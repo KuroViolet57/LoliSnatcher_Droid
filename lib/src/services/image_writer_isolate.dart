@@ -90,13 +90,18 @@ class ImageWriterIsolate {
   }
 
   String parseThumbUrlToName(String thumbURL) {
-    final int queryLastIndex = thumbURL.lastIndexOf('?'); // Sankaku fix
-    final int lastIndex = queryLastIndex != -1 ? queryLastIndex : thumbURL.length;
-    String result = thumbURL.substring(thumbURL.lastIndexOf('/') + 1, lastIndex);
+    final int queryIndex = thumbURL.indexOf('?'); // Sankaku fix
+    final String urlWithoutQuery = queryIndex != -1 ? thumbURL.substring(0, queryIndex) : thumbURL;
+    String result = urlWithoutQuery.substring(urlWithoutQuery.lastIndexOf('/') + 1);
+
     if (result.startsWith('thumb.')) {
       //Paheal/shimmie(?) fix
-      final String unthumbedURL = thumbURL.substring(0, lastIndex).replaceAll('/thumb', '');
-      result = unthumbedURL.substring(unthumbedURL.lastIndexOf('/') + 1);
+      final String unthumbedURL = thumbURL.replaceAll('/thumb', '');
+
+      final int unthumbedQueryIndex = unthumbedURL.indexOf('?');
+      final String unthumbedUrlWithoutQuery = unthumbedQueryIndex != -1 ? unthumbedURL.substring(0, unthumbedQueryIndex) : unthumbedURL;
+
+      result = unthumbedUrlWithoutQuery.substring(unthumbedUrlWithoutQuery.lastIndexOf('/') + 1);
     }
     return result;
   }
