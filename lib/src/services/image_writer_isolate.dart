@@ -48,12 +48,13 @@ class ImageWriterIsolate {
         fileNameExtras: fileNameExtras,
       );
       image = File(cachePath + fileName);
+      // TODO is readBytes required here?
       print('found image at: ${cachePath + fileName} for $fileURL :: ImageWriterIsolate /:: readFileFromCache');
-      if (!await image.exists()) {
-        return null;
+      if (await image.exists()) {
+        await image.readAsBytes();
       }
     } catch (e) {
-      print('Image Writer Isolate Exception :: read cache file :: $e');
+      print('Image Writer Isolate Exception :: cache write :: $e');
       return null;
     }
     return image;
@@ -95,7 +96,7 @@ class ImageWriterIsolate {
     String result = thumbURL.substring(thumbURL.lastIndexOf('/') + 1, lastIndex);
     if (result.startsWith('thumb.')) {
       //Paheal/shimmie(?) fix
-      final String unthumbedURL = thumbURL.substring(0, lastIndex).replaceAll('/thumb', '');
+      final String unthumbedURL = thumbURL.replaceAll('/thumb', '');
       result = unthumbedURL.substring(unthumbedURL.lastIndexOf('/') + 1);
     }
     return result;

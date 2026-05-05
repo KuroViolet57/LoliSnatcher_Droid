@@ -234,7 +234,8 @@ class ColorSetting extends SettingDefinition<Color?> {
 
   @override
   int? toJson(Color? value) {
-    return value?.toARGB32() ?? Colors.pink.toARGB32();
+    // ignore: deprecated_member_use
+    return value?.value ?? Colors.pink.value;
   }
 }
 

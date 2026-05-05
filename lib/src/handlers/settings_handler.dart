@@ -902,7 +902,9 @@ class SettingsHandler {
 
         case 'color':
           if (toJSON) {
-            return (value as Color?)?.toARGB32() ?? Colors.pink.toARGB32(); // Color => int
+            // TODO replace value with toARGB32() in the next flutter release
+            // ignore: deprecated_member_use
+            return (value as Color?)?.value ?? Colors.pink.value; // Color => int
           } else {
             if (value is int) {
               return Color(value);
@@ -1804,28 +1806,24 @@ class SettingsHandler {
       }
 
       if (files.isNotEmpty) {
-        final futures = <Future<void>>[];
         for (int i = 0; i < files.length; i++) {
           if (files[i].path.contains('.json')) {
             // && files[i].path != 'settings.json'
             // print(files[i].toString());
             final File booruFile = files[i] as File;
-            futures.add(() async {
-              final Booru booruFromFile = Booru.fromJSON(await booruFile.readAsString());
-              final bool isAllowed = BooruType.saveable.contains(booruFromFile.type);
-              if (isAllowed) {
-                tempList.add(booruFromFile);
-              } else {
-                await booruFile.delete();
-              }
+            final Booru booruFromFile = Booru.fromJSON(await booruFile.readAsString());
+            final bool isAllowed = BooruType.saveable.contains(booruFromFile.type);
+            if (isAllowed) {
+              tempList.add(booruFromFile);
+            } else {
+              await booruFile.delete();
+            }
 
-              if (booruFromFile.type?.isHydrus == true) {
-                hasHydrus = true;
-              }
-            }());
+            if (booruFromFile.type?.isHydrus == true) {
+              hasHydrus = true;
+            }
           }
         }
-        await Future.wait(futures);
       }
 
       if (dbEnabled && tempList.isNotEmpty) {

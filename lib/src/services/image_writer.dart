@@ -144,10 +144,11 @@ class ImageWriter {
       try {
         if (Platform.isAndroid) {
           if (settingsHandler.extPathOverride.isNotEmpty && await ServiceHandler.getAndroidSDKVersion() >= 31) {
-            final bool result = await ServiceHandler.existsFileFromSAFDirectoryFast(path, fileName);
-            if (!result) {
-              throw Exception('SAF file not found');
-            }
+            // TODO disabled for now, because it causes huge delays if user has a lot of saved files
+            // final bool result = await ServiceHandler.existsFileFromSAFDirectory(path, fileName);
+            // if (!result) {
+            //   throw Exception('SAF file not found');
+            // }
           } else {
             await ServiceHandler.callMediaScanner(image.path);
           }
@@ -527,7 +528,7 @@ class ImageWriter {
       result = thumbURL.substring(thumbURL.lastIndexOf('/') + 1, lastIndex);
       if (result.startsWith('thumb.')) {
         //Paheal/shimmie(?) fix
-        final String unthumbedURL = thumbURL.substring(0, lastIndex).replaceAll('/thumb', '');
+        final String unthumbedURL = thumbURL.replaceAll('/thumb', '');
         result = unthumbedURL.substring(unthumbedURL.lastIndexOf('/') + 1);
       }
     }

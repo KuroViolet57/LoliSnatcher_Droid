@@ -293,19 +293,10 @@ class DBHandler {
 
     final List<String> ids = List.generate(postURLs.length, (index) => '');
     if (result != null && result.isNotEmpty) {
-      final Map<String, List<int>> urlIndices = {};
-      for (int i = 0; i < postURLs.length; i++) {
-        (urlIndices[postURLs[i]] ??= []).add(i);
-      }
-
       for (final Map<String, dynamic> item in result) {
-        final String postURL = item['postURL'] as String;
-        final List<int>? indices = urlIndices[postURL];
-        if (indices != null) {
-          final String idString = item['id'].toString();
-          for (final int index in indices) {
-            ids[index] = idString;
-          }
+        final int postIndex = postURLs.indexOf(item['postURL']);
+        if (postIndex != -1) {
+          ids[postIndex] = item['id'].toString();
         }
       }
     }
