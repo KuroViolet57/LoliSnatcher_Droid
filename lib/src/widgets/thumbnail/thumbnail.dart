@@ -453,7 +453,7 @@ class _ThumbnailState extends State<Thumbnail> {
 
         final bool useExtra = isThumbQuality == false && !widget.item.isHidden && !settingsHandler.shitDevice;
 
-        final double blurAmount = (settingsHandler.blurImages && !widget.isStandalone)
+        final double blurAmount = (settingsHandler.blurImages.value && !widget.isStandalone)
             ? 40
             : max(constraints.maxWidth * (widget.isStandalone ? 0.1 : 0.06), 10);
 
@@ -483,7 +483,7 @@ class _ThumbnailState extends State<Thumbnail> {
                   );
                 },
                 child: ImageFiltered(
-                  enabled: settingsHandler.blurImages || widget.item.isHidden,
+                  enabled: settingsHandler.blurImages.value || widget.item.isHidden,
                   imageFilter: ImageFilter.blur(
                     sigmaX: blurAmount,
                     sigmaY: blurAmount,
@@ -545,7 +545,7 @@ class _ThumbnailState extends State<Thumbnail> {
                 child: ImageFiltered(
                   enabled:
                       isBlurred &&
-                      (settingsHandler.blurImages || (widget.item.isHidden && !settingsHandler.shitDevice)),
+                      (settingsHandler.blurImages.value || (widget.item.isHidden && !settingsHandler.shitDevice)),
                   imageFilter: ImageFilter.blur(
                     sigmaX: blurAmount,
                     sigmaY: blurAmount,

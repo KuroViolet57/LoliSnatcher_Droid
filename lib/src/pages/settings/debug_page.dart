@@ -102,10 +102,10 @@ class _DebugPageState extends State<DebugPage> {
               ),
               if (kDebugMode)
                 SettingsToggle(
-                  value: settingsHandler.blurImages,
+                  value: settingsHandler.blurImages.value,
                   onChanged: (newValue) {
                     setState(() {
-                      settingsHandler.blurImages = newValue;
+                      settingsHandler.blurImages.value = newValue;
                       ViewerHandler.instance.videoAutoMute = newValue;
                     });
                   },

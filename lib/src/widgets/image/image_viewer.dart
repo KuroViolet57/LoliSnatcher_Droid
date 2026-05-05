@@ -771,7 +771,7 @@ class ImageViewerState extends State<ImageViewer> {
               }
             },
             child: ImageFiltered(
-              enabled: settingsHandler.blurImages,
+              enabled: settingsHandler.blurImages.value,
               imageFilter: ImageFilter.blur(
                 sigmaX: 40,
                 sigmaY: 40,

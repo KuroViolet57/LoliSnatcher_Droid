@@ -86,11 +86,10 @@ class TagHandler {
     bool useDB = true,
     bool preferTypeIfNone = false,
   }) async {
-    // TODO sanitize tagString?
+    tag.fullString = tag.fullString.trim().toLowerCase();
     if (tag.fullString.isEmpty) {
       return;
     }
-    tag.fullString = tag.fullString.toLowerCase();
     if (preferTypeIfNone && hasTag(tag.fullString)) {
       if (getTag(tag.fullString).tagType != TagType.none && tag.tagType == TagType.none) {
         Logger.Inst().log(
