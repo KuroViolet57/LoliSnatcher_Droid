@@ -528,7 +528,7 @@ class ImageWriter {
       result = thumbURL.substring(thumbURL.lastIndexOf('/') + 1, lastIndex);
       if (result.startsWith('thumb.')) {
         //Paheal/shimmie(?) fix
-        final String unthumbedURL = thumbURL.replaceAll('/thumb', '');
+        final String unthumbedURL = thumbURL.substring(0, lastIndex).replaceAll('/thumb', '');
         result = unthumbedURL.substring(unthumbedURL.lastIndexOf('/') + 1);
       }
     }
