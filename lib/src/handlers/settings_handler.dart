@@ -1585,10 +1585,8 @@ class SettingsHandler {
         LogTypes.exception,
         s: s,
       );
+      return false;
     }
-
-    // TODO add error handling for invalid values
-    // (don't allow user to exit the page until the value is correct? or just set to default (current behaviour)? mix of both?)
 
     try {
       dynamic tempBtnOrder = json['buttonOrder'];
