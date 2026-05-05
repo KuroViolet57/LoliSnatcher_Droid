@@ -2200,6 +2200,34 @@ class _TagContentPreviewState extends State<TagContentPreview> {
                                   },
                                   onLongPress: () async {
                                     await ServiceHandler.vibrate();
+                                    final bool? addToEnd = await showModalBottomSheet<bool>(
+                                      context: context,
+                                      showDragHandle: true,
+                                      builder: (context) {
+                                        return SafeArea(
+                                          child: Column(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              ListTile(
+                                                title: Text(context.loc.tagView.previewAddTabPositionTitle),
+                                                subtitle: Text(context.loc.tagView.previewAddTabPositionHint),
+                                              ),
+                                              ListTile(
+                                                leading: const Icon(Icons.last_page),
+                                                title: Text(context.loc.tagView.previewAddTabPositionEnd),
+                                                onTap: () => Navigator.of(context).pop(true),
+                                              ),
+                                              ListTile(
+                                                leading: const Icon(Icons.chevron_right),
+                                                title: Text(context.loc.tagView.previewAddTabPositionNext),
+                                                onTap: () => Navigator.of(context).pop(false),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                      },
+                                    );
+                                    if (addToEnd == null) return;
                                     if (settingsHandler.appMode.value.isMobile) {
                                       Navigator.of(context).popUntil((route) => route.isFirst); // exit viewer
                                     }
@@ -2208,6 +2236,7 @@ class _TagContentPreviewState extends State<TagContentPreview> {
                                         widget.tag,
                                         customBooru: selectedBooru,
                                         switchToNew: true,
+                                        addMode: addToEnd ? TabAddMode.end : TabAddMode.next,
                                       );
                                     });
                                   },

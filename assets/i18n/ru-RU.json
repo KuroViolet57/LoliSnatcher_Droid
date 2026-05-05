@@ -1130,7 +1130,11 @@
         "relatedTabs": "Связанные вкладки",
         "tabsWithOnlyTag": "Вкладки только с этим тегом",
         "tabsWithOnlyTagDifferentBooru": "Вкладки только с этим тегом, но на другом сайте",
-        "tabsContainingTag": "Вкладки, содержащие этот тег"
+        "tabsContainingTag": "Вкладки, содержащие этот тег",
+        "previewAddTabPositionTitle": "Открыть новую вкладку из предпросмотра",
+        "previewAddTabPositionEnd": "Добавить в конец",
+        "previewAddTabPositionNext": "Добавить после текущей",
+        "previewAddTabPositionHint": "Выберите, куда добавить новую вкладку"
     },
     "pinnedTags": {
         "pinnedTags": "Закрепленные теги",

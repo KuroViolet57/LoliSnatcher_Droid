@@ -1120,7 +1120,11 @@
         "relatedTabs": "İlgili sekmeler",
         "tabsWithOnlyTag": "Sadece bu etiketi içeren sekmeler",
         "tabsWithOnlyTagDifferentBooru": "Sadece bu etiketi içeren ama farklı booru'daki sekmeler",
-        "tabsContainingTag": "Bu etiketi kapsayan sekmeler"
+        "tabsContainingTag": "Bu etiketi kapsayan sekmeler",
+        "previewAddTabPositionTitle": "Önizlemeden yeni sekme aç",
+        "previewAddTabPositionEnd": "Sona ekle",
+        "previewAddTabPositionNext": "Mevcut sekmeden sonra ekle",
+        "previewAddTabPositionHint": "Yeni sekmenin nereye ekleneceğini seç"
     },
     "pinnedTags": {
         "pinnedTags": "Sabitlenmiş etiketler",

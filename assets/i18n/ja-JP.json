@@ -1130,7 +1130,11 @@
         "relatedTabs": "関連タブ",
         "tabsWithOnlyTag": "このタグのみのタブ",
         "tabsWithOnlyTagDifferentBooru": "このタグのみで、違うBooruのタブ",
-        "tabsContainingTag": "このタグを含むタブ"
+        "tabsContainingTag": "このタグを含むタブ",
+        "previewAddTabPositionTitle": "プレビューから新しいタブを開く",
+        "previewAddTabPositionEnd": "最後に追加",
+        "previewAddTabPositionNext": "現在のタブの次に追加",
+        "previewAddTabPositionHint": "新しいタブの追加位置を選択"
     },
     "pinnedTags": {
         "pinnedTags": "ピン留めされたタグ",

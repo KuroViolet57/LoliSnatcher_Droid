@@ -1130,7 +1130,11 @@
         "relatedTabs": "Related tabs",
         "tabsWithOnlyTag": "Tabs with only this tag",
         "tabsWithOnlyTagDifferentBooru": "Tabs with only this tag but on a different booru",
-        "tabsContainingTag": "Tabs containing this tag"
+        "tabsContainingTag": "Tabs containing this tag",
+        "previewAddTabPositionTitle": "Open new tab from preview",
+        "previewAddTabPositionEnd": "Add to end",
+        "previewAddTabPositionNext": "Add next to current",
+        "previewAddTabPositionHint": "Choose where to place the new tab"
     },
     "pinnedTags": {
         "pinnedTags": "Pinned tags",
