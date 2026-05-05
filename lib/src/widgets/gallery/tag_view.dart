@@ -2200,6 +2200,34 @@ class _TagContentPreviewState extends State<TagContentPreview> {
                                   },
                                   onLongPress: () async {
                                     await ServiceHandler.vibrate();
+
+                                    final TabAddMode? chosenMode = await showModalBottomSheet<TabAddMode>(
+                                      context: context,
+                                      builder: (sheetContext) {
+                                        return SafeArea(
+                                          child: Column(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              ListTile(
+                                                leading: const Icon(Icons.vertical_align_bottom),
+                                                title: const Text('Open at end of tab list'),
+                                                onTap: () => Navigator.of(sheetContext).pop(TabAddMode.end),
+                                              ),
+                                              ListTile(
+                                                leading: const Icon(Icons.tab),
+                                                title: const Text('Open next to current tab'),
+                                                onTap: () => Navigator.of(sheetContext).pop(TabAddMode.next),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                      },
+                                    );
+
+                                    if (chosenMode == null) {
+                                      return;
+                                    }
+
                                     if (settingsHandler.appMode.value.isMobile) {
                                       Navigator.of(context).popUntil((route) => route.isFirst); // exit viewer
                                     }
@@ -2207,6 +2235,7 @@ class _TagContentPreviewState extends State<TagContentPreview> {
                                       SearchHandler.instance.addTabByString(
                                         widget.tag,
                                         customBooru: selectedBooru,
+                                        addMode: chosenMode,
                                         switchToNew: true,
                                       );
                                     });
