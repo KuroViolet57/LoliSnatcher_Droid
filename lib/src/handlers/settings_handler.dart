@@ -1895,7 +1895,7 @@ class SettingsHandler {
     booruList.value = sorted;
   }
 
-  Future saveBooru(Booru booru, {bool onlySave = false}) async {
+  Future saveBooru(Booru booru) async {
     if (path == '') {
       await setConfigDir();
     }
@@ -1906,12 +1906,9 @@ class SettingsHandler {
     writer.write(jsonEncode(booru.toJson()));
     await writer.close();
 
-    if (!onlySave) {
-      // used only to avoid duplication after migration to json format
-      // TODO remove condition when migration logic is removed
-      booruList.add(booru);
-      unawaited(sortBooruList());
-    }
+    booruList.add(booru);
+    unawaited(sortBooruList());
+
     return true;
   }
 
