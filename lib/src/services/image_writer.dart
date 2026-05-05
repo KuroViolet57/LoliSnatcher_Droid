@@ -5,6 +5,7 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
+import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 
 import 'package:lolisnatcher/src/data/booru.dart';
@@ -144,10 +145,11 @@ class ImageWriter {
       try {
         if (Platform.isAndroid) {
           if (settingsHandler.extPathOverride.isNotEmpty && await ServiceHandler.getAndroidSDKVersion() >= 31) {
-            final bool result = await ServiceHandler.existsFileFromSAFDirectoryFast(path, fileName);
-            if (!result) {
-              throw Exception('SAF file not found');
-            }
+            // TODO disabled for now, because it causes huge delays if user has a lot of saved files
+            // final bool result = await ServiceHandler.existsFileFromSAFDirectory(path, fileName);
+            // if (!result) {
+            //   throw Exception('SAF file not found');
+            // }
           } else {
             await ServiceHandler.callMediaScanner(image.path);
           }
@@ -520,14 +522,21 @@ class ImageWriter {
   String parseThumbUrlToName(String thumbURL) {
     String result = '';
     if (thumbURL.contains('Hydrus-Client')) {
-      result = "hydrusThumb_${thumbURL.split("&")[0].split("=")[1]}";
+      final match = RegExp(r'[?&](id|file_id|hash)=([^&]+)').firstMatch(thumbURL);
+      if (match != null && match.group(2) != null) {
+        result = "hydrusThumb_${match.group(2)}";
+      } else {
+        final bytes = utf8.encode(thumbURL);
+        final hash = md5.convert(bytes);
+        result = "hydrusThumb_$hash";
+      }
     } else {
       final int queryLastIndex = thumbURL.lastIndexOf('?'); // Sankaku fix
       final int lastIndex = queryLastIndex != -1 ? queryLastIndex : thumbURL.length;
       result = thumbURL.substring(thumbURL.lastIndexOf('/') + 1, lastIndex);
       if (result.startsWith('thumb.')) {
         //Paheal/shimmie(?) fix
-        final String unthumbedURL = thumbURL.substring(0, lastIndex).replaceAll('/thumb', '');
+        final String unthumbedURL = thumbURL.replaceAll('/thumb', '');
         result = unthumbedURL.substring(unthumbedURL.lastIndexOf('/') + 1);
       }
     }
