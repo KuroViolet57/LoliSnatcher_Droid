@@ -2209,17 +2209,17 @@ class _TagContentPreviewState extends State<TagContentPreview> {
                                             mainAxisSize: MainAxisSize.min,
                                             children: [
                                               ListTile(
-                                                title: Text(context.loc.tagView.previewAddTabPositionTitle),
-                                                subtitle: Text(context.loc.tagView.previewAddTabPositionHint),
+                                                title: Text(context.loc['tagView.previewAddTabPositionTitle']),
+                                                subtitle: Text(context.loc['tagView.previewAddTabPositionHint']),
                                               ),
                                               ListTile(
                                                 leading: const Icon(Icons.last_page),
-                                                title: Text(context.loc.tagView.previewAddTabPositionEnd),
+                                                title: Text(context.loc['tagView.previewAddTabPositionEnd']),
                                                 onTap: () => Navigator.of(context).pop(true),
                                               ),
                                               ListTile(
                                                 leading: const Icon(Icons.chevron_right),
-                                                title: Text(context.loc.tagView.previewAddTabPositionNext),
+                                                title: Text(context.loc['tagView.previewAddTabPositionNext']),
                                                 onTap: () => Navigator.of(context).pop(false),
                                               ),
                                             ],

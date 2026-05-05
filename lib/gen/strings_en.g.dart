@@ -1496,14 +1496,6 @@ class TranslationsTagViewEn {
 
   /// en: 'Tabs containing this tag'
   String get tabsContainingTag => TranslationOverrides.string(_root.$meta, 'tagView.tabsContainingTag', {}) ?? 'Tabs containing this tag';
-  String get previewAddTabPositionTitle =>
-      TranslationOverrides.string(_root.$meta, 'tagView.previewAddTabPositionTitle', {}) ?? 'Open new tab from preview';
-  String get previewAddTabPositionEnd =>
-      TranslationOverrides.string(_root.$meta, 'tagView.previewAddTabPositionEnd', {}) ?? 'Add to end';
-  String get previewAddTabPositionNext =>
-      TranslationOverrides.string(_root.$meta, 'tagView.previewAddTabPositionNext', {}) ?? 'Add next to current';
-  String get previewAddTabPositionHint =>
-      TranslationOverrides.string(_root.$meta, 'tagView.previewAddTabPositionHint', {}) ?? 'Choose where to place the new tab';
 }
 
 // Path: pinnedTags
@@ -6591,14 +6583,6 @@ extension on Translations {
             TranslationOverrides.string(_root.$meta, 'tagView.tabsWithOnlyTagDifferentBooru', {}) ??
                 'Tabs with only this tag but on a different booru',
           'tagView.tabsContainingTag' => TranslationOverrides.string(_root.$meta, 'tagView.tabsContainingTag', {}) ?? 'Tabs containing this tag',
-          'tagView.previewAddTabPositionTitle' =>
-            TranslationOverrides.string(_root.$meta, 'tagView.previewAddTabPositionTitle', {}) ?? 'Open new tab from preview',
-          'tagView.previewAddTabPositionEnd' =>
-            TranslationOverrides.string(_root.$meta, 'tagView.previewAddTabPositionEnd', {}) ?? 'Add to end',
-          'tagView.previewAddTabPositionNext' =>
-            TranslationOverrides.string(_root.$meta, 'tagView.previewAddTabPositionNext', {}) ?? 'Add next to current',
-          'tagView.previewAddTabPositionHint' =>
-            TranslationOverrides.string(_root.$meta, 'tagView.previewAddTabPositionHint', {}) ?? 'Choose where to place the new tab',
           'pinnedTags.pinnedTags' => TranslationOverrides.string(_root.$meta, 'pinnedTags.pinnedTags', {}) ?? 'Pinned tags',
           'pinnedTags.pinTag' => TranslationOverrides.string(_root.$meta, 'pinnedTags.pinTag', {}) ?? 'Pin tag',
           'pinnedTags.unpinTag' => TranslationOverrides.string(_root.$meta, 'pinnedTags.unpinTag', {}) ?? 'Unpin tag',
