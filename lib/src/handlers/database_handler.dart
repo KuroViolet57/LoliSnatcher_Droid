@@ -715,61 +715,122 @@ class DBHandler {
     if (itemID == null) {
       return;
     }
-    String? id = '';
-    // TODO rewrite using batch
-    for (final tag in tags) {
-      id = await getTagID(tag);
-      if (id.isEmpty) {
-        final result = await db?.rawInsert('INSERT INTO Tag(name) VALUES(?)', [tag]);
-        id = result?.toString();
+
+    // Deduplicate tags to avoid UNIQUE constraint failures
+    final uniqueTags = tags.toSet().toList();
+    if (uniqueTags.isEmpty) return;
+
+    final batch = db?.batch();
+    if (batch == null) return;
+
+    final Map<String, String> tagIdMap = {};
+
+    // Chunking to avoid SQLite variable limit
+    for (int i = 0; i < uniqueTags.length; i += 500) {
+      final chunk = uniqueTags.sublist(i, i + 500 > uniqueTags.length ? uniqueTags.length : i + 500);
+      final placeholders = List.filled(chunk.length, '?').join(',');
+
+      final existingTagsResult = await db?.rawQuery(
+        'SELECT id, name FROM Tag WHERE name IN ($placeholders)',
+        chunk,
+      );
+
+      if (existingTagsResult != null) {
+        for (final row in existingTagsResult) {
+          tagIdMap[row['name'].toString()] = row['id'].toString();
+        }
       }
-      await db?.rawInsert('INSERT INTO ImageTag(tagID, booruItemID) VALUES(?,?)', [id, itemID]);
     }
+
+    final insertBatch = db?.batch();
+    final List<String> tagsToInsert = [];
+
+    if (insertBatch != null) {
+      for (final tag in uniqueTags) {
+        if (!tagIdMap.containsKey(tag)) {
+          tagsToInsert.add(tag);
+          insertBatch.rawInsert('INSERT OR IGNORE INTO Tag(name) VALUES(?)', [tag]);
+        }
+      }
+      if (tagsToInsert.isNotEmpty) {
+        final results = await insertBatch.commit();
+        for (int j = 0; j < tagsToInsert.length; j++) {
+          tagIdMap[tagsToInsert[j]] = results[j]?.toString() ?? '';
+        }
+      }
+    }
+
+    for (final tag in tags) {
+      batch.rawInsert('INSERT OR IGNORE INTO ImageTag(tagID, booruItemID) VALUES(?,?)', [tagIdMap[tag], itemID]);
+    }
+    await batch.commit(noResult: true);
   }
 
   /// Adds tags for a BooruItem to the database
   Future<void> updateTagsFromObjects(List<Tag> tags) async {
-    if (tags.isEmpty) return;
+    // Deduplicate to avoid uniqueness constraint crashes
+    final Map<String, Tag> uniqueTagsMap = {};
+    for (final t in tags) {
+       uniqueTagsMap[t.fullString] = t;
+    }
+    final uniqueTags = uniqueTagsMap.values.toList();
 
-    final existingTags = <String, String>{};
-    final tagNames = tags.map((t) => t.fullString).toSet().toList();
+    if (uniqueTags.isEmpty) return;
 
-    // Chunk tag names by 999 to avoid SQLite limits
-    const chunkSize = 999;
-    for (var i = 0; i < tagNames.length; i += chunkSize) {
-      final chunk = tagNames.sublist(i, i + chunkSize > tagNames.length ? tagNames.length : i + chunkSize);
-      final placeholders = List.filled(chunk.length, '?').join(',');
-      final result = await db?.rawQuery('SELECT id, name FROM Tag WHERE name IN ($placeholders)', chunk);
+    final batch = db?.batch();
+    if (batch == null) return;
 
-      if (result != null) {
-        for (final row in result) {
-          existingTags[row['name'].toString()] = row['id'].toString();
+    final Map<String, String> tagIdMap = {};
+
+    // Chunking to avoid SQLite variable limit
+    for (int i = 0; i < uniqueTags.length; i += 500) {
+      final chunk = uniqueTags.sublist(i, i + 500 > uniqueTags.length ? uniqueTags.length : i + 500);
+      final chunkNames = chunk.map((t) => t.fullString).toList();
+      final placeholders = List.filled(chunkNames.length, '?').join(',');
+
+      final existingTagsResult = await db?.rawQuery(
+        'SELECT id, name FROM Tag WHERE name IN ($placeholders)',
+        chunkNames,
+      );
+
+      if (existingTagsResult != null) {
+        for (final row in existingTagsResult) {
+          tagIdMap[row['name'].toString()] = row['id'].toString();
         }
       }
     }
 
-    final batch = db?.batch();
-    if (batch != null) {
-      for (final tag in tags) {
-        final id = existingTags[tag.fullString];
-        if (id == null || id.isEmpty) {
-          batch.rawInsert('INSERT INTO Tag(name, tagType, updatedAt) VALUES(?,?,?)', [
+    final insertBatch = db?.batch();
+    final List<Tag> tagsToInsert = [];
+
+    if (insertBatch != null) {
+      for (final tag in uniqueTags) {
+        if (!tagIdMap.containsKey(tag.fullString)) {
+          tagsToInsert.add(tag);
+          insertBatch.rawInsert('INSERT OR IGNORE INTO Tag(name, tagType, updatedAt) VALUES(?,?,?)', [
             tag.fullString,
             tag.tagType.name,
             tag.updatedAt,
           ]);
-          // Prevent duplicate inserts within the same batch
-          existingTags[tag.fullString] = 'pending_insert';
-        } else if (id != 'pending_insert') {
+        } else {
+          // Keep updating existing tags logic as it was doing before this
           batch.rawUpdate('UPDATE Tag SET tagType = ?,updatedAt = ? WHERE id = ?', [
             tag.tagType.name,
             tag.updatedAt,
-            id,
+            tagIdMap[tag.fullString],
           ]);
         }
       }
-      await batch.commit(noResult: true);
+      if (tagsToInsert.isNotEmpty) {
+        final results = await insertBatch.commit();
+        for (int j = 0; j < tagsToInsert.length; j++) {
+          tagIdMap[tagsToInsert[j].fullString] = results[j]?.toString() ?? '';
+        }
+      }
     }
+
+    await batch.commit(noResult: true);
+    return;
   }
 
   /// Gets a tag id from the database
