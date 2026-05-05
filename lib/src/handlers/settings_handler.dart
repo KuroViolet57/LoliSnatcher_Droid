@@ -1806,24 +1806,28 @@ class SettingsHandler {
       }
 
       if (files.isNotEmpty) {
+        final futures = <Future<void>>[];
         for (int i = 0; i < files.length; i++) {
           if (files[i].path.contains('.json')) {
             // && files[i].path != 'settings.json'
             // print(files[i].toString());
             final File booruFile = files[i] as File;
-            final Booru booruFromFile = Booru.fromJSON(await booruFile.readAsString());
-            final bool isAllowed = BooruType.saveable.contains(booruFromFile.type);
-            if (isAllowed) {
-              tempList.add(booruFromFile);
-            } else {
-              await booruFile.delete();
-            }
+            futures.add(() async {
+              final Booru booruFromFile = Booru.fromJSON(await booruFile.readAsString());
+              final bool isAllowed = BooruType.saveable.contains(booruFromFile.type);
+              if (isAllowed) {
+                tempList.add(booruFromFile);
+              } else {
+                await booruFile.delete();
+              }
 
-            if (booruFromFile.type?.isHydrus == true) {
-              hasHydrus = true;
-            }
+              if (booruFromFile.type?.isHydrus == true) {
+                hasHydrus = true;
+              }
+            }());
           }
         }
+        await Future.wait(futures);
       }
 
       if (dbEnabled && tempList.isNotEmpty) {
