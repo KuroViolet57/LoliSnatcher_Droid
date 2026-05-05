@@ -902,9 +902,7 @@ class SettingsHandler {
 
         case 'color':
           if (toJSON) {
-            // TODO replace value with toARGB32() in the next flutter release
-            // ignore: deprecated_member_use
-            return (value as Color?)?.value ?? Colors.pink.value; // Color => int
+            return (value as Color?)?.toARGB32() ?? Colors.pink.toARGB32(); // Color => int
           } else {
             if (value is int) {
               return Color(value);
@@ -1585,10 +1583,8 @@ class SettingsHandler {
         LogTypes.exception,
         s: s,
       );
+      return false;
     }
-
-    // TODO add error handling for invalid values
-    // (don't allow user to exit the page until the value is correct? or just set to default (current behaviour)? mix of both?)
 
     try {
       dynamic tempBtnOrder = json['buttonOrder'];
@@ -1806,24 +1802,28 @@ class SettingsHandler {
       }
 
       if (files.isNotEmpty) {
+        final futures = <Future<void>>[];
         for (int i = 0; i < files.length; i++) {
           if (files[i].path.contains('.json')) {
             // && files[i].path != 'settings.json'
             // print(files[i].toString());
             final File booruFile = files[i] as File;
-            final Booru booruFromFile = Booru.fromJSON(await booruFile.readAsString());
-            final bool isAllowed = BooruType.saveable.contains(booruFromFile.type);
-            if (isAllowed) {
-              tempList.add(booruFromFile);
-            } else {
-              await booruFile.delete();
-            }
+            futures.add(() async {
+              final Booru booruFromFile = Booru.fromJSON(await booruFile.readAsString());
+              final bool isAllowed = BooruType.saveable.contains(booruFromFile.type);
+              if (isAllowed) {
+                tempList.add(booruFromFile);
+              } else {
+                await booruFile.delete();
+              }
 
-            if (booruFromFile.type?.isHydrus == true) {
-              hasHydrus = true;
-            }
+              if (booruFromFile.type?.isHydrus == true) {
+                hasHydrus = true;
+              }
+            }());
           }
         }
+        await Future.wait(futures);
       }
 
       if (dbEnabled && tempList.isNotEmpty) {
@@ -1895,7 +1895,7 @@ class SettingsHandler {
     booruList.value = sorted;
   }
 
-  Future saveBooru(Booru booru, {bool onlySave = false}) async {
+  Future saveBooru(Booru booru) async {
     if (path == '') {
       await setConfigDir();
     }
@@ -1906,12 +1906,9 @@ class SettingsHandler {
     writer.write(jsonEncode(booru.toJson()));
     await writer.close();
 
-    if (!onlySave) {
-      // used only to avoid duplication after migration to json format
-      // TODO remove condition when migration logic is removed
-      booruList.add(booru);
-      unawaited(sortBooruList());
-    }
+    booruList.add(booru);
+    unawaited(sortBooruList());
+
     return true;
   }
 

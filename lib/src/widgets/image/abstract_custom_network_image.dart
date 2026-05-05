@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'package:lolisnatcher/src/widgets/image/custom_network_image.dart' as custom_network_image;
 
+@immutable
 abstract class CustomNetworkImage extends ImageProvider<CustomNetworkImage> {
   const factory CustomNetworkImage(
     String url, {
