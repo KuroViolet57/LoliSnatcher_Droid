@@ -902,9 +902,7 @@ class SettingsHandler {
 
         case 'color':
           if (toJSON) {
-            // TODO replace value with toARGB32() in the next flutter release
-            // ignore: deprecated_member_use
-            return (value as Color?)?.value ?? Colors.pink.value; // Color => int
+            return (value as Color?)?.toARGB32() ?? Colors.pink.toARGB32(); // Color => int
           } else {
             if (value is int) {
               return Color(value);
