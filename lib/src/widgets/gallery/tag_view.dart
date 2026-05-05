@@ -2200,16 +2200,45 @@ class _TagContentPreviewState extends State<TagContentPreview> {
                                   },
                                   onLongPress: () async {
                                     await ServiceHandler.vibrate();
-                                    if (settingsHandler.appMode.value.isMobile) {
-                                      Navigator.of(context).popUntil((route) => route.isFirst); // exit viewer
+
+                                    final RenderBox button = context.findRenderObject() as RenderBox;
+                                    final RenderBox overlay = Navigator.of(context).overlay!.context.findRenderObject() as RenderBox;
+                                    final RelativeRect position = RelativeRect.fromRect(
+                                      Rect.fromPoints(
+                                        button.localToGlobal(Offset.zero, ancestor: overlay),
+                                        button.localToGlobal(button.size.bottomRight(Offset.zero), ancestor: overlay),
+                                      ),
+                                      Offset.zero & overlay.size,
+                                    );
+
+                                    final TabAddMode? selectedMode = await showMenu<TabAddMode>(
+                                      context: context,
+                                      position: position,
+                                      items: [
+                                        PopupMenuItem(
+                                          value: TabAddMode.next,
+                                          child: Text(TabAddMode.next.locName(context)),
+                                        ),
+                                        PopupMenuItem(
+                                          value: TabAddMode.end,
+                                          child: Text(TabAddMode.end.locName(context)),
+                                        ),
+                                      ],
+                                    );
+
+                                    if (selectedMode != null) {
+                                      if (settingsHandler.appMode.value.isMobile) {
+                                        Navigator.of(context).popUntil((route) => route.isFirst); // exit viewer
+                                      }
+                                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                                        SearchHandler.instance.addTabByString(
+                                          widget.tag,
+                                          customBooru: selectedBooru,
+                                          switchToNew: true,
+                                          addMode: selectedMode,
+                                        );
+                                      });
                                     }
-                                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                                      SearchHandler.instance.addTabByString(
-                                        widget.tag,
-                                        customBooru: selectedBooru,
-                                        switchToNew: true,
-                                      );
-                                    });
                                   },
                                 );
                               },
