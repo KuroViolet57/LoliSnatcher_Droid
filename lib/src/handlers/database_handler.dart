@@ -228,8 +228,13 @@ class DBHandler {
     final List<String> itemIDs = await getItemIDs(items.map((item) => item.postURL).toList());
 
     int saved = 0, exist = 0;
+
+    final Map<String, int> postUrlToIndex = {
+      for (var i = 0; i < items.length; i++) items[i].postURL: i
+    };
+
     for (final BooruItem item in items) {
-      final int itemIndex = items.indexWhere((element) => element.postURL == item.postURL);
+      final int itemIndex = postUrlToIndex[item.postURL] ?? -1;
       String? itemID = (itemIDs.isNotEmpty && itemIndex != -1) ? itemIDs[itemIndex] : null;
 
       if (itemID == null || itemID.isEmpty) {
