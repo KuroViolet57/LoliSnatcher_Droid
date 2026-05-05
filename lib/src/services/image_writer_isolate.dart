@@ -104,13 +104,18 @@ class ImageWriterIsolate {
         result = "hydrusThumb_$hash";
       }
     } else {
-      final int queryLastIndex = thumbURL.lastIndexOf('?'); // Sankaku fix
-      final int lastIndex = queryLastIndex != -1 ? queryLastIndex : thumbURL.length;
-      result = thumbURL.substring(thumbURL.lastIndexOf('/') + 1, lastIndex);
+      final int queryIndex = thumbURL.indexOf('?'); // Sankaku fix
+      final String urlWithoutQuery = queryIndex != -1 ? thumbURL.substring(0, queryIndex) : thumbURL;
+      result = urlWithoutQuery.substring(urlWithoutQuery.lastIndexOf('/') + 1);
+
       if (result.startsWith('thumb.')) {
         //Paheal/shimmie(?) fix
         final String unthumbedURL = thumbURL.replaceAll('/thumb', '');
-        result = unthumbedURL.substring(unthumbedURL.lastIndexOf('/') + 1);
+
+        final int unthumbedQueryIndex = unthumbedURL.indexOf('?');
+        final String unthumbedUrlWithoutQuery = unthumbedQueryIndex != -1 ? unthumbedURL.substring(0, unthumbedQueryIndex) : unthumbedURL;
+
+        result = unthumbedUrlWithoutQuery.substring(unthumbedUrlWithoutQuery.lastIndexOf('/') + 1);
       }
     }
 
