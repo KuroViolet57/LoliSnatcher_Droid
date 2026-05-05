@@ -720,26 +720,47 @@ class DBHandler {
 
   /// Adds tags for a BooruItem to the database
   Future<void> updateTagsFromObjects(List<Tag> tags) async {
-    String? id = '';
-    // TODO rewrite using batch
-    for (final tag in tags) {
-      id = await getTagID(tag.fullString);
-      if (id.isEmpty) {
-        final result = await db?.rawInsert('INSERT INTO Tag(name, tagType, updatedAt) VALUES(?,?,?)', [
-          tag.fullString,
-          tag.tagType.name,
-          tag.updatedAt,
-        ]);
-        id = result?.toString();
-      } else {
-        await db?.rawUpdate('UPDATE Tag SET tagType = ?,updatedAt = ? WHERE id = ?', [
-          tag.tagType.name,
-          tag.updatedAt,
-          id,
-        ]);
+    if (tags.isEmpty) return;
+
+    final existingTags = <String, String>{};
+    final tagNames = tags.map((t) => t.fullString).toSet().toList();
+
+    // Chunk tag names by 999 to avoid SQLite limits
+    const chunkSize = 999;
+    for (var i = 0; i < tagNames.length; i += chunkSize) {
+      final chunk = tagNames.sublist(i, i + chunkSize > tagNames.length ? tagNames.length : i + chunkSize);
+      final placeholders = List.filled(chunk.length, '?').join(',');
+      final result = await db?.rawQuery('SELECT id, name FROM Tag WHERE name IN ($placeholders)', chunk);
+
+      if (result != null) {
+        for (final row in result) {
+          existingTags[row['name'].toString()] = row['id'].toString();
+        }
       }
     }
-    return;
+
+    final batch = db?.batch();
+    if (batch != null) {
+      for (final tag in tags) {
+        final id = existingTags[tag.fullString];
+        if (id == null || id.isEmpty) {
+          batch.rawInsert('INSERT INTO Tag(name, tagType, updatedAt) VALUES(?,?,?)', [
+            tag.fullString,
+            tag.tagType.name,
+            tag.updatedAt,
+          ]);
+          // Prevent duplicate inserts within the same batch
+          existingTags[tag.fullString] = 'pending_insert';
+        } else if (id != 'pending_insert') {
+          batch.rawUpdate('UPDATE Tag SET tagType = ?,updatedAt = ? WHERE id = ?', [
+            tag.tagType.name,
+            tag.updatedAt,
+            id,
+          ]);
+        }
+      }
+      await batch.commit(noResult: true);
+    }
   }
 
   /// Gets a tag id from the database
