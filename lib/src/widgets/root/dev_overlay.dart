@@ -217,9 +217,9 @@ class __DevOverlayContentState extends State<DevOverlayContent> {
                       if (kDebugMode)
                         buildButton(
                           Icons.deblur,
-                          settingsHandler.blurImages ? 'Unblur' : 'Blur',
+                          settingsHandler.blurImages.value ? 'Unblur' : 'Blur',
                           () {
-                            settingsHandler.blurImages = !settingsHandler.blurImages;
+                            settingsHandler.blurImages.value = !settingsHandler.blurImages.value;
                             searchHandler.rootRestate?.call();
                           },
                         ),

@@ -96,7 +96,7 @@ class SettingsHandler {
   final RxBool showPerf = false.obs;
   final RxBool showImageStats = false.obs;
   final RxBool showVideoStats = false.obs;
-  bool blurImages = kDebugMode ? Constants.blurImagesDefaultDev : false;
+  final RxBool blurImages = (kDebugMode ? Constants.blurImagesDefaultDev : false).obs;
 
   ////////////////////////////////////////////////////
 

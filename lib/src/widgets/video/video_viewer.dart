@@ -635,7 +635,7 @@ class VideoViewerState extends State<VideoViewer> {
           child: Stack(
             children: [
               ImageFiltered(
-                enabled: settingsHandler.blurImages,
+                enabled: settingsHandler.blurImages.value,
                 imageFilter: ImageFilter.blur(
                   sigmaX: 40,
                   sigmaY: 40,
@@ -793,7 +793,7 @@ class VideoViewerState extends State<VideoViewer> {
                       child: Stack(
                         children: [
                           ImageFiltered(
-                            enabled: settingsHandler.blurImages,
+                            enabled: settingsHandler.blurImages.value,
                             imageFilter: ImageFilter.blur(
                               sigmaX: 40,
                               sigmaY: 40,
