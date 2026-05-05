@@ -5,6 +5,7 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
+import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 
 import 'package:lolisnatcher/src/data/booru.dart';
@@ -521,7 +522,14 @@ class ImageWriter {
   String parseThumbUrlToName(String thumbURL) {
     String result = '';
     if (thumbURL.contains('Hydrus-Client')) {
-      result = "hydrusThumb_${thumbURL.split("&")[0].split("=")[1]}";
+      final match = RegExp(r'[?&](id|file_id|hash)=([^&]+)').firstMatch(thumbURL);
+      if (match != null && match.group(2) != null) {
+        result = "hydrusThumb_${match.group(2)}";
+      } else {
+        final bytes = utf8.encode(thumbURL);
+        final hash = md5.convert(bytes);
+        result = "hydrusThumb_$hash";
+      }
     } else {
       final int queryLastIndex = thumbURL.lastIndexOf('?'); // Sankaku fix
       final int lastIndex = queryLastIndex != -1 ? queryLastIndex : thumbURL.length;
