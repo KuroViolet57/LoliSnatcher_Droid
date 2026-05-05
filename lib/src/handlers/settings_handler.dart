@@ -288,8 +288,6 @@ class SettingsHandler {
   ];
 
   // default values and possible options map for validation
-  // TODO build settings widgets from this map, need to add Label/Description/other options required for the input element
-  // TODO move it in another file?
   Map<String, Map<String, dynamic>> get map => {
     // enums
     'previewMode': {
