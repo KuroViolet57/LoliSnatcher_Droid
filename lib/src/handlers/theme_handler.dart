@@ -152,9 +152,7 @@ class ThemeHandler {
 
     final brightness = isDark ? Brightness.dark : Brightness.light;
     final SchemeTonalSpot scheme = SchemeTonalSpot(
-      // TODO replace value with toARGB32() in the next flutter release
-      // ignore: deprecated_member_use
-      sourceColorHct: Hct.fromInt(theme.accent!.value),
+      sourceColorHct: Hct.fromInt(theme.accent!.toARGB32()),
       isDark: brightness == Brightness.dark,
       contrastLevel: 0,
     );
