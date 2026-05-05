@@ -203,7 +203,14 @@ class BooruItem extends Equatable {
       thumbnailURL: json['thumbnailURL'].toString(),
       tagsList: tags.map(Tag.new).toList(),
       postURL: json['postURL'].toString(),
-      // TODO stringify other options here
+      fileExt: json['fileExt']?.toString(),
+      serverId: json['serverId']?.toString(),
+      rating: json['rating']?.toString(),
+      score: json['score']?.toString(),
+      sources: (json['sources'] as List?)?.map((e) => e.toString()).toList(),
+      md5String: json['md5String']?.toString(),
+      postDate: json['postDate']?.toString(),
+      postDateFormat: json['postDateFormat']?.toString(),
     );
     item.isFavourite.value = json['isFavourite'].toString() == 'true';
     item.isSnatched.value = json['isSnatched'].toString() == 'true';
