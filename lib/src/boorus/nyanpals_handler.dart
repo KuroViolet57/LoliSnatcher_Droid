@@ -8,7 +8,7 @@ class NyanPalsHandler extends BooruHandler {
   @override
   List parseListFromResponse(dynamic response) {
     final parsedResponse = response.data;
-    totalCount.value = parsedResponse['total'];
+    totalCount.value = parsedResponse['total']!;
     return (parsedResponse['rows'] ?? []) as List;
   }
 

@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 
 class ImageWriterIsolate {
@@ -48,12 +50,13 @@ class ImageWriterIsolate {
         fileNameExtras: fileNameExtras,
       );
       image = File(cachePath + fileName);
+      // TODO is readBytes required here?
       print('found image at: ${cachePath + fileName} for $fileURL :: ImageWriterIsolate /:: readFileFromCache');
-      if (!await image.exists()) {
-        return null;
+      if (await image.exists()) {
+        await image.readAsBytes();
       }
     } catch (e) {
-      print('Image Writer Isolate Exception :: read cache file :: $e');
+      print('Image Writer Isolate Exception :: cache write :: $e');
       return null;
     }
     return image;
@@ -90,19 +93,32 @@ class ImageWriterIsolate {
   }
 
   String parseThumbUrlToName(String thumbURL) {
-    final int queryIndex = thumbURL.indexOf('?'); // Sankaku fix
-    final String urlWithoutQuery = queryIndex != -1 ? thumbURL.substring(0, queryIndex) : thumbURL;
-    String result = urlWithoutQuery.substring(urlWithoutQuery.lastIndexOf('/') + 1);
+    String result = '';
+    if (thumbURL.contains('Hydrus-Client')) {
+      final match = RegExp(r'[?&](id|file_id|hash)=([^&]+)').firstMatch(thumbURL);
+      if (match != null && match.group(2) != null) {
+        result = "hydrusThumb_${match.group(2)}";
+      } else {
+        final bytes = utf8.encode(thumbURL);
+        final hash = md5.convert(bytes);
+        result = "hydrusThumb_$hash";
+      }
+    } else {
+      final int queryIndex = thumbURL.indexOf('?'); // Sankaku fix
+      final String urlWithoutQuery = queryIndex != -1 ? thumbURL.substring(0, queryIndex) : thumbURL;
+      result = urlWithoutQuery.substring(urlWithoutQuery.lastIndexOf('/') + 1);
 
-    if (result.startsWith('thumb.')) {
-      //Paheal/shimmie(?) fix
-      final String unthumbedURL = thumbURL.replaceAll('/thumb', '');
+      if (result.startsWith('thumb.')) {
+        //Paheal/shimmie(?) fix
+        final String unthumbedURL = thumbURL.replaceAll('/thumb', '');
 
-      final int unthumbedQueryIndex = unthumbedURL.indexOf('?');
-      final String unthumbedUrlWithoutQuery = unthumbedQueryIndex != -1 ? unthumbedURL.substring(0, unthumbedQueryIndex) : unthumbedURL;
+        final int unthumbedQueryIndex = unthumbedURL.indexOf('?');
+        final String unthumbedUrlWithoutQuery = unthumbedQueryIndex != -1 ? unthumbedURL.substring(0, unthumbedQueryIndex) : unthumbedURL;
 
-      result = unthumbedUrlWithoutQuery.substring(unthumbedUrlWithoutQuery.lastIndexOf('/') + 1);
+        result = unthumbedUrlWithoutQuery.substring(unthumbedUrlWithoutQuery.lastIndexOf('/') + 1);
+      }
     }
+
     return result;
   }
 

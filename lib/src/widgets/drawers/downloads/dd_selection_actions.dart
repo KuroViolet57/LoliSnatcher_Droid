@@ -26,26 +26,19 @@ class DDSelectionActions extends StatelessWidget {
     return Obx(() {
       final selected = searchHandler.currentSelected;
       if (selected.isNotEmpty) {
-        final int favSelectedCount = selected
-            .where((item) => item.isFavourite.value == true)
-            .length;
-        final int unfavSelectedCount = selected
-            .where((item) => item.isFavourite.value == false)
-            .length;
+        final int favSelectedCount = selected.where((item) => item.isFavourite.value == true).length;
+        final int unfavSelectedCount = selected.where((item) => item.isFavourite.value == false).length;
         final bool hasFavsSelected = favSelectedCount > 0;
         final bool isAllSelectedFavs = selected.length == favSelectedCount;
 
-        final int downloadsSelectedCount = selected
-            .where((item) => item.isSnatched.value == true)
-            .length;
+        final int downloadsSelectedCount = selected.where((item) => item.isSnatched.value == true).length;
         final bool hasDownloadsSelected = downloadsSelectedCount > 0;
 
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             SettingsButton(
-              name:
-                  '${context.loc.settings.downloads.snatchSelected} (${selected.length.toFormattedString()})',
+              name: '${context.loc.settings.downloads.snatchSelected} (${selected.length.toFormattedString()})',
               icon: const Icon(Icons.download_sharp),
               action: () => controller.onStartSnatching(context, false),
               onLongPress: () => controller.onStartSnatching(context, true),
@@ -60,22 +53,20 @@ class DDSelectionActions extends StatelessWidget {
               ),
             if (!isAllSelectedFavs)
               SettingsButton(
-                name:
-                    '${context.loc.settings.downloads.favouriteSelected} (${unfavSelectedCount.toFormattedString()})',
+                name: '${context.loc.settings.downloads.favouriteSelected} (${unfavSelectedCount.toFormattedString()})',
                 icon: const Icon(Icons.favorite, color: Colors.red),
                 action: controller.favouriteSelected,
               ),
             if (hasFavsSelected)
               SettingsButton(
-                name:
-                    '${context.loc.settings.downloads.unfavouriteSelected} (${favSelectedCount.toFormattedString()})',
+                name: '${context.loc.settings.downloads.unfavouriteSelected} (${favSelectedCount.toFormattedString()})',
                 icon: const Icon(Icons.favorite_border),
                 action: controller.unfavouriteSelected,
               ),
             SettingsButton(
               name: context.loc.settings.downloads.clearSelected,
               icon: const Icon(Icons.delete_forever),
-              action: searchHandler.currentTab.selected.clear,
+              action: () => searchHandler.currentTab.selected.clear(),
             ),
           ],
         );
@@ -120,8 +111,9 @@ class DDNavigationButtons extends StatelessWidget {
           name: context.loc.snatcher.snatchingHistory,
           icon: const Icon(Icons.file_download_outlined),
           action: () {
-            final Booru? downloadsBooru = settingsHandler.booruList
-                .firstWhereOrNull((booru) => booru.type?.isDownloads == true);
+            final Booru? downloadsBooru = settingsHandler.booruList.firstWhereOrNull(
+              (booru) => booru.type?.isDownloads == true,
+            );
             final bool hasDownloads = downloadsBooru != null;
 
             if (!hasDownloads) {
