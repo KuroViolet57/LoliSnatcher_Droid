@@ -6,6 +6,7 @@ import 'package:lolisnatcher/src/data/tag_suggestion.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
+import 'package:lolisnatcher/src/data/tag_type.dart';
 
 // TODO improve tag fecthing, add data from it to tag handler?
 
@@ -138,11 +139,19 @@ class AGNPHHandler extends BooruHandler {
 
   @override
   TagSuggestion? parseTagSuggestion(dynamic responseItem, int index) {
-    // TODO parse tag type
     final String tagStr = responseItem.getElement('name')?.innerText ?? '';
     if (tagStr.isEmpty) {
       return null;
     }
-    return TagSuggestion(tag: tagStr);
+
+    final int count = int.tryParse(responseItem.getElement('count')?.innerText ?? '0') ?? 0;
+    final String typeStr = responseItem.getElement('type_name')?.innerText.trim() ?? '';
+    final TagType type = TagType.fromString(typeStr);
+
+    return TagSuggestion(
+      tag: tagStr,
+      count: count,
+      type: type,
+    );
   }
 }
