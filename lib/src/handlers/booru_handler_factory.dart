@@ -14,6 +14,7 @@ import 'package:lolisnatcher/src/boorus/idol_sankaku_handler.dart';
 import 'package:lolisnatcher/src/boorus/ink_bunny_handler.dart';
 import 'package:lolisnatcher/src/boorus/mergebooru_handler.dart';
 import 'package:lolisnatcher/src/boorus/moebooru_handler.dart';
+import 'package:lolisnatcher/src/boorus/nozomi_handler.dart';
 import 'package:lolisnatcher/src/boorus/nyanpals_handler.dart';
 import 'package:lolisnatcher/src/boorus/philomena_handler.dart';
 import 'package:lolisnatcher/src/boorus/r34hentai_handler.dart';
@@ -46,6 +47,10 @@ class BooruHandlerFactory {
         case BooruType.Moebooru:
           pageNum = 0;
           booruHandler = MoebooruHandler(booru, limit);
+          break;
+        case BooruType.Nozomi:
+          pageNum = 0;
+          booruHandler = NozomiHandler(booru, limit);
           break;
         case BooruType.Gelbooru:
           // current gelbooru is v.0.2.5, while safe and others are 0.2.0, but since we had them under the same type from the start
