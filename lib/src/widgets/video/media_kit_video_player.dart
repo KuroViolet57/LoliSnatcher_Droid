@@ -19,6 +19,8 @@ import 'package:video_player_android/video_player_android.dart';
 import 'package:video_player_avfoundation/video_player_avfoundation.dart';
 import 'package:video_player_platform_interface/video_player_platform_interface.dart';
 
+import 'package:lolisnatcher/src/data/settings/mpv_hardware_decoding.dart';
+import 'package:lolisnatcher/src/data/settings/mpv_video_output.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 
 // https://github.com/dart-lang/linter/issues/1381
@@ -33,6 +35,15 @@ import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 /// * https://github.com/media-kit/media-kit
 ///
 class MediaKitVideoPlayer extends VideoPlayerPlatform {
+  MediaKitVideoPlayer({this.androidCodecFallback = false});
+
+  /// Uses conservative Android MPV options when the stock ExoPlayer backend fails.
+  ///
+  /// The normal MPV settings remain fully user-controlled. Automatic fallback uses
+  /// `vo=gpu` and `hwdec=auto-safe`, which are the media_kit Android defaults and
+  /// avoid desktop-only or experimental output modes that can fail on mobile GPUs.
+  final bool androidCodecFallback;
+
   // The implementation uses [Player.hashCode] as texture ID.
   final _players = HashMap<int, Player>();
   final _completers = HashMap<int, Completer<void>>();
@@ -41,9 +52,9 @@ class MediaKitVideoPlayer extends VideoPlayerPlatform {
   final _streamSubscriptions = HashMap<int, List<StreamSubscription>>();
 
   /// Registers this class as the default instance of [VideoPlayerPlatform].
-  static void registerWith() {
+  static void registerWith({bool androidCodecFallback = false}) {
     MediaKit.ensureInitialized();
-    VideoPlayerPlatform.instance = MediaKitVideoPlayer();
+    VideoPlayerPlatform.instance = MediaKitVideoPlayer(androidCodecFallback: androidCodecFallback);
   }
 
   /// Register original classes as default instance of [VideoPlayerPlatform].
@@ -98,10 +109,10 @@ class MediaKitVideoPlayer extends VideoPlayerPlatform {
     final videoController = VideoController(
       player,
       configuration: VideoControllerConfiguration(
-        enableHardwareAcceleration: settingsHandler.altVideoPlayerHwAccel,
-        vo: settingsHandler.altVideoPlayerVO.toJson(),
-        hwdec: settingsHandler.altVideoPlayerHWDEC.toJson(),
-        // androidAttachSurfaceAfterVideoParameters: false,
+        enableHardwareAcceleration: _enableHardwareAcceleration(settingsHandler),
+        vo: _videoOutput(settingsHandler),
+        hwdec: _hardwareDecoding(settingsHandler),
+        androidAttachSurfaceAfterVideoParameters: _attachSurfaceAfterVideoParameters(settingsHandler),
       ),
     );
     // NOTE: [StreamController] without broadcast buffers events.
@@ -157,6 +168,28 @@ class MediaKitVideoPlayer extends VideoPlayerPlatform {
     );
 
     return textureId;
+  }
+
+  bool _enableHardwareAcceleration(SettingsHandler settingsHandler) {
+    if (Platform.isAndroid && androidCodecFallback) return true;
+    return settingsHandler.altVideoPlayerHwAccel;
+  }
+
+  String _videoOutput(SettingsHandler settingsHandler) {
+    if (Platform.isAndroid && androidCodecFallback) return MpvVideoOutput.gpu.toJson();
+    return settingsHandler.altVideoPlayerVO.toJson();
+  }
+
+  String _hardwareDecoding(SettingsHandler settingsHandler) {
+    if (Platform.isAndroid && androidCodecFallback) return MpvHardwareDecoding.autoSafe.toJson();
+    return settingsHandler.altVideoPlayerHWDEC.toJson();
+  }
+
+  bool? _attachSurfaceAfterVideoParameters(SettingsHandler settingsHandler) {
+    if (!Platform.isAndroid) return null;
+    if (androidCodecFallback) return true;
+    if (settingsHandler.altVideoPlayerVO.isGpu) return true;
+    return null;
   }
 
   /// Returns a Stream of [VideoEventType]s.

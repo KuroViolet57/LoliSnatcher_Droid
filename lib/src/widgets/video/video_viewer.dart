@@ -27,6 +27,7 @@ import 'package:lolisnatcher/src/widgets/common/media_loading.dart';
 import 'package:lolisnatcher/src/widgets/common/transparent_pointer.dart';
 import 'package:lolisnatcher/src/widgets/thumbnail/thumbnail.dart';
 import 'package:lolisnatcher/src/widgets/video/loli_controls.dart';
+import 'package:lolisnatcher/src/widgets/video/media_kit_video_player.dart';
 
 // TODO remove setState use
 
@@ -76,6 +77,9 @@ class VideoViewerState extends State<VideoViewer> {
   DioDownloader? client, sizeClient;
   File? video;
   StreamSubscription? viewStateSubscription, scaleStateSubscription;
+
+  bool useMpvFallbackBackend = false;
+  bool attemptedMpvFallback = false;
 
   bool get isVideoInited => videoController.value?.value.isInitialized ?? false;
 
@@ -259,6 +263,7 @@ class VideoViewerState extends State<VideoViewer> {
     // force redraw on item data change
     if (oldWidget.booruItem != widget.booruItem) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        resetBackendFallback();
         stopLoading(reason: ViewerStopReason.reset);
         initVideo(false);
         updateState();
@@ -386,6 +391,42 @@ class VideoViewerState extends State<VideoViewer> {
     disposeClient();
   }
 
+  void resetBackendFallback() {
+    useMpvFallbackBackend = false;
+    attemptedMpvFallback = false;
+  }
+
+  bool get canFallbackToMpvBackend {
+    return Platform.isAndroid && settingsHandler.videoBackendMode.isNormal && !attemptedMpvFallback;
+  }
+
+  bool tryFallbackToMpvBackend(String? errorDescription) {
+    if (!canFallbackToMpvBackend) return false;
+
+    attemptedMpvFallback = true;
+    useMpvFallbackBackend = true;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+
+      stopLoading(reason: ViewerStopReason.reset);
+      await initVideo(false);
+      updateState();
+    });
+
+    return true;
+  }
+
+  void registerVideoBackendForCurrentAttempt() {
+    if (!Platform.isAndroid || !settingsHandler.videoBackendMode.isNormal) return;
+
+    if (useMpvFallbackBackend) {
+      MediaKitVideoPlayer.registerWith(androidCodecFallback: true);
+    } else {
+      MediaKitVideoPlayer.registerNative();
+    }
+  }
+
   // debug functions
   void onScaleStateChanged(PhotoViewScaleState scaleState) {
     // print(scaleState);
@@ -461,9 +502,12 @@ class VideoViewerState extends State<VideoViewer> {
     }
 
     if (!isStopped.value && videoController.value?.value.hasError == true) {
+      final errorDescription = videoController.value?.value.errorDescription;
+      if (tryFallbackToMpvBackend(errorDescription)) return;
+
       stopLoading(
         reason: ViewerStopReason.videoError,
-        details: videoController.value?.value.errorDescription,
+        details: errorDescription,
       );
     }
   }
@@ -471,6 +515,8 @@ class VideoViewerState extends State<VideoViewer> {
   Future<void> initPlayer() async {
     // ignore if player is already inited (i.e. stream+cache mode)
     if (isVideoInited) return;
+
+    registerVideoBackendForCurrentAttempt();
 
     if (video != null) {
       // Start from cache if was already cached or only caching is allowed
@@ -541,7 +587,9 @@ class VideoViewerState extends State<VideoViewer> {
       systemOverlaysOnEnterFullScreen: [],
       systemOverlaysAfterFullScreen: SystemUiOverlay.values,
       errorBuilder: (context, errorMessage) {
-        onError(Exception(errorMessage));
+        if (!tryFallbackToMpvBackend(errorMessage)) {
+          onError(Exception(errorMessage));
+        }
 
         return Center(
           child: Text(errorMessage, style: const TextStyle(color: Colors.white)),
@@ -582,7 +630,12 @@ class VideoViewerState extends State<VideoViewer> {
       );
     }
 
-    await Future.wait([videoController.value!.initialize()]);
+    try {
+      await Future.wait([videoController.value!.initialize()]);
+    } catch (error) {
+      if (tryFallbackToMpvBackend(error.toString())) return;
+      rethrow;
+    }
 
     if (settingsHandler.autoPlayEnabled) {
       await videoController.value!.play();
@@ -660,6 +713,8 @@ class VideoViewerState extends State<VideoViewer> {
   }
 
   Future<void> onManualRestart() async {
+    resetBackendFallback();
+
     if (blockPreloadState.isTooBig) {
       blockPreloadState = .ignore;
     }
