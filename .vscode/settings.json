@@ -19,5 +19,6 @@
       "source.fixAll": "explicit"
     }
   },
-  "dart.showTodos": false
+  "dart.showTodos": false,
+  "dart.flutterSdkPath": ".fvm/versions/3.42.0-0.4.pre"
 }
