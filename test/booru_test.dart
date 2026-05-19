@@ -69,6 +69,12 @@ Future<void> main() async {
       expect(booruHandler, isA<e621Handler>());
     });
 
+    test('NozomiHandler', () async {
+      final BooruHandler booruHandler = await testBooru(
+        Booru('Nozomi', BooruType.Nozomi, '', 'https://nozomi.la', ''),
+      );
+    });
+
     group('GelbooruAlikesHandler(s)', () {
       test('Rule34xxx', () async {
         final BooruHandler booruHandler = await testBooru(
