@@ -8,6 +8,7 @@ import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_suggestion.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
+import 'package:lolisnatcher/src/utils/logger.dart';
 
 //Slow piece of shit
 class RainbooruHandler extends BooruHandler {
@@ -32,40 +33,66 @@ class RainbooruHandler extends BooruHandler {
   }
 
   @override
-  Future<BooruItem?> parseItemFromResponse(dynamic responseItem, int index) async {
+  Future<BooruItem?> parseItemFromResponse(
+    dynamic responseItem,
+    int index,
+  ) async {
     final urlElem = (responseItem as Element).firstChild;
     if (urlElem == null) return null;
     final thumbURL = urlElem.firstChild?.attributes['src'] ?? '';
-    final String url = makePostURL(urlElem.attributes['href']!.split('img/')[1]);
-    final responseInner = await DioNetwork.get(url, headers: getHeaders());
-    if (responseInner.statusCode == 200) {
-      final document = parse(responseInner.data);
-      final post = document.getElementById('immainpage');
-      if (post != null) {
-        final postsURLs = post.querySelector('div#immainpage > a');
-        final String fileURL = postsURLs!.attributes['href']!;
-        final String sampleURL = postsURLs.firstChild!.attributes['src']!;
-        final tags = document.querySelectorAll('a.tag');
-        final List<String> currentTags = [];
-        for (int x = 0; x < tags.length; x++) {
-          currentTags.add(tags[x].innerHtml.replaceAll(' ', '+'));
+    final String url = makePostURL(
+      urlElem.attributes['href']!.split('img/')[1],
+    );
+    try {
+      final responseInner = await DioNetwork.get(url, headers: getHeaders());
+      if (responseInner.statusCode == 200) {
+        final document = parse(responseInner.data);
+        final post = document.getElementById('immainpage');
+        if (post != null) {
+          final postsURLs = post.querySelector('div#immainpage > a');
+          final String? fileURL = postsURLs?.attributes['href'];
+          final String? sampleURL = postsURLs?.firstChild?.attributes['src'];
+
+          if (fileURL == null || sampleURL == null) {
+            return null;
+          }
+
+          final tags = document.querySelectorAll('a.tag');
+          final List<String> currentTags = [];
+          for (int x = 0; x < tags.length; x++) {
+            currentTags.add(tags[x].innerHtml.replaceAll(' ', '+'));
+          }
+
+          final BooruItem item = BooruItem(
+            fileURL: fileURL,
+            sampleURL: sampleURL,
+            thumbnailURL: thumbURL,
+            tagsList: currentTags.map(Tag.new).toList(),
+            postURL: url,
+          );
+
+          return item;
+        } else {
+          return null;
         }
-
-        final BooruItem item = BooruItem(
-          fileURL: fileURL,
-          sampleURL: sampleURL,
-          thumbnailURL: thumbURL,
-          tagsList: currentTags.map(Tag.new).toList(),
-          postURL: url,
-        );
-
-        return item;
       } else {
+        Logger.Inst().log(
+          'Error fetching inner request: ${responseInner.statusCode}',
+          className,
+          'parseItemFromResponse',
+          LogTypes.booruHandlerFetchFailed,
+        );
         return null;
       }
-    } else {
-      // TODO + try/catch inner request
-      throw Error();
+    } catch (e, s) {
+      Logger.Inst().log(
+        'Error fetching inner request: $e',
+        className,
+        'parseItemFromResponse',
+        LogTypes.booruHandlerFetchFailed,
+        s: s,
+      );
+      return null;
     }
   }
 
@@ -108,7 +135,10 @@ class RainbooruHandler extends BooruHandler {
 
     String tag = responseItem['slug'].toString();
     for (int x = 0; x < tagStringReplacements.length; x++) {
-      tag = tag.replaceAll(tagStringReplacements[x][0], tagStringReplacements[x][1]);
+      tag = tag.replaceAll(
+        tagStringReplacements[x][0],
+        tagStringReplacements[x][1],
+      );
     }
     return TagSuggestion(tag: tag);
   }
