@@ -24,6 +24,7 @@ class _PerformancePageState extends State<PerformancePage> {
 
   bool shitDevice = false;
   bool autoPlayEnabled = true;
+  bool preloadVideos = false;
   bool disableVideo = false;
 
   PreviewQuality previewMode = .sample;
@@ -48,6 +49,7 @@ class _PerformancePageState extends State<PerformancePage> {
     preloadSizeController.text = settingsHandler.preloadSizeLimit.toString();
     preloadHeightController.text = settingsHandler.preloadHeight.toString();
     autoPlayEnabled = settingsHandler.autoPlayEnabled;
+    preloadVideos = settingsHandler.preloadVideos;
     disableVideo = settingsHandler.disableVideo;
   }
 
@@ -61,6 +63,7 @@ class _PerformancePageState extends State<PerformancePage> {
     settingsHandler.preloadSizeLimit = (double.tryParse(preloadSizeController.text) ?? 0.2).clamp(0, double.infinity);
     settingsHandler.preloadHeight = (int.tryParse(preloadHeightController.text) ?? (4096 * 4)).clamp(0, 2_000_000_000);
     settingsHandler.autoPlayEnabled = autoPlayEnabled;
+    settingsHandler.preloadVideos = preloadVideos;
     settingsHandler.disableVideo = disableVideo;
 
     await settingsHandler.saveSettings(restate: false);
@@ -362,6 +365,18 @@ class _PerformancePageState extends State<PerformancePage> {
                   });
                 },
                 title: context.loc.settings.performance.autoplayVideos,
+              ),
+              SettingsToggle(
+                value: preloadVideos,
+                onChanged: (newValue) {
+                  setState(() {
+                    preloadVideos = newValue;
+                  });
+                },
+                title: 'Preload videos',
+                subtitle: const Text(
+                  'Start downloading neighbouring videos before you swipe to them. Off by default — leaving it off keeps the currently playing video from competing with preloads for bandwidth.',
+                ),
               ),
               SettingsToggle(
                 value: disableVideo,

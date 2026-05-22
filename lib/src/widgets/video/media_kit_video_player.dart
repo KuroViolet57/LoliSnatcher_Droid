@@ -104,7 +104,31 @@ class MediaKitVideoPlayer extends VideoPlayerPlatform {
   Future<int?> create(DataSource dataSource) async {
     final settingsHandler = SettingsHandler.instance;
 
-    final player = Player();
+    // 64 MB demuxer cache (default is 32 MB). Halves the rate at which the
+    // decoder stalls on jittery mobile networks. cache-secs/readahead are set
+    // below once the player is initialized via setProperty.
+    final player = Player(
+      configuration: const PlayerConfiguration(
+        bufferSize: 64 * 1024 * 1024,
+      ),
+    );
+    // Push the rest of the buffering knobs as soon as the native player is up.
+    // Wrapped in a microtask + try/catch so a runtime quirk (e.g. setProperty
+    // not yet available on some platforms) can't break playback for everyone.
+    unawaited(
+      Future<void>(() async {
+        try {
+          final native = player.platform;
+          if (native is NativePlayer) {
+            await native.setProperty('cache', 'yes');
+            await native.setProperty('cache-secs', '10');
+            await native.setProperty('demuxer-readahead-secs', '5');
+          }
+        } catch (_) {
+          // ignore — playback still works on defaults
+        }
+      }),
+    );
     final completer = Completer();
     final videoController = VideoController(
       player,

@@ -161,6 +161,10 @@ class SettingsHandler {
 
   bool jsonWrite = false;
   bool autoPlayEnabled = true;
+  // When false, neighbour pages in the gallery only start downloading their
+  // video once the user actually swipes to them. Saves bandwidth and stops
+  // the currently-watched video from competing with preloads.
+  bool preloadVideos = false;
   bool loadingGif = false;
   bool thumbnailCache = true;
   bool mediaCache = true;
@@ -531,6 +535,10 @@ class SettingsHandler {
     'autoPlayEnabled': {
       'type': 'bool',
       'default': true,
+    },
+    'preloadVideos': {
+      'type': 'bool',
+      'default': false,
     },
     'loadingGif': {
       'type': 'bool',
@@ -1079,6 +1087,8 @@ class SettingsHandler {
         return markedTags;
       case 'autoPlayEnabled':
         return autoPlayEnabled;
+      case 'preloadVideos':
+        return preloadVideos;
       case 'loadingGif':
         return loadingGif;
       case 'thumbnailCache':
@@ -1307,6 +1317,9 @@ class SettingsHandler {
       //   break;
       case 'autoPlayEnabled':
         autoPlayEnabled = validatedValue;
+        break;
+      case 'preloadVideos':
+        preloadVideos = validatedValue;
         break;
       case 'loadingGif':
         loadingGif = validatedValue;

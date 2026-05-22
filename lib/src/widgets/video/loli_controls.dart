@@ -846,10 +846,18 @@ class _LoliControlsState extends State<LoliControls> {
     return value.isBuffering;
   }
 
+  // Position changes finer than this don't repaint — at 60 FPS the controller
+  // fires this listener ~60 times/second and the timestamp text + progress bar
+  // can't visually distinguish < ~quarter-second differences anyway. Keep
+  // play/pause, buffering, and duration changes unconditional so transitions
+  // still feel instant.
+  static const Duration _positionRebuildThreshold = Duration(milliseconds: 250);
+
   void _updateState() {
     if (!mounted) return;
 
     final bool isBuffering = getIsBuffering();
+    final bool prevDisplayBuffering = displayBufferingIndicator;
 
     if (chewieController.progressIndicatorDelay != null) {
       if (isBuffering) {
@@ -866,9 +874,24 @@ class _LoliControlsState extends State<LoliControls> {
       displayBufferingIndicator = isBuffering;
     }
 
-    setState(() {
-      _latestValue = controller.value;
-    });
+    final VideoPlayerValue next = controller.value;
+    final VideoPlayerValue prev = _latestValue;
+    final bool meaningfulChange =
+        prev.isPlaying != next.isPlaying ||
+        prev.isInitialized != next.isInitialized ||
+        prev.isBuffering != next.isBuffering ||
+        prev.isCompleted != next.isCompleted ||
+        prev.hasError != next.hasError ||
+        prev.duration != next.duration ||
+        prev.volume != next.volume ||
+        prev.playbackSpeed != next.playbackSpeed ||
+        (next.position - prev.position).abs() >= _positionRebuildThreshold ||
+        displayBufferingIndicator != prevDisplayBuffering;
+
+    _latestValue = next;
+    if (meaningfulChange) {
+      setState(() {});
+    }
   }
 
   void _startDoubleTapTimer() {
