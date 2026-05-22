@@ -11,6 +11,7 @@ import 'package:lolisnatcher/src/boorus/gelbooruv1_handler.dart';
 import 'package:lolisnatcher/src/boorus/idol_sankaku_handler.dart';
 import 'package:lolisnatcher/src/boorus/ink_bunny_handler.dart';
 import 'package:lolisnatcher/src/boorus/moebooru_handler.dart';
+import 'package:lolisnatcher/src/boorus/nozomi_handler.dart';
 import 'package:lolisnatcher/src/boorus/nyanpals_handler.dart';
 import 'package:lolisnatcher/src/boorus/philomena_handler.dart';
 import 'package:lolisnatcher/src/boorus/r34us_handler.dart';
@@ -67,6 +68,13 @@ Future<void> main() async {
     test('e621Handler', () async {
       final BooruHandler booruHandler = await testBooru(Booru('e621', BooruType.e621, '', 'https://e621.net/', ''));
       expect(booruHandler, isA<e621Handler>());
+    });
+    test('NozomiHandler', () async {
+      final BooruHandler booruHandler = await testBooru(
+        Booru('nozomi', BooruType.Nozomi, '', 'https://nozomi.la', ''),
+        hardFetchedLength: false,
+      );
+      expect(booruHandler, isA<NozomiHandler>());
     });
 
     group('GelbooruAlikesHandler(s)', () {
