@@ -47,6 +47,15 @@ import 'package:lolisnatcher/src/widgets/webview/webview_page.dart';
 void main() async {
   CustomWidgetsBinding.ensureInitialized();
 
+  // Default imageCache is 100 MB / 1000 images. For a booru client where a
+  // single 4K JPEG can easily decode to 30+ MB of RGBA, that cache spills to
+  // disk almost immediately and starts re-decoding the same image on scroll.
+  // 256 MB / 200 images is comfortable for any phone with ≥6 GB of RAM;
+  // lowered later in getDeviceInfo if the device reports as low-RAM.
+  PaintingBinding.instance.imageCache
+    ..maximumSize = 200
+    ..maximumSizeBytes = 256 * 1024 * 1024;
+
   if (Platform.isWindows || Platform.isLinux) {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
@@ -343,6 +352,14 @@ class _DebuggingWidgetsState extends State<DebuggingWidgets> with WidgetsBinding
           'getDeviceInfo',
           null,
         );
+
+        // Tighten the image cache on devices Android flags as low-RAM, so we
+        // don't push them into the OOM killer when scrolling thumbnails.
+        if (deviceInfo.isLowRamDevice) {
+          PaintingBinding.instance.imageCache
+            ..maximumSize = 60
+            ..maximumSizeBytes = 64 * 1024 * 1024;
+        }
       }
     } catch (e, s) {
       Logger.Inst().log(
