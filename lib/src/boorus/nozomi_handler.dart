@@ -8,6 +8,7 @@ import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
+import 'package:lolisnatcher/src/utils/tools.dart';
 
 class NozomiHandler extends BooruHandler {
   NozomiHandler(super.booru, super.limit);
@@ -16,7 +17,8 @@ class NozomiHandler extends BooruHandler {
   static const String _imageHost = 'https://w.gold-usergeneratedcontent.net';
   static const String _gifHost = 'https://g.gold-usergeneratedcontent.net';
   static const String _videoHost = 'https://v.gold-usergeneratedcontent.net';
-  static const String _thumbHost = 'https://tn.gold-usergeneratedcontent.net';
+  static const String _thumbHost = 'https://qtn.gold-usergeneratedcontent.net';
+  static const String _siteOrigin = 'https://nozomi.la';
 
   @override
   bool get hasSizeData => false;
@@ -24,8 +26,19 @@ class NozomiHandler extends BooruHandler {
   @override
   bool get hasTagSuggestions => false;
 
+  // Nozomi's CDN serves 403/404 unless the Referer matches nozomi.la.
+  @override
+  Map<String, String> getHeaders() {
+    return {
+      ...super.getHeaders(),
+      'Referer': '$_siteOrigin/',
+      'Origin': _siteOrigin,
+      'User-Agent': Tools.browserUserAgent,
+    };
+  }
+
   // Mirrors nozomi.la's `full_path_from_hash`: last char / 2 chars before / full.
-  // Used for both image dataids and the post JSON path keyed by postid.
+  // Used for both image dataids (hashes) and the post JSON path keyed by postid.
   String fullPathFromHash(String hash) {
     if (hash.length < 3) {
       return hash;
@@ -55,21 +68,15 @@ class NozomiHandler extends BooruHandler {
     final int length = fetched.length;
 
     try {
-      final List<int> allIds = await _resolveIds(tags);
-      if (allIds.isEmpty) {
-        prevTags = tags;
-        locked = true;
-        return fetched;
-      }
-
       final int effectivePage = pageNum < 1 ? 0 : pageNum - 1;
       final int startIndex = effectivePage * limit;
-      if (startIndex >= allIds.length) {
+
+      final List<int> pageIds = await _resolvePageIds(tags, startIndex, limit);
+      if (pageIds.isEmpty) {
         prevTags = tags;
         locked = true;
         return fetched;
       }
-      final List<int> pageIds = allIds.skip(startIndex).take(limit).toList();
 
       final List<dynamic> jsons = await Future.wait(pageIds.map(_fetchPostJson));
 
@@ -102,7 +109,7 @@ class NozomiHandler extends BooruHandler {
     return fetched;
   }
 
-  Future<List<int>> _resolveIds(String input) async {
+  Future<List<int>> _resolvePageIds(String input, int startIndex, int count) async {
     final List<String> terms = input.isEmpty ? [] : input.split(' ').where((t) => t.isNotEmpty).toList();
     final List<String> positive = [];
     final List<String> negative = [];
@@ -114,52 +121,59 @@ class NozomiHandler extends BooruHandler {
       }
     }
 
+    // Fast path: no tags → byte-range-slice the global index, never download the whole 100+ MB file.
+    if (positive.isEmpty && negative.isEmpty) {
+      return _fetchIdRange(_indexUrl(''), startIndex, count);
+    }
+
+    // Filtered path: per-tag .nozomi files are smaller — fetch each in full, intersect/subtract.
     List<int> result;
     if (positive.isEmpty) {
-      result = await _fetchIdList('');
+      result = await _fetchAllIds(_indexUrl(''));
     } else {
-      result = await _fetchIdList(positive.first);
+      result = await _fetchAllIds(_indexUrl(positive.first));
       for (int i = 1; i < positive.length; i++) {
-        final next = await _fetchIdList(positive[i]);
+        final next = await _fetchAllIds(_indexUrl(positive[i]));
         result = result.toSet().intersection(next.toSet()).toList();
         if (result.isEmpty) break;
       }
     }
-
     for (final term in negative) {
       if (result.isEmpty) break;
-      final exclude = await _fetchIdList(term);
+      final exclude = await _fetchAllIds(_indexUrl(term));
       result = result.toSet().difference(exclude.toSet()).toList();
     }
 
-    return result;
+    if (startIndex >= result.length) return const [];
+    return result.skip(startIndex).take(count).toList();
   }
 
-  Future<List<int>> _fetchIdList(String term) async {
-    final String url = term.isEmpty
-        ? '$_jsonHost/index.nozomi'
-        : '$_jsonHost/nozomi/${Uri.encodeComponent(term)}.nozomi';
+  String _indexUrl(String term) {
+    if (term.isEmpty) return '$_jsonHost/index.nozomi';
+    return '$_jsonHost/nozomi/${Uri.encodeComponent(term)}.nozomi';
+  }
 
+  Future<List<int>> _fetchIdRange(String url, int startIndex, int count) async {
+    final int rangeStart = startIndex * 4;
+    final int rangeEnd = rangeStart + count * 4 - 1;
     try {
       final Response response = await DioNetwork.get(
         url,
-        options: Options(responseType: ResponseType.bytes),
+        headers: {
+          ...getHeaders(),
+          'Range': 'bytes=$rangeStart-$rangeEnd',
+        },
+        options: Options(
+          responseType: ResponseType.bytes,
+          validateStatus: (s) => s != null && (s == 200 || s == 206),
+        ),
       );
-      if (response.statusCode != 200 || response.data == null) {
-        return const [];
-      }
-      final List<int> bytes = (response.data as List).cast<int>();
-      final ByteData view = ByteData.view(Uint8List.fromList(bytes).buffer);
-      final List<int> ids = [];
-      for (int i = 0; i + 4 <= view.lengthInBytes; i += 4) {
-        ids.add(view.getUint32(i));
-      }
-      return ids;
+      return _decodeIds(response.data);
     } catch (e, s) {
       Logger.Inst().log(
-        'failed to fetch id list for "$term": $e',
+        'failed to range-fetch ids ($url $rangeStart-$rangeEnd): $e',
         className,
-        '_fetchIdList',
+        '_fetchIdRange',
         LogTypes.booruHandlerFetchFailed,
         s: s,
       );
@@ -167,10 +181,42 @@ class NozomiHandler extends BooruHandler {
     }
   }
 
+  Future<List<int>> _fetchAllIds(String url) async {
+    try {
+      final Response response = await DioNetwork.get(
+        url,
+        headers: getHeaders(),
+        options: Options(responseType: ResponseType.bytes),
+      );
+      if (response.statusCode != 200) return const [];
+      return _decodeIds(response.data);
+    } catch (e, s) {
+      Logger.Inst().log(
+        'failed to fetch ids ($url): $e',
+        className,
+        '_fetchAllIds',
+        LogTypes.booruHandlerFetchFailed,
+        s: s,
+      );
+      return const [];
+    }
+  }
+
+  List<int> _decodeIds(dynamic raw) {
+    if (raw == null) return const [];
+    final Uint8List bytes = raw is Uint8List ? raw : Uint8List.fromList((raw as List).cast<int>());
+    final ByteData view = ByteData.view(bytes.buffer, bytes.offsetInBytes, bytes.lengthInBytes);
+    final List<int> ids = [];
+    for (int i = 0; i + 4 <= view.lengthInBytes; i += 4) {
+      ids.add(view.getUint32(i));
+    }
+    return ids;
+  }
+
   Future<dynamic> _fetchPostJson(int id) async {
     final String url = '$_jsonHost/post/${fullPathFromHash(id.toString())}.json';
     try {
-      final Response response = await DioNetwork.get(url);
+      final Response response = await DioNetwork.get(url, headers: getHeaders());
       if (response.statusCode != 200) return null;
       final data = response.data;
       if (data is String) {
@@ -201,7 +247,9 @@ class NozomiHandler extends BooruHandler {
     final Map imageData = imageUrls.first as Map;
     final String dataId = imageData['dataid']?.toString() ?? '';
     final String type = (imageData['type'] ?? 'jpg').toString();
-    final bool isVideo = imageData['is_video'] == 1 || imageData['is_video'] == true;
+    // is_video may come through as 1, true, "" (empty string for false) or "1".
+    final dynamic isVideoRaw = imageData['is_video'];
+    final bool isVideo = isVideoRaw == 1 || isVideoRaw == true || isVideoRaw == '1';
     if (dataId.isEmpty) return null;
 
     final String path = fullPathFromHash(dataId);
@@ -211,15 +259,15 @@ class NozomiHandler extends BooruHandler {
     if (isVideo) {
       fileURL = '$_videoHost/$path.$type';
       sampleURL = fileURL;
-      thumbURL = '$_thumbHost/$path.webp';
+      thumbURL = '$_thumbHost/$path.$type.webp';
     } else if (type == 'gif') {
       fileURL = '$_gifHost/$path.gif';
       sampleURL = fileURL;
-      thumbURL = '$_thumbHost/$path.webp';
+      thumbURL = '$_thumbHost/$path.$type.webp';
     } else {
       fileURL = '$_imageHost/$path.webp';
       sampleURL = fileURL;
-      thumbURL = '$_thumbHost/$path.webp';
+      thumbURL = '$_thumbHost/$path.$type.webp';
     }
 
     final List<Tag> tags = [];
