@@ -162,13 +162,18 @@ class NozomiHandler extends BooruHandler {
         headers: {
           ...getHeaders(),
           'Range': 'bytes=$rangeStart-$rangeEnd',
+          // Critical: nozomi's CDN ignores Range and streams the entire ~110MB
+          // gzipped file when any compression is allowed. Force identity so we
+          // actually get a 206 partial.
+          'Accept-Encoding': 'identity',
         },
         options: Options(
           responseType: ResponseType.bytes,
-          validateStatus: (s) => s != null && (s == 200 || s == 206),
+          validateStatus: (s) => s == 206,
         ),
       );
-      return _decodeIds(response.data);
+      final ids = _decodeIds(response.data);
+      return ids.take(count).toList();
     } catch (e, s) {
       Logger.Inst().log(
         'failed to range-fetch ids ($url $rangeStart-$rangeEnd): $e',
@@ -185,7 +190,13 @@ class NozomiHandler extends BooruHandler {
     try {
       final Response response = await DioNetwork.get(
         url,
-        headers: getHeaders(),
+        headers: {
+          ...getHeaders(),
+          // Per-tag .nozomi files are usually small, but the global index can
+          // still leak in here through fallbacks — keep identity so a runaway
+          // stream can't OOM the device.
+          'Accept-Encoding': 'identity',
+        },
         options: Options(responseType: ResponseType.bytes),
       );
       if (response.statusCode != 200) return const [];
