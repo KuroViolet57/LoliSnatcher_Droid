@@ -43,6 +43,15 @@ class SnatchHandler {
   final RxList<({BooruItem item, Booru booru})> existsItems = RxList([]);
   final RxList<({BooruItem item, Booru booru})> failedItems = RxList([]);
   final RxList<({BooruItem item, Booru booru})> cancelledItems = RxList([]);
+  // Stops these lists from accumulating forever across long browsing
+  // sessions. 500 entries is more than any UI ever shows at once; older
+  // records drop off the head.
+  static const int _resultsListCap = 500;
+  void _capResults(RxList list) {
+    if (list.length > _resultsListCap) {
+      list.removeRange(0, list.length - _resultsListCap);
+    }
+  }
 
   CancelToken? cancelToken;
 
@@ -279,6 +288,9 @@ class SnatchHandler {
               existsItems.addAll(exists.map((e) => (booru: item.booru, item: e)));
               failedItems.addAll(failed.map((e) => (booru: item.booru, item: e)));
               cancelledItems.addAll(cancelled.map((e) => (booru: item.booru, item: e)));
+              _capResults(existsItems);
+              _capResults(failedItems);
+              _capResults(cancelledItems);
             }
 
             cancelToken = null;

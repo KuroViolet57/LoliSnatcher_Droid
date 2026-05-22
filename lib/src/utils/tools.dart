@@ -245,7 +245,16 @@ class Tools {
 
     final String host = uri.host;
 
-    final bool hasCaptchaContent = hasCaptchaStrings(host, response?.data.toString() ?? '');
+    // Captcha pages are always HTML. Skip the content scan for binary responses
+    // — calling .toString() on the bytes of a 50 MB video to grep for captcha
+    // strings allocates a gigabyte-class string and pegs the UI isolate.
+    final String? contentType = response?.headers.value('content-type')?.toLowerCase();
+    final bool isTextResponse = contentType == null ||
+        contentType.contains('text/') ||
+        contentType.contains('html') ||
+        contentType.contains('json') ||
+        contentType.contains('xml');
+    final bool hasCaptchaContent = isTextResponse && hasCaptchaStrings(host, response?.data.toString() ?? '');
 
     if (isOnPlatformWithWebviewSupport &&
         (response?.statusCode == HttpStatus.forbidden ||
