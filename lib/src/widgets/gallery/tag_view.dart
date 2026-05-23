@@ -2367,25 +2367,33 @@ class _TagContentPreviewState extends State<TagContentPreview> {
                                   onLongPress: () async {
                                     await ServiceHandler.vibrate();
 
-                                    final TabAddMode? chosenMode = await showModalBottomSheet<TabAddMode>(
+                                    final TabAddMode? chosenMode = await showDialog<TabAddMode>(
                                       context: context,
-                                      builder: (sheetContext) {
-                                        return SafeArea(
-                                          child: Column(
+                                      builder: (dialogContext) {
+                                        return AlertDialog(
+                                          title: const Text('Open new tab'),
+                                          contentPadding: EdgeInsets.zero,
+                                          content: Column(
                                             mainAxisSize: MainAxisSize.min,
                                             children: [
                                               ListTile(
                                                 leading: const Icon(Icons.vertical_align_bottom),
                                                 title: const Text('Open at end of tab list'),
-                                                onTap: () => Navigator.of(sheetContext).pop(TabAddMode.end),
+                                                onTap: () => Navigator.of(dialogContext).pop(TabAddMode.end),
                                               ),
                                               ListTile(
                                                 leading: const Icon(Icons.tab),
                                                 title: const Text('Open next to current tab'),
-                                                onTap: () => Navigator.of(sheetContext).pop(TabAddMode.next),
+                                                onTap: () => Navigator.of(dialogContext).pop(TabAddMode.next),
                                               ),
                                             ],
                                           ),
+                                          actions: [
+                                            TextButton(
+                                              onPressed: () => Navigator.of(dialogContext).pop(),
+                                              child: const Text('Cancel'),
+                                            ),
+                                          ],
                                         );
                                       },
                                     );
@@ -2394,17 +2402,30 @@ class _TagContentPreviewState extends State<TagContentPreview> {
                                       return;
                                     }
 
-                                    if (settingsHandler.appMode.value.isMobile) {
-                                      Navigator.of(context).popUntil((route) => route.isFirst); // exit viewer
-                                    }
-                                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                                      SearchHandler.instance.addTabByString(
-                                        widget.tag,
-                                        customBooru: selectedBooru,
-                                        addMode: chosenMode,
-                                        switchToNew: true,
-                                      );
-                                    });
+                                    // Open in background — don't exit the viewer and don't
+                                    // switch to the new tab. Same UX as the single-tap path:
+                                    // a snackbar confirms it was added with a quick-jump arrow.
+                                    SearchHandler.instance.addTabByString(
+                                      widget.tag,
+                                      customBooru: selectedBooru,
+                                      addMode: chosenMode,
+                                      switchToNew: false,
+                                    );
+
+                                    if (!context.mounted) return;
+                                    FlashElements.showSnackbar(
+                                      context: context,
+                                      isKeyUnique: true,
+                                      key: 'added_new_tab',
+                                      duration: const Duration(seconds: 2),
+                                      title: Text(
+                                        context.loc.tagView.addedNewTab,
+                                        style: const TextStyle(fontSize: 20),
+                                      ),
+                                      content: Text(widget.tag, style: const TextStyle(fontSize: 16)),
+                                      leadingIcon: Icons.fiber_new,
+                                      sideColor: Colors.green,
+                                    );
                                   },
                                 );
                               },
