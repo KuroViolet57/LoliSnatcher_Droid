@@ -313,9 +313,18 @@ class NozomiHandler extends BooruHandler {
       if (entry is String) {
         name = entry;
       } else if (entry is Map) {
-        name = (entry['tagname_display'] ?? entry['tag'] ?? entry['tagname'] ?? entry['name'])?.toString();
+        // Prefer the underscored canonical form (`tag`) over the display form
+        // (`tagname_display`). The display form contains spaces, and the
+        // app's multi-tag parser splits queries on spaces — feeding it back
+        // would turn a single "ju fufu" tag into two unrelated tokens.
+        name = (entry['tag'] ?? entry['tagname'] ?? entry['name'] ?? entry['tagname_display'])?.toString();
       }
       if (name == null || name.isEmpty) continue;
+      // Defensive: if only a display-form slipped through (whitespace inside),
+      // convert spaces to the underscore convention every booru uses.
+      if (name.contains(' ')) {
+        name = name.trim().replaceAll(RegExp(r'\s+'), '_');
+      }
       out.add(Tag(name));
       names.add(name);
     }

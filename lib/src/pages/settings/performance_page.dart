@@ -374,8 +374,9 @@ class _PerformancePageState extends State<PerformancePage> {
                   });
                 },
                 title: 'Preload videos',
+                leadingIcon: const Icon(Icons.video_settings),
                 subtitle: const Text(
-                  'Start downloading neighbouring videos before you swipe to them. Off by default — leaving it off keeps the currently playing video from competing with preloads for bandwidth.',
+                  'Start downloading neighbouring videos before you swipe to them. Off by default keeps the currently playing video from competing for bandwidth.',
                 ),
               ),
               SettingsToggle(
