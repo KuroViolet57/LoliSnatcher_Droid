@@ -754,26 +754,32 @@ class _TagViewState extends State<TagView> {
     }).take(3).toList();
     for (final artist in artists) {
       if (artist.fullString.trim().isEmpty) continue;
+      final String artistQuery = artist.fullString;
       sections.add(
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           child: TagContentPreview(
-            tag: artist.fullString,
+            // Key by query+booru so async tag enrichment (e.g. an artist
+            // name resolving later) gives us a fresh State / fresh search
+            // rather than reusing the previous widget's stale tab.
+            key: ValueKey('related-artist-${currentBooru.name}-$artistQuery'),
+            tag: artistQuery,
             boorus: [currentBooru],
             parentTab: parentTab,
             compact: true,
-            compactTitle: 'More from artist ${artist.fullString.replaceAll('_', ' ')}',
+            compactTitle: 'More from artist ${artistQuery.replaceAll('_', ' ')}',
           ),
         ),
       );
     }
 
     // 2) Uploader section — only when the handler exposes a UserMetaTag
-    //    AND we have a usable uploader name. Mirrors the existing
-    //    "tap uploader name to add user:X to query" wiring above.
-    final String? uploader = (item.uploaderName?.isNotEmpty == true)
-        ? item.uploaderName
-        : (item.uploaderId?.isNotEmpty == true ? item.uploaderId : null);
+    //    AND we have a real uploader NAME (not just an ID). Many boorus,
+    //    notably Danbooru, return only `uploader_id` in the post JSON and
+    //    resolve the name asynchronously via getUploaderName(); building
+    //    the strip with the numeric ID produces a query like `user:12345`
+    //    that Danbooru can't satisfy. Wait for the name to be there.
+    final String? uploader = item.uploaderName?.isNotEmpty == true ? item.uploaderName : null;
     if (uploader != null) {
       final userMetaTag = searchHandler.currentBooruHandler.availableMetaTags().firstWhereOrNull((t) => t is UserMetaTag);
       if (userMetaTag != null) {
@@ -783,6 +789,7 @@ class _TagViewState extends State<TagView> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               child: TagContentPreview(
+                key: ValueKey('related-uploader-${currentBooru.name}-$userQuery'),
                 tag: userQuery,
                 boorus: [currentBooru],
                 parentTab: parentTab,
