@@ -12,19 +12,11 @@ import 'package:lolisnatcher/src/utils/tools.dart';
 class DioNetwork {
   DioNetwork._();
 
-  // Single process-wide HTTP adapter. Each per-request Dio still wraps it for
-  // its own interceptors, but the underlying TCP/TLS connection pool is
-  // shared across all booru handlers + image downloads. This avoids a fresh
-  // TLS handshake (typically 150-400 ms on mobile) for every API call.
-  static HttpClientAdapter? _sharedAdapter;
-  static HttpClientAdapter _getSharedAdapter() => _sharedAdapter ??= HttpClientAdapter();
-
   static Dio getClient({
     String? baseUrl,
     bool skipLogging = false,
   }) {
     final dio = Dio();
-    dio.httpClientAdapter = _getSharedAdapter();
 
     final settingsHandler = SettingsHandler.instance;
     // final proxyType = ProxyType.fromName(settingsHandler.proxyType);
@@ -225,6 +217,7 @@ class DioNetwork {
       cancelToken: cancelToken,
       onReceiveProgress: onReceiveProgress,
     );
+    client.close();
     return res;
   }
 
@@ -251,6 +244,7 @@ class DioNetwork {
       onReceiveProgress: onReceiveProgress,
       onSendProgress: onSendProgress,
     );
+    client.close();
     return res;
   }
 
@@ -275,6 +269,7 @@ class DioNetwork {
       options: mergeOptions(options, headers),
       cancelToken: cancelToken,
     );
+    client.close();
     return res;
   }
 
@@ -303,6 +298,7 @@ class DioNetwork {
       onReceiveProgress: onReceiveProgress,
       deleteOnError: deleteOnError,
     );
+    client.close();
     return res;
   }
 
@@ -341,6 +337,8 @@ class DioNetwork {
         e.response!.data = null;
       }
       rethrow;
+    } finally {
+      client.close();
     }
 
     response.headers = Headers.fromMap(response.data!.headers);
