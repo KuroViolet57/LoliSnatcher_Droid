@@ -744,7 +744,14 @@ class _TagViewState extends State<TagView> {
     final SearchTab parentTab = searchHandler.currentTab;
 
     // 1) Artist sections — at most 3 to keep the drawer scannable.
-    final artists = item.tagsList.where((t) => t.tagType.isArtist).take(3).toList();
+    //    Tag-type is usually classified by the handler via addTagsWithType
+    //    into TagHandler's enriched store rather than being set on the Tag
+    //    object on the item (see groupTagsList above for the same pattern).
+    //    Check both so this works regardless of how the handler tagged it.
+    final artists = item.tagsList.where((t) {
+      if (t.tagType.isArtist) return true;
+      return tagHandler.getTag(t.fullString).tagType.isArtist;
+    }).take(3).toList();
     for (final artist in artists) {
       if (artist.fullString.trim().isEmpty) continue;
       sections.add(
@@ -2367,6 +2374,13 @@ class _TagContentPreviewState extends State<TagContentPreview> {
                           width: MediaQuery.sizeOf(context).width,
                           child: NotificationListener<ScrollUpdateNotification>(
                             onNotification: (notif) {
+                              // Compact (inline) mode loads exactly one page.
+                              // Otherwise the strip auto-paginates aggressively
+                              // any time `!isScreenFilled` and chews bandwidth
+                              // / fires repeated requests as the parent drawer
+                              // scrolls.
+                              if (widget.compact) return true;
+
                               final bool isNotAtStart = notif.metrics.pixels > 0;
                               final bool isAtOrNearEdge =
                                   notif.metrics.atEdge ||
