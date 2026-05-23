@@ -134,6 +134,9 @@ class SettingsHandler {
   MpvHardwareDecoding altVideoPlayerHWDEC = MpvHardwareDecoding.defaultValue;
 
   Set<String> hiddenTags = {};
+  // Per-booru hidden tags. Keyed by booru.name. A tag in this map's value-set
+  // hides matching items only on that booru, regardless of the global list.
+  Map<String, Set<String>> hiddenTagsPerBooru = {};
   Set<String> markedTags = {};
 
   int itemLimit = Constants.defaultItemLimit;
@@ -445,6 +448,11 @@ class SettingsHandler {
     'hiddenTags': {
       'type': 'stringList',
       'default': <String>[],
+    },
+    // Per-booru hidden tags: {booruName: [tag, ...]}.
+    'hiddenTagsPerBooru': {
+      'type': 'map',
+      'default': <String, List<String>>{},
     },
     'lovedTags': {
       'type': 'stringList',
@@ -1609,6 +1617,13 @@ class SettingsHandler {
         // do nothing, legacy key
       } else if (key == 'hiddenTags') {
         json[key] = cleanTagsList(hiddenTags.map(Tag.new).toList());
+      } else if (key == 'hiddenTagsPerBooru') {
+        // Serialize the per-booru map; drop empty entries to keep JSON tight.
+        final Map<String, List<String>> out = {};
+        hiddenTagsPerBooru.forEach((boorus, tags) {
+          if (tags.isNotEmpty) out[boorus] = tags.toList();
+        });
+        json[key] = out;
       } else if (key == 'markedTags') {
         json[key] = cleanTagsList(markedTags.map(Tag.new).toList());
       } else {
@@ -1724,6 +1739,31 @@ class SettingsHandler {
     } catch (e, s) {
       Logger.Inst().log(
         'Failed to parse hidden tags $e',
+        'SettingsHandler',
+        'loadFromJSON',
+        LogTypes.exception,
+        s: s,
+      );
+    }
+
+    try {
+      final dynamic raw = json['hiddenTagsPerBooru'];
+      hiddenTagsPerBooru.clear();
+      if (raw is Map) {
+        raw.forEach((boorus, tagsAny) {
+          if (boorus is! String) return;
+          final List<String> tags = [];
+          if (tagsAny is List) {
+            for (final t in tagsAny) {
+              if (t is String && t.isNotEmpty) tags.add(t);
+            }
+          }
+          if (tags.isNotEmpty) hiddenTagsPerBooru[boorus] = tags.toSet();
+        });
+      }
+    } catch (e, s) {
+      Logger.Inst().log(
+        'Failed to parse per-booru hidden tags $e',
         'SettingsHandler',
         'loadFromJSON',
         LogTypes.exception,
@@ -2062,6 +2102,42 @@ class SettingsHandler {
         break;
     }
     saveSettings(restate: false);
+  }
+
+  /// Per-booru hidden-tag helpers. `booruName` keys the map; `null`/empty
+  /// names are ignored so virtual boorus (Favourites/Downloads/Merge) don't
+  /// pollute the storage.
+  bool isTagHiddenForBooru(String tag, String? booruName) {
+    if (booruName == null || booruName.isEmpty) return false;
+    return hiddenTagsPerBooru[booruName]?.contains(tag) ?? false;
+  }
+
+  Set<String> hiddenTagsForBooru(String? booruName) {
+    if (booruName == null || booruName.isEmpty) return const <String>{};
+    return hiddenTagsPerBooru[booruName] ?? const <String>{};
+  }
+
+  void addTagToBooruHiddenList(String booruName, String tag) {
+    if (booruName.isEmpty || tag.isEmpty) return;
+    hiddenTagsPerBooru.putIfAbsent(booruName, () => <String>{}).add(tag);
+    saveSettings(restate: false);
+  }
+
+  void removeTagFromBooruHiddenList(String booruName, String tag) {
+    final set = hiddenTagsPerBooru[booruName];
+    if (set == null) return;
+    set.remove(tag);
+    if (set.isEmpty) hiddenTagsPerBooru.remove(booruName);
+    saveSettings(restate: false);
+  }
+
+  /// True if the given item tags intersect any blacklist that applies to
+  /// `booru`. Honours the per-booru `ignoreGlobalBlacklist` toggle.
+  bool isItemHiddenForBooru(List<String> itemTags, Booru booru) {
+    final perBooru = hiddenTagsForBooru(booru.name);
+    if (perBooru.isNotEmpty && itemTags.any(perBooru.contains)) return true;
+    if (booru.ignoreGlobalBlacklist) return false;
+    return itemTags.any(hiddenTags.contains);
   }
 
   List<String> cleanTagsList(List<Tag> tags) {

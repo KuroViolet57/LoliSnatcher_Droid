@@ -53,6 +53,7 @@ class _BooruEditState extends State<BooruEdit> {
 
   BooruType? booruType;
   BooruType selectedBooruType = BooruType.Autodetect;
+  bool ignoreGlobalBlacklist = false;
 
   // TODO make standalone / move to handlers themselves
   String convertSiteUrlToApiUrl() {
@@ -106,6 +107,7 @@ class _BooruEditState extends State<BooruEdit> {
       booruUserIDController.text = widget.booru.userID ?? '';
       booruDefTagsController.text = widget.booru.defTags ?? '';
       selectedBooruType = BooruType.values.contains(widget.booru.type) ? widget.booru.type! : selectedBooruType;
+      ignoreGlobalBlacklist = widget.booru.ignoreGlobalBlacklist;
     }
   }
 
@@ -226,6 +228,19 @@ class _BooruEditState extends State<BooruEdit> {
                   clearable: true,
                 );
               },
+            ),
+            SettingsToggle(
+              value: ignoreGlobalBlacklist,
+              onChanged: (newValue) {
+                setState(() {
+                  ignoreGlobalBlacklist = newValue;
+                });
+              },
+              title: 'Ignore global blacklist for this booru',
+              leadingIcon: const Icon(Icons.visibility_off_outlined),
+              subtitle: const Text(
+                "When on, the global hidden-tags list won't filter items from this booru. Per-booru hidden tags still apply.",
+              ),
             ),
             Container(
               margin: const EdgeInsets.fromLTRB(10, 16, 10, 16),
@@ -500,6 +515,7 @@ class _BooruEditState extends State<BooruEdit> {
       booruAPIKeyController.text.isEmpty ? null : booruAPIKeyController.text,
       booruUserIDController.text.isEmpty ? null : booruUserIDController.text,
     );
+    newBooru.ignoreGlobalBlacklist = ignoreGlobalBlacklist;
 
     bool booruExists = false;
     String booruExistsReason = '';

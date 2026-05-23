@@ -56,7 +56,11 @@ abstract class BooruHandler {
 
     final List<BooruItem> filteredItems = [];
     for (final item in fetched) {
-      if (settingsHandler.filterHated && item.isHidden) {
+      if (settingsHandler.filterHated &&
+          settingsHandler.isItemHiddenForBooru(
+            item.tagsList.map((t) => t.fullString).toList(),
+            booru,
+          )) {
         continue;
       }
 

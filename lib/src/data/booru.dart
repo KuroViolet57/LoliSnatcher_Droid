@@ -41,6 +41,10 @@ class Booru {
 
   String? name = '', faviconURL = '', baseURL = '', apiKey = '', userID = '', defTags = '';
   BooruType? type;
+  // When true, the global blacklist (`SettingsHandler.hiddenTags`) is NOT
+  // applied to this booru. Per-booru hidden tags (keyed by booru.name in
+  // `SettingsHandler.hiddenTagsPerBooru`) still apply regardless.
+  bool ignoreGlobalBlacklist = false;
 
   Map<String, dynamic> toJson() {
     return {
@@ -51,6 +55,7 @@ class Booru {
       'defTags': defTags,
       'apiKey': apiKey,
       'userID': userID,
+      'ignoreGlobalBlacklist': ignoreGlobalBlacklist,
     };
   }
 
@@ -72,6 +77,7 @@ class Booru {
     defTags = json['defTags']?.toString();
     apiKey = json['apiKey']?.toString();
     userID = json['userID']?.toString();
+    ignoreGlobalBlacklist = json['ignoreGlobalBlacklist'] == true;
   }
 
   @override
@@ -87,8 +93,9 @@ class Booru {
     String? defTags,
     String? apiKey,
     String? userID,
+    bool? ignoreGlobalBlacklist,
   }) {
-    return Booru.withKey(
+    final b = Booru.withKey(
       name ?? this.name,
       type ?? this.type,
       faviconURL ?? this.faviconURL,
@@ -97,5 +104,7 @@ class Booru {
       apiKey ?? this.apiKey,
       userID ?? this.userID,
     );
+    b.ignoreGlobalBlacklist = ignoreGlobalBlacklist ?? this.ignoreGlobalBlacklist;
+    return b;
   }
 }

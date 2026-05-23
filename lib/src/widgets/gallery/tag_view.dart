@@ -1348,6 +1348,45 @@ class _TagText extends StatelessWidget {
   }
 }
 
+enum _BlacklistScope { global, perBooru }
+
+Future<_BlacklistScope?> _pickBlacklistScope(BuildContext context, Booru booru) async {
+  final String? booruName = booru.name;
+  // If the booru has no usable name (e.g. virtual Favourites/Downloads/Merge),
+  // there's no "per-booru" target — just blacklist globally without asking.
+  if (booruName == null || booruName.isEmpty) return _BlacklistScope.global;
+  return showDialog<_BlacklistScope>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Add to blacklist'),
+      contentPadding: EdgeInsets.zero,
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.public),
+            title: const Text('Globally'),
+            subtitle: const Text('Hides items with this tag on every booru'),
+            onTap: () => Navigator.of(ctx).pop(_BlacklistScope.global),
+          ),
+          ListTile(
+            leading: const Icon(Icons.collections_bookmark),
+            title: const Text('Only on this booru'),
+            subtitle: Text(booruName),
+            onTap: () => Navigator.of(ctx).pop(_BlacklistScope.perBooru),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(),
+          child: const Text('Cancel'),
+        ),
+      ],
+    ),
+  );
+}
+
 Future<void> showTagDialog({
   required BuildContext context,
   required String tag,
@@ -1517,16 +1556,22 @@ Future<void> showTagDialog({
                 Navigator.of(context).pop(true);
               },
             ),
-          if (!isHidden && !isMarked)
+          if (!isHidden && !isMarked && !settingsHandler.isTagHiddenForBooru(tag, handler.booru.name))
             ListTile(
               leading: const Icon(CupertinoIcons.eye_slash, color: Colors.red),
               title: Text(context.loc.tagView.addToHidden),
-              onTap: () {
-                settingsHandler.addTagToList('hidden', tag);
+              onTap: () async {
+                final scope = await _pickBlacklistScope(context, handler.booru);
+                if (scope == null) return;
+                if (scope == _BlacklistScope.global) {
+                  settingsHandler.addTagToList('hidden', tag);
+                } else if (handler.booru.name?.isNotEmpty == true) {
+                  settingsHandler.addTagToBooruHiddenList(handler.booru.name!, tag);
+                }
                 searchHandler.filterCurrentFetched();
                 handler.filterFetched();
                 onUpdate();
-                Navigator.of(context).pop();
+                if (context.mounted) Navigator.of(context).pop();
               },
             ),
           if (isMarked)
@@ -1551,6 +1596,25 @@ Future<void> showTagDialog({
               title: Text(context.loc.tagView.removeFromHidden),
               onTap: () {
                 settingsHandler.removeTagFromList('hidden', tag);
+                onUpdate();
+                Navigator.of(context).pop();
+              },
+            ),
+          if (settingsHandler.isTagHiddenForBooru(tag, handler.booru.name))
+            ListTile(
+              leading: Icon(
+                CupertinoIcons.eye_slash,
+                color: Theme.of(context).iconTheme.color,
+              ),
+              title: const Text("Remove from this booru's blacklist"),
+              subtitle: Text(handler.booru.name ?? ''),
+              onTap: () {
+                final n = handler.booru.name;
+                if (n != null && n.isNotEmpty) {
+                  settingsHandler.removeTagFromBooruHiddenList(n, tag);
+                  searchHandler.filterCurrentFetched();
+                  handler.filterFetched();
+                }
                 onUpdate();
                 Navigator.of(context).pop();
               },
