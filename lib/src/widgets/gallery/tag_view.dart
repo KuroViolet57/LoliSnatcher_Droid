@@ -2436,18 +2436,25 @@ class _TagContentPreviewState extends State<TagContentPreview> {
                           width: MediaQuery.sizeOf(context).width,
                           child: NotificationListener<ScrollUpdateNotification>(
                             onNotification: (notif) {
-                              // Compact (inline) mode loads exactly one page.
-                              // Otherwise the strip auto-paginates aggressively
-                              // any time `!isScreenFilled` and chews bandwidth
-                              // / fires repeated requests as the parent drawer
-                              // scrolls.
-                              if (widget.compact) return true;
-
                               final bool isNotAtStart = notif.metrics.pixels > 0;
                               final bool isAtOrNearEdge =
                                   notif.metrics.atEdge ||
                                   notif.metrics.pixels >
                                       (notif.metrics.maxScrollExtent - (notif.metrics.extentInside * 2));
+
+                              if (widget.compact) {
+                                // In the inline / compact strip: only paginate
+                                // when the user actively scrolls near the right
+                                // edge of the horizontal list. The original
+                                // "screen not filled → load more" branch would
+                                // fire infinitely because a horizontal strip
+                                // on a phone rarely overflows the viewport.
+                                if (!loading && isNotAtStart && isAtOrNearEdge) {
+                                  loadPreview();
+                                }
+                                return true;
+                              }
+
                               final bool isScreenFilled =
                                   notif.metrics.extentBefore != 0 || notif.metrics.extentAfter != 0;
 
