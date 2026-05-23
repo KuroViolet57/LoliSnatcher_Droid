@@ -2316,9 +2316,13 @@ class _TagContentPreviewState extends State<TagContentPreview> {
                                     ],
                                   ),
                                   onPressed: () {
+                                    final defaultMode = settingsHandler.defaultTabAddMode == 'next'
+                                        ? TabAddMode.next
+                                        : TabAddMode.end;
                                     SearchHandler.instance.addTabByString(
                                       widget.tag,
                                       customBooru: selectedBooru,
+                                      addMode: defaultMode,
                                     );
 
                                     FlashElements.showSnackbar(

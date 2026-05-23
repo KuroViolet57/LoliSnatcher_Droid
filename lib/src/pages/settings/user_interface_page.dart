@@ -39,6 +39,7 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
       disableVibration,
       usePredictiveBack,
       inlineRelatedGrids;
+  late String defaultTabAddMode;
   late AppMode appMode;
   late HandSide handSide;
 
@@ -56,6 +57,7 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
     disableVibration = settingsHandler.disableVibration;
     usePredictiveBack = settingsHandler.usePredictiveBack;
     inlineRelatedGrids = settingsHandler.inlineRelatedGrids;
+    defaultTabAddMode = settingsHandler.defaultTabAddMode;
     previewDisplay = settingsHandler.previewDisplay;
     previewDisplayFallback = settingsHandler.previewDisplayFallback;
     previewMode = settingsHandler.previewMode;
@@ -82,6 +84,7 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
     final bool needThemeChange = usePredictiveBack != settingsHandler.usePredictiveBack;
     settingsHandler.usePredictiveBack = usePredictiveBack;
     settingsHandler.inlineRelatedGrids = inlineRelatedGrids;
+    settingsHandler.defaultTabAddMode = defaultTabAddMode;
     settingsHandler.previewMode = previewMode;
     settingsHandler.previewDisplay = previewDisplay;
     settingsHandler.previewDisplayFallback = previewDisplayFallback;
@@ -269,6 +272,20 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
                 subtitle: const Text(
                   "Shows 'More from this artist' and 'More from this uploader' thumbnail rows at the top of the post-details drawer (where supported by the booru). Turn off if you want a leaner drawer or to save bandwidth.",
                 ),
+              ),
+              SettingsDropdown<String>(
+                value: defaultTabAddMode,
+                items: const ['end', 'next'],
+                itemTitleBuilder: (v) => v == 'next'
+                    ? 'Next to current tab'
+                    : 'End of tab list',
+                onChanged: (v) {
+                  setState(() {
+                    defaultTabAddMode = v ?? 'end';
+                  });
+                },
+                title: 'New tab placement (single tap)',
+                trailingIcon: const Icon(Icons.tab),
               ),
               SettingsTextInput(
                 controller: columnsPortraitController,

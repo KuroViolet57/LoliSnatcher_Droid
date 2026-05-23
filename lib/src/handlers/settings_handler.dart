@@ -173,6 +173,10 @@ class SettingsHandler {
   // Inline "more from this artist / uploader" thumbnail grids in the
   // post-details drawer. Mirrors Boorusama's pattern. On by default.
   bool inlineRelatedGrids = true;
+  // Default placement for a new tab when the user single-taps the
+  // "open in new tab" button. Long-press still shows the pick dialog.
+  // String values: 'end' (default) or 'next' (next to current tab).
+  String defaultTabAddMode = 'end';
   bool loadingGif = false;
   bool thumbnailCache = true;
   bool mediaCache = true;
@@ -387,6 +391,10 @@ class SettingsHandler {
     'defTags': {
       'type': 'string',
       'default': 'rating:safe',
+    },
+    'defaultTabAddMode': {
+      'type': 'string',
+      'default': 'end',
     },
     'prefBooru': {
       'type': 'string',
@@ -1109,6 +1117,8 @@ class SettingsHandler {
         return useBetterPlayer;
       case 'inlineRelatedGrids':
         return inlineRelatedGrids;
+      case 'defaultTabAddMode':
+        return defaultTabAddMode;
       case 'loadingGif':
         return loadingGif;
       case 'thumbnailCache':
@@ -1346,6 +1356,9 @@ class SettingsHandler {
         break;
       case 'inlineRelatedGrids':
         inlineRelatedGrids = validatedValue;
+        break;
+      case 'defaultTabAddMode':
+        defaultTabAddMode = (validatedValue == 'next') ? 'next' : 'end';
         break;
       case 'loadingGif':
         loadingGif = validatedValue;
