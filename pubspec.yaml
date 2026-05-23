@@ -18,6 +18,7 @@ dependencies:
   auto_size_text_plus: ^3.0.2
   calendar_date_picker2: ^2.0.1
   chewie: ^1.13.0
+  better_player_plus: ^1.2.1
   collection: ^1.19.1
   country_flags: ^4.1.2
   crypto: ^3.0.7

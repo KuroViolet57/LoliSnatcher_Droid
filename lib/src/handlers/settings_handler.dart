@@ -165,6 +165,11 @@ class SettingsHandler {
   // video once the user actually swipes to them. Saves bandwidth and stops
   // the currently-watched video from competing with preloads.
   bool preloadVideos = false;
+  // Experimental: swap the Flutter video_player / chewie pipeline for
+  // better_player_plus on Android. Exposes ExoPlayer's buffer + cache
+  // tuning, which Flutter's default plugin hides. Off by default so the
+  // tried-and-true engine stays the safe path.
+  bool useBetterPlayer = false;
   bool loadingGif = false;
   bool thumbnailCache = true;
   bool mediaCache = true;
@@ -537,6 +542,10 @@ class SettingsHandler {
       'default': true,
     },
     'preloadVideos': {
+      'type': 'bool',
+      'default': false,
+    },
+    'useBetterPlayer': {
       'type': 'bool',
       'default': false,
     },
@@ -1089,6 +1098,8 @@ class SettingsHandler {
         return autoPlayEnabled;
       case 'preloadVideos':
         return preloadVideos;
+      case 'useBetterPlayer':
+        return useBetterPlayer;
       case 'loadingGif':
         return loadingGif;
       case 'thumbnailCache':
@@ -1320,6 +1331,9 @@ class SettingsHandler {
         break;
       case 'preloadVideos':
         preloadVideos = validatedValue;
+        break;
+      case 'useBetterPlayer':
+        useBetterPlayer = validatedValue;
         break;
       case 'loadingGif':
         loadingGif = validatedValue;

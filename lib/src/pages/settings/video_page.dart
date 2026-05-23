@@ -23,6 +23,7 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
   bool autoPlay = true;
   bool startVideosMuted = false;
   bool disableVideo = false;
+  bool useBetterPlayer = false;
   bool altVideoPlayerHwAccel = true;
   VideoBackendMode videoBackendMode = SettingsHandler.isDesktopPlatform
       ? VideoBackendMode.mpv
@@ -38,6 +39,7 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
     autoPlay = settingsHandler.autoPlayEnabled;
     startVideosMuted = settingsHandler.startVideosMuted;
     disableVideo = settingsHandler.disableVideo;
+    useBetterPlayer = settingsHandler.useBetterPlayer;
     videoBackendMode = settingsHandler.videoBackendMode;
     altVideoPlayerHwAccel = settingsHandler.altVideoPlayerHwAccel;
     altVideoPlayerVO = settingsHandler.altVideoPlayerVO;
@@ -49,6 +51,7 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
     settingsHandler.autoPlayEnabled = autoPlay;
     settingsHandler.startVideosMuted = startVideosMuted;
     settingsHandler.disableVideo = disableVideo;
+    settingsHandler.useBetterPlayer = useBetterPlayer;
     settingsHandler.videoBackendMode = SettingsHandler.isDesktopPlatform ? VideoBackendMode.mpv : videoBackendMode;
     settingsHandler.altVideoPlayerHwAccel = altVideoPlayerHwAccel;
     settingsHandler.altVideoPlayerVO = altVideoPlayerVO;
@@ -137,6 +140,20 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
                 name: context.loc.settings.video.experimental,
                 icon: const Icon(Icons.science),
               ),
+              if (!SettingsHandler.isDesktopPlatform)
+                SettingsToggle(
+                  value: useBetterPlayer,
+                  onChanged: (newValue) {
+                    setState(() {
+                      useBetterPlayer = newValue;
+                    });
+                  },
+                  title: 'Use better_player engine (experimental)',
+                  leadingIcon: const Icon(Icons.science_outlined),
+                  subtitle: const Text(
+                    "Swaps the default video pipeline for better_player_plus, which exposes ExoPlayer's buffer and HTTP-cache tuning. Helps with the stall-buffer-stall cycle on jittery CDNs. Disables LoliControls-specific features (long-tap fast-forward) and the MPV fallback path while on. Restart the viewer for changes to take effect.",
+                  ),
+                ),
               if (!SettingsHandler.isDesktopPlatform)
                 SettingsDropdown(
                   value: videoBackendMode,

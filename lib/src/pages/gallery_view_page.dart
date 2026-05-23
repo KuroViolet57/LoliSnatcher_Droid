@@ -31,6 +31,7 @@ import 'package:lolisnatcher/src/widgets/gallery/viewer_tutorial.dart';
 import 'package:lolisnatcher/src/widgets/image/image_viewer.dart';
 import 'package:lolisnatcher/src/widgets/video/guess_extension_viewer.dart';
 import 'package:lolisnatcher/src/widgets/video/load_item_viewer.dart';
+import 'package:lolisnatcher/src/widgets/video/better_player_view.dart';
 import 'package:lolisnatcher/src/widgets/video/video_viewer_placeholder.dart';
 import 'package:lolisnatcher/src/widgets/video/video_viewer.dart';
 
@@ -423,6 +424,15 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
                                       itemWidget = ValueListenableBuilder(
                                         valueListenable: page,
                                         builder: (_, pageVal, _) {
+                                          // Experimental better_player_plus path; behind a setting.
+                                          if (settingsHandler.useBetterPlayer && Platform.isAndroid) {
+                                            return BetterPlayerView(
+                                              item,
+                                              booru: possibleBooru ?? widget.tab.booruHandler.booru,
+                                              isViewed: pageVal == index,
+                                              key: item.key,
+                                            );
+                                          }
                                           return VideoViewer(
                                             item,
                                             booru: possibleBooru ?? widget.tab.booruHandler.booru,
