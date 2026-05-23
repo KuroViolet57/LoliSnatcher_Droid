@@ -756,29 +756,23 @@ class _TagViewState extends State<TagView> {
       if (artist.fullString.trim().isEmpty) continue;
       final String artistQuery = artist.fullString;
       sections.add(
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          child: TagContentPreview(
-            // Key by query+booru so async tag enrichment (e.g. an artist
-            // name resolving later) gives us a fresh State / fresh search
-            // rather than reusing the previous widget's stale tab.
-            key: ValueKey('related-artist-${currentBooru.name}-$artistQuery'),
-            tag: artistQuery,
-            boorus: [currentBooru],
-            parentTab: parentTab,
-            compact: true,
-            compactTitle: 'More from artist ${artistQuery.replaceAll('_', ' ')}',
-          ),
+        _CollapsibleRelatedPreview(
+          key: ValueKey('related-artist-${currentBooru.name}-$artistQuery'),
+          title: 'More from artist ${artistQuery.replaceAll('_', ' ')}',
+          icon: Icons.brush,
+          booru: currentBooru,
+          query: artistQuery,
+          parentTab: parentTab,
         ),
       );
     }
 
     // 2) Uploader section — only when the handler exposes a UserMetaTag
-    //    AND we have a real uploader NAME (not just an ID). Many boorus,
-    //    notably Danbooru, return only `uploader_id` in the post JSON and
-    //    resolve the name asynchronously via getUploaderName(); building
-    //    the strip with the numeric ID produces a query like `user:12345`
-    //    that Danbooru can't satisfy. Wait for the name to be there.
+    //    AND we have a real uploader NAME (not just an ID). Many boorus
+    //    (Danbooru, rule34.xxx) return only `uploader_id` in the post JSON
+    //    and resolve the name asynchronously; building the strip with the
+    //    numeric ID produces a query like `user:12345` that user-search
+    //    can't satisfy. Skip until the name is in.
     final String? uploader = item.uploaderName?.isNotEmpty == true ? item.uploaderName : null;
     if (uploader != null) {
       final userMetaTag = searchHandler.currentBooruHandler.availableMetaTags().firstWhereOrNull((t) => t is UserMetaTag);
@@ -786,16 +780,13 @@ class _TagViewState extends State<TagView> {
         final String userQuery = userMetaTag.tagBuilder(null, null, uploader);
         if (userQuery.trim().isNotEmpty) {
           sections.add(
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              child: TagContentPreview(
-                key: ValueKey('related-uploader-${currentBooru.name}-$userQuery'),
-                tag: userQuery,
-                boorus: [currentBooru],
-                parentTab: parentTab,
-                compact: true,
-                compactTitle: 'More from uploader $uploader',
-              ),
+            _CollapsibleRelatedPreview(
+              key: ValueKey('related-uploader-${currentBooru.name}-$userQuery'),
+              title: 'More from uploader $uploader',
+              icon: Icons.person,
+              booru: currentBooru,
+              query: userQuery,
+              parentTab: parentTab,
             ),
           );
         }
@@ -1896,6 +1887,70 @@ class SourceLinkErrorDialog extends StatelessWidget {
           icon: const Icon(Icons.copy),
         ),
         const CloseDialogButton(withIcon: true),
+      ],
+    );
+  }
+}
+
+/// A header-only widget that, when tapped, expands inline to show a
+/// [TagContentPreview] grid for the given query against the given booru.
+///
+/// Lazy on purpose: we DON'T mount the underlying TagContentPreview until
+/// the user explicitly opts in, so opening the drawer doesn't fire a
+/// (potentially slow / metered) request per related section, and scrolling
+/// past the related-grids region stays cheap.
+class _CollapsibleRelatedPreview extends StatefulWidget {
+  const _CollapsibleRelatedPreview({
+    required this.title,
+    required this.icon,
+    required this.booru,
+    required this.query,
+    required this.parentTab,
+    super.key,
+  });
+
+  final String title;
+  final IconData icon;
+  final Booru booru;
+  final String query;
+  final SearchTab? parentTab;
+
+  @override
+  State<_CollapsibleRelatedPreview> createState() => _CollapsibleRelatedPreviewState();
+}
+
+class _CollapsibleRelatedPreviewState extends State<_CollapsibleRelatedPreview> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ListTile(
+          dense: true,
+          leading: Icon(widget.icon),
+          title: Text(
+            widget.title,
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+          trailing: Icon(_expanded ? Icons.expand_less : Icons.expand_more),
+          onTap: () => setState(() => _expanded = !_expanded),
+        ),
+        if (_expanded)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: TagContentPreview(
+              tag: widget.query,
+              boorus: [widget.booru],
+              parentTab: widget.parentTab,
+              compact: true,
+              // No compactTitle here: the wrapper above already shows the
+              // section header, so let TagContentPreview render its default
+              // "Preview" sub-label so we don't get a duplicate title.
+            ),
+          ),
       ],
     );
   }
