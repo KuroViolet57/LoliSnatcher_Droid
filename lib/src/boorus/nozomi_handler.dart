@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/data/meta_tag.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
@@ -113,7 +114,19 @@ class NozomiHandler extends BooruHandler {
     final List<String> terms = input.isEmpty ? [] : input.split(' ').where((t) => t.isNotEmpty).toList();
     final List<String> positive = [];
     final List<String> negative = [];
+    bool popular = false;
     for (final term in terms) {
+      // Sort toggle: `sort:popular` (and `sort:date`/default) switches between
+      // index-Popular.nozomi and index.nozomi. For a single positive term + popular,
+      // the per-tag nozomi/popular/{term}-Popular.nozomi file is used instead.
+      if (term.toLowerCase() == 'sort:popular') {
+        popular = true;
+        continue;
+      }
+      if (term.toLowerCase() == 'sort:date') {
+        popular = false;
+        continue;
+      }
       if (term.startsWith('-') && term.length > 1) {
         negative.add(term.substring(1));
       } else {
@@ -121,18 +134,22 @@ class NozomiHandler extends BooruHandler {
       }
     }
 
-    // Fast path: no tags → byte-range-slice the global index, never download the whole 100+ MB file.
+    // Fast path: no tag filtering → byte-range-slice the global index, never
+    // download the whole 100+ MB file.
     if (positive.isEmpty && negative.isEmpty) {
-      return _fetchIdRange(_indexUrl(''), startIndex, count);
+      return _fetchIdRange(_indexUrl('', popular: popular), startIndex, count);
     }
 
     // Filtered path: per-tag .nozomi files are smaller — fetch each in full, intersect/subtract.
     List<int> result;
     if (positive.isEmpty) {
-      result = await _fetchAllIds(_indexUrl(''));
+      result = await _fetchAllIds(_indexUrl('', popular: popular));
     } else {
-      result = await _fetchAllIds(_indexUrl(positive.first));
+      result = await _fetchAllIds(_indexUrl(positive.first, popular: popular));
       for (int i = 1; i < positive.length; i++) {
+        // Popular intersections aren't a thing in nozomi's index layout — fall
+        // back to a date-ordered intersection beyond the first term, matching
+        // nozomi.js's own behaviour.
         final next = await _fetchAllIds(_indexUrl(positive[i]));
         result = result.toSet().intersection(next.toSet()).toList();
         if (result.isEmpty) break;
@@ -148,9 +165,16 @@ class NozomiHandler extends BooruHandler {
     return result.skip(startIndex).take(count).toList();
   }
 
-  String _indexUrl(String term) {
-    if (term.isEmpty) return '$_jsonHost/index.nozomi';
-    return '$_jsonHost/nozomi/${Uri.encodeComponent(term)}.nozomi';
+  String _indexUrl(String term, {bool popular = false}) {
+    if (term.isEmpty) {
+      return popular
+          ? '$_jsonHost/index-Popular.nozomi'
+          : '$_jsonHost/index.nozomi';
+    }
+    final encoded = Uri.encodeComponent(term);
+    return popular
+        ? '$_jsonHost/nozomi/popular/$encoded-Popular.nozomi'
+        : '$_jsonHost/nozomi/$encoded.nozomi';
   }
 
   Future<List<int>> _fetchIdRange(String url, int startIndex, int count) async {
@@ -336,6 +360,22 @@ class NozomiHandler extends BooruHandler {
   @override
   String makePostURL(String id) {
     return 'https://nozomi.la/post/$id.html';
+  }
+
+  // Surfaces as a `sort:` chip in the search bar with Date / Popular options.
+  // Implementation: see _resolvePageIds + _indexUrl which switch between
+  // index.nozomi and index-Popular.nozomi (or per-tag equivalents).
+  @override
+  List<MetaTag> availableMetaTags() {
+    return [
+      SortMetaTag(
+        isFree: true,
+        values: [
+          MetaTagValue(name: 'Date', value: 'date'),
+          MetaTagValue(name: 'Popular', value: 'popular'),
+        ],
+      ),
+    ];
   }
 
   // search() is overridden, so the base URL/encoding flow is intentionally bypassed.
