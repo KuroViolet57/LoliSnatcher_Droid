@@ -729,6 +729,72 @@ class _TagViewState extends State<TagView> {
     return const SizedBox.shrink();
   }
 
+  /// Builds the "More from artist X" + "More from uploader Y" inline grid
+  /// sections that render at the top of the post-details drawer when the
+  /// `inlineRelatedGrids` setting is on.
+  ///
+  /// Returns an empty list when nothing applicable — caller can spread it
+  /// into the sliver child list unconditionally.
+  List<Widget> _buildRelatedGrids() {
+    final List<Widget> sections = [];
+    final Booru currentBooru = searchHandler.currentBooru;
+    if (currentBooru.name == null) {
+      return const [];
+    }
+    final SearchTab parentTab = searchHandler.currentTab;
+
+    // 1) Artist sections — at most 3 to keep the drawer scannable.
+    final artists = item.tagsList.where((t) => t.tagType.isArtist).take(3).toList();
+    for (final artist in artists) {
+      if (artist.fullString.trim().isEmpty) continue;
+      sections.add(
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: TagContentPreview(
+            tag: artist.fullString,
+            boorus: [currentBooru],
+            parentTab: parentTab,
+            compact: true,
+            compactTitle: 'More from artist ${artist.fullString.replaceAll('_', ' ')}',
+          ),
+        ),
+      );
+    }
+
+    // 2) Uploader section — only when the handler exposes a UserMetaTag
+    //    AND we have a usable uploader name. Mirrors the existing
+    //    "tap uploader name to add user:X to query" wiring above.
+    final String? uploader = (item.uploaderName?.isNotEmpty == true)
+        ? item.uploaderName
+        : (item.uploaderId?.isNotEmpty == true ? item.uploaderId : null);
+    if (uploader != null) {
+      final userMetaTag = searchHandler.currentBooruHandler.availableMetaTags().firstWhereOrNull((t) => t is UserMetaTag);
+      if (userMetaTag != null) {
+        final String userQuery = userMetaTag.tagBuilder(null, null, uploader);
+        if (userQuery.trim().isNotEmpty) {
+          sections.add(
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: TagContentPreview(
+                tag: userQuery,
+                boorus: [currentBooru],
+                parentTab: parentTab,
+                compact: true,
+                compactTitle: 'More from uploader $uploader',
+              ),
+            ),
+          );
+        }
+      }
+    }
+
+    if (sections.isEmpty) return const [];
+    return [
+      ...sections,
+      const Divider(),
+    ];
+  }
+
   Widget tagsItemBuilder(BuildContext context, Tag tag) {
     final String currentTag = tag.fullString;
     final int tagCount = tag.count;
@@ -1093,6 +1159,12 @@ class _TagViewState extends State<TagView> {
                   ),
                 //
                 infoText(context.loc.tagView.posted, formattedDate, canCopy: false),
+                //
+                // Inline "more from artist / uploader" grids — Boorusama-style.
+                // Each grid is gated on:
+                //   - the global Settings → Interface → inlineRelatedGrids toggle
+                //   - the data being available for this item + handler
+                if (settingsHandler.inlineRelatedGrids) ..._buildRelatedGrids(),
                 //
                 ExpansionTile(
                   title: Text(
@@ -1821,6 +1893,8 @@ class TagContentPreview extends StatefulWidget {
     required this.boorus,
     required this.parentTab,
     this.readOnly = false,
+    this.compact = false,
+    this.compactTitle,
     super.key,
   }) : assert(
          boorus.isNotEmpty,
@@ -1831,6 +1905,13 @@ class TagContentPreview extends StatefulWidget {
   final List<Booru> boorus;
   final SearchTab? parentTab;
   final bool readOnly;
+
+  // When true, the preview renders with minimal chrome (no booru dropdown,
+  // no refresh/close icons, no "open in new tab" cluster) and eagerly
+  // loads on init. Used inline inside the post-details drawer.
+  final bool compact;
+  // Optional override for the "Preview" header — e.g. "More from artist X".
+  final String? compactTitle;
 
   @override
   State<TagContentPreview> createState() => _TagContentPreviewState();
@@ -1867,6 +1948,14 @@ class _TagContentPreviewState extends State<TagContentPreview> {
 
     if (isSingleBooru) {
       selectedBooru = widget.boorus.first;
+    }
+
+    // Compact mode is used inline (no booru dropdown to wait on), so kick
+    // off the first fetch as soon as the widget mounts.
+    if (widget.compact && selectedBooru != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) loadPreview();
+      });
     }
   }
 
@@ -2023,12 +2112,18 @@ class _TagContentPreviewState extends State<TagContentPreview> {
       child: AnimatedSwitcher(
         duration: const Duration(milliseconds: 200),
         child: tab == null
-            ? ListTile(
+            ? (widget.compact
+                  // Compact path: auto-loads in initState, so this "no tab"
+                  // state is just a brief one-frame placeholder. Keep it
+                  // small and label-less so it doesn't conflict with the
+                  // section header rendered above.
+                  ? const SizedBox(height: 32)
+                  : ListTile(
                 leading: Icon(
                   Icons.search,
                   color: Theme.of(context).iconTheme.color,
                 ),
-                title: Text(context.loc.tagView.preview),
+                title: Text(widget.compactTitle ?? context.loc.tagView.preview),
                 trailing: widget.parentTab == null
                     ? null
                     : IconButton(
@@ -2056,7 +2151,7 @@ class _TagContentPreviewState extends State<TagContentPreview> {
                         ),
                       ),
                 onTap: isSingleBooru ? loadPreview : null,
-              )
+              ))
             : ((tab!.booruHandler.filteredFetched.isEmpty && (loading || errorString.isNotEmpty))
                   ? ListTile(
                       leading: Icon(
@@ -2094,7 +2189,7 @@ class _TagContentPreviewState extends State<TagContentPreview> {
                                   mainAxisSize: .min,
                                   crossAxisAlignment: .start,
                                   children: [
-                                    Text(context.loc.tagView.preview),
+                                    Text(widget.compactTitle ?? context.loc.tagView.preview),
                                     if (count > 0)
                                       Text(
                                         count.toFormattedString(),
@@ -2106,22 +2201,24 @@ class _TagContentPreviewState extends State<TagContentPreview> {
                                 ),
                               );
                             }),
-                            const SizedBox(width: 8),
-                            IconButton(
-                              onPressed: () => loadPreview(refresh: true),
-                              icon: const Icon(Icons.refresh),
-                            ),
-                            const SizedBox(width: 8),
-                            IconButton(
-                              onPressed: () {
-                                setState(() {
-                                  tab = null;
-                                });
-                              },
-                              icon: const Icon(Icons.close),
-                            ),
+                            if (!widget.compact) ...[
+                              const SizedBox(width: 8),
+                              IconButton(
+                                onPressed: () => loadPreview(refresh: true),
+                                icon: const Icon(Icons.refresh),
+                              ),
+                              const SizedBox(width: 8),
+                              IconButton(
+                                onPressed: () {
+                                  setState(() {
+                                    tab = null;
+                                  });
+                                },
+                                icon: const Icon(Icons.close),
+                              ),
+                            ],
                             const Spacer(),
-                            if (widget.parentTab != null)
+                            if (!widget.compact && widget.parentTab != null)
                               IconButton(
                                 icon: const Icon(Icons.list),
                                 onPressed: showTagPreviewsListDialog,
@@ -2246,24 +2343,25 @@ class _TagContentPreviewState extends State<TagContentPreview> {
                           ],
                         ),
                         const SizedBox(height: 8),
-                        SizedBox(
-                          width: context.mediaSize.width,
-                          height: 52,
-                          child: SettingsBooruDropdown(
-                            title: context.loc.booru,
-                            placeholder: context.loc.tagView.selectBooruToLoad,
-                            value: selectedBooru,
-                            items: settingsHandler.booruList,
-                            contentPadding: EdgeInsets.zero,
-                            onChanged: (value) {
-                              selectedBooru = value;
-                              loadPreview(refresh: true);
-                            },
-                            titleAsLabel: true,
-                            drawBottomBorder: false,
+                        if (!widget.compact)
+                          SizedBox(
+                            width: context.mediaSize.width,
+                            height: 52,
+                            child: SettingsBooruDropdown(
+                              title: context.loc.booru,
+                              placeholder: context.loc.tagView.selectBooruToLoad,
+                              value: selectedBooru,
+                              items: settingsHandler.booruList,
+                              contentPadding: EdgeInsets.zero,
+                              onChanged: (value) {
+                                selectedBooru = value;
+                                loadPreview(refresh: true);
+                              },
+                              titleAsLabel: true,
+                              drawBottomBorder: false,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 12),
+                        if (!widget.compact) const SizedBox(height: 12),
                         SizedBox(
                           height: 180 + 10 + 16, // card + listview paddings
                           width: MediaQuery.sizeOf(context).width,

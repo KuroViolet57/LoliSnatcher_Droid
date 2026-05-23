@@ -170,6 +170,9 @@ class SettingsHandler {
   // tuning, which Flutter's default plugin hides. Off by default so the
   // tried-and-true engine stays the safe path.
   bool useBetterPlayer = false;
+  // Inline "more from this artist / uploader" thumbnail grids in the
+  // post-details drawer. Mirrors Boorusama's pattern. On by default.
+  bool inlineRelatedGrids = true;
   bool loadingGif = false;
   bool thumbnailCache = true;
   bool mediaCache = true;
@@ -548,6 +551,10 @@ class SettingsHandler {
     'useBetterPlayer': {
       'type': 'bool',
       'default': false,
+    },
+    'inlineRelatedGrids': {
+      'type': 'bool',
+      'default': true,
     },
     'loadingGif': {
       'type': 'bool',
@@ -1100,6 +1107,8 @@ class SettingsHandler {
         return preloadVideos;
       case 'useBetterPlayer':
         return useBetterPlayer;
+      case 'inlineRelatedGrids':
+        return inlineRelatedGrids;
       case 'loadingGif':
         return loadingGif;
       case 'thumbnailCache':
@@ -1334,6 +1343,9 @@ class SettingsHandler {
         break;
       case 'useBetterPlayer':
         useBetterPlayer = validatedValue;
+        break;
+      case 'inlineRelatedGrids':
+        inlineRelatedGrids = validatedValue;
         break;
       case 'loadingGif':
         loadingGif = validatedValue;

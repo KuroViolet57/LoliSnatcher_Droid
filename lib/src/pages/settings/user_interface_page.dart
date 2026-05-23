@@ -37,7 +37,8 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
       showSearchbarQuickActions,
       autofocusSearchbar,
       disableVibration,
-      usePredictiveBack;
+      usePredictiveBack,
+      inlineRelatedGrids;
   late AppMode appMode;
   late HandSide handSide;
 
@@ -54,6 +55,7 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
     autofocusSearchbar = settingsHandler.autofocusSearchbar;
     disableVibration = settingsHandler.disableVibration;
     usePredictiveBack = settingsHandler.usePredictiveBack;
+    inlineRelatedGrids = settingsHandler.inlineRelatedGrids;
     previewDisplay = settingsHandler.previewDisplay;
     previewDisplayFallback = settingsHandler.previewDisplayFallback;
     previewMode = settingsHandler.previewMode;
@@ -79,6 +81,7 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
     settingsHandler.disableVibration = disableVibration;
     final bool needThemeChange = usePredictiveBack != settingsHandler.usePredictiveBack;
     settingsHandler.usePredictiveBack = usePredictiveBack;
+    settingsHandler.inlineRelatedGrids = inlineRelatedGrids;
     settingsHandler.previewMode = previewMode;
     settingsHandler.previewDisplay = previewDisplay;
     settingsHandler.previewDisplayFallback = previewDisplayFallback;
@@ -253,6 +256,19 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
                 },
                 title: context.loc.settings.interface.disableVibration,
                 subtitle: Text(context.loc.settings.interface.disableVibrationSubtitle),
+              ),
+              SettingsToggle(
+                value: inlineRelatedGrids,
+                onChanged: (newValue) {
+                  setState(() {
+                    inlineRelatedGrids = newValue;
+                  });
+                },
+                title: 'Inline related-posts grids',
+                leadingIcon: const Icon(Icons.grid_view),
+                subtitle: const Text(
+                  "Shows 'More from this artist' and 'More from this uploader' thumbnail rows at the top of the post-details drawer (where supported by the booru). Turn off if you want a leaner drawer or to save bandwidth.",
+                ),
               ),
               SettingsTextInput(
                 controller: columnsPortraitController,
