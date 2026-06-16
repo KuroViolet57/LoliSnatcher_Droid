@@ -99,6 +99,8 @@ class _TagViewState extends State<TagView> {
   List<Tag> tags = [];
   List<Tag> filteredTags = [];
   final Map<String, HasTabWithTagResult> tabMatchesMap = {};
+  // Tags whose inline preview strip is currently expanded in the tag list.
+  final Set<String> expandedTagPreviews = {};
   bool? sortTags;
   final TextEditingController searchController = TextEditingController();
   final FocusNode searchFocusNode = FocusNode();
@@ -1036,10 +1038,35 @@ class _TagViewState extends State<TagView> {
                       });
                     },
                   ),
-                  const SizedBox(width: 16),
+                  IconButton(
+                    icon: Icon(
+                      expandedTagPreviews.contains(currentTag) ? Icons.expand_less : Icons.expand_more,
+                      color: Theme.of(context).colorScheme.secondary,
+                    ),
+                    tooltip: 'Preview posts with this tag',
+                    onPressed: () {
+                      setState(() {
+                        if (!expandedTagPreviews.remove(currentTag)) {
+                          expandedTagPreviews.add(currentTag);
+                        }
+                      });
+                    },
+                  ),
+                  const SizedBox(width: 8),
                 ],
               ),
             ),
+            if (expandedTagPreviews.contains(currentTag))
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: TagContentPreview(
+                  key: ValueKey('tag-preview-${searchHandler.currentBooru.name}-$currentTag'),
+                  tag: currentTag,
+                  boorus: [searchHandler.currentBooru],
+                  parentTab: searchHandler.currentTab,
+                  compact: true,
+                ),
+              ),
             Divider(
               color: context.theme.dividerTheme.color?.withValues(alpha: 0.66),
             ),
