@@ -2544,25 +2544,24 @@ class _TagContentPreviewState extends State<TagContentPreview> {
                           ],
                         ),
                         const SizedBox(height: 8),
-                        if (!widget.compact)
-                          SizedBox(
-                            width: context.mediaSize.width,
-                            height: 52,
-                            child: SettingsBooruDropdown(
-                              title: context.loc.booru,
-                              placeholder: context.loc.tagView.selectBooruToLoad,
-                              value: selectedBooru,
-                              items: settingsHandler.booruList,
-                              contentPadding: EdgeInsets.zero,
-                              onChanged: (value) {
-                                selectedBooru = value;
-                                loadPreview(refresh: true);
-                              },
-                              titleAsLabel: true,
-                              drawBottomBorder: false,
-                            ),
+                        SizedBox(
+                          width: context.mediaSize.width,
+                          height: 52,
+                          child: SettingsBooruDropdown(
+                            title: context.loc.booru,
+                            placeholder: context.loc.tagView.selectBooruToLoad,
+                            value: selectedBooru,
+                            items: settingsHandler.booruList,
+                            contentPadding: EdgeInsets.zero,
+                            onChanged: (value) {
+                              selectedBooru = value;
+                              loadPreview(refresh: true);
+                            },
+                            titleAsLabel: true,
+                            drawBottomBorder: false,
                           ),
-                        if (!widget.compact) const SizedBox(height: 12),
+                        ),
+                        const SizedBox(height: 12),
                         SizedBox(
                           height: 180 + 10 + 16, // card + listview paddings
                           width: MediaQuery.sizeOf(context).width,
