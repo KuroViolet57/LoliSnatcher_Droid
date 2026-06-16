@@ -12,7 +12,6 @@ import 'package:fading_edge_scrollview/fading_edge_scrollview.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:fpdart/fpdart.dart' show FpdartOnIterable;
 import 'package:get/get.dart' hide ContextExt, FirstWhereOrNullExt;
-import 'package:intl/intl.dart';
 import 'package:lolisnatcher/src/boorus/danbooru_handler.dart';
 import 'package:lolisnatcher/src/data/meta_tag.dart';
 import 'package:lolisnatcher/src/data/pinned_tag.dart';
@@ -1101,35 +1100,14 @@ class _TagViewState extends State<TagView> {
         ? '${item.fileWidth?.toInt() ?? ''}x${item.fileHeight?.toInt() ?? ''}'
         : '';
     final String fileSize = item.fileSize != null ? Tools.formatBytes(item.fileSize!, 2) : '';
-    final String itemId = item.serverId ?? '';
     final String rating = item.rating ?? '';
     final String score = item.score ?? '';
     final String md5 = item.md5String ?? '';
     final List<String> sources = item.sources ?? [];
     final bool tagsAvailable = tags.isNotEmpty || hasLoadItemSupport;
-    String postDate = item.postDate ?? '';
-    final String postDateFormat = item.postDateFormat ?? '';
-    String formattedDate = '';
-    if (postDate.isNotEmpty && postDateFormat.isNotEmpty) {
-      try {
-        // no timezone support in DateFormat? see: https://stackoverflow.com/questions/56189407/dart-parse-date-timezone-gives-unimplementederror/56190055
-        // remove timezones from strings until they fix it
-        DateTime parsedDate;
-        if (postDateFormat == 'unix') {
-          parsedDate = DateTime.fromMillisecondsSinceEpoch(int.parse(postDate) * 1000);
-        } else if (postDateFormat == 'iso') {
-          postDate = postDate.replaceAll(RegExp(r'(?:\+|\-)\d{4}'), '');
-          parsedDate = DateTime.parse(postDate).toLocal();
-        } else {
-          postDate = postDate.replaceAll(RegExp(r'(?:\+|\-)\d{4}'), '');
-          parsedDate = DateFormat(postDateFormat).parseLoose(postDate).toLocal();
-        }
-        // print(postDate);
-        formattedDate = DateFormat('dd.MM.yyyy HH:mm').format(parsedDate);
-      } catch (e) {
-        print('Date Parse Error :: $postDate $postDateFormat :: $e');
-      }
-    }
+    // Note: post ID + post URL + formatted post date are intentionally not
+    // surfaced at the top of the drawer anymore (per user request); the
+    // remaining metadata still renders via the Details expansion further below.
 
     return Scrollbar(
       interactive: true,
@@ -1141,8 +1119,10 @@ class _TagViewState extends State<TagView> {
             delegate: SliverChildListDelegate(
               [
                 const SizedBox(height: kMinInteractiveDimension),
-                infoText(context.loc.tagView.id, itemId),
-                infoText(context.loc.tagView.postURL, item.postURL, isLink: true),
+                // ID / Post URL / Posted date intentionally hidden from the
+                // top of the drawer — kept available inside the Details
+                // expansion further below. Uploader stays here because it's
+                // the only one the user wants quick access to.
                 //
                 if (item.uploaderId?.isNotEmpty == true || item.uploaderName?.isNotEmpty == true)
                   Builder(
@@ -1202,8 +1182,6 @@ class _TagViewState extends State<TagView> {
                       );
                     },
                   ),
-                //
-                infoText(context.loc.tagView.posted, formattedDate, canCopy: false),
                 //
                 // Inline "more from artist / uploader" grids — Boorusama-style.
                 // Each grid is gated on:
@@ -2103,6 +2081,14 @@ class _TagContentPreviewState extends State<TagContentPreview> {
   bool isLastPage = false;
   String errorString = '';
 
+  // When true the preview filters to animated content by appending the
+  // "animated" tag. Works on almost every booru.
+  bool onlyAnimated = false;
+
+  // The actual query sent to the booru handler — `widget.tag` plus
+  // any per-strip filters the user toggled in the header.
+  String get _effectiveTag => onlyAnimated ? '${widget.tag} animated' : widget.tag;
+
   final ValueNotifier<int> viewedIndex = ValueNotifier(-1);
 
   bool get isSingleBooru => widget.boorus.length == 1;
@@ -2144,7 +2130,7 @@ class _TagContentPreviewState extends State<TagContentPreview> {
       tab = SearchTab(
         selectedBooru!,
         null,
-        widget.tag,
+        _effectiveTag,
       );
       loading = false;
       isLastPage = false;
@@ -2175,7 +2161,7 @@ class _TagContentPreviewState extends State<TagContentPreview> {
     }
     setState(() {});
 
-    await tab!.booruHandler.search(widget.tag, null);
+    await tab!.booruHandler.search(_effectiveTag, null);
 
     if (tab!.booruHandler.locked && !isLastPage) {
       isLastPage = true;
@@ -2188,7 +2174,7 @@ class _TagContentPreviewState extends State<TagContentPreview> {
     }
 
     if (tab!.booruHandler.totalCount.value == 0) {
-      unawaited(tab!.booruHandler.searchCount(widget.tag));
+      unawaited(tab!.booruHandler.searchCount(_effectiveTag));
     }
 
     Future.delayed(const Duration(milliseconds: 200), () {
@@ -2396,10 +2382,27 @@ class _TagContentPreviewState extends State<TagContentPreview> {
                                 icon: const Icon(Icons.list),
                                 onPressed: showTagPreviewsListDialog,
                               ),
+                            // "Videos / animated only" filter — appends the
+                            // `animated` tag to the query and refreshes the
+                            // strip. The `animated` tag is recognised by
+                            // almost every booru including Nozomi.
+                            IconButton(
+                              tooltip: onlyAnimated ? 'Show all' : 'Videos / GIFs only',
+                              icon: Icon(
+                                onlyAnimated ? Icons.movie : Icons.movie_outlined,
+                                color: onlyAnimated ? Theme.of(context).colorScheme.secondary : null,
+                              ),
+                              onPressed: () {
+                                setState(() {
+                                  onlyAnimated = !onlyAnimated;
+                                });
+                                loadPreview(refresh: true);
+                              },
+                            ),
                             Builder(
                               builder: (context) {
                                 final HasTabWithTagResult hasTabWithTag = SearchHandler.instance.hasTabWithTag(
-                                  widget.tag,
+                                  _effectiveTag,
                                   customBooru: selectedBooru,
                                 );
 
@@ -2424,7 +2427,7 @@ class _TagContentPreviewState extends State<TagContentPreview> {
                                         ? TabAddMode.next
                                         : TabAddMode.end;
                                     SearchHandler.instance.addTabByString(
-                                      widget.tag,
+                                      _effectiveTag,
                                       customBooru: selectedBooru,
                                       addMode: defaultMode,
                                     );
@@ -2438,7 +2441,7 @@ class _TagContentPreviewState extends State<TagContentPreview> {
                                         context.loc.tagView.addedNewTab,
                                         style: const TextStyle(fontSize: 20),
                                       ),
-                                      content: Text(widget.tag, style: const TextStyle(fontSize: 16)),
+                                      content: Text(_effectiveTag, style: const TextStyle(fontSize: 16)),
                                       leadingIcon: Icons.fiber_new,
                                       sideColor: Colors.green,
                                       primaryActionBuilder: (context, controller) {
@@ -2514,7 +2517,7 @@ class _TagContentPreviewState extends State<TagContentPreview> {
                                     // switch to the new tab. Same UX as the single-tap path:
                                     // a snackbar confirms it was added with a quick-jump arrow.
                                     SearchHandler.instance.addTabByString(
-                                      widget.tag,
+                                      _effectiveTag,
                                       customBooru: selectedBooru,
                                       addMode: chosenMode,
                                       switchToNew: false,
@@ -2530,7 +2533,7 @@ class _TagContentPreviewState extends State<TagContentPreview> {
                                         context.loc.tagView.addedNewTab,
                                         style: const TextStyle(fontSize: 20),
                                       ),
-                                      content: Text(widget.tag, style: const TextStyle(fontSize: 16)),
+                                      content: Text(_effectiveTag, style: const TextStyle(fontSize: 16)),
                                       leadingIcon: Icons.fiber_new,
                                       sideColor: Colors.green,
                                     );
