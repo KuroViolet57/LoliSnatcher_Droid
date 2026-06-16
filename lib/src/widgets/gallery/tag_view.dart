@@ -986,7 +986,17 @@ class _TagViewState extends State<TagView> {
                       ],
                     ),
                     onPressed: () {
-                      searchHandler.addTabByString(currentTag);
+                      final TabAddMode addMode = settingsHandler.defaultTabAddMode == 'next'
+                          ? TabAddMode.next
+                          : TabAddMode.end;
+                      // Capture the current index before inserting so the
+                      // snackbar's jump arrow targets the right tab even in
+                      // "next to current" mode (where it won't be at the end).
+                      final int indexBefore = searchHandler.currentIndex;
+                      searchHandler.addTabByString(currentTag, addMode: addMode);
+                      final int newTabIndex = addMode == TabAddMode.next
+                          ? indexBefore + 1
+                          : searchHandler.tabs.length - 1;
 
                       parseSortGroupTags();
 
@@ -1009,7 +1019,7 @@ class _TagViewState extends State<TagView> {
                                     Navigator.of(context).popUntil((route) => route.isFirst); // exit viewer
                                   }
                                   WidgetsBinding.instance.addPostFrameCallback((_) {
-                                    searchHandler.changeTabIndex(searchHandler.tabs.length - 1);
+                                    searchHandler.changeTabIndex(newTabIndex);
                                   });
                                   controller.dismiss();
                                 },
@@ -1030,11 +1040,14 @@ class _TagViewState extends State<TagView> {
                     },
                     onLongPress: () async {
                       await ServiceHandler.vibrate();
+                      final TabAddMode addMode = settingsHandler.defaultTabAddMode == 'next'
+                          ? TabAddMode.next
+                          : TabAddMode.end;
                       if (settingsHandler.appMode.value.isMobile) {
                         Navigator.of(context).popUntil((route) => route.isFirst); // exit viewer
                       }
                       WidgetsBinding.instance.addPostFrameCallback((_) {
-                        searchHandler.addTabByString(currentTag, switchToNew: true);
+                        searchHandler.addTabByString(currentTag, switchToNew: true, addMode: addMode);
                       });
                     },
                   ),
