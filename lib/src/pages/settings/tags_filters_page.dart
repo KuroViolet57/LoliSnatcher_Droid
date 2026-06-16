@@ -54,6 +54,48 @@ class _TagsFiltersPageState extends State<TagsFiltersPage> with SingleTickerProv
     }
   }
 
+  Future<void> _showBlacklistHelp() async {
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Blacklist syntax'),
+        content: const SingleChildScrollView(
+          child: Text(
+            'Each entry is a "line" in the e621-style blacklist. A post is hidden '
+            'if any line matches it.\n\n'
+            'Within a line, tokens are separated by spaces and combined with AND:\n\n'
+            '  male solo\n'
+            '    → hides posts that have BOTH male AND solo.\n\n'
+            'Prefix a token with - to require its absence:\n\n'
+            '  fox -wolf -lion\n'
+            '    → hides fox posts that have NEITHER wolf NOR lion.\n\n'
+            '  -female\n'
+            '    → hides every post WITHOUT the female tag.\n\n'
+            'Prefix tokens with ~ for OR (at least one must match):\n\n'
+            '  ~wolf ~lion\n'
+            '    → hides posts that have EITHER wolf OR lion.\n\n'
+            '  male ~wolf ~lion -fox\n'
+            '    → hides posts with male AND (wolf OR lion) AND NO fox.\n\n'
+            'Metatags also work:\n\n'
+            '  rating:e  rating:q  rating:s\n'
+            '  score:<0   score:>=100   score:50..100\n'
+            '  id:1234   width:>2000   filesize:>5mb\n'
+            '  username:someone   userid:1234   uploader:!1234\n\n'
+            'Lines starting with # are comments and ignored.\n\n'
+            'Tip: existing single-tag entries keep working — they are just lines '
+            'with one token.',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   void dispose() {
     tagSearchController.dispose();
@@ -64,6 +106,7 @@ class _TagsFiltersPageState extends State<TagsFiltersPage> with SingleTickerProv
 
   Future<void> _onPopInvoked(_, _) async {
     settingsHandler.hiddenTags = settingsHandler.cleanTagsList(hiddenList.map(Tag.new).toList()).toSet();
+    settingsHandler.invalidateBlacklistCache();
     settingsHandler.markedTags = settingsHandler.cleanTagsList(markedList.map(Tag.new).toList()).toSet();
     settingsHandler.filterHated = filterHated;
     settingsHandler.filterMarked = filterMarked;
@@ -170,6 +213,13 @@ class _TagsFiltersPageState extends State<TagsFiltersPage> with SingleTickerProv
         resizeToAvoidBottomInset: true,
         appBar: AppBar(
           title: Text(context.loc.settings.itemFilters.title),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.help_outline),
+              tooltip: 'Blacklist syntax',
+              onPressed: _showBlacklistHelp,
+            ),
+          ],
           bottom: TabBar(
             controller: tabController,
             indicatorColor: Theme.of(context).colorScheme.secondary,

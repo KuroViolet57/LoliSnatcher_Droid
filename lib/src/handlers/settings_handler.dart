@@ -18,6 +18,8 @@ import 'package:url_launcher/url_launcher_string.dart';
 import 'package:lolisnatcher/gen/strings.g.dart';
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
+import 'package:lolisnatcher/src/data/blacklist_line.dart';
+import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/constants.dart';
 import 'package:lolisnatcher/src/data/settings/app_alias.dart';
 import 'package:lolisnatcher/src/data/settings/app_mode.dart';
@@ -1736,6 +1738,7 @@ class SettingsHandler {
       for (int i = 0; i < hideTags.length; i++) {
         hiddenTags.add(hideTags.elementAt(i));
       }
+      invalidateBlacklistCache();
     } catch (e, s) {
       Logger.Inst().log(
         'Failed to parse hidden tags $e',
@@ -1761,6 +1764,7 @@ class SettingsHandler {
           if (tags.isNotEmpty) hiddenTagsPerBooru[boorus] = tags.toSet();
         });
       }
+      invalidateBlacklistCache();
     } catch (e, s) {
       Logger.Inst().log(
         'Failed to parse per-booru hidden tags $e',
@@ -2039,7 +2043,13 @@ class SettingsHandler {
 
   TagsListData parseTagsList(List<Tag> itemTags, {bool isCapped = true}) {
     final List<String> cleanItemTags = cleanTagsList(itemTags);
-    List<String> hiddenInItem = cleanItemTags.where(hiddenTags.contains).toList();
+    // For the visual "this tag is in your blacklist" indicator we check the
+    // tag against any plain-tag token mentioned in a global blacklist line.
+    // (Multi-token lines still don't surface per-tag, but at least the
+    // single-tag entries — which are what every existing user has — keep
+    // their badge.)
+    final Set<String> globalTokens = blacklistedTagTokens;
+    List<String> hiddenInItem = cleanItemTags.where(globalTokens.contains).toList();
     List<String> markedInItem = cleanItemTags.where(markedTags.contains).toList();
     final List<String> soundInItem = soundTags.where(cleanItemTags.contains).toList();
     final List<String> aiInItem = aiTags.where(cleanItemTags.contains).toList();
@@ -2057,7 +2067,24 @@ class SettingsHandler {
   }
 
   bool containsHidden(List<String> itemTags) {
-    return itemTags.any(hiddenTags.contains);
+    // Approximate — only checks plain-tag tokens from any global line.
+    // For the proper line-based evaluation (operators, metatags, per-booru
+    // scoping) callers should use [isItemHiddenForBooru].
+    final tokens = blacklistedTagTokens;
+    if (tokens.isEmpty) return false;
+    return itemTags.any(tokens.contains);
+  }
+
+  /// Proper line-based evaluation against the global blacklist only.
+  /// Use this from places that don't have per-booru context.
+  bool isItemHiddenGlobally(BooruItem item) {
+    final lines = globalBlacklistLines;
+    if (lines.isEmpty) return false;
+    final ctx = BlacklistContext.fromItem(item);
+    for (final line in lines) {
+      if (line.matches(ctx)) return true;
+    }
+    return false;
   }
 
   bool containsMarked(List<String> itemTags) {
@@ -2077,6 +2104,7 @@ class SettingsHandler {
       case 'hated':
       case 'hidden':
         hiddenTags.add(tag);
+        invalidateBlacklistCache();
         break;
       case 'loved':
       case 'marked':
@@ -2093,6 +2121,7 @@ class SettingsHandler {
       case 'hated':
       case 'hidden':
         hiddenTags.remove(tag);
+        invalidateBlacklistCache();
         break;
       case 'loved':
       case 'marked':
@@ -2120,6 +2149,7 @@ class SettingsHandler {
   void addTagToBooruHiddenList(String booruName, String tag) {
     if (booruName.isEmpty || tag.isEmpty) return;
     hiddenTagsPerBooru.putIfAbsent(booruName, () => <String>{}).add(tag);
+    invalidateBlacklistCache(booruName: booruName);
     saveSettings(restate: false);
   }
 
@@ -2128,16 +2158,62 @@ class SettingsHandler {
     if (set == null) return;
     set.remove(tag);
     if (set.isEmpty) hiddenTagsPerBooru.remove(booruName);
+    invalidateBlacklistCache(booruName: booruName);
     saveSettings(restate: false);
   }
 
-  /// True if the given item tags intersect any blacklist that applies to
-  /// `booru`. Honours the per-booru `ignoreGlobalBlacklist` toggle.
-  bool isItemHiddenForBooru(List<String> itemTags, Booru booru) {
-    final perBooru = hiddenTagsForBooru(booru.name);
-    if (perBooru.isNotEmpty && itemTags.any(perBooru.contains)) return true;
-    if (booru.ignoreGlobalBlacklist) return false;
-    return itemTags.any(hiddenTags.contains);
+  // ─── Blacklist line cache ────────────────────────────────────────────────
+  // Each entry in `hiddenTags` / `hiddenTagsPerBooru[name]` is treated as an
+  // e621-style blacklist line. We cache the parsed form so filtering N items
+  // doesn't re-tokenise the lines every time.
+
+  List<BlacklistLine>? _cachedGlobalLines;
+  final Map<String, List<BlacklistLine>> _cachedPerBooruLines = {};
+
+  List<BlacklistLine> get globalBlacklistLines {
+    return _cachedGlobalLines ??= parseBlacklist(hiddenTags);
+  }
+
+  List<BlacklistLine> blacklistLinesForBooru(String? booruName) {
+    if (booruName == null || booruName.isEmpty) return const [];
+    final set = hiddenTagsPerBooru[booruName];
+    if (set == null || set.isEmpty) return const [];
+    return _cachedPerBooruLines.putIfAbsent(booruName, () => parseBlacklist(set));
+  }
+
+  void invalidateBlacklistCache({String? booruName}) {
+    if (booruName == null) {
+      _cachedGlobalLines = null;
+      _cachedPerBooruLines.clear();
+    } else {
+      _cachedPerBooruLines.remove(booruName);
+    }
+  }
+
+  /// True if any blacklist line that applies to [booru] matches [item].
+  /// Honours the per-booru `ignoreGlobalBlacklist` toggle.
+  bool isItemHiddenForBooru(BooruItem item, Booru booru) {
+    final perBooru = blacklistLinesForBooru(booru.name);
+    final global = booru.ignoreGlobalBlacklist ? const <BlacklistLine>[] : globalBlacklistLines;
+    if (perBooru.isEmpty && global.isEmpty) return false;
+    final ctx = BlacklistContext.fromItem(item);
+    for (final line in perBooru) {
+      if (line.matches(ctx)) return true;
+    }
+    for (final line in global) {
+      if (line.matches(ctx)) return true;
+    }
+    return false;
+  }
+
+  /// All plain tag tokens referenced by any global blacklist line — used by
+  /// the UI to mark individual tag chips with the red eye-slash indicator.
+  Set<String> get blacklistedTagTokens {
+    final out = <String>{};
+    for (final line in globalBlacklistLines) {
+      out.addAll(line.plainTagTokens);
+    }
+    return out;
   }
 
   List<String> cleanTagsList(List<Tag> tags) {

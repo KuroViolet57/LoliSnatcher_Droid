@@ -102,9 +102,11 @@ class BooruItem extends Equatable {
     return fileAspectRatio != null && fileAspectRatio! < 0.3;
   }
 
-  bool get isHidden {
-    return SettingsHandler.instance.containsHidden(tagsList.map((t) => t.fullString).toList());
-  }
+  /// True if this item matches any line in the global e621-style blacklist.
+  /// Doesn't honour per-booru scoping (no booru context here); the actual
+  /// item-filter path in BooruHandler.filterFetched calls
+  /// [SettingsHandler.isItemHiddenForBooru], which does.
+  bool get isHidden => SettingsHandler.instance.isItemHiddenGlobally(this);
 
   bool get isMarked {
     return SettingsHandler.instance.containsMarked(tagsList.map((t) => t.fullString).toList());
