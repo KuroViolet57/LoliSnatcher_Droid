@@ -15,23 +15,35 @@ import 'package:lolisnatcher/src/utils/tools.dart';
 ///
 /// Android only provides a handful of hardware video decoders to any one app
 /// process; once exhausted, MediaCodec refuses to attach a new decoder and
-/// the next video either fails to start or the native layer aborts. The pool
-/// keeps that bounded: at any moment at most [_maxAlive] controllers are
-/// alive, and when a new one is registered the least-recently-touched view
-/// is asked to force-dispose its controller (releasing its decoder).
+/// the next video either fails to start or — worse — the native layer aborts
+/// the whole process (a hard crash Dart can't catch). The pool keeps the live
+/// decoder count strictly bounded.
 ///
-/// Why this is preferable to the simpler "dispose when off-screen" pattern:
-/// scroll-back to a recently visited video stays instant when its controller
-/// is still in the pool, and force-dispose only kicks in on the SAME push
-/// that allocates the new one, so we never accumulate idle decoders.
+/// Crucial ordering: we evict BEFORE the caller allocates its new controller
+/// (see [makeRoomFor]), so we never briefly hold `_maxAlive + 1` decoders.
+/// The earlier version evicted *after* registering the freshly-built
+/// controller, which meant a momentary 3-decoder spike — and that 3rd
+/// hardware decoder allocation is exactly what triggered the native abort
+/// when scrolling quickly through videos.
 class _BetterPlayerPool {
-  static const int _maxAlive = 2;
+  // 1 = only the visible video ever holds a hardware decoder. Safest against
+  // MediaCodec exhaustion; scroll-back re-inits from the (fast) byte cache.
+  static const int _maxAlive = 1;
   static final List<_BetterPlayerViewState> _lru = [];
+
+  /// Evict down so there's room for one more controller. Call this BEFORE
+  /// constructing a new BetterPlayerController.
+  static void makeRoomFor(_BetterPlayerViewState s) {
+    _lru.remove(s);
+    while (_lru.length >= _maxAlive) {
+      final old = _lru.removeAt(0);
+      old._forceDisposeFromPool();
+    }
+  }
 
   static void register(_BetterPlayerViewState s) {
     _lru.remove(s);
     _lru.add(s);
-    _evict();
   }
 
   static void unregister(_BetterPlayerViewState s) {
@@ -42,13 +54,6 @@ class _BetterPlayerPool {
     if (!_lru.contains(s)) return;
     _lru.remove(s);
     _lru.add(s);
-  }
-
-  static void _evict() {
-    while (_lru.length > _maxAlive) {
-      final old = _lru.removeAt(0);
-      old._forceDisposeFromPool();
-    }
   }
 }
 
@@ -186,11 +191,22 @@ class _BetterPlayerViewState extends State<BetterPlayerView> {
 
   Future<void> _initInner() async {
     final settings = SettingsHandler.instance;
+
+    // Free a decoder slot BEFORE we allocate ours, so the live hardware
+    // decoder count never exceeds the cap even momentarily. Then wait a beat
+    // for the evicted ExoPlayer's native release to actually settle —
+    // allocating a new MediaCodec while the old one is mid-release is a
+    // common cause of the native abort.
+    _BetterPlayerPool.makeRoomFor(this);
+    await Future.delayed(const Duration(milliseconds: 120));
+    if (!mounted || !_wantsPlayer || _controller != null) return;
+
     final headers = await Tools.getFileCustomHeaders(
       widget.booru,
       item: widget.booruItem,
       checkForReferer: true,
     );
+    if (!mounted || !_wantsPlayer || _controller != null) return;
 
     // Tuned for jittery mobile networks: start sooner (1.5 s buffered is
     // enough to begin), keep more in the buffer once we're going (60 s) so
