@@ -9,6 +9,48 @@ import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 
+/// Global LRU registry of live [BetterPlayerController]s across every
+/// [BetterPlayerView] currently on screen.
+///
+/// Android only provides a handful of hardware video decoders to any one app
+/// process; once exhausted, MediaCodec refuses to attach a new decoder and
+/// the next video either fails to start or the native layer aborts. The pool
+/// keeps that bounded: at any moment at most [_maxAlive] controllers are
+/// alive, and when a new one is registered the least-recently-touched view
+/// is asked to force-dispose its controller (releasing its decoder).
+///
+/// Why this is preferable to the simpler "dispose when off-screen" pattern:
+/// scroll-back to a recently visited video stays instant when its controller
+/// is still in the pool, and force-dispose only kicks in on the SAME push
+/// that allocates the new one, so we never accumulate idle decoders.
+class _BetterPlayerPool {
+  static const int _maxAlive = 2;
+  static final List<_BetterPlayerViewState> _lru = [];
+
+  static void register(_BetterPlayerViewState s) {
+    _lru.remove(s);
+    _lru.add(s);
+    _evict();
+  }
+
+  static void unregister(_BetterPlayerViewState s) {
+    _lru.remove(s);
+  }
+
+  static void touch(_BetterPlayerViewState s) {
+    if (!_lru.contains(s)) return;
+    _lru.remove(s);
+    _lru.add(s);
+  }
+
+  static void _evict() {
+    while (_lru.length > _maxAlive) {
+      final old = _lru.removeAt(0);
+      old._forceDisposeFromPool();
+    }
+  }
+}
+
 /// Experimental alternative to `VideoViewer` backed by `better_player_plus`,
 /// which exposes the ExoPlayer buffer/cache tuning that the stock Flutter
 /// `video_player` plugin hides. Selected via SettingsHandler.useBetterPlayer.
@@ -38,15 +80,21 @@ class _BetterPlayerViewState extends State<BetterPlayerView> {
   double? _windowedRatio;
   bool _wasFullScreen = false;
 
-  // Android can only run a handful of hardware video decoders at once
-  // (MediaCodec). Each better_player controller holds one ExoPlayer decoder,
-  // so we (a) only ever keep a decoder alive for a page that's actually being
-  // viewed (dispose when it scrolls off-screen), and (b) debounce creation so
-  // pages we merely scroll *through* don't each spin up — and then leak — a
-  // decoder. Without this, fast scrolling exhausts MediaCodec and the next
-  // video fails to load or the app hard-crashes natively.
+  // Android can only run a handful of hardware video decoders (MediaCodec)
+  // at once. Each better_player controller holds one ExoPlayer decoder.
+  // Without a global cap, fast scrolling spins up new decoders faster than
+  // they release → MediaCodec exhaustion → the next video fails to load or
+  // the app hard-crashes natively.
+  //
+  // Strategy:
+  //   - Hard cap (`_BetterPlayerPool._maxAlive`) controllers alive across
+  //     the whole app via `_BetterPlayerPool` (LRU-evicting force-dispose).
+  //   - Pause-on-offscreen (not full dispose) so scrolling back to a recently
+  //     viewed page is instant — the controller stays alive in the pool.
+  //   - Debounce creation so pages the user is just swiping past don't each
+  //     spin up a controller mid-flight.
   Timer? _initDebounce;
-  static const Duration _initDelay = Duration(milliseconds: 280);
+  static const Duration _initDelay = Duration(milliseconds: 250);
 
   bool get _wantsPlayer => widget.isViewed || SettingsHandler.instance.preloadVideos;
 
@@ -72,13 +120,20 @@ class _BetterPlayerViewState extends State<BetterPlayerView> {
       if (widget.isViewed) {
         if (_controller == null) {
           _scheduleInit();
-        } else if (SettingsHandler.instance.autoPlayEnabled) {
-          _controller?.play();
+        } else {
+          // Already-alive controller is back on-screen — make sure the pool
+          // knows it's the most-recently-used so it isn't the next to evict.
+          _BetterPlayerPool.touch(this);
+          if (SettingsHandler.instance.autoPlayEnabled) {
+            _controller?.play();
+          }
         }
       } else {
-        // Page scrolled off-screen: free the hardware decoder entirely rather
-        // than just pausing. Re-created (from cache, fast) when scrolled back.
-        _disposeController();
+        // Page scrolled off-screen: pause (don't dispose). The pool will
+        // force-dispose the least-recently-used controller when the cap is
+        // hit, so the decoder count stays bounded but recent ones survive
+        // for instant scroll-back.
+        _controller?.pause();
       }
     }
   }
@@ -89,6 +144,16 @@ class _BetterPlayerViewState extends State<BetterPlayerView> {
       if (!mounted || !_wantsPlayer || _controller != null) return;
       _init();
     });
+  }
+
+  /// Called by [_BetterPlayerPool] when it needs to evict this view's
+  /// controller to free a decoder slot. Tears down the controller without
+  /// killing the widget itself; the widget will be allowed to re-init if it
+  /// later becomes the active page again.
+  void _forceDisposeFromPool() {
+    if (!mounted) return;
+    _disposeControllerInternal(unregister: false);
+    setState(() {});
   }
 
   Future<void> _init() async {
@@ -111,11 +176,15 @@ class _BetterPlayerViewState extends State<BetterPlayerView> {
     );
 
     // Use ExoPlayer's built-in HTTP cache — same cache lives across the app,
-    // so a partial re-watch / scrub doesn't re-hit the CDN.
+    // so a partial re-watch / scrub doesn't re-hit the CDN. Size is
+    // user-configurable via Settings -> Video.
+    final int totalCacheBytes = settings.betterPlayerCacheMb * 1024 * 1024;
+    final int perFileCacheBytes = settings.betterPlayerPerFileMb * 1024 * 1024;
+    final bool cacheEnabled = settings.mediaCache && totalCacheBytes > 0;
     final cache = BetterPlayerCacheConfiguration(
-      useCache: settings.mediaCache,
-      maxCacheSize: 500 * 1024 * 1024,
-      maxCacheFileSize: 100 * 1024 * 1024,
+      useCache: cacheEnabled,
+      maxCacheSize: totalCacheBytes,
+      maxCacheFileSize: perFileCacheBytes,
       preCacheSize: 3 * 1024 * 1024,
       key: widget.booruItem.fileURL,
     );
@@ -186,6 +255,9 @@ class _BetterPlayerViewState extends State<BetterPlayerView> {
     setState(() {
       _controller = controller;
     });
+    // Register with the global pool so we (or whoever scrolls in next) can
+    // evict the oldest live controller if we'd otherwise exceed the cap.
+    _BetterPlayerPool.register(this);
     if (settings.startVideosMuted) {
       await controller.setVolume(0);
     }
@@ -206,13 +278,18 @@ class _BetterPlayerViewState extends State<BetterPlayerView> {
     }
   }
 
-  void _disposeController() {
+  void _disposeController() => _disposeControllerInternal(unregister: true);
+
+  void _disposeControllerInternal({required bool unregister}) {
     _initDebounce?.cancel();
     _initDebounce = null;
     final c = _controller;
     _controller = null;
     _windowedRatio = null;
     _wasFullScreen = false;
+    if (unregister) {
+      _BetterPlayerPool.unregister(this);
+    }
     c?.removeEventsListener(_onPlayerEvent);
     c?.pause();
     c?.dispose();

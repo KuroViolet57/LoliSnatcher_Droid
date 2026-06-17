@@ -24,6 +24,8 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
   bool startVideosMuted = false;
   bool disableVideo = false;
   bool useBetterPlayer = false;
+  final TextEditingController betterPlayerCacheMbController = TextEditingController();
+  final TextEditingController betterPlayerPerFileMbController = TextEditingController();
   bool altVideoPlayerHwAccel = true;
   VideoBackendMode videoBackendMode = SettingsHandler.isDesktopPlatform
       ? VideoBackendMode.mpv
@@ -40,6 +42,8 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
     startVideosMuted = settingsHandler.startVideosMuted;
     disableVideo = settingsHandler.disableVideo;
     useBetterPlayer = settingsHandler.useBetterPlayer;
+    betterPlayerCacheMbController.text = settingsHandler.betterPlayerCacheMb.toString();
+    betterPlayerPerFileMbController.text = settingsHandler.betterPlayerPerFileMb.toString();
     videoBackendMode = settingsHandler.videoBackendMode;
     altVideoPlayerHwAccel = settingsHandler.altVideoPlayerHwAccel;
     altVideoPlayerVO = settingsHandler.altVideoPlayerVO;
@@ -52,6 +56,10 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
     settingsHandler.startVideosMuted = startVideosMuted;
     settingsHandler.disableVideo = disableVideo;
     settingsHandler.useBetterPlayer = useBetterPlayer;
+    settingsHandler.betterPlayerCacheMb =
+        (int.tryParse(betterPlayerCacheMbController.text) ?? 500).clamp(0, 50000);
+    settingsHandler.betterPlayerPerFileMb =
+        (int.tryParse(betterPlayerPerFileMbController.text) ?? 100).clamp(0, 50000);
     settingsHandler.videoBackendMode = SettingsHandler.isDesktopPlatform ? VideoBackendMode.mpv : videoBackendMode;
     settingsHandler.altVideoPlayerHwAccel = altVideoPlayerHwAccel;
     settingsHandler.altVideoPlayerVO = altVideoPlayerVO;
@@ -154,6 +162,32 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
                     "Swaps the default video pipeline for better_player_plus, which exposes ExoPlayer's buffer and HTTP-cache tuning. Helps with the stall-buffer-stall cycle on jittery CDNs. Disables LoliControls-specific features (long-tap fast-forward) and the MPV fallback path while on. Restart the viewer for changes to take effect.",
                   ),
                 ),
+              if (!SettingsHandler.isDesktopPlatform && useBetterPlayer) ...[
+                SettingsTextInput(
+                  controller: betterPlayerCacheMbController,
+                  title: 'better_player video cache (MB)',
+                  hintText: '500',
+                  inputType: TextInputType.number,
+                  numberStep: 100,
+                  numberButtons: true,
+                  resetText: () => '500',
+                  subtitle: const Text(
+                    'Total on-disk cache for the better_player engine. Recently-watched videos serve from here on rewatch / scroll-back without re-hitting the CDN. 0 disables. Default 500. Bump higher (e.g. 2000-5000) if you have spare storage and want long browsing sessions to stay snappy.',
+                  ),
+                ),
+                SettingsTextInput(
+                  controller: betterPlayerPerFileMbController,
+                  title: 'better_player cache size per video (MB)',
+                  hintText: '100',
+                  inputType: TextInputType.number,
+                  numberStep: 50,
+                  numberButtons: true,
+                  resetText: () => '100',
+                  subtitle: const Text(
+                    'Per-file cap. Stops a single very long video from eating the whole cache pool.',
+                  ),
+                ),
+              ],
               if (!SettingsHandler.isDesktopPlatform)
                 SettingsDropdown(
                   value: videoBackendMode,

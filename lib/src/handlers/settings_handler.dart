@@ -175,6 +175,12 @@ class SettingsHandler {
   // tuning, which Flutter's default plugin hides. Off by default so the
   // tried-and-true engine stays the safe path.
   bool useBetterPlayer = false;
+  // ExoPlayer on-disk cache size for the better_player engine, in MB.
+  // 0 disables. Default 500 MB; bumping this means more recently-watched
+  // videos serve from disk on rewatch / scroll-back without re-hitting the
+  // CDN. The per-file cap protects a single huge video from eating the pool.
+  int betterPlayerCacheMb = 500;
+  int betterPlayerPerFileMb = 100;
   // Inline "more from this artist / uploader" thumbnail grids in the
   // post-details drawer. Mirrors Boorusama's pattern. On by default.
   bool inlineRelatedGrids = true;
@@ -569,6 +575,14 @@ class SettingsHandler {
     'useBetterPlayer': {
       'type': 'bool',
       'default': false,
+    },
+    'betterPlayerCacheMb': {
+      'type': 'int',
+      'default': 500,
+    },
+    'betterPlayerPerFileMb': {
+      'type': 'int',
+      'default': 100,
     },
     'inlineRelatedGrids': {
       'type': 'bool',
@@ -1125,6 +1139,10 @@ class SettingsHandler {
         return preloadVideos;
       case 'useBetterPlayer':
         return useBetterPlayer;
+      case 'betterPlayerCacheMb':
+        return betterPlayerCacheMb;
+      case 'betterPlayerPerFileMb':
+        return betterPlayerPerFileMb;
       case 'inlineRelatedGrids':
         return inlineRelatedGrids;
       case 'defaultTabAddMode':
@@ -1363,6 +1381,12 @@ class SettingsHandler {
         break;
       case 'useBetterPlayer':
         useBetterPlayer = validatedValue;
+        break;
+      case 'betterPlayerCacheMb':
+        betterPlayerCacheMb = (validatedValue as int).clamp(0, 50000);
+        break;
+      case 'betterPlayerPerFileMb':
+        betterPlayerPerFileMb = (validatedValue as int).clamp(0, 50000);
         break;
       case 'inlineRelatedGrids':
         inlineRelatedGrids = validatedValue;
