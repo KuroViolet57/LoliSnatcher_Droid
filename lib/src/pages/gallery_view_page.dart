@@ -358,7 +358,9 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
                             scrollDirection: settingsHandler.galleryScrollDirection.isVertical
                                 ? Axis.vertical
                                 : Axis.horizontal,
-                            physics: const AlwaysScrollableScrollPhysics(parent: ClampingScrollPhysics()),
+                            physics: const AlwaysScrollableScrollPhysics(
+                              parent: _SnappyPageSpringPhysics(parent: ClampingScrollPhysics()),
+                            ),
                             itemCount: filteredFetched.length,
                             itemBuilder: (context, index) {
                               final BooruItem item = widget.tab.booruHandler.filteredFetched[index];
@@ -910,4 +912,26 @@ class _ItemInfoDrawerState extends State<ItemInfoDrawer> {
       ),
     );
   }
+}
+
+/// Stiffer page-snap spring so swiping between posts settles quickly instead
+/// of the default "buttery"/floaty glide. PreloadPageView resolves its
+/// page-snap [spring] through the physics parent chain, so overriding [spring]
+/// here is enough — we don't need to reimplement the ballistic simulation.
+class _SnappyPageSpringPhysics extends ScrollPhysics {
+  const _SnappyPageSpringPhysics({super.parent});
+
+  @override
+  _SnappyPageSpringPhysics applyTo(ScrollPhysics? ancestor) {
+    return _SnappyPageSpringPhysics(parent: buildParent(ancestor));
+  }
+
+  // Default page spring is roughly mass 0.5 / stiffness 100 / ratio 1.1.
+  // Lighter + stiffer = a faster, snappier settle with no overshoot.
+  @override
+  SpringDescription get spring => SpringDescription.withDampingRatio(
+    mass: 0.32,
+    stiffness: 230,
+    ratio: 1.1,
+  );
 }

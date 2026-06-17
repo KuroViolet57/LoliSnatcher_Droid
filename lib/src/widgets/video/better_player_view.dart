@@ -35,7 +35,8 @@ class BetterPlayerView extends StatefulWidget {
 
 class _BetterPlayerViewState extends State<BetterPlayerView> {
   BetterPlayerController? _controller;
-  double? _lastBoxRatio;
+  double? _windowedRatio;
+  bool _wasFullScreen = false;
 
   @override
   void initState() {
@@ -148,6 +149,18 @@ class _BetterPlayerViewState extends State<BetterPlayerView> {
       controller.dispose();
       return;
     }
+
+    // Apply the screen-filling box ratio BEFORE the first build so the loading
+    // surface already covers the screen — no "small black box then snap to
+    // full res" when the first frame arrives.
+    final size = MediaQuery.sizeOf(context);
+    _windowedRatio = size.height == 0 ? 16 / 9 : size.width / size.height;
+    controller.setOverriddenAspectRatio(_windowedRatio!);
+
+    // Re-assert the windowed box ratio when returning from fullscreen —
+    // otherwise the player snaps back to its default tiny 16:9 box.
+    controller.addEventsListener(_onPlayerEvent);
+
     setState(() {
       _controller = controller;
     });
@@ -156,10 +169,27 @@ class _BetterPlayerViewState extends State<BetterPlayerView> {
     }
   }
 
+  void _onPlayerEvent(BetterPlayerEvent event) {
+    if (event.betterPlayerEventType == BetterPlayerEventType.hideFullscreen) {
+      final controller = _controller;
+      final ratio = _windowedRatio;
+      if (controller != null && ratio != null) {
+        // Defer one frame so the windowed route is back in the tree.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && !controller.isFullScreen) {
+            controller.setOverriddenAspectRatio(ratio);
+          }
+        });
+      }
+    }
+  }
+
   void _disposeController() {
     final c = _controller;
     _controller = null;
-    _lastBoxRatio = null;
+    _windowedRatio = null;
+    _wasFullScreen = false;
+    c?.removeEventsListener(_onPlayerEvent);
     c?.pause();
     c?.dispose();
   }
@@ -177,16 +207,20 @@ class _BetterPlayerViewState extends State<BetterPlayerView> {
       return const Material(color: Colors.black, child: SizedBox.expand());
     }
 
-    // Make the player's internal box fill the screen so the video covers the
-    // whole area (with letterboxing via fit: contain) instead of being pinned
-    // to a tiny 16:9 box. better_player lays the player out inside an
-    // AspectRatio sized by getAspectRatio(); overriding it to the current
-    // screen ratio is what fills the screen — exactly like the native player.
-    if (!controller.isFullScreen) {
+    // Keep the windowed box ratio matched to the screen (handles orientation
+    // changes and re-asserts after a fullscreen round-trip). better_player
+    // lays its surface out inside an AspectRatio sized by getAspectRatio();
+    // overriding it to the screen ratio + fit:contain is what fills the
+    // screen — exactly like the native player.
+    final bool isFs = controller.isFullScreen;
+    if (!isFs) {
       final size = MediaQuery.sizeOf(context);
       final double screenRatio = size.height == 0 ? 16 / 9 : size.width / size.height;
-      if (_lastBoxRatio == null || (_lastBoxRatio! - screenRatio).abs() > 0.001) {
-        _lastBoxRatio = screenRatio;
+      final bool justExitedFs = _wasFullScreen;
+      if (_windowedRatio == null ||
+          (_windowedRatio! - screenRatio).abs() > 0.001 ||
+          justExitedFs) {
+        _windowedRatio = screenRatio;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted && !controller.isFullScreen) {
             controller.setOverriddenAspectRatio(screenRatio);
@@ -194,6 +228,7 @@ class _BetterPlayerViewState extends State<BetterPlayerView> {
         });
       }
     }
+    _wasFullScreen = isFs;
 
     return Material(
       color: Colors.black,
