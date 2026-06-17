@@ -38,11 +38,23 @@ class _BetterPlayerViewState extends State<BetterPlayerView> {
   double? _windowedRatio;
   bool _wasFullScreen = false;
 
+  // Android can only run a handful of hardware video decoders at once
+  // (MediaCodec). Each better_player controller holds one ExoPlayer decoder,
+  // so we (a) only ever keep a decoder alive for a page that's actually being
+  // viewed (dispose when it scrolls off-screen), and (b) debounce creation so
+  // pages we merely scroll *through* don't each spin up — and then leak — a
+  // decoder. Without this, fast scrolling exhausts MediaCodec and the next
+  // video fails to load or the app hard-crashes natively.
+  Timer? _initDebounce;
+  static const Duration _initDelay = Duration(milliseconds: 280);
+
+  bool get _wantsPlayer => widget.isViewed || SettingsHandler.instance.preloadVideos;
+
   @override
   void initState() {
     super.initState();
-    if (widget.isViewed || SettingsHandler.instance.preloadVideos) {
-      _init();
+    if (_wantsPlayer) {
+      _scheduleInit();
     }
   }
 
@@ -53,20 +65,30 @@ class _BetterPlayerViewState extends State<BetterPlayerView> {
     final bool itemChanged = oldWidget.booruItem != widget.booruItem;
     if (itemChanged) {
       _disposeController();
-      if (widget.isViewed || SettingsHandler.instance.preloadVideos) {
-        _init();
+      if (_wantsPlayer) {
+        _scheduleInit();
       }
     } else if (oldWidget.isViewed != widget.isViewed) {
       if (widget.isViewed) {
         if (_controller == null) {
-          _init();
+          _scheduleInit();
         } else if (SettingsHandler.instance.autoPlayEnabled) {
           _controller?.play();
         }
       } else {
-        _controller?.pause();
+        // Page scrolled off-screen: free the hardware decoder entirely rather
+        // than just pausing. Re-created (from cache, fast) when scrolled back.
+        _disposeController();
       }
     }
+  }
+
+  void _scheduleInit() {
+    _initDebounce?.cancel();
+    _initDebounce = Timer(_initDelay, () {
+      if (!mounted || !_wantsPlayer || _controller != null) return;
+      _init();
+    });
   }
 
   Future<void> _init() async {
@@ -185,6 +207,8 @@ class _BetterPlayerViewState extends State<BetterPlayerView> {
   }
 
   void _disposeController() {
+    _initDebounce?.cancel();
+    _initDebounce = null;
     final c = _controller;
     _controller = null;
     _windowedRatio = null;
