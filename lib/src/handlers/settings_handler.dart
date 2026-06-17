@@ -579,10 +579,16 @@ class SettingsHandler {
     'betterPlayerCacheMb': {
       'type': 'int',
       'default': 500,
+      'step': 100,
+      'lowerLimit': 0,
+      'upperLimit': 50000,
     },
     'betterPlayerPerFileMb': {
       'type': 'int',
       'default': 100,
+      'step': 50,
+      'lowerLimit': 0,
+      'upperLimit': 50000,
     },
     'inlineRelatedGrids': {
       'type': 'bool',
