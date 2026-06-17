@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 
 /// Global LRU registry of live [BetterPlayerController]s across every
@@ -152,11 +153,38 @@ class _BetterPlayerViewState extends State<BetterPlayerView> {
   /// later becomes the active page again.
   void _forceDisposeFromPool() {
     if (!mounted) return;
+    Logger.Inst().log(
+      'pool-evicted, force-disposing controller for ${widget.booruItem.fileURL}',
+      'BetterPlayerView',
+      '_forceDisposeFromPool',
+      LogTypes.booruItemLoad,
+    );
     _disposeControllerInternal(unregister: false);
     setState(() {});
   }
 
   Future<void> _init() async {
+    Logger.Inst().log(
+      'init for ${widget.booruItem.fileURL} '
+      '(isViewed=${widget.isViewed}, pool=${_BetterPlayerPool._lru.length}/${_BetterPlayerPool._maxAlive})',
+      'BetterPlayerView',
+      '_init',
+      LogTypes.booruItemLoad,
+    );
+    try {
+      await _initInner();
+    } catch (e, s) {
+      Logger.Inst().log(
+        'init threw for ${widget.booruItem.fileURL}: $e',
+        'BetterPlayerView',
+        '_init',
+        LogTypes.exception,
+        s: s,
+      );
+    }
+  }
+
+  Future<void> _initInner() async {
     final settings = SettingsHandler.instance;
     final headers = await Tools.getFileCustomHeaders(
       widget.booru,
@@ -223,16 +251,24 @@ class _BetterPlayerViewState extends State<BetterPlayerView> {
       autoDetectFullscreenAspectRatio: true,
       autoDetectFullscreenDeviceOrientation: true,
       controlsConfiguration: controlsConfig,
-      errorBuilder: (context, errorMessage) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(
-            errorMessage ?? 'Playback error',
-            style: const TextStyle(color: Colors.white),
-            textAlign: TextAlign.center,
+      errorBuilder: (context, errorMessage) {
+        Logger.Inst().log(
+          'errorBuilder fired for ${widget.booruItem.fileURL}: $errorMessage',
+          'BetterPlayerView',
+          'errorBuilder',
+          LogTypes.exception,
+        );
+        return Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text(
+              errorMessage ?? 'Playback error',
+              style: const TextStyle(color: Colors.white),
+              textAlign: TextAlign.center,
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
 
     final controller = BetterPlayerController(config, betterPlayerDataSource: dataSource);
@@ -264,7 +300,34 @@ class _BetterPlayerViewState extends State<BetterPlayerView> {
   }
 
   void _onPlayerEvent(BetterPlayerEvent event) {
-    if (event.betterPlayerEventType == BetterPlayerEventType.hideFullscreen) {
+    final type = event.betterPlayerEventType;
+
+    // Surface noteworthy events into the in-app talker log so users can
+    // share a full event trail when reporting a playback hang/crash via
+    // Settings → Debug → Share logs. Skip the spammy ones (progress, etc.).
+    switch (type) {
+      case BetterPlayerEventType.exception:
+      case BetterPlayerEventType.openFullscreen:
+      case BetterPlayerEventType.hideFullscreen:
+      case BetterPlayerEventType.bufferingStart:
+      case BetterPlayerEventType.bufferingEnd:
+      case BetterPlayerEventType.initialized:
+      case BetterPlayerEventType.finished:
+      case BetterPlayerEventType.setupDataSource:
+        final isError = type == BetterPlayerEventType.exception;
+        Logger.Inst().log(
+          'better_player event ${type.name} '
+          '(url=${widget.booruItem.fileURL}, params=${event.parameters})',
+          'BetterPlayerView',
+          '_onPlayerEvent',
+          isError ? LogTypes.exception : LogTypes.booruItemLoad,
+        );
+        break;
+      default:
+        break;
+    }
+
+    if (type == BetterPlayerEventType.hideFullscreen) {
       final controller = _controller;
       final ratio = _windowedRatio;
       if (controller != null && ratio != null) {
@@ -287,6 +350,15 @@ class _BetterPlayerViewState extends State<BetterPlayerView> {
     _controller = null;
     _windowedRatio = null;
     _wasFullScreen = false;
+    if (c != null) {
+      Logger.Inst().log(
+        'dispose controller for ${widget.booruItem.fileURL} '
+        '(unregister=$unregister, pool=${_BetterPlayerPool._lru.length})',
+        'BetterPlayerView',
+        '_disposeControllerInternal',
+        LogTypes.booruItemLoad,
+      );
+    }
     if (unregister) {
       _BetterPlayerPool.unregister(this);
     }
