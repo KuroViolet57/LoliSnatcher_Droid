@@ -32,6 +32,7 @@ import 'package:lolisnatcher/src/widgets/image/image_viewer.dart';
 import 'package:lolisnatcher/src/widgets/video/guess_extension_viewer.dart';
 import 'package:lolisnatcher/src/widgets/video/load_item_viewer.dart';
 import 'package:lolisnatcher/src/widgets/video/better_player_view.dart';
+import 'package:lolisnatcher/src/widgets/video/media_kit_player_view.dart';
 import 'package:lolisnatcher/src/widgets/video/video_viewer_placeholder.dart';
 import 'package:lolisnatcher/src/widgets/video/video_viewer.dart';
 
@@ -426,11 +427,21 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
                                       itemWidget = ValueListenableBuilder(
                                         valueListenable: page,
                                         builder: (_, pageVal, _) {
+                                          final usedBooru = possibleBooru ?? widget.tab.booruHandler.booru;
+                                          // Experimental media_kit (libmpv) path takes precedence.
+                                          if (settingsHandler.useMediaKitPlayer && Platform.isAndroid) {
+                                            return MediaKitPlayerView(
+                                              item,
+                                              booru: usedBooru,
+                                              isViewed: pageVal == index,
+                                              key: item.key,
+                                            );
+                                          }
                                           // Experimental better_player_plus path; behind a setting.
                                           if (settingsHandler.useBetterPlayer && Platform.isAndroid) {
                                             return BetterPlayerView(
                                               item,
-                                              booru: possibleBooru ?? widget.tab.booruHandler.booru,
+                                              booru: usedBooru,
                                               isViewed: pageVal == index,
                                               key: item.key,
                                             );

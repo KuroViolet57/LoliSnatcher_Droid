@@ -175,6 +175,11 @@ class SettingsHandler {
   // tuning, which Flutter's default plugin hides. Off by default so the
   // tried-and-true engine stays the safe path.
   bool useBetterPlayer = false;
+  // Experimental media_kit (libmpv) engine. Not ExoPlayer/MediaCodec-based,
+  // so it sidesteps the hardware-decoder-exhaustion crashes; libmpv manages
+  // its own decoding (with software fallback). Takes precedence over
+  // useBetterPlayer when both are on.
+  bool useMediaKitPlayer = false;
   // ExoPlayer on-disk cache size for the better_player engine, in MB.
   // 0 disables. Default 500 MB; bumping this means more recently-watched
   // videos serve from disk on rewatch / scroll-back without re-hitting the
@@ -573,6 +578,10 @@ class SettingsHandler {
       'default': false,
     },
     'useBetterPlayer': {
+      'type': 'bool',
+      'default': false,
+    },
+    'useMediaKitPlayer': {
       'type': 'bool',
       'default': false,
     },
@@ -1145,6 +1154,8 @@ class SettingsHandler {
         return preloadVideos;
       case 'useBetterPlayer':
         return useBetterPlayer;
+      case 'useMediaKitPlayer':
+        return useMediaKitPlayer;
       case 'betterPlayerCacheMb':
         return betterPlayerCacheMb;
       case 'betterPlayerPerFileMb':
@@ -1387,6 +1398,9 @@ class SettingsHandler {
         break;
       case 'useBetterPlayer':
         useBetterPlayer = validatedValue;
+        break;
+      case 'useMediaKitPlayer':
+        useMediaKitPlayer = validatedValue;
         break;
       case 'betterPlayerCacheMb':
         betterPlayerCacheMb = (validatedValue as int).clamp(0, 50000);

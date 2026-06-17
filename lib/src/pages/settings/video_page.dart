@@ -24,6 +24,7 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
   bool startVideosMuted = false;
   bool disableVideo = false;
   bool useBetterPlayer = false;
+  bool useMediaKitPlayer = false;
   final TextEditingController betterPlayerCacheMbController = TextEditingController();
   final TextEditingController betterPlayerPerFileMbController = TextEditingController();
   bool altVideoPlayerHwAccel = true;
@@ -42,6 +43,7 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
     startVideosMuted = settingsHandler.startVideosMuted;
     disableVideo = settingsHandler.disableVideo;
     useBetterPlayer = settingsHandler.useBetterPlayer;
+    useMediaKitPlayer = settingsHandler.useMediaKitPlayer;
     betterPlayerCacheMbController.text = settingsHandler.betterPlayerCacheMb.toString();
     betterPlayerPerFileMbController.text = settingsHandler.betterPlayerPerFileMb.toString();
     videoBackendMode = settingsHandler.videoBackendMode;
@@ -56,6 +58,7 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
     settingsHandler.startVideosMuted = startVideosMuted;
     settingsHandler.disableVideo = disableVideo;
     settingsHandler.useBetterPlayer = useBetterPlayer;
+    settingsHandler.useMediaKitPlayer = useMediaKitPlayer;
     settingsHandler.betterPlayerCacheMb =
         (int.tryParse(betterPlayerCacheMbController.text) ?? 500).clamp(0, 50000);
     settingsHandler.betterPlayerPerFileMb =
@@ -148,6 +151,20 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
                 name: context.loc.settings.video.experimental,
                 icon: const Icon(Icons.science),
               ),
+              if (!SettingsHandler.isDesktopPlatform)
+                SettingsToggle(
+                  value: useMediaKitPlayer,
+                  onChanged: (newValue) {
+                    setState(() {
+                      useMediaKitPlayer = newValue;
+                    });
+                  },
+                  title: 'Use media_kit engine (experimental)',
+                  leadingIcon: const Icon(Icons.bolt),
+                  subtitle: const Text(
+                    'A completely separate video engine built on media_kit (libmpv) instead of ExoPlayer. libmpv manages its own decoders with software fallback, so it sidesteps the hardware-decoder-exhaustion crashes that can happen when scrolling fast through many videos. Same custom controls (tap, double-tap to skip, scrubber, fullscreen). Takes precedence over better_player when both are on. Restart the viewer for changes to take effect.',
+                  ),
+                ),
               if (!SettingsHandler.isDesktopPlatform)
                 SettingsToggle(
                   value: useBetterPlayer,
