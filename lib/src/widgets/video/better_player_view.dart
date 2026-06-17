@@ -57,6 +57,35 @@ class _BetterPlayerPool {
   }
 }
 
+/// Process-wide serialization gate for ExoPlayer decoder lifecycle.
+///
+/// ExoPlayer's `release()` is async on the native side — `dispose()` returns
+/// to Dart immediately while MediaCodec is still tearing the decoder down.
+/// During a fast scroll, multiple `_init`s can run concurrently, so a new
+/// decoder gets allocated while a previous one is mid-release. That overlap
+/// is what aborts the process (a hard native crash Dart can't catch).
+///
+/// Every create/teardown sequence runs through [run], which chains operations
+/// so only ONE is ever in flight across the whole app. No interleaving →
+/// no concurrent allocate-while-releasing → no abort.
+class _DecoderGate {
+  static Future<void> _tail = Future<void>.value();
+
+  static Future<void> run(Future<void> Function() action) {
+    final completer = Completer<void>();
+    final prev = _tail;
+    _tail = completer.future;
+    prev.whenComplete(() async {
+      try {
+        await action();
+      } finally {
+        completer.complete();
+      }
+    });
+    return completer.future;
+  }
+}
+
 /// Experimental alternative to `VideoViewer` backed by `better_player_plus`,
 /// which exposes the ExoPlayer buffer/cache tuning that the stock Flutter
 /// `video_player` plugin hides. Selected via SettingsHandler.useBetterPlayer.
@@ -176,29 +205,34 @@ class _BetterPlayerViewState extends State<BetterPlayerView> {
       '_init',
       LogTypes.booruItemLoad,
     );
-    try {
-      await _initInner();
-    } catch (e, s) {
-      Logger.Inst().log(
-        'init threw for ${widget.booruItem.fileURL}: $e',
-        'BetterPlayerView',
-        '_init',
-        LogTypes.exception,
-        s: s,
-      );
-    }
+    // Serialize the whole create sequence (evict old + settle + allocate new)
+    // through the global decoder gate so it can never overlap another view's
+    // teardown/creation. This is the actual fix for the native abort.
+    await _DecoderGate.run(() async {
+      try {
+        await _initInner();
+      } catch (e, s) {
+        Logger.Inst().log(
+          'init threw for ${widget.booruItem.fileURL}: $e',
+          'BetterPlayerView',
+          '_init',
+          LogTypes.exception,
+          s: s,
+        );
+      }
+    });
   }
 
   Future<void> _initInner() async {
     final settings = SettingsHandler.instance;
 
     // Free a decoder slot BEFORE we allocate ours, so the live hardware
-    // decoder count never exceeds the cap even momentarily. Then wait a beat
-    // for the evicted ExoPlayer's native release to actually settle —
-    // allocating a new MediaCodec while the old one is mid-release is a
-    // common cause of the native abort.
+    // decoder count never exceeds the cap even momentarily. Then wait for the
+    // evicted ExoPlayer's native release to actually settle — allocating a new
+    // MediaCodec while the old one is mid-release is a common abort trigger.
+    // (We're inside the gate, so nothing else is creating/disposing meanwhile.)
     _BetterPlayerPool.makeRoomFor(this);
-    await Future.delayed(const Duration(milliseconds: 120));
+    await Future.delayed(const Duration(milliseconds: 300));
     if (!mounted || !_wantsPlayer || _controller != null) return;
 
     final headers = await Tools.getFileCustomHeaders(
