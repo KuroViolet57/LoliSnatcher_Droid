@@ -17,10 +17,9 @@ import 'package:lolisnatcher/src/utils/tools.dart';
 /// fallback), so it sidesteps the hardware-decoder-exhaustion crashes that
 /// plague rapid create/destroy of ExoPlayer instances.
 ///
-/// Renders full-screen with a custom controls overlay matching the native
-/// LoliControls UX: tap to toggle controls, double-tap left/right to seek,
-/// double-tap centre to play/pause, a bottom bar with play/pause +
-/// position/duration + scrubber + mute + fullscreen.
+/// Players are kept warm in a URL-keyed LRU pool ([_MediaKitPlayerPool]) so
+/// scrolling back to a recently-watched video resumes with its buffer intact
+/// instead of restarting the download.
 class MediaKitPlayerView extends StatefulWidget {
   const MediaKitPlayerView(
     this.booruItem, {
@@ -38,11 +37,12 @@ class MediaKitPlayerView extends StatefulWidget {
 }
 
 class _MediaKitPlayerViewState extends State<MediaKitPlayerView> {
-  Player? _player;
-  VideoController? _controller;
+  _PooledPlayer? _entry;
+  String? _acquiredUrl;
 
   Timer? _initDebounce;
   static const Duration _initDelay = Duration(milliseconds: 200);
+  bool _initInProgress = false;
 
   bool get _wantsPlayer => widget.isViewed || SettingsHandler.instance.preloadVideos;
 
@@ -60,21 +60,26 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> {
 
     final bool itemChanged = oldWidget.booruItem != widget.booruItem;
     if (itemChanged) {
-      _dispose();
+      _release();
       if (_wantsPlayer) {
         _scheduleInit();
       }
     } else if (oldWidget.isViewed != widget.isViewed) {
       if (widget.isViewed) {
-        if (_player == null) {
+        if (_entry == null) {
           _scheduleInit();
-        } else if (SettingsHandler.instance.autoPlayEnabled) {
-          _player?.play();
+        } else {
+          // Always restart from the beginning when a video becomes the
+          // active page — user expectation from the previous engine.
+          _entry!.player.seek(Duration.zero);
+          if (SettingsHandler.instance.autoPlayEnabled) {
+            _entry!.player.play();
+          }
         }
       } else {
-        // libmpv is cheap to keep around, but pause off-screen to avoid
-        // background audio and wasted decode.
-        _player?.pause();
+        // Off-screen: pause but keep the player + its buffer warm in the
+        // pool. Releasing the slot happens only on widget dispose.
+        _entry?.player.pause();
       }
     }
   }
@@ -82,51 +87,57 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> {
   void _scheduleInit() {
     _initDebounce?.cancel();
     _initDebounce = Timer(_initDelay, () {
-      if (!mounted || !_wantsPlayer || _player != null) return;
+      if (!mounted || !_wantsPlayer || _entry != null) return;
       _init();
     });
   }
 
   Future<void> _init() async {
+    if (_initInProgress) return;
+    _initInProgress = true;
     try {
-      // libmpv must be initialized before any Player is constructed. Idempotent.
-      MediaKit.ensureInitialized();
       final settings = SettingsHandler.instance;
       final headers = await Tools.getFileCustomHeaders(
         widget.booru,
         item: widget.booruItem,
         checkForReferer: true,
       );
-      if (!mounted || !_wantsPlayer || _player != null) return;
+      if (!mounted || !_wantsPlayer) return;
 
-      // Generous demuxer cache so jittery CDNs don't stall mid-clip.
-      final player = Player(
-        configuration: const PlayerConfiguration(
-          bufferSize: 64 * 1024 * 1024,
-          logLevel: MPVLogLevel.error,
-        ),
+      final url = widget.booruItem.fileURL;
+      final entry = await _MediaKitPlayerPool.instance.acquire(
+        url: url,
+        headers: headers,
       );
-      final controller = VideoController(player);
-
-      await player.open(
-        Media(widget.booruItem.fileURL, httpHeaders: headers),
-        play: widget.isViewed && settings.autoPlayEnabled,
-      );
-      await player.setPlaylistMode(PlaylistMode.loop);
-      if (settings.startVideosMuted) {
-        await player.setVolume(0);
-      }
 
       if (!mounted || !_wantsPlayer) {
-        await player.dispose();
+        _MediaKitPlayerPool.instance.release(url);
         return;
       }
+
+      // Restart from beginning whenever this widget becomes the active view.
+      if (widget.isViewed) {
+        await entry.player.seek(Duration.zero);
+      }
+      if (settings.startVideosMuted) {
+        await entry.player.setVolume(0);
+      }
+      if (widget.isViewed && settings.autoPlayEnabled) {
+        await entry.player.play();
+      }
+
+      if (!mounted) {
+        _MediaKitPlayerPool.instance.release(url);
+        return;
+      }
+
       setState(() {
-        _player = player;
-        _controller = controller;
+        _entry = entry;
+        _acquiredUrl = url;
       });
+
       Logger.Inst().log(
-        'media_kit init for ${widget.booruItem.fileURL}',
+        'media_kit acquired ${entry.wasReused ? "(reused)" : "(new)"} for $url',
         'MediaKitPlayerView',
         '_init',
         LogTypes.booruItemLoad,
@@ -139,29 +150,32 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> {
         LogTypes.exception,
         s: s,
       );
+    } finally {
+      _initInProgress = false;
     }
   }
 
-  void _dispose() {
+  void _release() {
     _initDebounce?.cancel();
     _initDebounce = null;
-    final p = _player;
-    _player = null;
-    _controller = null;
-    p?.dispose();
+    final url = _acquiredUrl;
+    _entry = null;
+    _acquiredUrl = null;
+    if (url != null) {
+      _MediaKitPlayerPool.instance.release(url);
+    }
   }
 
   @override
   void dispose() {
-    _dispose();
+    _release();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final controller = _controller;
-    final player = _player;
-    if (controller == null || player == null) {
+    final entry = _entry;
+    if (entry == null) {
       return const Material(color: Colors.black, child: SizedBox.expand());
     }
     return Material(
@@ -171,15 +185,140 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> {
           fit: StackFit.expand,
           children: [
             Video(
-              controller: controller,
+              controller: entry.controller,
               fit: BoxFit.contain,
               controls: NoVideoControls,
             ),
-            _MediaKitControls(player: player),
+            _MediaKitControls(player: entry.player),
           ],
         ),
       ),
     );
+  }
+}
+
+/// Per-URL pooled player. Refcounted: many widgets *could* share the same URL,
+/// though in practice the PageView gives each item a unique URL.
+class _PooledPlayer {
+  _PooledPlayer({
+    required this.url,
+    required this.player,
+    required this.controller,
+  });
+
+  final String url;
+  final Player player;
+  final VideoController controller;
+  int refCount = 0;
+  int lastUsedTick = 0;
+  // Set per acquire() call so callers know whether they got a warm buffer.
+  bool wasReused = false;
+}
+
+/// Global URL-keyed LRU pool. Survives widget disposal so scrolling back to a
+/// neighbour video resumes with its buffer intact instead of restarting the
+/// download. Capacity = [SettingsHandler.mediaKitMaxPlayers]. Idle (refCount==0)
+/// entries are evicted oldest-first when capacity is exceeded.
+class _MediaKitPlayerPool {
+  _MediaKitPlayerPool._();
+  static final _MediaKitPlayerPool instance = _MediaKitPlayerPool._();
+
+  final Map<String, _PooledPlayer> _entries = {};
+  int _tick = 0;
+  bool _initialized = false;
+
+  Future<_PooledPlayer> acquire({
+    required String url,
+    required Map<String, String> headers,
+  }) async {
+    if (!_initialized) {
+      MediaKit.ensureInitialized();
+      _initialized = true;
+    }
+
+    final existing = _entries[url];
+    if (existing != null) {
+      existing.refCount++;
+      existing.lastUsedTick = ++_tick;
+      existing.wasReused = true;
+      return existing;
+    }
+
+    // Make room for the new entry up-front.
+    _evictIfNeeded(needSlot: true);
+
+    final player = Player(
+      configuration: const PlayerConfiguration(
+        bufferSize: 64 * 1024 * 1024,
+        logLevel: MPVLogLevel.error,
+      ),
+    );
+    final controller = VideoController(player);
+
+    await player.open(Media(url, httpHeaders: headers), play: false);
+    await player.setPlaylistMode(PlaylistMode.loop);
+
+    // Tune libmpv cache so we don't underrun mid-clip on jittery CDNs and so
+    // we keep enough back-buffer to seek-back without re-downloading.
+    try {
+      final platform = player.platform;
+      if (platform is NativePlayer) {
+        await platform.setProperty('cache', 'yes');
+        await platform.setProperty('cache-secs', '30');
+        await platform.setProperty('demuxer-readahead-secs', '20');
+        await platform.setProperty('demuxer-max-bytes', '67108864');
+        await platform.setProperty('demuxer-max-back-bytes', '33554432');
+      }
+    } catch (e, s) {
+      Logger.Inst().log(
+        'mpv setProperty failed: $e',
+        '_MediaKitPlayerPool',
+        'acquire',
+        LogTypes.exception,
+        s: s,
+      );
+    }
+
+    final entry = _PooledPlayer(url: url, player: player, controller: controller)
+      ..refCount = 1
+      ..lastUsedTick = ++_tick
+      ..wasReused = false;
+    _entries[url] = entry;
+    return entry;
+  }
+
+  void release(String url) {
+    final entry = _entries[url];
+    if (entry == null) return;
+    if (entry.refCount > 0) entry.refCount--;
+    entry.lastUsedTick = ++_tick;
+    if (entry.refCount == 0) {
+      // Idle but kept warm in the pool. Pause to free decode CPU; the buffer
+      // is preserved by libmpv until we evict.
+      try {
+        entry.player.pause();
+      } catch (_) {}
+    }
+    _evictIfNeeded();
+  }
+
+  void _evictIfNeeded({bool needSlot = false}) {
+    final int max = SettingsHandler.instance.mediaKitMaxPlayers;
+    // When making room for a new entry, target capacity is `max - 1`.
+    final int target = needSlot ? max - 1 : max;
+    if (_entries.length <= target) return;
+
+    final evictable = _entries.values.where((e) => e.refCount == 0).toList()
+      ..sort((a, b) => a.lastUsedTick.compareTo(b.lastUsedTick));
+    int toEvict = _entries.length - target;
+    for (final e in evictable) {
+      if (toEvict <= 0) break;
+      _entries.remove(e.url);
+      try {
+        e.player.dispose();
+      } catch (_) {}
+      toEvict--;
+    }
   }
 }
 

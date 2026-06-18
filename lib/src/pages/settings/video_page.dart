@@ -25,6 +25,7 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
   bool disableVideo = false;
   bool useBetterPlayer = false;
   bool useMediaKitPlayer = false;
+  final TextEditingController mediaKitMaxPlayersController = TextEditingController();
   final TextEditingController betterPlayerCacheMbController = TextEditingController();
   final TextEditingController betterPlayerPerFileMbController = TextEditingController();
   bool altVideoPlayerHwAccel = true;
@@ -44,6 +45,7 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
     disableVideo = settingsHandler.disableVideo;
     useBetterPlayer = settingsHandler.useBetterPlayer;
     useMediaKitPlayer = settingsHandler.useMediaKitPlayer;
+    mediaKitMaxPlayersController.text = settingsHandler.mediaKitMaxPlayers.toString();
     betterPlayerCacheMbController.text = settingsHandler.betterPlayerCacheMb.toString();
     betterPlayerPerFileMbController.text = settingsHandler.betterPlayerPerFileMb.toString();
     videoBackendMode = settingsHandler.videoBackendMode;
@@ -59,6 +61,8 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
     settingsHandler.disableVideo = disableVideo;
     settingsHandler.useBetterPlayer = useBetterPlayer;
     settingsHandler.useMediaKitPlayer = useMediaKitPlayer;
+    settingsHandler.mediaKitMaxPlayers =
+        (int.tryParse(mediaKitMaxPlayersController.text) ?? 4).clamp(1, 20);
     settingsHandler.betterPlayerCacheMb =
         (int.tryParse(betterPlayerCacheMbController.text) ?? 500).clamp(0, 50000);
     settingsHandler.betterPlayerPerFileMb =
@@ -163,6 +167,19 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
                   leadingIcon: const Icon(Icons.bolt),
                   subtitle: const Text(
                     'A completely separate video engine built on media_kit (libmpv) instead of ExoPlayer. libmpv manages its own decoders with software fallback, so it sidesteps the hardware-decoder-exhaustion crashes that can happen when scrolling fast through many videos. Same custom controls (tap, double-tap to skip, scrubber, fullscreen). Takes precedence over better_player when both are on. Restart the viewer for changes to take effect.',
+                  ),
+                ),
+              if (!SettingsHandler.isDesktopPlatform && useMediaKitPlayer)
+                SettingsTextInput(
+                  controller: mediaKitMaxPlayersController,
+                  title: 'media_kit warm player pool size',
+                  hintText: '4',
+                  inputType: TextInputType.number,
+                  numberStep: 1,
+                  numberButtons: true,
+                  resetText: () => '4',
+                  subtitle: const Text(
+                    "How many recently-viewed videos to keep warm in memory. Scrolling back to a video that's still in the pool resumes with its buffer intact instead of restarting the download. Higher = smoother scrub-back but more RAM. libmpv has no MediaCodec limit, so values up to ~10 are safe on most devices. Default 4 (current + previous + next + one more).",
                   ),
                 ),
               if (!SettingsHandler.isDesktopPlatform)

@@ -180,6 +180,11 @@ class SettingsHandler {
   // its own decoding (with software fallback). Takes precedence over
   // useBetterPlayer when both are on.
   bool useMediaKitPlayer = false;
+  // How many media_kit (libmpv) players to keep warm in the LRU pool. More =
+  // scrolling back to a recent video resumes instantly with its buffer
+  // intact, at the cost of RAM. libmpv has no MediaCodec limit so this is
+  // safe to raise on devices with spare memory.
+  int mediaKitMaxPlayers = 4;
   // ExoPlayer on-disk cache size for the better_player engine, in MB.
   // 0 disables. Default 500 MB; bumping this means more recently-watched
   // videos serve from disk on rewatch / scroll-back without re-hitting the
@@ -584,6 +589,13 @@ class SettingsHandler {
     'useMediaKitPlayer': {
       'type': 'bool',
       'default': false,
+    },
+    'mediaKitMaxPlayers': {
+      'type': 'int',
+      'default': 4,
+      'step': 1,
+      'lowerLimit': 1,
+      'upperLimit': 20,
     },
     'betterPlayerCacheMb': {
       'type': 'int',
@@ -1156,6 +1168,8 @@ class SettingsHandler {
         return useBetterPlayer;
       case 'useMediaKitPlayer':
         return useMediaKitPlayer;
+      case 'mediaKitMaxPlayers':
+        return mediaKitMaxPlayers;
       case 'betterPlayerCacheMb':
         return betterPlayerCacheMb;
       case 'betterPlayerPerFileMb':
@@ -1401,6 +1415,9 @@ class SettingsHandler {
         break;
       case 'useMediaKitPlayer':
         useMediaKitPlayer = validatedValue;
+        break;
+      case 'mediaKitMaxPlayers':
+        mediaKitMaxPlayers = (validatedValue as int).clamp(1, 20);
         break;
       case 'betterPlayerCacheMb':
         betterPlayerCacheMb = (validatedValue as int).clamp(0, 50000);
