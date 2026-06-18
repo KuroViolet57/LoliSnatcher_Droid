@@ -38,7 +38,8 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
       autofocusSearchbar,
       disableVibration,
       usePredictiveBack,
-      inlineRelatedGrids;
+      inlineRelatedGrids,
+      useBottomInfoSheet;
   late String defaultTabAddMode;
   late AppMode appMode;
   late HandSide handSide;
@@ -57,6 +58,7 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
     disableVibration = settingsHandler.disableVibration;
     usePredictiveBack = settingsHandler.usePredictiveBack;
     inlineRelatedGrids = settingsHandler.inlineRelatedGrids;
+    useBottomInfoSheet = settingsHandler.useBottomInfoSheet;
     defaultTabAddMode = settingsHandler.defaultTabAddMode;
     previewDisplay = settingsHandler.previewDisplay;
     previewDisplayFallback = settingsHandler.previewDisplayFallback;
@@ -84,6 +86,7 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
     final bool needThemeChange = usePredictiveBack != settingsHandler.usePredictiveBack;
     settingsHandler.usePredictiveBack = usePredictiveBack;
     settingsHandler.inlineRelatedGrids = inlineRelatedGrids;
+    settingsHandler.useBottomInfoSheet = useBottomInfoSheet;
     settingsHandler.defaultTabAddMode = defaultTabAddMode;
     settingsHandler.previewMode = previewMode;
     settingsHandler.previewDisplay = previewDisplay;
@@ -271,6 +274,19 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
                 leadingIcon: const Icon(Icons.grid_view),
                 subtitle: const Text(
                   "Shows 'More from this artist' and 'More from this uploader' thumbnail rows at the top of the post-details drawer (where supported by the booru). Turn off if you want a leaner drawer or to save bandwidth.",
+                ),
+              ),
+              SettingsToggle(
+                value: useBottomInfoSheet,
+                onChanged: (newValue) {
+                  setState(() {
+                    useBottomInfoSheet = newValue;
+                  });
+                },
+                title: 'Bottom info sheet',
+                leadingIcon: const Icon(Icons.vertical_align_bottom),
+                subtitle: const Text(
+                  'Show the post info panel (tags, metadata) as a Boorusama-style sheet dragged up from the bottom of the viewer, instead of the classic right-side drawer. Open it with the info button or by swiping up from the bottom edge. Turn off to restore the side drawer.',
                 ),
               ),
               SettingsDropdown<String>(

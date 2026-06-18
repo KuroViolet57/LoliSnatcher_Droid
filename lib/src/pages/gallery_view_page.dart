@@ -25,6 +25,7 @@ import 'package:lolisnatcher/src/widgets/common/close_dialog_button.dart';
 import 'package:lolisnatcher/src/widgets/common/long_press_repeater.dart';
 import 'package:lolisnatcher/src/widgets/gallery/gallery_buttons.dart';
 import 'package:lolisnatcher/src/widgets/gallery/hideable_appbar.dart';
+import 'package:lolisnatcher/src/widgets/gallery/item_info_bottom_sheet.dart';
 import 'package:lolisnatcher/src/widgets/gallery/notes_renderer.dart';
 import 'package:lolisnatcher/src/widgets/gallery/tag_view.dart';
 import 'package:lolisnatcher/src/widgets/gallery/viewer_tutorial.dart';
@@ -76,6 +77,11 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
 
   final ValueNotifier<bool> isActive = ValueNotifier(true);
   final ValueNotifier<bool> drawerVisibility = ValueNotifier(true);
+
+  // Boorusama-style bottom info sheet (alternative to the side endDrawer).
+  final DraggableScrollableController infoSheetController = DraggableScrollableController();
+  final ValueNotifier<double> infoSheetExtent = ValueNotifier(0);
+  bool get useBottomInfoSheet => settingsHandler.useBottomInfoSheet;
 
   @override
   void initState() {
@@ -161,6 +167,8 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
       });
     }
     NavigationHandler.instance.routeObserver.unsubscribe(this);
+    infoSheetController.dispose();
+    infoSheetExtent.dispose();
     volumeListener?.cancel();
     ServiceHandler.setVolumeButtons(!settingsHandler.useVolumeButtonsForScroll);
     kbFocusNode.dispose();
@@ -169,6 +177,30 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
   }
 
   void drawerVisibilityChanged(bool visible) => drawerVisibility.value = visible;
+
+  void openInfoPanel() {
+    if (useBottomInfoSheet) {
+      if (infoSheetController.isAttached) {
+        infoSheetController.animateTo(
+          ItemInfoBottomSheet.peekSize,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutCubic,
+        );
+      }
+    } else {
+      viewerScaffoldKey.currentState?.openEndDrawer();
+    }
+  }
+
+  void closeInfoSheet() {
+    if (infoSheetController.isAttached) {
+      infoSheetController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
 
   void volumeCallback(String event) {
     // print('in gallery $event');
@@ -197,9 +229,7 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
       pageController: controller,
       canSelect: widget.canSelect,
       readOnly: widget.readOnly,
-      onOpenDrawer: () {
-        viewerScaffoldKey.currentState?.openEndDrawer();
-      },
+      onOpenDrawer: openInfoPanel,
     );
 
     final scaffold = Scaffold(
@@ -210,14 +240,20 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
       appBar: settingsHandler.galleryBarPosition.isTop ? appBar : null,
       bottomNavigationBar: settingsHandler.galleryBarPosition.isBottom ? appBar : null,
       backgroundColor: Colors.transparent,
-      body: PhotoViewGestureDetectorScope(
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          PhotoViewGestureDetectorScope(
         // vertical to prevent swipe-to-dismiss when zoomed
         // axis: Axis.vertical, // photo_view doesn't support locking both axises, so we use custom fork to fix this
         axis: Axis.values,
         child: Dismissible(
           direction: settingsHandler.galleryScrollDirection.isVertical
               ? DismissDirection.horizontal
-              : DismissDirection.vertical,
+              // In horizontal-scroll mode vertical swipes normally dismiss
+              // both ways. With the bottom info sheet on, reserve swipe-up for
+              // opening the sheet — only swipe-down dismisses the viewer.
+              : (useBottomInfoSheet ? DismissDirection.down : DismissDirection.vertical),
           // background: Container(color: Colors.black.withValues(alpha: 0.3)),
           key: const Key('imagePageDismissibleKey'),
           resizeDuration: null, // Duration(milliseconds: 100),
@@ -643,19 +679,66 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
           ),
         ),
       ),
+          // Boorusama-style bottom info sheet + swipe-up-from-bottom-edge
+          // hotzone. Only present when the setting is on; otherwise the classic
+          // right-side endDrawer (below) handles the info panel.
+          if (useBottomInfoSheet) ...[
+            ItemInfoBottomSheet(
+              tab: widget.tab,
+              pageController: controller,
+              sheetController: infoSheetController,
+              extentNotifier: infoSheetExtent,
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              height: 56,
+              child: ValueListenableBuilder<double>(
+                valueListenable: infoSheetExtent,
+                builder: (context, extent, child) {
+                  if (extent > 0.001) return const SizedBox.shrink();
+                  return child!;
+                },
+                child: _SwipeUpHotzone(onOpen: openInfoPanel),
+              ),
+            ),
+          ],
+        ],
+      ),
       endDrawerEnableOpenDragGesture: false,
       onEndDrawerChanged: (isOpened) {
         drawerOpen.value = isOpened;
         drawerVisibilityChanged(isOpened);
       },
-      endDrawer: ItemInfoDrawer(
-        tab: widget.tab,
-        pageController: controller,
-        onVisibilityChanged: drawerVisibilityChanged,
-      ),
+      endDrawer: useBottomInfoSheet
+          ? null
+          : ItemInfoDrawer(
+              tab: widget.tab,
+              pageController: controller,
+              onVisibilityChanged: drawerVisibilityChanged,
+            ),
     );
 
     //
+
+    // When the bottom info sheet is open, intercept the system back button to
+    // close the sheet instead of leaving the viewer.
+    final Widget maybeBackHandled = useBottomInfoSheet
+        ? ValueListenableBuilder<double>(
+            valueListenable: infoSheetExtent,
+            builder: (context, extent, child) {
+              return PopScope(
+                canPop: extent <= 0.001,
+                onPopInvokedWithResult: (didPop, result) {
+                  if (!didPop) closeInfoSheet();
+                },
+                child: child!,
+              );
+            },
+            child: scaffold,
+          )
+        : scaffold;
 
     return ValueListenableBuilder(
       valueListenable: drawerVisibility,
@@ -669,7 +752,48 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
           child: child!,
         );
       },
-      child: scaffold,
+      child: maybeBackHandled,
+    );
+  }
+}
+
+/// Thin transparent strip along the bottom edge of the viewer. An upward drag
+/// (or upward fling) opens the bottom info sheet. Kept narrow so it doesn't
+/// steal pan gestures from the zoomed image above it.
+class _SwipeUpHotzone extends StatefulWidget {
+  const _SwipeUpHotzone({required this.onOpen});
+
+  final VoidCallback onOpen;
+
+  @override
+  State<_SwipeUpHotzone> createState() => _SwipeUpHotzoneState();
+}
+
+class _SwipeUpHotzoneState extends State<_SwipeUpHotzone> {
+  double _acc = 0;
+  bool _fired = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onVerticalDragStart: (_) {
+        _acc = 0;
+        _fired = false;
+      },
+      onVerticalDragUpdate: (d) {
+        _acc += d.primaryDelta ?? 0;
+        if (!_fired && _acc < -24) {
+          _fired = true;
+          widget.onOpen();
+        }
+      },
+      onVerticalDragEnd: (d) {
+        if (!_fired && (d.primaryVelocity ?? 0) < -120) {
+          _fired = true;
+          widget.onOpen();
+        }
+      },
     );
   }
 }

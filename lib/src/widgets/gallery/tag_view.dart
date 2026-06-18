@@ -71,11 +71,17 @@ class TagView extends StatefulWidget {
   const TagView({
     required this.item,
     required this.handler,
+    this.scrollController,
     super.key,
   });
 
   final BooruItem item;
   final BooruHandler handler;
+  // When hosted inside a DraggableScrollableSheet the sheet provides its own
+  // ScrollController that must drive the inner scrollable so dragging the
+  // sheet and scrolling its content are unified. When null, TagView owns a
+  // plain controller (classic side-drawer behaviour).
+  final ScrollController? scrollController;
 
   @override
   State<TagView> createState() => _TagViewState();
@@ -88,7 +94,7 @@ class _TagViewState extends State<TagView> {
   final TagHandler tagHandler = TagHandler.instance;
 
   TagsListData tagsData = const TagsListData();
-  ScrollController scrollController = ScrollController();
+  late final ScrollController scrollController = widget.scrollController ?? ScrollController();
 
   late BooruItem item;
   late BooruHandler handler;
@@ -1118,7 +1124,21 @@ class _TagViewState extends State<TagView> {
           SliverList(
             delegate: SliverChildListDelegate(
               [
-                const SizedBox(height: kMinInteractiveDimension),
+                if (widget.scrollController != null)
+                  // Boorusama-style grab handle when hosted in the bottom sheet.
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.only(top: 10, bottom: 6),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  )
+                else
+                  const SizedBox(height: kMinInteractiveDimension),
                 // ID / Post URL / Posted date intentionally hidden from the
                 // top of the drawer — kept available inside the Details
                 // expansion further below. Uploader stays here because it's

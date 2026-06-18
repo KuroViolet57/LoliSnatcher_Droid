@@ -194,6 +194,10 @@ class SettingsHandler {
   // Inline "more from this artist / uploader" thumbnail grids in the
   // post-details drawer. Mirrors Boorusama's pattern. On by default.
   bool inlineRelatedGrids = true;
+  // Render the post-info panel (tags, metadata) as a Boorusama-style bottom
+  // sheet dragged up from the bottom edge instead of the classic right-side
+  // drawer. On by default; turn off to restore the side drawer.
+  bool useBottomInfoSheet = true;
   // Default placement for a new tab when the user single-taps the
   // "open in new tab" button. Long-press still shows the pick dialog.
   // String values: 'end' (default) or 'next' (next to current tab).
@@ -612,6 +616,10 @@ class SettingsHandler {
       'upperLimit': 50000,
     },
     'inlineRelatedGrids': {
+      'type': 'bool',
+      'default': true,
+    },
+    'useBottomInfoSheet': {
       'type': 'bool',
       'default': true,
     },
@@ -1176,6 +1184,8 @@ class SettingsHandler {
         return betterPlayerPerFileMb;
       case 'inlineRelatedGrids':
         return inlineRelatedGrids;
+      case 'useBottomInfoSheet':
+        return useBottomInfoSheet;
       case 'defaultTabAddMode':
         return defaultTabAddMode;
       case 'loadingGif':
@@ -1427,6 +1437,9 @@ class SettingsHandler {
         break;
       case 'inlineRelatedGrids':
         inlineRelatedGrids = validatedValue;
+        break;
+      case 'useBottomInfoSheet':
+        useBottomInfoSheet = validatedValue;
         break;
       case 'defaultTabAddMode':
         defaultTabAddMode = (validatedValue == 'next') ? 'next' : 'end';
