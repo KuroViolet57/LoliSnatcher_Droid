@@ -180,12 +180,25 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
 
   void openInfoPanel() {
     if (useBottomInfoSheet) {
+      // Animate even on the first call. The controller attaches as soon as the
+      // sheet's first frame runs, which has happened by the time the user can
+      // tap a button or swipe. If somehow not attached, retry next frame.
       if (infoSheetController.isAttached) {
         infoSheetController.animateTo(
           ItemInfoBottomSheet.peekSize,
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeOutCubic,
         );
+      } else {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (infoSheetController.isAttached) {
+            infoSheetController.animateTo(
+              ItemInfoBottomSheet.peekSize,
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOutCubic,
+            );
+          }
+        });
       }
     } else {
       viewerScaffoldKey.currentState?.openEndDrawer();
@@ -689,18 +702,18 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
               sheetController: infoSheetController,
               extentNotifier: infoSheetExtent,
             ),
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              height: 56,
+            // Full-screen passive listener: observes pointer events without
+            // claiming them in the gesture arena (so paging, dismiss, pan,
+            // and tap-to-toggle-controls all still work). Fires when it sees
+            // a clear upward swipe.
+            Positioned.fill(
               child: ValueListenableBuilder<double>(
                 valueListenable: infoSheetExtent,
                 builder: (context, extent, child) {
                   if (extent > 0.001) return const SizedBox.shrink();
                   return child!;
                 },
-                child: _SwipeUpHotzone(onOpen: openInfoPanel),
+                child: _SwipeUpListener(onOpen: openInfoPanel),
               ),
             ),
           ],
@@ -757,41 +770,63 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
   }
 }
 
-/// Thin transparent strip along the bottom edge of the viewer. An upward drag
-/// (or upward fling) opens the bottom info sheet. Kept narrow so it doesn't
-/// steal pan gestures from the zoomed image above it.
-class _SwipeUpHotzone extends StatefulWidget {
-  const _SwipeUpHotzone({required this.onOpen});
+/// Full-screen passive pointer observer. Uses [Listener] (not [GestureDetector])
+/// so it does not enter the gesture arena — paging, dismiss, photo_view pan
+/// and tap-to-toggle-controls all continue to work normally. Fires [onOpen]
+/// when it sees a clear upward swipe (a single pointer moving up by ≥ 64
+/// logical pixels with vertical motion dominating horizontal by 1.5×).
+class _SwipeUpListener extends StatefulWidget {
+  const _SwipeUpListener({required this.onOpen});
 
   final VoidCallback onOpen;
 
   @override
-  State<_SwipeUpHotzone> createState() => _SwipeUpHotzoneState();
+  State<_SwipeUpListener> createState() => _SwipeUpListenerState();
 }
 
-class _SwipeUpHotzoneState extends State<_SwipeUpHotzone> {
-  double _acc = 0;
+class _SwipeUpListenerState extends State<_SwipeUpListener> {
+  // Track at most one primary pointer at a time. Multi-touch (pinch-zoom etc.)
+  // disqualifies the gesture entirely.
+  int? _pointerId;
+  Offset _startPos = Offset.zero;
   bool _fired = false;
+  bool _multiTouch = false;
+
+  static const double _threshold = 64;
+  static const double _ratio = 1.5;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return Listener(
       behavior: HitTestBehavior.translucent,
-      onVerticalDragStart: (_) {
-        _acc = 0;
+      onPointerDown: (event) {
+        if (_pointerId != null) {
+          // Second finger: this is a pinch / multi-touch gesture, not a swipe.
+          _multiTouch = true;
+          return;
+        }
+        _pointerId = event.pointer;
+        _startPos = event.position;
         _fired = false;
+        _multiTouch = false;
       },
-      onVerticalDragUpdate: (d) {
-        _acc += d.primaryDelta ?? 0;
-        if (!_fired && _acc < -24) {
-          _fired = true;
-          widget.onOpen();
+      onPointerMove: (event) {
+        if (_fired || _multiTouch) return;
+        if (event.pointer != _pointerId) return;
+        final delta = event.position - _startPos;
+        if (delta.dy > -_threshold) return;
+        if (delta.dx.abs() * _ratio > -delta.dy) return;
+        _fired = true;
+        widget.onOpen();
+      },
+      onPointerUp: (event) {
+        if (event.pointer == _pointerId) {
+          _pointerId = null;
         }
       },
-      onVerticalDragEnd: (d) {
-        if (!_fired && (d.primaryVelocity ?? 0) < -120) {
-          _fired = true;
-          widget.onOpen();
+      onPointerCancel: (event) {
+        if (event.pointer == _pointerId) {
+          _pointerId = null;
         }
       },
     );

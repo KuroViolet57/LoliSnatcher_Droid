@@ -41,10 +41,6 @@ class ItemInfoBottomSheet extends StatefulWidget {
 class _ItemInfoBottomSheetState extends State<ItemInfoBottomSheet> {
   final ValueNotifier<int> page = ValueNotifier(0);
 
-  // Defer building (and thus tag-loading) the heavy TagView until the sheet has
-  // been opened at least once — mirrors the side drawer's lazy behaviour.
-  bool _everOpened = false;
-
   @override
   void initState() {
     super.initState();
@@ -78,9 +74,6 @@ class _ItemInfoBottomSheetState extends State<ItemInfoBottomSheet> {
     return ValueListenableBuilder<double>(
       valueListenable: widget.extentNotifier,
       builder: (context, extent, _) {
-        if (extent > 0.001 && !_everOpened) {
-          _everOpened = true;
-        }
         // Scrim fully opaque-ish by the time the sheet reaches its peek.
         final double dim = (extent / ItemInfoBottomSheet.peekSize).clamp(0.0, 1.0) * 0.55;
 
@@ -114,28 +107,30 @@ class _ItemInfoBottomSheetState extends State<ItemInfoBottomSheet> {
                       shape: const RoundedRectangleBorder(
                         borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
                       ),
-                      child: _everOpened
-                          ? ValueListenableBuilder<int>(
-                              valueListenable: page,
-                              builder: (context, page, _) {
-                                final items = widget.tab.booruHandler.filteredFetched;
-                                if (items.isEmpty || page >= items.length) {
-                                  return ListView(
-                                    controller: scrollController,
-                                    children: [
-                                      const SizedBox(height: 80),
-                                      Center(child: Text(context.loc.galleryView.noItemSelected)),
-                                    ],
-                                  );
-                                }
-                                return TagView(
-                                  item: items[page],
-                                  handler: widget.tab.booruHandler,
-                                  scrollController: scrollController,
-                                );
-                              },
-                            )
-                          : const SizedBox.shrink(),
+                      // Always render the TagView so the sheet's scroll
+                      // controller has clients. Without this the
+                      // DraggableScrollableController reports isAttached=false
+                      // and animateTo() silently does nothing.
+                      child: ValueListenableBuilder<int>(
+                        valueListenable: page,
+                        builder: (context, page, _) {
+                          final items = widget.tab.booruHandler.filteredFetched;
+                          if (items.isEmpty || page >= items.length) {
+                            return ListView(
+                              controller: scrollController,
+                              children: [
+                                const SizedBox(height: 80),
+                                Center(child: Text(context.loc.galleryView.noItemSelected)),
+                              ],
+                            );
+                          }
+                          return TagView(
+                            item: items[page],
+                            handler: widget.tab.booruHandler,
+                            scrollController: scrollController,
+                          );
+                        },
+                      ),
                     );
                   },
                 ),
