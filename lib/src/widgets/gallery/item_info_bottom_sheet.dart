@@ -121,35 +121,43 @@ class _ItemInfoBottomSheetState extends State<ItemInfoBottomSheet> {
                   snap: true,
                   snapSizes: const [ItemInfoBottomSheet.peekSize],
                   builder: (context, scrollController) {
-                    return Material(
-                      color: theme.canvasColor.withValues(alpha: 0.94),
-                      clipBehavior: Clip.antiAlias,
-                      shape: const RoundedRectangleBorder(
-                        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-                      ),
-                      // Always render the TagView so the sheet's scroll
-                      // controller has clients. Without this the
-                      // DraggableScrollableController reports isAttached=false
-                      // and animateTo() silently does nothing.
-                      child: ValueListenableBuilder<int>(
-                        valueListenable: page,
-                        builder: (context, page, _) {
-                          final items = widget.tab.booruHandler.filteredFetched;
-                          if (items.isEmpty || page >= items.length) {
-                            return ListView(
-                              controller: scrollController,
-                              children: [
-                                const SizedBox(height: 80),
-                                Center(child: Text(context.loc.galleryView.noItemSelected)),
-                              ],
+                    // RepaintBoundary isolates the sheet content's paint pass
+                    // from the rest of the viewer (video, scrim, controls), so
+                    // animating the sheet's extent doesn't force the heavy
+                    // TagView to participate in every repaint.
+                    // Clip.hardEdge instead of antiAlias halves clip cost per
+                    // frame, which matters at 120Hz.
+                    return RepaintBoundary(
+                      child: Material(
+                        color: theme.canvasColor.withValues(alpha: 0.94),
+                        clipBehavior: Clip.hardEdge,
+                        shape: const RoundedRectangleBorder(
+                          borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+                        ),
+                        // Always render the TagView so the sheet's scroll
+                        // controller has clients. Without this the
+                        // DraggableScrollableController reports isAttached=false
+                        // and animateTo() silently does nothing.
+                        child: ValueListenableBuilder<int>(
+                          valueListenable: page,
+                          builder: (context, page, _) {
+                            final items = widget.tab.booruHandler.filteredFetched;
+                            if (items.isEmpty || page >= items.length) {
+                              return ListView(
+                                controller: scrollController,
+                                children: [
+                                  const SizedBox(height: 80),
+                                  Center(child: Text(context.loc.galleryView.noItemSelected)),
+                                ],
+                              );
+                            }
+                            return TagView(
+                              item: items[page],
+                              handler: widget.tab.booruHandler,
+                              scrollController: scrollController,
                             );
-                          }
-                          return TagView(
-                            item: items[page],
-                            handler: widget.tab.booruHandler,
-                            scrollController: scrollController,
-                          );
-                        },
+                          },
+                        ),
                       ),
                     );
                   },

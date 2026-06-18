@@ -704,8 +704,9 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
             ),
             // Full-screen passive listener: observes pointer events without
             // claiming them in the gesture arena (so paging, dismiss, pan,
-            // and tap-to-toggle-controls all still work). Fires when it sees
-            // a clear upward swipe.
+            // and tap-to-toggle-controls all still work). Once it sees a
+            // clear upward swipe it drives the sheet's extent directly so
+            // the sheet tracks the finger 1:1 (no animateTo lag).
             Positioned.fill(
               child: ValueListenableBuilder<double>(
                 valueListenable: infoSheetExtent,
@@ -713,7 +714,11 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
                   if (extent > 0.001) return const SizedBox.shrink();
                   return child!;
                 },
-                child: _SwipeUpListener(onOpen: openInfoPanel),
+                child: _SwipeUpListener(
+                  controller: infoSheetController,
+                  expandedSize: ItemInfoBottomSheet.expandedSize,
+                  peekSize: ItemInfoBottomSheet.peekSize,
+                ),
               ),
             ),
           ],
@@ -770,30 +775,45 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
   }
 }
 
-/// Full-screen passive pointer observer. Uses [Listener] (not [GestureDetector])
-/// so it does not enter the gesture arena — paging, dismiss, photo_view pan
-/// and tap-to-toggle-controls all continue to work normally. Fires [onOpen]
-/// when it sees a clear upward swipe (a single pointer moving up by ≥ 64
-/// logical pixels with vertical motion dominating horizontal by 1.5×).
+/// Full-screen passive pointer observer that drives the bottom info sheet's
+/// extent directly as the user swipes — Boorusama-style. Once it detects a
+/// clear upward swipe (≥24px up, vertical dominating horizontal by 1.5×,
+/// single touch) it switches into a "drag" phase and uses jumpTo on each
+/// pointer move so the sheet is glued to the finger at native refresh rate
+/// instead of running a separate animateTo. On release it snaps to the
+/// nearest of {closed, peek, expanded} biased by fling velocity.
+///
+/// Uses [Listener] (not [GestureDetector]) so it never enters the gesture
+/// arena while idle — paging, dismiss, photo_view pan and tap-to-toggle all
+/// continue to work normally.
 class _SwipeUpListener extends StatefulWidget {
-  const _SwipeUpListener({required this.onOpen});
+  const _SwipeUpListener({
+    required this.controller,
+    required this.peekSize,
+    required this.expandedSize,
+  });
 
-  final VoidCallback onOpen;
+  final DraggableScrollableController controller;
+  final double peekSize;
+  final double expandedSize;
 
   @override
   State<_SwipeUpListener> createState() => _SwipeUpListenerState();
 }
 
 class _SwipeUpListenerState extends State<_SwipeUpListener> {
-  // Track at most one primary pointer at a time. Multi-touch (pinch-zoom etc.)
-  // disqualifies the gesture entirely.
   int? _pointerId;
   Offset _startPos = Offset.zero;
-  bool _fired = false;
+  Offset _lastPos = Offset.zero;
+  int _lastTimeUs = 0;
+  // Velocity along Y in logical pixels per second (negative = upward).
+  double _velocityYPxPerSec = 0;
+  bool _engaged = false;
   bool _multiTouch = false;
 
-  static const double _threshold = 64;
+  static const double _engagePx = 24;
   static const double _ratio = 1.5;
+  static const double _flingPxPerSec = 600;
 
   @override
   Widget build(BuildContext context) {
@@ -801,34 +821,80 @@ class _SwipeUpListenerState extends State<_SwipeUpListener> {
       behavior: HitTestBehavior.translucent,
       onPointerDown: (event) {
         if (_pointerId != null) {
-          // Second finger: this is a pinch / multi-touch gesture, not a swipe.
           _multiTouch = true;
           return;
         }
         _pointerId = event.pointer;
         _startPos = event.position;
-        _fired = false;
+        _lastPos = event.position;
+        _lastTimeUs = event.timeStamp.inMicroseconds;
+        _engaged = false;
         _multiTouch = false;
+        _velocityYPxPerSec = 0;
       },
       onPointerMove: (event) {
-        if (_fired || _multiTouch) return;
+        if (_multiTouch) return;
         if (event.pointer != _pointerId) return;
-        final delta = event.position - _startPos;
-        if (delta.dy > -_threshold) return;
-        if (delta.dx.abs() * _ratio > -delta.dy) return;
-        _fired = true;
-        widget.onOpen();
+
+        final dtUs = (event.timeStamp.inMicroseconds - _lastTimeUs).clamp(1, 1 << 31);
+        _velocityYPxPerSec = (event.position.dy - _lastPos.dy) / (dtUs / 1e6);
+        _lastPos = event.position;
+        _lastTimeUs = event.timeStamp.inMicroseconds;
+
+        if (!_engaged) {
+          final delta = event.position - _startPos;
+          if (delta.dy > -_engagePx) return;
+          if (delta.dx.abs() * _ratio > -delta.dy) return;
+          _engaged = true;
+        }
+
+        if (!widget.controller.isAttached) return;
+
+        // Map finger Y to sheet extent: extent = 1 - y/screenHeight.
+        final screenHeight = MediaQuery.sizeOf(context).height;
+        final newExtent = (1 - event.position.dy / screenHeight)
+            .clamp(0.0, widget.expandedSize);
+        widget.controller.jumpTo(newExtent);
       },
       onPointerUp: (event) {
-        if (event.pointer == _pointerId) {
-          _pointerId = null;
-        }
+        if (event.pointer != _pointerId) return;
+        _pointerId = null;
+        if (!_engaged) return;
+        _settle();
       },
       onPointerCancel: (event) {
-        if (event.pointer == _pointerId) {
-          _pointerId = null;
-        }
+        if (event.pointer != _pointerId) return;
+        _pointerId = null;
+        if (!_engaged) return;
+        _settle();
       },
+    );
+  }
+
+  void _settle() {
+    if (!widget.controller.isAttached) return;
+    final current = widget.controller.size;
+    final upPxPerSec = -_velocityYPxPerSec;
+
+    double target;
+    if (upPxPerSec > _flingPxPerSec) {
+      // Strong upward fling — go one step higher than where the finger left.
+      target = current >= widget.peekSize ? widget.expandedSize : widget.peekSize;
+    } else if (upPxPerSec < -_flingPxPerSec) {
+      // Strong downward fling — close.
+      target = 0;
+    } else {
+      // Slow release — snap to the nearest discrete stop.
+      final candidates = [0.0, widget.peekSize, widget.expandedSize];
+      target = candidates.reduce(
+        (a, b) => (current - a).abs() < (current - b).abs() ? a : b,
+      );
+    }
+
+    widget.controller.animateTo(
+      target,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
     );
   }
 }
