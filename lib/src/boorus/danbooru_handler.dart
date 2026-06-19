@@ -12,6 +12,7 @@ import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_suggestion.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
+import 'package:lolisnatcher/src/handlers/booru_handler_utils.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/extensions.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
@@ -103,36 +104,33 @@ class DanbooruHandler extends BooruHandler {
     if (current.containsKey('file_url')) {
       if (current['file_url'].length > 0) {
         addTagsWithType(
-          current['tag_string_general'].toString().split(' '),
+          splitTagsClean(current['tag_string_general']?.toString()),
           TagType.none,
         );
         addTagsWithType(
-          current['tag_string_character'].toString().split(' '),
+          splitTagsClean(current['tag_string_character']?.toString()),
           TagType.character,
         );
         addTagsWithType(
-          current['tag_string_copyright'].toString().split(' '),
+          splitTagsClean(current['tag_string_copyright']?.toString()),
           TagType.copyright,
         );
         addTagsWithType(
-          current['tag_string_artist'].toString().split(' '),
+          splitTagsClean(current['tag_string_artist']?.toString()),
           TagType.artist,
         );
         addTagsWithType(
-          current['tag_string_meta'].toString().split(' '),
+          splitTagsClean(current['tag_string_meta']?.toString()),
           TagType.meta,
         );
 
         final bool isZip = current['file_url'].toString().endsWith('.zip');
-        final String? dateStr = current['created_at']?.toString().substring(
-          0,
-          current['created_at']!.toString().length - 6,
-        );
+        final String? dateStr = safeIsoDateMinusTimezone(current['created_at']);
         final BooruItem item = BooruItem(
           fileURL: isZip ? current['large_file_url'].toString() : current['file_url'].toString(),
           sampleURL: current['large_file_url'].toString(),
           thumbnailURL: current['preview_file_url'].toString(),
-          tagsList: current['tag_string'].toString().split(' ').map(Tag.new).toList(),
+          tagsList: splitTagsClean(current['tag_string']?.toString()).map(Tag.new).toList(),
           postURL: makePostURL(current['id'].toString()),
           fileSize: int.tryParse(current['file_size'].toString()),
           fileHeight: double.tryParse(current['image_height'].toString()),
@@ -168,6 +166,28 @@ class DanbooruHandler extends BooruHandler {
     final String loginStr = booru.userID?.isNotEmpty == true ? '&login=${booru.userID}' : '';
     final String apiKeyStr = booru.apiKey?.isNotEmpty == true ? '&api_key=${booru.apiKey}' : '';
     return '${booru.baseURL}/posts.json?tags=$tags&limit=$limit&page=$pageNum$loginStr$apiKeyStr';
+  }
+
+  @override
+  Future<void> searchCount(String input) async {
+    int result = 0;
+    final String tags = validateTags(input);
+    final String loginStr = booru.userID?.isNotEmpty == true ? '&login=${booru.userID}' : '';
+    final String apiKeyStr = booru.apiKey?.isNotEmpty == true ? '&api_key=${booru.apiKey}' : '';
+    // EXAMPLE: https://danbooru.donmai.us/counts/posts.json?tags=cat
+    final String url = '${booru.baseURL}/counts/posts.json?tags=$tags$loginStr$apiKeyStr';
+    try {
+      final response = await DioNetwork.get(url, headers: getHeaders());
+      if (response.statusCode == 200) {
+        final dynamic data = response.data;
+        final dynamic posts = (data is Map) ? (data['counts'] is Map ? data['counts']['posts'] : null) : null;
+        result = int.tryParse(posts?.toString() ?? '') ?? 0;
+      }
+    } catch (e) {
+      Logger.Inst().log(e.toString(), className, 'searchCount', LogTypes.exception);
+    }
+    totalCount.value = result;
+    return;
   }
 
   @override
@@ -219,10 +239,7 @@ class DanbooruHandler extends BooruHandler {
 
   @override
   CommentItem? parseComment(dynamic responseItem, int index) {
-    final String? dateStr = responseItem['created_at']?.toString().substring(
-      0,
-      responseItem['created_at']!.toString().length - 6,
-    );
+    final String? dateStr = safeIsoDateMinusTimezone(responseItem['created_at']);
     return CommentItem(
       id: responseItem['id'].toString(),
       title: responseItem['post_id'].toString(),
@@ -232,7 +249,6 @@ class DanbooruHandler extends BooruHandler {
       score: responseItem['score'],
       postID: responseItem['post_id'].toString(),
       createDate: dateStr, // 2021-11-29T01:42:28.351-05:00
-      // TODO throws exception when parsing date, fix this
       createDateFormat: 'iso',
     );
   }
