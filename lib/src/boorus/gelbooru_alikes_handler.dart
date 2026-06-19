@@ -5,7 +5,6 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 
 import 'package:dio/dio.dart';
-import 'package:html/dom.dart';
 import 'package:html/parser.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:xml/xml.dart';
@@ -17,8 +16,8 @@ import 'package:lolisnatcher/src/data/note_item.dart';
 import 'package:lolisnatcher/src/data/tag_suggestion.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
+import 'package:lolisnatcher/src/handlers/booru_handler_utils.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
-import 'package:lolisnatcher/src/utils/extensions.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 
@@ -91,7 +90,7 @@ class GelbooruAlikesHandler extends BooruHandler {
         }
       }
 
-      final List<String> tags = parseFragment(getAttrOrElem(current, 'tags')).text?.split(' ') ?? [];
+      final List<String> tags = splitTagsClean(parseFragment(getAttrOrElem(current, 'tags')).text);
 
       final BooruItem item = BooruItem(
         fileURL: fileURL,
@@ -418,17 +417,17 @@ class GelbooruAlikesHandler extends BooruHandler {
       } else {
         final html = parse(response.data);
         final sidebar = html.getElementById('tag-sidebar');
-        final copyrightTags = _tagsFromHtml(sidebar?.getElementsByClassName('tag-type-copyright tag'));
+        final copyrightTags = parseTagsFromGelbooruHtml(sidebar?.getElementsByClassName('tag-type-copyright tag'));
         addTagsWithType(copyrightTags.map((t) => t.tag).toList(), TagType.copyright);
-        final characterTags = _tagsFromHtml(sidebar?.getElementsByClassName('tag-type-character tag'));
+        final characterTags = parseTagsFromGelbooruHtml(sidebar?.getElementsByClassName('tag-type-character tag'));
         addTagsWithType(characterTags.map((t) => t.tag).toList(), TagType.character);
-        final artistTags = _tagsFromHtml(sidebar?.getElementsByClassName('tag-type-artist tag'));
+        final artistTags = parseTagsFromGelbooruHtml(sidebar?.getElementsByClassName('tag-type-artist tag'));
         addTagsWithType(artistTags.map((t) => t.tag).toList(), TagType.artist);
-        final generalTags = _tagsFromHtml(sidebar?.getElementsByClassName('tag-type-general tag'));
+        final generalTags = parseTagsFromGelbooruHtml(sidebar?.getElementsByClassName('tag-type-general tag'));
         addTagsWithType(generalTags.map((t) => t.tag).toList(), TagType.none);
-        final metaTags = _tagsFromHtml(sidebar?.getElementsByClassName('tag-type-meta tag'));
+        final metaTags = parseTagsFromGelbooruHtml(sidebar?.getElementsByClassName('tag-type-meta tag'));
         addTagsWithType(metaTags.map((t) => t.tag).toList(), TagType.meta);
-        final metadataTags = _tagsFromHtml(sidebar?.getElementsByClassName('tag-type-metadata tag'));
+        final metadataTags = parseTagsFromGelbooruHtml(sidebar?.getElementsByClassName('tag-type-metadata tag'));
         addTagsWithType(metadataTags.map((t) => t.tag).toList(), TagType.meta);
 
         for (final t in [
@@ -511,28 +510,4 @@ class GelbooruAlikesHandler extends BooruHandler {
       ComparableNumberMetaTag(name: 'Height', keyName: 'height'),
     ];
   }
-}
-
-List<({String tag, int count})> _tagsFromHtml(List<Element>? elements) {
-  if (elements == null || elements.isEmpty) {
-    return [];
-  }
-
-  final List<({String tag, int count})> tagsWithCount = [];
-  for (final element in elements) {
-    final String? tag = element
-        .getElementsByTagName('a')
-        .firstWhereOrNull((e) => e.text.isNotEmpty && e.text != '?')
-        ?.text;
-    final int? count = int.tryParse(
-      element.getElementsByTagName('span').lastWhereOrNull((e) => e.text.isNotEmpty)?.text ?? '',
-    );
-    if (tag != null) {
-      tagsWithCount.add((
-        tag: tag.replaceAll(' ', '_'),
-        count: count ?? 0,
-      ));
-    }
-  }
-  return tagsWithCount;
 }

@@ -2,6 +2,10 @@
 // free so they can be folded into any handler without pulling extra
 // dependencies; tested in practice by the handlers that consume them.
 
+import 'package:html/dom.dart';
+
+import 'package:lolisnatcher/src/utils/extensions.dart';
+
 /// Splits a whitespace-separated tag string into a clean tag list.
 /// Drops empty / whitespace-only entries — several boorus return empty
 /// `tag_string_*` fields when a category has no tags, and `String.split(' ')`
@@ -63,4 +67,31 @@ String formatTagsWithUnderscoresPhilomena(String tags) {
     }
   }
   return tagsList.join(' ');
+}
+
+/// Parses the Gelbooru-style HTML tag sidebar (`tag-type-*` blocks) into a
+/// list of (tag, count) records. Shared by the Gelbooru and Gelbooru-alikes
+/// handlers, which scrape the post page as a fallback for tag types.
+List<({String tag, int count})> parseTagsFromGelbooruHtml(List<Element>? elements) {
+  if (elements == null || elements.isEmpty) {
+    return [];
+  }
+
+  final List<({String tag, int count})> tagsWithCount = [];
+  for (final element in elements) {
+    final String? tag = element
+        .getElementsByTagName('a')
+        .firstWhereOrNull((e) => e.text.isNotEmpty && e.text != '?')
+        ?.text;
+    final int? count = int.tryParse(
+      element.getElementsByTagName('span').lastWhereOrNull((e) => e.text.isNotEmpty)?.text ?? '',
+    );
+    if (tag != null) {
+      tagsWithCount.add((
+        tag: tag.replaceAll(' ', '_'),
+        count: count ?? 0,
+      ));
+    }
+  }
+  return tagsWithCount;
 }
