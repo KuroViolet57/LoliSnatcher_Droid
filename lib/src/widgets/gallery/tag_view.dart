@@ -2195,6 +2195,7 @@ class _TagContentPreviewState extends State<TagContentPreview> {
 
     if (tab!.booruHandler.errorString.isNotEmpty) {
       errorString = tab!.booruHandler.errorString;
+      if (!mounted) return;
       setState(() {});
     }
 
@@ -2203,9 +2204,11 @@ class _TagContentPreviewState extends State<TagContentPreview> {
     }
 
     Future.delayed(const Duration(milliseconds: 200), () {
+      if (!mounted) return;
       loading = false;
       setState(() {});
     });
+    if (!mounted) return;
     setState(() {});
   }
 
@@ -2594,42 +2597,15 @@ class _TagContentPreviewState extends State<TagContentPreview> {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Compact-mode strips ("More from artist X") keep a
-                        // tiny header so the section is labelled. Non-compact
-                        // strips use the new Boorusama-style chip that folds
-                        // the picker, video filter and new-tab action into a
-                        // single row — replacing the old Preview header and
-                        // standalone booru dropdown.
-                        if (widget.compact)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    widget.compactTitle ?? context.loc.tagView.preview,
-                                    style: const TextStyle(fontWeight: FontWeight.w500),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                IconButton(
-                                  tooltip: onlyAnimated ? 'Show all' : 'Videos / GIFs only',
-                                  visualDensity: VisualDensity.compact,
-                                  icon: Icon(
-                                    onlyAnimated ? Icons.movie : Icons.movie_outlined,
-                                    color: onlyAnimated ? Theme.of(context).colorScheme.secondary : null,
-                                  ),
-                                  onPressed: _toggleAnimatedOnly,
-                                ),
-                              ],
-                            ),
-                          )
-                        else
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
-                            child: _buildBooruChip(context),
-                          ),
+                        // Boorusama-style chip — replaces the old Preview
+                        // header + standalone booru dropdown. Shown for BOTH
+                        // compact (tag-chevron / "More from artist X") and
+                        // non-compact paths, because the original booru
+                        // dropdown was present in both too.
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+                          child: _buildBooruChip(context),
+                        ),
                         const SizedBox(height: 6),
                         SizedBox(
                           height: 220 + 10 + 16, // bigger thumbs + listview paddings
