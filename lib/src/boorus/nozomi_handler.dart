@@ -161,8 +161,21 @@ class NozomiHandler extends BooruHandler {
       result = result.toSet().difference(exclude.toSet()).toList();
     }
 
+    // We have the full filtered id list here, so the count is exact.
+    totalCount.value = result.length;
     if (startIndex >= result.length) return const [];
     return result.skip(startIndex).take(count).toList();
+  }
+
+  // Parses the total size out of a "bytes start-end/TOTAL" Content-Range header
+  // and converts it to a post count (4 bytes per packed Int32 id).
+  int? _totalFromContentRange(String? header) {
+    if (header == null) return null;
+    final int slashIdx = header.lastIndexOf('/');
+    if (slashIdx < 0) return null;
+    final int? totalBytes = int.tryParse(header.substring(slashIdx + 1).trim());
+    if (totalBytes == null) return null;
+    return totalBytes ~/ 4;
   }
 
   String _indexUrl(String term, {bool popular = false}) {
@@ -196,6 +209,12 @@ class NozomiHandler extends BooruHandler {
           validateStatus: (s) => s == 206,
         ),
       );
+      // The 206 response carries "Content-Range: bytes start-end/TOTAL"; the
+      // index file is a packed Int32 array, so TOTAL / 4 is the post count.
+      final int? total = _totalFromContentRange(response.headers.value('content-range'));
+      if (total != null) {
+        totalCount.value = total;
+      }
       final ids = _decodeIds(response.data);
       return ids.take(count).toList();
     } catch (e, s) {
@@ -239,7 +258,17 @@ class NozomiHandler extends BooruHandler {
 
   List<int> _decodeIds(dynamic raw) {
     if (raw == null) return const [];
-    final Uint8List bytes = raw is Uint8List ? raw : Uint8List.fromList((raw as List).cast<int>());
+    final Uint8List bytes;
+    if (raw is Uint8List) {
+      bytes = raw;
+    } else if (raw is List<int>) {
+      bytes = Uint8List.fromList(raw);
+    } else if (raw is List) {
+      // best-effort: drop any non-int entries instead of throwing on cast
+      bytes = Uint8List.fromList(raw.whereType<int>().toList());
+    } else {
+      return const [];
+    }
     final ByteData view = ByteData.view(bytes.buffer, bytes.offsetInBytes, bytes.lengthInBytes);
     final List<int> ids = [];
     for (int i = 0; i + 4 <= view.lengthInBytes; i += 4) {
@@ -279,7 +308,11 @@ class NozomiHandler extends BooruHandler {
     if (imageUrls is! List || imageUrls.isEmpty) {
       return null;
     }
-    final Map imageData = imageUrls.first as Map;
+    final dynamic firstImage = imageUrls.first;
+    if (firstImage is! Map) {
+      return null;
+    }
+    final Map imageData = firstImage;
     final String dataId = imageData['dataid']?.toString() ?? '';
     final String type = (imageData['type'] ?? 'jpg').toString();
     // is_video may come through as 1, true, "" (empty string for false) or "1".
