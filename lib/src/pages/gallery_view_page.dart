@@ -265,18 +265,18 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
             valueListenable: infoSheetExtent,
             builder: (context, extent, child) {
               if (!useBottomInfoSheet) return child!;
-              // Size against the real body height (LayoutBuilder), not the full
-              // screen, so the viewer's bottom edge lines up exactly with the
-              // sheet's top edge — the sheet's extent is a fraction of this
-              // same box.
-              return LayoutBuilder(
-                builder: (context, constraints) {
-                  final double viewerH = constraints.maxHeight * (1 - extent).clamp(0.0, 1.0);
-                  return Align(
-                    alignment: Alignment.topCenter,
-                    child: SizedBox(height: viewerH, child: child),
-                  );
-                },
+              // Use MediaQuery (not LayoutBuilder) because LayoutBuilder
+              // defers its build until the LAYOUT phase, which causes the
+              // bottom sheet + appbar (mounted earlier in the same frame) to
+              // read pageController.page before the PreloadPageView attaches
+              // its position → "Bad state: No element" crash on first frame.
+              // extendBody* are both true on this Scaffold, so the body fills
+              // MediaQuery.size — no off-by-pixels at the seam.
+              final double screenH = MediaQuery.sizeOf(context).height;
+              final double viewerH = screenH * (1 - extent).clamp(0.0, 1.0);
+              return Align(
+                alignment: Alignment.topCenter,
+                child: SizedBox(height: viewerH, child: child),
               );
             },
             child: PhotoViewGestureDetectorScope(

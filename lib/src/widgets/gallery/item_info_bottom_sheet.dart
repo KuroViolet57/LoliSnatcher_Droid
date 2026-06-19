@@ -45,12 +45,20 @@ class _ItemInfoBottomSheetState extends State<ItemInfoBottomSheet> {
   @override
   void initState() {
     super.initState();
-    page.value = widget.pageController.page?.round() ?? 0;
+    page.value = _readPage();
     widget.pageController.addListener(_pageListener);
   }
 
   void _pageListener() {
-    page.value = widget.pageController.page?.round() ?? 0;
+    page.value = _readPage();
+  }
+
+  // PreloadPageController.page throws if the controller has no positions
+  // attached yet (it does List.single on _positions). That happens on the
+  // very first build before the PreloadPageView mounts.
+  int _readPage() {
+    if (!widget.pageController.hasClients) return page.value;
+    return widget.pageController.page?.round() ?? page.value;
   }
 
   @override
