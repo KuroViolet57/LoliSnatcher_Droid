@@ -11,6 +11,7 @@ import 'package:lolisnatcher/src/data/comment_item.dart';
 import 'package:lolisnatcher/src/data/constants.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
+import 'package:lolisnatcher/src/handlers/booru_handler_utils.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/extensions.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
@@ -115,7 +116,7 @@ class IdolSankakuHandler extends SankakuHandler {
         serverId: current['id'].toString(),
         rating: current['rating'],
         score: current['total_score'].toString(),
-        sources: (current['source'] != null && current['source'] is String) ? [current['source']] : null,
+        sources: cleanSourceList(current['source']),
         md5String: current['md5'],
         postDate: postDate,
         postDateFormat: postDateFormat,

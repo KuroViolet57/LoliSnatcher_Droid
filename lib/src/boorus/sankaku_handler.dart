@@ -11,6 +11,7 @@ import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_suggestion.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
+import 'package:lolisnatcher/src/handlers/booru_handler_utils.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/extensions.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
@@ -131,7 +132,8 @@ class SankakuHandler extends BooruHandler {
         rating: current['rating'],
         score: current['total_score'].toString(),
         md5String: current['md5'],
-        uploaderName: current['author']['name'].toString(),
+        sources: cleanSourceList(current['source']),
+        uploaderName: current['author']?['name']?.toString(),
         postDate: postDate,
         postDateFormat: postDateFormat,
       );
