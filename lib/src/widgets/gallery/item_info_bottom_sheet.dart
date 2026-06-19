@@ -18,6 +18,7 @@ class ItemInfoBottomSheet extends StatefulWidget {
     required this.currentPage,
     required this.sheetController,
     required this.extentNotifier,
+    required this.openSize,
     super.key,
   });
 
@@ -29,12 +30,11 @@ class ItemInfoBottomSheet extends StatefulWidget {
   final DraggableScrollableController sheetController;
   final ValueNotifier<double> extentNotifier;
 
-  /// Height (as a fraction of the screen) the sheet snaps to when opened — the
-  /// Boorusama "2/3 sheet, 1/3 player" split.
-  static const double peekSize = 0.66;
-
-  /// Maximum height the sheet can be dragged to (player shrinks further).
-  static const double expandedSize = 0.9;
+  /// Height (as a fraction of the screen) the sheet opens AND locks at —
+  /// derived from the user's "size in thirds" setting. maxChildSize == this so
+  /// the sheet stops here and its content scrolls in place instead of needing
+  /// to be over-dragged bigger.
+  final double openSize;
 
   @override
   State<ItemInfoBottomSheet> createState() => _ItemInfoBottomSheetState();
@@ -56,22 +56,23 @@ class _ItemInfoBottomSheetState extends State<ItemInfoBottomSheet> {
                   controller: widget.sheetController,
                   initialChildSize: 0,
                   minChildSize: 0,
-                  maxChildSize: ItemInfoBottomSheet.expandedSize,
+                  // Lock the sheet at the chosen open size — content scrolls
+                  // inside it rather than the sheet growing past it.
+                  maxChildSize: widget.openSize,
                   snap: true,
-                  snapSizes: const [ItemInfoBottomSheet.peekSize],
                   builder: (context, scrollController) {
                     // RepaintBoundary isolates the sheet content's paint pass
-                    // from the rest of the viewer (video, scrim, controls), so
+                    // from the rest of the viewer (video, controls), so
                     // animating the sheet's extent doesn't force the heavy
                     // TagView to participate in every repaint.
-                    // Clip.hardEdge instead of antiAlias halves clip cost per
-                    // frame, which matters at 120Hz.
                     return RepaintBoundary(
                       child: Material(
-                        color: theme.canvasColor.withValues(alpha: 0.94),
+                        // Fully opaque + square top corners so nothing shows
+                        // behind it and there's no rounded-corner gap.
+                        color: theme.canvasColor,
                         clipBehavior: Clip.hardEdge,
                         shape: const RoundedRectangleBorder(
-                          borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+                          borderRadius: BorderRadius.zero,
                         ),
                         // Always render the TagView so the sheet's scroll
                         // controller has clients. Without this the

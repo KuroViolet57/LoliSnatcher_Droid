@@ -28,6 +28,7 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
   final TextEditingController columnsLandscapeController = TextEditingController();
   final TextEditingController columnsPortraitController = TextEditingController();
   final TextEditingController mouseSpeedController = TextEditingController();
+  final TextEditingController bottomSheetSizeController = TextEditingController();
 
   late PreviewQuality previewMode;
   late PreviewDisplayMode previewDisplay, previewDisplayFallback;
@@ -49,6 +50,7 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
     super.initState();
     columnsPortraitController.text = settingsHandler.portraitColumns.toString();
     columnsLandscapeController.text = settingsHandler.landscapeColumns.toString();
+    bottomSheetSizeController.text = settingsHandler.bottomSheetSizeMultiplier.toString();
     appMode = settingsHandler.appMode.value;
     handSide = settingsHandler.handSide.value;
     showBottomSearchbar = settingsHandler.showBottomSearchbar;
@@ -72,6 +74,7 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
     columnsLandscapeController.dispose();
     columnsPortraitController.dispose();
     mouseSpeedController.dispose();
+    bottomSheetSizeController.dispose();
     super.dispose();
   }
 
@@ -87,6 +90,8 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
     settingsHandler.usePredictiveBack = usePredictiveBack;
     settingsHandler.inlineRelatedGrids = inlineRelatedGrids;
     settingsHandler.useBottomInfoSheet = useBottomInfoSheet;
+    settingsHandler.bottomSheetSizeMultiplier =
+        (double.tryParse(bottomSheetSizeController.text) ?? 2.0).clamp(0.5, 3.0);
     settingsHandler.defaultTabAddMode = defaultTabAddMode;
     settingsHandler.previewMode = previewMode;
     settingsHandler.previewDisplay = previewDisplay;
@@ -289,6 +294,21 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
                   'Show the post info panel (tags, metadata) as a Boorusama-style sheet dragged up from the bottom of the viewer, instead of the classic right-side drawer. Open it with the info button or by swiping up from the bottom edge. Turn off to restore the side drawer.',
                 ),
               ),
+              if (useBottomInfoSheet)
+                SettingsTextInput(
+                  controller: bottomSheetSizeController,
+                  title: 'Bottom sheet size',
+                  hintText: '2',
+                  inputType: const TextInputType.numberWithOptions(decimal: true),
+                  numberStep: 0.5,
+                  numberMin: 0.5,
+                  numberMax: 3,
+                  numberButtons: true,
+                  resetText: () => '2',
+                  subtitle: const Text(
+                    'How much of the screen the sheet fills when open, in thirds: 1 ≈ a third, 1.5 ≈ half, 2 ≈ two thirds, 3 ≈ full. The player shrinks to fill the space above it, and the sheet locks at this height so its content scrolls in place.',
+                  ),
+                ),
               SettingsDropdown<String>(
                 value: defaultTabAddMode,
                 items: const ['end', 'next'],

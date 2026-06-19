@@ -198,6 +198,10 @@ class SettingsHandler {
   // sheet dragged up from the bottom edge instead of the classic right-side
   // drawer. On by default; turn off to restore the side drawer.
   bool useBottomInfoSheet = true;
+  // How much of the screen the bottom info sheet occupies when open, expressed
+  // as "thirds": 1 => ~1/3 of the screen, 1.5 => ~1/2, 2 => ~2/3, 3 => full.
+  // The sheet locks at this size (content scrolls inside it). fraction = N/3.
+  double bottomSheetSizeMultiplier = 2;
   // Default placement for a new tab when the user single-taps the
   // "open in new tab" button. Long-press still shows the pick dialog.
   // String values: 'end' (default) or 'next' (next to current tab).
@@ -622,6 +626,13 @@ class SettingsHandler {
     'useBottomInfoSheet': {
       'type': 'bool',
       'default': true,
+    },
+    'bottomSheetSizeMultiplier': {
+      'type': 'double',
+      'default': 2.0,
+      'upperLimit': 3.0,
+      'lowerLimit': 0.5,
+      'step': 0.5,
     },
     'loadingGif': {
       'type': 'bool',
@@ -1186,6 +1197,8 @@ class SettingsHandler {
         return inlineRelatedGrids;
       case 'useBottomInfoSheet':
         return useBottomInfoSheet;
+      case 'bottomSheetSizeMultiplier':
+        return bottomSheetSizeMultiplier;
       case 'defaultTabAddMode':
         return defaultTabAddMode;
       case 'loadingGif':
@@ -1440,6 +1453,9 @@ class SettingsHandler {
         break;
       case 'useBottomInfoSheet':
         useBottomInfoSheet = validatedValue;
+        break;
+      case 'bottomSheetSizeMultiplier':
+        bottomSheetSizeMultiplier = (validatedValue as num).toDouble().clamp(0.5, 3.0);
         break;
       case 'defaultTabAddMode':
         defaultTabAddMode = (validatedValue == 'next') ? 'next' : 'end';

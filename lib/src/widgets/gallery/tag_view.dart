@@ -1115,6 +1115,69 @@ class _TagViewState extends State<TagView> {
     // surfaced at the top of the drawer anymore (per user request); the
     // remaining metadata still renders via the Details expansion further below.
 
+    // Uploader row — moved into the Details expansion (per user request) so it
+    // doesn't eat space at the top of the sheet when collapsed.
+    final Widget uploaderTile =
+        (item.uploaderId?.isNotEmpty == true || item.uploaderName?.isNotEmpty == true)
+        ? Builder(
+            builder: (context) {
+              final bool hasUploaderName = item.uploaderName?.isNotEmpty == true;
+              final String text = item.uploaderName ?? item.uploaderId ?? '';
+
+              return infoText(
+                context.loc.tagView.uploader,
+                text,
+                trailing: hasUploaderName
+                    ? IgnorePointer(
+                        child: IconButton(
+                          icon: const Icon(Icons.add),
+                          onPressed: () {},
+                        ),
+                      )
+                    : null,
+                onTap: hasUploaderName
+                    ? () {
+                        final userMetaTag = searchHandler.currentBooruHandler
+                            .availableMetaTags()
+                            .firstWhereOrNull(
+                              (t) => t is UserMetaTag,
+                            );
+                        if (userMetaTag == null) return;
+
+                        final String tag = userMetaTag.tagBuilder(null, null, item.uploaderName);
+
+                        searchHandler.addTagToSearch(tag);
+                        FlashElements.showSnackbar(
+                          context: context,
+                          duration: const Duration(seconds: 2),
+                          title: Text(
+                            context.loc.tagView.addedToCurrentSearch,
+                            style: const TextStyle(fontSize: 20),
+                          ),
+                          content: Text(tag, style: const TextStyle(fontSize: 16)),
+                          leadingIcon: Icons.add,
+                          sideColor: Colors.green,
+                        );
+                      }
+                    : null,
+                onLongPress: hasUploaderName
+                    ? () {
+                        Clipboard.setData(ClipboardData(text: text));
+                        FlashElements.showSnackbar(
+                          context: context,
+                          duration: const Duration(seconds: 2),
+                          title: Text(context.loc.copiedToClipboard, style: const TextStyle(fontSize: 20)),
+                          content: Text(text, style: const TextStyle(fontSize: 16)),
+                          leadingIcon: Icons.copy,
+                          sideColor: Colors.green,
+                        );
+                      }
+                    : null,
+              );
+            },
+          )
+        : const SizedBox.shrink();
+
     return Scrollbar(
       interactive: true,
       controller: scrollController,
@@ -1129,79 +1192,16 @@ class _TagViewState extends State<TagView> {
                   Center(
                     child: Container(
                       width: 40,
-                      height: 4,
+                      height: 5,
                       margin: const EdgeInsets.only(top: 10, bottom: 6),
                       decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
-                        borderRadius: BorderRadius.circular(2),
+                        color: Colors.black.withValues(alpha: 0.9),
+                        borderRadius: BorderRadius.circular(2.5),
                       ),
                     ),
                   )
                 else
                   const SizedBox(height: kMinInteractiveDimension),
-                // ID / Post URL / Posted date intentionally hidden from the
-                // top of the drawer — kept available inside the Details
-                // expansion further below. Uploader stays here because it's
-                // the only one the user wants quick access to.
-                //
-                if (item.uploaderId?.isNotEmpty == true || item.uploaderName?.isNotEmpty == true)
-                  Builder(
-                    builder: (context) {
-                      final bool hasUploaderName = item.uploaderName?.isNotEmpty == true;
-                      final String text = item.uploaderName ?? item.uploaderId ?? '';
-
-                      return infoText(
-                        context.loc.tagView.uploader,
-                        text,
-                        trailing: hasUploaderName
-                            ? IgnorePointer(
-                                child: IconButton(
-                                  icon: const Icon(Icons.add),
-                                  onPressed: () {},
-                                ),
-                              )
-                            : null,
-                        onTap: hasUploaderName
-                            ? () {
-                                final userMetaTag = searchHandler.currentBooruHandler
-                                    .availableMetaTags()
-                                    .firstWhereOrNull(
-                                      (t) => t is UserMetaTag,
-                                    );
-                                if (userMetaTag == null) return;
-
-                                final String tag = userMetaTag.tagBuilder(null, null, item.uploaderName);
-
-                                searchHandler.addTagToSearch(tag);
-                                FlashElements.showSnackbar(
-                                  context: context,
-                                  duration: const Duration(seconds: 2),
-                                  title: Text(
-                                    context.loc.tagView.addedToCurrentSearch,
-                                    style: const TextStyle(fontSize: 20),
-                                  ),
-                                  content: Text(tag, style: const TextStyle(fontSize: 16)),
-                                  leadingIcon: Icons.add,
-                                  sideColor: Colors.green,
-                                );
-                              }
-                            : null,
-                        onLongPress: hasUploaderName
-                            ? () {
-                                Clipboard.setData(ClipboardData(text: text));
-                                FlashElements.showSnackbar(
-                                  context: context,
-                                  duration: const Duration(seconds: 2),
-                                  title: Text(context.loc.copiedToClipboard, style: const TextStyle(fontSize: 20)),
-                                  content: Text(text, style: const TextStyle(fontSize: 16)),
-                                  leadingIcon: Icons.copy,
-                                  sideColor: Colors.green,
-                                );
-                              }
-                            : null,
-                      );
-                    },
-                  ),
                 //
                 // Inline "more from artist / uploader" grids — Boorusama-style.
                 // Each grid is gated on:
@@ -1209,6 +1209,9 @@ class _TagViewState extends State<TagView> {
                 //   - the data being available for this item + handler
                 if (settingsHandler.inlineRelatedGrids) ..._buildRelatedGrids(),
                 //
+                // Uploader, comments and sources are tucked inside the Details
+                // expansion (per user request) so the collapsed sheet stays
+                // compact.
                 ExpansionTile(
                   title: Text(
                     context.loc.tagView.details,
@@ -1228,6 +1231,7 @@ class _TagViewState extends State<TagView> {
                   shape: const Border(),
                   collapsedShape: const Border(),
                   children: [
+                    uploaderTile,
                     if (settingsHandler.isDebug.value) infoText(context.loc.tagView.filename, fileName),
                     infoText(context.loc.tagView.url, fileUrl, isLink: true),
                     infoText(context.loc.tagView.extension, fileExt),
@@ -1236,11 +1240,11 @@ class _TagViewState extends State<TagView> {
                     infoText(context.loc.tagView.md5, md5),
                     infoText(context.loc.tagView.rating, rating),
                     infoText(context.loc.tagView.score, score),
+                    commentsButton(),
+                    sourcesList(sources),
                   ],
                 ),
-                commentsButton(),
                 notesButton(),
-                sourcesList(sources),
                 if (tagsAvailable) ...[
                   Divider(
                     color: context.theme.dividerTheme.color?.withValues(alpha: 0.66),

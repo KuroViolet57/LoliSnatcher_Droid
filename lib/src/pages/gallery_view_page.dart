@@ -82,6 +82,9 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
   final DraggableScrollableController infoSheetController = DraggableScrollableController();
   final ValueNotifier<double> infoSheetExtent = ValueNotifier(0);
   bool get useBottomInfoSheet => settingsHandler.useBottomInfoSheet;
+  // Sheet open height as a fraction of the screen. The user setting is "in
+  // thirds": 1 => 1/3, 2 => 2/3, 3 => full. fraction = N/3.
+  double get infoSheetOpenSize => (settingsHandler.bottomSheetSizeMultiplier / 3).clamp(0.2, 0.98);
 
   @override
   void initState() {
@@ -185,7 +188,7 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
       // tap a button or swipe. If somehow not attached, retry next frame.
       if (infoSheetController.isAttached) {
         infoSheetController.animateTo(
-          ItemInfoBottomSheet.peekSize,
+          infoSheetOpenSize,
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeOutCubic,
         );
@@ -193,7 +196,7 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (infoSheetController.isAttached) {
             infoSheetController.animateTo(
-              ItemInfoBottomSheet.peekSize,
+              infoSheetOpenSize,
               duration: const Duration(milliseconds: 300),
               curve: Curves.easeOutCubic,
             );
@@ -725,6 +728,7 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
               currentPage: page,
               sheetController: infoSheetController,
               extentNotifier: infoSheetExtent,
+              openSize: infoSheetOpenSize,
             ),
             // Full-screen passive listener: observes pointer events without
             // claiming them in the gesture arena (so paging, dismiss, pan,
@@ -736,8 +740,7 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
             Positioned.fill(
               child: _SwipeUpListener(
                 controller: infoSheetController,
-                expandedSize: ItemInfoBottomSheet.expandedSize,
-                peekSize: ItemInfoBottomSheet.peekSize,
+                openSize: infoSheetOpenSize,
               ),
             ),
           ],
@@ -808,13 +811,11 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
 class _SwipeUpListener extends StatefulWidget {
   const _SwipeUpListener({
     required this.controller,
-    required this.peekSize,
-    required this.expandedSize,
+    required this.openSize,
   });
 
   final DraggableScrollableController controller;
-  final double peekSize;
-  final double expandedSize;
+  final double openSize;
 
   @override
   State<_SwipeUpListener> createState() => _SwipeUpListenerState();
@@ -882,7 +883,7 @@ class _SwipeUpListenerState extends State<_SwipeUpListener> {
         // where on screen the swipe started — so it begins from 0 and tracks
         // the finger smoothly instead of snapping to an absolute position.
         final double screenHeight = MediaQuery.sizeOf(context).height;
-        final double newExtent = (dyUp / screenHeight).clamp(0.0, widget.expandedSize);
+        final double newExtent = (dyUp / screenHeight).clamp(0.0, widget.openSize);
         widget.controller.jumpTo(newExtent);
       },
       onPointerUp: (event) {
@@ -905,19 +906,15 @@ class _SwipeUpListenerState extends State<_SwipeUpListener> {
     final current = widget.controller.size;
     final upPxPerSec = -_velocityYPxPerSec;
 
+    // Single open stop now (the sheet locks at openSize). Fling up => open,
+    // fling down => close, otherwise snap to whichever is nearer.
     double target;
     if (upPxPerSec > _flingPxPerSec) {
-      // Strong upward fling — go one step higher than where the finger left.
-      target = current >= widget.peekSize ? widget.expandedSize : widget.peekSize;
+      target = widget.openSize;
     } else if (upPxPerSec < -_flingPxPerSec) {
-      // Strong downward fling — close.
       target = 0;
     } else {
-      // Slow release — snap to the nearest discrete stop.
-      final candidates = [0.0, widget.peekSize, widget.expandedSize];
-      target = candidates.reduce(
-        (a, b) => (current - a).abs() < (current - b).abs() ? a : b,
-      );
+      target = current >= widget.openSize / 2 ? widget.openSize : 0;
     }
 
     widget.controller.animateTo(
