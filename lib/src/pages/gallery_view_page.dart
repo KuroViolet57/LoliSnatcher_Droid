@@ -722,7 +722,7 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
           if (useBottomInfoSheet) ...[
             ItemInfoBottomSheet(
               tab: widget.tab,
-              pageController: controller,
+              currentPage: page,
               sheetController: infoSheetController,
               extentNotifier: infoSheetExtent,
             ),

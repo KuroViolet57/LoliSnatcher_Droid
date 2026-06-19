@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 
-import 'package:preload_page_view/preload_page_view.dart';
-
 import 'package:lolisnatcher/gen/strings.g.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/widgets/gallery/tag_view.dart';
@@ -17,14 +15,17 @@ import 'package:lolisnatcher/src/widgets/gallery/tag_view.dart';
 class ItemInfoBottomSheet extends StatefulWidget {
   const ItemInfoBottomSheet({
     required this.tab,
-    required this.pageController,
+    required this.currentPage,
     required this.sheetController,
     required this.extentNotifier,
     super.key,
   });
 
   final SearchTab tab;
-  final PreloadPageController pageController;
+  // The viewer's authoritative current-page notifier (updated by the
+  // PreloadPageView's onPageChanged). The sheet mirrors the post the viewer is
+  // showing — reusing this avoids a second, fragile pageController listener.
+  final ValueNotifier<int> currentPage;
   final DraggableScrollableController sheetController;
   final ValueNotifier<double> extentNotifier;
 
@@ -40,34 +41,6 @@ class ItemInfoBottomSheet extends StatefulWidget {
 }
 
 class _ItemInfoBottomSheetState extends State<ItemInfoBottomSheet> {
-  final ValueNotifier<int> page = ValueNotifier(0);
-
-  @override
-  void initState() {
-    super.initState();
-    page.value = _readPage();
-    widget.pageController.addListener(_pageListener);
-  }
-
-  void _pageListener() {
-    page.value = _readPage();
-  }
-
-  // PreloadPageController.page throws if the controller has no positions
-  // attached yet (it does List.single on _positions). That happens on the
-  // very first build before the PreloadPageView mounts.
-  int _readPage() {
-    if (!widget.pageController.hasClients) return page.value;
-    return widget.pageController.page?.round() ?? page.value;
-  }
-
-  @override
-  void dispose() {
-    widget.pageController.removeListener(_pageListener);
-    page.dispose();
-    super.dispose();
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -105,7 +78,7 @@ class _ItemInfoBottomSheetState extends State<ItemInfoBottomSheet> {
                         // DraggableScrollableController reports isAttached=false
                         // and animateTo() silently does nothing.
                         child: ValueListenableBuilder<int>(
-                          valueListenable: page,
+                          valueListenable: widget.currentPage,
                           builder: (context, page, _) {
                             final items = widget.tab.booruHandler.filteredFetched;
                             if (items.isEmpty || page >= items.length) {
@@ -118,6 +91,10 @@ class _ItemInfoBottomSheetState extends State<ItemInfoBottomSheet> {
                               );
                             }
                             return TagView(
+                              // Key on the item so a swipe to a new post forces
+                              // a fresh TagView (belt-and-suspenders alongside
+                              // TagView's own didUpdateWidget).
+                              key: ValueKey(items[page].fileURL),
                               item: items[page],
                               handler: widget.tab.booruHandler,
                               scrollController: scrollController,
