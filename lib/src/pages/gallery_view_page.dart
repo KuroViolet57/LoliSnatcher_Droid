@@ -256,7 +256,30 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
       body: Stack(
         fit: StackFit.expand,
         children: [
-          PhotoViewGestureDetectorScope(
+          // The viewer. With the bottom info sheet on, it shrinks and anchors
+          // to the top as the sheet rises (Boorusama split): at the sheet's
+          // peek the player occupies the top ~1/3, the sheet the bottom ~2/3.
+          // The heavy viewer subtree is passed as `child` so it is NOT rebuilt
+          // on extent change — only re-parented into a shorter SizedBox.
+          ValueListenableBuilder<double>(
+            valueListenable: infoSheetExtent,
+            builder: (context, extent, child) {
+              if (!useBottomInfoSheet) return child!;
+              // Size against the real body height (LayoutBuilder), not the full
+              // screen, so the viewer's bottom edge lines up exactly with the
+              // sheet's top edge — the sheet's extent is a fraction of this
+              // same box.
+              return LayoutBuilder(
+                builder: (context, constraints) {
+                  final double viewerH = constraints.maxHeight * (1 - extent).clamp(0.0, 1.0);
+                  return Align(
+                    alignment: Alignment.topCenter,
+                    child: SizedBox(height: viewerH, child: child),
+                  );
+                },
+              );
+            },
+            child: PhotoViewGestureDetectorScope(
         // vertical to prevent swipe-to-dismiss when zoomed
         // axis: Axis.vertical, // photo_view doesn't support locking both axises, so we use custom fork to fix this
         axis: Axis.values,
@@ -692,9 +715,10 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
           ),
         ),
       ),
-          // Boorusama-style bottom info sheet + swipe-up-from-bottom-edge
-          // hotzone. Only present when the setting is on; otherwise the classic
-          // right-side endDrawer (below) handles the info panel.
+          ),
+          // Boorusama-style bottom info sheet. Only present when the setting is
+          // on; otherwise the classic right-side endDrawer (below) handles the
+          // info panel.
           if (useBottomInfoSheet) ...[
             ItemInfoBottomSheet(
               tab: widget.tab,
@@ -704,21 +728,16 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
             ),
             // Full-screen passive listener: observes pointer events without
             // claiming them in the gesture arena (so paging, dismiss, pan,
-            // and tap-to-toggle-controls all still work). Once it sees a
-            // clear upward swipe it drives the sheet's extent directly so
-            // the sheet tracks the finger 1:1 (no animateTo lag).
+            // and tap-to-toggle-controls all still work). While the sheet is
+            // closed it drives the sheet's extent directly from the finger's
+            // displacement (1:1, native refresh rate) on an upward swipe. Once
+            // the sheet is open it stands down and the sheet's own drag takes
+            // over. Always mounted so it never unmounts mid-gesture.
             Positioned.fill(
-              child: ValueListenableBuilder<double>(
-                valueListenable: infoSheetExtent,
-                builder: (context, extent, child) {
-                  if (extent > 0.001) return const SizedBox.shrink();
-                  return child!;
-                },
-                child: _SwipeUpListener(
-                  controller: infoSheetController,
-                  expandedSize: ItemInfoBottomSheet.expandedSize,
-                  peekSize: ItemInfoBottomSheet.peekSize,
-                ),
+              child: _SwipeUpListener(
+                controller: infoSheetController,
+                expandedSize: ItemInfoBottomSheet.expandedSize,
+                peekSize: ItemInfoBottomSheet.peekSize,
               ),
             ),
           ],
@@ -810,9 +829,11 @@ class _SwipeUpListenerState extends State<_SwipeUpListener> {
   double _velocityYPxPerSec = 0;
   bool _engaged = false;
   bool _multiTouch = false;
+  // True only when the gesture began while the sheet was (near) closed. When
+  // the sheet is already open we leave dragging to its own physics.
+  bool _eligible = false;
 
-  static const double _engagePx = 24;
-  static const double _ratio = 1.5;
+  static const double _engagePx = 12;
   static const double _flingPxPerSec = 600;
 
   @override
@@ -831,9 +852,12 @@ class _SwipeUpListenerState extends State<_SwipeUpListener> {
         _engaged = false;
         _multiTouch = false;
         _velocityYPxPerSec = 0;
+        double current = 0;
+        if (widget.controller.isAttached) current = widget.controller.size;
+        _eligible = current <= 0.02;
       },
       onPointerMove: (event) {
-        if (_multiTouch) return;
+        if (_multiTouch || !_eligible) return;
         if (event.pointer != _pointerId) return;
 
         final dtUs = (event.timeStamp.inMicroseconds - _lastTimeUs).clamp(1, 1 << 31);
@@ -841,19 +865,24 @@ class _SwipeUpListenerState extends State<_SwipeUpListener> {
         _lastPos = event.position;
         _lastTimeUs = event.timeStamp.inMicroseconds;
 
+        // Displacement from where the finger went DOWN — positive = moved up.
+        final double dyUp = _startPos.dy - event.position.dy;
+        final double dxAbs = (event.position.dx - _startPos.dx).abs();
+
         if (!_engaged) {
-          final delta = event.position - _startPos;
-          if (delta.dy > -_engagePx) return;
-          if (delta.dx.abs() * _ratio > -delta.dy) return;
+          if (dyUp < _engagePx) return;
+          // Vertical must dominate horizontal so we don't hijack page swipes.
+          if (dxAbs > dyUp) return;
           _engaged = true;
         }
 
         if (!widget.controller.isAttached) return;
 
-        // Map finger Y to sheet extent: extent = 1 - y/screenHeight.
-        final screenHeight = MediaQuery.sizeOf(context).height;
-        final newExtent = (1 - event.position.dy / screenHeight)
-            .clamp(0.0, widget.expandedSize);
+        // Extent grows 1:1 with how far the finger has moved up, regardless of
+        // where on screen the swipe started — so it begins from 0 and tracks
+        // the finger smoothly instead of snapping to an absolute position.
+        final double screenHeight = MediaQuery.sizeOf(context).height;
+        final double newExtent = (dyUp / screenHeight).clamp(0.0, widget.expandedSize);
         widget.controller.jumpTo(newExtent);
       },
       onPointerUp: (event) {

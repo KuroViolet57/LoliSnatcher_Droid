@@ -28,11 +28,12 @@ class ItemInfoBottomSheet extends StatefulWidget {
   final DraggableScrollableController sheetController;
   final ValueNotifier<double> extentNotifier;
 
-  /// Height (as a fraction of the screen) the sheet snaps to when first opened.
-  static const double peekSize = 0.55;
+  /// Height (as a fraction of the screen) the sheet snaps to when opened — the
+  /// Boorusama "2/3 sheet, 1/3 player" split.
+  static const double peekSize = 0.66;
 
-  /// Maximum height the sheet can be dragged to.
-  static const double expandedSize = 0.92;
+  /// Maximum height the sheet can be dragged to (player shrinks further).
+  static const double expandedSize = 0.9;
 
   @override
   State<ItemInfoBottomSheet> createState() => _ItemInfoBottomSheetState();
@@ -59,61 +60,18 @@ class _ItemInfoBottomSheetState extends State<ItemInfoBottomSheet> {
     super.dispose();
   }
 
-  void _close() {
-    if (!widget.sheetController.isAttached) {
-      // Should never happen with the stable Stack structure below, but guard
-      // anyway — better silent than a runtime "Null check" exception.
-      widget.extentNotifier.value = 0;
-      return;
-    }
-    widget.sheetController.animateTo(
-      0,
-      duration: const Duration(milliseconds: 250),
-      curve: Curves.easeOutCubic,
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return ValueListenableBuilder<double>(
-      valueListenable: widget.extentNotifier,
-      builder: (context, extent, _) {
-        // Scrim fully opaque-ish by the time the sheet reaches its peek.
-        final double dim = (extent / ItemInfoBottomSheet.peekSize).clamp(0.0, 1.0) * 0.55;
-        final bool sheetClosed = extent <= 0.001;
-
-        // Both children MUST stay at stable positions across rebuilds.
-        // Earlier this branch used `if (extent > 0.001) ...scrim...` as the
-        // first child, which shifted the sheet's index when extent crossed the
-        // threshold. Without keys Flutter compared by position, so the sheet
-        // got disposed-and-recreated, the in-flight animateTo was lost, and
-        // the controller briefly detached — causing taps on the (just-then-
-        // visible) scrim to fire _close on a null _attachedController and
-        // video taps to be consumed by the oscillating scrim. Use opacity +
-        // IgnorePointer to avoid the shift entirely.
-        return Stack(
-          children: [
-            Positioned.fill(
-              key: const ValueKey('infoSheetScrim'),
-              child: IgnorePointer(
-                ignoring: sheetClosed,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: _close,
-                  child: ColoredBox(color: Colors.black.withValues(alpha: dim)),
-                ),
-              ),
-            ),
-            Positioned.fill(
-              key: const ValueKey('infoSheet'),
-              child: NotificationListener<DraggableScrollableNotification>(
-                onNotification: (notification) {
-                  widget.extentNotifier.value = notification.extent;
-                  return false;
-                },
-                child: DraggableScrollableSheet(
+    // No scrim: in the split layout the player stays visible (and bright) in
+    // the top third, the sheet occupies the bottom — nothing to dim behind.
+    return NotificationListener<DraggableScrollableNotification>(
+      onNotification: (notification) {
+        widget.extentNotifier.value = notification.extent;
+        return false;
+      },
+      child: DraggableScrollableSheet(
                   controller: widget.sheetController,
                   initialChildSize: 0,
                   minChildSize: 0,
@@ -162,11 +120,6 @@ class _ItemInfoBottomSheetState extends State<ItemInfoBottomSheet> {
                     );
                   },
                 ),
-              ),
-            ),
-          ],
-        );
-      },
     );
   }
 }

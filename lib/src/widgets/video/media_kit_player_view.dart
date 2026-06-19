@@ -256,7 +256,11 @@ class _MediaKitPlayerPool {
     final controller = VideoController(player);
 
     await player.open(Media(url, httpHeaders: headers), play: false);
-    await player.setPlaylistMode(PlaylistMode.loop);
+    // PlaylistMode.single => mpv loop-file=yes: loops THIS file in place
+    // without re-running the playlist. PlaylistMode.loop (loop-playlist=yes)
+    // re-inits the demuxer at the loop point, which showed up as a 1-2s
+    // buffering spinner and an occasional cache reset on every loop.
+    await player.setPlaylistMode(PlaylistMode.single);
 
     // Tune libmpv cache so we don't underrun mid-clip on jittery CDNs and so
     // we keep enough back-buffer to seek-back without re-downloading.
@@ -268,6 +272,8 @@ class _MediaKitPlayerPool {
         await platform.setProperty('demuxer-readahead-secs', '20');
         await platform.setProperty('demuxer-max-bytes', '67108864');
         await platform.setProperty('demuxer-max-back-bytes', '33554432');
+        // Belt-and-suspenders: gapless in-place file loop at the mpv level.
+        await platform.setProperty('loop-file', 'inf');
       }
     } catch (e, s) {
       Logger.Inst().log(
