@@ -57,6 +57,7 @@ import 'package:lolisnatcher/src/widgets/dialogs/comments_dialog.dart';
 import 'package:lolisnatcher/src/widgets/gallery/notes_renderer.dart';
 import 'package:lolisnatcher/src/widgets/image/booru_favicon.dart';
 import 'package:lolisnatcher/src/widgets/preview/main_search_tag_chip.dart';
+import 'package:lolisnatcher/src/widgets/tabs/tab_booru_selector.dart';
 import 'package:lolisnatcher/src/widgets/tags_manager/tm_list_item_dialog.dart';
 import 'package:lolisnatcher/src/widgets/thumbnail/thumbnail_card_build.dart';
 
@@ -1195,7 +1196,7 @@ class _TagViewState extends State<TagView> {
                       height: 5,
                       margin: const EdgeInsets.only(top: 10, bottom: 6),
                       decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.9),
+                        color: Colors.white.withValues(alpha: 0.85),
                         borderRadius: BorderRadius.circular(2.5),
                       ),
                     ),
@@ -2288,6 +2289,240 @@ class _TagContentPreviewState extends State<TagContentPreview> {
     super.dispose();
   }
 
+  // Opens the LoliDropdown booru picker programmatically — used by the
+  // chip-arrow button. Mirrors what SettingsBooruDropdown did before.
+  Future<void> _openBooruPicker(BuildContext context) async {
+    final dropdown = LoliDropdown<Booru?>(
+      value: selectedBooru,
+      onChanged: (v) {
+        setState(() {
+          selectedBooru = v;
+        });
+        loadPreview(refresh: true);
+      },
+      items: [...settingsHandler.booruList],
+      labelText: context.loc.booru,
+      itemBuilder: (b) => b == null
+          ? const SizedBox.shrink()
+          : Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: TabBooruSelectorItem(booru: b),
+            ),
+      selectedItemBuilder: (b) => b == null
+          ? Text(context.loc.tagView.selectBooruToLoad)
+          : TabBooruSelectorItem(booru: b),
+      searchable: settingsHandler.booruList.length > 5,
+      searchCheck: (s, b) =>
+          (b?.name?.toLowerCase().contains(s) ?? true) ||
+          (b?.type?.name.toLowerCase().contains(s) ?? true),
+    );
+    await dropdown.showDialog(context);
+  }
+
+  // Toggles the "videos / GIFs only" filter and reloads the strip.
+  void _toggleAnimatedOnly() {
+    setState(() {
+      onlyAnimated = !onlyAnimated;
+    });
+    loadPreview(refresh: true);
+  }
+
+  // The "open this tag in a new tab" action — extracted so it can be reused
+  // from the chip's icon button.
+  void _openInNewTab(BuildContext context) {
+    final defaultMode = settingsHandler.defaultTabAddMode == 'next' ? TabAddMode.next : TabAddMode.end;
+    SearchHandler.instance.addTabByString(
+      _effectiveTag,
+      customBooru: selectedBooru,
+      addMode: defaultMode,
+    );
+
+    FlashElements.showSnackbar(
+      context: context,
+      isKeyUnique: true,
+      key: 'added_new_tab',
+      duration: const Duration(seconds: 2),
+      title: Text(
+        context.loc.tagView.addedNewTab,
+        style: const TextStyle(fontSize: 20),
+      ),
+      content: Text(_effectiveTag, style: const TextStyle(fontSize: 16)),
+      leadingIcon: Icons.fiber_new,
+      sideColor: Colors.green,
+      primaryActionBuilder: (context, controller) {
+        return Row(
+          children: [
+            IconButton(
+              onPressed: () {
+                ServiceHandler.vibrate();
+                if (settingsHandler.appMode.value.isMobile) {
+                  Navigator.of(context).popUntil((r) => r.isFirst);
+                }
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  SearchHandler.instance.changeTabIndex(
+                    SearchHandler.instance.tabs.length - 1,
+                  );
+                });
+                controller.dismiss();
+              },
+              icon: Icon(
+                Icons.arrow_forward_rounded,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
+            ),
+            const SizedBox(width: 4),
+            IconButton(
+              onPressed: () => controller.dismiss(),
+              icon: Icon(Icons.close, color: Theme.of(context).colorScheme.onSurface),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _openInNewTabLongPress(BuildContext context) async {
+    await ServiceHandler.vibrate();
+
+    final TabAddMode? chosenMode = await showDialog<TabAddMode>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Open new tab'),
+          contentPadding: EdgeInsets.zero,
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.vertical_align_bottom),
+                title: const Text('Open at end of tab list'),
+                onTap: () => Navigator.of(dialogContext).pop(TabAddMode.end),
+              ),
+              ListTile(
+                leading: const Icon(Icons.tab),
+                title: const Text('Open next to current tab'),
+                onTap: () => Navigator.of(dialogContext).pop(TabAddMode.next),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (chosenMode == null) return;
+
+    SearchHandler.instance.addTabByString(
+      _effectiveTag,
+      customBooru: selectedBooru,
+      addMode: chosenMode,
+      switchToNew: false,
+    );
+
+    if (!context.mounted) return;
+    FlashElements.showSnackbar(
+      context: context,
+      isKeyUnique: true,
+      key: 'added_new_tab',
+      duration: const Duration(seconds: 2),
+      title: Text(
+        context.loc.tagView.addedNewTab,
+        style: const TextStyle(fontSize: 20),
+      ),
+      content: Text(_effectiveTag, style: const TextStyle(fontSize: 16)),
+      leadingIcon: Icons.fiber_new,
+      sideColor: Colors.green,
+    );
+  }
+
+  /// Boorusama-style chip that replaces the old preview header + standalone
+  /// booru dropdown. Layout: favicon, booru name, video filter, new-tab,
+  /// picker arrow. The chip surface is non-tappable — the arrow is the only
+  /// way to open the booru picker, so the inline action buttons aren't
+  /// swallowed by a wrapping button.
+  Widget _buildBooruChip(BuildContext context) {
+    final boo = selectedBooru;
+    final theme = Theme.of(context);
+    final hasTabResult = SearchHandler.instance.hasTabWithTag(
+      _effectiveTag,
+      customBooru: selectedBooru,
+    );
+
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: theme.dividerColor.withValues(alpha: 0.5)),
+      ),
+      padding: const EdgeInsets.fromLTRB(12, 4, 4, 4),
+      child: Row(
+        children: [
+          if (boo != null) ...[
+            BooruFavicon(boo),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                boo.name ?? '',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w500),
+              ),
+            ),
+          ] else
+            Flexible(
+              child: Text(
+                context.loc.tagView.selectBooruToLoad,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          const SizedBox(width: 4),
+          IconButton(
+            tooltip: onlyAnimated ? 'Show all' : 'Videos / GIFs only',
+            visualDensity: VisualDensity.compact,
+            icon: Icon(
+              onlyAnimated ? Icons.movie : Icons.movie_outlined,
+              color: onlyAnimated ? theme.colorScheme.secondary : null,
+            ),
+            onPressed: _toggleAnimatedOnly,
+          ),
+          IconButton(
+            tooltip: 'Open in a new tab',
+            visualDensity: VisualDensity.compact,
+            icon: Stack(
+              children: [
+                const Icon(Icons.fiber_new),
+                if (hasTabResult.hasTagInAnyForm)
+                  Positioned(
+                    right: 0,
+                    top: 0,
+                    child: Icon(
+                      Icons.circle,
+                      size: 6,
+                      color: hasTabResult.color(context),
+                    ),
+                  ),
+              ],
+            ),
+            onPressed: () => _openInNewTab(context),
+            onLongPress: () => _openInNewTabLongPress(context),
+          ),
+          IconButton(
+            tooltip: 'Pick booru',
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.arrow_drop_down),
+            onPressed: () => _openBooruPicker(context),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return AnimatedSize(
@@ -2359,235 +2594,45 @@ class _TagContentPreviewState extends State<TagContentPreview> {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          children: [
-                            const Icon(Icons.search),
-                            const SizedBox(width: 8),
-                            Obx(() {
-                              final int count = tab!.booruHandler.totalCount.value;
-                              return AnimatedSize(
-                                duration: const Duration(milliseconds: 200),
-                                alignment: Alignment.centerLeft,
-                                child: Column(
-                                  mainAxisSize: .min,
-                                  crossAxisAlignment: .start,
-                                  children: [
-                                    Text(widget.compactTitle ?? context.loc.tagView.preview),
-                                    if (count > 0)
-                                      Text(
-                                        count.toFormattedString(),
-                                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                          color: Theme.of(context).textTheme.bodySmall!.color!.withValues(alpha: 0.66),
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              );
-                            }),
-                            if (!widget.compact) ...[
-                              const SizedBox(width: 8),
-                              IconButton(
-                                onPressed: () => loadPreview(refresh: true),
-                                icon: const Icon(Icons.refresh),
-                              ),
-                              const SizedBox(width: 8),
-                              IconButton(
-                                onPressed: () {
-                                  setState(() {
-                                    tab = null;
-                                  });
-                                },
-                                icon: const Icon(Icons.close),
-                              ),
-                            ],
-                            const Spacer(),
-                            if (!widget.compact && widget.parentTab != null)
-                              IconButton(
-                                icon: const Icon(Icons.list),
-                                onPressed: showTagPreviewsListDialog,
-                              ),
-                            // "Videos / animated only" filter — appends the
-                            // `animated` tag to the query and refreshes the
-                            // strip. The `animated` tag is recognised by
-                            // almost every booru including Nozomi.
-                            IconButton(
-                              tooltip: onlyAnimated ? 'Show all' : 'Videos / GIFs only',
-                              icon: Icon(
-                                onlyAnimated ? Icons.movie : Icons.movie_outlined,
-                                color: onlyAnimated ? Theme.of(context).colorScheme.secondary : null,
-                              ),
-                              onPressed: () {
-                                setState(() {
-                                  onlyAnimated = !onlyAnimated;
-                                });
-                                loadPreview(refresh: true);
-                              },
-                            ),
-                            Builder(
-                              builder: (context) {
-                                final HasTabWithTagResult hasTabWithTag = SearchHandler.instance.hasTabWithTag(
-                                  _effectiveTag,
-                                  customBooru: selectedBooru,
-                                );
-
-                                return IconButton(
-                                  icon: Stack(
-                                    children: [
-                                      const Icon(Icons.fiber_new),
-                                      if (hasTabWithTag.hasTagInAnyForm)
-                                        Positioned(
-                                          right: 0,
-                                          top: 0,
-                                          child: Icon(
-                                            Icons.circle,
-                                            size: 6,
-                                            color: hasTabWithTag.color(context),
-                                          ),
-                                        ),
-                                    ],
+                        // Compact-mode strips ("More from artist X") keep a
+                        // tiny header so the section is labelled. Non-compact
+                        // strips use the new Boorusama-style chip that folds
+                        // the picker, video filter and new-tab action into a
+                        // single row — replacing the old Preview header and
+                        // standalone booru dropdown.
+                        if (widget.compact)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    widget.compactTitle ?? context.loc.tagView.preview,
+                                    style: const TextStyle(fontWeight: FontWeight.w500),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
-                                  onPressed: () {
-                                    final defaultMode = settingsHandler.defaultTabAddMode == 'next'
-                                        ? TabAddMode.next
-                                        : TabAddMode.end;
-                                    SearchHandler.instance.addTabByString(
-                                      _effectiveTag,
-                                      customBooru: selectedBooru,
-                                      addMode: defaultMode,
-                                    );
-
-                                    FlashElements.showSnackbar(
-                                      context: context,
-                                      isKeyUnique: true,
-                                      key: 'added_new_tab',
-                                      duration: const Duration(seconds: 2),
-                                      title: Text(
-                                        context.loc.tagView.addedNewTab,
-                                        style: const TextStyle(fontSize: 20),
-                                      ),
-                                      content: Text(_effectiveTag, style: const TextStyle(fontSize: 16)),
-                                      leadingIcon: Icons.fiber_new,
-                                      sideColor: Colors.green,
-                                      primaryActionBuilder: (context, controller) {
-                                        return Row(
-                                          children: [
-                                            IconButton(
-                                              onPressed: () {
-                                                ServiceHandler.vibrate();
-                                                if (settingsHandler.appMode.value.isMobile) {
-                                                  Navigator.of(context).popUntil((r) => r.isFirst); // exit viewer
-                                                }
-                                                WidgetsBinding.instance.addPostFrameCallback((_) {
-                                                  SearchHandler.instance.changeTabIndex(
-                                                    SearchHandler.instance.tabs.length - 1,
-                                                  );
-                                                });
-                                                controller.dismiss();
-                                              },
-                                              icon: Icon(
-                                                Icons.arrow_forward_rounded,
-                                                color: Theme.of(context).colorScheme.onSurface,
-                                              ),
-                                            ),
-                                            const SizedBox(width: 4),
-                                            IconButton(
-                                              onPressed: () => controller.dismiss(),
-                                              icon: Icon(Icons.close, color: Theme.of(context).colorScheme.onSurface),
-                                            ),
-                                          ],
-                                        );
-                                      },
-                                    );
-                                  },
-                                  onLongPress: () async {
-                                    await ServiceHandler.vibrate();
-
-                                    final TabAddMode? chosenMode = await showDialog<TabAddMode>(
-                                      context: context,
-                                      builder: (dialogContext) {
-                                        return AlertDialog(
-                                          title: const Text('Open new tab'),
-                                          contentPadding: EdgeInsets.zero,
-                                          content: Column(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              ListTile(
-                                                leading: const Icon(Icons.vertical_align_bottom),
-                                                title: const Text('Open at end of tab list'),
-                                                onTap: () => Navigator.of(dialogContext).pop(TabAddMode.end),
-                                              ),
-                                              ListTile(
-                                                leading: const Icon(Icons.tab),
-                                                title: const Text('Open next to current tab'),
-                                                onTap: () => Navigator.of(dialogContext).pop(TabAddMode.next),
-                                              ),
-                                            ],
-                                          ),
-                                          actions: [
-                                            TextButton(
-                                              onPressed: () => Navigator.of(dialogContext).pop(),
-                                              child: const Text('Cancel'),
-                                            ),
-                                          ],
-                                        );
-                                      },
-                                    );
-
-                                    if (chosenMode == null) {
-                                      return;
-                                    }
-
-                                    // Open in background — don't exit the viewer and don't
-                                    // switch to the new tab. Same UX as the single-tap path:
-                                    // a snackbar confirms it was added with a quick-jump arrow.
-                                    SearchHandler.instance.addTabByString(
-                                      _effectiveTag,
-                                      customBooru: selectedBooru,
-                                      addMode: chosenMode,
-                                      switchToNew: false,
-                                    );
-
-                                    if (!context.mounted) return;
-                                    FlashElements.showSnackbar(
-                                      context: context,
-                                      isKeyUnique: true,
-                                      key: 'added_new_tab',
-                                      duration: const Duration(seconds: 2),
-                                      title: Text(
-                                        context.loc.tagView.addedNewTab,
-                                        style: const TextStyle(fontSize: 20),
-                                      ),
-                                      content: Text(_effectiveTag, style: const TextStyle(fontSize: 16)),
-                                      leadingIcon: Icons.fiber_new,
-                                      sideColor: Colors.green,
-                                    );
-                                  },
-                                );
-                              },
+                                ),
+                                IconButton(
+                                  tooltip: onlyAnimated ? 'Show all' : 'Videos / GIFs only',
+                                  visualDensity: VisualDensity.compact,
+                                  icon: Icon(
+                                    onlyAnimated ? Icons.movie : Icons.movie_outlined,
+                                    color: onlyAnimated ? Theme.of(context).colorScheme.secondary : null,
+                                  ),
+                                  onPressed: _toggleAnimatedOnly,
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        SizedBox(
-                          width: context.mediaSize.width,
-                          height: 52,
-                          child: SettingsBooruDropdown(
-                            title: context.loc.booru,
-                            placeholder: context.loc.tagView.selectBooruToLoad,
-                            value: selectedBooru,
-                            items: settingsHandler.booruList,
-                            contentPadding: EdgeInsets.zero,
-                            onChanged: (value) {
-                              selectedBooru = value;
-                              loadPreview(refresh: true);
-                            },
-                            titleAsLabel: true,
-                            drawBottomBorder: false,
+                          )
+                        else
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+                            child: _buildBooruChip(context),
                           ),
-                        ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 6),
                         SizedBox(
-                          height: 180 + 10 + 16, // card + listview paddings
+                          height: 220 + 10 + 16, // bigger thumbs + listview paddings
                           width: MediaQuery.sizeOf(context).width,
                           child: NotificationListener<ScrollUpdateNotification>(
                             onNotification: (notif) {
@@ -2705,8 +2750,8 @@ class _TagContentPreviewState extends State<TagContentPreview> {
                                         color: Colors.transparent,
                                         child: Container(
                                           padding: const EdgeInsets.only(right: 8),
-                                          height: 180,
-                                          width: 120,
+                                          height: 220,
+                                          width: 148,
                                           child: ValueListenableBuilder(
                                             valueListenable: viewedIndex,
                                             builder: (context, viewedIndex, _) {
