@@ -9,6 +9,7 @@ import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 import 'package:lolisnatcher/src/widgets/common/loli_dropdown.dart';
 import 'package:lolisnatcher/src/widgets/common/settings_widgets.dart';
 import 'package:lolisnatcher/src/widgets/tabs/tab_booru_selector.dart';
+import 'package:lolisnatcher/src/widgets/tabs/tab_per_booru_tag_overrides.dart';
 import 'package:lolisnatcher/src/widgets/tabs/tab_secondary_booru_selector.dart';
 
 class MergeBooruToggleAndSelector extends StatelessWidget {
@@ -106,7 +107,13 @@ class MergeBooruToggleAndSelector extends StatelessWidget {
               duration: const Duration(milliseconds: 200),
               alignment: Alignment.topCenter,
               child: (settingsHandler.booruList.length > 1 && hasTabsAndTabHasSecondaryBoorus)
-                  ? const TabSecondaryBooruSelector()
+                  ? const Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        TabSecondaryBooruSelector(),
+                        TabPerBooruTagOverrides(),
+                      ],
+                    )
                   : const SizedBox.shrink(),
             );
           }),

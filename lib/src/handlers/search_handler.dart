@@ -12,6 +12,7 @@ import 'package:lolisnatcher/src/utils/extensions.dart';
 import 'package:scroll_to_index/scroll_to_index.dart';
 import 'package:uuid/uuid.dart';
 
+import 'package:lolisnatcher/src/boorus/mergebooru_handler.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
@@ -506,10 +507,14 @@ class SearchHandler {
         tabs.add(newTab);
       }
     } else {
+      // Preserve per-booru tag overrides across the tab swap so the user's
+      // search-bar tap doesn't wipe edits they made to the override fields.
+      final Map<String, String> carriedOverrides = Map<String, String>.from(currentTab.tagOverrides);
       final SearchTab newTab = SearchTab(
         newBooru ?? currentBooru,
         currentSecondaryBoorus.value,
         text,
+        tagOverrides: carriedOverrides,
       );
       tabs[currentIndex] = newTab;
     }
@@ -602,7 +607,24 @@ class SearchHandler {
     final bool canAddSecondary = secondaryBoorus != null && settingsHandler.booruList.length > 1;
     final List<Booru>? secondary = canAddSecondary ? secondaryBoorus : null;
 
-    final SearchTab newTab = SearchTab(currentBooru, secondary, currentTab.tags);
+    // When the merge set changes, drop overrides for boorus that are no longer
+    // part of it; keep the rest so the user doesn't lose their edits when
+    // toggling boorus on and off.
+    final Set<String> keepNames = {
+      currentBooru.name ?? '',
+      ...?secondary?.map((b) => b.name ?? ''),
+    }..removeWhere((e) => e.isEmpty);
+    final Map<String, String> carriedOverrides = {
+      for (final e in currentTab.tagOverrides.entries)
+        if (keepNames.contains(e.key)) e.key: e.value,
+    };
+
+    final SearchTab newTab = SearchTab(
+      currentBooru,
+      secondary,
+      currentTab.tags,
+      tagOverrides: carriedOverrides,
+    );
     tabs[currentIndex] = newTab;
 
     // run search
@@ -1077,6 +1099,8 @@ class SearchHandler {
         final String booruName = tab.selectedBooru.value.name ?? 'unknown';
         final List<String> secondaryBoorusNames =
             tab.secondaryBoorus.value?.map((b) => b.name ?? 'unknown').toList() ?? [];
+        final Map<String, String> overrides = Map<String, String>.from(tab.tagOverrides)
+          ..removeWhere((_, v) => v.trim().isEmpty);
         final bool selected = tab == tabs[tabIndex];
 
         return jsonEncode(
@@ -1084,6 +1108,7 @@ class SearchHandler {
             tags: tags,
             booru: booruName,
             secondaryBoorus: secondaryBoorusNames,
+            tagOverrides: overrides,
             selected: selected,
           ).toJson(),
         );
@@ -1118,6 +1143,7 @@ class SearchHandler {
       selectedBooru,
       secondaryBoorus.isEmpty ? null : secondaryBoorus,
       backup.tags,
+      tagOverrides: backup.tagOverrides.isEmpty ? null : Map<String, String>.from(backup.tagOverrides),
     );
   }
 
@@ -1221,10 +1247,14 @@ class SearchTab {
   SearchTab(
     Booru selectedBooru,
     List<Booru>? secondaryBoorus,
-    this.tags,
-  ) {
+    this.tags, {
+    Map<String, String>? tagOverrides,
+  }) {
     this.selectedBooru = selectedBooru.obs;
     this.secondaryBoorus = Rxn<List<Booru>?>(secondaryBoorus);
+    if (tagOverrides != null && tagOverrides.isNotEmpty) {
+      this.tagOverrides.addAll(tagOverrides);
+    }
 
     final List<Booru> tempBooruList = [];
     tempBooruList.add(selectedBooru);
@@ -1234,10 +1264,28 @@ class SearchTab {
     final temp = BooruHandlerFactory().getBooruHandler(tempBooruList, null);
     booruHandler = temp.booruHandler;
     booruHandler.pageNum = temp.startingPage;
+    final handler = booruHandler;
+    if (handler is MergebooruHandler) {
+      handler.tagOverrides = Map<String, String>.from(this.tagOverrides);
+    }
   }
   // unique id to use for booru controller
   final String id = uuid.v4();
   String tags = '';
+  // Per-booru tag overrides used when this tab is in merge mode. Keyed by
+  // child booru name. Reactive so the per-booru text fields refresh when
+  // a new tab is restored from a backup.
+  final RxMap<String, String> tagOverrides = <String, String>{}.obs;
+
+  // Pushes the current tagOverrides snapshot onto the merge handler. Called
+  // by the search bar when the user triggers a new search so per-booru edits
+  // made since the tab was created take effect on the next page-1 fetch.
+  void syncTagOverridesToHandler() {
+    final handler = booruHandler;
+    if (handler is MergebooruHandler) {
+      handler.tagOverrides = Map<String, String>.from(tagOverrides);
+    }
+  }
 
   late final Rx<Booru> selectedBooru;
   late final Rxn<List<Booru>?> secondaryBoorus;
@@ -1347,11 +1395,15 @@ class TabBackup {
     required this.tags,
     required this.booru,
     this.secondaryBoorus = const [],
+    this.tagOverrides = const {},
     this.selected = false,
   });
   final String tags;
   final String booru;
   final List<String> secondaryBoorus;
+  // Per-booru tag overrides used in merge mode. Keys are booru names; missing
+  // entries (or older backups without this field) fall back to `tags`.
+  final Map<String, String> tagOverrides;
   final bool selected;
 
   Map<String, dynamic> toJson() {
@@ -1359,6 +1411,7 @@ class TabBackup {
       't': tags,
       'b': booru,
       if (secondaryBoorus.isNotEmpty) 'sb': secondaryBoorus,
+      if (tagOverrides.isNotEmpty) 'to': tagOverrides,
       if (selected) 's': selected, // only true matters, don't include on false
     };
   }
@@ -1369,6 +1422,8 @@ class TabBackup {
         tags: json['t'] as String,
         booru: json['b'] as String,
         secondaryBoorus: (json['sb'] as List<dynamic>?)?.map((e) => e as String).toList() ?? const [],
+        tagOverrides:
+            (json['to'] as Map<String, dynamic>?)?.map((k, v) => MapEntry(k, v.toString())) ?? const {},
         selected: (json['s'] as bool?) ?? false,
       );
     } catch (_) {
@@ -1404,12 +1459,14 @@ class TabBackup {
     String? tags,
     String? booru,
     List<String>? secondaryBoorus,
+    Map<String, String>? tagOverrides,
     bool? selected,
   }) {
     return TabBackup(
       tags: tags ?? this.tags,
       booru: booru ?? this.booru,
       secondaryBoorus: secondaryBoorus ?? this.secondaryBoorus,
+      tagOverrides: tagOverrides ?? this.tagOverrides,
       selected: selected ?? this.selected,
     );
   }

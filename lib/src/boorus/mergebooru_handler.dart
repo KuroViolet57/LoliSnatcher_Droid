@@ -23,6 +23,11 @@ class MergebooruHandler extends BooruHandler {
   List<BooruHandler> booruHandlers = [];
   List<int> booruHandlerPageNums = [];
 
+  // Per-child tag override keyed by child booru name. Empty / missing entries
+  // fall back to the merge tab's main tag string. Lets the user fix the
+  // common case where the same character is tagged differently on each site.
+  Map<String, String> tagOverrides = {};
+
   Map<int, ({Booru booru, List<BooruItem> items})> fetchedMap = {};
 
   @override
@@ -104,7 +109,10 @@ class MergebooruHandler extends BooruHandler {
     final Map<int, ({Booru booru, List<BooruItem> items})> tmpFetchedMap = {};
     int fetchedMax = 0;
     for (int i = 0; i < booruHandlers.length; i++) {
-      final String currentTags = cleanBooruIndexesFromTags(tags, i);
+      final String? overrideName = booruHandlers[i].booru.name;
+      final String? override = overrideName == null ? null : tagOverrides[overrideName];
+      final String baseTags = (override != null && override.trim().isNotEmpty) ? override : tags;
+      final String currentTags = cleanBooruIndexesFromTags(baseTags, i);
       Logger.Inst().log('TAGS FOR #$i are: $currentTags', 'MergeBooruHandler', 'Search', LogTypes.booruHandlerInfo);
       booruHandlers[i].pageNum = pageNum + booruHandlerPageNums[i];
       final List<BooruItem> tmpFetched = (await booruHandlers[i].search(currentTags, null)) ?? [];
