@@ -2,10 +2,13 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
+import 'package:get/get.dart';
 import 'package:scroll_to_index/scroll_to_index.dart';
 
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
+import 'package:lolisnatcher/src/handlers/search_handler.dart';
+import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/snatch_handler.dart';
 import 'package:lolisnatcher/src/widgets/common/animated_progress_indicator.dart';
 import 'package:lolisnatcher/src/widgets/thumbnail/thumbnail_build.dart';
@@ -119,6 +122,38 @@ class ThumbnailCardBuild extends StatelessWidget {
                 },
               ),
             ),
+            //
+            // Dim overlay for already-viewed posts. Gated on the setting, and
+            // reactive to item.isSeen so a post dims the moment you return
+            // from viewing it. Ignores pointer events so taps still pass
+            // through to the card.
+            if (SettingsHandler.instance.dimSeenPosts)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: Obx(() {
+                    final bool seen =
+                        item.isSeen.value || SearchHandler.instance.isPostSeen(item);
+                    if (!seen) return const SizedBox.shrink();
+                    return DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(4),
+                        color: Colors.black.withValues(alpha: 0.6),
+                      ),
+                      child: Align(
+                        alignment: Alignment.topRight,
+                        child: Padding(
+                          padding: const EdgeInsets.all(4),
+                          child: Icon(
+                            Icons.visibility,
+                            size: 16,
+                            color: Colors.white.withValues(alpha: 0.8),
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+                ),
+              ),
           ],
         ),
       ),

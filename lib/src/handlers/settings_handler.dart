@@ -241,6 +241,7 @@ class SettingsHandler {
   bool desktopListsDrag = false;
   bool showBottomSearchbar = true;
   bool useTopSearchbarInput = false;
+  bool dimSeenPosts = false;
   bool showSearchbarQuickActions = false;
   bool autofocusSearchbar = true;
   bool expandDetails = false;
@@ -779,6 +780,10 @@ class SettingsHandler {
       'type': 'bool',
       'default': false,
     },
+    'dimSeenPosts': {
+      'type': 'bool',
+      'default': false,
+    },
     'showSearchbarQuickActions': {
       'type': 'bool',
       'default': false,
@@ -1265,6 +1270,8 @@ class SettingsHandler {
         return showBottomSearchbar;
       case 'useTopSearchbarInput':
         return useTopSearchbarInput;
+      case 'dimSeenPosts':
+        return dimSeenPosts;
       case 'showSearchbarQuickActions':
         return showSearchbarQuickActions;
       case 'autofocusSearchbar':
@@ -1637,6 +1644,9 @@ class SettingsHandler {
         break;
       case 'useTopSearchbarInput':
         useTopSearchbarInput = validatedValue;
+        break;
+      case 'dimSeenPosts':
+        dimSeenPosts = validatedValue;
         break;
       case 'showSearchbarQuickActions':
         showSearchbarQuickActions = validatedValue;

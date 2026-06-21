@@ -129,6 +129,12 @@ class DBHandler {
       'createdAt INTEGER NOT NULL '
       ')',
     );
+    await db?.execute(
+      'CREATE TABLE IF NOT EXISTS SeenPost ( '
+      'postKey TEXT PRIMARY KEY, '
+      'viewedAt INTEGER NOT NULL '
+      ')',
+    );
     try {
       if (!await columnExists('SearchHistory', 'isFavourite')) {
         await db?.execute('ALTER TABLE SearchHistory ADD COLUMN isFavourite INTEGER;');
@@ -982,6 +988,35 @@ class DBHandler {
 
   Future<void> renameSavedSearch(int id, String name) async {
     await db?.rawUpdate('UPDATE SavedSearch SET name = ? WHERE id = ?', [name, id]);
+  }
+
+  ///////
+  /// Seen posts (already-viewed dimming)
+
+  // Cap so the table can't grow unbounded; trims oldest beyond this on insert.
+  static const int _seenPostLimit = 100000;
+
+  Future<Set<String>> getSeenPostKeys() async {
+    final rows = await db?.rawQuery('SELECT postKey FROM SeenPost');
+    if (rows == null || rows.isEmpty) return <String>{};
+    return rows.map((r) => r['postKey']?.toString() ?? '').where((k) => k.isNotEmpty).toSet();
+  }
+
+  Future<void> addSeenPost(String postKey) async {
+    if (postKey.isEmpty) return;
+    await db?.rawInsert(
+      'INSERT OR REPLACE INTO SeenPost(postKey, viewedAt) VALUES(?, ?)',
+      [postKey, DateTime.now().millisecondsSinceEpoch],
+    );
+    // Best-effort trim of the oldest rows once over the cap.
+    await db?.rawDelete(
+      'DELETE FROM SeenPost WHERE postKey NOT IN '
+      '(SELECT postKey FROM SeenPost ORDER BY viewedAt DESC LIMIT $_seenPostLimit)',
+    );
+  }
+
+  Future<void> clearSeenPosts() async {
+    await db?.rawDelete('DELETE FROM SeenPost');
   }
 
   ///////

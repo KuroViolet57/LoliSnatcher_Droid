@@ -70,6 +70,10 @@ class BooruItem extends Equatable {
   late Rx<MediaType> mediaType;
   Rxn<MediaType> possibleMediaType = Rxn<MediaType>(null);
   RxnBool isSnatched = RxnBool(null), isFavourite = RxnBool(null);
+  // Whether this post has been opened in the viewer before. Reactive so the
+  // grid cell dims live the moment you come back from viewing it. Persisted
+  // via the SeenPost table keyed by postURL.
+  RxBool isSeen = false.obs;
   RxBool isNoScale = false.obs, toggleQuality = false.obs;
   bool isUpdated = false;
 

@@ -106,6 +106,9 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
     try {
       final item = widget.tab.booruHandler.filteredFetched[widget.initialIndex];
       viewerHandler.setCurrent(item);
+      if (settingsHandler.dimSeenPosts) {
+        unawaited(searchHandler.markPostSeen(item));
+      }
     } catch (e) {
       viewerHandler.dropCurrent();
     }
@@ -649,6 +652,9 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
                                 final item = widget.tab.booruHandler.filteredFetched[index];
                                 if (mounted) {
                                   viewerHandler.setCurrent(item);
+                                  if (settingsHandler.dimSeenPosts) {
+                                    unawaited(searchHandler.markPostSeen(item));
+                                  }
                                 }
                               } catch (e) {
                                 // attempt to recover from broken out of array bounds state (i.e. when adding tag to hidden removes all items from the tab)

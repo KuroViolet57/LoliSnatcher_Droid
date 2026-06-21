@@ -7,6 +7,7 @@ import 'package:lolisnatcher/src/data/settings/image_quality.dart';
 import 'package:lolisnatcher/src/data/settings/scroll_direction.dart';
 import 'package:lolisnatcher/src/data/settings/share_action.dart';
 import 'package:lolisnatcher/src/data/settings/vertical_position.dart';
+import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
@@ -23,6 +24,7 @@ class _GalleryPageState extends State<GalleryPage> {
 
   bool autoHideImageBar = false,
       hideNotes = false,
+      dimSeenPosts = false,
       allowRotation = false,
       loadingGif = false,
       useVolumeButtonsForScroll = false,
@@ -65,6 +67,7 @@ class _GalleryPageState extends State<GalleryPage> {
     zoomButtonPosition = settingsHandler.zoomButtonPosition;
     changePageButtonsPosition = settingsHandler.changePageButtonsPosition;
     hideNotes = settingsHandler.hideNotes;
+    dimSeenPosts = settingsHandler.dimSeenPosts;
     allowRotation = settingsHandler.allowRotation;
     useVolumeButtonsForScroll = settingsHandler.useVolumeButtonsForScroll;
     scrollSpeedController.text = settingsHandler.volumeButtonsScrollSpeed.toString();
@@ -100,6 +103,7 @@ class _GalleryPageState extends State<GalleryPage> {
     settingsHandler.zoomButtonPosition = zoomButtonPosition;
     settingsHandler.changePageButtonsPosition = changePageButtonsPosition;
     settingsHandler.hideNotes = hideNotes;
+    settingsHandler.dimSeenPosts = dimSeenPosts;
     settingsHandler.allowRotation = allowRotation;
     settingsHandler.loadingGif = loadingGif;
     settingsHandler.useVolumeButtonsForScroll = useVolumeButtonsForScroll;
@@ -299,6 +303,48 @@ class _GalleryPageState extends State<GalleryPage> {
                 },
                 title: context.loc.settings.viewer.hideTranslationNotesByDefault,
               ),
+              SettingsToggle(
+                value: dimSeenPosts,
+                onChanged: (newValue) {
+                  setState(() {
+                    dimSeenPosts = newValue;
+                  });
+                },
+                title: 'Dim already-viewed posts',
+                subtitle: const Text('Greys out posts in the grid once you open them'),
+              ),
+              if (dimSeenPosts)
+                SettingsButton(
+                  name: 'Clear viewed history',
+                  icon: const Icon(Icons.visibility_off),
+                  action: () async {
+                    final bool? confirmed = await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text('Clear viewed history?'),
+                        content: const Text('All posts will be treated as unseen again.'),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.of(ctx).pop(false),
+                            child: Text(context.loc.no),
+                          ),
+                          FilledButton(
+                            onPressed: () => Navigator.of(ctx).pop(true),
+                            child: Text(context.loc.yes),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (confirmed == true) {
+                      await SearchHandler.instance.clearSeenPosts();
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Viewed history cleared')),
+                        );
+                      }
+                    }
+                  },
+                ),
               SettingsToggle(
                 value: allowRotation,
                 onChanged: (newValue) {

@@ -608,6 +608,59 @@ class SearchHandler {
   //
 
   //
+  // Seen posts (already-viewed dimming). In-memory mirror of the SeenPost
+  // table for O(1) lookups while building grid cells; the DB is the durable
+  // copy. Keyed by postURL (globally unique because it carries the domain,
+  // so it's merge-safe with no booru context needed).
+
+  final Set<String> seenPostKeys = <String>{};
+
+  String? seenKeyFor(BooruItem item) {
+    if (item.postURL.isNotEmpty) return item.postURL;
+    if (item.fileURL.isNotEmpty) return item.fileURL;
+    return null;
+  }
+
+  bool isPostSeen(BooruItem item) {
+    final String? key = seenKeyFor(item);
+    return key != null && seenPostKeys.contains(key);
+  }
+
+  Future<void> loadSeenPosts() async {
+    try {
+      final keys = await SettingsHandler.instance.dbHandler.getSeenPostKeys();
+      seenPostKeys
+        ..clear()
+        ..addAll(keys);
+    } catch (_) {}
+  }
+
+  Future<void> markPostSeen(BooruItem item) async {
+    final String? key = seenKeyFor(item);
+    if (key == null) return;
+    item.isSeen.value = true;
+    if (seenPostKeys.add(key)) {
+      // only hit the DB the first time we see this key
+      try {
+        await SettingsHandler.instance.dbHandler.addSeenPost(key);
+      } catch (_) {}
+    }
+  }
+
+  Future<void> clearSeenPosts() async {
+    seenPostKeys.clear();
+    try {
+      await SettingsHandler.instance.dbHandler.clearSeenPosts();
+    } catch (_) {}
+    // Drop the live flag on currently-loaded items so the grid un-dims.
+    for (final tab in tabs) {
+      for (final item in tab.booruHandler.fetched) {
+        item.isSeen.value = false;
+      }
+    }
+  }
+
+  //
   // Saved searches (quick-search favourites). Bookmarks the user's current
   // query (tags + booru + secondaries + per-booru overrides + inherit flags)
   // so they can re-open it later, optionally on a different booru.
@@ -1266,6 +1319,9 @@ class SearchHandler {
   Future<void> restoreTabs() async {
     // TODO restoring database from the backup may have corrupted tab data when there are a lot of tabs?
     final settingsHandler = SettingsHandler.instance;
+    // Load the seen-post set once the DB is ready (before tabs paint so the
+    // first grid already shows dimming for previously-viewed posts).
+    await loadSeenPosts();
     try {
       final String? result = await settingsHandler.dbHandler.getTabRestore();
       if (result == null || result.startsWith('[')) {
