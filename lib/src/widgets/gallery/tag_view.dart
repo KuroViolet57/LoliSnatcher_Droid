@@ -1078,12 +1078,21 @@ class _TagViewState extends State<TagView> {
             if (expandedTagPreviews.contains(currentTag))
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: TagContentPreview(
-                  key: ValueKey('tag-preview-${searchHandler.currentBooru.name}-$currentTag'),
-                  tag: currentTag,
-                  boorus: [searchHandler.currentBooru],
-                  parentTab: searchHandler.currentTab,
-                  compact: true,
+                child: Builder(
+                  builder: (context) {
+                    // In merge mode (and Favourites/Downloads), the post being viewed often comes
+                    // from a different booru than the tab's primary. Route the preview strip to
+                    // that source booru so the tag lookup hits the right site instead of always
+                    // querying the primary.
+                    final Booru previewBooru = possibleBooruHandler?.booru ?? searchHandler.currentBooru;
+                    return TagContentPreview(
+                      key: ValueKey('tag-preview-${previewBooru.name}-$currentTag'),
+                      tag: currentTag,
+                      boorus: [previewBooru],
+                      parentTab: searchHandler.currentTab,
+                      compact: true,
+                    );
+                  },
                 ),
               ),
             Divider(
