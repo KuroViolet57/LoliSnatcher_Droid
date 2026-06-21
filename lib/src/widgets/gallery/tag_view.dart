@@ -1327,6 +1327,8 @@ class _TagViewState extends State<TagView> {
                             tag: query,
                             boorus: [previewBooru],
                             parentTab: searchHandler.currentTab,
+                            compact: true,
+                            compactTitle: 'Related',
                           ),
                         ),
                       ],
