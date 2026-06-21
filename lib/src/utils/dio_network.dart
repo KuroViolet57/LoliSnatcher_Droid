@@ -12,6 +12,61 @@ import 'package:lolisnatcher/src/utils/tools.dart';
 class DioNetwork {
   DioNetwork._();
 
+  // Status codes that mean "try again in a moment" rather than "this request
+  // is broken". Boorus increasingly use 429 (Cloudflare per-IP throttling)
+  // and 503 (origin overloaded), and the right user behaviour for both is
+  // identical: wait, retry. Doing it once at the network layer means every
+  // handler call (search, loadItem, comments, tags...) gets the same self-
+  // healing without each one re-implementing it.
+  static const List<int> _transientStatusCodes = [429, 503];
+  static const int _transientMaxAttempts = 3;
+
+  // Runs the request, retrying up to _transientMaxAttempts times on 429/503.
+  // Uses Retry-After (seconds or HTTP-date) when the server provides it,
+  // capped at 30s; otherwise 1s/2s/4s exponential backoff. Aborts immediately
+  // on cancellation so swiping away cancels the wait too.
+  static Future<Response> _withTransientRetries({
+    required Future<Response> Function() request,
+    required CancelToken? cancelToken,
+  }) async {
+    int attempt = 0;
+    while (true) {
+      try {
+        return await request();
+      } on DioException catch (e) {
+        final int? status = e.response?.statusCode;
+        final bool retriable = status != null && _transientStatusCodes.contains(status);
+        if (!retriable || CancelToken.isCancel(e) || attempt >= _transientMaxAttempts - 1) {
+          rethrow;
+        }
+        attempt++;
+        final Duration delay = _retryDelay(e, attempt);
+        try {
+          await Future.delayed(delay);
+        } catch (_) {}
+        if (cancelToken?.isCancelled == true) rethrow;
+      }
+    }
+  }
+
+  static Duration _retryDelay(DioException e, int attempt) {
+    final String? raw = e.response?.headers.value('retry-after');
+    if (raw != null) {
+      final int? seconds = int.tryParse(raw.trim());
+      if (seconds != null && seconds > 0 && seconds <= 30) {
+        return Duration(seconds: seconds);
+      }
+      // Some servers send an HTTP-date instead of seconds; best-effort parse.
+      try {
+        final DateTime when = DateTime.parse(raw.trim());
+        final int waitSec = when.difference(DateTime.now()).inSeconds;
+        if (waitSec > 0 && waitSec <= 30) return Duration(seconds: waitSec);
+      } catch (_) {}
+    }
+    // Exponential backoff: 1s, 2s, 4s.
+    return Duration(seconds: 1 << (attempt - 1));
+  }
+
   static Dio getClient({
     String? baseUrl,
     bool skipLogging = false,
@@ -210,12 +265,15 @@ class DioNetwork {
     final client = customInterceptor != null ? customInterceptor(getClient()) : getClient();
     final urlAndQuery = separateUrlAndQueryParams(url, queryParameters);
 
-    final res = await client.get(
-      urlAndQuery['url'],
-      queryParameters: urlAndQuery['query'],
-      options: mergeOptions(options, headers),
+    final res = await _withTransientRetries(
       cancelToken: cancelToken,
-      onReceiveProgress: onReceiveProgress,
+      request: () => client.get(
+        urlAndQuery['url'],
+        queryParameters: urlAndQuery['query'],
+        options: mergeOptions(options, headers),
+        cancelToken: cancelToken,
+        onReceiveProgress: onReceiveProgress,
+      ),
     );
     client.close();
     return res;
@@ -235,14 +293,17 @@ class DioNetwork {
     final client = customInterceptor != null ? customInterceptor(getClient()) : getClient();
     final urlAndQuery = separateUrlAndQueryParams(url, queryParameters);
 
-    final res = await client.post(
-      urlAndQuery['url'],
-      data: data,
-      queryParameters: urlAndQuery['query'],
-      options: mergeOptions(options, headers),
+    final res = await _withTransientRetries(
       cancelToken: cancelToken,
-      onReceiveProgress: onReceiveProgress,
-      onSendProgress: onSendProgress,
+      request: () => client.post(
+        urlAndQuery['url'],
+        data: data,
+        queryParameters: urlAndQuery['query'],
+        options: mergeOptions(options, headers),
+        cancelToken: cancelToken,
+        onReceiveProgress: onReceiveProgress,
+        onSendProgress: onSendProgress,
+      ),
     );
     client.close();
     return res;
@@ -262,12 +323,15 @@ class DioNetwork {
     final client = customInterceptor != null ? customInterceptor(getClient()) : getClient();
     final urlAndQuery = separateUrlAndQueryParams(url, queryParameters);
 
-    final res = await client.head(
-      urlAndQuery['url'],
-      data: data,
-      queryParameters: urlAndQuery['query'],
-      options: mergeOptions(options, headers),
+    final res = await _withTransientRetries(
       cancelToken: cancelToken,
+      request: () => client.head(
+        urlAndQuery['url'],
+        data: data,
+        queryParameters: urlAndQuery['query'],
+        options: mergeOptions(options, headers),
+        cancelToken: cancelToken,
+      ),
     );
     client.close();
     return res;

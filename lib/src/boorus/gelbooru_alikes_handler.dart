@@ -398,42 +398,24 @@ class GelbooruAlikesHandler extends BooruHandler {
     try {
       final cookies = await getCookiesForPost(item.postURL);
 
-      // Rule34's CDN throttles per-cookie HTML-page hits aggressively; retry on
-      // 429/503 with backoff so the user doesn't have to manually tap the
-      // error icon. Caps at 3 attempts (~7s total) and respects cancellation.
-      Response? response;
-      const List<Duration> retryDelays = [
-        Duration(seconds: 1),
-        Duration(seconds: 2),
-        Duration(seconds: 4),
-      ];
-      for (int attempt = 0; attempt <= retryDelays.length; attempt++) {
-        try {
-          response = await DioNetwork.get(
-            item.postURL,
-            headers: {
-              ...getHeaders(),
-              if (isR34xxx && cookies?.isNotEmpty == true) 'Cookie': cookies,
-            },
-            options: Options(
-              sendTimeout: const Duration(seconds: 5),
-              receiveTimeout: const Duration(seconds: 5),
-            ),
-            cancelToken: cancelToken,
-            customInterceptor: withCapcthaCheck ? DioNetwork.captchaInterceptor : null,
-          );
-          break;
-        } on DioException catch (e) {
-          final int? status = e.response?.statusCode;
-          final bool retriable = status == 429 || status == 503;
-          if (!retriable || attempt == retryDelays.length || CancelToken.isCancel(e)) rethrow;
-          await Future.delayed(retryDelays[attempt]);
-          if (cancelToken?.isCancelled == true) rethrow;
-        }
-      }
+      // 429/503 transient retries now live in DioNetwork.get so every handler
+      // benefits from the same backoff (see _withTransientRetries).
+      final response = await DioNetwork.get(
+        item.postURL,
+        headers: {
+          ...getHeaders(),
+          if (isR34xxx && cookies?.isNotEmpty == true) 'Cookie': cookies,
+        },
+        options: Options(
+          sendTimeout: const Duration(seconds: 5),
+          receiveTimeout: const Duration(seconds: 5),
+        ),
+        cancelToken: cancelToken,
+        customInterceptor: withCapcthaCheck ? DioNetwork.captchaInterceptor : null,
+      );
 
-      if (response == null || response.statusCode != 200) {
-        return (item: null, failed: true, error: 'Invalid status code ${response?.statusCode}');
+      if (response.statusCode != 200) {
+        return (item: null, failed: true, error: 'Invalid status code ${response.statusCode}');
       } else {
         final html = parse(response.data);
         final sidebar = html.getElementById('tag-sidebar');
