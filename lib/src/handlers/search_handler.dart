@@ -507,14 +507,16 @@ class SearchHandler {
         tabs.add(newTab);
       }
     } else {
-      // Preserve per-booru tag overrides across the tab swap so the user's
-      // search-bar tap doesn't wipe edits they made to the override fields.
+      // Preserve per-booru tag overrides + inherit flags across the tab swap
+      // so the user's search-bar tap doesn't wipe edits they made.
       final Map<String, String> carriedOverrides = Map<String, String>.from(currentTab.tagOverrides);
+      final Map<String, bool> carriedInherit = Map<String, bool>.from(currentTab.inheritMainTags);
       final SearchTab newTab = SearchTab(
         newBooru ?? currentBooru,
         currentSecondaryBoorus.value,
         text,
         tagOverrides: carriedOverrides,
+        inheritMainTags: carriedInherit,
       );
       tabs[currentIndex] = newTab;
     }
@@ -618,12 +620,17 @@ class SearchHandler {
       for (final e in currentTab.tagOverrides.entries)
         if (keepNames.contains(e.key)) e.key: e.value,
     };
+    final Map<String, bool> carriedInherit = {
+      for (final e in currentTab.inheritMainTags.entries)
+        if (keepNames.contains(e.key)) e.key: e.value,
+    };
 
     final SearchTab newTab = SearchTab(
       currentBooru,
       secondary,
       currentTab.tags,
       tagOverrides: carriedOverrides,
+      inheritMainTags: carriedInherit,
     );
     tabs[currentIndex] = newTab;
 
@@ -1101,6 +1108,9 @@ class SearchHandler {
             tab.secondaryBoorus.value?.map((b) => b.name ?? 'unknown').toList() ?? [];
         final Map<String, String> overrides = Map<String, String>.from(tab.tagOverrides)
           ..removeWhere((_, v) => v.trim().isEmpty);
+        // inherit defaults to true; only persist the explicit-false entries.
+        final Map<String, bool> inherit = Map<String, bool>.from(tab.inheritMainTags)
+          ..removeWhere((_, v) => v);
         final bool selected = tab == tabs[tabIndex];
 
         return jsonEncode(
@@ -1109,6 +1119,7 @@ class SearchHandler {
             booru: booruName,
             secondaryBoorus: secondaryBoorusNames,
             tagOverrides: overrides,
+            inheritMainTags: inherit,
             selected: selected,
           ).toJson(),
         );
@@ -1144,6 +1155,8 @@ class SearchHandler {
       secondaryBoorus.isEmpty ? null : secondaryBoorus,
       backup.tags,
       tagOverrides: backup.tagOverrides.isEmpty ? null : Map<String, String>.from(backup.tagOverrides),
+      inheritMainTags:
+          backup.inheritMainTags.isEmpty ? null : Map<String, bool>.from(backup.inheritMainTags),
     );
   }
 
@@ -1249,11 +1262,15 @@ class SearchTab {
     List<Booru>? secondaryBoorus,
     this.tags, {
     Map<String, String>? tagOverrides,
+    Map<String, bool>? inheritMainTags,
   }) {
     this.selectedBooru = selectedBooru.obs;
     this.secondaryBoorus = Rxn<List<Booru>?>(secondaryBoorus);
     if (tagOverrides != null && tagOverrides.isNotEmpty) {
       this.tagOverrides.addAll(tagOverrides);
+    }
+    if (inheritMainTags != null && inheritMainTags.isNotEmpty) {
+      this.inheritMainTags.addAll(inheritMainTags);
     }
 
     final List<Booru> tempBooruList = [];
@@ -1267,6 +1284,7 @@ class SearchTab {
     final handler = booruHandler;
     if (handler is MergebooruHandler) {
       handler.tagOverrides = Map<String, String>.from(this.tagOverrides);
+      handler.inheritMainTags = Map<String, bool>.from(this.inheritMainTags);
     }
   }
   // unique id to use for booru controller
@@ -1276,6 +1294,9 @@ class SearchTab {
   // child booru name. Reactive so the per-booru text fields refresh when
   // a new tab is restored from a backup.
   final RxMap<String, String> tagOverrides = <String, String>{}.obs;
+  // Per-booru inherit flag. Missing key means inherit (additive, the default).
+  // Explicit false means the override replaces the main tags for that booru.
+  final RxMap<String, bool> inheritMainTags = <String, bool>{}.obs;
 
   // Pushes the current tagOverrides snapshot onto the merge handler. Called
   // by the search bar when the user triggers a new search so per-booru edits
@@ -1284,6 +1305,7 @@ class SearchTab {
     final handler = booruHandler;
     if (handler is MergebooruHandler) {
       handler.tagOverrides = Map<String, String>.from(tagOverrides);
+      handler.inheritMainTags = Map<String, bool>.from(inheritMainTags);
     }
   }
 
@@ -1396,6 +1418,7 @@ class TabBackup {
     required this.booru,
     this.secondaryBoorus = const [],
     this.tagOverrides = const {},
+    this.inheritMainTags = const {},
     this.selected = false,
   });
   final String tags;
@@ -1404,6 +1427,9 @@ class TabBackup {
   // Per-booru tag overrides used in merge mode. Keys are booru names; missing
   // entries (or older backups without this field) fall back to `tags`.
   final Map<String, String> tagOverrides;
+  // Per-booru "do not inherit main tags" flags. Only false entries are
+  // persisted (true is the default).
+  final Map<String, bool> inheritMainTags;
   final bool selected;
 
   Map<String, dynamic> toJson() {
@@ -1412,6 +1438,7 @@ class TabBackup {
       'b': booru,
       if (secondaryBoorus.isNotEmpty) 'sb': secondaryBoorus,
       if (tagOverrides.isNotEmpty) 'to': tagOverrides,
+      if (inheritMainTags.isNotEmpty) 'in': inheritMainTags,
       if (selected) 's': selected, // only true matters, don't include on false
     };
   }
@@ -1424,6 +1451,8 @@ class TabBackup {
         secondaryBoorus: (json['sb'] as List<dynamic>?)?.map((e) => e as String).toList() ?? const [],
         tagOverrides:
             (json['to'] as Map<String, dynamic>?)?.map((k, v) => MapEntry(k, v.toString())) ?? const {},
+        inheritMainTags:
+            (json['in'] as Map<String, dynamic>?)?.map((k, v) => MapEntry(k, v == true)) ?? const {},
         selected: (json['s'] as bool?) ?? false,
       );
     } catch (_) {
@@ -1460,6 +1489,7 @@ class TabBackup {
     String? booru,
     List<String>? secondaryBoorus,
     Map<String, String>? tagOverrides,
+    Map<String, bool>? inheritMainTags,
     bool? selected,
   }) {
     return TabBackup(
@@ -1467,6 +1497,7 @@ class TabBackup {
       booru: booru ?? this.booru,
       secondaryBoorus: secondaryBoorus ?? this.secondaryBoorus,
       tagOverrides: tagOverrides ?? this.tagOverrides,
+      inheritMainTags: inheritMainTags ?? this.inheritMainTags,
       selected: selected ?? this.selected,
     );
   }

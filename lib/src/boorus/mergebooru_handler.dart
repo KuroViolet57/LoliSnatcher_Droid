@@ -28,6 +28,12 @@ class MergebooruHandler extends BooruHandler {
   // common case where the same character is tagged differently on each site.
   Map<String, String> tagOverrides = {};
 
+  // Per-child "inherit main tags?" flag keyed by child booru name. Default is
+  // true (the override field is additive). When false, the override replaces
+  // the main tags entirely — useful when the main tag simply doesn't exist
+  // on that booru (e.g. "animated" vs "video").
+  Map<String, bool> inheritMainTags = {};
+
   Map<int, ({Booru booru, List<BooruItem> items})> fetchedMap = {};
 
   @override
@@ -110,8 +116,16 @@ class MergebooruHandler extends BooruHandler {
     int fetchedMax = 0;
     for (int i = 0; i < booruHandlers.length; i++) {
       final String? overrideName = booruHandlers[i].booru.name;
-      final String? override = overrideName == null ? null : tagOverrides[overrideName];
-      final String baseTags = (override != null && override.trim().isNotEmpty) ? override : tags;
+      final String override = (overrideName == null ? '' : tagOverrides[overrideName] ?? '').trim();
+      final bool inherit = overrideName == null ? true : (inheritMainTags[overrideName] ?? true);
+      final String baseTags;
+      if (override.isEmpty) {
+        baseTags = tags;
+      } else if (inherit) {
+        baseTags = tags.trim().isEmpty ? override : '${tags.trim()} $override';
+      } else {
+        baseTags = override;
+      }
       final String currentTags = cleanBooruIndexesFromTags(baseTags, i);
       Logger.Inst().log('TAGS FOR #$i are: $currentTags', 'MergeBooruHandler', 'Search', LogTypes.booruHandlerInfo);
       booruHandlers[i].pageNum = pageNum + booruHandlerPageNums[i];
