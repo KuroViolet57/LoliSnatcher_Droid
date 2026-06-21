@@ -242,6 +242,11 @@ class SettingsHandler {
   bool showBottomSearchbar = true;
   bool useTopSearchbarInput = false;
   bool dimSeenPosts = false;
+  // When true, .gif files are sent to the active video backend instead of
+  // Flutter's built-in Image widget. Flutter's GIF decoder runs single-
+  // threaded on the UI isolate, which turns anything bigger than tiny into
+  // a 2-3 FPS slideshow. libmpv / video_player handle GIFs natively.
+  bool useVideoBackendForGifs = false;
   bool showSearchbarQuickActions = false;
   bool autofocusSearchbar = true;
   bool expandDetails = false;
@@ -784,6 +789,10 @@ class SettingsHandler {
       'type': 'bool',
       'default': false,
     },
+    'useVideoBackendForGifs': {
+      'type': 'bool',
+      'default': false,
+    },
     'showSearchbarQuickActions': {
       'type': 'bool',
       'default': false,
@@ -1272,6 +1281,8 @@ class SettingsHandler {
         return useTopSearchbarInput;
       case 'dimSeenPosts':
         return dimSeenPosts;
+      case 'useVideoBackendForGifs':
+        return useVideoBackendForGifs;
       case 'showSearchbarQuickActions':
         return showSearchbarQuickActions;
       case 'autofocusSearchbar':
@@ -1647,6 +1658,9 @@ class SettingsHandler {
         break;
       case 'dimSeenPosts':
         dimSeenPosts = validatedValue;
+        break;
+      case 'useVideoBackendForGifs':
+        useVideoBackendForGifs = validatedValue;
         break;
       case 'showSearchbarQuickActions':
         showSearchbarQuickActions = validatedValue;

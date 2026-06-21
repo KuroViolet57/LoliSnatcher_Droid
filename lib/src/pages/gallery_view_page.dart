@@ -477,8 +477,17 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
                               return ValueListenableBuilder(
                                 valueListenable: item.mediaType,
                                 builder: (context, mediaType, _) {
-                                  final bool isVideo = mediaType.isVideo;
-                                  final bool isImage = mediaType.isImageOrAnimation;
+                                  // Flutter's built-in GIF decoder runs on the
+                                  // UI isolate and drops to single-digit FPS on
+                                  // anything past a few hundred KB. With the
+                                  // setting on, route .gif files through the
+                                  // active video backend (libmpv / fvp /
+                                  // better_player) which decode natively and
+                                  // play smoothly.
+                                  final bool reroutedAsVideo =
+                                      settingsHandler.useVideoBackendForGifs && mediaType.isAnimation;
+                                  final bool isVideo = mediaType.isVideo || reroutedAsVideo;
+                                  final bool isImage = mediaType.isImageOrAnimation && !reroutedAsVideo;
                                   final bool isNeedToGuess = mediaType.isNeedToGuess;
                                   final bool isNeedToLoadItem =
                                       mediaType.isNeedToLoadItem && widget.tab.booruHandler.hasLoadItemSupport;
