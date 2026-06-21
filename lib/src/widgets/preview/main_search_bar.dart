@@ -223,6 +223,15 @@ class _MainSearchBarState extends State<MainSearchBar> {
 
   // Prompt for an optional label, save the current tab as a SavedSearch.
   Future<void> _onSaveSearchTap(BuildContext context) async {
+    if (searchHandler.tabs.isEmpty || searchHandler.currentTab.tags.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Nothing to save — type some tags first.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
     final controller = TextEditingController();
     final theme = Theme.of(context);
     final String? name = await showDialog<String?>(
@@ -431,29 +440,19 @@ class _MainSearchBarState extends State<MainSearchBar> {
                       },
                     ),
                     //
-                    Obx(
-                      () {
-                        final SearchHandler s = SearchHandler.instance;
-                        // Only offer the save button when there's something
-                        // to save (current tab has tags).
-                        if (s.tabs.isEmpty || s.currentTab.tags.trim().isEmpty) {
-                          return const SizedBox.shrink();
-                        }
-                        return Material(
-                          key: const Key('save-search-button'),
-                          color: Colors.transparent,
-                          child: InkWell(
-                            onTap: () => _onSaveSearchTap(context),
-                            child: const Padding(
-                              padding: EdgeInsets.symmetric(horizontal: 10),
-                              child: Icon(
-                                Icons.bookmark_add_outlined,
-                                size: 24,
-                              ),
-                            ),
+                    Material(
+                      key: const Key('save-search-button'),
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: () => _onSaveSearchTap(context),
+                        child: const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 10),
+                          child: Icon(
+                            Icons.bookmark_add_outlined,
+                            size: 24,
                           ),
-                        );
-                      },
+                        ),
+                      ),
                     ),
                     //
                     Material(

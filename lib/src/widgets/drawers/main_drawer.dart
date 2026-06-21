@@ -251,14 +251,16 @@ class _SavedSearchesDrawerSectionState extends State<SavedSearchesDrawerSection>
     return Obx(() {
       final searchHandler = SearchHandler.instance;
       final list = searchHandler.savedSearches;
-      if (list.isEmpty) return const SizedBox.shrink();
       final preview = list.take(5).toList(growable: false);
+      final theme = Theme.of(context);
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           ListTile(
             leading: const Icon(Icons.bookmarks),
-            title: Text('Saved searches (${list.length})'),
+            title: Text(
+              list.isEmpty ? 'Saved searches' : 'Saved searches (${list.length})',
+            ),
             trailing: Icon(_expanded ? Icons.expand_less : Icons.expand_more),
             onTap: () => setState(() => _expanded = !_expanded),
           ),
@@ -270,7 +272,18 @@ class _SavedSearchesDrawerSectionState extends State<SavedSearchesDrawerSection>
                 : Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      for (final entry in preview) SavedSearchTile(entry: entry),
+                      if (list.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 4, 20, 4),
+                          child: Text(
+                            'No saved searches yet. Tap the bookmark icon in the search bar to add the current query.',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        )
+                      else
+                        for (final entry in preview) SavedSearchTile(entry: entry),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                         child: OutlinedButton.icon(
