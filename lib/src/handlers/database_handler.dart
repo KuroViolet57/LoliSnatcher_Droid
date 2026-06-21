@@ -10,6 +10,7 @@ import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/constants.dart';
 import 'package:lolisnatcher/src/data/history_item.dart';
 import 'package:lolisnatcher/src/data/pinned_tag.dart';
+import 'package:lolisnatcher/src/data/saved_search.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
@@ -118,6 +119,14 @@ class DBHandler {
       'pinnedAt INTEGER NOT NULL, '
       'sortOrder INTEGER DEFAULT 0, '
       'label TEXT '
+      ')',
+    );
+    await db?.execute(
+      'CREATE TABLE IF NOT EXISTS SavedSearch ( '
+      'id INTEGER PRIMARY KEY, '
+      'name TEXT, '
+      'payload TEXT NOT NULL, '
+      'createdAt INTEGER NOT NULL '
       ')',
     );
     try {
@@ -949,6 +958,30 @@ class DBHandler {
   Future<void> setFavouriteSearchHistory(int id, bool isFavourite) async {
     await db?.rawUpdate('UPDATE SearchHistory SET isFavourite = ? WHERE id = ?', [Tools.boolToInt(isFavourite), id]);
     return;
+  }
+
+  ///////
+  /// Saved searches (quick-search favourites)
+
+  Future<int?> addSavedSearch(SavedSearch entry) async {
+    return db?.rawInsert(
+      'INSERT INTO SavedSearch(name, payload, createdAt) VALUES(?, ?, ?)',
+      [entry.name, entry.payloadJson(), entry.createdAt.millisecondsSinceEpoch],
+    );
+  }
+
+  Future<List<SavedSearch>> getSavedSearches() async {
+    final rows = await db?.rawQuery('SELECT * FROM SavedSearch ORDER BY createdAt DESC');
+    if (rows == null || rows.isEmpty) return const [];
+    return rows.map(SavedSearch.fromRow).whereType<SavedSearch>().toList(growable: false);
+  }
+
+  Future<void> deleteSavedSearch(int id) async {
+    await db?.rawDelete('DELETE FROM SavedSearch WHERE id = ?', [id]);
+  }
+
+  Future<void> renameSavedSearch(int id, String name) async {
+    await db?.rawUpdate('UPDATE SavedSearch SET name = ? WHERE id = ?', [name, id]);
   }
 
   ///////

@@ -15,6 +15,7 @@ import 'package:uuid/uuid.dart';
 import 'package:lolisnatcher/src/boorus/mergebooru_handler.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/data/saved_search.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 import 'package:lolisnatcher/src/handlers/database_handler.dart';
@@ -80,6 +81,8 @@ class SearchHandler {
     List<Booru>? secondaryBoorus,
     TabAddMode addMode = TabAddMode.end,
     int? customPage,
+    Map<String, String>? tagOverrides,
+    Map<String, bool>? inheritMainTags,
   }) {
     final Booru booru = customBooru ?? currentBooru;
 
@@ -88,6 +91,8 @@ class SearchHandler {
       booru,
       secondaryBoorus,
       searchText,
+      tagOverrides: tagOverrides,
+      inheritMainTags: inheritMainTags,
     );
     if (customPage != null) {
       newTab.booruHandler.pageNum = customPage;
@@ -598,6 +603,84 @@ class SearchHandler {
         );
       }
     }
+  }
+
+  //
+
+  //
+  // Saved searches (quick-search favourites). Bookmarks the user's current
+  // query (tags + booru + secondaries + per-booru overrides + inherit flags)
+  // so they can re-open it later, optionally on a different booru.
+
+  final RxList<SavedSearch> savedSearches = <SavedSearch>[].obs;
+
+  Future<void> reloadSavedSearches() async {
+    final SettingsHandler settingsHandler = SettingsHandler.instance;
+    savedSearches.assignAll(await settingsHandler.dbHandler.getSavedSearches());
+  }
+
+  // Snapshots the current tab as a SavedSearch and persists it. Returns the
+  // new id (or null if persistence failed). Name is optional; empty falls
+  // back to the tag string at display time.
+  Future<int?> addCurrentTabAsSavedSearch({String? name}) async {
+    if (tabs.isEmpty) return null;
+    final SettingsHandler settingsHandler = SettingsHandler.instance;
+    final SearchTab tab = currentTab;
+    final entry = SavedSearch(
+      id: null,
+      name: name?.trim() ?? '',
+      tags: tab.tags,
+      booru: tab.selectedBooru.value.name ?? '',
+      secondaryBoorus:
+          tab.secondaryBoorus.value?.map((b) => b.name ?? '').where((e) => e.isNotEmpty).toList() ?? const [],
+      tagOverrides: Map<String, String>.from(tab.tagOverrides)..removeWhere((_, v) => v.trim().isEmpty),
+      inheritMainTags: Map<String, bool>.from(tab.inheritMainTags)..removeWhere((_, v) => v),
+      createdAt: DateTime.now(),
+    );
+    final int? id = await settingsHandler.dbHandler.addSavedSearch(entry);
+    await reloadSavedSearches();
+    return id;
+  }
+
+  Future<void> deleteSavedSearch(int id) async {
+    final SettingsHandler settingsHandler = SettingsHandler.instance;
+    await settingsHandler.dbHandler.deleteSavedSearch(id);
+    await reloadSavedSearches();
+  }
+
+  Future<void> renameSavedSearch(int id, String name) async {
+    final SettingsHandler settingsHandler = SettingsHandler.instance;
+    await settingsHandler.dbHandler.renameSavedSearch(id, name);
+    await reloadSavedSearches();
+  }
+
+  // Opens a saved search as a new tab. `customBooru` overrides the saved
+  // primary (used by the "open in another booru" action). Respects the
+  // user's defaultTabAddMode setting and switches focus to the new tab.
+  void openSavedSearch(
+    SavedSearch entry, {
+    Booru? customBooru,
+  }) {
+    final SettingsHandler settingsHandler = SettingsHandler.instance;
+    final List<Booru> allBoorus = settingsHandler.booruList;
+    final Booru? primary = customBooru ??
+        allBoorus.firstWhereOrNull((b) => b.name == entry.booru);
+    if (primary == null) return;
+
+    final TabAddMode addMode = TabAddMode.values.firstWhereOrNull(
+          (m) => m.name == settingsHandler.defaultTabAddMode,
+        ) ??
+        TabAddMode.end;
+    addTabByString(
+      entry.tags,
+      switchToNew: true,
+      customBooru: primary,
+      secondaryBoorus: entry.resolveSecondaryBoorus(allBoorus),
+      addMode: addMode,
+      tagOverrides: entry.tagOverrides.isEmpty ? null : Map<String, String>.from(entry.tagOverrides),
+      inheritMainTags:
+          entry.inheritMainTags.isEmpty ? null : Map<String, bool>.from(entry.inheritMainTags),
+    );
   }
 
   //

@@ -221,6 +221,67 @@ class _MainSearchBarState extends State<MainSearchBar> {
     super.dispose();
   }
 
+  // Prompt for an optional label, save the current tab as a SavedSearch.
+  Future<void> _onSaveSearchTap(BuildContext context) async {
+    final controller = TextEditingController();
+    final theme = Theme.of(context);
+    final String? name = await showDialog<String?>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Save search'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                searchHandler.currentTab.tags.isEmpty
+                    ? '(no tags)'
+                    : searchHandler.currentTab.tags,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  labelText: 'Label (optional)',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                onSubmitted: (v) => Navigator.of(ctx).pop(v),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(null),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(controller.text),
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+    controller.dispose();
+    if (name == null) return; // cancelled
+    final int? id = await searchHandler.addCurrentTabAsSavedSearch(name: name);
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(id != null ? 'Search saved' : 'Failed to save search'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return ClipRRect(
@@ -367,6 +428,31 @@ class _MainSearchBarState extends State<MainSearchBar> {
                         }
 
                         return const SizedBox.shrink();
+                      },
+                    ),
+                    //
+                    Obx(
+                      () {
+                        final SearchHandler s = SearchHandler.instance;
+                        // Only offer the save button when there's something
+                        // to save (current tab has tags).
+                        if (s.tabs.isEmpty || s.currentTab.tags.trim().isEmpty) {
+                          return const SizedBox.shrink();
+                        }
+                        return Material(
+                          key: const Key('save-search-button'),
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: () => _onSaveSearchTap(context),
+                            child: const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 10),
+                              child: Icon(
+                                Icons.bookmark_add_outlined,
+                                size: 24,
+                              ),
+                            ),
+                          ),
+                        );
                       },
                     ),
                     //
