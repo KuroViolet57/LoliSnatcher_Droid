@@ -116,6 +116,11 @@ class _TagViewState extends State<TagView> {
   bool loadingUpdate = false, failedUpdate = false;
 
   bool? detailsExpanded;
+  bool relatedExpanded = false;
+  // Cached so collapsing / re-expanding the "Related" tile doesn't re-derive
+  // (and the preview widget's own state doesn't get torn down on the second
+  // expand). Filled lazily on the first expand.
+  String? _relatedQueryCache;
 
   Timer? sortTimer;
 
@@ -197,6 +202,8 @@ class _TagViewState extends State<TagView> {
     super.didUpdateWidget(oldWidget);
     if (widget.item != item) {
       item = widget.item;
+      // Different item -> different related query; bust the cache.
+      _relatedQueryCache = null;
       checkForPossibleBooruHandler();
       tags = [...Set.from(item.tagsList)];
       filteredTags = [...tags];
@@ -1107,6 +1114,42 @@ class _TagViewState extends State<TagView> {
     }
   }
 
+  // Builds a space-separated tag query for the "Related" preview strip.
+  // Prefers character + artist + copyright tags (the narrowest, most-likely-
+  // to-match-vibe categories); falls back to a few general tags if none of
+  // those are present. Always excludes the current post id so the strip
+  // doesn't show this same item back to the user.
+  String? _buildRelatedQuery() {
+    if (_relatedQueryCache != null) return _relatedQueryCache;
+
+    final List<String> picked = [];
+
+    void pickFrom(TagType type, int limit) {
+      int taken = 0;
+      for (final t in item.tagsList) {
+        if (taken >= limit) break;
+        if (t.tagType == type && t.fullString.trim().isNotEmpty && !picked.contains(t.fullString)) {
+          picked.add(t.fullString);
+          taken++;
+        }
+      }
+    }
+
+    // Up to 2 characters + 1 artist + 1 copyright; if all empty, take 2 general.
+    pickFrom(TagType.character, 2);
+    pickFrom(TagType.artist, 1);
+    pickFrom(TagType.copyright, 1);
+    if (picked.isEmpty) {
+      pickFrom(TagType.none, 2);
+    }
+
+    if (picked.isEmpty) return null;
+
+    final String? id = item.serverId;
+    final String exclusion = (id != null && id.isNotEmpty) ? ' -id:$id' : '';
+    return _relatedQueryCache = picked.join(' ') + exclusion;
+  }
+
   @override
   Widget build(BuildContext context) {
     final String fileName = Tools.getFileName(item.fileURL);
@@ -1253,6 +1296,42 @@ class _TagViewState extends State<TagView> {
                     commentsButton(),
                     sourcesList(sources),
                   ],
+                ),
+                // "Related" — preview strip seeded from the item's strongest
+                // tags (character/artist/copyright, falling back to general).
+                // Only shows when we can build a meaningful seed query.
+                Builder(
+                  builder: (context) {
+                    final String? query = _buildRelatedQuery();
+                    if (query == null) return const SizedBox.shrink();
+                    final Booru previewBooru =
+                        possibleBooruHandler?.booru ?? searchHandler.currentBooru;
+                    return ExpansionTile(
+                      title: const Text(
+                        'Related',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
+                      ),
+                      initiallyExpanded: relatedExpanded,
+                      onExpansionChanged: (expanded) {
+                        setState(() => relatedExpanded = expanded);
+                      },
+                      iconColor: Colors.white.withValues(alpha: 0.66),
+                      collapsedIconColor: Colors.white.withValues(alpha: 0.66),
+                      shape: const Border(),
+                      collapsedShape: const Border(),
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          child: TagContentPreview(
+                            key: ValueKey('related-${previewBooru.name}-${item.serverId ?? item.fileURL}'),
+                            tag: query,
+                            boorus: [previewBooru],
+                            parentTab: searchHandler.currentTab,
+                          ),
+                        ),
+                      ],
+                    );
+                  },
                 ),
                 notesButton(),
                 if (tagsAvailable) ...[
