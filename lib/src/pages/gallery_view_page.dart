@@ -515,8 +515,14 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
                                         valueListenable: page,
                                         builder: (_, pageVal, _) {
                                           final usedBooru = possibleBooru ?? widget.tab.booruHandler.booru;
+                                          // GIFs being rerouted as video must skip libmpv / better_player —
+                                          // neither decodes the GIF container reliably and they hang on init.
+                                          // Force the default ExoPlayer-backed VideoViewer for those.
+                                          final bool useDefaultForGif = reroutedAsVideo;
                                           // Experimental media_kit (libmpv) path takes precedence.
-                                          if (settingsHandler.useMediaKitPlayer && Platform.isAndroid) {
+                                          if (!useDefaultForGif &&
+                                              settingsHandler.useMediaKitPlayer &&
+                                              Platform.isAndroid) {
                                             return MediaKitPlayerView(
                                               item,
                                               booru: usedBooru,
@@ -525,7 +531,9 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
                                             );
                                           }
                                           // Experimental better_player_plus path; behind a setting.
-                                          if (settingsHandler.useBetterPlayer && Platform.isAndroid) {
+                                          if (!useDefaultForGif &&
+                                              settingsHandler.useBetterPlayer &&
+                                              Platform.isAndroid) {
                                             return BetterPlayerView(
                                               item,
                                               booru: usedBooru,
