@@ -21,6 +21,7 @@ import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/snatch_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/utils/extensions.dart';
+import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/widgets/common/close_dialog_button.dart';
 import 'package:lolisnatcher/src/widgets/common/long_press_repeater.dart';
 import 'package:lolisnatcher/src/widgets/gallery/gallery_buttons.dart';
@@ -486,6 +487,15 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
                                   // play smoothly.
                                   final bool reroutedAsVideo =
                                       settingsHandler.useVideoBackendForGifs && mediaType.isAnimation;
+                                  if (mediaType.isAnimation) {
+                                    Logger.Inst().log(
+                                      'gif route: mediaType=$mediaType reroutedAsVideo=$reroutedAsVideo '
+                                      'setting=${settingsHandler.useVideoBackendForGifs} url=${item.fileURL}',
+                                      'GalleryViewPage',
+                                      'gifRoute',
+                                      LogTypes.booruItemLoad,
+                                    );
+                                  }
                                   final bool isVideo = mediaType.isVideo || reroutedAsVideo;
                                   final bool isImage = mediaType.isImageOrAnimation && !reroutedAsVideo;
                                   final bool isNeedToGuess = mediaType.isNeedToGuess;

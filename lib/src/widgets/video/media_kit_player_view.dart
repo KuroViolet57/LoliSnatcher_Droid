@@ -218,6 +218,8 @@ class _PooledPlayer {
   int lastUsedTick = 0;
   // Set per acquire() call so callers know whether they got a warm buffer.
   bool wasReused = false;
+  // Diagnostic stream subscriptions (mpv error / log). Cancelled on eviction.
+  final List<StreamSubscription> debugSubs = [];
 }
 
 /// Global URL-keyed LRU pool. Survives widget disposal so scrolling back to a
@@ -260,7 +262,31 @@ class _MediaKitPlayerPool {
     );
     final controller = VideoController(player);
 
+    // Diagnostics: surface libmpv decode errors and key state transitions so a
+    // hung/black GIF leaves a trail in the talker log instead of failing
+    // silently. (Verbose but only fires per opened media.)
+    final List<StreamSubscription> debugSubs = [
+      player.stream.error.listen((e) {
+        Logger.Inst().log('mpv error [$url]: $e', '_MediaKitPlayerPool', 'stream.error', LogTypes.exception);
+      }),
+      player.stream.videoParams.listen((p) {
+        Logger.Inst().log(
+          'mpv videoParams [$url]: w=${p.w} h=${p.h} pixelformat=${p.pixelformat}',
+          '_MediaKitPlayerPool',
+          'stream.videoParams',
+          LogTypes.booruItemLoad,
+        );
+      }),
+    ];
+
+    Logger.Inst().log('mpv opening [$url]', '_MediaKitPlayerPool', 'acquire', LogTypes.booruItemLoad);
     await player.open(Media(url, httpHeaders: headers), play: false);
+    Logger.Inst().log(
+      'mpv opened [$url] duration=${player.state.duration} playing=${player.state.playing}',
+      '_MediaKitPlayerPool',
+      'acquire',
+      LogTypes.booruItemLoad,
+    );
     // PlaylistMode.single => mpv loop-file=yes: loops THIS file in place
     // without re-running the playlist. PlaylistMode.loop (loop-playlist=yes)
     // re-inits the demuxer at the loop point, which showed up as a 1-2s
@@ -293,7 +319,8 @@ class _MediaKitPlayerPool {
     final entry = _PooledPlayer(url: url, player: player, controller: controller)
       ..refCount = 1
       ..lastUsedTick = ++_tick
-      ..wasReused = false;
+      ..wasReused = false
+      ..debugSubs.addAll(debugSubs);
     _entries[url] = entry;
     return entry;
   }
@@ -325,6 +352,10 @@ class _MediaKitPlayerPool {
     for (final e in evictable) {
       if (toEvict <= 0) break;
       _entries.remove(e.url);
+      for (final sub in e.debugSubs) {
+        sub.cancel();
+      }
+      e.debugSubs.clear();
       try {
         e.player.dispose();
       } catch (_) {}
