@@ -25,12 +25,17 @@ class MediaKitPlayerView extends StatefulWidget {
     this.booruItem, {
     required this.booru,
     required this.isViewed,
+    this.forcePlay = false,
     super.key,
   });
 
   final BooruItem booruItem;
   final Booru booru;
   final bool isViewed;
+  // Always start playback regardless of the autoplay setting. Used for GIFs
+  // routed here by the "Play GIFs with the video backend" option — a paused
+  // GIF is pointless, and libmpv only renders a frame once it's playing.
+  final bool forcePlay;
 
   @override
   State<MediaKitPlayerView> createState() => _MediaKitPlayerViewState();
@@ -72,7 +77,7 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> {
           // Always restart from the beginning when a video becomes the
           // active page — user expectation from the previous engine.
           _entry!.player.seek(Duration.zero);
-          if (SettingsHandler.instance.autoPlayEnabled) {
+          if (SettingsHandler.instance.autoPlayEnabled || widget.forcePlay) {
             _entry!.player.play();
           }
         }
@@ -122,7 +127,7 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> {
       if (settings.startVideosMuted) {
         await entry.player.setVolume(0);
       }
-      if (widget.isViewed && settings.autoPlayEnabled) {
+      if (widget.isViewed && (settings.autoPlayEnabled || widget.forcePlay)) {
         await entry.player.play();
       }
 

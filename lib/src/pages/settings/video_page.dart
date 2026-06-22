@@ -152,10 +152,10 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
                 },
                 title: 'Play GIFs with the video backend',
                 subtitle: const Text(
-                  'Fixes slow / stuttery GIF playback. Renders .gif files through the default video player '
-                  '(ExoPlayer on Android). Note: libmpv and better_player are not used for GIFs because they '
-                  "don't decode the GIF container reliably — only the default backend handles GIFs, regardless "
-                  'of which video backend you have selected below.',
+                  'Fixes slow / stuttery GIF playback. Routes .gif files through the libmpv (media_kit) '
+                  'decoder, which plays them at full framerate — unlike the default ExoPlayer, which '
+                  "can't read GIFs. This is independent of the video backend you pick below; GIFs always "
+                  'use libmpv when this is on. Android only.',
                 ),
               ),
               SettingsToggle(

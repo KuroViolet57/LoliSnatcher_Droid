@@ -515,14 +515,22 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
                                         valueListenable: page,
                                         builder: (_, pageVal, _) {
                                           final usedBooru = possibleBooru ?? widget.tab.booruHandler.booru;
-                                          // GIFs being rerouted as video must skip libmpv / better_player —
-                                          // neither decodes the GIF container reliably and they hang on init.
-                                          // Force the default ExoPlayer-backed VideoViewer for those.
-                                          final bool useDefaultForGif = reroutedAsVideo;
+                                          // GIFs rerouted here must use libmpv (media_kit): it's the only
+                                          // backend that decodes the GIF container. ExoPlayer (the default
+                                          // video_player path) and better_player can't read GIFs at all and
+                                          // hang on init. forcePlay makes libmpv render a frame even when
+                                          // autoplay is off — a paused GIF shows nothing.
+                                          if (reroutedAsVideo && Platform.isAndroid) {
+                                            return MediaKitPlayerView(
+                                              item,
+                                              booru: usedBooru,
+                                              isViewed: pageVal == index,
+                                              forcePlay: true,
+                                              key: item.key,
+                                            );
+                                          }
                                           // Experimental media_kit (libmpv) path takes precedence.
-                                          if (!useDefaultForGif &&
-                                              settingsHandler.useMediaKitPlayer &&
-                                              Platform.isAndroid) {
+                                          if (settingsHandler.useMediaKitPlayer && Platform.isAndroid) {
                                             return MediaKitPlayerView(
                                               item,
                                               booru: usedBooru,
@@ -531,9 +539,7 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
                                             );
                                           }
                                           // Experimental better_player_plus path; behind a setting.
-                                          if (!useDefaultForGif &&
-                                              settingsHandler.useBetterPlayer &&
-                                              Platform.isAndroid) {
+                                          if (settingsHandler.useBetterPlayer && Platform.isAndroid) {
                                             return BetterPlayerView(
                                               item,
                                               booru: usedBooru,
