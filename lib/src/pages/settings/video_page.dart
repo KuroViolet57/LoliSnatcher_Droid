@@ -25,7 +25,6 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
   bool disableVideo = false;
   bool useBetterPlayer = false;
   bool useMediaKitPlayer = false;
-  bool useVideoBackendForGifs = false;
   final TextEditingController mediaKitMaxPlayersController = TextEditingController();
   final TextEditingController betterPlayerCacheMbController = TextEditingController();
   final TextEditingController betterPlayerPerFileMbController = TextEditingController();
@@ -46,7 +45,6 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
     disableVideo = settingsHandler.disableVideo;
     useBetterPlayer = settingsHandler.useBetterPlayer;
     useMediaKitPlayer = settingsHandler.useMediaKitPlayer;
-    useVideoBackendForGifs = settingsHandler.useVideoBackendForGifs;
     mediaKitMaxPlayersController.text = settingsHandler.mediaKitMaxPlayers.toString();
     betterPlayerCacheMbController.text = settingsHandler.betterPlayerCacheMb.toString();
     betterPlayerPerFileMbController.text = settingsHandler.betterPlayerPerFileMb.toString();
@@ -63,7 +61,6 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
     settingsHandler.disableVideo = disableVideo;
     settingsHandler.useBetterPlayer = useBetterPlayer;
     settingsHandler.useMediaKitPlayer = useMediaKitPlayer;
-    settingsHandler.useVideoBackendForGifs = useVideoBackendForGifs;
     settingsHandler.mediaKitMaxPlayers =
         (int.tryParse(mediaKitMaxPlayersController.text) ?? 4).clamp(1, 20);
     settingsHandler.betterPlayerCacheMb =
@@ -142,21 +139,6 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
                   });
                 },
                 title: context.loc.settings.video.autoplayVideos,
-              ),
-              SettingsToggle(
-                value: useVideoBackendForGifs,
-                onChanged: (newValue) {
-                  setState(() {
-                    useVideoBackendForGifs = newValue;
-                  });
-                },
-                title: 'Play GIFs with the video backend',
-                subtitle: const Text(
-                  'Fixes slow / stuttery GIF playback. Routes .gif files through the libmpv (media_kit) '
-                  'decoder, which plays them at full framerate — unlike the default ExoPlayer, which '
-                  "can't read GIFs. This is independent of the video backend you pick below; GIFs always "
-                  'use libmpv when this is on. Android only.',
-                ),
               ),
               SettingsToggle(
                 value: startVideosMuted,

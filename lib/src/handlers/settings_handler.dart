@@ -242,11 +242,11 @@ class SettingsHandler {
   bool showBottomSearchbar = true;
   bool useTopSearchbarInput = false;
   bool dimSeenPosts = false;
-  // When true, .gif files are sent to the active video backend instead of
-  // Flutter's built-in Image widget. Flutter's GIF decoder runs single-
-  // threaded on the UI isolate, which turns anything bigger than tiny into
-  // a 2-3 FPS slideshow. libmpv / video_player handle GIFs natively.
-  bool useVideoBackendForGifs = false;
+  // Render .gif files with the extended_image engine (the same one Boorusama
+  // uses) instead of Flutter's built-in Image widget. extended_image decodes
+  // frames at display resolution and manages its own cache, which fixes the
+  // slow/stuttery full-res GIF playback.
+  bool fastGifPlayback = false;
   bool showSearchbarQuickActions = false;
   bool autofocusSearchbar = true;
   bool expandDetails = false;
@@ -789,7 +789,7 @@ class SettingsHandler {
       'type': 'bool',
       'default': false,
     },
-    'useVideoBackendForGifs': {
+    'fastGifPlayback': {
       'type': 'bool',
       'default': false,
     },
@@ -1281,8 +1281,8 @@ class SettingsHandler {
         return useTopSearchbarInput;
       case 'dimSeenPosts':
         return dimSeenPosts;
-      case 'useVideoBackendForGifs':
-        return useVideoBackendForGifs;
+      case 'fastGifPlayback':
+        return fastGifPlayback;
       case 'showSearchbarQuickActions':
         return showSearchbarQuickActions;
       case 'autofocusSearchbar':
@@ -1659,8 +1659,8 @@ class SettingsHandler {
       case 'dimSeenPosts':
         dimSeenPosts = validatedValue;
         break;
-      case 'useVideoBackendForGifs':
-        useVideoBackendForGifs = validatedValue;
+      case 'fastGifPlayback':
+        fastGifPlayback = validatedValue;
         break;
       case 'showSearchbarQuickActions':
         showSearchbarQuickActions = validatedValue;

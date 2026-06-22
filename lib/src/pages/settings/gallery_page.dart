@@ -25,6 +25,7 @@ class _GalleryPageState extends State<GalleryPage> {
   bool autoHideImageBar = false,
       hideNotes = false,
       dimSeenPosts = false,
+      fastGifPlayback = false,
       allowRotation = false,
       loadingGif = false,
       useVolumeButtonsForScroll = false,
@@ -68,6 +69,7 @@ class _GalleryPageState extends State<GalleryPage> {
     changePageButtonsPosition = settingsHandler.changePageButtonsPosition;
     hideNotes = settingsHandler.hideNotes;
     dimSeenPosts = settingsHandler.dimSeenPosts;
+    fastGifPlayback = settingsHandler.fastGifPlayback;
     allowRotation = settingsHandler.allowRotation;
     useVolumeButtonsForScroll = settingsHandler.useVolumeButtonsForScroll;
     scrollSpeedController.text = settingsHandler.volumeButtonsScrollSpeed.toString();
@@ -104,6 +106,7 @@ class _GalleryPageState extends State<GalleryPage> {
     settingsHandler.changePageButtonsPosition = changePageButtonsPosition;
     settingsHandler.hideNotes = hideNotes;
     settingsHandler.dimSeenPosts = dimSeenPosts;
+    settingsHandler.fastGifPlayback = fastGifPlayback;
     settingsHandler.allowRotation = allowRotation;
     settingsHandler.loadingGif = loadingGif;
     settingsHandler.useVolumeButtonsForScroll = useVolumeButtonsForScroll;
@@ -345,6 +348,20 @@ class _GalleryPageState extends State<GalleryPage> {
                     }
                   },
                 ),
+              SettingsToggle(
+                value: fastGifPlayback,
+                onChanged: (newValue) {
+                  setState(() {
+                    fastGifPlayback = newValue;
+                  });
+                },
+                title: 'Fast GIF playback (experimental)',
+                subtitle: const Text(
+                  'Renders GIFs with the extended_image engine (decodes at screen resolution + its own '
+                  'cache) instead of the built-in viewer. Fixes slow / stuttery large GIFs. Turn off if a '
+                  'GIF looks wrong.',
+                ),
+              ),
               SettingsToggle(
                 value: allowRotation,
                 onChanged: (newValue) {

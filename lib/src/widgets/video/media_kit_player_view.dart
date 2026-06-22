@@ -25,17 +25,12 @@ class MediaKitPlayerView extends StatefulWidget {
     this.booruItem, {
     required this.booru,
     required this.isViewed,
-    this.forcePlay = false,
     super.key,
   });
 
   final BooruItem booruItem;
   final Booru booru;
   final bool isViewed;
-  // Always start playback regardless of the autoplay setting. Used for GIFs
-  // routed here by the "Play GIFs with the video backend" option — a paused
-  // GIF is pointless, and libmpv only renders a frame once it's playing.
-  final bool forcePlay;
 
   @override
   State<MediaKitPlayerView> createState() => _MediaKitPlayerViewState();
@@ -77,7 +72,7 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> {
           // Always restart from the beginning when a video becomes the
           // active page — user expectation from the previous engine.
           _entry!.player.seek(Duration.zero);
-          if (SettingsHandler.instance.autoPlayEnabled || widget.forcePlay) {
+          if (SettingsHandler.instance.autoPlayEnabled) {
             _entry!.player.play();
           }
         }
@@ -127,7 +122,7 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> {
       if (settings.startVideosMuted) {
         await entry.player.setVolume(0);
       }
-      if (widget.isViewed && (settings.autoPlayEnabled || widget.forcePlay)) {
+      if (widget.isViewed && settings.autoPlayEnabled) {
         await entry.player.play();
       }
 
@@ -218,8 +213,6 @@ class _PooledPlayer {
   int lastUsedTick = 0;
   // Set per acquire() call so callers know whether they got a warm buffer.
   bool wasReused = false;
-  // Diagnostic stream subscriptions (mpv error / log). Cancelled on eviction.
-  final List<StreamSubscription> debugSubs = [];
 }
 
 /// Global URL-keyed LRU pool. Survives widget disposal so scrolling back to a
@@ -262,31 +255,7 @@ class _MediaKitPlayerPool {
     );
     final controller = VideoController(player);
 
-    // Diagnostics: surface libmpv decode errors and key state transitions so a
-    // hung/black GIF leaves a trail in the talker log instead of failing
-    // silently. (Verbose but only fires per opened media.)
-    final List<StreamSubscription> debugSubs = [
-      player.stream.error.listen((e) {
-        Logger.Inst().log('mpv error [$url]: $e', '_MediaKitPlayerPool', 'stream.error', LogTypes.exception);
-      }),
-      player.stream.videoParams.listen((p) {
-        Logger.Inst().log(
-          'mpv videoParams [$url]: w=${p.w} h=${p.h} pixelformat=${p.pixelformat}',
-          '_MediaKitPlayerPool',
-          'stream.videoParams',
-          LogTypes.booruItemLoad,
-        );
-      }),
-    ];
-
-    Logger.Inst().log('mpv opening [$url]', '_MediaKitPlayerPool', 'acquire', LogTypes.booruItemLoad);
     await player.open(Media(url, httpHeaders: headers), play: false);
-    Logger.Inst().log(
-      'mpv opened [$url] duration=${player.state.duration} playing=${player.state.playing}',
-      '_MediaKitPlayerPool',
-      'acquire',
-      LogTypes.booruItemLoad,
-    );
     // PlaylistMode.single => mpv loop-file=yes: loops THIS file in place
     // without re-running the playlist. PlaylistMode.loop (loop-playlist=yes)
     // re-inits the demuxer at the loop point, which showed up as a 1-2s
@@ -319,8 +288,7 @@ class _MediaKitPlayerPool {
     final entry = _PooledPlayer(url: url, player: player, controller: controller)
       ..refCount = 1
       ..lastUsedTick = ++_tick
-      ..wasReused = false
-      ..debugSubs.addAll(debugSubs);
+      ..wasReused = false;
     _entries[url] = entry;
     return entry;
   }
@@ -352,10 +320,6 @@ class _MediaKitPlayerPool {
     for (final e in evictable) {
       if (toEvict <= 0) break;
       _entries.remove(e.url);
-      for (final sub in e.debugSubs) {
-        sub.cancel();
-      }
-      e.debugSubs.clear();
       try {
         e.player.dispose();
       } catch (_) {}

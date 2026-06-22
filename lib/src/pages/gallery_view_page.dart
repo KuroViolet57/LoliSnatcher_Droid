@@ -21,7 +21,6 @@ import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/snatch_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/utils/extensions.dart';
-import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/widgets/common/close_dialog_button.dart';
 import 'package:lolisnatcher/src/widgets/common/long_press_repeater.dart';
 import 'package:lolisnatcher/src/widgets/gallery/gallery_buttons.dart';
@@ -30,6 +29,7 @@ import 'package:lolisnatcher/src/widgets/gallery/item_info_bottom_sheet.dart';
 import 'package:lolisnatcher/src/widgets/gallery/notes_renderer.dart';
 import 'package:lolisnatcher/src/widgets/gallery/tag_view.dart';
 import 'package:lolisnatcher/src/widgets/gallery/viewer_tutorial.dart';
+import 'package:lolisnatcher/src/widgets/image/gif_viewer.dart';
 import 'package:lolisnatcher/src/widgets/image/image_viewer.dart';
 import 'package:lolisnatcher/src/widgets/video/guess_extension_viewer.dart';
 import 'package:lolisnatcher/src/widgets/video/load_item_viewer.dart';
@@ -478,32 +478,31 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
                               return ValueListenableBuilder(
                                 valueListenable: item.mediaType,
                                 builder: (context, mediaType, _) {
-                                  // Flutter's built-in GIF decoder runs on the
-                                  // UI isolate and drops to single-digit FPS on
-                                  // anything past a few hundred KB. With the
-                                  // setting on, route .gif files through the
-                                  // active video backend (libmpv / fvp /
-                                  // better_player) which decode natively and
-                                  // play smoothly.
-                                  final bool reroutedAsVideo =
-                                      settingsHandler.useVideoBackendForGifs && mediaType.isAnimation;
-                                  if (mediaType.isAnimation) {
-                                    Logger.Inst().log(
-                                      'gif route: mediaType=$mediaType reroutedAsVideo=$reroutedAsVideo '
-                                      'setting=${settingsHandler.useVideoBackendForGifs} url=${item.fileURL}',
-                                      'GalleryViewPage',
-                                      'gifRoute',
-                                      LogTypes.booruItemLoad,
-                                    );
-                                  }
-                                  final bool isVideo = mediaType.isVideo || reroutedAsVideo;
-                                  final bool isImage = mediaType.isImageOrAnimation && !reroutedAsVideo;
+                                  final bool isVideo = mediaType.isVideo;
+                                  final bool isImage = mediaType.isImageOrAnimation;
                                   final bool isNeedToGuess = mediaType.isNeedToGuess;
                                   final bool isNeedToLoadItem =
                                       mediaType.isNeedToLoadItem && widget.tab.booruHandler.hasLoadItemSupport;
 
+                                  // GIFs get the extended_image renderer when the
+                                  // fast-GIF option is on (decodes at display res
+                                  // + own cache — fixes the slow stock Image path).
+                                  final bool useGifViewer = mediaType.isAnimation && settingsHandler.fastGifPlayback;
+
                                   late Widget itemWidget;
-                                  if (isImage) {
+                                  if (useGifViewer) {
+                                    itemWidget = ValueListenableBuilder(
+                                      valueListenable: page,
+                                      builder: (_, pageVal, _) {
+                                        return GifViewer(
+                                          item,
+                                          booru: possibleBooru ?? widget.tab.booruHandler.booru,
+                                          isViewed: pageVal == index,
+                                          key: item.key,
+                                        );
+                                      },
+                                    );
+                                  } else if (isImage) {
                                     itemWidget = ValueListenableBuilder(
                                       valueListenable: page,
                                       builder: (_, pageVal, _) {
@@ -525,20 +524,6 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
                                         valueListenable: page,
                                         builder: (_, pageVal, _) {
                                           final usedBooru = possibleBooru ?? widget.tab.booruHandler.booru;
-                                          // GIFs rerouted here must use libmpv (media_kit): it's the only
-                                          // backend that decodes the GIF container. ExoPlayer (the default
-                                          // video_player path) and better_player can't read GIFs at all and
-                                          // hang on init. forcePlay makes libmpv render a frame even when
-                                          // autoplay is off — a paused GIF shows nothing.
-                                          if (reroutedAsVideo && Platform.isAndroid) {
-                                            return MediaKitPlayerView(
-                                              item,
-                                              booru: usedBooru,
-                                              isViewed: pageVal == index,
-                                              forcePlay: true,
-                                              key: item.key,
-                                            );
-                                          }
                                           // Experimental media_kit (libmpv) path takes precedence.
                                           if (settingsHandler.useMediaKitPlayer && Platform.isAndroid) {
                                             return MediaKitPlayerView(
