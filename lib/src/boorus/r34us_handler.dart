@@ -101,6 +101,21 @@ class R34USHandler extends BooruHandler {
         // link to full res has the same html as a tag, but is the only/first(?) element inside .tag-list-left which is wrapped into <a>
         final Element? origEl = html.querySelector('.tag-list-left > a');
         if (imageEl == null && videoEl == null) {
+          // Diagnostic: site may have changed its post-page markup. Log a
+          // short HTML snippet so we can see what's actually there instead
+          // of guessing at the next selector.
+          final String snippet = (response.data is String)
+              ? (response.data as String).length > 600
+                    ? (response.data as String).substring(0, 600)
+                    : response.data as String
+              : '<non-string response>';
+          Logger.Inst().log(
+            'r34us: no img/video in .content_push for ${item.postURL}. '
+            'origEl=${origEl?.outerHtml.length ?? 0}b. html head: $snippet',
+            className,
+            'loadItem',
+            LogTypes.booruHandlerInfo,
+          );
           return (item: null, failed: true, error: 'Failed to parse html');
         }
 
@@ -117,6 +132,20 @@ class R34USHandler extends BooruHandler {
         item.fileExt = Tools.getFileExt(item.fileURL);
         item.possibleMediaType.value = null;
         item.mediaType.value = MediaType.fromExtension(item.fileExt);
+
+        // Diagnostic: when we end up with an unknown media type, that's the
+        // exact moment the viewer falls back to "?". Log the inputs so we
+        // can see which one (URL pattern? unknown extension?) drove it.
+        if (item.mediaType.value == MediaType.unknown) {
+          Logger.Inst().log(
+            'r34us: unresolved mediaType after loadItem. '
+            'imageEl=${imageEl != null} videoEl=${videoEl != null} origElHref=${origEl?.attributes['href']} '
+            'fileURL=${item.fileURL} fileExt=${item.fileExt}',
+            className,
+            'loadItem',
+            LogTypes.booruHandlerInfo,
+          );
+        }
 
         final sidebar = html.getElementById('tag-list');
         final copyrightTags = _tagsFromHtml(sidebar?.getElementsByClassName('copyright-tag'));
