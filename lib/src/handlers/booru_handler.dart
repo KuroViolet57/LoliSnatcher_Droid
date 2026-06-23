@@ -395,11 +395,25 @@ abstract class BooruHandler {
   }
 
   /// Helper for Gelbooru-family boorus that wrap OR groups in braces with
-  /// an infix tilde, e.g. Gelbooru's `{tag1 ~ tag2 ~ tag3}` (curly) and
-  /// Rule34xxx/Safebooru's `(tag1 ~ tag2 ~ tag3)` (round). Pass the
-  /// open/close strings the booru expects.
-  static String orSyntaxBraced(String tags, String open, String close) {
+  /// an infix tilde. Different boorus in this family require different
+  /// inner padding, verified empirically against each API:
+  ///
+  /// - Gelbooru.com expects `{tag1 ~ tag2}` — NO space between brace and
+  ///   tag. Adding inner spaces returns zero posts.
+  /// - Rule34xxx / safebooru.org expect `( tag1 ~ tag2 )` — WITH a space
+  ///   between brace and tag. Removing inner spaces returns zero posts.
+  ///
+  /// `padInner` controls that: pass false for Gelbooru.com's curly braces,
+  /// true for the round-paren alikes.
+  static String orSyntaxBraced(
+    String tags,
+    String open,
+    String close, {
+    bool padInner = false,
+  }) {
     if (!tags.contains('|')) return tags;
+    final String innerOpen = padInner ? '$open ' : open;
+    final String innerClose = padInner ? ' $close' : close;
     return tags
         .split(RegExp(r'\s+'))
         .where((t) => t.isNotEmpty)
@@ -408,7 +422,7 @@ abstract class BooruHandler {
           final parts = token.split('|').where((p) => p.isNotEmpty).toList();
           if (parts.isEmpty) return '';
           if (parts.length == 1) return parts.first;
-          return '$open${parts.join(' ~ ')}$close';
+          return '$innerOpen${parts.join(' ~ ')}$innerClose';
         })
         .where((s) => s.isNotEmpty)
         .join(' ');

@@ -23,9 +23,11 @@ class RealbooruHandler extends BooruHandler {
     }
   }
 
-  // Gelbooru 0.2 derivative — uses `(tag1 ~ tag2)` round-paren OR syntax.
+  // Gelbooru 0.2 derivative — uses `( tag1 ~ tag2 )` round-paren OR
+  // syntax with inner padding, same as the rule34xxx family.
   @override
-  String translateOrSyntax(String tags) => BooruHandler.orSyntaxBraced(tags, '(', ')');
+  String translateOrSyntax(String tags) =>
+      BooruHandler.orSyntaxBraced(tags, '(', ')', padInner: true);
 
   @override
   bool get hasLoadItemSupport => true;

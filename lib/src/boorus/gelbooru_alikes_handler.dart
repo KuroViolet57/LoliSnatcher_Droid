@@ -34,10 +34,12 @@ class GelbooruAlikesHandler extends BooruHandler {
   bool get hasTagSuggestions => true;
 
   // Gelbooru 0.2 family (rule34.xxx, safebooru.org, etc.) uses
-  // `(tag1 ~ tag2 ~ tag3)` — round parens, infix tilde — per their
-  // shared cheatsheet wiki.
+  // `( tag1 ~ tag2 ~ tag3 )` — round parens, infix tilde, WITH padding
+  // between brace and tag. Verified against rule34.xxx API: without the
+  // inner spaces the search returns zero posts.
   @override
-  String translateOrSyntax(String tags) => BooruHandler.orSyntaxBraced(tags, '(', ')');
+  String translateOrSyntax(String tags) =>
+      BooruHandler.orSyntaxBraced(tags, '(', ')', padInner: true);
 
   String get originalBaseUrl => booru.baseURL!;
 
