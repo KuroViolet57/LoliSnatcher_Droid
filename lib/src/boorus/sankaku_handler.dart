@@ -50,6 +50,9 @@ class SankakuHandler extends BooruHandler {
   bool get hasSignInSupport => true;
 
   @override
+  String translateOrSyntax(String tags) => BooruHandler.dropOrGroupsWithWarning(tags, className);
+
+  @override
   Future<Response<dynamic>> fetchSearch(
     Uri uri,
     String input, {

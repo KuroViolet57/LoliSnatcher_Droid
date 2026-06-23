@@ -31,6 +31,23 @@ class BooruOnRailsHandler extends BooruHandler {
   }
 
   @override
+  String translateOrSyntax(String tags) {
+    if (!tags.contains('|')) return tags;
+    return tags
+        .split(RegExp(r'\s+'))
+        .where((t) => t.isNotEmpty)
+        .map((token) {
+          if (!token.contains('|')) return token;
+          final parts = token.split('|').where((p) => p.isNotEmpty).toList();
+          if (parts.isEmpty) return '';
+          if (parts.length == 1) return parts.first;
+          return '(${parts.join(' || ')})';
+        })
+        .where((s) => s.isNotEmpty)
+        .join(' ');
+  }
+
+  @override
   List parseListFromResponse(dynamic response) {
     final Map<String, dynamic> parsedResponse = response.data;
     return (parsedResponse['posts'] as List?) ?? [];

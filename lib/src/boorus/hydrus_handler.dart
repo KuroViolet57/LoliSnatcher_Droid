@@ -20,6 +20,12 @@ class HydrusHandler extends BooruHandler {
 
   dynamic _fileIDs;
 
+  // Hydrus accepts nested-array OR groups, but text-substitution doesn't
+  // produce that. Drop with a warning until proper structured-tag support
+  // is added.
+  @override
+  String translateOrSyntax(String tags) => BooruHandler.dropOrGroupsWithWarning(tags, className);
+
   @override
   Map<String, String> getHeaders() {
     return {
@@ -54,6 +60,7 @@ class HydrusHandler extends BooruHandler {
 
   @override
   Future search(String tags, int? pageNumCustom, {bool withCaptchaCheck = true}) async {
+    tags = translateOrSyntax(tags);
     if (prevTags != tags) {
       fetched.value = [];
       prevTags = tags;

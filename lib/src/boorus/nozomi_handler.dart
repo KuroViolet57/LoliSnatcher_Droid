@@ -61,7 +61,7 @@ class NozomiHandler extends BooruHandler {
       return fetched;
     }
 
-    tags = tags.trim();
+    tags = translateOrSyntax(tags.trim());
     if (prevTags != tags) {
       fetched.value = [];
       totalCount.value = 0;
@@ -414,6 +414,11 @@ class NozomiHandler extends BooruHandler {
   // search() is overridden, so the base URL/encoding flow is intentionally bypassed.
   @override
   String validateTags(String tags) => tags;
+
+  // Nozomi has no native OR — it's set-intersection on packed index files.
+  // Drop OR groups with a warning until a proper union implementation lands.
+  @override
+  String translateOrSyntax(String tags) => BooruHandler.dropOrGroupsWithWarning(tags, className);
 
   @override
   String makeURL(String tags) => '';

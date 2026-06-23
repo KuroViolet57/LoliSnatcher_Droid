@@ -34,6 +34,9 @@ class ShimmieHandler extends BooruHandler {
   }
 
   @override
+  String translateOrSyntax(String tags) => BooruHandler.dropOrGroupsWithWarning(tags, className);
+
+  @override
   Future<List> parseListFromResponse(dynamic response) async {
     final parsedResponse = await compute(XmlDocument.parse, response.data as String);
     try {

@@ -190,7 +190,7 @@ class GelbooruAlikesHandler extends BooruHandler {
   Future<void> searchCount(String input) async {
     int result = 0;
     // gelbooru json has count in @attributes, but there is no count data on r34xxx json, so we switch back to xml
-    final String url = makeURL(validateTags(input));
+    final String url = makeURL(validateTags(translateOrSyntax(input)));
 
     final String cookies = await getCookies() ?? '';
     final Map<String, String> headers = {

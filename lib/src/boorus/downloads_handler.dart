@@ -20,6 +20,10 @@ class DownloadsHandler extends BooruHandler {
     return tags;
   }
 
+  // Local DB search has no OR — drop with a warning, search the rest.
+  @override
+  String translateOrSyntax(String tags) => BooruHandler.dropOrGroupsWithWarning(tags, className);
+
   @override
   Future search(String tags, int? pageNumCustom, {bool withCaptchaCheck = true}) async {
     // set custom page number
@@ -28,7 +32,7 @@ class DownloadsHandler extends BooruHandler {
     }
 
     // validate tags
-    tags = validateTags(tags.trim());
+    tags = validateTags(translateOrSyntax(tags.trim()));
 
     // if tags are different than previous tags, reset fetched
     if (prevTags != tags) {

@@ -130,6 +130,8 @@ abstract class BooruHandler {
       return fetched;
     }
 
+    // translate cross-booru OR syntax (tag1|tag2) into the handler's native form
+    tags = translateOrSyntax(tags.trim());
     // validate tags (usually just convert empty string to current booru "search all" query)
     tags = validateTags(tags.trim());
 
@@ -333,6 +335,63 @@ abstract class BooruHandler {
   String validateTags(String tags) {
     // remember to return super.validateTags(tags) if you override this function
     return Uri.encodeComponent(tags);
+  }
+
+  /// Translates the cross-booru OR operator (pipe-separated tokens like
+  /// `tag1|tag2|tag3`) into a form the current booru understands.
+  ///
+  /// Default: expands each pipe-token into `~tag1 ~tag2 ~tag3`, the standard
+  /// OR syntax used by Danbooru, Gelbooru, e621 and Moebooru-derived APIs.
+  ///
+  /// Single tokens without a pipe pass through unchanged. Empty sub-tags
+  /// produced by stray pipes (`tag1|`) are skipped silently.
+  ///
+  /// Handlers whose backend uses a different syntax (Philomena/BooruOnRails
+  /// use `||`) or has no OR support (Sankaku, Shimmie, Hydrus, Nozomi)
+  /// override this.
+  String translateOrSyntax(String tags) {
+    if (!tags.contains('|')) return tags;
+    return tags
+        .split(RegExp(r'\s+'))
+        .where((t) => t.isNotEmpty)
+        .map((token) {
+          if (!token.contains('|')) return token;
+          final parts = token.split('|').where((p) => p.isNotEmpty).toList();
+          if (parts.isEmpty) return '';
+          if (parts.length == 1) return parts.first;
+          return parts.map((p) => '~$p').join(' ');
+        })
+        .where((s) => s.isNotEmpty)
+        .join(' ');
+  }
+
+  /// Helper for handlers whose backend has no OR support: removes any
+  /// whitespace-separated token containing a pipe (`|`) and logs a warning
+  /// listing the dropped groups. The remaining tags are returned untouched
+  /// so the search still runs.
+  static String dropOrGroupsWithWarning(String tags, String className) {
+    if (!tags.contains('|')) return tags;
+    final List<String> dropped = [];
+    final String kept = tags
+        .split(RegExp(r'\s+'))
+        .where((t) => t.isNotEmpty)
+        .where((token) {
+          if (token.contains('|')) {
+            dropped.add(token);
+            return false;
+          }
+          return true;
+        })
+        .join(' ');
+    if (dropped.isNotEmpty) {
+      Logger.Inst().log(
+        'OR syntax not supported by this booru; dropped: ${dropped.join(', ')}',
+        className,
+        'translateOrSyntax',
+        LogTypes.booruHandlerInfo,
+      );
+    }
+    return kept;
   }
 
   /// [SHOULD BE OVERRIDDEN]
