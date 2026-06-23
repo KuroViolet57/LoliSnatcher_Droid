@@ -33,6 +33,12 @@ class GelbooruAlikesHandler extends BooruHandler {
   @override
   bool get hasTagSuggestions => true;
 
+  // Gelbooru 0.2 family (rule34.xxx, safebooru.org, etc.) uses
+  // `(tag1 ~ tag2 ~ tag3)` — round parens, infix tilde — per their
+  // shared cheatsheet wiki.
+  @override
+  String translateOrSyntax(String tags) => BooruHandler.orSyntaxBraced(tags, '(', ')');
+
   String get originalBaseUrl => booru.baseURL!;
 
   bool get isR34xxx => originalBaseUrl.contains('rule34.xxx');

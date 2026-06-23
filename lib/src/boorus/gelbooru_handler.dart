@@ -55,6 +55,12 @@ class GelbooruHandler extends BooruHandler {
     return super.validateTags(tags);
   }
 
+  // Gelbooru's OR syntax is `{tag1 ~ tag2 ~ tag3}` (curly braces, infix
+  // tilde), per its cheatsheet wiki page. Prefix-tilde (Danbooru style)
+  // silently returns no results here.
+  @override
+  String translateOrSyntax(String tags) => BooruHandler.orSyntaxBraced(tags, '{', '}');
+
   @override
   List parseListFromResponse(dynamic response) {
     dynamic parsedResponse;

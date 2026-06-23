@@ -394,6 +394,26 @@ abstract class BooruHandler {
     return kept;
   }
 
+  /// Helper for Gelbooru-family boorus that wrap OR groups in braces with
+  /// an infix tilde, e.g. Gelbooru's `{tag1 ~ tag2 ~ tag3}` (curly) and
+  /// Rule34xxx/Safebooru's `(tag1 ~ tag2 ~ tag3)` (round). Pass the
+  /// open/close strings the booru expects.
+  static String orSyntaxBraced(String tags, String open, String close) {
+    if (!tags.contains('|')) return tags;
+    return tags
+        .split(RegExp(r'\s+'))
+        .where((t) => t.isNotEmpty)
+        .map((token) {
+          if (!token.contains('|')) return token;
+          final parts = token.split('|').where((p) => p.isNotEmpty).toList();
+          if (parts.isEmpty) return '';
+          if (parts.length == 1) return parts.first;
+          return '$open${parts.join(' ~ ')}$close';
+        })
+        .where((s) => s.isNotEmpty)
+        .join(' ');
+  }
+
   /// [SHOULD BE OVERRIDDEN]
   String makeURL(String tags) {
     return '';
