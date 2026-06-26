@@ -203,6 +203,14 @@ class ShimmieHtmlHandler extends BooruHandler {
     }
   }
 
+  // Paheal-style Shimmie variant: URL-path search like
+  // `/post/list/tag1+tag2/1`, no native OR support.
+  @override
+  String translateOrSyntax(String tags) => BooruHandler.dropOrGroupsWithWarning(tags, className);
+
+  @override
+  bool get hasNativeOrSupport => false;
+
   @override
   List parseListFromResponse(dynamic response) {
     final document = parse(response.data);

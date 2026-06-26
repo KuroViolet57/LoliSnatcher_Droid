@@ -23,6 +23,14 @@ class R34USHandler extends BooruHandler {
     }
   }
 
+  // R34US is a Shimmie-style HTML-scraped booru with no native OR.
+  // Drop OR groups with a warning and route the UI to the 3-state cycle.
+  @override
+  String translateOrSyntax(String tags) => BooruHandler.dropOrGroupsWithWarning(tags, className);
+
+  @override
+  bool get hasNativeOrSupport => false;
+
   @override
   bool get hasLoadItemSupport => true;
 
