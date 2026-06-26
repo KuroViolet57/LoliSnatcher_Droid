@@ -25,6 +25,9 @@ class FavouritesHandler extends BooruHandler {
   String translateOrSyntax(String tags) => BooruHandler.dropOrGroupsWithWarning(tags, className);
 
   @override
+  bool get hasNativeOrSupport => false;
+
+  @override
   Future search(String tags, int? pageNumCustom, {bool withCaptchaCheck = true}) async {
     // set custom page number
     if (pageNumCustom != null) {

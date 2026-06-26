@@ -27,6 +27,9 @@ class HydrusHandler extends BooruHandler {
   String translateOrSyntax(String tags) => BooruHandler.dropOrGroupsWithWarning(tags, className);
 
   @override
+  bool get hasNativeOrSupport => false;
+
+  @override
   Map<String, String> getHeaders() {
     return {
       ...super.getHeaders(),

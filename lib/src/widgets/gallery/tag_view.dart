@@ -2183,6 +2183,13 @@ class TagContentPreview extends StatefulWidget {
   State<TagContentPreview> createState() => _TagContentPreviewState();
 }
 
+/// Per-strip filter for the "videos / GIFs only" header button.
+///
+/// Boorus with native OR get a 2-state cycle (off ↔ `animated|video`),
+/// boorus without get a 3-state cycle (off → animated → video → off) so
+/// the user can still narrow the strip on one media kind at a time.
+enum _AnimatedFilter { off, animatedAndVideo, animatedOnly, videoOnly }
+
 class _TagContentPreviewState extends State<TagContentPreview> {
   final settingsHandler = SettingsHandler.instance;
   final viewerHandler = ViewerHandler.instance;
@@ -2196,13 +2203,29 @@ class _TagContentPreviewState extends State<TagContentPreview> {
   bool isLastPage = false;
   String errorString = '';
 
-  // When true the preview filters to animated content by appending the
-  // "animated" tag. Works on almost every booru.
-  bool onlyAnimated = false;
+  // Header "videos / GIFs only" filter. The cycle the button walks
+  // through depends on whether the active booru supports OR.
+  _AnimatedFilter animatedFilter = _AnimatedFilter.off;
 
   // The actual query sent to the booru handler — `widget.tag` plus
   // any per-strip filters the user toggled in the header.
-  String get _effectiveTag => onlyAnimated ? '${widget.tag} animated' : widget.tag;
+  String get _effectiveTag {
+    switch (animatedFilter) {
+      case _AnimatedFilter.off:
+        return widget.tag;
+      case _AnimatedFilter.animatedAndVideo:
+        return '${widget.tag} animated|video';
+      case _AnimatedFilter.animatedOnly:
+        return '${widget.tag} animated';
+      case _AnimatedFilter.videoOnly:
+        return '${widget.tag} video';
+    }
+  }
+
+  // Whether the booru currently powering this strip understands
+  // cross-booru OR (so we can collapse the cycle to a single
+  // "animated|video" stop instead of stepping through both).
+  bool get _supportsOr => tab?.booruHandler.hasNativeOrSupport ?? true;
 
   final ValueNotifier<int> viewedIndex = ValueNotifier(-1);
 
@@ -2412,10 +2435,23 @@ class _TagContentPreviewState extends State<TagContentPreview> {
     await dropdown.showDialog(context);
   }
 
-  // Toggles the "videos / GIFs only" filter and reloads the strip.
+  // Advances the "videos / GIFs only" filter to the next state and
+  // reloads the strip. OR-capable boorus cycle off ↔ animated|video.
+  // Non-OR boorus cycle off → animated → video → off.
   void _toggleAnimatedOnly() {
     setState(() {
-      onlyAnimated = !onlyAnimated;
+      if (_supportsOr) {
+        animatedFilter = animatedFilter == _AnimatedFilter.animatedAndVideo
+            ? _AnimatedFilter.off
+            : _AnimatedFilter.animatedAndVideo;
+      } else {
+        animatedFilter = switch (animatedFilter) {
+          _AnimatedFilter.off => _AnimatedFilter.animatedOnly,
+          _AnimatedFilter.animatedOnly => _AnimatedFilter.videoOnly,
+          // videoOnly, or a stale animatedAndVideo from a previous OR booru
+          _ => _AnimatedFilter.off,
+        };
+      }
     });
     loadPreview(refresh: true);
   }
@@ -2576,11 +2612,21 @@ class _TagContentPreviewState extends State<TagContentPreview> {
             ),
           const SizedBox(width: 4),
           IconButton(
-            tooltip: onlyAnimated ? 'Show all' : 'Videos / GIFs only',
+            tooltip: switch (animatedFilter) {
+              _AnimatedFilter.off => _supportsOr ? 'Videos / GIFs only' : 'Animated only',
+              _AnimatedFilter.animatedAndVideo => 'Videos / GIFs only — tap to clear',
+              _AnimatedFilter.animatedOnly => 'Animated — tap for videos',
+              _AnimatedFilter.videoOnly => 'Videos — tap to clear',
+            },
             visualDensity: VisualDensity.compact,
             icon: Icon(
-              onlyAnimated ? Icons.movie : Icons.movie_outlined,
-              color: onlyAnimated ? theme.colorScheme.secondary : null,
+              switch (animatedFilter) {
+                _AnimatedFilter.off => Icons.movie_outlined,
+                _AnimatedFilter.animatedAndVideo => Icons.movie,
+                _AnimatedFilter.animatedOnly => Icons.gif_box,
+                _AnimatedFilter.videoOnly => Icons.movie,
+              },
+              color: animatedFilter == _AnimatedFilter.off ? null : theme.colorScheme.secondary,
             ),
             onPressed: _toggleAnimatedOnly,
           ),

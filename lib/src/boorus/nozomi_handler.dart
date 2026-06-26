@@ -421,5 +421,8 @@ class NozomiHandler extends BooruHandler {
   String translateOrSyntax(String tags) => BooruHandler.dropOrGroupsWithWarning(tags, className);
 
   @override
+  bool get hasNativeOrSupport => false;
+
+  @override
   String makeURL(String tags) => '';
 }

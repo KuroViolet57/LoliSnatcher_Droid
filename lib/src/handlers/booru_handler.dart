@@ -98,6 +98,14 @@ abstract class BooruHandler {
 
   bool get hasSizeData => false;
 
+  /// Whether this handler's backend can translate cross-booru OR groups
+  /// (`tag1|tag2`) into a native query that actually returns combined
+  /// results. False for handlers that fall back to dropping OR groups
+  /// (Sankaku, Shimmie family, Nozomi, Hydrus, local Downloads/Favourites).
+  /// UI code reads this to decide whether to offer an OR-style filter
+  /// shortcut or fall back to a step-through cycle.
+  bool get hasNativeOrSupport => true;
+
   Future<bool> searchSetup() async {
     if (hasSignInSupport) {
       final bool canLogin = await canSignIn();
