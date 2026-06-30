@@ -154,6 +154,11 @@ class Tools {
         headers['Referer'] = 'https://rule34.us';
       } else if (uri.host.contains('nozomi.la')) {
         headers['Referer'] = 'https://nozomi.la/';
+      } else if (uri.host.contains('realbooru.com')) {
+        // realbooru added hotlink protection: image/thumbnail requests
+        // without a matching Referer 302-redirect to hotlink.php (HTML),
+        // so the loader fails. A same-origin Referer serves the image.
+        headers['Referer'] = 'https://realbooru.com/';
       }
     }
 
