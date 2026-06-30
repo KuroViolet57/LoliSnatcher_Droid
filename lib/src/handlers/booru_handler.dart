@@ -106,6 +106,23 @@ abstract class BooruHandler {
   /// shortcut or fall back to a step-through cycle.
   bool get hasNativeOrSupport => true;
 
+  /// Ordered list of tag fragments the tag-preview "videos / GIFs only"
+  /// button cycles through. Each entry is appended (with a space) to the
+  /// strip's base tag; the button walks off → [0] → [1] → … → off.
+  ///
+  /// Default:
+  /// - OR-capable boorus get a single combined `animated|video` stop, so
+  ///   the button is a simple on/off toggle that catches both kinds at once.
+  /// - Non-OR boorus get separate `animated` and `video` stops so the user
+  ///   can still narrow on one media kind at a time.
+  ///
+  /// Boorus that split animated content across more tags (e.g. realbooru's
+  /// independent video / webm / animated) override this with their own
+  /// ordered list. Verified against each site that these tags exist and
+  /// that the chosen combine/cycle strategy actually returns results.
+  List<String> get animatedPreviewFilters =>
+      hasNativeOrSupport ? const ['animated|video'] : const ['animated', 'video'];
+
   Future<bool> searchSetup() async {
     if (hasSignInSupport) {
       final bool canLogin = await canSignIn();

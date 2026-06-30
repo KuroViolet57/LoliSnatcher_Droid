@@ -23,11 +23,19 @@ class RealbooruHandler extends BooruHandler {
     }
   }
 
-  // Gelbooru 0.2 derivative — uses `( tag1 ~ tag2 )` round-paren OR
-  // syntax with inner padding, same as the rule34xxx family.
+  // Realbooru's OR syntax is `{tag1 ~ tag2}` — curly braces, NO inner
+  // padding — same as Gelbooru.com (NOT the rule34xxx round-paren form).
+  // Verified against the live site: `{webm ~ 3d}` returns the exact union
+  // of `webm` and `3d`, while `( webm ~ 3d )` returns zero.
   @override
-  String translateOrSyntax(String tags) =>
-      BooruHandler.orSyntaxBraced(tags, '(', ')', padInner: true);
+  String translateOrSyntax(String tags) => BooruHandler.orSyntaxBraced(tags, '{', '}');
+
+  // Realbooru spreads animated content across several mostly-independent
+  // tags (a webm is usually NOT also tagged `video` or `animated`), so a
+  // single combined filter would miss most of it. Cycle through the three
+  // main ones instead: off → video → webm → animated → off.
+  @override
+  List<String> get animatedPreviewFilters => const ['video', 'webm', 'animated'];
 
   @override
   bool get hasLoadItemSupport => true;
