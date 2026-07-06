@@ -13,6 +13,7 @@ import 'package:scroll_to_index/scroll_to_index.dart';
 import 'package:uuid/uuid.dart';
 
 import 'package:lolisnatcher/src/boorus/mergebooru_handler.dart';
+import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/saved_search.dart';
@@ -72,6 +73,33 @@ class SearchHandler {
   // current tab index
   RxInt index = 0.obs;
   RxnString tabId = RxnString(null);
+
+  // History of tabs the user personally opened/viewed by tapping them
+  // (tab manager, tab nav buttons, desktop tab bar). Tabs auto-created from
+  // the tag view / preview strips are deliberately NOT recorded here — only
+  // genuine user visits, flagged via changeTabIndex(byUser: true).
+  final RxList<TabVisit> visitedTabsHistory = RxList<TabVisit>([]);
+  static const int _maxVisitHistory = 150;
+
+  void recordTabVisit(SearchTab tab) {
+    // skip if it's the same tab as the most recent visit (avoids spamming the
+    // history when re-selecting the already-current tab)
+    if (visitedTabsHistory.isNotEmpty && visitedTabsHistory.last.tabId == tab.id) {
+      return;
+    }
+    visitedTabsHistory.add(
+      TabVisit(
+        tabId: tab.id,
+        tags: tab.tags,
+        booruName: tab.selectedBooru.value.name ?? '',
+        booruType: tab.selectedBooru.value.type,
+        visitedAt: DateTime.now(),
+      ),
+    );
+    if (visitedTabsHistory.length > _maxVisitHistory) {
+      visitedTabsHistory.removeRange(0, visitedTabsHistory.length - _maxVisitHistory);
+    }
+  }
 
   // add new tab by the given search string
   void addTabByString(
@@ -319,6 +347,7 @@ class SearchHandler {
     int i, {
     bool switchOnly = false,
     bool ignoreSameIndexCheck = false,
+    bool byUser = false,
   }) {
     // change only if new index != current index
     // final int oldIndex = currentIndex;
@@ -334,6 +363,12 @@ class SearchHandler {
       newIndex = total - 1;
     } else if (newIndex < 0) {
       newIndex = 0;
+    }
+
+    // record a personal visit when the switch was user-initiated (tab manager
+    // tap, tab nav buttons, desktop tab bar) — not for programmatic switches.
+    if (byUser && newIndex >= 0 && newIndex < total) {
+      recordTabVisit(tabs[newIndex]);
     }
 
     // change index only when it's different
@@ -1393,6 +1428,26 @@ class SearchHandler {
 
     lastBackupTime = DateTime.now();
   }
+}
+
+/// A lightweight record of a tab the user personally visited. Keeps a
+/// snapshot (tags + booru) so it stays meaningful even after the underlying
+/// tab is closed, plus the live tab id so we can jump straight back if it's
+/// still open.
+class TabVisit {
+  TabVisit({
+    required this.tabId,
+    required this.tags,
+    required this.booruName,
+    required this.booruType,
+    required this.visitedAt,
+  });
+
+  final String tabId;
+  final String tags;
+  final String booruName;
+  final BooruType? booruType;
+  final DateTime visitedAt;
 }
 
 class SearchTab {

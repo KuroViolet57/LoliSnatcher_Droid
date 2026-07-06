@@ -917,6 +917,7 @@ class _TabManagerPageState extends State<TabManagerPage> {
             : () {
                 searchHandler.changeTabIndex(
                   searchHandler.tabs.indexOf(tab),
+                  byUser: true,
                 );
                 Navigator.of(context).pop();
               },
@@ -1117,6 +1118,111 @@ class _TabManagerPageState extends State<TabManagerPage> {
       context: context,
       builder: (_) => deleteDialog,
     );
+  }
+
+  // Opens the tab a history entry points to. Jumps to it if it's still open
+  // (matched by tab id); otherwise re-opens a fresh tab with the same query
+  // and booru.
+  Booru? _booruByName(String name) {
+    for (final b in settingsHandler.booruList) {
+      if (b.name == name) return b;
+    }
+    return null;
+  }
+
+  void _openVisitedTab(TabVisit visit) {
+    final int existingIndex = searchHandler.tabs.indexWhere((t) => t.id == visit.tabId);
+    if (existingIndex != -1) {
+      searchHandler.changeTabIndex(existingIndex, byUser: true);
+    } else {
+      final Booru? booru = _booruByName(visit.booruName);
+      searchHandler.addTabByString(
+        visit.tags,
+        customBooru: booru,
+        switchToNew: true,
+      );
+    }
+    if (mounted) Navigator.of(context).pop();
+  }
+
+  void showVisitHistoryDialog() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return SettingsDialog(
+          title: const Text('Visited tabs history'),
+          contentItems: [
+            Obx(() {
+              final history = searchHandler.visitedTabsHistory;
+              if (history.isEmpty) {
+                return const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Center(
+                    child: Text('No visited tabs yet.\nTabs you open by tapping them will show up here.'),
+                  ),
+                );
+              }
+              // most-recent first
+              final entries = history.reversed.toList();
+              return SizedBox(
+                width: double.maxFinite,
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: entries.length,
+                  separatorBuilder: (_, _) => const Divider(height: 1),
+                  itemBuilder: (context, i) {
+                    final visit = entries[i];
+                    final bool stillOpen = searchHandler.tabs.any((t) => t.id == visit.tabId);
+                    final Booru? booru = _booruByName(visit.booruName);
+                    final String tagsLabel = visit.tags.trim().isEmpty ? '(empty search)' : visit.tags.trim();
+                    return ListTile(
+                      dense: true,
+                      leading: booru != null
+                          ? BooruFavicon(booru)
+                          : const Icon(Icons.public, size: 20),
+                      title: Text(
+                        tagsLabel,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: Text(
+                        '${visit.booruName.isEmpty ? 'Unknown booru' : visit.booruName} · ${_formatVisitTime(visit.visitedAt)}${stillOpen ? '' : ' · closed'}',
+                        style: const TextStyle(fontSize: 11),
+                      ),
+                      trailing: Icon(
+                        stillOpen ? Icons.open_in_new : Icons.restart_alt,
+                        size: 18,
+                      ),
+                      onTap: () => _openVisitedTab(visit),
+                    );
+                  },
+                ),
+              );
+            }),
+          ],
+          actionButtons: [
+            if (searchHandler.visitedTabsHistory.isNotEmpty)
+              TextButton.icon(
+                icon: const Icon(Icons.delete_outline),
+                label: const Text('Clear'),
+                onPressed: () {
+                  searchHandler.visitedTabsHistory.clear();
+                  Navigator.of(context).pop();
+                },
+              ),
+            const CancelButton(withIcon: true),
+          ],
+        );
+      },
+    );
+  }
+
+  String _formatVisitTime(DateTime t) {
+    final Duration diff = DateTime.now().difference(t);
+    if (diff.inSeconds < 60) return 'just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    return '${diff.inDays}d ago';
   }
 
   void showHelpDialog() {
@@ -1434,6 +1540,12 @@ class _TabManagerPageState extends State<TabManagerPage> {
                 getTabs();
               },
             ),
+          ),
+          const SizedBox(width: 8),
+          IconButton(
+            icon: const Icon(Icons.history),
+            tooltip: 'Visited tabs history',
+            onPressed: showVisitHistoryDialog,
           ),
           const SizedBox(width: 8),
           IconButton(

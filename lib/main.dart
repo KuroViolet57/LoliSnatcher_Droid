@@ -38,6 +38,7 @@ import 'package:lolisnatcher/src/pages/mobile_home_page.dart';
 import 'package:lolisnatcher/src/pages/settings/booru_edit_page.dart';
 import 'package:lolisnatcher/src/services/image_writer.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
+import 'package:lolisnatcher/src/utils/tools.dart';
 import 'package:lolisnatcher/src/widgets/common/settings_widgets.dart';
 import 'package:lolisnatcher/src/widgets/root/dev_overlay.dart';
 import 'package:lolisnatcher/src/widgets/root/image_stats.dart';
@@ -72,6 +73,11 @@ void main() async {
   }
 
   Logger.Inst();
+
+  // Read the device's real WebView User-Agent up front so browser-facing
+  // requests and the Cloudflare captcha webview share one legitimate UA
+  // (see Tools.deviceWebViewUserAgent). Best-effort; safe to skip on failure.
+  await Tools.captureWebViewUserAgent();
 
   // load settings before first render to get theme data early
   NavigationHandler.register();

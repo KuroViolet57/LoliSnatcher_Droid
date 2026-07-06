@@ -138,7 +138,7 @@ class _DesktopTabsState extends State<DesktopTabs> {
                         width: 250,
                         child: GestureDetector(
                           onTap: () {
-                            searchHandler.changeTabIndex(index);
+                            searchHandler.changeTabIndex(index, byUser: true);
                           },
                           child: buildRow(tab),
                         ),
@@ -158,7 +158,7 @@ class _DesktopTabsState extends State<DesktopTabs> {
             const SizedBox(width: 3),
             PopupMenuButton<SearchTab>(
               onSelected: (SearchTab tab) {
-                searchHandler.changeTabIndex(searchHandler.tabs.indexOf(tab));
+                searchHandler.changeTabIndex(searchHandler.tabs.indexOf(tab), byUser: true);
               },
               itemBuilder: (BuildContext context) {
                 return searchHandler.tabs.map((SearchTab choice) {

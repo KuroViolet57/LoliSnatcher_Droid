@@ -215,10 +215,41 @@ class Tools {
   }
 
   static final String appUserAgent = 'LoliSnatcher_Droid/${Constants.updateInfo.versionName}';
+
+  // The device's real system-WebView User-Agent (a genuine Chrome UA),
+  // captured once at startup. Used as the default "browser" UA so that the
+  // Cloudflare captcha webview and the API requests that replay its
+  // cf_clearance cookie present the SAME, legitimate browser identity.
+  // Cloudflare binds cf_clearance to (IP + User-Agent) and validates a
+  // non-browser UA loosely on a trusted/stable IP (home wifi) but strictly
+  // rejects it on an untrusted/rotating mobile-data IP — which is why the
+  // old fake `LoliSnatcher_Droid/x.y` UA only worked on wifi.
+  static String? deviceWebViewUserAgent;
+
+  static Future<void> captureWebViewUserAgent() async {
+    if (!isOnPlatformWithWebviewSupport) return;
+    try {
+      final String ua = await InAppWebViewController.getDefaultUserAgent();
+      if (ua.trim().isNotEmpty) {
+        deviceWebViewUserAgent = ua.trim();
+      }
+    } catch (e, s) {
+      Logger.Inst().log(
+        'failed to read default webview user agent: $e',
+        'Tools',
+        'captureWebViewUserAgent',
+        LogTypes.exception,
+        s: s,
+      );
+    }
+  }
+
   static String get browserUserAgent {
-    return (isTestMode || SettingsHandler.instance.customUserAgent.isEmpty)
-        ? appUserAgent
-        : SettingsHandler.instance.customUserAgent;
+    if (isTestMode) return appUserAgent;
+    if (SettingsHandler.instance.customUserAgent.isNotEmpty) {
+      return SettingsHandler.instance.customUserAgent;
+    }
+    return deviceWebViewUserAgent ?? appUserAgent;
   }
 
   static bool get isTestMode => Platform.environment.containsKey('FLUTTER_TEST');
