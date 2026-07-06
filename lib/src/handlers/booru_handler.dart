@@ -37,6 +37,15 @@ abstract class BooruHandler {
   bool locked = false;
   Booru booru;
 
+  // When false, this handler's parsed tags are NOT written into the shared
+  // TagHandler store (neither the inline `addTagsWithType` categories nor the
+  // async `populateTagHandler` queue). Tag-preview strips set this so that
+  // previewing a tag on a *different* booru doesn't overwrite the current
+  // booru's tag types/colors — which used to re-type tags (e.g. species ->
+  // character) and, via the resulting tag-list rebuild, reset the strip's
+  // selected booru back to the tab's current one.
+  bool storeTagsGlobally = true;
+
   String errorString = '';
   // List<({BooruItem item, Object e, StackTrace? s})> failedItems = [];
 
@@ -883,12 +892,14 @@ abstract class BooruHandler {
   }
 
   void addTagsWithType(List<String> tags, TagType type) {
+    if (!storeTagsGlobally) return;
     TagHandler.instance.addTagsWithType(tags, type);
   }
 
   bool get shouldPopulateTags => false;
 
   Future<void> populateTagHandler(List<BooruItem> items) async {
+    if (!storeTagsGlobally) return;
     final List<String> unTyped = [];
     for (int x = 0; x < items.length; x++) {
       for (int i = 0; i < items[x].tagsList.length; i++) {

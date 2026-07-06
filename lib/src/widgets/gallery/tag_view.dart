@@ -2299,6 +2299,11 @@ class _TagContentPreviewState extends State<TagContentPreview> {
         null,
         _effectiveTag,
       );
+      // Preview strips are throwaway mini-searches. Don't let them write the
+      // previewed booru's tag types into the shared store — otherwise
+      // previewing a tag on a different booru re-colours the current booru's
+      // tags and the resulting rebuild resets this strip's selected booru.
+      tab!.booruHandler.storeTagsGlobally = false;
       loading = false;
       isLastPage = false;
       errorString = '';
