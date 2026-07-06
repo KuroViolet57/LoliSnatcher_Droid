@@ -1206,7 +1206,7 @@ class _TabManagerPageState extends State<TabManagerPage> {
                 icon: const Icon(Icons.delete_outline),
                 label: const Text('Clear'),
                 onPressed: () {
-                  searchHandler.visitedTabsHistory.clear();
+                  searchHandler.clearVisitedTabsHistory();
                   Navigator.of(context).pop();
                 },
               ),

@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/data/meta_tag.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_suggestion.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
@@ -292,15 +293,23 @@ class WorldXyzHandler extends BooruHandler {
       cursor = '';
     }
 
+    // Pull the `sort:` metatag out of the query and map it to the API's
+    // numeric sortBy (verified against rule34.xyz: 0 = newest, 1 = most
+    // liked, 2 = most viewed). The sort term itself is not a real tag, so
+    // it's excluded from include/excludeTags below.
+    final int sortBy = _sortByFromTags(input);
+
+    bool isSortTerm(String f) => f.toLowerCase().startsWith('sort:');
+
     final List<String> includeTags = input
         .split(' ')
-        .where((f) => !f.startsWith('-'))
+        .where((f) => !f.startsWith('-') && !isSortTerm(f))
         .map((tag) => tag.replaceAll(RegExp('_'), ' '))
         .where((f) => f.isNotEmpty)
         .toList();
     final List<String> excludeTags = input
         .split(' ')
-        .where((f) => f.startsWith('-'))
+        .where((f) => f.startsWith('-') && !isSortTerm(f.replaceAll(RegExp('^-'), '')))
         .map(
           (tag) => tag.replaceAll(RegExp('_'), ' ').replaceAll(RegExp('^-'), ''),
         )
@@ -318,11 +327,53 @@ class WorldXyzHandler extends BooruHandler {
         if (cursor.isNotEmpty) 'cursor': cursor,
         'includeTags': includeTags,
         if (excludeTags.isNotEmpty) 'excludeTags': excludeTags,
-        'sortBy': 0,
+        'sortBy': sortBy,
         'take': limit,
       },
       customInterceptor: withCaptchaCheck ? DioNetwork.captchaInterceptor : null,
     );
+  }
+
+  // Maps the `sort:` metatag value to the World/XYZ API's numeric sortBy.
+  // Accepts a few aliases per option. Defaults to 0 (newest).
+  int _sortByFromTags(String input) {
+    for (final term in input.split(' ')) {
+      final String lower = term.toLowerCase();
+      if (!lower.startsWith('sort:')) continue;
+      final String value = lower.substring('sort:'.length);
+      switch (value) {
+        case 'likes':
+        case 'liked':
+        case 'mostliked':
+        case 'score':
+          return 1;
+        case 'views':
+        case 'viewed':
+        case 'mostviewed':
+          return 2;
+        case 'date':
+        case 'newest':
+        case 'new':
+          return 0;
+      }
+    }
+    return 0;
+  }
+
+  // Surfaces as a `sort:` chip in the search bar (Newest / Most Liked /
+  // Most Viewed). Handled by _sortByFromTags + the sortBy field above.
+  @override
+  List<MetaTag> availableMetaTags() {
+    return [
+      SortMetaTag(
+        isFree: true,
+        values: [
+          MetaTagValue(name: 'Newest', value: 'date'),
+          MetaTagValue(name: 'Most Liked', value: 'likes'),
+          MetaTagValue(name: 'Most Viewed', value: 'views'),
+        ],
+      ),
+    ];
   }
 
   @override

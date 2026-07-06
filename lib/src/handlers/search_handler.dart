@@ -87,18 +87,62 @@ class SearchHandler {
     if (visitedTabsHistory.isNotEmpty && visitedTabsHistory.last.tabId == tab.id) {
       return;
     }
-    visitedTabsHistory.add(
-      TabVisit(
-        tabId: tab.id,
-        tags: tab.tags,
-        booruName: tab.selectedBooru.value.name ?? '',
-        booruType: tab.selectedBooru.value.type,
-        visitedAt: DateTime.now(),
-      ),
+    final visit = TabVisit(
+      tabId: tab.id,
+      tags: tab.tags,
+      booruName: tab.selectedBooru.value.name ?? '',
+      booruType: tab.selectedBooru.value.type,
+      visitedAt: DateTime.now(),
     );
+    visitedTabsHistory.add(visit);
     if (visitedTabsHistory.length > _maxVisitHistory) {
       visitedTabsHistory.removeRange(0, visitedTabsHistory.length - _maxVisitHistory);
     }
+    // Persist so the history survives app restarts. Fire-and-forget.
+    unawaited(_persistTabVisit(visit));
+  }
+
+  Future<void> _persistTabVisit(TabVisit visit) async {
+    try {
+      await SettingsHandler.instance.dbHandler.addTabVisit(
+        tabId: visit.tabId,
+        tags: visit.tags,
+        booruName: visit.booruName,
+        booruType: visit.booruType?.name,
+        visitedAt: visit.visitedAt.millisecondsSinceEpoch,
+      );
+      await SettingsHandler.instance.dbHandler.trimTabVisits(_maxVisitHistory);
+    } catch (e, s) {
+      Logger.Inst().log(
+        'failed to persist tab visit: $e',
+        'SearchHandler',
+        '_persistTabVisit',
+        LogTypes.exception,
+        s: s,
+      );
+    }
+  }
+
+  Future<void> loadVisitedTabsHistory() async {
+    try {
+      final rows = await SettingsHandler.instance.dbHandler.getTabVisits();
+      visitedTabsHistory.assignAll(rows.map(TabVisit.fromRow));
+    } catch (e, s) {
+      Logger.Inst().log(
+        'failed to load tab visit history: $e',
+        'SearchHandler',
+        'loadVisitedTabsHistory',
+        LogTypes.exception,
+        s: s,
+      );
+    }
+  }
+
+  Future<void> clearVisitedTabsHistory() async {
+    visitedTabsHistory.clear();
+    try {
+      await SettingsHandler.instance.dbHandler.clearTabVisits();
+    } catch (_) {}
   }
 
   // add new tab by the given search string
@@ -1357,6 +1401,8 @@ class SearchHandler {
     // Load the seen-post set once the DB is ready (before tabs paint so the
     // first grid already shows dimming for previously-viewed posts).
     await loadSeenPosts();
+    // Restore the personal tab-visit history so it survives app restarts.
+    await loadVisitedTabsHistory();
     try {
       final String? result = await settingsHandler.dbHandler.getTabRestore();
       if (result == null || result.startsWith('[')) {
@@ -1442,6 +1488,28 @@ class TabVisit {
     required this.booruType,
     required this.visitedAt,
   });
+
+  factory TabVisit.fromRow(Map<String, Object?> row) {
+    final String? typeName = row['booruType'] as String?;
+    BooruType? type;
+    if (typeName != null) {
+      for (final t in BooruType.values) {
+        if (t.name == typeName) {
+          type = t;
+          break;
+        }
+      }
+    }
+    return TabVisit(
+      tabId: (row['tabId'] as String?) ?? '',
+      tags: (row['tags'] as String?) ?? '',
+      booruName: (row['booruName'] as String?) ?? '',
+      booruType: type,
+      visitedAt: DateTime.fromMillisecondsSinceEpoch(
+        (row['visitedAt'] as int?) ?? 0,
+      ),
+    );
+  }
 
   final String tabId;
   final String tags;

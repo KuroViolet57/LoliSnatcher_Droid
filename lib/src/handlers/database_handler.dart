@@ -135,6 +135,16 @@ class DBHandler {
       'viewedAt INTEGER NOT NULL '
       ')',
     );
+    await db?.execute(
+      'CREATE TABLE IF NOT EXISTS TabVisitHistory ( '
+      'id INTEGER PRIMARY KEY, '
+      'tabId TEXT, '
+      'tags TEXT, '
+      'booruName TEXT, '
+      'booruType TEXT, '
+      'visitedAt INTEGER NOT NULL '
+      ')',
+    );
     try {
       if (!await columnExists('SearchHistory', 'isFavourite')) {
         await db?.execute('ALTER TABLE SearchHistory ADD COLUMN isFavourite INTEGER;');
@@ -988,6 +998,41 @@ class DBHandler {
 
   Future<void> renameSavedSearch(int id, String name) async {
     await db?.rawUpdate('UPDATE SavedSearch SET name = ? WHERE id = ?', [name, id]);
+  }
+
+  ///////
+  /// Visited tabs history (tabs the user personally opened by tapping)
+
+  Future<void> addTabVisit({
+    required String tabId,
+    required String tags,
+    required String booruName,
+    required String? booruType,
+    required int visitedAt,
+  }) async {
+    await db?.rawInsert(
+      'INSERT INTO TabVisitHistory(tabId, tags, booruName, booruType, visitedAt) VALUES(?, ?, ?, ?, ?)',
+      [tabId, tags, booruName, booruType, visitedAt],
+    );
+  }
+
+  // Oldest-first, so callers can append straight into an in-memory list.
+  Future<List<Map<String, Object?>>> getTabVisits() async {
+    final rows = await db?.rawQuery('SELECT * FROM TabVisitHistory ORDER BY visitedAt ASC, id ASC');
+    return rows ?? const [];
+  }
+
+  Future<void> clearTabVisits() async {
+    await db?.rawDelete('DELETE FROM TabVisitHistory');
+  }
+
+  // Keep only the newest [keep] rows.
+  Future<void> trimTabVisits(int keep) async {
+    await db?.rawDelete(
+      'DELETE FROM TabVisitHistory WHERE id NOT IN '
+      '(SELECT id FROM TabVisitHistory ORDER BY visitedAt DESC, id DESC LIMIT ?)',
+      [keep],
+    );
   }
 
   ///////
