@@ -31,6 +31,13 @@ class R34USHandler extends BooruHandler {
   @override
   bool get hasNativeOrSupport => false;
 
+  // R34USHandler serves rule34.us. Verified against the site: unlike the
+  // rule34hentai/paheal Shimmie sites, `animated` and `video` are independent
+  // here (`video -animated` still returns a full page), so both stops are
+  // meaningful. Cycle off → animated → video → off.
+  @override
+  List<String> get animatedPreviewFilters => const ['animated', 'video'];
+
   @override
   bool get hasLoadItemSupport => true;
 

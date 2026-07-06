@@ -39,11 +39,11 @@ class ShimmieHandler extends BooruHandler {
   @override
   bool get hasNativeOrSupport => false;
 
-  // Shimmie boorus (e.g. rule34hentai) tag all animated content — including
-  // webm/mp4 — under a single `animated` umbrella; there is no `video` tag,
-  // so the old `animated → video` cycle 404'd on the second tap. Single stop.
-  @override
-  List<String> get animatedPreviewFilters => const ['animated'];
+  // NOTE: no blanket media-filter list here. Shimmie is just the engine — the
+  // tags a site uses for video/animated content are decided per-site by its
+  // own community/admins, so concrete single-site subclasses (e.g.
+  // R34HentaiHandler) set their own verified `animatedPreviewFilters`.
+  // Generic user-added Shimmie sites fall back to the base default.
 
   @override
   Future<List> parseListFromResponse(dynamic response) async {
@@ -217,8 +217,10 @@ class ShimmieHtmlHandler extends BooruHandler {
   @override
   bool get hasNativeOrSupport => false;
 
-  // Same Shimmie `animated` umbrella convention as ShimmieHandler above —
-  // no standalone `video` tag, so keep the filter to a single stop.
+  // ShimmieHtmlHandler serves paheal (rule34.paheal.net). Verified against the
+  // site: `animated` is the umbrella (webm posts are also tagged animated, and
+  // `gif` is an alias of `animated`); there is no standalone `video` tag. So a
+  // single `animated` stop catches everything without a dead second tap.
   @override
   List<String> get animatedPreviewFilters => const ['animated'];
 

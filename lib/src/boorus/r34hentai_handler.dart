@@ -19,6 +19,14 @@ class R34HentaiHandler extends ShimmieHandler {
   @override
   bool get hasSizeData => true;
 
+  // R34HentaiHandler serves rule34hentai.net. Verified against the site:
+  // `animated` = 152366 posts is the umbrella (webm = 2076 and mp4 = 660 are
+  // essentially all tagged animated too — `webm -animated` returns ~one page);
+  // there is no standalone `video` tag (it 404s). So a single `animated` stop
+  // catches everything without the dead second tap the old cycle produced.
+  @override
+  List<String> get animatedPreviewFilters => const ['animated'];
+
   @override
   String validateTags(String tags) {
     return tags;
