@@ -97,6 +97,12 @@ class _TagViewState extends State<TagView> {
   TagsListData tagsData = const TagsListData();
   late final ScrollController scrollController = widget.scrollController ?? ScrollController();
 
+  // Tracks each tag row's inline preview strip effective query (base tag +
+  // the strip's active "videos / GIFs only" filter) so the row's own
+  // "open in new tab" button carries the same filter the strip is showing.
+  final Map<String, String> _previewEffectiveTags = {};
+  String _effectiveTagFor(String tag) => _previewEffectiveTags[tag] ?? tag;
+
   late BooruItem item;
   late BooruHandler handler;
   BooruHandler? possibleBooruHandler;
@@ -1006,7 +1012,10 @@ class _TagViewState extends State<TagView> {
                       // snackbar's jump arrow targets the right tab even in
                       // "next to current" mode (where it won't be at the end).
                       final int indexBefore = searchHandler.currentIndex;
-                      searchHandler.addTabByString(currentTag, addMode: addMode);
+                      // Carry the inline preview strip's active videos/GIFs
+                      // filter into the new tab, if one is set for this tag.
+                      final String newTabTags = _effectiveTagFor(currentTag);
+                      searchHandler.addTabByString(newTabTags, addMode: addMode);
                       final int newTabIndex = addMode == TabAddMode.next
                           ? indexBefore + 1
                           : searchHandler.tabs.length - 1;
@@ -1019,7 +1028,7 @@ class _TagViewState extends State<TagView> {
                         key: 'added_new_tab',
                         duration: const Duration(seconds: 2),
                         title: Text(context.loc.tagView.addedNewTab, style: const TextStyle(fontSize: 20)),
-                        content: Text(currentTag, style: const TextStyle(fontSize: 16)),
+                        content: Text(newTabTags, style: const TextStyle(fontSize: 16)),
                         leadingIcon: Icons.fiber_new,
                         sideColor: Colors.green,
                         primaryActionBuilder: (context, controller) {
@@ -1059,8 +1068,9 @@ class _TagViewState extends State<TagView> {
                       if (settingsHandler.appMode.value.isMobile) {
                         Navigator.of(context).popUntil((route) => route.isFirst); // exit viewer
                       }
+                      final String newTabTags = _effectiveTagFor(currentTag);
                       WidgetsBinding.instance.addPostFrameCallback((_) {
-                        searchHandler.addTabByString(currentTag, switchToNew: true, addMode: addMode);
+                        searchHandler.addTabByString(newTabTags, switchToNew: true, addMode: addMode);
                       });
                     },
                   ),
@@ -1098,6 +1108,7 @@ class _TagViewState extends State<TagView> {
                       boorus: [previewBooru],
                       parentTab: searchHandler.currentTab,
                       compact: true,
+                      onEffectiveTagChanged: (t) => _previewEffectiveTags[currentTag] = t,
                     );
                   },
                 ),
@@ -2161,6 +2172,7 @@ class TagContentPreview extends StatefulWidget {
     this.readOnly = false,
     this.compact = false,
     this.compactTitle,
+    this.onEffectiveTagChanged,
     super.key,
   }) : assert(
          boorus.isNotEmpty,
@@ -2171,6 +2183,11 @@ class TagContentPreview extends StatefulWidget {
   final List<Booru> boorus;
   final SearchTab? parentTab;
   final bool readOnly;
+
+  // Reports the strip's current effective query (base tag + any active
+  // "videos / GIFs only" filter) so an enclosing widget's own "open in
+  // new tab" button can carry the same filter the strip is showing.
+  final ValueChanged<String>? onEffectiveTagChanged;
 
   // When true, the preview renders with minimal chrome (no booru dropdown,
   // no refresh/close icons, no "open in new tab" cluster) and eagerly
@@ -2457,6 +2474,7 @@ class _TagContentPreviewState extends State<TagContentPreview> {
       final int next = animatedFilterIndex + 1;
       animatedFilterIndex = next < _animatedFilters.length ? next : -1;
     });
+    widget.onEffectiveTagChanged?.call(_effectiveTag);
     loadPreview(refresh: true);
   }
 

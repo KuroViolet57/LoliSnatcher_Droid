@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'package:extended_image/extended_image.dart';
@@ -35,10 +37,30 @@ class _GifViewerState extends State<GifViewer> {
   Map<String, String>? _headers;
   bool _failedHeaders = false;
 
+  // Bumped to force a fresh ExtendedImage (new decode) when the gif should
+  // restart from frame 0.
+  int _restartToken = 0;
+  // Whether we've already reset the animation for the current "viewed" spell,
+  // so we don't evict repeatedly on every rebuild while viewed.
+  bool _didResetForView = false;
+
   @override
   void initState() {
     super.initState();
     _loadHeaders();
+  }
+
+  @override
+  void didUpdateWidget(GifViewer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // PreloadPageView builds adjacent pages ahead of time, so their gifs decode
+    // and animate off-screen. Without a reset, swiping to one shows it already
+    // mid-animation. When a page scrolls into view, restart it from frame 0.
+    if (widget.isViewed && !oldWidget.isViewed) {
+      _restartAnimation();
+    } else if (!widget.isViewed && oldWidget.isViewed) {
+      _didResetForView = false;
+    }
   }
 
   Future<void> _loadHeaders() async {
@@ -50,10 +72,42 @@ class _GifViewerState extends State<GifViewer> {
       );
       if (!mounted) return;
       setState(() => _headers = headers);
+      // If this page is already the viewed one at mount (e.g. opened straight
+      // from the grid), start its animation cleanly too.
+      if (widget.isViewed) unawaited(_restartAnimation());
     } catch (_) {
       if (!mounted) return;
       setState(() => _failedHeaders = true);
     }
+  }
+
+  // Evicts the gif's cached (and live) image stream so the next build decodes a
+  // fresh completer starting at frame 0, then rebuilds with a new key. Disk
+  // cache is untouched, so this doesn't re-download — only re-decodes.
+  Future<void> _restartAnimation() async {
+    if (_didResetForView || _headers == null || !mounted) return;
+    _didResetForView = true;
+    try {
+      await _buildProvider(context).evict();
+    } catch (_) {
+      // eviction is best-effort; a failure just means the gif may resume
+      // mid-frame rather than crash.
+    }
+    if (mounted) setState(() => _restartToken++);
+  }
+
+  // Builds the same provider ExtendedImage.network would, so evicting this
+  // instance targets the exact cache entry the widget renders.
+  ImageProvider _buildProvider(BuildContext context) {
+    final base = ExtendedNetworkImageProvider(
+      widget.booruItem.fileURL,
+      cache: settingsHandler.mediaCache,
+      headers: _headers,
+    );
+    final int? cacheWidth = _cacheWidthFor(context);
+    return cacheWidth == null
+        ? base
+        : ExtendedResizeImage.resizeIfNeeded(provider: base, cacheWidth: cacheWidth);
   }
 
   // Decode the GIF at the screen's pixel width (capped to its own width so we
@@ -83,11 +137,11 @@ class _GifViewerState extends State<GifViewer> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    return ExtendedImage.network(
-      widget.booruItem.fileURL,
-      headers: _headers,
-      cache: settingsHandler.mediaCache,
-      cacheWidth: _cacheWidthFor(context),
+    return ExtendedImage(
+      // Key on the restart token so becoming-viewed forces a fresh decode
+      // (frame 0) rather than resuming the cached mid-animation completer.
+      key: ValueKey('gif-${widget.booruItem.fileURL}-$_restartToken'),
+      image: _buildProvider(context),
       fit: BoxFit.contain,
       mode: ExtendedImageMode.gesture,
       // animate immediately and loop, like a GIF should

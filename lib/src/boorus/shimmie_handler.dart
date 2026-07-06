@@ -39,6 +39,12 @@ class ShimmieHandler extends BooruHandler {
   @override
   bool get hasNativeOrSupport => false;
 
+  // Shimmie boorus (e.g. rule34hentai) tag all animated content — including
+  // webm/mp4 — under a single `animated` umbrella; there is no `video` tag,
+  // so the old `animated → video` cycle 404'd on the second tap. Single stop.
+  @override
+  List<String> get animatedPreviewFilters => const ['animated'];
+
   @override
   Future<List> parseListFromResponse(dynamic response) async {
     final parsedResponse = await compute(XmlDocument.parse, response.data as String);
@@ -210,6 +216,11 @@ class ShimmieHtmlHandler extends BooruHandler {
 
   @override
   bool get hasNativeOrSupport => false;
+
+  // Same Shimmie `animated` umbrella convention as ShimmieHandler above —
+  // no standalone `video` tag, so keep the filter to a single stop.
+  @override
+  List<String> get animatedPreviewFilters => const ['animated'];
 
   @override
   List parseListFromResponse(dynamic response) {
