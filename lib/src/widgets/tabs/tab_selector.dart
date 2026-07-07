@@ -1136,10 +1136,12 @@ class _TabManagerPageState extends State<TabManagerPage> {
       searchHandler.changeTabIndex(existingIndex, byUser: true);
     } else {
       final Booru? booru = _booruByName(visit.booruName);
+      // Re-open a closed tab right next to the active one (not at the end).
       searchHandler.addTabByString(
         visit.tags,
         customBooru: booru,
         switchToNew: true,
+        addMode: TabAddMode.next,
       );
     }
     if (mounted) Navigator.of(context).pop();

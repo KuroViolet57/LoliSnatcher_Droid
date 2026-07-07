@@ -1022,6 +1022,10 @@ class DBHandler {
     return rows ?? const [];
   }
 
+  Future<void> deleteTabVisit(String tabId) async {
+    await db?.rawDelete('DELETE FROM TabVisitHistory WHERE tabId = ?', [tabId]);
+  }
+
   Future<void> clearTabVisits() async {
     await db?.rawDelete('DELETE FROM TabVisitHistory');
   }

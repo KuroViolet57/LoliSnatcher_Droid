@@ -82,11 +82,6 @@ class SearchHandler {
   static const int _maxVisitHistory = 150;
 
   void recordTabVisit(SearchTab tab) {
-    // skip if it's the same tab as the most recent visit (avoids spamming the
-    // history when re-selecting the already-current tab)
-    if (visitedTabsHistory.isNotEmpty && visitedTabsHistory.last.tabId == tab.id) {
-      return;
-    }
     final visit = TabVisit(
       tabId: tab.id,
       tags: tab.tags,
@@ -94,6 +89,10 @@ class SearchHandler {
       booruType: tab.selectedBooru.value.type,
       visitedAt: DateTime.now(),
     );
+    // One entry per tab: drop any existing entry for this tab (same id) so the
+    // tab moves to most-recent and reflects its current tags, instead of
+    // adding a duplicate when its search changes or it's re-visited.
+    visitedTabsHistory.removeWhere((v) => v.tabId == tab.id);
     visitedTabsHistory.add(visit);
     if (visitedTabsHistory.length > _maxVisitHistory) {
       visitedTabsHistory.removeRange(0, visitedTabsHistory.length - _maxVisitHistory);
@@ -104,6 +103,9 @@ class SearchHandler {
 
   Future<void> _persistTabVisit(TabVisit visit) async {
     try {
+      // Replace any prior persisted rows for this tab so the DB mirrors the
+      // one-entry-per-tab, most-recent semantics of the in-memory list.
+      await SettingsHandler.instance.dbHandler.deleteTabVisit(visit.tabId);
       await SettingsHandler.instance.dbHandler.addTabVisit(
         tabId: visit.tabId,
         tags: visit.tags,
@@ -459,6 +461,7 @@ class SearchHandler {
       currentBooru,
       currentSecondaryBoorus.value,
       currentTab.tags,
+      tabId: currentTab.id,
     );
     newTab.booruHandler.pageNum = newPageNum;
     pageNum.value = newPageNum;
@@ -599,10 +602,14 @@ class SearchHandler {
         newBooru ?? currentBooru,
         currentSecondaryBoorus.value,
         text,
+        tabId: currentTab.id, // keep the same tab identity across the search change
         tagOverrides: carriedOverrides,
         inheritMainTags: carriedInherit,
       );
       tabs[currentIndex] = newTab;
+      // The user changed this tab's search while viewing it — update its
+      // visited-history entry in place (same id) instead of duplicating.
+      recordTabVisit(newTab);
     }
 
     unawaited(searchReactions(text, newBooru ?? currentBooru));
@@ -844,6 +851,7 @@ class SearchHandler {
       currentBooru,
       secondary,
       currentTab.tags,
+      tabId: currentTab.id,
       tagOverrides: carriedOverrides,
       inheritMainTags: carriedInherit,
     );
@@ -1332,6 +1340,7 @@ class SearchHandler {
           TabBackup(
             tags: tags,
             booru: booruName,
+            id: tab.id,
             secondaryBoorus: secondaryBoorusNames,
             tagOverrides: overrides,
             inheritMainTags: inherit,
@@ -1369,6 +1378,7 @@ class SearchHandler {
       selectedBooru,
       secondaryBoorus.isEmpty ? null : secondaryBoorus,
       backup.tags,
+      tabId: backup.id,
       tagOverrides: backup.tagOverrides.isEmpty ? null : Map<String, String>.from(backup.tagOverrides),
       inheritMainTags:
           backup.inheritMainTags.isEmpty ? null : Map<String, bool>.from(backup.inheritMainTags),
@@ -1525,7 +1535,8 @@ class SearchTab {
     this.tags, {
     Map<String, String>? tagOverrides,
     Map<String, bool>? inheritMainTags,
-  }) {
+    String? tabId,
+  }) : id = (tabId != null && tabId.isNotEmpty) ? tabId : uuid.v4() {
     this.selectedBooru = selectedBooru.obs;
     this.secondaryBoorus = Rxn<List<Booru>?>(secondaryBoorus);
     if (tagOverrides != null && tagOverrides.isNotEmpty) {
@@ -1549,8 +1560,10 @@ class SearchTab {
       handler.inheritMainTags = Map<String, bool>.from(this.inheritMainTags);
     }
   }
-  // unique id to use for booru controller
-  final String id = uuid.v4();
+  // unique id to use for booru controller. Preserved across in-place search
+  // changes and app restarts (see SearchTab tabId param + TabBackup.id) so the
+  // visited-tabs history can track a tab as one entry rather than duplicating.
+  final String id;
   String tags = '';
   // Per-booru tag overrides used when this tab is in merge mode. Keyed by
   // child booru name. Reactive so the per-booru text fields refresh when
@@ -1678,6 +1691,7 @@ class TabBackup {
   TabBackup({
     required this.tags,
     required this.booru,
+    this.id,
     this.secondaryBoorus = const [],
     this.tagOverrides = const {},
     this.inheritMainTags = const {},
@@ -1685,6 +1699,9 @@ class TabBackup {
   });
   final String tags;
   final String booru;
+  // Stable tab id, so a restored tab keeps the same identity the visited-tabs
+  // history recorded. Optional for backward-compat with older backups.
+  final String? id;
   final List<String> secondaryBoorus;
   // Per-booru tag overrides used in merge mode. Keys are booru names; missing
   // entries (or older backups without this field) fall back to `tags`.
@@ -1698,6 +1715,7 @@ class TabBackup {
     return {
       't': tags,
       'b': booru,
+      if (id != null) 'i': id,
       if (secondaryBoorus.isNotEmpty) 'sb': secondaryBoorus,
       if (tagOverrides.isNotEmpty) 'to': tagOverrides,
       if (inheritMainTags.isNotEmpty) 'in': inheritMainTags,
@@ -1710,6 +1728,7 @@ class TabBackup {
       return TabBackup(
         tags: json['t'] as String,
         booru: json['b'] as String,
+        id: json['i'] as String?,
         secondaryBoorus: (json['sb'] as List<dynamic>?)?.map((e) => e as String).toList() ?? const [],
         tagOverrides:
             (json['to'] as Map<String, dynamic>?)?.map((k, v) => MapEntry(k, v.toString())) ?? const {},

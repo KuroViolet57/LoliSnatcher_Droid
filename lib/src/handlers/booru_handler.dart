@@ -383,17 +383,32 @@ abstract class BooruHandler {
   /// Handlers whose backend uses a different syntax (Philomena/BooruOnRails
   /// use `||`) or has no OR support (Sankaku, Shimmie, Hydrus, Nozomi)
   /// override this.
-  String translateOrSyntax(String tags) {
+  String translateOrSyntax(String tags) => orSyntaxPrefixTilde(tags);
+
+  /// Prefix-tilde OR expansion: each pipe-token `a|b|c` becomes `~a ~b ~c`.
+  ///
+  /// The catch: a bare stream of tildes is a single OR pool, so
+  /// `~a ~b ~c ~d` means "a OR b OR c OR d" — it can't express two separate
+  /// groups. When [grouping] is true and the query has 2+ OR groups, each is
+  /// wrapped in parentheses (`( ~a ~b ) ( ~c ~d )`) so they AND together —
+  /// verified working on Danbooru and e621. Moebooru and friends do NOT
+  /// support parentheses, so they keep [grouping] false (single-group OR
+  /// still works there; multi-group just falls back to the pool).
+  static String orSyntaxPrefixTilde(String tags, {bool grouping = false}) {
     if (!tags.contains('|')) return tags;
-    return tags
-        .split(RegExp(r'\s+'))
-        .where((t) => t.isNotEmpty)
+    final List<String> tokens = tags.split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
+    final int orGroupCount = tokens
+        .where((t) => t.split('|').where((p) => p.isNotEmpty).length >= 2)
+        .length;
+    final bool wrap = grouping && orGroupCount >= 2;
+    return tokens
         .map((token) {
           if (!token.contains('|')) return token;
           final parts = token.split('|').where((p) => p.isNotEmpty).toList();
           if (parts.isEmpty) return '';
           if (parts.length == 1) return parts.first;
-          return parts.map((p) => '~$p').join(' ');
+          final String expanded = parts.map((p) => '~$p').join(' ');
+          return wrap ? '( $expanded )' : expanded;
         })
         .where((s) => s.isNotEmpty)
         .join(' ');

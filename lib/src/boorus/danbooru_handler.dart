@@ -50,6 +50,11 @@ class DanbooruHandler extends BooruHandler {
     return super.validateTags(tags);
   }
 
+  // Danbooru supports parenthesised OR groups, so multiple OR groups AND
+  // together correctly (`( ~a ~b ) ( ~c ~d )`). Verified against the live API.
+  @override
+  String translateOrSyntax(String tags) => BooruHandler.orSyntaxPrefixTilde(tags, grouping: true);
+
   @override
   Map<String, String> getHeaders() {
     final defaultHeaders = super.getHeaders();

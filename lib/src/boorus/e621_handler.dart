@@ -12,6 +12,11 @@ import 'package:lolisnatcher/src/utils/tools.dart';
 class e621Handler extends BooruHandler {
   e621Handler(super.booru, super.limit);
 
+  // e621 supports parenthesised OR groups, so multiple OR groups AND
+  // together correctly (`( ~a ~b ) ( ~c ~d )`). Verified against the live API.
+  @override
+  String translateOrSyntax(String tags) => BooruHandler.orSyntaxPrefixTilde(tags, grouping: true);
+
   @override
   bool get hasSizeData => true;
 
