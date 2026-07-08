@@ -157,6 +157,7 @@ class SearchHandler {
     int? customPage,
     Map<String, String>? tagOverrides,
     Map<String, bool>? inheritMainTags,
+    String? tabId,
   }) {
     final Booru booru = customBooru ?? currentBooru;
 
@@ -165,6 +166,7 @@ class SearchHandler {
       booru,
       secondaryBoorus,
       searchText,
+      tabId: tabId,
       tagOverrides: tagOverrides,
       inheritMainTags: inheritMainTags,
     );
