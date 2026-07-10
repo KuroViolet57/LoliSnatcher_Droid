@@ -20,12 +20,14 @@ enum BooruType {
   Philomena,
   Rainbooru,
   Realbooru,
+  RedGifs,
   R34Hentai,
   R34US,
   Sankaku,
   IdolSankaku,
   Shimmie,
   Szurubooru,
+  WebView,
   WildCritters,
   World,
 
@@ -57,7 +59,9 @@ enum BooruType {
       ..remove(BooruType.Downloads)
       ..remove(BooruType.Favourites)
       ..remove(BooruType.Hydrus)
-      ..remove(BooruType.Merge);
+      ..remove(BooruType.Merge)
+      // WebView is a "render anything" escape hatch — never autodetect it.
+      ..remove(BooruType.WebView);
   }
 
   bool get isDetectable => detectable.contains(this);
@@ -78,6 +82,8 @@ enum BooruType {
         return 'World/XYZ/Vault';
       case IdolSankaku:
         return 'Sankaku Idol';
+      case WebView:
+        return 'WebView (browser)';
       default:
         return name;
     }
@@ -99,6 +105,8 @@ enum BooruType {
   bool get isPhilomena => this == BooruType.Philomena;
   bool get isRainbooru => this == BooruType.Rainbooru;
   bool get isRealbooru => this == BooruType.Realbooru;
+  bool get isRedGifs => this == BooruType.RedGifs;
+  bool get isWebView => this == BooruType.WebView;
   bool get isR34Hentai => this == BooruType.R34Hentai;
   bool get isR34US => this == BooruType.R34US;
   bool get isSankaku => this == BooruType.Sankaku;

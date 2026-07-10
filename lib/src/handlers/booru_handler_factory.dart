@@ -21,9 +21,11 @@ import 'package:lolisnatcher/src/boorus/r34hentai_handler.dart';
 import 'package:lolisnatcher/src/boorus/r34us_handler.dart';
 import 'package:lolisnatcher/src/boorus/rainbooru_handler.dart';
 import 'package:lolisnatcher/src/boorus/realbooru_handler.dart';
+import 'package:lolisnatcher/src/boorus/redgifs_handler.dart';
 import 'package:lolisnatcher/src/boorus/sankaku_handler.dart';
 import 'package:lolisnatcher/src/boorus/shimmie_handler.dart';
 import 'package:lolisnatcher/src/boorus/szurubooru_handler.dart';
+import 'package:lolisnatcher/src/boorus/webview_browser_handler.dart';
 import 'package:lolisnatcher/src/boorus/wildcritters_handler.dart';
 import 'package:lolisnatcher/src/boorus/worldxyz_handler.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
@@ -149,6 +151,14 @@ class BooruHandlerFactory {
         case BooruType.NyanPals:
           pageNum = 0;
           booruHandler = NyanPalsHandler(booru, limit);
+          break;
+        case BooruType.RedGifs:
+          // redgifs pages start at 1
+          pageNum = 0;
+          booruHandler = RedGifsHandler(booru, limit);
+          break;
+        case BooruType.WebView:
+          booruHandler = WebViewBrowserHandler(booru, limit);
           break;
         case BooruType.WildCritters:
           pageNum = 0;

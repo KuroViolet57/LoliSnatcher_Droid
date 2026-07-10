@@ -181,6 +181,16 @@ class _BooruEditState extends State<BooruEdit> {
               onChanged: (BooruType? newValue) {
                 setState(() {
                   selectedBooruType = newValue ?? BooruType.values.first;
+                  // Prefill sensible defaults for the special engines.
+                  if (selectedBooruType.isRedGifs && booruURLController.text.trim().isEmpty) {
+                    booruURLController.text = 'https://www.redgifs.com';
+                    if (booruNameController.text.trim().isEmpty) {
+                      booruNameController.text = 'RedGifs';
+                    }
+                    if (booruFaviconController.text.trim().isEmpty) {
+                      booruFaviconController.text = 'https://www.redgifs.com/favicon.ico';
+                    }
+                  }
                 });
               },
               title: context.loc.settings.booruEditor.booruType,
@@ -320,6 +330,20 @@ class _BooruEditState extends State<BooruEdit> {
         break;
       case BooruType.Hydrus:
         return '';
+      case BooruType.RedGifs:
+        return '<b>RedGifs</b><br>No setup needed — leave the URL as '
+            'https://www.redgifs.com. Browse trending content or search tags '
+            '(e.g. <i>blowjob blonde</i>). Sort with the <i>sort:</i> chip '
+            '(Trending / Top / Latest). Creators are searchable via the '
+            '<i>creator:name</i> tag shown in a post tag list.';
+      case BooruType.WebView:
+        return '<b>WebView (browser)</b><br>Renders any site inside a tab '
+            'instead of scraping it — use it for sites that are hard or '
+            'impossible to parse.<br><br>Set the URL to the site you want. '
+            'To make the tab search box drive the site search, put a '
+            'placeholder where the query goes: <b>{tags}</b> — e.g.<br>'
+            '<i>https://example.com/search?q={tags}</i><br>'
+            'Downloads started inside the page are sent to the snatcher.';
       default:
         break;
     }
@@ -361,6 +385,39 @@ class _BooruEditState extends State<BooruEdit> {
 
   Future<bool> onTest() async {
     sanitizeBooruName();
+
+    // The special engines don't scrape, so there's nothing to test — just
+    // normalise the URL and accept. RedGifs has a fixed API; WebView renders
+    // whatever URL (optionally with a {tags} placeholder) the user provides.
+    if (selectedBooruType.isRedGifs || selectedBooruType.isWebView) {
+      if (booruNameController.text.trim().isEmpty) {
+        booruNameController.text = selectedBooruType.isRedGifs ? 'RedGifs' : 'WebView';
+      }
+      if (booruURLController.text.trim().isEmpty && selectedBooruType.isRedGifs) {
+        booruURLController.text = 'https://www.redgifs.com';
+      }
+      if (booruURLController.text.trim().isEmpty) {
+        FlashElements.showSnackbar(
+          context: context,
+          title: Text(
+            context.loc.settings.booruEditor.booruUrlRequired,
+            style: const TextStyle(fontSize: 20),
+          ),
+          leadingIcon: Icons.warning_amber,
+          leadingIconColor: Colors.red,
+          sideColor: Colors.red,
+        );
+        return false;
+      }
+      if (!booruURLController.text.contains('http')) {
+        booruURLController.text = 'https://${booruURLController.text}';
+      }
+      if (booruFaviconController.text.trim().isEmpty) {
+        booruFaviconController.text = convertSiteUrlToFaviconUrl();
+      }
+      booruType = selectedBooruType;
+      return true;
+    }
 
     if (booruNameController.text.trim().isEmpty) {
       FlashElements.showSnackbar(
