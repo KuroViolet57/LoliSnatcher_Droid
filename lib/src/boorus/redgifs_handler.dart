@@ -255,8 +255,24 @@ class RedGifsHandler extends BooruHandler {
     final String? userName = current['userName']?.toString();
     if (userName != null && userName.isNotEmpty) {
       // Treat the creator as an artist so it lands in the info drawer's
-      // "more from this artist" section and gets artist colouring.
-      tags.add(Tag('creator:${userName.toLowerCase()}', tagType: TagType.artist));
+      // "more from this artist" section and gets artist colouring. The colour
+      // is looked up from the shared TagHandler store (not the Tag object),
+      // so the type has to be registered there too.
+      final String creatorTag = 'creator:${userName.toLowerCase()}';
+      tags.add(Tag(creatorTag, tagType: TagType.artist));
+      addTagsWithType([creatorTag], TagType.artist);
+    }
+    // Niches this gif belongs to, as tappable `niche:<id>` tags — typed as
+    // meta so they get their own colour and group in the tag list.
+    final List nichesRaw = (current['niches'] as List?) ?? [];
+    if (nichesRaw.isNotEmpty) {
+      final List<String> nicheTags = nichesRaw
+          .map((n) => n.toString().trim().toLowerCase())
+          .where((n) => n.isNotEmpty)
+          .map((n) => 'niche:$n')
+          .toList();
+      tags.addAll(nicheTags.map((n) => Tag(n, tagType: TagType.meta)));
+      addTagsWithType(nicheTags, TagType.meta);
     }
     if (current['hasAudio'] == true) {
       tags.add(Tag('sound'));
@@ -291,8 +307,77 @@ class RedGifsHandler extends BooruHandler {
         .replace(queryParameters: {'query': input.replaceAll('_', ' ')}).toString();
   }
 
+  // Full niche catalogue (id/name/gifs), fetched once per app run and shared
+  // across instances. ~1.8k entries; used to autocomplete `niche:` locally so
+  // the user never has to go hunting on the website.
+  static List<Map<String, dynamic>>? _nichesCache;
+  static Future<List<Map<String, dynamic>>>? _nichesFuture;
+
+  Future<List<Map<String, dynamic>>> _ensureNiches() {
+    if (_nichesCache != null) return Future.value(_nichesCache);
+    return _nichesFuture ??= _fetchAllNiches().whenComplete(() => _nichesFuture = null);
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchAllNiches() async {
+    await _ensureToken();
+    final List<Map<String, dynamic>> all = [];
+    int page = 1;
+    int pages = 1;
+    // The API caps `count` server-side (returns `pages` accordingly), so read
+    // the real page count from each response. Hard cap as a safety net.
+    while (page <= pages && page <= 25) {
+      final response = await DioNetwork.get(
+        '$_apiBase/v2/niches',
+        queryParameters: {'count': '1000', 'page': page.toString()},
+        headers: getHeaders(),
+      );
+      final data = response.data;
+      if (data is! Map) break;
+      pages = int.tryParse(data['pages']?.toString() ?? '1') ?? 1;
+      final List list = (data['niches'] as List?) ?? [];
+      if (list.isEmpty) break;
+      for (final n in list) {
+        if (n is Map && n['id'] != null) {
+          all.add({
+            'id': n['id'].toString(),
+            'name': n['name']?.toString() ?? '',
+            'gifs': int.tryParse(n['gifs']?.toString() ?? '0') ?? 0,
+          });
+        }
+      }
+      page++;
+    }
+    all.sort((a, b) => (b['gifs'] as int).compareTo(a['gifs'] as int));
+    if (all.isNotEmpty) _nichesCache = all;
+    return all;
+  }
+
   @override
   Future<Response<dynamic>> fetchTagSuggestions(Uri uri, String input, {CancelToken? cancelToken}) async {
+    // Typing `niche` / `niche:<query>` autocompletes from the full local
+    // niche catalogue instead of the tag-suggest endpoint (which doesn't
+    // know about niches).
+    final String lower = input.trim().toLowerCase();
+    if (lower == 'niche' || lower == 'niches' || lower.startsWith('niche:')) {
+      final String query = lower.startsWith('niche:') ? lower.substring('niche:'.length) : '';
+      final niches = await _ensureNiches();
+      final matches = niches
+          .where(
+            (n) =>
+                query.isEmpty ||
+                n['id'].toString().contains(query) ||
+                n['name'].toString().toLowerCase().contains(query),
+          )
+          .take(30)
+          .map((n) => {'type': 'niche', 'text': n['id'], 'gifs': n['gifs']})
+          .toList();
+      return Response(
+        requestOptions: RequestOptions(path: uri.toString()),
+        statusCode: 200,
+        data: matches,
+      );
+    }
+
     await _ensureToken();
     return DioNetwork.get(
       uri.toString(),
@@ -311,9 +396,15 @@ class RedGifsHandler extends BooruHandler {
   @override
   TagSuggestion? parseTagSuggestion(dynamic responseItem, int index) {
     if (responseItem is! Map) return null;
-    if (responseItem['type'] != 'tag') return null;
     final String text = responseItem['text']?.toString() ?? '';
     if (text.isEmpty) return null;
+    if (responseItem['type'] == 'niche') {
+      return TagSuggestion(
+        tag: 'niche:$text',
+        count: int.tryParse(responseItem['gifs']?.toString() ?? '0') ?? 0,
+      );
+    }
+    if (responseItem['type'] != 'tag') return null;
     return TagSuggestion(
       tag: text.replaceAll(' ', '_').toLowerCase(),
       count: int.tryParse(responseItem['gifs']?.toString() ?? '0') ?? 0,

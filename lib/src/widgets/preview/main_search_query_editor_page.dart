@@ -883,6 +883,17 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     crossAxisAlignment: CrossAxisAlignment.center,
                                     children: [
+                                      // Tag-type colour bar for quick scanning
+                                      // of artist/character/copyright matches.
+                                      Container(
+                                        width: 4,
+                                        height: 22,
+                                        margin: const EdgeInsets.only(right: 10),
+                                        decoration: BoxDecoration(
+                                          color: tagColor ?? context.theme.dividerColor.withValues(alpha: 0.4),
+                                          borderRadius: BorderRadius.circular(2),
+                                        ),
+                                      ),
                                       if (tag.icon != null)
                                         Padding(
                                           padding: const EdgeInsets.only(right: 8),
@@ -1472,20 +1483,15 @@ class _SuggestionsMainContentState extends State<SuggestionsMainContent> {
   Widget build(BuildContext context) {
     final bool isReverse = SettingsHandler.instance.useTopSearchbarInput;
 
+    // Ordered by how often each section is actually reached for:
+    // recent searches first, then the user's own pinned tags, then
+    // site-wide popular tags, then the metatag builder.
     List<Widget> blocks = [
-      if (!widget.hidePopular)
-        PopularTagsBlock(
-          onTagTap: widget.onTagTap,
-          delay: const Duration(milliseconds: 20),
-        ),
-      //
       if (!widget.hideHistory)
         HistoryBlock(
           delay: const Duration(milliseconds: 10),
           onTagApply: widget.onTagTap,
         ),
-      //
-      MetatagsBlock(onSelect: widget.onMetatagSelect),
       //
       if (!widget.hidePinned)
         PinnedTagsBlock(
@@ -1497,6 +1503,14 @@ class _SuggestionsMainContentState extends State<SuggestionsMainContent> {
           },
         ),
       //
+      if (!widget.hidePopular)
+        PopularTagsBlock(
+          onTagTap: widget.onTagTap,
+          delay: const Duration(milliseconds: 20),
+        ),
+      //
+      MetatagsBlock(onSelect: widget.onMetatagSelect),
+      //
       const SizedBox(height: 16),
     ];
 
@@ -1505,8 +1519,31 @@ class _SuggestionsMainContentState extends State<SuggestionsMainContent> {
     }
 
     return Column(
-      spacing: 16,
+      spacing: 10,
       children: blocks,
+    );
+  }
+}
+
+/// Card wrapper that gives each query-editor section (history, pinned,
+/// popular, metatags) its own visually distinct rounded surface, so the
+/// page reads as organized groups instead of one continuous wall of chips.
+class SearchSectionCard extends StatelessWidget {
+  const SearchSectionCard({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 10),
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      decoration: BoxDecoration(
+        color: context.theme.colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: context.theme.dividerColor.withValues(alpha: 0.25)),
+      ),
+      child: child,
     );
   }
 }
@@ -1819,7 +1856,8 @@ class _HistoryBlockState extends State<HistoryBlock> {
       return const SizedBox.shrink();
     }
 
-    return Column(
+    return SearchSectionCard(
+      child: Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Padding(
@@ -1939,6 +1977,7 @@ class _HistoryBlockState extends State<HistoryBlock> {
           ),
         ),
       ],
+      ),
     );
   }
 }
@@ -2001,7 +2040,8 @@ class _MetatagsBlockState extends State<MetatagsBlock> {
       return const SizedBox.shrink();
     }
 
-    return Column(
+    return SearchSectionCard(
+      child: Column(
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -2122,6 +2162,7 @@ class _MetatagsBlockState extends State<MetatagsBlock> {
           ),
         ),
       ],
+      ),
     );
   }
 }
@@ -2208,7 +2249,8 @@ class _PopularTagsBlockState extends State<PopularTagsBlock> {
       return const SizedBox.shrink();
     }
 
-    return Column(
+    return SearchSectionCard(
+      child: Column(
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -2322,6 +2364,7 @@ class _PopularTagsBlockState extends State<PopularTagsBlock> {
             ),
           ),
       ],
+      ),
     );
   }
 }
@@ -2621,7 +2664,8 @@ class _PinnedTagsBlockState extends State<PinnedTagsBlock> {
       return const SizedBox.shrink();
     }
 
-    return Column(
+    return SearchSectionCard(
+      child: Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Padding(
@@ -2810,6 +2854,7 @@ class _PinnedTagsBlockState extends State<PinnedTagsBlock> {
           ),
         ),
       ],
+      ),
     );
   }
 }

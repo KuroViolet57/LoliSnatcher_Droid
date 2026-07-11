@@ -335,7 +335,10 @@ class _BooruEditState extends State<BooruEdit> {
             'https://www.redgifs.com. Browse trending content or search tags '
             '(e.g. <i>blowjob blonde</i>). Sort with the <i>sort:</i> chip '
             '(Trending / Top / Latest). Creators are searchable via the '
-            '<i>creator:name</i> tag shown in a post tag list.';
+            '<i>creator:name</i> tag shown in a post tag list. Type '
+            '<i>niche:</i> in the search bar to autocomplete from the full '
+            'catalogue of curated niches; the niches a post belongs to also '
+            'show up as tags in its tag list.';
       case BooruType.WebView:
         return '<b>WebView (browser)</b><br>Renders any site inside a tab '
             'instead of scraping it — use it for sites that are hard or '

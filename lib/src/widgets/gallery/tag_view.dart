@@ -98,12 +98,6 @@ class _TagViewState extends State<TagView> {
   TagsListData tagsData = const TagsListData();
   late final ScrollController scrollController = widget.scrollController ?? ScrollController();
 
-  // Tracks each tag row's inline preview strip effective query (base tag +
-  // the strip's active "videos / GIFs only" filter) so the row's own
-  // "open in new tab" button carries the same filter the strip is showing.
-  final Map<String, String> _previewEffectiveTags = {};
-  String _effectiveTagFor(String tag) => _previewEffectiveTags[tag] ?? tag;
-
   late BooruItem item;
   late BooruHandler handler;
   BooruHandler? possibleBooruHandler;
@@ -820,9 +814,97 @@ class _TagViewState extends State<TagView> {
     ];
   }
 
-  Widget tagsItemBuilder(BuildContext context, Tag tag) {
-    final String currentTag = tag.fullString;
-    final int tagCount = tag.count;
+  /// Boorusama-style tag cloud: chips grouped into colored sections by tag
+  /// type (Artist / Character / Copyright / Meta / Species / General).
+  ///
+  /// The alpha-sort modes (sort button) collapse the sections into a single
+  /// flat sorted chip cloud. Tapping a chip opens the full tag dialog
+  /// (add/exclude/new tab/preview window/blacklist...), long-pressing
+  /// quick-adds the tag to the current search.
+  List<Widget> tagChipSectionSlivers(BuildContext context) {
+    if (filteredTags.isEmpty) return const [];
+
+    final List<(TagType?, List<Tag>)> sections = [];
+    if (sortTags == null) {
+      final Map<TagType, List<Tag>> byType = {
+        for (final type in TagType.values) type: <Tag>[],
+      };
+      for (final tag in filteredTags) {
+        // Types usually live in TagHandler's enriched store rather than on
+        // the item's Tag object; check both (same pattern as groupTagsList).
+        final TagType type = tagHandler.hasTag(tag.fullString)
+            ? tagHandler.getTag(tag.fullString).tagType
+            : tag.tagType;
+        byType[type]!.add(tag);
+      }
+      for (final type in TagType.values) {
+        if (byType[type]!.isNotEmpty) {
+          sections.add((type, byType[type]!));
+        }
+      }
+    } else {
+      sections.add((null, filteredTags));
+    }
+
+    return [
+      for (final section in sections) ...[
+        if (section.$1 != null)
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 2),
+            sliver: SliverToBoxAdapter(
+              child: Row(
+                children: [
+                  Container(
+                    width: 5,
+                    height: 16,
+                    decoration: BoxDecoration(
+                      color:
+                          section.$1!.getColour() ??
+                          Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4),
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    section.$1!.locName,
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    '${section.$2.length}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+          sliver: SliverToBoxAdapter(
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final tag in section.$2) buildTagChip(context, tag),
+              ],
+            ),
+          ),
+        ),
+      ],
+    ];
+  }
+
+  Widget buildTagChip(BuildContext context, Tag rawTag) {
+    final String currentTag = rawTag.fullString;
+    if (currentTag.isEmpty) return const SizedBox.shrink();
+
+    final theme = Theme.of(context);
+    final tag = tagHandler.getTag(currentTag);
+    Color? color = tag.getColour();
+    color = color == Colors.transparent ? null : color;
 
     final bool isHidden = tagsData.hiddenTags.contains(currentTag);
     final bool isMarked = tagsData.markedTags.contains(currentTag);
@@ -843,268 +925,148 @@ class _TagViewState extends State<TagView> {
     final HasTabWithTagResult hasTabWithTag = tabMatchesMap.containsKey(currentTag)
         ? tabMatchesMap[currentTag]!
         : HasTabWithTagResult.noTag;
+    final int tagCount = rawTag.count;
 
-    final List<_TagInfoIcon> tagIconAndColor = [];
-    if (isAi) {
-      tagIconAndColor.add(_TagInfoIcon(FontAwesomeIcons.robot, Theme.of(context).colorScheme.onSurface));
-    }
-    if (isSound) {
-      tagIconAndColor.add(_TagInfoIcon(Icons.volume_up_rounded, Theme.of(context).colorScheme.onSurface));
-    }
-    if (isHidden) {
-      tagIconAndColor.add(_TagInfoIcon(CupertinoIcons.eye_slash, Colors.red));
-    }
-    if (isMarked) {
-      tagIconAndColor.add(_TagInfoIcon(Icons.star, Colors.yellow));
-    }
+    final Color baseColor = color ?? theme.colorScheme.onSurface;
+    // Tint the label towards readable contrast instead of using the raw
+    // type color (pure red/brown etc. get muddy on dark surfaces).
+    final Color textColor = color == null
+        ? theme.colorScheme.onSurface
+        : Color.lerp(color, context.isLight ? Colors.black : Colors.white, context.isLight ? 0.35 : 0.45)!;
 
-    if (currentTag != '') {
-      final tag = tagHandler.getTag(currentTag);
+    final List<_TagInfoIcon> tagIconAndColor = [
+      if (isAi) _TagInfoIcon(FontAwesomeIcons.robot, textColor),
+      if (isSound) _TagInfoIcon(Icons.volume_up_rounded, textColor),
+      if (isHidden) _TagInfoIcon(CupertinoIcons.eye_slash, Colors.red),
+      if (isMarked) _TagInfoIcon(Icons.star, Colors.yellow),
+    ];
 
-      return ColoredBox(
-        key: ValueKey('tag-$currentTag'),
-        color: tag.getColour() == null
-            ? Colors.transparent
-            : Color.lerp(
-                context.isLight ? Colors.white.withValues(alpha: 0.6) : Colors.black.withValues(alpha: 0.6),
-                tag.getColour()?.withValues(alpha: 0.1),
-                0.4,
-              )!,
-        child: Column(
-          children: [
-            InkWell(
-              onTap: () {
-                showTagDialog(
-                  context: context,
-                  tag: currentTag,
-                  handler: handler,
-                  isHidden: isHidden,
-                  isMarked: isMarked,
-                  isInSearch: isInSearch,
-                  hasTabWithTag: hasTabWithTag,
-                  onUpdate: parseSortGroupTagsWithoutCache,
-                );
-              },
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Container(
-                      height: 50,
-                      padding: const EdgeInsets.only(left: 12),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          _TagText(
-                            key: ValueKey(currentTag),
-                            tag: tag,
-                            filterText: searchController.text,
-                          ),
-                          AnimatedSize(
-                            duration: const Duration(milliseconds: 200),
-                            alignment: Alignment.centerLeft,
-                            child: tagCount <= 0
-                                ? const SizedBox(width: double.infinity)
-                                : Padding(
-                                    padding: const EdgeInsets.only(top: 2),
-                                    child: Text(
-                                      tagCount.toFormattedString(),
-                                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                        fontSize: 10,
-                                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
-                                      ),
-                                    ),
-                                  ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  if (tagIconAndColor.isNotEmpty) ...[
-                    ...tagIconAndColor.map(
-                      (t) => switch (t.icon) {
-                        FaIconData _ => Padding(
-                          // add a bit of padding to compensate for some icons being too close to each other
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
-                          child: FaIcon(
-                            t.icon,
-                            color: t.color,
-                            size: 18,
-                          ),
-                        ),
-                        IconData _ => Icon(
-                          t.icon,
-                          color: t.color,
-                          size: 20,
-                        ),
-                        _ => const SizedBox.shrink(),
-                      },
-                    ),
-                    const SizedBox(width: 5),
-                  ],
-                  IconButton(
-                    icon: Stack(
-                      children: [
-                        Icon(Icons.add, color: Theme.of(context).colorScheme.secondary),
-                        if (isInSearch)
-                          Positioned(
-                            right: 0,
-                            top: 0,
-                            child: Icon(
-                              Icons.search,
-                              size: 10,
-                              color: Theme.of(context).colorScheme.onSurface,
-                            ),
-                          ),
-                      ],
-                    ),
-                    onPressed: () {
-                      if (isInSearch) {
-                        FlashElements.showSnackbar(
-                          context: context,
-                          duration: const Duration(seconds: 2),
-                          title: Text(
-                            context.loc.tagView.thisTagAlreadyInSearch,
-                            style: const TextStyle(fontSize: 18),
-                          ),
-                          content: Text(currentTag, style: const TextStyle(fontSize: 16)),
-                          leadingIcon: Icons.warning_amber,
-                          leadingIconColor: Colors.yellow,
-                          sideColor: Colors.yellow,
-                        );
-                        return;
-                      }
-
-                      searchHandler.addTagToSearch(currentTag);
-                      FlashElements.showSnackbar(
-                        context: context,
-                        duration: const Duration(seconds: 2),
-                        title: Text(context.loc.tagView.addedToCurrentSearch, style: const TextStyle(fontSize: 20)),
-                        content: Text(currentTag, style: const TextStyle(fontSize: 16)),
-                        leadingIcon: Icons.add,
-                        sideColor: Colors.green,
-                      );
-                    },
-                  ),
-                  IconButton(
-                    icon: Stack(
-                      children: [
-                        Icon(Icons.fiber_new, color: Theme.of(context).colorScheme.secondary),
-                        if (hasTabWithTag.hasTagInAnyForm)
-                          Positioned(
-                            right: 0,
-                            top: 0,
-                            child: Icon(
-                              Icons.circle,
-                              size: 6,
-                              color: hasTabWithTag.color(context),
-                            ),
-                          ),
-                      ],
-                    ),
-                    onPressed: () {
-                      final TabAddMode addMode = settingsHandler.defaultTabAddMode == 'next'
-                          ? TabAddMode.next
-                          : TabAddMode.end;
-                      // Capture the current index before inserting so the
-                      // snackbar's jump arrow targets the right tab even in
-                      // "next to current" mode (where it won't be at the end).
-                      final int indexBefore = searchHandler.currentIndex;
-                      // Carry the inline preview strip's active videos/GIFs
-                      // filter into the new tab, if one is set for this tag.
-                      final String newTabTags = _effectiveTagFor(currentTag);
-                      searchHandler.addTabByString(newTabTags, addMode: addMode);
-                      final int newTabIndex = addMode == TabAddMode.next
-                          ? indexBefore + 1
-                          : searchHandler.tabs.length - 1;
-
-                      parseSortGroupTags();
-
-                      FlashElements.showSnackbar(
-                        context: context,
-                        isKeyUnique: true,
-                        key: 'added_new_tab',
-                        duration: const Duration(seconds: 2),
-                        title: Text(context.loc.tagView.addedNewTab, style: const TextStyle(fontSize: 20)),
-                        content: Text(newTabTags, style: const TextStyle(fontSize: 16)),
-                        leadingIcon: Icons.fiber_new,
-                        sideColor: Colors.green,
-                        primaryActionBuilder: (context, controller) {
-                          return Row(
-                            children: [
-                              IconButton(
-                                onPressed: () {
-                                  ServiceHandler.vibrate();
-                                  if (settingsHandler.appMode.value.isMobile) {
-                                    Navigator.of(context).popUntil((route) => route.isFirst); // exit viewer
-                                  }
-                                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                                    searchHandler.changeTabIndex(newTabIndex);
-                                  });
-                                  controller.dismiss();
-                                },
-                                icon: Icon(
-                                  Icons.arrow_forward_rounded,
-                                  color: Theme.of(context).colorScheme.onSurface,
-                                ),
-                              ),
-                              const SizedBox(width: 4),
-                              IconButton(
-                                onPressed: () => controller.dismiss(),
-                                icon: Icon(Icons.close, color: Theme.of(context).colorScheme.onSurface),
-                              ),
-                            ],
-                          );
-                        },
-                      );
-                    },
-                    onLongPress: () async {
-                      await ServiceHandler.vibrate();
-                      final TabAddMode addMode = settingsHandler.defaultTabAddMode == 'next'
-                          ? TabAddMode.next
-                          : TabAddMode.end;
-                      if (settingsHandler.appMode.value.isMobile) {
-                        Navigator.of(context).popUntil((route) => route.isFirst); // exit viewer
-                      }
-                      final String newTabTags = _effectiveTagFor(currentTag);
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        searchHandler.addTabByString(newTabTags, switchToNew: true, addMode: addMode);
-                      });
-                    },
-                  ),
-                  IconButton(
-                    icon: Icon(
-                      Icons.picture_in_picture_alt_outlined,
-                      color: Theme.of(context).colorScheme.secondary,
-                    ),
-                    tooltip: 'Preview posts with this tag',
-                    onPressed: () {
-                      // In merge mode (and Favourites/Downloads), the post being viewed often comes
-                      // from a different booru than the tab's primary. Route the preview window to
-                      // that source booru so the tag lookup hits the right site instead of always
-                      // querying the primary.
-                      final Booru previewBooru = possibleBooruHandler?.booru ?? searchHandler.currentBooru;
-                      FloatingPreviewHandler.instance.open(
-                        tag: currentTag,
-                        booru: previewBooru,
-                      );
-                    },
-                  ),
-                  const SizedBox(width: 8),
-                ],
-              ),
-            ),
-            Divider(
-              color: context.theme.dividerTheme.color?.withValues(alpha: 0.66),
-            ),
-          ],
+    return Material(
+      key: ValueKey('tag-chip-$currentTag'),
+      color: baseColor.withValues(alpha: context.isLight ? 0.09 : 0.16),
+      shape: StadiumBorder(
+        side: BorderSide(
+          color: isInSearch ? baseColor.withValues(alpha: 0.9) : baseColor.withValues(alpha: 0.35),
+          width: isInSearch ? 1.6 : 1,
         ),
-      );
-    } else {
-      // Render nothing if currentTag is an empty string
-      return const SizedBox.shrink();
+      ),
+      child: InkWell(
+        customBorder: const StadiumBorder(),
+        onTap: () {
+          showTagDialog(
+            context: context,
+            tag: currentTag,
+            handler: handler,
+            isHidden: isHidden,
+            isMarked: isMarked,
+            isInSearch: isInSearch,
+            hasTabWithTag: hasTabWithTag,
+            onUpdate: parseSortGroupTagsWithoutCache,
+          );
+        },
+        onLongPress: () async {
+          await ServiceHandler.vibrate();
+          if (isInSearch) {
+            FlashElements.showSnackbar(
+              context: context,
+              duration: const Duration(seconds: 2),
+              title: Text(
+                context.loc.tagView.thisTagAlreadyInSearch,
+                style: const TextStyle(fontSize: 18),
+              ),
+              content: Text(currentTag, style: const TextStyle(fontSize: 16)),
+              leadingIcon: Icons.warning_amber,
+              leadingIconColor: Colors.yellow,
+              sideColor: Colors.yellow,
+            );
+            return;
+          }
+          searchHandler.addTagToSearch(currentTag);
+          setState(() {});
+          FlashElements.showSnackbar(
+            context: context,
+            duration: const Duration(seconds: 2),
+            title: Text(context.loc.tagView.addedToCurrentSearch, style: const TextStyle(fontSize: 20)),
+            content: Text(currentTag, style: const TextStyle(fontSize: 16)),
+            leadingIcon: Icons.add,
+            sideColor: Colors.green,
+          );
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final t in tagIconAndColor)
+                Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: switch (t.icon) {
+                    FaIconData _ => FaIcon(t.icon, color: t.color, size: 12),
+                    IconData _ => Icon(t.icon, color: t.color, size: 14),
+                    _ => const SizedBox.shrink(),
+                  },
+                ),
+              ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.62),
+                child: _chipTagLabel(currentTag, textColor),
+              ),
+              if (tagCount > 0) ...[
+                const SizedBox(width: 5),
+                Text(
+                  tagCount.toFormattedString(),
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w500,
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
+                  ),
+                ),
+              ],
+              if (hasTabWithTag.hasTagInAnyForm) ...[
+                const SizedBox(width: 5),
+                Icon(
+                  Icons.circle,
+                  size: 7,
+                  color: hasTabWithTag.color(context),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Chip label with the in-panel tag-search match highlighted.
+  Widget _chipTagLabel(String currentTag, Color textColor) {
+    final TextStyle style = TextStyle(
+      fontSize: 13.5,
+      fontWeight: FontWeight.w600,
+      color: textColor,
+    );
+
+    final String filter = searchController.text.toLowerCase();
+    final int matchIndex = filter.isEmpty ? -1 : currentTag.toLowerCase().indexOf(filter);
+    if (matchIndex == -1) {
+      return Text(currentTag, maxLines: 1, overflow: TextOverflow.ellipsis, style: style);
     }
+
+    return Text.rich(
+      TextSpan(
+        children: [
+          TextSpan(text: currentTag.substring(0, matchIndex), style: style),
+          TextSpan(
+            text: currentTag.substring(matchIndex, matchIndex + filter.length),
+            style: style.copyWith(
+              decoration: TextDecoration.underline,
+              backgroundColor: textColor.withValues(alpha: 0.15),
+            ),
+          ),
+          TextSpan(text: currentTag.substring(matchIndex + filter.length), style: style),
+        ],
+      ),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+    );
   }
 
   // Builds a space-separated tag query for the "Related" preview strip.
@@ -1393,12 +1355,7 @@ class _TagViewState extends State<TagView> {
                   )
                 : const SizedBox.shrink(),
           ),
-          SliverList(
-            delegate: SliverChildBuilderDelegate(
-              (c, i) => tagsItemBuilder(c, filteredTags[i]),
-              childCount: filteredTags.length,
-            ),
-          ),
+          ...tagChipSectionSlivers(context),
           SliverToBoxAdapter(
             child: SizedBox(
               height: MediaQuery.viewInsetsOf(context).bottom + kMinInteractiveDimension,
@@ -1407,70 +1364,6 @@ class _TagViewState extends State<TagView> {
         ],
       ),
     );
-  }
-}
-
-class _TagText extends StatelessWidget {
-  const _TagText({
-    required this.tag,
-    this.filterText,
-    super.key,
-  });
-
-  final Tag tag;
-  final String? filterText;
-
-  @override
-  Widget build(BuildContext context) {
-    Color? color = tag.getColour();
-    color = color == Colors.transparent ? null : color;
-    final basicStyle = TextStyle(
-      fontSize: 14,
-      fontWeight: filterText?.isNotEmpty == true ? FontWeight.w400 : FontWeight.w600,
-    );
-    final fullStyle = basicStyle.copyWith(
-      color: color,
-    );
-
-    if (filterText?.isNotEmpty == true) {
-      final List<TextSpan> spans = [];
-      final List<String> split = tag.fullString.split(filterText!);
-
-      for (int i = 0; i < split.length; i++) {
-        spans.add(
-          TextSpan(
-            text: split[i],
-            style: basicStyle,
-          ),
-        );
-        if (i < split.length - 1) {
-          spans.add(
-            TextSpan(
-              text: filterText,
-              style: fullStyle.copyWith(
-                backgroundColor: color?.withValues(alpha: 0.1),
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          );
-        }
-      }
-
-      return MarqueeText.rich(
-        textSpan: TextSpan(
-          children: spans,
-          style: basicStyle,
-        ),
-        isExpanded: false,
-        style: basicStyle,
-      );
-    } else {
-      return MarqueeText(
-        text: tag.fullString,
-        isExpanded: false,
-        style: fullStyle,
-      );
-    }
   }
 }
 
