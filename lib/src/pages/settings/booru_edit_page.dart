@@ -191,6 +191,15 @@ class _BooruEditState extends State<BooruEdit> {
                       booruFaviconController.text = 'https://www.redgifs.com/favicon.ico';
                     }
                   }
+                  if (selectedBooruType.isRule34Dev && booruURLController.text.trim().isEmpty) {
+                    booruURLController.text = 'https://app.rule34.dev';
+                    if (booruNameController.text.trim().isEmpty) {
+                      booruNameController.text = 'Rule34.dev';
+                    }
+                    if (booruFaviconController.text.trim().isEmpty) {
+                      booruFaviconController.text = 'https://app.rule34.dev/icon.webp';
+                    }
+                  }
                 });
               },
               title: context.loc.settings.booruEditor.booruType,
@@ -339,6 +348,18 @@ class _BooruEditState extends State<BooruEdit> {
             '<i>niche:</i> in the search bar to autocomplete from the full '
             'catalogue of curated niches; the niches a post belongs to also '
             'show up as tags in its tag list.';
+      case BooruType.Rule34Dev:
+        return '<b>Rule34.dev (aggregator)</b><br>No setup needed — leave the '
+            'URL as https://app.rule34.dev. This reads the app.rule34.dev '
+            'aggregated feed (images, GIFs and video posts).<br><br>'
+            'Pick which underlying booru to browse with the <i>source:</i> '
+            'chip / prefix: <i>source:r34</i> (Rule34.xxx, default), '
+            '<i>source:gel</i> (Gelbooru), <i>source:e621</i>, '
+            '<i>source:r34paheal</i> — e.g. <i>source:gel milf score:&gt;3</i>. '
+            'Tag autocomplete follows the selected source.<br><br>'
+            'Note: the "real videos" (xvideos) section streams tube sites '
+            'through a private proxy and cannot be scraped directly — open '
+            'app.rule34.dev in a WebView booru for that part.';
       case BooruType.WebView:
         return '<b>WebView (browser)</b><br>Renders any site inside a tab '
             'instead of scraping it — use it for sites that are hard or '
@@ -389,15 +410,22 @@ class _BooruEditState extends State<BooruEdit> {
   Future<bool> onTest() async {
     sanitizeBooruName();
 
-    // The special engines don't scrape, so there's nothing to test — just
-    // normalise the URL and accept. RedGifs has a fixed API; WebView renders
-    // whatever URL (optionally with a {tags} placeholder) the user provides.
-    if (selectedBooruType.isRedGifs || selectedBooruType.isWebView) {
+    // The special engines don't use the standard scrape-test — just normalise
+    // the URL and accept. RedGifs has a fixed API; Rule34.dev reads a fixed
+    // data endpoint; WebView renders whatever URL the user provides.
+    if (selectedBooruType.isRedGifs || selectedBooruType.isWebView || selectedBooruType.isRule34Dev) {
       if (booruNameController.text.trim().isEmpty) {
-        booruNameController.text = selectedBooruType.isRedGifs ? 'RedGifs' : 'WebView';
+        booruNameController.text = selectedBooruType.isRedGifs
+            ? 'RedGifs'
+            : selectedBooruType.isRule34Dev
+            ? 'Rule34.dev'
+            : 'WebView';
       }
       if (booruURLController.text.trim().isEmpty && selectedBooruType.isRedGifs) {
         booruURLController.text = 'https://www.redgifs.com';
+      }
+      if (booruURLController.text.trim().isEmpty && selectedBooruType.isRule34Dev) {
+        booruURLController.text = 'https://app.rule34.dev';
       }
       if (booruURLController.text.trim().isEmpty) {
         FlashElements.showSnackbar(

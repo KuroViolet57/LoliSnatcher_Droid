@@ -22,6 +22,7 @@ import 'package:lolisnatcher/src/boorus/r34us_handler.dart';
 import 'package:lolisnatcher/src/boorus/rainbooru_handler.dart';
 import 'package:lolisnatcher/src/boorus/realbooru_handler.dart';
 import 'package:lolisnatcher/src/boorus/redgifs_handler.dart';
+import 'package:lolisnatcher/src/boorus/rule34dev_handler.dart';
 import 'package:lolisnatcher/src/boorus/sankaku_handler.dart';
 import 'package:lolisnatcher/src/boorus/shimmie_handler.dart';
 import 'package:lolisnatcher/src/boorus/szurubooru_handler.dart';
@@ -156,6 +157,11 @@ class BooruHandlerFactory {
           // redgifs pages start at 1
           pageNum = 0;
           booruHandler = RedGifsHandler(booru, limit);
+          break;
+        case BooruType.Rule34Dev:
+          // rule34.dev data route is 0-based; leave pageNum at -1 so the
+          // first search increments it to page 0.
+          booruHandler = Rule34DevHandler(booru, limit);
           break;
         case BooruType.WebView:
           booruHandler = WebViewBrowserHandler(booru, limit);
