@@ -35,6 +35,7 @@ import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/database_handler.dart';
+import 'package:lolisnatcher/src/handlers/floating_preview_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -111,8 +112,6 @@ class _TagViewState extends State<TagView> {
   List<Tag> tags = [];
   List<Tag> filteredTags = [];
   final Map<String, HasTabWithTagResult> tabMatchesMap = {};
-  // Tags whose inline preview strip is currently expanded in the tag list.
-  final Set<String> expandedTagPreviews = {};
   bool? sortTags;
   final TextEditingController searchController = TextEditingController();
   final FocusNode searchFocusNode = FocusNode();
@@ -1076,43 +1075,26 @@ class _TagViewState extends State<TagView> {
                   ),
                   IconButton(
                     icon: Icon(
-                      expandedTagPreviews.contains(currentTag) ? Icons.expand_less : Icons.expand_more,
+                      Icons.picture_in_picture_alt_outlined,
                       color: Theme.of(context).colorScheme.secondary,
                     ),
                     tooltip: 'Preview posts with this tag',
                     onPressed: () {
-                      setState(() {
-                        if (!expandedTagPreviews.remove(currentTag)) {
-                          expandedTagPreviews.add(currentTag);
-                        }
-                      });
+                      // In merge mode (and Favourites/Downloads), the post being viewed often comes
+                      // from a different booru than the tab's primary. Route the preview window to
+                      // that source booru so the tag lookup hits the right site instead of always
+                      // querying the primary.
+                      final Booru previewBooru = possibleBooruHandler?.booru ?? searchHandler.currentBooru;
+                      FloatingPreviewHandler.instance.open(
+                        tag: currentTag,
+                        booru: previewBooru,
+                      );
                     },
                   ),
                   const SizedBox(width: 8),
                 ],
               ),
             ),
-            if (expandedTagPreviews.contains(currentTag))
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: Builder(
-                  builder: (context) {
-                    // In merge mode (and Favourites/Downloads), the post being viewed often comes
-                    // from a different booru than the tab's primary. Route the preview strip to
-                    // that source booru so the tag lookup hits the right site instead of always
-                    // querying the primary.
-                    final Booru previewBooru = possibleBooruHandler?.booru ?? searchHandler.currentBooru;
-                    return TagContentPreview(
-                      key: ValueKey('tag-preview-${previewBooru.name}-$currentTag'),
-                      tag: currentTag,
-                      boorus: [previewBooru],
-                      parentTab: searchHandler.currentTab,
-                      compact: true,
-                      onEffectiveTagChanged: (t) => _previewEffectiveTags[currentTag] = t,
-                    );
-                  },
-                ),
-              ),
             Divider(
               color: context.theme.dividerTheme.color?.withValues(alpha: 0.66),
             ),
@@ -1589,14 +1571,24 @@ Future<void> showTagDialog({
           ),
           const SizedBox(height: 10),
           //
-          TagContentPreview(
-            tag: tag,
-            boorus: handler.booru.type?.isMerge == true
-                ? [
-                    ...(handler as MergebooruHandler).booruHandlers.map((e) => e.booru),
-                  ]
-                : [handler.booru],
-            parentTab: searchHandler.currentTab,
+          // Boorusama-style floating preview window (draggable/resizable,
+          // opens over whatever page spawned this dialog).
+          ListTile(
+            leading: Icon(
+              Icons.picture_in_picture_alt_outlined,
+              color: Theme.of(context).colorScheme.secondary,
+            ),
+            title: Text(context.loc.tagView.preview),
+            onTap: () {
+              final Booru previewBooru = handler.booru.type?.isMerge == true
+                  ? (handler as MergebooruHandler).booruHandlers.first.booru
+                  : handler.booru;
+              Navigator.of(context).pop();
+              FloatingPreviewHandler.instance.open(
+                tag: tag,
+                booru: previewBooru,
+              );
+            },
           ),
           //
           ListTile(
@@ -2143,7 +2135,27 @@ class _CollapsibleRelatedPreviewState extends State<_CollapsibleRelatedPreview> 
             widget.title,
             style: const TextStyle(fontWeight: FontWeight.w600),
           ),
-          trailing: Icon(_expanded ? Icons.expand_less : Icons.expand_more),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                tooltip: 'Open in floating window',
+                icon: Icon(
+                  Icons.picture_in_picture_alt_outlined,
+                  size: 20,
+                  color: Theme.of(context).colorScheme.secondary,
+                ),
+                onPressed: () {
+                  FloatingPreviewHandler.instance.open(
+                    tag: widget.query,
+                    booru: widget.booru,
+                  );
+                },
+              ),
+              Icon(_expanded ? Icons.expand_less : Icons.expand_more),
+            ],
+          ),
           onTap: () => setState(() => _expanded = !_expanded),
         ),
         if (_expanded)

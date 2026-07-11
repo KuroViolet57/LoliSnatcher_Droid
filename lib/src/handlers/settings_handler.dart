@@ -194,6 +194,10 @@ class SettingsHandler {
   // Inline "more from this artist / uploader" thumbnail grids in the
   // post-details drawer. Mirrors Boorusama's pattern. On by default.
   bool inlineRelatedGrids = true;
+  // Persisted rect of the floating tag-preview window, stored as
+  // 'left,top,width,height' fractions of the screen (empty = use default).
+  // Living in settings.json means it also rides along in backup/restore.
+  String previewWindowRect = '';
   // Render the post-info panel (tags, metadata) as a Boorusama-style bottom
   // sheet dragged up from the bottom edge instead of the classic right-side
   // drawer. On by default; turn off to restore the side drawer.
@@ -628,6 +632,10 @@ class SettingsHandler {
     'inlineRelatedGrids': {
       'type': 'bool',
       'default': true,
+    },
+    'previewWindowRect': {
+      'type': 'string',
+      'default': '',
     },
     'useBottomInfoSheet': {
       'type': 'bool',
@@ -1209,6 +1217,8 @@ class SettingsHandler {
         return betterPlayerPerFileMb;
       case 'inlineRelatedGrids':
         return inlineRelatedGrids;
+      case 'previewWindowRect':
+        return previewWindowRect;
       case 'useBottomInfoSheet':
         return useBottomInfoSheet;
       case 'bottomSheetSizeMultiplier':
@@ -1468,6 +1478,9 @@ class SettingsHandler {
         break;
       case 'inlineRelatedGrids':
         inlineRelatedGrids = validatedValue;
+        break;
+      case 'previewWindowRect':
+        previewWindowRect = validatedValue;
         break;
       case 'useBottomInfoSheet':
         useBottomInfoSheet = validatedValue;

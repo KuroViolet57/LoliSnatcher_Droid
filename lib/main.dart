@@ -19,6 +19,7 @@ import 'package:talker_flutter/talker_flutter.dart';
 
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/theme_item.dart';
+import 'package:lolisnatcher/src/handlers/floating_preview_handler.dart';
 import 'package:lolisnatcher/src/handlers/local_auth_handler.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
 import 'package:lolisnatcher/src/handlers/notify_handler.dart';
@@ -82,6 +83,7 @@ void main() async {
   // load settings before first render to get theme data early
   NavigationHandler.register();
   ViewerHandler.register();
+  FloatingPreviewHandler.register();
   SearchHandler.register();
   SnatchHandler.register();
   TagHandler.register();
@@ -229,6 +231,7 @@ class _MainAppState extends State<MainApp> {
                     navigatorKey: navigationHandler.navigatorKey,
                     navigatorObservers: [
                       navigationHandler.routeObserver,
+                      FloatingPreviewHandler.instance.routeObserver,
                       TalkerRouteObserver(Logger.talker),
                     ],
                     home: const Home(),
