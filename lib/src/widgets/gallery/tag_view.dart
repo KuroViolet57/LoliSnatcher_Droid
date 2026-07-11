@@ -965,31 +965,14 @@ class _TagViewState extends State<TagView> {
           );
         },
         onLongPress: () async {
+          // Long-press peeks the tag in a floating preview window (which
+          // floats over the current view) instead of editing the search.
+          // Adding to search still lives behind the tap → tag dialog.
           await ServiceHandler.vibrate();
-          if (isInSearch) {
-            FlashElements.showSnackbar(
-              context: context,
-              duration: const Duration(seconds: 2),
-              title: Text(
-                context.loc.tagView.thisTagAlreadyInSearch,
-                style: const TextStyle(fontSize: 18),
-              ),
-              content: Text(currentTag, style: const TextStyle(fontSize: 16)),
-              leadingIcon: Icons.warning_amber,
-              leadingIconColor: Colors.yellow,
-              sideColor: Colors.yellow,
-            );
-            return;
-          }
-          searchHandler.addTagToSearch(currentTag);
-          setState(() {});
-          FlashElements.showSnackbar(
-            context: context,
-            duration: const Duration(seconds: 2),
-            title: Text(context.loc.tagView.addedToCurrentSearch, style: const TextStyle(fontSize: 20)),
-            content: Text(currentTag, style: const TextStyle(fontSize: 16)),
-            leadingIcon: Icons.add,
-            sideColor: Colors.green,
+          final Booru previewBooru = possibleBooruHandler?.booru ?? searchHandler.currentBooru;
+          FloatingPreviewHandler.instance.open(
+            tag: currentTag,
+            booru: previewBooru,
           );
         },
         child: Padding(

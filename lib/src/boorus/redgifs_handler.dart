@@ -149,7 +149,7 @@ class RedGifsHandler extends BooruHandler {
     if (niche != null) {
       return Uri.parse('$_apiBase/v2/niches/$niche/gifs').replace(
         queryParameters: {
-          'order': parts.order == 'latest' ? 'recent' : parts.order,
+          'order': _nicheOrder(parts.order),
           'count': limit.toString(),
           'page': pageNum.toString(),
         },
@@ -161,11 +161,9 @@ class RedGifsHandler extends BooruHandler {
     // doesn't match usernames).
     final String? creator = _creatorFromInput(tags);
     if (creator != null) {
-      // The user endpoint takes new|trending|top|likes|oldest; map our chip.
-      final String userOrder = parts.order == 'latest' ? 'new' : parts.order;
       return Uri.parse('$_apiBase/v2/users/$creator/search').replace(
         queryParameters: {
-          'order': userOrder,
+          'order': _userOrder(parts.order),
           'count': limit.toString(),
           'page': pageNum.toString(),
         },
@@ -182,6 +180,33 @@ class RedGifsHandler extends BooruHandler {
         'page': pageNum.toString(),
       },
     ).toString();
+  }
+
+  // The per-user feed endpoint accepts recent/best/latest/top/oldest/new but
+  // NOT `trending` (the search default) — passing trending there silently
+  // returns zero gifs, which looked like "this creator has no content" even
+  // for creators with thousands of gifs. Map the sort chip to a valid value.
+  String _userOrder(String order) {
+    switch (order) {
+      case 'top':
+        return 'top';
+      case 'latest':
+        return 'latest';
+      default: // 'trending' (chip default) is invalid here
+        return 'best';
+    }
+  }
+
+  // The niche feed accepts trending/oldest/latest/best/hot — NOT `top`.
+  String _nicheOrder(String order) {
+    switch (order) {
+      case 'top':
+        return 'best';
+      case 'latest':
+        return 'latest';
+      default:
+        return 'trending';
+    }
   }
 
   String? _creatorFromInput(String input) {

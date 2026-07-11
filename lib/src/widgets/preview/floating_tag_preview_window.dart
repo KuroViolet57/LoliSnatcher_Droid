@@ -15,9 +15,7 @@ import 'package:lolisnatcher/src/pages/gallery_view_page.dart';
 import 'package:lolisnatcher/src/utils/extensions.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 import 'package:lolisnatcher/src/widgets/common/kaomoji.dart';
-import 'package:lolisnatcher/src/widgets/common/loli_dropdown.dart';
 import 'package:lolisnatcher/src/widgets/image/booru_favicon.dart';
-import 'package:lolisnatcher/src/widgets/tabs/tab_booru_selector.dart';
 import 'package:lolisnatcher/src/widgets/thumbnail/thumbnail_card_build.dart';
 
 /// Renders every live floating preview window. Inserted once into the
@@ -99,6 +97,17 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
   bool minimized = false;
   Offset? pillPos;
 
+  // Extra tags typed into the window's own search box, AND-ed onto the tag
+  // the window was opened for.
+  final TextEditingController extraTagsController = TextEditingController();
+  String extraTags = '';
+
+  // In-window booru picker panel. Rendered inside the window's own Stack (not
+  // as a navigator dialog) so it floats ABOVE the window instead of opening
+  // behind it in the page below the overlay.
+  bool booruPickerOpen = false;
+  final TextEditingController booruFilterController = TextEditingController();
+
   // Window rect as fractions of the screen (position + size), so the stored
   // value stays meaningful across rotations and devices.
   double? fx, fy, fw, fh;
@@ -113,9 +122,14 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
       ? _animatedFilters[animatedFilterIndex]
       : null;
 
+  String get _baseTag {
+    final String extra = extraTags.trim();
+    return extra.isEmpty ? widget.entry.tag : '${widget.entry.tag} $extra';
+  }
+
   String get _effectiveTag {
     final filter = _activeAnimatedFilter;
-    return filter == null ? widget.entry.tag : '${widget.entry.tag} $filter';
+    return filter == null ? _baseTag : '$_baseTag $filter';
   }
 
   @override
@@ -132,7 +146,19 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
   void dispose() {
     viewedIndex.dispose();
     scrollController.dispose();
+    extraTagsController.dispose();
+    booruFilterController.dispose();
     super.dispose();
+  }
+
+  void _applyExtraTags() {
+    final String next = extraTagsController.text.trim();
+    if (next == extraTags.trim()) return;
+    setState(() {
+      extraTags = next;
+      animatedFilterIndex = -1;
+    });
+    loadPreview(refresh: true);
   }
 
   Future<void> loadPreview({
@@ -270,31 +296,20 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
   //
   // Actions
 
-  Future<void> _openBooruPicker(BuildContext context) async {
-    final dropdown = LoliDropdown<Booru?>(
-      value: selectedBooru,
-      onChanged: (v) {
-        if (v == null) return;
-        setState(() {
-          selectedBooru = v;
-          animatedFilterIndex = -1;
-        });
-        loadPreview(refresh: true);
-      },
-      items: [...settingsHandler.booruList],
-      labelText: context.loc.booru,
-      itemBuilder: (b) => b == null
-          ? const SizedBox.shrink()
-          : Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: TabBooruSelectorItem(booru: b),
-            ),
-      selectedItemBuilder: (b) => b == null ? const SizedBox.shrink() : TabBooruSelectorItem(booru: b),
-      searchable: settingsHandler.booruList.length > 5,
-      searchCheck: (s, b) =>
-          (b?.name?.toLowerCase().contains(s) ?? true) || (b?.type?.name.toLowerCase().contains(s) ?? true),
-    );
-    await dropdown.showDialog(context);
+  void _openBooruPicker() {
+    setState(() {
+      booruFilterController.clear();
+      booruPickerOpen = true;
+    });
+  }
+
+  void _pickBooru(Booru b) {
+    setState(() {
+      selectedBooru = b;
+      animatedFilterIndex = -1;
+      booruPickerOpen = false;
+    });
+    loadPreview(refresh: true);
   }
 
   void _openInNewTab() {
@@ -402,9 +417,13 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
                   children: [
                     _buildTitleBar(context, screen),
                     _buildBooruRow(context),
+                    _buildSearchRow(context),
                     Expanded(child: _buildGrid(context, rect.width)),
                   ],
                 ),
+                // In-window booru picker — floats above the grid so it can't
+                // hide behind the window like a navigator dialog would.
+                if (booruPickerOpen) _buildBooruPickerPanel(context),
                 // Resize grip
                 Positioned(
                   right: 0,
@@ -500,7 +519,7 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
           Flexible(
             child: InkWell(
               borderRadius: BorderRadius.circular(20),
-              onTap: () => _openBooruPicker(context),
+              onTap: _openBooruPicker,
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 child: Row(
@@ -557,6 +576,150 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
         ],
       ),
     );
+  }
+
+  // Slim search box to AND extra tags onto the previewed tag without leaving
+  // the window.
+  Widget _buildSearchRow(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
+      child: SizedBox(
+        height: 38,
+        child: TextField(
+          controller: extraTagsController,
+          textInputAction: TextInputAction.search,
+          onSubmitted: (_) => _applyExtraTags(),
+          style: const TextStyle(fontSize: 13),
+          decoration: InputDecoration(
+            isDense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            hintText: 'Add tags to this preview…',
+            hintStyle: TextStyle(fontSize: 13, color: theme.colorScheme.onSurface.withValues(alpha: 0.5)),
+            prefixIcon: const Icon(Icons.search, size: 18),
+            prefixIconConstraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+            suffixIcon: ValueListenableBuilder(
+              valueListenable: extraTagsController,
+              builder: (context, value, _) {
+                if (value.text.isEmpty) return const SizedBox.shrink();
+                return IconButton(
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.clear, size: 16),
+                  onPressed: () {
+                    extraTagsController.clear();
+                    _applyExtraTags();
+                  },
+                );
+              },
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(20),
+              borderSide: BorderSide(color: theme.dividerColor.withValues(alpha: 0.5)),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(20),
+              borderSide: BorderSide(color: theme.dividerColor.withValues(alpha: 0.4)),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Booru picker rendered inside the window (an overlay above the grid). A
+  // navigator dialog would open on the page BELOW the root overlay the window
+  // lives in, so it would appear behind the window — hence this in-window list.
+  Widget _buildBooruPickerPanel(BuildContext context) {
+    final theme = Theme.of(context);
+    return Positioned.fill(
+      // sit below the title bar so the window stays draggable/closable
+      top: 42,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => setState(() => booruPickerOpen = false),
+        child: ColoredBox(
+          color: Colors.black.withValues(alpha: 0.35),
+          child: GestureDetector(
+            onTap: () {}, // swallow taps on the panel itself
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: Container(
+                margin: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surfaceContainerHigh,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+                      child: Row(
+                        children: [
+                          Text('Preview booru', style: theme.textTheme.titleSmall),
+                          const Spacer(),
+                          IconButton(
+                            visualDensity: VisualDensity.compact,
+                            icon: const Icon(Icons.close, size: 20),
+                            onPressed: () => setState(() => booruPickerOpen = false),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (settingsHandler.booruList.length > 6)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                        child: SizedBox(
+                          height: 38,
+                          child: TextField(
+                            controller: booruFilterController,
+                            style: const TextStyle(fontSize: 13),
+                            onChanged: (_) => setState(() {}),
+                            decoration: InputDecoration(
+                              isDense: true,
+                              hintText: 'Filter boorus…',
+                              prefixIcon: const Icon(Icons.search, size: 18),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(20)),
+                            ),
+                          ),
+                        ),
+                      ),
+                    Flexible(
+                      child: ListView(
+                        shrinkWrap: true,
+                        padding: EdgeInsets.zero,
+                        children: [
+                          for (final b in settingsHandler.booruList.where(_booruMatchesFilter))
+                            ListTile(
+                              dense: true,
+                              leading: BooruFavicon(b),
+                              title: Text(b.name ?? '', maxLines: 1, overflow: TextOverflow.ellipsis),
+                              subtitle: Text(
+                                b.type?.name ?? '',
+                                style: const TextStyle(fontSize: 11),
+                              ),
+                              trailing: b == selectedBooru ? const Icon(Icons.check, size: 18) : null,
+                              onTap: () => _pickBooru(b),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  bool _booruMatchesFilter(Booru b) {
+    final String q = booruFilterController.text.trim().toLowerCase();
+    if (q.isEmpty) return true;
+    return (b.name?.toLowerCase().contains(q) ?? false) || (b.type?.name.toLowerCase().contains(q) ?? false);
   }
 
   Widget _buildGrid(BuildContext context, double width) {
