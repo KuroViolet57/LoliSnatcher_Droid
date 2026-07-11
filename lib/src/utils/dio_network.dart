@@ -1,8 +1,10 @@
 // ignore_for_file: invalid_use_of_internal_member
 
 import 'dart:async';
+import 'dart:io';
 
 import 'package:dio/dio.dart';
+import 'package:dio/io.dart';
 
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -89,6 +91,21 @@ class DioNetwork {
     // dio.options.connectTimeout = Duration(seconds: 10);
     // dio.options.receiveTimeout = Duration(seconds: 30);
     // dio.options.sendTimeout = Duration(seconds: 10);
+
+    // Honour the "Allow self-signed certificates" setting on the actual Dio
+    // client. This is what lets a user-installed MITM CA (e.g. AdGuard HTTPS
+    // filtering, or a debugging proxy) work: dart:io's HttpClient uses its own
+    // trust store and ignores Android's user-CA config, so without this the
+    // handshake fails with CERTIFICATE_VERIFY_FAILED even though the user
+    // deliberately installed the filtering CA. The created HttpClient still
+    // inherits any global proxy override.
+    dio.httpClientAdapter = IOHttpClientAdapter(
+      createHttpClient: () {
+        final HttpClient client = HttpClient();
+        client.badCertificateCallback = (_, _, _) => settingsHandler.allowSelfSignedCerts;
+        return client;
+      },
+    );
 
     if (!skipLogging) {
       dio.interceptors.add(Logger.dioInterceptor!);

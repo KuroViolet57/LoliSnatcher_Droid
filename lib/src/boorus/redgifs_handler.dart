@@ -7,6 +7,7 @@ import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/meta_tag.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_suggestion.dart';
+import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
@@ -141,14 +142,60 @@ class RedGifsHandler extends BooruHandler {
   @override
   String makeURL(String tags) {
     final parts = _splitQueryAndOrder(tags);
+
+    // A `niche:id` term routes to a curated RedGifs niche feed, e.g.
+    // `niche:just-boobs`. Browse the catalogue at redgifs.com/niches.
+    final String? niche = _prefixValue(tags, 'niche');
+    if (niche != null) {
+      return Uri.parse('$_apiBase/v2/niches/$niche/gifs').replace(
+        queryParameters: {
+          'order': parts.order == 'latest' ? 'recent' : parts.order,
+          'count': limit.toString(),
+          'page': pageNum.toString(),
+        },
+      ).toString();
+    }
+
+    // A `creator:name` term routes to the per-user feed endpoint (that's how
+    // "more from this artist" fetches a creator's gifs — the plain tag search
+    // doesn't match usernames).
+    final String? creator = _creatorFromInput(tags);
+    if (creator != null) {
+      // The user endpoint takes new|trending|top|likes|oldest; map our chip.
+      final String userOrder = parts.order == 'latest' ? 'new' : parts.order;
+      return Uri.parse('$_apiBase/v2/users/$creator/search').replace(
+        queryParameters: {
+          'order': userOrder,
+          'count': limit.toString(),
+          'page': pageNum.toString(),
+        },
+      ).toString();
+    }
+
+    // RedGifs renamed the search param: `search_text` is now ignored (returns
+    // the global feed for anything), the query goes in `tags` (comma = AND).
     return Uri.parse('$_apiBase/v2/gifs/search').replace(
       queryParameters: {
-        'search_text': parts.query,
+        'tags': parts.query,
         'order': parts.order,
         'count': limit.toString(),
         'page': pageNum.toString(),
       },
     ).toString();
+  }
+
+  String? _creatorFromInput(String input) {
+    return _prefixValue(input, 'creator') ?? _prefixValue(input, 'artist');
+  }
+
+  String? _prefixValue(String input, String prefix) {
+    for (final term in input.split(' ')) {
+      if (term.toLowerCase().startsWith('$prefix:')) {
+        final value = term.substring(term.indexOf(':') + 1).trim();
+        if (value.isNotEmpty) return value;
+      }
+    }
+    return null;
   }
 
   @override
@@ -202,15 +249,17 @@ class RedGifsHandler extends BooruHandler {
     final String thumb = urls['thumbnail']?.toString() ?? urls['poster']?.toString() ?? fileURL;
     final String id = current['id']?.toString() ?? '';
 
-    final List<String> tags = ((current['tags'] as List?) ?? [])
-        .map((t) => t.toString().replaceAll(' ', '_').toLowerCase())
+    final List<Tag> tags = ((current['tags'] as List?) ?? [])
+        .map((t) => Tag(t.toString().replaceAll(' ', '_').toLowerCase()))
         .toList();
     final String? userName = current['userName']?.toString();
     if (userName != null && userName.isNotEmpty) {
-      tags.add('creator:${userName.toLowerCase()}');
+      // Treat the creator as an artist so it lands in the info drawer's
+      // "more from this artist" section and gets artist colouring.
+      tags.add(Tag('creator:${userName.toLowerCase()}', tagType: TagType.artist));
     }
     if (current['hasAudio'] == true) {
-      tags.add('sound');
+      tags.add(Tag('sound'));
     }
 
     final int? createDate = int.tryParse(current['createDate']?.toString() ?? '');
@@ -219,7 +268,7 @@ class RedGifsHandler extends BooruHandler {
       fileURL: fileURL,
       sampleURL: sd ?? fileURL,
       thumbnailURL: thumb,
-      tagsList: tags.map(Tag.new).toList(),
+      tagsList: tags,
       postURL: makePostURL(id),
       serverId: id,
       score: current['likes']?.toString(),

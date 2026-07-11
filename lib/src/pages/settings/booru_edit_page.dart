@@ -341,8 +341,8 @@ class _BooruEditState extends State<BooruEdit> {
             'instead of scraping it — use it for sites that are hard or '
             'impossible to parse.<br><br>Set the URL to the site you want. '
             'To make the tab search box drive the site search, put a '
-            'placeholder where the query goes: <b>{tags}</b> — e.g.<br>'
-            '<i>https://example.com/search?q={tags}</i><br>'
+            'placeholder where the query goes: {tags} — for example, '
+            '<i>https://example.com/search?q={tags}</i> <br>'
             'Downloads started inside the page are sent to the snatcher.';
       default:
         break;

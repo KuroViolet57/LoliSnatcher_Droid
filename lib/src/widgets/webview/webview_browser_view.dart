@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -217,11 +219,14 @@ class _WebViewBrowserViewState extends State<WebViewBrowserView> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Column(
+    return SafeArea(
+      // clear the status bar / notch so the toolbar is tappable
+      bottom: false,
+      child: Column(
       children: [
         // slim toolbar: nav controls + current host + external open
         SizedBox(
-          height: 40,
+          height: 44,
           child: Row(
             children: [
               IconButton(
@@ -285,6 +290,19 @@ class _WebViewBrowserViewState extends State<WebViewBrowserView> {
           child: InAppWebView(
             initialUrlRequest: URLRequest(url: WebUri(homeUrl)),
             initialSettings: settings,
+            // Claim pan/scale gestures so the page can be scrolled and
+            // panned without the home page's drawer edge-swipe stealing them.
+            // ignore: prefer_const_literals_to_create_immutables
+            gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
+              // ignore: prefer_const_constructors
+              Factory<VerticalDragGestureRecognizer>(VerticalDragGestureRecognizer.new),
+              // ignore: prefer_const_constructors
+              Factory<HorizontalDragGestureRecognizer>(HorizontalDragGestureRecognizer.new),
+              // ignore: prefer_const_constructors
+              Factory<ScaleGestureRecognizer>(ScaleGestureRecognizer.new),
+              // ignore: prefer_const_constructors
+              Factory<EagerGestureRecognizer>(EagerGestureRecognizer.new),
+            },
             onWebViewCreated: (c) => controller = c,
             onLoadStop: (c, url) async {
               if (url != null) currentUrl.value = url.toString();
@@ -301,6 +319,7 @@ class _WebViewBrowserViewState extends State<WebViewBrowserView> {
           ),
         ),
       ],
+      ),
     );
   }
 }
