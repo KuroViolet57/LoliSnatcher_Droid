@@ -36,6 +36,7 @@ import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/database_handler.dart';
 import 'package:lolisnatcher/src/handlers/floating_preview_handler.dart';
+import 'package:lolisnatcher/src/handlers/interests_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -1283,6 +1284,30 @@ class _TagViewState extends State<TagView> {
                     ),
                     title: const Text('Add to collection'),
                     onTap: () => showAddToCollectionSheet(context, [item]),
+                  ),
+                if (settingsHandler.dbEnabled)
+                  Builder(
+                    builder: (context) {
+                      final List<String> seeds = InterestsHandler.seedTagsFromItem(item, limit: 3);
+                      if (seeds.isEmpty) return const SizedBox.shrink();
+                      return ListTile(
+                        leading: Icon(Icons.auto_awesome, color: Theme.of(context).iconTheme.color),
+                        title: const Text('Recommend more like this'),
+                        subtitle: Text(
+                          seeds.map((s) => s.replaceAll('_', ' ')).join(', '),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        onTap: () {
+                          final booru = settingsHandler.ensureForYouBooru();
+                          final String query = seeds.map((s) => 'seed:$s').join(' ');
+                          searchHandler.addTabByString(query, customBooru: booru, switchToNew: true);
+                          if (settingsHandler.appMode.value.isMobile) {
+                            Navigator.of(context).popUntil((route) => route.isFirst);
+                          }
+                        },
+                      );
+                    },
                   ),
                 if (tagsAvailable) ...[
                   Divider(

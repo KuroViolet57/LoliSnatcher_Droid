@@ -14,6 +14,7 @@ import 'package:lolisnatcher/src/boorus/idol_sankaku_handler.dart';
 import 'package:lolisnatcher/src/boorus/sankaku_handler.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
+import 'package:lolisnatcher/src/handlers/interests_handler.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
@@ -76,6 +77,26 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
   final ValueNotifier<double> dismissProgress = ValueNotifier(1);
   final ValueNotifier<bool> drawerOpen = ValueNotifier(false);
 
+  // Dwell tracking for the taste profile: which item is currently on screen
+  // and since when. Flushed to InterestsHandler when the item changes / closes.
+  BooruItem? _dwellItem;
+  DateTime _dwellSince = DateTime.now();
+
+  void _flushDwell() {
+    final item = _dwellItem;
+    if (item != null) {
+      InterestsHandler.instance.onItemViewed(item, DateTime.now().difference(_dwellSince));
+    }
+    _dwellItem = null;
+  }
+
+  void _startDwell(BooruItem item) {
+    if (identical(item, _dwellItem)) return;
+    _flushDwell();
+    _dwellItem = item;
+    _dwellSince = DateTime.now();
+  }
+
   final ValueNotifier<bool> isActive = ValueNotifier(true);
   final ValueNotifier<bool> drawerVisibility = ValueNotifier(true);
 
@@ -107,6 +128,7 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
     try {
       final item = widget.tab.booruHandler.filteredFetched[widget.initialIndex];
       viewerHandler.setCurrent(item);
+      _startDwell(item);
       if (settingsHandler.dimSeenPosts) {
         unawaited(searchHandler.markPostSeen(item));
       }
@@ -168,6 +190,7 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
 
   @override
   void dispose() {
+    _flushDwell();
     if (widget.key is GlobalKey) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         viewerHandler.removeViewer(widget.key! as GlobalKey);
@@ -446,7 +469,8 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
                               final BooruItem item = widget.tab.booruHandler.filteredFetched[index];
 
                               final bool isFavsOrDls =
-                                  widget.tab.booruHandler.booru.type?.isLocalDb == true;
+                                  widget.tab.booruHandler.booru.type?.isLocalDb == true ||
+                                  widget.tab.booruHandler.booru.type?.isForYou == true;
                               Booru? possibleBooru;
                               if (isFavsOrDls) {
                                 final itemFileHost = Uri.tryParse(item.fileURL)?.host;
@@ -470,7 +494,7 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
                                           booruHost?.isNotEmpty == true &&
                                           itemFileHost! == booruHost!);
                                 });
-                                if (possibleBooru?.type?.isLocalDb == true) {
+                                if (possibleBooru?.type?.isLocalDb == true || possibleBooru?.type?.isForYou == true) {
                                   possibleBooru = null;
                                 }
                               }
@@ -670,6 +694,7 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
                                 final item = widget.tab.booruHandler.filteredFetched[index];
                                 if (mounted) {
                                   viewerHandler.setCurrent(item);
+                                  _startDwell(item);
                                   if (settingsHandler.dimSeenPosts) {
                                     unawaited(searchHandler.markPostSeen(item));
                                   }

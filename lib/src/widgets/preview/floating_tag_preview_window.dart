@@ -13,6 +13,7 @@ import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/pages/gallery_view_page.dart';
 import 'package:lolisnatcher/src/utils/extensions.dart';
+import 'package:lolisnatcher/src/utils/tag_alias_resolver.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 import 'package:lolisnatcher/src/widgets/common/kaomoji.dart';
 import 'package:lolisnatcher/src/widgets/image/booru_favicon.dart';
@@ -122,9 +123,17 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
       ? _animatedFilters[animatedFilterIndex]
       : null;
 
+  // Cross-booru tag unification: when the previewed tag returns nothing on the
+  // selected booru, it's re-resolved to that booru's own spelling (e.g.
+  // burnice_white -> burnice_white_(zenless_zone_zero)) and the preview retried.
+  String? _resolvedBaseTag;
+  bool _aliasTried = false;
+  String? _aliasNote;
+
   String get _baseTag {
+    final String core = _resolvedBaseTag ?? widget.entry.tag;
     final String extra = extraTags.trim();
-    return extra.isEmpty ? widget.entry.tag : '${widget.entry.tag} $extra';
+    return extra.isEmpty ? core : '$core $extra';
   }
 
   String get _effectiveTag {
@@ -157,6 +166,7 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
     setState(() {
       extraTags = next;
       animatedFilterIndex = -1;
+      _aliasTried = false;
     });
     loadPreview(refresh: true);
   }
@@ -217,6 +227,24 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
 
     loading = false;
     setState(() {});
+
+    // Empty result + not yet remapped: try resolving the tag to this booru's
+    // own spelling and reload once.
+    if (!_aliasTried &&
+        _resolvedBaseTag == null &&
+        errorString.isEmpty &&
+        tab!.booruHandler.filteredFetched.isEmpty) {
+      _aliasTried = true;
+      final String? resolved = await TagAliasResolver.resolve(widget.entry.tag, selectedBooru);
+      if (!mounted) return;
+      if (resolved != null && resolved.isNotEmpty && resolved != widget.entry.tag.trim().toLowerCase()) {
+        setState(() {
+          _resolvedBaseTag = resolved;
+          _aliasNote = resolved;
+        });
+        return loadPreview(refresh: true);
+      }
+    }
 
     // If the freshly loaded page doesn't overflow the (possibly huge) window,
     // keep fetching so the grid actually fills up.
@@ -308,6 +336,10 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
       selectedBooru = b;
       animatedFilterIndex = -1;
       booruPickerOpen = false;
+      // Different booru -> re-resolve the tag's spelling for it.
+      _resolvedBaseTag = null;
+      _aliasTried = false;
+      _aliasNote = null;
     });
     loadPreview(refresh: true);
   }
@@ -418,6 +450,7 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
                     _buildTitleBar(context, screen),
                     _buildBooruRow(context),
                     _buildSearchRow(context),
+                    if (_aliasNote != null) _buildAliasBanner(context),
                     Expanded(child: _buildGrid(context, rect.width)),
                   ],
                 ),
@@ -573,6 +606,34 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
             onPressed: _openInNewTab,
           ),
           const SizedBox(width: 4),
+        ],
+      ),
+    );
+  }
+
+  // Shown when the tag was auto-remapped to this booru's own spelling.
+  Widget _buildAliasBanner(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(8, 0, 8, 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.secondaryContainer.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.sync_alt, size: 15, color: theme.colorScheme.onSecondaryContainer),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              'Matched on ${selectedBooru.name}: ${_aliasNote!.replaceAll('_', ' ')}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 11.5, color: theme.colorScheme.onSecondaryContainer),
+            ),
+          ),
         ],
       ),
     );

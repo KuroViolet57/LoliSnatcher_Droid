@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/collection_info.dart';
+import 'package:lolisnatcher/src/handlers/interests_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 
@@ -62,6 +63,7 @@ class _AddToCollectionSheetState extends State<_AddToCollectionSheet> {
       await dbHandler.removeItemsFromCollection(c.id, [widget.items.first.postURL]);
     } else {
       await dbHandler.addItemsToCollection(c.id, widget.items);
+      InterestsHandler.instance.onItemsCollected(widget.items);
     }
     await _load();
     SettingsHandler.instance.ensureCollectionsBooru();
@@ -69,6 +71,7 @@ class _AddToCollectionSheetState extends State<_AddToCollectionSheet> {
 
   Future<void> _addBatch(CollectionInfo c) async {
     final int added = await dbHandler.addItemsToCollection(c.id, widget.items);
+    InterestsHandler.instance.onItemsCollected(widget.items);
     SettingsHandler.instance.ensureCollectionsBooru();
     if (!mounted) return;
     Navigator.of(context).pop();
@@ -90,6 +93,7 @@ class _AddToCollectionSheetState extends State<_AddToCollectionSheet> {
     final int? id = await dbHandler.createCollection(name);
     if (id == null) return;
     final int added = await dbHandler.addItemsToCollection(id, widget.items);
+    InterestsHandler.instance.onItemsCollected(widget.items);
     SettingsHandler.instance.ensureCollectionsBooru();
     if (!mounted) return;
     if (isSingle) {

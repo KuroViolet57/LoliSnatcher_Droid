@@ -146,6 +146,29 @@ class DBHandler {
       'visitedAt INTEGER NOT NULL '
       ')',
     );
+    // Behaviour signals for the local "For You" recommender: one row per tag
+    // with an accumulated, time-decayed interest score. Written by
+    // InterestsHandler; never leaves the device.
+    await db?.execute(
+      'CREATE TABLE IF NOT EXISTS TagSignal ( '
+      'name TEXT PRIMARY KEY, '
+      'score REAL NOT NULL, '
+      'updatedAt INTEGER NOT NULL '
+      ')',
+    );
+    // Cross-booru tag alias cache: how <sourceTag> is spelled on <booruKey>
+    // (e.g. burnice_white -> burnice_white_(zenless_zone_zero) on gelbooru).
+    // Resolved on demand against each booru's tag-autocomplete API. An empty
+    // targetTag records a confirmed miss so it isn't retried constantly.
+    await db?.execute(
+      'CREATE TABLE IF NOT EXISTS TagAliasCache ( '
+      'sourceTag TEXT NOT NULL, '
+      'booruKey TEXT NOT NULL, '
+      'targetTag TEXT NOT NULL, '
+      'updatedAt INTEGER NOT NULL, '
+      'PRIMARY KEY (sourceTag, booruKey) '
+      ')',
+    );
     // Collections / albums: named groups of posts. Membership is a join onto
     // the shared BooruItem table so in-collection tag search reuses the same
     // index; the items are protected from deleteUntracked below.
@@ -698,6 +721,104 @@ class DBHandler {
     );
     if (rows == null) return {};
     return rows.map((r) => r['collectionId'] as int).toSet();
+  }
+
+  //
+  // Behaviour signals (local "For You" recommender)
+  //
+
+  /// Half-life of an interest signal: after this many days without
+  /// reinforcement a tag's score halves. Keeps the profile tracking current
+  /// taste instead of everything ever clicked.
+  static const double tagSignalHalfLifeDays = 30;
+
+  static double decayedTagScore(double score, int updatedAtMs) {
+    final double days = (DateTime.now().millisecondsSinceEpoch - updatedAtMs) / Duration.millisecondsPerDay;
+    if (days <= 0) return score;
+    return score * pow(0.5, days / tagSignalHalfLifeDays);
+  }
+
+  /// Adds [deltas] to the interest scores of their tags, applying decay to
+  /// the previously stored score first.
+  Future<void> addTagSignals(Map<String, double> deltas) async {
+    final db = this.db;
+    if (db == null || deltas.isEmpty) return;
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    final batch = db.batch();
+    for (final entry in deltas.entries) {
+      final String name = entry.key.trim().toLowerCase();
+      if (name.isEmpty) continue;
+      final List rows = await db.rawQuery('SELECT score, updatedAt FROM TagSignal WHERE name = ?', [name]);
+      double base = 0;
+      if (rows.isNotEmpty) {
+        base = decayedTagScore(
+          (rows.first['score'] as num?)?.toDouble() ?? 0,
+          (rows.first['updatedAt'] as int?) ?? now,
+        );
+      }
+      batch.rawInsert(
+        'INSERT OR REPLACE INTO TagSignal(name, score, updatedAt) VALUES(?,?,?)',
+        [name, base + entry.value, now],
+      );
+    }
+    await batch.commit(noResult: true);
+  }
+
+  /// Top interest tags by decayed score.
+  Future<List<MapEntry<String, double>>> getTagSignals({int limit = 100}) async {
+    final List? rows = await db?.rawQuery(
+      'SELECT name, score, updatedAt FROM TagSignal ORDER BY score DESC LIMIT ?',
+      // over-fetch: decay can reorder rows relative to raw score
+      [limit * 3],
+    );
+    if (rows == null) return [];
+    final List<MapEntry<String, double>> out = rows
+        .map(
+          (r) => MapEntry(
+            r['name'].toString(),
+            decayedTagScore((r['score'] as num?)?.toDouble() ?? 0, (r['updatedAt'] as int?) ?? 0),
+          ),
+        )
+        .toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return out.take(limit).toList();
+  }
+
+  Future<void> deleteTagSignal(String name) async {
+    await db?.rawDelete('DELETE FROM TagSignal WHERE name = ?', [name.trim().toLowerCase()]);
+  }
+
+  Future<void> clearTagSignals() async {
+    await db?.rawDelete('DELETE FROM TagSignal');
+  }
+
+  //
+  // Cross-booru tag alias cache
+  //
+
+  /// null = not cached; '' = cached miss (tag confirmed absent on that booru).
+  Future<String?> getTagAlias(String sourceTag, String booruKey) async {
+    final List? rows = await db?.rawQuery(
+      'SELECT targetTag, updatedAt FROM TagAliasCache WHERE sourceTag = ? AND booruKey = ?',
+      [sourceTag.toLowerCase(), booruKey],
+    );
+    if (rows == null || rows.isEmpty) return null;
+    final int updatedAt = (rows.first['updatedAt'] as int?) ?? 0;
+    final String target = rows.first['targetTag'].toString();
+    // Re-resolve misses after a week (the tag may have been created since);
+    // successful mappings are kept for a month.
+    final int ttlDays = target.isEmpty ? 7 : 30;
+    if (DateTime.now().millisecondsSinceEpoch - updatedAt > ttlDays * Duration.millisecondsPerDay) {
+      return null;
+    }
+    return target;
+  }
+
+  Future<void> setTagAlias(String sourceTag, String booruKey, String targetTag) async {
+    await db?.rawInsert(
+      'INSERT OR REPLACE INTO TagAliasCache(sourceTag, booruKey, targetTag, updatedAt) VALUES(?,?,?,?)',
+      [sourceTag.toLowerCase(), booruKey, targetTag, DateTime.now().millisecondsSinceEpoch],
+    );
   }
 
   Future<List<Tag>> getAllTags() async {

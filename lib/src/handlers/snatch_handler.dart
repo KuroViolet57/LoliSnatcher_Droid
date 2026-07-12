@@ -8,6 +8,7 @@ import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
+import 'package:lolisnatcher/src/handlers/interests_handler.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/services/image_writer.dart';
@@ -342,6 +343,7 @@ class SnatchHandler {
     if (booruItems.isNotEmpty) {
       final SnatchItem item = SnatchItem(booruItems, cooldown, booru, ignoreExists);
       queuedList.add(item);
+      InterestsHandler.instance.onItemsSnatched(booruItems);
 
       if (booruItems.length > 1) {
         if (SettingsHandler.instance.downloadNotifications) {

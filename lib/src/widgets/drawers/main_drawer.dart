@@ -11,6 +11,7 @@ import 'package:lolisnatcher/src/handlers/local_auth_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/pages/collections_page.dart';
+import 'package:lolisnatcher/src/pages/foryou_page.dart';
 import 'package:lolisnatcher/src/pages/settings_page.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 import 'package:lolisnatcher/src/widgets/common/cancel_button.dart';
@@ -126,6 +127,12 @@ class MainDrawer extends StatelessWidget {
                     icon: const Icon(Icons.settings),
                     page: () => const SettingsPage(),
                   ),
+                  if (settingsHandler.dbEnabled)
+                    SettingsButton(
+                      name: 'For You',
+                      icon: const Icon(Icons.auto_awesome),
+                      page: () => const ForYouPage(),
+                    ),
                   if (settingsHandler.dbEnabled)
                     SettingsButton(
                       name: 'Collections',

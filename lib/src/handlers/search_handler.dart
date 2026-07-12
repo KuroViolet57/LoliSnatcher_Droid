@@ -20,6 +20,7 @@ import 'package:lolisnatcher/src/data/saved_search.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 import 'package:lolisnatcher/src/handlers/database_handler.dart';
+import 'package:lolisnatcher/src/handlers/interests_handler.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -581,6 +582,12 @@ class SearchHandler {
 
     // Remove extra spaces
     text = text.trim();
+
+    // Record the search as a taste signal (skip virtual/local feeds).
+    final BooruType? actionType = (newBooru ?? currentBooru).type;
+    if (text.isNotEmpty && actionType?.isLocalDb != true && actionType?.isForYou != true) {
+      InterestsHandler.instance.onSearch(text);
+    }
 
     // clear image memory cache
     Tools.forceClearMemoryCache(withLive: true);
@@ -1628,6 +1635,7 @@ class SearchTab {
 
       final bool newValue = forcedValue ?? (item.isFavourite.value == true ? false : true);
       item.isFavourite.value = newValue;
+      InterestsHandler.instance.onItemFavourited(item, nowFavourite: newValue);
 
       final SettingsHandler settingsHandler = SettingsHandler.instance;
       if (!skipSnatching && settingsHandler.snatchOnFavourite && newValue && item.isSnatched.value != true) {

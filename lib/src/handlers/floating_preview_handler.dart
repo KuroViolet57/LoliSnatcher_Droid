@@ -4,6 +4,7 @@ import 'package:get_it/get_it.dart';
 import 'package:uuid/uuid.dart';
 
 import 'package:lolisnatcher/src/data/booru.dart';
+import 'package:lolisnatcher/src/handlers/interests_handler.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
 import 'package:lolisnatcher/src/widgets/preview/floating_tag_preview_window.dart';
 
@@ -76,6 +77,7 @@ class FloatingPreviewHandler extends ChangeNotifier {
       ),
     );
     _ensureOverlay();
+    InterestsHandler.instance.onTagPreviewOpened(tag);
     notifyListeners();
   }
 

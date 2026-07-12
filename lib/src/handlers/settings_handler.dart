@@ -201,6 +201,9 @@ class SettingsHandler {
   // 'left,top,width,height' fractions of the screen (empty = use default).
   // Living in settings.json means it also rides along in backup/restore.
   String previewWindowRect = '';
+  // Local behaviour tracking that powers the "For You" recommendation tab.
+  // Fully on-device (TagSignal table); can be disabled and wiped at any time.
+  bool enableInterestTracking = true;
   // Render the post-info panel (tags, metadata) as a Boorusama-style bottom
   // sheet dragged up from the bottom edge instead of the classic right-side
   // drawer. On by default; turn off to restore the side drawer.
@@ -646,6 +649,10 @@ class SettingsHandler {
     'previewWindowRect': {
       'type': 'string',
       'default': '',
+    },
+    'enableInterestTracking': {
+      'type': 'bool',
+      'default': true,
     },
     'useBottomInfoSheet': {
       'type': 'bool',
@@ -1229,6 +1236,8 @@ class SettingsHandler {
         return inlineRelatedGrids;
       case 'previewWindowRect':
         return previewWindowRect;
+      case 'enableInterestTracking':
+        return enableInterestTracking;
       case 'useBottomInfoSheet':
         return useBottomInfoSheet;
       case 'bottomSheetSizeMultiplier':
@@ -1493,6 +1502,9 @@ class SettingsHandler {
         break;
       case 'previewWindowRect':
         previewWindowRect = validatedValue;
+        break;
+      case 'enableInterestTracking':
+        enableInterestTracking = validatedValue;
         break;
       case 'useBottomInfoSheet':
         useBottomInfoSheet = validatedValue;
@@ -2065,6 +2077,7 @@ class SettingsHandler {
       if (dbEnabled && tempList.isNotEmpty) {
         tempList.add(Booru(loc.favourites, BooruType.Favourites, '', '', ''));
         tempList.add(Booru(loc.downloads, BooruType.Downloads, '', '', ''));
+        tempList.add(Booru('For You', BooruType.ForYou, '', '', ''));
         // Only surface the Collections booru once the user actually has a
         // collection, so it doesn't clutter the selector otherwise.
         try {
@@ -2101,6 +2114,17 @@ class SettingsHandler {
       if (b.type?.isCollections == true) return b;
     }
     final Booru b = Booru('Collections', BooruType.Collections, '', '', '');
+    booruList.add(b);
+    return b;
+  }
+
+  /// Returns the virtual "For You" recommender booru, adding it to the list on
+  /// first use.
+  Booru ensureForYouBooru() {
+    for (final b in booruList) {
+      if (b.type?.isForYou == true) return b;
+    }
+    final Booru b = Booru('For You', BooruType.ForYou, '', '', '');
     booruList.add(b);
     return b;
   }
