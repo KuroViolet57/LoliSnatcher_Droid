@@ -446,7 +446,7 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
                               final BooruItem item = widget.tab.booruHandler.filteredFetched[index];
 
                               final bool isFavsOrDls =
-                                  widget.tab.booruHandler.booru.type?.isFavouritesOrDownloads == true;
+                                  widget.tab.booruHandler.booru.type?.isLocalDb == true;
                               Booru? possibleBooru;
                               if (isFavsOrDls) {
                                 final itemFileHost = Uri.tryParse(item.fileURL)?.host;
@@ -470,7 +470,7 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
                                           booruHost?.isNotEmpty == true &&
                                           itemFileHost! == booruHost!);
                                 });
-                                if (possibleBooru?.type?.isFavouritesOrDownloads == true) {
+                                if (possibleBooru?.type?.isLocalDb == true) {
                                   possibleBooru = null;
                                 }
                               }

@@ -48,6 +48,7 @@ class _GalleryPageState extends State<GalleryPage> {
   final TextEditingController preloadHeightController = TextEditingController();
   final TextEditingController scrollSpeedController = TextEditingController();
   final TextEditingController galleryAutoScrollController = TextEditingController();
+  final TextEditingController galleryAutoScrollVideoController = TextEditingController();
 
   @override
   void initState() {
@@ -74,6 +75,7 @@ class _GalleryPageState extends State<GalleryPage> {
     useVolumeButtonsForScroll = settingsHandler.useVolumeButtonsForScroll;
     scrollSpeedController.text = settingsHandler.volumeButtonsScrollSpeed.toString();
     galleryAutoScrollController.text = settingsHandler.galleryAutoScrollTime.toString();
+    galleryAutoScrollVideoController.text = settingsHandler.galleryAutoScrollVideoTime.toString();
     preloadAmountController.text = settingsHandler.preloadCount.toString();
     preloadSizeController.text = settingsHandler.preloadSizeLimit.toString();
     preloadHeightController.text = settingsHandler.preloadHeight.toString();
@@ -91,6 +93,7 @@ class _GalleryPageState extends State<GalleryPage> {
     preloadHeightController.dispose();
     scrollSpeedController.dispose();
     galleryAutoScrollController.dispose();
+    galleryAutoScrollVideoController.dispose();
     super.dispose();
   }
 
@@ -118,6 +121,8 @@ class _GalleryPageState extends State<GalleryPage> {
 
     settingsHandler.volumeButtonsScrollSpeed = (int.tryParse(scrollSpeedController.text) ?? 200).clamp(0, 1_000_000);
     settingsHandler.galleryAutoScrollTime = (int.tryParse(galleryAutoScrollController.text) ?? 4000).clamp(100, 10000);
+    settingsHandler.galleryAutoScrollVideoTime =
+        (int.tryParse(galleryAutoScrollVideoController.text) ?? 10000).clamp(100, 600000);
 
     settingsHandler.preloadCount = (int.tryParse(preloadAmountController.text) ?? 1).clamp(0, 4);
     settingsHandler.preloadSizeLimit = (double.tryParse(preloadSizeController.text) ?? 0.2).clamp(0, double.infinity);
@@ -681,6 +686,27 @@ class _GalleryPageState extends State<GalleryPage> {
                     );
                   },
                 ),
+              ),
+              SettingsTextInput(
+                controller: galleryAutoScrollVideoController,
+                title: 'Slideshow duration for videos/GIFs (in ms)',
+                inputType: TextInputType.number,
+                inputFormatters: <TextInputFormatter>[FilteringTextInputFormatter.digitsOnly],
+                resetText: () => settingsHandler.map['galleryAutoScrollVideoTime']!['default']!.toString(),
+                numberButtons: true,
+                numberStep: 100,
+                numberMin: 100,
+                numberMax: double.infinity,
+                validator: (String? value) {
+                  final int? parse = int.tryParse(value ?? '');
+                  if (value == null || value.isEmpty) {
+                    return context.loc.validationErrors.required;
+                  } else if (parse == null) {
+                    return context.loc.validationErrors.invalidNumericValue;
+                  } else {
+                    return null;
+                  }
+                },
               ),
               SettingsToggle(
                 value: wakeLockEnabled,

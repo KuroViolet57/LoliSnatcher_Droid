@@ -8,8 +8,8 @@ class TimedProgressController {
   }) : tickPeriod = _calculateTickPeriod(duration);
   static const double smoothnessConstant = 250;
 
-  final Duration duration;
-  final Duration tickPeriod;
+  Duration duration;
+  Duration tickPeriod;
 
   Timer? _timer;
   Timer? _periodicTimer;
@@ -43,6 +43,14 @@ class TimedProgressController {
   void restart() {
     _cancelTimers();
     start();
+  }
+
+  /// Restart the animation using a new total [duration] (e.g. a longer dwell
+  /// for a video slide vs a still image).
+  void restartWith(Duration newDuration) {
+    duration = newDuration;
+    tickPeriod = _calculateTickPeriod(newDuration);
+    restart();
   }
 
   Future<void> dispose() async {

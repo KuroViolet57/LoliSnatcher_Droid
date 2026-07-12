@@ -37,6 +37,7 @@ enum BooruType {
   Merge,
   Downloads,
   Favourites,
+  Collections,
   ;
 
   static List<BooruType> get dropDownValues {
@@ -46,6 +47,7 @@ enum BooruType {
     return [...values]
       ..remove(BooruType.Downloads)
       ..remove(BooruType.Favourites)
+      ..remove(BooruType.Collections)
       ..remove(BooruType.Merge)
       ..remove(BooruType.GelbooruAlike)
       ..remove(isDebug ? BooruType.NyanPals : null)
@@ -59,6 +61,7 @@ enum BooruType {
       ..remove(BooruType.Autodetect)
       ..remove(BooruType.Downloads)
       ..remove(BooruType.Favourites)
+      ..remove(BooruType.Collections)
       ..remove(BooruType.Hydrus)
       ..remove(BooruType.Merge)
       // WebView is a "render anything" escape hatch — never autodetect it.
@@ -74,6 +77,7 @@ enum BooruType {
       ..remove(BooruType.Autodetect)
       ..remove(BooruType.Downloads)
       ..remove(BooruType.Favourites)
+      ..remove(BooruType.Collections)
       ..remove(BooruType.Merge);
   }
 
@@ -126,5 +130,11 @@ enum BooruType {
   bool get isMerge => this == BooruType.Merge;
   bool get isDownloads => this == BooruType.Downloads;
   bool get isFavourites => this == BooruType.Favourites;
+  bool get isCollections => this == BooruType.Collections;
   bool get isFavouritesOrDownloads => isFavourites || isDownloads;
+
+  /// Local, DB-backed virtual boorus (Favourites / Downloads / Collections).
+  /// These aggregate posts from many sources, so the grid/viewer must resolve
+  /// each item's real source booru from its URL rather than the tab's booru.
+  bool get isLocalDb => isFavourites || isDownloads || isCollections;
 }

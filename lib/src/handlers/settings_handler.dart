@@ -149,6 +149,9 @@ class SettingsHandler {
   int snatchCooldown = 250;
   int volumeButtonsScrollSpeed = 200;
   int galleryAutoScrollTime = 4000;
+  // Separate, usually longer, slideshow dwell for video / GIF slides so they
+  // get time to play before the slideshow advances.
+  int galleryAutoScrollVideoTime = 10000;
   int cacheSize = 3;
   int autoLockTimeout = 120;
 
@@ -554,6 +557,13 @@ class SettingsHandler {
       'default': 4000,
       'step': 100,
       'upperLimit': 100000,
+      'lowerLimit': 100,
+    },
+    'galleryAutoScrollVideoTime': {
+      'type': 'int',
+      'default': 10000,
+      'step': 100,
+      'upperLimit': 600000,
       'lowerLimit': 100,
     },
     'cacheSize': {
@@ -1263,6 +1273,8 @@ class SettingsHandler {
         return shitDevice;
       case 'galleryAutoScrollTime':
         return galleryAutoScrollTime;
+      case 'galleryAutoScrollVideoTime':
+        return galleryAutoScrollVideoTime;
       case 'jsonWrite':
         return jsonWrite;
       case 'zoomButtonPosition':
@@ -1544,6 +1556,9 @@ class SettingsHandler {
         break;
       case 'shitDevice':
         shitDevice = validatedValue;
+        break;
+      case 'galleryAutoScrollVideoTime':
+        galleryAutoScrollVideoTime = validatedValue;
         break;
       case 'galleryAutoScrollTime':
         galleryAutoScrollTime = validatedValue;
@@ -2050,6 +2065,14 @@ class SettingsHandler {
       if (dbEnabled && tempList.isNotEmpty) {
         tempList.add(Booru(loc.favourites, BooruType.Favourites, '', '', ''));
         tempList.add(Booru(loc.downloads, BooruType.Downloads, '', '', ''));
+        // Only surface the Collections booru once the user actually has a
+        // collection, so it doesn't clutter the selector otherwise.
+        try {
+          final collections = await dbHandler.getCollections();
+          if (collections.isNotEmpty) {
+            tempList.add(Booru('Collections', BooruType.Collections, '', '', ''));
+          }
+        } catch (_) {}
       }
     } catch (e, s) {
       Logger.Inst().log(
@@ -2069,6 +2092,17 @@ class SettingsHandler {
       unawaited(sortBooruList());
     }
     return true;
+  }
+
+  /// Returns the virtual Collections booru, adding it to the list on first use
+  /// (it's created lazily so it only appears once the user has a collection).
+  Booru ensureCollectionsBooru() {
+    for (final b in booruList) {
+      if (b.type?.isCollections == true) return b;
+    }
+    final Booru b = Booru('Collections', BooruType.Collections, '', '', '');
+    booruList.add(b);
+    return b;
   }
 
   Future<void> sortBooruList() async {

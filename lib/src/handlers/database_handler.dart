@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/data/collection_info.dart';
 import 'package:lolisnatcher/src/data/constants.dart';
 import 'package:lolisnatcher/src/data/history_item.dart';
 import 'package:lolisnatcher/src/data/pinned_tag.dart';
@@ -143,6 +144,25 @@ class DBHandler {
       'booruName TEXT, '
       'booruType TEXT, '
       'visitedAt INTEGER NOT NULL '
+      ')',
+    );
+    // Collections / albums: named groups of posts. Membership is a join onto
+    // the shared BooruItem table so in-collection tag search reuses the same
+    // index; the items are protected from deleteUntracked below.
+    await db?.execute(
+      'CREATE TABLE IF NOT EXISTS Collection ( '
+      'id INTEGER PRIMARY KEY, '
+      'name TEXT NOT NULL, '
+      'createdAt INTEGER NOT NULL, '
+      'sortOrder INTEGER DEFAULT 0 '
+      ')',
+    );
+    await db?.execute(
+      'CREATE TABLE IF NOT EXISTS CollectionItem ( '
+      'collectionId INTEGER NOT NULL, '
+      'booruItemID INTEGER NOT NULL, '
+      'addedAt INTEGER NOT NULL, '
+      'PRIMARY KEY (collectionId, booruItemID) '
       ')',
     );
     try {
@@ -371,6 +391,7 @@ class DBHandler {
     String? order,
     List<String> customConditions = const [],
     bool isDownloads = false,
+    int? collectionId,
   }) async {
     final db = this.db;
     if (db == null) return [];
@@ -427,7 +448,7 @@ class DBHandler {
     }
 
     // A. Base Filter
-    whereClauses.add(isDownloads ? 'bi.isSnatched = 1' : 'bi.isFavourite = 1');
+    whereClauses.add(_baseTrackFilter(isDownloads: isDownloads, collectionId: collectionId));
 
     // B. Site Filter
     if (siteQuery.isNotEmpty) whereClauses.add(siteQuery);
@@ -542,6 +563,143 @@ class DBHandler {
     }).toList();
   }
 
+  // Picks the base "tracked" WHERE clause for searchDB / searchDBCount:
+  // collection membership when a collection is being browsed (collectionId
+  // == -1 means "all collections"), otherwise the snatched/favourite filter.
+  // The id is an app-controlled integer, so it's safe to inline.
+  String _baseTrackFilter({required bool isDownloads, int? collectionId}) {
+    if (collectionId != null) {
+      if (collectionId == -1) {
+        return 'bi.id IN (SELECT booruItemID FROM CollectionItem)';
+      }
+      return 'bi.id IN (SELECT booruItemID FROM CollectionItem WHERE collectionId = $collectionId)';
+    }
+    return isDownloads ? 'bi.isSnatched = 1' : 'bi.isFavourite = 1';
+  }
+
+  //
+  // Collections / albums
+  //
+
+  Future<int?> createCollection(String name) async {
+    final String trimmed = name.trim();
+    if (trimmed.isEmpty) return null;
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    return db?.rawInsert(
+      'INSERT INTO Collection(name, createdAt, sortOrder) VALUES(?,?,?)',
+      [trimmed, now, now],
+    );
+  }
+
+  Future<void> renameCollection(int id, String name) async {
+    final String trimmed = name.trim();
+    if (trimmed.isEmpty) return;
+    await db?.rawUpdate('UPDATE Collection SET name = ? WHERE id = ?', [trimmed, id]);
+  }
+
+  Future<void> deleteCollection(int id) async {
+    await db?.rawDelete('DELETE FROM CollectionItem WHERE collectionId = ?', [id]);
+    await db?.rawDelete('DELETE FROM Collection WHERE id = ?', [id]);
+    // Any BooruItems that were only kept because of this collection get swept.
+    await deleteUntracked();
+  }
+
+  /// Returns each collection with its item count and a cover thumbnail
+  /// (the most-recently-added item's thumbnail).
+  Future<List<CollectionInfo>> getCollections() async {
+    final List? rows = await db?.rawQuery('''
+      SELECT c.id AS id, c.name AS name, c.createdAt AS createdAt,
+             COUNT(ci.booruItemID) AS itemCount,
+             (SELECT bi.thumbnailURL FROM CollectionItem ci2
+                JOIN BooruItem bi ON bi.id = ci2.booruItemID
+                WHERE ci2.collectionId = c.id
+                ORDER BY ci2.addedAt DESC LIMIT 1) AS cover
+      FROM Collection c
+      LEFT JOIN CollectionItem ci ON ci.collectionId = c.id
+      GROUP BY c.id
+      ORDER BY c.sortOrder DESC
+    ''');
+    if (rows == null) return [];
+    return rows
+        .map(
+          (r) => CollectionInfo(
+            id: r['id'] as int,
+            name: r['name']?.toString() ?? '',
+            itemCount: (r['itemCount'] as int?) ?? 0,
+            coverThumbnailURL: r['cover']?.toString(),
+            createdAt: (r['createdAt'] as int?) ?? 0,
+          ),
+        )
+        .toList();
+  }
+
+  /// Inserts each item into the shared BooruItem table if missing (without
+  /// touching its favourite/snatched flags) and links it to [collectionId].
+  /// Returns how many were newly added to the collection.
+  Future<int> addItemsToCollection(int collectionId, List<BooruItem> items) async {
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    int added = 0;
+    for (final BooruItem item in items) {
+      String? itemID = await getItemID(item.postURL);
+      if (itemID == null || itemID.isEmpty) {
+        final result = await db?.rawInsert(
+          'INSERT INTO BooruItem(thumbnailURL, sampleURL, fileURL, postURL, mediaType, isSnatched, isFavourite) VALUES(?,?,?,?,?,?,?)',
+          [
+            item.thumbnailURL.replaceFirstMapped(RegExp('(?<!https?:)//'), (m) => '/'),
+            item.sampleURL.replaceFirstMapped(RegExp('(?<!https?:)//'), (m) => '/'),
+            item.fileURL.replaceFirstMapped(RegExp('(?<!https?:)//'), (m) => '/'),
+            item.postURL,
+            item.mediaType.value.toJson(),
+            Tools.boolToInt(item.isSnatched.value == true),
+            Tools.boolToInt(item.isFavourite.value == true),
+          ],
+        );
+        itemID = result?.toString();
+        await updateTags(item.tagsList.map((t) => t.fullString).toList(), itemID);
+      }
+      if (itemID == null || itemID.isEmpty) continue;
+      final int count = Sqflite.firstIntValue(
+            await db!.rawQuery(
+              'SELECT COUNT(*) FROM CollectionItem WHERE collectionId = ? AND booruItemID = ?',
+              [collectionId, itemID],
+            ),
+          ) ??
+          0;
+      if (count == 0) {
+        await db?.rawInsert(
+          'INSERT INTO CollectionItem(collectionId, booruItemID, addedAt) VALUES(?,?,?)',
+          [collectionId, int.parse(itemID), now],
+        );
+        added++;
+      }
+    }
+    return added;
+  }
+
+  Future<void> removeItemsFromCollection(int collectionId, List<String> postURLs) async {
+    for (final String postURL in postURLs) {
+      final String? itemID = await getItemID(postURL);
+      if (itemID == null || itemID.isEmpty) continue;
+      await db?.rawDelete(
+        'DELETE FROM CollectionItem WHERE collectionId = ? AND booruItemID = ?',
+        [collectionId, itemID],
+      );
+    }
+    await deleteUntracked();
+  }
+
+  /// Set of collection ids that already contain the given post.
+  Future<Set<int>> getCollectionsForItem(String postURL) async {
+    final String? itemID = await getItemID(postURL);
+    if (itemID == null || itemID.isEmpty) return {};
+    final List? rows = await db?.rawQuery(
+      'SELECT collectionId FROM CollectionItem WHERE booruItemID = ?',
+      [itemID],
+    );
+    if (rows == null) return {};
+    return rows.map((r) => r['collectionId'] as int).toSet();
+  }
+
   Future<List<Tag>> getAllTags() async {
     final List? result = await db?.rawQuery('SELECT name, tagType, updatedAt FROM Tag');
     final List<Tag> tags = [];
@@ -560,6 +718,7 @@ class DBHandler {
     String searchTagsString, {
     List<String> customConditions = const [],
     bool isDownloads = false,
+    int? collectionId,
   }) async {
     final db = this.db;
     if (db == null) return 0;
@@ -611,7 +770,7 @@ class DBHandler {
     // --- 3. APPLY FILTERS ---
 
     // A. Base Filter
-    whereClauses.add(isDownloads ? 'bi.isSnatched = 1' : 'bi.isFavourite = 1');
+    whereClauses.add(_baseTrackFilter(isDownloads: isDownloads, collectionId: collectionId));
 
     // B. Site Filter
     if (siteQuery.isNotEmpty) whereClauses.add(siteQuery);
@@ -1271,8 +1430,12 @@ class DBHandler {
 
   /// Deletes booruItems which are no longer favourited or snatched
   Future<bool> deleteUntracked() async {
+    // Keep items that are favourited, snatched, OR held by a collection.
     final result = await db?.rawQuery(
-      'SELECT id FROM BooruItem WHERE (isFavourite = 0 OR isFavourite IS NULL) AND (isSnatched = 0 OR isSnatched IS NULL)',
+      'SELECT id FROM BooruItem '
+      'WHERE (isFavourite = 0 OR isFavourite IS NULL) '
+      'AND (isSnatched = 0 OR isSnatched IS NULL) '
+      'AND id NOT IN (SELECT booruItemID FROM CollectionItem)',
     );
     if (result != null && result.isNotEmpty) {
       await deleteItem(result.map((r) => r['id'].toString()).toList());
