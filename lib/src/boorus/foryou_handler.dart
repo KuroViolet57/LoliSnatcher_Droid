@@ -77,6 +77,10 @@ class ForYouHandler extends BooruHandler {
     if (_inited) return;
     _inited = true;
 
+    // This virtual booru has no API of its own; don't let afterParseResponse
+    // try to fetch tag types through it (items already carry their tags).
+    storeTagsGlobally = false;
+
     // Source boorus: real, tag-searchable sites the user has configured.
     final all = SettingsHandler.instance.booruList;
     for (final b in all) {

@@ -2075,17 +2075,13 @@ class SettingsHandler {
       }
 
       if (dbEnabled && tempList.isNotEmpty) {
+        // Virtual, DB-backed boorus. Added unconditionally (like Favourites /
+        // Downloads) so a restored Collections / For You tab always finds its
+        // booru after a restart, and so no per-launch DB round-trip is needed.
         tempList.add(Booru(loc.favourites, BooruType.Favourites, '', '', ''));
         tempList.add(Booru(loc.downloads, BooruType.Downloads, '', '', ''));
         tempList.add(Booru('For You', BooruType.ForYou, '', '', ''));
-        // Only surface the Collections booru once the user actually has a
-        // collection, so it doesn't clutter the selector otherwise.
-        try {
-          final collections = await dbHandler.getCollections();
-          if (collections.isNotEmpty) {
-            tempList.add(Booru('Collections', BooruType.Collections, '', '', ''));
-          }
-        } catch (_) {}
+        tempList.add(Booru('Collections', BooruType.Collections, '', '', ''));
       }
     } catch (e, s) {
       Logger.Inst().log(
@@ -2169,6 +2165,19 @@ class SettingsHandler {
       final Booru tmp = sorted.elementAt(dlsIndex);
       sorted.remove(tmp);
       sorted.add(tmp);
+    }
+
+    // Keep the other virtual boorus grouped after Favourites / Downloads.
+    for (final isType in [
+      (Booru b) => b.type?.isForYou == true,
+      (Booru b) => b.type?.isCollections == true,
+    ]) {
+      final int idx = sorted.indexWhere(isType);
+      if (idx != -1) {
+        final Booru tmp = sorted.elementAt(idx);
+        sorted.remove(tmp);
+        sorted.add(tmp);
+      }
     }
 
     booruList.value = sorted;

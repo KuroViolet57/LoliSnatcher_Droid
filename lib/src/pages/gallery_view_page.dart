@@ -1032,7 +1032,6 @@ class _ItemInfoDrawerState extends State<ItemInfoDrawer> {
 
   void pageListener() {
     page.value = widget.pageController.page?.round() ?? 0;
-    print('page: ${page.value}/${widget.pageController.page}');
   }
 
   void toggleVisibility() {

@@ -17,12 +17,15 @@ class CollectionsPage extends StatefulWidget {
   State<CollectionsPage> createState() => _CollectionsPageState();
 }
 
+enum _CollSort { recent, name, count }
+
 class _CollectionsPageState extends State<CollectionsPage> {
   final dbHandler = SettingsHandler.instance.dbHandler;
   final searchHandler = SearchHandler.instance;
 
   List<CollectionInfo> collections = [];
   bool loading = true;
+  _CollSort _sort = _CollSort.recent;
 
   @override
   void initState() {
@@ -33,7 +36,22 @@ class _CollectionsPageState extends State<CollectionsPage> {
   Future<void> _load() async {
     setState(() => loading = true);
     collections = await dbHandler.getCollections();
+    _applySort();
     if (mounted) setState(() => loading = false);
+  }
+
+  void _applySort() {
+    switch (_sort) {
+      case _CollSort.recent:
+        collections.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        break;
+      case _CollSort.name:
+        collections.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+        break;
+      case _CollSort.count:
+        collections.sort((a, b) => b.itemCount.compareTo(a.itemCount));
+        break;
+    }
   }
 
   Future<void> _create() async {
@@ -142,6 +160,21 @@ class _CollectionsPageState extends State<CollectionsPage> {
       appBar: AppBar(
         title: const Text('Collections'),
         actions: [
+          if (collections.length > 1)
+            PopupMenuButton<_CollSort>(
+              icon: const Icon(Icons.sort),
+              tooltip: 'Sort',
+              initialValue: _sort,
+              onSelected: (v) => setState(() {
+                _sort = v;
+                _applySort();
+              }),
+              itemBuilder: (context) => const [
+                PopupMenuItem(value: _CollSort.recent, child: Text('Most recent')),
+                PopupMenuItem(value: _CollSort.name, child: Text('Name (A–Z)')),
+                PopupMenuItem(value: _CollSort.count, child: Text('Most posts')),
+              ],
+            ),
           IconButton(
             icon: const Icon(Icons.create_new_folder_outlined),
             tooltip: 'New collection',
@@ -195,7 +228,9 @@ class _CollectionsPageState extends State<CollectionsPage> {
             Text('No collections yet', style: theme.textTheme.titleMedium),
             const SizedBox(height: 8),
             Text(
-              'Group posts into albums. Long-press a post (or use the ⋮ / info panel) to add it to a collection.',
+              'Group posts into albums. Add posts from a post\'s info panel '
+              '("Add to collection"), or select several in the grid and use '
+              '"Add to collection" in the downloads drawer.',
               textAlign: TextAlign.center,
               style: TextStyle(color: theme.colorScheme.onSurface.withValues(alpha: 0.6)),
             ),
@@ -303,10 +338,19 @@ class _CollectionCard extends StatelessWidget {
     );
     final String? url = info.coverThumbnailURL;
     if (url == null || url.isEmpty) return fallback;
+    // Send a Referer from the image's own origin so hotlink-protected booru
+    // CDNs (gelbooru / realbooru / ...) still serve the cover thumbnail.
+    final Uri? parsed = Uri.tryParse(url);
+    final String referer = (parsed != null && parsed.hasScheme && parsed.host.isNotEmpty)
+        ? '${parsed.scheme}://${parsed.host}/'
+        : '';
     return Image.network(
       url,
       fit: BoxFit.cover,
-      headers: {'User-Agent': Tools.browserUserAgent},
+      headers: {
+        'User-Agent': Tools.browserUserAgent,
+        if (referer.isNotEmpty) 'Referer': referer,
+      },
       errorBuilder: (_, _, _) => fallback,
       loadingBuilder: (context, child, progress) {
         if (progress == null) return child;

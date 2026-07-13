@@ -914,11 +914,14 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
 
   Widget _buildPill(BuildContext context, Size screen, EdgeInsets pad) {
     final theme = Theme.of(context);
+    // Stagger the default position by this window's slot so several minimized
+    // pills don't stack on the exact same spot.
+    final int slot = FloatingPreviewHandler.instance.entries.indexOf(widget.entry).clamp(0, 5);
     final Offset pos =
         pillPos ??
         Offset(
           screen.width - 68,
-          (screen.height * 0.55).clamp(pad.top + 8, screen.height - 72),
+          (screen.height * 0.55 + slot * 64).clamp(pad.top + 8, screen.height - 72),
         );
 
     return Stack(

@@ -40,7 +40,8 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
       disableVibration,
       usePredictiveBack,
       inlineRelatedGrids,
-      useBottomInfoSheet;
+      useBottomInfoSheet,
+      enableInterestTracking;
   late String defaultTabAddMode;
   late AppMode appMode;
   late HandSide handSide;
@@ -60,6 +61,7 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
     disableVibration = settingsHandler.disableVibration;
     usePredictiveBack = settingsHandler.usePredictiveBack;
     inlineRelatedGrids = settingsHandler.inlineRelatedGrids;
+    enableInterestTracking = settingsHandler.enableInterestTracking;
     useBottomInfoSheet = settingsHandler.useBottomInfoSheet;
     defaultTabAddMode = settingsHandler.defaultTabAddMode;
     previewDisplay = settingsHandler.previewDisplay;
@@ -89,6 +91,7 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
     final bool needThemeChange = usePredictiveBack != settingsHandler.usePredictiveBack;
     settingsHandler.usePredictiveBack = usePredictiveBack;
     settingsHandler.inlineRelatedGrids = inlineRelatedGrids;
+    settingsHandler.enableInterestTracking = enableInterestTracking;
     settingsHandler.useBottomInfoSheet = useBottomInfoSheet;
     settingsHandler.bottomSheetSizeMultiplier =
         (double.tryParse(bottomSheetSizeController.text) ?? 2.0).clamp(0.5, 3.0);
@@ -267,6 +270,19 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
                 },
                 title: context.loc.settings.interface.disableVibration,
                 subtitle: Text(context.loc.settings.interface.disableVibrationSubtitle),
+              ),
+              SettingsToggle(
+                value: enableInterestTracking,
+                onChanged: (newValue) {
+                  setState(() {
+                    enableInterestTracking = newValue;
+                  });
+                },
+                title: 'Personalized recommendations',
+                leadingIcon: const Icon(Icons.auto_awesome),
+                subtitle: const Text(
+                  "Learns which tags you tend to view, favourite, collect and search — on your device only — to power the 'For You' tab. Turn off to stop building the taste profile (you can wipe it from the For You page).",
+                ),
               ),
               SettingsToggle(
                 value: inlineRelatedGrids,
