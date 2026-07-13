@@ -31,6 +31,7 @@ import 'package:lolisnatcher/src/boorus/szurubooru_handler.dart';
 import 'package:lolisnatcher/src/boorus/webview_browser_handler.dart';
 import 'package:lolisnatcher/src/boorus/wildcritters_handler.dart';
 import 'package:lolisnatcher/src/boorus/worldxyz_handler.dart';
+import 'package:lolisnatcher/src/boorus/xxxfollow_handler.dart';
 import 'package:lolisnatcher/src/boorus/xxxtik_handler.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
@@ -176,6 +177,12 @@ class BooruHandlerFactory {
           // keyset cursor pagination handled inside the handler.
           pageNum = 0;
           booruHandler = XXXTikHandler(booru, limit);
+          break;
+        case BooruType.XXXFollow:
+          // xxxfollow's API is 1-indexed; pre-increment makes the first fetch
+          // page 1.
+          pageNum = 0;
+          booruHandler = XXXFollowHandler(booru, limit);
           break;
         case BooruType.WebView:
           booruHandler = WebViewBrowserHandler(booru, limit);

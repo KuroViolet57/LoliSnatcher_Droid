@@ -211,6 +211,15 @@ class _BooruEditState extends State<BooruEdit> {
                       booruFaviconController.text = 'https://xxxtik.com/favicon.ico';
                     }
                   }
+                  if (selectedBooruType.isXXXFollow && booruURLController.text.trim().isEmpty) {
+                    booruURLController.text = 'https://www.xxxfollow.com';
+                    if (booruNameController.text.trim().isEmpty) {
+                      booruNameController.text = 'xxxfollow';
+                    }
+                    if (booruFaviconController.text.trim().isEmpty) {
+                      booruFaviconController.text = 'https://www.xxxfollow.com/favicon.ico';
+                    }
+                  }
                 });
               },
               title: context.loc.settings.booruEditor.booruType,
@@ -393,6 +402,15 @@ class _BooruEditState extends State<BooruEdit> {
             'sent only to xxxtik login (Firebase) over HTTPS.<br><br>'
             'Videos stream as HLS; downloading a native xxxtik clip is not '
             'supported (there is no single-file source), though playback works.';
+      case BooruType.XXXFollow:
+        return '<b>xxxfollow</b><br>Leave the URL as https://www.xxxfollow.com. '
+            'A short-form video site (formerly Xfollow).<br><br>'
+            'Leave the search empty to browse the discovery feed, or type a tag '
+            'to see that tag videos. Use the <i>sort:</i> chip to filter by '
+            'creator gender (All / Female / Male). Tapping a creator or similar '
+            'tag shown above a tag results opens it.<br><br>'
+            'Videos are direct MP4 files, so downloads work. As a guest the site '
+            'only exposes a limited set of public videos per tag.';
       case BooruType.WebView:
         return '<b>WebView (browser)</b><br>Renders any site inside a tab '
             'instead of scraping it — use it for sites that are hard or '
@@ -538,7 +556,8 @@ class _BooruEditState extends State<BooruEdit> {
     if (selectedBooruType.isRedGifs ||
         selectedBooruType.isWebView ||
         selectedBooruType.isRule34Dev ||
-        selectedBooruType.isXXXTik) {
+        selectedBooruType.isXXXTik ||
+        selectedBooruType.isXXXFollow) {
       if (booruNameController.text.trim().isEmpty) {
         booruNameController.text = selectedBooruType.isRedGifs
             ? 'RedGifs'
@@ -546,6 +565,8 @@ class _BooruEditState extends State<BooruEdit> {
             ? 'Rule34.dev'
             : selectedBooruType.isXXXTik
             ? 'xxxtik'
+            : selectedBooruType.isXXXFollow
+            ? 'xxxfollow'
             : 'WebView';
       }
       if (booruURLController.text.trim().isEmpty && selectedBooruType.isRedGifs) {
@@ -556,6 +577,9 @@ class _BooruEditState extends State<BooruEdit> {
       }
       if (booruURLController.text.trim().isEmpty && selectedBooruType.isXXXTik) {
         booruURLController.text = 'https://xxxtik.com';
+      }
+      if (booruURLController.text.trim().isEmpty && selectedBooruType.isXXXFollow) {
+        booruURLController.text = 'https://www.xxxfollow.com';
       }
       if (booruURLController.text.trim().isEmpty) {
         FlashElements.showSnackbar(

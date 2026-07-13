@@ -23,6 +23,7 @@ enum BooruType {
   RedGifs,
   Rule34Dev,
   XXXTik,
+  XXXFollow,
   R34Hentai,
   R34US,
   Sankaku,
@@ -73,7 +74,9 @@ enum BooruType {
       // Rule34.dev shares CDNs with rule34.xxx; only pick it deliberately.
       ..remove(BooruType.Rule34Dev)
       // xxxtik has a fixed API host; only pick it deliberately.
-      ..remove(BooruType.XXXTik);
+      ..remove(BooruType.XXXTik)
+      // xxxfollow has a fixed API host; only pick it deliberately.
+      ..remove(BooruType.XXXFollow);
   }
 
   bool get isDetectable => detectable.contains(this);
@@ -102,6 +105,8 @@ enum BooruType {
         return 'Rule34.dev (aggregator)';
       case XXXTik:
         return 'xxxtik';
+      case XXXFollow:
+        return 'xxxfollow';
       default:
         return name;
     }
@@ -126,6 +131,7 @@ enum BooruType {
   bool get isRedGifs => this == BooruType.RedGifs;
   bool get isRule34Dev => this == BooruType.Rule34Dev;
   bool get isXXXTik => this == BooruType.XXXTik;
+  bool get isXXXFollow => this == BooruType.XXXFollow;
   bool get isWebView => this == BooruType.WebView;
   bool get isR34Hentai => this == BooruType.R34Hentai;
   bool get isR34US => this == BooruType.R34US;
