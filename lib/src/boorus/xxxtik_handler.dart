@@ -9,6 +9,7 @@ import 'package:lolisnatcher/src/data/tag_suggestion.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
+import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 
 /// xxxtik.com handler.
@@ -42,11 +43,36 @@ class XXXTikHandler extends BooruHandler {
   static const String _cdn = 'https://p5rn.com/cdn/production/media/0312/';
   static const String _site = 'https://xxxtik.com/';
 
+  // Firebase Web API key for the xxxtik project (public identifier baked into
+  // the site bundle — safe to embed; it only scopes which project auth targets,
+  // not a secret). Login goes through Google Identity Toolkit / Secure Token.
+  static const String _firebaseKey = 'AIzaSyAm9k1Y1GRbET-w1Z9joYMp63x1EHwZ5fY';
+  static const String _signInUrl =
+      'https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword';
+  static const String _refreshUrl = 'https://securetoken.googleapis.com/v1/token';
+
   static const List<String> _periods = ['week', 'month', 'year', 'all'];
 
   // Keyset pagination state.
   int _cursor = 0;
   String? _cursorKey;
+
+  // Firebase session, shared across handler instances and keyed by the email
+  // that produced it (so a credential change forces a fresh login). Static so
+  // it survives handler recreation between searches.
+  static String? _idToken;
+  static String? _refreshToken;
+  static DateTime? _tokenExpiry;
+  static String? _authedEmail;
+  // After a failed login (e.g. wrong credentials) back off so the search flow
+  // doesn't retry the auth endpoint on every page. Keyed by the email tried.
+  static DateTime? _authFailedAt;
+  static String? _authFailedEmail;
+
+  bool get _tokenValid =>
+      _idToken?.isNotEmpty == true &&
+      _tokenExpiry != null &&
+      _tokenExpiry!.isAfter(DateTime.now());
 
   @override
   bool get hasSizeData => true;
@@ -149,7 +175,137 @@ class XXXTikHandler extends BooruHandler {
       'User-Agent': Tools.browserUserAgent,
       'Origin': 'https://xxxtik.com',
       'Referer': _site,
+      if (_idToken?.isNotEmpty == true && _authedEmail == booru.userID?.trim().toLowerCase())
+        'Authorization': 'Bearer $_idToken',
     };
+  }
+
+  //
+  // Login — Firebase email/password (repurposes the booru's userID = email,
+  // apiKey = password fields). Optional: browsing works without an account,
+  // but signing in unlocks personalised/following feeds and per-account state.
+
+  @override
+  bool get hasSignInSupport => true;
+
+  @override
+  Future<bool> isSignedIn() async {
+    // Session still valid for the currently-configured account?
+    if (_tokenValid && _authedEmail == booru.userID?.trim().toLowerCase()) {
+      return true;
+    }
+    // Try a silent refresh before declaring the session dead.
+    if (_refreshToken?.isNotEmpty == true &&
+        _authedEmail == booru.userID?.trim().toLowerCase()) {
+      return _refreshSession();
+    }
+    return false;
+  }
+
+  @override
+  Future<dynamic> signIn() async {
+    final String email = booru.userID?.trim() ?? '';
+    final String password = booru.apiKey ?? '';
+    if (email.isEmpty || password.isEmpty) return false;
+
+    // Skip if a recent attempt with these same credentials failed.
+    if (_authFailedEmail == email.toLowerCase() &&
+        _authFailedAt != null &&
+        DateTime.now().difference(_authFailedAt!) < const Duration(minutes: 5)) {
+      return false;
+    }
+
+    try {
+      final response = await DioNetwork.post(
+        _signInUrl,
+        queryParameters: {'key': _firebaseKey},
+        data: {
+          'email': email,
+          'password': password,
+          'returnSecureToken': true,
+        },
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': Tools.browserUserAgent,
+        },
+      );
+      final data = response.data;
+      if (data is Map && data['idToken'] != null) {
+        _idToken = data['idToken']?.toString();
+        _refreshToken = data['refreshToken']?.toString();
+        _authedEmail = email.toLowerCase();
+        final int expiresIn = int.tryParse(data['expiresIn']?.toString() ?? '') ?? 3600;
+        // Refresh a minute early to avoid racing expiry.
+        _tokenExpiry = DateTime.now().add(Duration(seconds: expiresIn - 60));
+        _authFailedAt = null;
+        _authFailedEmail = null;
+        return true;
+      }
+      // Reached here on a 200 with no idToken — treat as a failed attempt.
+      _authFailedAt = DateTime.now();
+      _authFailedEmail = email.toLowerCase();
+    } catch (e, s) {
+      _authFailedAt = DateTime.now();
+      _authFailedEmail = email.toLowerCase();
+      _clearSession();
+      Logger.Inst().log(
+        'xxxtik sign-in failed: $e',
+        className,
+        'signIn',
+        LogTypes.booruHandlerFetchFailed,
+        s: s,
+      );
+    }
+    return false;
+  }
+
+  Future<bool> _refreshSession() async {
+    if (_refreshToken?.isEmpty != false) return false;
+    try {
+      final response = await DioNetwork.post(
+        _refreshUrl,
+        queryParameters: {'key': _firebaseKey},
+        data: {
+          'grant_type': 'refresh_token',
+          'refresh_token': _refreshToken,
+        },
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'User-Agent': Tools.browserUserAgent,
+        },
+      );
+      final data = response.data;
+      if (data is Map && data['id_token'] != null) {
+        _idToken = data['id_token']?.toString();
+        _refreshToken = data['refresh_token']?.toString() ?? _refreshToken;
+        final int expiresIn = int.tryParse(data['expires_in']?.toString() ?? '') ?? 3600;
+        _tokenExpiry = DateTime.now().add(Duration(seconds: expiresIn - 60));
+        return true;
+      }
+    } catch (e, s) {
+      Logger.Inst().log(
+        'xxxtik token refresh failed: $e',
+        className,
+        '_refreshSession',
+        LogTypes.booruHandlerFetchFailed,
+        s: s,
+      );
+    }
+    // Refresh failed — fall back to a full re-login on the next setup.
+    _clearSession();
+    return false;
+  }
+
+  void _clearSession() {
+    _idToken = null;
+    _refreshToken = null;
+    _tokenExpiry = null;
+    _authedEmail = null;
+  }
+
+  @override
+  Future<dynamic> signOut({bool fromError = false}) async {
+    _clearSession();
   }
 
   @override

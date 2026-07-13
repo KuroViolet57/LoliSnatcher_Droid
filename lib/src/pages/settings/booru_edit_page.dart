@@ -8,6 +8,7 @@ import 'package:lolisnatcher/src/boorus/gelbooru_alikes_handler.dart';
 import 'package:lolisnatcher/src/boorus/gelbooru_handler.dart';
 import 'package:lolisnatcher/src/boorus/hydrus_handler.dart';
 import 'package:lolisnatcher/src/boorus/idol_sankaku_handler.dart';
+import 'package:lolisnatcher/src/boorus/redgifs_handler.dart';
 import 'package:lolisnatcher/src/boorus/sankaku_handler.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
@@ -15,6 +16,7 @@ import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/pages/settings/redgifs_login_page.dart';
 import 'package:lolisnatcher/src/services/get_perms.dart';
 import 'package:lolisnatcher/src/utils/extensions.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
@@ -289,26 +291,31 @@ class _BooruEditState extends State<BooruEdit> {
                 apiKeyController: booruAPIKeyController,
               ),
             //
-            SettingsTextInput(
-              controller: booruUserIDController,
-              onChanged: (_) => setState(() {}),
-              title: getUserIDTitle(),
-              hintText: getUserIdPlaceholder(),
-              clearable: true,
-              pasteable: true,
-              drawTopBorder: true,
-              enableIMEPersonalizedLearning: !settingsHandler.incognitoKeyboard,
-            ),
-            SettingsTextInput(
-              controller: booruAPIKeyController,
-              onChanged: (_) => setState(() {}),
-              title: getApiKeyTitle(),
-              pasteable: true,
-              hintText: getApiKeyPlaceholder(),
-              clearable: true,
-              obscureable: shouldObscureApiKey(),
-              enableIMEPersonalizedLearning: !settingsHandler.incognitoKeyboard,
-            ),
+            if (selectedBooruType == BooruType.RedGifs) _buildRedGifsLogin(),
+            // RedGifs has no per-user ID field — it logs in via the browser
+            // button above and stores a session token in the key field.
+            if (selectedBooruType != BooruType.RedGifs)
+              SettingsTextInput(
+                controller: booruUserIDController,
+                onChanged: (_) => setState(() {}),
+                title: getUserIDTitle(),
+                hintText: getUserIdPlaceholder(),
+                clearable: true,
+                pasteable: true,
+                drawTopBorder: true,
+                enableIMEPersonalizedLearning: !settingsHandler.incognitoKeyboard,
+              ),
+            if (selectedBooruType != BooruType.RedGifs)
+              SettingsTextInput(
+                controller: booruAPIKeyController,
+                onChanged: (_) => setState(() {}),
+                title: getApiKeyTitle(),
+                pasteable: true,
+                hintText: getApiKeyPlaceholder(),
+                clearable: true,
+                obscureable: shouldObscureApiKey(),
+                enableIMEPersonalizedLearning: !settingsHandler.incognitoKeyboard,
+              ),
             SizedBox(height: MediaQuery.sizeOf(context).height * 0.2),
           ],
         ),
@@ -322,6 +329,7 @@ class _BooruEditState extends State<BooruEdit> {
       case BooruType.IdolSankaku:
       case BooruType.R34Hentai:
       case BooruType.InkBunny:
+      case BooruType.XXXTik:
         return context.loc.password;
       default:
         return context.loc.apiKey;
@@ -356,7 +364,10 @@ class _BooruEditState extends State<BooruEdit> {
             '<i>creator:name</i> tag shown in a post tag list. Type '
             '<i>niche:</i> in the search bar to autocomplete from the full '
             'catalogue of curated niches; the niches a post belongs to also '
-            'show up as tags in its tag list.';
+            'show up as tags in its tag list.<br><br>'
+            '<b>Login (optional):</b> use the <i>Sign in with browser</i> button '
+            'below to connect your RedGifs account (their login needs a captcha, '
+            'so it opens the real site). Browsing works without an account.';
       case BooruType.Rule34Dev:
         return '<b>Rule34.dev (aggregator)</b><br>No setup needed — leave the '
             'URL as https://app.rule34.dev. This reads the app.rule34.dev '
@@ -370,12 +381,16 @@ class _BooruEditState extends State<BooruEdit> {
             'through a private proxy and cannot be scraped directly — open '
             'app.rule34.dev in a WebView booru for that part.';
       case BooruType.XXXTik:
-        return '<b>xxxtik</b><br>No setup needed — leave the URL as '
-            'https://xxxtik.com. A short-form video site.<br><br>'
+        return '<b>xxxtik</b><br>Leave the URL as https://xxxtik.com. A '
+            'short-form video site.<br><br>'
             'Browse recent videos, or a tag (type a single tag), and sort with '
             'the <i>sort:</i> chip (Recent / Top week / month / year / all — '
             'sorting applies to the main feed). Tap a creator, or type '
             '<i>creator:name</i>, to see that creator videos.<br><br>'
+            '<b>Login (optional):</b> put your account email and password in '
+            'the fields below to sign in — browsing works without an account, '
+            'but signing in enables your personalised feeds. Credentials are '
+            'sent only to xxxtik login (Firebase) over HTTPS.<br><br>'
             'Videos stream as HLS; downloading a native xxxtik clip is not '
             'supported (there is no single-file source), though playback works.';
       case BooruType.WebView:
@@ -407,6 +422,8 @@ class _BooruEditState extends State<BooruEdit> {
       case BooruType.Danbooru:
       case BooruType.R34Hentai:
         return context.loc.login;
+      case BooruType.XXXTik:
+        return 'Email';
       default:
         return context.loc.userId;
     }
@@ -416,6 +433,93 @@ class _BooruEditState extends State<BooruEdit> {
     switch (selectedBooruType) {
       default:
         return '';
+    }
+  }
+
+  Widget _buildRedGifsLogin() {
+    final String token = booruAPIKeyController.text.trim();
+    final DateTime? expiry = token.isEmpty ? null : RedGifsHandler.decodeJwtExpiry(token);
+    final bool signedIn = expiry != null && expiry.isAfter(DateTime.now());
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                signedIn ? Icons.check_circle : Icons.account_circle_outlined,
+                color: signedIn ? Colors.green : Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  signedIn ? 'Signed in to RedGifs' : 'Not signed in (browsing as guest)',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            signedIn
+                ? 'Your account session is active. Sign in again if it stops working.'
+                : 'Sign in with your RedGifs account to use your personal feeds and '
+                      'follows. Optional — browsing works without an account.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              FilledButton.tonalIcon(
+                icon: const Icon(Icons.login),
+                label: Text(signedIn ? 'Sign in again' : 'Sign in with browser'),
+                onPressed: _openRedGifsLogin,
+              ),
+              if (signedIn) ...[
+                const SizedBox(width: 8),
+                TextButton.icon(
+                  icon: const Icon(Icons.logout),
+                  label: const Text('Sign out'),
+                  onPressed: () => setState(() => booruAPIKeyController.text = ''),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openRedGifsLogin() async {
+    if (!Tools.isOnPlatformWithWebviewSupport) {
+      FlashElements.showSnackbar(
+        context: context,
+        title: const Text('WebView unavailable'),
+        content: const Text('Signing in to RedGifs needs a WebView, which is not available on this device.'),
+        leadingIcon: Icons.error_outline,
+        leadingIconColor: Colors.red,
+      );
+      return;
+    }
+    final String? token = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => const RedGifsLoginPage()),
+    );
+    if (token != null && token.isNotEmpty && mounted) {
+      setState(() => booruAPIKeyController.text = token);
+      FlashElements.showSnackbar(
+        context: context,
+        title: const Text('Signed in'),
+        content: const Text('RedGifs account connected.'),
+        leadingIcon: Icons.check_circle,
+        leadingIconColor: Colors.green,
+      );
     }
   }
 

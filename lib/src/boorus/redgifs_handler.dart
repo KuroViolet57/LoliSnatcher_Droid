@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
@@ -101,12 +102,70 @@ class RedGifsHandler extends BooruHandler {
     return _ensureToken();
   }
 
+  // The active bearer: a signed-in user token (persisted in booru.apiKey) when
+  // present and unexpired, otherwise the anonymous guest token. RedGifs binds
+  // the token to the request IP + User-Agent, so the login WebView captures the
+  // token the site sends and it's replayed here with the same User-Agent.
+  String? get _activeToken {
+    final String? userToken = _validUserToken;
+    if (userToken != null) return userToken;
+    return _token;
+  }
+
+  String? get _validUserToken {
+    final String? t = booru.apiKey;
+    if (t == null || t.isEmpty) return null;
+    final DateTime? exp = decodeJwtExpiry(t);
+    // Keep a small safety margin; expired/undecodable tokens fall back to guest.
+    if (exp == null || exp.isBefore(DateTime.now().add(const Duration(minutes: 2)))) {
+      return null;
+    }
+    return t;
+  }
+
+  @override
+  bool get hasSignInSupport => true;
+
+  @override
+  Future<bool> isSignedIn() async => _validUserToken != null;
+
+  @override
+  Future<dynamic> signOut({bool fromError = false}) async {
+    // Drop the stored user token; browsing continues on a guest token.
+    booru.apiKey = '';
+  }
+
+  /// Decodes the `exp` (seconds since epoch) claim from a JWT, or null if the
+  /// string isn't a decodable JWT.
+  static DateTime? decodeJwtExpiry(String jwt) {
+    try {
+      final parts = jwt.split('.');
+      if (parts.length != 3) return null;
+      String payload = parts[1].replaceAll('-', '+').replaceAll('_', '/');
+      switch (payload.length % 4) {
+        case 2:
+          payload += '==';
+          break;
+        case 3:
+          payload += '=';
+          break;
+      }
+      final Map<String, dynamic> claims = jsonDecode(utf8.decode(base64.decode(payload)));
+      final int? exp = int.tryParse(claims['exp']?.toString() ?? '');
+      if (exp == null) return null;
+      return DateTime.fromMillisecondsSinceEpoch(exp * 1000);
+    } catch (_) {
+      return null;
+    }
+  }
+
   @override
   Map<String, String> getHeaders() {
+    final String? token = _activeToken;
     return {
       'Accept': 'application/json',
       'User-Agent': Tools.browserUserAgent,
-      if (_token?.isNotEmpty == true) 'Authorization': 'Bearer $_token',
+      if (token?.isNotEmpty == true) 'Authorization': 'Bearer $token',
     };
   }
 
@@ -239,6 +298,11 @@ class RedGifsHandler extends BooruHandler {
     } on DioException catch (e) {
       // Token can die early (IP change on mobile networks) — re-auth once.
       if (e.response?.statusCode == HttpStatus.unauthorized) {
+        // A user token is IP/agent-bound; if it's the one being rejected, drop
+        // it and continue on a fresh guest token rather than looping on 401s.
+        if (_validUserToken != null) {
+          booru.apiKey = '';
+        }
         final bool ok = await _ensureToken(force: true);
         if (ok) {
           return DioNetwork.get(
