@@ -108,8 +108,13 @@ class VideoViewerState extends State<VideoViewer> {
 
     unawaited(getSize());
 
-    if (!settingsHandler.mediaCache) {
-      // Media caching disabled - don't cache videos
+    // HLS streams (.m3u8) are playlists, not a single file — caching them to
+    // disk would save the manifest text, not the video, and playback from the
+    // saved file fails. Always stream HLS straight from the network.
+    final bool isHlsStream = widget.booruItem.fileURL.contains('.m3u8');
+
+    if (isHlsStream || !settingsHandler.mediaCache) {
+      // Media caching disabled (or impossible for HLS) - don't cache videos
       unawaited(initPlayer());
       return;
     }

@@ -22,6 +22,7 @@ enum BooruType {
   Realbooru,
   RedGifs,
   Rule34Dev,
+  XXXTik,
   R34Hentai,
   R34US,
   Sankaku,
@@ -70,7 +71,9 @@ enum BooruType {
       // WebView is a "render anything" escape hatch — never autodetect it.
       ..remove(BooruType.WebView)
       // Rule34.dev shares CDNs with rule34.xxx; only pick it deliberately.
-      ..remove(BooruType.Rule34Dev);
+      ..remove(BooruType.Rule34Dev)
+      // xxxtik has a fixed API host; only pick it deliberately.
+      ..remove(BooruType.XXXTik);
   }
 
   bool get isDetectable => detectable.contains(this);
@@ -97,6 +100,8 @@ enum BooruType {
         return 'WebView (browser)';
       case Rule34Dev:
         return 'Rule34.dev (aggregator)';
+      case XXXTik:
+        return 'xxxtik';
       default:
         return name;
     }
@@ -120,6 +125,7 @@ enum BooruType {
   bool get isRealbooru => this == BooruType.Realbooru;
   bool get isRedGifs => this == BooruType.RedGifs;
   bool get isRule34Dev => this == BooruType.Rule34Dev;
+  bool get isXXXTik => this == BooruType.XXXTik;
   bool get isWebView => this == BooruType.WebView;
   bool get isR34Hentai => this == BooruType.R34Hentai;
   bool get isR34US => this == BooruType.R34US;

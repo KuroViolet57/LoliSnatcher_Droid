@@ -200,6 +200,15 @@ class _BooruEditState extends State<BooruEdit> {
                       booruFaviconController.text = 'https://app.rule34.dev/icon.webp';
                     }
                   }
+                  if (selectedBooruType.isXXXTik && booruURLController.text.trim().isEmpty) {
+                    booruURLController.text = 'https://xxxtik.com';
+                    if (booruNameController.text.trim().isEmpty) {
+                      booruNameController.text = 'xxxtik';
+                    }
+                    if (booruFaviconController.text.trim().isEmpty) {
+                      booruFaviconController.text = 'https://xxxtik.com/favicon.ico';
+                    }
+                  }
                 });
               },
               title: context.loc.settings.booruEditor.booruType,
@@ -360,6 +369,15 @@ class _BooruEditState extends State<BooruEdit> {
             'Note: the "real videos" (xvideos) section streams tube sites '
             'through a private proxy and cannot be scraped directly — open '
             'app.rule34.dev in a WebView booru for that part.';
+      case BooruType.XXXTik:
+        return '<b>xxxtik</b><br>No setup needed — leave the URL as '
+            'https://xxxtik.com. A short-form video site.<br><br>'
+            'Browse recent videos, or a tag (type a single tag), and sort with '
+            'the <i>sort:</i> chip (Recent / Top week / month / year / all — '
+            'sorting applies to the main feed). Tap a creator, or type '
+            '<i>creator:name</i>, to see that creator videos.<br><br>'
+            'Videos stream as HLS; downloading a native xxxtik clip is not '
+            'supported (there is no single-file source), though playback works.';
       case BooruType.WebView:
         return '<b>WebView (browser)</b><br>Renders any site inside a tab '
             'instead of scraping it — use it for sites that are hard or '
@@ -413,12 +431,17 @@ class _BooruEditState extends State<BooruEdit> {
     // The special engines don't use the standard scrape-test — just normalise
     // the URL and accept. RedGifs has a fixed API; Rule34.dev reads a fixed
     // data endpoint; WebView renders whatever URL the user provides.
-    if (selectedBooruType.isRedGifs || selectedBooruType.isWebView || selectedBooruType.isRule34Dev) {
+    if (selectedBooruType.isRedGifs ||
+        selectedBooruType.isWebView ||
+        selectedBooruType.isRule34Dev ||
+        selectedBooruType.isXXXTik) {
       if (booruNameController.text.trim().isEmpty) {
         booruNameController.text = selectedBooruType.isRedGifs
             ? 'RedGifs'
             : selectedBooruType.isRule34Dev
             ? 'Rule34.dev'
+            : selectedBooruType.isXXXTik
+            ? 'xxxtik'
             : 'WebView';
       }
       if (booruURLController.text.trim().isEmpty && selectedBooruType.isRedGifs) {
@@ -426,6 +449,9 @@ class _BooruEditState extends State<BooruEdit> {
       }
       if (booruURLController.text.trim().isEmpty && selectedBooruType.isRule34Dev) {
         booruURLController.text = 'https://app.rule34.dev';
+      }
+      if (booruURLController.text.trim().isEmpty && selectedBooruType.isXXXTik) {
+        booruURLController.text = 'https://xxxtik.com';
       }
       if (booruURLController.text.trim().isEmpty) {
         FlashElements.showSnackbar(
