@@ -80,17 +80,21 @@ DioNetwork's cookie interceptor after a GET of `/`).
 - The handler stashes `lastRelatedTags` + `lastCreators` (List<XXXFollowCreator>)
   from each tag query — **ready for the UI section to consume.**
 
-## PENDING (step 3 of plan) — Tag creators + similar-tags UI with dividers
-User: "when you click a tag ... above the videos you have the creators in this
-tag + similar tags underneath — implement in the tags section with some dividers."
-- Data is already captured on the handler (`lastRelatedTags`, `lastCreators`).
-- Need: a header strip / section (with dividers) in the tag/results or preview
-  view showing creator chips (avatar + display_name → tap loads that creator)
-  and similar-tag chips (→ tap searches that tag). Tapping a creator should load
-  their feed — options: search `query=<username>` on xxxfollow, or add a
-  `creator:` route via `user/<username>`. Mirror the sectioned look of the
-  floating video preview window / tag_view chip sections.
-- This is xxxfollow-specific UI but could generalise (redgifs also has creators).
+## step 3 — Tag creators + similar-tags UI — DONE
+`lib/src/widgets/preview/xxxfollow_tag_strip.dart` (XXXFollowTagStrip): a header
+strip above the results with a "Creators in this tag" horizontal avatar row and
+a "Similar tags" chip Wrap, each section with a divider label. Tapping a creator
+searches `query=<username>`; tapping a tag searches it (via
+`SearchHandler.searchAction`). Reads `handler.lastCreators/lastRelatedTags`,
+rebuilds on `filteredFetched`. Inserted as a SliverToBoxAdapter after MainAppBar
+in `waterfall_view.dart` (no-op for non-xxxfollow handlers). Committed in 5210c.
+
+## POSSIBLE FUTURE POLISH (not requested yet)
+- Generalise the creators/similar-tags strip to redgifs (it also has creators).
+- xxxfollow login (Laravel email/password + Google reCAPTCHA) — same WebView
+  token/cookie-capture pattern as redgifs would be needed to unlock the full
+  (non-teaser) catalog. `site_config` exposes `recaptcha_public_key`.
+- Verify the `genders` filter actually changes results (was inconclusive live).
 
 ## Key architecture notes
 - BooruHandler: makeURL/fetchSearch/parseListFromResponse/parseItemFromResponse,
