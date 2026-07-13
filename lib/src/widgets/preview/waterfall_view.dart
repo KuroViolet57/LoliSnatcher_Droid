@@ -19,8 +19,8 @@ import 'package:lolisnatcher/src/widgets/common/long_press_repeater.dart';
 import 'package:lolisnatcher/src/widgets/preview/grid_builder.dart';
 import 'package:lolisnatcher/src/widgets/preview/shimmer_builder.dart';
 import 'package:lolisnatcher/src/widgets/preview/staggered_builder.dart';
+import 'package:lolisnatcher/src/widgets/preview/discovery_strip.dart';
 import 'package:lolisnatcher/src/widgets/preview/waterfall_bottom_bar.dart';
-import 'package:lolisnatcher/src/widgets/preview/xxxfollow_tag_strip.dart';
 import 'package:lolisnatcher/src/widgets/root/main_appbar.dart';
 
 class WaterfallView extends StatefulWidget {
@@ -445,12 +445,13 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware {
                         cacheExtent: 300 * MediaQuery.devicePixelRatioOf(context),
                         slivers: [
                           const MainAppBar(),
-                          // xxxfollow shows the creators-in-tag + similar-tags
-                          // strip above the results (no-op for other boorus).
+                          // Discovery strip: creators + similar tags above the
+                          // results, for any handler that populates them
+                          // (xxxfollow, redgifs). No-op for the rest.
                           SliverPadding(
                             padding: const EdgeInsets.fromLTRB(10, 12, 10, 0),
                             sliver: SliverToBoxAdapter(
-                              child: XXXFollowTagStrip(tab: searchHandler.currentTab),
+                              child: DiscoveryStrip(tab: searchHandler.currentTab),
                             ),
                           ),
                           SliverPadding(

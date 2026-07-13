@@ -3,30 +3,13 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/data/creator_info.dart';
 import 'package:lolisnatcher/src/data/meta_tag.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_suggestion.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
-
-/// A creator/channel that appears within a tag's results (for the "creators in
-/// this tag" strip the UI shows above the videos).
-class XXXFollowCreator {
-  const XXXFollowCreator({
-    required this.username,
-    required this.displayName,
-    this.avatarUrl,
-    this.coverUrl,
-    this.gender,
-  });
-
-  final String username;
-  final String displayName;
-  final String? avatarUrl;
-  final String? coverUrl;
-  final String? gender;
-}
 
 /// xxxfollow.com (formerly Xfollow) handler.
 ///
@@ -53,12 +36,6 @@ class XXXFollowHandler extends BooruHandler {
   static const String _api = '$_root/api/v1';
 
   bool _sessionReady = false;
-
-  /// Similar tags surfaced by the last tag query (for the tags-section UI).
-  final List<String> lastRelatedTags = [];
-
-  /// Creators found in the last tag query (for the creators strip UI).
-  final List<XXXFollowCreator> lastCreators = [];
 
   @override
   bool get hasSizeData => true;
@@ -177,12 +154,8 @@ class XXXFollowHandler extends BooruHandler {
     final data = response.data;
     if (data is! Map) return [];
 
-    lastRelatedTags
-      ..clear()
-      ..addAll(_extractTagNames(data['tags']));
-    lastCreators
-      ..clear()
-      ..addAll(_extractCreators(data['users']));
+    relatedTags = _extractTagNames(data['tags']);
+    relatedCreators = _extractCreators(data['users']);
 
     // Query present -> `search` (paginated). Empty query -> the discovery
     // payload, which ignores `page`, so only serve it once and let subsequent
@@ -215,20 +188,19 @@ class XXXFollowHandler extends BooruHandler {
         .toList();
   }
 
-  List<XXXFollowCreator> _extractCreators(dynamic users) {
+  List<CreatorInfo> _extractCreators(dynamic users) {
     if (users is! List) return [];
-    final List<XXXFollowCreator> out = [];
+    final List<CreatorInfo> out = [];
     for (final u in users) {
       if (u is! Map) continue;
       final String username = u['username']?.toString() ?? '';
       if (username.isEmpty) continue;
       out.add(
-        XXXFollowCreator(
-          username: username,
+        CreatorInfo(
+          searchQuery: username,
           displayName: _nonEmpty(u['display_name']) ?? username,
           avatarUrl: _nonEmpty(u['public_avatar_url']) ?? _nonEmpty(u['fans_avatar_url']),
           coverUrl: _nonEmpty(u['public_cover_picture_url']) ?? _nonEmpty(u['fans_cover_picture_url']),
-          gender: _nonEmpty(u['gender']),
         ),
       );
     }

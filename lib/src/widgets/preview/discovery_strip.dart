@@ -1,16 +1,17 @@
 import 'package:flutter/material.dart';
 
-import 'package:lolisnatcher/src/boorus/xxxfollow_handler.dart';
+import 'package:lolisnatcher/src/data/creator_info.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 
-/// A header strip shown above xxxfollow results: the creators that appear in
-/// the current tag, and similar tags — mirroring the site's own tag page.
+/// A header strip shown above search results: the creators behind the current
+/// results and related/similar tags — mirroring a site's own tag page.
 ///
-/// The data comes from the last `post/search/tag` response the handler parsed
-/// (`lastCreators` / `lastRelatedTags`). It rebuilds whenever the tab's results
-/// change (i.e. after each search) by listening to `filteredFetched`.
-class XXXFollowTagStrip extends StatelessWidget {
-  const XXXFollowTagStrip({required this.tab, super.key});
+/// It's booru-agnostic: it renders whatever the active handler put in
+/// `relatedCreators` / `relatedTags` (empty for handlers that don't populate
+/// them, in which case the strip is invisible). It rebuilds whenever the tab's
+/// results change by listening to `filteredFetched`.
+class DiscoveryStrip extends StatelessWidget {
+  const DiscoveryStrip({required this.tab, super.key});
 
   final SearchTab tab;
 
@@ -39,11 +40,11 @@ class XXXFollowTagStrip extends StatelessWidget {
     handler.searchAction(query, null);
   }
 
-  Widget _creatorTile(BuildContext context, XXXFollowCreator c) {
+  Widget _creatorTile(BuildContext context, CreatorInfo c) {
     final String? avatar = c.avatarUrl;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () => _search(c.username),
+      onTap: () => _search(c.searchQuery),
       child: SizedBox(
         width: 72,
         child: Column(
@@ -75,13 +76,12 @@ class XXXFollowTagStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final handler = tab.booruHandler;
-    if (handler is! XXXFollowHandler) return const SizedBox.shrink();
 
     return ValueListenableBuilder(
       valueListenable: handler.filteredFetched,
       builder: (context, _, _) {
-        final creators = handler.lastCreators;
-        final tags = handler.lastRelatedTags;
+        final creators = handler.relatedCreators;
+        final tags = handler.relatedTags;
         if (creators.isEmpty && tags.isEmpty) return const SizedBox.shrink();
 
         return Container(
@@ -95,7 +95,7 @@ class XXXFollowTagStrip extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (creators.isNotEmpty) ...[
-                _sectionLabel(context, 'Creators in this tag'),
+                _sectionLabel(context, 'Creators in these results'),
                 SizedBox(
                   height: 96,
                   child: ListView.separated(
@@ -116,7 +116,7 @@ class XXXFollowTagStrip extends StatelessWidget {
                   children: [
                     for (final t in tags)
                       ActionChip(
-                        label: Text(t.replaceAll('-', ' ')),
+                        label: Text(t.replaceAll('-', ' ').replaceAll('_', ' ')),
                         visualDensity: VisualDensity.compact,
                         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         onPressed: () => _search(t),

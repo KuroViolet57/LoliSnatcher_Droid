@@ -80,17 +80,29 @@ DioNetwork's cookie interceptor after a GET of `/`).
 - The handler stashes `lastRelatedTags` + `lastCreators` (List<XXXFollowCreator>)
   from each tag query — **ready for the UI section to consume.**
 
-## step 3 — Tag creators + similar-tags UI — DONE
-`lib/src/widgets/preview/xxxfollow_tag_strip.dart` (XXXFollowTagStrip): a header
-strip above the results with a "Creators in this tag" horizontal avatar row and
-a "Similar tags" chip Wrap, each section with a divider label. Tapping a creator
-searches `query=<username>`; tapping a tag searches it (via
-`SearchHandler.searchAction`). Reads `handler.lastCreators/lastRelatedTags`,
-rebuilds on `filteredFetched`. Inserted as a SliverToBoxAdapter after MainAppBar
-in `waterfall_view.dart` (no-op for non-xxxfollow handlers). Committed in 5210c.
+## step 3 — creators + similar-tags UI — DONE + GENERALIZED
+Generic `lib/src/widgets/preview/discovery_strip.dart` (DiscoveryStrip): header
+strip above results with a "Creators in these results" avatar row + "Similar
+tags" chip Wrap, each under a divider label. Tapping a creator runs
+`CreatorInfo.searchQuery`; tapping a tag searches it (SearchHandler.searchAction).
+Inserted as SliverToBoxAdapter after MainAppBar in `waterfall_view.dart`;
+rebuilds on `filteredFetched`; invisible unless the handler filled the data.
+
+Booru-agnostic via base `BooruHandler` fields (`List<CreatorInfo> relatedCreators`,
+`List<String> relatedTags`) + shared `lib/src/data/creator_info.dart` (CreatorInfo:
+searchQuery/displayName/avatarUrl/coverUrl/subtitle). Populated by:
+- **xxxfollow**: from the tag response `users` (creators) + `tags` (similar).
+- **redgifs** (`_buildDiscoveryFromGifs`, page 1 only): distinct gif uploaders →
+  creators (searchQuery `creator:<name>`, avatar from response `users` block when
+  present; hidden when <2 distinct creators, e.g. a single-creator feed); most
+  common co-occurring tags (minus the searched terms captured in
+  `_queryTagsLower`) → similar tags. Verified: redgifs suggest returns related
+  tags; gif objects carry `userName`; `creator:` routing already works.
+Old xxxfollow-only strip (xxxfollow_tag_strip.dart / XXXFollowCreator) removed.
+Committed in 5210d.
 
 ## POSSIBLE FUTURE POLISH (not requested yet)
-- Generalise the creators/similar-tags strip to redgifs (it also has creators).
+- Populate relatedCreators/relatedTags for more handlers (any with tag data).
 - xxxfollow login (Laravel email/password + Google reCAPTCHA) — same WebView
   token/cookie-capture pattern as redgifs would be needed to unlock the full
   (non-teaser) catalog. `site_config` exposes `recaptcha_public_key`.

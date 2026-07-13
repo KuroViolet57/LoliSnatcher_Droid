@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/data/creator_info.dart';
 import 'package:lolisnatcher/src/data/meta_tag.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_suggestion.dart';
@@ -201,6 +202,11 @@ class RedGifsHandler extends BooruHandler {
   @override
   String makeURL(String tags) {
     final parts = _splitQueryAndOrder(tags);
+    _queryTagsLower = parts.query
+        .split(',')
+        .map((e) => e.trim().toLowerCase())
+        .where((e) => e.isNotEmpty && e != 'nsfw')
+        .toList();
 
     // A `niche:id` term routes to a curated RedGifs niche feed, e.g.
     // `niche:just-boobs`. Browse the catalogue at redgifs.com/niches.
@@ -316,12 +322,70 @@ class RedGifsHandler extends BooruHandler {
     }
   }
 
+  // The tags of the active query (space form, lowercased), captured in makeURL
+  // so the discovery strip can exclude them from "similar tags".
+  List<String> _queryTagsLower = [];
+
   @override
   List parseListFromResponse(dynamic response) {
     final data = response.data;
     if (data is! Map<String, dynamic>) return [];
     totalCount.value = int.tryParse(data['total']?.toString() ?? '0') ?? 0;
-    return (data['gifs'] as List?) ?? [];
+    final List gifs = (data['gifs'] as List?) ?? [];
+
+    // Populate the discovery strip from the first page only (it reflects the
+    // query, not deeper pages).
+    if (pageNum <= 1) {
+      _buildDiscoveryFromGifs(gifs, data['users']);
+    }
+    return gifs;
+  }
+
+  /// Distinct uploaders in the results -> creator strip; the most common tags
+  /// across the results (minus the searched ones) -> similar tags.
+  void _buildDiscoveryFromGifs(List gifs, dynamic usersRaw) {
+    // username -> avatar, from the response's `users` block when present.
+    final Map<String, String> avatars = {};
+    if (usersRaw is List) {
+      for (final u in usersRaw) {
+        if (u is! Map) continue;
+        final String name = (u['username'] ?? u['name'] ?? '').toString();
+        if (name.isEmpty) continue;
+        final String? img = (u['profileImageUrl'] ?? u['thumbnailUrl'])?.toString();
+        if (img != null && img.isNotEmpty) avatars[name.toLowerCase()] = img;
+      }
+    }
+
+    final List<CreatorInfo> creators = [];
+    final Set<String> seenCreators = {};
+    final Map<String, int> tagCounts = {};
+    for (final g in gifs) {
+      if (g is! Map) continue;
+      final String user = (g['userName'] ?? '').toString();
+      if (user.isNotEmpty && seenCreators.add(user.toLowerCase()) && creators.length < 20) {
+        creators.add(
+          CreatorInfo(
+            searchQuery: 'creator:${user.toLowerCase()}',
+            displayName: user,
+            avatarUrl: avatars[user.toLowerCase()],
+          ),
+        );
+      }
+      for (final t in (g['tags'] as List?) ?? []) {
+        final String tag = t.toString().trim();
+        if (tag.isEmpty) continue;
+        if (_queryTagsLower.contains(tag.toLowerCase())) continue;
+        tagCounts[tag] = (tagCounts[tag] ?? 0) + 1;
+      }
+    }
+
+    // Only show the creators row when there's real variety (a single-creator
+    // feed would just repeat the one creator).
+    relatedCreators = creators.length >= 2 ? creators : [];
+
+    final List<MapEntry<String, int>> sorted = tagCounts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    relatedTags = sorted.take(12).map((e) => e.key.replaceAll(' ', '_')).toList();
   }
 
   @override

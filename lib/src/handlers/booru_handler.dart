@@ -12,6 +12,7 @@ import 'package:html/parser.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/comment_item.dart';
+import 'package:lolisnatcher/src/data/creator_info.dart';
 import 'package:lolisnatcher/src/data/meta_tag.dart';
 import 'package:lolisnatcher/src/data/note_item.dart';
 import 'package:lolisnatcher/src/data/response_error.dart';
@@ -48,6 +49,12 @@ abstract class BooruHandler {
 
   String errorString = '';
   // List<({BooruItem item, Object e, StackTrace? s})> failedItems = [];
+
+  // Discovery strip data (rendered above the results grid). Handlers that can
+  // surface the creators behind the current results and/or related tags fill
+  // these during parsing; empty means the strip stays hidden for this booru.
+  List<CreatorInfo> relatedCreators = [];
+  List<String> relatedTags = [];
 
   Map<String, TagType> get tagTypeMap => {};
 
