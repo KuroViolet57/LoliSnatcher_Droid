@@ -44,8 +44,17 @@ class ForYouHandler extends BooruHandler {
   // declaring the feed exhausted (each round fans out to every source).
   int _emptyStreak = 0;
 
-  // Max source boorus queried per page (keeps request fan-out bounded).
+  // Max source boorus tracked (keeps request fan-out bounded).
   static const int _maxSources = 8;
+
+  // Sources actually queried per page — a rotating subset of the tracked
+  // sources so one page doesn't wait on every booru at once.
+  static const int _sourcesPerPage = 4;
+
+  // Per-request budgets so one slow / captcha-looping booru can't stall the
+  // whole feed (which showed up as "For You loads forever").
+  static const Duration _resolveTimeout = Duration(seconds: 6);
+  static const Duration _searchTimeout = Duration(seconds: 12);
 
   @override
   bool get hasSizeData => false;
@@ -66,11 +75,53 @@ class ForYouHandler extends BooruHandler {
     final List<String> seeds = [];
     for (final term in input.split(' ').where((t) => t.trim().isNotEmpty)) {
       if (term.toLowerCase().startsWith('seed:')) {
-        final v = term.substring('seed:'.length).trim().toLowerCase();
+        final v = _sanitizeSeed(term.substring('seed:'.length));
         if (v.isNotEmpty) seeds.add(v);
       }
     }
     return seeds;
+  }
+
+  // Booru-specific prefixes (creator:, artist:, niche:, source:, sort:, …) and
+  // meta filters don't port across sites, so strip them to the bare term for
+  // cross-booru fanning — a plain name the alias resolver can actually match.
+  static const List<String> _dropPrefixes = [
+    'creator:',
+    'artist:',
+    'niche:',
+    'source:',
+    'sort:',
+    'order:',
+    'rating:',
+    'status:',
+    'score:',
+  ];
+
+  String _sanitizeSeed(String raw) {
+    String s = raw.trim().toLowerCase();
+    for (final p in _dropPrefixes) {
+      if (s.startsWith(p)) {
+        // sort:/order:/rating:/etc. carry no reusable term — drop entirely.
+        if (p == 'sort:' || p == 'order:' || p == 'rating:' || p == 'status:' || p == 'score:') {
+          return '';
+        }
+        s = s.substring(p.length).trim();
+        break;
+      }
+    }
+    // Keep the meaningful prefix forms out; also skip empties and lone digits.
+    if (s.isEmpty || RegExp(r'^\d+$').hasMatch(s)) return '';
+    return s;
+  }
+
+  /// Runs [future] but gives up (returns null) after [timeout] or on error, so
+  /// a single misbehaving source can never block the feed.
+  Future<T?> _bounded<T>(Future<T> Function() future, Duration timeout) async {
+    try {
+      return await future().timeout(timeout);
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> _init(String tags) async {
@@ -104,7 +155,15 @@ class ForYouHandler extends BooruHandler {
       for (final e in await InterestsHandler.instance.topTags(limit: 60)) e.key: e.value,
     };
     if (_seeds.isEmpty) {
-      _seeds = _profile.entries.where((e) => e.value > 0).take(24).map((e) => e.key).toList();
+      // Sanitize profile tags into portable, cross-booru seeds and de-dupe.
+      final List<String> pool = [];
+      for (final e in _profile.entries) {
+        if (e.value <= 0) continue;
+        final String s = _sanitizeSeed(e.key);
+        if (s.isNotEmpty && !pool.contains(s)) pool.add(s);
+        if (pool.length >= 24) break;
+      }
+      _seeds = pool;
     } else {
       // Seed mode still benefits from profile ranking; make sure seeds appear.
       for (final s in _seeds) {
@@ -162,38 +221,45 @@ class ForYouHandler extends BooruHandler {
     final int before = fetched.length;
     final List<BooruItem> pageItems = [];
 
-    // Pull one page from each source, each for a rotating seed, deepening as
-    // the feed scrolls. Alias-resolve every seed onto the source's spelling.
-    for (int j = 0; j < _sources.length; j++) {
+    // Query a rotating subset of sources per page (not all at once), each for a
+    // rotating seed, deepening as the feed scrolls. Every network step is time-
+    // bounded so a slow/captcha booru can't hang the feed. The subset rotates
+    // by page so all sources get used across a few scrolls.
+    final int take = _sources.length < _sourcesPerPage ? _sources.length : _sourcesPerPage;
+    for (int k = 0; k < take; k++) {
+      final int j = (_feedPage * _sourcesPerPage + k) % _sources.length;
       final Booru booru = _sources[j];
       final BooruHandler handler = _sourceHandlers[j];
-      final String seed = _seeds[(_feedPage + j) % _seeds.length];
+      final String seed = _seeds[(_feedPage + k) % _seeds.length];
 
-      String? resolved;
-      try {
-        resolved = await TagAliasResolver.resolve(seed, booru);
-      } catch (_) {
-        resolved = seed;
-      }
-      if (resolved == null || resolved.isEmpty) continue;
+      String resolved = seed;
+      final String? aliased = await _bounded<String?>(
+        () => TagAliasResolver.resolve(seed, booru),
+        _resolveTimeout,
+      );
+      if (aliased != null && aliased.isNotEmpty) resolved = aliased;
+      if (resolved.isEmpty) continue;
 
-      try {
-        handler.pageNum = _sourceStartPages[j] + 1 + _feedPage;
-        final List<BooruItem> got = (await handler.search(resolved, null)) ?? [];
-        for (final item in got) {
-          if (SearchHandler.instance.isPostSeen(item)) continue;
-          if (_isDuplicate(item)) continue;
-          if (pageItems.any((e) => e.fileURL == item.fileURL || e.postURL == item.postURL)) continue;
-          pageItems.add(item);
-        }
-      } catch (e, s) {
+      handler.pageNum = _sourceStartPages[j] + 1 + _feedPage;
+      handler.locked = false;
+      final List<BooruItem>? got = await _bounded(
+        () async => (await handler.search(resolved, null)) as List<BooruItem>? ?? <BooruItem>[],
+        _searchTimeout,
+      );
+      if (got == null) {
         Logger.Inst().log(
-          'For You source ${booru.name} failed: $e',
+          'For You source ${booru.name} timed out/failed for "$resolved"',
           'ForYouHandler',
           'search',
           LogTypes.booruHandlerInfo,
-          s: s,
         );
+        continue;
+      }
+      for (final item in got) {
+        if (SearchHandler.instance.isPostSeen(item)) continue;
+        if (_isDuplicate(item)) continue;
+        if (pageItems.any((e) => e.fileURL == item.fileURL || e.postURL == item.postURL)) continue;
+        pageItems.add(item);
       }
     }
 
@@ -207,7 +273,7 @@ class ForYouHandler extends BooruHandler {
       // single dry seed/booru doesn't end the feed. Bounded to keep the
       // network fan-out per scroll in check.
       _emptyStreak++;
-      if (_emptyStreak <= 3) {
+      if (_emptyStreak <= 2) {
         return search(tags, null, withCaptchaCheck: withCaptchaCheck);
       }
       _emptyStreak = 0;

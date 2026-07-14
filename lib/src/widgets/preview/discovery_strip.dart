@@ -23,12 +23,14 @@ class DiscoveryStrip extends StatelessWidget {
           Text(
             text,
             style: Theme.of(context).textTheme.labelLarge?.copyWith(
-              fontWeight: FontWeight.w600,
-              color: Theme.of(context).colorScheme.primary,
+              fontWeight: FontWeight.w700,
+              // onSurface reads clearly in any theme (colorScheme.primary was
+              // nearly invisible on some dark themes).
+              color: Theme.of(context).colorScheme.onSurface,
             ),
           ),
           const SizedBox(width: 8),
-          Expanded(child: Divider(color: Theme.of(context).dividerColor)),
+          Expanded(child: Divider(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.2))),
         ],
       ),
     );

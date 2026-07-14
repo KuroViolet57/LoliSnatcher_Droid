@@ -967,14 +967,28 @@ class _TagViewState extends State<TagView> {
           );
         },
         onLongPress: () async {
-          // Long-press peeks the tag in a floating preview window (which
-          // floats over the current view) instead of editing the search.
-          // Adding to search still lives behind the tap → tag dialog.
+          // Long-press opens the tag directly as a new background tab (no extra
+          // tap). Adding to the current search still lives behind tap → dialog;
+          // the floating preview is still available from that dialog.
           await ServiceHandler.vibrate();
           final Booru previewBooru = possibleBooruHandler?.booru ?? searchHandler.currentBooru;
-          FloatingPreviewHandler.instance.open(
-            tag: currentTag,
-            booru: previewBooru,
+          searchHandler.addTabByString(
+            currentTag,
+            customBooru: previewBooru,
+          );
+          FlashElements.showSnackbar(
+            context: context,
+            duration: const Duration(seconds: 2),
+            title: const Text(
+              'Opened in a new tab',
+              style: TextStyle(fontSize: 18),
+            ),
+            content: Text(
+              currentTag,
+              style: const TextStyle(fontSize: 16),
+            ),
+            leadingIcon: Icons.add_to_photos_outlined,
+            sideColor: Theme.of(context).colorScheme.primary,
           );
         },
         child: Padding(
