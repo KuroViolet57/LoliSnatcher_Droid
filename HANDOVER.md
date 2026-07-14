@@ -101,6 +101,26 @@ searchQuery/displayName/avatarUrl/coverUrl/subtitle). Populated by:
 Old xxxfollow-only strip (xxxfollow_tag_strip.dart / XXXFollowCreator) removed.
 Committed in 5210d.
 
+## FEEDBACK ROUND (build 5210e/f) — DONE
+- **For You infinite loading FIXED** (`foryou_handler.dart`): was fanning to 8
+  sources/page with no timeout + 3 empty-round recursions → a few slow/captcha
+  boorus hung it. Now: rotating subset of 4 sources/page, every alias-resolve
+  (6s) and source search (12s) time-bounded via `_bounded`, seed prefixes
+  (creator:/artist:/niche:/sort:/…) stripped via `_sanitizeSeed` so seeds port
+  across boorus, empty-recursion capped at 2.
+- **Tag-chip long-press** now opens the tag as a background tab (`addTabByString`,
+  switchToNew:false) + confirmation snackbar, instead of the floating preview
+  (tag_view.dart ~969). Preview still available via tap→dialog.
+- **DiscoveryStrip labels** use onSurface (were invisible on dark themes).
+- **Left sidebar repurposed** (build 5210f): the downloads/snatch drawer now has
+  a `DrawerQuickAccess` panel on top
+  (`lib/src/widgets/drawers/downloads/drawer_quick_access.dart`) — shortcut
+  circles to For You / Collections / Favourites / Downloads (open as tabs) +
+  recent-search chips (re-open as tabs), then a "Downloads" divider above the
+  existing queue. Wired in downloads_drawer.dart.
+- Player/image errors: NOT from our video_viewer change (video/HLS only); it's
+  the known Gelbooru rate-limit/AdGuard issue.
+
 ## POSSIBLE FUTURE POLISH (not requested yet)
 - Populate relatedCreators/relatedTags for more handlers (any with tag data).
 - xxxfollow login (Laravel email/password + Google reCAPTCHA) — same WebView
