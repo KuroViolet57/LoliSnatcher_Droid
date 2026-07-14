@@ -121,6 +121,29 @@ Committed in 5210d.
 - Player/image errors: NOT from our video_viewer change (video/HLS only); it's
   the known Gelbooru rate-limit/AdGuard issue.
 
+## FEEDBACK ROUND 2 (build 5210h) — DONE
+- **Tag-chip long-press** (tag_view ~969) now matches the app's standard
+  background-tab open: respects the "New tab placement" setting
+  (`defaultTabAddMode` end/next), shows the standard green "added new tab" toast
+  (`loc.tagView.addedNewTab`), stronger haptic (vibrate 40ms/amp180). Earlier I
+  wrongly removed the toast — the standard flow DOES toast; matched it.
+- **Left drawer fully redesigned** (`drawer_quick_access.dart` +
+  `downloads_drawer.dart`): removed the whole download queue (DDContent +
+  DDControlPanel; DownloadsDrawer is now a StatelessWidget wrapping only the
+  panel). Layout = Quick access shortcuts (top) → **Pinned tags** (top, favourited
+  searches) → Recent searches (bottom). Long-press a chip to pin/unpin (uses
+  `dbHandler.setFavouriteSearchHistory` + `getSearchHistory`). Chip icons use
+  onSurface (clock/pin) for contrast.
+- **Hide status bar setting** (interface): new `hideStatusBar` bool in
+  settings_handler (map/getByString/setByString). `ServiceHandler.
+  setSystemUiVisibility(true)` now hides the top status bar (keeps bottom nav via
+  `SystemUiMode.manual, overlays:[bottom]`) when it's on. Toggle in
+  user_interface_page applies immediately. Applied app-wide because main.dart:98
+  calls setSystemUiVisibility(true) at startup.
+- Download queue UI removed from the drawer per user request; downloading still
+  works (only the queue panel was removed). NOTE: if a user actually snatches,
+  they no longer have the in-drawer queue/controls — revisit if needed.
+
 ## POSSIBLE FUTURE POLISH (not requested yet)
 - Populate relatedCreators/relatedTags for more handlers (any with tag data).
 - xxxfollow login (Laravel email/password + Google reCAPTCHA) — same WebView

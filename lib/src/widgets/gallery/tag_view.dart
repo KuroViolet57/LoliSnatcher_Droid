@@ -967,14 +967,32 @@ class _TagViewState extends State<TagView> {
           );
         },
         onLongPress: () async {
-          // Long-press opens the tag directly as a new background tab (the
-          // long-press itself is the deliberate action; no confirmation).
-          // Adding to the current search still lives behind tap → dialog.
-          await ServiceHandler.vibrate();
+          // Long-press opens the tag as a new background tab, honouring the
+          // user's "New tab placement" setting and showing the same toast every
+          // other background-tab action does. Adding to the current search
+          // still lives behind tap → dialog.
+          await ServiceHandler.vibrate(duration: 40, amplitude: 180);
           final Booru previewBooru = possibleBooruHandler?.booru ?? searchHandler.currentBooru;
+          final TabAddMode addMode =
+              settingsHandler.defaultTabAddMode == 'next' ? TabAddMode.next : TabAddMode.end;
           searchHandler.addTabByString(
             currentTag,
             customBooru: previewBooru,
+            addMode: addMode,
+          );
+          if (!context.mounted) return;
+          FlashElements.showSnackbar(
+            context: context,
+            isKeyUnique: true,
+            key: 'added_new_tab',
+            duration: const Duration(seconds: 2),
+            title: Text(
+              context.loc.tagView.addedNewTab,
+              style: const TextStyle(fontSize: 20),
+            ),
+            content: Text(currentTag, style: const TextStyle(fontSize: 16)),
+            leadingIcon: Icons.fiber_new,
+            sideColor: Colors.green,
           );
         },
         child: Padding(

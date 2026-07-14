@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 
@@ -6,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:lolisnatcher/src/data/settings/app_mode.dart';
+import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/data/settings/button_position.dart';
 import 'package:lolisnatcher/src/data/settings/hand_side.dart';
 import 'package:lolisnatcher/src/data/settings/preview_display_mode.dart';
@@ -41,6 +43,7 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
       usePredictiveBack,
       inlineRelatedGrids,
       useBottomInfoSheet,
+      hideStatusBar,
       enableInterestTracking;
   late String defaultTabAddMode;
   late AppMode appMode;
@@ -63,6 +66,7 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
     inlineRelatedGrids = settingsHandler.inlineRelatedGrids;
     enableInterestTracking = settingsHandler.enableInterestTracking;
     useBottomInfoSheet = settingsHandler.useBottomInfoSheet;
+    hideStatusBar = settingsHandler.hideStatusBar;
     defaultTabAddMode = settingsHandler.defaultTabAddMode;
     previewDisplay = settingsHandler.previewDisplay;
     previewDisplayFallback = settingsHandler.previewDisplayFallback;
@@ -93,6 +97,9 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
     settingsHandler.inlineRelatedGrids = inlineRelatedGrids;
     settingsHandler.enableInterestTracking = enableInterestTracking;
     settingsHandler.useBottomInfoSheet = useBottomInfoSheet;
+    settingsHandler.hideStatusBar = hideStatusBar;
+    // Apply the status-bar preference immediately on the way out.
+    unawaited(ServiceHandler.setSystemUiVisibility(true));
     settingsHandler.bottomSheetSizeMultiplier =
         (double.tryParse(bottomSheetSizeController.text) ?? 2.0).clamp(0.5, 3.0);
     settingsHandler.defaultTabAddMode = defaultTabAddMode;
@@ -270,6 +277,21 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
                 },
                 title: context.loc.settings.interface.disableVibration,
                 subtitle: Text(context.loc.settings.interface.disableVibrationSubtitle),
+              ),
+              SettingsToggle(
+                value: hideStatusBar,
+                onChanged: (newValue) {
+                  setState(() {
+                    hideStatusBar = newValue;
+                  });
+                  settingsHandler.hideStatusBar = newValue;
+                  ServiceHandler.setSystemUiVisibility(true);
+                },
+                title: 'Hide status bar',
+                leadingIcon: const Icon(Icons.fullscreen),
+                subtitle: const Text(
+                  'Hides the Android status bar (clock, battery, notifications) app-wide so it stops intruding while you scroll. The bottom navigation bar stays.',
+                ),
               ),
               SettingsToggle(
                 value: enableInterestTracking,

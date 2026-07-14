@@ -220,6 +220,9 @@ class SettingsHandler {
   bool thumbnailCache = true;
   bool mediaCache = true;
   bool autoHideImageBar = false;
+  // When true, the top Android status bar is hidden app-wide (the bottom
+  // navigation bar is kept), so it doesn't intrude while scrolling the grid.
+  bool hideStatusBar = false;
   bool dbEnabled = true;
   bool indexesEnabled = false;
   bool searchHistoryEnabled = true;
@@ -678,6 +681,10 @@ class SettingsHandler {
       'default': true,
     },
     'autoHideImageBar': {
+      'type': 'bool',
+      'default': false,
+    },
+    'hideStatusBar': {
       'type': 'bool',
       'default': false,
     },
@@ -1252,6 +1259,8 @@ class SettingsHandler {
         return mediaCache;
       case 'autoHideImageBar':
         return autoHideImageBar;
+      case 'hideStatusBar':
+        return hideStatusBar;
       case 'dbEnabled':
         return dbEnabled;
       case 'indexesEnabled':
@@ -1526,6 +1535,9 @@ class SettingsHandler {
         break;
       case 'autoHideImageBar':
         autoHideImageBar = validatedValue;
+        break;
+      case 'hideStatusBar':
+        hideStatusBar = validatedValue;
         break;
       case 'dbEnabled':
         dbEnabled = validatedValue;

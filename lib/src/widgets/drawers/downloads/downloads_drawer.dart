@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 
-import 'package:lolisnatcher/src/widgets/drawers/downloads/dd_content.dart';
-import 'package:lolisnatcher/src/widgets/drawers/downloads/dd_control_panel.dart';
-import 'package:lolisnatcher/src/widgets/drawers/downloads/dd_controller.dart';
 import 'package:lolisnatcher/src/widgets/drawers/downloads/drawer_quick_access.dart';
 
-class DownloadsDrawer extends StatefulWidget {
+/// The left drawer. Previously the snatch/download queue; now a navigation
+/// panel (quick-access shortcuts, pinned tags, recent searches). Downloading
+/// itself is unaffected — only this queue UI was removed from the drawer.
+class DownloadsDrawer extends StatelessWidget {
   const DownloadsDrawer({
     required this.toggleDrawer,
     super.key,
@@ -14,39 +14,11 @@ class DownloadsDrawer extends StatefulWidget {
   final VoidCallback toggleDrawer;
 
   @override
-  State<DownloadsDrawer> createState() => _DownloadsDrawerState();
-}
-
-class _DownloadsDrawerState extends State<DownloadsDrawer> {
-  late final DownloadsDrawerController controller;
-
-  @override
-  void initState() {
-    super.initState();
-    controller = DownloadsDrawerController();
-  }
-
-  @override
-  void dispose() {
-    controller.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     return Material(
       color: Theme.of(context).colorScheme.surface,
       child: SafeArea(
-        child: Column(
-          children: [
-            DrawerQuickAccess(toggleDrawer: widget.toggleDrawer),
-            Expanded(child: DDContent(controller: controller)),
-            DDControlPanel(
-              controller: controller,
-              toggleDrawer: widget.toggleDrawer,
-            ),
-          ],
-        ),
+        child: DrawerQuickAccess(toggleDrawer: toggleDrawer),
       ),
     );
   }
