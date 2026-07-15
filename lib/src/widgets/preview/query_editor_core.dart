@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 
 import 'package:dio/dio.dart';
@@ -196,7 +198,7 @@ class QueryEditorController {
             return TagSuggestion(
               tag: tag,
               type: tagHandler.getTag(tag).tagType,
-              icon: const Icon(Icons.archive),
+              icon: const Icon(Symbols.archive_rounded),
             );
           }).toList();
 
@@ -206,7 +208,7 @@ class QueryEditorController {
                     return TagSuggestion(
                       tag: tag,
                       type: tagHandler.getTag(tag).tagType,
-                      icon: const Icon(Icons.history),
+                      icon: const Icon(Symbols.history_rounded),
                     );
                   })
                   .where(
@@ -361,7 +363,7 @@ class QueryEditorKeyboardActions extends StatelessWidget {
                         child: Padding(
                           padding: EdgeInsets.only(bottom: isKbVisible ? 0 : 20),
                           child: Icon(
-                            Icons.paste,
+                            Symbols.content_paste_rounded,
                             color: context.theme.colorScheme.onSecondary,
                           ),
                         ),
@@ -373,7 +375,7 @@ class QueryEditorKeyboardActions extends StatelessWidget {
                         child: Padding(
                           padding: EdgeInsets.only(bottom: isKbVisible ? 0 : 20),
                           child: Icon(
-                            Icons.keyboard_hide,
+                            Symbols.keyboard_hide_rounded,
                             color: context.theme.colorScheme.onSecondary,
                           ),
                         ),
@@ -389,7 +391,7 @@ class QueryEditorKeyboardActions extends StatelessWidget {
                             child: Padding(
                               padding: EdgeInsets.only(bottom: isKbVisible ? 0 : 20),
                               child: Icon(
-                                suggestionTextControllerRawInput.isEmpty ? Icons.search : Icons.add_rounded,
+                                suggestionTextControllerRawInput.isEmpty ? Symbols.search_rounded : Symbols.add_rounded,
                                 color: context.theme.colorScheme.onSecondary,
                               ),
                             ),

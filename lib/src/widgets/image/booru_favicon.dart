@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:dio/dio.dart';
 
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
@@ -216,8 +218,8 @@ class _BooruFaviconState extends State<BooruFavicon> {
         children: [
           if (isIcon)
             switch (widget.booru?.type) {
-              BooruType.Favourites => Icon(Icons.favorite, color: Colors.red, size: size),
-              BooruType.Downloads => Icon(Icons.file_download_outlined, size: size),
+              BooruType.Favourites => Icon(Symbols.favorite_rounded, color: Colors.red, size: size),
+              BooruType.Downloads => Icon(Symbols.file_download_rounded, size: size),
               _ => Icon(CupertinoIcons.question, size: size),
             }
           else if (mainProvider != null)
@@ -272,7 +274,7 @@ class _BooruFaviconState extends State<BooruFavicon> {
           //   width: size,
           //   height: size,
           //   errorBuilder: (BuildContext context, Object exception, StackTrace? stackTrace) {
-          //     return const Icon(Icons.broken_image, size: size);
+          //     return const Icon(Symbols.broken_image_rounded, size: size);
           //   },
           // ),
         ],
@@ -304,7 +306,7 @@ class FaviconError extends StatelessWidget {
           children: [
             Center(
               child: Icon(
-                Icons.broken_image,
+                Symbols.broken_image_rounded,
                 size: iconSize,
                 color: color,
               ),

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:get/get.dart';
 
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
@@ -65,7 +67,7 @@ class DesktopHome extends StatelessWidget {
             if (settingsHandler.booruList.isNotEmpty && searchHandler.tabs.isNotEmpty) {
               return SettingsButton(
                 name: context.loc.desktopHome.snatcher,
-                icon: const Icon(Icons.download),
+                icon: const Icon(Symbols.download_rounded),
                 iconOnly: true,
                 page: () => const SnatcherPage(),
               );
@@ -82,7 +84,7 @@ class DesktopHome extends StatelessWidget {
           }),
           SettingsButton(
             name: context.loc.desktopHome.settings,
-            icon: const Icon(Icons.settings),
+            icon: const Icon(Symbols.settings_rounded),
             iconOnly: true,
             page: () => const SettingsPage(),
           ),
@@ -93,7 +95,7 @@ class DesktopHome extends StatelessWidget {
                 children: [
                   SettingsButton(
                     name: context.loc.desktopHome.save,
-                    icon: const Icon(Icons.save),
+                    icon: const Icon(Symbols.save_rounded),
                     iconOnly: true,
                     action: () async {
                       if (!await setPermissions()) return;

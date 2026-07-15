@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:get/get.dart';
 
 import 'package:lolisnatcher/src/data/booru_item.dart';
@@ -169,7 +171,7 @@ class _DesktopImageListenerState extends State<DesktopImageListener> {
                         false,
                       );
                     },
-                    child: const Icon(Icons.save),
+                    child: const Icon(Symbols.save_rounded),
                   ),
                 ),
                 Container(
@@ -186,8 +188,8 @@ class _DesktopImageListenerState extends State<DesktopImageListener> {
                     child: Obx(
                       () => Icon(
                         item.isFavourite.value == true
-                            ? Icons.favorite
-                            : (item.isFavourite.value == false ? Icons.favorite_border : CupertinoIcons.heart_slash),
+                            ? Symbols.favorite_rounded
+                            : (item.isFavourite.value == false ? Symbols.favorite_border_rounded : CupertinoIcons.heart_slash),
                       ),
                     ),
                   ),
@@ -226,7 +228,7 @@ class _DesktopImageListenerState extends State<DesktopImageListener> {
                                     onPressed: () {
                                       Navigator.of(context).pop();
                                     },
-                                    child: const Icon(Icons.fullscreen_exit),
+                                    child: const Icon(Symbols.fullscreen_exit_rounded),
                                   ),
                                 ),
                               ),
@@ -239,7 +241,7 @@ class _DesktopImageListenerState extends State<DesktopImageListener> {
                       updateState();
                       unawaited(delayedZoomReset());
                     },
-                    child: const Icon(Icons.fullscreen),
+                    child: const Icon(Symbols.fullscreen_rounded),
                   ),
                 ),
               ],

@@ -4,6 +4,8 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 
 import 'package:get/get.dart' hide FirstWhereOrNullExt;
@@ -246,7 +248,7 @@ class SearchHandler {
             Text(context.loc.searchHandler.resettingSearchToDefaultTags),
           ],
         ),
-        leadingIcon: Icons.warning_amber,
+        leadingIcon: Symbols.warning_amber_rounded,
         leadingIconColor: Colors.yellow,
         sideColor: Colors.yellow,
       );
@@ -281,7 +283,7 @@ class SearchHandler {
             Text(context.loc.searchHandler.resettingSearchToDefaultTags),
           ],
         ),
-        leadingIcon: Icons.warning_amber,
+        leadingIcon: Symbols.warning_amber_rounded,
         leadingIconColor: Colors.yellow,
         sideColor: Colors.yellow,
       );
@@ -692,7 +694,7 @@ class SearchHandler {
               ),
             ],
           ),
-          leadingIcon: Icons.warning_amber,
+          leadingIcon: Symbols.warning_amber_rounded,
           leadingIconColor: Colors.yellow,
           sideColor: Colors.red,
         );
@@ -1051,7 +1053,7 @@ class SearchHandler {
           ],
         ),
         sideColor: foundBrokenItem ? Colors.yellow : Colors.green,
-        leadingIcon: foundBrokenItem ? Icons.warning_amber : Icons.settings_backup_restore,
+        leadingIcon: foundBrokenItem ? Symbols.warning_amber_rounded : Symbols.settings_backup_restore_rounded,
         duration: Duration(seconds: brokenItems.isEmpty ? 4 : 10),
       );
 
@@ -1112,7 +1114,7 @@ class SearchHandler {
         context.loc.searchHandler.addedTabsCount(count: restoredGlobals.length),
       ),
       sideColor: Colors.green,
-      leadingIcon: Icons.settings_backup_restore,
+      leadingIcon: Symbols.settings_backup_restore_rounded,
     );
   }
 
@@ -1157,7 +1159,7 @@ class SearchHandler {
         context.loc.searchHandler.receivedTabsCount(count: restoredGlobals.length),
       ),
       sideColor: Colors.green,
-      leadingIcon: Icons.settings_backup_restore,
+      leadingIcon: Symbols.settings_backup_restore_rounded,
     );
   }
 
@@ -1233,7 +1235,7 @@ class SearchHandler {
           ],
         ),
         sideColor: foundBrokenItems ? Colors.yellow : Colors.green,
-        leadingIcon: foundBrokenItems ? Icons.warning_amber : Icons.settings_backup_restore,
+        leadingIcon: foundBrokenItems ? Symbols.warning_amber_rounded : Symbols.settings_backup_restore_rounded,
         duration: Duration(seconds: brokenItems.isEmpty ? 4 : 10),
       );
 
@@ -1286,7 +1288,7 @@ class SearchHandler {
         context.loc.searchHandler.addedTabsCount(count: restoredTabs.length),
       ),
       sideColor: Colors.green,
-      leadingIcon: Icons.settings_backup_restore,
+      leadingIcon: Symbols.settings_backup_restore_rounded,
     );
   }
 
@@ -1319,7 +1321,7 @@ class SearchHandler {
         context.loc.searchHandler.receivedTabsCount(count: restoredTabs.length),
       ),
       sideColor: Colors.green,
-      leadingIcon: Icons.settings_backup_restore,
+      leadingIcon: Symbols.settings_backup_restore_rounded,
     );
   }
 

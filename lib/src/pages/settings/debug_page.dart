@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/scheduler.dart' show timeDilation;
 import 'package:flutter/services.dart';
 
@@ -124,7 +126,7 @@ class _DebugPageState extends State<DebugPage> {
 
               SettingsButton(
                 name: context.loc.settings.debug.animationSpeed(speed: timeDilation),
-                icon: const Icon(Icons.timelapse),
+                icon: const Icon(Symbols.timelapse_rounded),
                 action: () {
                   const List<double> speeds = [0.25, 0.5, 0.75, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20];
                   final int currentIndex = speeds.indexOf(timeDilation);
@@ -147,7 +149,7 @@ class _DebugPageState extends State<DebugPage> {
 
               SettingsButton(
                 name: 'Text Parser Test',
-                icon: const Icon(Icons.text_fields),
+                icon: const Icon(Symbols.text_fields_rounded),
                 page: () => const TextParserTestPage(),
               ),
 
@@ -174,17 +176,17 @@ class _DebugPageState extends State<DebugPage> {
                     ),
                   );
                 },
-                trailingIcon: const Icon(Icons.print),
+                trailingIcon: const Icon(Symbols.print_rounded),
               ),
 
               SettingsButton(
                 name: context.loc.settings.debug.webview,
-                icon: const Icon(Icons.public),
+                icon: const Icon(Symbols.public_rounded),
                 page: () => const InAppWebviewView(initialUrl: 'gelbooru.com'),
               ),
               SettingsButton(
                 name: context.loc.settings.debug.deleteAllCookies,
-                icon: const Icon(Icons.cookie_outlined),
+                icon: const Icon(Symbols.cookie_rounded),
                 action: () async {
                   await CookieManager.instance(webViewEnvironment: webViewEnvironment).deleteAllCookies();
                   globalWindowsCookies.clear();
@@ -203,7 +205,7 @@ class _DebugPageState extends State<DebugPage> {
 
               SettingsButton(
                 name: context.loc.settings.debug.getSessionString,
-                icon: const Icon(Icons.copy),
+                icon: const Icon(Symbols.content_copy_rounded),
                 action: () async {
                   final str = SearchHandler.instance.generateBackupJson() ?? '';
                   await Clipboard.setData(ClipboardData(text: str));
@@ -215,14 +217,14 @@ class _DebugPageState extends State<DebugPage> {
                       str,
                       style: const TextStyle(fontSize: 16),
                     ),
-                    leadingIcon: Icons.copy,
+                    leadingIcon: Symbols.content_copy_rounded,
                     sideColor: Colors.green,
                   );
                 },
               ),
               SettingsButton(
                 name: context.loc.settings.debug.setSessionString,
-                icon: const Icon(Icons.restore),
+                icon: const Icon(Symbols.restore_rounded),
                 action: () async {
                   await showDialog(
                     context: context,
@@ -256,7 +258,7 @@ class _DebugPageState extends State<DebugPage> {
                                     sessionStrController.text,
                                     style: const TextStyle(fontSize: 16),
                                   ),
-                                  leadingIcon: Icons.copy,
+                                  leadingIcon: Symbols.content_copy_rounded,
                                   sideColor: Colors.green,
                                 );
                               }

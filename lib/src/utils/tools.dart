@@ -4,6 +4,8 @@ import 'dart:math';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
@@ -168,13 +170,13 @@ class Tools {
   static IconData? getFileIcon(MediaType? mediaType) {
     switch (mediaType) {
       case MediaType.image:
-        return null; // Icons.photo;
+        return null; // Symbols.photo_rounded;
       case MediaType.video:
         return CupertinoIcons.videocam_fill;
       case MediaType.animation:
         return CupertinoIcons.play_fill;
       case MediaType.notSupportedAnimation:
-        return Icons.play_disabled;
+        return Symbols.play_disabled_rounded;
       default:
         return CupertinoIcons.question;
     }
@@ -353,7 +355,7 @@ class Tools {
                 final bool res = await showTimedLeaveDialog(
                   context,
                   title: context.loc.webview.captchaCompleted,
-                  icon: const Icon(Icons.thumb_up_alt_rounded),
+                  icon: const Icon(Symbols.thumb_up_alt_rounded),
                   duration: const Duration(seconds: 4),
                 );
                 if (res) Navigator.of(context).pop();

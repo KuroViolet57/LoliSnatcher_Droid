@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:dio/dio.dart';
 import 'package:get/get.dart';
 import 'package:get_it/get_it.dart';
@@ -245,7 +247,7 @@ class SnatchHandler {
                       const SizedBox(width: 8),
                     ],
                   ),
-                  leadingIcon: Icons.done_all,
+                  leadingIcon: Symbols.done_all_rounded,
                   sideColor: failed.isNotEmpty
                       ? Colors.red
                       : ((exists.isNotEmpty || cancelled.isNotEmpty) ? Colors.yellow : Colors.green),
@@ -277,7 +279,7 @@ class SnatchHandler {
                       if (queuedList.isNotEmpty) Text(context.loc.snatcher.startingNextQueueItem),
                     ],
                   ),
-                  leadingIcon: Icons.done_all,
+                  leadingIcon: Symbols.done_all_rounded,
                   sideColor: failed.isNotEmpty
                       ? Colors.red
                       : ((exists.isNotEmpty || cancelled.isNotEmpty) ? Colors.yellow : Colors.green),
@@ -355,7 +357,7 @@ class SnatchHandler {
             ),
             position: FlashPosition.top,
             duration: const Duration(seconds: 2),
-            leadingIcon: Icons.info_outline,
+            leadingIcon: Symbols.info_rounded,
             sideColor: Colors.green,
           );
         }
@@ -369,7 +371,7 @@ class SnatchHandler {
             ),
             position: FlashPosition.top,
             duration: const Duration(seconds: 2),
-            leadingIcon: Icons.info_outline,
+            leadingIcon: Symbols.info_rounded,
             sideColor: Colors.green,
             content: Row(
               children: [
@@ -419,7 +421,7 @@ class SnatchHandler {
           Text(context.loc.snatcher.doNotCloseApp),
         ],
       ),
-      leadingIcon: Icons.warning_amber,
+      leadingIcon: Symbols.warning_amber_rounded,
       leadingIconColor: Colors.yellow,
       sideColor: Colors.yellow,
     );

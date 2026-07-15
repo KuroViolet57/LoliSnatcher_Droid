@@ -3,6 +3,8 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:dio/dio.dart';
 
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
@@ -75,7 +77,7 @@ class _DatabasePageState extends State<DatabasePage> {
           context.loc.settings.database.sankakuDataUpdating,
           style: const TextStyle(fontSize: 16),
         ),
-        leadingIcon: Icons.warning_amber,
+        leadingIcon: Symbols.warning_amber_rounded,
         leadingIconColor: Colors.yellow,
         sideColor: Colors.yellow,
       );
@@ -86,7 +88,7 @@ class _DatabasePageState extends State<DatabasePage> {
       FlashElements.showSnackbar(
         title: Text(context.loc.settings.database.pleaseWaitTitle, style: const TextStyle(fontSize: 20)),
         content: Text(context.loc.settings.database.indexesBeingChanged, style: const TextStyle(fontSize: 16)),
-        leadingIcon: Icons.info_outline,
+        leadingIcon: Symbols.info_rounded,
         leadingIconColor: Colors.yellow,
         sideColor: Colors.yellow,
       );
@@ -131,7 +133,7 @@ class _DatabasePageState extends State<DatabasePage> {
           Text(context.loc.settings.database.sankakuDontLeavePage, style: const TextStyle(fontSize: 14)),
         ],
       ),
-      leadingIcon: Icons.info_outline,
+      leadingIcon: Symbols.info_rounded,
       leadingIconColor: Colors.green,
       sideColor: Colors.green,
     );
@@ -157,7 +159,7 @@ class _DatabasePageState extends State<DatabasePage> {
     if (sankakuBoorus.isEmpty) {
       FlashElements.showSnackbar(
         title: Text(context.loc.settings.database.noSankakuConfigFound, style: const TextStyle(fontSize: 20)),
-        leadingIcon: Icons.warning_amber,
+        leadingIcon: Symbols.warning_amber_rounded,
         leadingIconColor: Colors.red,
         sideColor: Colors.red,
       );
@@ -221,7 +223,7 @@ class _DatabasePageState extends State<DatabasePage> {
           context.loc.settings.database.sankakuFavouritesUpdateComplete,
           style: const TextStyle(fontSize: 20),
         ),
-        leadingIcon: Icons.check,
+        leadingIcon: Symbols.check_rounded,
         leadingIconColor: Colors.green,
         sideColor: Colors.green,
       );
@@ -252,7 +254,7 @@ class _DatabasePageState extends State<DatabasePage> {
           Text(context.loc.settings.database.failedItemsPurgeInfo, style: const TextStyle(fontSize: 16)),
         ],
       ),
-      leadingIcon: Icons.info_outline,
+      leadingIcon: Symbols.info_rounded,
       leadingIconColor: Colors.green,
       sideColor: Colors.green,
     );
@@ -306,7 +308,7 @@ class _DatabasePageState extends State<DatabasePage> {
                 },
                 title: context.loc.settings.database.enableDatabase,
                 trailingIcon: IconButton(
-                  icon: const Icon(Icons.help_outline),
+                  icon: const Icon(Symbols.help_rounded),
                   onPressed: () {
                     showDialog(
                       context: context,
@@ -335,7 +337,7 @@ class _DatabasePageState extends State<DatabasePage> {
                             onChanged: changeIndexes,
                             title: context.loc.settings.database.enableIndexing,
                             trailingIcon: IconButton(
-                              icon: const Icon(Icons.help_outline),
+                              icon: const Icon(Symbols.help_rounded),
                               onPressed: () {
                                 showDialog(
                                   context: context,
@@ -356,7 +358,7 @@ class _DatabasePageState extends State<DatabasePage> {
                           if (settingsHandler.isDebug.value) ...[
                             SettingsButton(
                               name: context.loc.settings.database.createIndexesDebug,
-                              icon: const Icon(Icons.create_new_folder_rounded),
+                              icon: const Icon(Symbols.create_new_folder_rounded),
                               action: () async {
                                 changingIndexes = true;
                                 setState(() {});
@@ -367,7 +369,7 @@ class _DatabasePageState extends State<DatabasePage> {
                             ),
                             SettingsButton(
                               name: context.loc.settings.database.dropIndexesDebug,
-                              icon: const Icon(Icons.delete_forever),
+                              icon: const Icon(Symbols.delete_forever_rounded),
                               action: () async {
                                 changingIndexes = true;
                                 setState(() {});
@@ -412,7 +414,7 @@ class _DatabasePageState extends State<DatabasePage> {
                   },
                   title: context.loc.settings.database.enableSearchHistory,
                   trailingIcon: IconButton(
-                    icon: const Icon(Icons.help_outline),
+                    icon: const Icon(Symbols.help_rounded),
                     onPressed: () {
                       showDialog(
                         context: context,
@@ -442,7 +444,7 @@ class _DatabasePageState extends State<DatabasePage> {
                   },
                   title: context.loc.settings.database.enableTagTypeFetching,
                   trailingIcon: IconButton(
-                    icon: const Icon(Icons.help_outline),
+                    icon: const Icon(Symbols.help_rounded),
                     onPressed: () {
                       showDialog(
                         context: context,
@@ -462,7 +464,7 @@ class _DatabasePageState extends State<DatabasePage> {
                 const SettingsButton(name: '', enabled: false),
                 SettingsButton(
                   name: context.loc.settings.database.deleteDatabase,
-                  icon: Icon(Icons.delete_forever, color: Theme.of(context).colorScheme.error),
+                  icon: Icon(Symbols.delete_forever_rounded, color: Theme.of(context).colorScheme.error),
                   action: () {
                     showDialog(
                       context: context,
@@ -485,14 +487,14 @@ class _DatabasePageState extends State<DatabasePage> {
                                     context.loc.settings.database.appRestartRequired,
                                     style: const TextStyle(fontSize: 16),
                                   ),
-                                  leadingIcon: Icons.delete_forever,
+                                  leadingIcon: Symbols.delete_forever_rounded,
                                   leadingIconColor: Colors.red,
                                   sideColor: Colors.yellow,
                                 );
                                 Navigator.of(context).pop(true);
                               },
                               label: Text(context.loc.delete),
-                              icon: const Icon(Icons.delete_forever),
+                              icon: const Icon(Symbols.delete_forever_rounded),
                             ),
                           ],
                         );
@@ -502,8 +504,8 @@ class _DatabasePageState extends State<DatabasePage> {
                 ),
                 SettingsButton(
                   name: context.loc.settings.database.clearSnatchedItems,
-                  icon: Icon(Icons.delete_outline, color: Theme.of(context).colorScheme.error),
-                  trailingIcon: const Icon(Icons.save_alt),
+                  icon: Icon(Symbols.delete_rounded, color: Theme.of(context).colorScheme.error),
+                  trailingIcon: const Icon(Symbols.save_alt_rounded),
                   action: () {
                     showDialog(
                       context: context,
@@ -535,7 +537,7 @@ class _DatabasePageState extends State<DatabasePage> {
                                       context.loc.settings.database.appRestartMayBeRequired,
                                       style: const TextStyle(fontSize: 16),
                                     ),
-                                    leadingIcon: Icons.delete_forever,
+                                    leadingIcon: Symbols.delete_forever_rounded,
                                     leadingIconColor: Colors.red,
                                     sideColor: Colors.yellow,
                                   );
@@ -543,7 +545,7 @@ class _DatabasePageState extends State<DatabasePage> {
                                 Navigator.of(context).pop(true);
                               },
                               label: Text(context.loc.clear),
-                              icon: const Icon(Icons.delete_forever),
+                              icon: const Icon(Symbols.delete_forever_rounded),
                             ),
                           ],
                         );
@@ -553,8 +555,8 @@ class _DatabasePageState extends State<DatabasePage> {
                 ),
                 SettingsButton(
                   name: context.loc.settings.database.clearFavouritedItems,
-                  icon: Icon(Icons.delete_outline, color: Theme.of(context).colorScheme.error),
-                  trailingIcon: const Icon(Icons.favorite_outline),
+                  icon: Icon(Symbols.delete_rounded, color: Theme.of(context).colorScheme.error),
+                  trailingIcon: const Icon(Symbols.favorite_rounded),
                   action: () {
                     showDialog(
                       context: context,
@@ -586,7 +588,7 @@ class _DatabasePageState extends State<DatabasePage> {
                                       context.loc.settings.database.appRestartMayBeRequired,
                                       style: const TextStyle(fontSize: 16),
                                     ),
-                                    leadingIcon: Icons.delete_forever,
+                                    leadingIcon: Symbols.delete_forever_rounded,
                                     leadingIconColor: Colors.red,
                                     sideColor: Colors.yellow,
                                   );
@@ -594,7 +596,7 @@ class _DatabasePageState extends State<DatabasePage> {
                                 Navigator.of(context).pop(true);
                               },
                               label: Text(context.loc.clear),
-                              icon: const Icon(Icons.delete_forever),
+                              icon: const Icon(Symbols.delete_forever_rounded),
                             ),
                           ],
                         );
@@ -604,8 +606,8 @@ class _DatabasePageState extends State<DatabasePage> {
                 ),
                 SettingsButton(
                   name: context.loc.settings.database.clearSearchHistory,
-                  icon: Icon(Icons.delete_outline, color: Theme.of(context).colorScheme.error),
-                  trailingIcon: const Icon(Icons.history),
+                  icon: Icon(Symbols.delete_rounded, color: Theme.of(context).colorScheme.error),
+                  trailingIcon: const Icon(Symbols.history_rounded),
                   action: () {
                     showDialog(
                       context: context,
@@ -628,7 +630,7 @@ class _DatabasePageState extends State<DatabasePage> {
                                       context.loc.settings.database.appRestartMayBeRequired,
                                       style: const TextStyle(fontSize: 16),
                                     ),
-                                    leadingIcon: Icons.delete_forever,
+                                    leadingIcon: Symbols.delete_forever_rounded,
                                     leadingIconColor: Colors.red,
                                     sideColor: Colors.yellow,
                                   );
@@ -636,7 +638,7 @@ class _DatabasePageState extends State<DatabasePage> {
                                 Navigator.of(context).pop(true);
                               },
                               label: Text(context.loc.clear),
-                              icon: const Icon(Icons.delete_forever),
+                              icon: const Icon(Symbols.delete_forever_rounded),
                             ),
                           ],
                         );
@@ -674,7 +676,7 @@ class _DatabasePageState extends State<DatabasePage> {
                             ),
                             SettingsButton(
                               name: context.loc.settings.database.updateSankakuUrls,
-                              trailingIcon: const Icon(Icons.image),
+                              trailingIcon: const Icon(Symbols.image_rounded),
                               action: updateSankakuItems,
                             ),
                           ],
@@ -727,7 +729,7 @@ class _DatabasePageState extends State<DatabasePage> {
                     SettingsButton(
                       name: context.loc.settings.database.skipCurrentItem,
                       subtitle: Text(context.loc.settings.database.useIfStuck),
-                      trailingIcon: const Icon(Icons.skip_next),
+                      trailingIcon: const Icon(Symbols.skip_next_rounded),
                       drawTopBorder: true,
                       action: () {
                         cancelToken?.cancel();
@@ -735,7 +737,7 @@ class _DatabasePageState extends State<DatabasePage> {
                     ),
                     SettingsButton(
                       name: context.loc.settings.database.pressToStop,
-                      trailingIcon: const Icon(Icons.cancel),
+                      trailingIcon: const Icon(Symbols.cancel_rounded),
                       drawTopBorder: true,
                       action: () {
                         setState(() {
@@ -748,7 +750,7 @@ class _DatabasePageState extends State<DatabasePage> {
                   if (!isUpdating && failedItems.isNotEmpty) ...[
                     SettingsButton(
                       name: context.loc.settings.database.purgeFailedItems(count: failedItems.length),
-                      trailingIcon: const Icon(Icons.delete_forever),
+                      trailingIcon: const Icon(Symbols.delete_forever_rounded),
                       drawTopBorder: true,
                       action: () {
                         setState(purgeFailedSankakuItems);
@@ -756,7 +758,7 @@ class _DatabasePageState extends State<DatabasePage> {
                     ),
                     SettingsButton(
                       name: context.loc.settings.database.retryFailedItems(count: failedItems.length),
-                      trailingIcon: const Icon(Icons.refresh),
+                      trailingIcon: const Icon(Symbols.refresh_rounded),
                       drawTopBorder: true,
                       action: () {
                         updateSankakuItems(customItems: [...failedItems]);

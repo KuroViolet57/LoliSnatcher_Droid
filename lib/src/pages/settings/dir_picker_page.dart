@@ -1,6 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -49,14 +51,14 @@ class _DirPickerState extends State<DirPicker> {
             title: Text(context.loc.settings.dirPicker.closeWithoutChoosing),
             actionButtons: [
               ElevatedButton.icon(
-                icon: const Icon(Icons.cancel_outlined),
+                icon: const Icon(Symbols.cancel_rounded),
                 label: Text(context.loc.settings.dirPicker.no),
                 onPressed: () {
                   Navigator.of(context).pop(false);
                 },
               ),
               ElevatedButton.icon(
-                icon: const Icon(Icons.check_circle_outline_rounded),
+                icon: const Icon(Symbols.check_circle_outline_rounded),
                 label: Text(context.loc.settings.dirPicker.yes),
                 onPressed: () {
                   Navigator.of(context).pop(true);
@@ -104,7 +106,7 @@ class _DirPickerState extends State<DirPicker> {
           context.loc.settings.dirPicker.failedToCreateDirectory,
           style: const TextStyle(fontSize: 16),
         ),
-        leadingIcon: Icons.warning_amber,
+        leadingIcon: Symbols.warning_amber_rounded,
         leadingIconColor: Colors.red,
         sideColor: Colors.red,
       );
@@ -129,7 +131,7 @@ class _DirPickerState extends State<DirPicker> {
           context.loc.settings.dirPicker.directoryNotWritable,
           style: const TextStyle(fontSize: 16),
         ),
-        leadingIcon: Icons.warning_amber,
+        leadingIcon: Symbols.warning_amber_rounded,
         leadingIconColor: Colors.red,
         sideColor: Colors.red,
       );
@@ -233,7 +235,7 @@ class _DirPickerState extends State<DirPicker> {
                   }
                 },
                 backgroundColor: Theme.of(context).colorScheme.secondary,
-                child: const Icon(Icons.check),
+                child: const Icon(Symbols.check_rounded),
               ),
             Container(
               width: 5,
@@ -256,7 +258,7 @@ class _DirPickerState extends State<DirPicker> {
                       actionButtons: [
                         const CancelButton(withIcon: true),
                         ElevatedButton.icon(
-                          icon: const Icon(Icons.add),
+                          icon: const Icon(Symbols.add_rounded),
                           label: Text(context.loc.settings.dirPicker.create),
                           onPressed: () {
                             mkdir();
@@ -269,7 +271,7 @@ class _DirPickerState extends State<DirPicker> {
                 );
               },
               backgroundColor: Theme.of(context).colorScheme.secondary,
-              child: const Icon(Icons.add),
+              child: const Icon(Symbols.add_rounded),
             ),
           ],
         ),

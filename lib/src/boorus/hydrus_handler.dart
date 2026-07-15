@@ -4,6 +4,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:lolisnatcher/gen/strings.g.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
@@ -236,7 +238,7 @@ class HydrusHandler extends BooruHandler {
             Text('${context.loc.hydrus.addTagsToFile} ${context.loc.hydrus.addUrls}.'),
           ],
         ),
-        leadingIcon: Icons.error_outline,
+        leadingIcon: Symbols.error_rounded,
         leadingIconColor: Colors.red,
         sideColor: Colors.red,
       );

@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 
 import 'package:get/get.dart';
@@ -341,7 +343,7 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware {
       duration: const Duration(seconds: 2),
       title: Text(context.loc.mediaPreviews.copiedFileURL, style: const TextStyle(fontSize: 20)),
       content: Text(Uri.encodeFull(item.fileURL), style: const TextStyle(fontSize: 16)),
-      leadingIcon: Icons.copy,
+      leadingIcon: Symbols.content_copy_rounded,
       sideColor: Colors.green,
     );
   }
@@ -659,7 +661,7 @@ class WaterfallScrollButtons extends StatelessWidget {
                   width: kMinInteractiveDimension,
                   height: kMinInteractiveDimension,
                   child: Icon(
-                    Icons.arrow_upward,
+                    Symbols.arrow_upward_rounded,
                     size: 30,
                     color: Theme.of(context).colorScheme.onPrimaryContainer.withValues(alpha: 0.5),
                   ),
@@ -677,7 +679,7 @@ class WaterfallScrollButtons extends StatelessWidget {
                   width: kMinInteractiveDimension,
                   height: kMinInteractiveDimension,
                   child: Icon(
-                    Icons.arrow_downward,
+                    Symbols.arrow_downward_rounded,
                     size: 30,
                     color: Theme.of(context).colorScheme.onPrimaryContainer.withValues(alpha: 0.5),
                   ),

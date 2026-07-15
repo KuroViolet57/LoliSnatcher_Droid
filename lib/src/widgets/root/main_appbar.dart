@@ -3,6 +3,8 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:get/get.dart';
 
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
@@ -60,7 +62,7 @@ class _MainAppBarState extends State<MainAppBar> {
           onSecondaryTap: _onMenuLongTap,
           child: IconButton(
             icon: Icon(
-              Icons.menu,
+              Symbols.menu_rounded,
               color: Theme.of(context).appBarTheme.iconTheme?.color,
             ),
             onPressed: () {
@@ -106,19 +108,19 @@ class _MainAppBarState extends State<MainAppBar> {
                     children: [
                       if (settingsHandler.handSide.value.isLeft)
                         Icon(
-                          Icons.save,
+                          Symbols.save_rounded,
                           color: Theme.of(context).appBarTheme.iconTheme?.color,
                         ),
                       Transform.rotate(
                         angle: settingsHandler.handSide.value.isRight ? 0 : pi,
                         child: Icon(
-                          Icons.keyboard_double_arrow_left_rounded,
+                          Symbols.keyboard_double_arrow_left_rounded,
                           color: Theme.of(context).appBarTheme.iconTheme?.color,
                         ),
                       ),
                       if (settingsHandler.handSide.value.isRight)
                         Icon(
-                          Icons.save,
+                          Symbols.save_rounded,
                           color: Theme.of(context).appBarTheme.iconTheme?.color,
                         ),
                     ],

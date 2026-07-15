@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:fvp/fvp.dart' as fvp;
 
 import 'package:lolisnatcher/src/data/settings/mpv_hardware_decoding.dart';
@@ -113,7 +115,7 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
                 },
                 title: context.loc.settings.video.disableVideos,
                 trailingIcon: IconButton(
-                  icon: const Icon(Icons.help_outline),
+                  icon: const Icon(Symbols.help_rounded),
                   onPressed: () {
                     showDialog(
                       context: context,
@@ -153,7 +155,7 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
               const SettingsButton(name: '', enabled: false),
               SettingsButton(
                 name: context.loc.settings.video.experimental,
-                icon: const Icon(Icons.science),
+                icon: const Icon(Symbols.science_rounded),
               ),
               if (!SettingsHandler.isDesktopPlatform)
                 SettingsToggle(
@@ -164,7 +166,7 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
                     });
                   },
                   title: 'Use media_kit engine (experimental)',
-                  leadingIcon: const Icon(Icons.bolt),
+                  leadingIcon: const Icon(Symbols.bolt_rounded),
                   subtitle: const Text(
                     'A completely separate video engine built on media_kit (libmpv) instead of ExoPlayer. libmpv manages its own decoders with software fallback, so it sidesteps the hardware-decoder-exhaustion crashes that can happen when scrolling fast through many videos. Same custom controls (tap, double-tap to skip, scrubber, fullscreen). Takes precedence over better_player when both are on. Restart the viewer for changes to take effect.',
                   ),
@@ -191,7 +193,7 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
                     });
                   },
                   title: 'Use better_player engine (experimental)',
-                  leadingIcon: const Icon(Icons.science_outlined),
+                  leadingIcon: const Icon(Symbols.science_rounded),
                   subtitle: const Text(
                     "Swaps the default video pipeline for better_player_plus, which exposes ExoPlayer's buffer and HTTP-cache tuning. Helps with the stall-buffer-stall cycle on jittery CDNs. Disables LoliControls-specific features (long-tap fast-forward) and the MPV fallback path while on. Restart the viewer for changes to take effect.",
                   ),
@@ -314,7 +316,7 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
                               '''Videos on some Boorus may not work correctly (i.e. endless loading) when using Stream video cache mode. In that case try using Cache mode. Otherwise player will retry with Cache mode automatically if video is in initial buffering state for 10+ seconds and video file size is less than 25mb''',
                             ),
                             trailingIcon: IconButton(
-                              icon: const Icon(Icons.help_outline),
+                              icon: const Icon(Symbols.help_rounded),
                               onPressed: () {
                                 showDialog(
                                   context: context,

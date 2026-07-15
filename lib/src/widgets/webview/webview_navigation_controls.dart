@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -20,9 +22,9 @@ class WebviewNavigationControls extends StatelessWidget {
         if (snapshot.connectionState != ConnectionState.done || controller == null) {
           return const Row(
             children: [
-              Icon(Icons.arrow_back_ios),
-              Icon(Icons.arrow_forward_ios),
-              Icon(Icons.replay),
+              Icon(Symbols.arrow_back_ios_rounded),
+              Icon(Symbols.arrow_forward_ios_rounded),
+              Icon(Symbols.replay_rounded),
             ],
           );
         }
@@ -42,7 +44,7 @@ class WebviewNavigationControls extends StatelessWidget {
                 );
               },
               child: IconButton(
-                icon: const Icon(Icons.arrow_back_ios),
+                icon: const Icon(Symbols.arrow_back_ios_rounded),
                 onPressed: () async {
                   if (await controller.canGoBack()) {
                     await controller.goBack();
@@ -56,7 +58,7 @@ class WebviewNavigationControls extends StatelessWidget {
               ),
             ),
             IconButton(
-              icon: const Icon(Icons.arrow_forward_ios),
+              icon: const Icon(Symbols.arrow_forward_ios_rounded),
               onPressed: () async {
                 if (await controller.canGoForward()) {
                   await controller.goForward();
@@ -69,7 +71,7 @@ class WebviewNavigationControls extends StatelessWidget {
               },
             ),
             IconButton(
-              icon: const Icon(Icons.replay),
+              icon: const Icon(Symbols.replay_rounded),
               onPressed: controller.reload,
             ),
           ],

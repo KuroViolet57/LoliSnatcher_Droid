@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 enum SplitDirection {
   horizontal,
   vertical,
@@ -113,7 +115,7 @@ class _ResizableSplitViewState extends State<ResizableSplitView> {
                       turns: widget.direction == SplitDirection.horizontal
                           ? const AlwaysStoppedAnimation(0.25)
                           : const AlwaysStoppedAnimation(0.50),
-                      child: const Icon(Icons.drag_handle),
+                      child: const Icon(Symbols.drag_handle_rounded),
                     ),
                   ),
                 ),

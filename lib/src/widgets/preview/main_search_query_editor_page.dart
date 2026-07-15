@@ -3,6 +3,8 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 
 import 'package:calendar_date_picker2/calendar_date_picker2.dart';
@@ -319,7 +321,7 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
                 return TagSuggestion(
                   tag: tag,
                   type: tagHandler.getTag(tag).tagType,
-                  icon: const Icon(Icons.archive),
+                  icon: const Icon(Symbols.archive_rounded),
                 );
               })
               .toList();
@@ -330,7 +332,7 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
                     return TagSuggestion(
                       tag: tag,
                       type: tagHandler.getTag(tag).tagType,
-                      icon: const Icon(Icons.history),
+                      icon: const Icon(Symbols.history_rounded),
                     );
                   })
                   .where(
@@ -518,7 +520,7 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
             ListTile(
               title: Text(context.loc.add),
               leading: const Icon(
-                Icons.add_rounded,
+                Symbols.add_rounded,
                 color: Colors.green,
               ),
               onTap: () async {
@@ -529,7 +531,7 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
             ListTile(
               title: Text(context.loc.exclude),
               leading: const Icon(
-                Icons.remove_rounded,
+                Symbols.remove_rounded,
                 color: Colors.red,
               ),
               onTap: () async {
@@ -549,7 +551,7 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
             ),
             ListTile(
               title: Text(context.loc.copy),
-              leading: const Icon(Icons.copy),
+              leading: const Icon(Symbols.content_copy_rounded),
               onTap: () async {
                 final tagText = tag.tag;
 
@@ -558,7 +560,7 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
                   title: Text(context.loc.copied, style: const TextStyle(fontSize: 20)),
                   content: Text(context.loc.searchBar.copiedTagToClipboard(tag: tagText)),
                   sideColor: Colors.green,
-                  leadingIcon: Icons.check,
+                  leadingIcon: Symbols.check_rounded,
                   leadingIconColor: Colors.green,
                   duration: const Duration(seconds: 2),
                 );
@@ -577,7 +579,7 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
 
                 return ListTile(
                   title: Text(isPinned ? context.loc.pinnedTags.unpinTag : context.loc.pinnedTags.pinTag),
-                  leading: Icon(isPinned ? Icons.push_pin : Icons.push_pin_outlined),
+                  leading: Icon(isPinned ? Symbols.push_pin_rounded : Symbols.push_pin_rounded),
                   onTap: () async {
                     Navigator.of(context).pop();
                     if (isPinned && pinnedTag != null) {
@@ -751,7 +753,7 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
                         child: Padding(
                           padding: EdgeInsets.only(bottom: isKbVisible ? 0 : 20),
                           child: Icon(
-                            Icons.paste,
+                            Symbols.content_paste_rounded,
                             color: context.theme.colorScheme.onSecondary,
                           ),
                         ),
@@ -763,7 +765,7 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
                         child: Padding(
                           padding: EdgeInsets.only(bottom: isKbVisible ? 0 : 20),
                           child: Icon(
-                            Icons.keyboard_hide,
+                            Symbols.keyboard_hide_rounded,
                             color: context.theme.colorScheme.onSecondary,
                           ),
                         ),
@@ -783,7 +785,7 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
                             child: Padding(
                               padding: EdgeInsets.only(bottom: isKbVisible ? 0 : 20),
                               child: Icon(
-                                suggestionTextControllerCleanedInput.isEmpty ? Icons.search : Icons.add_rounded,
+                                suggestionTextControllerCleanedInput.isEmpty ? Symbols.search_rounded : Symbols.add_rounded,
                                 color: context.theme.colorScheme.onSecondary,
                               ),
                             ),
@@ -866,7 +868,7 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
                                         mainAxisSize: MainAxisSize.min,
                                         mainAxisAlignment: MainAxisAlignment.center,
                                         children: [
-                                          const Icon(Icons.refresh),
+                                          const Icon(Symbols.refresh_rounded),
                                           const SizedBox(width: 8),
                                           Expanded(
                                             child: Text(
@@ -986,7 +988,7 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
                                         ),
                                         builder: (context, snapshot) {
                                           final isPinned = snapshot.data != null || tag.isPinned == true;
-                                          if (isPinned) return const Icon(Icons.push_pin, size: 16);
+                                          if (isPinned) return const Icon(Symbols.push_pin_rounded, size: 16);
 
                                           return const SizedBox.shrink();
                                         },
@@ -1110,9 +1112,9 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
                       buttonItems: buttonItems,
                     );
                   },
-                  submitIcon: Icons.add_rounded,
+                  submitIcon: Symbols.add_rounded,
                   prefixIcon: IconButton(
-                    icon: const Icon(Icons.arrow_back_rounded),
+                    icon: const Icon(Symbols.arrow_back_rounded),
                     onPressed: () => Navigator.of(context).pop(),
                   ),
                 ),
@@ -1331,7 +1333,7 @@ class AddMetatagBottomSheet extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    const Icon(Icons.info_outline_rounded),
+                    const Icon(Symbols.info_rounded),
                     const SizedBox(width: 8),
                     Text(
                       context.loc.searchBar.freeMetatags,
@@ -1449,7 +1451,7 @@ class AddMetatagBottomSheet extends StatelessWidget {
                                   },
                                   icon: metaTag.supportsRange
                                       ? Text(context.loc.searchBar.single)
-                                      : const Icon(Icons.calendar_month_rounded),
+                                      : const Icon(Symbols.calendar_month_rounded),
                                 ),
                                 if (metaTag.supportsRange)
                                   IconButton.outlined(
@@ -1473,13 +1475,13 @@ class AddMetatagBottomSheet extends StatelessWidget {
                                     },
                                     icon: Text(context.loc.searchBar.range),
                                   ),
-                                if (metaTag.supportsRange) const Icon(Icons.calendar_month_rounded),
+                                if (metaTag.supportsRange) const Icon(Symbols.calendar_month_rounded),
                               ],
                             );
                           },
                         ),
-                        .sort => const Icon(Icons.sort_rounded),
-                        .user => const Icon(Icons.person_outline_rounded),
+                        .sort => const Icon(Symbols.sort_rounded),
+                        .user => const Icon(Symbols.person_outline_rounded),
                         .comparableNumber => Row(
                           spacing: 2,
                           children: [
@@ -1827,7 +1829,7 @@ class _HistoryBlockState extends State<HistoryBlock> {
                     widget.onTagApply?.call(entry.searchText);
                     Navigator.of(context).pop();
                   },
-                  icon: const Icon(Icons.add),
+                  icon: const Icon(Symbols.add_rounded),
                   label: Text(context.loc.tabs.filters.apply),
                 ),
               ),
@@ -1840,7 +1842,7 @@ class _HistoryBlockState extends State<HistoryBlock> {
                 } else {
                   FlashElements.showSnackbar(
                     title: Text(context.loc.history.unknownBooruType, style: const TextStyle(fontSize: 20)),
-                    leadingIcon: Icons.warning_amber,
+                    leadingIcon: Symbols.warning_amber_rounded,
                     leadingIconColor: Colors.red,
                     sideColor: Colors.red,
                   );
@@ -1849,7 +1851,7 @@ class _HistoryBlockState extends State<HistoryBlock> {
 
                 Navigator.of(context).popUntil(ModalRoute.withName('/'));
               },
-              icon: const Icon(Icons.open_in_browser),
+              icon: const Icon(Symbols.open_in_browser_rounded),
               label: Text(context.loc.open),
             ),
             //
@@ -1866,7 +1868,7 @@ class _HistoryBlockState extends State<HistoryBlock> {
                 } else {
                   FlashElements.showSnackbar(
                     title: Text(context.loc.history.unknownBooruType, style: const TextStyle(fontSize: 20)),
-                    leadingIcon: Icons.warning_amber,
+                    leadingIcon: Symbols.warning_amber_rounded,
                     leadingIconColor: Colors.red,
                     sideColor: Colors.red,
                   );
@@ -1875,7 +1877,7 @@ class _HistoryBlockState extends State<HistoryBlock> {
 
                 Navigator.of(context).popUntil(ModalRoute.withName('/'));
               },
-              icon: const Icon(Icons.add_circle_outline),
+              icon: const Icon(Symbols.add_circle_rounded),
               label: Text(context.loc.openInNewTab),
             ),
             //
@@ -1887,12 +1889,12 @@ class _HistoryBlockState extends State<HistoryBlock> {
                   duration: const Duration(seconds: 2),
                   title: Text(context.loc.copied, style: const TextStyle(fontSize: 20)),
                   content: Text(entry.searchText, style: const TextStyle(fontSize: 16)),
-                  leadingIcon: Icons.copy,
+                  leadingIcon: Symbols.content_copy_rounded,
                   sideColor: Colors.green,
                 );
                 Navigator.of(context).pop();
               },
-              icon: const Icon(Icons.copy),
+              icon: const Icon(Symbols.content_copy_rounded),
               label: Text(context.loc.copy),
             ),
           ],
@@ -1931,7 +1933,7 @@ class _HistoryBlockState extends State<HistoryBlock> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Icon(
-                  Icons.history_rounded,
+                  Symbols.history_rounded,
                   size: 20,
                 ),
                 const SizedBox(width: 8),
@@ -1949,7 +1951,7 @@ class _HistoryBlockState extends State<HistoryBlock> {
                       page: (_) => const HistoryList(),
                     ).open();
                   },
-                  icon: const Icon(Icons.chevron_right_rounded),
+                  icon: const Icon(Symbols.chevron_right_rounded),
                 ),
               ],
             ),
@@ -1992,7 +1994,7 @@ class _HistoryBlockState extends State<HistoryBlock> {
                   const favIcon = Padding(
                     padding: EdgeInsets.only(left: 6),
                     child: Icon(
-                      Icons.favorite,
+                      Symbols.favorite_rounded,
                       color: Colors.red,
                       size: 16,
                     ),
@@ -2112,7 +2114,7 @@ class _MetatagsBlockState extends State<MetatagsBlock> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Icon(
-                  Icons.filter_list,
+                  Symbols.filter_list_rounded,
                   size: 20,
                 ),
                 const SizedBox(width: 8),
@@ -2133,12 +2135,12 @@ class _MetatagsBlockState extends State<MetatagsBlock> {
                           mode: LaunchMode.externalApplication,
                         );
                       },
-                      icon: const Icon(Icons.help_outline_rounded),
+                      icon: const Icon(Symbols.help_outline_rounded),
                     ),
                   ),
                 IconButton(
                   onPressed: openMetatagsDialog,
-                  icon: const Icon(Icons.chevron_right_rounded),
+                  icon: const Icon(Symbols.chevron_right_rounded),
                 ),
               ],
             ),
@@ -2175,15 +2177,15 @@ class _MetatagsBlockState extends State<MetatagsBlock> {
                       label: Text(tag.name),
                       avatar: switch (tag.type) {
                         .date => Icon(
-                          Icons.calendar_month_rounded,
+                          Symbols.calendar_month_rounded,
                           color: context.theme.colorScheme.onSurface,
                         ),
                         .sort => Icon(
-                          Icons.sort_rounded,
+                          Symbols.sort_rounded,
                           color: context.theme.colorScheme.onSurface,
                         ),
                         .user => Icon(
-                          Icons.person_outline_rounded,
+                          Symbols.person_outline_rounded,
                           color: context.theme.colorScheme.onSurface,
                         ),
                         _ => null,
@@ -2321,7 +2323,7 @@ class _PopularTagsBlockState extends State<PopularTagsBlock> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Icon(
-                  Icons.trending_up_rounded,
+                  Symbols.trending_up_rounded,
                   size: 20,
                 ),
                 const SizedBox(width: 8),
@@ -2341,7 +2343,7 @@ class _PopularTagsBlockState extends State<PopularTagsBlock> {
                 else if (failed)
                   IconButton(
                     onPressed: loadPopularTags,
-                    icon: const Icon(Icons.refresh),
+                    icon: const Icon(Symbols.refresh_rounded),
                   ),
               ],
             ),
@@ -2356,7 +2358,7 @@ class _PopularTagsBlockState extends State<PopularTagsBlock> {
             child: Center(
               child: TextButton.icon(
                 onPressed: loadPopularTags,
-                icon: const Icon(Icons.refresh),
+                icon: const Icon(Symbols.refresh_rounded),
                 label: Text(context.loc.retry),
               ),
             ),
@@ -2698,9 +2700,9 @@ class _PinnedTagsBlockState extends State<PinnedTagsBlock> {
   }
 
   IconData get _sortIcon => switch (sortMode) {
-    PinnedTagsSortMode.custom => Icons.sort,
-    PinnedTagsSortMode.alphabetical => Icons.sort_by_alpha,
-    PinnedTagsSortMode.reverseAlphabetical => Icons.sort_by_alpha,
+    PinnedTagsSortMode.custom => Symbols.sort_rounded,
+    PinnedTagsSortMode.alphabetical => Symbols.sort_by_alpha_rounded,
+    PinnedTagsSortMode.reverseAlphabetical => Symbols.sort_by_alpha_rounded,
   };
 
   String get _sortTooltip => switch (sortMode) {
@@ -2739,7 +2741,7 @@ class _PinnedTagsBlockState extends State<PinnedTagsBlock> {
               mainAxisAlignment: MainAxisAlignment.start,
               children: [
                 const Icon(
-                  Icons.push_pin_rounded,
+                  Symbols.push_pin_rounded,
                   size: 20,
                 ),
                 const SizedBox(width: 8),
@@ -2762,7 +2764,7 @@ class _PinnedTagsBlockState extends State<PinnedTagsBlock> {
                             selectedLabel ?? context.loc.pinnedTags.all,
                             style: context.theme.textTheme.bodyLarge,
                           ),
-                          const Icon(Icons.arrow_drop_down),
+                          const Icon(Symbols.arrow_drop_down_rounded),
                         ],
                       ),
                     ),
@@ -2772,7 +2774,7 @@ class _PinnedTagsBlockState extends State<PinnedTagsBlock> {
                         onTap: () => _selectLabel(null),
                         child: Row(
                           children: [
-                            if (selectedLabel == null) const Icon(Icons.check, size: 18) else const SizedBox(width: 18),
+                            if (selectedLabel == null) const Icon(Symbols.check_rounded, size: 18) else const SizedBox(width: 18),
                             const SizedBox(width: 8),
                             Text(context.loc.pinnedTags.all),
                           ],
@@ -2785,7 +2787,7 @@ class _PinnedTagsBlockState extends State<PinnedTagsBlock> {
                           child: Row(
                             children: [
                               if (selectedLabel == label)
-                                const Icon(Icons.check, size: 18)
+                                const Icon(Symbols.check_rounded, size: 18)
                               else
                                 const SizedBox(width: 18),
                               const SizedBox(width: 8),
@@ -2808,7 +2810,7 @@ class _PinnedTagsBlockState extends State<PinnedTagsBlock> {
                             right: 0,
                             bottom: 0,
                             child: Icon(
-                              Icons.arrow_downward,
+                              Symbols.arrow_downward_rounded,
                               size: 10,
                               color: context.theme.colorScheme.primary,
                             ),
@@ -2827,7 +2829,7 @@ class _PinnedTagsBlockState extends State<PinnedTagsBlock> {
                     // Always refresh after closing the dialog since changes might have been made
                     await init();
                   },
-                  icon: const Icon(Icons.chevron_right_rounded),
+                  icon: const Icon(Symbols.chevron_right_rounded),
                 ),
               ],
             ),
@@ -2900,7 +2902,7 @@ class _PinnedTagsBlockState extends State<PinnedTagsBlock> {
                         ),
                         onPressed: () => widget.onTagTap(pinnedTag.tagName),
                         onDeleted: () => widget.onTagLongTap(pinnedTag.tagName, pinnedTag),
-                        deleteIcon: const Icon(Icons.more_vert, size: 18),
+                        deleteIcon: const Icon(Symbols.more_vert_rounded, size: 18),
                         deleteButtonTooltipMessage: '',
                       ),
                     ),
@@ -3017,7 +3019,7 @@ class _PinTagDialogState extends State<PinTagDialog> {
                       isDense: true,
                       suffixIcon: labelController.text.isNotEmpty
                           ? IconButton(
-                              icon: const Icon(Icons.add, size: 18),
+                              icon: const Icon(Symbols.add_rounded, size: 18),
                               onPressed: () => _addLabel(labelController.text),
                             )
                           : null,
@@ -3030,7 +3032,7 @@ class _PinTagDialogState extends State<PinTagDialog> {
                   Padding(
                     padding: const EdgeInsets.only(left: 6),
                     child: PopupMenuButton<String>(
-                      icon: const Icon(Icons.arrow_drop_down),
+                      icon: const Icon(Symbols.arrow_drop_down_rounded),
                       tooltip: context.loc.pinnedTags.selectExistingLabel,
                       onSelected: _addLabel,
                       itemBuilder: (context) => widget.existingLabels
@@ -3054,7 +3056,7 @@ class _PinTagDialogState extends State<PinTagDialog> {
                       builder: (_, value, _) {
                         if (value.text.isNotEmpty) {
                           return IconButton(
-                            icon: const Icon(Icons.add),
+                            icon: const Icon(Symbols.add_rounded),
                             onPressed: () => _addLabel(value.text),
                           );
                         }
@@ -3101,7 +3103,7 @@ class _PinTagDialogState extends State<PinTagDialog> {
                         labels: selectedLabels.toList(),
                       ),
                     ),
-                    icon: const Icon(Icons.push_pin),
+                    icon: const Icon(Symbols.push_pin_rounded),
                     label: Text(context.loc.pinnedTags.pin),
                   ),
                 ],
@@ -3159,7 +3161,7 @@ Future<void> showPinTagDialog(
             : context.loc.pinnedTags.pinnedGloballyWithLabels(labels: labelText),
       ),
       sideColor: Colors.green,
-      leadingIcon: Icons.push_pin,
+      leadingIcon: Symbols.push_pin_rounded,
       leadingIconColor: Colors.green,
       duration: const Duration(seconds: 2),
     );
@@ -3213,7 +3215,7 @@ Future<bool> showUnpinTagDialog(
                       const CancelButton(),
                       ElevatedButton.icon(
                         onPressed: () => Navigator.of(ctx).pop(true),
-                        icon: const Icon(Icons.push_pin_outlined),
+                        icon: const Icon(Symbols.push_pin_rounded),
                         label: Text(ctx.loc.pinnedTags.unpin),
                       ),
                     ],
@@ -3236,7 +3238,7 @@ Future<bool> showUnpinTagDialog(
     FlashElements.showSnackbar(
       title: Text(context.loc.pinnedTags.tagUnpinned, style: const TextStyle(fontSize: 20)),
       sideColor: Colors.orange,
-      leadingIcon: Icons.push_pin_outlined,
+      leadingIcon: Symbols.push_pin_rounded,
       leadingIconColor: Colors.orange,
       duration: const Duration(seconds: 2),
     );
@@ -3337,7 +3339,7 @@ class _PinnedTagsReorderDialogState extends State<PinnedTagsReorderDialog> {
                       children: [
                         ReorderableDragStartListener(
                           index: index,
-                          child: const Icon(Icons.drag_handle),
+                          child: const Icon(Symbols.drag_handle_rounded),
                         ),
                         const SizedBox(width: 8),
                         if (!pinnedTag.isGlobal)
@@ -3357,7 +3359,7 @@ class _PinnedTagsReorderDialogState extends State<PinnedTagsReorderDialog> {
                     ),
                     subtitle: Text(pinnedTag.booruName ?? ''),
                     trailing: IconButton(
-                      icon: const Icon(Icons.delete_outline),
+                      icon: const Icon(Symbols.delete_rounded),
                       onPressed: () => showUnpinTagDialog(
                         context,
                         pinnedTag.tagName,
@@ -3391,7 +3393,7 @@ class _PinnedTagsReorderDialogState extends State<PinnedTagsReorderDialog> {
                             dimension: 16,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Icon(Icons.check),
+                        : const Icon(Symbols.check_rounded),
                     label: Text(saving ? context.loc.pinnedTags.saving : context.loc.save),
                   ),
                 ],
@@ -3518,9 +3520,9 @@ class _PinnedTagsManagerDialogState extends State<PinnedTagsManagerDialog> {
   }
 
   IconData get _sortIcon => switch (sortMode) {
-    PinnedTagsSortMode.custom => Icons.sort,
-    PinnedTagsSortMode.alphabetical => Icons.sort_by_alpha,
-    PinnedTagsSortMode.reverseAlphabetical => Icons.sort_by_alpha,
+    PinnedTagsSortMode.custom => Symbols.sort_rounded,
+    PinnedTagsSortMode.alphabetical => Symbols.sort_by_alpha_rounded,
+    PinnedTagsSortMode.reverseAlphabetical => Symbols.sort_by_alpha_rounded,
   };
 
   String get _sortTooltip => switch (sortMode) {
@@ -3641,7 +3643,7 @@ class _PinnedTagsManagerDialogState extends State<PinnedTagsManagerDialog> {
                   const SizedBox(width: 8),
                   IconButton(
                     onPressed: () => Navigator.of(context).pop(hasChanges),
-                    icon: const Icon(Icons.close),
+                    icon: const Icon(Symbols.close_rounded),
                   ),
                 ],
               ),
@@ -3657,10 +3659,10 @@ class _PinnedTagsManagerDialogState extends State<PinnedTagsManagerDialog> {
                       controller: searchController,
                       decoration: InputDecoration(
                         labelText: context.loc.search,
-                        prefixIcon: const Icon(Icons.search),
+                        prefixIcon: const Icon(Symbols.search_rounded),
                         suffixIcon: searchController.text.isNotEmpty
                             ? IconButton(
-                                icon: const Icon(Icons.clear),
+                                icon: const Icon(Symbols.clear_rounded),
                                 onPressed: searchController.clear,
                               )
                             : null,
@@ -3682,7 +3684,7 @@ class _PinnedTagsManagerDialogState extends State<PinnedTagsManagerDialog> {
                             right: 0,
                             bottom: 0,
                             child: Icon(
-                              Icons.arrow_downward,
+                              Symbols.arrow_downward_rounded,
                               size: 10,
                               color: context.theme.colorScheme.primary,
                             ),
@@ -3694,12 +3696,12 @@ class _PinnedTagsManagerDialogState extends State<PinnedTagsManagerDialog> {
                   if (allTags.length > 1)
                     IconButton(
                       onPressed: _openReorderDialog,
-                      icon: const Icon(Icons.reorder_rounded),
+                      icon: const Icon(Symbols.reorder_rounded),
                       tooltip: context.loc.pinnedTags.reorder,
                     ),
                   IconButton(
                     onPressed: _addManualTag,
-                    icon: const Icon(Icons.add_rounded),
+                    icon: const Icon(Symbols.add_rounded),
                     tooltip: context.loc.pinnedTags.addTagManually,
                   ),
                 ],
@@ -3757,14 +3759,14 @@ class _PinnedTagsManagerDialogState extends State<PinnedTagsManagerDialog> {
                             children: [
                               IconButton(
                                 icon: Icon(
-                                  pinnedTag.labels.isNotEmpty ? Icons.label : Icons.label_outline,
+                                  pinnedTag.labels.isNotEmpty ? Symbols.label_rounded : Symbols.label_rounded,
                                   size: 20,
                                 ),
                                 tooltip: context.loc.pinnedTags.editLabels,
                                 onPressed: () => _editTagLabels(pinnedTag),
                               ),
                               IconButton(
-                                icon: const Icon(Icons.delete_outline),
+                                icon: const Icon(Symbols.delete_rounded),
                                 tooltip: context.loc.pinnedTags.unpin,
                                 onPressed: () => _deleteTag(pinnedTag),
                               ),
@@ -3860,7 +3862,7 @@ class _EditLabelsDialogState extends State<EditLabelsDialog> {
                       isDense: true,
                       suffixIcon: labelController.text.isNotEmpty
                           ? IconButton(
-                              icon: const Icon(Icons.add, size: 18),
+                              icon: const Icon(Symbols.add_rounded, size: 18),
                               onPressed: () => _addLabel(labelController.text),
                             )
                           : null,
@@ -3874,7 +3876,7 @@ class _EditLabelsDialogState extends State<EditLabelsDialog> {
                   Padding(
                     padding: const EdgeInsets.only(left: 6),
                     child: PopupMenuButton<String>(
-                      icon: const Icon(Icons.arrow_drop_down),
+                      icon: const Icon(Symbols.arrow_drop_down_rounded),
                       tooltip: context.loc.pinnedTags.selectExistingLabel,
                       onSelected: _addLabel,
                       itemBuilder: (context) => widget.existingLabels
@@ -3898,7 +3900,7 @@ class _EditLabelsDialogState extends State<EditLabelsDialog> {
                       builder: (_, value, _) {
                         if (value.text.isNotEmpty) {
                           return IconButton(
-                            icon: const Icon(Icons.add),
+                            icon: const Icon(Symbols.add_rounded),
                             onPressed: () => _addLabel(value.text),
                           );
                         }
@@ -3948,7 +3950,7 @@ class _EditLabelsDialogState extends State<EditLabelsDialog> {
                     const CancelButton(),
                     ElevatedButton.icon(
                       onPressed: () => Navigator.of(context).pop(selectedLabels.toList()),
-                      icon: const Icon(Icons.check),
+                      icon: const Icon(Symbols.check_rounded),
                       label: Text(context.loc.save),
                     ),
                   ],
@@ -4075,7 +4077,7 @@ class _ManualPinTagDialogState extends State<ManualPinTagDialog> {
                       isDense: true,
                       suffixIcon: labelController.text.isNotEmpty
                           ? IconButton(
-                              icon: const Icon(Icons.add, size: 18),
+                              icon: const Icon(Symbols.add_rounded, size: 18),
                               onPressed: () => _addLabel(labelController.text),
                             )
                           : null,
@@ -4088,7 +4090,7 @@ class _ManualPinTagDialogState extends State<ManualPinTagDialog> {
                   Padding(
                     padding: const EdgeInsets.only(left: 6),
                     child: PopupMenuButton<String>(
-                      icon: const Icon(Icons.arrow_drop_down),
+                      icon: const Icon(Symbols.arrow_drop_down_rounded),
                       tooltip: context.loc.pinnedTags.selectExistingLabel,
                       onSelected: _addLabel,
                       itemBuilder: (context) => widget.existingLabels
@@ -4112,7 +4114,7 @@ class _ManualPinTagDialogState extends State<ManualPinTagDialog> {
                       builder: (_, value, _) {
                         if (value.text.isNotEmpty) {
                           return IconButton(
-                            icon: const Icon(Icons.add),
+                            icon: const Icon(Symbols.add_rounded),
                             onPressed: () => _addLabel(value.text),
                           );
                         }
@@ -4170,7 +4172,7 @@ class _ManualPinTagDialogState extends State<ManualPinTagDialog> {
                               ),
                             )
                           : null,
-                      icon: const Icon(Icons.push_pin),
+                      icon: const Icon(Symbols.push_pin_rounded),
                       label: Text(context.loc.pinnedTags.pin),
                     ),
                   ],

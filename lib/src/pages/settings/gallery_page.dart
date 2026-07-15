@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 
 import 'package:lolisnatcher/src/data/settings/button_position.dart';
@@ -324,7 +326,7 @@ class _GalleryPageState extends State<GalleryPage> {
               if (dimSeenPosts)
                 SettingsButton(
                   name: 'Clear viewed history',
-                  icon: const Icon(Icons.visibility_off),
+                  icon: const Icon(Symbols.visibility_off_rounded),
                   action: () async {
                     final bool? confirmed = await showDialog<bool>(
                       context: context,
@@ -386,7 +388,7 @@ class _GalleryPageState extends State<GalleryPage> {
                       Expanded(child: Text(context.loc.settings.viewer.toolbarButtonsOrder)),
                       IconButton(
                         icon: Icon(
-                          Icons.refresh,
+                          Symbols.refresh_rounded,
                           color: Theme.of(context).colorScheme.onSurface,
                         ),
                         onPressed: () {
@@ -400,7 +402,7 @@ class _GalleryPageState extends State<GalleryPage> {
                       ),
                       IconButton(
                         icon: Icon(
-                          Icons.help_outline,
+                          Symbols.help_rounded,
                           color: Theme.of(context).colorScheme.onSurface,
                         ),
                         onPressed: () {
@@ -474,7 +476,7 @@ class _GalleryPageState extends State<GalleryPage> {
                                       ),
                                       key: 'toolbar-button-order',
                                       isKeyUnique: true,
-                                      leadingIcon: Icons.warning_amber,
+                                      leadingIcon: Symbols.warning_amber_rounded,
                                       leadingIconColor: Colors.yellow,
                                       sideColor: Colors.yellow,
                                     );
@@ -518,17 +520,17 @@ class _GalleryPageState extends State<GalleryPage> {
                                     children: [
                                       Icon(
                                         switch (button) {
-                                          .snatch => Icons.save,
-                                          .favourite => Icons.favorite,
-                                          .info => Icons.info,
-                                          .share => Icons.share,
-                                          .select => Icons.check_box,
-                                          .open => Icons.public,
-                                          .autoscroll => Icons.play_arrow,
-                                          .reloadnoscale => Icons.refresh,
-                                          .toggleQuality => Icons.high_quality,
-                                          .externalPlayer => Icons.exit_to_app,
-                                          .imageSearch => Icons.image_search_rounded,
+                                          .snatch => Symbols.save_rounded,
+                                          .favourite => Symbols.favorite_rounded,
+                                          .info => Symbols.info_rounded,
+                                          .share => Symbols.share_rounded,
+                                          .select => Symbols.check_box_rounded,
+                                          .open => Symbols.public_rounded,
+                                          .autoscroll => Symbols.play_arrow_rounded,
+                                          .reloadnoscale => Symbols.refresh_rounded,
+                                          .toggleQuality => Symbols.high_quality_rounded,
+                                          .externalPlayer => Symbols.exit_to_app_rounded,
+                                          .imageSearch => Symbols.image_search_rounded,
                                         },
                                       ),
                                       ReorderableDragStartListener(
@@ -536,7 +538,7 @@ class _GalleryPageState extends State<GalleryPage> {
                                         index: index,
                                         child: const IconButton(
                                           onPressed: null,
-                                          icon: Icon(Icons.drag_handle),
+                                          icon: Icon(Symbols.drag_handle_rounded),
                                         ),
                                       ),
                                     ],
@@ -569,7 +571,7 @@ class _GalleryPageState extends State<GalleryPage> {
                 title: context.loc.settings.viewer.defaultShareAction,
                 itemTitleBuilder: (e) => e?.locName ?? '',
                 trailingIcon: IconButton(
-                  icon: const Icon(Icons.help_outline),
+                  icon: const Icon(Symbols.help_rounded),
                   onPressed: () {
                     showDialog(
                       context: context,
@@ -603,7 +605,7 @@ class _GalleryPageState extends State<GalleryPage> {
                 },
                 title: context.loc.settings.viewer.useVolumeButtonsForScrolling,
                 trailingIcon: IconButton(
-                  icon: const Icon(Icons.help_outline),
+                  icon: const Icon(Symbols.help_rounded),
                   onPressed: () {
                     showDialog(
                       context: context,
@@ -671,7 +673,7 @@ class _GalleryPageState extends State<GalleryPage> {
                   }
                 },
                 trailingIcon: IconButton(
-                  icon: const Icon(Icons.help_outline),
+                  icon: const Icon(Symbols.help_rounded),
                   onPressed: () {
                     showDialog(
                       context: context,

@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 
@@ -218,7 +220,7 @@ class _InAppWebviewViewState extends State<InAppWebviewView> {
                     ),
                     IconButton(
                       iconSize: 22,
-                      icon: const Icon(Icons.close),
+                      icon: const Icon(Symbols.close_rounded),
                       onPressed: () {
                         setState(() {
                           hideSubtitle = true;
@@ -264,7 +266,7 @@ class _InAppWebviewViewState extends State<InAppWebviewView> {
                     ),
                     IconButton(
                       iconSize: 22,
-                      icon: const Icon(Icons.close),
+                      icon: const Icon(Symbols.close_rounded),
                       onPressed: () {
                         setState(() {
                           hideSubtitle = true;
@@ -281,7 +283,7 @@ class _InAppWebviewViewState extends State<InAppWebviewView> {
               bottom: MediaQuery.paddingOf(context).bottom + 20,
               right: 20,
               child: IconButton.filled(
-                icon: const Icon(Icons.info_outline),
+                icon: const Icon(Symbols.info_rounded),
                 onPressed: () {
                   setState(() {
                     hideSubtitle = false;

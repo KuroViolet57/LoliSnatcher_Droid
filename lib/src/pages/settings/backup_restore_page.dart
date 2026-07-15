@@ -6,6 +6,8 @@ import 'dart:typed_data';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
@@ -78,7 +80,7 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
         text,
         style: const TextStyle(fontSize: 16),
       ),
-      leadingIcon: isError ? Icons.error_outline : Icons.done,
+      leadingIcon: isError ? Symbols.error_rounded : Symbols.done_rounded,
       leadingIconColor: isError ? Colors.red : Colors.green,
       sideColor: isError ? Colors.red : Colors.green,
     );
@@ -350,7 +352,7 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
     if (inProgress) {
       FlashElements.showSnackbar(
         title: Text(context.loc.pleaseWait),
-        leadingIcon: Icons.warning_amber,
+        leadingIcon: Symbols.warning_amber_rounded,
         leadingIconColor: Colors.yellow,
         sideColor: Colors.yellow,
       );
@@ -392,7 +394,7 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
                   // Backup Directory
                   SettingsButton(
                     name: context.loc.settings.backupAndRestore.selectBackupDir,
-                    icon: const Icon(Icons.folder),
+                    icon: const Icon(Symbols.folder_rounded),
                     action: () async {
                       final String path = await ServiceHandler.getSAFDirectoryAccess();
                       if (path.isNotEmpty) {
@@ -424,7 +426,7 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
                   if (backupPath.isNotEmpty)
                     SettingsButton(
                       name: context.loc.settings.backupAndRestore.resetBackupDir,
-                      icon: const Icon(Icons.refresh_rounded),
+                      icon: const Icon(Symbols.refresh_rounded),
                       action: () async {
                         setState(() {
                           backupPath = '';
@@ -440,13 +442,13 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
                     const SettingsButton(name: '', enabled: false),
                     SettingsButton(
                       name: 'Backup all (settings + boorus + database)',
-                      icon: const Icon(Icons.cloud_upload_outlined),
+                      icon: const Icon(Symbols.cloud_upload_rounded),
                       action: () => _runBackupAll(context),
                       drawTopBorder: true,
                     ),
                     SettingsButton(
                       name: context.loc.settings.backupAndRestore.backupSettings,
-                      icon: const Icon(Icons.settings),
+                      icon: const Icon(Symbols.settings_rounded),
                       action: () async {
                         inProgress = true;
                         setState(() {});
@@ -496,7 +498,7 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
                     ),
                     SettingsButton(
                       name: context.loc.settings.backupAndRestore.backupBoorus,
-                      icon: const Icon(Icons.image_search),
+                      icon: const Icon(Symbols.image_search_rounded),
                       action: () async {
                         inProgress = true;
                         setState(() {});
@@ -547,7 +549,7 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
                     ),
                     SettingsButton(
                       name: context.loc.settings.backupAndRestore.backupDatabase,
-                      icon: const Icon(Icons.list_alt),
+                      icon: const Icon(Symbols.list_alt_rounded),
                       action: () async {
                         inProgress = true;
                         setState(() {});
@@ -663,13 +665,13 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
                     ),
                     SettingsButton(
                       name: 'Restore all (settings + boorus + database)',
-                      icon: const Icon(Icons.cloud_download_outlined),
+                      icon: const Icon(Symbols.cloud_download_rounded),
                       action: () => _runRestoreAll(context),
                       drawTopBorder: true,
                     ),
                     SettingsButton(
                       name: context.loc.settings.backupAndRestore.restoreSettings,
-                      icon: const Icon(Icons.settings_backup_restore),
+                      icon: const Icon(Symbols.settings_backup_restore_rounded),
                       subtitle: const Text('settings.json'),
                       action: () async {
                         final bool res = await confirmRestore(context.loc.settings.backupAndRestore.restoreSettings);
@@ -719,7 +721,7 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
                     ),
                     SettingsButton(
                       name: context.loc.settings.backupAndRestore.restoreBoorus,
-                      icon: const Icon(Icons.image_search),
+                      icon: const Icon(Symbols.image_search_rounded),
                       subtitle: const Text('boorus.json'),
                       action: () async {
                         final bool res = await confirmRestore(context.loc.settings.backupAndRestore.restoreBoorus);
@@ -795,7 +797,7 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
                     ),
                     SettingsButton(
                       name: context.loc.settings.backupAndRestore.restoreDatabase,
-                      icon: const Icon(Icons.list_alt),
+                      icon: const Icon(Symbols.list_alt_rounded),
                       subtitle: Text('store.db (${context.loc.settings.backupAndRestore.restoreDatabaseInfo})'),
                       action: () async {
                         final bool res = await confirmRestore(context.loc.settings.backupAndRestore.restoreDatabase);

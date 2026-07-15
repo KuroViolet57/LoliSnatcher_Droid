@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 
 import 'package:lolisnatcher/src/data/settings/image_quality.dart';
@@ -99,13 +101,13 @@ class _PerformancePageState extends State<PerformancePage> {
                       TextButton.icon(
                         style: TextButton.styleFrom(foregroundColor: context.colorScheme.onSurface),
                         onPressed: () => Navigator.of(context).pop(false),
-                        icon: const Icon(Icons.cancel_outlined),
+                        icon: const Icon(Symbols.cancel_rounded),
                         label: Text(context.loc.cancel),
                       ),
                       TextButton.icon(
                         style: TextButton.styleFrom(foregroundColor: context.colorScheme.onSurface),
                         onPressed: () => Navigator.of(context).pop(true),
-                        icon: const Icon(Icons.check_circle_outline),
+                        icon: const Icon(Symbols.check_circle_rounded),
                         label: Text(context.loc['confirm']),
                       ),
                     ]
@@ -161,7 +163,7 @@ class _PerformancePageState extends State<PerformancePage> {
                 title: context.loc.settings.performance.lowPerformanceMode,
                 subtitle: Text(context.loc.settings.performance.lowPerformanceModeSubtitle),
                 trailingIcon: IconButton(
-                  icon: const Icon(Icons.help_outline),
+                  icon: const Icon(Symbols.help_rounded),
                   onPressed: () => showLowPerfConfirmDialog(false),
                 ),
               ),
@@ -354,7 +356,7 @@ class _PerformancePageState extends State<PerformancePage> {
                   });
                 },
                 title: context.loc.settings.interface.dontScaleImages,
-                leadingIcon: const Icon(Icons.close_fullscreen),
+                leadingIcon: const Icon(Symbols.close_fullscreen_rounded),
                 subtitle: Text(context.loc.settings.interface.dontScaleImagesSubtitle),
               ),
               SettingsToggle(
@@ -374,7 +376,7 @@ class _PerformancePageState extends State<PerformancePage> {
                   });
                 },
                 title: 'Preload videos',
-                leadingIcon: const Icon(Icons.video_settings),
+                leadingIcon: const Icon(Symbols.video_settings_rounded),
                 subtitle: const Text(
                   'Start downloading neighbouring videos before you swipe to them. Off by default keeps the currently playing video from competing for bandwidth.',
                 ),
@@ -388,7 +390,7 @@ class _PerformancePageState extends State<PerformancePage> {
                 },
                 title: context.loc.settings.performance.disableVideos,
                 trailingIcon: IconButton(
-                  icon: const Icon(Icons.help_outline),
+                  icon: const Icon(Symbols.help_rounded),
                   onPressed: () {
                     showDialog(
                       context: context,

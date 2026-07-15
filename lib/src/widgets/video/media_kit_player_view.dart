@@ -3,6 +3,8 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
@@ -521,7 +523,7 @@ class _MediaKitControlsState extends State<_MediaKitControls> {
                 child: Container(
                   decoration: const BoxDecoration(color: Colors.black38, shape: BoxShape.circle),
                   padding: const EdgeInsets.all(12),
-                  child: const Icon(Icons.play_arrow, color: Colors.white, size: 48),
+                  child: const Icon(Symbols.play_arrow_rounded, color: Colors.white, size: 48),
                 ),
               ),
             ),
@@ -579,7 +581,7 @@ class _MediaKitControlsState extends State<_MediaKitControls> {
             Row(
               children: [
                 IconButton(
-                  icon: Icon(_playing ? Icons.pause : Icons.play_arrow, color: Colors.white),
+                  icon: Icon(_playing ? Symbols.pause_rounded : Symbols.play_arrow_rounded, color: Colors.white),
                   onPressed: _playPause,
                 ),
                 Text(
@@ -588,14 +590,14 @@ class _MediaKitControlsState extends State<_MediaKitControls> {
                 ),
                 const Spacer(),
                 IconButton(
-                  icon: Icon(muted ? Icons.volume_off : Icons.volume_up, color: Colors.white),
+                  icon: Icon(muted ? Symbols.volume_off_rounded : Symbols.volume_up_rounded, color: Colors.white),
                   onPressed: () {
                     _p.setVolume(muted ? 100 : 0);
                     _wake();
                   },
                 ),
                 IconButton(
-                  icon: Icon(_fullscreen ? Icons.fullscreen_exit : Icons.fullscreen, color: Colors.white),
+                  icon: Icon(_fullscreen ? Symbols.fullscreen_exit_rounded : Symbols.fullscreen_rounded, color: Colors.white),
                   onPressed: _toggleFullscreen,
                 ),
               ],
@@ -692,7 +694,7 @@ class _SeekFeedback extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(side < 0 ? Icons.fast_rewind : Icons.fast_forward, color: Colors.white, size: 28),
+            Icon(side < 0 ? Symbols.fast_rewind_rounded : Symbols.fast_forward_rounded, color: Colors.white, size: 28),
             const SizedBox(width: 8),
             Text('${seconds}s', style: const TextStyle(color: Colors.white, fontSize: 20)),
           ],

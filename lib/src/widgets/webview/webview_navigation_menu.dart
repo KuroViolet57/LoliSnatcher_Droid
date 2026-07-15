@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -61,7 +63,7 @@ class _WebviewNavigationMenuState extends State<WebviewNavigationMenu> {
               suffixIcon: GestureDetector(
                 onTap: _urlController.clear,
                 child: Icon(
-                  Icons.clear,
+                  Symbols.clear_rounded,
                   color: Theme.of(context).colorScheme.onSurface,
                 ),
               ),

@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
@@ -135,7 +137,7 @@ class _BooruEditState extends State<BooruEdit> {
           children: [
             SettingsButton(
               name: context.loc.settings.booruEditor.saveBooru,
-              icon: isTesting ? const CircularProgressIndicator() : const Icon(Icons.save),
+              icon: isTesting ? const CircularProgressIndicator() : const Icon(Symbols.save_rounded),
               action: onSave,
               onLongPress: settingsHandler.isDebug.value ? () => onSave(force: true) : null,
             ),
@@ -162,7 +164,7 @@ class _BooruEditState extends State<BooruEdit> {
               SettingsButton(
                 name: context.loc.settings.webview.openWebview,
                 subtitle: Text(context.loc.settings.webview.openWebviewTip),
-                icon: const Icon(Icons.public),
+                icon: const Icon(Symbols.public_rounded),
                 action: () {
                   if (booruURLController.text.isNotEmpty) {
                     Navigator.push(
@@ -277,7 +279,7 @@ class _BooruEditState extends State<BooruEdit> {
                 });
               },
               title: 'Ignore global blacklist for this booru',
-              leadingIcon: const Icon(Icons.visibility_off_outlined),
+              leadingIcon: const Icon(Symbols.visibility_off_rounded),
               subtitle: const Text(
                 "When on, the global hidden-tags list won't filter items from this booru. Per-booru hidden tags still apply.",
               ),
@@ -472,7 +474,7 @@ class _BooruEditState extends State<BooruEdit> {
           Row(
             children: [
               Icon(
-                signedIn ? Icons.check_circle : Icons.account_circle_outlined,
+                signedIn ? Symbols.check_circle_rounded : Symbols.account_circle_rounded,
                 color: signedIn ? Colors.green : Theme.of(context).colorScheme.onSurfaceVariant,
               ),
               const SizedBox(width: 8),
@@ -496,14 +498,14 @@ class _BooruEditState extends State<BooruEdit> {
           Row(
             children: [
               FilledButton.tonalIcon(
-                icon: const Icon(Icons.login),
+                icon: const Icon(Symbols.login_rounded),
                 label: Text(signedIn ? 'Sign in again' : 'Sign in with browser'),
                 onPressed: _openRedGifsLogin,
               ),
               if (signedIn) ...[
                 const SizedBox(width: 8),
                 TextButton.icon(
-                  icon: const Icon(Icons.logout),
+                  icon: const Icon(Symbols.logout_rounded),
                   label: const Text('Sign out'),
                   onPressed: () => setState(() => booruAPIKeyController.text = ''),
                 ),
@@ -521,7 +523,7 @@ class _BooruEditState extends State<BooruEdit> {
         context: context,
         title: const Text('WebView unavailable'),
         content: const Text('Signing in to RedGifs needs a WebView, which is not available on this device.'),
-        leadingIcon: Icons.error_outline,
+        leadingIcon: Symbols.error_rounded,
         leadingIconColor: Colors.red,
       );
       return;
@@ -535,7 +537,7 @@ class _BooruEditState extends State<BooruEdit> {
         context: context,
         title: const Text('Signed in'),
         content: const Text('RedGifs account connected.'),
-        leadingIcon: Icons.check_circle,
+        leadingIcon: Symbols.check_circle_rounded,
         leadingIconColor: Colors.green,
       );
     }
@@ -588,7 +590,7 @@ class _BooruEditState extends State<BooruEdit> {
             context.loc.settings.booruEditor.booruUrlRequired,
             style: const TextStyle(fontSize: 20),
           ),
-          leadingIcon: Icons.warning_amber,
+          leadingIcon: Symbols.warning_amber_rounded,
           leadingIconColor: Colors.red,
           sideColor: Colors.red,
         );
@@ -611,7 +613,7 @@ class _BooruEditState extends State<BooruEdit> {
           context.loc.settings.booruEditor.booruNameRequired,
           style: const TextStyle(fontSize: 20),
         ),
-        leadingIcon: Icons.warning_amber,
+        leadingIcon: Symbols.warning_amber_rounded,
         leadingIconColor: Colors.red,
         sideColor: Colors.red,
       );
@@ -625,7 +627,7 @@ class _BooruEditState extends State<BooruEdit> {
           context.loc.settings.booruEditor.booruUrlRequired,
           style: const TextStyle(fontSize: 20),
         ),
-        leadingIcon: Icons.warning_amber,
+        leadingIcon: Symbols.warning_amber_rounded,
         leadingIconColor: Colors.red,
         sideColor: Colors.red,
       );
@@ -706,17 +708,17 @@ class _BooruEditState extends State<BooruEdit> {
                       style: const TextStyle(fontSize: 20),
                     ),
                     sideColor: Colors.green,
-                    leadingIcon: Icons.check,
+                    leadingIcon: Symbols.check_rounded,
                     leadingIconColor: Colors.green,
                     duration: const Duration(seconds: 2),
                   );
                 },
-                icon: const Icon(Icons.copy),
+                icon: const Icon(Symbols.content_copy_rounded),
                 label: Text(context.loc.copyErrorText),
               ),
           ];
         },
-        leadingIcon: Icons.warning_amber,
+        leadingIcon: Symbols.warning_amber_rounded,
         leadingIconColor: Colors.red,
         sideColor: Colors.red,
       );
@@ -741,7 +743,7 @@ class _BooruEditState extends State<BooruEdit> {
           context.loc.settings.booruEditor.runningTest,
           style: const TextStyle(fontSize: 20),
         ),
-        leadingIcon: Icons.refresh,
+        leadingIcon: Symbols.refresh_rounded,
         leadingIconColor: Colors.yellow,
         sideColor: Colors.yellow,
       );
@@ -807,7 +809,7 @@ class _BooruEditState extends State<BooruEdit> {
           context.loc.settings.booruEditor.thisBooruConfigWontBeAdded,
           style: const TextStyle(fontSize: 16),
         ),
-        leadingIcon: Icons.warning_amber,
+        leadingIcon: Symbols.warning_amber_rounded,
         leadingIconColor: Colors.red,
         sideColor: Colors.red,
       );
@@ -889,7 +891,7 @@ class _BooruEditState extends State<BooruEdit> {
                 context.loc.settings.booruEditor.existingTabsNeedReload,
                 style: const TextStyle(fontSize: 16),
               ),
-        leadingIcon: Icons.done,
+        leadingIcon: Symbols.done_rounded,
         leadingIconColor: Colors.green,
         sideColor: Colors.green,
       );
@@ -1044,7 +1046,7 @@ class _HydrusAccessKeyWidget extends StatelessWidget {
                     context.loc.settings.booruEditor.accessKeyRequestedMsg,
                     style: const TextStyle(fontSize: 16),
                   ),
-                  leadingIcon: Icons.warning_amber,
+                  leadingIcon: Symbols.warning_amber_rounded,
                   leadingIconColor: Colors.yellow,
                   sideColor: Colors.yellow,
                 );
@@ -1060,7 +1062,7 @@ class _HydrusAccessKeyWidget extends StatelessWidget {
                     context.loc.settings.booruEditor.accessKeyFailedMsg,
                     style: const TextStyle(fontSize: 16),
                   ),
-                  leadingIcon: Icons.warning_amber,
+                  leadingIcon: Symbols.warning_amber_rounded,
                   leadingIconColor: Colors.red,
                   sideColor: Colors.red,
                 );
@@ -1115,12 +1117,12 @@ class _PerBooruBlacklistEditor extends StatelessWidget {
                 ),
               ),
               IconButton(
-                icon: const Icon(Icons.help_outline),
+                icon: const Icon(Symbols.help_rounded),
                 tooltip: 'Blacklist syntax',
                 onPressed: () => _showHelp(context),
               ),
               IconButton(
-                icon: const Icon(Icons.add),
+                icon: const Icon(Symbols.add_rounded),
                 tooltip: 'Add line',
                 onPressed: () async {
                   await showDialog<bool>(
@@ -1228,7 +1230,7 @@ class _PerBooruBlacklistRow extends StatelessWidget {
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.delete_outline, size: 20),
+            icon: const Icon(Symbols.delete_rounded, size: 20),
             tooltip: 'Remove',
             onPressed: onRemove,
           ),

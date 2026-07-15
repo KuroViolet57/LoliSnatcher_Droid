@@ -4,6 +4,8 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 import 'package:lolisnatcher/src/widgets/webview/webview_page.dart';
@@ -158,7 +160,7 @@ class _RedGifsLoginPageState extends State<RedGifsLoginPage> {
         actions: [
           IconButton(
             tooltip: 'Cancel',
-            icon: const Icon(Icons.close),
+            icon: const Icon(Symbols.close_rounded),
             onPressed: () => Navigator.of(context).maybePop(),
           ),
         ],

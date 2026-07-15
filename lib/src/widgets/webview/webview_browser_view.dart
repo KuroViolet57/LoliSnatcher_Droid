@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
@@ -84,7 +86,7 @@ class _WebViewBrowserViewState extends State<WebViewBrowserView> {
       context: context,
       duration: const Duration(seconds: 2),
       title: Text('Sent ${items.length} to snatcher', style: const TextStyle(fontSize: 18)),
-      leadingIcon: Icons.download,
+      leadingIcon: Symbols.download_rounded,
       sideColor: Colors.green,
     );
   }
@@ -136,7 +138,7 @@ class _WebViewBrowserViewState extends State<WebViewBrowserView> {
         context: context,
         duration: const Duration(seconds: 2),
         title: const Text('No media found on this page', style: TextStyle(fontSize: 16)),
-        leadingIcon: Icons.search_off,
+        leadingIcon: Symbols.search_off_rounded,
         sideColor: Colors.orange,
       );
       return;
@@ -164,7 +166,7 @@ class _WebViewBrowserViewState extends State<WebViewBrowserView> {
                           Text('Found ${media.length} media', style: Theme.of(context).textTheme.titleMedium),
                           const Spacer(),
                           FilledButton.icon(
-                            icon: const Icon(Icons.download, size: 18),
+                            icon: const Icon(Symbols.download_rounded, size: 18),
                             label: Text('Snatch ${selected.length}'),
                             onPressed: selected.isEmpty
                                 ? null
@@ -187,7 +189,7 @@ class _WebViewBrowserViewState extends State<WebViewBrowserView> {
                           return CheckboxListTile(
                             dense: true,
                             value: selected.contains(url),
-                            secondary: Icon(isVideo ? Icons.movie : Icons.image, size: 20),
+                            secondary: Icon(isVideo ? Symbols.movie_rounded : Symbols.image_rounded, size: 20),
                             title: Text(
                               Uri.tryParse(url)?.pathSegments.lastOrNull ?? url,
                               maxLines: 1,
@@ -231,23 +233,23 @@ class _WebViewBrowserViewState extends State<WebViewBrowserView> {
             children: [
               IconButton(
                 visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.arrow_back, size: 20),
+                icon: const Icon(Symbols.arrow_back_rounded, size: 20),
                 onPressed: _goBack,
               ),
               IconButton(
                 visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.arrow_forward, size: 20),
+                icon: const Icon(Symbols.arrow_forward_rounded, size: 20),
                 onPressed: _goForward,
               ),
               IconButton(
                 visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.refresh, size: 20),
+                icon: const Icon(Symbols.refresh_rounded, size: 20),
                 onPressed: () => controller?.reload(),
               ),
               IconButton(
                 visualDensity: VisualDensity.compact,
                 tooltip: 'Home (search url)',
-                icon: const Icon(Icons.home_outlined, size: 20),
+                icon: const Icon(Symbols.home_rounded, size: 20),
                 onPressed: () => controller?.loadUrl(urlRequest: URLRequest(url: WebUri(homeUrl))),
               ),
               Expanded(
@@ -265,13 +267,13 @@ class _WebViewBrowserViewState extends State<WebViewBrowserView> {
               IconButton(
                 visualDensity: VisualDensity.compact,
                 tooltip: 'Grab media on this page',
-                icon: const Icon(Icons.download_for_offline_outlined, size: 20),
+                icon: const Icon(Symbols.download_for_offline_rounded, size: 20),
                 onPressed: _grabMedia,
               ),
               IconButton(
                 visualDensity: VisualDensity.compact,
                 tooltip: 'Open in external browser',
-                icon: const Icon(Icons.open_in_browser, size: 20),
+                icon: const Icon(Symbols.open_in_browser_rounded, size: 20),
                 onPressed: () {
                   final url = currentUrl.value.isNotEmpty ? currentUrl.value : homeUrl;
                   launchUrlString(url, mode: LaunchMode.externalApplication);

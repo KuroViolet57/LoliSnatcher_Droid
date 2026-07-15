@@ -4,6 +4,8 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 
 import 'package:alice_lightweight/alice.dart';
@@ -2537,7 +2539,7 @@ class SettingsHandler {
             e.toString(),
           ),
           sideColor: Colors.red,
-          leadingIcon: Icons.update,
+          leadingIcon: Symbols.update_rounded,
           leadingIconColor: Colors.red,
         );
       }
@@ -2551,7 +2553,7 @@ class SettingsHandler {
         style: const TextStyle(fontSize: 20),
       ),
       sideColor: Colors.green,
-      leadingIcon: Icons.update,
+      leadingIcon: Symbols.update_rounded,
       leadingIconColor: Colors.green,
       actionsBuilder: (context, controller) {
         return [
@@ -2563,7 +2565,7 @@ class SettingsHandler {
                 isAfterUpdate: true,
               );
             },
-            icon: const Icon(Icons.list_alt_rounded),
+            icon: const Icon(Symbols.list_alt_rounded),
             label: Text(
               loc.settings.checkForUpdates.viewLatestChangelog,
               maxLines: 2,
@@ -2641,7 +2643,7 @@ class SettingsHandler {
                         onPressed: () {
                           Navigator.of(ctx).pop();
                         },
-                        icon: const Icon(Icons.close),
+                        icon: const Icon(Symbols.close_rounded),
                         label: Text(isDiffVersion ? loc.later : loc.close),
                       ),
                       const SizedBox(width: 16),
@@ -2659,7 +2661,7 @@ class SettingsHandler {
                             );
                             Navigator.of(ctx).pop();
                           },
-                          icon: const Icon(Icons.play_arrow),
+                          icon: const Icon(Symbols.play_arrow_rounded),
                           label: Text(loc.settings.checkForUpdates.visitPlayStore),
                         )
                       else
@@ -2671,7 +2673,7 @@ class SettingsHandler {
                             );
                             Navigator.of(ctx).pop();
                           },
-                          icon: const Icon(Icons.exit_to_app),
+                          icon: const Icon(Symbols.exit_to_app_rounded),
                           label: Text(loc.settings.checkForUpdates.visitReleases),
                         ),
                     ],
@@ -2727,7 +2729,7 @@ class SettingsHandler {
           e.toString(),
         ),
         sideColor: Colors.red,
-        leadingIcon: Icons.error,
+        leadingIcon: Symbols.error_rounded,
         leadingIconColor: Colors.red,
       );
     }
@@ -2810,7 +2812,7 @@ class SettingsHandler {
           e.toString(),
         ),
         sideColor: Colors.red,
-        leadingIcon: Icons.error,
+        leadingIcon: Symbols.error_rounded,
         leadingIconColor: Colors.red,
       );
     }

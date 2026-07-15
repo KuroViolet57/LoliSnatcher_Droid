@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:get/get.dart' hide ContextExt, FirstWhereOrNullExt;
 import 'package:intl/intl.dart';
@@ -220,19 +222,19 @@ class MainSearchTagChip extends StatelessWidget {
                                       child: Center(
                                         child: switch (metaTag?.type) {
                                           .sort => Icon(
-                                            Icons.sort,
+                                            Symbols.sort_rounded,
                                             color: tagColor,
                                             size: 20,
                                           ),
                                           .user => Icon(
-                                            Icons.person_outline_rounded,
+                                            Symbols.person_outline_rounded,
                                             color: tagColor,
                                             size: 20,
                                           ),
                                           .date =>
                                             metaTag?.keyName == 'date'
                                                 ? Icon(
-                                                    Icons.calendar_month,
+                                                    Symbols.calendar_month_rounded,
                                                     color: tagColor,
                                                     size: 20,
                                                   )
@@ -359,7 +361,7 @@ class MainSearchTagChip extends StatelessWidget {
                               child: Padding(
                                 padding: const EdgeInsets.symmetric(horizontal: 6),
                                 child: Icon(
-                                  Icons.close_rounded,
+                                  Symbols.close_rounded,
                                   size: 20,
                                   color: canDelete ? tagColor : Colors.grey.shade400,
                                 ),

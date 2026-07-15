@@ -4,6 +4,8 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 
 import 'package:lolisnatcher/src/data/settings/app_mode.dart';
@@ -169,13 +171,13 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
                   title: context.loc.settings.interface.appUIMode,
                   itemLeadingBuilder: (item) {
                     return switch (item) {
-                      AppMode.Mobile => const Icon(Icons.phone_android_sharp),
-                      AppMode.Desktop => const Icon(Icons.desktop_windows_sharp),
+                      AppMode.Mobile => const Icon(Symbols.phone_android_rounded),
+                      AppMode.Desktop => const Icon(Symbols.desktop_windows_rounded),
                       _ => const Icon(null),
                     };
                   },
                   trailingIcon: IconButton(
-                    icon: const Icon(Icons.help_outline),
+                    icon: const Icon(Symbols.help_rounded),
                     onPressed: () {
                       showDialog(
                         context: context,
@@ -207,7 +209,7 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
                 title: context.loc.settings.interface.handSide,
                 itemTitleBuilder: (item) => item?.locName ?? '?',
                 trailingIcon: IconButton(
-                  icon: const Icon(Icons.back_hand_outlined),
+                  icon: const Icon(Symbols.back_hand_rounded),
                   onPressed: () {
                     showDialog(
                       context: context,
@@ -288,7 +290,7 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
                   ServiceHandler.setSystemUiVisibility(true);
                 },
                 title: 'Hide status bar',
-                leadingIcon: const Icon(Icons.fullscreen),
+                leadingIcon: const Icon(Symbols.fullscreen_rounded),
                 subtitle: const Text(
                   'Hides the Android status bar (clock, battery, notifications) app-wide so it stops intruding while you scroll. The bottom navigation bar stays.',
                 ),
@@ -301,7 +303,7 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
                   });
                 },
                 title: 'Personalized recommendations',
-                leadingIcon: const Icon(Icons.auto_awesome),
+                leadingIcon: const Icon(Symbols.auto_awesome_rounded),
                 subtitle: const Text(
                   "Learns which tags you tend to view, favourite, collect and search — on your device only — to power the 'For You' tab. Turn off to stop building the taste profile (you can wipe it from the For You page).",
                 ),
@@ -314,7 +316,7 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
                   });
                 },
                 title: 'Inline related-posts grids',
-                leadingIcon: const Icon(Icons.grid_view),
+                leadingIcon: const Icon(Symbols.grid_view_rounded),
                 subtitle: const Text(
                   "Shows 'More from this artist' and 'More from this uploader' thumbnail rows at the top of the post-details drawer (where supported by the booru). Turn off if you want a leaner drawer or to save bandwidth.",
                 ),
@@ -327,7 +329,7 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
                   });
                 },
                 title: 'Bottom info sheet',
-                leadingIcon: const Icon(Icons.vertical_align_bottom),
+                leadingIcon: const Icon(Symbols.vertical_align_bottom_rounded),
                 subtitle: const Text(
                   'Show the post info panel (tags, metadata) as a Boorusama-style sheet dragged up from the bottom of the viewer, instead of the classic right-side drawer. Open it with the info button or by swiping up from the bottom edge. Turn off to restore the side drawer.',
                 ),
@@ -359,7 +361,7 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
                   });
                 },
                 title: 'New tab placement (single tap)',
-                trailingIcon: const Icon(Icons.tab),
+                trailingIcon: const Icon(Symbols.tab_rounded),
               ),
               SettingsTextInput(
                 controller: columnsPortraitController,
@@ -421,7 +423,7 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
                 title: context.loc.settings.interface.previewQuality,
                 itemTitleBuilder: (e) => e?.locName ?? '',
                 trailingIcon: IconButton(
-                  icon: const Icon(Icons.help_outline),
+                  icon: const Icon(Symbols.help_rounded),
                   onPressed: () {
                     showDialog(
                       context: context,
@@ -456,12 +458,12 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
                 },
                 itemLeadingBuilder: (item) {
                   return switch (item) {
-                    .square => const Icon(Icons.crop_square_outlined),
+                    .square => const Icon(Symbols.crop_square_rounded),
                     .rectangle => Transform.rotate(
                       angle: pi / 2,
-                      child: const Icon(Icons.crop_16_9),
+                      child: const Icon(Symbols.crop_16_9_rounded),
                     ),
-                    .staggered => const Icon(Icons.dashboard_outlined),
+                    .staggered => const Icon(Symbols.dashboard_rounded),
                     _ => const Icon(null),
                   };
                 },
@@ -485,10 +487,10 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
                         },
                         itemLeadingBuilder: (item) {
                           return switch (item) {
-                            .square => const Icon(Icons.crop_square_outlined),
+                            .square => const Icon(Symbols.crop_square_rounded),
                             .rectangle => Transform.rotate(
                               angle: pi / 2,
-                              child: const Icon(Icons.crop_16_9),
+                              child: const Icon(Symbols.crop_16_9_rounded),
                             ),
                             _ => const Icon(null),
                           };
@@ -541,7 +543,7 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
                   });
                 },
                 title: context.loc.settings.interface.dontScaleImages,
-                leadingIcon: const Icon(Icons.close_fullscreen),
+                leadingIcon: const Icon(Symbols.close_fullscreen_rounded),
                 subtitle: Text(context.loc.settings.interface.dontScaleImagesSubtitle),
               ),
               Stack(
@@ -554,7 +556,7 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
                       });
                     },
                     title: context.loc.settings.interface.gifThumbnails,
-                    leadingIcon: const Icon(Icons.gif),
+                    leadingIcon: const Icon(Symbols.gif_rounded),
                     subtitle: Text(context.loc.settings.interface.gifThumbnailsRequires),
                   ),
                   if (!settingsHandler.disableImageScaling)

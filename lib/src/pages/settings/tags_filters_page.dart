@@ -1,5 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -176,7 +178,7 @@ class _TagsFiltersPageState extends State<TagsFiltersPage> with SingleTickerProv
         context.loc.settings.itemFilters.alreadyInList(tag: tag, type: type),
         style: const TextStyle(fontSize: 16),
       ),
-      leadingIcon: Icons.warning_amber,
+      leadingIcon: Symbols.warning_amber_rounded,
       leadingIconColor: Colors.yellow,
       sideColor: Colors.yellow,
     );
@@ -215,7 +217,7 @@ class _TagsFiltersPageState extends State<TagsFiltersPage> with SingleTickerProv
           title: Text(context.loc.settings.itemFilters.title),
           actions: [
             IconButton(
-              icon: const Icon(Icons.help_outline),
+              icon: const Icon(Symbols.help_rounded),
               tooltip: 'Blacklist syntax',
               onPressed: _showBlacklistHelp,
             ),
@@ -247,7 +249,7 @@ class _TagsFiltersPageState extends State<TagsFiltersPage> with SingleTickerProv
               ),
               Tab(
                 icon: const Icon(
-                  Icons.star,
+                  Symbols.star_rounded,
                   size: 24,
                   color: Colors.yellow,
                 ),
@@ -259,7 +261,7 @@ class _TagsFiltersPageState extends State<TagsFiltersPage> with SingleTickerProv
               ),
               Tab(
                 icon: Icon(
-                  Icons.settings,
+                  Symbols.settings_rounded,
                   size: 24,
                   color: Theme.of(context).colorScheme.onSurface,
                 ),
@@ -277,7 +279,7 @@ class _TagsFiltersPageState extends State<TagsFiltersPage> with SingleTickerProv
                 onPressed: () {
                   openAddDialog(tabController.index == 0 ? 'Hidden' : 'Marked');
                 },
-                child: const Icon(Icons.add),
+                child: const Icon(Symbols.add_rounded),
               )
             : null,
         body: TabBarView(

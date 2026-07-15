@@ -3,6 +3,8 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:fading_edge_scrollview/fading_edge_scrollview.dart';
 import 'package:get/get.dart' hide ContextExt, FirstWhereOrNullExt;
 import 'package:lolisnatcher/src/widgets/desktop/desktop_scroll.dart';
@@ -405,7 +407,7 @@ class _MainSearchBarState extends State<MainSearchBar> {
                                 child: const Padding(
                                   padding: EdgeInsets.symmetric(horizontal: 10),
                                   child: Icon(
-                                    Icons.close_rounded,
+                                    Symbols.close_rounded,
                                     size: 24,
                                   ),
                                 ),
@@ -428,7 +430,7 @@ class _MainSearchBarState extends State<MainSearchBar> {
                               child: const Padding(
                                 padding: EdgeInsets.symmetric(horizontal: 10),
                                 child: Icon(
-                                  Icons.refresh,
+                                  Symbols.refresh_rounded,
                                   size: 24,
                                 ),
                               ),
@@ -448,7 +450,7 @@ class _MainSearchBarState extends State<MainSearchBar> {
                         child: const Padding(
                           padding: EdgeInsets.symmetric(horizontal: 10),
                           child: Icon(
-                            Icons.bookmark_add_outlined,
+                            Symbols.bookmark_add_rounded,
                             size: 24,
                           ),
                         ),
@@ -464,7 +466,7 @@ class _MainSearchBarState extends State<MainSearchBar> {
                         child: const Padding(
                           padding: EdgeInsets.symmetric(horizontal: 10),
                           child: Icon(
-                            Icons.search_rounded,
+                            Symbols.search_rounded,
                             size: 24,
                           ),
                         ),

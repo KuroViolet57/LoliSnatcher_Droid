@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:lolisnatcher/src/utils/text_parser/comment_parser.dart';
 import 'package:lolisnatcher/src/widgets/common/parsed_text.dart';
 import 'package:lolisnatcher/src/widgets/common/settings_widgets.dart';
@@ -428,7 +430,7 @@ class _TextParserTestPageState extends State<TextParserTestPage> {
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.bug_report, size: 20),
+                  icon: const Icon(Symbols.bug_report_rounded, size: 20),
                   onPressed: () => _showDebugDialog(context, sample),
                   tooltip: 'Show parsed segments',
                   visualDensity: VisualDensity.compact,

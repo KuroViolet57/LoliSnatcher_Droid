@@ -4,6 +4,8 @@ import 'dart:math';
 import 'package:better_player_plus/better_player_plus.dart';
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -669,7 +671,7 @@ class _BetterControlsState extends State<_BetterControls> {
                     shape: BoxShape.circle,
                   ),
                   padding: const EdgeInsets.all(12),
-                  child: const Icon(Icons.play_arrow, color: Colors.white, size: 48),
+                  child: const Icon(Symbols.play_arrow_rounded, color: Colors.white, size: 48),
                 ),
               ),
             ),
@@ -730,7 +732,7 @@ class _BetterControlsState extends State<_BetterControls> {
             Row(
               children: [
                 IconButton(
-                  icon: Icon(_isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white),
+                  icon: Icon(_isPlaying ? Symbols.pause_rounded : Symbols.play_arrow_rounded, color: Colors.white),
                   onPressed: _playPause,
                 ),
                 Text(
@@ -739,7 +741,7 @@ class _BetterControlsState extends State<_BetterControls> {
                 ),
                 const Spacer(),
                 IconButton(
-                  icon: Icon(muted ? Icons.volume_off : Icons.volume_up, color: Colors.white),
+                  icon: Icon(muted ? Symbols.volume_off_rounded : Symbols.volume_up_rounded, color: Colors.white),
                   onPressed: () {
                     _bpc.setVolume(muted ? 1.0 : 0.0);
                     _wake();
@@ -747,7 +749,7 @@ class _BetterControlsState extends State<_BetterControls> {
                 ),
                 IconButton(
                   icon: Icon(
-                    _bpc.isFullScreen ? Icons.fullscreen_exit : Icons.fullscreen,
+                    _bpc.isFullScreen ? Symbols.fullscreen_exit_rounded : Symbols.fullscreen_rounded,
                     color: Colors.white,
                   ),
                   onPressed: () {
@@ -790,7 +792,7 @@ class _SeekFeedback extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              side < 0 ? Icons.fast_rewind : Icons.fast_forward,
+              side < 0 ? Symbols.fast_rewind_rounded : Symbols.fast_forward_rounded,
               color: Colors.white,
               size: 28,
             ),
