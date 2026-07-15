@@ -829,47 +829,46 @@ class SettingsOptionsList<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: Column(
-        children: [
-          ListTile(
-            title: Text(title),
-            subtitle: subtitle,
-            trailing:
-                trailingIcon ??
-                (onReset != null
-                    ? IconButton(
-                        onPressed: onReset,
-                        icon: const Icon(Icons.refresh_rounded),
-                      )
-                    : null),
-            dense: false,
-            shape: Border(
-              top: drawTopBorder
-                  ? BorderSide(color: Theme.of(context).dividerColor, width: borderWidth)
-                  : BorderSide.none,
+    final cardTheme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+      child: Material(
+        color: cardTheme.colorScheme.surfaceContainer,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(13),
+          side: BorderSide(color: cardTheme.colorScheme.outlineVariant),
+        ),
+        child: Column(
+          children: [
+            ListTile(
+              title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+              subtitle: subtitle,
+              trailing:
+                  trailingIcon ??
+                  (onReset != null
+                      ? IconButton(
+                          onPressed: onReset,
+                          icon: const Icon(Icons.refresh_rounded),
+                        )
+                      : null),
+              dense: false,
             ),
-          ),
-          ListTile(
-            title: Column(
-              children: [
-                for (final item in items)
-                  getItemWidget(
-                    context,
-                    item,
-                    value == item,
-                    items.indexOf(item),
-                  ),
-              ],
+            ListTile(
+              title: Column(
+                children: [
+                  for (final item in items)
+                    getItemWidget(
+                      context,
+                      item,
+                      value == item,
+                      items.indexOf(item),
+                    ),
+                ],
+              ),
             ),
-            shape: Border(
-              bottom: drawBottomBorder
-                  ? BorderSide(color: Theme.of(context).dividerColor, width: borderWidth)
-                  : BorderSide.none,
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
