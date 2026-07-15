@@ -2,6 +2,8 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:get/get.dart';
 import 'package:scroll_to_index/scroll_to_index.dart';
 
@@ -147,7 +149,7 @@ class ThumbnailCardBuild extends StatelessWidget {
                         child: Padding(
                           padding: const EdgeInsets.all(4),
                           child: Icon(
-                            Icons.visibility,
+                            Symbols.visibility_rounded,
                             size: 16,
                             color: Colors.white.withValues(alpha: 0.8),
                           ),

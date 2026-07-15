@@ -1,6 +1,8 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:lolisnatcher/gen/strings.g.dart';
 import 'package:lolisnatcher/src/widgets/common/bordered_text.dart';
 import 'package:lolisnatcher/src/widgets/common/cancel_button.dart';
@@ -95,7 +97,7 @@ class _TimedLeaveDialogContentState extends State<_TimedLeaveDialogContent> with
           children: [
             widget.icon ??
                 const Icon(
-                  Icons.warning_amber_rounded,
+                  Symbols.warning_amber_rounded,
                   size: 40,
                 ),
             const SizedBox(height: 16),

@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:flash/flash.dart';
 
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
@@ -100,7 +102,7 @@ class FlashElements {
     bool isKeyUnique = false,
     Widget content = const SizedBox(height: 20),
     Color sideColor = Colors.red,
-    IconData? leadingIcon = Icons.info_outline,
+    IconData? leadingIcon = Symbols.info_rounded,
     Color? leadingIconColor,
     double leadingIconSize = 36,
     Widget? overrideLeadingIconWidget,
@@ -304,7 +306,7 @@ Widget _defaultPrimaryAction(
       child: IconButton(
         onPressed: () => controller.dismiss(),
         icon: const Icon(
-          Icons.close,
+          Symbols.close_rounded,
           // Dark ink to match the light Flow snackbar.
           color: Color(0xFF2A2240),
         ),

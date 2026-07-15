@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -78,7 +80,7 @@ class _SnatchedStatusIconState extends State<SnatchedStatusIcon> {
     return PulseWidget(
       enabled: running,
       child: Icon(
-        Icons.save_alt,
+        Symbols.save_alt_rounded,
         size: Theme.of(context).buttonTheme.height / 2.1,
         color: fileExists ? Colors.green : Colors.white,
       ),

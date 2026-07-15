@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:get/get.dart';
 
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
@@ -108,7 +110,7 @@ class _PageNumberDialogState extends State<PageNumberDialog> {
                   name: context.loc.pageChanger.searchCurrentlyRunning,
                   icon: const PulseWidget(
                     child: Icon(
-                      Icons.warning_amber,
+                      Symbols.warning_amber_rounded,
                       color: Colors.yellow,
                     ),
                   ),
@@ -118,7 +120,7 @@ class _PageNumberDialogState extends State<PageNumberDialog> {
       ],
       actionButtons: [
         ElevatedButton.icon(
-          icon: const Icon(Icons.subdirectory_arrow_right_rounded),
+          icon: const Icon(Symbols.subdirectory_arrow_right_rounded),
           label: Text(context.loc.pageChanger.jumpToPage),
           onPressed: () {
             if (pageNumberController.text.isNotEmpty) {
@@ -129,7 +131,7 @@ class _PageNumberDialogState extends State<PageNumberDialog> {
         ),
         Obx(
           () => ElevatedButton.icon(
-            icon: const Icon(Icons.search_rounded),
+            icon: const Icon(Symbols.search_rounded),
             label: Text(context.loc.pageChanger.searchUntilPage),
             onPressed: searchHandler.isRunningAutoSearch.value
                 ? null
@@ -147,7 +149,7 @@ class _PageNumberDialogState extends State<PageNumberDialog> {
         Obx(
           () => searchHandler.isRunningAutoSearch.value
               ? ElevatedButton.icon(
-                  icon: const Icon(Icons.cancel_outlined),
+                  icon: const Icon(Symbols.cancel_rounded),
                   label: Text(context.loc.pageChanger.stopSearching),
                   onPressed: () {
                     searchHandler.isRunningAutoSearch.value = false;

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:get/get.dart';
 
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
@@ -49,7 +51,7 @@ class TabButtons extends StatelessWidget {
 
       // Prev tab
       final Widget leftArrow = IconButton(
-        icon: const Icon(Icons.arrow_upward),
+        icon: const Icon(Symbols.arrow_upward_rounded),
         color: iconColor,
         onPressed: () {
           // switch to the prev tab, loop if reached the first
@@ -63,7 +65,7 @@ class TabButtons extends StatelessWidget {
 
       // Next tab
       final Widget rightArrow = IconButton(
-        icon: const Icon(Icons.arrow_downward),
+        icon: const Icon(Symbols.arrow_downward_rounded),
         color: iconColor,
         onPressed: () {
           // switch to the next tab, loop if reached the last
@@ -77,7 +79,7 @@ class TabButtons extends StatelessWidget {
 
       // Remove current tab
       final Widget removeButton = IconButton(
-        icon: const Icon(Icons.remove_circle_outline),
+        icon: const Icon(Symbols.remove_circle_rounded),
         color: iconColor,
         // Remove selected searchtab from list and apply nearest to search bar
         onPressed: searchHandler.removeTabAt,
@@ -87,7 +89,7 @@ class TabButtons extends StatelessWidget {
       final Widget addButton = GestureDetector(
         onLongPress: () => showLongTapAddDialog(context),
         child: IconButton(
-          icon: const Icon(Icons.add_circle_outline),
+          icon: const Icon(Symbols.add_circle_rounded),
           color: iconColor,
           onPressed: () {
             final String defaultText = searchHandler.currentBooru.defTags?.isNotEmpty == true
@@ -102,7 +104,7 @@ class TabButtons extends StatelessWidget {
 
       // Show search history
       final Widget historyButton = IconButton(
-        icon: const Icon(Icons.history),
+        icon: const Icon(Symbols.history_rounded),
         color: iconColor,
         onPressed: () async {
           await showHistory(context);
@@ -111,7 +113,7 @@ class TabButtons extends StatelessWidget {
 
       // Show page number dialog
       final Widget pageNumberNutton = IconButton(
-        icon: const Icon(Icons.format_list_numbered),
+        icon: const Icon(Symbols.format_list_numbered_rounded),
         color: iconColor,
         onPressed: () {
           SettingsPageOpen(

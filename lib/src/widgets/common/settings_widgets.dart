@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 
 import 'package:lolisnatcher/src/data/booru.dart';
@@ -86,7 +88,7 @@ class SettingsButton extends StatelessWidget {
           subtitle: subtitle,
           trailing: trailingIcon ??
               (page != null
-                  ? Icon(Icons.chevron_right, color: theme.colorScheme.onSurfaceVariant)
+                  ? Icon(Symbols.chevron_right_rounded, color: theme.colorScheme.onSurfaceVariant)
                   : null),
           enabled: enabled,
           dense: dense,
@@ -255,7 +257,7 @@ class SettingsToggle extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsets.only(left: 8),
                   child: IconButton(
-                    icon: const Icon(Icons.restore),
+                    icon: const Icon(Symbols.restore_rounded),
                     onPressed: () {
                       onChanged(defaultValue!);
                     },
@@ -348,7 +350,7 @@ class SettingsToggleTristate extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsets.only(left: 8),
                   child: IconButton(
-                    icon: const Icon(Icons.restore),
+                    icon: const Icon(Symbols.restore_rounded),
                     onPressed: () {
                       onChanged(defaultValue);
                     },
@@ -428,7 +430,7 @@ class SettingsSegmentedButton<T> extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(left: 8),
                 child: IconButton(
-                  icon: const Icon(Icons.restore),
+                  icon: const Icon(Symbols.restore_rounded),
                   onPressed: () {
                     onChanged(defaultValue as T);
                   },
@@ -646,7 +648,7 @@ class SettingsDropdown<T> extends StatelessWidget {
             (onReset != null
                 ? IconButton(
                     onPressed: onReset,
-                    icon: const Icon(Icons.refresh_rounded),
+                    icon: const Icon(Symbols.refresh_rounded),
                   )
                 : null),
         dense: false,
@@ -822,7 +824,7 @@ class SettingsOptionsList<T> extends StatelessWidget {
             tileColor: index.isOdd ? oddItemColor : evenItemColor,
             leading: getItemLeading(value),
             title: Text(getItemTitle(value)),
-            trailing: isSelected ? const Icon(Icons.check, size: 24) : null,
+            trailing: isSelected ? const Icon(Symbols.check_rounded, size: 24) : null,
           ),
     );
   }
@@ -849,7 +851,7 @@ class SettingsOptionsList<T> extends StatelessWidget {
                   (onReset != null
                       ? IconButton(
                           onPressed: onReset,
-                          icon: const Icon(Icons.refresh_rounded),
+                          icon: const Icon(Symbols.refresh_rounded),
                         )
                       : null),
               dense: false,
@@ -1043,7 +1045,7 @@ class _SettingsTextInputState extends State<SettingsTextInput> {
           IconButton(
             key: const Key('reset-button'),
             icon: Icon(
-              Icons.refresh,
+              Symbols.refresh_rounded,
               color: Theme.of(context).colorScheme.onSurface,
             ),
             onPressed: () {
@@ -1054,18 +1056,18 @@ class _SettingsTextInputState extends State<SettingsTextInput> {
         if (widget.numberButtons && (isFocused || widget.alwaysShowNumberButtons))
           Container(
             key: const Key('number-button-down'),
-            child: buildNumberButton(stepNumberDown, Icons.remove),
+            child: buildNumberButton(stepNumberDown, Symbols.remove_rounded),
           ),
         if (widget.numberButtons && (isFocused || widget.alwaysShowNumberButtons))
           Container(
             key: const Key('number-button-up'),
-            child: buildNumberButton(stepNumberUp, Icons.add),
+            child: buildNumberButton(stepNumberUp, Symbols.add_rounded),
           ),
         if (widget.clearable && isFocused && widget.controller.text.isNotEmpty)
           IconButton(
             key: const Key('clear-button'),
             icon: Icon(
-              Icons.close_rounded,
+              Symbols.close_rounded,
               color: Theme.of(context).colorScheme.onSurface,
             ),
             onPressed: () {
@@ -1076,7 +1078,7 @@ class _SettingsTextInputState extends State<SettingsTextInput> {
         if (widget.copyable && isFocused)
           IconButton(
             key: const Key('copy-button'),
-            icon: Icon(Icons.copy, color: Theme.of(context).colorScheme.onSurface),
+            icon: Icon(Symbols.content_copy_rounded, color: Theme.of(context).colorScheme.onSurface),
             onPressed: () {
               Clipboard.setData(ClipboardData(text: widget.controller.text));
             },
@@ -1091,7 +1093,7 @@ class _SettingsTextInputState extends State<SettingsTextInput> {
 
               return IconButton(
                 key: const Key('paste-button'),
-                icon: Icon(Icons.paste, color: Theme.of(context).colorScheme.onSurface),
+                icon: Icon(Symbols.content_paste_rounded, color: Theme.of(context).colorScheme.onSurface),
                 onPressed: () async {
                   final data = snapshot.data?.text;
                   if (data?.isNotEmpty == true) {
@@ -1107,7 +1109,7 @@ class _SettingsTextInputState extends State<SettingsTextInput> {
           IconButton(
             key: const Key('obscure-button'),
             icon: Icon(
-              isObscured ? Icons.visibility : Icons.visibility_off,
+              isObscured ? Symbols.visibility_rounded : Symbols.visibility_off_rounded,
               color: Theme.of(context).colorScheme.onSurface,
             ),
             onPressed: toggleObscure,
@@ -1116,7 +1118,7 @@ class _SettingsTextInputState extends State<SettingsTextInput> {
           IconButton(
             key: const Key('submit-button'),
             icon: Icon(
-              widget.submitIcon ?? (widget.onSubmitted != null ? Icons.send : Icons.done),
+              widget.submitIcon ?? (widget.onSubmitted != null ? Symbols.send_rounded : Symbols.done_rounded),
               color: Theme.of(context).colorScheme.onSurface,
             ),
             onPressed: () {
@@ -1133,7 +1135,7 @@ class _SettingsTextInputState extends State<SettingsTextInput> {
         else if (!isFocused)
           IconButton(
             key: const Key('edit-button'),
-            icon: Icon(Icons.edit, color: Theme.of(context).colorScheme.onSurface),
+            icon: Icon(Symbols.edit_rounded, color: Theme.of(context).colorScheme.onSurface),
             onPressed: _focusNode.requestFocus,
           ),
       ],
@@ -1347,7 +1349,7 @@ class SettingsBottomSheet extends StatelessWidget {
                           Padding(
                             padding: const EdgeInsets.fromLTRB(0, 12, 16, 0),
                             child: IconButton(
-                              icon: const Icon(Icons.close_rounded),
+                              icon: const Icon(Symbols.close_rounded),
                               onPressed: () {
                                 Navigator.of(context).pop();
                               },

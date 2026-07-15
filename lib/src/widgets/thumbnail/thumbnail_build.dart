@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -119,7 +121,7 @@ class ThumbnailBuild extends StatelessWidget {
                           title: Text(context.loc.copied, style: const TextStyle(fontSize: 20)),
                           content: Text(context.loc.common.booruItemCopiedToClipboard),
                           sideColor: Colors.green,
-                          leadingIcon: Icons.copy,
+                          leadingIcon: Symbols.content_copy_rounded,
                           leadingIconColor: Colors.white,
                           duration: const Duration(seconds: 2),
                         );
@@ -131,7 +133,7 @@ class ThumbnailBuild extends StatelessWidget {
                           borderRadius: const BorderRadius.only(bottomRight: Radius.circular(5)),
                         ),
                         child: const Icon(
-                          Icons.copy,
+                          Symbols.content_copy_rounded,
                           color: Colors.white,
                           size: 16,
                         ),
@@ -423,7 +425,7 @@ class _ThumbnailBottomRightIcons extends StatelessWidget {
       final bool isBottomRightEmpty = bottomRightAmount == 0;
 
       const snatchedIcon = Icon(
-        Icons.save_alt,
+        Symbols.save_alt_rounded,
         color: Colors.white,
         size: 14,
       );
@@ -461,7 +463,7 @@ class _ThumbnailBottomRightIcons extends StatelessWidget {
                           ),
                         )
                       : Icon(
-                          isFav == true ? Icons.favorite : Icons.star,
+                          isFav == true ? Symbols.favorite_rounded : Symbols.star_rounded,
                           color: isFav == true ? Colors.red : Colors.grey,
                           key: ValueKey<Color>(isFav == true ? Colors.red : Colors.grey),
                           size: 14,
@@ -490,19 +492,19 @@ class _ThumbnailBottomRightIcons extends StatelessWidget {
                 ),
               if (hasComments)
                 const Icon(
-                  Icons.comment,
+                  Symbols.comment_rounded,
                   color: Colors.white,
                   size: 14,
                 ),
               if (hasNotes)
                 const Icon(
-                  Icons.note_add,
+                  Symbols.note_add_rounded,
                   color: Colors.white,
                   size: 14,
                 ),
               if (isSound)
                 const Icon(
-                  Icons.volume_up_rounded,
+                  Symbols.volume_up_rounded,
                   color: Colors.white,
                   size: 14,
                 ),

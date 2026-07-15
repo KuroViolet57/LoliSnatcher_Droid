@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/widgets/common/add_button.dart';
 import 'package:lolisnatcher/src/widgets/common/cancel_button.dart';
@@ -42,7 +44,7 @@ class _TagsFiltersAddDialogState extends State<TagsFiltersAddDialog> {
           context.loc.tagsFiltersDialogs.emptyInput,
           style: const TextStyle(fontSize: 20),
         ),
-        leadingIcon: Icons.warning_amber,
+        leadingIcon: Symbols.warning_amber_rounded,
         leadingIconColor: Colors.red,
         sideColor: Colors.red,
       );
@@ -59,7 +61,7 @@ class _TagsFiltersAddDialogState extends State<TagsFiltersAddDialog> {
             absorbing: true,
             child: TagsFiltersListItem(
               tag: context.loc.tagsFiltersDialogs.addNewFilter(type: widget.tagFilterType),
-              overrideIcon: const Icon(Icons.add),
+              overrideIcon: const Icon(Symbols.add_rounded),
             ),
           ),
         ),

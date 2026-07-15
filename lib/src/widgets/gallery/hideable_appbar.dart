@@ -5,6 +5,8 @@ import 'dart:math';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 
 import 'package:dio/dio.dart';
@@ -140,7 +142,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
             context: context,
             title: Text(context.loc.viewer.appBar.cantStartSlideshow, style: const TextStyle(fontSize: 20)),
             content: Text(context.loc.viewer.appBar.reachedLastLoadedItem, style: const TextStyle(fontSize: 16)),
-            leadingIcon: Icons.warning_amber,
+            leadingIcon: Symbols.warning_amber_rounded,
             leadingIconColor: Colors.red,
             sideColor: Colors.red,
           );
@@ -257,7 +259,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
 
     // Debug - print current item info
     // actions.add(IconButton(
-    //   icon: Icon(Icons.developer_board),
+    //   icon: Icon(Symbols.developer_board_rounded),
     //   color: Colors.white,
     //   onPressed: () {
     //     print(searchHandler.viewedItem.value.toJSON().toString());
@@ -286,12 +288,12 @@ class _HideableAppBarState extends State<HideableAppBar> {
                 children: [
                   if (isSelected && isSelectOverflowed)
                     const Icon(
-                      Icons.check_box,
+                      Symbols.check_box_rounded,
                       color: Colors.white,
                       size: 18,
                     ),
                   const Icon(
-                    Icons.more_vert,
+                    Symbols.more_vert_rounded,
                     color: Colors.white,
                   ),
                 ],
@@ -337,19 +339,19 @@ class _HideableAppBarState extends State<HideableAppBar> {
 
     switch (button) {
       case .info:
-        icon = Icons.info;
+        icon = Symbols.info_rounded;
         break;
       case .open:
-        icon = Icons.public;
+        icon = Symbols.public_rounded;
         break;
       case .autoscroll:
-        icon = autoScroll ? Icons.pause : Icons.play_arrow;
+        icon = autoScroll ? Symbols.pause_rounded : Symbols.play_arrow_rounded;
         break;
       case .snatch:
-        icon = Icons.save;
+        icon = Symbols.save_rounded;
         break;
       case .favourite:
-        // icon = isFav == true ? Icons.favorite : Icons.favorite_border;
+        // icon = isFav == true ? Symbols.favorite_rounded : Symbols.favorite_border_rounded;
         // early return to override with animated icon
         return Obx(() {
           if (page.value == -1 || widget.tab.booruHandler.filteredFetched.isEmpty) {
@@ -360,14 +362,14 @@ class _HideableAppBarState extends State<HideableAppBar> {
           return AnimatedCrossFade(
             duration: const Duration(milliseconds: 200),
             crossFadeState: isFav == true ? CrossFadeState.showFirst : CrossFadeState.showSecond,
-            firstChild: const Icon(Icons.favorite),
+            firstChild: const Icon(Symbols.favorite_rounded),
             secondChild: Icon(
-              isFav == true ? Icons.favorite : (isFav == false ? Icons.favorite_border : CupertinoIcons.heart_slash),
+              isFav == true ? Symbols.favorite_rounded : (isFav == false ? Symbols.favorite_border_rounded : CupertinoIcons.heart_slash),
             ),
           );
         });
       case .share:
-        icon = Icons.share;
+        icon = Symbols.share_rounded;
         break;
       case .select:
         return Obx(() {
@@ -415,7 +417,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
                           ),
                         )
                       : const Icon(
-                          Icons.check_box_outline_blank,
+                          Symbols.check_box_outline_blank_rounded,
                           size: 24,
                         ),
                 ),
@@ -424,16 +426,16 @@ class _HideableAppBarState extends State<HideableAppBar> {
           );
         });
       case .reloadnoscale:
-        icon = Icons.refresh;
+        icon = Symbols.refresh_rounded;
         break;
       case .toggleQuality:
         final bool isHq = settingsHandler.galleryMode.isFullRes ? !item.toggleQuality.value : item.toggleQuality.value;
-        icon = isHq ? Icons.high_quality : Icons.high_quality_outlined;
+        icon = isHq ? Symbols.high_quality_rounded : Symbols.high_quality_rounded;
       case .externalPlayer:
-        icon = Icons.exit_to_app;
+        icon = Symbols.exit_to_app_rounded;
         break;
       case .imageSearch:
-        icon = Icons.image_search_rounded;
+        icon = Symbols.image_search_rounded;
         break;
     }
     return Icon(icon);
@@ -690,7 +692,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
                           await settingsHandler.dbHandler.updateBooruItem(item, BooruUpdateMode.local);
                           Navigator.of(context).pop();
                         },
-                        leading: item.isSnatched.value == true ? const Icon(Icons.clear) : const Icon(Icons.check),
+                        leading: item.isSnatched.value == true ? const Icon(Symbols.clear_rounded) : const Icon(Symbols.check_rounded),
                         title: item.isSnatched.value == true
                             ? Text(context.loc.viewer.appBar.dropSnatchedStatus)
                             : Text(context.loc.viewer.appBar.setSnatchedStatus),
@@ -720,7 +722,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
                         }
                         Navigator.of(context).pop();
                       },
-                      leading: const Icon(Icons.file_download_outlined),
+                      leading: const Icon(Symbols.file_download_rounded),
                       title: Text(
                         '${context.loc.viewer.appBar.snatch} ${item.isSnatched.value == true ? context.loc.viewer.appBar.forced : ''}'
                             .trim(),
@@ -758,7 +760,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
           FlashElements.showSnackbar(
             context: context,
             title: Text(context.loc.gallery.noPostUrl, style: const TextStyle(fontSize: 20)),
-            leadingIcon: Icons.warning_amber,
+            leadingIcon: Symbols.warning_amber_rounded,
             leadingIconColor: Colors.red,
             sideColor: Colors.red,
           );
@@ -772,7 +774,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
           FlashElements.showSnackbar(
             context: context,
             title: Text(context.loc.gallery.noPostUrl, style: const TextStyle(fontSize: 20)),
-            leadingIcon: Icons.warning_amber,
+            leadingIcon: Symbols.warning_amber_rounded,
             leadingIconColor: Colors.red,
             sideColor: Colors.red,
           );
@@ -825,7 +827,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
         duration: const Duration(seconds: 2),
         title: Text(context.loc.copiedToClipboard, style: const TextStyle(fontSize: 20)),
         content: Text(Uri.encodeFull(text), style: const TextStyle(fontSize: 16)),
-        leadingIcon: Icons.copy,
+        leadingIcon: Symbols.content_copy_rounded,
         sideColor: Colors.green,
       );
     } else if (Platform.isAndroid) {
@@ -852,21 +854,21 @@ class _HideableAppBarState extends State<HideableAppBar> {
                 const SizedBox(height: 12),
                 ListTile(
                   title: Text(context.loc.viewer.appBar.postURL),
-                  leading: const Icon(Icons.arrow_forward),
+                  leading: const Icon(Symbols.arrow_forward_rounded),
                   onTap: () {
                     Navigator.of(context).pop('post');
                   },
                 ),
                 ListTile(
                   title: Text(context.loc.viewer.appBar.fileURL),
-                  leading: const Icon(Icons.arrow_forward),
+                  leading: const Icon(Symbols.arrow_forward_rounded),
                   onTap: () {
                     Navigator.of(context).pop('file');
                   },
                 ),
                 ListTile(
                   title: Text(context.loc.cancel),
-                  leading: const Icon(Icons.cancel_outlined),
+                  leading: const Icon(Symbols.cancel_rounded),
                   onTap: () {
                     Navigator.of(context).pop();
                   },
@@ -935,7 +937,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
                     if (!alreadyLoadingSame) ...[
                       const SizedBox(width: 8),
                       Icon(
-                        Icons.arrow_forward_ios,
+                        Symbols.arrow_forward_ios_rounded,
                         size: 30,
                         color: Theme.of(context).colorScheme.onSurface,
                       ),
@@ -1072,7 +1074,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
             context.loc.viewer.appBar.savingFileError,
             style: const TextStyle(fontSize: 16),
           ),
-          leadingIcon: Icons.warning_amber,
+          leadingIcon: Symbols.warning_amber_rounded,
           leadingIconColor: Colors.red,
           sideColor: Colors.red,
         );
@@ -1210,7 +1212,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
                     Navigator.of(context).pop();
                     shareFileAction();
                   },
-                  leading: const Icon(Icons.file_present),
+                  leading: const Icon(Symbols.file_present_rounded),
                   title: Text(context.loc.viewer.appBar.file),
                 ),
                 const SizedBox(height: 15),
@@ -1234,7 +1236,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
                   leading: const Stack(
                     clipBehavior: Clip.none,
                     children: [
-                      Icon(Icons.file_present),
+                      Icon(Symbols.file_present_rounded),
                       Positioned(
                         bottom: -10,
                         right: -10,
@@ -1258,7 +1260,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
                       await shareHydrusAction(item);
                       Navigator.of(context).pop();
                     },
-                    leading: const Icon(Icons.file_present),
+                    leading: const Icon(Symbols.file_present_rounded),
                     title: Text(context.loc.viewer.appBar.hydrus),
                   ),
               ],
@@ -1359,7 +1361,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
                 surfaceTintColor: Colors.transparent,
                 leading: IconButton(
                   // to ignore icon change
-                  icon: const Icon(Icons.arrow_back, color: Colors.white),
+                  icon: const Icon(Symbols.arrow_back_rounded, color: Colors.white),
                   onPressed: () => Navigator.of(context).pop(),
                 ),
                 title: FittedBox(

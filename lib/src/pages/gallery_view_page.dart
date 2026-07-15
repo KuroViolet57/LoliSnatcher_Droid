@@ -4,6 +4,8 @@ import 'dart:math';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 
 import 'package:photo_view/photo_view.dart';
@@ -1085,20 +1087,20 @@ class _InfoPeekBar extends StatelessWidget {
                       Flexible(
                         child: _chip(
                           context,
-                          Icons.brush_outlined,
+                          Symbols.brush_rounded,
                           artist.replaceAll('_', ' '),
                           TagType.artist.getColour(),
                         ),
                       ),
                       const SizedBox(width: 8),
                     ],
-                    _chip(context, Icons.sell_outlined, '$tagCount tags', null),
+                    _chip(context, Symbols.sell_rounded, '$tagCount tags', null),
                     const Spacer(),
                     const Text(
                       'swipe up',
                       style: TextStyle(color: Color(0xFF8A80A0), fontSize: 11.5, fontWeight: FontWeight.w600),
                     ),
-                    const Icon(Icons.keyboard_arrow_up_rounded, size: 18, color: Color(0xFF8A80A0)),
+                    const Icon(Symbols.keyboard_arrow_up_rounded, size: 18, color: Color(0xFF8A80A0)),
                   ],
                 ),
               ],
@@ -1197,7 +1199,7 @@ class _ItemInfoDrawerState extends State<ItemInfoDrawer> {
                   ? SizedBox.expand(
                       child: OutlinedButton(
                         onPressed: viewerHandler.forceLoadCurrentItem,
-                        child: const Icon(Icons.refresh),
+                        child: const Icon(Symbols.refresh_rounded),
                       ),
                     )
                   : null,
@@ -1215,7 +1217,7 @@ class _ItemInfoDrawerState extends State<ItemInfoDrawer> {
               onLongPressCancel: toggleVisibility,
               child: OutlinedButton(
                 onPressed: toggleVisibility,
-                child: isVisible.value ? const Icon(Icons.remove_red_eye) : const Icon(Icons.remove_red_eye_outlined),
+                child: isVisible.value ? const Icon(Symbols.remove_red_eye_rounded) : const Icon(Symbols.remove_red_eye_rounded),
               ),
             );
           },
@@ -1231,8 +1233,8 @@ class _ItemInfoDrawerState extends State<ItemInfoDrawer> {
           child: OutlinedButton(
             onPressed: () => widget.pageController.jumpToPage(page.value - 1),
             child: settingsHandler.galleryScrollDirection.isVertical
-                ? const Icon(Icons.arrow_upward)
-                : const Icon(Icons.arrow_back),
+                ? const Icon(Symbols.arrow_upward_rounded)
+                : const Icon(Symbols.arrow_back_rounded),
           ),
         ),
       ),
@@ -1246,8 +1248,8 @@ class _ItemInfoDrawerState extends State<ItemInfoDrawer> {
           child: OutlinedButton(
             onPressed: () => widget.pageController.jumpToPage(page.value + 1),
             child: settingsHandler.galleryScrollDirection.isVertical
-                ? const Icon(Icons.arrow_downward)
-                : const Icon(Icons.arrow_forward),
+                ? const Icon(Symbols.arrow_downward_rounded)
+                : const Icon(Symbols.arrow_forward_rounded),
           ),
         ),
       ),

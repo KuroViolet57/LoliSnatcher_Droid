@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:lolisnatcher/gen/strings.g.dart';
 
 class SaveButton extends StatelessWidget {
@@ -31,7 +33,7 @@ class SaveButton extends StatelessWidget {
             Navigator.of(context).pop(returnData);
           }
         },
-        icon: const Icon(Icons.save),
+        icon: const Icon(Symbols.save_rounded),
         label: Text(context.loc.save),
       );
     }

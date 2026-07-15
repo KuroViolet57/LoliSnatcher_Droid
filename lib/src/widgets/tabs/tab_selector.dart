@@ -3,6 +3,8 @@ import 'dart:math';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 
 import 'package:auto_size_text_plus/auto_size_text_plus.dart';
@@ -182,7 +184,7 @@ class TabSelector extends StatelessWidget {
                                       child: Padding(
                                         padding: const EdgeInsets.symmetric(horizontal: 2),
                                         child: Icon(
-                                          Icons.image,
+                                          Symbols.image_rounded,
                                           size: inputDecoration.labelStyle?.fontSize ?? 12,
                                           color: color ?? inputDecoration.labelStyle?.color,
                                         ),
@@ -244,7 +246,7 @@ class TabSelector extends StatelessWidget {
                                     Padding(
                                       padding: const EdgeInsets.symmetric(horizontal: 2),
                                       child: Icon(
-                                        Icons.image,
+                                        Symbols.image_rounded,
                                         size: 14,
                                         color: usedColor,
                                       ),
@@ -295,7 +297,7 @@ class TabSelector extends StatelessWidget {
                               children: [
                                 BooruFavicon(searchHandler.currentBooru),
                                 Icon(
-                                  Icons.arrow_drop_down,
+                                  Symbols.arrow_drop_down_rounded,
                                   color: color ?? theme.iconTheme.color,
                                 ),
                               ],
@@ -369,7 +371,7 @@ class TabSelector extends StatelessWidget {
                                   ),
                                   const SizedBox(width: 4),
                                   Icon(
-                                    Icons.arrow_drop_down,
+                                    Symbols.arrow_drop_down_rounded,
                                     color: color ?? theme.iconTheme.color,
                                   ),
                                 ],
@@ -798,7 +800,7 @@ class _TabManagerPageState extends State<TabManagerPage> {
           TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
           ElevatedButton.icon(
             onPressed: () => Navigator.of(ctx).pop(true),
-            icon: const Icon(Icons.delete_outline),
+            icon: const Icon(Symbols.delete_rounded),
             label: const Text('Delete'),
           ),
         ],
@@ -843,7 +845,7 @@ class _TabManagerPageState extends State<TabManagerPage> {
               IconButton(
                 iconSize: 30,
                 onPressed: openFiltersDialog,
-                icon: const Icon(Icons.filter_alt),
+                icon: const Icon(Symbols.filter_alt_rounded),
               ),
               if (filtersCount > 0)
                 Positioned(
@@ -985,12 +987,12 @@ class _TabManagerPageState extends State<TabManagerPage> {
               duration: const Duration(seconds: 2),
               title: Text(context.loc.copiedToClipboard, style: const TextStyle(fontSize: 20)),
               content: Text(tab.tags, style: const TextStyle(fontSize: 16)),
-              leadingIcon: Icons.copy,
+              leadingIcon: Symbols.content_copy_rounded,
               sideColor: Colors.green,
             );
             Navigator.of(context).pop();
           },
-          leading: const Icon(Icons.copy),
+          leading: const Icon(Symbols.content_copy_rounded),
           title: Text(context.loc.tabs.copy),
         ),
         const SizedBox(height: 10),
@@ -1014,7 +1016,7 @@ class _TabManagerPageState extends State<TabManagerPage> {
             );
             getTabs();
           },
-          leading: const Icon(Icons.move_down_sharp),
+          leading: const Icon(Symbols.move_down_rounded),
           title: Text(context.loc.tabs.moveAction),
         ),
         const SizedBox(height: 10),
@@ -1028,7 +1030,7 @@ class _TabManagerPageState extends State<TabManagerPage> {
             searchHandler.removeTabAt(tabIndex: searchHandler.tabs.indexOf(tab));
             getTabs();
           },
-          leading: const Icon(Icons.close, color: Colors.red),
+          leading: const Icon(Symbols.close_rounded, color: Colors.red),
           title: Text(context.loc.tabs.remove),
         ),
         const SizedBox(height: 20),
@@ -1040,7 +1042,7 @@ class _TabManagerPageState extends State<TabManagerPage> {
           onTap: () {
             Navigator.of(context).pop();
           },
-          leading: const Icon(Icons.cancel_outlined),
+          leading: const Icon(Symbols.cancel_rounded),
           title: Text(context.loc.close),
         ),
         const SizedBox(height: 10),
@@ -1184,7 +1186,7 @@ class _TabManagerPageState extends State<TabManagerPage> {
                       dense: true,
                       leading: booru != null
                           ? BooruFavicon(booru)
-                          : const Icon(Icons.public, size: 20),
+                          : const Icon(Symbols.public_rounded, size: 20),
                       title: Text(
                         tagsLabel,
                         maxLines: 2,
@@ -1195,7 +1197,7 @@ class _TabManagerPageState extends State<TabManagerPage> {
                         style: const TextStyle(fontSize: 11),
                       ),
                       trailing: Icon(
-                        stillOpen ? Icons.open_in_new : Icons.restart_alt,
+                        stillOpen ? Symbols.open_in_new_rounded : Symbols.restart_alt_rounded,
                         size: 18,
                       ),
                       onTap: () => _openVisitedTab(visit),
@@ -1208,7 +1210,7 @@ class _TabManagerPageState extends State<TabManagerPage> {
           actionButtons: [
             if (searchHandler.visitedTabsHistory.isNotEmpty)
               TextButton.icon(
-                icon: const Icon(Icons.delete_outline),
+                icon: const Icon(Symbols.delete_rounded),
                 label: const Text('Clear'),
                 onPressed: () {
                   searchHandler.clearVisitedTabsHistory();
@@ -1241,7 +1243,7 @@ class _TabManagerPageState extends State<TabManagerPage> {
             const SizedBox(height: 6),
             Row(
               children: [
-                const Icon(Icons.subdirectory_arrow_left_outlined),
+                const Icon(Symbols.subdirectory_arrow_left_rounded),
                 const SizedBox(width: 10),
                 Expanded(child: Text(context.loc.tabs.scrollToCurrent)),
               ],
@@ -1249,7 +1251,7 @@ class _TabManagerPageState extends State<TabManagerPage> {
             const SizedBox(height: 6),
             Row(
               children: [
-                const Icon(Icons.arrow_circle_up),
+                const Icon(Symbols.arrow_circle_up_rounded),
                 const SizedBox(width: 10),
                 Expanded(child: Text(context.loc.tabs.scrollToTop)),
               ],
@@ -1257,7 +1259,7 @@ class _TabManagerPageState extends State<TabManagerPage> {
             const SizedBox(height: 6),
             Row(
               children: [
-                const Icon(Icons.arrow_circle_down),
+                const Icon(Symbols.arrow_circle_down_rounded),
                 const SizedBox(width: 10),
                 Expanded(child: Text(context.loc.tabs.scrollToBottom)),
               ],
@@ -1265,7 +1267,7 @@ class _TabManagerPageState extends State<TabManagerPage> {
             const Divider(),
             Row(
               children: [
-                const Icon(Icons.filter_alt),
+                const Icon(Symbols.filter_alt_rounded),
                 const SizedBox(width: 10),
                 Expanded(child: Text(context.loc.tabs.filterTabsByBooru)),
               ],
@@ -1339,7 +1341,7 @@ class _TabManagerPageState extends State<TabManagerPage> {
             const SizedBox(height: 6),
             Row(
               children: [
-                const Icon(Icons.select_all),
+                const Icon(Symbols.select_all_rounded),
                 const SizedBox(width: 10),
                 Expanded(child: Text(context.loc.tabs.toggleSelectMode)),
               ],
@@ -1349,9 +1351,9 @@ class _TabManagerPageState extends State<TabManagerPage> {
             const SizedBox(height: 6),
             Row(
               children: [
-                const Icon(Icons.select_all),
+                const Icon(Symbols.select_all_rounded),
                 const Text(' / '),
-                const Icon(Icons.border_clear),
+                const Icon(Symbols.border_clear_rounded),
                 const SizedBox(width: 10),
                 Expanded(child: Text(context.loc.tabs.selectDeselectAll)),
               ],
@@ -1359,7 +1361,7 @@ class _TabManagerPageState extends State<TabManagerPage> {
             const SizedBox(height: 6),
             Row(
               children: [
-                const Icon(Icons.delete_forever),
+                const Icon(Symbols.delete_forever_rounded),
                 const SizedBox(width: 10),
                 Expanded(child: Text(context.loc.tabs.deleteSelectedTabs)),
               ],
@@ -1367,7 +1369,7 @@ class _TabManagerPageState extends State<TabManagerPage> {
             const Divider(),
             Row(
               children: [
-                const Icon(Icons.expand),
+                const Icon(Symbols.expand_rounded),
                 const SizedBox(width: 10),
                 Text(context.loc.tabs.longPressToMove),
               ],
@@ -1423,7 +1425,7 @@ class _TabManagerPageState extends State<TabManagerPage> {
                   if (isFilterActive) ...[
                     const WidgetSpan(
                       alignment: PlaceholderAlignment.middle,
-                      child: Icon(Icons.filter_alt, size: 16),
+                      child: Icon(Symbols.filter_alt_rounded, size: 16),
                     ),
                     TextSpan(text: '${totalFilteredTabs.toFormattedString()}/'),
                   ],
@@ -1435,7 +1437,7 @@ class _TabManagerPageState extends State<TabManagerPage> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.select_all),
+            icon: const Icon(Symbols.select_all_rounded),
             tooltip: context.loc.tabs.selectMode,
             onPressed: () {
               setState(() {
@@ -1494,7 +1496,7 @@ class _TabManagerPageState extends State<TabManagerPage> {
                         context: context,
                         duration: const Duration(seconds: 2),
                         title: Text(context.loc.tabs.tabRandomlyShuffled, style: const TextStyle(fontSize: 20)),
-                        leadingIcon: Icons.sort_by_alpha,
+                        leadingIcon: Symbols.sort_by_alpha_rounded,
                         sideColor: Colors.green,
                       );
                     } else {
@@ -1502,7 +1504,7 @@ class _TabManagerPageState extends State<TabManagerPage> {
                         context: context,
                         duration: const Duration(seconds: 2),
                         title: Text(context.loc.tabs.tabOrderSaved, style: const TextStyle(fontSize: 20)),
-                        leadingIcon: Icons.sort,
+                        leadingIcon: Symbols.sort_rounded,
                         sideColor: Colors.green,
                       );
                     }
@@ -1548,13 +1550,13 @@ class _TabManagerPageState extends State<TabManagerPage> {
           ),
           const SizedBox(width: 8),
           IconButton(
-            icon: const Icon(Icons.history),
+            icon: const Icon(Symbols.history_rounded),
             tooltip: 'Visited tabs history',
             onPressed: showVisitHistoryDialog,
           ),
           const SizedBox(width: 8),
           IconButton(
-            icon: const Icon(Icons.help_center_outlined),
+            icon: const Icon(Symbols.help_center_rounded),
             tooltip: context.loc.tabs.help,
             onPressed: showHelpDialog,
           ),
@@ -1574,7 +1576,7 @@ class _TabManagerPageState extends State<TabManagerPage> {
                 width: double.infinity,
                 child: ElevatedButton.icon(
                   onPressed: removeDuplicateTabs,
-                  icon: const Icon(Icons.cleaning_services_outlined),
+                  icon: const Icon(Symbols.cleaning_services_rounded),
                   label: const Text('Remove all duplicates (keep one copy)'),
                 ),
               ),
@@ -1634,7 +1636,7 @@ class _TabManagerPageState extends State<TabManagerPage> {
               final toTopBtn = ElevatedButton(
                 onPressed: scrollToTop,
                 child: const Icon(
-                  Icons.arrow_circle_up_rounded,
+                  Symbols.arrow_circle_up_rounded,
                   size: iconSize,
                 ),
               );
@@ -1653,7 +1655,7 @@ class _TabManagerPageState extends State<TabManagerPage> {
                   setState(() {});
                 },
                 child: Icon(
-                  selectedAll ? Icons.border_clear : Icons.select_all,
+                  selectedAll ? Symbols.border_clear_rounded : Symbols.select_all_rounded,
                   size: iconSize,
                 ),
               );
@@ -1664,7 +1666,7 @@ class _TabManagerPageState extends State<TabManagerPage> {
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     const Icon(
-                      Icons.subdirectory_arrow_left_outlined,
+                      Symbols.subdirectory_arrow_left_rounded,
                       size: iconSize,
                     ),
                     const SizedBox(width: 4),
@@ -1686,7 +1688,7 @@ class _TabManagerPageState extends State<TabManagerPage> {
                 child: Row(
                   children: [
                     const Icon(
-                      Icons.delete_forever,
+                      Symbols.delete_forever_rounded,
                       size: iconSize,
                     ),
                     const SizedBox(width: 4),
@@ -1712,7 +1714,7 @@ class _TabManagerPageState extends State<TabManagerPage> {
               final toBottomBtn = ElevatedButton(
                 onPressed: scrollToBottom,
                 child: const Icon(
-                  Icons.arrow_circle_down_rounded,
+                  Symbols.arrow_circle_down_rounded,
                   size: iconSize,
                 ),
               );
@@ -1748,7 +1750,7 @@ class _TabManagerPageState extends State<TabManagerPage> {
                           Navigator.of(context).pop();
                         },
                         icon: const Icon(
-                          Icons.close,
+                          Symbols.close_rounded,
                           size: iconSize,
                         ),
                         label: AutoSizeText(
@@ -1891,7 +1893,7 @@ class TabManagerItem extends StatelessWidget {
                     iconSize: 18,
                     color: meta,
                     onPressed: onCloseTap,
-                    icon: const Icon(Icons.close),
+                    icon: const Icon(Symbols.close_rounded),
                   ),
               ],
             ),
@@ -1929,10 +1931,10 @@ class TabSortingIcon extends StatelessWidget {
             transform: Matrix4.rotationX((sortingMode.isAnyReverse || sortingMode.isNone) ? 0 : pi),
             child: Icon(
               sortingMode.isNone
-                  ? Icons.sort_by_alpha
+                  ? Symbols.sort_by_alpha_rounded
                   : sortingMode.isAnyBooruOpenOrder
-                  ? Icons.schedule
-                  : Icons.sort,
+                  ? Symbols.schedule_rounded
+                  : Symbols.sort_rounded,
             ),
           ),
           if (sortingMode.isAnyBooru)

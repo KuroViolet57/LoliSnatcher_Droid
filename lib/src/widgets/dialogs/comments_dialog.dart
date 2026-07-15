@@ -2,6 +2,8 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:intl/intl.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
 import 'package:lolisnatcher/src/widgets/common/settings_widgets.dart';
@@ -196,7 +198,7 @@ class _CommentsDialogState extends State<CommentsDialog> {
         ),
       IconButton(
         onPressed: () => getComments(initial: true),
-        icon: const Icon(Icons.refresh),
+        icon: const Icon(Symbols.refresh_rounded),
       ),
       if (widget.item.postURL.isNotEmpty)
         IconButton(
@@ -204,7 +206,7 @@ class _CommentsDialogState extends State<CommentsDialog> {
             widget.item.postURL,
             mode: LaunchMode.externalApplication,
           ),
-          icon: const Icon(Icons.public),
+          icon: const Icon(Symbols.public_rounded),
         ),
     ];
 
@@ -361,7 +363,7 @@ class _CommentsDialogState extends State<CommentsDialog> {
                                 width: kMinInteractiveDimension,
                                 height: kMinInteractiveDimension,
                                 child: Icon(
-                                  Icons.arrow_upward,
+                                  Symbols.arrow_upward_rounded,
                                   size: 30,
                                   color: Theme.of(context).colorScheme.onPrimaryContainer.withValues(alpha: 0.8),
                                 ),
@@ -379,7 +381,7 @@ class _CommentsDialogState extends State<CommentsDialog> {
                                 width: kMinInteractiveDimension,
                                 height: kMinInteractiveDimension,
                                 child: Icon(
-                                  Icons.arrow_downward,
+                                  Symbols.arrow_downward_rounded,
                                   size: 30,
                                   color: Theme.of(context).colorScheme.onPrimaryContainer.withValues(alpha: 0.8),
                                 ),
@@ -509,14 +511,14 @@ class _CommentEntry extends StatelessWidget {
                       width: 200,
                       height: 200,
                       color: Theme.of(context).colorScheme.surface,
-                      child: const Center(child: Icon(Icons.error_outline, size: 48)),
+                      child: const Center(child: Icon(Symbols.error_rounded, size: 48)),
                     );
                   },
                 ),
               ),
             ),
             IconButton(
-              icon: const Icon(Icons.image_search_rounded),
+              icon: const Icon(Symbols.image_search_rounded),
               onPressed: () => showImageSearchDialog(context, avatarUrl),
             ),
           ],

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:lolisnatcher/src/handlers/interests_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -88,7 +90,7 @@ class _ForYouPageState extends State<ForYouPage> {
           if (profile.isNotEmpty)
             IconButton(
               tooltip: 'Reset profile',
-              icon: const Icon(Icons.delete_sweep_outlined),
+              icon: const Icon(Symbols.delete_sweep_rounded),
               onPressed: _resetProfile,
             ),
         ],
@@ -109,7 +111,7 @@ class _ForYouPageState extends State<ForYouPage> {
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.auto_awesome, color: theme.colorScheme.secondary),
+                      Icon(Symbols.auto_awesome_rounded, color: theme.colorScheme.secondary),
                       const SizedBox(width: 10),
                       Text(
                         'Recommendations',
@@ -128,7 +130,7 @@ class _ForYouPageState extends State<ForYouPage> {
                     width: double.infinity,
                     child: FilledButton.icon(
                       onPressed: () => _openFeed(),
-                      icon: const Icon(Icons.auto_awesome),
+                      icon: const Icon(Symbols.auto_awesome_rounded),
                       label: const Text('Open my For You feed'),
                     ),
                   ),
@@ -223,13 +225,13 @@ class _ForYouPageState extends State<ForYouPage> {
           IconButton(
             visualDensity: VisualDensity.compact,
             tooltip: 'Recommend around this',
-            icon: const Icon(Icons.auto_awesome, size: 18),
+            icon: const Icon(Symbols.auto_awesome_rounded, size: 18),
             onPressed: () => _openFeed(seedQuery: 'seed:$tag'),
           ),
           IconButton(
             visualDensity: VisualDensity.compact,
             tooltip: 'Forget',
-            icon: const Icon(Icons.close, size: 18),
+            icon: const Icon(Symbols.close_rounded, size: 18),
             onPressed: () async {
               await InterestsHandler.instance.removeTag(tag);
               await _load();

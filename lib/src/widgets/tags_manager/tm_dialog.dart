@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -149,7 +151,7 @@ class _TagsManagerDialogState extends State<TagsManagerDialog> {
         padding: const EdgeInsets.only(bottom: 40),
         child: FloatingActionButton(
           onPressed: showAddDialog,
-          child: const Icon(Icons.add),
+          child: const Icon(Symbols.add_rounded),
         ),
       ),
       content: Column(

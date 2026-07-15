@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/collection_info.dart';
 import 'package:lolisnatcher/src/handlers/interests_handler.dart';
@@ -79,7 +81,7 @@ class _AddToCollectionSheetState extends State<_AddToCollectionSheet> {
       context: context,
       duration: const Duration(seconds: 2),
       title: Text('Added $added to "${c.name}"', style: const TextStyle(fontSize: 18)),
-      leadingIcon: Icons.playlist_add_check,
+      leadingIcon: Symbols.playlist_add_check_rounded,
       sideColor: Colors.green,
     );
   }
@@ -104,7 +106,7 @@ class _AddToCollectionSheetState extends State<_AddToCollectionSheet> {
         context: context,
         duration: const Duration(seconds: 2),
         title: Text('Added $added to "$name"', style: const TextStyle(fontSize: 18)),
-        leadingIcon: Icons.playlist_add_check,
+        leadingIcon: Symbols.playlist_add_check_rounded,
         sideColor: Colors.green,
       );
     }
@@ -123,7 +125,7 @@ class _AddToCollectionSheetState extends State<_AddToCollectionSheet> {
               padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
               child: Row(
                 children: [
-                  const Icon(Icons.collections_bookmark_outlined),
+                  const Icon(Symbols.collections_bookmark_rounded),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
@@ -141,7 +143,7 @@ class _AddToCollectionSheetState extends State<_AddToCollectionSheet> {
                       shrinkWrap: true,
                       children: [
                         ListTile(
-                          leading: const Icon(Icons.add, color: Colors.green),
+                          leading: const Icon(Symbols.add_rounded, color: Colors.green),
                           title: const Text('New collection'),
                           onTap: _createCollection,
                         ),
@@ -158,17 +160,17 @@ class _AddToCollectionSheetState extends State<_AddToCollectionSheet> {
                           if (isSingle)
                             CheckboxListTile(
                               value: memberOf.contains(c.id),
-                              secondary: const Icon(Icons.folder_outlined),
+                              secondary: const Icon(Symbols.folder_rounded),
                               title: Text(c.name, maxLines: 1, overflow: TextOverflow.ellipsis),
                               subtitle: Text('${c.itemCount}'),
                               onChanged: (_) => _toggleSingle(c),
                             )
                           else
                             ListTile(
-                              leading: const Icon(Icons.folder_outlined),
+                              leading: const Icon(Symbols.folder_rounded),
                               title: Text(c.name, maxLines: 1, overflow: TextOverflow.ellipsis),
                               subtitle: Text('${c.itemCount}'),
-                              trailing: const Icon(Icons.add),
+                              trailing: const Icon(Symbols.add_rounded),
                               onTap: () => _addBatch(c),
                             ),
                         const SizedBox(height: 12),

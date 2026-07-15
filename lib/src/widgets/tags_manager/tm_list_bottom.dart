@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/widgets/common/cancel_button.dart';
@@ -34,7 +36,7 @@ class TagsManagerListBottom extends StatelessWidget {
               child: Container(
                 margin: const EdgeInsets.all(10),
                 child: ElevatedButton.icon(
-                  icon: const Icon(Icons.select_all),
+                  icon: const Icon(Symbols.select_all_rounded),
                   label: Text(context.loc.selectAll),
                   onPressed: onSelectAll,
                 ),
@@ -56,7 +58,7 @@ class TagsManagerListBottom extends StatelessWidget {
               label: Text(
                 context.loc.tagsManager.deleteTags(count: selected.length),
               ),
-              icon: const Icon(Icons.delete_forever),
+              icon: const Icon(Symbols.delete_forever_rounded),
               onPressed: () {
                 if (selected.isEmpty) {
                   return;
@@ -99,7 +101,7 @@ class TagsManagerListBottom extends StatelessWidget {
         ),
         Expanded(
           child: ElevatedButton.icon(
-            icon: const Icon(Icons.border_clear),
+            icon: const Icon(Symbols.border_clear_rounded),
             label: Text(context.loc.tagsManager.clearSelection),
             onPressed: onDeselectAll,
           ),

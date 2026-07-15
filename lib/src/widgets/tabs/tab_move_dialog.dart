@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/utils/extensions.dart';
@@ -63,7 +65,7 @@ class _TabMoveDialogState extends State<TabMoveDialog> {
             Navigator.of(context).pop(true);
             Navigator.of(context).pop(true);
           },
-          icon: const Icon(Icons.vertical_align_top),
+          icon: const Icon(Symbols.vertical_align_top_rounded),
           label: Text(context.loc.tabs.move.moveToTop),
         ),
         //
@@ -74,7 +76,7 @@ class _TabMoveDialogState extends State<TabMoveDialog> {
             Navigator.of(context).pop(true);
             Navigator.of(context).pop(true);
           },
-          icon: const Icon(Icons.vertical_align_bottom),
+          icon: const Icon(Symbols.vertical_align_bottom_rounded),
           label: Text(context.loc.tabs.move.moveToBottom),
         ),
         //
@@ -125,7 +127,7 @@ class _TabMoveDialogState extends State<TabMoveDialog> {
                   }
                 }
               : null,
-          icon: const Icon(Icons.vertical_align_center),
+          icon: const Icon(Symbols.vertical_align_center_rounded),
           label: Text(context.loc.tabs.move.moveTo(formattedNumber: controllerNumber?.toFormattedString() ?? '?')),
         ),
         //

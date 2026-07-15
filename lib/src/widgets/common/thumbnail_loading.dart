@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/utils/debouncer.dart';
@@ -154,7 +156,7 @@ class _ThumbnailLoadingState extends State<ThumbnailLoading> {
                 mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  widget.retryIcon ?? const Icon(Icons.broken_image),
+                  widget.retryIcon ?? const Icon(Symbols.broken_image_rounded),
                   const BorderedText(
                     strokeWidth: 2,
                     child: Text(

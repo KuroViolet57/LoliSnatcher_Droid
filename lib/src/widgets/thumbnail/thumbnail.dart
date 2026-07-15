@@ -6,6 +6,8 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:dio/dio.dart';
 
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
@@ -505,7 +507,7 @@ class _ThumbnailState extends State<Thumbnail> {
                           errorBuilder: (BuildContext context, Object exception, StackTrace? stackTrace) {
                             if (widget.isStandalone) {
                               return Icon(
-                                Icons.broken_image,
+                                Symbols.broken_image_rounded,
                                 size: 30,
                                 color: Colors.yellow.withValues(alpha: 0.5),
                               );
@@ -567,7 +569,7 @@ class _ThumbnailState extends State<Thumbnail> {
                           errorBuilder: (BuildContext context, Object exception, StackTrace? stackTrace) {
                             if (widget.isStandalone) {
                               return Icon(
-                                Icons.broken_image,
+                                Symbols.broken_image_rounded,
                                 size: 30,
                                 color: Colors.white.withValues(alpha: 0.5),
                               );
@@ -649,12 +651,12 @@ class _ThumbnailState extends State<Thumbnail> {
                         spacing: 4,
                         children: isFavOrDlsOrHasLoad
                             ? const [
-                                Icon(Icons.download),
+                                Icon(Symbols.download_rounded),
                                 Text('/', style: TextStyle(fontSize: 20)),
-                                Icon(Icons.refresh),
+                                Icon(Symbols.refresh_rounded),
                               ]
                             : const [
-                                Icon(Icons.refresh),
+                                Icon(Symbols.refresh_rounded),
                               ],
                       ),
                       restartAction: () async {

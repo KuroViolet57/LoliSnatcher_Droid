@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:get/get.dart' hide FirstWhereOrNullExt;
 
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
@@ -93,7 +95,7 @@ class MainDrawer extends StatelessWidget {
                   ),
                   const Spacer(),
                   IconButton(
-                    icon: const Icon(Icons.close),
+                    icon: const Icon(Symbols.close_rounded),
                     onPressed: () {
                       final state = SearchHandler.instance.mainDrawerKey.currentState;
                       if (state is InnerDrawerState) state.close();
@@ -161,7 +163,7 @@ class MainDrawer extends StatelessWidget {
                             ],
                           ),
                         ),
-                        Icon(Icons.unfold_more, size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                        Icon(Symbols.unfold_more_rounded, size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant),
                       ],
                     ),
                   ),
@@ -199,13 +201,13 @@ class MainDrawer extends StatelessWidget {
                           if (downloads != null)
                             SettingsButton(
                               name: 'Downloads',
-                              icon: const Icon(Icons.download),
+                              icon: const Icon(Symbols.download_rounded),
                               action: () => openVirtual(downloads),
                             ),
                           if (favourites != null)
                             SettingsButton(
                               name: 'Favourites',
-                              icon: const Icon(Icons.favorite),
+                              icon: const Icon(Symbols.favorite_rounded),
                               action: () => openVirtual(favourites),
                             ),
                         ],
@@ -229,25 +231,25 @@ class MainDrawer extends StatelessWidget {
                     },
                     child: SettingsButton(
                       name: context.loc.mobileHome.lockApp,
-                      icon: const Icon(Icons.lock),
+                      icon: const Icon(Symbols.lock_rounded),
                       action: () => LocalAuthHandler.instance.lock(manually: true),
                     ),
                   ),
                   SettingsButton(
                     name: context.loc.settings.title,
-                    icon: const Icon(Icons.settings),
+                    icon: const Icon(Symbols.settings_rounded),
                     page: () => const SettingsPage(),
                   ),
                   if (settingsHandler.dbEnabled)
                     SettingsButton(
                       name: 'For You',
-                      icon: const Icon(Icons.auto_awesome),
+                      icon: const Icon(Symbols.auto_awesome_rounded),
                       page: () => const ForYouPage(),
                     ),
                   if (settingsHandler.dbEnabled)
                     SettingsButton(
                       name: 'Collections',
-                      icon: const Icon(Icons.collections_bookmark_outlined),
+                      icon: const Icon(Symbols.collections_bookmark_rounded),
                       page: () => const CollectionsPage(),
                     ),
                   Obx(() {
@@ -263,7 +265,7 @@ class MainDrawer extends StatelessWidget {
 
                       return SettingsButton(
                         name: context.loc.settings.webview.openWebview,
-                        icon: const Icon(Icons.public),
+                        icon: const Icon(Symbols.public_rounded),
                         action: () async {
                           final Booru? selectedBooru = boorus.length == 1
                               ? boorus.first
@@ -301,7 +303,7 @@ class MainDrawer extends StatelessWidget {
                         icon: Stack(
                           alignment: Alignment.center,
                           children: [
-                            const Icon(Icons.update),
+                            const Icon(Symbols.update_rounded),
                             Positioned(
                               top: 1,
                               left: 1,
@@ -330,7 +332,7 @@ class MainDrawer extends StatelessWidget {
                   if (SettingsHandler.isDesktopPlatform)
                     SettingsButton(
                       name: context.loc.closeTheApp,
-                      icon: const Icon(Icons.exit_to_app),
+                      icon: const Icon(Symbols.exit_to_app_rounded),
                       action: () async {
                         // twice to trigger drawer close
                         await Navigator.of(context).maybePop();
@@ -382,11 +384,11 @@ class _SavedSearchesDrawerSectionState extends State<SavedSearchesDrawerSection>
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           ListTile(
-            leading: const Icon(Icons.bookmarks),
+            leading: const Icon(Symbols.bookmarks_rounded),
             title: Text(
               list.isEmpty ? 'Saved searches' : 'Saved searches (${list.length})',
             ),
-            trailing: Icon(_expanded ? Icons.expand_less : Icons.expand_more),
+            trailing: Icon(_expanded ? Symbols.expand_less_rounded : Symbols.expand_more_rounded),
             onTap: () => setState(() => _expanded = !_expanded),
           ),
           AnimatedSize(
@@ -412,7 +414,7 @@ class _SavedSearchesDrawerSectionState extends State<SavedSearchesDrawerSection>
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                         child: OutlinedButton.icon(
-                          icon: const Icon(Icons.list),
+                          icon: const Icon(Symbols.list_rounded),
                           label: const Text('View all'),
                           onPressed: () {
                             Navigator.of(context).push(

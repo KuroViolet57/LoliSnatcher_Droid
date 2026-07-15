@@ -2,6 +2,8 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/widgets/common/clear_button.dart';
 import 'package:lolisnatcher/src/widgets/common/ok_button.dart';
@@ -171,7 +173,7 @@ class LoliDropdown<T> extends StatelessWidget {
               Expanded(child: selectedItemBuilder.call(value)),
               const SizedBox(width: 8),
               Icon(
-                Icons.arrow_drop_down,
+                Symbols.arrow_drop_down_rounded,
                 color: theme.iconTheme.color,
               ),
             ],
@@ -389,7 +391,7 @@ class _LoliDropdownBottomSheet<T> extends State<LoliDropdownBottomSheet<T>> {
                           IgnorePointer(
                             child: Padding(
                               padding: EdgeInsets.only(right: 8),
-                              child: Icon(Icons.search),
+                              child: Icon(Symbols.search_rounded),
                             ),
                           ),
                         ],
@@ -579,7 +581,7 @@ class LoliMultiselectDropdown<T> extends StatelessWidget {
               Expanded(child: selectedItemBuilder.call(value)),
               const SizedBox(width: 8),
               Icon(
-                Icons.arrow_drop_down,
+                Symbols.arrow_drop_down_rounded,
                 color: theme.iconTheme.color,
               ),
             ],
@@ -673,7 +675,7 @@ class _LoliMultiselectDropdownBottomSheetState<T> extends State<LoliMultiselectD
                 value.addAll(widget.items);
                 setState(() {});
               },
-        icon: const Icon(Icons.select_all),
+        icon: const Icon(Symbols.select_all_rounded),
         label: Text(context.loc.selectAll),
       ),
       OkButton(

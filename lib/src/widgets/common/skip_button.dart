@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:lolisnatcher/gen/strings.g.dart';
 
 class SkipButton extends StatelessWidget {
@@ -34,7 +36,7 @@ class SkipButton extends StatelessWidget {
             Navigator.of(context).pop(returnData);
           }
         },
-        icon: const Icon(Icons.skip_next),
+        icon: const Icon(Symbols.skip_next_rounded),
         label: Text(context.loc.mobileHome.skip),
       );
     }

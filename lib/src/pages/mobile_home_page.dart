@@ -1,6 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
@@ -70,14 +72,14 @@ class _MobileHomeState extends State<MobileHome> {
           actionButtons: [
             ElevatedButton.icon(
               label: Text(context.loc.no),
-              icon: const Icon(Icons.cancel),
+              icon: const Icon(Symbols.cancel_rounded),
               onPressed: () {
                 Navigator.of(context).pop(false);
               },
             ),
             ElevatedButton.icon(
               label: Text(context.loc.yes),
-              icon: const Icon(Icons.exit_to_app_sharp),
+              icon: const Icon(Symbols.exit_to_app_rounded),
               onPressed: () {
                 Navigator.of(context).pop(true);
               },

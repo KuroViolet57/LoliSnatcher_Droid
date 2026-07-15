@@ -4,6 +4,8 @@ import 'dart:math';
 import 'package:auto_size_text_plus/auto_size_text_plus.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 
 import 'package:collection/collection.dart';
@@ -476,7 +478,7 @@ class _TagViewState extends State<TagView> {
                             ),
                           ),
                           Icon(
-                            Icons.close,
+                            Symbols.close_rounded,
                             color: Theme.of(context).iconTheme.color,
                             size: 24,
                           ),
@@ -487,7 +489,7 @@ class _TagViewState extends State<TagView> {
                     IconButton(
                       onPressed: () => reloadItemData(force: true),
                       icon: Icon(
-                        failedUpdate ? Icons.error_outline : Icons.refresh,
+                        failedUpdate ? Symbols.error_rounded : Symbols.refresh_rounded,
                         color: failedUpdate ? Colors.red : Theme.of(context).iconTheme.color,
                         size: 28,
                       ),
@@ -499,7 +501,7 @@ class _TagViewState extends State<TagView> {
                   transform: sortTags == true ? Matrix4.rotationX(pi) : Matrix4.rotationX(0),
                   child: IconButton(
                     icon: Icon(
-                      (sortTags == true || sortTags == false) ? Icons.sort : Icons.sort_by_alpha,
+                      (sortTags == true || sortTags == false) ? Symbols.sort_rounded : Symbols.sort_by_alpha_rounded,
                       color: Theme.of(context).iconTheme.color,
                     ),
                     onPressed: () {
@@ -567,7 +569,7 @@ class _TagViewState extends State<TagView> {
               ? context.loc.tagView.hideNotes(count: item.notes.length)
               : context.loc.tagView.showNotes(count: item.notes.length),
           icon: Icon(
-            Icons.note_add,
+            Symbols.note_add_rounded,
             color: Theme.of(context).iconTheme.color,
           ),
           action: viewerHandler.showNotes.toggle,
@@ -583,7 +585,7 @@ class _TagViewState extends State<TagView> {
         return SettingsButton(
           name: context.loc.tagView.loadNotes,
           icon: Icon(
-            Icons.note_add,
+            Symbols.note_add_rounded,
             color: Theme.of(context).iconTheme.color,
           ),
           action: () async {
@@ -684,7 +686,7 @@ class _TagViewState extends State<TagView> {
                         '$title: $data',
                         style: const TextStyle(fontSize: 16),
                       ),
-                      leadingIcon: Icons.copy,
+                      leadingIcon: Symbols.content_copy_rounded,
                       sideColor: Colors.green,
                     );
                   }
@@ -733,7 +735,7 @@ class _TagViewState extends State<TagView> {
             trailing ??
             (isLink
                 ? IconButton(
-                    icon: const Icon(Icons.exit_to_app),
+                    icon: const Icon(Symbols.exit_to_app_rounded),
                     onPressed: () => launchUrlString(
                       data,
                       mode: LaunchMode.externalApplication,
@@ -776,7 +778,7 @@ class _TagViewState extends State<TagView> {
         _CollapsibleRelatedPreview(
           key: ValueKey('related-artist-${currentBooru.name}-$artistQuery'),
           title: 'More from artist ${artistQuery.replaceAll('_', ' ')}',
-          icon: Icons.brush,
+          icon: Symbols.brush_rounded,
           booru: currentBooru,
           query: artistQuery,
           parentTab: parentTab,
@@ -800,7 +802,7 @@ class _TagViewState extends State<TagView> {
             _CollapsibleRelatedPreview(
               key: ValueKey('related-uploader-${currentBooru.name}-$userQuery'),
               title: 'More from uploader $uploader',
-              icon: Icons.person,
+              icon: Symbols.person_rounded,
               booru: currentBooru,
               query: userQuery,
               parentTab: parentTab,
@@ -959,7 +961,7 @@ class _TagViewState extends State<TagView> {
       context: context,
       duration: const Duration(seconds: 2),
       title: const Text('Queued for download', style: TextStyle(fontSize: 18)),
-      leadingIcon: Icons.download,
+      leadingIcon: Symbols.download_rounded,
       sideColor: const Color(0xFF7FC98B),
     );
   }
@@ -1014,7 +1016,7 @@ class _TagViewState extends State<TagView> {
             Obx(() {
               final bool fav = item.isFavourite.value == true;
               return btn(
-                icon: fav ? Icons.favorite : Icons.favorite_border,
+                icon: fav ? Symbols.favorite_rounded : Symbols.favorite_border_rounded,
                 label: 'Favorite',
                 activeColor: const Color(0xFFF0708A),
                 active: fav,
@@ -1024,7 +1026,7 @@ class _TagViewState extends State<TagView> {
             Obx(() {
               final bool snatched = item.isSnatched.value == true;
               return btn(
-                icon: snatched ? Icons.download_done : Icons.download_outlined,
+                icon: snatched ? Symbols.download_done_rounded : Symbols.download_rounded,
                 label: snatched ? 'Saved' : 'Save',
                 activeColor: const Color(0xFF7FC98B),
                 active: snatched,
@@ -1032,13 +1034,13 @@ class _TagViewState extends State<TagView> {
               );
             }),
             btn(
-              icon: Icons.bookmark_add_outlined,
+              icon: Symbols.bookmark_add_rounded,
               label: 'Collect',
               activeColor: const Color(0xFFE8C46B),
               onTap: () => showAddToCollectionSheet(context, [item]),
             ),
             btn(
-              icon: Icons.info_outline,
+              icon: Symbols.info_rounded,
               label: 'Details',
               activeColor: theme.colorScheme.secondary,
               onTap: () => showPostDetailsSheet(context, item),
@@ -1088,9 +1090,9 @@ class _TagViewState extends State<TagView> {
 
     final List<_TagInfoIcon> tagIconAndColor = [
       if (isAi) _TagInfoIcon(FontAwesomeIcons.robot, textColor),
-      if (isSound) _TagInfoIcon(Icons.volume_up_rounded, textColor),
+      if (isSound) _TagInfoIcon(Symbols.volume_up_rounded, textColor),
       if (isHidden) _TagInfoIcon(CupertinoIcons.eye_slash, Colors.red),
-      if (isMarked) _TagInfoIcon(Icons.star, Colors.yellow),
+      if (isMarked) _TagInfoIcon(Symbols.star_rounded, Colors.yellow),
     ];
 
     return Material(
@@ -1141,7 +1143,7 @@ class _TagViewState extends State<TagView> {
               style: const TextStyle(fontSize: 20),
             ),
             content: Text(currentTag, style: const TextStyle(fontSize: 16)),
-            leadingIcon: Icons.fiber_new,
+            leadingIcon: Symbols.fiber_new_rounded,
             sideColor: Colors.green,
           );
         },
@@ -1177,7 +1179,7 @@ class _TagViewState extends State<TagView> {
               if (hasTabWithTag.hasTagInAnyForm) ...[
                 const SizedBox(width: 5),
                 Icon(
-                  Icons.circle,
+                  Symbols.circle_rounded,
                   size: 7,
                   color: hasTabWithTag.color(context),
                 ),
@@ -1195,7 +1197,7 @@ class _TagViewState extends State<TagView> {
                 },
                 child: Padding(
                   padding: const EdgeInsets.only(left: 7, right: 1),
-                  child: Icon(Icons.picture_in_picture_alt_outlined, size: 15, color: baseColor),
+                  child: Icon(Symbols.picture_in_picture_alt_rounded, size: 15, color: baseColor),
                 ),
               ),
             ],
@@ -1307,7 +1309,7 @@ class _TagViewState extends State<TagView> {
                 trailing: hasUploaderName
                     ? IgnorePointer(
                         child: IconButton(
-                          icon: const Icon(Icons.add),
+                          icon: const Icon(Symbols.add_rounded),
                           onPressed: () {},
                         ),
                       )
@@ -1332,7 +1334,7 @@ class _TagViewState extends State<TagView> {
                             style: const TextStyle(fontSize: 20),
                           ),
                           content: Text(tag, style: const TextStyle(fontSize: 16)),
-                          leadingIcon: Icons.add,
+                          leadingIcon: Symbols.add_rounded,
                           sideColor: Colors.green,
                         );
                       }
@@ -1345,7 +1347,7 @@ class _TagViewState extends State<TagView> {
                           duration: const Duration(seconds: 2),
                           title: Text(context.loc.copiedToClipboard, style: const TextStyle(fontSize: 20)),
                           content: Text(text, style: const TextStyle(fontSize: 16)),
-                          leadingIcon: Icons.copy,
+                          leadingIcon: Symbols.content_copy_rounded,
                           sideColor: Colors.green,
                         );
                       }
@@ -1466,7 +1468,7 @@ class _TagViewState extends State<TagView> {
                 if (settingsHandler.dbEnabled)
                   ListTile(
                     leading: Icon(
-                      Icons.collections_bookmark_outlined,
+                      Symbols.collections_bookmark_rounded,
                       color: Theme.of(context).iconTheme.color,
                     ),
                     title: const Text('Add to collection'),
@@ -1478,7 +1480,7 @@ class _TagViewState extends State<TagView> {
                       final List<String> seeds = InterestsHandler.seedTagsFromItem(item, limit: 3);
                       if (seeds.isEmpty) return const SizedBox.shrink();
                       return ListTile(
-                        leading: Icon(Icons.auto_awesome, color: Theme.of(context).iconTheme.color),
+                        leading: Icon(Symbols.auto_awesome_rounded, color: Theme.of(context).iconTheme.color),
                         title: const Text('Recommend more like this'),
                         subtitle: Text(
                           seeds.map((s) => s.replaceAll('_', ' ')).join(', '),
@@ -1588,13 +1590,13 @@ Future<_BlacklistScope?> _pickBlacklistScope(BuildContext context, Booru booru) 
         mainAxisSize: MainAxisSize.min,
         children: [
           ListTile(
-            leading: const Icon(Icons.public),
+            leading: const Icon(Symbols.public_rounded),
             title: const Text('Globally'),
             subtitle: const Text('Hides items with this tag on every booru'),
             onTap: () => Navigator.of(ctx).pop(_BlacklistScope.global),
           ),
           ListTile(
-            leading: const Icon(Icons.collections_bookmark),
+            leading: const Icon(Symbols.collections_bookmark_rounded),
             title: const Text('Only on this booru'),
             subtitle: Text(booruName),
             onTap: () => Navigator.of(ctx).pop(_BlacklistScope.perBooru),
@@ -1693,7 +1695,7 @@ Future<void> showTagDialog({
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.close),
+                    icon: const Icon(Symbols.close_rounded),
                     onPressed: () => Navigator.of(context).pop(),
                   ),
                 ],
@@ -1710,7 +1712,7 @@ Future<void> showTagDialog({
           // opens over whatever page spawned this dialog).
           ListTile(
             leading: Icon(
-              Icons.picture_in_picture_alt_outlined,
+              Symbols.picture_in_picture_alt_rounded,
               color: Theme.of(context).colorScheme.secondary,
             ),
             title: Text(context.loc.tagView.preview),
@@ -1728,7 +1730,7 @@ Future<void> showTagDialog({
           //
           ListTile(
             leading: Icon(
-              Icons.copy,
+              Symbols.content_copy_rounded,
               color: Theme.of(context).iconTheme.color,
             ),
             title: Text(context.loc.tagView.copy),
@@ -1745,7 +1747,7 @@ Future<void> showTagDialog({
                   tag,
                   style: const TextStyle(fontSize: 16),
                 ),
-                leadingIcon: Icons.copy,
+                leadingIcon: Symbols.content_copy_rounded,
                 sideColor: Colors.green,
               );
               Navigator.of(context).pop();
@@ -1755,7 +1757,7 @@ Future<void> showTagDialog({
           if (isInSearch)
             ListTile(
               leading: Icon(
-                Icons.delete_outline,
+                Symbols.delete_rounded,
                 color: Theme.of(context).iconTheme.color,
               ),
               title: Text(context.loc.tagView.removeFromSearch),
@@ -1766,7 +1768,7 @@ Future<void> showTagDialog({
             )
           else ...[
             ListTile(
-              leading: const Icon(Icons.add, color: Colors.green),
+              leading: const Icon(Symbols.add_rounded, color: Colors.green),
               title: Text(context.loc.tagView.addToSearch),
               onTap: () {
                 searchHandler.addTagToSearch(tag);
@@ -1782,7 +1784,7 @@ Future<void> showTagDialog({
                     tag,
                     style: const TextStyle(fontSize: 16),
                   ),
-                  leadingIcon: Icons.add,
+                  leadingIcon: Symbols.add_rounded,
                   sideColor: Colors.green,
                 );
 
@@ -1790,7 +1792,7 @@ Future<void> showTagDialog({
               },
             ),
             ListTile(
-              leading: const Icon(Icons.remove_rounded, color: Colors.red),
+              leading: const Icon(Symbols.remove_rounded, color: Colors.red),
               title: Text(context.loc.tagView.excludeFromSearch),
               onTap: () {
                 searchHandler.addTagToSearch('-$tag');
@@ -1806,7 +1808,7 @@ Future<void> showTagDialog({
                     tag,
                     style: const TextStyle(fontSize: 16),
                   ),
-                  leadingIcon: Icons.add,
+                  leadingIcon: Symbols.add_rounded,
                   sideColor: Colors.green,
                 );
 
@@ -1817,7 +1819,7 @@ Future<void> showTagDialog({
           //
           if (!isHidden && !isMarked)
             ListTile(
-              leading: const Icon(Icons.star, color: Colors.yellow),
+              leading: const Icon(Symbols.star_rounded, color: Colors.yellow),
               title: Text(context.loc.tagView.addToMarked),
               onTap: () {
                 settingsHandler.addTagToList('marked', tag);
@@ -1848,7 +1850,7 @@ Future<void> showTagDialog({
           if (isMarked)
             ListTile(
               leading: Icon(
-                Icons.star_border,
+                Symbols.star_border_rounded,
                 color: Theme.of(context).iconTheme.color,
               ),
               title: Text(context.loc.tagView.removeFromMarked),
@@ -1917,7 +1919,7 @@ Future<void> showTagDialog({
 
               return ListTile(
                 title: Text(isPinned ? context.loc.pinnedTags.unpinTag : context.loc.pinnedTags.pinTag),
-                leading: Icon(isPinned ? Icons.push_pin : Icons.push_pin_outlined),
+                leading: Icon(isPinned ? Symbols.push_pin_rounded : Symbols.push_pin_rounded),
                 onTap: () async {
                   if (isPinned && pinnedTag != null) {
                     await showUnpinTagDialog(
@@ -1954,7 +1956,7 @@ Future<void> showTagDialog({
                     right: -5,
                     top: -5,
                     child: Icon(
-                      Icons.circle,
+                      Symbols.circle_rounded,
                       size: 6,
                       color: hasTabWithTag.color(context),
                     ),
@@ -1966,7 +1968,7 @@ Future<void> showTagDialog({
             ),
           ListTile(
             leading: Icon(
-              Icons.edit,
+              Symbols.edit_rounded,
               color: Theme.of(context).iconTheme.color,
             ),
             title: Text(context.loc.tagView.editTag),
@@ -2072,7 +2074,7 @@ class _RelatedTabsDialogState extends State<_RelatedTabsDialog> {
             ],
             itemBuilder: (v) => ListTile(
               leading: Icon(
-                Icons.circle,
+                Symbols.circle_rounded,
                 size: 12,
                 color: v?.color(context),
               ),
@@ -2087,7 +2089,7 @@ class _RelatedTabsDialogState extends State<_RelatedTabsDialog> {
             ),
             selectedItemBuilder: (v) => ListTile(
               leading: Icon(
-                Icons.circle,
+                Symbols.circle_rounded,
                 size: 12,
                 color: v?.color(context),
               ),
@@ -2153,7 +2155,7 @@ class SourceLinkErrorDialog extends StatelessWidget {
         style: const TextStyle(fontSize: 20),
       ),
       content: Text(link, style: const TextStyle(fontSize: 16)),
-      leadingIcon: Icons.copy,
+      leadingIcon: Symbols.content_copy_rounded,
       sideColor: Colors.green,
     );
   }
@@ -2178,7 +2180,7 @@ class SourceLinkErrorDialog extends StatelessWidget {
               (url) => ListTile(
                 dense: true,
                 contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.link, size: 20),
+                leading: const Icon(Symbols.link_rounded, size: 20),
                 title: Text(url, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14)),
                 onTap: () async {
                   final ok = await launchUrlString(
@@ -2212,7 +2214,7 @@ class SourceLinkErrorDialog extends StatelessWidget {
         ElevatedButton.icon(
           onPressed: () => copy(context),
           label: Text(context.loc.copy),
-          icon: const Icon(Icons.copy),
+          icon: const Icon(Symbols.content_copy_rounded),
         ),
         const CloseDialogButton(withIcon: true),
       ],
@@ -2270,7 +2272,7 @@ class _CollapsibleRelatedPreviewState extends State<_CollapsibleRelatedPreview> 
                 visualDensity: VisualDensity.compact,
                 tooltip: 'Open in floating window',
                 icon: Icon(
-                  Icons.picture_in_picture_alt_outlined,
+                  Symbols.picture_in_picture_alt_rounded,
                   size: 20,
                   color: Theme.of(context).colorScheme.secondary,
                 ),
@@ -2281,7 +2283,7 @@ class _CollapsibleRelatedPreviewState extends State<_CollapsibleRelatedPreview> 
                   );
                 },
               ),
-              Icon(_expanded ? Icons.expand_less : Icons.expand_more),
+              Icon(_expanded ? Symbols.expand_less_rounded : Symbols.expand_more_rounded),
             ],
           ),
           onTap: () => setState(() => _expanded = !_expanded),
@@ -2556,7 +2558,7 @@ class _TagContentPreviewState extends State<TagContentPreview> {
       duration: const Duration(seconds: 2),
       title: Text(context.loc.tagView.copiedFileURL, style: const TextStyle(fontSize: 20)),
       content: Text(Uri.encodeFull(item.fileURL), style: const TextStyle(fontSize: 16)),
-      leadingIcon: Icons.copy,
+      leadingIcon: Symbols.content_copy_rounded,
       sideColor: Colors.green,
     );
   }
@@ -2643,7 +2645,7 @@ class _TagContentPreviewState extends State<TagContentPreview> {
         style: const TextStyle(fontSize: 20),
       ),
       content: Text(_effectiveTag, style: const TextStyle(fontSize: 16)),
-      leadingIcon: Icons.fiber_new,
+      leadingIcon: Symbols.fiber_new_rounded,
       sideColor: Colors.green,
       primaryActionBuilder: (context, controller) {
         return Row(
@@ -2662,14 +2664,14 @@ class _TagContentPreviewState extends State<TagContentPreview> {
                 controller.dismiss();
               },
               icon: Icon(
-                Icons.arrow_forward_rounded,
+                Symbols.arrow_forward_rounded,
                 color: Theme.of(context).colorScheme.onSurface,
               ),
             ),
             const SizedBox(width: 4),
             IconButton(
               onPressed: () => controller.dismiss(),
-              icon: Icon(Icons.close, color: Theme.of(context).colorScheme.onSurface),
+              icon: Icon(Symbols.close_rounded, color: Theme.of(context).colorScheme.onSurface),
             ),
           ],
         );
@@ -2690,12 +2692,12 @@ class _TagContentPreviewState extends State<TagContentPreview> {
             mainAxisSize: MainAxisSize.min,
             children: [
               ListTile(
-                leading: const Icon(Icons.vertical_align_bottom),
+                leading: const Icon(Symbols.vertical_align_bottom_rounded),
                 title: const Text('Open at end of tab list'),
                 onTap: () => Navigator.of(dialogContext).pop(TabAddMode.end),
               ),
               ListTile(
-                leading: const Icon(Icons.tab),
+                leading: const Icon(Symbols.tab_rounded),
                 title: const Text('Open next to current tab'),
                 onTap: () => Navigator.of(dialogContext).pop(TabAddMode.next),
               ),
@@ -2731,7 +2733,7 @@ class _TagContentPreviewState extends State<TagContentPreview> {
         style: const TextStyle(fontSize: 20),
       ),
       content: Text(_effectiveTag, style: const TextStyle(fontSize: 16)),
-      leadingIcon: Icons.fiber_new,
+      leadingIcon: Symbols.fiber_new_rounded,
       sideColor: Colors.green,
     );
   }
@@ -2782,7 +2784,7 @@ class _TagContentPreviewState extends State<TagContentPreview> {
             tooltip: _animatedButtonTooltip,
             visualDensity: VisualDensity.compact,
             icon: Icon(
-              _activeAnimatedFilter == null ? Icons.movie_outlined : Icons.movie,
+              _activeAnimatedFilter == null ? Symbols.movie_rounded : Symbols.movie_rounded,
               color: _activeAnimatedFilter == null ? null : theme.colorScheme.secondary,
             ),
             onPressed: _toggleAnimatedOnly,
@@ -2792,13 +2794,13 @@ class _TagContentPreviewState extends State<TagContentPreview> {
             visualDensity: VisualDensity.compact,
             icon: Stack(
               children: [
-                const Icon(Icons.fiber_new),
+                const Icon(Symbols.fiber_new_rounded),
                 if (hasTabResult.hasTagInAnyForm)
                   Positioned(
                     right: 0,
                     top: 0,
                     child: Icon(
-                      Icons.circle,
+                      Symbols.circle_rounded,
                       size: 6,
                       color: hasTabResult.color(context),
                     ),
@@ -2811,7 +2813,7 @@ class _TagContentPreviewState extends State<TagContentPreview> {
           IconButton(
             tooltip: 'Pick booru',
             visualDensity: VisualDensity.compact,
-            icon: const Icon(Icons.arrow_drop_down),
+            icon: const Icon(Symbols.arrow_drop_down_rounded),
             onPressed: () => _openBooruPicker(context),
           ),
         ],
@@ -2834,14 +2836,14 @@ class _TagContentPreviewState extends State<TagContentPreview> {
                   ? const SizedBox(height: 32)
                   : ListTile(
                 leading: Icon(
-                  Icons.search,
+                  Symbols.search_rounded,
                   color: Theme.of(context).iconTheme.color,
                 ),
                 title: Text(widget.compactTitle ?? context.loc.tagView.preview),
                 trailing: widget.parentTab == null
                     ? null
                     : IconButton(
-                        icon: const Icon(Icons.list),
+                        icon: const Icon(Symbols.list_rounded),
                         onPressed: showTagPreviewsListDialog,
                       ),
                 subtitle: isSingleBooru
@@ -2869,7 +2871,7 @@ class _TagContentPreviewState extends State<TagContentPreview> {
             : ((tab!.booruHandler.filteredFetched.isEmpty && (loading || errorString.isNotEmpty))
                   ? ListTile(
                       leading: Icon(
-                        loading ? Icons.search : Icons.restart_alt,
+                        loading ? Symbols.search_rounded : Symbols.restart_alt_rounded,
                         color: Theme.of(context).iconTheme.color,
                       ),
                       trailing: loading
@@ -2877,7 +2879,7 @@ class _TagContentPreviewState extends State<TagContentPreview> {
                           : (widget.parentTab == null
                                 ? null
                                 : IconButton(
-                                    icon: const Icon(Icons.list),
+                                    icon: const Icon(Symbols.list_rounded),
                                     onPressed: showTagPreviewsListDialog,
                                   )),
                       title: loading
@@ -2996,7 +2998,7 @@ class _TagContentPreviewState extends State<TagContentPreview> {
                                               spacing: 8,
                                               children: [
                                                 const Icon(
-                                                  Icons.error_outline,
+                                                  Symbols.error_rounded,
                                                   size: 30,
                                                 ),
                                                 Text(
@@ -3143,7 +3145,7 @@ class _TagPreviewsListDialog extends StatelessWidget {
                             trailing: (isActive || matchesCurrentState)
                                 ? null
                                 : IconButton(
-                                    icon: const Icon(Icons.history),
+                                    icon: const Icon(Symbols.history_rounded),
                                     onPressed: () async {
                                       Navigator.of(context).pop();
 
@@ -3251,7 +3253,7 @@ class _TagPreviewsListDialog extends StatelessWidget {
                                               const Padding(
                                                 padding: EdgeInsets.symmetric(horizontal: 4),
                                                 child: Icon(
-                                                  Icons.arrow_forward,
+                                                  Symbols.arrow_forward_rounded,
                                                   size: 14,
                                                 ),
                                               ),
@@ -3273,7 +3275,7 @@ class _TagPreviewsListDialog extends StatelessWidget {
               //
               ListTile(
                 leading: Icon(
-                  Icons.cancel_outlined,
+                  Symbols.cancel_rounded,
                   color: Theme.of(context).iconTheme.color,
                 ),
                 title: Text(context.loc.close),

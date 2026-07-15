@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 
 import 'package:huge_listview/huge_listview.dart';
@@ -168,7 +170,7 @@ class _HistoryListState extends State<HistoryList> {
                   FlashElements.showSnackbar(
                     context: context,
                     title: Text(context.loc.history.unknownBooruType, style: const TextStyle(fontSize: 20)),
-                    leadingIcon: Icons.warning_amber,
+                    leadingIcon: Symbols.warning_amber_rounded,
                     leadingIconColor: Colors.red,
                     sideColor: Colors.red,
                   );
@@ -177,7 +179,7 @@ class _HistoryListState extends State<HistoryList> {
 
                 Navigator.of(context).popUntil(ModalRoute.withName('/'));
               },
-              leading: const Icon(Icons.open_in_browser),
+              leading: const Icon(Symbols.open_in_browser_rounded),
               title: Text(context.loc.history.open),
             ),
             //
@@ -199,7 +201,7 @@ class _HistoryListState extends State<HistoryList> {
                   FlashElements.showSnackbar(
                     context: context,
                     title: Text(context.loc.history.unknownBooruType, style: const TextStyle(fontSize: 20)),
-                    leadingIcon: Icons.warning_amber,
+                    leadingIcon: Symbols.warning_amber_rounded,
                     leadingIconColor: Colors.red,
                     sideColor: Colors.red,
                   );
@@ -208,7 +210,7 @@ class _HistoryListState extends State<HistoryList> {
 
                 Navigator.of(context).popUntil(ModalRoute.withName('/'));
               },
-              leading: const Icon(Icons.add_circle_outline),
+              leading: const Icon(Symbols.add_circle_rounded),
               title: Text(context.loc.history.openInNewTab),
             ),
             //
@@ -232,7 +234,7 @@ class _HistoryListState extends State<HistoryList> {
                 Navigator.of(context).pop();
               },
               leading: Icon(
-                entry.isFavourite ? Icons.favorite_border : Icons.favorite,
+                entry.isFavourite ? Symbols.favorite_border_rounded : Symbols.favorite_rounded,
                 color: entry.isFavourite ? Colors.grey : Colors.red,
               ),
               title: Text(
@@ -253,12 +255,12 @@ class _HistoryListState extends State<HistoryList> {
                   duration: const Duration(seconds: 2),
                   title: Text(context.loc.copiedToClipboard, style: const TextStyle(fontSize: 20)),
                   content: Text(entry.searchText, style: const TextStyle(fontSize: 16)),
-                  leadingIcon: Icons.copy,
+                  leadingIcon: Symbols.content_copy_rounded,
                   sideColor: Colors.green,
                 );
                 Navigator.of(context).pop();
               },
-              leading: const Icon(Icons.copy),
+              leading: const Icon(Symbols.content_copy_rounded),
               title: Text(context.loc.history.copy),
             ),
             //
@@ -273,7 +275,7 @@ class _HistoryListState extends State<HistoryList> {
                 await deleteEntry(entry);
                 Navigator.of(context).pop();
               },
-              leading: Icon(Icons.delete_forever, color: Theme.of(context).colorScheme.error),
+              leading: Icon(Symbols.delete_forever_rounded, color: Theme.of(context).colorScheme.error),
               title: Text(context.loc.history.delete),
             ),
           ],
@@ -379,7 +381,7 @@ class _HistoryListState extends State<HistoryList> {
               if (currentEntry.isFavourite)
                 const Padding(
                   padding: EdgeInsets.fromLTRB(5, 0, 0, 0),
-                  child: Icon(Icons.star, color: Color(0xFFE8C46B), size: 20),
+                  child: Icon(Symbols.star_rounded, color: Color(0xFFE8C46B), size: 20),
                 ),
               if (showCheckbox) checkbox,
             ],
@@ -430,7 +432,7 @@ class _HistoryListState extends State<HistoryList> {
           Center(
             child: IconButton(
               icon: Icon(
-                Icons.favorite,
+                Symbols.favorite_rounded,
                 color: showFavourites ? Colors.red : null,
               ),
               iconSize: 32,
@@ -498,7 +500,7 @@ class _HistoryListState extends State<HistoryList> {
               child: Container(
                 margin: const EdgeInsets.all(10),
                 child: ElevatedButton.icon(
-                  icon: const Icon(Icons.select_all),
+                  icon: const Icon(Symbols.select_all_rounded),
                   label: Text(context.loc.selectAll),
                   onPressed: () {
                     // create new list through spread to avoid modifying the original list
@@ -522,7 +524,7 @@ class _HistoryListState extends State<HistoryList> {
             margin: const EdgeInsets.all(10),
             child: ElevatedButton.icon(
               label: Text(context.loc.history.deleteItems(count: selectedEntries.length)),
-              icon: const Icon(Icons.delete_forever),
+              icon: const Icon(Symbols.delete_forever_rounded),
               onPressed: () {
                 if (selectedEntries.isEmpty) {
                   return;
@@ -573,7 +575,7 @@ class _HistoryListState extends State<HistoryList> {
         ),
         Expanded(
           child: ElevatedButton.icon(
-            icon: const Icon(Icons.border_clear),
+            icon: const Icon(Symbols.border_clear_rounded),
             label: Text(context.loc.history.clearSelection),
             onPressed: () {
               selectedEntries.clear();
