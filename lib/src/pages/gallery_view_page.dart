@@ -12,7 +12,10 @@ import 'package:preload_page_view/preload_page_view.dart';
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/boorus/idol_sankaku_handler.dart';
 import 'package:lolisnatcher/src/boorus/sankaku_handler.dart';
+import 'package:get/get.dart' hide ContextExt, FirstWhereOrNullExt;
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/data/tag_type.dart';
+import 'package:lolisnatcher/src/handlers/tag_handler.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/handlers/interests_handler.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
@@ -792,6 +795,36 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
                 openSize: infoSheetOpenSize,
               ),
             ),
+            // Persistent peek bar: artist + tag-count chips + swipe-up hint,
+            // shown while the sheet is collapsed and the chrome is visible.
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: Obx(() {
+                // Only while the viewer chrome is showing, so it never covers
+                // hidden-UI immersive viewing.
+                if (!viewerHandler.displayAppbar.value) return const SizedBox.shrink();
+                return ValueListenableBuilder<double>(
+                  valueListenable: infoSheetExtent,
+                  builder: (context, extent, _) {
+                    final double t = (1 - (extent / 0.06)).clamp(0.0, 1.0);
+                    if (t <= 0.01) return const SizedBox.shrink();
+                    return Opacity(
+                      opacity: t,
+                      child: IgnorePointer(
+                        ignoring: t < 0.5,
+                        child: _InfoPeekBar(
+                          tab: widget.tab,
+                          page: page,
+                          onTap: openInfoPanel,
+                        ),
+                      ),
+                    );
+                  },
+                );
+              }),
+            ),
           ],
         ],
       ),
@@ -970,6 +1003,109 @@ class _SwipeUpListenerState extends State<_SwipeUpListener> {
       target,
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeOutCubic,
+    );
+  }
+}
+
+/// The collapsed "peek" bar at the bottom of the viewer: artist + tag-count
+/// chips and a swipe-up hint. Tapping it opens the info sheet.
+class _InfoPeekBar extends StatelessWidget {
+  const _InfoPeekBar({required this.tab, required this.page, required this.onTap});
+
+  final SearchTab tab;
+  final ValueNotifier<int> page;
+  final VoidCallback onTap;
+
+  String? _artistOf(BooruItem item) {
+    final th = TagHandler.instance;
+    for (final t in item.tagsList) {
+      if (th.getTag(t.fullString).tagType.isArtist) return t.fullString;
+    }
+    return null;
+  }
+
+  Widget _chip(BuildContext context, IconData icon, String label, Color? color) {
+    final Color fg = color ?? const Color(0xFFDDD5EA);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1622),
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(color: const Color(0xFF2E2940)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: fg),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(color: fg, fontSize: 12.5, fontWeight: FontWeight.w700),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<int>(
+      valueListenable: page,
+      builder: (context, p, _) {
+        final items = tab.booruHandler.filteredFetched;
+        if (items.isEmpty || p >= items.length) return const SizedBox.shrink();
+        final item = items[p];
+        final String? artist = _artistOf(item);
+        final int tagCount = item.tagsList.length;
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: Container(
+            decoration: const BoxDecoration(
+              color: Color(0xFF0E0C13),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+              border: Border(top: BorderSide(color: Color(0xFF2E2940))),
+            ),
+            padding: EdgeInsets.fromLTRB(14, 6, 14, MediaQuery.viewPaddingOf(context).bottom + 10),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 40,
+                  height: 4.5,
+                  margin: const EdgeInsets.only(bottom: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF4A4260),
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                ),
+                Row(
+                  children: [
+                    if (artist != null) ...[
+                      Flexible(
+                        child: _chip(
+                          context,
+                          Icons.brush_outlined,
+                          artist.replaceAll('_', ' '),
+                          TagType.artist.getColour(),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                    _chip(context, Icons.sell_outlined, '$tagCount tags', null),
+                    const Spacer(),
+                    const Text(
+                      'swipe up',
+                      style: TextStyle(color: Color(0xFF8A80A0), fontSize: 11.5, fontWeight: FontWeight.w600),
+                    ),
+                    const Icon(Icons.keyboard_arrow_up_rounded, size: 18, color: Color(0xFF8A80A0)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
