@@ -1815,142 +1815,85 @@ class TabManagerItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // print('tab selector item build $index');
+    final theme = Theme.of(context);
+    final BorderRadius radius = BorderRadius.circular(13);
+    final Color meta = theme.colorScheme.onSurfaceVariant;
 
-    final BorderRadius radius = BorderRadius.circular(10);
+    final Booru avatarBooru = tab.booruHandler is MergebooruHandler
+        ? (tab.booruHandler as MergebooruHandler).booruList[0]
+        : tab.booruHandler.booru;
 
-    final subtitleStyle = Theme.of(context).textTheme.bodySmall!.copyWith(
-      color: Theme.of(context).textTheme.bodySmall!.color,
-    );
+    final List<String> booruNames = [
+      avatarBooru.name ?? '',
+      for (final Booru booru in (tab.secondaryBoorus.value ?? [])) booru.name ?? '',
+    ];
+    final String booruNamesStr = booruNames.where((n) => n.isNotEmpty).join(', ');
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: SizedBox(
-        height: 72,
-        width: double.maxFinite,
-        child: Material(
-          color: Color.lerp(
-            Theme.of(context).cardColor,
-            Theme.of(context).brightness == Brightness.dark ? Colors.transparent : Colors.grey[200],
-            0.66,
+      padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 8),
+      child: Material(
+        color: isCurrent ? theme.colorScheme.secondary.withValues(alpha: 0.12) : theme.colorScheme.surfaceContainer,
+        shape: RoundedRectangleBorder(
+          borderRadius: radius,
+          side: BorderSide(
+            color: isCurrent ? theme.colorScheme.secondary : theme.colorScheme.outlineVariant,
+            width: isCurrent ? 1.4 : 1,
           ),
-          shape: RoundedRectangleBorder(
-            borderRadius: radius,
-            side: isCurrent
-                ? BorderSide(
-                    color: Theme.of(context).colorScheme.secondary,
-                    width: 2,
-                  )
-                : BorderSide.none,
-          ),
-          child: InkWell(
-            onTap: onTap,
-            borderRadius: radius,
-            child: Padding(
-              padding: const EdgeInsets.only(
-                left: 12,
-                right: 12,
-                top: 2,
-                bottom: 6,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Expanded(
-                    flex: 2,
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: TabRow(
-                            tab: tab,
-                            filterText: filterText,
-                          ),
-                        ),
-                        if (onOptionsTap != null) ...[
-                          const SizedBox(width: 4),
-                          optionsWidgetBuilder?.call(context, onOptionsTap) ??
-                              IconButton(
-                                onPressed: onOptionsTap,
-                                icon: const Icon(CupertinoIcons.slider_horizontal_3),
-                              ),
-                        ],
-                        if (onCloseTap != null) ...[
-                          if (onOptionsTap == null) const SizedBox(width: 4) else const SizedBox(width: 8),
-                          IconButton(
-                            onPressed: onCloseTap,
-                            icon: const Icon(
-                              Icons.close,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
+        ),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: radius,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
+            child: Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: SizedBox(width: 26, height: 26, child: BooruFavicon(avatarBooru, size: 26)),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TabRow(tab: tab, filterText: filterText),
+                      const SizedBox(height: 2),
+                      Obx(() {
+                        final int totalCount = tab.booruHandler.totalCount.value;
+                        final String countStr = totalCount > 0
+                            ? totalCount.toFormattedString()
+                            : (tab.booruHandler.filteredFetched.isNotEmpty ? '${tab.booruHandler.filteredFetched.length}+' : '—');
+                        return Text(
+                          '$booruNamesStr · $countStr',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: meta),
+                        );
+                      }),
+                    ],
                   ),
-                  Expanded(
-                    flex: 1,
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: SizedBox(
-                            height: subtitleStyle.fontSize,
-                            child: Builder(
-                              builder: (context) {
-                                final List<String> booruNames = [
-                                  if (tab.booruHandler is MergebooruHandler)
-                                    (tab.booruHandler as MergebooruHandler).booruList[0].name ?? ''
-                                  else
-                                    tab.booruHandler.booru.name ?? '',
-                                  //
-                                  for (final Booru booru in (tab.secondaryBoorus.value ?? [])) booru.name ?? '',
-                                ];
-                                final String booruNamesStr = booruNames.join(', ');
-
-                                return MarqueeText(
-                                  key: ValueKey(booruNamesStr),
-                                  text: booruNamesStr.trim(),
-                                  style: subtitleStyle.copyWith(
-                                    height: 1,
-                                  ),
-                                  allowDownscale: false,
-                                  isExpanded: false,
-                                );
-                              },
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        Obx(() {
-                          final int totalCount = tab.booruHandler.totalCount.value;
-                          return Row(
-                            children: [
-                              if (totalCount > 0) ...[
-                                Icon(
-                                  Icons.image,
-                                  size: 16,
-                                  color: subtitleStyle.color,
-                                ),
-                                const SizedBox(width: 2),
-                                Text(
-                                  '${totalCount.toFormattedString()} | ',
-                                  style: subtitleStyle,
-                                ),
-                              ],
-                              if (index != null)
-                                Text(
-                                  '#${(index! + 1).toFormattedString()}${originalIndex != null ? '|${(originalIndex! + 1).toFormattedString()}' : ''}',
-                                  style: subtitleStyle,
-                                ),
-                            ],
-                          );
-                        }),
-                        const SizedBox(width: 8),
-                      ],
-                    ),
-                  ),
+                ),
+                if (onOptionsTap != null || optionsWidgetBuilder != null) ...[
+                  const SizedBox(width: 2),
+                  optionsWidgetBuilder?.call(context, onOptionsTap) ??
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        iconSize: 18,
+                        color: meta,
+                        onPressed: onOptionsTap,
+                        icon: const Icon(CupertinoIcons.slider_horizontal_3),
+                      ),
                 ],
-              ),
+                if (onCloseTap != null)
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    iconSize: 18,
+                    color: meta,
+                    onPressed: onCloseTap,
+                    icon: const Icon(Icons.close),
+                  ),
+              ],
             ),
           ),
         ),
