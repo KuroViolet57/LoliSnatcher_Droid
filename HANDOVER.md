@@ -1,6 +1,6 @@
 # LoliSnatcher_Droid — Session Handover
 
-Paste this back to resume with full context. Last updated: 2026-07-13 (build 5210).
+Paste this back to resume with full context. Last updated: 2026-07-15 (build 5210, Flow rounded-icon sweep + sqlite3 sandbox build fix).
 
 ## Project / workflow
 - Flutter Android booru gallery app. Autonomous multi-feature build.
@@ -11,6 +11,25 @@ Paste this back to resume with full context. Last updated: 2026-07-13 (build 521
   warns about running as root but works). APKs land in
   `build/app/outputs/flutter-apk/LoliSnatcher_2.5.0_<build>_<abi>_test.apk`.
 - Each feature: build → commit → push → upload test APK.
+- **sqlite3 native-asset build break (sandbox only).** In THIS restricted
+  sandbox the release build fails with `Hash of downloaded file
+  libsqlite3.arm64.android.so is <x>, expected <y>` — the `sqlite3` pub package
+  downloads a prebuilt `.so` from `github.com/simolus3/sqlite3.dart/releases`,
+  but the GitHub proxy is scoped to only the app repo, so it returns a 195-byte
+  JSON error instead of the binary. The user's real CI (with normal network)
+  is unaffected — do NOT commit a workaround into the repo. Sandbox fix (all
+  ephemeral, redo after a container reset): (1) the valid `.so` files may still
+  be cached under `.dart_tool/hooks_runner/shared/sqlite3/build/download-*/`
+  (match by sha256 to the expected hashes in the sqlite3 package's
+  `lib/src/hook/asset_hashes.dart`); copy them into
+  `/root/.pub-cache/sqlite3_prebuilt_seed/` named by release filename
+  (`libsqlite3.{arm,arm64,x64}.android.so`); (2) patch the pub-cache hook
+  `~/.pub-cache/hosted/pub.dev/sqlite3-*/lib/src/hook/description.dart` so
+  `PrecompiledFromGithubAssets._fetchFromSource` serves that seed file when it
+  exists (before the HttpClient download) — the hash is still verified by the
+  caller; (3) `rm -rf .dart_tool/hooks_runner/sqlite3` to force a hook recompile,
+  then rebuild. If `add_repo` for `simolus3/sqlite3.dart` becomes available,
+  that's the clean fix instead (no patch/seed needed).
 
 ## Uploading builds
 - **Google Drive (primary, durable):** creds live at
@@ -261,8 +280,15 @@ analyzer errors project-wide.
   suggestions + accent Search btn); All Tabs manager (filter, fast-scroll, bulk);
   Settings hub (SEARCH/LOOK&FEEL/SYSTEM cards → detail pages); Downloads/Favorites.
 - Snackbar Flow style (bg #E9E2F5, text #2A2240, r14, w800) in flash_elements.
-- Material Symbols Rounded icons (material_symbols_icons pkg NOT in pubspec;
-  either add it or keep Material Icons — currently kept Material Icons).
+- **Material Symbols Rounded icons — DONE.** `material_symbols_icons` IS in
+  pubspec now. Icons app-wide use `Symbols.<name>_rounded` (the unsuffixed
+  `Symbols.<name>` is the Outlined family — always keep the `_rounded` suffix
+  so the rounded font is what tree-shaking keeps). Converted: the 6 core Flow
+  widgets, collections/about/saved-searches, add-to-collection sheet, tab/tag/
+  page dialogs, ALL `widgets/common/*` shared widgets, and the gallery/drawers/
+  tabs/history/tags/thumbnail/home surfaces. Name gotchas: `Icons.copy`→
+  `Symbols.content_copy_rounded`, `paste`→`content_paste_rounded`; never touch
+  `FontAwesomeIcons.*` / `CupertinoIcons.*` (use a `\bIcons\.` regex).
 Approach: reskin, reuse existing GetX handlers (SearchHandler/ViewerHandler/
 SettingsHandler), build+ship per phase so each is testable. Fill missing UIs in
 the design's style.
