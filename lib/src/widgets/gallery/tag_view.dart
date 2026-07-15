@@ -848,6 +848,46 @@ class _TagViewState extends State<TagView> {
     }
 
     return [
+      // Tags header + interaction hint (Flow info-flow).
+      SliverPadding(
+        padding: const EdgeInsets.fromLTRB(14, 6, 14, 0),
+        sliver: SliverToBoxAdapter(
+          child: Row(
+            children: [
+              Text(
+                'Tags',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                '${filteredTags.length}',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                ),
+              ),
+              const Spacer(),
+              Flexible(
+                child: Text(
+                  'tap · hold = tab · ⧉ = preview',
+                  textAlign: TextAlign.right,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w600,
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
       for (final section in sections) ...[
         if (section.$1 != null)
           SliverPadding(
@@ -1031,6 +1071,22 @@ class _TagViewState extends State<TagView> {
                   color: hasTabWithTag.color(context),
                 ),
               ],
+              // ⧉ preview zone: a divider + picture-in-picture that opens the
+              // floating preview window for this tag (its own tap target, so it
+              // doesn't trigger the chip's tap = menu).
+              const SizedBox(width: 7),
+              Container(width: 1, height: 16, color: baseColor.withValues(alpha: 0.3)),
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  final Booru previewBooru = possibleBooruHandler?.booru ?? searchHandler.currentBooru;
+                  FloatingPreviewHandler.instance.open(tag: currentTag, booru: previewBooru);
+                },
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 7, right: 1),
+                  child: Icon(Icons.picture_in_picture_alt_outlined, size: 15, color: baseColor),
+                ),
+              ),
             ],
           ),
         ),
