@@ -353,38 +353,45 @@ class _HistoryListState extends State<HistoryList> {
       },
     );
 
+    final theme = Theme.of(context);
+    final BorderRadius radius = BorderRadius.circular(13);
     return Material(
-      color: Colors.transparent,
+      color: theme.colorScheme.surfaceContainer,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: radius,
+        side: BorderSide(color: theme.colorScheme.outlineVariant),
+      ),
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 0, vertical: 4),
-        height: 72,
+        margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        height: 64,
         child: ListTile(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(5),
-            side: const BorderSide(color: Colors.grey),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: radius),
           onTap: isActive ? () => showHistoryEntryActions(buildEntry(index, false, true), currentEntry, booru) : null,
           minLeadingWidth: 24,
-          leading: BooruFavicon(booru),
+          leading: ClipRRect(
+            borderRadius: BorderRadius.circular(9),
+            child: SizedBox(width: 30, height: 30, child: BooruFavicon(booru, size: 30)),
+          ),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               if (currentEntry.isFavourite)
                 const Padding(
                   padding: EdgeInsets.fromLTRB(5, 0, 0, 0),
-                  child: Icon(Icons.favorite, color: Colors.red),
+                  child: Icon(Icons.star, color: Color(0xFFE8C46B), size: 20),
                 ),
               if (showCheckbox) checkbox,
             ],
           ),
           title: SizedBox(
-            height: 16,
+            height: 18,
             child: MarqueeText(
               key: ValueKey(currentEntry.searchText),
               text: currentEntry.searchText,
               style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
+                fontSize: 14.5,
+                fontWeight: FontWeight.w700,
               ),
               isExpanded: false,
             ),
@@ -392,6 +399,7 @@ class _HistoryListState extends State<HistoryList> {
           subtitle: Text(
             booru?.name ??
                 context.loc.history.unknownBooru(name: currentEntry.booruName, type: currentEntry.booruType.toString()),
+            style: TextStyle(fontSize: 11.5, color: theme.colorScheme.onSurfaceVariant),
           ),
         ),
       ),
