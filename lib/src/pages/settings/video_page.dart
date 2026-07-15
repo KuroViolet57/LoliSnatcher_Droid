@@ -23,6 +23,11 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
   bool autoPlay = true;
   bool startVideosMuted = false;
   bool disableVideo = false;
+  bool useBetterPlayer = false;
+  bool useMediaKitPlayer = false;
+  final TextEditingController mediaKitMaxPlayersController = TextEditingController();
+  final TextEditingController betterPlayerCacheMbController = TextEditingController();
+  final TextEditingController betterPlayerPerFileMbController = TextEditingController();
   bool altVideoPlayerHwAccel = true;
   VideoBackendMode videoBackendMode = SettingsHandler.isDesktopPlatform
       ? VideoBackendMode.mpv
@@ -38,6 +43,11 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
     autoPlay = settingsHandler.autoPlayEnabled;
     startVideosMuted = settingsHandler.startVideosMuted;
     disableVideo = settingsHandler.disableVideo;
+    useBetterPlayer = settingsHandler.useBetterPlayer;
+    useMediaKitPlayer = settingsHandler.useMediaKitPlayer;
+    mediaKitMaxPlayersController.text = settingsHandler.mediaKitMaxPlayers.toString();
+    betterPlayerCacheMbController.text = settingsHandler.betterPlayerCacheMb.toString();
+    betterPlayerPerFileMbController.text = settingsHandler.betterPlayerPerFileMb.toString();
     videoBackendMode = settingsHandler.videoBackendMode;
     altVideoPlayerHwAccel = settingsHandler.altVideoPlayerHwAccel;
     altVideoPlayerVO = settingsHandler.altVideoPlayerVO;
@@ -49,6 +59,14 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
     settingsHandler.autoPlayEnabled = autoPlay;
     settingsHandler.startVideosMuted = startVideosMuted;
     settingsHandler.disableVideo = disableVideo;
+    settingsHandler.useBetterPlayer = useBetterPlayer;
+    settingsHandler.useMediaKitPlayer = useMediaKitPlayer;
+    settingsHandler.mediaKitMaxPlayers =
+        (int.tryParse(mediaKitMaxPlayersController.text) ?? 4).clamp(1, 20);
+    settingsHandler.betterPlayerCacheMb =
+        (int.tryParse(betterPlayerCacheMbController.text) ?? 500).clamp(0, 50000);
+    settingsHandler.betterPlayerPerFileMb =
+        (int.tryParse(betterPlayerPerFileMbController.text) ?? 100).clamp(0, 50000);
     settingsHandler.videoBackendMode = SettingsHandler.isDesktopPlatform ? VideoBackendMode.mpv : videoBackendMode;
     settingsHandler.altVideoPlayerHwAccel = altVideoPlayerHwAccel;
     settingsHandler.altVideoPlayerVO = altVideoPlayerVO;
@@ -137,6 +155,73 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
                 name: context.loc.settings.video.experimental,
                 icon: const Icon(Icons.science),
               ),
+              if (!SettingsHandler.isDesktopPlatform)
+                SettingsToggle(
+                  value: useMediaKitPlayer,
+                  onChanged: (newValue) {
+                    setState(() {
+                      useMediaKitPlayer = newValue;
+                    });
+                  },
+                  title: 'Use media_kit engine (experimental)',
+                  leadingIcon: const Icon(Icons.bolt),
+                  subtitle: const Text(
+                    'A completely separate video engine built on media_kit (libmpv) instead of ExoPlayer. libmpv manages its own decoders with software fallback, so it sidesteps the hardware-decoder-exhaustion crashes that can happen when scrolling fast through many videos. Same custom controls (tap, double-tap to skip, scrubber, fullscreen). Takes precedence over better_player when both are on. Restart the viewer for changes to take effect.',
+                  ),
+                ),
+              if (!SettingsHandler.isDesktopPlatform && useMediaKitPlayer)
+                SettingsTextInput(
+                  controller: mediaKitMaxPlayersController,
+                  title: 'media_kit warm player pool size',
+                  hintText: '4',
+                  inputType: TextInputType.number,
+                  numberStep: 1,
+                  numberButtons: true,
+                  resetText: () => '4',
+                  subtitle: const Text(
+                    "How many recently-viewed videos to keep warm in memory. Scrolling back to a video that's still in the pool resumes with its buffer intact instead of restarting the download. Higher = smoother scrub-back but more RAM. libmpv has no MediaCodec limit, so values up to ~10 are safe on most devices. Default 4 (current + previous + next + one more).",
+                  ),
+                ),
+              if (!SettingsHandler.isDesktopPlatform)
+                SettingsToggle(
+                  value: useBetterPlayer,
+                  onChanged: (newValue) {
+                    setState(() {
+                      useBetterPlayer = newValue;
+                    });
+                  },
+                  title: 'Use better_player engine (experimental)',
+                  leadingIcon: const Icon(Icons.science_outlined),
+                  subtitle: const Text(
+                    "Swaps the default video pipeline for better_player_plus, which exposes ExoPlayer's buffer and HTTP-cache tuning. Helps with the stall-buffer-stall cycle on jittery CDNs. Disables LoliControls-specific features (long-tap fast-forward) and the MPV fallback path while on. Restart the viewer for changes to take effect.",
+                  ),
+                ),
+              if (!SettingsHandler.isDesktopPlatform && useBetterPlayer) ...[
+                SettingsTextInput(
+                  controller: betterPlayerCacheMbController,
+                  title: 'better_player video cache (MB)',
+                  hintText: '500',
+                  inputType: TextInputType.number,
+                  numberStep: 100,
+                  numberButtons: true,
+                  resetText: () => '500',
+                  subtitle: const Text(
+                    'Total on-disk cache for the better_player engine. Recently-watched videos serve from here on rewatch / scroll-back without re-hitting the CDN. 0 disables. Default 500. Bump higher (e.g. 2000-5000) if you have spare storage and want long browsing sessions to stay snappy.',
+                  ),
+                ),
+                SettingsTextInput(
+                  controller: betterPlayerPerFileMbController,
+                  title: 'better_player cache size per video (MB)',
+                  hintText: '100',
+                  inputType: TextInputType.number,
+                  numberStep: 50,
+                  numberButtons: true,
+                  resetText: () => '100',
+                  subtitle: const Text(
+                    'Per-file cap. Stops a single very long video from eating the whole cache pool.',
+                  ),
+                ),
+              ],
               if (!SettingsHandler.isDesktopPlatform)
                 SettingsDropdown(
                   value: videoBackendMode,

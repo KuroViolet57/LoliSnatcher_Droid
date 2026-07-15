@@ -132,6 +132,215 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
     return res ?? false;
   }
 
+  // Bulk backup — runs settings + boorus + database sequentially after one
+  // confirmation. Overwrites existing files silently (you opted in to the
+  // bulk action, so we don't gate each file behind the duplicate prompt).
+  Future<void> _runBackupAll(BuildContext context) async {
+    if (backupPath.isEmpty) {
+      showSnackbar(context.loc.settings.backupAndRestore.noBackupDirSelected, isError: true);
+      return;
+    }
+    final bool ok = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => const SettingsDialog(
+            title: Text('Backup all'),
+            contentItems: [
+              Text('This will back up settings.json, boorus.json and store.db to the selected directory, overwriting any existing copies.'),
+            ],
+            actionButtons: [
+              CancelButton(withIcon: true),
+              ConfirmButton(withIcon: true, returnData: true, label: 'Backup all'),
+            ],
+          ),
+        ) ??
+        false;
+    if (!ok) return;
+
+    inProgress = true;
+    setState(() {});
+
+    final List<String> failures = [];
+
+    Future<void> step(String label, Future<void> Function() body) async {
+      try {
+        await body();
+      } catch (e, s) {
+        failures.add(label);
+        Logger.Inst().log(e.toString(), 'BackupRestorePage', 'backupAll/$label', LogTypes.exception, s: s);
+      }
+    }
+
+    // settings.json
+    await step('settings', () async {
+      final File file = File('${await ServiceHandler.getConfigDir()}settings.json');
+      await ServiceHandler.writeImage(
+        await file.readAsBytes(),
+        'settings',
+        'text/json',
+        'json',
+        backupPath,
+      );
+    });
+
+    // boorus.json
+    await step('boorus', () async {
+      final List<Booru> booruList =
+          settingsHandler.booruList.where((e) => BooruType.saveable.contains(e.type)).toList();
+      await ServiceHandler.writeImage(
+        utf8.encode(json.encode(booruList)),
+        'boorus',
+        'text',
+        'json',
+        backupPath,
+      );
+    });
+
+    // store.db
+    await step('database', () async {
+      final File file = File('${await ServiceHandler.getConfigDir()}store.db');
+      if (!await file.exists()) throw Exception('database file not found');
+      await ServiceHandler.copyFileToSafDir(
+        await ServiceHandler.getConfigDir(),
+        'store.db',
+        backupPath,
+        'application/x-sqlite3',
+      );
+    });
+
+    inProgress = false;
+    setState(() {});
+
+    if (failures.isEmpty) {
+      showSnackbar('Backed up settings, boorus and database.', isError: false);
+    } else {
+      showSnackbar('Backup finished with errors: ${failures.join(", ")}', isError: true);
+    }
+  }
+
+  // Bulk restore — confirms once with a stronger warning, then restores all
+  // three sequentially. Database is restored last and triggers the standard
+  // app restart on success (already part of the single-file flow).
+  Future<void> _runRestoreAll(BuildContext context) async {
+    if (backupPath.isEmpty) {
+      showSnackbar(context.loc.settings.backupAndRestore.noBackupDirSelected, isError: true);
+      return;
+    }
+    final bool ok = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => const SettingsDialog(
+            title: Text('Restore all'),
+            contentItems: [
+              Text(
+                'This will replace your current settings, boorus and database with the files from the backup directory. '
+                'The app will restart at the end. This cannot be undone.',
+              ),
+            ],
+            actionButtons: [
+              CancelButton(withIcon: true),
+              ConfirmButton(withIcon: true, returnData: true, label: 'Restore all'),
+            ],
+          ),
+        ) ??
+        false;
+    if (!ok) return;
+
+    inProgress = true;
+    setState(() {});
+
+    final List<String> failures = [];
+
+    // settings.json
+    try {
+      final Uint8List? bytes = await ServiceHandler.getFileFromSAFDirectory(backupPath, 'settings.json');
+      if (bytes != null) {
+        final File f = File('${await ServiceHandler.getConfigDir()}settings.json');
+        if (!await f.exists()) await f.create();
+        await f.writeAsBytes(bytes);
+        await settingsHandler.loadSettingsJson();
+      } else {
+        failures.add('settings (file not found)');
+      }
+    } catch (e, s) {
+      failures.add('settings');
+      Logger.Inst().log(e.toString(), 'BackupRestorePage', 'restoreAll/settings', LogTypes.exception, s: s);
+    }
+
+    // boorus.json
+    try {
+      final Uint8List? bytes = await ServiceHandler.getFileFromSAFDirectory(backupPath, 'boorus.json');
+      if (bytes != null) {
+        final String boorusStr = String.fromCharCodes(bytes);
+        if (boorusStr.isNotEmpty) {
+          final List<dynamic> parsed = jsonDecode(boorusStr);
+          final String configBoorusPath = '${await ServiceHandler.getConfigDir()}boorus/';
+          final Directory configBoorusDir = await Directory(configBoorusPath).create(recursive: true);
+          for (int i = 0; i < parsed.length; i++) {
+            final Booru booru = Booru.fromMap(parsed[i]);
+            final bool alreadyExists = settingsHandler.booruList.indexWhere(
+                  (el) => el.baseURL == booru.baseURL && el.name == booru.name,
+                ) !=
+                -1;
+            final bool isAllowed = BooruType.saveable.contains(booru.type);
+            if (!alreadyExists && isAllowed) {
+              final File booruFile = File('${configBoorusDir.path}${booru.name}.json');
+              final writer = booruFile.openWrite();
+              writer.write(jsonEncode(booru.toJson()));
+              await writer.close();
+            }
+          }
+          await settingsHandler.loadBoorus();
+        }
+      } else {
+        failures.add('boorus (file not found)');
+      }
+    } catch (e, s) {
+      failures.add('boorus');
+      Logger.Inst().log(e.toString(), 'BackupRestorePage', 'restoreAll/boorus', LogTypes.exception, s: s);
+    }
+
+    // store.db — last because it restarts the app on success
+    try {
+      final fileExists = await ServiceHandler.existsFileFromSAFDirectory(backupPath, 'store.db');
+      if (!fileExists) {
+        failures.add('database (file not found)');
+      } else {
+        searchHandler.canBackup.value = false;
+        final String configDir = await ServiceHandler.getConfigDir();
+        await settingsHandler.dbHandler.closeDb();
+        for (final suffix in ['-wal', '-shm']) {
+          final sidecar = File('${configDir}store.db$suffix');
+          if (await sidecar.exists()) await sidecar.delete();
+        }
+        final bool copied = await ServiceHandler.copySafFileToDir(backupPath, 'store.db', configDir);
+        if (!copied) {
+          failures.add('database (copy failed)');
+          searchHandler.canBackup.value = true;
+        } else {
+          final File newFile = File('${configDir}store.db');
+          if (!await newFile.exists()) {
+            failures.add('database (post-copy missing)');
+            searchHandler.canBackup.value = true;
+          }
+        }
+      }
+    } catch (e, s) {
+      failures.add('database');
+      Logger.Inst().log(e.toString(), 'BackupRestorePage', 'restoreAll/database', LogTypes.exception, s: s);
+      searchHandler.canBackup.value = true;
+    }
+
+    inProgress = false;
+    setState(() {});
+
+    if (failures.isEmpty) {
+      showSnackbar('Restored. App will restart in a moment.', isError: false);
+      await Future.delayed(const Duration(seconds: 3));
+      unawaited(ServiceHandler.restartApp());
+    } else {
+      showSnackbar('Restore finished with errors: ${failures.join(", ")}', isError: true);
+    }
+  }
+
   //called when page is closed, sets settingshandler variables and then writes settings to disk
   Future<void> _onPopInvoked(bool didPop, _) async {
     if (didPop) {
@@ -229,6 +438,12 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
                   if (backupPath.isNotEmpty) ...[
                     // Backup
                     const SettingsButton(name: '', enabled: false),
+                    SettingsButton(
+                      name: 'Backup all (settings + boorus + database)',
+                      icon: const Icon(Icons.cloud_upload_outlined),
+                      action: () => _runBackupAll(context),
+                      drawTopBorder: true,
+                    ),
                     SettingsButton(
                       name: context.loc.settings.backupAndRestore.backupSettings,
                       icon: const Icon(Icons.settings),
@@ -445,6 +660,12 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
                       margin: const EdgeInsets.fromLTRB(10, 10, 10, 10),
                       width: double.infinity,
                       child: Text(context.loc.settings.backupAndRestore.restoreInfoMsg),
+                    ),
+                    SettingsButton(
+                      name: 'Restore all (settings + boorus + database)',
+                      icon: const Icon(Icons.cloud_download_outlined),
+                      action: () => _runRestoreAll(context),
+                      drawTopBorder: true,
                     ),
                     SettingsButton(
                       name: context.loc.settings.backupAndRestore.restoreSettings,

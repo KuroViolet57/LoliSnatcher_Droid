@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/widgets/preview/main_search_bar.dart';
+import 'package:lolisnatcher/src/widgets/preview/flow_search_bar.dart';
 import 'package:lolisnatcher/src/widgets/preview/waterfall_error_buttons.dart';
 
 // all the scroll stuff is just experiments,
@@ -84,7 +84,7 @@ class WaterfallBottomBarState extends State<WaterfallBottomBar> with TickerProvi
               return Transform.translate(
                 offset: Offset(
                   0,
-                  showSearchBar ? (MainSearchBar.height + bottomPadding) * animValue : bottomPadding,
+                  showSearchBar ? (FlowSearchBar.height + bottomPadding) * animValue : bottomPadding,
                 ),
                 child: AnimatedPadding(
                   duration: const Duration(milliseconds: 100),
@@ -113,17 +113,17 @@ class WaterfallBottomBarState extends State<WaterfallBottomBar> with TickerProvi
                       bottom: (12 + bottomPadding) * reverseAnimValue,
                     ),
                     child: Transform.translate(
-                      offset: Offset(0, (MainSearchBar.height + bottomPadding) * 2 * animValue),
+                      offset: Offset(0, (FlowSearchBar.height + bottomPadding) * 2 * animValue),
                       child: child,
                     ),
                   ),
                 );
               },
               child: Container(
-                height: MainSearchBar.height,
+                height: FlowSearchBar.height,
                 width: double.infinity,
-                margin: const EdgeInsets.symmetric(horizontal: 12),
-                child: const MainSearchBarWithActions('bottom'),
+                margin: const EdgeInsets.symmetric(horizontal: 16),
+                child: const FlowSearchBar(),
               ),
             ),
         ],

@@ -12,11 +12,15 @@ import 'package:lolisnatcher/src/utils/extensions.dart';
 import 'package:scroll_to_index/scroll_to_index.dart';
 import 'package:uuid/uuid.dart';
 
+import 'package:lolisnatcher/src/boorus/mergebooru_handler.dart';
+import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/data/saved_search.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 import 'package:lolisnatcher/src/handlers/database_handler.dart';
+import 'package:lolisnatcher/src/handlers/interests_handler.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -71,6 +75,79 @@ class SearchHandler {
   RxInt index = 0.obs;
   RxnString tabId = RxnString(null);
 
+  // History of tabs the user personally opened/viewed by tapping them
+  // (tab manager, tab nav buttons, desktop tab bar). Tabs auto-created from
+  // the tag view / preview strips are deliberately NOT recorded here — only
+  // genuine user visits, flagged via changeTabIndex(byUser: true).
+  final RxList<TabVisit> visitedTabsHistory = RxList<TabVisit>([]);
+  static const int _maxVisitHistory = 150;
+
+  void recordTabVisit(SearchTab tab) {
+    final visit = TabVisit(
+      tabId: tab.id,
+      tags: tab.tags,
+      booruName: tab.selectedBooru.value.name ?? '',
+      booruType: tab.selectedBooru.value.type,
+      visitedAt: DateTime.now(),
+    );
+    // One entry per tab: drop any existing entry for this tab (same id) so the
+    // tab moves to most-recent and reflects its current tags, instead of
+    // adding a duplicate when its search changes or it's re-visited.
+    visitedTabsHistory.removeWhere((v) => v.tabId == tab.id);
+    visitedTabsHistory.add(visit);
+    if (visitedTabsHistory.length > _maxVisitHistory) {
+      visitedTabsHistory.removeRange(0, visitedTabsHistory.length - _maxVisitHistory);
+    }
+    // Persist so the history survives app restarts. Fire-and-forget.
+    unawaited(_persistTabVisit(visit));
+  }
+
+  Future<void> _persistTabVisit(TabVisit visit) async {
+    try {
+      // Replace any prior persisted rows for this tab so the DB mirrors the
+      // one-entry-per-tab, most-recent semantics of the in-memory list.
+      await SettingsHandler.instance.dbHandler.deleteTabVisit(visit.tabId);
+      await SettingsHandler.instance.dbHandler.addTabVisit(
+        tabId: visit.tabId,
+        tags: visit.tags,
+        booruName: visit.booruName,
+        booruType: visit.booruType?.name,
+        visitedAt: visit.visitedAt.millisecondsSinceEpoch,
+      );
+      await SettingsHandler.instance.dbHandler.trimTabVisits(_maxVisitHistory);
+    } catch (e, s) {
+      Logger.Inst().log(
+        'failed to persist tab visit: $e',
+        'SearchHandler',
+        '_persistTabVisit',
+        LogTypes.exception,
+        s: s,
+      );
+    }
+  }
+
+  Future<void> loadVisitedTabsHistory() async {
+    try {
+      final rows = await SettingsHandler.instance.dbHandler.getTabVisits();
+      visitedTabsHistory.assignAll(rows.map(TabVisit.fromRow));
+    } catch (e, s) {
+      Logger.Inst().log(
+        'failed to load tab visit history: $e',
+        'SearchHandler',
+        'loadVisitedTabsHistory',
+        LogTypes.exception,
+        s: s,
+      );
+    }
+  }
+
+  Future<void> clearVisitedTabsHistory() async {
+    visitedTabsHistory.clear();
+    try {
+      await SettingsHandler.instance.dbHandler.clearTabVisits();
+    } catch (_) {}
+  }
+
   // add new tab by the given search string
   void addTabByString(
     String searchText, {
@@ -79,6 +156,9 @@ class SearchHandler {
     List<Booru>? secondaryBoorus,
     TabAddMode addMode = TabAddMode.end,
     int? customPage,
+    Map<String, String>? tagOverrides,
+    Map<String, bool>? inheritMainTags,
+    String? tabId,
   }) {
     final Booru booru = customBooru ?? currentBooru;
 
@@ -87,6 +167,9 @@ class SearchHandler {
       booru,
       secondaryBoorus,
       searchText,
+      tabId: tabId,
+      tagOverrides: tagOverrides,
+      inheritMainTags: inheritMainTags,
     );
     if (customPage != null) {
       newTab.booruHandler.pageNum = customPage;
@@ -313,6 +396,7 @@ class SearchHandler {
     int i, {
     bool switchOnly = false,
     bool ignoreSameIndexCheck = false,
+    bool byUser = false,
   }) {
     // change only if new index != current index
     // final int oldIndex = currentIndex;
@@ -328,6 +412,12 @@ class SearchHandler {
       newIndex = total - 1;
     } else if (newIndex < 0) {
       newIndex = 0;
+    }
+
+    // record a personal visit when the switch was user-initiated (tab manager
+    // tap, tab nav buttons, desktop tab bar) — not for programmatic switches.
+    if (byUser && newIndex >= 0 && newIndex < total) {
+      recordTabVisit(tabs[newIndex]);
     }
 
     // change index only when it's different
@@ -374,6 +464,7 @@ class SearchHandler {
       currentBooru,
       currentSecondaryBoorus.value,
       currentTab.tags,
+      tabId: currentTab.id,
     );
     newTab.booruHandler.pageNum = newPageNum;
     pageNum.value = newPageNum;
@@ -492,6 +583,12 @@ class SearchHandler {
     // Remove extra spaces
     text = text.trim();
 
+    // Record the search as a taste signal (skip virtual/local feeds).
+    final BooruType? actionType = (newBooru ?? currentBooru).type;
+    if (text.isNotEmpty && actionType?.isLocalDb != true && actionType?.isForYou != true) {
+      InterestsHandler.instance.onSearch(text);
+    }
+
     // clear image memory cache
     Tools.forceClearMemoryCache(withLive: true);
 
@@ -506,12 +603,22 @@ class SearchHandler {
         tabs.add(newTab);
       }
     } else {
+      // Preserve per-booru tag overrides + inherit flags across the tab swap
+      // so the user's search-bar tap doesn't wipe edits they made.
+      final Map<String, String> carriedOverrides = Map<String, String>.from(currentTab.tagOverrides);
+      final Map<String, bool> carriedInherit = Map<String, bool>.from(currentTab.inheritMainTags);
       final SearchTab newTab = SearchTab(
         newBooru ?? currentBooru,
         currentSecondaryBoorus.value,
         text,
+        tabId: currentTab.id, // keep the same tab identity across the search change
+        tagOverrides: carriedOverrides,
+        inheritMainTags: carriedInherit,
       );
       tabs[currentIndex] = newTab;
+      // The user changed this tab's search while viewing it — update its
+      // visited-history entry in place (same id) instead of duplicating.
+      recordTabVisit(newTab);
     }
 
     unawaited(searchReactions(text, newBooru ?? currentBooru));
@@ -595,6 +702,137 @@ class SearchHandler {
 
   //
 
+  //
+  // Seen posts (already-viewed dimming). In-memory mirror of the SeenPost
+  // table for O(1) lookups while building grid cells; the DB is the durable
+  // copy. Keyed by postURL (globally unique because it carries the domain,
+  // so it's merge-safe with no booru context needed).
+
+  final Set<String> seenPostKeys = <String>{};
+
+  String? seenKeyFor(BooruItem item) {
+    if (item.postURL.isNotEmpty) return item.postURL;
+    if (item.fileURL.isNotEmpty) return item.fileURL;
+    return null;
+  }
+
+  bool isPostSeen(BooruItem item) {
+    final String? key = seenKeyFor(item);
+    return key != null && seenPostKeys.contains(key);
+  }
+
+  Future<void> loadSeenPosts() async {
+    try {
+      final keys = await SettingsHandler.instance.dbHandler.getSeenPostKeys();
+      seenPostKeys
+        ..clear()
+        ..addAll(keys);
+    } catch (_) {}
+  }
+
+  Future<void> markPostSeen(BooruItem item) async {
+    final String? key = seenKeyFor(item);
+    if (key == null) return;
+    item.isSeen.value = true;
+    if (seenPostKeys.add(key)) {
+      // only hit the DB the first time we see this key
+      try {
+        await SettingsHandler.instance.dbHandler.addSeenPost(key);
+      } catch (_) {}
+    }
+  }
+
+  Future<void> clearSeenPosts() async {
+    seenPostKeys.clear();
+    try {
+      await SettingsHandler.instance.dbHandler.clearSeenPosts();
+    } catch (_) {}
+    // Drop the live flag on currently-loaded items so the grid un-dims.
+    for (final tab in tabs) {
+      for (final item in tab.booruHandler.fetched) {
+        item.isSeen.value = false;
+      }
+    }
+  }
+
+  //
+  // Saved searches (quick-search favourites). Bookmarks the user's current
+  // query (tags + booru + secondaries + per-booru overrides + inherit flags)
+  // so they can re-open it later, optionally on a different booru.
+
+  final RxList<SavedSearch> savedSearches = <SavedSearch>[].obs;
+
+  Future<void> reloadSavedSearches() async {
+    final SettingsHandler settingsHandler = SettingsHandler.instance;
+    savedSearches.assignAll(await settingsHandler.dbHandler.getSavedSearches());
+  }
+
+  // Snapshots the current tab as a SavedSearch and persists it. Returns the
+  // new id (or null if persistence failed). Name is optional; empty falls
+  // back to the tag string at display time.
+  Future<int?> addCurrentTabAsSavedSearch({String? name}) async {
+    if (tabs.isEmpty) return null;
+    final SettingsHandler settingsHandler = SettingsHandler.instance;
+    final SearchTab tab = currentTab;
+    final entry = SavedSearch(
+      id: null,
+      name: name?.trim() ?? '',
+      tags: tab.tags,
+      booru: tab.selectedBooru.value.name ?? '',
+      secondaryBoorus:
+          tab.secondaryBoorus.value?.map((b) => b.name ?? '').where((e) => e.isNotEmpty).toList() ?? const [],
+      tagOverrides: Map<String, String>.from(tab.tagOverrides)..removeWhere((_, v) => v.trim().isEmpty),
+      inheritMainTags: Map<String, bool>.from(tab.inheritMainTags)..removeWhere((_, v) => v),
+      createdAt: DateTime.now(),
+    );
+    final int? id = await settingsHandler.dbHandler.addSavedSearch(entry);
+    await reloadSavedSearches();
+    return id;
+  }
+
+  Future<void> deleteSavedSearch(int id) async {
+    final SettingsHandler settingsHandler = SettingsHandler.instance;
+    await settingsHandler.dbHandler.deleteSavedSearch(id);
+    await reloadSavedSearches();
+  }
+
+  Future<void> renameSavedSearch(int id, String name) async {
+    final SettingsHandler settingsHandler = SettingsHandler.instance;
+    await settingsHandler.dbHandler.renameSavedSearch(id, name);
+    await reloadSavedSearches();
+  }
+
+  // Opens a saved search as a new tab. `customBooru` overrides the saved
+  // primary (used by the "open in another booru" action). Respects the
+  // user's defaultTabAddMode setting and switches focus to the new tab.
+  void openSavedSearch(
+    SavedSearch entry, {
+    Booru? customBooru,
+  }) {
+    final SettingsHandler settingsHandler = SettingsHandler.instance;
+    final List<Booru> allBoorus = settingsHandler.booruList;
+    final Booru? primary = customBooru ??
+        allBoorus.firstWhereOrNull((b) => b.name == entry.booru);
+    if (primary == null) return;
+
+    final TabAddMode addMode = TabAddMode.values.firstWhereOrNull(
+          (m) => m.name == settingsHandler.defaultTabAddMode,
+        ) ??
+        TabAddMode.end;
+    addTabByString(
+      entry.tags,
+      switchToNew: true,
+      customBooru: primary,
+      secondaryBoorus: entry.resolveSecondaryBoorus(allBoorus),
+      addMode: addMode,
+      tagOverrides: entry.tagOverrides.isEmpty ? null : Map<String, String>.from(entry.tagOverrides),
+      inheritMainTags:
+          entry.inheritMainTags.isEmpty ? null : Map<String, bool>.from(entry.inheritMainTags),
+    );
+  }
+
+  //
+
   // add secondary boorus and run search
   void mergeAction(List<Booru>? secondaryBoorus) {
     final SettingsHandler settingsHandler = SettingsHandler.instance;
@@ -602,7 +840,30 @@ class SearchHandler {
     final bool canAddSecondary = secondaryBoorus != null && settingsHandler.booruList.length > 1;
     final List<Booru>? secondary = canAddSecondary ? secondaryBoorus : null;
 
-    final SearchTab newTab = SearchTab(currentBooru, secondary, currentTab.tags);
+    // When the merge set changes, drop overrides for boorus that are no longer
+    // part of it; keep the rest so the user doesn't lose their edits when
+    // toggling boorus on and off.
+    final Set<String> keepNames = {
+      currentBooru.name ?? '',
+      ...?secondary?.map((b) => b.name ?? ''),
+    }..removeWhere((e) => e.isEmpty);
+    final Map<String, String> carriedOverrides = {
+      for (final e in currentTab.tagOverrides.entries)
+        if (keepNames.contains(e.key)) e.key: e.value,
+    };
+    final Map<String, bool> carriedInherit = {
+      for (final e in currentTab.inheritMainTags.entries)
+        if (keepNames.contains(e.key)) e.key: e.value,
+    };
+
+    final SearchTab newTab = SearchTab(
+      currentBooru,
+      secondary,
+      currentTab.tags,
+      tabId: currentTab.id,
+      tagOverrides: carriedOverrides,
+      inheritMainTags: carriedInherit,
+    );
     tabs[currentIndex] = newTab;
 
     // run search
@@ -1077,13 +1338,21 @@ class SearchHandler {
         final String booruName = tab.selectedBooru.value.name ?? 'unknown';
         final List<String> secondaryBoorusNames =
             tab.secondaryBoorus.value?.map((b) => b.name ?? 'unknown').toList() ?? [];
+        final Map<String, String> overrides = Map<String, String>.from(tab.tagOverrides)
+          ..removeWhere((_, v) => v.trim().isEmpty);
+        // inherit defaults to true; only persist the explicit-false entries.
+        final Map<String, bool> inherit = Map<String, bool>.from(tab.inheritMainTags)
+          ..removeWhere((_, v) => v);
         final bool selected = tab == tabs[tabIndex];
 
         return jsonEncode(
           TabBackup(
             tags: tags,
             booru: booruName,
+            id: tab.id,
             secondaryBoorus: secondaryBoorusNames,
+            tagOverrides: overrides,
+            inheritMainTags: inherit,
             selected: selected,
           ).toJson(),
         );
@@ -1118,6 +1387,10 @@ class SearchHandler {
       selectedBooru,
       secondaryBoorus.isEmpty ? null : secondaryBoorus,
       backup.tags,
+      tabId: backup.id,
+      tagOverrides: backup.tagOverrides.isEmpty ? null : Map<String, String>.from(backup.tagOverrides),
+      inheritMainTags:
+          backup.inheritMainTags.isEmpty ? null : Map<String, bool>.from(backup.inheritMainTags),
     );
   }
 
@@ -1144,6 +1417,11 @@ class SearchHandler {
   Future<void> restoreTabs() async {
     // TODO restoring database from the backup may have corrupted tab data when there are a lot of tabs?
     final settingsHandler = SettingsHandler.instance;
+    // Load the seen-post set once the DB is ready (before tabs paint so the
+    // first grid already shows dimming for previously-viewed posts).
+    await loadSeenPosts();
+    // Restore the personal tab-visit history so it survives app restarts.
+    await loadVisitedTabsHistory();
     try {
       final String? result = await settingsHandler.dbHandler.getTabRestore();
       if (result == null || result.startsWith('[')) {
@@ -1217,14 +1495,65 @@ class SearchHandler {
   }
 }
 
+/// A lightweight record of a tab the user personally visited. Keeps a
+/// snapshot (tags + booru) so it stays meaningful even after the underlying
+/// tab is closed, plus the live tab id so we can jump straight back if it's
+/// still open.
+class TabVisit {
+  TabVisit({
+    required this.tabId,
+    required this.tags,
+    required this.booruName,
+    required this.booruType,
+    required this.visitedAt,
+  });
+
+  factory TabVisit.fromRow(Map<String, Object?> row) {
+    final String? typeName = row['booruType'] as String?;
+    BooruType? type;
+    if (typeName != null) {
+      for (final t in BooruType.values) {
+        if (t.name == typeName) {
+          type = t;
+          break;
+        }
+      }
+    }
+    return TabVisit(
+      tabId: (row['tabId'] as String?) ?? '',
+      tags: (row['tags'] as String?) ?? '',
+      booruName: (row['booruName'] as String?) ?? '',
+      booruType: type,
+      visitedAt: DateTime.fromMillisecondsSinceEpoch(
+        (row['visitedAt'] as int?) ?? 0,
+      ),
+    );
+  }
+
+  final String tabId;
+  final String tags;
+  final String booruName;
+  final BooruType? booruType;
+  final DateTime visitedAt;
+}
+
 class SearchTab {
   SearchTab(
     Booru selectedBooru,
     List<Booru>? secondaryBoorus,
-    this.tags,
-  ) {
+    this.tags, {
+    Map<String, String>? tagOverrides,
+    Map<String, bool>? inheritMainTags,
+    String? tabId,
+  }) : id = (tabId != null && tabId.isNotEmpty) ? tabId : uuid.v4() {
     this.selectedBooru = selectedBooru.obs;
     this.secondaryBoorus = Rxn<List<Booru>?>(secondaryBoorus);
+    if (tagOverrides != null && tagOverrides.isNotEmpty) {
+      this.tagOverrides.addAll(tagOverrides);
+    }
+    if (inheritMainTags != null && inheritMainTags.isNotEmpty) {
+      this.inheritMainTags.addAll(inheritMainTags);
+    }
 
     final List<Booru> tempBooruList = [];
     tempBooruList.add(selectedBooru);
@@ -1234,10 +1563,35 @@ class SearchTab {
     final temp = BooruHandlerFactory().getBooruHandler(tempBooruList, null);
     booruHandler = temp.booruHandler;
     booruHandler.pageNum = temp.startingPage;
+    final handler = booruHandler;
+    if (handler is MergebooruHandler) {
+      handler.tagOverrides = Map<String, String>.from(this.tagOverrides);
+      handler.inheritMainTags = Map<String, bool>.from(this.inheritMainTags);
+    }
   }
-  // unique id to use for booru controller
-  final String id = uuid.v4();
+  // unique id to use for booru controller. Preserved across in-place search
+  // changes and app restarts (see SearchTab tabId param + TabBackup.id) so the
+  // visited-tabs history can track a tab as one entry rather than duplicating.
+  final String id;
   String tags = '';
+  // Per-booru tag overrides used when this tab is in merge mode. Keyed by
+  // child booru name. Reactive so the per-booru text fields refresh when
+  // a new tab is restored from a backup.
+  final RxMap<String, String> tagOverrides = <String, String>{}.obs;
+  // Per-booru inherit flag. Missing key means inherit (additive, the default).
+  // Explicit false means the override replaces the main tags for that booru.
+  final RxMap<String, bool> inheritMainTags = <String, bool>{}.obs;
+
+  // Pushes the current tagOverrides snapshot onto the merge handler. Called
+  // by the search bar when the user triggers a new search so per-booru edits
+  // made since the tab was created take effect on the next page-1 fetch.
+  void syncTagOverridesToHandler() {
+    final handler = booruHandler;
+    if (handler is MergebooruHandler) {
+      handler.tagOverrides = Map<String, String>.from(tagOverrides);
+      handler.inheritMainTags = Map<String, bool>.from(inheritMainTags);
+    }
+  }
 
   late final Rx<Booru> selectedBooru;
   late final Rxn<List<Booru>?> secondaryBoorus;
@@ -1281,6 +1635,7 @@ class SearchTab {
 
       final bool newValue = forcedValue ?? (item.isFavourite.value == true ? false : true);
       item.isFavourite.value = newValue;
+      InterestsHandler.instance.onItemFavourited(item, nowFavourite: newValue);
 
       final SettingsHandler settingsHandler = SettingsHandler.instance;
       if (!skipSnatching && settingsHandler.snatchOnFavourite && newValue && item.isSnatched.value != true) {
@@ -1346,19 +1701,34 @@ class TabBackup {
   TabBackup({
     required this.tags,
     required this.booru,
+    this.id,
     this.secondaryBoorus = const [],
+    this.tagOverrides = const {},
+    this.inheritMainTags = const {},
     this.selected = false,
   });
   final String tags;
   final String booru;
+  // Stable tab id, so a restored tab keeps the same identity the visited-tabs
+  // history recorded. Optional for backward-compat with older backups.
+  final String? id;
   final List<String> secondaryBoorus;
+  // Per-booru tag overrides used in merge mode. Keys are booru names; missing
+  // entries (or older backups without this field) fall back to `tags`.
+  final Map<String, String> tagOverrides;
+  // Per-booru "do not inherit main tags" flags. Only false entries are
+  // persisted (true is the default).
+  final Map<String, bool> inheritMainTags;
   final bool selected;
 
   Map<String, dynamic> toJson() {
     return {
       't': tags,
       'b': booru,
+      if (id != null) 'i': id,
       if (secondaryBoorus.isNotEmpty) 'sb': secondaryBoorus,
+      if (tagOverrides.isNotEmpty) 'to': tagOverrides,
+      if (inheritMainTags.isNotEmpty) 'in': inheritMainTags,
       if (selected) 's': selected, // only true matters, don't include on false
     };
   }
@@ -1368,7 +1738,12 @@ class TabBackup {
       return TabBackup(
         tags: json['t'] as String,
         booru: json['b'] as String,
+        id: json['i'] as String?,
         secondaryBoorus: (json['sb'] as List<dynamic>?)?.map((e) => e as String).toList() ?? const [],
+        tagOverrides:
+            (json['to'] as Map<String, dynamic>?)?.map((k, v) => MapEntry(k, v.toString())) ?? const {},
+        inheritMainTags:
+            (json['in'] as Map<String, dynamic>?)?.map((k, v) => MapEntry(k, v == true)) ?? const {},
         selected: (json['s'] as bool?) ?? false,
       );
     } catch (_) {
@@ -1404,12 +1779,16 @@ class TabBackup {
     String? tags,
     String? booru,
     List<String>? secondaryBoorus,
+    Map<String, String>? tagOverrides,
+    Map<String, bool>? inheritMainTags,
     bool? selected,
   }) {
     return TabBackup(
       tags: tags ?? this.tags,
       booru: booru ?? this.booru,
       secondaryBoorus: secondaryBoorus ?? this.secondaryBoorus,
+      tagOverrides: tagOverrides ?? this.tagOverrides,
+      inheritMainTags: inheritMainTags ?? this.inheritMainTags,
       selected: selected ?? this.selected,
     );
   }

@@ -92,11 +92,32 @@ class _HideableAppBarState extends State<HideableAppBar> {
   Timer? autoScrollTimer;
   TimedProgressController? autoScrollProgressController;
 
+  // Dwell for the current slide: a longer time for video / GIF slides so they
+  // get to play, the normal time for still images.
+  Duration _dwellForCurrent() {
+    int ms = settingsHandler.galleryAutoScrollTime;
+    final int index = page.value;
+    if (index >= 0 && index < widget.tab.booruHandler.filteredFetched.length) {
+      final mediaType = widget.tab.booruHandler.filteredFetched[index].mediaType.value;
+      if (!mediaType.isImage) {
+        // videos + animations (gif/webp/mp4...) get the longer dwell
+        ms = settingsHandler.galleryAutoScrollVideoTime;
+      }
+    }
+    return Duration(milliseconds: ms);
+  }
+
+  // Self-rescheduling one-shot timer (not periodic), so each slide can dwell
+  // for a duration that depends on whether it's a still image or a video/GIF.
   void setScrollTimer() {
-    autoScrollProgressController?.restart();
-    autoScrollTimer = Timer.periodic(Duration(milliseconds: settingsHandler.galleryAutoScrollTime), (timer) {
+    final Duration dwell = _dwellForCurrent();
+    autoScrollProgressController?.restartWith(dwell);
+    autoScrollTimer?.cancel();
+    autoScrollTimer = Timer(dwell, () {
+      if (!autoScroll) return;
       scrollToNextPage();
-      autoScrollProgressController?.restart();
+      // scrollToNextPage may turn autoScroll off at the last page.
+      if (autoScroll) setScrollTimer();
     });
   }
 
@@ -145,13 +166,11 @@ class _HideableAppBarState extends State<HideableAppBar> {
   }
 
   void scrollToNextPage() {
-    // Not sure if video and gifs should be autoscrolled, could maybe add a listener for video playtime so it changes at the end
+    // Slideshow advances through every media type; videos / GIFs simply get a
+    // longer dwell (see [_dwellForCurrent]) so they have time to play.
     final int viewedIndex = page.value;
-    final bool isImage = widget.tab.booruHandler.filteredFetched[viewedIndex].mediaType.value.isImage;
-    // TODO video and gifs support
-    // TODO check if item is loaded
     if (viewedIndex < (widget.tab.booruHandler.filteredFetched.length - 1)) {
-      if (isImage && autoScroll) {
+      if (autoScroll) {
         widget.pageController.jumpToPage(viewedIndex + 1);
       }
     } else {

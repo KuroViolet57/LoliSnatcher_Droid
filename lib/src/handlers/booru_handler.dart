@@ -12,6 +12,7 @@ import 'package:html/parser.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/comment_item.dart';
+import 'package:lolisnatcher/src/data/creator_info.dart';
 import 'package:lolisnatcher/src/data/meta_tag.dart';
 import 'package:lolisnatcher/src/data/note_item.dart';
 import 'package:lolisnatcher/src/data/response_error.dart';
@@ -37,8 +38,23 @@ abstract class BooruHandler {
   bool locked = false;
   Booru booru;
 
+  // When false, this handler's parsed tags are NOT written into the shared
+  // TagHandler store (neither the inline `addTagsWithType` categories nor the
+  // async `populateTagHandler` queue). Tag-preview strips set this so that
+  // previewing a tag on a *different* booru doesn't overwrite the current
+  // booru's tag types/colors — which used to re-type tags (e.g. species ->
+  // character) and, via the resulting tag-list rebuild, reset the strip's
+  // selected booru back to the tab's current one.
+  bool storeTagsGlobally = true;
+
   String errorString = '';
   // List<({BooruItem item, Object e, StackTrace? s})> failedItems = [];
+
+  // Discovery strip data (rendered above the results grid). Handlers that can
+  // surface the creators behind the current results and/or related tags fill
+  // these during parsing; empty means the strip stays hidden for this booru.
+  List<CreatorInfo> relatedCreators = [];
+  List<String> relatedTags = [];
 
   Map<String, TagType> get tagTypeMap => {};
 
@@ -56,7 +72,8 @@ abstract class BooruHandler {
 
     final List<BooruItem> filteredItems = [];
     for (final item in fetched) {
-      if (settingsHandler.filterHated && item.isHidden) {
+      if (settingsHandler.filterHated &&
+          settingsHandler.isItemHiddenForBooru(item, booru)) {
         continue;
       }
 
@@ -97,6 +114,31 @@ abstract class BooruHandler {
 
   bool get hasSizeData => false;
 
+  /// Whether this handler's backend can translate cross-booru OR groups
+  /// (`tag1|tag2`) into a native query that actually returns combined
+  /// results. False for handlers that fall back to dropping OR groups
+  /// (Sankaku, Shimmie family, Nozomi, Hydrus, local Downloads/Favourites).
+  /// UI code reads this to decide whether to offer an OR-style filter
+  /// shortcut or fall back to a step-through cycle.
+  bool get hasNativeOrSupport => true;
+
+  /// Ordered list of tag fragments the tag-preview "videos / GIFs only"
+  /// button cycles through. Each entry is appended (with a space) to the
+  /// strip's base tag; the button walks off → [0] → [1] → … → off.
+  ///
+  /// Default:
+  /// - OR-capable boorus get a single combined `animated|video` stop, so
+  ///   the button is a simple on/off toggle that catches both kinds at once.
+  /// - Non-OR boorus get separate `animated` and `video` stops so the user
+  ///   can still narrow on one media kind at a time.
+  ///
+  /// Boorus that split animated content across more tags (e.g. realbooru's
+  /// independent video / webm / animated) override this with their own
+  /// ordered list. Verified against each site that these tags exist and
+  /// that the chosen combine/cycle strategy actually returns results.
+  List<String> get animatedPreviewFilters =>
+      hasNativeOrSupport ? const ['animated|video'] : const ['animated', 'video'];
+
   Future<bool> searchSetup() async {
     if (hasSignInSupport) {
       final bool canLogin = await canSignIn();
@@ -129,6 +171,8 @@ abstract class BooruHandler {
       return fetched;
     }
 
+    // translate cross-booru OR syntax (tag1|tag2) into the handler's native form
+    tags = translateOrSyntax(tags.trim());
     // validate tags (usually just convert empty string to current booru "search all" query)
     tags = validateTags(tags.trim());
 
@@ -332,6 +376,112 @@ abstract class BooruHandler {
   String validateTags(String tags) {
     // remember to return super.validateTags(tags) if you override this function
     return Uri.encodeComponent(tags);
+  }
+
+  /// Translates the cross-booru OR operator (pipe-separated tokens like
+  /// `tag1|tag2|tag3`) into a form the current booru understands.
+  ///
+  /// Default: expands each pipe-token into `~tag1 ~tag2 ~tag3`, the standard
+  /// OR syntax used by Danbooru, Gelbooru, e621 and Moebooru-derived APIs.
+  ///
+  /// Single tokens without a pipe pass through unchanged. Empty sub-tags
+  /// produced by stray pipes (`tag1|`) are skipped silently.
+  ///
+  /// Handlers whose backend uses a different syntax (Philomena/BooruOnRails
+  /// use `||`) or has no OR support (Sankaku, Shimmie, Hydrus, Nozomi)
+  /// override this.
+  String translateOrSyntax(String tags) => orSyntaxPrefixTilde(tags);
+
+  /// Prefix-tilde OR expansion: each pipe-token `a|b|c` becomes `~a ~b ~c`.
+  ///
+  /// The catch: a bare stream of tildes is a single OR pool, so
+  /// `~a ~b ~c ~d` means "a OR b OR c OR d" — it can't express two separate
+  /// groups. When [grouping] is true and the query has 2+ OR groups, each is
+  /// wrapped in parentheses (`( ~a ~b ) ( ~c ~d )`) so they AND together —
+  /// verified working on Danbooru and e621. Moebooru and friends do NOT
+  /// support parentheses, so they keep [grouping] false (single-group OR
+  /// still works there; multi-group just falls back to the pool).
+  static String orSyntaxPrefixTilde(String tags, {bool grouping = false}) {
+    if (!tags.contains('|')) return tags;
+    final List<String> tokens = tags.split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
+    final int orGroupCount = tokens
+        .where((t) => t.split('|').where((p) => p.isNotEmpty).length >= 2)
+        .length;
+    final bool wrap = grouping && orGroupCount >= 2;
+    return tokens
+        .map((token) {
+          if (!token.contains('|')) return token;
+          final parts = token.split('|').where((p) => p.isNotEmpty).toList();
+          if (parts.isEmpty) return '';
+          if (parts.length == 1) return parts.first;
+          final String expanded = parts.map((p) => '~$p').join(' ');
+          return wrap ? '( $expanded )' : expanded;
+        })
+        .where((s) => s.isNotEmpty)
+        .join(' ');
+  }
+
+  /// Helper for handlers whose backend has no OR support: removes any
+  /// whitespace-separated token containing a pipe (`|`) and logs a warning
+  /// listing the dropped groups. The remaining tags are returned untouched
+  /// so the search still runs.
+  static String dropOrGroupsWithWarning(String tags, String className) {
+    if (!tags.contains('|')) return tags;
+    final List<String> dropped = [];
+    final String kept = tags
+        .split(RegExp(r'\s+'))
+        .where((t) => t.isNotEmpty)
+        .where((token) {
+          if (token.contains('|')) {
+            dropped.add(token);
+            return false;
+          }
+          return true;
+        })
+        .join(' ');
+    if (dropped.isNotEmpty) {
+      Logger.Inst().log(
+        'OR syntax not supported by this booru; dropped: ${dropped.join(', ')}',
+        className,
+        'translateOrSyntax',
+        LogTypes.booruHandlerInfo,
+      );
+    }
+    return kept;
+  }
+
+  /// Helper for Gelbooru-family boorus that wrap OR groups in braces with
+  /// an infix tilde. Different boorus in this family require different
+  /// inner padding, verified empirically against each API:
+  ///
+  /// - Gelbooru.com expects `{tag1 ~ tag2}` — NO space between brace and
+  ///   tag. Adding inner spaces returns zero posts.
+  /// - Rule34xxx / safebooru.org expect `( tag1 ~ tag2 )` — WITH a space
+  ///   between brace and tag. Removing inner spaces returns zero posts.
+  ///
+  /// `padInner` controls that: pass false for Gelbooru.com's curly braces,
+  /// true for the round-paren alikes.
+  static String orSyntaxBraced(
+    String tags,
+    String open,
+    String close, {
+    bool padInner = false,
+  }) {
+    if (!tags.contains('|')) return tags;
+    final String innerOpen = padInner ? '$open ' : open;
+    final String innerClose = padInner ? ' $close' : close;
+    return tags
+        .split(RegExp(r'\s+'))
+        .where((t) => t.isNotEmpty)
+        .map((token) {
+          if (!token.contains('|')) return token;
+          final parts = token.split('|').where((p) => p.isNotEmpty).toList();
+          if (parts.isEmpty) return '';
+          if (parts.length == 1) return parts.first;
+          return '$innerOpen${parts.join(' ~ ')}$innerClose';
+        })
+        .where((s) => s.isNotEmpty)
+        .join(' ');
   }
 
   /// [SHOULD BE OVERRIDDEN]
@@ -764,12 +914,14 @@ abstract class BooruHandler {
   }
 
   void addTagsWithType(List<String> tags, TagType type) {
+    if (!storeTagsGlobally) return;
     TagHandler.instance.addTagsWithType(tags, type);
   }
 
   bool get shouldPopulateTags => false;
 
   Future<void> populateTagHandler(List<BooruItem> items) async {
+    if (!storeTagsGlobally) return;
     final List<String> unTyped = [];
     for (int x = 0; x < items.length; x++) {
       for (int i = 0; i < items[x].tagsList.length; i++) {

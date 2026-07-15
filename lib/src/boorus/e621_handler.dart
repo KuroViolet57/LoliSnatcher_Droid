@@ -5,11 +5,17 @@ import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_suggestion.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
+import 'package:lolisnatcher/src/handlers/booru_handler_utils.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 
 // ignore: camel_case_types
 class e621Handler extends BooruHandler {
   e621Handler(super.booru, super.limit);
+
+  // e621 supports parenthesised OR groups, so multiple OR groups AND
+  // together correctly (`( ~a ~b ) ( ~c ~d )`). Verified against the live API.
+  @override
+  String translateOrSyntax(String tags) => BooruHandler.orSyntaxPrefixTilde(tags, grouping: true);
 
   @override
   bool get hasSizeData => true;
@@ -75,10 +81,7 @@ class e621Handler extends BooruHandler {
       addTagsWithType([...generalTags], TagType.none);
       addTagsWithType([...speciesTags], TagType.species);
 
-      final String? dateStr = current['created_at']?.toString().substring(
-        0,
-        current['created_at']!.toString().length - 6,
-      );
+      final String? dateStr = safeIsoDateMinusTimezone(current['created_at']);
 
       final BooruItem item = BooruItem(
         fileURL: fileURL,
@@ -109,6 +112,7 @@ class e621Handler extends BooruHandler {
         score: current['score']['total']?.toString(),
         sources: List<String>.from(current['sources'] ?? []),
         md5String: current['file']['md5'],
+        uploaderId: current['uploader_id']?.toString(),
         postDate: dateStr, // 2021-06-13t02:09:45.138-04:00
         postDateFormat: 'iso',
       );

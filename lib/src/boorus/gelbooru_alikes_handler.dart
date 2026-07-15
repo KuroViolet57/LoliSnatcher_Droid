@@ -5,7 +5,6 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 
 import 'package:dio/dio.dart';
-import 'package:html/dom.dart';
 import 'package:html/parser.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:xml/xml.dart';
@@ -17,8 +16,8 @@ import 'package:lolisnatcher/src/data/note_item.dart';
 import 'package:lolisnatcher/src/data/tag_suggestion.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
+import 'package:lolisnatcher/src/handlers/booru_handler_utils.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
-import 'package:lolisnatcher/src/utils/extensions.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 
@@ -33,6 +32,14 @@ class GelbooruAlikesHandler extends BooruHandler {
 
   @override
   bool get hasTagSuggestions => true;
+
+  // Gelbooru 0.2 family (rule34.xxx, safebooru.org, etc.) uses
+  // `( tag1 ~ tag2 ~ tag3 )` — round parens, infix tilde, WITH padding
+  // between brace and tag. Verified against rule34.xxx API: without the
+  // inner spaces the search returns zero posts.
+  @override
+  String translateOrSyntax(String tags) =>
+      BooruHandler.orSyntaxBraced(tags, '(', ')', padInner: true);
 
   String get originalBaseUrl => booru.baseURL!;
 
@@ -91,7 +98,7 @@ class GelbooruAlikesHandler extends BooruHandler {
         }
       }
 
-      final List<String> tags = parseFragment(getAttrOrElem(current, 'tags')).text?.split(' ') ?? [];
+      final List<String> tags = splitTagsClean(parseFragment(getAttrOrElem(current, 'tags')).text);
 
       final BooruItem item = BooruItem(
         fileURL: fileURL,
@@ -191,7 +198,7 @@ class GelbooruAlikesHandler extends BooruHandler {
   Future<void> searchCount(String input) async {
     int result = 0;
     // gelbooru json has count in @attributes, but there is no count data on r34xxx json, so we switch back to xml
-    final String url = makeURL(validateTags(input));
+    final String url = makeURL(validateTags(translateOrSyntax(input)));
 
     final String cookies = await getCookies() ?? '';
     final Map<String, String> headers = {
@@ -399,6 +406,8 @@ class GelbooruAlikesHandler extends BooruHandler {
     try {
       final cookies = await getCookiesForPost(item.postURL);
 
+      // 429/503 transient retries now live in DioNetwork.get so every handler
+      // benefits from the same backoff (see _withTransientRetries).
       final response = await DioNetwork.get(
         item.postURL,
         headers: {
@@ -418,17 +427,17 @@ class GelbooruAlikesHandler extends BooruHandler {
       } else {
         final html = parse(response.data);
         final sidebar = html.getElementById('tag-sidebar');
-        final copyrightTags = _tagsFromHtml(sidebar?.getElementsByClassName('tag-type-copyright tag'));
+        final copyrightTags = parseTagsFromGelbooruHtml(sidebar?.getElementsByClassName('tag-type-copyright tag'));
         addTagsWithType(copyrightTags.map((t) => t.tag).toList(), TagType.copyright);
-        final characterTags = _tagsFromHtml(sidebar?.getElementsByClassName('tag-type-character tag'));
+        final characterTags = parseTagsFromGelbooruHtml(sidebar?.getElementsByClassName('tag-type-character tag'));
         addTagsWithType(characterTags.map((t) => t.tag).toList(), TagType.character);
-        final artistTags = _tagsFromHtml(sidebar?.getElementsByClassName('tag-type-artist tag'));
+        final artistTags = parseTagsFromGelbooruHtml(sidebar?.getElementsByClassName('tag-type-artist tag'));
         addTagsWithType(artistTags.map((t) => t.tag).toList(), TagType.artist);
-        final generalTags = _tagsFromHtml(sidebar?.getElementsByClassName('tag-type-general tag'));
+        final generalTags = parseTagsFromGelbooruHtml(sidebar?.getElementsByClassName('tag-type-general tag'));
         addTagsWithType(generalTags.map((t) => t.tag).toList(), TagType.none);
-        final metaTags = _tagsFromHtml(sidebar?.getElementsByClassName('tag-type-meta tag'));
+        final metaTags = parseTagsFromGelbooruHtml(sidebar?.getElementsByClassName('tag-type-meta tag'));
         addTagsWithType(metaTags.map((t) => t.tag).toList(), TagType.meta);
-        final metadataTags = _tagsFromHtml(sidebar?.getElementsByClassName('tag-type-metadata tag'));
+        final metadataTags = parseTagsFromGelbooruHtml(sidebar?.getElementsByClassName('tag-type-metadata tag'));
         addTagsWithType(metadataTags.map((t) => t.tag).toList(), TagType.meta);
 
         for (final t in [
@@ -511,28 +520,4 @@ class GelbooruAlikesHandler extends BooruHandler {
       ComparableNumberMetaTag(name: 'Height', keyName: 'height'),
     ];
   }
-}
-
-List<({String tag, int count})> _tagsFromHtml(List<Element>? elements) {
-  if (elements == null || elements.isEmpty) {
-    return [];
-  }
-
-  final List<({String tag, int count})> tagsWithCount = [];
-  for (final element in elements) {
-    final String? tag = element
-        .getElementsByTagName('a')
-        .firstWhereOrNull((e) => e.text.isNotEmpty && e.text != '?')
-        ?.text;
-    final int? count = int.tryParse(
-      element.getElementsByTagName('span').lastWhereOrNull((e) => e.text.isNotEmpty)?.text ?? '',
-    );
-    if (tag != null) {
-      tagsWithCount.add((
-        tag: tag.replaceAll(' ', '_'),
-        count: count ?? 0,
-      ));
-    }
-  }
-  return tagsWithCount;
 }

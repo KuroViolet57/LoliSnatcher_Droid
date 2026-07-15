@@ -448,6 +448,22 @@ class ServiceHandler {
   }
 
   static Future<void> setSystemUiVisibility(bool visible) async {
+    // When the user opted to hide the status bar, "showing" the system UI still
+    // keeps the top status bar hidden (bottom nav stays visible) so it doesn't
+    // intrude while scrolling.
+    bool hideStatusBar = false;
+    try {
+      hideStatusBar = SettingsHandler.instance.hideStatusBar;
+    } catch (_) {}
+
+    if (visible && hideStatusBar) {
+      await SystemChrome.setEnabledSystemUIMode(
+        SystemUiMode.manual,
+        overlays: [SystemUiOverlay.bottom],
+      );
+      return;
+    }
+
     await SystemChrome.setEnabledSystemUIMode(
       visible ? SystemUiMode.edgeToEdge : SystemUiMode.immersiveSticky,
       overlays: visible ? SystemUiOverlay.values : [],

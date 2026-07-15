@@ -14,8 +14,8 @@ import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_suggestion.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
+import 'package:lolisnatcher/src/handlers/booru_handler_utils.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
-import 'package:lolisnatcher/src/utils/extensions.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 
 class GelbooruHandler extends BooruHandler {
@@ -54,6 +54,12 @@ class GelbooruHandler extends BooruHandler {
     }
     return super.validateTags(tags);
   }
+
+  // Gelbooru's OR syntax is `{tag1 ~ tag2 ~ tag3}` (curly braces, infix
+  // tilde), per its cheatsheet wiki page. Prefix-tilde (Danbooru style)
+  // silently returns no results here.
+  @override
+  String translateOrSyntax(String tags) => BooruHandler.orSyntaxBraced(tags, '{', '}');
 
   @override
   List parseListFromResponse(dynamic response) {
@@ -110,7 +116,7 @@ class GelbooruHandler extends BooruHandler {
         sampleURL: sampleURL,
         thumbnailURL: previewURL,
         // parseFragment to parse html elements (i.e. &amp; => &)
-        tagsList: (parseFragment(current['tags']).text?.split(' ') ?? []).map(Tag.new).toList(),
+        tagsList: splitTagsClean(parseFragment(current['tags']).text).map(Tag.new).toList(),
         postURL: makePostURL(current['id']!.toString()),
         fileWidth: double.tryParse(current['width']?.toString() ?? ''),
         fileHeight: double.tryParse(current['height']?.toString() ?? ''),
@@ -282,23 +288,41 @@ class GelbooruHandler extends BooruHandler {
     final document = parse(response.data);
     final avatars = document.querySelectorAll('div.commentAvatar');
     final bodies = document.querySelectorAll('div.commentBody');
-    return List.generate(avatars.length, (i) => [avatars[i], bodies[i]]);
+    // avatars/bodies counts should match, but guard against mismatched markup
+    final int count = min(avatars.length, bodies.length);
+    return List.generate(count, (i) => [avatars[i], bodies[i]]);
   }
 
   @override
   CommentItem? parseComment(dynamic responseItem, int index) {
-    final Element avatarNode = responseItem[0];
-    final String avatarUrl = 'https://gelbooru.com/${avatarNode.outerHtml.split("url('")[1].split("')")[0]}';
-    final Element bodyNode = responseItem[1];
+    // The comment markup is scraped HTML, so node positions can shift on
+    // malformed/changed pages. Parse defensively and skip a single bad
+    // comment rather than dropping the whole list.
+    try {
+      final Element avatarNode = responseItem[0];
+      final List<String> avatarParts = avatarNode.outerHtml.split("url('");
+      final String? avatarUrl = avatarParts.length > 1
+          ? 'https://gelbooru.com/${avatarParts[1].split("')")[0]}'
+          : null;
+      final Element bodyNode = responseItem[1];
 
-    return CommentItem(
-      content: bodyNode.nodes[5].text,
-      authorName: bodyNode.nodes[1].nodes[0].text,
-      avatarUrl: avatarUrl,
-      score: int.tryParse(bodyNode.querySelector('span span.info span')?.text ?? '0'),
-      createDate: bodyNode.nodes[2].text?.split('at ')[1].split(' »')[0],
-      createDateFormat: 'yyyy-MM-dd HH:mm:ss',
-    );
+      final List<String>? dateParts = bodyNode.nodes.elementAtOrNull(2)?.text?.split('at ');
+      final String? createDate = (dateParts != null && dateParts.length > 1)
+          ? dateParts[1].split(' »')[0]
+          : null;
+
+      return CommentItem(
+        content: bodyNode.nodes.elementAtOrNull(5)?.text,
+        authorName: bodyNode.nodes.elementAtOrNull(1)?.nodes.elementAtOrNull(0)?.text,
+        avatarUrl: avatarUrl,
+        score: int.tryParse(bodyNode.querySelector('span span.info span')?.text ?? '0'),
+        createDate: createDate,
+        createDateFormat: 'yyyy-MM-dd HH:mm:ss',
+      );
+    } catch (e) {
+      Logger.Inst().log(e.toString(), className, 'parseComment', LogTypes.exception);
+      return null;
+    }
   }
 
   List parseCommentsListOld(dynamic response) {
@@ -454,15 +478,15 @@ class GelbooruHandler extends BooruHandler {
         item.fileURL = item.fileURL.replaceAll('(?<!https?:)//', '/');
 
         final sidebar = html.getElementById('tag-list');
-        final copyrightTags = _tagsFromHtml(sidebar?.getElementsByClassName('tag-type-copyright'));
+        final copyrightTags = parseTagsFromGelbooruHtml(sidebar?.getElementsByClassName('tag-type-copyright'));
         addTagsWithType(copyrightTags.map((t) => t.tag).toList(), TagType.copyright);
-        final characterTags = _tagsFromHtml(sidebar?.getElementsByClassName('tag-type-character'));
+        final characterTags = parseTagsFromGelbooruHtml(sidebar?.getElementsByClassName('tag-type-character'));
         addTagsWithType(characterTags.map((t) => t.tag).toList(), TagType.character);
-        final artistTags = _tagsFromHtml(sidebar?.getElementsByClassName('tag-type-artist'));
+        final artistTags = parseTagsFromGelbooruHtml(sidebar?.getElementsByClassName('tag-type-artist'));
         addTagsWithType(artistTags.map((t) => t.tag).toList(), TagType.artist);
-        final generalTags = _tagsFromHtml(sidebar?.getElementsByClassName('tag-type-general'));
+        final generalTags = parseTagsFromGelbooruHtml(sidebar?.getElementsByClassName('tag-type-general'));
         addTagsWithType(generalTags.map((t) => t.tag).toList(), TagType.none);
-        final metaTags = _tagsFromHtml(sidebar?.getElementsByClassName('tag-type-metadata'));
+        final metaTags = parseTagsFromGelbooruHtml(sidebar?.getElementsByClassName('tag-type-metadata'));
         addTagsWithType(metaTags.map((t) => t.tag).toList(), TagType.meta);
 
         for (final t in [...copyrightTags, ...characterTags, ...artistTags, ...generalTags, ...metaTags]) {
@@ -485,28 +509,4 @@ class GelbooruHandler extends BooruHandler {
       return (item: null, failed: true, error: e.toString());
     }
   }
-}
-
-List<({String tag, int count})> _tagsFromHtml(List<Element>? elements) {
-  if (elements == null || elements.isEmpty) {
-    return [];
-  }
-
-  final List<({String tag, int count})> tagsWithCount = [];
-  for (final element in elements) {
-    final String? tag = element
-        .getElementsByTagName('a')
-        .firstWhereOrNull((e) => e.text.isNotEmpty && e.text != '?')
-        ?.text;
-    final int? count = int.tryParse(
-      element.getElementsByTagName('span').lastWhereOrNull((e) => e.text.isNotEmpty)?.text ?? '',
-    );
-    if (tag != null) {
-      tagsWithCount.add((
-        tag: tag.replaceAll(' ', '_'),
-        count: count ?? 0,
-      ));
-    }
-  }
-  return tagsWithCount;
 }

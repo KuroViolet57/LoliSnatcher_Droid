@@ -29,6 +29,7 @@
 .packages
 .pub-cache/
 .pub/
+pubspec_overrides.yaml
 /build/
 **/*.g.dart
 **/*.freezed.dart

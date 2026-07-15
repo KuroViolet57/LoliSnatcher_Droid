@@ -20,12 +20,17 @@ enum BooruType {
   Philomena,
   Rainbooru,
   Realbooru,
+  RedGifs,
+  Rule34Dev,
+  XXXTik,
+  XXXFollow,
   R34Hentai,
   R34US,
   Sankaku,
   IdolSankaku,
   Shimmie,
   Szurubooru,
+  WebView,
   WildCritters,
   World,
 
@@ -34,6 +39,8 @@ enum BooruType {
   Merge,
   Downloads,
   Favourites,
+  Collections,
+  ForYou,
   ;
 
   static List<BooruType> get dropDownValues {
@@ -43,6 +50,8 @@ enum BooruType {
     return [...values]
       ..remove(BooruType.Downloads)
       ..remove(BooruType.Favourites)
+      ..remove(BooruType.Collections)
+      ..remove(BooruType.ForYou)
       ..remove(BooruType.Merge)
       ..remove(BooruType.GelbooruAlike)
       ..remove(isDebug ? BooruType.NyanPals : null)
@@ -56,8 +65,18 @@ enum BooruType {
       ..remove(BooruType.Autodetect)
       ..remove(BooruType.Downloads)
       ..remove(BooruType.Favourites)
+      ..remove(BooruType.Collections)
+      ..remove(BooruType.ForYou)
       ..remove(BooruType.Hydrus)
-      ..remove(BooruType.Merge);
+      ..remove(BooruType.Merge)
+      // WebView is a "render anything" escape hatch — never autodetect it.
+      ..remove(BooruType.WebView)
+      // Rule34.dev shares CDNs with rule34.xxx; only pick it deliberately.
+      ..remove(BooruType.Rule34Dev)
+      // xxxtik has a fixed API host; only pick it deliberately.
+      ..remove(BooruType.XXXTik)
+      // xxxfollow has a fixed API host; only pick it deliberately.
+      ..remove(BooruType.XXXFollow);
   }
 
   bool get isDetectable => detectable.contains(this);
@@ -67,6 +86,8 @@ enum BooruType {
       ..remove(BooruType.Autodetect)
       ..remove(BooruType.Downloads)
       ..remove(BooruType.Favourites)
+      ..remove(BooruType.Collections)
+      ..remove(BooruType.ForYou)
       ..remove(BooruType.Merge);
   }
 
@@ -78,6 +99,14 @@ enum BooruType {
         return 'World/XYZ/Vault';
       case IdolSankaku:
         return 'Sankaku Idol';
+      case WebView:
+        return 'WebView (browser)';
+      case Rule34Dev:
+        return 'Rule34.dev (aggregator)';
+      case XXXTik:
+        return 'xxxtik';
+      case XXXFollow:
+        return 'xxxfollow';
       default:
         return name;
     }
@@ -99,6 +128,11 @@ enum BooruType {
   bool get isPhilomena => this == BooruType.Philomena;
   bool get isRainbooru => this == BooruType.Rainbooru;
   bool get isRealbooru => this == BooruType.Realbooru;
+  bool get isRedGifs => this == BooruType.RedGifs;
+  bool get isRule34Dev => this == BooruType.Rule34Dev;
+  bool get isXXXTik => this == BooruType.XXXTik;
+  bool get isXXXFollow => this == BooruType.XXXFollow;
+  bool get isWebView => this == BooruType.WebView;
   bool get isR34Hentai => this == BooruType.R34Hentai;
   bool get isR34US => this == BooruType.R34US;
   bool get isSankaku => this == BooruType.Sankaku;
@@ -112,5 +146,12 @@ enum BooruType {
   bool get isMerge => this == BooruType.Merge;
   bool get isDownloads => this == BooruType.Downloads;
   bool get isFavourites => this == BooruType.Favourites;
+  bool get isCollections => this == BooruType.Collections;
+  bool get isForYou => this == BooruType.ForYou;
   bool get isFavouritesOrDownloads => isFavourites || isDownloads;
+
+  /// Local, DB-backed virtual boorus (Favourites / Downloads / Collections).
+  /// These aggregate posts from many sources, so the grid/viewer must resolve
+  /// each item's real source booru from its URL rather than the tab's booru.
+  bool get isLocalDb => isFavourites || isDownloads || isCollections;
 }

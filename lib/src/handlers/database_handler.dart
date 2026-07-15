@@ -7,9 +7,11 @@ import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/data/collection_info.dart';
 import 'package:lolisnatcher/src/data/constants.dart';
 import 'package:lolisnatcher/src/data/history_item.dart';
 import 'package:lolisnatcher/src/data/pinned_tag.dart';
+import 'package:lolisnatcher/src/data/saved_search.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
@@ -118,6 +120,72 @@ class DBHandler {
       'pinnedAt INTEGER NOT NULL, '
       'sortOrder INTEGER DEFAULT 0, '
       'label TEXT '
+      ')',
+    );
+    await db?.execute(
+      'CREATE TABLE IF NOT EXISTS SavedSearch ( '
+      'id INTEGER PRIMARY KEY, '
+      'name TEXT, '
+      'payload TEXT NOT NULL, '
+      'createdAt INTEGER NOT NULL '
+      ')',
+    );
+    await db?.execute(
+      'CREATE TABLE IF NOT EXISTS SeenPost ( '
+      'postKey TEXT PRIMARY KEY, '
+      'viewedAt INTEGER NOT NULL '
+      ')',
+    );
+    await db?.execute(
+      'CREATE TABLE IF NOT EXISTS TabVisitHistory ( '
+      'id INTEGER PRIMARY KEY, '
+      'tabId TEXT, '
+      'tags TEXT, '
+      'booruName TEXT, '
+      'booruType TEXT, '
+      'visitedAt INTEGER NOT NULL '
+      ')',
+    );
+    // Behaviour signals for the local "For You" recommender: one row per tag
+    // with an accumulated, time-decayed interest score. Written by
+    // InterestsHandler; never leaves the device.
+    await db?.execute(
+      'CREATE TABLE IF NOT EXISTS TagSignal ( '
+      'name TEXT PRIMARY KEY, '
+      'score REAL NOT NULL, '
+      'updatedAt INTEGER NOT NULL '
+      ')',
+    );
+    // Cross-booru tag alias cache: how <sourceTag> is spelled on <booruKey>
+    // (e.g. burnice_white -> burnice_white_(zenless_zone_zero) on gelbooru).
+    // Resolved on demand against each booru's tag-autocomplete API. An empty
+    // targetTag records a confirmed miss so it isn't retried constantly.
+    await db?.execute(
+      'CREATE TABLE IF NOT EXISTS TagAliasCache ( '
+      'sourceTag TEXT NOT NULL, '
+      'booruKey TEXT NOT NULL, '
+      'targetTag TEXT NOT NULL, '
+      'updatedAt INTEGER NOT NULL, '
+      'PRIMARY KEY (sourceTag, booruKey) '
+      ')',
+    );
+    // Collections / albums: named groups of posts. Membership is a join onto
+    // the shared BooruItem table so in-collection tag search reuses the same
+    // index; the items are protected from deleteUntracked below.
+    await db?.execute(
+      'CREATE TABLE IF NOT EXISTS Collection ( '
+      'id INTEGER PRIMARY KEY, '
+      'name TEXT NOT NULL, '
+      'createdAt INTEGER NOT NULL, '
+      'sortOrder INTEGER DEFAULT 0 '
+      ')',
+    );
+    await db?.execute(
+      'CREATE TABLE IF NOT EXISTS CollectionItem ( '
+      'collectionId INTEGER NOT NULL, '
+      'booruItemID INTEGER NOT NULL, '
+      'addedAt INTEGER NOT NULL, '
+      'PRIMARY KEY (collectionId, booruItemID) '
       ')',
     );
     try {
@@ -346,6 +414,7 @@ class DBHandler {
     String? order,
     List<String> customConditions = const [],
     bool isDownloads = false,
+    int? collectionId,
   }) async {
     final db = this.db;
     if (db == null) return [];
@@ -402,7 +471,7 @@ class DBHandler {
     }
 
     // A. Base Filter
-    whereClauses.add(isDownloads ? 'bi.isSnatched = 1' : 'bi.isFavourite = 1');
+    whereClauses.add(_baseTrackFilter(isDownloads: isDownloads, collectionId: collectionId));
 
     // B. Site Filter
     if (siteQuery.isNotEmpty) whereClauses.add(siteQuery);
@@ -517,6 +586,241 @@ class DBHandler {
     }).toList();
   }
 
+  // Picks the base "tracked" WHERE clause for searchDB / searchDBCount:
+  // collection membership when a collection is being browsed (collectionId
+  // == -1 means "all collections"), otherwise the snatched/favourite filter.
+  // The id is an app-controlled integer, so it's safe to inline.
+  String _baseTrackFilter({required bool isDownloads, int? collectionId}) {
+    if (collectionId != null) {
+      if (collectionId == -1) {
+        return 'bi.id IN (SELECT booruItemID FROM CollectionItem)';
+      }
+      return 'bi.id IN (SELECT booruItemID FROM CollectionItem WHERE collectionId = $collectionId)';
+    }
+    return isDownloads ? 'bi.isSnatched = 1' : 'bi.isFavourite = 1';
+  }
+
+  //
+  // Collections / albums
+  //
+
+  Future<int?> createCollection(String name) async {
+    final String trimmed = name.trim();
+    if (trimmed.isEmpty) return null;
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    return db?.rawInsert(
+      'INSERT INTO Collection(name, createdAt, sortOrder) VALUES(?,?,?)',
+      [trimmed, now, now],
+    );
+  }
+
+  Future<void> renameCollection(int id, String name) async {
+    final String trimmed = name.trim();
+    if (trimmed.isEmpty) return;
+    await db?.rawUpdate('UPDATE Collection SET name = ? WHERE id = ?', [trimmed, id]);
+  }
+
+  Future<void> deleteCollection(int id) async {
+    await db?.rawDelete('DELETE FROM CollectionItem WHERE collectionId = ?', [id]);
+    await db?.rawDelete('DELETE FROM Collection WHERE id = ?', [id]);
+    // Any BooruItems that were only kept because of this collection get swept.
+    await deleteUntracked();
+  }
+
+  /// Returns each collection with its item count and a cover thumbnail
+  /// (the most-recently-added item's thumbnail).
+  Future<List<CollectionInfo>> getCollections() async {
+    final List? rows = await db?.rawQuery('''
+      SELECT c.id AS id, c.name AS name, c.createdAt AS createdAt,
+             COUNT(ci.booruItemID) AS itemCount,
+             (SELECT bi.thumbnailURL FROM CollectionItem ci2
+                JOIN BooruItem bi ON bi.id = ci2.booruItemID
+                WHERE ci2.collectionId = c.id
+                ORDER BY ci2.addedAt DESC LIMIT 1) AS cover
+      FROM Collection c
+      LEFT JOIN CollectionItem ci ON ci.collectionId = c.id
+      GROUP BY c.id
+      ORDER BY c.sortOrder DESC
+    ''');
+    if (rows == null) return [];
+    return rows
+        .map(
+          (r) => CollectionInfo(
+            id: r['id'] as int,
+            name: r['name']?.toString() ?? '',
+            itemCount: (r['itemCount'] as int?) ?? 0,
+            coverThumbnailURL: r['cover']?.toString(),
+            createdAt: (r['createdAt'] as int?) ?? 0,
+          ),
+        )
+        .toList();
+  }
+
+  /// Inserts each item into the shared BooruItem table if missing (without
+  /// touching its favourite/snatched flags) and links it to [collectionId].
+  /// Returns how many were newly added to the collection.
+  Future<int> addItemsToCollection(int collectionId, List<BooruItem> items) async {
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    int added = 0;
+    for (final BooruItem item in items) {
+      String? itemID = await getItemID(item.postURL);
+      if (itemID == null || itemID.isEmpty) {
+        final result = await db?.rawInsert(
+          'INSERT INTO BooruItem(thumbnailURL, sampleURL, fileURL, postURL, mediaType, isSnatched, isFavourite) VALUES(?,?,?,?,?,?,?)',
+          [
+            item.thumbnailURL.replaceFirstMapped(RegExp('(?<!https?:)//'), (m) => '/'),
+            item.sampleURL.replaceFirstMapped(RegExp('(?<!https?:)//'), (m) => '/'),
+            item.fileURL.replaceFirstMapped(RegExp('(?<!https?:)//'), (m) => '/'),
+            item.postURL,
+            item.mediaType.value.toJson(),
+            Tools.boolToInt(item.isSnatched.value == true),
+            Tools.boolToInt(item.isFavourite.value == true),
+          ],
+        );
+        itemID = result?.toString();
+        await updateTags(item.tagsList.map((t) => t.fullString).toList(), itemID);
+      }
+      if (itemID == null || itemID.isEmpty) continue;
+      final int count = Sqflite.firstIntValue(
+            await db!.rawQuery(
+              'SELECT COUNT(*) FROM CollectionItem WHERE collectionId = ? AND booruItemID = ?',
+              [collectionId, itemID],
+            ),
+          ) ??
+          0;
+      if (count == 0) {
+        await db?.rawInsert(
+          'INSERT INTO CollectionItem(collectionId, booruItemID, addedAt) VALUES(?,?,?)',
+          [collectionId, int.parse(itemID), now],
+        );
+        added++;
+      }
+    }
+    return added;
+  }
+
+  Future<void> removeItemsFromCollection(int collectionId, List<String> postURLs) async {
+    for (final String postURL in postURLs) {
+      final String? itemID = await getItemID(postURL);
+      if (itemID == null || itemID.isEmpty) continue;
+      await db?.rawDelete(
+        'DELETE FROM CollectionItem WHERE collectionId = ? AND booruItemID = ?',
+        [collectionId, itemID],
+      );
+    }
+    await deleteUntracked();
+  }
+
+  /// Set of collection ids that already contain the given post.
+  Future<Set<int>> getCollectionsForItem(String postURL) async {
+    final String? itemID = await getItemID(postURL);
+    if (itemID == null || itemID.isEmpty) return {};
+    final List? rows = await db?.rawQuery(
+      'SELECT collectionId FROM CollectionItem WHERE booruItemID = ?',
+      [itemID],
+    );
+    if (rows == null) return {};
+    return rows.map((r) => r['collectionId'] as int).toSet();
+  }
+
+  //
+  // Behaviour signals (local "For You" recommender)
+  //
+
+  /// Half-life of an interest signal: after this many days without
+  /// reinforcement a tag's score halves. Keeps the profile tracking current
+  /// taste instead of everything ever clicked.
+  static const double tagSignalHalfLifeDays = 30;
+
+  static double decayedTagScore(double score, int updatedAtMs) {
+    final double days = (DateTime.now().millisecondsSinceEpoch - updatedAtMs) / Duration.millisecondsPerDay;
+    if (days <= 0) return score;
+    return score * pow(0.5, days / tagSignalHalfLifeDays);
+  }
+
+  /// Adds [deltas] to the interest scores of their tags, applying decay to
+  /// the previously stored score first.
+  Future<void> addTagSignals(Map<String, double> deltas) async {
+    final db = this.db;
+    if (db == null || deltas.isEmpty) return;
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    final batch = db.batch();
+    for (final entry in deltas.entries) {
+      final String name = entry.key.trim().toLowerCase();
+      if (name.isEmpty) continue;
+      final List rows = await db.rawQuery('SELECT score, updatedAt FROM TagSignal WHERE name = ?', [name]);
+      double base = 0;
+      if (rows.isNotEmpty) {
+        base = decayedTagScore(
+          (rows.first['score'] as num?)?.toDouble() ?? 0,
+          (rows.first['updatedAt'] as int?) ?? now,
+        );
+      }
+      batch.rawInsert(
+        'INSERT OR REPLACE INTO TagSignal(name, score, updatedAt) VALUES(?,?,?)',
+        [name, base + entry.value, now],
+      );
+    }
+    await batch.commit(noResult: true);
+  }
+
+  /// Top interest tags by decayed score.
+  Future<List<MapEntry<String, double>>> getTagSignals({int limit = 100}) async {
+    final List? rows = await db?.rawQuery(
+      'SELECT name, score, updatedAt FROM TagSignal ORDER BY score DESC LIMIT ?',
+      // over-fetch: decay can reorder rows relative to raw score
+      [limit * 3],
+    );
+    if (rows == null) return [];
+    final List<MapEntry<String, double>> out = rows
+        .map(
+          (r) => MapEntry(
+            r['name'].toString(),
+            decayedTagScore((r['score'] as num?)?.toDouble() ?? 0, (r['updatedAt'] as int?) ?? 0),
+          ),
+        )
+        .toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return out.take(limit).toList();
+  }
+
+  Future<void> deleteTagSignal(String name) async {
+    await db?.rawDelete('DELETE FROM TagSignal WHERE name = ?', [name.trim().toLowerCase()]);
+  }
+
+  Future<void> clearTagSignals() async {
+    await db?.rawDelete('DELETE FROM TagSignal');
+  }
+
+  //
+  // Cross-booru tag alias cache
+  //
+
+  /// null = not cached; '' = cached miss (tag confirmed absent on that booru).
+  Future<String?> getTagAlias(String sourceTag, String booruKey) async {
+    final List? rows = await db?.rawQuery(
+      'SELECT targetTag, updatedAt FROM TagAliasCache WHERE sourceTag = ? AND booruKey = ?',
+      [sourceTag.toLowerCase(), booruKey],
+    );
+    if (rows == null || rows.isEmpty) return null;
+    final int updatedAt = (rows.first['updatedAt'] as int?) ?? 0;
+    final String target = rows.first['targetTag'].toString();
+    // Re-resolve misses after a week (the tag may have been created since);
+    // successful mappings are kept for a month.
+    final int ttlDays = target.isEmpty ? 7 : 30;
+    if (DateTime.now().millisecondsSinceEpoch - updatedAt > ttlDays * Duration.millisecondsPerDay) {
+      return null;
+    }
+    return target;
+  }
+
+  Future<void> setTagAlias(String sourceTag, String booruKey, String targetTag) async {
+    await db?.rawInsert(
+      'INSERT OR REPLACE INTO TagAliasCache(sourceTag, booruKey, targetTag, updatedAt) VALUES(?,?,?,?)',
+      [sourceTag.toLowerCase(), booruKey, targetTag, DateTime.now().millisecondsSinceEpoch],
+    );
+  }
+
   Future<List<Tag>> getAllTags() async {
     final List? result = await db?.rawQuery('SELECT name, tagType, updatedAt FROM Tag');
     final List<Tag> tags = [];
@@ -535,6 +839,7 @@ class DBHandler {
     String searchTagsString, {
     List<String> customConditions = const [],
     bool isDownloads = false,
+    int? collectionId,
   }) async {
     final db = this.db;
     if (db == null) return 0;
@@ -586,7 +891,7 @@ class DBHandler {
     // --- 3. APPLY FILTERS ---
 
     // A. Base Filter
-    whereClauses.add(isDownloads ? 'bi.isSnatched = 1' : 'bi.isFavourite = 1');
+    whereClauses.add(_baseTrackFilter(isDownloads: isDownloads, collectionId: collectionId));
 
     // B. Site Filter
     if (siteQuery.isNotEmpty) whereClauses.add(siteQuery);
@@ -952,6 +1257,98 @@ class DBHandler {
   }
 
   ///////
+  /// Saved searches (quick-search favourites)
+
+  Future<int?> addSavedSearch(SavedSearch entry) async {
+    return db?.rawInsert(
+      'INSERT INTO SavedSearch(name, payload, createdAt) VALUES(?, ?, ?)',
+      [entry.name, entry.payloadJson(), entry.createdAt.millisecondsSinceEpoch],
+    );
+  }
+
+  Future<List<SavedSearch>> getSavedSearches() async {
+    final rows = await db?.rawQuery('SELECT * FROM SavedSearch ORDER BY createdAt DESC');
+    if (rows == null || rows.isEmpty) return const [];
+    return rows.map(SavedSearch.fromRow).whereType<SavedSearch>().toList(growable: false);
+  }
+
+  Future<void> deleteSavedSearch(int id) async {
+    await db?.rawDelete('DELETE FROM SavedSearch WHERE id = ?', [id]);
+  }
+
+  Future<void> renameSavedSearch(int id, String name) async {
+    await db?.rawUpdate('UPDATE SavedSearch SET name = ? WHERE id = ?', [name, id]);
+  }
+
+  ///////
+  /// Visited tabs history (tabs the user personally opened by tapping)
+
+  Future<void> addTabVisit({
+    required String tabId,
+    required String tags,
+    required String booruName,
+    required String? booruType,
+    required int visitedAt,
+  }) async {
+    await db?.rawInsert(
+      'INSERT INTO TabVisitHistory(tabId, tags, booruName, booruType, visitedAt) VALUES(?, ?, ?, ?, ?)',
+      [tabId, tags, booruName, booruType, visitedAt],
+    );
+  }
+
+  // Oldest-first, so callers can append straight into an in-memory list.
+  Future<List<Map<String, Object?>>> getTabVisits() async {
+    final rows = await db?.rawQuery('SELECT * FROM TabVisitHistory ORDER BY visitedAt ASC, id ASC');
+    return rows ?? const [];
+  }
+
+  Future<void> deleteTabVisit(String tabId) async {
+    await db?.rawDelete('DELETE FROM TabVisitHistory WHERE tabId = ?', [tabId]);
+  }
+
+  Future<void> clearTabVisits() async {
+    await db?.rawDelete('DELETE FROM TabVisitHistory');
+  }
+
+  // Keep only the newest [keep] rows.
+  Future<void> trimTabVisits(int keep) async {
+    await db?.rawDelete(
+      'DELETE FROM TabVisitHistory WHERE id NOT IN '
+      '(SELECT id FROM TabVisitHistory ORDER BY visitedAt DESC, id DESC LIMIT ?)',
+      [keep],
+    );
+  }
+
+  ///////
+  /// Seen posts (already-viewed dimming)
+
+  // Cap so the table can't grow unbounded; trims oldest beyond this on insert.
+  static const int _seenPostLimit = 100000;
+
+  Future<Set<String>> getSeenPostKeys() async {
+    final rows = await db?.rawQuery('SELECT postKey FROM SeenPost');
+    if (rows == null || rows.isEmpty) return <String>{};
+    return rows.map((r) => r['postKey']?.toString() ?? '').where((k) => k.isNotEmpty).toSet();
+  }
+
+  Future<void> addSeenPost(String postKey) async {
+    if (postKey.isEmpty) return;
+    await db?.rawInsert(
+      'INSERT OR REPLACE INTO SeenPost(postKey, viewedAt) VALUES(?, ?)',
+      [postKey, DateTime.now().millisecondsSinceEpoch],
+    );
+    // Best-effort trim of the oldest rows once over the cap.
+    await db?.rawDelete(
+      'DELETE FROM SeenPost WHERE postKey NOT IN '
+      '(SELECT postKey FROM SeenPost ORDER BY viewedAt DESC LIMIT $_seenPostLimit)',
+    );
+  }
+
+  Future<void> clearSeenPosts() async {
+    await db?.rawDelete('DELETE FROM SeenPost');
+  }
+
+  ///////
   /// Pinned Tags methods
 
   /// Add a pinned tag (global or booru-specific)
@@ -1154,8 +1551,12 @@ class DBHandler {
 
   /// Deletes booruItems which are no longer favourited or snatched
   Future<bool> deleteUntracked() async {
+    // Keep items that are favourited, snatched, OR held by a collection.
     final result = await db?.rawQuery(
-      'SELECT id FROM BooruItem WHERE (isFavourite = 0 OR isFavourite IS NULL) AND (isSnatched = 0 OR isSnatched IS NULL)',
+      'SELECT id FROM BooruItem '
+      'WHERE (isFavourite = 0 OR isFavourite IS NULL) '
+      'AND (isSnatched = 0 OR isSnatched IS NULL) '
+      'AND id NOT IN (SELECT booruItemID FROM CollectionItem)',
     );
     if (result != null && result.isNotEmpty) {
       await deleteItem(result.map((r) => r['id'].toString()).toList());

@@ -19,6 +19,8 @@ import 'package:talker_flutter/talker_flutter.dart';
 
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/theme_item.dart';
+import 'package:lolisnatcher/src/handlers/floating_preview_handler.dart';
+import 'package:lolisnatcher/src/handlers/interests_handler.dart';
 import 'package:lolisnatcher/src/handlers/local_auth_handler.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
 import 'package:lolisnatcher/src/handlers/notify_handler.dart';
@@ -38,6 +40,7 @@ import 'package:lolisnatcher/src/pages/mobile_home_page.dart';
 import 'package:lolisnatcher/src/pages/settings/booru_edit_page.dart';
 import 'package:lolisnatcher/src/services/image_writer.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
+import 'package:lolisnatcher/src/utils/tools.dart';
 import 'package:lolisnatcher/src/widgets/common/settings_widgets.dart';
 import 'package:lolisnatcher/src/widgets/root/dev_overlay.dart';
 import 'package:lolisnatcher/src/widgets/root/image_stats.dart';
@@ -46,6 +49,15 @@ import 'package:lolisnatcher/src/widgets/webview/webview_page.dart';
 
 void main() async {
   CustomWidgetsBinding.ensureInitialized();
+
+  // Default imageCache is 100 MB / 1000 images. For a booru client where a
+  // single 4K JPEG can easily decode to 30+ MB of RGBA, that cache spills to
+  // disk almost immediately and starts re-decoding the same image on scroll.
+  // 256 MB / 200 images is comfortable for any phone with ≥6 GB of RAM;
+  // lowered later in getDeviceInfo if the device reports as low-RAM.
+  PaintingBinding.instance.imageCache
+    ..maximumSize = 200
+    ..maximumSizeBytes = 256 * 1024 * 1024;
 
   if (Platform.isWindows || Platform.isLinux) {
     sqfliteFfiInit();
@@ -64,9 +76,16 @@ void main() async {
 
   Logger.Inst();
 
+  // Read the device's real WebView User-Agent up front so browser-facing
+  // requests and the Cloudflare captcha webview share one legitimate UA
+  // (see Tools.deviceWebViewUserAgent). Best-effort; safe to skip on failure.
+  await Tools.captureWebViewUserAgent();
+
   // load settings before first render to get theme data early
   NavigationHandler.register();
   ViewerHandler.register();
+  FloatingPreviewHandler.register();
+  InterestsHandler.register();
   SearchHandler.register();
   SnatchHandler.register();
   TagHandler.register();
@@ -214,6 +233,7 @@ class _MainAppState extends State<MainApp> {
                     navigatorKey: navigationHandler.navigatorKey,
                     navigatorObservers: [
                       navigationHandler.routeObserver,
+                      FloatingPreviewHandler.instance.routeObserver,
                       TalkerRouteObserver(Logger.talker),
                     ],
                     home: const Home(),
@@ -343,6 +363,14 @@ class _DebuggingWidgetsState extends State<DebuggingWidgets> with WidgetsBinding
           'getDeviceInfo',
           null,
         );
+
+        // Tighten the image cache on devices Android flags as low-RAM, so we
+        // don't push them into the OOM killer when scrolling thumbnails.
+        if (deviceInfo.isLowRamDevice) {
+          PaintingBinding.instance.imageCache
+            ..maximumSize = 60
+            ..maximumSizeBytes = 64 * 1024 * 1024;
+        }
       }
     } catch (e, s) {
       Logger.Inst().log(

@@ -18,6 +18,7 @@ dependencies:
   auto_size_text_plus: ^3.0.2
   calendar_date_picker2: ^2.0.1
   chewie: ^1.13.0
+  better_player_plus: ^1.2.1
   collection: ^1.19.1
   country_flags: ^4.1.2
   crypto: ^3.0.7
@@ -26,6 +27,7 @@ dependencies:
   dio_http2_adapter: ^2.7.0
   dynamic_color: ^1.8.1
   equatable: ^2.0.8
+  extended_image: ^10.0.1
   external_video_player_launcher: ^0.0.3
   fading_edge_scrollview: ^4.1.1
   fast_marquee:

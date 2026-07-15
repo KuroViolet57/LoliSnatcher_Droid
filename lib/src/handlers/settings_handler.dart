@@ -18,6 +18,8 @@ import 'package:url_launcher/url_launcher_string.dart';
 import 'package:lolisnatcher/gen/strings.g.dart';
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
+import 'package:lolisnatcher/src/data/blacklist_line.dart';
+import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/constants.dart';
 import 'package:lolisnatcher/src/data/settings/app_alias.dart';
 import 'package:lolisnatcher/src/data/settings/app_mode.dart';
@@ -134,6 +136,9 @@ class SettingsHandler {
   MpvHardwareDecoding altVideoPlayerHWDEC = MpvHardwareDecoding.defaultValue;
 
   Set<String> hiddenTags = {};
+  // Per-booru hidden tags. Keyed by booru.name. A tag in this map's value-set
+  // hides matching items only on that booru, regardless of the global list.
+  Map<String, Set<String>> hiddenTagsPerBooru = {};
   Set<String> markedTags = {};
 
   int itemLimit = Constants.defaultItemLimit;
@@ -144,6 +149,9 @@ class SettingsHandler {
   int snatchCooldown = 250;
   int volumeButtonsScrollSpeed = 200;
   int galleryAutoScrollTime = 4000;
+  // Separate, usually longer, slideshow dwell for video / GIF slides so they
+  // get time to play before the slideshow advances.
+  int galleryAutoScrollVideoTime = 10000;
   int cacheSize = 3;
   int autoLockTimeout = 120;
 
@@ -161,10 +169,60 @@ class SettingsHandler {
 
   bool jsonWrite = false;
   bool autoPlayEnabled = true;
+  // When false, neighbour pages in the gallery only start downloading their
+  // video once the user actually swipes to them. Saves bandwidth and stops
+  // the currently-watched video from competing with preloads.
+  bool preloadVideos = false;
+  // Experimental: swap the Flutter video_player / chewie pipeline for
+  // better_player_plus on Android. Exposes ExoPlayer's buffer + cache
+  // tuning, which Flutter's default plugin hides. Off by default so the
+  // tried-and-true engine stays the safe path.
+  bool useBetterPlayer = false;
+  // Experimental media_kit (libmpv) engine. Not ExoPlayer/MediaCodec-based,
+  // so it sidesteps the hardware-decoder-exhaustion crashes; libmpv manages
+  // its own decoding (with software fallback). Takes precedence over
+  // useBetterPlayer when both are on.
+  bool useMediaKitPlayer = false;
+  // How many media_kit (libmpv) players to keep warm in the LRU pool. More =
+  // scrolling back to a recent video resumes instantly with its buffer
+  // intact, at the cost of RAM. libmpv has no MediaCodec limit so this is
+  // safe to raise on devices with spare memory.
+  int mediaKitMaxPlayers = 4;
+  // ExoPlayer on-disk cache size for the better_player engine, in MB.
+  // 0 disables. Default 500 MB; bumping this means more recently-watched
+  // videos serve from disk on rewatch / scroll-back without re-hitting the
+  // CDN. The per-file cap protects a single huge video from eating the pool.
+  int betterPlayerCacheMb = 500;
+  int betterPlayerPerFileMb = 100;
+  // Inline "more from this artist / uploader" thumbnail grids in the
+  // post-details drawer. Mirrors Boorusama's pattern. On by default.
+  bool inlineRelatedGrids = true;
+  // Persisted rect of the floating tag-preview window, stored as
+  // 'left,top,width,height' fractions of the screen (empty = use default).
+  // Living in settings.json means it also rides along in backup/restore.
+  String previewWindowRect = '';
+  // Local behaviour tracking that powers the "For You" recommendation tab.
+  // Fully on-device (TagSignal table); can be disabled and wiped at any time.
+  bool enableInterestTracking = true;
+  // Render the post-info panel (tags, metadata) as a Boorusama-style bottom
+  // sheet dragged up from the bottom edge instead of the classic right-side
+  // drawer. On by default; turn off to restore the side drawer.
+  bool useBottomInfoSheet = true;
+  // How much of the screen the bottom info sheet occupies when open, expressed
+  // as "thirds": 1 => ~1/3 of the screen, 1.5 => ~1/2, 2 => ~2/3, 3 => full.
+  // The sheet locks at this size (content scrolls inside it). fraction = N/3.
+  double bottomSheetSizeMultiplier = 2;
+  // Default placement for a new tab when the user single-taps the
+  // "open in new tab" button. Long-press still shows the pick dialog.
+  // String values: 'end' (default) or 'next' (next to current tab).
+  String defaultTabAddMode = 'end';
   bool loadingGif = false;
   bool thumbnailCache = true;
   bool mediaCache = true;
   bool autoHideImageBar = false;
+  // When true, the top Android status bar is hidden app-wide (the bottom
+  // navigation bar is kept), so it doesn't intrude while scrolling the grid.
+  bool hideStatusBar = false;
   bool dbEnabled = true;
   bool indexesEnabled = false;
   bool searchHistoryEnabled = true;
@@ -196,6 +254,12 @@ class SettingsHandler {
   bool desktopListsDrag = false;
   bool showBottomSearchbar = true;
   bool useTopSearchbarInput = false;
+  bool dimSeenPosts = false;
+  // Render .gif files with the extended_image engine (the same one Boorusama
+  // uses) instead of Flutter's built-in Image widget. extended_image decodes
+  // frames at display resolution and manages its own cache, which fixes the
+  // slow/stuttery full-res GIF playback.
+  bool fastGifPlayback = false;
   bool showSearchbarQuickActions = false;
   bool autofocusSearchbar = true;
   bool expandDetails = false;
@@ -207,9 +271,9 @@ class SettingsHandler {
 
   // themes wip
   final Rx<ThemeItem> theme = ThemeItem(
-    name: 'Pink',
-    primary: Colors.pink[200],
-    accent: Colors.pink[600],
+    name: 'Flow',
+    primary: const Color(0xFFB9A0E8),
+    accent: const Color(0xFFB9A0E8),
   ).obs;
 
   final Rx<Color?> customPrimaryColor = Colors.pink[200]!.obs;
@@ -376,6 +440,10 @@ class SettingsHandler {
       'type': 'string',
       'default': 'rating:safe',
     },
+    'defaultTabAddMode': {
+      'type': 'string',
+      'default': 'end',
+    },
     'prefBooru': {
       'type': 'string',
       'default': '',
@@ -425,6 +493,11 @@ class SettingsHandler {
     'hiddenTags': {
       'type': 'stringList',
       'default': <String>[],
+    },
+    // Per-booru hidden tags: {booruName: [tag, ...]}.
+    'hiddenTagsPerBooru': {
+      'type': 'map',
+      'default': <String, List<String>>{},
     },
     'lovedTags': {
       'type': 'stringList',
@@ -492,6 +565,13 @@ class SettingsHandler {
       'upperLimit': 100000,
       'lowerLimit': 100,
     },
+    'galleryAutoScrollVideoTime': {
+      'type': 'int',
+      'default': 10000,
+      'step': 100,
+      'upperLimit': 600000,
+      'lowerLimit': 100,
+    },
     'cacheSize': {
       'type': 'int',
       'default': 3,
@@ -532,6 +612,62 @@ class SettingsHandler {
       'type': 'bool',
       'default': true,
     },
+    'preloadVideos': {
+      'type': 'bool',
+      'default': false,
+    },
+    'useBetterPlayer': {
+      'type': 'bool',
+      'default': false,
+    },
+    'useMediaKitPlayer': {
+      'type': 'bool',
+      'default': false,
+    },
+    'mediaKitMaxPlayers': {
+      'type': 'int',
+      'default': 4,
+      'step': 1,
+      'lowerLimit': 1,
+      'upperLimit': 20,
+    },
+    'betterPlayerCacheMb': {
+      'type': 'int',
+      'default': 500,
+      'step': 100,
+      'lowerLimit': 0,
+      'upperLimit': 50000,
+    },
+    'betterPlayerPerFileMb': {
+      'type': 'int',
+      'default': 100,
+      'step': 50,
+      'lowerLimit': 0,
+      'upperLimit': 50000,
+    },
+    'inlineRelatedGrids': {
+      'type': 'bool',
+      'default': true,
+    },
+    'previewWindowRect': {
+      'type': 'string',
+      'default': '',
+    },
+    'enableInterestTracking': {
+      'type': 'bool',
+      'default': true,
+    },
+    'useBottomInfoSheet': {
+      'type': 'bool',
+      'default': true,
+    },
+    'bottomSheetSizeMultiplier': {
+      'type': 'double',
+      'default': 2.0,
+      'upperLimit': 3.0,
+      'lowerLimit': 0.5,
+      'step': 0.5,
+    },
     'loadingGif': {
       'type': 'bool',
       'default': false,
@@ -545,6 +681,10 @@ class SettingsHandler {
       'default': true,
     },
     'autoHideImageBar': {
+      'type': 'bool',
+      'default': false,
+    },
+    'hideStatusBar': {
       'type': 'bool',
       'default': false,
     },
@@ -677,6 +817,14 @@ class SettingsHandler {
       'type': 'bool',
       'default': false,
     },
+    'dimSeenPosts': {
+      'type': 'bool',
+      'default': false,
+    },
+    'fastGifPlayback': {
+      'type': 'bool',
+      'default': false,
+    },
     'showSearchbarQuickActions': {
       'type': 'bool',
       'default': false,
@@ -745,8 +893,9 @@ class SettingsHandler {
     },
     'theme': {
       'type': 'theme',
-      'default': ThemeItem(name: 'Pink', primary: Colors.pink[200], accent: Colors.pink[600]),
+      'default': ThemeItem(name: 'Flow', primary: const Color(0xFFB9A0E8), accent: const Color(0xFFB9A0E8)),
       'options': <ThemeItem>[
+        ThemeItem(name: 'Flow', primary: const Color(0xFFB9A0E8), accent: const Color(0xFFB9A0E8)),
         ThemeItem(name: 'Pink', primary: Colors.pink[200], accent: Colors.pink[600]),
         ThemeItem(name: 'Purple', primary: Colors.deepPurple[600], accent: Colors.deepPurple[800]),
         ThemeItem(name: 'Blue', primary: Colors.lightBlue, accent: Colors.lightBlue[600]),
@@ -1079,6 +1228,30 @@ class SettingsHandler {
         return markedTags;
       case 'autoPlayEnabled':
         return autoPlayEnabled;
+      case 'preloadVideos':
+        return preloadVideos;
+      case 'useBetterPlayer':
+        return useBetterPlayer;
+      case 'useMediaKitPlayer':
+        return useMediaKitPlayer;
+      case 'mediaKitMaxPlayers':
+        return mediaKitMaxPlayers;
+      case 'betterPlayerCacheMb':
+        return betterPlayerCacheMb;
+      case 'betterPlayerPerFileMb':
+        return betterPlayerPerFileMb;
+      case 'inlineRelatedGrids':
+        return inlineRelatedGrids;
+      case 'previewWindowRect':
+        return previewWindowRect;
+      case 'enableInterestTracking':
+        return enableInterestTracking;
+      case 'useBottomInfoSheet':
+        return useBottomInfoSheet;
+      case 'bottomSheetSizeMultiplier':
+        return bottomSheetSizeMultiplier;
+      case 'defaultTabAddMode':
+        return defaultTabAddMode;
       case 'loadingGif':
         return loadingGif;
       case 'thumbnailCache':
@@ -1087,6 +1260,8 @@ class SettingsHandler {
         return mediaCache;
       case 'autoHideImageBar':
         return autoHideImageBar;
+      case 'hideStatusBar':
+        return hideStatusBar;
       case 'dbEnabled':
         return dbEnabled;
       case 'indexesEnabled':
@@ -1117,6 +1292,8 @@ class SettingsHandler {
         return shitDevice;
       case 'galleryAutoScrollTime':
         return galleryAutoScrollTime;
+      case 'galleryAutoScrollVideoTime':
+        return galleryAutoScrollVideoTime;
       case 'jsonWrite':
         return jsonWrite;
       case 'zoomButtonPosition':
@@ -1143,6 +1320,10 @@ class SettingsHandler {
         return showBottomSearchbar;
       case 'useTopSearchbarInput':
         return useTopSearchbarInput;
+      case 'dimSeenPosts':
+        return dimSeenPosts;
+      case 'fastGifPlayback':
+        return fastGifPlayback;
       case 'showSearchbarQuickActions':
         return showSearchbarQuickActions;
       case 'autofocusSearchbar':
@@ -1308,6 +1489,42 @@ class SettingsHandler {
       case 'autoPlayEnabled':
         autoPlayEnabled = validatedValue;
         break;
+      case 'preloadVideos':
+        preloadVideos = validatedValue;
+        break;
+      case 'useBetterPlayer':
+        useBetterPlayer = validatedValue;
+        break;
+      case 'useMediaKitPlayer':
+        useMediaKitPlayer = validatedValue;
+        break;
+      case 'mediaKitMaxPlayers':
+        mediaKitMaxPlayers = (validatedValue as int).clamp(1, 20);
+        break;
+      case 'betterPlayerCacheMb':
+        betterPlayerCacheMb = (validatedValue as int).clamp(0, 50000);
+        break;
+      case 'betterPlayerPerFileMb':
+        betterPlayerPerFileMb = (validatedValue as int).clamp(0, 50000);
+        break;
+      case 'inlineRelatedGrids':
+        inlineRelatedGrids = validatedValue;
+        break;
+      case 'previewWindowRect':
+        previewWindowRect = validatedValue;
+        break;
+      case 'enableInterestTracking':
+        enableInterestTracking = validatedValue;
+        break;
+      case 'useBottomInfoSheet':
+        useBottomInfoSheet = validatedValue;
+        break;
+      case 'bottomSheetSizeMultiplier':
+        bottomSheetSizeMultiplier = (validatedValue as num).toDouble().clamp(0.5, 3.0);
+        break;
+      case 'defaultTabAddMode':
+        defaultTabAddMode = (validatedValue == 'next') ? 'next' : 'end';
+        break;
       case 'loadingGif':
         loadingGif = validatedValue;
         break;
@@ -1319,6 +1536,9 @@ class SettingsHandler {
         break;
       case 'autoHideImageBar':
         autoHideImageBar = validatedValue;
+        break;
+      case 'hideStatusBar':
+        hideStatusBar = validatedValue;
         break;
       case 'dbEnabled':
         dbEnabled = validatedValue;
@@ -1361,6 +1581,9 @@ class SettingsHandler {
         break;
       case 'shitDevice':
         shitDevice = validatedValue;
+        break;
+      case 'galleryAutoScrollVideoTime':
+        galleryAutoScrollVideoTime = validatedValue;
         break;
       case 'galleryAutoScrollTime':
         galleryAutoScrollTime = validatedValue;
@@ -1486,6 +1709,12 @@ class SettingsHandler {
       case 'useTopSearchbarInput':
         useTopSearchbarInput = validatedValue;
         break;
+      case 'dimSeenPosts':
+        dimSeenPosts = validatedValue;
+        break;
+      case 'fastGifPlayback':
+        fastGifPlayback = validatedValue;
+        break;
       case 'showSearchbarQuickActions':
         showSearchbarQuickActions = validatedValue;
         break;
@@ -1557,6 +1786,13 @@ class SettingsHandler {
         // do nothing, legacy key
       } else if (key == 'hiddenTags') {
         json[key] = cleanTagsList(hiddenTags.map(Tag.new).toList());
+      } else if (key == 'hiddenTagsPerBooru') {
+        // Serialize the per-booru map; drop empty entries to keep JSON tight.
+        final Map<String, List<String>> out = {};
+        hiddenTagsPerBooru.forEach((boorus, tags) {
+          if (tags.isNotEmpty) out[boorus] = tags.toList();
+        });
+        json[key] = out;
       } else if (key == 'markedTags') {
         json[key] = cleanTagsList(markedTags.map(Tag.new).toList());
       } else {
@@ -1669,9 +1905,36 @@ class SettingsHandler {
       for (int i = 0; i < hideTags.length; i++) {
         hiddenTags.add(hideTags.elementAt(i));
       }
+      invalidateBlacklistCache();
     } catch (e, s) {
       Logger.Inst().log(
         'Failed to parse hidden tags $e',
+        'SettingsHandler',
+        'loadFromJSON',
+        LogTypes.exception,
+        s: s,
+      );
+    }
+
+    try {
+      final dynamic raw = json['hiddenTagsPerBooru'];
+      hiddenTagsPerBooru.clear();
+      if (raw is Map) {
+        raw.forEach((boorus, tagsAny) {
+          if (boorus is! String) return;
+          final List<String> tags = [];
+          if (tagsAny is List) {
+            for (final t in tagsAny) {
+              if (t is String && t.isNotEmpty) tags.add(t);
+            }
+          }
+          if (tags.isNotEmpty) hiddenTagsPerBooru[boorus] = tags.toSet();
+        });
+      }
+      invalidateBlacklistCache();
+    } catch (e, s) {
+      Logger.Inst().log(
+        'Failed to parse per-booru hidden tags $e',
         'SettingsHandler',
         'loadFromJSON',
         LogTypes.exception,
@@ -1825,8 +2088,13 @@ class SettingsHandler {
       }
 
       if (dbEnabled && tempList.isNotEmpty) {
+        // Virtual, DB-backed boorus. Added unconditionally (like Favourites /
+        // Downloads) so a restored Collections / For You tab always finds its
+        // booru after a restart, and so no per-launch DB round-trip is needed.
         tempList.add(Booru(loc.favourites, BooruType.Favourites, '', '', ''));
         tempList.add(Booru(loc.downloads, BooruType.Downloads, '', '', ''));
+        tempList.add(Booru('For You', BooruType.ForYou, '', '', ''));
+        tempList.add(Booru('Collections', BooruType.Collections, '', '', ''));
       }
     } catch (e, s) {
       Logger.Inst().log(
@@ -1846,6 +2114,28 @@ class SettingsHandler {
       unawaited(sortBooruList());
     }
     return true;
+  }
+
+  /// Returns the virtual Collections booru, adding it to the list on first use
+  /// (it's created lazily so it only appears once the user has a collection).
+  Booru ensureCollectionsBooru() {
+    for (final b in booruList) {
+      if (b.type?.isCollections == true) return b;
+    }
+    final Booru b = Booru('Collections', BooruType.Collections, '', '', '');
+    booruList.add(b);
+    return b;
+  }
+
+  /// Returns the virtual "For You" recommender booru, adding it to the list on
+  /// first use.
+  Booru ensureForYouBooru() {
+    for (final b in booruList) {
+      if (b.type?.isForYou == true) return b;
+    }
+    final Booru b = Booru('For You', BooruType.ForYou, '', '', '');
+    booruList.add(b);
+    return b;
   }
 
   Future<void> sortBooruList() async {
@@ -1888,6 +2178,19 @@ class SettingsHandler {
       final Booru tmp = sorted.elementAt(dlsIndex);
       sorted.remove(tmp);
       sorted.add(tmp);
+    }
+
+    // Keep the other virtual boorus grouped after Favourites / Downloads.
+    for (final isType in [
+      (Booru b) => b.type?.isForYou == true,
+      (Booru b) => b.type?.isCollections == true,
+    ]) {
+      final int idx = sorted.indexWhere(isType);
+      if (idx != -1) {
+        final Booru tmp = sorted.elementAt(idx);
+        sorted.remove(tmp);
+        sorted.add(tmp);
+      }
     }
 
     booruList.value = sorted;
@@ -1947,7 +2250,13 @@ class SettingsHandler {
 
   TagsListData parseTagsList(List<Tag> itemTags, {bool isCapped = true}) {
     final List<String> cleanItemTags = cleanTagsList(itemTags);
-    List<String> hiddenInItem = cleanItemTags.where(hiddenTags.contains).toList();
+    // For the visual "this tag is in your blacklist" indicator we check the
+    // tag against any plain-tag token mentioned in a global blacklist line.
+    // (Multi-token lines still don't surface per-tag, but at least the
+    // single-tag entries — which are what every existing user has — keep
+    // their badge.)
+    final Set<String> globalTokens = blacklistedTagTokens;
+    List<String> hiddenInItem = cleanItemTags.where(globalTokens.contains).toList();
     List<String> markedInItem = cleanItemTags.where(markedTags.contains).toList();
     final List<String> soundInItem = soundTags.where(cleanItemTags.contains).toList();
     final List<String> aiInItem = aiTags.where(cleanItemTags.contains).toList();
@@ -1965,7 +2274,24 @@ class SettingsHandler {
   }
 
   bool containsHidden(List<String> itemTags) {
-    return itemTags.any(hiddenTags.contains);
+    // Approximate — only checks plain-tag tokens from any global line.
+    // For the proper line-based evaluation (operators, metatags, per-booru
+    // scoping) callers should use [isItemHiddenForBooru].
+    final tokens = blacklistedTagTokens;
+    if (tokens.isEmpty) return false;
+    return itemTags.any(tokens.contains);
+  }
+
+  /// Proper line-based evaluation against the global blacklist only.
+  /// Use this from places that don't have per-booru context.
+  bool isItemHiddenGlobally(BooruItem item) {
+    final lines = globalBlacklistLines;
+    if (lines.isEmpty) return false;
+    final ctx = BlacklistContext.fromItem(item);
+    for (final line in lines) {
+      if (line.matches(ctx)) return true;
+    }
+    return false;
   }
 
   bool containsMarked(List<String> itemTags) {
@@ -1985,6 +2311,7 @@ class SettingsHandler {
       case 'hated':
       case 'hidden':
         hiddenTags.add(tag);
+        invalidateBlacklistCache();
         break;
       case 'loved':
       case 'marked':
@@ -2001,6 +2328,7 @@ class SettingsHandler {
       case 'hated':
       case 'hidden':
         hiddenTags.remove(tag);
+        invalidateBlacklistCache();
         break;
       case 'loved':
       case 'marked':
@@ -2010,6 +2338,89 @@ class SettingsHandler {
         break;
     }
     saveSettings(restate: false);
+  }
+
+  /// Per-booru hidden-tag helpers. `booruName` keys the map; `null`/empty
+  /// names are ignored so virtual boorus (Favourites/Downloads/Merge) don't
+  /// pollute the storage.
+  bool isTagHiddenForBooru(String tag, String? booruName) {
+    if (booruName == null || booruName.isEmpty) return false;
+    return hiddenTagsPerBooru[booruName]?.contains(tag) ?? false;
+  }
+
+  Set<String> hiddenTagsForBooru(String? booruName) {
+    if (booruName == null || booruName.isEmpty) return const <String>{};
+    return hiddenTagsPerBooru[booruName] ?? const <String>{};
+  }
+
+  void addTagToBooruHiddenList(String booruName, String tag) {
+    if (booruName.isEmpty || tag.isEmpty) return;
+    hiddenTagsPerBooru.putIfAbsent(booruName, () => <String>{}).add(tag);
+    invalidateBlacklistCache(booruName: booruName);
+    saveSettings(restate: false);
+  }
+
+  void removeTagFromBooruHiddenList(String booruName, String tag) {
+    final set = hiddenTagsPerBooru[booruName];
+    if (set == null) return;
+    set.remove(tag);
+    if (set.isEmpty) hiddenTagsPerBooru.remove(booruName);
+    invalidateBlacklistCache(booruName: booruName);
+    saveSettings(restate: false);
+  }
+
+  // ─── Blacklist line cache ────────────────────────────────────────────────
+  // Each entry in `hiddenTags` / `hiddenTagsPerBooru[name]` is treated as an
+  // e621-style blacklist line. We cache the parsed form so filtering N items
+  // doesn't re-tokenise the lines every time.
+
+  List<BlacklistLine>? _cachedGlobalLines;
+  final Map<String, List<BlacklistLine>> _cachedPerBooruLines = {};
+
+  List<BlacklistLine> get globalBlacklistLines {
+    return _cachedGlobalLines ??= parseBlacklist(hiddenTags);
+  }
+
+  List<BlacklistLine> blacklistLinesForBooru(String? booruName) {
+    if (booruName == null || booruName.isEmpty) return const [];
+    final set = hiddenTagsPerBooru[booruName];
+    if (set == null || set.isEmpty) return const [];
+    return _cachedPerBooruLines.putIfAbsent(booruName, () => parseBlacklist(set));
+  }
+
+  void invalidateBlacklistCache({String? booruName}) {
+    if (booruName == null) {
+      _cachedGlobalLines = null;
+      _cachedPerBooruLines.clear();
+    } else {
+      _cachedPerBooruLines.remove(booruName);
+    }
+  }
+
+  /// True if any blacklist line that applies to [booru] matches [item].
+  /// Honours the per-booru `ignoreGlobalBlacklist` toggle.
+  bool isItemHiddenForBooru(BooruItem item, Booru booru) {
+    final perBooru = blacklistLinesForBooru(booru.name);
+    final global = booru.ignoreGlobalBlacklist ? const <BlacklistLine>[] : globalBlacklistLines;
+    if (perBooru.isEmpty && global.isEmpty) return false;
+    final ctx = BlacklistContext.fromItem(item);
+    for (final line in perBooru) {
+      if (line.matches(ctx)) return true;
+    }
+    for (final line in global) {
+      if (line.matches(ctx)) return true;
+    }
+    return false;
+  }
+
+  /// All plain tag tokens referenced by any global blacklist line — used by
+  /// the UI to mark individual tag chips with the red eye-slash indicator.
+  Set<String> get blacklistedTagTokens {
+    final out = <String>{};
+    for (final line in globalBlacklistLines) {
+      out.addAll(line.plainTagTokens);
+    }
+    return out;
   }
 
   List<String> cleanTagsList(List<Tag> tags) {

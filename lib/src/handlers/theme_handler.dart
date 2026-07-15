@@ -107,7 +107,7 @@ class ThemeHandler {
     return ThemeData.dark(useMaterial3: true).copyWith(
       brightness: Brightness.dark,
       appBarTheme: appBarTheme(darkColorScheme),
-      scaffoldBackgroundColor: darkColorScheme.surface,
+      scaffoldBackgroundColor: scaffoldBackground(darkColorScheme) ?? darkColorScheme.surface,
       colorScheme: darkColorScheme,
       textTheme: textTheme(),
       textSelectionTheme: textSelectionTheme(darkColorScheme),
@@ -139,6 +139,31 @@ class ThemeHandler {
     );
   }
 
+  // ── "Flow" dark palette ─────────────────────────────────────────────────
+  // Near-black violet surfaces used across the app in dark mode. The accent
+  // stays theme-driven (theme.accent), so custom accent colours keep working;
+  // only the neutral surfaces/text are pinned to the Flow tokens.
+  static const Color flowBg = Color(0xFF0A090D); // app/page background (scaffold)
+  static const Color flowLowest = Color(0xFF0E0C13); // info-flow sheet bg
+  static const Color flowSurface = Color(0xFF14111B); // drawers, sheets, dialogs, cards
+  static const Color flowRaised = Color(0xFF17131F); // raised card on surface
+  static const Color flowInput = Color(0xFF1D1827); // input pills, chip wells
+  static const Color flowDeep = Color(0xFF241E33); // deepest raised element
+  static const Color flowBorder = Color(0xFF2E2940); // sheet/drawer borders
+  static const Color flowBorderSoft = Color(0xFF262232); // card borders
+  static const Color flowTextPrimary = Color(0xFFF2EDFA);
+  static const Color flowTextBody = Color(0xFFDDD5EA);
+  static const Color flowTextSecondary = Color(0xFF9C93AE);
+  static const Color flowError = Color(0xFFE5766B);
+
+  /// Scaffold/page background — darker than [ColorScheme.surface] (which is the
+  /// card/drawer tone), matching the Flow layering. Dark mode only.
+  Color? scaffoldBackground(ColorScheme scheme) {
+    if (!isDark) return null;
+    if (isAmoled) return Colors.black;
+    return flowBg;
+  }
+
   ColorScheme colorScheme() {
     if (isDark) {
       if (darkDynamic != null) {
@@ -159,7 +184,7 @@ class ThemeHandler {
       contrastLevel: 0,
     );
 
-    return ColorScheme.fromSeed(
+    final ColorScheme base = ColorScheme.fromSeed(
       seedColor: theme.accent!,
       primary: theme.primary,
       onPrimary: primaryIsDark ? Colors.white : Colors.black,
@@ -171,18 +196,41 @@ class ThemeHandler {
       onError: Colors.white,
       brightness: brightness,
     );
+
+    // In light mode, or AMOLED, keep the seed-generated scheme.
+    if (!isDark || isAmoled) return base;
+
+    // Dark mode: pin neutral surfaces/text to the Flow tokens (accent stays
+    // theme-driven). This gives every screen the modern violet-near-black look
+    // without hardcoding the accent.
+    return base.copyWith(
+      surface: flowSurface,
+      onSurface: flowTextBody,
+      surfaceContainerLowest: flowLowest,
+      surfaceContainerLow: flowSurface,
+      surfaceContainer: flowRaised,
+      surfaceContainerHigh: flowInput,
+      surfaceContainerHighest: flowDeep,
+      onSurfaceVariant: flowTextSecondary,
+      outline: flowBorder,
+      outlineVariant: flowBorderSoft,
+      surfaceTint: Colors.transparent,
+      error: flowError,
+      onError: Colors.white,
+    );
   }
 
   TextTheme textTheme() {
     final baseTheme = isDark ? ThemeData.dark().textTheme : ThemeData.light().textTheme;
 
-    if (fontFamily == 'System') {
-      return baseTheme;
-    }
+    // Flow uses Manrope as the app-wide default; 'System' now maps to Manrope so
+    // the typography reskin applies without the user having to pick a font. An
+    // explicit font choice is still respected.
+    final String font = fontFamily == 'System' ? 'Manrope' : fontFamily;
 
     try {
       return baseTheme.apply(
-        fontFamily: GoogleFonts.getFont(fontFamily).fontFamily,
+        fontFamily: GoogleFonts.getFont(font).fontFamily,
       );
     } catch (_) {
       return baseTheme;
@@ -243,34 +291,38 @@ class ThemeHandler {
         ),
   );
 
-  AppBarTheme appBarTheme(ColorScheme colorScheme) => AppBarTheme(
-    titleTextStyle: TextStyle(
-      fontFamily: textTheme().bodyMedium!.fontFamily,
-      color: primaryIsDark ? Colors.white : Colors.black,
-      fontSize: 18,
-      fontWeight: FontWeight.w600,
-    ),
-    toolbarTextStyle: TextStyle(
-      fontFamily: textTheme().bodyMedium!.fontFamily,
-      color: primaryIsDark ? Colors.white : Colors.black,
-      fontSize: 18,
-      fontWeight: FontWeight.w600,
-    ),
-    backgroundColor: colorScheme.primary,
-    foregroundColor: primaryIsDark ? Colors.white : Colors.black,
-    actionsIconTheme: IconThemeData(
-      color: primaryIsDark ? Colors.white : Colors.black,
-    ),
-    iconTheme: IconThemeData(
-      color: primaryIsDark ? Colors.white : Colors.black,
-    ),
-    titleSpacing: 8,
-    systemOverlayStyle: SystemUiOverlayStyle(
-      statusBarColor: (isDark ? Colors.black : Colors.white).withValues(alpha: 0.25),
-      statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
-      statusBarBrightness: isDark ? Brightness.dark : Brightness.light,
-    ),
-  );
+  AppBarTheme appBarTheme(ColorScheme colorScheme) {
+    // Flow: dark, flat headers in dark mode (not the accent colour). Title/icons
+    // in the primary text tone. Light mode keeps the classic primary bar.
+    final Color barBg = isDark ? flowBg : colorScheme.primary;
+    final Color barFg = isDark ? flowTextPrimary : (primaryIsDark ? Colors.white : Colors.black);
+    return AppBarTheme(
+      titleTextStyle: TextStyle(
+        fontFamily: textTheme().bodyMedium!.fontFamily,
+        color: barFg,
+        fontSize: 19,
+        fontWeight: FontWeight.w800,
+      ),
+      toolbarTextStyle: TextStyle(
+        fontFamily: textTheme().bodyMedium!.fontFamily,
+        color: barFg,
+        fontSize: 18,
+        fontWeight: FontWeight.w600,
+      ),
+      backgroundColor: barBg,
+      foregroundColor: barFg,
+      surfaceTintColor: Colors.transparent,
+      scrolledUnderElevation: 0,
+      actionsIconTheme: IconThemeData(color: barFg),
+      iconTheme: IconThemeData(color: barFg),
+      titleSpacing: 8,
+      systemOverlayStyle: SystemUiOverlayStyle(
+        statusBarColor: (isDark ? Colors.black : Colors.white).withValues(alpha: 0.25),
+        statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+        statusBarBrightness: isDark ? Brightness.dark : Brightness.light,
+      ),
+    );
+  }
 
   ButtonThemeData buttonTheme(ColorScheme colorScheme) => ButtonThemeData(
     buttonColor: colorScheme.primary,
@@ -491,7 +543,7 @@ class ThemeHandler {
   );
 
   DividerThemeData dividerTheme(ColorScheme colorScheme) => DividerThemeData(
-    color: Colors.grey[800],
+    color: isDark ? flowBorder : Colors.grey[300],
     thickness: 1,
     space: 1,
     indent: 0,

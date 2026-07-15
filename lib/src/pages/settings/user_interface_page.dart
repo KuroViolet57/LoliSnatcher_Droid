@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 
@@ -6,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:lolisnatcher/src/data/settings/app_mode.dart';
+import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/data/settings/button_position.dart';
 import 'package:lolisnatcher/src/data/settings/hand_side.dart';
 import 'package:lolisnatcher/src/data/settings/preview_display_mode.dart';
@@ -28,6 +30,7 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
   final TextEditingController columnsLandscapeController = TextEditingController();
   final TextEditingController columnsPortraitController = TextEditingController();
   final TextEditingController mouseSpeedController = TextEditingController();
+  final TextEditingController bottomSheetSizeController = TextEditingController();
 
   late PreviewQuality previewMode;
   late PreviewDisplayMode previewDisplay, previewDisplayFallback;
@@ -37,7 +40,12 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
       showSearchbarQuickActions,
       autofocusSearchbar,
       disableVibration,
-      usePredictiveBack;
+      usePredictiveBack,
+      inlineRelatedGrids,
+      useBottomInfoSheet,
+      hideStatusBar,
+      enableInterestTracking;
+  late String defaultTabAddMode;
   late AppMode appMode;
   late HandSide handSide;
 
@@ -46,6 +54,7 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
     super.initState();
     columnsPortraitController.text = settingsHandler.portraitColumns.toString();
     columnsLandscapeController.text = settingsHandler.landscapeColumns.toString();
+    bottomSheetSizeController.text = settingsHandler.bottomSheetSizeMultiplier.toString();
     appMode = settingsHandler.appMode.value;
     handSide = settingsHandler.handSide.value;
     showBottomSearchbar = settingsHandler.showBottomSearchbar;
@@ -54,6 +63,11 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
     autofocusSearchbar = settingsHandler.autofocusSearchbar;
     disableVibration = settingsHandler.disableVibration;
     usePredictiveBack = settingsHandler.usePredictiveBack;
+    inlineRelatedGrids = settingsHandler.inlineRelatedGrids;
+    enableInterestTracking = settingsHandler.enableInterestTracking;
+    useBottomInfoSheet = settingsHandler.useBottomInfoSheet;
+    hideStatusBar = settingsHandler.hideStatusBar;
+    defaultTabAddMode = settingsHandler.defaultTabAddMode;
     previewDisplay = settingsHandler.previewDisplay;
     previewDisplayFallback = settingsHandler.previewDisplayFallback;
     previewMode = settingsHandler.previewMode;
@@ -66,6 +80,7 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
     columnsLandscapeController.dispose();
     columnsPortraitController.dispose();
     mouseSpeedController.dispose();
+    bottomSheetSizeController.dispose();
     super.dispose();
   }
 
@@ -79,6 +94,15 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
     settingsHandler.disableVibration = disableVibration;
     final bool needThemeChange = usePredictiveBack != settingsHandler.usePredictiveBack;
     settingsHandler.usePredictiveBack = usePredictiveBack;
+    settingsHandler.inlineRelatedGrids = inlineRelatedGrids;
+    settingsHandler.enableInterestTracking = enableInterestTracking;
+    settingsHandler.useBottomInfoSheet = useBottomInfoSheet;
+    settingsHandler.hideStatusBar = hideStatusBar;
+    // Apply the status-bar preference immediately on the way out.
+    unawaited(ServiceHandler.setSystemUiVisibility(true));
+    settingsHandler.bottomSheetSizeMultiplier =
+        (double.tryParse(bottomSheetSizeController.text) ?? 2.0).clamp(0.5, 3.0);
+    settingsHandler.defaultTabAddMode = defaultTabAddMode;
     settingsHandler.previewMode = previewMode;
     settingsHandler.previewDisplay = previewDisplay;
     settingsHandler.previewDisplayFallback = previewDisplayFallback;
@@ -253,6 +277,89 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
                 },
                 title: context.loc.settings.interface.disableVibration,
                 subtitle: Text(context.loc.settings.interface.disableVibrationSubtitle),
+              ),
+              SettingsToggle(
+                value: hideStatusBar,
+                onChanged: (newValue) {
+                  setState(() {
+                    hideStatusBar = newValue;
+                  });
+                  settingsHandler.hideStatusBar = newValue;
+                  ServiceHandler.setSystemUiVisibility(true);
+                },
+                title: 'Hide status bar',
+                leadingIcon: const Icon(Icons.fullscreen),
+                subtitle: const Text(
+                  'Hides the Android status bar (clock, battery, notifications) app-wide so it stops intruding while you scroll. The bottom navigation bar stays.',
+                ),
+              ),
+              SettingsToggle(
+                value: enableInterestTracking,
+                onChanged: (newValue) {
+                  setState(() {
+                    enableInterestTracking = newValue;
+                  });
+                },
+                title: 'Personalized recommendations',
+                leadingIcon: const Icon(Icons.auto_awesome),
+                subtitle: const Text(
+                  "Learns which tags you tend to view, favourite, collect and search — on your device only — to power the 'For You' tab. Turn off to stop building the taste profile (you can wipe it from the For You page).",
+                ),
+              ),
+              SettingsToggle(
+                value: inlineRelatedGrids,
+                onChanged: (newValue) {
+                  setState(() {
+                    inlineRelatedGrids = newValue;
+                  });
+                },
+                title: 'Inline related-posts grids',
+                leadingIcon: const Icon(Icons.grid_view),
+                subtitle: const Text(
+                  "Shows 'More from this artist' and 'More from this uploader' thumbnail rows at the top of the post-details drawer (where supported by the booru). Turn off if you want a leaner drawer or to save bandwidth.",
+                ),
+              ),
+              SettingsToggle(
+                value: useBottomInfoSheet,
+                onChanged: (newValue) {
+                  setState(() {
+                    useBottomInfoSheet = newValue;
+                  });
+                },
+                title: 'Bottom info sheet',
+                leadingIcon: const Icon(Icons.vertical_align_bottom),
+                subtitle: const Text(
+                  'Show the post info panel (tags, metadata) as a Boorusama-style sheet dragged up from the bottom of the viewer, instead of the classic right-side drawer. Open it with the info button or by swiping up from the bottom edge. Turn off to restore the side drawer.',
+                ),
+              ),
+              if (useBottomInfoSheet)
+                SettingsTextInput(
+                  controller: bottomSheetSizeController,
+                  title: 'Bottom sheet size',
+                  hintText: '2',
+                  inputType: const TextInputType.numberWithOptions(decimal: true),
+                  numberStep: 0.5,
+                  numberMin: 0.5,
+                  numberMax: 3,
+                  numberButtons: true,
+                  resetText: () => '2',
+                  subtitle: const Text(
+                    'How much of the screen the sheet fills when open, in thirds: 1 ≈ a third, 1.5 ≈ half, 2 ≈ two thirds, 3 ≈ full. The player shrinks to fill the space above it, and the sheet locks at this height so its content scrolls in place.',
+                  ),
+                ),
+              SettingsDropdown<String>(
+                value: defaultTabAddMode,
+                items: const ['end', 'next'],
+                itemTitleBuilder: (v) => v == 'next'
+                    ? 'Next to current tab'
+                    : 'End of tab list',
+                onChanged: (v) {
+                  setState(() {
+                    defaultTabAddMode = v ?? 'end';
+                  });
+                },
+                title: 'New tab placement (single tap)',
+                trailingIcon: const Icon(Icons.tab),
               ),
               SettingsTextInput(
                 controller: columnsPortraitController,

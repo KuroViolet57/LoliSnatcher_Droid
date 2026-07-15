@@ -7,6 +7,7 @@ import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/tag_suggestion.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
+import 'package:lolisnatcher/src/handlers/booru_handler_utils.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 
 class MoebooruHandler extends BooruHandler {
@@ -56,8 +57,9 @@ class MoebooruHandler extends BooruHandler {
       // Fix for bleachbooru
       String fileURL = '', sampleURL = '', previewURL = '';
       fileURL += current.getAttribute('file_url')!;
-      sampleURL += current.getAttribute('sample_url')!;
-      previewURL += current.getAttribute('preview_url')!;
+      // sample/preview can be missing on some posts; fall back to the file url
+      sampleURL += current.getAttribute('sample_url') ?? current.getAttribute('file_url')!;
+      previewURL += current.getAttribute('preview_url') ?? current.getAttribute('file_url')!;
       if (!fileURL.contains('http')) {
         fileURL = booru.baseURL! + fileURL;
         sampleURL = booru.baseURL! + sampleURL;
@@ -68,7 +70,7 @@ class MoebooruHandler extends BooruHandler {
         fileURL: fileURL,
         sampleURL: sampleURL,
         thumbnailURL: previewURL,
-        tagsList: current.getAttribute('tags')!.split(' ').map(Tag.new).toList(),
+        tagsList: splitTagsClean(current.getAttribute('tags')).map(Tag.new).toList(),
         postURL: makePostURL(current.getAttribute('id')!),
         fileWidth: double.tryParse(current.getAttribute('width') ?? ''),
         fileHeight: double.tryParse(current.getAttribute('height') ?? ''),
@@ -79,9 +81,7 @@ class MoebooruHandler extends BooruHandler {
         serverId: current.getAttribute('id'),
         rating: current.getAttribute('rating'),
         score: current.getAttribute('score'),
-        sources: [
-          if (current.getAttribute('source') == null) '' else current.getAttribute('source')!,
-        ],
+        sources: cleanSourceList(current.getAttribute('source')),
         md5String: current.getAttribute('md5'),
         postDate: current.getAttribute('created_at'), // Fri Jun 18 02:13:45 -0500 2021
         postDateFormat: 'unix', // when timezone support added: "EEE MMM dd HH:mm:ss Z yyyy",

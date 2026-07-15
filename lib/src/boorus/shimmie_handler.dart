@@ -34,6 +34,18 @@ class ShimmieHandler extends BooruHandler {
   }
 
   @override
+  String translateOrSyntax(String tags) => BooruHandler.dropOrGroupsWithWarning(tags, className);
+
+  @override
+  bool get hasNativeOrSupport => false;
+
+  // NOTE: no blanket media-filter list here. Shimmie is just the engine — the
+  // tags a site uses for video/animated content are decided per-site by its
+  // own community/admins, so concrete single-site subclasses (e.g.
+  // R34HentaiHandler) set their own verified `animatedPreviewFilters`.
+  // Generic user-added Shimmie sites fall back to the base default.
+
+  @override
   Future<List> parseListFromResponse(dynamic response) async {
     final parsedResponse = await compute(XmlDocument.parse, response.data as String);
     try {
@@ -196,6 +208,21 @@ class ShimmieHtmlHandler extends BooruHandler {
       return super.validateTags(tags);
     }
   }
+
+  // Paheal-style Shimmie variant: URL-path search like
+  // `/post/list/tag1+tag2/1`, no native OR support.
+  @override
+  String translateOrSyntax(String tags) => BooruHandler.dropOrGroupsWithWarning(tags, className);
+
+  @override
+  bool get hasNativeOrSupport => false;
+
+  // ShimmieHtmlHandler serves paheal (rule34.paheal.net). Verified against the
+  // site: `animated` is the umbrella (webm posts are also tagged animated, and
+  // `gif` is an alias of `animated`); there is no standalone `video` tag. So a
+  // single `animated` stop catches everything without a dead second tap.
+  @override
+  List<String> get animatedPreviewFilters => const ['animated'];
 
   @override
   List parseListFromResponse(dynamic response) {

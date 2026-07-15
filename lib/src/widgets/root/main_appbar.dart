@@ -14,7 +14,7 @@ import 'package:lolisnatcher/src/handlers/theme_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/utils/extensions.dart';
 import 'package:lolisnatcher/src/widgets/common/inner_drawer.dart';
-import 'package:lolisnatcher/src/widgets/root/active_title.dart';
+import 'package:lolisnatcher/src/widgets/preview/flow_tab_carousel.dart';
 import 'package:lolisnatcher/src/widgets/root/custom_sliver_app_bar.dart';
 
 class MainAppBar extends StatefulWidget implements PreferredSizeWidget {
@@ -191,7 +191,7 @@ class _MainAppBarState extends State<MainAppBar> {
         leading: settingsHandler.handSide.value.isLeft
             ? menuButton(InnerDrawerDirection.start)
             : snatcherButton(InnerDrawerDirection.start),
-        title: const ActiveTitle(),
+        title: const TabsCountPill(),
         toolbarHeight: MainAppBar.height,
         flexibleSpace: settingsHandler.shitDevice
             ? null

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:get/get.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
 import 'package:lolisnatcher/src/data/booru.dart';
@@ -9,6 +10,7 @@ import 'package:lolisnatcher/src/pages/settings/booru_edit_page.dart';
 import 'package:lolisnatcher/src/pages/settings_page.dart';
 import 'package:lolisnatcher/src/widgets/common/settings_widgets.dart';
 import 'package:lolisnatcher/src/widgets/preview/waterfall_view.dart';
+import 'package:lolisnatcher/src/widgets/webview/webview_browser_view.dart';
 
 class MediaPreviews extends StatefulWidget {
   const MediaPreviews({super.key});
@@ -122,8 +124,24 @@ class _MediaPreviewsState extends State<MediaPreviews> {
           );
         }
 
-        // render thumbnails grid
-        return const WaterfallView();
+        // render thumbnails grid — or an embedded browser for WebView-type
+        // boorus (sites that can't be scraped still get a tab this way)
+        return Obx(() {
+          searchHandler.index.value; // subscribe to tab switches
+          searchHandler.tabId.value;
+          if (searchHandler.tabs.isEmpty) {
+            return const WaterfallView();
+          }
+          final tab = searchHandler.currentTab;
+          if (tab.selectedBooru.value.type?.isWebView == true) {
+            return WebViewBrowserView(
+              // recreate on tab switch or new search text
+              key: ValueKey('webview-${tab.id}-${tab.tags}'),
+              tab: tab,
+            );
+          }
+          return const WaterfallView();
+        });
       },
     );
   }

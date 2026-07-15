@@ -7,6 +7,7 @@ import 'package:lolisnatcher/src/data/settings/image_quality.dart';
 import 'package:lolisnatcher/src/data/settings/scroll_direction.dart';
 import 'package:lolisnatcher/src/data/settings/share_action.dart';
 import 'package:lolisnatcher/src/data/settings/vertical_position.dart';
+import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
@@ -23,6 +24,8 @@ class _GalleryPageState extends State<GalleryPage> {
 
   bool autoHideImageBar = false,
       hideNotes = false,
+      dimSeenPosts = false,
+      fastGifPlayback = false,
       allowRotation = false,
       loadingGif = false,
       useVolumeButtonsForScroll = false,
@@ -45,6 +48,7 @@ class _GalleryPageState extends State<GalleryPage> {
   final TextEditingController preloadHeightController = TextEditingController();
   final TextEditingController scrollSpeedController = TextEditingController();
   final TextEditingController galleryAutoScrollController = TextEditingController();
+  final TextEditingController galleryAutoScrollVideoController = TextEditingController();
 
   @override
   void initState() {
@@ -65,10 +69,13 @@ class _GalleryPageState extends State<GalleryPage> {
     zoomButtonPosition = settingsHandler.zoomButtonPosition;
     changePageButtonsPosition = settingsHandler.changePageButtonsPosition;
     hideNotes = settingsHandler.hideNotes;
+    dimSeenPosts = settingsHandler.dimSeenPosts;
+    fastGifPlayback = settingsHandler.fastGifPlayback;
     allowRotation = settingsHandler.allowRotation;
     useVolumeButtonsForScroll = settingsHandler.useVolumeButtonsForScroll;
     scrollSpeedController.text = settingsHandler.volumeButtonsScrollSpeed.toString();
     galleryAutoScrollController.text = settingsHandler.galleryAutoScrollTime.toString();
+    galleryAutoScrollVideoController.text = settingsHandler.galleryAutoScrollVideoTime.toString();
     preloadAmountController.text = settingsHandler.preloadCount.toString();
     preloadSizeController.text = settingsHandler.preloadSizeLimit.toString();
     preloadHeightController.text = settingsHandler.preloadHeight.toString();
@@ -86,6 +93,7 @@ class _GalleryPageState extends State<GalleryPage> {
     preloadHeightController.dispose();
     scrollSpeedController.dispose();
     galleryAutoScrollController.dispose();
+    galleryAutoScrollVideoController.dispose();
     super.dispose();
   }
 
@@ -100,6 +108,8 @@ class _GalleryPageState extends State<GalleryPage> {
     settingsHandler.zoomButtonPosition = zoomButtonPosition;
     settingsHandler.changePageButtonsPosition = changePageButtonsPosition;
     settingsHandler.hideNotes = hideNotes;
+    settingsHandler.dimSeenPosts = dimSeenPosts;
+    settingsHandler.fastGifPlayback = fastGifPlayback;
     settingsHandler.allowRotation = allowRotation;
     settingsHandler.loadingGif = loadingGif;
     settingsHandler.useVolumeButtonsForScroll = useVolumeButtonsForScroll;
@@ -111,6 +121,8 @@ class _GalleryPageState extends State<GalleryPage> {
 
     settingsHandler.volumeButtonsScrollSpeed = (int.tryParse(scrollSpeedController.text) ?? 200).clamp(0, 1_000_000);
     settingsHandler.galleryAutoScrollTime = (int.tryParse(galleryAutoScrollController.text) ?? 4000).clamp(100, 10000);
+    settingsHandler.galleryAutoScrollVideoTime =
+        (int.tryParse(galleryAutoScrollVideoController.text) ?? 10000).clamp(100, 600000);
 
     settingsHandler.preloadCount = (int.tryParse(preloadAmountController.text) ?? 1).clamp(0, 4);
     settingsHandler.preloadSizeLimit = (double.tryParse(preloadSizeController.text) ?? 0.2).clamp(0, double.infinity);
@@ -298,6 +310,62 @@ class _GalleryPageState extends State<GalleryPage> {
                   });
                 },
                 title: context.loc.settings.viewer.hideTranslationNotesByDefault,
+              ),
+              SettingsToggle(
+                value: dimSeenPosts,
+                onChanged: (newValue) {
+                  setState(() {
+                    dimSeenPosts = newValue;
+                  });
+                },
+                title: 'Dim already-viewed posts',
+                subtitle: const Text('Greys out posts in the grid once you open them'),
+              ),
+              if (dimSeenPosts)
+                SettingsButton(
+                  name: 'Clear viewed history',
+                  icon: const Icon(Icons.visibility_off),
+                  action: () async {
+                    final bool? confirmed = await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text('Clear viewed history?'),
+                        content: const Text('All posts will be treated as unseen again.'),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.of(ctx).pop(false),
+                            child: Text(context.loc.no),
+                          ),
+                          FilledButton(
+                            onPressed: () => Navigator.of(ctx).pop(true),
+                            child: Text(context.loc.yes),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (confirmed == true) {
+                      await SearchHandler.instance.clearSeenPosts();
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Viewed history cleared')),
+                        );
+                      }
+                    }
+                  },
+                ),
+              SettingsToggle(
+                value: fastGifPlayback,
+                onChanged: (newValue) {
+                  setState(() {
+                    fastGifPlayback = newValue;
+                  });
+                },
+                title: 'Fast GIF playback (experimental)',
+                subtitle: const Text(
+                  'Renders GIFs with the extended_image engine (decodes at screen resolution + its own '
+                  'cache) instead of the built-in viewer. Fixes slow / stuttery large GIFs. Turn off if a '
+                  'GIF looks wrong.',
+                ),
               ),
               SettingsToggle(
                 value: allowRotation,
@@ -618,6 +686,27 @@ class _GalleryPageState extends State<GalleryPage> {
                     );
                   },
                 ),
+              ),
+              SettingsTextInput(
+                controller: galleryAutoScrollVideoController,
+                title: 'Slideshow duration for videos/GIFs (in ms)',
+                inputType: TextInputType.number,
+                inputFormatters: <TextInputFormatter>[FilteringTextInputFormatter.digitsOnly],
+                resetText: () => settingsHandler.map['galleryAutoScrollVideoTime']!['default']!.toString(),
+                numberButtons: true,
+                numberStep: 100,
+                numberMin: 100,
+                numberMax: double.infinity,
+                validator: (String? value) {
+                  final int? parse = int.tryParse(value ?? '');
+                  if (value == null || value.isEmpty) {
+                    return context.loc.validationErrors.required;
+                  } else if (parse == null) {
+                    return context.loc.validationErrors.invalidNumericValue;
+                  } else {
+                    return null;
+                  }
+                },
               ),
               SettingsToggle(
                 value: wakeLockEnabled,

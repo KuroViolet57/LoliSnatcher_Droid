@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Trust user-installed CAs in addition to the system store.
+
+  Android (API 24+) ignores user-added certificates by default, which breaks
+  the entire app for anyone running AdGuard's HTTPS filtering, a Pi-hole
+  style MITM filter or a debugging proxy: every native HTTP stack (ExoPlayer
+  video playback, WebView / captcha solving, Cronet, OkHttp plugins) fails
+  the TLS handshake even though the user deliberately installed that CA.
+
+  Note this config does NOT affect dart:io sockets (Dio requests) - those use
+  BoringSSL with the system roots only; the in-app
+  "Allow self-signed certificates" setting covers that side.
+
+  cleartextTrafficPermitted mirrors the old android:usesCleartextTraffic
+  manifest attribute, which is ignored once a network security config exists.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

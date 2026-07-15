@@ -20,6 +20,13 @@ class FavouritesHandler extends BooruHandler {
     return tags;
   }
 
+  // Local DB search has no OR — drop with a warning, search the rest.
+  @override
+  String translateOrSyntax(String tags) => BooruHandler.dropOrGroupsWithWarning(tags, className);
+
+  @override
+  bool get hasNativeOrSupport => false;
+
   @override
   Future search(String tags, int? pageNumCustom, {bool withCaptchaCheck = true}) async {
     // set custom page number
@@ -28,7 +35,7 @@ class FavouritesHandler extends BooruHandler {
     }
 
     // validate tags
-    tags = validateTags(tags.trim());
+    tags = validateTags(translateOrSyntax(tags.trim()));
 
     // if tags are different than previous tags, reset fetched
     if (prevTags != tags) {

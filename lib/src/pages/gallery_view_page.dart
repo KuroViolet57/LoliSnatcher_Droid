@@ -12,8 +12,12 @@ import 'package:preload_page_view/preload_page_view.dart';
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/boorus/idol_sankaku_handler.dart';
 import 'package:lolisnatcher/src/boorus/sankaku_handler.dart';
+import 'package:get/get.dart' hide ContextExt, FirstWhereOrNullExt;
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/data/tag_type.dart';
+import 'package:lolisnatcher/src/handlers/tag_handler.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
+import 'package:lolisnatcher/src/handlers/interests_handler.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
@@ -25,12 +29,16 @@ import 'package:lolisnatcher/src/widgets/common/close_dialog_button.dart';
 import 'package:lolisnatcher/src/widgets/common/long_press_repeater.dart';
 import 'package:lolisnatcher/src/widgets/gallery/gallery_buttons.dart';
 import 'package:lolisnatcher/src/widgets/gallery/hideable_appbar.dart';
+import 'package:lolisnatcher/src/widgets/gallery/item_info_bottom_sheet.dart';
 import 'package:lolisnatcher/src/widgets/gallery/notes_renderer.dart';
 import 'package:lolisnatcher/src/widgets/gallery/tag_view.dart';
 import 'package:lolisnatcher/src/widgets/gallery/viewer_tutorial.dart';
+import 'package:lolisnatcher/src/widgets/image/gif_viewer.dart';
 import 'package:lolisnatcher/src/widgets/image/image_viewer.dart';
 import 'package:lolisnatcher/src/widgets/video/guess_extension_viewer.dart';
 import 'package:lolisnatcher/src/widgets/video/load_item_viewer.dart';
+import 'package:lolisnatcher/src/widgets/video/better_player_view.dart';
+import 'package:lolisnatcher/src/widgets/video/media_kit_player_view.dart';
 import 'package:lolisnatcher/src/widgets/video/video_viewer_placeholder.dart';
 import 'package:lolisnatcher/src/widgets/video/video_viewer.dart';
 
@@ -72,8 +80,36 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
   final ValueNotifier<double> dismissProgress = ValueNotifier(1);
   final ValueNotifier<bool> drawerOpen = ValueNotifier(false);
 
+  // Dwell tracking for the taste profile: which item is currently on screen
+  // and since when. Flushed to InterestsHandler when the item changes / closes.
+  BooruItem? _dwellItem;
+  DateTime _dwellSince = DateTime.now();
+
+  void _flushDwell() {
+    final item = _dwellItem;
+    if (item != null) {
+      InterestsHandler.instance.onItemViewed(item, DateTime.now().difference(_dwellSince));
+    }
+    _dwellItem = null;
+  }
+
+  void _startDwell(BooruItem item) {
+    if (identical(item, _dwellItem)) return;
+    _flushDwell();
+    _dwellItem = item;
+    _dwellSince = DateTime.now();
+  }
+
   final ValueNotifier<bool> isActive = ValueNotifier(true);
   final ValueNotifier<bool> drawerVisibility = ValueNotifier(true);
+
+  // Boorusama-style bottom info sheet (alternative to the side endDrawer).
+  final DraggableScrollableController infoSheetController = DraggableScrollableController();
+  final ValueNotifier<double> infoSheetExtent = ValueNotifier(0);
+  bool get useBottomInfoSheet => settingsHandler.useBottomInfoSheet;
+  // Sheet open height as a fraction of the screen. The user setting is "in
+  // thirds": 1 => 1/3, 2 => 2/3, 3 => full. fraction = N/3.
+  double get infoSheetOpenSize => (settingsHandler.bottomSheetSizeMultiplier / 3).clamp(0.2, 0.98);
 
   @override
   void initState() {
@@ -95,6 +131,10 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
     try {
       final item = widget.tab.booruHandler.filteredFetched[widget.initialIndex];
       viewerHandler.setCurrent(item);
+      _startDwell(item);
+      if (settingsHandler.dimSeenPosts) {
+        unawaited(searchHandler.markPostSeen(item));
+      }
     } catch (e) {
       viewerHandler.dropCurrent();
     }
@@ -153,12 +193,15 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
 
   @override
   void dispose() {
+    _flushDwell();
     if (widget.key is GlobalKey) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         viewerHandler.removeViewer(widget.key! as GlobalKey);
       });
     }
     NavigationHandler.instance.routeObserver.unsubscribe(this);
+    infoSheetController.dispose();
+    infoSheetExtent.dispose();
     volumeListener?.cancel();
     ServiceHandler.setVolumeButtons(!settingsHandler.useVolumeButtonsForScroll);
     kbFocusNode.dispose();
@@ -167,6 +210,43 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
   }
 
   void drawerVisibilityChanged(bool visible) => drawerVisibility.value = visible;
+
+  void openInfoPanel() {
+    if (useBottomInfoSheet) {
+      // Animate even on the first call. The controller attaches as soon as the
+      // sheet's first frame runs, which has happened by the time the user can
+      // tap a button or swipe. If somehow not attached, retry next frame.
+      if (infoSheetController.isAttached) {
+        infoSheetController.animateTo(
+          infoSheetOpenSize,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutCubic,
+        );
+      } else {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (infoSheetController.isAttached) {
+            infoSheetController.animateTo(
+              infoSheetOpenSize,
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOutCubic,
+            );
+          }
+        });
+      }
+    } else {
+      viewerScaffoldKey.currentState?.openEndDrawer();
+    }
+  }
+
+  void closeInfoSheet() {
+    if (infoSheetController.isAttached) {
+      infoSheetController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
 
   void volumeCallback(String event) {
     // print('in gallery $event');
@@ -195,9 +275,7 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
       pageController: controller,
       canSelect: widget.canSelect,
       readOnly: widget.readOnly,
-      onOpenDrawer: () {
-        viewerScaffoldKey.currentState?.openEndDrawer();
-      },
+      onOpenDrawer: openInfoPanel,
     );
 
     final scaffold = Scaffold(
@@ -208,14 +286,43 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
       appBar: settingsHandler.galleryBarPosition.isTop ? appBar : null,
       bottomNavigationBar: settingsHandler.galleryBarPosition.isBottom ? appBar : null,
       backgroundColor: Colors.transparent,
-      body: PhotoViewGestureDetectorScope(
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          // The viewer. With the bottom info sheet on, it shrinks and anchors
+          // to the top as the sheet rises (Boorusama split): at the sheet's
+          // peek the player occupies the top ~1/3, the sheet the bottom ~2/3.
+          // The heavy viewer subtree is passed as `child` so it is NOT rebuilt
+          // on extent change — only re-parented into a shorter SizedBox.
+          ValueListenableBuilder<double>(
+            valueListenable: infoSheetExtent,
+            builder: (context, extent, child) {
+              if (!useBottomInfoSheet) return child!;
+              // Use MediaQuery (not LayoutBuilder) because LayoutBuilder
+              // defers its build until the LAYOUT phase, which causes the
+              // bottom sheet + appbar (mounted earlier in the same frame) to
+              // read pageController.page before the PreloadPageView attaches
+              // its position → "Bad state: No element" crash on first frame.
+              // extendBody* are both true on this Scaffold, so the body fills
+              // MediaQuery.size — no off-by-pixels at the seam.
+              final double screenH = MediaQuery.sizeOf(context).height;
+              final double viewerH = screenH * (1 - extent).clamp(0.0, 1.0);
+              return Align(
+                alignment: Alignment.topCenter,
+                child: SizedBox(height: viewerH, child: child),
+              );
+            },
+            child: PhotoViewGestureDetectorScope(
         // vertical to prevent swipe-to-dismiss when zoomed
         // axis: Axis.vertical, // photo_view doesn't support locking both axises, so we use custom fork to fix this
         axis: Axis.values,
         child: Dismissible(
           direction: settingsHandler.galleryScrollDirection.isVertical
               ? DismissDirection.horizontal
-              : DismissDirection.vertical,
+              // In horizontal-scroll mode vertical swipes normally dismiss
+              // both ways. With the bottom info sheet on, reserve swipe-up for
+              // opening the sheet — only swipe-down dismisses the viewer.
+              : (useBottomInfoSheet ? DismissDirection.down : DismissDirection.vertical),
           // background: Container(color: Colors.black.withValues(alpha: 0.3)),
           key: const Key('imagePageDismissibleKey'),
           resizeDuration: null, // Duration(milliseconds: 100),
@@ -357,13 +464,16 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
                             scrollDirection: settingsHandler.galleryScrollDirection.isVertical
                                 ? Axis.vertical
                                 : Axis.horizontal,
-                            physics: const AlwaysScrollableScrollPhysics(parent: ClampingScrollPhysics()),
+                            physics: const AlwaysScrollableScrollPhysics(
+                              parent: _SnappyPageSpringPhysics(parent: ClampingScrollPhysics()),
+                            ),
                             itemCount: filteredFetched.length,
                             itemBuilder: (context, index) {
                               final BooruItem item = widget.tab.booruHandler.filteredFetched[index];
 
                               final bool isFavsOrDls =
-                                  widget.tab.booruHandler.booru.type?.isFavouritesOrDownloads == true;
+                                  widget.tab.booruHandler.booru.type?.isLocalDb == true ||
+                                  widget.tab.booruHandler.booru.type?.isForYou == true;
                               Booru? possibleBooru;
                               if (isFavsOrDls) {
                                 final itemFileHost = Uri.tryParse(item.fileURL)?.host;
@@ -387,7 +497,7 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
                                           booruHost?.isNotEmpty == true &&
                                           itemFileHost! == booruHost!);
                                 });
-                                if (possibleBooru?.type?.isFavouritesOrDownloads == true) {
+                                if (possibleBooru?.type?.isLocalDb == true || possibleBooru?.type?.isForYou == true) {
                                   possibleBooru = null;
                                 }
                               }
@@ -401,8 +511,25 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
                                   final bool isNeedToLoadItem =
                                       mediaType.isNeedToLoadItem && widget.tab.booruHandler.hasLoadItemSupport;
 
+                                  // GIFs get the extended_image renderer when the
+                                  // fast-GIF option is on (decodes at display res
+                                  // + own cache — fixes the slow stock Image path).
+                                  final bool useGifViewer = mediaType.isAnimation && settingsHandler.fastGifPlayback;
+
                                   late Widget itemWidget;
-                                  if (isImage) {
+                                  if (useGifViewer) {
+                                    itemWidget = ValueListenableBuilder(
+                                      valueListenable: page,
+                                      builder: (_, pageVal, _) {
+                                        return GifViewer(
+                                          item,
+                                          booru: possibleBooru ?? widget.tab.booruHandler.booru,
+                                          isViewed: pageVal == index,
+                                          key: item.key,
+                                        );
+                                      },
+                                    );
+                                  } else if (isImage) {
                                     itemWidget = ValueListenableBuilder(
                                       valueListenable: page,
                                       builder: (_, pageVal, _) {
@@ -423,6 +550,25 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
                                       itemWidget = ValueListenableBuilder(
                                         valueListenable: page,
                                         builder: (_, pageVal, _) {
+                                          final usedBooru = possibleBooru ?? widget.tab.booruHandler.booru;
+                                          // Experimental media_kit (libmpv) path takes precedence.
+                                          if (settingsHandler.useMediaKitPlayer && Platform.isAndroid) {
+                                            return MediaKitPlayerView(
+                                              item,
+                                              booru: usedBooru,
+                                              isViewed: pageVal == index,
+                                              key: item.key,
+                                            );
+                                          }
+                                          // Experimental better_player_plus path; behind a setting.
+                                          if (settingsHandler.useBetterPlayer && Platform.isAndroid) {
+                                            return BetterPlayerView(
+                                              item,
+                                              booru: usedBooru,
+                                              isViewed: pageVal == index,
+                                              key: item.key,
+                                            );
+                                          }
                                           return VideoViewer(
                                             item,
                                             booru: possibleBooru ?? widget.tab.booruHandler.booru,
@@ -551,6 +697,10 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
                                 final item = widget.tab.booruHandler.filteredFetched[index];
                                 if (mounted) {
                                   viewerHandler.setCurrent(item);
+                                  _startDwell(item);
+                                  if (settingsHandler.dimSeenPosts) {
+                                    unawaited(searchHandler.markPostSeen(item));
+                                  }
                                 }
                               } catch (e) {
                                 // attempt to recover from broken out of array bounds state (i.e. when adding tag to hidden removes all items from the tab)
@@ -620,19 +770,97 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
           ),
         ),
       ),
+          ),
+          // Boorusama-style bottom info sheet. Only present when the setting is
+          // on; otherwise the classic right-side endDrawer (below) handles the
+          // info panel.
+          if (useBottomInfoSheet) ...[
+            ItemInfoBottomSheet(
+              tab: widget.tab,
+              currentPage: page,
+              sheetController: infoSheetController,
+              extentNotifier: infoSheetExtent,
+              openSize: infoSheetOpenSize,
+            ),
+            // Full-screen passive listener: observes pointer events without
+            // claiming them in the gesture arena (so paging, dismiss, pan,
+            // and tap-to-toggle-controls all still work). While the sheet is
+            // closed it drives the sheet's extent directly from the finger's
+            // displacement (1:1, native refresh rate) on an upward swipe. Once
+            // the sheet is open it stands down and the sheet's own drag takes
+            // over. Always mounted so it never unmounts mid-gesture.
+            Positioned.fill(
+              child: _SwipeUpListener(
+                controller: infoSheetController,
+                openSize: infoSheetOpenSize,
+              ),
+            ),
+            // Persistent peek bar: artist + tag-count chips + swipe-up hint,
+            // shown while the sheet is collapsed and the chrome is visible.
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: Obx(() {
+                // Only while the viewer chrome is showing, so it never covers
+                // hidden-UI immersive viewing.
+                if (!viewerHandler.displayAppbar.value) return const SizedBox.shrink();
+                return ValueListenableBuilder<double>(
+                  valueListenable: infoSheetExtent,
+                  builder: (context, extent, _) {
+                    final double t = (1 - (extent / 0.06)).clamp(0.0, 1.0);
+                    if (t <= 0.01) return const SizedBox.shrink();
+                    return Opacity(
+                      opacity: t,
+                      child: IgnorePointer(
+                        ignoring: t < 0.5,
+                        child: _InfoPeekBar(
+                          tab: widget.tab,
+                          page: page,
+                          onTap: openInfoPanel,
+                        ),
+                      ),
+                    );
+                  },
+                );
+              }),
+            ),
+          ],
+        ],
+      ),
       endDrawerEnableOpenDragGesture: false,
       onEndDrawerChanged: (isOpened) {
         drawerOpen.value = isOpened;
         drawerVisibilityChanged(isOpened);
       },
-      endDrawer: ItemInfoDrawer(
-        tab: widget.tab,
-        pageController: controller,
-        onVisibilityChanged: drawerVisibilityChanged,
-      ),
+      endDrawer: useBottomInfoSheet
+          ? null
+          : ItemInfoDrawer(
+              tab: widget.tab,
+              pageController: controller,
+              onVisibilityChanged: drawerVisibilityChanged,
+            ),
     );
 
     //
+
+    // When the bottom info sheet is open, intercept the system back button to
+    // close the sheet instead of leaving the viewer.
+    final Widget maybeBackHandled = useBottomInfoSheet
+        ? ValueListenableBuilder<double>(
+            valueListenable: infoSheetExtent,
+            builder: (context, extent, child) {
+              return PopScope(
+                canPop: extent <= 0.001,
+                onPopInvokedWithResult: (didPop, result) {
+                  if (!didPop) closeInfoSheet();
+                },
+                child: child!,
+              );
+            },
+            child: scaffold,
+          )
+        : scaffold;
 
     return ValueListenableBuilder(
       valueListenable: drawerVisibility,
@@ -646,7 +874,238 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
           child: child!,
         );
       },
-      child: scaffold,
+      child: maybeBackHandled,
+    );
+  }
+}
+
+/// Full-screen passive pointer observer that drives the bottom info sheet's
+/// extent directly as the user swipes — Boorusama-style. Once it detects a
+/// clear upward swipe (≥24px up, vertical dominating horizontal by 1.5×,
+/// single touch) it switches into a "drag" phase and uses jumpTo on each
+/// pointer move so the sheet is glued to the finger at native refresh rate
+/// instead of running a separate animateTo. On release it snaps to the
+/// nearest of {closed, peek, expanded} biased by fling velocity.
+///
+/// Uses [Listener] (not [GestureDetector]) so it never enters the gesture
+/// arena while idle — paging, dismiss, photo_view pan and tap-to-toggle all
+/// continue to work normally.
+class _SwipeUpListener extends StatefulWidget {
+  const _SwipeUpListener({
+    required this.controller,
+    required this.openSize,
+  });
+
+  final DraggableScrollableController controller;
+  final double openSize;
+
+  @override
+  State<_SwipeUpListener> createState() => _SwipeUpListenerState();
+}
+
+class _SwipeUpListenerState extends State<_SwipeUpListener> {
+  int? _pointerId;
+  Offset _startPos = Offset.zero;
+  Offset _lastPos = Offset.zero;
+  int _lastTimeUs = 0;
+  // Velocity along Y in logical pixels per second (negative = upward).
+  double _velocityYPxPerSec = 0;
+  bool _engaged = false;
+  bool _multiTouch = false;
+  // True only when the gesture began while the sheet was (near) closed. When
+  // the sheet is already open we leave dragging to its own physics.
+  bool _eligible = false;
+
+  static const double _engagePx = 12;
+  static const double _flingPxPerSec = 600;
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (event) {
+        if (_pointerId != null) {
+          _multiTouch = true;
+          return;
+        }
+        _pointerId = event.pointer;
+        _startPos = event.position;
+        _lastPos = event.position;
+        _lastTimeUs = event.timeStamp.inMicroseconds;
+        _engaged = false;
+        _multiTouch = false;
+        _velocityYPxPerSec = 0;
+        double current = 0;
+        if (widget.controller.isAttached) current = widget.controller.size;
+        _eligible = current <= 0.02;
+      },
+      onPointerMove: (event) {
+        if (_multiTouch || !_eligible) return;
+        if (event.pointer != _pointerId) return;
+
+        final dtUs = (event.timeStamp.inMicroseconds - _lastTimeUs).clamp(1, 1 << 31);
+        _velocityYPxPerSec = (event.position.dy - _lastPos.dy) / (dtUs / 1e6);
+        _lastPos = event.position;
+        _lastTimeUs = event.timeStamp.inMicroseconds;
+
+        // Displacement from where the finger went DOWN — positive = moved up.
+        final double dyUp = _startPos.dy - event.position.dy;
+        final double dxAbs = (event.position.dx - _startPos.dx).abs();
+
+        if (!_engaged) {
+          if (dyUp < _engagePx) return;
+          // Vertical must dominate horizontal so we don't hijack page swipes.
+          if (dxAbs > dyUp) return;
+          _engaged = true;
+        }
+
+        if (!widget.controller.isAttached) return;
+
+        // Extent grows 1:1 with how far the finger has moved up, regardless of
+        // where on screen the swipe started — so it begins from 0 and tracks
+        // the finger smoothly instead of snapping to an absolute position.
+        final double screenHeight = MediaQuery.sizeOf(context).height;
+        final double newExtent = (dyUp / screenHeight).clamp(0.0, widget.openSize);
+        widget.controller.jumpTo(newExtent);
+      },
+      onPointerUp: (event) {
+        if (event.pointer != _pointerId) return;
+        _pointerId = null;
+        if (!_engaged) return;
+        _settle();
+      },
+      onPointerCancel: (event) {
+        if (event.pointer != _pointerId) return;
+        _pointerId = null;
+        if (!_engaged) return;
+        _settle();
+      },
+    );
+  }
+
+  void _settle() {
+    if (!widget.controller.isAttached) return;
+    final current = widget.controller.size;
+    final upPxPerSec = -_velocityYPxPerSec;
+
+    // Single open stop now (the sheet locks at openSize). Fling up => open,
+    // fling down => close, otherwise snap to whichever is nearer.
+    double target;
+    if (upPxPerSec > _flingPxPerSec) {
+      target = widget.openSize;
+    } else if (upPxPerSec < -_flingPxPerSec) {
+      target = 0;
+    } else {
+      target = current >= widget.openSize / 2 ? widget.openSize : 0;
+    }
+
+    widget.controller.animateTo(
+      target,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+    );
+  }
+}
+
+/// The collapsed "peek" bar at the bottom of the viewer: artist + tag-count
+/// chips and a swipe-up hint. Tapping it opens the info sheet.
+class _InfoPeekBar extends StatelessWidget {
+  const _InfoPeekBar({required this.tab, required this.page, required this.onTap});
+
+  final SearchTab tab;
+  final ValueNotifier<int> page;
+  final VoidCallback onTap;
+
+  String? _artistOf(BooruItem item) {
+    final th = TagHandler.instance;
+    for (final t in item.tagsList) {
+      if (th.getTag(t.fullString).tagType.isArtist) return t.fullString;
+    }
+    return null;
+  }
+
+  Widget _chip(BuildContext context, IconData icon, String label, Color? color) {
+    final Color fg = color ?? const Color(0xFFDDD5EA);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1622),
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(color: const Color(0xFF2E2940)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: fg),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(color: fg, fontSize: 12.5, fontWeight: FontWeight.w700),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<int>(
+      valueListenable: page,
+      builder: (context, p, _) {
+        final items = tab.booruHandler.filteredFetched;
+        if (items.isEmpty || p >= items.length) return const SizedBox.shrink();
+        final item = items[p];
+        final String? artist = _artistOf(item);
+        final int tagCount = item.tagsList.length;
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: Container(
+            decoration: const BoxDecoration(
+              color: Color(0xFF0E0C13),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+              border: Border(top: BorderSide(color: Color(0xFF2E2940))),
+            ),
+            padding: EdgeInsets.fromLTRB(14, 6, 14, MediaQuery.viewPaddingOf(context).bottom + 10),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 40,
+                  height: 4.5,
+                  margin: const EdgeInsets.only(bottom: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF4A4260),
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                ),
+                Row(
+                  children: [
+                    if (artist != null) ...[
+                      Flexible(
+                        child: _chip(
+                          context,
+                          Icons.brush_outlined,
+                          artist.replaceAll('_', ' '),
+                          TagType.artist.getColour(),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                    _chip(context, Icons.sell_outlined, '$tagCount tags', null),
+                    const Spacer(),
+                    const Text(
+                      'swipe up',
+                      style: TextStyle(color: Color(0xFF8A80A0), fontSize: 11.5, fontWeight: FontWeight.w600),
+                    ),
+                    const Icon(Icons.keyboard_arrow_up_rounded, size: 18, color: Color(0xFF8A80A0)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -709,7 +1168,6 @@ class _ItemInfoDrawerState extends State<ItemInfoDrawer> {
 
   void pageListener() {
     page.value = widget.pageController.page?.round() ?? 0;
-    print('page: ${page.value}/${widget.pageController.page}');
   }
 
   void toggleVisibility() {
@@ -900,4 +1358,26 @@ class _ItemInfoDrawerState extends State<ItemInfoDrawer> {
       ),
     );
   }
+}
+
+/// Stiffer page-snap spring so swiping between posts settles quickly instead
+/// of the default "buttery"/floaty glide. PreloadPageView resolves its
+/// page-snap [spring] through the physics parent chain, so overriding [spring]
+/// here is enough — we don't need to reimplement the ballistic simulation.
+class _SnappyPageSpringPhysics extends ScrollPhysics {
+  const _SnappyPageSpringPhysics({super.parent});
+
+  @override
+  _SnappyPageSpringPhysics applyTo(ScrollPhysics? ancestor) {
+    return _SnappyPageSpringPhysics(parent: buildParent(ancestor));
+  }
+
+  // Default page spring is roughly mass 0.5 / stiffness 100 / ratio 1.1.
+  // Lighter + stiffer = a faster, snappier settle with no overshoot.
+  @override
+  SpringDescription get spring => SpringDescription.withDampingRatio(
+    mass: 0.32,
+    stiffness: 230,
+    ratio: 1.1,
+  );
 }

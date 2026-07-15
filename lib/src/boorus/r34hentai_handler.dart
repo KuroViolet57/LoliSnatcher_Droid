@@ -9,6 +9,7 @@ import 'package:lolisnatcher/src/boorus/shimmie_handler.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
+import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 import 'package:lolisnatcher/src/widgets/webview/webview_page.dart';
 
@@ -17,6 +18,14 @@ class R34HentaiHandler extends ShimmieHandler {
 
   @override
   bool get hasSizeData => true;
+
+  // R34HentaiHandler serves rule34hentai.net. Verified against the site:
+  // `animated` = 152366 posts is the umbrella (webm = 2076 and mp4 = 660 are
+  // essentially all tagged animated too — `webm -animated` returns ~one page);
+  // there is no standalone `video` tag (it 404s). So a single `animated` stop
+  // catches everything without the dead second tap the old cycle produced.
+  @override
+  List<String> get animatedPreviewFilters => const ['animated'];
 
   @override
   String validateTags(String tags) {
@@ -34,7 +43,8 @@ class R34HentaiHandler extends ShimmieHandler {
     final current = responseItem as Element;
 
     final String id = current.attributes['data-post-id']!;
-    final String fileExt = current.attributes['data-mime']?.split('/')[1] ?? 'png';
+    final String? rawMime = current.attributes['data-mime'];
+    final String fileExt = rawMime?.split('/')[1] ?? 'png';
     final String thumbURL = current.firstChild!.attributes['src']!;
     final double? thumbWidth = double.tryParse(current.firstChild!.attributes['width'] ?? '');
     final double? thumbHeight = double.tryParse(current.firstChild!.attributes['height'] ?? '');
@@ -60,6 +70,23 @@ class R34HentaiHandler extends ShimmieHandler {
       postURL: makePostURL(id),
       serverId: id,
     );
+
+    // Diagnostic: if the post looks video-like (by tags or mime) but the
+    // computed fileExt / mediaType isn't a video, log inputs + outputs so we
+    // can see what's actually in data-mime and what URL we built. Catches the
+    // "viewer shows static image for a video" case.
+    final bool tagsSayVideo = tags.contains('video') || tags.contains('webm') || tags.contains('mp4');
+    final bool mimeSaysVideo = rawMime?.startsWith('video/') == true;
+    if ((tagsSayVideo || mimeSaysVideo) && !item.mediaType.value.isVideo) {
+      Logger.Inst().log(
+        'r34hentai: video-tagged item resolved to ${item.mediaType.value}. '
+        'data-mime=$rawMime fileExt=$fileExt fileURL=${item.fileURL} thumbURL=$thumbURL '
+        'tagsSayVideo=$tagsSayVideo postURL=${item.postURL}',
+        className,
+        'parseItemFromResponse',
+        LogTypes.booruHandlerInfo,
+      );
+    }
 
     return item;
   }

@@ -35,6 +35,8 @@ enum TabSortingMode {
   alphabetReverse,
   booru,
   booruReverse,
+  booruOpenOrder,
+  booruOpenOrderReverse,
   ;
 
   bool get isNone => this == TabSortingMode.none;
@@ -42,10 +44,15 @@ enum TabSortingMode {
   bool get isAlphabetReverse => this == TabSortingMode.alphabetReverse;
   bool get isBooru => this == TabSortingMode.booru;
   bool get isBooruReverse => this == TabSortingMode.booruReverse;
+  bool get isBooruOpenOrder => this == TabSortingMode.booruOpenOrder;
+  bool get isBooruOpenOrderReverse => this == TabSortingMode.booruOpenOrderReverse;
+
+  bool get isAnyBooru => isBooru || isBooruReverse || isBooruOpenOrder || isBooruOpenOrderReverse;
+  // True for modes that keep original (open-order) tab order within each booru group.
+  bool get isAnyBooruOpenOrder => isBooruOpenOrder || isBooruOpenOrderReverse;
+  bool get isAnyReverse => isAlphabetReverse || isBooruReverse || isBooruOpenOrderReverse;
 
   bool get isAnyAlphabet => isAlphabet || isAlphabetReverse;
-  bool get isAnyBooru => isBooru || isBooruReverse;
-  bool get isAnyReverse => isAlphabetReverse || isBooruReverse;
 }
 
 class TabSelector extends StatelessWidget {
@@ -407,6 +414,35 @@ class _TabManagerPageState extends State<TabManagerPage> {
   bool? isMultiBooruMode;
   bool selectMode = false;
 
+  // App-session persistence of the sort + filter state. The tab manager is a
+  // transient page (built on each open), and the user reported that the sort
+  // mode and filters reset every time it's reopened. Stashing them on the
+  // class itself survives close/reopen while the app is running.
+  static TabSortingMode _savedSortingMode = TabSortingMode.none;
+  static bool? _savedLoadedFilter;
+  static Booru? _savedBooruFilter;
+  static TagType? _savedTagTypeFilter;
+  static bool _savedDuplicateFilter = false;
+  static bool _savedDuplicateBooruFilter = true;
+  static bool _savedEmptyFilter = false;
+  static bool? _savedIsMultiBooruMode;
+  static String _savedFilterText = '';
+
+  void _persistSortingMode() {
+    _savedSortingMode = sortingMode;
+  }
+
+  void _persistFilters() {
+    _savedLoadedFilter = loadedFilter;
+    _savedBooruFilter = booruFilter;
+    _savedTagTypeFilter = tagTypeFilter;
+    _savedDuplicateFilter = duplicateFilter;
+    _savedDuplicateBooruFilter = duplicateBooruFilter;
+    _savedEmptyFilter = emptyFilter;
+    _savedIsMultiBooruMode = isMultiBooruMode;
+    _savedFilterText = filterTextController.text;
+  }
+
   static const double tabHeight = 72 + 8;
 
   int get totalTabs => searchHandler.total;
@@ -440,6 +476,18 @@ class _TabManagerPageState extends State<TabManagerPage> {
   @override
   void initState() {
     super.initState();
+
+    // Restore the persisted sort + filter state from the previous open.
+    sortingMode = _savedSortingMode;
+    loadedFilter = _savedLoadedFilter;
+    booruFilter = _savedBooruFilter;
+    tagTypeFilter = _savedTagTypeFilter;
+    duplicateFilter = _savedDuplicateFilter;
+    duplicateBooruFilter = _savedDuplicateBooruFilter;
+    emptyFilter = _savedEmptyFilter;
+    isMultiBooruMode = _savedIsMultiBooruMode;
+    filterTextController.text = _savedFilterText;
+
     getTabs();
 
     scrollController = ScrollController(
@@ -615,7 +663,11 @@ class _TabManagerPageState extends State<TabManagerPage> {
             }
           }
 
-          if (cleanAtags != cleanBtags) {
+          // "By booru, open order" modes group by booru name but keep tabs
+          // inside each group in the order they were opened (searchHandler
+          // insertion index). Skip the alphabetic-within-group comparison so
+          // the index fallback below decides ordering.
+          if (!sortingMode.isAnyBooruOpenOrder && cleanAtags != cleanBtags) {
             if (sortingMode.isAnyReverse && !sortingMode.isAnyBooru) {
               return cleanBtags.compareTo(cleanAtags);
             } else {
@@ -694,6 +746,8 @@ class _TabManagerPageState extends State<TabManagerPage> {
     }
 
     if (result != null) {
+      _persistFilters();
+      _persistSortingMode();
       getTabs();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (filteredTabs.contains(searchHandler.currentTab) && !duplicateFilter) {
@@ -703,6 +757,57 @@ class _TabManagerPageState extends State<TabManagerPage> {
         }
       });
     }
+  }
+
+  /// Groups the current tab list by the same key the duplicate filter uses
+  /// and returns the tabs that should be removed to leave exactly one copy of
+  /// each duplicate (the earliest-opened — i.e. the one with the lowest index
+  /// in [SearchHandler.tabs]).
+  List<SearchTab> _computeDuplicateTabsToRemove() {
+    final Map<String, List<SearchTab>> groups = {};
+    for (final tab in searchHandler.tabs) {
+      final tags = tab.tags.toLowerCase().trim();
+      final key = duplicateBooruFilter ? '${tab.selectedBooru.value.name}+$tags' : tags;
+      (groups[key] ??= []).add(tab);
+    }
+
+    final List<SearchTab> toRemove = [];
+    for (final entry in groups.entries) {
+      if (entry.value.length <= 1) continue;
+      // Keep the earliest-opened tab (smallest index). entry.value already
+      // arrived in insertion order because we iterated searchHandler.tabs
+      // top-down — drop everything past the first.
+      toRemove.addAll(entry.value.skip(1));
+    }
+    return toRemove;
+  }
+
+  Future<void> removeDuplicateTabs() async {
+    final List<SearchTab> toRemove = _computeDuplicateTabsToRemove();
+    if (toRemove.isEmpty) return;
+
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remove duplicate tabs'),
+        content: Text(
+          'Keep one copy of each duplicate and delete the other ${toRemove.length}? '
+          'The earliest-opened copy in each group is kept.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+          ElevatedButton.icon(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            icon: const Icon(Icons.delete_outline),
+            label: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    searchHandler.removeTabs(toRemove);
+    getTabs();
   }
 
   Widget filterBuild() {
@@ -724,7 +829,10 @@ class _TabManagerPageState extends State<TabManagerPage> {
               drawBottomBorder: false,
               margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               // margin: const EdgeInsets.fromLTRB(2, 8, 2, 5),
-              onChanged: (_) => getTabs(),
+              onChanged: (_) {
+                _savedFilterText = filterTextController.text;
+                getTabs();
+              },
               enableIMEPersonalizedLearning: !settingsHandler.incognitoKeyboard,
             ),
           ),
@@ -809,6 +917,7 @@ class _TabManagerPageState extends State<TabManagerPage> {
             : () {
                 searchHandler.changeTabIndex(
                   searchHandler.tabs.indexOf(tab),
+                  byUser: true,
                 );
                 Navigator.of(context).pop();
               },
@@ -1011,6 +1120,116 @@ class _TabManagerPageState extends State<TabManagerPage> {
     );
   }
 
+  // Opens the tab a history entry points to. Jumps to it if it's still open
+  // (matched by tab id); otherwise re-opens a fresh tab with the same query
+  // and booru.
+  Booru? _booruByName(String name) {
+    for (final b in settingsHandler.booruList) {
+      if (b.name == name) return b;
+    }
+    return null;
+  }
+
+  void _openVisitedTab(TabVisit visit) {
+    final int existingIndex = searchHandler.tabs.indexWhere((t) => t.id == visit.tabId);
+    if (existingIndex != -1) {
+      searchHandler.changeTabIndex(existingIndex, byUser: true);
+    } else {
+      final Booru? booru = _booruByName(visit.booruName);
+      // Re-open a closed tab right next to the active one (not at the end),
+      // reusing the history entry's id so it maps back to the SAME history
+      // entry instead of spawning a duplicate once it's tapped/recorded.
+      searchHandler.addTabByString(
+        visit.tags,
+        customBooru: booru,
+        switchToNew: true,
+        addMode: TabAddMode.next,
+        tabId: visit.tabId,
+      );
+    }
+    if (mounted) Navigator.of(context).pop();
+  }
+
+  void showVisitHistoryDialog() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return SettingsDialog(
+          title: const Text('Visited tabs history'),
+          contentItems: [
+            Obx(() {
+              final history = searchHandler.visitedTabsHistory;
+              if (history.isEmpty) {
+                return const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Center(
+                    child: Text('No visited tabs yet.\nTabs you open by tapping them will show up here.'),
+                  ),
+                );
+              }
+              // most-recent first
+              final entries = history.reversed.toList();
+              return SizedBox(
+                width: double.maxFinite,
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: entries.length,
+                  separatorBuilder: (_, _) => const Divider(height: 1),
+                  itemBuilder: (context, i) {
+                    final visit = entries[i];
+                    final bool stillOpen = searchHandler.tabs.any((t) => t.id == visit.tabId);
+                    final Booru? booru = _booruByName(visit.booruName);
+                    final String tagsLabel = visit.tags.trim().isEmpty ? '(empty search)' : visit.tags.trim();
+                    return ListTile(
+                      dense: true,
+                      leading: booru != null
+                          ? BooruFavicon(booru)
+                          : const Icon(Icons.public, size: 20),
+                      title: Text(
+                        tagsLabel,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: Text(
+                        '${visit.booruName.isEmpty ? 'Unknown booru' : visit.booruName} · ${_formatVisitTime(visit.visitedAt)}${stillOpen ? '' : ' · closed'}',
+                        style: const TextStyle(fontSize: 11),
+                      ),
+                      trailing: Icon(
+                        stillOpen ? Icons.open_in_new : Icons.restart_alt,
+                        size: 18,
+                      ),
+                      onTap: () => _openVisitedTab(visit),
+                    );
+                  },
+                ),
+              );
+            }),
+          ],
+          actionButtons: [
+            if (searchHandler.visitedTabsHistory.isNotEmpty)
+              TextButton.icon(
+                icon: const Icon(Icons.delete_outline),
+                label: const Text('Clear'),
+                onPressed: () {
+                  searchHandler.clearVisitedTabsHistory();
+                  Navigator.of(context).pop();
+                },
+              ),
+            const CancelButton(withIcon: true),
+          ],
+        );
+      },
+    );
+  }
+
+  String _formatVisitTime(DateTime t) {
+    final Duration diff = DateTime.now().difference(t);
+    if (diff.inSeconds < 60) return 'just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    return '${diff.inDays}d ago';
+  }
+
   void showHelpDialog() {
     showDialog(
       context: context,
@@ -1091,6 +1310,26 @@ class _TabManagerPageState extends State<TabManagerPage> {
                 const TabSortingIcon(TabSortingMode.booruReverse, withBorder: true),
                 const SizedBox(width: 10),
                 Expanded(child: Text(context.loc.tabs.sortByBooruNameReversed)),
+              ],
+            ),
+            const SizedBox(height: 6),
+            const Row(
+              children: [
+                TabSortingIcon(TabSortingMode.booruOpenOrder, withBorder: true),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text('Group by booru, keep tabs in the order they were opened'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            const Row(
+              children: [
+                TabSortingIcon(TabSortingMode.booruOpenOrderReverse, withBorder: true),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text('Same, with booru groups in reverse alphabetical order'),
+                ),
               ],
             ),
             const SizedBox(height: 6),
@@ -1293,12 +1532,25 @@ class _TabManagerPageState extends State<TabManagerPage> {
                     sortingMode = TabSortingMode.booruReverse;
                     break;
                   case TabSortingMode.booruReverse:
+                    sortingMode = TabSortingMode.booruOpenOrder;
+                    break;
+                  case TabSortingMode.booruOpenOrder:
+                    sortingMode = TabSortingMode.booruOpenOrderReverse;
+                    break;
+                  case TabSortingMode.booruOpenOrderReverse:
                     sortingMode = TabSortingMode.none;
                     break;
                 }
+                _persistSortingMode();
                 getTabs();
               },
             ),
+          ),
+          const SizedBox(width: 8),
+          IconButton(
+            icon: const Icon(Icons.history),
+            tooltip: 'Visited tabs history',
+            onPressed: showVisitHistoryDialog,
           ),
           const SizedBox(width: 8),
           IconButton(
@@ -1312,6 +1564,21 @@ class _TabManagerPageState extends State<TabManagerPage> {
       body: Column(
         children: [
           filterBuild(),
+          // Visible only when the duplicate filter is on. One tap removes
+          // every extra copy of each duplicate group (keeping the
+          // earliest-opened tab).
+          if (duplicateFilter)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+              child: SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: removeDuplicateTabs,
+                  icon: const Icon(Icons.cleaning_services_outlined),
+                  label: const Text('Remove all duplicates (keep one copy)'),
+                ),
+              ),
+            ),
           Expanded(
             child: Stack(
               children: [
@@ -1717,7 +1984,13 @@ class TabSortingIcon extends StatelessWidget {
           Transform(
             alignment: Alignment.center,
             transform: Matrix4.rotationX((sortingMode.isAnyReverse || sortingMode.isNone) ? 0 : pi),
-            child: Icon(sortingMode.isNone ? Icons.sort_by_alpha : Icons.sort),
+            child: Icon(
+              sortingMode.isNone
+                  ? Icons.sort_by_alpha
+                  : sortingMode.isAnyBooruOpenOrder
+                  ? Icons.schedule
+                  : Icons.sort,
+            ),
           ),
           if (sortingMode.isAnyBooru)
             Positioned(

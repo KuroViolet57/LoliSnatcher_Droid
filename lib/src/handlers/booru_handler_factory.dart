@@ -1,11 +1,13 @@
 import 'package:lolisnatcher/src/boorus/agnph_handler.dart';
 import 'package:lolisnatcher/src/boorus/booru_on_rails_handler.dart';
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
+import 'package:lolisnatcher/src/boorus/collections_handler.dart';
 import 'package:lolisnatcher/src/boorus/danbooru_handler.dart';
 import 'package:lolisnatcher/src/boorus/downloads_handler.dart';
 import 'package:lolisnatcher/src/boorus/e621_handler.dart';
 import 'package:lolisnatcher/src/boorus/empty_handler.dart';
 import 'package:lolisnatcher/src/boorus/favourites_handler.dart';
+import 'package:lolisnatcher/src/boorus/foryou_handler.dart';
 import 'package:lolisnatcher/src/boorus/gelbooru_alikes_handler.dart';
 import 'package:lolisnatcher/src/boorus/gelbooru_handler.dart';
 import 'package:lolisnatcher/src/boorus/gelbooruv1_handler.dart';
@@ -21,11 +23,16 @@ import 'package:lolisnatcher/src/boorus/r34hentai_handler.dart';
 import 'package:lolisnatcher/src/boorus/r34us_handler.dart';
 import 'package:lolisnatcher/src/boorus/rainbooru_handler.dart';
 import 'package:lolisnatcher/src/boorus/realbooru_handler.dart';
+import 'package:lolisnatcher/src/boorus/redgifs_handler.dart';
+import 'package:lolisnatcher/src/boorus/rule34dev_handler.dart';
 import 'package:lolisnatcher/src/boorus/sankaku_handler.dart';
 import 'package:lolisnatcher/src/boorus/shimmie_handler.dart';
 import 'package:lolisnatcher/src/boorus/szurubooru_handler.dart';
+import 'package:lolisnatcher/src/boorus/webview_browser_handler.dart';
 import 'package:lolisnatcher/src/boorus/wildcritters_handler.dart';
 import 'package:lolisnatcher/src/boorus/worldxyz_handler.dart';
+import 'package:lolisnatcher/src/boorus/xxxfollow_handler.dart';
+import 'package:lolisnatcher/src/boorus/xxxtik_handler.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -120,6 +127,12 @@ class BooruHandlerFactory {
         case BooruType.Favourites:
           booruHandler = FavouritesHandler(booru, limit);
           break;
+        case BooruType.Collections:
+          booruHandler = CollectionsHandler(booru, limit);
+          break;
+        case BooruType.ForYou:
+          booruHandler = ForYouHandler(booru, limit);
+          break;
         case BooruType.Rainbooru:
           pageNum = 0;
           booruHandler = RainbooruHandler(booru, limit);
@@ -149,6 +162,30 @@ class BooruHandlerFactory {
         case BooruType.NyanPals:
           pageNum = 0;
           booruHandler = NyanPalsHandler(booru, limit);
+          break;
+        case BooruType.RedGifs:
+          // redgifs pages start at 1
+          pageNum = 0;
+          booruHandler = RedGifsHandler(booru, limit);
+          break;
+        case BooruType.Rule34Dev:
+          // rule34.dev data route is 0-based; leave pageNum at -1 so the
+          // first search increments it to page 0.
+          booruHandler = Rule34DevHandler(booru, limit);
+          break;
+        case BooruType.XXXTik:
+          // keyset cursor pagination handled inside the handler.
+          pageNum = 0;
+          booruHandler = XXXTikHandler(booru, limit);
+          break;
+        case BooruType.XXXFollow:
+          // xxxfollow's API is 1-indexed; pre-increment makes the first fetch
+          // page 1.
+          pageNum = 0;
+          booruHandler = XXXFollowHandler(booru, limit);
+          break;
+        case BooruType.WebView:
+          booruHandler = WebViewBrowserHandler(booru, limit);
           break;
         case BooruType.WildCritters:
           pageNum = 0;

@@ -5,8 +5,10 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:get/get.dart';
 
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
+import 'package:lolisnatcher/src/boorus/collections_handler.dart';
 import 'package:lolisnatcher/src/boorus/downloads_handler.dart';
 import 'package:lolisnatcher/src/boorus/favourites_handler.dart';
+import 'package:lolisnatcher/src/boorus/foryou_handler.dart';
 import 'package:lolisnatcher/src/boorus/idol_sankaku_handler.dart';
 import 'package:lolisnatcher/src/boorus/mergebooru_handler.dart';
 import 'package:lolisnatcher/src/boorus/sankaku_handler.dart';
@@ -52,7 +54,11 @@ class ThumbnailBuild extends StatelessWidget {
           RepaintBoundary(
             child: Builder(
               builder: (context) {
-                final bool isFavsOrDls = handler is FavouritesHandler || handler is DownloadsHandler;
+                final bool isFavsOrDls =
+                    handler is FavouritesHandler ||
+                    handler is DownloadsHandler ||
+                    handler is CollectionsHandler ||
+                    handler is ForYouHandler;
                 Booru? possibleBooru;
                 if (isFavsOrDls) {
                   final itemFileHost = Uri.tryParse(item.fileURL)?.host;
@@ -72,7 +78,7 @@ class ThumbnailBuild extends StatelessWidget {
                             booruHost?.isNotEmpty == true &&
                             itemFileHost! == booruHost!);
                   });
-                  if (possibleBooru?.type?.isFavouritesOrDownloads == true) {
+                  if (possibleBooru?.type?.isLocalDb == true || possibleBooru?.type?.isForYou == true) {
                     possibleBooru = null;
                   }
                 }

@@ -54,9 +54,9 @@ class TabButtons extends StatelessWidget {
         onPressed: () {
           // switch to the prev tab, loop if reached the first
           if ((searchHandler.currentIndex - 1) < 0) {
-            searchHandler.changeTabIndex(searchHandler.total - 1);
+            searchHandler.changeTabIndex(searchHandler.total - 1, byUser: true);
           } else {
-            searchHandler.changeTabIndex(searchHandler.currentIndex - 1);
+            searchHandler.changeTabIndex(searchHandler.currentIndex - 1, byUser: true);
           }
         },
       );
@@ -68,9 +68,9 @@ class TabButtons extends StatelessWidget {
         onPressed: () {
           // switch to the next tab, loop if reached the last
           if ((searchHandler.currentIndex + 1) > (searchHandler.total - 1)) {
-            searchHandler.changeTabIndex(0);
+            searchHandler.changeTabIndex(0, byUser: true);
           } else {
-            searchHandler.changeTabIndex(searchHandler.currentIndex + 1);
+            searchHandler.changeTabIndex(searchHandler.currentIndex + 1, byUser: true);
           }
         },
       );

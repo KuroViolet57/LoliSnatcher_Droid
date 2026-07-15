@@ -154,7 +154,21 @@ class TagHandler {
         if (workingTags.isNotEmpty) {
           final List<Tag> newTags = await booruHandler.genTagObjects(workingTags);
           for (final Tag tag in newTags) {
-            await putTag(tag, dbEnabled: dbEnabled);
+            // Cross-booru enrichment is fill-in-only: a parsing handler that
+            // ran `addTagsWithType` already wrote the authoritative type for
+            // a given booru. We must NOT let a different booru's
+            // genTagObjects response downgrade or change that type.
+            // Only overwrite when the cached entry is still `none`.
+            final bool cachedHasType =
+                hasTag(tag.fullString) && getTag(tag.fullString).tagType != TagType.none;
+            if (cachedHasType && tag.tagType != TagType.none) {
+              continue;
+            }
+            await putTag(
+              tag,
+              dbEnabled: dbEnabled,
+              preferTypeIfNone: true,
+            );
 
             //TODO write tag to database
             tagCounter++;
@@ -173,16 +187,34 @@ class TagHandler {
     tryGetTagTypes();
   }
 
-  /// Stores given tags list with given type, if tag is already in the tag map - update it's type, but only if the type was "none"
+  /// Stores given tags list with given type.
+  ///
+  /// Parsing handlers call this during item parsing with the type they
+  /// know to be correct for the current booru (e.g. e621 classifies "human"
+  /// as `species`). That classification is authoritative for that booru, so
+  /// a non-none type ALWAYS overwrites whatever may be cached from another
+  /// booru's previous visit. We just skip the write when the cached type is
+  /// already identical, to avoid DB churn on repeat browsing.
+  ///
+  /// For `none` (general) writes we only seed unknown tags; we never
+  /// downgrade a typed tag back to none.
   Future<void> addTagsWithType(List<String> tags, TagType type) async {
     final dbEnabled = SettingsHandler.instance.dbEnabled;
 
     for (final String tag in tags) {
-      if (!hasTagAndNotStale(tag)) {
-        await putTag(Tag(tag, tagType: type), dbEnabled: dbEnabled);
-      } else if (type != TagType.none) {
-        if (getTag(tag).tagType == TagType.none) {
-          await putTag(Tag(tag, tagType: type), dbEnabled: dbEnabled);
+      final String lower = tag.trim().toLowerCase();
+      if (lower.isEmpty) continue;
+
+      final bool exists = hasTag(lower);
+      final TagType cachedType = exists ? getTag(lower).tagType : TagType.none;
+
+      if (type != TagType.none) {
+        if (!exists || cachedType != type) {
+          await putTag(Tag(lower, tagType: type), dbEnabled: dbEnabled);
+        }
+      } else {
+        if (!exists) {
+          await putTag(Tag(lower, tagType: type), dbEnabled: dbEnabled);
         }
       }
     }

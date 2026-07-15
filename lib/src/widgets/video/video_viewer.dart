@@ -80,6 +80,22 @@ class VideoViewerState extends State<VideoViewer> {
 
   bool useMpvFallbackBackend = false;
   bool attemptedMpvFallback = false;
+  Timer? mpvWatchdogTimer;
+
+  // Cached per-item HTTP headers. Computing this involves an awaited cookie
+  // lookup, so we want exactly one call per video open, not three.
+  Map<String, String>? _cachedCustomHeaders;
+  // Futures from the previous player's dispose calls — the next initPlayer
+  // awaits them so we never have two decoders fighting for the GPU.
+  final List<Future<void>> _pendingDispose = [];
+
+  Future<Map<String, String>> _customHeaders() async {
+    return _cachedCustomHeaders ??= await Tools.getFileCustomHeaders(
+      widget.booru,
+      item: widget.booruItem,
+      checkForReferer: true,
+    );
+  }
 
   bool get isVideoInited => videoController.value?.value.isInitialized ?? false;
 
@@ -92,8 +108,13 @@ class VideoViewerState extends State<VideoViewer> {
 
     unawaited(getSize());
 
-    if (!settingsHandler.mediaCache) {
-      // Media caching disabled - don't cache videos
+    // HLS streams (.m3u8) are playlists, not a single file — caching them to
+    // disk would save the manifest text, not the video, and playback from the
+    // saved file fails. Always stream HLS straight from the network.
+    final bool isHlsStream = widget.booruItem.fileURL.contains('.m3u8');
+
+    if (isHlsStream || !settingsHandler.mediaCache) {
+      // Media caching disabled (or impossible for HLS) - don't cache videos
       unawaited(initPlayer());
       return;
     }
@@ -121,11 +142,7 @@ class VideoViewerState extends State<VideoViewer> {
     cancelToken = CancelToken();
     client = DioDownloader(
       widget.booruItem.fileURL,
-      headers: await Tools.getFileCustomHeaders(
-        widget.booru,
-        item: widget.booruItem,
-        checkForReferer: true,
-      ),
+      headers: await _customHeaders(),
       cancelToken: cancelToken,
       onProgress: onBytesAdded,
       onEvent: onEvent,
@@ -151,11 +168,7 @@ class VideoViewerState extends State<VideoViewer> {
     sizeCancelToken = CancelToken();
     sizeClient = DioDownloader(
       widget.booruItem.fileURL,
-      headers: await Tools.getFileCustomHeaders(
-        widget.booru,
-        item: widget.booruItem,
-        checkForReferer: true,
-      ),
+      headers: await _customHeaders(),
       cancelToken: sizeCancelToken,
       onEvent: onEvent,
       fileNameExtras: widget.booruItem.fileNameExtras,
@@ -244,6 +257,10 @@ class VideoViewerState extends State<VideoViewer> {
     }
   }
 
+  // Only download/decode when this page is actually visible, unless the user
+  // has explicitly opted into eager neighbour preloading.
+  bool get _shouldLoadNow => widget.isViewed || settingsHandler.preloadVideos;
+
   @override
   void initState() {
     super.initState();
@@ -255,17 +272,22 @@ class VideoViewerState extends State<VideoViewer> {
     viewStateSubscription = viewController.outputStateStream.listen(onViewStateChanged);
     scaleStateSubscription = scaleController.outputScaleStateStream.listen(onScaleStateChanged);
 
-    initVideo(false);
+    if (_shouldLoadNow) {
+      initVideo(false);
+    }
   }
 
   @override
   void didUpdateWidget(VideoViewer oldWidget) {
     // force redraw on item data change
     if (oldWidget.booruItem != widget.booruItem) {
+      _cachedCustomHeaders = null;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         resetBackendFallback();
         stopLoading(reason: ViewerStopReason.reset);
-        initVideo(false);
+        if (_shouldLoadNow) {
+          initVideo(false);
+        }
         updateState();
       });
     }
@@ -275,6 +297,11 @@ class VideoViewerState extends State<VideoViewer> {
       isViewed.value = widget.isViewed;
 
       if (isViewed.value) {
+        // Deferred-load case: this page just became visible without ever
+        // having started its download. Kick it off now.
+        if (videoController.value == null && client == null && !isStopped.value) {
+          initVideo(false);
+        }
         if (settingsHandler.autoPlayEnabled) {
           videoController.value?.play();
         }
@@ -365,11 +392,22 @@ class VideoViewerState extends State<VideoViewer> {
   }
 
   void disposables() {
-    videoController.value?.setVolume(0);
-    videoController.value?.pause();
-    videoController.value?.removeListener(updateVideoState);
-    videoController.value?.dispose();
-    chewieController.value?.dispose();
+    mpvWatchdogTimer?.cancel();
+    mpvWatchdogTimer = null;
+
+    final vc = videoController.value;
+    final cc = chewieController.value;
+    vc?.setVolume(0);
+    vc?.pause();
+    vc?.removeListener(updateVideoState);
+    if (vc != null) {
+      _pendingDispose.add(vc.dispose().catchError((_) {}));
+    }
+    if (cc != null) {
+      // ChewieController.dispose is synchronous (void). Capture as a no-op
+      // future so the await chain in initPlayer still works uniformly.
+      cc.dispose();
+    }
     videoController.value = null;
     chewieController.value = null;
 
@@ -516,6 +554,15 @@ class VideoViewerState extends State<VideoViewer> {
     // ignore if player is already inited (i.e. stream+cache mode)
     if (isVideoInited) return;
 
+    // Drain any previous player's dispose calls before allocating a new
+    // decoder, otherwise on Android we end up with two MediaPlayer instances
+    // briefly contending for the GPU.
+    if (_pendingDispose.isNotEmpty) {
+      final toAwait = List<Future<void>>.from(_pendingDispose);
+      _pendingDispose.clear();
+      await Future.wait(toAwait);
+    }
+
     registerVideoBackendForCurrentAttempt();
 
     if (video != null) {
@@ -529,11 +576,7 @@ class VideoViewerState extends State<VideoViewer> {
       videoController.value = VideoPlayerController.networkUrl(
         Uri.parse(widget.booruItem.fileURL),
         videoPlayerOptions: Platform.isAndroid ? VideoPlayerOptions(mixWithOthers: true) : null,
-        httpHeaders: await Tools.getFileCustomHeaders(
-          widget.booru,
-          item: widget.booruItem,
-          checkForReferer: true,
-        ),
+        httpHeaders: await _customHeaders(),
       );
     }
     // mixWithOthers: true, allows to not interrupt audio sources from other apps
@@ -630,12 +673,26 @@ class VideoViewerState extends State<VideoViewer> {
       );
     }
 
+    // Proactive ExoPlayer→MPV watchdog: if initialize() hasn't completed in
+    // a few seconds, trigger the fallback ourselves rather than waiting for
+    // an explicit error. The reactive errorBuilder path is preserved below as
+    // belt-and-suspenders for failures that surface late.
+    mpvWatchdogTimer?.cancel();
+    if (canFallbackToMpvBackend) {
+      mpvWatchdogTimer = Timer(const Duration(seconds: 3), () {
+        if (!mounted || isVideoInited) return;
+        tryFallbackToMpvBackend('watchdog: initialize timed out');
+      });
+    }
+
     try {
       await Future.wait([videoController.value!.initialize()]);
     } catch (error) {
+      mpvWatchdogTimer?.cancel();
       if (tryFallbackToMpvBackend(error.toString())) return;
       rethrow;
     }
+    mpvWatchdogTimer?.cancel();
 
     if (settingsHandler.autoPlayEnabled) {
       await videoController.value!.play();

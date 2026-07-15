@@ -6,6 +6,7 @@ import 'package:lolisnatcher/gen/strings.g.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/pages/snatcher_page.dart';
 import 'package:lolisnatcher/src/utils/extensions.dart';
+import 'package:lolisnatcher/src/widgets/collections/add_to_collection_sheet.dart';
 import 'package:lolisnatcher/src/widgets/common/settings_widgets.dart';
 import 'package:lolisnatcher/src/widgets/drawers/downloads/dd_controller.dart';
 
@@ -62,6 +63,15 @@ class DDSelectionActions extends StatelessWidget {
                 name: '${context.loc.settings.downloads.unfavouriteSelected} (${favSelectedCount.toFormattedString()})',
                 icon: const Icon(Icons.favorite_border),
                 action: controller.unfavouriteSelected,
+              ),
+            if (controller.settingsHandler.dbEnabled)
+              SettingsButton(
+                name: 'Add to collection (${selected.length.toFormattedString()})',
+                icon: const Icon(Icons.collections_bookmark_outlined),
+                action: () {
+                  toggleDrawer();
+                  showAddToCollectionSheet(context, [...selected]);
+                },
               ),
             SettingsButton(
               name: context.loc.settings.downloads.clearSelected,

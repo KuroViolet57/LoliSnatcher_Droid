@@ -2,6 +2,7 @@ import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_suggestion.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
+import 'package:lolisnatcher/src/handlers/booru_handler_utils.dart';
 
 // TODO autoreplace both ways all that special symbol crap (see tag suggestions) to normal format for user
 // TODO fix file names like we do with shimmie, probably should move file name encode/decode process to boorus themselves instead of image writer
@@ -27,6 +28,23 @@ class BooruOnRailsHandler extends BooruHandler {
     } else {
       return tags;
     }
+  }
+
+  @override
+  String translateOrSyntax(String tags) {
+    if (!tags.contains('|')) return tags;
+    return tags
+        .split(RegExp(r'\s+'))
+        .where((t) => t.isNotEmpty)
+        .map((token) {
+          if (!token.contains('|')) return token;
+          final parts = token.split('|').where((p) => p.isNotEmpty).toList();
+          if (parts.isEmpty) return '';
+          if (parts.length == 1) return parts.first;
+          return '(${parts.join(' || ')})';
+        })
+        .where((s) => s.isNotEmpty)
+        .join(' ');
   }
 
   @override
@@ -86,19 +104,7 @@ class BooruOnRailsHandler extends BooruHandler {
     }
   }
 
-  String formatTagsWithUnderscores(String tags) {
-    final tagsList = tags.split(' ');
-
-    for (int i = 0; i < tagsList.length; i++) {
-      final tag = tagsList[i];
-      if (tag.contains('"')) {
-        tagsList[i] = tag.replaceAll('"', '');
-      } else {
-        tagsList[i] = tag.replaceAll('_', '+');
-      }
-    }
-    return tagsList.join(' ');
-  }
+  String formatTagsWithUnderscores(String tags) => formatTagsWithUnderscoresPhilomena(tags);
 
   @override
   String makeURL(String tags) {
