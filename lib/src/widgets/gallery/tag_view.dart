@@ -52,7 +52,6 @@ import 'package:lolisnatcher/src/widgets/common/close_dialog_button.dart';
 import 'package:lolisnatcher/src/widgets/common/draggable_overflow_text.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 import 'package:lolisnatcher/src/widgets/common/kaomoji.dart';
-import 'package:lolisnatcher/src/widgets/common/marquee_text.dart';
 import 'package:lolisnatcher/src/widgets/common/parsed_text.dart';
 import 'package:lolisnatcher/src/widgets/common/settings_widgets.dart';
 import 'package:lolisnatcher/src/widgets/desktop/desktop_scroll.dart';
@@ -1456,50 +1455,87 @@ Future<void> showTagDialog({
   final searchHandler = SearchHandler.instance;
   final tagHandler = TagHandler.instance;
 
-  await showDialog(
+  final Color typeColor = tagHandler.getTag(tag).getColour() ?? const Color(0xFF8A80A0);
+  final String typeName = tagHandler.getTag(tag).tagType.locName;
+  await showModalBottomSheet<void>(
     context: context,
     routeSettings: RouteSettings(name: 'tagDialog/$tag'),
+    isScrollControlled: true,
+    useSafeArea: true,
+    backgroundColor: Colors.transparent,
     builder: (BuildContext context) {
-      return SettingsDialog(
-        contentPadding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-        contentItems: [
-          SizedBox(
-            height: 60,
-            width: MediaQuery.sizeOf(context).width,
-            child: ListTile(
-              title: MarqueeText(
-                key: ValueKey(tag),
-                text: tag,
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                ),
-                isExpanded: false,
+      return Container(
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // drag handle
+            Container(
+              margin: const EdgeInsets.only(top: 8, bottom: 2),
+              width: 40,
+              height: 4.5,
+              decoration: BoxDecoration(
+                color: const Color(0xFF4A4260),
+                borderRadius: BorderRadius.circular(3),
               ),
             ),
-          ),
-          Row(
-            children: [
-              Container(
-                width: 6,
-                height: 24,
-                decoration: BoxDecoration(
-                  color: tagHandler.getTag(tag).getColour(),
-                  borderRadius: BorderRadius.circular(5),
-                ),
+            // Flow header: type-colour bar + tag name (in type colour) + type + close
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 8, 4),
+              child: Row(
+                children: [
+                  Container(
+                    width: 4,
+                    height: 30,
+                    decoration: BoxDecoration(
+                      color: typeColor,
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          tag.replaceAll('_', ' '),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: typeColor,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        Text(
+                          typeName,
+                          style: const TextStyle(
+                            color: Color(0xFF8A80A0),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ],
               ),
-              const SizedBox(width: 10),
-              Text(
-                tagHandler.getTag(tag).tagType.locName,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          //
+            ),
+            const Divider(height: 1),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                padding: const EdgeInsets.only(bottom: 8),
+                children: [
+                  //
           // Boorusama-style floating preview window (draggable/resizable,
           // opens over whatever page spawned this dialog).
           ListTile(
@@ -1783,18 +1819,11 @@ Future<void> showTagDialog({
               onUpdate();
             },
           ),
-          //
-          ListTile(
-            leading: Icon(
-              Icons.cancel_outlined,
-              color: Theme.of(context).iconTheme.color,
+                ],
+              ),
             ),
-            title: Text(context.loc.close),
-            onTap: () {
-              Navigator.of(context).pop();
-            },
-          ),
-        ],
+          ],
+        ),
       );
     },
   );
