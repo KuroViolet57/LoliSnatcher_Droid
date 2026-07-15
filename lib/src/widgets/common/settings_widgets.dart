@@ -321,45 +321,50 @@ class SettingsToggleTristate extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: ListTile(
-        title: Row(
-          children: [
-            if (leadingIcon != null)
-              Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: leadingIcon,
-              ),
-            Expanded(
-              child: Text(title),
-            ),
-            const SizedBox(width: 4),
-            if (defaultValue != null && value != defaultValue)
-              Padding(
-                padding: const EdgeInsets.only(left: 8),
-                child: IconButton(
-                  icon: const Icon(Icons.restore),
-                  onPressed: () {
-                    onChanged(defaultValue);
-                  },
+    final theme = Theme.of(context);
+    final BorderRadius radius = BorderRadius.circular(13);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+      child: Material(
+        color: theme.colorScheme.surfaceContainer,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: radius,
+          side: BorderSide(color: theme.colorScheme.outlineVariant),
+        ),
+        child: ListTile(
+          title: Row(
+            children: [
+              if (leadingIcon != null)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: leadingIcon,
                 ),
+              Expanded(
+                child: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
               ),
-            trailingIcon ?? const SizedBox(width: 8),
-          ],
-        ),
-        subtitle: subtitle,
-        trailing: Checkbox(
-          value: value,
-          tristate: true,
-          onChanged: (_) => _onChangedToggle(),
-        ),
-        onTap: _onChangedToggle,
-        shape: Border(
-          top: drawTopBorder ? BorderSide(color: Theme.of(context).dividerColor, width: borderWidth) : BorderSide.none,
-          bottom: drawBottomBorder
-              ? BorderSide(color: Theme.of(context).dividerColor, width: borderWidth)
-              : BorderSide.none,
+              const SizedBox(width: 4),
+              if (defaultValue != null && value != defaultValue)
+                Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: IconButton(
+                    icon: const Icon(Icons.restore),
+                    onPressed: () {
+                      onChanged(defaultValue);
+                    },
+                  ),
+                ),
+              trailingIcon ?? const SizedBox(width: 8),
+            ],
+          ),
+          subtitle: subtitle,
+          trailing: Checkbox(
+            value: value,
+            tristate: true,
+            onChanged: (_) => _onChangedToggle(),
+          ),
+          onTap: _onChangedToggle,
+          shape: RoundedRectangleBorder(borderRadius: radius),
         ),
       ),
     );
@@ -1195,29 +1200,30 @@ class _SettingsTextInputState extends State<SettingsTextInput> {
       );
     }
 
-    return Material(
-      color: Colors.transparent,
-      child: ListTile(
-        title: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (!widget.titleAsLabel) Text(widget.title),
-            field,
-          ],
+    final theme = Theme.of(context);
+    final BorderRadius radius = BorderRadius.circular(13);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+      child: Material(
+        color: theme.colorScheme.surfaceContainer,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: radius,
+          side: BorderSide(color: theme.colorScheme.outlineVariant),
         ),
-        subtitle: widget.subtitle,
-        trailing: widget.trailingIcon,
-        dense: false,
-        shape: Border(
-          // draw top border when item is in the middle of other items, but they are not listtile
-          top: widget.drawTopBorder
-              ? BorderSide(color: Theme.of(context).dividerColor, width: borderWidth)
-              : BorderSide.none,
-          // draw bottom border when item is among other listtiles, but not when it's the last one
-          bottom: widget.drawBottomBorder
-              ? BorderSide(color: Theme.of(context).dividerColor, width: borderWidth)
-              : BorderSide.none,
+        child: ListTile(
+          title: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (!widget.titleAsLabel) Text(widget.title, style: const TextStyle(fontWeight: FontWeight.w600)),
+              field,
+            ],
+          ),
+          subtitle: widget.subtitle,
+          trailing: widget.trailingIcon,
+          dense: false,
+          shape: RoundedRectangleBorder(borderRadius: radius),
         ),
       ),
     );
