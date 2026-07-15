@@ -202,17 +202,33 @@ tag-type colors, per-screen specs 1-16).
   Size/Type/Posted/Uploader/Source(link)/MD5, tap row = copy.
 - main_drawer got the Flow "Menu" header + close.
 
-**REMAINING PHASES (per zip spec screens; not yet done):**
-- Query Editor helper-key row + suggestion pins (screen 06,
-  main_search_query_editor_page.dart).
-- Settings hub cards SEARCH/LOOK&FEEL/SYSTEM (screen 15) + data-driven detail
-  pages; "Media size on open" slider.
-- Favorites filter chips + 3-col grid (screen 18); Downloads screen (17).
-- Left sidebar (screen 03): reconcile with the quick-access I already put in the
-  downloads drawer (pinned tags top + quick access bottom).
-- Minimized preview bubble (screen 22), Pin-tag sheet (20), hidden submenu (21)
-  — some already exist as dialogs, could go to sheets.
-- Snackbar Flow style; Material Symbols Rounded icons.
+**FEEDBACK-DRIVEN FIXES + FULL SWEEP (builds 5210w–5210z):**
+- Search bar chips: fixed-height custom chips (were stretching); tap=edit, ✕=remove.
+- Left sidebar (drawer_quick_access.dart): rebuilt to screen 03 — "Pinned tags"
+  header + pinned-tag rows (dbHandler.getAllPinnedTags; tap=add to search) at top,
+  QUICK ACCESS section (Global blacklist→TagsFiltersPage, For You blacklist→ForYou
+  BooruEdit, Favorites→fav tab, Saved searches→HistoryList, Collections→
+  CollectionsPage) at bottom. No recent searches.
+- Right drawer (main_drawer.dart): removed old tab manager (TabSelector/TabButtons/
+  SavedSearchesDrawerSection); order = Menu header → search → booru card →
+  multibooru → Downloads → Favourites → …settings/webview.
+- Tab manager (TabManagerItem in tab_selector.dart): compact Flow rows (avatar +
+  tag-coloured query via TabRow + "booru · count" + tune/close, active tint).
+- Settings row widgets (settings_widgets.dart): SettingsButton, SettingsToggle,
+  SettingsToggleTristate, SettingsTextInput, SettingsDropdown → Flow cards
+  (surfaceContainer + outlineVariant, w600 labels, chevron on page rows). Hub
+  grouped into SEARCH/LOOK&FEEL/SYSTEM/ABOUT (settings_page.dart).
+- History/saved-searches rows (history.dart): Flow cards + gold "kept" star.
+
+**STILL OPEN (niche / lower-visibility):**
+- 3 rarer settings widgets not yet carded: SettingsSegmentedButton,
+  SettingsOptionsList, SettingsBooruDropdown (still divider style).
+- Favorites filter chips + 3-col grid (screen 18) — needs grid media-type filter.
+- Snatcher/Downloads screen batch banner (17); "Media size on open" slider;
+  minimized preview bubble (22); light Flow snackbar (risky — flash pkg controls
+  title colour); Material Symbols Rounded icon set (pkg not in pubspec).
+- collections_page / foryou_page already inherit Flow via theme tokens; floating
+  preview window + add-to-collection sheet also theme-driven (already Flow-ish).
 - Phase 2 — Browse (`mobile_home_page`/`waterfall_view`): tab-card carousel w/
   edit btn + peek + dashed "+" ; header (tabs pill + menu); 2-col grid tiles
   (badges bottom-left type+duration on scrim, heart bottom-right, r14); bottom
