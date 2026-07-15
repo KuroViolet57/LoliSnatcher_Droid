@@ -134,7 +134,16 @@ class FlashElements {
     final bool isDesktop =
         !ignoreDesktopCheck && (SettingsHandler.instance.appMode.value.isDesktop || SettingsHandler.isDesktopPlatform);
     final bool isTooWide = screenSize.width > 500;
-    final bool isDark = themeData.brightness == Brightness.dark;
+    // Flow snackbar: a light lilac bar with dark text (per the design tokens).
+    // Title + content + default icon are forced to the dark ink so nothing is
+    // unreadable on the light background; semantic leadingIconColor (red/green)
+    // is respected when explicitly provided.
+    const Color flowSnackBg = Color(0xFFE9E2F5);
+    const Color flowSnackFg = Color(0xFF2A2240);
+    final Widget flowTitle = DefaultTextStyle.merge(
+      style: const TextStyle(color: flowSnackFg, fontWeight: FontWeight.w800),
+      child: title,
+    );
 
     final String usedKey = key ?? (title is Text ? title.data : null) ?? uuid.v4();
 
@@ -179,18 +188,18 @@ class FlashElements {
             backgroundColor: Colors.transparent,
             surfaceTintColor: Colors.transparent,
             content: DefaultTextStyle(
-              style: TextStyle(color: themeData.colorScheme.onSurface),
+              style: const TextStyle(color: flowSnackFg),
               child: GestureDetector(
                 onTap: tapToClose ? () => controller.dismiss() : null,
                 child: FlashBar(
+                  backgroundColor: flowSnackBg,
                   controller: controller,
-                  title: title,
+                  title: flowTitle,
                   content: content,
                   indicatorColor: sideColor,
                   clipBehavior: Clip.antiAlias,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: const BorderRadius.all(Radius.circular(8)),
-                    side: BorderSide(color: isDark ? Colors.grey[800]! : Colors.grey[300]!),
+                  shape: const RoundedRectangleBorder(
+                    borderRadius: BorderRadius.all(Radius.circular(14)),
                   ),
                   dismissDirections: const [],
                   shadowColor: Colors.black.withValues(alpha: 0.4),
@@ -201,7 +210,7 @@ class FlashElements {
                         padding: const EdgeInsets.all(12),
                         child: Icon(
                           leadingIcon,
-                          color: leadingIconColor ?? themeData.colorScheme.onSurface,
+                          color: leadingIconColor ?? flowSnackFg,
                           size: leadingIconSize,
                         ),
                       ),
@@ -227,7 +236,7 @@ class FlashElements {
         addController(usedKey, controller);
 
         return FlashBar(
-          title: title,
+          title: flowTitle,
           controller: controller,
           position: position,
           forwardAnimationCurve: Curves.linearToEaseOut,
@@ -237,7 +246,7 @@ class FlashElements {
             FlashDismissDirection.endToStart,
           ],
           content: DefaultTextStyle(
-            style: TextStyle(color: themeData.colorScheme.onSurface),
+            style: const TextStyle(color: flowSnackFg),
             child: GestureDetector(
               onTap: tapToClose ? () => controller.dismiss() : null,
               child: content,
@@ -251,23 +260,22 @@ class FlashElements {
           clipBehavior: Clip.antiAlias,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.only(
-              topLeft: const Radius.circular(8),
-              topRight: const Radius.circular(8),
-              bottomLeft: (isDesktop && isTooWide) ? Radius.zero : const Radius.circular(8),
-              bottomRight: (isDesktop && isTooWide) ? Radius.zero : const Radius.circular(8),
+              topLeft: const Radius.circular(14),
+              topRight: const Radius.circular(14),
+              bottomLeft: (isDesktop && isTooWide) ? Radius.zero : const Radius.circular(14),
+              bottomRight: (isDesktop && isTooWide) ? Radius.zero : const Radius.circular(14),
             ),
-            side: BorderSide(color: isDark ? Colors.grey[800]! : Colors.grey[300]!),
           ),
           shadowColor: Colors.black.withValues(alpha: 0.4),
           elevation: 8,
-          backgroundColor: themeData.colorScheme.surface,
+          backgroundColor: flowSnackBg,
           icon:
               overrideLeadingIconWidget ??
               Padding(
                 padding: const EdgeInsets.all(12),
                 child: Icon(
                   leadingIcon,
-                  color: leadingIconColor ?? themeData.colorScheme.onSurface,
+                  color: leadingIconColor ?? flowSnackFg,
                   size: leadingIconSize,
                 ),
               ),
@@ -295,9 +303,10 @@ Widget _defaultPrimaryAction(
       ),
       child: IconButton(
         onPressed: () => controller.dismiss(),
-        icon: Icon(
+        icon: const Icon(
           Icons.close,
-          color: themeData.colorScheme.onSurface,
+          // Dark ink to match the light Flow snackbar.
+          color: Color(0xFF2A2240),
         ),
       ),
     ),

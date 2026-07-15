@@ -21,6 +21,7 @@ import 'package:lolisnatcher/src/widgets/preview/shimmer_builder.dart';
 import 'package:lolisnatcher/src/widgets/preview/staggered_builder.dart';
 import 'package:lolisnatcher/src/widgets/preview/discovery_strip.dart';
 import 'package:lolisnatcher/src/widgets/preview/flow_tab_carousel.dart';
+import 'package:lolisnatcher/src/widgets/preview/media_filter_chips.dart';
 import 'package:lolisnatcher/src/widgets/preview/waterfall_bottom_bar.dart';
 import 'package:lolisnatcher/src/widgets/root/main_appbar.dart';
 
@@ -449,6 +450,18 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware {
                           // Flow tab-card carousel: swipeable tab cards under the
                           // header (active tab = wide card, others peek, dashed +).
                           const SliverToBoxAdapter(child: FlowTabCarousel()),
+                          // Media-type filter chips for the local feeds
+                          // (Favourites / Downloads / Collections).
+                          if (searchHandler.currentTab.selectedBooru.value.type?.isLocalDb == true)
+                            SliverPadding(
+                              padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
+                              sliver: SliverToBoxAdapter(
+                                child: MediaFilterChips(
+                                  key: ValueKey('media-filter-${searchHandler.currentTabId}'),
+                                  tab: searchHandler.currentTab,
+                                ),
+                              ),
+                            ),
                           // Discovery strip: creators + similar tags above the
                           // results, for any handler that populates them
                           // (xxxfollow, redgifs). No-op for the rest.

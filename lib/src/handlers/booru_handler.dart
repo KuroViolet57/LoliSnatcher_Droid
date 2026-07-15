@@ -61,6 +61,10 @@ abstract class BooruHandler {
   RxList<BooruItem> fetched = RxList<BooruItem>([]);
   RxList<BooruItem> filteredFetched = RxList<BooruItem>([]);
 
+  /// Media-type filter for the grid ('all' | 'image' | 'video' | 'sound').
+  /// Driven by the Favourites/Downloads filter chips; applied in filterFetched.
+  String mediaFilter = 'all';
+
   /// Filters the list of fetched items and stores them in filteredFetched
   ///
   /// Should always be called after fetched changed (so don't forget to add it in custom afterParseResponse or search methods)
@@ -83,6 +87,17 @@ abstract class BooruHandler {
 
       if (settingsHandler.filterAi && item.isAI) {
         continue;
+      }
+
+      if (mediaFilter != 'all') {
+        final mt = item.mediaType.value;
+        final bool keep = switch (mediaFilter) {
+          'image' => mt.isImage || mt.isAnimation,
+          'video' => mt.isVideo,
+          'sound' => item.isSound,
+          _ => true,
+        };
+        if (!keep) continue;
       }
 
       final bool filterFavourites = settingsHandler.filterFavourites && booru.type?.isFavourites != true;
