@@ -49,6 +49,7 @@ import 'package:lolisnatcher/src/utils/extensions.dart';
 import 'package:lolisnatcher/src/utils/text_parser/rules/url_rule.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 import 'package:lolisnatcher/src/widgets/collections/add_to_collection_sheet.dart';
+import 'package:lolisnatcher/src/widgets/gallery/post_details_sheet.dart';
 import 'package:lolisnatcher/src/widgets/common/close_dialog_button.dart';
 import 'package:lolisnatcher/src/widgets/common/draggable_overflow_text.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
@@ -1035,6 +1036,12 @@ class _TagViewState extends State<TagView> {
               label: 'Collect',
               activeColor: const Color(0xFFE8C46B),
               onTap: () => showAddToCollectionSheet(context, [item]),
+            ),
+            btn(
+              icon: Icons.info_outline,
+              label: 'Details',
+              activeColor: theme.colorScheme.secondary,
+              onTap: () => showPostDetailsSheet(context, item),
             ),
           ],
         ),
