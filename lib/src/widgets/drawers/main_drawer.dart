@@ -23,6 +23,7 @@ import 'package:lolisnatcher/src/widgets/saved_searches/saved_search_tile.dart';
 import 'package:lolisnatcher/src/widgets/saved_searches/saved_searches_page.dart';
 import 'package:lolisnatcher/src/widgets/tabs/tab_buttons.dart';
 import 'package:lolisnatcher/src/widgets/tabs/tab_selector.dart';
+import 'package:lolisnatcher/src/widgets/common/inner_drawer.dart';
 import 'package:lolisnatcher/src/widgets/webview/webview_page.dart';
 
 class MainDrawer extends StatelessWidget {
@@ -77,12 +78,36 @@ class MainDrawer extends StatelessWidget {
       child: SafeArea(
         child: Column(
           children: [
+            // Flow drawer header
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 14, 8, 2),
+              child: Row(
+                children: [
+                  Text(
+                    'Menu',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () {
+                      final state = SearchHandler.instance.mainDrawerKey.currentState;
+                      if (state is InnerDrawerState) state.close();
+                    },
+                  ),
+                ],
+              ),
+            ),
             RepaintBoundary(
               child: Obx(() {
                 if (settingsHandler.booruList.isNotEmpty && searchHandler.tabs.isNotEmpty) {
                   return Container(
                     height: MainSearchBar.height,
-                    margin: const EdgeInsets.fromLTRB(2, 24, 2, 12),
+                    margin: const EdgeInsets.fromLTRB(2, 4, 2, 12),
                     child: const MainSearchBarWithActions('drawer'),
                   );
                 } else {
