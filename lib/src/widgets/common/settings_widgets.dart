@@ -586,8 +586,17 @@ class SettingsDropdown<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
+    final cardTheme = Theme.of(context);
+    final BorderRadius cardRadius = BorderRadius.circular(13);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+      child: Material(
+      color: cardTheme.colorScheme.surfaceContainer,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: cardRadius,
+        side: BorderSide(color: cardTheme.colorScheme.outlineVariant),
+      ),
       child: ListTile(
         title: Column(
           mainAxisSize: MainAxisSize.min,
@@ -596,7 +605,7 @@ class SettingsDropdown<T> extends StatelessWidget {
             if (!titleAsLabel)
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
-                child: Text(title),
+                child: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
               ),
             LoliDropdown(
               value: value,
@@ -639,14 +648,8 @@ class SettingsDropdown<T> extends StatelessWidget {
                 : null),
         dense: false,
         contentPadding: contentPadding,
-        shape: Border(
-          // draw top border when item is in the middle of other items, but they are not listtile
-          top: drawTopBorder ? BorderSide(color: Theme.of(context).dividerColor, width: borderWidth) : BorderSide.none,
-          // draw bottom border when item is among other listtiles, but not when it's the last one
-          bottom: drawBottomBorder
-              ? BorderSide(color: Theme.of(context).dividerColor, width: borderWidth)
-              : BorderSide.none,
-        ),
+        shape: RoundedRectangleBorder(borderRadius: cardRadius),
+      ),
       ),
     );
   }
