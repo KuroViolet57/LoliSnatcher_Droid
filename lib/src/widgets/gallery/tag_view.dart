@@ -40,6 +40,7 @@ import 'package:lolisnatcher/src/handlers/interests_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/handlers/snatch_handler.dart';
 import 'package:lolisnatcher/src/handlers/tag_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/pages/gallery_view_page.dart';
@@ -938,6 +939,109 @@ class _TagViewState extends State<TagView> {
     ];
   }
 
+  // Flow post-action row (Favorite / Save / Collect) shown at the top of the
+  // info panel. Reuses the existing favourite / snatch / collection plumbing.
+  void _toggleFavourite() {
+    final int idx = handler.filteredFetched.indexOf(item);
+    if (idx < 0) return;
+    searchHandler.currentTab.toggleItemFavourite(idx);
+  }
+
+  void _snatchItem(BuildContext context) {
+    SnatchHandler.instance.queue(
+      [item],
+      handler.booru,
+      settingsHandler.snatchCooldown,
+      false,
+    );
+    FlashElements.showSnackbar(
+      context: context,
+      duration: const Duration(seconds: 2),
+      title: const Text('Queued for download', style: TextStyle(fontSize: 18)),
+      leadingIcon: Icons.download,
+      sideColor: const Color(0xFF7FC98B),
+    );
+  }
+
+  Widget _flowActionRow(BuildContext context) {
+    final theme = Theme.of(context);
+
+    Widget btn({
+      required IconData icon,
+      required String label,
+      required Color activeColor,
+      required VoidCallback onTap,
+      bool active = false,
+    }) {
+      final Color fg = active ? activeColor : theme.colorScheme.onSurface;
+      return Expanded(
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 22, color: fg),
+                const SizedBox(height: 3),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: active ? activeColor : theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 6),
+      child: Container(
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainer,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: theme.colorScheme.outlineVariant),
+        ),
+        child: Row(
+          children: [
+            Obx(() {
+              final bool fav = item.isFavourite.value == true;
+              return btn(
+                icon: fav ? Icons.favorite : Icons.favorite_border,
+                label: 'Favorite',
+                activeColor: const Color(0xFFF0708A),
+                active: fav,
+                onTap: _toggleFavourite,
+              );
+            }),
+            Obx(() {
+              final bool snatched = item.isSnatched.value == true;
+              return btn(
+                icon: snatched ? Icons.download_done : Icons.download_outlined,
+                label: snatched ? 'Saved' : 'Save',
+                activeColor: const Color(0xFF7FC98B),
+                active: snatched,
+                onTap: () => _snatchItem(context),
+              );
+            }),
+            btn(
+              icon: Icons.bookmark_add_outlined,
+              label: 'Collect',
+              activeColor: const Color(0xFFE8C46B),
+              onTap: () => showAddToCollectionSheet(context, [item]),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget buildTagChip(BuildContext context, Tag rawTag) {
     final String currentTag = rawTag.fullString;
     if (currentTag.isEmpty) return const SizedBox.shrink();
@@ -1268,6 +1372,9 @@ class _TagViewState extends State<TagView> {
                   )
                 else
                   const SizedBox(height: kMinInteractiveDimension),
+                //
+                // Flow post actions (Favorite / Save / Collect).
+                _flowActionRow(context),
                 //
                 // Inline "more from artist / uploader" grids — Boorusama-style.
                 // Each grid is gated on:
