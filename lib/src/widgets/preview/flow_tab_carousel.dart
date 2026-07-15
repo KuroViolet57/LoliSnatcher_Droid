@@ -8,6 +8,52 @@ import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/theme_handler.dart';
 import 'package:lolisnatcher/src/widgets/image/booru_favicon.dart';
 import 'package:lolisnatcher/src/widgets/preview/main_search_query_editor_page.dart';
+import 'package:lolisnatcher/src/widgets/tabs/tab_selector.dart';
+
+/// Compact "N tabs" pill (stacks icon + count) that opens the All-Tabs manager.
+/// Used as the browse app-bar title, replacing the old inline tab switcher.
+class TabsCountPill extends StatelessWidget {
+  const TabsCountPill({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final searchHandler = SearchHandler.instance;
+    final accent = Theme.of(context).colorScheme.secondary;
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: GestureDetector(
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const TabManagerPage()),
+        ),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          decoration: BoxDecoration(
+            color: ThemeHandler.flowSurface,
+            border: Border.all(color: ThemeHandler.flowBorder),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.layers_outlined, size: 16, color: accent),
+              const SizedBox(width: 6),
+              Obx(
+                () => Text(
+                  '${searchHandler.tabs.length} tabs',
+                  style: const TextStyle(
+                    color: Color(0xFFCDBAF0),
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 /// The "Flow" browse header: tabs shown as horizontally-swipeable cards. The
 /// active tab is a wide gradient card (booru + query + edit + status); the
@@ -23,6 +69,7 @@ class FlowTabCarousel extends StatefulWidget {
 class _FlowTabCarouselState extends State<FlowTabCarousel> {
   final SearchHandler searchHandler = SearchHandler.instance;
   final ScrollController _scroll = ScrollController();
+  int _lastActive = -1;
 
   static const double _cardHeight = 92;
   static const double _activeWidth = 264;
@@ -71,7 +118,7 @@ class _FlowTabCarouselState extends State<FlowTabCarousel> {
               children: [
                 _avatar(booru, 18),
                 const SizedBox(width: 7),
-                Flexible(
+                Expanded(
                   child: Text(
                     booru.name ?? '',
                     maxLines: 1,
@@ -83,7 +130,7 @@ class _FlowTabCarouselState extends State<FlowTabCarousel> {
                     ),
                   ),
                 ),
-                const Spacer(),
+                const SizedBox(width: 8),
                 Obx(() {
                   final int count = tab.booruHandler.totalCount.value;
                   final int loaded = tab.booruHandler.filteredFetched.length;
@@ -243,10 +290,15 @@ class _FlowTabCarouselState extends State<FlowTabCarousel> {
   Widget _dots(int total, int active) {
     const int maxDots = 7;
     final int show = total > maxDots ? maxDots : total;
+    // Map the active tab's absolute position into the small dot window so the
+    // elongated dot tracks progress through the whole list.
+    final int activeDot = (total <= 1)
+        ? 0
+        : ((active / (total - 1)) * (show - 1)).round().clamp(0, show - 1);
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: List.generate(show, (i) {
-        final bool isActive = i == (active >= show ? show - 1 : active);
+        final bool isActive = i == activeDot;
         return AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           margin: const EdgeInsets.symmetric(horizontal: 2.5),
@@ -270,13 +322,19 @@ class _FlowTabCarouselState extends State<FlowTabCarousel> {
       final int active = searchHandler.currentIndex;
       if (tabs.isEmpty) return const SizedBox.shrink();
 
-      // Order so the active tab is first (its wide card), then the rest peek.
-      final List<int> order = [
-        active,
-        for (int i = 0; i < tabs.length; i++)
-          if (i != active) i,
-      ];
+      // When the active tab changes (e.g. jumped via the tab list), snap the
+      // carousel back to the start so the active card leads and the peeks are
+      // the *real* neighbours of the new tab.
+      if (active != _lastActive) {
+        _lastActive = active;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_scroll.hasClients) _scroll.jumpTo(0);
+        });
+      }
 
+      // Cards run from the active tab forward: active (wide) + the tabs that
+      // follow it (peeks) + a trailing "add" card.
+      final int remaining = tabs.length - active; // active..end
       return Column(
         children: [
           SizedBox(
@@ -285,18 +343,18 @@ class _FlowTabCarouselState extends State<FlowTabCarousel> {
               controller: _scroll,
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: order.length + 1,
+              itemCount: remaining + 1,
               separatorBuilder: (_, _) => const SizedBox(width: 10),
               itemBuilder: (context, i) {
-                if (i == order.length) return _addCard();
-                final int tabIndex = order[i];
+                if (i == remaining) return _addCard();
+                final int tabIndex = active + i;
                 final tab = tabs[tabIndex];
                 return i == 0 ? _activeCard(tab) : _peekCard(tab, tabIndex);
               },
             ),
           ),
           const SizedBox(height: 10),
-          _dots(tabs.length, 0),
+          _dots(tabs.length, active),
           const SizedBox(height: 8),
         ],
       );
