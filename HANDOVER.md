@@ -191,7 +191,28 @@ tag-type colors, per-screen specs 1-16).
   top of info panel; "Media size on open" slider (README 86%); viewer top-scrim
   restyle (screen 08).
 
+**Phase 3 + Phase 4 more (builds 5210q-t):**
+- Info-panel action row (`_flowActionRow` in tag_view): Favorite / Save (snatch) /
+  Collect / Details — reuses toggleItemFavourite / SnatchHandler.queue /
+  showAddToCollectionSheet / showPostDetailsSheet.
+- `booru_switcher_sheet.dart` (showBooruSwitcherSheet): Flow "Switch booru" sheet
+  (favicon+name+domain rows, radio, Add-booru-config footer) → searchAction to
+  switch. Drawer got a current-booru card that opens it.
+- `post_details_sheet.dart` (showPostDetailsSheet): ID/Rating/Score/Resolution/
+  Size/Type/Posted/Uploader/Source(link)/MD5, tap row = copy.
+- main_drawer got the Flow "Menu" header + close.
+
 **REMAINING PHASES (per zip spec screens; not yet done):**
+- Query Editor helper-key row + suggestion pins (screen 06,
+  main_search_query_editor_page.dart).
+- Settings hub cards SEARCH/LOOK&FEEL/SYSTEM (screen 15) + data-driven detail
+  pages; "Media size on open" slider.
+- Favorites filter chips + 3-col grid (screen 18); Downloads screen (17).
+- Left sidebar (screen 03): reconcile with the quick-access I already put in the
+  downloads drawer (pinned tags top + quick access bottom).
+- Minimized preview bubble (screen 22), Pin-tag sheet (20), hidden submenu (21)
+  — some already exist as dialogs, could go to sheets.
+- Snackbar Flow style; Material Symbols Rounded icons.
 - Phase 2 — Browse (`mobile_home_page`/`waterfall_view`): tab-card carousel w/
   edit btn + peek + dashed "+" ; header (tabs pill + menu); 2-col grid tiles
   (badges bottom-left type+duration on scrim, heart bottom-right, r14); bottom
