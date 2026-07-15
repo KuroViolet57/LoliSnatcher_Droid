@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -121,7 +123,7 @@ class _BooruSwitcherSheet extends StatelessWidget {
                       style: TextStyle(fontSize: 11.5, color: theme.colorScheme.onSurfaceVariant),
                     ),
                     trailing: Icon(
-                      isActive ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                      isActive ? Symbols.radio_button_checked_rounded : Symbols.radio_button_unchecked_rounded,
                       color: isActive ? theme.colorScheme.secondary : theme.colorScheme.onSurfaceVariant,
                       size: 20,
                     ),
@@ -156,7 +158,7 @@ class _BooruSwitcherSheet extends StatelessWidget {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.add, size: 18, color: theme.colorScheme.onSurfaceVariant),
+                    Icon(Symbols.add_rounded, size: 18, color: theme.colorScheme.onSurfaceVariant),
                     const SizedBox(width: 8),
                     Text(
                       'Add booru config',

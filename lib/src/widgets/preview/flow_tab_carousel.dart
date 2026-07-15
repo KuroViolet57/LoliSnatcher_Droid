@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:get/get.dart';
 
 import 'package:lolisnatcher/src/data/booru.dart';
@@ -35,7 +37,7 @@ class TabsCountPill extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.layers_outlined, size: 16, color: accent),
+              Icon(Symbols.layers_rounded, size: 16, color: accent),
               const SizedBox(width: 6),
               Obx(
                 () => Text(
@@ -167,7 +169,7 @@ class _FlowTabCarouselState extends State<FlowTabCarousel> {
                     color: theme.colorScheme.secondary.withValues(alpha: 0.16),
                     borderRadius: BorderRadius.circular(9),
                   ),
-                  child: Icon(Icons.edit_outlined, size: 16, color: theme.colorScheme.secondary),
+                  child: Icon(Symbols.edit_rounded, size: 16, color: theme.colorScheme.secondary),
                 ),
               ],
             ),
@@ -264,7 +266,7 @@ class _FlowTabCarouselState extends State<FlowTabCarousel> {
           border: Border.all(color: const Color(0xFF35304A), width: 1.5, style: BorderStyle.solid),
         ),
         child: const Center(
-          child: Icon(Icons.add, size: 22, color: Color(0xFF736A85)),
+          child: Icon(Symbols.add_rounded, size: 22, color: Color(0xFF736A85)),
         ),
       ),
     );

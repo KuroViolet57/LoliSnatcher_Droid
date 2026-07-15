@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 
 /// Flow filter chips (All / Images / Video / Sound) shown above the grid for
@@ -16,10 +18,10 @@ class MediaFilterChips extends StatefulWidget {
 
 class _MediaFilterChipsState extends State<MediaFilterChips> {
   static const List<({String value, String label, IconData icon})> _filters = [
-    (value: 'all', label: 'All', icon: Icons.apps),
-    (value: 'image', label: 'Images', icon: Icons.image_outlined),
-    (value: 'video', label: 'Video', icon: Icons.videocam_outlined),
-    (value: 'sound', label: 'Sound', icon: Icons.volume_up_outlined),
+    (value: 'all', label: 'All', icon: Symbols.apps_rounded),
+    (value: 'image', label: 'Images', icon: Symbols.image_rounded),
+    (value: 'video', label: 'Video', icon: Symbols.videocam_rounded),
+    (value: 'sound', label: 'Sound', icon: Symbols.volume_up_rounded),
   ];
 
   void _select(String value) {

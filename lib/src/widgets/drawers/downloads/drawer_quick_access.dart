@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/pinned_tag.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
@@ -136,7 +138,7 @@ class _DrawerQuickAccessState extends State<DrawerQuickAccess> {
               ),
             ],
             const SizedBox(width: 6),
-            Icon(Icons.add, size: 18, color: Theme.of(context).colorScheme.secondary),
+            Icon(Symbols.add_rounded, size: 18, color: Theme.of(context).colorScheme.secondary),
           ],
         ),
       ),
@@ -182,7 +184,7 @@ class _DrawerQuickAccessState extends State<DrawerQuickAccess> {
               ),
               const SizedBox(width: 6),
             ],
-            Icon(Icons.chevron_right, size: 18, color: Theme.of(context).colorScheme.onSurfaceVariant),
+            Icon(Symbols.chevron_right_rounded, size: 18, color: Theme.of(context).colorScheme.onSurfaceVariant),
           ],
         ),
       ),
@@ -217,7 +219,7 @@ class _DrawerQuickAccessState extends State<DrawerQuickAccess> {
             padding: const EdgeInsets.fromLTRB(4, 0, 0, 8),
             child: Row(
               children: [
-                Icon(Icons.push_pin, size: 18, color: theme.colorScheme.secondary),
+                Icon(Symbols.push_pin_rounded, size: 18, color: theme.colorScheme.secondary),
                 const SizedBox(width: 8),
                 Text(
                   'Pinned tags',
@@ -229,7 +231,7 @@ class _DrawerQuickAccessState extends State<DrawerQuickAccess> {
                 ),
                 const Spacer(),
                 IconButton(
-                  icon: const Icon(Icons.close),
+                  icon: const Icon(Symbols.close_rounded),
                   onPressed: widget.toggleDrawer,
                 ),
               ],
@@ -258,34 +260,34 @@ class _DrawerQuickAccessState extends State<DrawerQuickAccess> {
           const SizedBox(height: 8),
           _sectionLabel('QUICK ACCESS'),
           _quickAccessRow(
-            icon: Icons.block,
+            icon: Symbols.block_rounded,
             iconColor: const Color(0xFFE5766B),
             label: 'Global blacklist',
             count: '${settingsHandler.hiddenTags.length} tags',
             onTap: () => _openPage(const TagsFiltersPage()),
           ),
           _quickAccessRow(
-            icon: Icons.visibility_off_outlined,
+            icon: Symbols.visibility_off_rounded,
             iconColor: const Color(0xFFE5766B),
             label: 'For You blacklist',
             onTap: _openForYouBlacklist,
           ),
           _quickAccessRow(
-            icon: Icons.favorite,
+            icon: Symbols.favorite_rounded,
             iconColor: const Color(0xFFF0708A),
             label: 'Favorites',
             count: _favCount > 0 ? '$_favCount' : null,
             onTap: _openFavourites,
           ),
           _quickAccessRow(
-            icon: Icons.bookmark_outline,
+            icon: Symbols.bookmark_rounded,
             iconColor: const Color(0xFFE8C46B),
             label: 'Saved searches',
             count: '${searchHandler.savedSearches.length} kept',
             onTap: () => _openPage(const HistoryList()),
           ),
           _quickAccessRow(
-            icon: Icons.folder_outlined,
+            icon: Symbols.folder_rounded,
             iconColor: const Color(0xFF93AECC),
             label: 'Collections',
             count: _collectionCount > 0 ? '$_collectionCount sets' : null,

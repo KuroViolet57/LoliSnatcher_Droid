@@ -2,6 +2,8 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -68,7 +70,7 @@ class _FlowSearchBarState extends State<FlowSearchBar> {
         context: context,
         title: const Text('Nothing to save', style: TextStyle(fontSize: 18)),
         content: const Text('Type some tags first.'),
-        leadingIcon: Icons.info_outline,
+        leadingIcon: Symbols.info_rounded,
         duration: const Duration(seconds: 2),
       );
       return;
@@ -79,7 +81,7 @@ class _FlowSearchBarState extends State<FlowSearchBar> {
       context: context,
       title: Text(id != null ? 'Search saved' : 'Already saved', style: const TextStyle(fontSize: 18)),
       content: Text(text),
-      leadingIcon: Icons.bookmark_added,
+      leadingIcon: Symbols.bookmark_added_rounded,
       leadingIconColor: Colors.green,
       duration: const Duration(seconds: 2),
     );
@@ -146,7 +148,7 @@ class _FlowSearchBarState extends State<FlowSearchBar> {
               onTap: () => _removeTag(tag),
               child: Padding(
                 padding: const EdgeInsets.all(4),
-                child: Icon(Icons.close, size: 14, color: textColor.withValues(alpha: 0.8)),
+                child: Icon(Symbols.close_rounded, size: 14, color: textColor.withValues(alpha: 0.8)),
               ),
             ),
           ],
@@ -182,7 +184,7 @@ class _FlowSearchBarState extends State<FlowSearchBar> {
           padding: const EdgeInsets.only(left: 18, right: 7),
           child: Row(
             children: [
-              const Icon(Icons.search, size: 21, color: Color(0xFF8A80A0)),
+              const Icon(Symbols.search_rounded, size: 21, color: Color(0xFF8A80A0)),
               const SizedBox(width: 10),
               Expanded(
                 child: hasQuery
@@ -208,13 +210,13 @@ class _FlowSearchBarState extends State<FlowSearchBar> {
               IconButton(
                 tooltip: 'Search history',
                 visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.history, size: 21, color: Color(0xFFB5AEC4)),
+                icon: const Icon(Symbols.history_rounded, size: 21, color: Color(0xFFB5AEC4)),
                 onPressed: _openHistory,
               ),
               IconButton(
                 tooltip: 'Save search',
                 visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.bookmark_add_outlined, size: 21, color: Color(0xFFB5AEC4)),
+                icon: const Icon(Symbols.bookmark_add_rounded, size: 21, color: Color(0xFFB5AEC4)),
                 onPressed: _saveSearch,
               ),
               const SizedBox(width: 2),
@@ -228,7 +230,7 @@ class _FlowSearchBarState extends State<FlowSearchBar> {
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Icon(
-                    Icons.arrow_forward,
+                    Symbols.arrow_forward_rounded,
                     size: 20,
                     color: theme.colorScheme.onSecondary,
                   ),

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 
 import 'package:url_launcher/url_launcher_string.dart';
@@ -76,7 +78,7 @@ class _PostDetailsSheet extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(18, 8, 8, 4),
             child: Row(
               children: [
-                Icon(Icons.info_outline, size: 18, color: theme.colorScheme.onSurface),
+                Icon(Symbols.info_rounded, size: 18, color: theme.colorScheme.onSurface),
                 const SizedBox(width: 8),
                 Text(
                   'Details',
@@ -88,7 +90,7 @@ class _PostDetailsSheet extends StatelessWidget {
                 ),
                 const Spacer(),
                 IconButton(
-                  icon: const Icon(Icons.close),
+                  icon: const Icon(Symbols.close_rounded),
                   onPressed: () => Navigator.of(context).pop(),
                 ),
               ],
@@ -122,7 +124,7 @@ class _PostDetailsSheet extends StatelessWidget {
                       duration: const Duration(seconds: 1),
                       title: Text('Copied $label', style: const TextStyle(fontSize: 16)),
                       content: Text(val, style: const TextStyle(fontSize: 14)),
-                      leadingIcon: Icons.copy,
+                      leadingIcon: Symbols.content_copy_rounded,
                       sideColor: Colors.green,
                     );
                   },
@@ -157,7 +159,7 @@ class _PostDetailsSheet extends StatelessWidget {
                         ),
                         const SizedBox(width: 8),
                         Icon(
-                          isLink ? Icons.open_in_new : Icons.copy,
+                          isLink ? Symbols.open_in_new_rounded : Symbols.content_copy_rounded,
                           size: 15,
                           color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
                         ),

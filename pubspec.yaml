@@ -53,6 +53,7 @@ dependencies:
   get_it: ^9.2.1
   get: ^5.0.0-release-candidate-9.3.2 # ^4.7.3
   google_fonts: ^8.0.2
+  material_symbols_icons: ^4.2801.0
   html: ^0.15.6
   http_proxy: # ^1.2.2
     git:
