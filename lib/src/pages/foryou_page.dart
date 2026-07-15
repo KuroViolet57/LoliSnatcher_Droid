@@ -96,7 +96,12 @@ class _ForYouPageState extends State<ForYouPage> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
         children: [
-          Card(
+          Container(
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainer,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: theme.colorScheme.outlineVariant),
+            ),
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
@@ -104,9 +109,12 @@ class _ForYouPageState extends State<ForYouPage> {
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.auto_awesome, color: theme.colorScheme.primary),
+                      Icon(Icons.auto_awesome, color: theme.colorScheme.secondary),
                       const SizedBox(width: 10),
-                      Text('Recommendations', style: theme.textTheme.titleMedium),
+                      Text(
+                        'Recommendations',
+                        style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 8),
