@@ -20,6 +20,7 @@ import 'package:lolisnatcher/src/widgets/preview/grid_builder.dart';
 import 'package:lolisnatcher/src/widgets/preview/shimmer_builder.dart';
 import 'package:lolisnatcher/src/widgets/preview/staggered_builder.dart';
 import 'package:lolisnatcher/src/widgets/preview/discovery_strip.dart';
+import 'package:lolisnatcher/src/widgets/preview/flow_tab_carousel.dart';
 import 'package:lolisnatcher/src/widgets/preview/waterfall_bottom_bar.dart';
 import 'package:lolisnatcher/src/widgets/root/main_appbar.dart';
 
@@ -445,6 +446,9 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware {
                         cacheExtent: 300 * MediaQuery.devicePixelRatioOf(context),
                         slivers: [
                           const MainAppBar(),
+                          // Flow tab-card carousel: swipeable tab cards under the
+                          // header (active tab = wide card, others peek, dashed +).
+                          const SliverToBoxAdapter(child: FlowTabCarousel()),
                           // Discovery strip: creators + similar tags above the
                           // results, for any handler that populates them
                           // (xxxfollow, redgifs). No-op for the rest.
