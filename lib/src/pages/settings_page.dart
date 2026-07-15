@@ -40,6 +40,21 @@ class SettingsPage extends StatelessWidget {
     await SettingsHandler.instance.saveSettings(restate: true);
   }
 
+  Widget _sectionLabel(BuildContext context, String text) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 6),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 1.2,
+          color: Theme.of(context).colorScheme.secondary,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final SettingsHandler settingsHandler = SettingsHandler.instance;
@@ -54,16 +69,18 @@ class SettingsPage extends StatelessWidget {
         body: Center(
           child: ListView(
             children: [
-              SettingsButton(
-                name: context.loc.settings.language.title,
-                icon: const Icon(Icons.translate_rounded),
-                page: () => const LanguageSettingsPage(),
-              ),
+              _sectionLabel(context, 'SEARCH'),
               SettingsButton(
                 name: context.loc.settings.booru.title,
                 icon: const Icon(Icons.image_search),
                 page: () => const BooruPage(),
               ),
+              SettingsButton(
+                name: context.loc.settings.itemFilters.title,
+                icon: const Icon(CupertinoIcons.tag),
+                page: () => const TagsFiltersPage(),
+              ),
+              _sectionLabel(context, 'LOOK & FEEL'),
               SettingsButton(
                 name: context.loc.settings.interface.title,
                 icon: const Icon(Icons.grid_on),
@@ -84,15 +101,24 @@ class SettingsPage extends StatelessWidget {
                 icon: const Icon(Icons.video_settings),
                 page: () => const VideoSettingsPage(),
               ),
+              _sectionLabel(context, 'SYSTEM'),
+              SettingsButton(
+                name: context.loc.settings.performance.title,
+                icon: const Icon(
+                  Icons.speed,
+                  size: 20,
+                ),
+                page: () => const PerformancePage(),
+              ),
               SettingsButton(
                 name: context.loc.settings.cache.title,
                 icon: const Icon(Icons.sd_storage_sharp),
                 page: () => const SaveCachePage(),
               ),
               SettingsButton(
-                name: context.loc.settings.itemFilters.title,
-                icon: const Icon(CupertinoIcons.tag),
-                page: () => const TagsFiltersPage(),
+                name: context.loc.settings.network.title,
+                icon: const Icon(Icons.wifi),
+                page: () => const NetworkPage(),
               ),
               SettingsButton(
                 name: context.loc.settings.database.title,
@@ -105,11 +131,6 @@ class SettingsPage extends StatelessWidget {
                 page: () => const BackupRestorePage(),
               ),
               SettingsButton(
-                name: context.loc.settings.network.title,
-                icon: const Icon(Icons.wifi),
-                page: () => const NetworkPage(),
-              ),
-              SettingsButton(
                 name: context.loc.settings.privacy.title,
                 icon: const FaIcon(
                   FontAwesomeIcons.userShield,
@@ -118,13 +139,11 @@ class SettingsPage extends StatelessWidget {
                 page: () => const PrivacyPage(),
               ),
               SettingsButton(
-                name: context.loc.settings.performance.title,
-                icon: const Icon(
-                  Icons.speed,
-                  size: 20,
-                ),
-                page: () => const PerformancePage(),
+                name: context.loc.settings.language.title,
+                icon: const Icon(Icons.translate_rounded),
+                page: () => const LanguageSettingsPage(),
               ),
+              _sectionLabel(context, 'ABOUT'),
               SettingsButton(
                 name: context.loc.settings.sync.title,
                 icon: const Icon(Icons.sync),
