@@ -21,8 +21,6 @@ import 'package:lolisnatcher/src/widgets/common/settings_widgets.dart';
 import 'package:lolisnatcher/src/widgets/preview/main_search_bar.dart';
 import 'package:lolisnatcher/src/widgets/saved_searches/saved_search_tile.dart';
 import 'package:lolisnatcher/src/widgets/saved_searches/saved_searches_page.dart';
-import 'package:lolisnatcher/src/widgets/tabs/tab_buttons.dart';
-import 'package:lolisnatcher/src/widgets/tabs/tab_selector.dart';
 import 'package:lolisnatcher/src/widgets/booru/booru_switcher_sheet.dart';
 import 'package:lolisnatcher/src/widgets/common/inner_drawer.dart';
 import 'package:lolisnatcher/src/widgets/image/booru_favicon.dart';
@@ -170,17 +168,50 @@ class MainDrawer extends StatelessWidget {
                 ),
               );
             }),
-            const TabSelector(),
             Expanded(
               child: ListView(
                 controller: ScrollController(),
                 clipBehavior: Clip.antiAlias,
                 children: [
-                  const SizedBox(height: 12),
-                  const TabButtons(true, WrapAlignment.spaceEvenly),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
                   const MergeBooruToggleAndSelector(),
-                  const SavedSearchesDrawerSection(),
+                  Builder(
+                    builder: (context) {
+                      Booru? virtual(bool Function(BooruType) test) {
+                        for (final b in settingsHandler.booruList) {
+                          final t = b.type;
+                          if (t != null && test(t)) return b;
+                        }
+                        return null;
+                      }
+
+                      void openVirtual(Booru? b) {
+                        if (b == null) return;
+                        final state = searchHandler.mainDrawerKey.currentState;
+                        if (state is InnerDrawerState) state.close();
+                        searchHandler.addTabByString('', customBooru: b, switchToNew: true);
+                      }
+
+                      final downloads = virtual((t) => t.isDownloads);
+                      final favourites = virtual((t) => t.isFavourites);
+                      return Column(
+                        children: [
+                          if (downloads != null)
+                            SettingsButton(
+                              name: 'Downloads',
+                              icon: const Icon(Icons.download),
+                              action: () => openVirtual(downloads),
+                            ),
+                          if (favourites != null)
+                            SettingsButton(
+                              name: 'Favourites',
+                              icon: const Icon(Icons.favorite),
+                              action: () => openVirtual(favourites),
+                            ),
+                        ],
+                      );
+                    },
+                  ),
                   ListenableBuilder(
                     listenable: Listenable.merge([
                       LocalAuthHandler.instance.deviceSupportsBiometrics,

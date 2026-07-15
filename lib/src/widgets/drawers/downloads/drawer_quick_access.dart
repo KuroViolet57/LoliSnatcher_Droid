@@ -1,17 +1,18 @@
 import 'package:flutter/material.dart';
 
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/data/history_item.dart';
+import 'package:lolisnatcher/src/data/pinned_tag.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
-import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/handlers/tag_handler.dart';
+import 'package:lolisnatcher/src/pages/collections_page.dart';
+import 'package:lolisnatcher/src/pages/settings/booru_edit_page.dart';
+import 'package:lolisnatcher/src/pages/settings/tags_filters_page.dart';
+import 'package:lolisnatcher/src/widgets/history/history.dart';
 
-/// The whole left ("snatch") drawer, repurposed as a navigation panel:
-///   - Quick access shortcuts (For You / Collections / Favourites / Downloads)
-///   - Pinned tags (favourited searches) at the top
-///   - Recent searches at the bottom
-/// Long-press a search to pin/unpin it. The download queue lives elsewhere.
+/// The left ("Pinned tags") sidebar: pinned tags at the top (tap = add to the
+/// current search) and a Quick access section at the bottom (blacklists,
+/// favourites, saved searches, collections).
 class DrawerQuickAccess extends StatefulWidget {
   const DrawerQuickAccess({required this.toggleDrawer, super.key});
 
@@ -24,52 +25,50 @@ class DrawerQuickAccess extends StatefulWidget {
 class _DrawerQuickAccessState extends State<DrawerQuickAccess> {
   final SettingsHandler settingsHandler = SettingsHandler.instance;
   final SearchHandler searchHandler = SearchHandler.instance;
+  final TagHandler tagHandler = TagHandler.instance;
 
-  List<HistoryItem> _pinned = [];
-  List<HistoryItem> _recent = [];
-
-  late final Booru _forYou;
-  late final Booru _collections;
-  Booru? _favourites;
-  Booru? _downloads;
+  List<PinnedTag> _pinned = [];
+  int _favCount = 0;
+  int _collectionCount = 0;
 
   @override
   void initState() {
     super.initState();
-    _forYou = settingsHandler.ensureForYouBooru();
-    _collections = settingsHandler.ensureCollectionsBooru();
-    _favourites = _virtual((t) => t.isFavourites);
-    _downloads = _virtual((t) => t.isDownloads);
-    _loadHistory();
+    _load();
   }
 
-  Future<void> _loadHistory() async {
+  Future<void> _load() async {
     try {
-      final items = await settingsHandler.dbHandler.getSearchHistory();
-      final seen = <String>{};
-      final List<HistoryItem> pinned = [];
-      final List<HistoryItem> recent = [];
-      for (final h in items) {
-        final t = h.searchText.trim();
-        if (t.isEmpty || !seen.add(t.toLowerCase())) continue;
-        if (h.isFavourite) {
-          pinned.add(h);
-        } else if (recent.length < 14) {
-          recent.add(h);
-        }
-      }
+      final pinned = await settingsHandler.dbHandler.getAllPinnedTags();
+      int fav = 0;
+      int col = 0;
+      try {
+        fav = await settingsHandler.dbHandler.searchDBCount('');
+      } catch (_) {}
+      try {
+        col = (await settingsHandler.dbHandler.getCollections()).length;
+      } catch (_) {}
       if (mounted) {
         setState(() {
           _pinned = pinned;
-          _recent = recent;
+          _favCount = fav;
+          _collectionCount = col;
         });
       }
-    } catch (_) {
-      // history is a nicety — ignore failures
-    }
+    } catch (_) {}
   }
 
-  Booru? _virtual(bool Function(BooruType) test) {
+  void _addTagAndClose(String tag) {
+    searchHandler.addTagToSearch(tag);
+    widget.toggleDrawer();
+  }
+
+  void _openPage(Widget page) {
+    widget.toggleDrawer();
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
+  }
+
+  Booru? _virtual(bool Function(dynamic) test) {
     for (final b in settingsHandler.booruList) {
       final t = b.type;
       if (t != null && test(t)) return b;
@@ -77,58 +76,114 @@ class _DrawerQuickAccessState extends State<DrawerQuickAccess> {
     return null;
   }
 
-  void _openTab(String query, Booru? booru) {
-    if (booru == null) return;
-    searchHandler.addTabByString(query, customBooru: booru, switchToNew: true);
+  void _openFavourites() {
+    final fav = _virtual((t) => t.isFavourites);
+    if (fav == null) return;
     widget.toggleDrawer();
+    searchHandler.addTabByString('', customBooru: fav, switchToNew: true);
   }
 
-  void _openRecent(HistoryItem h) {
-    Booru? booru;
-    for (final b in settingsHandler.booruList) {
-      if (b.name == h.booruName) {
-        booru = b;
-        break;
-      }
-    }
-    booru ??= searchHandler.currentBooru;
-    _openTab(h.searchText, booru);
+  void _openForYouBlacklist() {
+    final booru = settingsHandler.ensureForYouBooru();
+    _openPage(BooruEdit(booru));
   }
 
-  Future<void> _setPinned(HistoryItem h, bool pin) async {
-    await ServiceHandler.vibrate(duration: 35, amplitude: 160);
-    await settingsHandler.dbHandler.setFavouriteSearchHistory(h.id, pin);
-    await _loadHistory();
-  }
-
-  Widget _shortcut(IconData icon, String label, Booru? booru) {
-    final bool enabled = booru != null;
-    final Color fg = enabled
-        ? Theme.of(context).colorScheme.onSurface
-        : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.35);
-    return Expanded(
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: enabled ? () => _openTab('', booru) : null,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircleAvatar(
-                radius: 22,
-                backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-                child: Icon(icon, size: 22, color: fg),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                label,
+  Widget _pinnedRow(PinnedTag pt) {
+    final Color dot = tagHandler.getTag(pt.tagName).getColour() ?? const Color(0xFF8A80A0);
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () => _addTagAndClose(pt.tagName),
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 3),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainer,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                pt.tagName.replaceAll('_', ' '),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(color: fg),
+                style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
+              ),
+            ),
+            for (final label in pt.labels.take(2)) ...[
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
               ),
             ],
-          ),
+            const SizedBox(width: 6),
+            Icon(Icons.add, size: 18, color: Theme.of(context).colorScheme.secondary),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _quickAccessRow({
+    required IconData icon,
+    required Color iconColor,
+    required String label,
+    required VoidCallback onTap,
+    String? count,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 3),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainer,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 19, color: iconColor),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
+              ),
+            ),
+            if (count != null) ...[
+              Text(
+                count,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(width: 6),
+            ],
+            Icon(Icons.chevron_right, size: 18, color: Theme.of(context).colorScheme.onSurfaceVariant),
+          ],
         ),
       ),
     );
@@ -136,94 +191,106 @@ class _DrawerQuickAccessState extends State<DrawerQuickAccess> {
 
   Widget _sectionLabel(String text) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.fromLTRB(2, 4, 2, 6),
       child: Text(
         text,
-        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-          fontWeight: FontWeight.w700,
-          color: Theme.of(context).colorScheme.onSurface,
+        style: TextStyle(
+          fontSize: 10.5,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 1,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
         ),
-      ),
-    );
-  }
-
-  Widget _historyChip(HistoryItem h, {required bool pinned}) {
-    final Color iconColor = Theme.of(context).colorScheme.onSurface;
-    return GestureDetector(
-      onLongPress: () => _setPinned(h, !pinned),
-      child: ActionChip(
-        label: Text(h.searchText, overflow: TextOverflow.ellipsis),
-        visualDensity: VisualDensity.compact,
-        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        avatar: Icon(
-          pinned ? Icons.push_pin : Icons.history,
-          size: 16,
-          color: iconColor,
-        ),
-        onPressed: () => _openRecent(h),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _sectionLabel('Quick access'),
-          Row(
-            children: [
-              _shortcut(Icons.auto_awesome, 'For You', _forYou),
-              _shortcut(Icons.collections_bookmark, 'Collections', _collections),
-              _shortcut(Icons.favorite, 'Favourites', _favourites),
-              _shortcut(Icons.download, 'Downloads', _downloads),
-            ],
+          // header
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 0, 0, 8),
+            child: Row(
+              children: [
+                Icon(Icons.push_pin, size: 18, color: theme.colorScheme.secondary),
+                const SizedBox(width: 8),
+                Text(
+                  'Pinned tags',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: theme.colorScheme.onSurface,
+                  ),
+                ),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: widget.toggleDrawer,
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 12),
-          // Pinned tags sit at the top; the list scrolls if it grows so the
-          // recent-searches section stays anchored to the bottom.
-          _sectionLabel('Pinned tags'),
+          // pinned tags (scrolls; pushes quick access to the bottom)
           Expanded(
             child: _pinned.isEmpty
                 ? Align(
                     alignment: Alignment.topLeft,
                     child: Text(
-                      'Long-press a recent search to pin it here.',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      'No pinned tags yet. Pin a tag from its menu to keep it here.',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
                   )
-                : SingleChildScrollView(
-                    child: Wrap(
-                      spacing: 6,
-                      runSpacing: 2,
-                      children: [
-                        for (final h in _pinned) _historyChip(h, pinned: true),
-                      ],
-                    ),
+                : ListView(
+                    padding: EdgeInsets.zero,
+                    children: [for (final pt in _pinned) _pinnedRow(pt)],
                   ),
           ),
-          if (_recent.isNotEmpty) ...[
-            const Divider(),
-            _sectionLabel('Recent searches'),
-            ConstrainedBox(
-              constraints: BoxConstraints(
-                maxHeight: MediaQuery.sizeOf(context).height * 0.28,
-              ),
-              child: SingleChildScrollView(
-                child: Wrap(
-                  spacing: 6,
-                  runSpacing: 2,
-                  children: [
-                    for (final h in _recent) _historyChip(h, pinned: false),
-                  ],
-                ),
-              ),
-            ),
-          ],
+          const SizedBox(height: 8),
+          const Divider(height: 1),
+          const SizedBox(height: 8),
+          _sectionLabel('QUICK ACCESS'),
+          _quickAccessRow(
+            icon: Icons.block,
+            iconColor: const Color(0xFFE5766B),
+            label: 'Global blacklist',
+            count: '${settingsHandler.hiddenTags.length} tags',
+            onTap: () => _openPage(const TagsFiltersPage()),
+          ),
+          _quickAccessRow(
+            icon: Icons.visibility_off_outlined,
+            iconColor: const Color(0xFFE5766B),
+            label: 'For You blacklist',
+            onTap: _openForYouBlacklist,
+          ),
+          _quickAccessRow(
+            icon: Icons.favorite,
+            iconColor: const Color(0xFFF0708A),
+            label: 'Favorites',
+            count: _favCount > 0 ? '$_favCount' : null,
+            onTap: _openFavourites,
+          ),
+          _quickAccessRow(
+            icon: Icons.bookmark_outline,
+            iconColor: const Color(0xFFE8C46B),
+            label: 'Saved searches',
+            count: '${searchHandler.savedSearches.length} kept',
+            onTap: () => _openPage(const HistoryList()),
+          ),
+          _quickAccessRow(
+            icon: Icons.folder_outlined,
+            iconColor: const Color(0xFF93AECC),
+            label: 'Collections',
+            count: _collectionCount > 0 ? '$_collectionCount sets' : null,
+            onTap: () => _openPage(const CollectionsPage()),
+          ),
         ],
       ),
     );

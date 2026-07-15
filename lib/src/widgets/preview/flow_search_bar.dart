@@ -5,10 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/handlers/tag_handler.dart';
+import 'package:lolisnatcher/src/utils/extensions.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 import 'package:lolisnatcher/src/widgets/history/history.dart';
 import 'package:lolisnatcher/src/widgets/preview/main_search_query_editor_page.dart';
-import 'package:lolisnatcher/src/widgets/preview/main_search_tag_chip.dart';
 
 /// The Flow browse floating search bar: a blurred pill hugging the bottom with
 /// a search icon, the current query (tap → Query Editor), a history button,
@@ -90,26 +91,67 @@ class _FlowSearchBarState extends State<FlowSearchBar> {
     searchHandler.searchAction(searchHandler.searchTextController.text, null);
   }
 
-  // Current query shown as removable, type-coloured chips (horizontally
-  // scrollable). Tap a chip to open the editor; the ✕ removes that tag and
-  // re-runs the search.
+  // Current query shown as removable, type-coloured chips (fixed height,
+  // vertically centred, horizontally scrollable). Tap a chip to open the
+  // editor; the ✕ removes that tag and re-runs the search.
   Widget _chips() {
     final List<String> tags = searchHandler.searchTextControllerTags;
     return ListView.separated(
       scrollDirection: Axis.horizontal,
       itemCount: tags.length,
       separatorBuilder: (_, _) => const SizedBox(width: 5),
-      itemBuilder: (context, i) {
-        final String tag = tags[i];
-        return Center(
-          child: MainSearchTagChip(
-            tag: tag,
-            tab: searchHandler.currentTab,
-            onTap: _openEditor,
-            onDeleteTap: () => _removeTag(tag),
-          ),
-        );
-      },
+      itemBuilder: (context, i) => Center(child: _chip(context, tags[i])),
+    );
+  }
+
+  Widget _chip(BuildContext context, String tag) {
+    // Strip a leading -/~ (exclude / or) for colour lookup + display prefix.
+    final bool isExclude = tag.startsWith('-');
+    final bool isOr = tag.startsWith('~');
+    final String bare = tag.replaceFirst(RegExp('^[-~]'), '');
+    Color color = TagHandler.instance.getTag(bare).getColour() ?? const Color(0xFF8A80A0);
+    if (isExclude) color = const Color(0xFFE5766B);
+    final Color textColor = Color.lerp(color, Colors.white, context.isLight ? 0.0 : 0.35)!;
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: _openEditor,
+      child: Container(
+        height: 34,
+        padding: const EdgeInsets.only(left: 12, right: 5),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.16),
+          borderRadius: BorderRadius.circular(17),
+          border: Border.all(color: color.withValues(alpha: 0.5)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (isExclude || isOr)
+              Text(
+                isExclude ? '−' : '~',
+                style: TextStyle(color: textColor, fontSize: 14, fontWeight: FontWeight.w800),
+              ),
+            Flexible(
+              child: Text(
+                bare.replaceAll('_', ' '),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: textColor, fontSize: 13, fontWeight: FontWeight.w700),
+              ),
+            ),
+            const SizedBox(width: 3),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => _removeTag(tag),
+              child: Padding(
+                padding: const EdgeInsets.all(4),
+                child: Icon(Icons.close, size: 14, color: textColor.withValues(alpha: 0.8)),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
