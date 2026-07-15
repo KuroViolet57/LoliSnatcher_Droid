@@ -23,7 +23,9 @@ import 'package:lolisnatcher/src/widgets/saved_searches/saved_search_tile.dart';
 import 'package:lolisnatcher/src/widgets/saved_searches/saved_searches_page.dart';
 import 'package:lolisnatcher/src/widgets/tabs/tab_buttons.dart';
 import 'package:lolisnatcher/src/widgets/tabs/tab_selector.dart';
+import 'package:lolisnatcher/src/widgets/booru/booru_switcher_sheet.dart';
 import 'package:lolisnatcher/src/widgets/common/inner_drawer.dart';
+import 'package:lolisnatcher/src/widgets/image/booru_favicon.dart';
 import 'package:lolisnatcher/src/widgets/webview/webview_page.dart';
 
 class MainDrawer extends StatelessWidget {
@@ -115,6 +117,59 @@ class MainDrawer extends StatelessWidget {
                 }
               }),
             ),
+            // Flow current-booru card → opens the Switch booru sheet.
+            Obx(() {
+              if (settingsHandler.booruList.isEmpty || searchHandler.tabs.isEmpty) {
+                return const SizedBox.shrink();
+              }
+              final booru = searchHandler.currentBooru;
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(10, 2, 10, 6),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(14),
+                  onTap: () => showBooruSwitcherSheet(context),
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surfaceContainer,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+                    ),
+                    child: Row(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: SizedBox(width: 32, height: 32, child: BooruFavicon(booru, size: 32)),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                booru.name ?? '',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800),
+                              ),
+                              Text(
+                                'current booru · tap to switch',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Icon(Icons.unfold_more, size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }),
             const TabSelector(),
             Expanded(
               child: ListView(
