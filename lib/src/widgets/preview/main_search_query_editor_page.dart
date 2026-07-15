@@ -149,6 +149,61 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
     }
   }
 
+  // Inserts a query-syntax character at the cursor and keeps focus.
+  void _insertHelperChar(String s) {
+    final controller = suggestionTextController;
+    final text = controller.text;
+    final sel = controller.selection;
+    final int start = sel.start >= 0 ? sel.start : text.length;
+    final int end = sel.end >= 0 ? sel.end : text.length;
+    final String newText = text.replaceRange(start, end, s);
+    controller.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: start + s.length),
+    );
+    suggestionTextFocusNode.requestFocus();
+  }
+
+  Widget _helperKeyRow(BuildContext context) {
+    const List<String> keys = ['_', '-', '~', ':', '(', ')'];
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 6, 8, 2),
+      child: Row(
+        children: [
+          for (final k in keys)
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 2),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () => _insertHelperChar(k),
+                  child: Container(
+                    height: 40,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surfaceContainerHigh,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: theme.colorScheme.outlineVariant),
+                    ),
+                    child: Text(
+                      k,
+                      style: TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: theme.colorScheme.onSurface,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   String _lastSuggestionText = '';
   void onSuggestionTextChanged() {
     // focus change can trigger this too, so we run search only when text changed
@@ -1062,6 +1117,8 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
                   ),
                 ),
               ),
+              // Flow helper-key row: quick-insert common query syntax chars.
+              _helperKeyRow(context),
               //
               if (settingsHandler.useTopSearchbarInput)
                 const SizedBox(height: 4)
