@@ -58,14 +58,14 @@ class ThumbnailCardBuild extends StatelessWidget {
       index: index,
       child: Material(
         color: Colors.transparent,
-        borderRadius: BorderRadius.circular(4),
+        borderRadius: BorderRadius.circular(14),
         child: Stack(
           alignment: Alignment.center,
           children: [
             DecoratedBox(
               position: DecorationPosition.foreground,
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: BorderRadius.circular(14),
                 border: showHighlightBorder
                     ? Border.all(
                         color: Theme.of(context).colorScheme.secondary,
@@ -75,19 +75,22 @@ class ThumbnailCardBuild extends StatelessWidget {
               ),
               child: InkWell(
                 enableFeedback: true,
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: BorderRadius.circular(14),
                 highlightColor: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.4),
                 splashColor: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.2),
                 onTap: onTap == null ? null : () => onTap?.call(index),
                 onDoubleTap: onDoubleTap == null ? null : () => onDoubleTap?.call(index),
                 onLongPress: onLongPress == null ? null : () => onLongPress?.call(index),
                 onSecondaryTap: onSecondaryTap == null ? null : () => onSecondaryTap?.call(index),
-                child: ThumbnailBuild(
-                  item: item,
-                  handler: handler,
-                  selectable: selectable,
-                  selectedIndex: isSelected ? selectedIndex : null,
-                  onSelected: onSelected == null ? null : () => onSelected!(index),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: ThumbnailBuild(
+                    item: item,
+                    handler: handler,
+                    selectable: selectable,
+                    selectedIndex: isSelected ? selectedIndex : null,
+                    onSelected: onSelected == null ? null : () => onSelected!(index),
+                  ),
                 ),
               ),
             ),
@@ -136,7 +139,7 @@ class ThumbnailCardBuild extends StatelessWidget {
                     if (!seen) return const SizedBox.shrink();
                     return DecoratedBox(
                       decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(4),
+                        borderRadius: BorderRadius.circular(14),
                         color: Colors.black.withValues(alpha: 0.6),
                       ),
                       child: Align(
