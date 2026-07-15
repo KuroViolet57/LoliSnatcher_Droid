@@ -401,8 +401,17 @@ class SettingsSegmentedButton<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
+    final cardTheme = Theme.of(context);
+    final BorderRadius cardRadius = BorderRadius.circular(13);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+      child: Material(
+      color: cardTheme.colorScheme.surfaceContainer,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: cardRadius,
+        side: BorderSide(color: cardTheme.colorScheme.outlineVariant),
+      ),
       child: ListTile(
         title: Row(
           children: [
@@ -412,7 +421,7 @@ class SettingsSegmentedButton<T> extends StatelessWidget {
                 child: leadingIcon,
               ),
             Expanded(
-              child: Text(title),
+              child: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
             ),
             const SizedBox(width: 4),
             if (defaultValue != null && value != defaultValue)
@@ -480,14 +489,8 @@ class SettingsSegmentedButton<T> extends StatelessWidget {
             ],
           ),
         ),
-        shape: Border(
-          // draw top border when item is in the middle of other items, but they are not listtile
-          top: drawTopBorder ? BorderSide(color: Theme.of(context).dividerColor, width: borderWidth) : BorderSide.none,
-          // draw bottom border when item is among other listtiles, but not when it's the last one
-          bottom: drawBottomBorder
-              ? BorderSide(color: Theme.of(context).dividerColor, width: borderWidth)
-              : BorderSide.none,
-        ),
+        shape: RoundedRectangleBorder(borderRadius: cardRadius),
+      ),
       ),
     );
   }
