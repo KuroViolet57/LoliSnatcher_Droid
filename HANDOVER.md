@@ -144,6 +144,50 @@ Committed in 5210d.
   works (only the queue panel was removed). NOTE: if a user actually snatches,
   they no longer have the in-drawer queue/controls — revisit if needed.
 
+## "FLOW" UI MODERNIZATION (big multi-phase redesign) — IN PROGRESS
+Design handoff = user-provided zip (design_handoff_flow_ui): README.md + HTML
+prototypes (`Redesign 1e - Flow.dc.html` is THE spec, 16 screens, 412x892).
+Dark violet "Flow" look. Map tokens onto ThemeHandler; keep custom accents
+working (violet is just the default accent). Fonts: Manrope + Material Symbols
+Rounded. Full token list is in the zip README (palette, radii, type scale,
+tag-type colors, per-screen specs 1-16).
+
+**Phase 1 DONE (build 5210i / "flow1"):** theme foundation.
+- `theme_handler.dart`: Flow dark palette constants (flowBg #0A090D, flowSurface
+  #14111B, flowRaised #17131F, flowInput #1D1827, flowDeep #241E33, flowBorder
+  #2E2940...). `colorScheme()` copyWith pins dark neutral surfaces/text to Flow
+  (accent stays theme-driven). `scaffoldBackground()` = flowBg. App bars flat
+  dark in dark mode (appBarTheme). dividerTheme uses flowBorder. textTheme:
+  'System' font → Manrope. AMOLED + light mode left on the seed scheme.
+- `settings_handler.dart`: "Flow" ThemeItem (violet #B9A0E8) added first + set as
+  default theme + default `theme` Rx.
+- `tag_type.dart`: getColour() → Flow tag palette.
+
+**REMAINING PHASES (per zip spec screens; not yet done):**
+- Phase 2 — Browse (`mobile_home_page`/`waterfall_view`): tab-card carousel w/
+  edit btn + peek + dashed "+" ; header (tabs pill + menu); 2-col grid tiles
+  (badges bottom-left type+duration on scrim, heart bottom-right, r14); bottom
+  floating blurred search bar (search/history/bookmark_add/accent arrow).
+- Phase 3 — Viewer + Info Flow + Tag Menu (`gallery_view_page`, `hideable_appbar`,
+  `tag_view`): media 86% on open (setting "Media size on open"); peek sheet →
+  Info Flow (artist carousel, uploader pill w/ Save/Fav/Collect, tags cloud
+  split chips: tap=menu, hold=new tab, ⧉ zone=preview). Tag Menu = bottom sheet
+  replacing the dialog (Preview/Add/Exclude/New tab/Copy/Marked/Hidden→submenu/
+  Pin→sheet/Related tabs/Edit).
+- Phase 4 — Sheets/drawers: right drawer (mirrored top search bar, booru card,
+  multibooru toggle, downloads/favs/settings/webview rows); left sidebar
+  (pinned tags top + Quick Access bottom — note: I already put quick-access in
+  the downloads drawer, reconcile); Booru Switcher / Search History / Add to
+  Collection / Post Details sheets; Query Editor (chips + helper key row +
+  suggestions + accent Search btn); All Tabs manager (filter, fast-scroll, bulk);
+  Settings hub (SEARCH/LOOK&FEEL/SYSTEM cards → detail pages); Downloads/Favorites.
+- Snackbar Flow style (bg #E9E2F5, text #2A2240, r14, w800) in flash_elements.
+- Material Symbols Rounded icons (material_symbols_icons pkg NOT in pubspec;
+  either add it or keep Material Icons — currently kept Material Icons).
+Approach: reskin, reuse existing GetX handlers (SearchHandler/ViewerHandler/
+SettingsHandler), build+ship per phase so each is testable. Fill missing UIs in
+the design's style.
+
 ## POSSIBLE FUTURE POLISH (not requested yet)
 - Populate relatedCreators/relatedTags for more handlers (any with tag data).
 - xxxfollow login (Laravel email/password + Google reCAPTCHA) — same WebView
