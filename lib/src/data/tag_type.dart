@@ -40,18 +40,20 @@ enum TagType {
     return name;
   }
 
+  // "Flow" tag-type palette — softened, on-theme hues (chip text + left bar +
+  // dot). Chip fill/border derive from these at low alpha in the chip widgets.
   Color? getColour() {
     switch (this) {
       case artist:
-        return Colors.red;
+        return const Color(0xFFE890A5);
       case character:
-        return Colors.green;
+        return const Color(0xFF8FCB94);
       case copyright:
-        return Colors.purple;
+        return const Color(0xFFCB9CD4);
       case meta:
-        return Colors.orange;
+        return const Color(0xFFE5B36B);
       case species:
-        return Colors.brown;
+        return const Color(0xFFC8A98B);
       default:
         return null;
     }

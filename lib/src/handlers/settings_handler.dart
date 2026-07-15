@@ -271,9 +271,9 @@ class SettingsHandler {
 
   // themes wip
   final Rx<ThemeItem> theme = ThemeItem(
-    name: 'Pink',
-    primary: Colors.pink[200],
-    accent: Colors.pink[600],
+    name: 'Flow',
+    primary: const Color(0xFFB9A0E8),
+    accent: const Color(0xFFB9A0E8),
   ).obs;
 
   final Rx<Color?> customPrimaryColor = Colors.pink[200]!.obs;
@@ -893,8 +893,9 @@ class SettingsHandler {
     },
     'theme': {
       'type': 'theme',
-      'default': ThemeItem(name: 'Pink', primary: Colors.pink[200], accent: Colors.pink[600]),
+      'default': ThemeItem(name: 'Flow', primary: const Color(0xFFB9A0E8), accent: const Color(0xFFB9A0E8)),
       'options': <ThemeItem>[
+        ThemeItem(name: 'Flow', primary: const Color(0xFFB9A0E8), accent: const Color(0xFFB9A0E8)),
         ThemeItem(name: 'Pink', primary: Colors.pink[200], accent: Colors.pink[600]),
         ThemeItem(name: 'Purple', primary: Colors.deepPurple[600], accent: Colors.deepPurple[800]),
         ThemeItem(name: 'Blue', primary: Colors.lightBlue, accent: Colors.lightBlue[600]),
