@@ -8,6 +8,7 @@ import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 import 'package:lolisnatcher/src/widgets/history/history.dart';
 import 'package:lolisnatcher/src/widgets/preview/main_search_query_editor_page.dart';
+import 'package:lolisnatcher/src/widgets/preview/main_search_tag_chip.dart';
 
 /// The Flow browse floating search bar: a blurred pill hugging the bottom with
 /// a search icon, the current query (tap → Query Editor), a history button,
@@ -83,6 +84,35 @@ class _FlowSearchBarState extends State<FlowSearchBar> {
     );
   }
 
+  void _removeTag(String tag) {
+    ServiceHandler.vibrate(duration: 20);
+    searchHandler.removeTagFromSearch(tag);
+    searchHandler.searchAction(searchHandler.searchTextController.text, null);
+  }
+
+  // Current query shown as removable, type-coloured chips (horizontally
+  // scrollable). Tap a chip to open the editor; the ✕ removes that tag and
+  // re-runs the search.
+  Widget _chips() {
+    final List<String> tags = searchHandler.searchTextControllerTags;
+    return ListView.separated(
+      scrollDirection: Axis.horizontal,
+      itemCount: tags.length,
+      separatorBuilder: (_, _) => const SizedBox(width: 5),
+      itemBuilder: (context, i) {
+        final String tag = tags[i];
+        return Center(
+          child: MainSearchTagChip(
+            tag: tag,
+            tab: searchHandler.currentTab,
+            onTap: _openEditor,
+            onDeleteTap: () => _removeTag(tag),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -113,27 +143,25 @@ class _FlowSearchBarState extends State<FlowSearchBar> {
               const Icon(Icons.search, size: 21, color: Color(0xFF8A80A0)),
               const SizedBox(width: 10),
               Expanded(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: _openEditor,
-                  onLongPress: () {
-                    ServiceHandler.vibrate();
-                    searchHandler.addTabByString(query, switchToNew: true);
-                  },
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      hasQuery ? query : 'Add tags — try artist:…',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: hasQuery ? const Color(0xFFE5DEF0) : const Color(0xFF8A80A0),
-                        fontSize: 14.5,
-                        fontWeight: FontWeight.w600,
+                child: hasQuery
+                    ? _chips()
+                    : GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: _openEditor,
+                        child: const Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            'Add tags — try artist:…',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Color(0xFF8A80A0),
+                              fontSize: 14.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                ),
               ),
               IconButton(
                 tooltip: 'Search history',
