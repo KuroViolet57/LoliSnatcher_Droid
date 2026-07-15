@@ -163,6 +163,34 @@ tag-type colors, per-screen specs 1-16).
   default theme + default `theme` Rx.
 - `tag_type.dart`: getColour() → Flow tag palette.
 
+**Phase 2 DONE (builds 5210j/k/m):** Browse.
+- `flow_tab_carousel.dart` (FlowTabCarousel): swipeable tab cards under the app
+  bar — active = wide gradient card (booru avatar+name, count right-aligned,
+  query 16.5/800 + edit btn → query editor, status line), following tabs peek,
+  dashed "+" adds a tab, dots track position. Renders from active forward so the
+  neighbour is the real next tab; snaps to start on tab switch. Inserted as a
+  SliverToBoxAdapter after MainAppBar in waterfall_view. `TabsCountPill` (same
+  file) replaced the old inline switcher (ActiveTitle) as the app-bar title →
+  opens TabManagerPage (no more redundant switcher).
+- `flow_search_bar.dart`: floating blurred bottom search pill (search/history/
+  bookmark/accent arrow) + inline removable type-coloured tag chips (reuses
+  MainSearchTagChip; ✕ removes tag + re-searches).
+- Grid tiles restyled (rounded, badges) — in waterfall/thumbnail build.
+
+**Phase 3 IN PROGRESS (builds 5210n/o/p):** Viewer + Info Flow + Tag Menu.
+- Tag Menu (`showTagDialog` in tag_view.dart) converted from dialog →
+  `showModalBottomSheet` with Flow header (type bar + tag name in type colour +
+  type label + drag handle); all actions kept, redundant Close row dropped.
+- Info-flow tag chips: added the ⧉ preview zone (divider + picture_in_picture in
+  type colour → FloatingPreviewHandler) as its own tap target; added "Tags N ·
+  tap · hold = tab · ⧉ = preview" hint header above the per-type sections.
+- Viewer peek bar (`_InfoPeekBar` in gallery_view_page.dart): collapsed-sheet
+  bottom bar with artist chip + N-tags chip + swipe-up hint, tied to
+  viewerHandler.displayAppbar; tap → openInfoPanel.
+- STILL TODO in phase 3: artist carousel + uploader pill w/ Save/Fav/Collect at
+  top of info panel; "Media size on open" slider (README 86%); viewer top-scrim
+  restyle (screen 08).
+
 **REMAINING PHASES (per zip spec screens; not yet done):**
 - Phase 2 — Browse (`mobile_home_page`/`waterfall_view`): tab-card carousel w/
   edit btn + peek + dashed "+" ; header (tabs pill + menu); 2-col grid tiles
