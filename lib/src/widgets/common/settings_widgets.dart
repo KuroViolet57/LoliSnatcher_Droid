@@ -69,24 +69,30 @@ class SettingsButton extends StatelessWidget {
       );
     }
 
-    return Material(
-      color: Colors.transparent,
-      child: ListTile(
-        leading: icon,
-        title: useHtml ? LoliHtml(name) : Text(name),
-        subtitle: subtitle,
-        trailing: trailingIcon,
-        enabled: enabled,
-        dense: dense,
-        onTap: interactive ? () => onTapAction(context) : null,
-        onLongPress: onLongPress,
-        shape: Border(
-          // draw top border when item is in the middle of other items, but they are not listtile
-          top: drawTopBorder ? BorderSide(color: Theme.of(context).dividerColor, width: borderWidth) : BorderSide.none,
-          // draw bottom border when item is among other listtiles, but not when it's the last one
-          bottom: drawBottomBorder
-              ? BorderSide(color: Theme.of(context).dividerColor, width: borderWidth)
-              : BorderSide.none,
+    final theme = Theme.of(context);
+    final BorderRadius radius = BorderRadius.circular(13);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+      child: Material(
+        color: theme.colorScheme.surfaceContainer,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: radius,
+          side: BorderSide(color: theme.colorScheme.outlineVariant),
+        ),
+        child: ListTile(
+          leading: icon,
+          title: useHtml ? LoliHtml(name) : Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
+          subtitle: subtitle,
+          trailing: trailingIcon ??
+              (page != null
+                  ? Icon(Icons.chevron_right, color: theme.colorScheme.onSurfaceVariant)
+                  : null),
+          enabled: enabled,
+          dense: dense,
+          onTap: interactive ? () => onTapAction(context) : null,
+          onLongPress: onLongPress,
+          shape: RoundedRectangleBorder(borderRadius: radius),
         ),
       ),
     );
@@ -221,55 +227,58 @@ class SettingsToggle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: ListTile(
-        enabled: enabled,
-        title: Row(
-          children: [
-            if (leadingIcon != null)
+    final theme = Theme.of(context);
+    final BorderRadius radius = BorderRadius.circular(13);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+      child: Material(
+        color: theme.colorScheme.surfaceContainer,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: radius,
+          side: BorderSide(color: theme.colorScheme.outlineVariant),
+        ),
+        child: ListTile(
+          enabled: enabled,
+          title: Row(
+            children: [
+              if (leadingIcon != null)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: leadingIcon,
+                ),
+              Expanded(
+                child: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+              ),
+              const SizedBox(width: 4),
+              if (defaultValue != null && value != defaultValue)
+                Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: IconButton(
+                    icon: const Icon(Icons.restore),
+                    onPressed: () {
+                      onChanged(defaultValue!);
+                    },
+                  ),
+                ),
+            ],
+          ),
+          subtitle: subtitle,
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
               Padding(
                 padding: const EdgeInsets.only(right: 8),
-                child: leadingIcon,
+                child: trailingIcon,
               ),
-            Expanded(
-              child: Text(title),
-            ),
-            const SizedBox(width: 4),
-            if (defaultValue != null && value != defaultValue)
-              Padding(
-                padding: const EdgeInsets.only(left: 8),
-                child: IconButton(
-                  icon: const Icon(Icons.restore),
-                  onPressed: () {
-                    onChanged(defaultValue!);
-                  },
-                ),
+              Switch(
+                value: value,
+                onChanged: enabled ? onChanged : null,
               ),
-          ],
-        ),
-        subtitle: subtitle,
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: trailingIcon,
-            ),
-            Switch(
-              value: value,
-              onChanged: enabled ? onChanged : null,
-            ),
-          ],
-        ),
-        onTap: () => onChanged(!value),
-        shape: Border(
-          // draw top border when item is in the middle of other items, but they are not listtile
-          top: drawTopBorder ? BorderSide(color: Theme.of(context).dividerColor, width: borderWidth) : BorderSide.none,
-          // draw bottom border when item is among other listtiles, but not when it's the last one
-          bottom: drawBottomBorder
-              ? BorderSide(color: Theme.of(context).dividerColor, width: borderWidth)
-              : BorderSide.none,
+            ],
+          ),
+          onTap: () => onChanged(!value),
+          shape: RoundedRectangleBorder(borderRadius: radius),
         ),
       ),
     );
