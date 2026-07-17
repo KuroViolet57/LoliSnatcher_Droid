@@ -285,6 +285,13 @@ class SettingsHandler {
   final RxBool useDynamicColor = false.obs;
   final RxBool isAmoled = false.obs;
 
+  /// One-time "Flow" skin migration marker: existing installs keep their old
+  /// persisted theme (e.g. Pink/Red + AMOLED + dynamic colours), which makes
+  /// the reskin look broken. On the first launch after the redesign we switch
+  /// them to the Flow preset once and set this flag; after that their choices
+  /// are respected again.
+  final RxBool flowSkinApplied = false.obs;
+
   final Rx<String> fontFamily = 'System'.obs;
 
   final Rxn<AppLocale> locale = Rxn<AppLocale>(null);
@@ -921,6 +928,10 @@ class SettingsHandler {
       'type': 'bool',
       'default': false,
     },
+    'flowSkinApplied': {
+      'type': 'bool',
+      'default': false,
+    },
     'fontFamily': {
       'type': 'string',
       'default': 'System',
@@ -1114,6 +1125,10 @@ class SettingsHandler {
 
     if (await checkForSettings()) {
       await loadSettingsJson();
+      if (_flowMigrationPending) {
+        _flowMigrationPending = false;
+        await saveSettings(restate: false);
+      }
     } else {
       await saveSettings(restate: true);
     }
@@ -1410,6 +1425,8 @@ class SettingsHandler {
         return useDynamicColor;
       case 'isAmoled':
         return isAmoled;
+      case 'flowSkinApplied':
+        return flowSkinApplied;
       case 'fontFamily':
         return fontFamily;
       case 'customPrimaryColor':
@@ -1755,6 +1772,9 @@ class SettingsHandler {
       case 'isAmoled':
         isAmoled.value = validatedValue;
         break;
+      case 'flowSkinApplied':
+        flowSkinApplied.value = validatedValue;
+        break;
       case 'fontFamily':
         fontFamily.value = validatedValue;
         break;
@@ -2029,8 +2049,29 @@ class SettingsHandler {
     // force mobile app mode, until we redo UI for desktop and start doing builds again
     appMode.value = AppMode.Mobile;
 
+    // One-time Flow skin migration (startup loads only, not sync payloads):
+    // older installs carry a pre-redesign theme (Pink/Red accent, AMOLED,
+    // dynamic wallpaper colours) that fights the Flow skin. Switch them to the
+    // Flow preset once; afterwards any manual theme change sticks.
+    if (setMissingKeys && flowSkinApplied.value != true) {
+      theme.value = ThemeItem(
+        name: 'Flow',
+        primary: const Color(0xFFB9A0E8),
+        accent: const Color(0xFFB9A0E8),
+      );
+      themeMode.value = ThemeMode.dark;
+      isAmoled.value = false;
+      useDynamicColor.value = false;
+      flowSkinApplied.value = true;
+      _flowMigrationPending = true;
+    }
+
     return true;
   }
+
+  /// Set when [loadFromJSON] just performed the one-time Flow skin migration —
+  /// tells [loadSettings] to persist immediately so it never re-runs.
+  bool _flowMigrationPending = false;
 
   Future<bool> saveSettings({required bool restate}) async {
     await getStoragePermission();

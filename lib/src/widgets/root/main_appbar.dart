@@ -1,4 +1,3 @@
-import 'dart:math';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -98,32 +97,15 @@ class _MainAppBarState extends State<MainAppBar> {
                     value: currentCompleteProgress + downloadToTotalProgress,
                   );
                 }),
+                // Flow: this drawer is the Pinned tags / quick access sidebar
+                // now, so a single pin glyph replaces the old floppy+arrows.
                 IconButton(
                   onPressed: () async {
                     _toggleDrawer(direction);
                   },
-                  padding: EdgeInsets.zero,
-                  icon: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      if (settingsHandler.handSide.value.isLeft)
-                        Icon(
-                          Symbols.save_rounded,
-                          color: Theme.of(context).appBarTheme.iconTheme?.color,
-                        ),
-                      Transform.rotate(
-                        angle: settingsHandler.handSide.value.isRight ? 0 : pi,
-                        child: Icon(
-                          Symbols.keyboard_double_arrow_left_rounded,
-                          color: Theme.of(context).appBarTheme.iconTheme?.color,
-                        ),
-                      ),
-                      if (settingsHandler.handSide.value.isRight)
-                        Icon(
-                          Symbols.save_rounded,
-                          color: Theme.of(context).appBarTheme.iconTheme?.color,
-                        ),
-                    ],
+                  icon: Icon(
+                    Symbols.push_pin_rounded,
+                    color: Theme.of(context).appBarTheme.iconTheme?.color,
                   ),
                 ),
                 if (searchHandler.currentSelected.isNotEmpty)

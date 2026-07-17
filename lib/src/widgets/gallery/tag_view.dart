@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:math';
 
-import 'package:auto_size_text_plus/auto_size_text_plus.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
@@ -659,6 +658,8 @@ class _TagViewState extends State<TagView> {
     }
   }
 
+  // Flow key/value row (matches the Details sheet): muted key column, bold
+  // value, subtle copy/open glyph. Tap copies (or opens links).
   Widget infoText(
     String title,
     String data, {
@@ -668,84 +669,76 @@ class _TagViewState extends State<TagView> {
     VoidCallback? onLongPress,
     Widget? trailing,
   }) {
-    if (data.isNotEmpty) {
-      return ListTile(
-        onTap:
-            onTap ??
-            (canCopy
-                ? () {
-                    Clipboard.setData(ClipboardData(text: data));
-                    FlashElements.showSnackbar(
-                      context: context,
-                      duration: const Duration(seconds: 2),
-                      title: Text(
-                        context.loc.copiedToClipboard,
-                        style: const TextStyle(fontSize: 20),
-                      ),
-                      content: Text(
-                        '$title: $data',
-                        style: const TextStyle(fontSize: 16),
-                      ),
-                      leadingIcon: Symbols.content_copy_rounded,
-                      sideColor: Colors.green,
-                    );
-                  }
-                : null),
-        onLongPress: onLongPress,
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.center,
+    if (data.isEmpty) return const SizedBox.shrink();
+
+    final theme = Theme.of(context);
+    return InkWell(
+      onTap:
+          onTap ??
+          (isLink
+              ? () => launchUrlString(data, mode: LaunchMode.externalApplication)
+              : (canCopy
+                    ? () {
+                        Clipboard.setData(ClipboardData(text: data));
+                        FlashElements.showSnackbar(
+                          context: context,
+                          duration: const Duration(seconds: 2),
+                          title: Text(
+                            context.loc.copiedToClipboard,
+                            style: const TextStyle(fontSize: 20),
+                          ),
+                          content: Text(
+                            '$title: $data',
+                            style: const TextStyle(fontSize: 16),
+                          ),
+                          leadingIcon: Symbols.content_copy_rounded,
+                          sideColor: Colors.green,
+                        );
+                      }
+                    : null)),
+      onLongPress: onLongPress,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+        child: Row(
           children: [
-            Text(
-              '$title: ',
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            if (!isLink)
-              Expanded(
-                child: AutoSizeText(
-                  data,
-                  maxLines: 1,
-                  minFontSize: 13,
-                  maxFontSize: 14,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    height: 1,
-                  ),
-                  overflowReplacement: DraggableOverflowText(
-                    data,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      height: 1,
-                    ),
-                  ),
+            SizedBox(
+              width: 92,
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
+            ),
+            Expanded(
+              child: Text(
+                data,
+                maxLines: isLink ? 1 : 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: isLink ? theme.colorScheme.secondary : theme.colorScheme.onSurface,
+                  decoration: isLink ? TextDecoration.underline : null,
+                  decorationColor: theme.colorScheme.secondary,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            trailing ??
+                Icon(
+                  isLink ? Symbols.open_in_new_rounded : Symbols.content_copy_rounded,
+                  size: 15,
+                  color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                ),
           ],
         ),
-        subtitle: isLink
-            ? DraggableOverflowText(
-                data,
-                style: const TextStyle(fontSize: 14),
-              )
-            : null,
-        trailing:
-            trailing ??
-            (isLink
-                ? IconButton(
-                    icon: const Icon(Symbols.exit_to_app_rounded),
-                    onPressed: () => launchUrlString(
-                      data,
-                      mode: LaunchMode.externalApplication,
-                    ),
-                  )
-                : null),
-      );
-    }
-
-    return const SizedBox.shrink();
+      ),
+    );
   }
 
   /// Builds the "More from artist X" + "More from uploader Y" inline grid

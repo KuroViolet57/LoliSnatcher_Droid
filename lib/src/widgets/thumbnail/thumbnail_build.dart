@@ -49,7 +49,9 @@ class ThumbnailBuild extends StatelessWidget {
     final SettingsHandler settingsHandler = SettingsHandler.instance;
 
     return ClipRRect(
-      borderRadius: BorderRadius.circular(4),
+      // Flow: grid media tiles are softly rounded (matches the blueprint's
+      // 14px card radius), not the old near-square 4px.
+      borderRadius: BorderRadius.circular(14),
       child: Stack(
         alignment: settingsHandler.previewDisplay.isSquare ? .center : .bottomCenter,
         children: [
