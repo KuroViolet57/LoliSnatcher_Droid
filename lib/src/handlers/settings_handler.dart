@@ -1125,10 +1125,6 @@ class SettingsHandler {
 
     if (await checkForSettings()) {
       await loadSettingsJson();
-      if (_flowMigrationPending) {
-        _flowMigrationPending = false;
-        await saveSettings(restate: false);
-      }
     } else {
       await saveSettings(restate: true);
     }
@@ -1196,6 +1192,13 @@ class SettingsHandler {
     final String settings = await settingsFile.readAsString();
     // print('loadJSON $settings');
     await loadFromJSON(settings, true);
+    // If loading just triggered the one-time Flow skin migration (startup OR
+    // a restored pre-redesign backup), persist immediately so the migrated
+    // state hits disk even if the app is killed before the next save.
+    if (_flowMigrationPending) {
+      _flowMigrationPending = false;
+      await saveSettings(restate: false);
+    }
     return;
   }
 
