@@ -113,9 +113,18 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
   // thirds": 1 => 1/3, 2 => 2/3, 3 => full. fraction = N/3.
   double get infoSheetOpenSize => (settingsHandler.bottomSheetSizeMultiplier / 3).clamp(0.2, 0.98);
 
+  void _mirrorSheetExtent() {
+    viewerHandler.infoSheetExtent.value = infoSheetExtent.value;
+  }
+
   @override
   void initState() {
     super.initState();
+
+    // Mirror the sheet extent into ViewerHandler so video-control overlays
+    // know whether the peek bar is actually visible.
+    viewerHandler.infoSheetExtent.value = 0;
+    infoSheetExtent.addListener(_mirrorSheetExtent);
 
     // pause all active videos to avoid performance and sound overlay issues
     viewerHandler.pauseAllVideos();
@@ -203,6 +212,8 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
     }
     NavigationHandler.instance.routeObserver.unsubscribe(this);
     infoSheetController.dispose();
+    infoSheetExtent.removeListener(_mirrorSheetExtent);
+    viewerHandler.infoSheetExtent.value = 0;
     infoSheetExtent.dispose();
     volumeListener?.cancel();
     ServiceHandler.setVolumeButtons(!settingsHandler.useVolumeButtonsForScroll);

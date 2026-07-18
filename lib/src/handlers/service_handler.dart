@@ -447,6 +447,14 @@ class ServiceHandler {
     }
   }
 
+  // What setSystemUiVisibility last applied — the re-hide callback below only
+  // acts while the app still wants the "visible chrome, hidden status bar"
+  // combination (manual mode never re-hides on its own after the user swipes
+  // the status bar back in).
+  static bool _wantsHiddenStatusBar = false;
+  static bool _statusBarCallbackArmed = false;
+  static int _statusBarReHideGeneration = 0;
+
   static Future<void> setSystemUiVisibility(bool visible) async {
     // When the user opted to hide the status bar, "showing" the system UI still
     // keeps the top status bar hidden (bottom nav stays visible) so it doesn't
@@ -457,13 +465,32 @@ class ServiceHandler {
     } catch (_) {}
 
     if (visible && hideStatusBar) {
+      _wantsHiddenStatusBar = true;
       await SystemChrome.setEnabledSystemUIMode(
         SystemUiMode.manual,
         overlays: [SystemUiOverlay.bottom],
       );
+      if (!_statusBarCallbackArmed) {
+        _statusBarCallbackArmed = true;
+        await SystemChrome.setSystemUIChangeCallback((bool systemOverlaysAreVisible) async {
+          if (!systemOverlaysAreVisible || !_wantsHiddenStatusBar) return;
+          // The user swiped the status bar back in — let it linger briefly
+          // (so quick-settings access still works), then re-hide, unless the
+          // desired mode changed in the meantime.
+          final int generation = ++_statusBarReHideGeneration;
+          await Future.delayed(const Duration(seconds: 3));
+          if (_wantsHiddenStatusBar && generation == _statusBarReHideGeneration) {
+            await SystemChrome.setEnabledSystemUIMode(
+              SystemUiMode.manual,
+              overlays: [SystemUiOverlay.bottom],
+            );
+          }
+        });
+      }
       return;
     }
 
+    _wantsHiddenStatusBar = false;
     await SystemChrome.setEnabledSystemUIMode(
       visible ? SystemUiMode.edgeToEdge : SystemUiMode.immersiveSticky,
       overlays: visible ? SystemUiOverlay.values : [],

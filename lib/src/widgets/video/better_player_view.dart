@@ -690,7 +690,7 @@ class _BetterControlsState extends State<_BetterControls> {
           child: Obx(
             () => Padding(
               padding: EdgeInsets.only(
-                bottom: ViewerHandler.instance.displayAppbar.value
+                bottom: ViewerHandler.instance.isPeekBarVisible
                     ? 64 + MediaQuery.viewPaddingOf(context).bottom
                     : 0,
               ),

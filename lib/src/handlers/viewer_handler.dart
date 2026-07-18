@@ -89,6 +89,14 @@ class ViewerHandler {
   }
 
   final RxBool displayAppbar = true.obs; // is viewer toolbar visible
+
+  // Current extent of the bottom info sheet (0 = closed). Mirrored from the
+  // gallery page so overlays (e.g. video controls) can tell whether the Flow
+  // peek bar is actually on screen: it only shows while the chrome is visible
+  // AND the sheet is closed.
+  final RxDouble infoSheetExtent = 0.0.obs;
+
+  bool get isPeekBarVisible => displayAppbar.value && infoSheetExtent.value < 0.06;
   final RxBool isZoomed = false.obs; // is current item zoomed in
   final RxBool isLoaded = false.obs; // is current item loaded
   final RxBool isStopped = false.obs; // is current item stopped

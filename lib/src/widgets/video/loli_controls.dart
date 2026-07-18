@@ -126,7 +126,7 @@ class _LoliControlsState extends State<LoliControls> {
                 Obx(
                   () => Padding(
                     padding: EdgeInsets.only(
-                      bottom: viewerHandler.displayAppbar.value
+                      bottom: viewerHandler.isPeekBarVisible
                           ? 64 + MediaQuery.viewPaddingOf(context).bottom
                           : 0,
                     ),
