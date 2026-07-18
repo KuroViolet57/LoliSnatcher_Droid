@@ -22,6 +22,121 @@ class WorldXyzHandler extends BooruHandler {
   @override
   bool get shouldUpdateIteminTagView => true;
 
+  // ── Account auth (rule34.xyz "credentials" section) ────────────────────
+  // userID = email/username, apiKey = password. Sign-in yields a JWT which is
+  // sent as a Bearer header; the account id unlocks the liked / bookmarked
+  // feeds and the user's playlists. Cached statically so tab switches don't
+  // re-login; failed logins back off for 5 minutes.
+  static final Map<String, String> _jwtCache = {};
+  static final Map<String, String> _userIdCache = {};
+  static final Map<String, int> _authFailedAt = {};
+
+  bool get _hasCredentials => booru.userID?.isNotEmpty == true && booru.apiKey?.isNotEmpty == true;
+
+  String get _authKey => '${booru.name}|${booru.userID}';
+
+  String? get _jwt => _jwtCache[_authKey];
+
+  String? get _accountId => _userIdCache[_authKey];
+
+  // Playlists of the signed-in user (name -> id), fetched during searchSetup
+  // and surfaced through the `playlist:` metatag in the query editor.
+  static final Map<String, List<MetaTagValue>> _playlistCache = {};
+
+  List<MetaTagValue> get _playlists => _playlistCache[_authKey] ?? [];
+
+  Future<void> _ensureAuth() async {
+    if (!_hasCredentials || (_jwt != null && _accountId != null)) return;
+
+    final int? failedAt = _authFailedAt[_authKey];
+    if (failedAt != null && DateTime.now().millisecondsSinceEpoch - failedAt < 5 * 60 * 1000) {
+      return;
+    }
+
+    try {
+      final res = await DioNetwork.post(
+        '${booru.baseURL}/api/v2/auth/signin',
+        headers: getHeaders(),
+        data: {
+          'email': booru.userID,
+          'password': booru.apiKey,
+        },
+      );
+
+      final dynamic data = res.data;
+      String? token;
+      String? userId;
+      if (data is String && data.isNotEmpty) {
+        token = data;
+      } else if (data is Map) {
+        token = (data['token'] ?? data['jwt'] ?? data['accessToken'] ?? data['access_token'])?.toString();
+        userId = (data['user'] is Map ? data['user']['id'] : data['userId'])?.toString();
+      }
+      if (token == null || token.isEmpty) {
+        throw Exception('no token in signin response');
+      }
+
+      if (userId == null || userId.isEmpty) {
+        final me = await DioNetwork.post(
+          '${booru.baseURL}/api/v2/account/me',
+          headers: {
+            ...getHeaders(),
+            'Authorization': 'Bearer $token',
+          },
+          data: {},
+        );
+        if (me.data is Map) {
+          userId = (me.data['id'] ?? me.data['user']?['id'])?.toString();
+        }
+      }
+      if (userId == null || userId.isEmpty) {
+        throw Exception('no user id after signin');
+      }
+
+      _jwtCache[_authKey] = token;
+      _userIdCache[_authKey] = userId;
+      _authFailedAt.remove(_authKey);
+    } catch (e) {
+      _authFailedAt[_authKey] = DateTime.now().millisecondsSinceEpoch;
+      Logger.Inst().log(
+        'rule34.xyz signin failed: $e',
+        className,
+        '_ensureAuth',
+        LogTypes.booruHandlerInfo,
+      );
+    }
+  }
+
+  Future<void> _fetchPlaylists() async {
+    if (_jwt == null || _accountId == null || _playlistCache[_authKey] != null) return;
+    try {
+      final res = await DioNetwork.post(
+        '${booru.baseURL}/api/v2/playlist/search/user/$_accountId',
+        headers: {
+          ...getHeaders(),
+          'Authorization': 'Bearer $_jwt',
+        },
+        data: {'Skip': 0, 'take': 100},
+      );
+      final items = (res.data is Map ? res.data['items'] : null) as List? ?? [];
+      _playlistCache[_authKey] = [
+        for (final p in items)
+          if (p is Map && p['id'] != null)
+            MetaTagValue(
+              name: (p['name'] ?? p['title'] ?? 'playlist ${p['id']}').toString(),
+              value: p['id'].toString(),
+            ),
+      ];
+    } catch (e) {
+      Logger.Inst().log(
+        'rule34.xyz playlists fetch failed: $e',
+        className,
+        '_fetchPlaylists',
+        LogTypes.booruHandlerInfo,
+      );
+    }
+  }
+
   @override
   List parseListFromResponse(dynamic response) {
     final Map<String, dynamic> parsedResponse = response.data;
@@ -75,6 +190,11 @@ class WorldXyzHandler extends BooruHandler {
         LogTypes.booruHandlerInfo,
       );
     }
+
+    // Sign in (when credentials are set) and load the account's playlists so
+    // the `feed:`/`playlist:` metatags work. Failures don't break search.
+    await _ensureAuth();
+    await _fetchPlaylists();
 
     return success;
   }
@@ -273,10 +393,13 @@ class WorldXyzHandler extends BooruHandler {
     bool withCaptchaCheck = true,
     Map<String, dynamic>? queryParams,
   }) async {
+    await _ensureAuth();
+
     final String cookies = await getCookies() ?? '';
     final Map<String, String> headers = {
       ...getHeaders(),
       if (cookies.isNotEmpty) 'Cookie': cookies,
+      if (_jwt != null) 'Authorization': 'Bearer $_jwt',
     };
 
     Logger.Inst().log(
@@ -295,29 +418,52 @@ class WorldXyzHandler extends BooruHandler {
 
     // Pull the `sort:` metatag out of the query and map it to the API's
     // numeric sortBy (verified against rule34.xyz: 0 = newest, 1 = most
-    // liked, 2 = most viewed). The sort term itself is not a real tag, so
-    // it's excluded from include/excludeTags below.
+    // liked, 2 = most viewed, 3 = random; oldest = sortBy 0 + sortOrder 0).
+    // The sort term itself is not a real tag, so it's excluded from
+    // include/excludeTags below.
     final int sortBy = _sortByFromTags(input);
 
-    bool isSortTerm(String f) => f.toLowerCase().startsWith('sort:');
+    // Account feeds: `feed:likes` / `feed:bookmarks` (aliases likes:me /
+    // bookmarks:me) search within the signed-in account's liked/bookmarked
+    // posts; `playlist:<id>` searches inside a playlist. Remaining tags still
+    // filter within the feed.
+    final _FeedRoute route = _feedRouteFromTags(input);
+
+    bool isSpecialTerm(String f) {
+      final String lower = f.toLowerCase().replaceAll(RegExp('^-'), '');
+      return lower.startsWith('sort:') ||
+          lower.startsWith('feed:') ||
+          lower.startsWith('playlist:') ||
+          lower == 'likes:me' ||
+          lower == 'bookmarks:me';
+    }
 
     final List<String> includeTags = input
         .split(' ')
-        .where((f) => !f.startsWith('-') && !isSortTerm(f))
+        .where((f) => !f.startsWith('-') && !isSpecialTerm(f))
         .map((tag) => tag.replaceAll(RegExp('_'), ' '))
         .where((f) => f.isNotEmpty)
         .toList();
     final List<String> excludeTags = input
         .split(' ')
-        .where((f) => f.startsWith('-') && !isSortTerm(f.replaceAll(RegExp('^-'), '')))
+        .where((f) => f.startsWith('-') && !isSpecialTerm(f))
         .map(
           (tag) => tag.replaceAll(RegExp('_'), ' ').replaceAll(RegExp('^-'), ''),
         )
         .where((f) => f.isNotEmpty)
         .toList();
 
+    String url = uri.toString();
+    if (route.playlistId != null) {
+      url = '${booru.baseURL}/api/v2/post/search/playlist/${route.playlistId}';
+    } else if (route.liked && _accountId != null) {
+      url = '${booru.baseURL}/api/v2/post/search/liked/$_accountId';
+    } else if (route.bookmarked && _accountId != null) {
+      url = '${booru.baseURL}/api/v2/post/search/bookmarked/$_accountId';
+    }
+
     return DioNetwork.post(
-      uri.toString(),
+      url,
       headers: headers,
       queryParameters: queryParams,
       options: fetchSearchOptions(),
@@ -327,7 +473,7 @@ class WorldXyzHandler extends BooruHandler {
         if (cursor.isNotEmpty) 'cursor': cursor,
         'includeTags': includeTags,
         if (excludeTags.isNotEmpty) 'excludeTags': excludeTags,
-        'sortBy': sortBy,
+        if (sortBy == -1) ...{'sortBy': 0, 'sortOrder': 0} else 'sortBy': sortBy,
         'take': limit,
       },
       customInterceptor: withCaptchaCheck ? DioNetwork.captchaInterceptor : null,
@@ -351,6 +497,12 @@ class WorldXyzHandler extends BooruHandler {
         case 'viewed':
         case 'mostviewed':
           return 2;
+        case 'random':
+        case 'shuffle':
+          return 3;
+        case 'oldest':
+        case 'old':
+          return -1;
         case 'date':
         case 'newest':
         case 'new':
@@ -360,8 +512,26 @@ class WorldXyzHandler extends BooruHandler {
     return 0;
   }
 
-  // Surfaces as a `sort:` chip in the search bar (Newest / Most Liked /
-  // Most Viewed). Handled by _sortByFromTags + the sortBy field above.
+  _FeedRoute _feedRouteFromTags(String input) {
+    bool liked = false;
+    bool bookmarked = false;
+    String? playlistId;
+    for (final term in input.split(' ')) {
+      final String lower = term.toLowerCase();
+      if (lower == 'feed:likes' || lower == 'feed:liked' || lower == 'likes:me') {
+        liked = true;
+      } else if (lower == 'feed:bookmarks' || lower == 'feed:bookmarked' || lower == 'bookmarks:me') {
+        bookmarked = true;
+      } else if (lower.startsWith('playlist:')) {
+        final String value = lower.substring('playlist:'.length);
+        if (value.isNotEmpty) playlistId = value;
+      }
+    }
+    return _FeedRoute(liked: liked, bookmarked: bookmarked, playlistId: playlistId);
+  }
+
+  // Surfaces in the query editor: sort options (incl. Random/Oldest), the
+  // account feeds, and — once signed in — the account's playlists by name.
   @override
   List<MetaTag> availableMetaTags() {
     return [
@@ -369,10 +539,29 @@ class WorldXyzHandler extends BooruHandler {
         isFree: true,
         values: [
           MetaTagValue(name: 'Newest', value: 'date'),
+          MetaTagValue(name: 'Oldest', value: 'oldest'),
           MetaTagValue(name: 'Most Liked', value: 'likes'),
           MetaTagValue(name: 'Most Viewed', value: 'views'),
+          MetaTagValue(name: 'Random', value: 'random'),
         ],
       ),
+      if (_hasCredentials)
+        MetaTagWithValues(
+          name: 'My feed',
+          keyName: 'feed',
+          isFree: true,
+          values: [
+            MetaTagValue(name: 'My likes', value: 'likes'),
+            MetaTagValue(name: 'My bookmarks', value: 'bookmarks'),
+          ],
+        ),
+      if (_playlists.isNotEmpty)
+        MetaTagWithValues(
+          name: 'Playlist',
+          keyName: 'playlist',
+          isFree: true,
+          values: _playlists,
+        ),
     ];
   }
 
@@ -410,6 +599,7 @@ class WorldXyzHandler extends BooruHandler {
         headers: {
           ...getHeaders(),
           if (cookies?.isNotEmpty == true) 'Cookie': cookies,
+          if (_jwt != null) 'Authorization': 'Bearer $_jwt',
         },
         options: Options(
           sendTimeout: const Duration(seconds: 5),
@@ -471,6 +661,14 @@ class WorldXyzHandler extends BooruHandler {
       type: tagTypeMap[responseItem['type']?.toString()] ?? TagType.none,
     );
   }
+}
+
+class _FeedRoute {
+  const _FeedRoute({required this.liked, required this.bookmarked, this.playlistId});
+
+  final bool liked;
+  final bool bookmarked;
+  final String? playlistId;
 }
 
 const String a = '''

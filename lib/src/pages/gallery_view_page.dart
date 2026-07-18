@@ -1040,9 +1040,13 @@ class _InfoPeekBar extends StatelessWidget {
         children: [
           Icon(icon, size: 15, color: fg),
           const SizedBox(width: 6),
-          Text(
-            label,
-            style: TextStyle(color: fg, fontSize: 12.5, fontWeight: FontWeight.w700),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: fg, fontSize: 12.5, fontWeight: FontWeight.w700),
+            ),
           ),
         ],
       ),

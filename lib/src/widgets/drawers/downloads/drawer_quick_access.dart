@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import 'package:material_symbols_icons/symbols.dart';
 
+import 'package:get/get.dart' hide ContextExt, FirstWhereOrNullExt;
+
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/pinned_tag.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
@@ -10,7 +12,7 @@ import 'package:lolisnatcher/src/handlers/tag_handler.dart';
 import 'package:lolisnatcher/src/pages/collections_page.dart';
 import 'package:lolisnatcher/src/pages/settings/booru_edit_page.dart';
 import 'package:lolisnatcher/src/pages/settings/tags_filters_page.dart';
-import 'package:lolisnatcher/src/widgets/history/history.dart';
+import 'package:lolisnatcher/src/widgets/saved_searches/saved_searches_page.dart';
 
 /// The left ("Pinned tags") sidebar: pinned tags at the top (tap = add to the
 /// current search) and a Quick access section at the bottom (blacklists,
@@ -32,16 +34,32 @@ class _DrawerQuickAccessState extends State<DrawerQuickAccess> {
   List<PinnedTag> _pinned = [];
   int _favCount = 0;
   int _collectionCount = 0;
+  Worker? _tabWorker;
 
   @override
   void initState() {
     super.initState();
     _load();
+    // Re-scope the pinned list when the active tab (and so the booru) changes.
+    _tabWorker = ever(searchHandler.index, (_) => _load());
+  }
+
+  @override
+  void dispose() {
+    _tabWorker?.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
     try {
-      final pinned = await settingsHandler.dbHandler.getAllPinnedTags();
+      // Global pins + the ones scoped to the currently active booru only.
+      final Booru? current = searchHandler.tabs.isNotEmpty ? searchHandler.currentBooru : null;
+      final pinned = current == null
+          ? await settingsHandler.dbHandler.getAllPinnedTags()
+          : await settingsHandler.dbHandler.getPinnedTags(
+              booruType: current.type?.name,
+              booruName: current.name,
+            );
       int fav = 0;
       int col = 0;
       try {
@@ -85,9 +103,12 @@ class _DrawerQuickAccessState extends State<DrawerQuickAccess> {
     searchHandler.addTabByString('', customBooru: fav, switchToNew: true);
   }
 
-  void _openForYouBlacklist() {
-    final booru = settingsHandler.ensureForYouBooru();
-    _openPage(BooruEdit(booru));
+  // Opens the per-booru blacklist of the CURRENTLY ACTIVE booru (the editor
+  // page hosts the per-booru blacklist section), not a fixed one.
+  void _openCurrentBooruBlacklist() {
+    final Booru? current = searchHandler.tabs.isNotEmpty ? searchHandler.currentBooru : null;
+    if (current == null) return;
+    _openPage(BooruEdit(current));
   }
 
   Widget _pinnedRow(PinnedTag pt) {
@@ -266,12 +287,16 @@ class _DrawerQuickAccessState extends State<DrawerQuickAccess> {
             count: '${settingsHandler.hiddenTags.length} tags',
             onTap: () => _openPage(const TagsFiltersPage()),
           ),
-          _quickAccessRow(
-            icon: Symbols.visibility_off_rounded,
-            iconColor: const Color(0xFFE5766B),
-            label: 'For You blacklist',
-            onTap: _openForYouBlacklist,
-          ),
+          Obx(() {
+            final Booru? current = searchHandler.tabs.isNotEmpty ? searchHandler.currentBooru : null;
+            if (current == null) return const SizedBox.shrink();
+            return _quickAccessRow(
+              icon: Symbols.visibility_off_rounded,
+              iconColor: const Color(0xFFE5766B),
+              label: '${current.name} blacklist',
+              onTap: _openCurrentBooruBlacklist,
+            );
+          }),
           _quickAccessRow(
             icon: Symbols.favorite_rounded,
             iconColor: const Color(0xFFF0708A),
@@ -284,7 +309,7 @@ class _DrawerQuickAccessState extends State<DrawerQuickAccess> {
             iconColor: const Color(0xFFE8C46B),
             label: 'Saved searches',
             count: '${searchHandler.savedSearches.length} kept',
-            onTap: () => _openPage(const HistoryList()),
+            onTap: () => _openPage(const SavedSearchesPage()),
           ),
           _quickAccessRow(
             icon: Symbols.folder_rounded,

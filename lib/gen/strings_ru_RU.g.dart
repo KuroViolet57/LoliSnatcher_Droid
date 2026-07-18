@@ -2073,6 +2073,8 @@ class _TranslationsSettingsThemeRuRu extends TranslationsSettingsThemeEn {
   @override
   String get dark => TranslationOverrides.string(_root.$meta, 'settings.theme.dark', {}) ?? 'Тёмная';
   @override
+  String get flow => TranslationOverrides.string(_root.$meta, 'settings.theme.flow', {}) ?? 'Flow';
+  @override
   String get pink => TranslationOverrides.string(_root.$meta, 'settings.theme.pink', {}) ?? 'Розовая';
   @override
   String get purple => TranslationOverrides.string(_root.$meta, 'settings.theme.purple', {}) ?? 'Фиолетовая';
@@ -4615,6 +4617,7 @@ extension on TranslationsRuRu {
           'settings.theme.system' => TranslationOverrides.string(_root.$meta, 'settings.theme.system', {}) ?? 'Системная',
           'settings.theme.light' => TranslationOverrides.string(_root.$meta, 'settings.theme.light', {}) ?? 'Светлая',
           'settings.theme.dark' => TranslationOverrides.string(_root.$meta, 'settings.theme.dark', {}) ?? 'Тёмная',
+          'settings.theme.flow' => TranslationOverrides.string(_root.$meta, 'settings.theme.flow', {}) ?? 'Flow',
           'settings.theme.pink' => TranslationOverrides.string(_root.$meta, 'settings.theme.pink', {}) ?? 'Розовая',
           'settings.theme.purple' => TranslationOverrides.string(_root.$meta, 'settings.theme.purple', {}) ?? 'Фиолетовая',
           'settings.theme.blue' => TranslationOverrides.string(_root.$meta, 'settings.theme.blue', {}) ?? 'Синяя',
@@ -4816,10 +4819,10 @@ extension on TranslationsRuRu {
                 'Попробуй разные значения настроек \'MPV\' ниже, если видео не работают корректно или выдают ошибки кодеков:',
           'settings.video.mpvUseHardwareAcceleration' =>
             TranslationOverrides.string(_root.$meta, 'settings.video.mpvUseHardwareAcceleration', {}) ?? 'MPV: использовать аппаратное ускорение',
-          'settings.video.mpvVO' => TranslationOverrides.string(_root.$meta, 'settings.video.mpvVO', {}) ?? 'MPV: VO',
           _ => null,
         } ??
         switch (path) {
+          'settings.video.mpvVO' => TranslationOverrides.string(_root.$meta, 'settings.video.mpvVO', {}) ?? 'MPV: VO',
           'settings.video.mpvHWDEC' => TranslationOverrides.string(_root.$meta, 'settings.video.mpvHWDEC', {}) ?? 'MPV: HWDEC',
           'settings.video.videoCacheMode' =>
             TranslationOverrides.string(_root.$meta, 'settings.video.videoCacheMode', {}) ?? 'Режим кэширования видео',
@@ -5778,10 +5781,10 @@ extension on TranslationsRuRu {
             TranslationOverrides.string(_root.$meta, 'mediaPreviews.noBooruConfigsFound', {}) ?? 'Конфигурации сайтов не найдены',
           'mediaPreviews.addNewBooru' => TranslationOverrides.string(_root.$meta, 'mediaPreviews.addNewBooru', {}) ?? 'Добавить новый сайт',
           'mediaPreviews.help' => TranslationOverrides.string(_root.$meta, 'mediaPreviews.help', {}) ?? 'Помощь',
-          'mediaPreviews.settings' => TranslationOverrides.string(_root.$meta, 'mediaPreviews.settings', {}) ?? 'Настройки',
           _ => null,
         } ??
         switch (path) {
+          'mediaPreviews.settings' => TranslationOverrides.string(_root.$meta, 'mediaPreviews.settings', {}) ?? 'Настройки',
           'mediaPreviews.restoringPreviousSession' =>
             TranslationOverrides.string(_root.$meta, 'mediaPreviews.restoringPreviousSession', {}) ?? 'Восстановление предыдущей сессии…',
           'mediaPreviews.copiedFileURL' =>

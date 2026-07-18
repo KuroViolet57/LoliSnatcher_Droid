@@ -240,39 +240,57 @@ class _MainAppState extends State<MainApp> {
                     locale: TranslationProvider.of(context).flutterLocale,
                     supportedLocales: AppLocaleUtils.supportedLocales,
                     localizationsDelegates: GlobalMaterialLocalizations.delegates,
-                    builder: (_, child) => Stack(
-                      children: [
-                        Overlay(
-                          initialEntries: [
-                            OverlayEntry(
-                              builder: (context) {
-                                registerGlobalOverlay(context);
+                    builder: (builderContext, child) {
+                      // When the status bar is hidden, Android can still
+                      // report the top inset (display cutout) — strip it so
+                      // layouts actually reclaim the space instead of leaving
+                      // an empty gap at the top.
+                      Widget content = child ?? const SizedBox.shrink();
+                      if (settingsHandler.hideStatusBar) {
+                        final mq = MediaQuery.of(builderContext);
+                        content = MediaQuery(
+                          data: mq.copyWith(
+                            padding: mq.padding.copyWith(top: 0),
+                            viewPadding: mq.viewPadding.copyWith(top: 0),
+                          ),
+                          child: content,
+                        );
+                      }
+                      final Widget wrappedChild = content;
+                      return Stack(
+                        children: [
+                          Overlay(
+                            initialEntries: [
+                              OverlayEntry(
+                                builder: (context) {
+                                  registerGlobalOverlay(context);
 
-                                return child ?? const SizedBox.shrink();
-                              },
-                            ),
-                          ],
-                        ),
-                        // Blur overlay
-                        Overlay(
-                          initialEntries: [
-                            OverlayEntry(
-                              builder: (_) => AppLifecycleOverlay(
-                                shouldOverlay: settingsHandler.blurOnLeave.value,
+                                  return wrappedChild;
+                                },
                               ),
-                            ),
-                          ],
-                        ),
-                        // Lock screen overlay
-                        Overlay(
-                          initialEntries: [
-                            OverlayEntry(
-                              builder: (_) => const LockScreenPage(),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
+                            ],
+                          ),
+                          // Blur overlay
+                          Overlay(
+                            initialEntries: [
+                              OverlayEntry(
+                                builder: (_) => AppLifecycleOverlay(
+                                  shouldOverlay: settingsHandler.blurOnLeave.value,
+                                ),
+                              ),
+                            ],
+                          ),
+                          // Lock screen overlay
+                          Overlay(
+                            initialEntries: [
+                              OverlayEntry(
+                                builder: (_) => const LockScreenPage(),
+                              ),
+                            ],
+                          ),
+                        ],
+                      );
+                    },
                   );
                 },
               );

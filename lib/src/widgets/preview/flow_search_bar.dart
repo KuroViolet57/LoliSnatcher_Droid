@@ -94,15 +94,34 @@ class _FlowSearchBarState extends State<FlowSearchBar> {
   }
 
   // Current query shown as removable, type-coloured chips (fixed height,
-  // vertically centred, horizontally scrollable). Tap a chip to open the
-  // editor; the ✕ removes that tag and re-runs the search.
+  // vertically centred, horizontally scrollable). Tap a chip (or any empty
+  // space around the chips) to open the editor; the ✕ removes that tag and
+  // re-runs the search.
+  //
+  // The scroll view shrink-wraps to the chips so the empty space to their
+  // right belongs to the outer GestureDetector — a tap handler behind a
+  // scrollable loses the gesture arena, so the empty area must not be part
+  // of the scrollable itself.
   Widget _chips() {
     final List<String> tags = searchHandler.searchTextControllerTags;
-    return ListView.separated(
-      scrollDirection: Axis.horizontal,
-      itemCount: tags.length,
-      separatorBuilder: (_, _) => const SizedBox(width: 5),
-      itemBuilder: (context, i) => Center(child: _chip(context, tags[i])),
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: _openEditor,
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (int i = 0; i < tags.length; i++) ...[
+                if (i > 0) const SizedBox(width: 5),
+                _chip(context, tags[i]),
+              ],
+            ],
+          ),
+        ),
+      ),
     );
   }
 

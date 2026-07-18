@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:chewie/chewie.dart';
+import 'package:get/get.dart' hide ContextExt, FirstWhereOrNullExt;
 import 'package:chewie/src/center_play_button.dart';
 import 'package:chewie/src/helpers/utils.dart';
 import 'package:chewie/src/progress_bar.dart';
@@ -119,12 +120,24 @@ class _LoliControlsState extends State<LoliControls> {
                     ],
                   ),
                 ),
-                Stack(
-                  alignment: AlignmentDirectional.bottomStart,
-                  children: [
-                    _buildBottomBar(context),
-                    _buildBottomProgress(),
-                  ],
+                // While the viewer chrome is visible the Flow info peek bar
+                // overlays the bottom of the screen — lift the seek/controls
+                // above it so they stay reachable.
+                Obx(
+                  () => Padding(
+                    padding: EdgeInsets.only(
+                      bottom: viewerHandler.displayAppbar.value
+                          ? 64 + MediaQuery.viewPaddingOf(context).bottom
+                          : 0,
+                    ),
+                    child: Stack(
+                      alignment: AlignmentDirectional.bottomStart,
+                      children: [
+                        _buildBottomBar(context),
+                        _buildBottomProgress(),
+                      ],
+                    ),
+                  ),
                 ),
               ],
             ),

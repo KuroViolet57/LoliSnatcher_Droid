@@ -2572,6 +2572,9 @@ class TranslationsSettingsThemeEn {
   /// en: 'Dark'
   String get dark => TranslationOverrides.string(_root.$meta, 'settings.theme.dark', {}) ?? 'Dark';
 
+  /// en: 'Flow'
+  String get flow => TranslationOverrides.string(_root.$meta, 'settings.theme.flow', {}) ?? 'Flow';
+
   /// en: 'Pink'
   String get pink => TranslationOverrides.string(_root.$meta, 'settings.theme.pink', {}) ?? 'Pink';
 
@@ -5569,6 +5572,7 @@ extension on Translations {
           'settings.theme.system' => TranslationOverrides.string(_root.$meta, 'settings.theme.system', {}) ?? 'System',
           'settings.theme.light' => TranslationOverrides.string(_root.$meta, 'settings.theme.light', {}) ?? 'Light',
           'settings.theme.dark' => TranslationOverrides.string(_root.$meta, 'settings.theme.dark', {}) ?? 'Dark',
+          'settings.theme.flow' => TranslationOverrides.string(_root.$meta, 'settings.theme.flow', {}) ?? 'Flow',
           'settings.theme.pink' => TranslationOverrides.string(_root.$meta, 'settings.theme.pink', {}) ?? 'Pink',
           'settings.theme.purple' => TranslationOverrides.string(_root.$meta, 'settings.theme.purple', {}) ?? 'Purple',
           'settings.theme.blue' => TranslationOverrides.string(_root.$meta, 'settings.theme.blue', {}) ?? 'Blue',
@@ -5758,10 +5762,10 @@ extension on Translations {
                 'Try different values of \'MPV\' settings below if videos don\'t work correctly or give codec errors:',
           'settings.video.mpvUseHardwareAcceleration' =>
             TranslationOverrides.string(_root.$meta, 'settings.video.mpvUseHardwareAcceleration', {}) ?? 'MPV: use hardware acceleration',
-          'settings.video.mpvVO' => TranslationOverrides.string(_root.$meta, 'settings.video.mpvVO', {}) ?? 'MPV: VO',
           _ => null,
         } ??
         switch (path) {
+          'settings.video.mpvVO' => TranslationOverrides.string(_root.$meta, 'settings.video.mpvVO', {}) ?? 'MPV: VO',
           'settings.video.mpvHWDEC' => TranslationOverrides.string(_root.$meta, 'settings.video.mpvHWDEC', {}) ?? 'MPV: HWDEC',
           'settings.video.videoCacheMode' => TranslationOverrides.string(_root.$meta, 'settings.video.videoCacheMode', {}) ?? 'Video cache mode',
           'settings.video.cacheModes.title' => TranslationOverrides.string(_root.$meta, 'settings.video.cacheModes.title', {}) ?? 'Video cache modes',
@@ -6679,10 +6683,10 @@ extension on Translations {
             TranslationOverrides.string(_root.$meta, 'mediaPreviews.noBooruConfigsFound', {}) ?? 'No booru configs found',
           'mediaPreviews.addNewBooru' => TranslationOverrides.string(_root.$meta, 'mediaPreviews.addNewBooru', {}) ?? 'Add new Booru',
           'mediaPreviews.help' => TranslationOverrides.string(_root.$meta, 'mediaPreviews.help', {}) ?? 'Help',
-          'mediaPreviews.settings' => TranslationOverrides.string(_root.$meta, 'mediaPreviews.settings', {}) ?? 'Settings',
           _ => null,
         } ??
         switch (path) {
+          'mediaPreviews.settings' => TranslationOverrides.string(_root.$meta, 'mediaPreviews.settings', {}) ?? 'Settings',
           'mediaPreviews.restoringPreviousSession' =>
             TranslationOverrides.string(_root.$meta, 'mediaPreviews.restoringPreviousSession', {}) ?? 'Restoring previous session…',
           'mediaPreviews.copiedFileURL' =>

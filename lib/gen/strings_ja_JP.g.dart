@@ -1976,6 +1976,8 @@ class _TranslationsSettingsThemeJaJp extends TranslationsSettingsThemeEn {
   @override
   String get dark => TranslationOverrides.string(_root.$meta, 'settings.theme.dark', {}) ?? 'ダーク';
   @override
+  String get flow => TranslationOverrides.string(_root.$meta, 'settings.theme.flow', {}) ?? 'Flow';
+  @override
   String get pink => TranslationOverrides.string(_root.$meta, 'settings.theme.pink', {}) ?? 'ピンク';
   @override
   String get purple => TranslationOverrides.string(_root.$meta, 'settings.theme.purple', {}) ?? 'パープル';
@@ -4275,6 +4277,7 @@ extension on TranslationsJaJp {
           'settings.theme.system' => TranslationOverrides.string(_root.$meta, 'settings.theme.system', {}) ?? 'システム',
           'settings.theme.light' => TranslationOverrides.string(_root.$meta, 'settings.theme.light', {}) ?? 'ライト',
           'settings.theme.dark' => TranslationOverrides.string(_root.$meta, 'settings.theme.dark', {}) ?? 'ダーク',
+          'settings.theme.flow' => TranslationOverrides.string(_root.$meta, 'settings.theme.flow', {}) ?? 'Flow',
           'settings.theme.pink' => TranslationOverrides.string(_root.$meta, 'settings.theme.pink', {}) ?? 'ピンク',
           'settings.theme.purple' => TranslationOverrides.string(_root.$meta, 'settings.theme.purple', {}) ?? 'パープル',
           'settings.theme.blue' => TranslationOverrides.string(_root.$meta, 'settings.theme.blue', {}) ?? 'ブルー',
@@ -4453,10 +4456,10 @@ extension on TranslationsJaJp {
                 '動画が正しく動作しない、またはコーデックエラーが発生する場合は、以下の\'MPV\'設定の調整を試してみてください:',
           'settings.video.mpvUseHardwareAcceleration' =>
             TranslationOverrides.string(_root.$meta, 'settings.video.mpvUseHardwareAcceleration', {}) ?? 'MPV: ハードウェアアクセラレーションを使用',
-          'settings.video.mpvVO' => TranslationOverrides.string(_root.$meta, 'settings.video.mpvVO', {}) ?? 'MPV: VO',
           _ => null,
         } ??
         switch (path) {
+          'settings.video.mpvVO' => TranslationOverrides.string(_root.$meta, 'settings.video.mpvVO', {}) ?? 'MPV: VO',
           'settings.video.mpvHWDEC' => TranslationOverrides.string(_root.$meta, 'settings.video.mpvHWDEC', {}) ?? 'MPV: HWDEC',
           'settings.video.videoCacheMode' => TranslationOverrides.string(_root.$meta, 'settings.video.videoCacheMode', {}) ?? 'ビデオキャッシュモード',
           'settings.video.cacheModes.title' => TranslationOverrides.string(_root.$meta, 'settings.video.cacheModes.title', {}) ?? 'ビデオキャッシュモード',
@@ -5289,10 +5292,10 @@ extension on TranslationsJaJp {
             TranslationOverrides.string(_root.$meta, 'mediaPreviews.noBooruConfigsFound', {}) ?? 'Booruの設定が追加されていません',
           'mediaPreviews.addNewBooru' => TranslationOverrides.string(_root.$meta, 'mediaPreviews.addNewBooru', {}) ?? 'Booruを新規追加',
           'mediaPreviews.help' => TranslationOverrides.string(_root.$meta, 'mediaPreviews.help', {}) ?? 'ヘルプ (英語)',
-          'mediaPreviews.settings' => TranslationOverrides.string(_root.$meta, 'mediaPreviews.settings', {}) ?? '設定',
           _ => null,
         } ??
         switch (path) {
+          'mediaPreviews.settings' => TranslationOverrides.string(_root.$meta, 'mediaPreviews.settings', {}) ?? '設定',
           'mediaPreviews.restoringPreviousSession' =>
             TranslationOverrides.string(_root.$meta, 'mediaPreviews.restoringPreviousSession', {}) ?? '以前のセッションを復元中…',
           'mediaPreviews.copiedFileURL' => TranslationOverrides.string(_root.$meta, 'mediaPreviews.copiedFileURL', {}) ?? 'ファイルURLをクリップボードにコピーしました！',

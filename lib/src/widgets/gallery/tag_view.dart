@@ -48,7 +48,6 @@ import 'package:lolisnatcher/src/pages/gallery_view_page.dart';
 import 'package:lolisnatcher/src/utils/debouncer.dart';
 import 'package:lolisnatcher/src/utils/extensions.dart';
 import 'package:lolisnatcher/src/utils/text_parser/rules/url_rule.dart';
-import 'package:lolisnatcher/src/utils/tools.dart';
 import 'package:lolisnatcher/src/widgets/collections/add_to_collection_sheet.dart';
 import 'package:lolisnatcher/src/widgets/gallery/post_details_sheet.dart';
 import 'package:lolisnatcher/src/widgets/common/close_dialog_button.dart';
@@ -979,7 +978,9 @@ class _TagViewState extends State<TagView> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(icon, size: 22, color: fg),
+                // fill is the Material Symbols variable-font axis — without it
+                // the "active" state renders the same outline glyph.
+                Icon(icon, size: 22, color: fg, fill: active ? 1 : 0),
                 const SizedBox(height: 3),
                 Text(
                   label,
@@ -1009,7 +1010,7 @@ class _TagViewState extends State<TagView> {
             Obx(() {
               final bool fav = item.isFavourite.value == true;
               return btn(
-                icon: fav ? Symbols.favorite_rounded : Symbols.favorite_border_rounded,
+                icon: Symbols.favorite_rounded,
                 label: 'Favorite',
                 activeColor: const Color(0xFFF0708A),
                 active: fav,
@@ -1271,84 +1272,9 @@ class _TagViewState extends State<TagView> {
 
   @override
   Widget build(BuildContext context) {
-    final String fileName = Tools.getFileName(item.fileURL);
-    final String fileExt = Tools.getFileExt(item.fileURL);
-    final String fileUrl = item.fileURL;
-    final String fileRes = (item.fileWidth != null && item.fileHeight != null)
-        ? '${item.fileWidth?.toInt() ?? ''}x${item.fileHeight?.toInt() ?? ''}'
-        : '';
-    final String fileSize = item.fileSize != null ? Tools.formatBytes(item.fileSize!, 2) : '';
-    final String rating = item.rating ?? '';
-    final String score = item.score ?? '';
-    final String md5 = item.md5String ?? '';
-    final List<String> sources = item.sources ?? [];
     final bool tagsAvailable = tags.isNotEmpty || hasLoadItemSupport;
-    // Note: post ID + post URL + formatted post date are intentionally not
-    // surfaced at the top of the drawer anymore (per user request); the
-    // remaining metadata still renders via the Details expansion further below.
-
-    // Uploader row — moved into the Details expansion (per user request) so it
-    // doesn't eat space at the top of the sheet when collapsed.
-    final Widget uploaderTile =
-        (item.uploaderId?.isNotEmpty == true || item.uploaderName?.isNotEmpty == true)
-        ? Builder(
-            builder: (context) {
-              final bool hasUploaderName = item.uploaderName?.isNotEmpty == true;
-              final String text = item.uploaderName ?? item.uploaderId ?? '';
-
-              return infoText(
-                context.loc.tagView.uploader,
-                text,
-                trailing: hasUploaderName
-                    ? IgnorePointer(
-                        child: IconButton(
-                          icon: const Icon(Symbols.add_rounded),
-                          onPressed: () {},
-                        ),
-                      )
-                    : null,
-                onTap: hasUploaderName
-                    ? () {
-                        final userMetaTag = searchHandler.currentBooruHandler
-                            .availableMetaTags()
-                            .firstWhereOrNull(
-                              (t) => t is UserMetaTag,
-                            );
-                        if (userMetaTag == null) return;
-
-                        final String tag = userMetaTag.tagBuilder(null, null, item.uploaderName);
-
-                        searchHandler.addTagToSearch(tag);
-                        FlashElements.showSnackbar(
-                          context: context,
-                          duration: const Duration(seconds: 2),
-                          title: Text(
-                            context.loc.tagView.addedToCurrentSearch,
-                            style: const TextStyle(fontSize: 20),
-                          ),
-                          content: Text(tag, style: const TextStyle(fontSize: 16)),
-                          leadingIcon: Symbols.add_rounded,
-                          sideColor: Colors.green,
-                        );
-                      }
-                    : null,
-                onLongPress: hasUploaderName
-                    ? () {
-                        Clipboard.setData(ClipboardData(text: text));
-                        FlashElements.showSnackbar(
-                          context: context,
-                          duration: const Duration(seconds: 2),
-                          title: Text(context.loc.copiedToClipboard, style: const TextStyle(fontSize: 20)),
-                          content: Text(text, style: const TextStyle(fontSize: 16)),
-                          leadingIcon: Symbols.content_copy_rounded,
-                          sideColor: Colors.green,
-                        );
-                      }
-                    : null,
-              );
-            },
-          )
-        : const SizedBox.shrink();
+    // Post metadata (url/resolution/size/rating/score/md5/uploader/sources)
+    // lives in the Flow Details sheet now — opened from the action row.
 
     return Scrollbar(
       interactive: true,
@@ -1384,41 +1310,11 @@ class _TagViewState extends State<TagView> {
                 //   - the data being available for this item + handler
                 if (settingsHandler.inlineRelatedGrids) ..._buildRelatedGrids(),
                 //
-                // Uploader, comments and sources are tucked inside the Details
-                // expansion (per user request) so the collapsed sheet stays
-                // compact.
-                ExpansionTile(
-                  title: Text(
-                    context.loc.tagView.details,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  initiallyExpanded: detailsExpanded ?? settingsHandler.expandDetails,
-                  onExpansionChanged: (expanded) {
-                    setState(() {
-                      detailsExpanded = expanded;
-                    });
-                  },
-                  iconColor: Colors.white.withValues(alpha: 0.66),
-                  collapsedIconColor: Colors.white.withValues(alpha: 0.66),
-                  shape: const Border(),
-                  collapsedShape: const Border(),
-                  children: [
-                    uploaderTile,
-                    if (settingsHandler.isDebug.value) infoText(context.loc.tagView.filename, fileName),
-                    infoText(context.loc.tagView.url, fileUrl, isLink: true),
-                    infoText(context.loc.tagView.extension, fileExt),
-                    infoText(context.loc.tagView.resolution, fileRes),
-                    infoText(context.loc.tagView.size, fileSize),
-                    infoText(context.loc.tagView.md5, md5),
-                    infoText(context.loc.tagView.rating, rating),
-                    infoText(context.loc.tagView.score, score),
-                    commentsButton(),
-                    sourcesList(sources),
-                  ],
-                ),
+                // The old "Details" expansion (url/extension/resolution/...)
+                // is gone — the Flow Details sheet (action row → Details)
+                // covers all of it. Comments have no other home, so they stay
+                // as a standalone row.
+                commentsButton(),
                 // "Related" — preview strip seeded from the item's strongest
                 // tags (character/artist/copyright, falling back to general).
                 // Only shows when we can build a meaningful seed query.
@@ -1458,15 +1354,6 @@ class _TagViewState extends State<TagView> {
                   },
                 ),
                 notesButton(),
-                if (settingsHandler.dbEnabled)
-                  ListTile(
-                    leading: Icon(
-                      Symbols.collections_bookmark_rounded,
-                      color: Theme.of(context).iconTheme.color,
-                    ),
-                    title: const Text('Add to collection'),
-                    onTap: () => showAddToCollectionSheet(context, [item]),
-                  ),
                 if (settingsHandler.dbEnabled)
                   Builder(
                     builder: (context) {

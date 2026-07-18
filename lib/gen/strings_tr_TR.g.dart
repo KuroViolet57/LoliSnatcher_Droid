@@ -2043,6 +2043,8 @@ class _TranslationsSettingsThemeTrTr extends TranslationsSettingsThemeEn {
   @override
   String get dark => TranslationOverrides.string(_root.$meta, 'settings.theme.dark', {}) ?? 'Koyu';
   @override
+  String get flow => TranslationOverrides.string(_root.$meta, 'settings.theme.flow', {}) ?? 'Flow';
+  @override
   String get pink => TranslationOverrides.string(_root.$meta, 'settings.theme.pink', {}) ?? 'Pembe';
   @override
   String get purple => TranslationOverrides.string(_root.$meta, 'settings.theme.purple', {}) ?? 'Mor';
@@ -4567,6 +4569,7 @@ extension on TranslationsTrTr {
           'settings.theme.system' => TranslationOverrides.string(_root.$meta, 'settings.theme.system', {}) ?? 'Sistem',
           'settings.theme.light' => TranslationOverrides.string(_root.$meta, 'settings.theme.light', {}) ?? 'Açık',
           'settings.theme.dark' => TranslationOverrides.string(_root.$meta, 'settings.theme.dark', {}) ?? 'Koyu',
+          'settings.theme.flow' => TranslationOverrides.string(_root.$meta, 'settings.theme.flow', {}) ?? 'Flow',
           'settings.theme.pink' => TranslationOverrides.string(_root.$meta, 'settings.theme.pink', {}) ?? 'Pembe',
           'settings.theme.purple' => TranslationOverrides.string(_root.$meta, 'settings.theme.purple', {}) ?? 'Mor',
           'settings.theme.blue' => TranslationOverrides.string(_root.$meta, 'settings.theme.blue', {}) ?? 'Mavi',
@@ -4786,10 +4789,10 @@ extension on TranslationsTrTr {
           'settings.video.cacheModes.desktopWarning' =>
             TranslationOverrides.string(_root.$meta, 'settings.video.cacheModes.desktopWarning', {}) ??
                 '[Uyarı]: Masaüstünde Akış modu bazı Booru\'lar için hatalı çalışabilir.',
-          'settings.video.cacheModeValues.stream' => TranslationOverrides.string(_root.$meta, 'settings.video.cacheModeValues.stream', {}) ?? 'Akış',
           _ => null,
         } ??
         switch (path) {
+          'settings.video.cacheModeValues.stream' => TranslationOverrides.string(_root.$meta, 'settings.video.cacheModeValues.stream', {}) ?? 'Akış',
           'settings.video.cacheModeValues.cache' =>
             TranslationOverrides.string(_root.$meta, 'settings.video.cacheModeValues.cache', {}) ?? 'Önbellek',
           'settings.video.cacheModeValues.streamCache' =>
@@ -5743,10 +5746,10 @@ extension on TranslationsTrTr {
             TranslationOverrides.string(_root.$meta, 'viewer.appBar.reachedLastLoadedItem', {}) ?? 'Yüklenen son ögeye ulaşıldı',
           'viewer.appBar.pause' => TranslationOverrides.string(_root.$meta, 'viewer.appBar.pause', {}) ?? 'Duraklat',
           'viewer.appBar.start' => TranslationOverrides.string(_root.$meta, 'viewer.appBar.start', {}) ?? 'Başlat',
-          'viewer.appBar.unfavourite' => TranslationOverrides.string(_root.$meta, 'viewer.appBar.unfavourite', {}) ?? 'Favorilerden çıkar',
           _ => null,
         } ??
         switch (path) {
+          'viewer.appBar.unfavourite' => TranslationOverrides.string(_root.$meta, 'viewer.appBar.unfavourite', {}) ?? 'Favorilerden çıkar',
           'viewer.appBar.deselect' => TranslationOverrides.string(_root.$meta, 'viewer.appBar.deselect', {}) ?? 'Seçimi kaldır',
           'viewer.appBar.reloadWithScaling' =>
             TranslationOverrides.string(_root.$meta, 'viewer.appBar.reloadWithScaling', {}) ?? 'Ölçeklendirme ile yeniden yükle',

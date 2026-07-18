@@ -359,12 +359,19 @@ class _HideableAppBarState extends State<HideableAppBar> {
           }
 
           final bool? isFav = item.isFavourite.value;
+          // Material Symbols renders the same outline glyph for both states —
+          // the favourited state needs fill: 1 (variable font axis) + the
+          // accent tint to actually light up.
           return AnimatedCrossFade(
             duration: const Duration(milliseconds: 200),
             crossFadeState: isFav == true ? CrossFadeState.showFirst : CrossFadeState.showSecond,
-            firstChild: const Icon(Symbols.favorite_rounded),
+            firstChild: const Icon(
+              Symbols.favorite_rounded,
+              fill: 1,
+              color: Color(0xFFF0708A),
+            ),
             secondChild: Icon(
-              isFav == true ? Symbols.favorite_rounded : (isFav == false ? Symbols.favorite_border_rounded : CupertinoIcons.heart_slash),
+              isFav == false ? Symbols.favorite_rounded : CupertinoIcons.heart_slash,
             ),
           );
         });
