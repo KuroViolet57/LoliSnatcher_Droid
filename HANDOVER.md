@@ -42,6 +42,12 @@ Paste this back to resume with full context. Last updated: 2026-07-15 (build 521
   ```
   Prints folder/changelog/apk URLs — post them in chat. `--token` is just a
   short folder-name key (litterbox is down, so make one up, e.g. `login5210`).
+- **APK naming scheme (user request, from 2.6.0 on):** every uploaded APK is
+  named `{1-2 words describing the changes}-{version}.apk` via the script's
+  `--apk-name` flag (e.g. `drawer-cleanup-2.6.0.apk`). The same string minus
+  `.apk` shows in Settings → version row: update `Constants.buildCodename`
+  (lib/src/data/constants.dart) each build, and bump the version in
+  pubspec.yaml + constants.dart updateInfo together.
 - Fallback host: **gofile.io** (works). Litterbox = HTTP 500, catbox rejects,
   0x0.st disabled.
 

@@ -41,10 +41,15 @@ class Constants {
   // useful to blur all images during dev to avoid seeing nsfw content, but still see that they are loading, [don't forget to undo before commit]
   static const bool blurImagesDefaultDev = false;
 
+  // Short 1-2 word codename describing this build's changes. Shown in the
+  // settings version row and used for the uploaded APK name, following the
+  // '{codename}-{version}' scheme.
+  static const String buildCodename = 'drawer-cleanup';
+
   // TODO don't forget to update on every new release
   static const UpdateInfo updateInfo = UpdateInfo(
-    versionName: '2.5.0',
-    buildNumber: 5210,
+    versionName: '2.6.0',
+    buildNumber: 5211,
     title: '2.5.0 - Localization, fonts, optimization, pinned tags and more',
     isInStore: true,
     isImportant: false,

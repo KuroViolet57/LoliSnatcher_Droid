@@ -8,7 +8,6 @@ import 'package:get/get.dart' hide FirstWhereOrNullExt;
 
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/data/constants.dart';
 import 'package:lolisnatcher/src/handlers/local_auth_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -294,40 +293,9 @@ class MainDrawer extends StatelessWidget {
 
                     return const SizedBox.shrink();
                   }),
-                  //
-                  Obx(() {
-                    if (settingsHandler.updateInfo.value != null &&
-                        Constants.updateInfo.buildNumber < (settingsHandler.updateInfo.value!.buildNumber)) {
-                      return SettingsButton(
-                        name: context.loc.settings.checkForUpdates.updateAvailable,
-                        icon: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            const Icon(Symbols.update_rounded),
-                            Positioned(
-                              top: 1,
-                              left: 1,
-                              child: Center(
-                                child: Container(
-                                  width: 8,
-                                  height: 8,
-                                  decoration: BoxDecoration(
-                                    color: Colors.red,
-                                    borderRadius: BorderRadius.circular(15),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        action: () async {
-                          settingsHandler.showUpdate(true);
-                        },
-                      );
-                    }
-
-                    return const SizedBox.shrink();
-                  }),
+                  // (The "update available" row was removed from the drawer
+                  // per user request — updates stay reachable via Settings →
+                  // Check for updates.)
                   //
                   if (SettingsHandler.isDesktopPlatform)
                     SettingsButton(

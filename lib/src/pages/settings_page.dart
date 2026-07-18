@@ -282,8 +282,10 @@ class _VersionButtonState extends State<VersionButton> {
   Widget build(BuildContext context) {
     final SettingsHandler settingsHandler = SettingsHandler.instance;
 
+    // '{codename}-{version}' — mirrors the uploaded APK's filename scheme so
+    // a screenshot of this row identifies the exact test build.
     final String verText =
-        '${context.loc.settings.version}: ${Constants.updateInfo.versionName} (${Constants.updateInfo.buildNumber})';
+        '${context.loc.settings.version}: ${Constants.buildCodename}-${Constants.updateInfo.versionName}';
 
     const String buildTypeText = EnvironmentConfig.isFromStore
         ? '/ Play'

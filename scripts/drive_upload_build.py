@@ -163,6 +163,7 @@ def main():
     ap.add_argument("--token", required=True, help="litterbox token, e.g. de7amf")
     ap.add_argument("--descriptor", required=True, help="short label shown in folder name")
     ap.add_argument("--apk", help="path to .apk to upload (optional — skip to only update the changelog)")
+    ap.add_argument("--apk-name", help="filename to give the apk on Drive (default: local filename); scheme: {1-2 words}-{version}.apk")
     src = ap.add_mutually_exclusive_group(required=True)
     src.add_argument("--changelog-file", help="path to a .txt file to upload as changes.txt")
     src.add_argument("--changelog-text", help="inline changelog content")
@@ -198,7 +199,7 @@ def main():
         apk_bytes = apk_path.read_bytes()
         apk_resp = upload_file(
             token,
-            apk_path.name,
+            args.apk_name or apk_path.name,
             sub_id,
             apk_bytes,
             "application/vnd.android.package-archive",
