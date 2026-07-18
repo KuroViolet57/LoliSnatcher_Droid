@@ -5,12 +5,14 @@ import 'package:flutter/material.dart';
 
 import 'package:material_symbols_icons/symbols.dart';
 
+import 'package:get/get.dart' hide ContextExt, FirstWhereOrNullExt;
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 
@@ -528,16 +530,27 @@ class _MediaKitControlsState extends State<_MediaKitControls> {
               ),
             ),
           ),
+        // While the viewer chrome is visible the Flow info peek bar overlays
+        // the bottom of the screen — lift the seek/controls above it.
         Positioned(
           left: 0,
           right: 0,
           bottom: 0,
-          child: AnimatedOpacity(
-            opacity: _hidden ? 0 : 1,
-            duration: const Duration(milliseconds: 200),
-            child: IgnorePointer(
-              ignoring: _hidden,
-              child: _buildBottomBar(accent),
+          child: Obx(
+            () => Padding(
+              padding: EdgeInsets.only(
+                bottom: ViewerHandler.instance.displayAppbar.value
+                    ? 64 + MediaQuery.viewPaddingOf(context).bottom
+                    : 0,
+              ),
+              child: AnimatedOpacity(
+                opacity: _hidden ? 0 : 1,
+                duration: const Duration(milliseconds: 200),
+                child: IgnorePointer(
+                  ignoring: _hidden,
+                  child: _buildBottomBar(accent),
+                ),
+              ),
             ),
           ),
         ),
