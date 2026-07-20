@@ -175,7 +175,14 @@ class _MainAppBarState extends State<MainAppBar> {
         leading: settingsHandler.handSide.value.isLeft
             ? menuButton(InnerDrawerDirection.start)
             : snatcherButton(InnerDrawerDirection.start),
-        title: const TabsCountPill(),
+        title: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TabsCountPill(),
+            SizedBox(width: 8),
+            PageIndicatorPill(),
+          ],
+        ),
         toolbarHeight: MainAppBar.height,
         flexibleSpace: settingsHandler.shitDevice
             ? null

@@ -8,6 +8,8 @@ import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/theme_handler.dart';
+import 'package:lolisnatcher/src/widgets/common/settings_widgets.dart';
+import 'package:lolisnatcher/src/widgets/dialogs/page_number_dialog.dart';
 import 'package:lolisnatcher/src/widgets/image/booru_favicon.dart';
 import 'package:lolisnatcher/src/widgets/preview/main_search_query_editor_page.dart';
 import 'package:lolisnatcher/src/widgets/tabs/tab_selector.dart';
@@ -54,6 +56,54 @@ class TabsCountPill extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// Compact "Page N" pill shown next to [TabsCountPill] in the browse app bar.
+/// Tapping opens the page-number sheet (jump to / prefetch a specific page) —
+/// restoring the old UI's page changer. Only meaningful for page-based boorus;
+/// hidden while no page is loaded yet (pageNum == -1).
+class PageIndicatorPill extends StatelessWidget {
+  const PageIndicatorPill({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final searchHandler = SearchHandler.instance;
+    final accent = Theme.of(context).colorScheme.secondary;
+    return Obx(() {
+      final int page = searchHandler.pageNum.value;
+      if (searchHandler.tabs.isEmpty || page < 0) return const SizedBox.shrink();
+      return GestureDetector(
+        onTap: () => SettingsPageOpen(
+          context: context,
+          asBottomSheet: true,
+          page: (_) => const PageNumberDialog(),
+        ).open(),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          decoration: BoxDecoration(
+            color: ThemeHandler.flowSurface,
+            border: Border.all(color: ThemeHandler.flowBorder),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Symbols.format_list_numbered_rounded, size: 16, color: accent),
+              const SizedBox(width: 6),
+              Text(
+                'Pg ${page + 1}',
+                style: const TextStyle(
+                  color: Color(0xFFCDBAF0),
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    });
   }
 }
 

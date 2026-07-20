@@ -153,14 +153,24 @@ class WorldXyzHandler extends BooruHandler {
     final Map<String, dynamic> parsedResponse = response.data;
     try {
       cursor = parsedResponse['cursor'] ?? '';
-      // quick way to tell difference between old(?) (i.e.animazone34.com) and new (i.e. rule34.world) engine version
-      isXyz = parsedResponse.keys.contains('pagination');
+      // quick way to tell difference between old(?) (i.e.animazone34.com) and new (i.e. rule34.world) engine version.
+      // Only the ROOT search response reliably carries the 'pagination' key —
+      // the liked/bookmarked/playlist feed responses omit it, and flipping
+      // isXyz mid-session made every file URL use the wrong extension scheme
+      // (…thumbnailex.jpg instead of …pic256ex.jpg → 404s on those feeds).
+      if (!_lastFetchWasFeedRoute) {
+        isXyz = parsedResponse.keys.contains('pagination');
+      }
       totalCount.value = totalCount.value > 0
           ? totalCount.value
           : int.tryParse(parsedResponse['totalCount']?.toString() ?? '0') ?? 0;
     } catch (_) {}
     return (parsedResponse['items'] ?? []) as List;
   }
+
+  // Whether the most recent fetchSearch hit a liked/bookmarked/playlist feed
+  // endpoint (whose responses can't be used for engine detection).
+  bool _lastFetchWasFeedRoute = false;
 
   Map<String, dynamic> appConfig = {};
 
@@ -465,6 +475,7 @@ class WorldXyzHandler extends BooruHandler {
         .toList();
 
     String url = uri.toString();
+    _lastFetchWasFeedRoute = route.playlistId != null || route.liked || route.bookmarked;
     if (route.playlistId != null) {
       url = '${booru.baseURL}/api/v2/post/search/playlist/${route.playlistId}';
     } else if (route.liked || route.bookmarked) {
