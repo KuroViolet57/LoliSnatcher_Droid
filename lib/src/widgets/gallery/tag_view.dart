@@ -1142,7 +1142,7 @@ class _TagViewState extends State<TagView> {
           );
         },
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          padding: const EdgeInsets.only(left: 10, right: 2, top: 3, bottom: 3),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -1180,8 +1180,9 @@ class _TagViewState extends State<TagView> {
               ],
               // ⧉ preview zone: a divider + picture-in-picture that opens the
               // floating preview window for this tag (its own tap target, so it
-              // doesn't trigger the chip's tap = menu).
-              const SizedBox(width: 7),
+              // doesn't trigger the chip's tap = menu). Generously padded —
+              // the icon is small but the hit area must be finger-sized.
+              const SizedBox(width: 4),
               Container(width: 1, height: 16, color: baseColor.withValues(alpha: 0.3)),
               GestureDetector(
                 behavior: HitTestBehavior.opaque,
@@ -1190,8 +1191,8 @@ class _TagViewState extends State<TagView> {
                   FloatingPreviewHandler.instance.open(tag: currentTag, booru: previewBooru);
                 },
                 child: Padding(
-                  padding: const EdgeInsets.only(left: 7, right: 1),
-                  child: Icon(Symbols.picture_in_picture_alt_rounded, size: 15, color: baseColor),
+                  padding: const EdgeInsets.fromLTRB(11, 9, 8, 9),
+                  child: Icon(Symbols.picture_in_picture_alt_rounded, size: 16, color: baseColor),
                 ),
               ),
             ],

@@ -30,10 +30,13 @@ class WorldXyzHandler extends BooruHandler {
   static final Map<String, String> _jwtCache = {};
   static final Map<String, String> _userIdCache = {};
   static final Map<String, int> _authFailedAt = {};
+  static final Map<String, String> _lastAuthError = {};
 
   bool get _hasCredentials => booru.userID?.isNotEmpty == true && booru.apiKey?.isNotEmpty == true;
 
-  String get _authKey => '${booru.name}|${booru.userID}';
+  // apiKey is part of the key so editing the password resets the backoff and
+  // cached state immediately.
+  String get _authKey => '${booru.name}|${booru.userID}|${booru.apiKey.hashCode}';
 
   String? get _jwt => _jwtCache[_authKey];
 
@@ -96,8 +99,16 @@ class WorldXyzHandler extends BooruHandler {
       _jwtCache[_authKey] = token;
       _userIdCache[_authKey] = userId;
       _authFailedAt.remove(_authKey);
+      _lastAuthError.remove(_authKey);
     } catch (e) {
       _authFailedAt[_authKey] = DateTime.now().millisecondsSinceEpoch;
+      // Keep the server's own message ("Incorrect email or password", ...) so
+      // the search error the user sees says WHY instead of silently failing.
+      String message = e.toString();
+      if (e is DioException && e.response?.data is Map) {
+        message = (e.response!.data['message'] ?? message).toString();
+      }
+      _lastAuthError[_authKey] = message;
       Logger.Inst().log(
         'rule34.xyz signin failed: $e',
         className,
@@ -456,10 +467,19 @@ class WorldXyzHandler extends BooruHandler {
     String url = uri.toString();
     if (route.playlistId != null) {
       url = '${booru.baseURL}/api/v2/post/search/playlist/${route.playlistId}';
-    } else if (route.liked && _accountId != null) {
-      url = '${booru.baseURL}/api/v2/post/search/liked/$_accountId';
-    } else if (route.bookmarked && _accountId != null) {
-      url = '${booru.baseURL}/api/v2/post/search/bookmarked/$_accountId';
+    } else if (route.liked || route.bookmarked) {
+      // Never silently fall back to the public feed when the user explicitly
+      // asked for their own likes/bookmarks — fail with the reason instead.
+      if (_accountId == null) {
+        final String reason = _lastAuthError[_authKey] ?? (_hasCredentials ? 'sign-in failed' : 'no credentials set');
+        throw Exception(
+          'rule34.xyz account sign-in required for feed:${route.liked ? 'likes' : 'bookmarks'} — $reason. '
+          "Check the login/password in this booru's config.",
+        );
+      }
+      url = route.liked
+          ? '${booru.baseURL}/api/v2/post/search/liked/$_accountId'
+          : '${booru.baseURL}/api/v2/post/search/bookmarked/$_accountId';
     }
 
     return DioNetwork.post(
