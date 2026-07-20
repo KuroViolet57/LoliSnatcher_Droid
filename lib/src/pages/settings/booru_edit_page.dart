@@ -222,6 +222,15 @@ class _BooruEditState extends State<BooruEdit> {
                       booruFaviconController.text = 'https://www.xxxfollow.com/favicon.ico';
                     }
                   }
+                  if (selectedBooruType.isCivitai && booruURLController.text.trim().isEmpty) {
+                    booruURLController.text = 'https://civitai.com';
+                    if (booruNameController.text.trim().isEmpty) {
+                      booruNameController.text = 'Civitai';
+                    }
+                    if (booruFaviconController.text.trim().isEmpty) {
+                      booruFaviconController.text = 'https://civitai.com/favicon.ico';
+                    }
+                  }
                 });
               },
               title: context.loc.settings.booruEditor.booruType,
@@ -413,6 +422,17 @@ class _BooruEditState extends State<BooruEdit> {
             'tag shown above a tag results opens it.<br><br>'
             'Videos are direct MP4 files, so downloads work. As a guest the site '
             'only exposes a limited set of public videos per tag.';
+      case BooruType.Civitai:
+        return '<b>Civitai</b><br>Leave the URL as https://civitai.com. '
+            'The AI-generation gallery, via its official public API.<br><br>'
+            'Put your Civitai <b>API key</b> (civitai.com → Account settings → '
+            "API Keys) in the API key field — it unlocks your account's "
+            "browsing level and <i>artist:me</i> (your uploads).<br><br>"
+            'Search with plain tags, or use the chips: <i>sort:</i> (incl. '
+            'Random), <i>period:</i>, <i>nsfw:</i> level, <i>type:</i> '
+            'image/video, <i>basemodel:</i>, <i>artist:</i>name, '
+            '<i>model:</i>id, <i>post:</i>id. Exclusions (-tag) are filtered '
+            'on-device. Note: the public API has no "liked images" feed.';
       case BooruType.WebView:
         return '<b>WebView (browser)</b><br>Renders any site inside a tab '
             'instead of scraping it — use it for sites that are hard or '

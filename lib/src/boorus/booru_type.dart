@@ -7,6 +7,7 @@ enum BooruType {
   //
   AGNPH,
   BooruOnRails,
+  Civitai,
   Danbooru,
   e621,
   //FurAffinity,
@@ -76,7 +77,9 @@ enum BooruType {
       // xxxtik has a fixed API host; only pick it deliberately.
       ..remove(BooruType.XXXTik)
       // xxxfollow has a fixed API host; only pick it deliberately.
-      ..remove(BooruType.XXXFollow);
+      ..remove(BooruType.XXXFollow)
+      // civitai has a fixed API host; only pick it deliberately.
+      ..remove(BooruType.Civitai);
   }
 
   bool get isDetectable => detectable.contains(this);
@@ -107,6 +110,8 @@ enum BooruType {
         return 'xxxtik';
       case XXXFollow:
         return 'xxxfollow';
+      case Civitai:
+        return 'Civitai';
       default:
         return name;
     }
@@ -132,6 +137,7 @@ enum BooruType {
   bool get isRule34Dev => this == BooruType.Rule34Dev;
   bool get isXXXTik => this == BooruType.XXXTik;
   bool get isXXXFollow => this == BooruType.XXXFollow;
+  bool get isCivitai => this == BooruType.Civitai;
   bool get isWebView => this == BooruType.WebView;
   bool get isR34Hentai => this == BooruType.R34Hentai;
   bool get isR34US => this == BooruType.R34US;

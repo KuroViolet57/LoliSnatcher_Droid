@@ -31,6 +31,7 @@ import 'package:lolisnatcher/src/boorus/szurubooru_handler.dart';
 import 'package:lolisnatcher/src/boorus/webview_browser_handler.dart';
 import 'package:lolisnatcher/src/boorus/wildcritters_handler.dart';
 import 'package:lolisnatcher/src/boorus/worldxyz_handler.dart';
+import 'package:lolisnatcher/src/boorus/civitai_handler.dart';
 import 'package:lolisnatcher/src/boorus/xxxfollow_handler.dart';
 import 'package:lolisnatcher/src/boorus/xxxtik_handler.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
@@ -183,6 +184,12 @@ class BooruHandlerFactory {
           // page 1.
           pageNum = 0;
           booruHandler = XXXFollowHandler(booru, limit);
+          break;
+        case BooruType.Civitai:
+          // cursor pagination handled inside the handler; pageNum only marks
+          // first-page resets.
+          pageNum = -1;
+          booruHandler = CivitaiHandler(booru, limit);
           break;
         case BooruType.WebView:
           booruHandler = WebViewBrowserHandler(booru, limit);
