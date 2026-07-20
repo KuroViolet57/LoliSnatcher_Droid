@@ -9,6 +9,7 @@ import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/theme_handler.dart';
 import 'package:lolisnatcher/src/widgets/common/settings_widgets.dart';
+import 'package:lolisnatcher/src/widgets/dialogs/add_new_tab_dialog.dart';
 import 'package:lolisnatcher/src/widgets/dialogs/page_number_dialog.dart';
 import 'package:lolisnatcher/src/widgets/image/booru_favicon.dart';
 import 'package:lolisnatcher/src/widgets/preview/main_search_query_editor_page.dart';
@@ -54,6 +55,35 @@ class TabsCountPill extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Persistent "new tab" button for the browse app bar (the Flow equivalent of
+/// the old sidebar add-tab button). One tap opens a fresh tab in the current
+/// booru — honouring the "New tab position" setting — and switches to it; a
+/// long press opens the full Add-new-tab sheet (choose booru + tags, etc.).
+class NewTabButton extends StatelessWidget {
+  const NewTabButton({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final searchHandler = SearchHandler.instance;
+    final accent = Theme.of(context).colorScheme.secondary;
+    return GestureDetector(
+      onLongPress: () {
+        ServiceHandler.vibrate();
+        SettingsPageOpen(
+          context: context,
+          asBottomSheet: true,
+          page: (_) => const AddNewTabDialog(),
+        ).open();
+      },
+      child: IconButton(
+        tooltip: 'New tab (hold to choose booru)',
+        icon: Icon(Symbols.add_circle_rounded, color: accent),
+        onPressed: searchHandler.addNewTabRespectingSetting,
       ),
     );
   }
@@ -141,7 +171,7 @@ class _FlowTabCarouselState extends State<FlowTabCarousel> {
 
   void _newTab() {
     ServiceHandler.vibrate(duration: 30);
-    searchHandler.addTabByString('', switchToNew: true);
+    searchHandler.addNewTabRespectingSetting();
   }
 
   Widget _activeCard(SearchTab tab) {

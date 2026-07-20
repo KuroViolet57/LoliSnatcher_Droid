@@ -197,6 +197,7 @@ class _MainAppBarState extends State<MainAppBar> {
                 ),
               ),
         actions: [
+          const NewTabButton(),
           if (settingsHandler.handSide.value.isRight)
             menuButton(InnerDrawerDirection.end)
           else

@@ -804,6 +804,28 @@ class SearchHandler {
     await reloadSavedSearches();
   }
 
+  // The TabAddMode matching the user's "New tab position" setting
+  // (next / end / prev), falling back to end.
+  TabAddMode get defaultTabAddModeResolved =>
+      TabAddMode.values.firstWhereOrNull(
+        (m) => m.name == SettingsHandler.instance.defaultTabAddMode,
+      ) ??
+      TabAddMode.end;
+
+  // One-tap "new tab": opens an empty tab in the current booru (or its default
+  // tags), honouring the New tab position setting, and switches to it.
+  void addNewTabRespectingSetting() {
+    final String defaultText = currentBooru.defTags?.isNotEmpty == true
+        ? currentBooru.defTags!
+        : SettingsHandler.instance.defTags;
+    searchTextController.text = defaultText;
+    addTabByString(
+      defaultText,
+      switchToNew: true,
+      addMode: defaultTabAddModeResolved,
+    );
+  }
+
   // Opens a saved search as a new tab. `customBooru` overrides the saved
   // primary (used by the "open in another booru" action). Respects the
   // user's defaultTabAddMode setting and switches focus to the new tab.
