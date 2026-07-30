@@ -42,6 +42,7 @@ import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/snatch_handler.dart';
+import 'package:lolisnatcher/src/handlers/tag_alias_resolver.dart';
 import 'package:lolisnatcher/src/handlers/tag_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/pages/gallery_view_page.dart';
@@ -2236,6 +2237,13 @@ class _TagContentPreviewState extends State<TagContentPreview> {
   bool isLastPage = false;
   String errorString = '';
 
+  // Cross-booru alias translation: when the strip is switched to a booru
+  // other than the one the tag was written for, the tag is resolved to that
+  // booru's own spelling via TagAliasResolver (e.g. `burnice` →
+  // `burnice_white_(zenless_zone_zero)`). null = no translation active.
+  String? resolvedQuery;
+  Map<String, String> resolvedTerms = {};
+
   // Header "videos / GIFs only" filter. -1 means off; otherwise it's an
   // index into the active booru's `animatedPreviewFilters` list, which the
   // button cycles through (off → [0] → [1] → … → off).
@@ -2255,11 +2263,34 @@ class _TagContentPreviewState extends State<TagContentPreview> {
       ? _animatedFilters[animatedFilterIndex]
       : null;
 
-  // The actual query sent to the booru handler — `widget.tag` plus
-  // any per-strip filter the user toggled in the header.
+  // The actual query sent to the booru handler — `widget.tag` (translated to
+  // the selected booru's spelling when a resolution is active) plus any
+  // per-strip filter the user toggled in the header.
   String get _effectiveTag {
+    final String base = resolvedQuery ?? widget.tag;
     final filter = _activeAnimatedFilter;
-    return filter == null ? widget.tag : '${widget.tag} $filter';
+    return filter == null ? base : '$base $filter';
+  }
+
+  // The booru this strip's tag was originally written for.
+  Booru? get _originBooru => widget.parentTab?.selectedBooru.value ?? widget.boorus.firstOrNull;
+
+  // Translates the tag for the selected booru when it differs from the origin
+  // booru. Failures (or nothing to translate) leave the original query.
+  Future<void> _maybeResolveAliases() async {
+    resolvedQuery = null;
+    resolvedTerms = {};
+    final Booru? origin = _originBooru;
+    final Booru? target = selectedBooru;
+    if (origin == null || target == null) return;
+    if (origin.name == target.name && origin.type == target.type) return;
+    try {
+      final res = await TagAliasResolver.resolveQuery(widget.tag, target);
+      if (res.changed) {
+        resolvedQuery = res.query;
+        resolvedTerms = res.perTerm;
+      }
+    } catch (_) {}
   }
 
   // Whether the booru currently powering this strip understands
@@ -2317,6 +2348,8 @@ class _TagContentPreviewState extends State<TagContentPreview> {
     }
 
     if (refresh || tab == null) {
+      await _maybeResolveAliases();
+      if (!mounted) return;
       tab = SearchTab(
         selectedBooru!,
         null,
@@ -2652,6 +2685,23 @@ class _TagContentPreviewState extends State<TagContentPreview> {
                 style: const TextStyle(fontWeight: FontWeight.w500),
               ),
             ),
+            // Alias translation indicator: this booru spells the tag
+            // differently, show what the strip is actually searching.
+            if (resolvedTerms.isNotEmpty) ...[
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  '→ ${resolvedTerms.values.map((t) => t.replaceAll('_', ' ')).join(', ')}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: theme.colorScheme.secondary,
+                  ),
+                ),
+              ),
+            ],
           ] else
             Flexible(
               child: Text(
