@@ -2273,7 +2273,8 @@ class _TagContentPreviewState extends State<TagContentPreview> {
   }
 
   // The booru this strip's tag was originally written for.
-  Booru? get _originBooru => widget.parentTab?.selectedBooru.value ?? widget.boorus.firstOrNull;
+  Booru? get _originBooru =>
+      widget.parentTab?.selectedBooru.value ?? (widget.boorus.isNotEmpty ? widget.boorus.first : null);
 
   // Translates the tag for the selected booru when it differs from the origin
   // booru. Failures (or nothing to translate) leave the original query.
