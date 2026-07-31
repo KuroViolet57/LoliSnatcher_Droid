@@ -3,6 +3,17 @@
 Paste this back to resume with full context. Last updated: 2026-07-15 (build 5210, Flow rounded-icon sweep + sqlite3 sandbox build fix).
 
 ## Project / workflow
+- **CONTAINER RESETS HAPPEN.** After a reset: toolchain is gone (reinstall
+  Flutter 3.42.0-0.4.pre beta to /opt/flutter + Android SDK/NDK 28.2.13676358
+  via cmdline-tools to /opt/android-sdk), Drive oauth.json is gone (ask user to
+  re-paste client_id/secret/refresh_token; folder id
+  1v27HWGKh2L_tmoxB1gBo1MaEgc3Y2eYi), and the fresh clone lands on the
+  auto-named session branch — switch back to megabuild. The sqlite3 release
+  download and the signing keystore are handled now: the TEST keystore is
+  COMMITTED at android/app/lolisnatcher-test.jks + android/key.properties
+  (force-added over gitignore; passwords 'lolisnatcher-test'). Builds signed
+  before 2026-07-31 used a lost key — users must uninstall/reinstall once.
+
 - Flutter Android booru gallery app. Autonomous multi-feature build.
 - **Working branch: `claude/experimental-megabuild`** (NOT the auto-named
   `claude/google-oauth-refresh-token-*` — all features live on megabuild).
