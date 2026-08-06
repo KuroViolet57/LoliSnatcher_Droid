@@ -27,6 +27,7 @@ import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/boorus/downloads_handler.dart';
 import 'package:lolisnatcher/src/boorus/favourites_handler.dart';
 import 'package:lolisnatcher/src/boorus/foryou_handler.dart';
+import 'package:lolisnatcher/src/boorus/history_handler.dart';
 import 'package:lolisnatcher/src/boorus/idol_sankaku_handler.dart';
 import 'package:lolisnatcher/src/boorus/mergebooru_handler.dart';
 import 'package:lolisnatcher/src/boorus/sankaku_handler.dart';
@@ -177,11 +178,15 @@ class _TagViewState extends State<TagView> {
 
     final bool isMergeHandler = handler is MergebooruHandler;
 
-    // Virtual feeds (favourites, downloads, merge, For You) aggregate posts
-    // from real boorus — resolve the item's actual source so tag previews,
-    // related strips and the source row point at the right booru.
+    // Virtual feeds (favourites, downloads, merge, For You, History)
+    // aggregate posts from real boorus — resolve the item's actual source so
+    // tag previews, related strips and the source row point at the right booru.
     final bool isVirtualFeed =
-        handler is FavouritesHandler || handler is DownloadsHandler || handler is ForYouHandler || isMergeHandler;
+        handler is FavouritesHandler ||
+        handler is DownloadsHandler ||
+        handler is ForYouHandler ||
+        handler is HistoryHandler ||
+        isMergeHandler;
     if (!isVirtualFeed) {
       return;
     }

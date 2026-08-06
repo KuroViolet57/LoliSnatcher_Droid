@@ -32,6 +32,7 @@ class _BooruSwitcherSheet extends StatelessWidget {
     }
     final t = booru.type;
     if (t?.isForYou == true) return 'recommendation feed';
+    if (t?.isHistory == true) return 'viewing history';
     if (t?.isFavourites == true) return 'your favourites';
     if (t?.isCollections == true) return 'your collections';
     if (t?.isDownloads == true) return 'downloaded posts';

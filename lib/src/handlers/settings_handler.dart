@@ -2151,6 +2151,7 @@ class SettingsHandler {
         tempList.add(Booru(loc.downloads, BooruType.Downloads, '', '', ''));
         tempList.add(Booru('For You', BooruType.ForYou, '', '', ''));
         tempList.add(Booru('Collections', BooruType.Collections, '', '', ''));
+        tempList.add(Booru('History', BooruType.History, '', '', ''));
       }
     } catch (e, s) {
       Logger.Inst().log(
@@ -2190,6 +2191,17 @@ class SettingsHandler {
       if (b.type?.isForYou == true) return b;
     }
     final Booru b = Booru('For You', BooruType.ForYou, '', '', '');
+    booruList.add(b);
+    return b;
+  }
+
+  /// Returns the virtual viewing-history booru, adding it to the list on
+  /// first use.
+  Booru ensureHistoryBooru() {
+    for (final b in booruList) {
+      if (b.type?.isHistory == true) return b;
+    }
+    final Booru b = Booru('History', BooruType.History, '', '', '');
     booruList.add(b);
     return b;
   }
@@ -2240,6 +2252,7 @@ class SettingsHandler {
     for (final isType in [
       (Booru b) => b.type?.isForYou == true,
       (Booru b) => b.type?.isCollections == true,
+      (Booru b) => b.type?.isHistory == true,
     ]) {
       final int idx = sorted.indexWhere(isType);
       if (idx != -1) {

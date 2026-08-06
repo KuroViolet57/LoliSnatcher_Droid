@@ -37,6 +37,7 @@ class _DrawerQuickAccessState extends State<DrawerQuickAccess> {
   int _favCount = 0;
   int _collectionCount = 0;
   int _followedCount = 0;
+  int _historyCount = 0;
   Worker? _tabWorker;
 
   @override
@@ -78,12 +79,17 @@ class _DrawerQuickAccessState extends State<DrawerQuickAccess> {
       try {
         followed = (await FollowedArtistsHandler.listFollowed()).length;
       } catch (_) {}
+      int history = 0;
+      try {
+        history = await settingsHandler.dbHandler.countViewedPosts('');
+      } catch (_) {}
       if (mounted) {
         setState(() {
           _pinned = pinned;
           _favCount = fav;
           _collectionCount = col;
           _followedCount = followed;
+          _historyCount = history;
         });
       }
     } catch (_) {}
@@ -112,6 +118,14 @@ class _DrawerQuickAccessState extends State<DrawerQuickAccess> {
     if (fav == null) return;
     widget.toggleDrawer();
     searchHandler.addTabByString('', customBooru: fav, switchToNew: true);
+  }
+
+  // Opens the viewing history as a tab on the virtual History booru — full
+  // grid/search/viewer for free, same pattern as the Favourites entry.
+  void _openHistory() {
+    final Booru history = settingsHandler.ensureHistoryBooru();
+    widget.toggleDrawer();
+    searchHandler.addTabByString('', customBooru: history, switchToNew: true);
   }
 
   // Opens the per-booru blacklist of the CURRENTLY ACTIVE booru (the editor
@@ -314,6 +328,13 @@ class _DrawerQuickAccessState extends State<DrawerQuickAccess> {
             label: 'Favorites',
             count: _favCount > 0 ? '$_favCount' : null,
             onTap: _openFavourites,
+          ),
+          _quickAccessRow(
+            icon: Symbols.history_rounded,
+            iconColor: const Color(0xFF8FBFD4),
+            label: 'History',
+            count: _historyCount > 0 ? '$_historyCount' : null,
+            onTap: _openHistory,
           ),
           _quickAccessRow(
             icon: Symbols.artist_rounded,

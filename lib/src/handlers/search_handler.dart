@@ -742,6 +742,14 @@ class SearchHandler {
         await SettingsHandler.instance.dbHandler.addSeenPost(key);
       } catch (_) {}
     }
+    // Viewing history: store the full item every time (a re-view bumps the
+    // entry back to the top of the History feed).
+    try {
+      await SettingsHandler.instance.dbHandler.addViewedPost(
+        key,
+        DBHandler.serializeHistoryItem(item),
+      );
+    } catch (_) {}
   }
 
   Future<void> clearSeenPosts() async {

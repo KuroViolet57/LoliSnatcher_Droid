@@ -42,6 +42,7 @@ enum BooruType {
   Favourites,
   Collections,
   ForYou,
+  History,
   ;
 
   static List<BooruType> get dropDownValues {
@@ -53,6 +54,7 @@ enum BooruType {
       ..remove(BooruType.Favourites)
       ..remove(BooruType.Collections)
       ..remove(BooruType.ForYou)
+      ..remove(BooruType.History)
       ..remove(BooruType.Merge)
       ..remove(BooruType.GelbooruAlike)
       ..remove(isDebug ? BooruType.NyanPals : null)
@@ -68,6 +70,7 @@ enum BooruType {
       ..remove(BooruType.Favourites)
       ..remove(BooruType.Collections)
       ..remove(BooruType.ForYou)
+      ..remove(BooruType.History)
       ..remove(BooruType.Hydrus)
       ..remove(BooruType.Merge)
       // WebView is a "render anything" escape hatch — never autodetect it.
@@ -91,6 +94,7 @@ enum BooruType {
       ..remove(BooruType.Favourites)
       ..remove(BooruType.Collections)
       ..remove(BooruType.ForYou)
+      ..remove(BooruType.History)
       ..remove(BooruType.Merge);
   }
 
@@ -154,10 +158,12 @@ enum BooruType {
   bool get isFavourites => this == BooruType.Favourites;
   bool get isCollections => this == BooruType.Collections;
   bool get isForYou => this == BooruType.ForYou;
+  bool get isHistory => this == BooruType.History;
   bool get isFavouritesOrDownloads => isFavourites || isDownloads;
 
-  /// Local, DB-backed virtual boorus (Favourites / Downloads / Collections).
-  /// These aggregate posts from many sources, so the grid/viewer must resolve
-  /// each item's real source booru from its URL rather than the tab's booru.
-  bool get isLocalDb => isFavourites || isDownloads || isCollections;
+  /// Local, DB-backed virtual boorus (Favourites / Downloads / Collections /
+  /// History). These aggregate posts from many sources, so the grid/viewer
+  /// must resolve each item's real source booru from its URL rather than the
+  /// tab's booru.
+  bool get isLocalDb => isFavourites || isDownloads || isCollections || isHistory;
 }

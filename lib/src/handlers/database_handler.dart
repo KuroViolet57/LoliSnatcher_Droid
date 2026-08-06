@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
@@ -133,6 +134,16 @@ class DBHandler {
     await db?.execute(
       'CREATE TABLE IF NOT EXISTS SeenPost ( '
       'postKey TEXT PRIMARY KEY, '
+      'viewedAt INTEGER NOT NULL '
+      ')',
+    );
+    // Viewing history: full serialized items so the History feed can render
+    // thumbnails and reopen posts without re-fetching. SeenPost stays the
+    // lightweight key set for grid dimming.
+    await db?.execute(
+      'CREATE TABLE IF NOT EXISTS ViewedPost ( '
+      'postKey TEXT PRIMARY KEY, '
+      'itemJson TEXT NOT NULL, '
       'viewedAt INTEGER NOT NULL '
       ')',
     );
@@ -1346,6 +1357,109 @@ class DBHandler {
 
   Future<void> clearSeenPosts() async {
     await db?.rawDelete('DELETE FROM SeenPost');
+  }
+
+  ///////
+  /// Viewing history (full items, newest first — powers the History feed)
+
+  // Cap so the table can't grow unbounded; trims oldest beyond this on insert.
+  static const int _viewedPostLimit = 5000;
+
+  Future<void> addViewedPost(String postKey, String itemJson) async {
+    if (postKey.isEmpty || itemJson.isEmpty) return;
+    // INSERT OR REPLACE so a re-view bumps the entry back to the top.
+    await db?.rawInsert(
+      'INSERT OR REPLACE INTO ViewedPost(postKey, itemJson, viewedAt) VALUES(?, ?, ?)',
+      [postKey, itemJson, DateTime.now().millisecondsSinceEpoch],
+    );
+    await db?.rawDelete(
+      'DELETE FROM ViewedPost WHERE postKey NOT IN '
+      '(SELECT postKey FROM ViewedPost ORDER BY viewedAt DESC LIMIT $_viewedPostLimit)',
+    );
+  }
+
+  // Builds the WHERE clause for a space-separated filter: every term must
+  // appear somewhere in the stored item JSON (tags, URLs, artist...). Crude
+  // but effective for a local history search.
+  (String, List<String>) _viewedPostFilter(String filter) {
+    final terms = filter.toLowerCase().split(' ').where((t) => t.trim().isNotEmpty).toList();
+    if (terms.isEmpty) return ('', const []);
+    final String where = 'WHERE ${List.filled(terms.length, 'LOWER(itemJson) LIKE ?').join(' AND ')}';
+    return (where, [for (final t in terms) '%$t%']);
+  }
+
+  // History rows use their own (de)serializer — BooruItem.fromMap is lossy
+  // (drops rating/score/sources and stringifies Tag maps into garbage).
+  static String serializeHistoryItem(BooruItem item) => jsonEncode({
+    'postURL': item.postURL,
+    'fileURL': item.fileURL,
+    'sampleURL': item.sampleURL,
+    'thumbnailURL': item.thumbnailURL,
+    'tags': [for (final t in item.tagsList) t.fullString],
+    'fileExt': item.fileExt,
+    'serverId': item.serverId,
+    'rating': item.rating,
+    'score': item.score,
+    'md5String': item.md5String,
+    'sources': item.sources,
+    'postDate': item.postDate,
+    'postDateFormat': item.postDateFormat,
+    'fileWidth': item.fileWidth,
+    'fileHeight': item.fileHeight,
+  });
+
+  static BooruItem? deserializeHistoryItem(String jsonStr) {
+    try {
+      final Map<String, dynamic> j = jsonDecode(jsonStr);
+      return BooruItem(
+        fileURL: j['fileURL']?.toString() ?? '',
+        sampleURL: j['sampleURL']?.toString() ?? '',
+        thumbnailURL: j['thumbnailURL']?.toString() ?? '',
+        postURL: j['postURL']?.toString() ?? '',
+        tagsList: [for (final t in (j['tags'] as List? ?? [])) Tag(t.toString())],
+        fileExt: j['fileExt']?.toString(),
+        serverId: j['serverId']?.toString(),
+        rating: j['rating']?.toString(),
+        score: j['score']?.toString(),
+        md5String: j['md5String']?.toString(),
+        sources: (j['sources'] as List?)?.map((e) => e.toString()).toList(),
+        postDate: j['postDate']?.toString(),
+        postDateFormat: j['postDateFormat']?.toString(),
+        fileWidth: double.tryParse(j['fileWidth']?.toString() ?? ''),
+        fileHeight: double.tryParse(j['fileHeight']?.toString() ?? ''),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<List<BooruItem>> getViewedPosts(String filter, int offset, int limit) async {
+    final (String where, List<String> args) = _viewedPostFilter(filter);
+    final rows = await db?.rawQuery(
+      'SELECT itemJson FROM ViewedPost $where ORDER BY viewedAt DESC LIMIT $limit OFFSET $offset',
+      args,
+    );
+    if (rows == null || rows.isEmpty) return [];
+    final List<BooruItem> items = [];
+    for (final row in rows) {
+      final BooruItem? item = deserializeHistoryItem(row['itemJson']!.toString());
+      // Skip rows that fail to deserialize (e.g. written by a newer build).
+      if (item != null && item.fileURL.isNotEmpty) {
+        items.add(item);
+      }
+    }
+    return items;
+  }
+
+  Future<int> countViewedPosts(String filter) async {
+    final (String where, List<String> args) = _viewedPostFilter(filter);
+    final rows = await db?.rawQuery('SELECT COUNT(*) as c FROM ViewedPost $where', args);
+    if (rows == null || rows.isEmpty) return 0;
+    return int.tryParse(rows.first['c']?.toString() ?? '') ?? 0;
+  }
+
+  Future<void> clearViewedPosts() async {
+    await db?.rawDelete('DELETE FROM ViewedPost');
   }
 
   ///////

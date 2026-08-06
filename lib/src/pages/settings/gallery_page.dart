@@ -355,6 +355,38 @@ class _GalleryPageState extends State<GalleryPage> {
                     }
                   },
                 ),
+              SettingsButton(
+                name: 'Clear viewing history',
+                subtitle: const Text('Empties the History feed (left drawer > Quick access)'),
+                icon: const Icon(Symbols.history_rounded),
+                action: () async {
+                  final bool? confirmed = await showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: const Text('Clear viewing history?'),
+                      content: const Text('The list of posts you have opened will be emptied.'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.of(ctx).pop(false),
+                          child: Text(context.loc.no),
+                        ),
+                        FilledButton(
+                          onPressed: () => Navigator.of(ctx).pop(true),
+                          child: Text(context.loc.yes),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (confirmed == true) {
+                    await SettingsHandler.instance.dbHandler.clearViewedPosts();
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Viewing history cleared')),
+                      );
+                    }
+                  }
+                },
+              ),
               SettingsToggle(
                 value: fastGifPlayback,
                 onChanged: (newValue) {
