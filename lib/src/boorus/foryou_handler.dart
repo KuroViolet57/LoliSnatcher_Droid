@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
@@ -25,10 +26,16 @@ import 'package:lolisnatcher/src/utils/tag_alias_resolver.dart';
 /// Config travels in the tab's search string:
 ///   ''                       -> profile mode (uses the behaviour profile)
 ///   'seed:tagA seed:tagB'    -> seed mode (recommend around these tags)
+///   'tagA tagB'              -> plain tags work as seeds too
 class ForYouHandler extends BooruHandler {
   ForYouHandler(super.booru, super.limit);
 
   bool _inited = false;
+  // The query the seed set was built for — a changed query re-derives seeds
+  // instead of silently serving the old feed.
+  String? _initedTags;
+
+  final Random _rand = Random();
 
   final List<Booru> _sources = [];
   final List<BooruHandler> _sourceHandlers = [];
@@ -39,6 +46,11 @@ class ForYouHandler extends BooruHandler {
 
   // Advances every page so seeds rotate and each source deepens over time.
   int _feedPage = 0;
+
+  // Randomized once per session so the source/seed pairing starts somewhere
+  // different every time — otherwise the first page of the feed was fully
+  // deterministic and looked identical on every open.
+  int _rotationOffset = 0;
 
   // Bounds how many empty rounds we auto-retry within a single scroll before
   // declaring the feed exhausted (each round fans out to every source).
@@ -74,10 +86,18 @@ class ForYouHandler extends BooruHandler {
   List<String> _parseSeeds(String input) {
     final List<String> seeds = [];
     for (final term in input.split(' ').where((t) => t.trim().isNotEmpty)) {
-      if (term.toLowerCase().startsWith('seed:')) {
-        final v = _sanitizeSeed(term.substring('seed:'.length));
-        if (v.isNotEmpty) seeds.add(v);
+      String raw = term;
+      if (raw.toLowerCase().startsWith('seed:')) {
+        raw = raw.substring('seed:'.length);
+      } else if (raw.startsWith('-')) {
+        // Exclusions aren't seeds.
+        continue;
       }
+      // Plain tags count as seeds too — searching `girl` should steer the
+      // feed just like `seed:girl` (previously non-seed: terms were silently
+      // ignored and the old feed kept rendering).
+      final v = _sanitizeSeed(raw);
+      if (v.isNotEmpty && !seeds.contains(v)) seeds.add(v);
     }
     return seeds;
   }
@@ -125,29 +145,43 @@ class ForYouHandler extends BooruHandler {
   }
 
   Future<void> _init(String tags) async {
-    if (_inited) return;
+    // Re-derive the seed set when the query changes (same handler instance) —
+    // otherwise editing the search did nothing and the old feed kept coming.
+    if (_inited && _initedTags == tags) return;
+    final bool firstInit = !_inited;
     _inited = true;
+    _initedTags = tags;
 
-    // This virtual booru has no API of its own; don't let afterParseResponse
-    // try to fetch tag types through it (items already carry their tags).
-    storeTagsGlobally = false;
+    if (firstInit) {
+      // This virtual booru has no API of its own; don't let afterParseResponse
+      // try to fetch tag types through it (items already carry their tags).
+      storeTagsGlobally = false;
 
-    // Source boorus: real, tag-searchable sites the user has configured.
-    final all = SettingsHandler.instance.booruList;
-    for (final b in all) {
-      final t = b.type;
-      if (t == null) continue;
-      if (t.isLocalDb || t.isMerge || t.isWebView || t.isForYou) continue;
-      if ((b.baseURL ?? '').isEmpty && !t.isRedGifs && !t.isRule34Dev) continue;
-      _sources.add(b);
-      if (_sources.length >= _maxSources) break;
+      // Source boorus: real, tag-searchable sites the user has configured.
+      final all = SettingsHandler.instance.booruList;
+      for (final b in all) {
+        final t = b.type;
+        if (t == null) continue;
+        if (t.isLocalDb || t.isMerge || t.isWebView || t.isForYou) continue;
+        if ((b.baseURL ?? '').isEmpty && !t.isRedGifs && !t.isRule34Dev) continue;
+        _sources.add(b);
+        if (_sources.length >= _maxSources) break;
+      }
+      for (final b in _sources) {
+        final res = BooruHandlerFactory().getBooruHandler([b], limit);
+        res.booruHandler.storeTagsGlobally = false;
+        _sourceHandlers.add(res.booruHandler);
+        _sourceStartPages.add(res.startingPage);
+      }
+    } else {
+      // Query changed: restart the feed walk for the new seed set.
+      _feedPage = 0;
+      _emptyStreak = 0;
+      locked = false;
     }
-    for (final b in _sources) {
-      final res = BooruHandlerFactory().getBooruHandler([b], limit);
-      res.booruHandler.storeTagsGlobally = false;
-      _sourceHandlers.add(res.booruHandler);
-      _sourceStartPages.add(res.startingPage);
-    }
+
+    // Session variety: start the source/seed rotation somewhere random.
+    _rotationOffset = _rand.nextInt(1 << 16);
 
     // Seeds: explicit if given, else the strongest profile tags.
     _seeds = _parseSeeds(tags);
@@ -163,6 +197,9 @@ class ForYouHandler extends BooruHandler {
         if (s.isNotEmpty && !pool.contains(s)) pool.add(s);
         if (pool.length >= 24) break;
       }
+      // Shuffle so the profile feed doesn't open on the exact same seed
+      // (and thus the exact same posts) every session.
+      pool.shuffle(_rand);
       _seeds = pool;
     } else {
       // Seed mode still benefits from profile ranking; make sure seeds appear.
@@ -180,7 +217,9 @@ class ForYouHandler extends BooruHandler {
     // Light popularity nudge so ties resolve toward well-liked posts.
     final int? s = int.tryParse(item.score ?? '');
     if (s != null) score += (s / 500).clamp(0, 2);
-    return score;
+    // Small jitter so equally-ranked posts don't line up identically on
+    // every open.
+    return score + _rand.nextDouble() * 0.5;
   }
 
   bool _isDuplicate(BooruItem item) {
@@ -227,10 +266,12 @@ class ForYouHandler extends BooruHandler {
     // by page so all sources get used across a few scrolls.
     final int take = _sources.length < _sourcesPerPage ? _sources.length : _sourcesPerPage;
     for (int k = 0; k < take; k++) {
-      final int j = (_feedPage * _sourcesPerPage + k) % _sources.length;
+      // _rotationOffset varies the pairing per session; _feedPage still
+      // drives the page depth so rare seeds aren't asked for deep pages.
+      final int j = ((_feedPage + _rotationOffset) * _sourcesPerPage + k) % _sources.length;
       final Booru booru = _sources[j];
       final BooruHandler handler = _sourceHandlers[j];
-      final String seed = _seeds[(_feedPage + k) % _seeds.length];
+      final String seed = _seeds[(_feedPage + _rotationOffset + k) % _seeds.length];
 
       String resolved = seed;
       final String? aliased = await _bounded<String?>(
@@ -263,8 +304,13 @@ class ForYouHandler extends BooruHandler {
       }
     }
 
-    // Rank this page by profile affinity (best matches first).
-    pageItems.sort((a, b) => _scoreItem(b).compareTo(_scoreItem(a)));
+    // Rank this page by profile affinity (best matches first). Scores are
+    // precomputed — _scoreItem carries random jitter, and a comparator that
+    // re-rolls per comparison isn't a consistent ordering.
+    final Map<BooruItem, double> scores = {
+      for (final item in pageItems) item: _scoreItem(item),
+    };
+    pageItems.sort((a, b) => scores[b]!.compareTo(scores[a]!));
 
     _feedPage++;
 
