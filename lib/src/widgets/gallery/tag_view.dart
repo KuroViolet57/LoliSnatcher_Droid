@@ -26,6 +26,7 @@ import 'package:uuid/uuid.dart';
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/boorus/downloads_handler.dart';
 import 'package:lolisnatcher/src/boorus/favourites_handler.dart';
+import 'package:lolisnatcher/src/boorus/foryou_handler.dart';
 import 'package:lolisnatcher/src/boorus/idol_sankaku_handler.dart';
 import 'package:lolisnatcher/src/boorus/mergebooru_handler.dart';
 import 'package:lolisnatcher/src/boorus/sankaku_handler.dart';
@@ -171,8 +172,12 @@ class _TagViewState extends State<TagView> {
 
     final bool isMergeHandler = handler is MergebooruHandler;
 
-    final bool isFavsOrDlsOrMerge = handler is FavouritesHandler || handler is DownloadsHandler || isMergeHandler;
-    if (!isFavsOrDlsOrMerge) {
+    // Virtual feeds (favourites, downloads, merge, For You) aggregate posts
+    // from real boorus — resolve the item's actual source so tag previews,
+    // related strips and the source row point at the right booru.
+    final bool isVirtualFeed =
+        handler is FavouritesHandler || handler is DownloadsHandler || handler is ForYouHandler || isMergeHandler;
+    if (!isVirtualFeed) {
       return;
     }
 
@@ -1106,7 +1111,10 @@ class _TagViewState extends State<TagView> {
           showTagDialog(
             context: context,
             tag: currentTag,
-            handler: handler,
+            // Virtual feeds (For You, favourites, merge) resolve the item's
+            // real source booru — the dialog's preview / hub entries should
+            // originate there, not on the virtual feed.
+            handler: possibleBooruHandler ?? handler,
             isHidden: isHidden,
             isMarked: isMarked,
             isInSearch: isInSearch,
@@ -1325,6 +1333,19 @@ class _TagViewState extends State<TagView> {
                 //
                 // Flow post actions (Favorite / Save / Collect).
                 _flowActionRow(context),
+                //
+                // Source booru — virtual feeds (For You, favourites, merge)
+                // aggregate posts from real boorus; say which one this is.
+                if (possibleBooruHandler != null)
+                  ListTile(
+                    dense: true,
+                    minVerticalPadding: 0,
+                    leading: BooruFavicon(possibleBooruHandler!.booru, size: 20),
+                    title: Text(
+                      'From ${possibleBooruHandler!.booru.name ?? 'unknown booru'}',
+                      style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
+                    ),
+                  ),
                 //
                 // Inline "more from artist / uploader" grids — Boorusama-style.
                 // Each grid is gated on:

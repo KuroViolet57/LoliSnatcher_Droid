@@ -397,7 +397,14 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
   }
 
   void onChipLongTap(String tag, int tagIndex) {
-    onChipTap(tag, tagIndex);
+    // Same action sheet as long-pressing a suggestion (tag type, preview,
+    // copy, pin/unpin) — single tap already covers editing, and pinning is
+    // the thing you actually want from a tag that's already in the query.
+    // Add/exclude entries are hidden: the tag is in the query already.
+    onSuggestionLongTap(
+      TagSuggestion(tag: tag.startsWith('-') ? tag.substring(1) : tag),
+      showAddActions: false,
+    );
   }
 
   void onChipDeleteTap(String tag, int tagIndex) {
@@ -486,7 +493,10 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
     runSearch();
   }
 
-  Future<void> onSuggestionLongTap(TagSuggestion tag) async {
+  Future<void> onSuggestionLongTap(
+    TagSuggestion tag, {
+    bool showAddActions = true,
+  }) async {
     // TODO add more actions? hate/fave +-, add as exclude, add with multibooru number?
     await SettingsPageOpen(
       context: context,
@@ -518,29 +528,31 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
               ],
             ),
             const SizedBox(height: 16),
-            ListTile(
-              title: Text(context.loc.add),
-              leading: const Icon(
-                Symbols.add_rounded,
-                color: Colors.green,
+            if (showAddActions) ...[
+              ListTile(
+                title: Text(context.loc.add),
+                leading: const Icon(
+                  Symbols.add_rounded,
+                  color: Colors.green,
+                ),
+                onTap: () async {
+                  onSuggestionTap(tag);
+                  Navigator.of(context).pop();
+                },
               ),
-              onTap: () async {
-                onSuggestionTap(tag);
-                Navigator.of(context).pop();
-              },
-            ),
-            ListTile(
-              title: Text(context.loc.exclude),
-              leading: const Icon(
-                Symbols.remove_rounded,
-                color: Colors.red,
+              ListTile(
+                title: Text(context.loc.exclude),
+                leading: const Icon(
+                  Symbols.remove_rounded,
+                  color: Colors.red,
+                ),
+                onTap: () async {
+                  tag = tag.copyWith(tag: '-${tag.tag}');
+                  onSuggestionTap(tag);
+                  Navigator.of(context).pop();
+                },
               ),
-              onTap: () async {
-                tag = tag.copyWith(tag: '-${tag.tag}');
-                onSuggestionTap(tag);
-                Navigator.of(context).pop();
-              },
-            ),
+            ],
             TagContentPreview(
               tag: tag.tag,
               boorus: searchHandler.currentBooru.type?.isMerge == true
