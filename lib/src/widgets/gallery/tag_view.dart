@@ -122,6 +122,11 @@ class _TagViewState extends State<TagView> {
 
   bool? detailsExpanded;
   bool relatedExpanded = false;
+
+  // Batch tag selection: pick several tags from the list and open them as
+  // tabs in one go (each its own tab, or combined into one search).
+  bool tagSelectionMode = false;
+  final Set<String> selectedBatchTags = {};
   // Cached so collapsing / re-expanding the "Related" tile doesn't re-derive
   // (and the preview widget's own state doesn't get torn down on the second
   // expand). Filled lazily on the first expand.
@@ -875,9 +880,29 @@ class _TagViewState extends State<TagView> {
                 ),
               ),
               const Spacer(),
+              // Batch selection toggle: pick several tags, open them as tabs.
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  setState(() {
+                    tagSelectionMode = !tagSelectionMode;
+                    if (!tagSelectionMode) selectedBatchTags.clear();
+                  });
+                },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  child: Icon(
+                    Symbols.checklist_rounded,
+                    size: 20,
+                    color: tagSelectionMode
+                        ? Theme.of(context).colorScheme.secondary
+                        : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.55),
+                  ),
+                ),
+              ),
               Flexible(
                 child: Text(
-                  'tap · hold = tab · ⧉ = preview',
+                  tagSelectionMode ? 'tap tags to select' : 'tap · hold = tab · ⧉ = preview',
                   textAlign: TextAlign.right,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -891,6 +916,48 @@ class _TagViewState extends State<TagView> {
           ),
         ),
       ),
+      // Batch-selection action bar: appears while selecting, offers opening
+      // the picked tags as separate tabs or one combined search tab.
+      if (tagSelectionMode)
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 2),
+          sliver: SliverToBoxAdapter(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainer,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${selectedBatchTags.length} selected',
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: selectedBatchTags.isEmpty ? null : () => _openSelectedTagsAsTabs(combined: true),
+                    icon: const Icon(Symbols.join_rounded, size: 18),
+                    label: const Text('One tab'),
+                  ),
+                  TextButton.icon(
+                    onPressed: selectedBatchTags.isEmpty ? null : () => _openSelectedTagsAsTabs(combined: false),
+                    icon: const Icon(Symbols.tab_rounded, size: 18),
+                    label: Text(selectedBatchTags.length > 1 ? '${selectedBatchTags.length} tabs' : 'Open tab'),
+                  ),
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    tooltip: 'Cancel selection',
+                    icon: const Icon(Symbols.close_rounded, size: 18),
+                    onPressed: _exitTagSelectionMode,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       for (final section in sections) ...[
         if (section.$1 != null)
           SliverPadding(
@@ -939,6 +1006,83 @@ class _TagViewState extends State<TagView> {
         ),
       ],
     ];
+  }
+
+  void _toggleBatchTag(String tag) {
+    setState(() {
+      if (!selectedBatchTags.remove(tag)) {
+        selectedBatchTags.add(tag);
+      }
+    });
+  }
+
+  void _exitTagSelectionMode() {
+    setState(() {
+      tagSelectionMode = false;
+      selectedBatchTags.clear();
+    });
+  }
+
+  // Selected tags in on-screen order (selection set order is insertion order,
+  // which may not match the list after sorting/filtering).
+  List<String> get _selectedBatchTagsOrdered {
+    final List<String> ordered = [
+      for (final t in filteredTags)
+        if (selectedBatchTags.contains(t.fullString)) t.fullString,
+    ];
+    for (final t in selectedBatchTags) {
+      if (!ordered.contains(t)) ordered.add(t);
+    }
+    return ordered;
+  }
+
+  void _openSelectedTagsAsTabs({required bool combined}) {
+    final List<String> toOpen = _selectedBatchTagsOrdered;
+    if (toOpen.isEmpty) return;
+
+    final Booru batchBooru = possibleBooruHandler?.booru ?? searchHandler.currentBooru;
+    final TabAddMode addMode = settingsHandler.defaultTabAddMode == 'next' ? TabAddMode.next : TabAddMode.end;
+
+    if (combined) {
+      searchHandler.addTabByString(
+        toOpen.join(' '),
+        customBooru: batchBooru,
+        addMode: addMode,
+        switchToNew: false,
+      );
+    } else {
+      // "next" inserts right after the current tab, so add in reverse to end
+      // up with the tabs in selection order.
+      for (final tag in addMode == TabAddMode.next ? toOpen.reversed : toOpen) {
+        searchHandler.addTabByString(
+          tag,
+          customBooru: batchBooru,
+          addMode: addMode,
+          switchToNew: false,
+        );
+      }
+    }
+
+    FlashElements.showSnackbar(
+      context: context,
+      isKeyUnique: true,
+      key: 'added_new_tab',
+      duration: const Duration(seconds: 2),
+      title: Text(
+        combined ? 'Opened combined tab' : 'Opened ${toOpen.length} ${toOpen.length == 1 ? 'tab' : 'tabs'}',
+        style: const TextStyle(fontSize: 20),
+      ),
+      content: Text(
+        toOpen.join(combined ? ' ' : ', '),
+        maxLines: 3,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontSize: 16),
+      ),
+      leadingIcon: Symbols.fiber_new_rounded,
+      sideColor: Colors.green,
+    );
+
+    _exitTagSelectionMode();
   }
 
   // Flow post-action row (Favorite / Save / Collect) shown at the top of the
@@ -1096,52 +1240,62 @@ class _TagViewState extends State<TagView> {
       if (isMarked) _TagInfoIcon(Symbols.star_rounded, Colors.yellow),
     ];
 
+    final bool isSelectedForBatch = tagSelectionMode && selectedBatchTags.contains(currentTag);
+
     return Material(
       key: ValueKey('tag-chip-$currentTag'),
-      color: baseColor.withValues(alpha: context.isLight ? 0.09 : 0.16),
+      color: isSelectedForBatch
+          ? Theme.of(context).colorScheme.secondary.withValues(alpha: 0.22)
+          : baseColor.withValues(alpha: context.isLight ? 0.09 : 0.16),
       shape: StadiumBorder(
-        side: BorderSide(
-          color: isInSearch ? baseColor.withValues(alpha: 0.9) : baseColor.withValues(alpha: 0.35),
-          width: isInSearch ? 1.6 : 1,
-        ),
+        side: isSelectedForBatch
+            ? BorderSide(color: Theme.of(context).colorScheme.secondary, width: 1.8)
+            : BorderSide(
+                color: isInSearch ? baseColor.withValues(alpha: 0.9) : baseColor.withValues(alpha: 0.35),
+                width: isInSearch ? 1.6 : 1,
+              ),
       ),
       child: InkWell(
         customBorder: const StadiumBorder(),
-        onTap: () {
-          showTagDialog(
-            context: context,
-            tag: currentTag,
-            // Virtual feeds (For You, favourites, merge) resolve the item's
-            // real source booru — the dialog's preview / hub entries should
-            // originate there, not on the virtual feed.
-            handler: possibleBooruHandler ?? handler,
-            isHidden: isHidden,
-            isMarked: isMarked,
-            isInSearch: isInSearch,
-            hasTabWithTag: hasTabWithTag,
-            onUpdate: parseSortGroupTagsWithoutCache,
-          );
-        },
-        onDoubleTap: () async {
-          // Shortcut straight to the tag editor (same dialog as tap →
-          // "Edit tag") — mainly for quickly recolouring a tag's type.
-          final item = tagHandler.getTag(currentTag);
-          await showDialog(
-            context: context,
-            builder: (context) => TagsManagerListItemDialog(
-              tag: item,
-              onChangedType: (TagType? newValue) {
-                if (newValue != null && item.tagType != newValue) {
-                  item.tagType = newValue;
-                  tagHandler.putTag(item, dbEnabled: settingsHandler.dbEnabled);
-                  parseSortGroupTagsWithoutCache();
-                }
+        onTap: tagSelectionMode
+            ? () => _toggleBatchTag(currentTag)
+            : () {
+                showTagDialog(
+                  context: context,
+                  tag: currentTag,
+                  // Virtual feeds (For You, favourites, merge) resolve the item's
+                  // real source booru — the dialog's preview / hub entries should
+                  // originate there, not on the virtual feed.
+                  handler: possibleBooruHandler ?? handler,
+                  isHidden: isHidden,
+                  isMarked: isMarked,
+                  isInSearch: isInSearch,
+                  hasTabWithTag: hasTabWithTag,
+                  onUpdate: parseSortGroupTagsWithoutCache,
+                );
               },
-            ),
-          );
-          parseSortGroupTagsWithoutCache();
-        },
-        onLongPress: () async {
+        onDoubleTap: tagSelectionMode
+            ? null
+            : () async {
+                // Shortcut straight to the tag editor (same dialog as tap →
+                // "Edit tag") — mainly for quickly recolouring a tag's type.
+                final item = tagHandler.getTag(currentTag);
+                await showDialog(
+                  context: context,
+                  builder: (context) => TagsManagerListItemDialog(
+                    tag: item,
+                    onChangedType: (TagType? newValue) {
+                      if (newValue != null && item.tagType != newValue) {
+                        item.tagType = newValue;
+                        tagHandler.putTag(item, dbEnabled: settingsHandler.dbEnabled);
+                        parseSortGroupTagsWithoutCache();
+                      }
+                    },
+                  ),
+                );
+                parseSortGroupTagsWithoutCache();
+              },
+        onLongPress: tagSelectionMode ? null : () async {
           // Long-press opens the tag as a new background tab, honouring the
           // user's "New tab placement" setting and showing the same toast every
           // other background-tab action does. Adding to the current search
@@ -1216,12 +1370,23 @@ class _TagViewState extends State<TagView> {
               GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: () {
+                  if (tagSelectionMode) {
+                    _toggleBatchTag(currentTag);
+                    return;
+                  }
                   final Booru previewBooru = possibleBooruHandler?.booru ?? searchHandler.currentBooru;
                   FloatingPreviewHandler.instance.open(tag: currentTag, booru: previewBooru);
                 },
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(11, 9, 8, 9),
-                  child: Icon(Symbols.picture_in_picture_alt_rounded, size: 16, color: baseColor),
+                  child: Icon(
+                    tagSelectionMode
+                        ? (isSelectedForBatch ? Symbols.check_circle_rounded : Symbols.circle_rounded)
+                        : Symbols.picture_in_picture_alt_rounded,
+                    size: 16,
+                    fill: isSelectedForBatch ? 1 : 0,
+                    color: isSelectedForBatch ? Theme.of(context).colorScheme.secondary : baseColor,
+                  ),
                 ),
               ),
             ],

@@ -180,9 +180,6 @@ class ForYouHandler extends BooruHandler {
       locked = false;
     }
 
-    // Session variety: start the source/seed rotation somewhere random.
-    _rotationOffset = _rand.nextInt(1 << 16);
-
     // Seeds: explicit if given, else the strongest profile tags.
     _seeds = _parseSeeds(tags);
     _profile = {
@@ -190,6 +187,9 @@ class ForYouHandler extends BooruHandler {
     };
     if (_seeds.isEmpty) {
       // Sanitize profile tags into portable, cross-booru seeds and de-dupe.
+      // Kept in strength order — strong seeds are common tags with rich
+      // results, so leading with them keeps first pages fast (a full shuffle
+      // made openings crawl: weak seeds -> empty rounds -> retries).
       final List<String> pool = [];
       for (final e in _profile.entries) {
         if (e.value <= 0) continue;
@@ -197,9 +197,6 @@ class ForYouHandler extends BooruHandler {
         if (s.isNotEmpty && !pool.contains(s)) pool.add(s);
         if (pool.length >= 24) break;
       }
-      // Shuffle so the profile feed doesn't open on the exact same seed
-      // (and thus the exact same posts) every session.
-      pool.shuffle(_rand);
       _seeds = pool;
     } else {
       // Seed mode still benefits from profile ranking; make sure seeds appear.
@@ -207,6 +204,10 @@ class ForYouHandler extends BooruHandler {
         _profile.putIfAbsent(s, () => 5);
       }
     }
+
+    // Session variety: nudge the source/seed rotation a little so openings
+    // differ between sessions, but stay within the strongest few seeds.
+    _rotationOffset = _seeds.length <= 1 ? 0 : _rand.nextInt(min(4, _seeds.length));
   }
 
   double _scoreItem(BooruItem item) {
@@ -265,6 +266,11 @@ class ForYouHandler extends BooruHandler {
     // bounded so a slow/captcha booru can't hang the feed. The subset rotates
     // by page so all sources get used across a few scrolls.
     final int take = _sources.length < _sourcesPerPage ? _sources.length : _sourcesPerPage;
+    // Fan the per-source requests out IN PARALLEL — sequentially a page cost
+    // the sum of every source's resolve+search time (worst case over a
+    // minute); now it costs the slowest single source. Source indices within
+    // a page are distinct, so no handler is hit concurrently.
+    final List<Future<List<BooruItem>>> requests = [];
     for (int k = 0; k < take; k++) {
       // _rotationOffset varies the pairing per session; _feedPage still
       // drives the page depth so rare seeds aren't asked for deep pages.
@@ -273,29 +279,35 @@ class ForYouHandler extends BooruHandler {
       final BooruHandler handler = _sourceHandlers[j];
       final String seed = _seeds[(_feedPage + _rotationOffset + k) % _seeds.length];
 
-      String resolved = seed;
-      final String? aliased = await _bounded<String?>(
-        () => TagAliasResolver.resolve(seed, booru),
-        _resolveTimeout,
-      );
-      if (aliased != null && aliased.isNotEmpty) resolved = aliased;
-      if (resolved.isEmpty) continue;
-
-      handler.pageNum = _sourceStartPages[j] + 1 + _feedPage;
-      handler.locked = false;
-      final List<BooruItem>? got = await _bounded(
-        () async => (await handler.search(resolved, null)) as List<BooruItem>? ?? <BooruItem>[],
-        _searchTimeout,
-      );
-      if (got == null) {
-        Logger.Inst().log(
-          'For You source ${booru.name} timed out/failed for "$resolved"',
-          'ForYouHandler',
-          'search',
-          LogTypes.booruHandlerInfo,
+      requests.add(() async {
+        String resolved = seed;
+        final String? aliased = await _bounded<String?>(
+          () => TagAliasResolver.resolve(seed, booru),
+          _resolveTimeout,
         );
-        continue;
-      }
+        if (aliased != null && aliased.isNotEmpty) resolved = aliased;
+        if (resolved.isEmpty) return <BooruItem>[];
+
+        handler.pageNum = _sourceStartPages[j] + 1 + _feedPage;
+        handler.locked = false;
+        final List<BooruItem>? got = await _bounded(
+          () async => (await handler.search(resolved, null)) as List<BooruItem>? ?? <BooruItem>[],
+          _searchTimeout,
+        );
+        if (got == null) {
+          Logger.Inst().log(
+            'For You source ${booru.name} timed out/failed for "$resolved"',
+            'ForYouHandler',
+            'search',
+            LogTypes.booruHandlerInfo,
+          );
+          return <BooruItem>[];
+        }
+        return got;
+      }());
+    }
+
+    for (final got in await Future.wait(requests)) {
       for (final item in got) {
         if (SearchHandler.instance.isPostSeen(item)) continue;
         if (_isDuplicate(item)) continue;
