@@ -171,6 +171,7 @@ class SettingsHandler {
 
   bool jsonWrite = false;
   bool autoPlayEnabled = true;
+  bool respectManualPause = true;
   // When false, neighbour pages in the gallery only start downloading their
   // video once the user actually swipes to them. Saves bandwidth and stops
   // the currently-watched video from competing with preloads.
@@ -616,6 +617,10 @@ class SettingsHandler {
     'jsonWrite': {
       'type': 'bool',
       'default': false,
+    },
+    'respectManualPause': {
+      'type': 'bool',
+      'default': true,
     },
     'autoPlayEnabled': {
       'type': 'bool',
@@ -1248,6 +1253,8 @@ class SettingsHandler {
         return markedTags;
       case 'autoPlayEnabled':
         return autoPlayEnabled;
+      case 'respectManualPause':
+        return respectManualPause;
       case 'preloadVideos':
         return preloadVideos;
       case 'useBetterPlayer':
@@ -1510,6 +1517,9 @@ class SettingsHandler {
       //   break;
       case 'autoPlayEnabled':
         autoPlayEnabled = validatedValue;
+        break;
+      case 'respectManualPause':
+        respectManualPause = validatedValue;
         break;
       case 'preloadVideos':
         preloadVideos = validatedValue;

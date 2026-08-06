@@ -302,7 +302,8 @@ class VideoViewerState extends State<VideoViewer> {
         if (videoController.value == null && client == null && !isStopped.value) {
           initVideo(false);
         }
-        if (settingsHandler.autoPlayEnabled) {
+        if (settingsHandler.autoPlayEnabled &&
+            !(settingsHandler.respectManualPause && viewerHandler.isManuallyPaused(widget.booruItem.fileURL))) {
           videoController.value?.play();
         }
         if (viewerHandler.videoAutoMute) {
@@ -694,7 +695,8 @@ class VideoViewerState extends State<VideoViewer> {
     }
     mpvWatchdogTimer?.cancel();
 
-    if (settingsHandler.autoPlayEnabled) {
+    if (settingsHandler.autoPlayEnabled &&
+        !(settingsHandler.respectManualPause && viewerHandler.isManuallyPaused(widget.booruItem.fileURL))) {
       await videoController.value!.play();
     }
 

@@ -164,7 +164,9 @@ class _BetterPlayerViewState extends State<BetterPlayerView> {
           // Already-alive controller is back on-screen — make sure the pool
           // knows it's the most-recently-used so it isn't the next to evict.
           _BetterPlayerPool.touch(this);
-          if (SettingsHandler.instance.autoPlayEnabled) {
+          if (SettingsHandler.instance.autoPlayEnabled &&
+              !(SettingsHandler.instance.respectManualPause &&
+                  ViewerHandler.instance.isManuallyPaused(widget.booruItem.fileURL))) {
             _controller?.play();
           }
         }
@@ -287,12 +289,15 @@ class _BetterPlayerViewState extends State<BetterPlayerView> {
         return _BetterControls(
           controller: controller,
           onVisibilityChanged: onVisibilityChanged,
+          url: widget.booruItem.fileURL,
         );
       },
     );
 
     final config = BetterPlayerConfiguration(
-      autoPlay: widget.isViewed && settings.autoPlayEnabled,
+      autoPlay: widget.isViewed &&
+          settings.autoPlayEnabled &&
+          !(settings.respectManualPause && ViewerHandler.instance.isManuallyPaused(widget.booruItem.fileURL)),
       looping: true,
       allowedScreenSleep: false,
       // Letterbox the video inside whatever box we're given (we make the box
@@ -473,10 +478,12 @@ class _BetterControls extends StatefulWidget {
   const _BetterControls({
     required this.controller,
     required this.onVisibilityChanged,
+    this.url,
   });
 
   final BetterPlayerController controller;
   final void Function(bool visible) onVisibilityChanged;
+  final String? url;
 
   @override
   State<_BetterControls> createState() => _BetterControlsState();
@@ -564,7 +571,10 @@ class _BetterControlsState extends State<_BetterControls> {
   void _playPause() {
     if (_isPlaying) {
       _bpc.pause();
+      // User-initiated pause: keep this video paused across auto-play paths.
+      ViewerHandler.instance.markManualPause(widget.url);
     } else {
+      ViewerHandler.instance.clearManualPause(widget.url);
       _bpc.play();
     }
     _wake();

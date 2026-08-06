@@ -23,6 +23,7 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
   final SettingsHandler settingsHandler = SettingsHandler.instance;
 
   bool autoPlay = true;
+  bool respectManualPause = true;
   bool startVideosMuted = false;
   bool disableVideo = false;
   bool useBetterPlayer = false;
@@ -43,6 +44,7 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
     super.initState();
 
     autoPlay = settingsHandler.autoPlayEnabled;
+    respectManualPause = settingsHandler.respectManualPause;
     startVideosMuted = settingsHandler.startVideosMuted;
     disableVideo = settingsHandler.disableVideo;
     useBetterPlayer = settingsHandler.useBetterPlayer;
@@ -59,6 +61,7 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
 
   Future<void> _onPopInvoked(_, _) async {
     settingsHandler.autoPlayEnabled = autoPlay;
+    settingsHandler.respectManualPause = respectManualPause;
     settingsHandler.startVideosMuted = startVideosMuted;
     settingsHandler.disableVideo = disableVideo;
     settingsHandler.useBetterPlayer = useBetterPlayer;
@@ -141,6 +144,18 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
                   });
                 },
                 title: context.loc.settings.video.autoplayVideos,
+              ),
+              SettingsToggle(
+                value: respectManualPause,
+                onChanged: (newValue) {
+                  setState(() {
+                    respectManualPause = newValue;
+                  });
+                },
+                title: 'Keep videos paused after manual pause',
+                subtitle: const Text(
+                  'A video you paused yourself stays paused when returning from previews, tag windows or other posts.',
+                ),
               ),
               SettingsToggle(
                 value: startVideosMuted,

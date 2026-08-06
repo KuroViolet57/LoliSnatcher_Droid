@@ -180,6 +180,12 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
   void didPopNext() {
     isActive.value = true;
 
+    // A nested viewer (e.g. opened from a tag preview strip) shares the
+    // global sheet-extent mirror and resets it to 0 in its own initState —
+    // re-assert THIS viewer's actual sheet position so video controls don't
+    // lift for a peek bar that isn't there (sheet open ⇒ no peek bar).
+    viewerHandler.infoSheetExtent.value = infoSheetExtent.value;
+
     try {
       final item = widget.tab.booruHandler.filteredFetched[page.value];
       if (mounted) {
@@ -213,7 +219,10 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
     NavigationHandler.instance.routeObserver.unsubscribe(this);
     infoSheetController.dispose();
     infoSheetExtent.removeListener(_mirrorSheetExtent);
-    viewerHandler.infoSheetExtent.value = 0;
+    // NOTE: deliberately NOT resetting viewerHandler.infoSheetExtent here — a
+    // nested viewer disposing after the outer one's didPopNext would clobber
+    // the outer viewer's just-restored sheet position. The next viewer's
+    // initState sets its own value.
     infoSheetExtent.dispose();
     volumeListener?.cancel();
     ServiceHandler.setVolumeButtons(!settingsHandler.useVolumeButtonsForScroll);

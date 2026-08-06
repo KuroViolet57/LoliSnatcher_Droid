@@ -97,6 +97,24 @@ class ViewerHandler {
   final RxDouble infoSheetExtent = 0.0.obs;
 
   bool get isPeekBarVisible => displayAppbar.value && infoSheetExtent.value < 0.06;
+
+  // ── manual pause tracking ────────────────────────────────────────────────
+  // URLs of videos the USER paused via the controls. While the
+  // "don't auto-resume manually paused videos" setting is on, the players'
+  // auto-play paths skip these (e.g. returning from a nested viewer /
+  // preview window won't restart a video you paused). Pressing play clears
+  // the mark. Session-only by design.
+  final Set<String> _manuallyPaused = {};
+
+  void markManualPause(String? url) {
+    if (url != null && url.isNotEmpty) _manuallyPaused.add(url);
+  }
+
+  void clearManualPause(String? url) {
+    if (url != null) _manuallyPaused.remove(url);
+  }
+
+  bool isManuallyPaused(String? url) => url != null && _manuallyPaused.contains(url);
   final RxBool isZoomed = false.obs; // is current item zoomed in
   final RxBool isLoaded = false.obs; // is current item loaded
   final RxBool isStopped = false.obs; // is current item stopped

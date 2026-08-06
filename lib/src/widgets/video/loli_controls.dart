@@ -792,10 +792,14 @@ class _LoliControlsState extends State<LoliControls> {
         _hideStuff = false;
         _hideTimer?.cancel();
         controller.pause();
+        // User-initiated pause: remember it so auto-play paths don't restart
+        // this video when returning from previews/nested viewers.
+        viewerHandler.markManualPause(controller.dataSource);
         if (widget.useLongTapFastForward) {
           viewerHandler.toggleToolbar(false, forcedNewValue: true);
         }
       } else {
+        viewerHandler.clearManualPause(controller.dataSource);
         _cancelAndRestartTimer();
 
         if (!controller.value.isInitialized) {

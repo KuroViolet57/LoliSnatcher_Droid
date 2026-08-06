@@ -76,7 +76,9 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> {
           // Always restart from the beginning when a video becomes the
           // active page — user expectation from the previous engine.
           _entry!.player.seek(Duration.zero);
-          if (SettingsHandler.instance.autoPlayEnabled) {
+          if (SettingsHandler.instance.autoPlayEnabled &&
+              !(SettingsHandler.instance.respectManualPause &&
+                  ViewerHandler.instance.isManuallyPaused(widget.booruItem.fileURL))) {
             _entry!.player.play();
           }
         }
@@ -126,7 +128,9 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> {
       if (settings.startVideosMuted) {
         await entry.player.setVolume(0);
       }
-      if (widget.isViewed && settings.autoPlayEnabled) {
+      if (widget.isViewed &&
+          settings.autoPlayEnabled &&
+          !(settings.respectManualPause && ViewerHandler.instance.isManuallyPaused(url))) {
         await entry.player.play();
       }
 
@@ -193,7 +197,7 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> {
               fit: BoxFit.contain,
               controls: NoVideoControls,
             ),
-            _MediaKitControls(player: entry.player),
+            _MediaKitControls(player: entry.player, url: widget.booruItem.fileURL),
           ],
         ),
       ),
@@ -334,9 +338,10 @@ class _MediaKitPlayerPool {
 
 /// LoliControls-style overlay driven by a media_kit [Player]'s streams.
 class _MediaKitControls extends StatefulWidget {
-  const _MediaKitControls({required this.player});
+  const _MediaKitControls({required this.player, required this.url});
 
   final Player player;
+  final String url;
 
   @override
   State<_MediaKitControls> createState() => _MediaKitControlsState();
@@ -423,6 +428,13 @@ class _MediaKitControlsState extends State<_MediaKitControls> {
   }
 
   void _playPause() {
+    // Track USER intent before toggling: pausing marks the video so
+    // auto-play paths won't restart it; playing clears the mark.
+    if (_playing) {
+      ViewerHandler.instance.markManualPause(widget.url);
+    } else {
+      ViewerHandler.instance.clearManualPause(widget.url);
+    }
     _p.playOrPause();
     _wake();
   }
@@ -631,7 +643,7 @@ class _MediaKitControlsState extends State<_MediaKitControls> {
     await Navigator.of(context).push(
       PageRouteBuilder(
         opaque: true,
-        pageBuilder: (_, _, _) => _FullscreenMediaKit(player: _p),
+        pageBuilder: (_, _, _) => _FullscreenMediaKit(player: _p, url: widget.url),
       ),
     );
     if (mounted) setState(() => _fullscreen = false);
@@ -651,9 +663,10 @@ class _MediaKitControlsState extends State<_MediaKitControls> {
 /// same controls overlay, so playback continues seamlessly and double-tap /
 /// scrubber all work in landscape.
 class _FullscreenMediaKit extends StatefulWidget {
-  const _FullscreenMediaKit({required this.player});
+  const _FullscreenMediaKit({required this.player, required this.url});
 
   final Player player;
+  final String url;
 
   @override
   State<_FullscreenMediaKit> createState() => _FullscreenMediaKitState();
@@ -683,7 +696,7 @@ class _FullscreenMediaKitState extends State<_FullscreenMediaKit> {
             ),
             // A second controls instance bound to the same player; fullscreen
             // button here pops back.
-            _MediaKitControls(player: widget.player),
+            _MediaKitControls(player: widget.player, url: widget.url),
           ],
         ),
       ),
