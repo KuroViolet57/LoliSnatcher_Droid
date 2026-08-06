@@ -45,6 +45,7 @@ import 'package:lolisnatcher/src/handlers/snatch_handler.dart';
 import 'package:lolisnatcher/src/handlers/tag_alias_resolver.dart';
 import 'package:lolisnatcher/src/handlers/tag_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
+import 'package:lolisnatcher/src/pages/artist_hub_page.dart';
 import 'package:lolisnatcher/src/pages/gallery_view_page.dart';
 import 'package:lolisnatcher/src/utils/debouncer.dart';
 import 'package:lolisnatcher/src/utils/extensions.dart';
@@ -1609,6 +1610,29 @@ Future<void> showTagDialog({
               );
             },
           ),
+          //
+          // Artist hub — only for artist-type tags. Opens a dedicated page
+          // with follow + this artist's work across every configured booru.
+          if (tagHandler.getTag(tag).tagType.isArtist)
+            ListTile(
+              leading: Icon(
+                Symbols.artist_rounded,
+                color: Theme.of(context).colorScheme.secondary,
+              ),
+              title: const Text('Artist hub'),
+              subtitle: const Text('Follow + their work across your boorus'),
+              onTap: () {
+                Navigator.of(context).pop();
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => ArtistHubPage(
+                      tag: tag,
+                      originBooru: handler.booru,
+                    ),
+                  ),
+                );
+              },
+            ),
           //
           ListTile(
             leading: Icon(
