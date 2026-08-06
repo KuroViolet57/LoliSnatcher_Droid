@@ -156,7 +156,9 @@ class SearchHandler {
     bool switchToNew = false,
     Booru? customBooru,
     List<Booru>? secondaryBoorus,
-    TabAddMode addMode = TabAddMode.end,
+    // null = follow the user's "New tab position" setting. Pass explicitly
+    // only when the caller offers its own placement choice.
+    TabAddMode? addMode,
     int? customPage,
     Map<String, String>? tagOverrides,
     Map<String, bool>? inheritMainTags,
@@ -178,7 +180,7 @@ class SearchHandler {
     }
 
     int newIndex = 0;
-    switch (addMode) {
+    switch (addMode ?? defaultTabAddModeResolved) {
       case TabAddMode.prev:
         newIndex = currentIndex;
         tabs.insert(newIndex, newTab);
