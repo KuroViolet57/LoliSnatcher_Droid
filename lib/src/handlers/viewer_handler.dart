@@ -47,9 +47,12 @@ class ViewerHandler {
   void removeViewer(GlobalKey key) {
     activeViewers.remove(key);
     if (activeViewers.isEmpty) {
-      // Whole viewer stack closed — parked video positions are only meant to
-      // survive nested-viewer round-trips, not a later fresh open.
+      // Whole viewer stack closed — parked video positions and manual-pause
+      // marks are only meant to live within one viewing session (nested
+      // round-trips, swiping between posts). A fresh open starts clean:
+      // position 0, autoplay back to normal.
       _savedVideoPositions.clear();
+      _manuallyPaused.clear();
     }
   }
 
@@ -108,7 +111,8 @@ class ViewerHandler {
   // "don't auto-resume manually paused videos" setting is on, the players'
   // auto-play paths skip these (e.g. returning from a nested viewer /
   // preview window won't restart a video you paused). Pressing play clears
-  // the mark. Session-only by design.
+  // the mark, and the whole set is wiped when the viewer stack closes (see
+  // removeViewer) — reopening a post later autoplays as normal.
   final Set<String> _manuallyPaused = {};
 
   void markManualPause(String? url) {
