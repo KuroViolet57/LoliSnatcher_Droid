@@ -880,26 +880,6 @@ class _TagViewState extends State<TagView> {
                 ),
               ),
               const Spacer(),
-              // Batch selection toggle: pick several tags, open them as tabs.
-              GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () {
-                  setState(() {
-                    tagSelectionMode = !tagSelectionMode;
-                    if (!tagSelectionMode) selectedBatchTags.clear();
-                  });
-                },
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  child: Icon(
-                    Symbols.checklist_rounded,
-                    size: 20,
-                    color: tagSelectionMode
-                        ? Theme.of(context).colorScheme.secondary
-                        : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.55),
-                  ),
-                ),
-              ),
               Flexible(
                 child: Text(
                   tagSelectionMode ? 'tap tags to select' : 'tap · hold = tab · ⧉ = preview',
@@ -909,6 +889,55 @@ class _TagViewState extends State<TagView> {
                     fontSize: 10.5,
                     fontWeight: FontWeight.w600,
                     color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Batch selection toggle: pick several tags, open them as tabs.
+              // A labelled pill (not a bare icon) so it reads as a button.
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  setState(() {
+                    tagSelectionMode = !tagSelectionMode;
+                    if (!tagSelectionMode) selectedBatchTags.clear();
+                  });
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: tagSelectionMode
+                        ? Theme.of(context).colorScheme.secondary.withValues(alpha: 0.22)
+                        : Theme.of(context).colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: tagSelectionMode
+                          ? Theme.of(context).colorScheme.secondary
+                          : Theme.of(context).colorScheme.outlineVariant,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Symbols.checklist_rounded,
+                        size: 15,
+                        color: tagSelectionMode
+                            ? Theme.of(context).colorScheme.secondary
+                            : Theme.of(context).colorScheme.onSurface,
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        tagSelectionMode ? 'Done' : 'Select',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                          color: tagSelectionMode
+                              ? Theme.of(context).colorScheme.secondary
+                              : Theme.of(context).colorScheme.onSurface,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
