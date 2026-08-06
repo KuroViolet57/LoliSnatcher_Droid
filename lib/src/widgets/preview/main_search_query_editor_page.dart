@@ -28,6 +28,7 @@ import 'package:lolisnatcher/src/data/pinned_tag.dart';
 import 'package:lolisnatcher/src/data/tag_suggestion.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
+import 'package:lolisnatcher/src/handlers/followed_artists_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/tag_handler.dart';
 import 'package:lolisnatcher/src/utils/extensions.dart';
@@ -2635,6 +2636,8 @@ class _PinnedTagsBlockState extends State<PinnedTagsBlock> {
       booruType: booru.type?.name,
       booruName: booru.name,
     );
+    // Follows are stored as labelled pins but have their own screen.
+    allPinnedTags.removeWhere(FollowedArtistsHandler.isFollowPin);
 
     // Get unique labels from all tags
     final labelsSet = <String>{};
@@ -3477,6 +3480,8 @@ class _PinnedTagsManagerDialogState extends State<PinnedTagsManagerDialog> {
       booruType: booru.type?.name,
       booruName: booru.name,
     );
+    // Follows are stored as labelled pins but have their own screen.
+    allTags.removeWhere(FollowedArtistsHandler.isFollowPin);
 
     _applySorting();
     _applyFilter();

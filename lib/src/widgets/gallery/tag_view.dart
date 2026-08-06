@@ -45,7 +45,7 @@ import 'package:lolisnatcher/src/handlers/snatch_handler.dart';
 import 'package:lolisnatcher/src/handlers/tag_alias_resolver.dart';
 import 'package:lolisnatcher/src/handlers/tag_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
-import 'package:lolisnatcher/src/pages/artist_hub_page.dart';
+import 'package:lolisnatcher/src/pages/tag_hub_page.dart';
 import 'package:lolisnatcher/src/pages/gallery_view_page.dart';
 import 'package:lolisnatcher/src/utils/debouncer.dart';
 import 'package:lolisnatcher/src/utils/extensions.dart';
@@ -1114,6 +1114,25 @@ class _TagViewState extends State<TagView> {
             onUpdate: parseSortGroupTagsWithoutCache,
           );
         },
+        onDoubleTap: () async {
+          // Shortcut straight to the tag editor (same dialog as tap →
+          // "Edit tag") — mainly for quickly recolouring a tag's type.
+          final item = tagHandler.getTag(currentTag);
+          await showDialog(
+            context: context,
+            builder: (context) => TagsManagerListItemDialog(
+              tag: item,
+              onChangedType: (TagType? newValue) {
+                if (newValue != null && item.tagType != newValue) {
+                  item.tagType = newValue;
+                  tagHandler.putTag(item, dbEnabled: settingsHandler.dbEnabled);
+                  parseSortGroupTagsWithoutCache();
+                }
+              },
+            ),
+          );
+          parseSortGroupTagsWithoutCache();
+        },
         onLongPress: () async {
           // Long-press opens the tag as a new background tab, honouring the
           // user's "New tab placement" setting and showing the same toast every
@@ -1611,28 +1630,31 @@ Future<void> showTagDialog({
             },
           ),
           //
-          // Artist hub — only for artist-type tags. Opens a dedicated page
-          // with follow + this artist's work across every configured booru.
-          if (tagHandler.getTag(tag).tagType.isArtist)
-            ListTile(
-              leading: Icon(
-                Symbols.artist_rounded,
-                color: Theme.of(context).colorScheme.secondary,
-              ),
-              title: const Text('Artist hub'),
-              subtitle: const Text('Follow + their work across your boorus'),
-              onTap: () {
-                Navigator.of(context).pop();
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => ArtistHubPage(
-                      tag: tag,
-                      originBooru: handler.booru,
-                    ),
-                  ),
-                );
-              },
+          // Tag hub — a dedicated page showing this tag across every
+          // configured booru. Artists get follow support and their own label.
+          ListTile(
+            leading: Icon(
+              tagHandler.getTag(tag).tagType.isArtist ? Symbols.artist_rounded : Symbols.hub_rounded,
+              color: Theme.of(context).colorScheme.secondary,
             ),
+            title: Text(tagHandler.getTag(tag).tagType.isArtist ? 'Artist hub' : 'Tag hub'),
+            subtitle: Text(
+              tagHandler.getTag(tag).tagType.isArtist
+                  ? 'Follow + their work across your boorus'
+                  : 'This tag across your boorus',
+            ),
+            onTap: () {
+              Navigator.of(context).pop();
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => TagHubPage(
+                    tag: tag,
+                    originBooru: handler.booru,
+                  ),
+                ),
+              );
+            },
+          ),
           //
           ListTile(
             leading: Icon(
@@ -2221,6 +2243,8 @@ class TagContentPreview extends StatefulWidget {
     this.compact = false,
     this.compactTitle,
     this.onEffectiveTagChanged,
+    this.hideWhenEmpty = false,
+    this.header,
     super.key,
   }) : assert(
          boorus.isNotEmpty,
@@ -2243,6 +2267,16 @@ class TagContentPreview extends StatefulWidget {
   final bool compact;
   // Optional override for the "Preview" header — e.g. "More from artist X".
   final String? compactTitle;
+
+  // When true, the whole strip (and [header], if any) collapses to nothing
+  // once the search comes back empty — used by the hub pages so boorus that
+  // don't know the tag don't waste a "Nothing found" row of screen space.
+  final bool hideWhenEmpty;
+
+  // Optional widget rendered above the strip (e.g. the hub's favicon+name
+  // row). Lives inside the preview so it collapses together with it when
+  // [hideWhenEmpty] kicks in.
+  final Widget? header;
 
   @override
   State<TagContentPreview> createState() => _TagContentPreviewState();
@@ -2779,7 +2813,19 @@ class _TagContentPreviewState extends State<TagContentPreview> {
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedSize(
+    // Search finished (not loading, no error) with zero results — the tag
+    // simply doesn't exist on this booru. With hideWhenEmpty the whole strip
+    // (header included) collapses instead of wasting a "Nothing found" row.
+    final bool isKnownEmpty =
+        tab != null && !loading && errorString.isEmpty && tab!.booruHandler.filteredFetched.isEmpty;
+    if (widget.hideWhenEmpty && isKnownEmpty) {
+      return const AnimatedSize(
+        duration: Duration(milliseconds: 200),
+        child: SizedBox.shrink(),
+      );
+    }
+
+    final Widget strip = AnimatedSize(
       duration: const Duration(milliseconds: 200),
       child: AnimatedSwitcher(
         duration: const Duration(milliseconds: 200),
@@ -3009,6 +3055,19 @@ class _TagContentPreviewState extends State<TagContentPreview> {
                       ],
                     )),
       ),
+    );
+
+    if (widget.header == null) {
+      return strip;
+    }
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        widget.header!,
+        strip,
+      ],
     );
   }
 }

@@ -1,16 +1,22 @@
+import 'package:lolisnatcher/src/data/pinned_tag.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 
 /// "Following" state for artists (and, in principle, any tag). Persisted as
-/// global pinned tags carrying the [followLabel] so a followed artist also
-/// shows up in the Pinned tags sidebar, and later feeds the Subscriptions
-/// feed. Kept deliberately thin — the DB is the source of truth, this just
-/// wraps the label convention.
+/// global pinned tags carrying the [followLabel] — so follows ride along in
+/// backups — but presented in their own "Followed artists" screen, NOT in the
+/// pinned-tags UIs (those filter follows out via [isFollowPin]). Kept
+/// deliberately thin — the DB is the source of truth, this just wraps the
+/// label convention.
 class FollowedArtistsHandler {
   FollowedArtistsHandler._();
 
   static const String followLabel = 'followed';
 
   static SettingsHandler get _settings => SettingsHandler.instance;
+
+  /// Whether a pinned-tag row is actually a follow (so pinned-tag UIs can
+  /// leave it to the Followed artists screen).
+  static bool isFollowPin(PinnedTag pin) => pin.labels.any((l) => l.toLowerCase() == followLabel);
 
   /// Whether [tagName] is currently followed.
   static Future<bool> isFollowed(String tagName) async {

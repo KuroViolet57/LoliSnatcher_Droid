@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:lolisnatcher/src/data/booru.dart';
+import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/followed_artists_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -11,30 +12,34 @@ import 'package:lolisnatcher/src/widgets/common/settings_widgets.dart';
 import 'package:lolisnatcher/src/widgets/gallery/tag_view.dart';
 import 'package:lolisnatcher/src/widgets/image/booru_favicon.dart';
 
-/// A dedicated page for an artist tag: follow toggle, how many of their posts
-/// are in your favourites, and a per-booru strip of their work across every
+/// A dedicated page for any tag: how many matching posts are in your
+/// favourites, and a per-booru strip of the tag's content across every
 /// configured booru — each strip translating the tag into that booru's own
-/// spelling via [TagContentPreview]'s cross-booru alias resolution.
+/// spelling via [TagContentPreview]'s cross-booru alias resolution, and
+/// collapsing entirely when a booru has nothing for it.
 ///
-/// Opened from the tag action sheet when the tapped tag is an artist.
-class ArtistHubPage extends StatefulWidget {
-  const ArtistHubPage({
+/// Artist tags additionally get a Follow toggle ("Artist hub"); every other
+/// type renders the same page as a plain "Tag hub".
+///
+/// Opened from the tag action sheet and the floating preview window.
+class TagHubPage extends StatefulWidget {
+  const TagHubPage({
     required this.tag,
     this.originBooru,
     super.key,
   });
 
-  /// The artist tag as written on the booru it was tapped from.
+  /// The tag as written on the booru it was tapped from.
   final String tag;
 
   /// The booru the tag came from — used as the translation origin.
   final Booru? originBooru;
 
   @override
-  State<ArtistHubPage> createState() => _ArtistHubPageState();
+  State<TagHubPage> createState() => _TagHubPageState();
 }
 
-class _ArtistHubPageState extends State<ArtistHubPage> {
+class _TagHubPageState extends State<TagHubPage> {
   final SettingsHandler settingsHandler = SettingsHandler.instance;
   final SearchHandler searchHandler = SearchHandler.instance;
 
@@ -42,11 +47,13 @@ class _ArtistHubPageState extends State<ArtistHubPage> {
   bool _followLoaded = false;
   int _favCount = 0;
 
+  bool get _isArtist => TagHandler.instance.getTag(widget.tag).tagType.isArtist;
+
   // The origin tab drives TagContentPreview's alias translation (origin booru
   // vs each target booru). Reuses the current tab when available.
   SearchTab? get _originTab => searchHandler.tabs.isNotEmpty ? searchHandler.currentTab : null;
 
-  // Real (non-virtual) boorus to show the artist across.
+  // Real (non-virtual) boorus to show the tag across.
   List<Booru> get _boorus => settingsHandler.booruList
       .where((b) => b.type != null && !b.type!.isLocalDb && !b.type!.isForYou && !b.type!.isMerge)
       .toList();
@@ -58,7 +65,7 @@ class _ArtistHubPageState extends State<ArtistHubPage> {
   }
 
   Future<void> _load() async {
-    final bool following = await FollowedArtistsHandler.isFollowed(widget.tag);
+    final bool following = _isArtist && await FollowedArtistsHandler.isFollowed(widget.tag);
     int fav = 0;
     try {
       fav = await settingsHandler.dbHandler.searchDBCount(widget.tag);
@@ -77,15 +84,34 @@ class _ArtistHubPageState extends State<ArtistHubPage> {
     if (mounted) setState(() => _following = now);
   }
 
+  IconData get _typeIcon {
+    final TagType type = TagHandler.instance.getTag(widget.tag).tagType;
+    switch (type) {
+      case TagType.artist:
+        return Symbols.brush_rounded;
+      case TagType.character:
+        return Symbols.person_rounded;
+      case TagType.copyright:
+        return Symbols.copyright_rounded;
+      case TagType.species:
+        return Symbols.pets_rounded;
+      case TagType.meta:
+        return Symbols.info_rounded;
+      case TagType.none:
+        return Symbols.sell_rounded;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final String display = widget.tag.replaceAll('_', ' ');
-    final Color typeColor = TagHandler.instance.getTag(widget.tag).getColour() ?? const Color(0xFFF0708A);
+    final Color typeColor = TagHandler.instance.getTag(widget.tag).getColour() ?? const Color(0xFFB9A0E8);
+    final String typeName = TagHandler.instance.getTag(widget.tag).tagType.locName;
     final boorus = _boorus;
 
     return Scaffold(
-      appBar: const SettingsAppBar(title: 'Artist hub'),
+      appBar: SettingsAppBar(title: _isArtist ? 'Artist hub' : 'Tag hub'),
       body: ListView(
         padding: const EdgeInsets.only(bottom: 32),
         children: [
@@ -112,7 +138,7 @@ class _ArtistHubPageState extends State<ArtistHubPage> {
                         shape: BoxShape.circle,
                         border: Border.all(color: typeColor.withValues(alpha: 0.5), width: 1.5),
                       ),
-                      child: Icon(Symbols.brush_rounded, color: typeColor, size: 22),
+                      child: Icon(_typeIcon, color: typeColor, size: 22),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -131,7 +157,7 @@ class _ArtistHubPageState extends State<ArtistHubPage> {
                             ),
                           ),
                           Text(
-                            'Artist',
+                            typeName,
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
@@ -146,15 +172,17 @@ class _ArtistHubPageState extends State<ArtistHubPage> {
                 const SizedBox(height: 14),
                 Row(
                   children: [
-                    // Follow / Following toggle.
-                    Expanded(
-                      child: _FollowButton(
-                        following: _following,
-                        enabled: _followLoaded,
-                        onTap: _toggleFollow,
+                    // Follow / Following toggle — artists only.
+                    if (_isArtist) ...[
+                      Expanded(
+                        child: _FollowButton(
+                          following: _following,
+                          enabled: _followLoaded,
+                          onTap: _toggleFollow,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 10),
+                      const SizedBox(width: 10),
+                    ],
                     // Favourites stat.
                     _StatChip(
                       icon: Symbols.favorite_rounded,
@@ -194,38 +222,33 @@ class _ArtistHubPageState extends State<ArtistHubPage> {
               ),
             )
           else
+            // The favicon+name header rides INSIDE the strip so a booru with
+            // no results for this tag collapses away, header and all.
             for (final booru in boorus)
-              Padding(
-                padding: const EdgeInsets.only(top: 4, bottom: 4),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-                      child: Row(
-                        children: [
-                          BooruFavicon(booru, size: 18),
-                          const SizedBox(width: 8),
-                          Text(
-                            booru.name ?? '',
-                            style: TextStyle(
-                              fontSize: 13.5,
-                              fontWeight: FontWeight.w700,
-                              color: theme.colorScheme.onSurface,
-                            ),
-                          ),
-                        ],
+              TagContentPreview(
+                key: ValueKey('taghub-${booru.name}-${booru.type}-${widget.tag}'),
+                tag: widget.tag,
+                boorus: [booru],
+                parentTab: _originTab,
+                compact: true,
+                compactTitle: booru.name,
+                hideWhenEmpty: true,
+                header: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  child: Row(
+                    children: [
+                      BooruFavicon(booru, size: 18),
+                      const SizedBox(width: 8),
+                      Text(
+                        booru.name ?? '',
+                        style: TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w700,
+                          color: theme.colorScheme.onSurface,
+                        ),
                       ),
-                    ),
-                    TagContentPreview(
-                      key: ValueKey('artisthub-${booru.name}-${booru.type}-${widget.tag}'),
-                      tag: widget.tag,
-                      boorus: [booru],
-                      parentTab: _originTab,
-                      compact: true,
-                      compactTitle: booru.name,
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
         ],

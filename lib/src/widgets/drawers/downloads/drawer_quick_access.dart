@@ -6,10 +6,12 @@ import 'package:get/get.dart' hide ContextExt, FirstWhereOrNullExt;
 
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/pinned_tag.dart';
+import 'package:lolisnatcher/src/handlers/followed_artists_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/tag_handler.dart';
 import 'package:lolisnatcher/src/pages/collections_page.dart';
+import 'package:lolisnatcher/src/pages/followed_artists_page.dart';
 import 'package:lolisnatcher/src/pages/settings/booru_edit_page.dart';
 import 'package:lolisnatcher/src/pages/settings/tags_filters_page.dart';
 import 'package:lolisnatcher/src/widgets/saved_searches/saved_searches_page.dart';
@@ -34,6 +36,7 @@ class _DrawerQuickAccessState extends State<DrawerQuickAccess> {
   List<PinnedTag> _pinned = [];
   int _favCount = 0;
   int _collectionCount = 0;
+  int _followedCount = 0;
   Worker? _tabWorker;
 
   @override
@@ -60,19 +63,27 @@ class _DrawerQuickAccessState extends State<DrawerQuickAccess> {
               booruType: current.type?.name,
               booruName: current.name,
             );
+      // Follows live in the same table but have their own screen — keep them
+      // out of the pinned list here.
+      pinned.removeWhere(FollowedArtistsHandler.isFollowPin);
       int fav = 0;
       int col = 0;
+      int followed = 0;
       try {
         fav = await settingsHandler.dbHandler.searchDBCount('');
       } catch (_) {}
       try {
         col = (await settingsHandler.dbHandler.getCollections()).length;
       } catch (_) {}
+      try {
+        followed = (await FollowedArtistsHandler.listFollowed()).length;
+      } catch (_) {}
       if (mounted) {
         setState(() {
           _pinned = pinned;
           _favCount = fav;
           _collectionCount = col;
+          _followedCount = followed;
         });
       }
     } catch (_) {}
@@ -303,6 +314,13 @@ class _DrawerQuickAccessState extends State<DrawerQuickAccess> {
             label: 'Favorites',
             count: _favCount > 0 ? '$_favCount' : null,
             onTap: _openFavourites,
+          ),
+          _quickAccessRow(
+            icon: Symbols.artist_rounded,
+            iconColor: const Color(0xFFB9A0E8),
+            label: 'Followed artists',
+            count: _followedCount > 0 ? '$_followedCount' : null,
+            onTap: () => _openPage(const FollowedArtistsPage()),
           ),
           _quickAccessRow(
             icon: Symbols.bookmark_rounded,

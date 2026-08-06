@@ -14,6 +14,7 @@ import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/pages/gallery_view_page.dart';
+import 'package:lolisnatcher/src/pages/tag_hub_page.dart';
 import 'package:lolisnatcher/src/utils/extensions.dart';
 import 'package:lolisnatcher/src/utils/tag_alias_resolver.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
@@ -606,6 +607,23 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
             tooltip: 'Open in a new tab',
             icon: const Icon(Symbols.fiber_new_rounded, size: 20),
             onPressed: _openInNewTab,
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            tooltip: 'Tag hub',
+            icon: const Icon(Symbols.hub_rounded, size: 20),
+            onPressed: () {
+              // The window's Offstage logic parks it while the hub page is on
+              // top and restores it (state intact) when the page pops.
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => TagHubPage(
+                    tag: widget.entry.tag,
+                    originBooru: widget.entry.booru,
+                  ),
+                ),
+              );
+            },
           ),
           const SizedBox(width: 4),
         ],
