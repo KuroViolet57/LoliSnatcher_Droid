@@ -88,6 +88,10 @@ class VideoViewerState extends State<VideoViewer> {
   // Futures from the previous player's dispose calls — the next initPlayer
   // awaits them so we never have two decoders fighting for the GPU.
   final List<Future<void>> _pendingDispose = [];
+  // The fileURL the live controller was created for — the key for the
+  // nested-viewer position hand-off (widget.booruItem may already point at a
+  // different item by the time disposables() runs).
+  String? _positionKeyUrl;
 
   Future<Map<String, String>> _customHeaders() async {
     return _cachedCustomHeaders ??= await Tools.getFileCustomHeaders(
@@ -398,6 +402,15 @@ class VideoViewerState extends State<VideoViewer> {
 
     final vc = videoController.value;
     final cc = chewieController.value;
+    // Tearing down while still the viewed page = we're being unmounted under
+    // the user (nested viewer cover / backend restart), not swiped away —
+    // park the position so the next init resumes instead of starting over.
+    // Keyed on the URL the controller was actually created for, not the
+    // (possibly already swapped) current widget item.
+    if (vc != null && widget.isViewed && vc.value.isInitialized) {
+      viewerHandler.saveVideoPosition(_positionKeyUrl, vc.value.position);
+    }
+    _positionKeyUrl = null;
     vc?.setVolume(0);
     vc?.pause();
     vc?.removeListener(updateVideoState);
@@ -566,6 +579,10 @@ class VideoViewerState extends State<VideoViewer> {
 
     registerVideoBackendForCurrentAttempt();
 
+    // Remember which item this controller belongs to for the position
+    // hand-off in disposables().
+    _positionKeyUrl = widget.booruItem.fileURL;
+
     if (video != null) {
       // Start from cache if was already cached or only caching is allowed
       videoController.value = VideoPlayerController.file(
@@ -694,6 +711,13 @@ class VideoViewerState extends State<VideoViewer> {
       rethrow;
     }
     mpvWatchdogTimer?.cancel();
+
+    // Position parked by a previous incarnation of this video (nested-viewer
+    // cover, backend fallback restart) — pick up where it left off.
+    final Duration? savedPosition = viewerHandler.takeVideoPosition(widget.booruItem.fileURL);
+    if (savedPosition != null) {
+      await videoController.value!.seekTo(savedPosition);
+    }
 
     if (settingsHandler.autoPlayEnabled &&
         !(settingsHandler.respectManualPause && viewerHandler.isManuallyPaused(widget.booruItem.fileURL))) {

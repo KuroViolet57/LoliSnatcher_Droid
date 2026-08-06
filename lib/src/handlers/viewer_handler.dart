@@ -46,6 +46,11 @@ class ViewerHandler {
 
   void removeViewer(GlobalKey key) {
     activeViewers.remove(key);
+    if (activeViewers.isEmpty) {
+      // Whole viewer stack closed — parked video positions are only meant to
+      // survive nested-viewer round-trips, not a later fresh open.
+      _savedVideoPositions.clear();
+    }
   }
 
   int indexOfViewer(GlobalKey key) {
@@ -115,6 +120,28 @@ class ViewerHandler {
   }
 
   bool isManuallyPaused(String? url) => url != null && _manuallyPaused.contains(url);
+
+  // ── nested-viewer position hand-off ──────────────────────────────────────
+  // Opening a nested viewer unmounts the covered viewer's media widget
+  // entirely (maxActiveViewers guard), destroying its player and with it the
+  // playback position. The disposing player parks its position here; the
+  // widget re-created on return picks it up and seeks back, so the video is
+  // exactly where it was left. Entries are consumed on take and the whole map
+  // is wiped when the viewer stack closes, so a later fresh open of the same
+  // video still starts at the beginning.
+  final Map<String, Duration> _savedVideoPositions = {};
+
+  void saveVideoPosition(String? url, Duration? position) {
+    if (url == null || url.isEmpty || position == null || position <= Duration.zero) {
+      return;
+    }
+    _savedVideoPositions[url] = position;
+  }
+
+  Duration? takeVideoPosition(String? url) {
+    if (url == null) return null;
+    return _savedVideoPositions.remove(url);
+  }
   final RxBool isZoomed = false.obs; // is current item zoomed in
   final RxBool isLoaded = false.obs; // is current item loaded
   final RxBool isStopped = false.obs; // is current item stopped

@@ -136,6 +136,14 @@ class _BetterPlayerViewState extends State<BetterPlayerView> {
   Timer? _initDebounce;
   static const Duration _initDelay = Duration(milliseconds: 250);
 
+  // Position parked by a previous incarnation of this video (nested-viewer
+  // cover) — applied once the fresh controller reports initialized.
+  Duration? _pendingResumePosition;
+  // The fileURL the live controller was created for — the key for the
+  // position hand-off (widget.booruItem may already point at a different
+  // item by the time the controller is torn down).
+  String? _controllerUrl;
+
   bool get _wantsPlayer => widget.isViewed || SettingsHandler.instance.preloadVideos;
 
   @override
@@ -331,6 +339,11 @@ class _BetterPlayerViewState extends State<BetterPlayerView> {
       },
     );
 
+    // Claim any parked position now (take = consume) so the initialized
+    // event can seek back to it.
+    _pendingResumePosition = ViewerHandler.instance.takeVideoPosition(widget.booruItem.fileURL);
+    _controllerUrl = widget.booruItem.fileURL;
+
     final controller = BetterPlayerController(config, betterPlayerDataSource: dataSource);
     if (!mounted) {
       controller.dispose();
@@ -387,6 +400,14 @@ class _BetterPlayerViewState extends State<BetterPlayerView> {
         break;
     }
 
+    if (type == BetterPlayerEventType.initialized) {
+      final Duration? resume = _pendingResumePosition;
+      _pendingResumePosition = null;
+      if (resume != null && resume > Duration.zero) {
+        _controller?.seekTo(resume);
+      }
+    }
+
     if (type == BetterPlayerEventType.hideFullscreen) {
       final controller = _controller;
       final ratio = _windowedRatio;
@@ -422,6 +443,16 @@ class _BetterPlayerViewState extends State<BetterPlayerView> {
     if (unregister) {
       _BetterPlayerPool.unregister(this);
     }
+    // Torn down while still the viewed page = unmounted under the user
+    // (nested viewer cover / pool eviction), not swiped away — park the
+    // position so the next incarnation resumes instead of restarting.
+    if (c != null && widget.isViewed) {
+      ViewerHandler.instance.saveVideoPosition(
+        _controllerUrl,
+        c.videoPlayerController?.value.position,
+      );
+    }
+    _controllerUrl = null;
     c?.removeEventsListener(_onPlayerEvent);
     c?.pause();
     c?.dispose();

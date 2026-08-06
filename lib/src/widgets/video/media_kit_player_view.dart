@@ -121,9 +121,12 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> {
         return;
       }
 
-      // Restart from beginning whenever this widget becomes the active view.
+      // Restart from beginning whenever this widget becomes the active view —
+      // unless a previous incarnation parked its position (nested-viewer
+      // cover), in which case resume exactly there.
       if (widget.isViewed) {
-        await entry.player.seek(Duration.zero);
+        final Duration? savedPosition = ViewerHandler.instance.takeVideoPosition(url);
+        await entry.player.seek(savedPosition ?? Duration.zero);
       }
       if (settings.startVideosMuted) {
         await entry.player.setVolume(0);
@@ -167,6 +170,12 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> {
     _initDebounce?.cancel();
     _initDebounce = null;
     final url = _acquiredUrl;
+    // Released while still the viewed page = unmounted under the user
+    // (nested viewer cover), not swiped away — park the position so the
+    // re-created widget resumes instead of restarting.
+    if (_entry != null && widget.isViewed) {
+      ViewerHandler.instance.saveVideoPosition(url, _entry!.player.state.position);
+    }
     _entry = null;
     _acquiredUrl = null;
     if (url != null) {
