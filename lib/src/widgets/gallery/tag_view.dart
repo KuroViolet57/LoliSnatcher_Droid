@@ -40,6 +40,7 @@ import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/database_handler.dart';
 import 'package:lolisnatcher/src/handlers/floating_preview_handler.dart';
 import 'package:lolisnatcher/src/handlers/interests_handler.dart';
+import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -1083,6 +1084,7 @@ class _TagViewState extends State<TagView> {
         customBooru: batchBooru,
         addMode: addMode,
         switchToNew: false,
+        group: SearchHandler.inheritGroup,
       );
     } else {
       // "next" inserts right after the current tab, so add in reverse to end
@@ -1093,6 +1095,7 @@ class _TagViewState extends State<TagView> {
           customBooru: batchBooru,
           addMode: addMode,
           switchToNew: false,
+          group: SearchHandler.inheritGroup,
         );
       }
     }
@@ -1342,6 +1345,7 @@ class _TagViewState extends State<TagView> {
             currentTag,
             customBooru: previewBooru,
             addMode: addMode,
+            group: SearchHandler.inheritGroup,
           );
           if (!context.mounted) return;
           FlashElements.showSnackbar(
@@ -1965,6 +1969,25 @@ Future<void> showTagDialog({
             ),
           ],
           //
+          // Open the tag as a background tab inside a tab group — existing
+          // group or a newly named one.
+          ListTile(
+            leading: Icon(
+              Symbols.create_new_folder_rounded,
+              color: Theme.of(context).iconTheme.color,
+            ),
+            title: const Text('Open in group'),
+            subtitle: const Text('As a background tab inside a tab group'),
+            onTap: () {
+              Navigator.of(context).pop();
+              showOpenTagInGroupSheet(
+                NavigationHandler.instance.navContext,
+                tag,
+                handler.booru,
+              );
+            },
+          ),
+          //
           if (!isHidden && !isMarked)
             ListTile(
               leading: const Icon(Symbols.star_rounded, color: Colors.yellow),
@@ -2146,6 +2169,139 @@ Future<void> showTagDialog({
         ),
       );
     },
+  );
+}
+
+/// Bottom sheet to open [tag] as a background tab inside a tab group:
+/// pick an existing group or name a new one on the spot.
+Future<void> showOpenTagInGroupSheet(
+  BuildContext context,
+  String tag,
+  Booru booru,
+) async {
+  final searchHandler = SearchHandler.instance;
+  final List<String> groups = searchHandler.tabGroupNames;
+  const String newGroupSentinel = ' new-group';
+
+  final String? chosen = await showModalBottomSheet<String>(
+    context: context,
+    useSafeArea: true,
+    backgroundColor: Colors.transparent,
+    builder: (BuildContext ctx) {
+      final theme = Theme.of(ctx);
+      return Container(
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              margin: const EdgeInsets.only(top: 8, bottom: 2),
+              width: 40,
+              height: 4.5,
+              decoration: BoxDecoration(
+                color: const Color(0xFF4A4260),
+                borderRadius: BorderRadius.circular(3),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+              child: Row(
+                children: [
+                  Icon(Symbols.create_new_folder_rounded, size: 20, color: theme.colorScheme.secondary),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Open "${tag.replaceAll('_', ' ')}" in group',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                padding: const EdgeInsets.only(bottom: 8),
+                children: [
+                  for (final g in groups)
+                    ListTile(
+                      leading: Icon(Symbols.folder_open_rounded, color: theme.colorScheme.secondary),
+                      title: Text(g),
+                      subtitle: Text(
+                        '${searchHandler.tabsInGroup(g).length} ${searchHandler.tabsInGroup(g).length == 1 ? 'tab' : 'tabs'}',
+                      ),
+                      onTap: () => Navigator.of(ctx).pop(g),
+                    ),
+                  ListTile(
+                    leading: const Icon(Symbols.add_rounded, color: Colors.green),
+                    title: const Text('New group…'),
+                    onTap: () => Navigator.of(ctx).pop(newGroupSentinel),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    },
+  );
+
+  if (chosen == null) return;
+
+  String groupName = chosen;
+  if (chosen == newGroupSentinel) {
+    final TextEditingController controller = TextEditingController();
+    final String? name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('New tab group'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'Group name',
+            border: OutlineInputBorder(),
+          ),
+          onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(ctx.loc.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+            child: const Text('Create'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (name == null || name.isEmpty) return;
+    groupName = name;
+  }
+
+  searchHandler.addTabByString(
+    tag,
+    customBooru: booru,
+    group: groupName,
+    switchToNew: false,
+  );
+
+  FlashElements.showSnackbar(
+    isKeyUnique: true,
+    key: 'added_new_tab',
+    duration: const Duration(seconds: 2),
+    title: Text('Opened in group "$groupName"', style: const TextStyle(fontSize: 20)),
+    content: Text(tag, style: const TextStyle(fontSize: 16)),
+    leadingIcon: Symbols.fiber_new_rounded,
+    sideColor: Colors.green,
   );
 }
 
@@ -2826,6 +2982,7 @@ class _TagContentPreviewState extends State<TagContentPreview> {
       _effectiveTag,
       customBooru: selectedBooru,
       addMode: defaultMode,
+      group: SearchHandler.inheritGroup,
     );
 
     FlashElements.showSnackbar(
@@ -2913,6 +3070,7 @@ class _TagContentPreviewState extends State<TagContentPreview> {
       customBooru: selectedBooru,
       addMode: chosenMode,
       switchToNew: false,
+      group: SearchHandler.inheritGroup,
     );
 
     if (!context.mounted) return;

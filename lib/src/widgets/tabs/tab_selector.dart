@@ -884,6 +884,170 @@ class _TabManagerPageState extends State<TabManagerPage> {
     return child;
   }
 
+  // After a drag, sync the moved tab's group with its new neighbours:
+  // dropped inside a group block -> join it; dragged away from its own
+  // group's block -> leave it; hovering at a block's edge -> keep as-is.
+  void _normalizeMovedTabGroup(int newIndex) {
+    final int idx = newIndex.clamp(0, searchHandler.total - 1);
+    final SearchTab moved = searchHandler.tabs[idx];
+    final String? prevG = idx > 0 ? searchHandler.tabs[idx - 1].groupName : null;
+    final String? nextG = idx < searchHandler.total - 1 ? searchHandler.tabs[idx + 1].groupName : null;
+    if (prevG != null && prevG == nextG) {
+      moved.groupName = prevG;
+    } else if (moved.groupName != null && moved.groupName != prevG && moved.groupName != nextG) {
+      moved.groupName = null;
+    }
+  }
+
+  Future<String?> _promptGroupName({String? initial}) async {
+    final TextEditingController controller = TextEditingController(text: initial ?? '');
+    final String? name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(initial == null ? 'New tab group' : 'Rename group'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'Group name',
+            border: OutlineInputBorder(),
+          ),
+          onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(context.loc.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+            child: Text(initial == null ? 'Create' : 'Rename'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    return (name == null || name.isEmpty) ? null : name;
+  }
+
+  Future<void> _createNewGroup() async {
+    final String? name = await _promptGroupName();
+    if (name == null) return;
+    // A group is its tabs — creating one starts it off with a fresh empty
+    // tab on the current booru.
+    searchHandler.addTabByString(
+      '',
+      customBooru: searchHandler.currentBooru,
+      addMode: TabAddMode.end,
+      group: name,
+    );
+    getTabs();
+  }
+
+  void _addTabToGroup(String groupName) {
+    searchHandler.addTabByString(
+      '',
+      customBooru: searchHandler.currentBooru,
+      addMode: TabAddMode.end,
+      group: groupName,
+    );
+    getTabs();
+  }
+
+  Future<void> _onGroupMenuAction(String groupName, String action) async {
+    switch (action) {
+      case 'rename':
+        final String? newName = await _promptGroupName(initial: groupName);
+        if (newName != null && newName != groupName) {
+          searchHandler.renameTabGroup(groupName, newName);
+          getTabs();
+        }
+        break;
+      case 'ungroup':
+        searchHandler.dissolveTabGroup(groupName);
+        getTabs();
+        break;
+      case 'close':
+        final List<SearchTab> members = searchHandler.tabsInGroup(groupName);
+        final bool? confirmed = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: Text('Close group "$groupName"?'),
+            content: Text('${members.length} ${members.length == 1 ? 'tab' : 'tabs'} will be closed.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: Text(context.loc.no),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: Text(context.loc.yes),
+              ),
+            ],
+          ),
+        );
+        if (confirmed == true) {
+          selectedTabs.removeWhere(members.contains);
+          searchHandler.removeTabs(members);
+          getTabs();
+        }
+        break;
+    }
+  }
+
+  Widget _groupHeader(BuildContext context, String groupName) {
+    final theme = Theme.of(context);
+    final int count = searchHandler.tabsInGroup(groupName).length;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 4, 4, 0),
+      child: Row(
+        children: [
+          Icon(Symbols.folder_open_rounded, size: 17, color: theme.colorScheme.secondary),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              groupName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w800,
+                color: theme.colorScheme.secondary,
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            '$count',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const Spacer(),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            iconSize: 18,
+            tooltip: 'New tab in this group',
+            icon: const Icon(Symbols.add_rounded),
+            onPressed: () => _addTabToGroup(groupName),
+          ),
+          PopupMenuButton<String>(
+            iconSize: 18,
+            tooltip: 'Group options',
+            onSelected: (action) => _onGroupMenuAction(groupName, action),
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'rename', child: Text('Rename')),
+              PopupMenuItem(value: 'ungroup', child: Text('Ungroup (keep tabs)')),
+              PopupMenuItem(value: 'close', child: Text('Close all tabs')),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget itemBuilder(BuildContext context, int index) {
     final SearchTab tab = filteredTabs[index];
 
@@ -896,11 +1060,20 @@ class _TabManagerPageState extends State<TabManagerPage> {
     final bool isCurrent = tab == searchHandler.currentTab;
     final bool isSelected = selectedTabs.contains(tab);
 
-    return ReorderableDelayedDragStartListener(
-      key: ValueKey('item-${tab.id}'),
-      index: index,
-      enabled: !selectMode && !isFilterActive && sortingMode.isNone,
-      child: TabManagerItem(
+    // Group-block framing: a run of consecutive same-group tabs renders
+    // inside one bordered container, with the header above the first row.
+    final String? groupName = (tab.groupName?.isNotEmpty ?? false) ? tab.groupName : null;
+    final String? prevGroup = index > 0 && (filteredTabs[index - 1].groupName?.isNotEmpty ?? false)
+        ? filteredTabs[index - 1].groupName
+        : null;
+    final String? nextGroup =
+        index < filteredTabs.length - 1 && (filteredTabs[index + 1].groupName?.isNotEmpty ?? false)
+        ? filteredTabs[index + 1].groupName
+        : null;
+    final bool isRunStart = groupName != null && groupName != prevGroup;
+    final bool isRunEnd = groupName != null && groupName != nextGroup;
+
+    final Widget tabItem = TabManagerItem(
         tab: tab,
         index: index,
         isFiltered: isFilterActive || !sortingMode.isNone,
@@ -957,7 +1130,43 @@ class _TabManagerPageState extends State<TabManagerPage> {
                 searchHandler.removeTabAt(tabIndex: searchHandler.tabs.indexOf(tab));
                 getTabs();
               },
-      ),
+    );
+
+    Widget row = tabItem;
+    if (groupName != null) {
+      final theme = Theme.of(context);
+      final Color frame = theme.colorScheme.secondary.withValues(alpha: 0.55);
+      row = Container(
+        margin: EdgeInsets.only(bottom: isRunEnd ? 6 : 0),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.secondary.withValues(alpha: 0.05),
+          border: Border(
+            left: BorderSide(color: frame, width: 1.4),
+            right: BorderSide(color: frame, width: 1.4),
+            top: isRunStart ? BorderSide(color: frame, width: 1.4) : BorderSide.none,
+            bottom: isRunEnd ? BorderSide(color: frame, width: 1.4) : BorderSide.none,
+          ),
+          borderRadius: BorderRadius.vertical(
+            top: Radius.circular(isRunStart ? 16 : 0),
+            bottom: Radius.circular(isRunEnd ? 16 : 0),
+          ),
+        ),
+        padding: EdgeInsets.only(bottom: isRunEnd ? 4 : 0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (isRunStart) _groupHeader(context, groupName),
+            tabItem,
+          ],
+        ),
+      );
+    }
+
+    return ReorderableDelayedDragStartListener(
+      key: ValueKey('item-${tab.id}'),
+      index: index,
+      enabled: !selectMode && !isFilterActive && sortingMode.isNone,
+      child: row,
     );
   }
 
@@ -1437,6 +1646,12 @@ class _TabManagerPageState extends State<TabManagerPage> {
         ),
         actions: [
           IconButton(
+            icon: const Icon(Symbols.create_new_folder_rounded),
+            tooltip: 'New tab group',
+            onPressed: _createNewGroup,
+          ),
+          const SizedBox(width: 8),
+          IconButton(
             icon: const Icon(Symbols.select_all_rounded),
             tooltip: context.loc.tabs.selectMode,
             onPressed: () {
@@ -1593,13 +1808,15 @@ class _TabManagerPageState extends State<TabManagerPage> {
                       : ScrollbarOrientation.right,
                   child: ReorderableListView.builder(
                     scrollController: scrollController,
-                    itemExtent: tabHeight,
+                    // no itemExtent: rows carry an inline group header when
+                    // they start a group block, so heights vary.
                     onReorderItem: (oldIndex, newIndex) {
                       if (oldIndex == newIndex) {
                         return;
                       }
 
                       searchHandler.moveTab(oldIndex, newIndex);
+                      _normalizeMovedTabGroup(newIndex);
                       getTabs();
                     },
                     buildDefaultDragHandles: false,

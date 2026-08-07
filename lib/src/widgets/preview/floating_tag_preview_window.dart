@@ -353,6 +353,7 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
       _effectiveTag,
       customBooru: selectedBooru,
       addMode: addMode,
+      group: SearchHandler.inheritGroup,
     );
     FlashElements.showSnackbar(
       context: context,

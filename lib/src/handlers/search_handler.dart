@@ -150,6 +150,11 @@ class SearchHandler {
     } catch (_) {}
   }
 
+  // Sentinel for addTabByString's `group` param: inherit the current tab's
+  // group. Used by tag-driven opens (tag chips, previews, batch open) so a
+  // tab spawned from inside a group lands in the same group.
+  static const Object inheritGroup = Object();
+
   // add new tab by the given search string
   void addTabByString(
     String searchText, {
@@ -159,12 +164,19 @@ class SearchHandler {
     // null = follow the user's "New tab position" setting. Pass explicitly
     // only when the caller offers its own placement choice.
     TabAddMode? addMode,
+    // Tab group to open into: a String places the tab in that group (created
+    // if new), [inheritGroup] copies the current tab's group, null = none.
+    Object? group,
     int? customPage,
     Map<String, String>? tagOverrides,
     Map<String, bool>? inheritMainTags,
     String? tabId,
   }) {
     final Booru booru = customBooru ?? currentBooru;
+
+    final String? groupName = identical(group, inheritGroup)
+        ? (tabs.isNotEmpty ? currentTab.groupName : null)
+        : group as String?;
 
     // Add new tab depending on the add mode
     final SearchTab newTab = SearchTab(
@@ -175,12 +187,21 @@ class SearchHandler {
       tagOverrides: tagOverrides,
       inheritMainTags: inheritMainTags,
     );
+    newTab.groupName = groupName;
     if (customPage != null) {
       newTab.booruHandler.pageNum = customPage;
     }
 
+    TabAddMode resolvedMode = addMode ?? defaultTabAddModeResolved;
+    // Opening into a group the current tab is NOT part of: prev/next would
+    // drop the tab outside the group's block and fragment it — force
+    // end-of-group placement instead.
+    if (groupName != null && (tabs.isEmpty || currentTab.groupName != groupName)) {
+      resolvedMode = TabAddMode.end;
+    }
+
     int newIndex = 0;
-    switch (addMode ?? defaultTabAddModeResolved) {
+    switch (resolvedMode) {
       case TabAddMode.prev:
         newIndex = currentIndex;
         tabs.insert(newIndex, newTab);
@@ -190,8 +211,16 @@ class SearchHandler {
         tabs.insert(newIndex, newTab);
         break;
       case TabAddMode.end:
-        tabs.add(newTab);
-        newIndex = total - 1;
+        // "End" for a grouped tab means the end of ITS GROUP's block, so the
+        // group stays contiguous in the tab list.
+        final int lastInGroup = groupName == null ? -1 : tabs.lastIndexWhere((t) => t.groupName == groupName);
+        if (lastInGroup != -1) {
+          newIndex = lastInGroup + 1;
+          tabs.insert(newIndex, newTab);
+        } else {
+          tabs.add(newTab);
+          newIndex = total - 1;
+        }
         break;
     }
 
@@ -619,6 +648,8 @@ class SearchHandler {
         tagOverrides: carriedOverrides,
         inheritMainTags: carriedInherit,
       );
+      // In-place search change keeps the tab in its group.
+      newTab.groupName = currentTab.groupName;
       tabs[currentIndex] = newTab;
       // The user changed this tab's search while viewing it — update its
       // visited-history entry in place (same id) instead of duplicating.
@@ -812,6 +843,32 @@ class SearchHandler {
     final SettingsHandler settingsHandler = SettingsHandler.instance;
     await settingsHandler.dbHandler.renameSavedSearch(id, name);
     await reloadSavedSearches();
+  }
+
+  // Ordered distinct tab-group names, in first-appearance order.
+  List<String> get tabGroupNames {
+    final List<String> names = [];
+    for (final tab in tabs) {
+      final String? g = tab.groupName;
+      if (g != null && g.isNotEmpty && !names.contains(g)) names.add(g);
+    }
+    return names;
+  }
+
+  List<SearchTab> tabsInGroup(String groupName) => tabs.where((t) => t.groupName == groupName).toList();
+
+  void renameTabGroup(String oldName, String newName) {
+    for (final tab in tabs) {
+      if (tab.groupName == oldName) tab.groupName = newName;
+    }
+    tabs.value = [...tabs];
+  }
+
+  void dissolveTabGroup(String groupName) {
+    for (final tab in tabs) {
+      if (tab.groupName == groupName) tab.groupName = null;
+    }
+    tabs.value = [...tabs];
   }
 
   // The TabAddMode matching the user's "New tab position" setting
@@ -1384,6 +1441,7 @@ class SearchHandler {
             tags: tags,
             booru: booruName,
             id: tab.id,
+            group: tab.groupName,
             secondaryBoorus: secondaryBoorusNames,
             tagOverrides: overrides,
             inheritMainTags: inherit,
@@ -1425,7 +1483,7 @@ class SearchHandler {
       tagOverrides: backup.tagOverrides.isEmpty ? null : Map<String, String>.from(backup.tagOverrides),
       inheritMainTags:
           backup.inheritMainTags.isEmpty ? null : Map<String, bool>.from(backup.inheritMainTags),
-    );
+    )..groupName = (backup.group?.isEmpty ?? true) ? null : backup.group;
   }
 
   Booru handleFavDlsNameChange(Booru booru) {
@@ -1608,6 +1666,10 @@ class SearchTab {
   // visited-tabs history can track a tab as one entry rather than duplicating.
   final String id;
   String tags = '';
+  // Tab group this tab belongs to (null = ungrouped). Groups are rendered as
+  // bordered blocks in the tab manager; tabs opened from within a grouped tab
+  // (tag taps etc.) inherit the group. Persisted via TabBackup.
+  String? groupName;
   // Per-booru tag overrides used when this tab is in merge mode. Keyed by
   // child booru name. Reactive so the per-booru text fields refresh when
   // a new tab is restored from a backup.
@@ -1736,6 +1798,7 @@ class TabBackup {
     required this.tags,
     required this.booru,
     this.id,
+    this.group,
     this.secondaryBoorus = const [],
     this.tagOverrides = const {},
     this.inheritMainTags = const {},
@@ -1746,6 +1809,8 @@ class TabBackup {
   // Stable tab id, so a restored tab keeps the same identity the visited-tabs
   // history recorded. Optional for backward-compat with older backups.
   final String? id;
+  // Tab group name (null/absent = ungrouped).
+  final String? group;
   final List<String> secondaryBoorus;
   // Per-booru tag overrides used in merge mode. Keys are booru names; missing
   // entries (or older backups without this field) fall back to `tags`.
@@ -1760,6 +1825,7 @@ class TabBackup {
       't': tags,
       'b': booru,
       if (id != null) 'i': id,
+      if (group != null && group!.isNotEmpty) 'g': group,
       if (secondaryBoorus.isNotEmpty) 'sb': secondaryBoorus,
       if (tagOverrides.isNotEmpty) 'to': tagOverrides,
       if (inheritMainTags.isNotEmpty) 'in': inheritMainTags,
@@ -1773,6 +1839,7 @@ class TabBackup {
         tags: json['t'] as String,
         booru: json['b'] as String,
         id: json['i'] as String?,
+        group: json['g'] as String?,
         secondaryBoorus: (json['sb'] as List<dynamic>?)?.map((e) => e as String).toList() ?? const [],
         tagOverrides:
             (json['to'] as Map<String, dynamic>?)?.map((k, v) => MapEntry(k, v.toString())) ?? const {},
