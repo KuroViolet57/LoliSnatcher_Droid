@@ -542,6 +542,9 @@ class _TabManagerPageState extends State<TabManagerPage> {
     isMultiBooruMode = _savedIsMultiBooruMode;
     filterTextController.text = _savedFilterText;
 
+    // Heal any group blocks split by pre-fix inserts before rendering.
+    searchHandler.compactGroupBlocks();
+
     getTabs();
 
     scrollController = ScrollController(

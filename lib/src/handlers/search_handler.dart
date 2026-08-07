@@ -898,6 +898,39 @@ class SearchHandler {
     tabs.value = [...tabs];
   }
 
+  /// Makes every group's tabs contiguous: each group's block sits where the
+  /// group first appears, fragments (from pre-snapping inserts) are folded
+  /// into it in their existing relative order. Ungrouped tabs keep their
+  /// positions relative to each other. No-op when nothing is fragmented.
+  void compactGroupBlocks() {
+    if (tabs.isEmpty) return;
+    final SearchTab current = currentTab;
+
+    final List<SearchTab> result = [];
+    final Set<String> doneGroups = {};
+    for (final tab in tabs) {
+      final String? g = (tab.groupName?.isNotEmpty ?? false) ? tab.groupName : null;
+      if (g == null) {
+        result.add(tab);
+      } else if (doneGroups.add(g)) {
+        result.addAll(tabs.where((t) => t.groupName == g));
+      }
+    }
+
+    bool changed = false;
+    for (int i = 0; i < tabs.length; i++) {
+      if (!identical(tabs[i], result[i])) {
+        changed = true;
+        break;
+      }
+    }
+    if (!changed) return;
+
+    tabs.value = result;
+    final int newIndex = tabs.indexOf(current);
+    changeTabIndex(newIndex == -1 ? 0 : newIndex);
+  }
+
   /// Moves [tabsToMove] into [groupName], keeping their relative order and
   /// the group block contiguous. An existing group receives them at its end;
   /// a new group's block forms where the first moved tab sat.
@@ -1595,6 +1628,9 @@ class SearchHandler {
         // ignore: deprecated_member_use_from_same_package
         await restoreTabsLegacy(result);
       }
+      // Heal group blocks that were split by pre-fix inserts: each group's
+      // stray fragments are pulled back to its first occurrence.
+      compactGroupBlocks();
     } catch (e, s) {
       Logger.Inst().log(
         'Error restoring tabs: $e',

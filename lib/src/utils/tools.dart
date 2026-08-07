@@ -318,7 +318,8 @@ class Tools {
       }
 
       captchaScreenActive = true;
-      await Navigator.push(
+      try {
+        await Navigator.push(
         NavigationHandler.instance.navContext,
         MaterialPageRoute(
           builder: (context) => InAppWebviewView(
@@ -363,8 +364,13 @@ class Tools {
             },
           ),
         ),
-      );
-      captchaScreenActive = false;
+        );
+      } finally {
+        // MUST reset even when the push throws (e.g. challenge detected at
+        // app startup before the navigator is ready) — a stuck flag silently
+        // disabled every auto-captcha for the rest of the session.
+        captchaScreenActive = false;
+      }
       return true;
     }
     return false;
