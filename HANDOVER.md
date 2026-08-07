@@ -329,3 +329,60 @@ the design's style.
   tag unification), FloatingPreviewHandler (route-tied floating preview window).
 - WebView infra: `lib/src/widgets/webview/webview_page.dart` (InAppWebviewView,
   onLoadStop callback exposes controller for evaluateJavascript).
+
+## ═══ OPTIMIZATION MARATHON (2026-08-07, branch claude/experimental-megabuild) ═══
+Ongoing perf pass. Every major chunk = its own build/APK for fallback. Codenames
+below are `Constants.buildCodename`; APKs uploaded to Drive per the usual scheme.
+
+### Network — shared pooled HttpClient (codename `net-pool`)
+- `DioNetwork.getClient()` used to build a fresh `Dio`+`HttpClient` per request
+  and every caller did `client.close()` after — destroying TCP keep-alive AND
+  the TLS session, so each request paid a full handshake (brutal on slow boorus
+  like rule34hentai, verified ~2s/query server-side + handshake on top).
+- Now a single app-lifetime `DioNetwork.sharedHttpClient` (idleTimeout 20s,
+  maxConnectionsPerHost 8, badCertificateCallback reads the live
+  allowSelfSignedCerts setting). Every Dio's IOHttpClientAdapter returns it via
+  `createHttpClient: () => sharedHttpClient`. **CRITICAL INVARIANT: never call
+  `.close()` on any Dio from getClient()** — the adapter's close() closes the
+  shared client for everyone. Removed all client.close() in dio_network.dart
+  (get/post/head/download/stream), custom_network_image.dart (:179), and
+  dio_downloader.dart (dispose now cancels via cancelToken, 4 post-request
+  closes removed). dio 5.9.2 has NO `closeOnDispose` param.
+
+### DB indexes (same build)
+- `createCriticalIndexes()` runs on every DB open (in initDB, NOT gated by the
+  heavy-index toggle): BooruItem(postURL), Tag(name), PinnedTag(tagName),
+  ViewedPost(viewedAt), SeenPost(viewedAt). These columns were linearly
+  scanned on hot paths (dedup/favourite lookup per item, tag colour/type
+  resolution, pin scoping, history ordering).
+
+### rule34hentai server reality (investigated live w/ user's cookies)
+- Origin genuinely slow: list/search pages ~1.8–2.5s TTFB sustained, no caching.
+  500s are load-dependent origin timeouts. Media (thumbs/videos) served fast via
+  CDN (~0.35s). Cloudflare challenges target mobile-carrier IP ranges; cf_clearance
+  is IP-bound so carrier IP rotation = frequent re-challenge. Nothing app-side
+  fixes the slowness; the auto-captcha/probe/soft-refresh machinery is the mitigation.
+
+### Auto-captcha stuck-flag fix (earlier build `group-heal`)
+- `Tools.checkForCaptcha` set `captchaScreenActive=true` before pushing the
+  webview and only reset it AFTER a normal return. A challenge at app startup
+  (navigator not ready) threw → flag stuck true → ALL auto-captcha disabled for
+  the session. Now reset in a `finally`.
+
+### Tab groups (recap of the group system for future work)
+- `SearchTab.groupName` (persisted in TabBackup as `g`). `addTabByString` takes
+  `group:` (String | SearchHandler.inheritGroup sentinel | null). Insertion uses
+  `_snapInsertionIndex` so a tab never splits a foreign group's contiguous block.
+  `compactGroupBlocks()` heals pre-existing splits (runs on restoreTabs + tab
+  manager open). Tab manager: `displayTabs` getter hides collapsed-group members
+  (reorder disabled while any group collapsed so display==real indices). Group
+  picker = `pickTabGroupName(context, allowOutside:)` returning group name /
+  kOpenOutsideGroupSentinel / null.
+
+### TODO / next optimization targets (not yet done)
+- Video player pools (media_kit `_MediaKitPlayerPool`, better_player
+  `_BetterPlayerPool`): review eviction + preload counts.
+- Thumbnail pipeline: ResizeImage cache dimensions, decode sizing.
+- Grid: RepaintBoundary coverage, const-ness, ListView cacheExtent.
+- Dead code sweep (commented-out proxy/http2 block in dio_network already
+  removed; look for more).

@@ -175,9 +175,10 @@ mixin _NetworkImageLoaderMixin {
         await File(tempFilePath).delete();
       } catch (_) {}
       rethrow;
-    } finally {
-      client.close();
     }
+    // NOTE: do NOT close `client` — it now shares the app-wide pooled
+    // HttpClient (see DioNetwork.getClient); closing would drop every other
+    // request's warm connections.
 
     if (!Tools.isGoodResponse(response)) {
       try {

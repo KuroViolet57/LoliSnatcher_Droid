@@ -64,6 +64,7 @@ class DBHandler {
       db = await databaseFactory.openDatabase('${path}store.db');
     }
     await updateTable();
+    await createCriticalIndexes();
     await fixBooruItems(onStatusUpdate);
     await deleteUntracked();
     return true;
@@ -237,6 +238,21 @@ class DBHandler {
     await db?.execute('CREATE INDEX IF NOT EXISTS ImageTag_tagID_index ON ImageTag (tagID);');
     await db?.execute('CREATE INDEX IF NOT EXISTS ImageTag_booruItemID_index ON ImageTag (booruItemID);');
     return true;
+  }
+
+  // Small, always-worth-it indexes on hot lookup columns — created on every
+  // DB open regardless of the (heavy) ImageTag index toggle. Each of these
+  // columns was previously scanned linearly on very common queries.
+  Future<void> createCriticalIndexes() async {
+    // postURL: de-dup / favourite lookup, hit per fetched item and DB write.
+    await db?.execute('CREATE INDEX IF NOT EXISTS BooruItem_postURL_index ON BooruItem (postURL);');
+    // Tag.name: colour/type resolution, suggestions, id lookup.
+    await db?.execute('CREATE INDEX IF NOT EXISTS Tag_name_index ON Tag (name);');
+    // PinnedTag.tagName: pin scoping / follow lookups.
+    await db?.execute('CREATE INDEX IF NOT EXISTS PinnedTag_tagName_index ON PinnedTag (tagName);');
+    // Recency ordering for the History feed and the seen/viewed trims.
+    await db?.execute('CREATE INDEX IF NOT EXISTS ViewedPost_viewedAt_index ON ViewedPost (viewedAt);');
+    await db?.execute('CREATE INDEX IF NOT EXISTS SeenPost_viewedAt_index ON SeenPost (viewedAt);');
   }
 
   Future<bool> dropIndexes() async {

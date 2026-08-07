@@ -69,6 +69,34 @@ class DioNetwork {
     return Duration(seconds: 1 << (attempt - 1));
   }
 
+  // ── shared HTTP client ────────────────────────────────────────────────
+  // Previously every request built a fresh Dio + HttpClient and closed it
+  // afterwards, throwing away the TCP connection AND the negotiated TLS
+  // session — so each request (search, thumbnail, video probe...) paid a
+  // full handshake, brutal on slow/keep-alive-friendly boorus. Now a single
+  // long-lived HttpClient is shared by every Dio: dart:io pools connections
+  // per host and reuses TLS sessions, so back-to-back requests to the same
+  // booru skip the handshake entirely. The client is NEVER closed per
+  // request (see the callers) — it lives for the app session.
+  static HttpClient? _sharedHttpClient;
+
+  static HttpClient get sharedHttpClient {
+    final existing = _sharedHttpClient;
+    if (existing != null) return existing;
+    final client = HttpClient()
+      // Keep idle connections warm long enough to be reused while scrolling a
+      // grid / paging a feed, without holding sockets open forever.
+      ..idleTimeout = const Duration(seconds: 20)
+      // Bound per-host sockets so a burst of thumbnails can't exhaust fds;
+      // dio queues beyond this and reuses as they free up.
+      ..maxConnectionsPerHost = 8
+      // Reads the live setting on each handshake, so toggling "allow
+      // self-signed" takes effect without rebuilding the client.
+      ..badCertificateCallback = (_, _, _) => SettingsHandler.instance.allowSelfSignedCerts;
+    _sharedHttpClient = client;
+    return client;
+  }
+
   static Dio getClient({
     String? baseUrl,
     bool skipLogging = false,
@@ -76,35 +104,17 @@ class DioNetwork {
     final dio = Dio();
 
     final settingsHandler = SettingsHandler.instance;
-    // final proxyType = ProxyType.fromName(settingsHandler.proxyType);
-    // if (settingsHandler.useHttp2 &&
-    //     (proxyType.isDirect || (proxyType.isSystem && systemProxyAddress.isEmpty) || getProxyConfigAddress().isEmpty)) {
-    //   // dio.httpClientAdapter = NativeAdapter();
-    //   dio.httpClientAdapter = Http2Adapter(
-    //     ConnectionManager(
-    //       idleTimeout: const Duration(seconds: 30),
-    //     ),
-    //   );
-    // }
 
     dio.options.baseUrl = baseUrl ?? '';
-    // dio.options.connectTimeout = Duration(seconds: 10);
-    // dio.options.receiveTimeout = Duration(seconds: 30);
-    // dio.options.sendTimeout = Duration(seconds: 10);
 
-    // Honour the "Allow self-signed certificates" setting on the actual Dio
-    // client. This is what lets a user-installed MITM CA (e.g. AdGuard HTTPS
-    // filtering, or a debugging proxy) work: dart:io's HttpClient uses its own
-    // trust store and ignores Android's user-CA config, so without this the
-    // handshake fails with CERTIFICATE_VERIFY_FAILED even though the user
-    // deliberately installed the filtering CA. The created HttpClient still
-    // inherits any global proxy override.
+    // Reuse the shared, connection-pooling HttpClient (see above). The
+    // adapter must NOT close it — closing would tear down every other Dio's
+    // pooled connections — so createHttpClient just hands back the singleton.
+    // NOTE: the returned Dio must never have close() called on it — its
+    // adapter's close() would close the shared HttpClient. Callers below drop
+    // the Dio (GC) instead of closing it.
     dio.httpClientAdapter = IOHttpClientAdapter(
-      createHttpClient: () {
-        final HttpClient client = HttpClient();
-        client.badCertificateCallback = (_, _, _) => settingsHandler.allowSelfSignedCerts;
-        return client;
-      },
+      createHttpClient: () => sharedHttpClient,
     );
 
     if (!skipLogging) {
@@ -292,7 +302,7 @@ class DioNetwork {
         onReceiveProgress: onReceiveProgress,
       ),
     );
-    client.close();
+    // Shared HttpClient — do NOT close (see getClient).
     return res;
   }
 
@@ -322,7 +332,7 @@ class DioNetwork {
         onSendProgress: onSendProgress,
       ),
     );
-    client.close();
+    // Shared HttpClient — do NOT close (see getClient).
     return res;
   }
 
@@ -350,7 +360,7 @@ class DioNetwork {
         cancelToken: cancelToken,
       ),
     );
-    client.close();
+    // Shared HttpClient — do NOT close (see getClient).
     return res;
   }
 
@@ -379,7 +389,7 @@ class DioNetwork {
       onReceiveProgress: onReceiveProgress,
       deleteOnError: deleteOnError,
     );
-    client.close();
+    // Shared HttpClient — do NOT close (see getClient).
     return res;
   }
 
@@ -419,7 +429,8 @@ class DioNetwork {
       }
       rethrow;
     } finally {
-      client.close();
+      // Shared HttpClient — do NOT close it here; the response body stream is
+      // consumed after this block and closing would kill the connection.
     }
 
     response.headers = Headers.fromMap(response.data!.headers);
