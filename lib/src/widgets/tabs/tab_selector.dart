@@ -450,16 +450,27 @@ class _TabManagerPageState extends State<TabManagerPage> {
   // heights so scroll-to-index math stays exact.
   static const double groupHeaderHeight = 44;
 
+  String? _groupOfRow(int i) => (filteredTabs[i].groupName?.isNotEmpty ?? false) ? filteredTabs[i].groupName : null;
+
+  bool _isGroupRunStart(int i) {
+    final String? g = _groupOfRow(i);
+    return g != null && (i == 0 || _groupOfRow(i - 1) != g);
+  }
+
+  // Height of the row at [index]: run-start rows carry the inline group
+  // header. Exact known heights keep the fixed-extent fast path (see
+  // itemExtentBuilder) and the scroll-to-index math correct.
+  double rowExtentForIndex(int index) {
+    if (index < 0 || index >= filteredTabs.length) return tabHeight;
+    return _isGroupRunStart(index) ? tabHeight + groupHeaderHeight : tabHeight;
+  }
+
   // Scroll offset of the row at [index], accounting for group headers
   // rendered above the first tab of each group run.
   double offsetForTabIndex(int index) {
     int headers = 0;
     for (int i = 0; i <= index && i < filteredTabs.length; i++) {
-      final String? g = (filteredTabs[i].groupName?.isNotEmpty ?? false) ? filteredTabs[i].groupName : null;
-      final String? prev = i > 0 && (filteredTabs[i - 1].groupName?.isNotEmpty ?? false)
-          ? filteredTabs[i - 1].groupName
-          : null;
-      if (g != null && g != prev) headers++;
+      if (_isGroupRunStart(i)) headers++;
     }
     return index * tabHeight + headers * groupHeaderHeight;
   }
@@ -1155,32 +1166,49 @@ class _TabManagerPageState extends State<TabManagerPage> {
     if (groupName != null) {
       final theme = Theme.of(context);
       final Color frame = theme.colorScheme.secondary.withValues(alpha: 0.55);
-      row = Container(
-        decoration: BoxDecoration(
-          color: theme.colorScheme.secondary.withValues(alpha: 0.05),
-          border: Border(
-            left: BorderSide(color: frame, width: 1.4),
-            right: BorderSide(color: frame, width: 1.4),
-            top: isRunStart ? BorderSide(color: frame, width: 1.4) : BorderSide.none,
-            bottom: isRunEnd ? BorderSide(color: frame, width: 1.4) : BorderSide.none,
-          ),
-          borderRadius: BorderRadius.vertical(
-            top: Radius.circular(isRunStart ? 16 : 0),
-            bottom: Radius.circular(isRunEnd ? 16 : 0),
-          ),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (isRunStart) _groupHeader(context, groupName),
-            SizedBox(height: tabHeight, child: tabItem),
-          ],
-        ),
+      final BorderRadius radius = BorderRadius.vertical(
+        top: Radius.circular(isRunStart ? 16 : 0),
+        bottom: Radius.circular(isRunEnd ? 16 : 0),
       );
-    } else {
-      // Fixed height so scroll-to-index math stays exact (the list has no
-      // itemExtent anymore because grouped rows carry inline headers).
-      row = SizedBox(height: tabHeight, child: row);
+      // The frame is painted as overlays (tint below, border above) instead
+      // of a bordered Container, so the row's height stays EXACTLY what
+      // itemExtentBuilder promises.
+      row = Stack(
+        children: [
+          Positioned.fill(
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.secondary.withValues(alpha: 0.05),
+                  borderRadius: radius,
+                ),
+              ),
+            ),
+          ),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (isRunStart) _groupHeader(context, groupName),
+              SizedBox(height: tabHeight, child: tabItem),
+            ],
+          ),
+          Positioned.fill(
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  border: Border(
+                    left: BorderSide(color: frame, width: 1.4),
+                    right: BorderSide(color: frame, width: 1.4),
+                    top: isRunStart ? BorderSide(color: frame, width: 1.4) : BorderSide.none,
+                    bottom: isRunEnd ? BorderSide(color: frame, width: 1.4) : BorderSide.none,
+                  ),
+                  borderRadius: radius,
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
     }
 
     return ReorderableDelayedDragStartListener(
@@ -1829,8 +1857,10 @@ class _TabManagerPageState extends State<TabManagerPage> {
                       : ScrollbarOrientation.right,
                   child: ReorderableListView.builder(
                     scrollController: scrollController,
-                    // no itemExtent: rows carry an inline group header when
-                    // they start a group block, so heights vary.
+                    // Per-index extents keep the O(1) fixed-extent layout path
+                    // (fast jumps/flings even with thousands of tabs) while
+                    // letting run-start rows carry the inline group header.
+                    itemExtentBuilder: (index, dimensions) => rowExtentForIndex(index),
                     onReorderItem: (oldIndex, newIndex) {
                       if (oldIndex == newIndex) {
                         return;
