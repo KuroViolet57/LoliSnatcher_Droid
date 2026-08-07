@@ -2211,6 +2211,40 @@ Future<void> showTagDialog({
             },
           ),
           //
+          // When browsing inside a group: open the tag as a normal ungrouped
+          // background tab, placed right after this group's block (the
+          // insertion snapping keeps blocks intact).
+          if (searchHandler.tabs.isNotEmpty && (searchHandler.currentTab.groupName?.isNotEmpty ?? false))
+            ListTile(
+              leading: Icon(
+                Symbols.folder_off_rounded,
+                color: Theme.of(context).iconTheme.color,
+              ),
+              title: const Text('Open outside group'),
+              subtitle: const Text("Background tab after this group's block"),
+              onTap: () {
+                searchHandler.addTabByString(
+                  tag,
+                  customBooru: handler.booru,
+                  switchToNew: false,
+                );
+                FlashElements.showSnackbar(
+                  context: context,
+                  isKeyUnique: true,
+                  key: 'added_new_tab',
+                  duration: const Duration(seconds: 2),
+                  title: Text(
+                    context.loc.tagView.addedNewTab,
+                    style: const TextStyle(fontSize: 20),
+                  ),
+                  content: Text(tag, style: const TextStyle(fontSize: 16)),
+                  leadingIcon: Symbols.fiber_new_rounded,
+                  sideColor: Colors.green,
+                );
+                Navigator.of(context).pop();
+              },
+            ),
+          //
           if (!isHidden && !isMarked)
             ListTile(
               leading: const Icon(Symbols.star_rounded, color: Colors.yellow),

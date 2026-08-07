@@ -58,7 +58,24 @@ class FloatingPreviewHandler extends ChangeNotifier {
 
   Route<dynamic>? get topPageRoute => _pageRoutes.isNotEmpty ? _pageRoutes.last : null;
 
-  bool isEntryVisible(FloatingPreviewEntry entry) => entry.ownerRoute == topPageRoute;
+  // Windows render in the root overlay, ABOVE any dialog/bottom sheet pushed
+  // on the navigator. UI launched FROM a window (group picker etc.) wraps
+  // itself in push/popSuppress so the windows duck out of the way instead of
+  // burying the modal.
+  int _suppressCount = 0;
+  bool get isSuppressed => _suppressCount > 0;
+
+  void pushSuppress() {
+    _suppressCount++;
+    notifyListeners();
+  }
+
+  void popSuppress() {
+    if (_suppressCount > 0) _suppressCount--;
+    notifyListeners();
+  }
+
+  bool isEntryVisible(FloatingPreviewEntry entry) => !isSuppressed && entry.ownerRoute == topPageRoute;
 
   /// Opens (or replaces, when the current top route already has one) the
   /// floating preview window for [tag] on [booru].

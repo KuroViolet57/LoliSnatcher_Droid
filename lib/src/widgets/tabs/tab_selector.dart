@@ -450,6 +450,20 @@ class _TabManagerPageState extends State<TabManagerPage> {
   // heights so scroll-to-index math stays exact.
   static const double groupHeaderHeight = 44;
 
+  // Collapsed groups (chevron on the header). Survives close/reopen of the
+  // manager within the app session.
+  static final Set<String> _collapsedGroups = {};
+
+  bool _isGroupCollapsed(String? g) => g != null && _collapsedGroups.contains(g);
+
+  void _toggleGroupCollapsed(String groupName) {
+    setState(() {
+      if (!_collapsedGroups.remove(groupName)) {
+        _collapsedGroups.add(groupName);
+      }
+    });
+  }
+
   String? _groupOfRow(int i) => (filteredTabs[i].groupName?.isNotEmpty ?? false) ? filteredTabs[i].groupName : null;
 
   bool _isGroupRunStart(int i) {
@@ -1109,36 +1123,53 @@ class _TabManagerPageState extends State<TabManagerPage> {
   Widget _groupHeader(BuildContext context, String groupName) {
     final theme = Theme.of(context);
     final int count = searchHandler.tabsInGroup(groupName).length;
+    final bool collapsed = _isGroupCollapsed(groupName);
     return Container(
       height: groupHeaderHeight,
       alignment: Alignment.center,
-      padding: const EdgeInsets.fromLTRB(14, 4, 4, 0),
+      padding: const EdgeInsets.fromLTRB(6, 4, 4, 0),
       child: Row(
         children: [
-          Icon(Symbols.folder_open_rounded, size: 17, color: theme.colorScheme.secondary),
-          const SizedBox(width: 8),
-          Flexible(
-            child: Text(
-              groupName,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 13.5,
-                fontWeight: FontWeight.w800,
-                color: theme.colorScheme.secondary,
+          // Collapse/expand — the name area toggles too.
+          Expanded(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => _toggleGroupCollapsed(groupName),
+              child: Row(
+                children: [
+                  Icon(
+                    collapsed ? Symbols.chevron_right_rounded : Symbols.expand_more_rounded,
+                    size: 20,
+                    color: theme.colorScheme.secondary,
+                  ),
+                  const SizedBox(width: 4),
+                  Icon(Symbols.folder_open_rounded, size: 17, color: theme.colorScheme.secondary),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      groupName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w800,
+                        color: theme.colorScheme.secondary,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    '$count',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
-          const SizedBox(width: 6),
-          Text(
-            '$count',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const Spacer(),
           IconButton(
             visualDensity: VisualDensity.compact,
             iconSize: 18,
@@ -1246,6 +1277,50 @@ class _TabManagerPageState extends State<TabManagerPage> {
     );
 
     Widget row = tabItem;
+    if (groupName != null && _isGroupCollapsed(groupName)) {
+      // Collapsed group: only the run-start row renders (header only, fully
+      // framed); member rows shrink to nothing (their extent is 0).
+      if (!isRunStart) {
+        return ReorderableDelayedDragStartListener(
+          key: ValueKey('item-${tab.id}'),
+          index: index,
+          enabled: false,
+          child: const SizedBox.shrink(),
+        );
+      }
+      final theme = Theme.of(context);
+      final Color frame = theme.colorScheme.secondary.withValues(alpha: 0.55);
+      return ReorderableDelayedDragStartListener(
+        key: ValueKey('item-${tab.id}'),
+        index: index,
+        enabled: false,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.secondary.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+              ),
+            ),
+            _groupHeader(context, groupName),
+            Positioned.fill(
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    border: Border.all(color: frame, width: 1.4),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     if (groupName != null) {
       final theme = Theme.of(context);
       final Color frame = theme.colorScheme.secondary.withValues(alpha: 0.55);

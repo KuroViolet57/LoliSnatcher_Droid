@@ -622,7 +622,17 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
             visualDensity: VisualDensity.compact,
             tooltip: 'Open in group',
             icon: const Icon(Symbols.create_new_folder_rounded, size: 20),
-            onPressed: () => showOpenTagInGroupSheet(context, _effectiveTag, selectedBooru),
+            onPressed: () async {
+              // Duck the window while the sheet is open — the root overlay
+              // sits above navigator sheets, which buried the picker.
+              final handler = FloatingPreviewHandler.instance;
+              handler.pushSuppress();
+              try {
+                await showOpenTagInGroupSheet(context, _effectiveTag, selectedBooru);
+              } finally {
+                handler.popSuppress();
+              }
+            },
           ),
           IconButton(
             visualDensity: VisualDensity.compact,

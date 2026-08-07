@@ -206,11 +206,11 @@ class SearchHandler {
     int newIndex = 0;
     switch (resolvedMode) {
       case TabAddMode.prev:
-        newIndex = currentIndex;
+        newIndex = _snapInsertionIndex(currentIndex, groupName, forward: false);
         tabs.insert(newIndex, newTab);
         break;
       case TabAddMode.next:
-        newIndex = currentIndex + 1;
+        newIndex = _snapInsertionIndex(currentIndex + 1, groupName, forward: true);
         tabs.insert(newIndex, newTab);
         break;
       case TabAddMode.end:
@@ -848,6 +848,30 @@ class SearchHandler {
     await reloadSavedSearches();
   }
 
+  // Inserting at [index] must never split another group's contiguous block
+  // (e.g. opening a NEW group from inside group A would otherwise cut A in
+  // two). When the insertion point falls inside a foreign block, snap it to
+  // the block's end (forward) or start (backward).
+  int _snapInsertionIndex(int index, String? groupName, {required bool forward}) {
+    if (index <= 0 || index >= tabs.length) return index.clamp(0, tabs.length);
+    final String? before = tabs[index - 1].groupName;
+    final String? at = tabs[index].groupName;
+    final bool splitsForeignBlock = before != null && before.isNotEmpty && before == at && before != groupName;
+    if (!splitsForeignBlock) return index;
+
+    int i = index;
+    if (forward) {
+      while (i < tabs.length && tabs[i].groupName == before) {
+        i++;
+      }
+    } else {
+      while (i > 0 && tabs[i - 1].groupName == before) {
+        i--;
+      }
+    }
+    return i;
+  }
+
   // Ordered distinct tab-group names, in first-appearance order.
   List<String> get tabGroupNames {
     final List<String> names = [];
@@ -898,6 +922,16 @@ class SearchHandler {
         if (!tabsToMove.contains(tabs[i])) before++;
       }
       insertAt = before;
+      // Don't split a foreign group block in the remaining list.
+      if (insertAt > 0 && insertAt < remaining.length) {
+        final String? b = remaining[insertAt - 1].groupName;
+        final String? a = remaining[insertAt].groupName;
+        if (b != null && b.isNotEmpty && b == a && b != groupName) {
+          while (insertAt < remaining.length && remaining[insertAt].groupName == b) {
+            insertAt++;
+          }
+        }
+      }
     }
 
     for (final t in ordered) {
