@@ -386,3 +386,19 @@ below are `Constants.buildCodename`; APKs uploaded to Drive per the usual scheme
 - Grid: RepaintBoundary coverage, const-ness, ListView cacheExtent.
 - Dead code sweep (commented-out proxy/http2 block in dio_network already
   removed; look for more).
+
+### Investigated — already optimal (don't redo)
+- Grid rendering (waterfall_view/grid_builder/staggered_builder): already
+  addRepaintBoundaries:false + per-card RepaintBoundary, addAutomaticKeepAlives:
+  false, cacheExtent set. Good.
+- Thumbnail decode: ResizeImage to constraints×devicePixelRatio, allowUpscaling
+  false, ResizeImagePolicy.fit. Decodes at display size. Good.
+- TagHandler.getTag: O(1) map lookup. Fine.
+- `flutter analyze` project-wide: essentially zero dead code (2 trivial style
+  infos in xxxfollow_handler / foryou_page). Codebase is well-maintained.
+- Removed the old commented-out proxy/http2 block from getClient during the
+  shared-client rewrite.
+Conclusion of this pass: the two high-value wins were the shared pooled
+HttpClient (net) and the critical DB indexes. Further gains would be marginal
+and риск-prone; left video pools / interests as future targets only if profiling
+shows a real hotspot.
