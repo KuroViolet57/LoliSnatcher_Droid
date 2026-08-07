@@ -499,6 +499,16 @@ class _MediaKitControlsState extends State<_MediaKitControls> {
 
   bool _playing = false;
   bool _buffering = false;
+  // Debounced UI mirrors of the above: mpv pulses buffering=true and
+  // playing=false for a few ms at every loop-file loop point, and reflecting
+  // those raw pulses made loops visibly stutter (spinner + play icon flash).
+  // The UI only reacts when a state persists past the debounce window;
+  // user-initiated pauses stay instant via _userPaused.
+  bool _showBuffering = false;
+  bool _playingUi = false;
+  bool _userPaused = false;
+  Timer? _bufferingDebounce;
+  Timer? _pauseIconDebounce;
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
   Duration _buffer = Duration.zero;
@@ -530,15 +540,42 @@ class _MediaKitControlsState extends State<_MediaKitControls> {
   void _bindPlayer() {
     final s = _p.state;
     _playing = s.playing;
+    _playingUi = s.playing;
     _buffering = s.buffering;
+    _showBuffering = false;
     _position = s.position;
     _duration = s.duration;
     _buffer = s.buffer;
     _volume = s.volume;
 
     _subs.addAll([
-      _p.stream.playing.listen((v) => _safe(() => _playing = v)),
-      _p.stream.buffering.listen((v) => _safe(() => _buffering = v)),
+      _p.stream.playing.listen((v) => _safe(() {
+            _playing = v;
+            if (v) {
+              _pauseIconDebounce?.cancel();
+              _playingUi = true;
+              _userPaused = false;
+            } else if (_userPaused) {
+              _playingUi = false;
+            } else {
+              _pauseIconDebounce?.cancel();
+              _pauseIconDebounce = Timer(const Duration(milliseconds: 300), () {
+                if (mounted && !_playing) setState(() => _playingUi = false);
+              });
+            }
+          })),
+      _p.stream.buffering.listen((v) => _safe(() {
+            _buffering = v;
+            if (v) {
+              _bufferingDebounce?.cancel();
+              _bufferingDebounce = Timer(const Duration(milliseconds: 350), () {
+                if (mounted && _buffering) setState(() => _showBuffering = true);
+              });
+            } else {
+              _bufferingDebounce?.cancel();
+              _showBuffering = false;
+            }
+          })),
       _p.stream.position.listen((v) => _safe(() {
             if (!_dragging) _position = v;
           })),
@@ -572,6 +609,8 @@ class _MediaKitControlsState extends State<_MediaKitControls> {
     }
     _hideTimer?.cancel();
     _seekFeedbackTimer?.cancel();
+    _bufferingDebounce?.cancel();
+    _pauseIconDebounce?.cancel();
     super.dispose();
   }
 
@@ -594,11 +633,16 @@ class _MediaKitControlsState extends State<_MediaKitControls> {
 
   void _playPause() {
     // Track USER intent before toggling: pausing marks the video so
-    // auto-play paths won't restart it; playing clears the mark.
+    // auto-play paths won't restart it; playing clears the mark. The pause
+    // icon reflects a user pause instantly (no debounce).
     if (_playing) {
       ViewerHandler.instance.markManualPause(widget.url);
+      _userPaused = true;
+      _playingUi = false;
     } else {
       ViewerHandler.instance.clearManualPause(widget.url);
+      _userPaused = false;
+      _playingUi = true;
     }
     _p.playOrPause();
     _wake();
@@ -676,7 +720,7 @@ class _MediaKitControlsState extends State<_MediaKitControls> {
           onDoubleTapDown: _onDoubleTapDown,
           onDoubleTap: _onDoubleTap,
         ),
-        if (_buffering && !_dragging)
+        if (_showBuffering && !_dragging)
           const Center(
             child: SizedBox(
               width: 48,
@@ -695,7 +739,7 @@ class _MediaKitControlsState extends State<_MediaKitControls> {
         if (!_hidden)
           Center(
             child: AnimatedOpacity(
-              opacity: _playing ? 0 : 1,
+              opacity: _playingUi ? 0 : 1,
               duration: const Duration(milliseconds: 150),
               child: GestureDetector(
                 onTap: _playPause,
@@ -771,7 +815,7 @@ class _MediaKitControlsState extends State<_MediaKitControls> {
             Row(
               children: [
                 IconButton(
-                  icon: Icon(_playing ? Symbols.pause_rounded : Symbols.play_arrow_rounded, color: Colors.white),
+                  icon: Icon(_playingUi ? Symbols.pause_rounded : Symbols.play_arrow_rounded, color: Colors.white),
                   onPressed: _playPause,
                 ),
                 Text(
