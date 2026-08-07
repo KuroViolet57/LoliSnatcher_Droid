@@ -14,9 +14,13 @@ import 'package:lolisnatcher/src/handlers/snatch_handler.dart';
 import 'package:lolisnatcher/src/handlers/theme_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/utils/extensions.dart';
+import 'package:lolisnatcher/src/utils/tools.dart';
+import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 import 'package:lolisnatcher/src/widgets/common/inner_drawer.dart';
 import 'package:lolisnatcher/src/widgets/preview/flow_tab_carousel.dart';
 import 'package:lolisnatcher/src/widgets/root/custom_sliver_app_bar.dart';
+import 'package:lolisnatcher/src/widgets/video/better_player_view.dart';
+import 'package:lolisnatcher/src/widgets/video/media_kit_player_view.dart';
 
 class MainAppBar extends StatefulWidget implements PreferredSizeWidget {
   const MainAppBar({
@@ -142,6 +146,44 @@ class _MainAppBarState extends State<MainAppBar> {
     );
   }
 
+  // Soft media refresh: drops the image memory cache and the video player
+  // pools so everything reloads with freshly-read cookies — WITHOUT touching
+  // the tab itself (no re-search, page and scroll position stay). The fix-up
+  // step after re-solving a Cloudflare/session challenge in the webview.
+  void _softRefreshMedia() {
+    Tools.forceClearMemoryCache(withLive: true);
+    MediaKitPlayerView.resetPool();
+    BetterPlayerView.resetPool();
+    // Re-emit the item list so grid cells rebuild and re-request their media.
+    searchHandler.filterCurrentFetched();
+
+    FlashElements.showSnackbar(
+      context: context,
+      isKeyUnique: true,
+      key: 'soft_refresh',
+      duration: const Duration(seconds: 2),
+      title: const Text('Reloading media', style: TextStyle(fontSize: 20)),
+      content: const Text('Fresh session, same page — posts will re-request as you view them.'),
+      leadingIcon: Symbols.mop_rounded,
+      sideColor: Colors.green,
+    );
+  }
+
+  Widget refreshMediaButton() {
+    return Builder(
+      builder: (context) {
+        return IconButton(
+          tooltip: 'Reload media (keeps your place)',
+          icon: Icon(
+            Symbols.mop_rounded,
+            color: Theme.of(context).appBarTheme.iconTheme?.color,
+          ),
+          onPressed: _softRefreshMedia,
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final backgroundColor = Theme.of(context).brightness.isLight ? Colors.white : Colors.black;
@@ -202,6 +244,8 @@ class _MainAppBarState extends State<MainAppBar> {
             menuButton(InnerDrawerDirection.end)
           else
             snatcherButton(InnerDrawerDirection.end),
+          // Rightmost: soft media refresh (fresh session, keeps tab state).
+          refreshMediaButton(),
           const SizedBox(width: 8),
         ],
       ),

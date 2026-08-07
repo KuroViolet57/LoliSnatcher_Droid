@@ -60,6 +60,15 @@ class _BetterPlayerPool {
     _lru.remove(s);
     _lru.add(s);
   }
+
+  /// Soft-refresh: tear down every live controller so videos re-init with
+  /// freshly-read cookies (e.g. after re-solving a Cloudflare challenge).
+  static void resetAll() {
+    for (final s in [..._lru]) {
+      s._forceDisposeFromPool();
+    }
+    _lru.clear();
+  }
 }
 
 /// Process-wide serialization gate for ExoPlayer decoder lifecycle.
@@ -108,6 +117,10 @@ class BetterPlayerView extends StatefulWidget {
   });
 
   final BooruItem booruItem;
+
+  /// Soft-refresh hook for the appbar reload button.
+  static void resetPool() => _BetterPlayerPool.resetAll();
+
   final Booru booru;
   final bool isViewed;
 

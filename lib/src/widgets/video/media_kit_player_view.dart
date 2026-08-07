@@ -13,6 +13,7 @@ import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
+import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 
@@ -36,6 +37,11 @@ class MediaKitPlayerView extends StatefulWidget {
   final Booru booru;
   final bool isViewed;
 
+  /// Soft-refresh hook: drops idle pooled players and flags live ones so
+  /// every video reloads with freshly-read cookies (e.g. after re-solving a
+  /// Cloudflare challenge).
+  static void resetPool() => _MediaKitPlayerPool.instance.reset();
+
   @override
   State<MediaKitPlayerView> createState() => _MediaKitPlayerViewState();
 }
@@ -47,6 +53,16 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> {
   Timer? _initDebounce;
   static const Duration _initDelay = Duration(milliseconds: 200);
   bool _initInProgress = false;
+
+  // Error-recovery probe: mpv does its own networking, so an expired
+  // Cloudflare session just makes the video silently fail — no captcha
+  // screen ever triggers. On a player error we probe the URL through Dio
+  // WITH the captcha interceptor (which pops the solve webview when the
+  // host is challenging), then rebuild the player with the fresh cookies.
+  StreamSubscription<String>? _errorProbeSub;
+  // Per-URL cooldown so a genuinely broken file can't loop probe/retry.
+  static final Map<String, int> _lastProbeAt = {};
+  static const Duration _probeCooldown = Duration(minutes: 2);
 
   bool get _wantsPlayer => widget.isViewed || SettingsHandler.instance.preloadVideos;
 
@@ -147,6 +163,9 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> {
         _acquiredUrl = url;
       });
 
+      await _errorProbeSub?.cancel();
+      _errorProbeSub = entry.player.stream.error.listen(_onPlayerError);
+
       Logger.Inst().log(
         'media_kit acquired ${entry.wasReused ? "(reused)" : "(new)"} for $url',
         'MediaKitPlayerView',
@@ -166,7 +185,55 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> {
     }
   }
 
+  Future<void> _onPlayerError(String message) async {
+    // Only recover for the video the user is actually looking at.
+    if (!mounted || !widget.isViewed) return;
+
+    final String url = widget.booruItem.fileURL;
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    if (now - (_lastProbeAt[url] ?? 0) < _probeCooldown.inMilliseconds) return;
+    _lastProbeAt[url] = now;
+
+    Logger.Inst().log(
+      'probing after player error for $url ($message)',
+      'MediaKitPlayerView',
+      '_onPlayerError',
+      LogTypes.booruItemLoad,
+    );
+
+    // The probe request runs through the captcha interceptor: if the host is
+    // serving a Cloudflare challenge, the solve webview opens here and the
+    // request is replayed with the fresh cookies once it's done.
+    try {
+      final headers = await Tools.getFileCustomHeaders(
+        widget.booru,
+        item: widget.booruItem,
+        checkForReferer: true,
+      );
+      await DioNetwork.get(
+        url,
+        headers: {...headers, 'Range': 'bytes=0-0'},
+        customInterceptor: (dio) => DioNetwork.captchaInterceptor(
+          dio,
+          customUserAgent: Tools.browserUserAgent,
+        ),
+      );
+    } catch (_) {
+      // Probe failed outright — nothing more to do, keep the error state.
+      return;
+    }
+    if (!mounted) return;
+
+    // Probe succeeded (challenge solved or transient hiccup) — rebuild this
+    // player with freshly-read cookies.
+    _MediaKitPlayerPool.instance.markErrored(url);
+    _release();
+    _scheduleInit();
+  }
+
   void _release() {
+    _errorProbeSub?.cancel();
+    _errorProbeSub = null;
     _initDebounce?.cancel();
     _initDebounce = null;
     final url = _acquiredUrl;
@@ -230,6 +297,13 @@ class _PooledPlayer {
   int lastUsedTick = 0;
   // Set per acquire() call so callers know whether they got a warm buffer.
   bool wasReused = false;
+  // Set when the player reported an error (network block, expired session
+  // cookie, ...). An errored entry is rebuilt with fresh headers on the next
+  // acquire instead of being reused broken.
+  bool hasError = false;
+  // Cancelled on evict/reset/dispose — the pool owns the lifecycle.
+  // ignore: cancel_subscriptions
+  StreamSubscription<String>? errorSub;
 }
 
 /// Global URL-keyed LRU pool. Survives widget disposal so scrolling back to a
@@ -255,10 +329,21 @@ class _MediaKitPlayerPool {
 
     final existing = _entries[url];
     if (existing != null) {
-      existing.refCount++;
-      existing.lastUsedTick = ++_tick;
-      existing.wasReused = true;
-      return existing;
+      // A pooled player that errored (e.g. its baked-in session cookie
+      // expired) must NOT be reused — drop it and build a fresh one with the
+      // headers we were just given.
+      if (existing.hasError && existing.refCount <= 0) {
+        _entries.remove(url);
+        try {
+          await existing.errorSub?.cancel();
+          await existing.player.dispose();
+        } catch (_) {}
+      } else {
+        existing.refCount++;
+        existing.lastUsedTick = ++_tick;
+        existing.wasReused = true;
+        return existing;
+      }
     }
 
     // Make room for the new entry up-front.
@@ -306,8 +391,40 @@ class _MediaKitPlayerPool {
       ..refCount = 1
       ..lastUsedTick = ++_tick
       ..wasReused = false;
+    // Cancelled on evict/reset/dispose — the pool owns the lifecycle.
+    // ignore: cancel_subscriptions
+    entry.errorSub = player.stream.error.listen((message) {
+      entry.hasError = true;
+      Logger.Inst().log(
+        'media_kit player error for $url: $message',
+        '_MediaKitPlayerPool',
+        'errorStream',
+        LogTypes.booruItemLoad,
+      );
+    });
     _entries[url] = entry;
     return entry;
+  }
+
+  void markErrored(String url) {
+    _entries[url]?.hasError = true;
+  }
+
+  /// Drops every idle player and flags the in-use ones as errored, so all
+  /// videos rebuild with freshly-read cookies on their next acquire. Used by
+  /// the soft-refresh button after e.g. re-solving a Cloudflare challenge.
+  void reset() {
+    final idle = _entries.values.where((e) => e.refCount <= 0).toList();
+    for (final e in idle) {
+      _entries.remove(e.url);
+      try {
+        e.errorSub?.cancel();
+        e.player.dispose();
+      } catch (_) {}
+    }
+    for (final e in _entries.values) {
+      e.hasError = true;
+    }
   }
 
   void release(String url) {
@@ -338,6 +455,7 @@ class _MediaKitPlayerPool {
       if (toEvict <= 0) break;
       _entries.remove(e.url);
       try {
+        e.errorSub?.cancel();
         e.player.dispose();
       } catch (_) {}
       toEvict--;
