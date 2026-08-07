@@ -189,10 +189,23 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> {
     // Only recover for the video the user is actually looking at.
     if (!mounted || !widget.isViewed) return;
 
+    // Decoder-level hiccups ('Could not open codec.' on some webm tracks)
+    // are NOT session/network problems — mpv usually plays the file anyway.
+    // Rebuilding on them swapped the player out from under the controls for
+    // nothing.
+    if (message.toLowerCase().contains('codec')) return;
+
     final String url = widget.booruItem.fileURL;
     final int now = DateTime.now().millisecondsSinceEpoch;
     if (now - (_lastProbeAt[url] ?? 0) < _probeCooldown.inMilliseconds) return;
     _lastProbeAt[url] = now;
+
+    // Give playback a moment — if the stream starts anyway, the error was
+    // transient/partial and there is nothing to recover from.
+    await Future.delayed(const Duration(seconds: 2));
+    if (!mounted || !widget.isViewed) return;
+    final st = _entry?.player.state;
+    if (st != null && (st.playing || st.position > Duration.zero)) return;
 
     Logger.Inst().log(
       'probing after player error for $url ($message)',
@@ -394,7 +407,11 @@ class _MediaKitPlayerPool {
     // Cancelled on evict/reset/dispose — the pool owns the lifecycle.
     // ignore: cancel_subscriptions
     entry.errorSub = player.stream.error.listen((message) {
-      entry.hasError = true;
+      // Codec grumbles aren't fatal (playback usually continues) — don't
+      // condemn the entry to a rebuild over them.
+      if (!message.toLowerCase().contains('codec')) {
+        entry.hasError = true;
+      }
       Logger.Inst().log(
         'media_kit player error for $url: $message',
         '_MediaKitPlayerPool',
@@ -501,6 +518,16 @@ class _MediaKitControlsState extends State<_MediaKitControls> {
   @override
   void initState() {
     super.initState();
+    _bindPlayer();
+    _startHideTimer();
+  }
+
+  // (Re)binds this overlay to the current widget.player. Split out of
+  // initState because the hosting view can swap the underlying player in
+  // place (pool rebuild after an error) — without rebinding, the overlay
+  // kept dead subscriptions to the disposed player and froze (static seek
+  // bar, wrong play/pause icon) while the new player actually played.
+  void _bindPlayer() {
     final s = _p.state;
     _playing = s.playing;
     _buffering = s.buffering;
@@ -519,7 +546,18 @@ class _MediaKitControlsState extends State<_MediaKitControls> {
       _p.stream.buffer.listen((v) => _safe(() => _buffer = v)),
       _p.stream.volume.listen((v) => _safe(() => _volume = v)),
     ]);
-    _startHideTimer();
+  }
+
+  @override
+  void didUpdateWidget(covariant _MediaKitControls oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.player != widget.player) {
+      for (final s in _subs) {
+        s.cancel();
+      }
+      _subs.clear();
+      _safe(_bindPlayer);
+    }
   }
 
   void _safe(VoidCallback fn) {

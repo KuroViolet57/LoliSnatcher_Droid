@@ -446,6 +446,23 @@ class _TabManagerPageState extends State<TabManagerPage> {
   }
 
   static const double tabHeight = 72 + 8;
+  // Fixed height of the inline group header row — rows must have known
+  // heights so scroll-to-index math stays exact.
+  static const double groupHeaderHeight = 44;
+
+  // Scroll offset of the row at [index], accounting for group headers
+  // rendered above the first tab of each group run.
+  double offsetForTabIndex(int index) {
+    int headers = 0;
+    for (int i = 0; i <= index && i < filteredTabs.length; i++) {
+      final String? g = (filteredTabs[i].groupName?.isNotEmpty ?? false) ? filteredTabs[i].groupName : null;
+      final String? prev = i > 0 && (filteredTabs[i - 1].groupName?.isNotEmpty ?? false)
+          ? filteredTabs[i - 1].groupName
+          : null;
+      if (g != null && g != prev) headers++;
+    }
+    return index * tabHeight + headers * groupHeaderHeight;
+  }
 
   int get totalTabs => searchHandler.total;
   int get totalFilteredTabs => filteredTabs.length;
@@ -493,7 +510,7 @@ class _TabManagerPageState extends State<TabManagerPage> {
     getTabs();
 
     scrollController = ScrollController(
-      initialScrollOffset: currentTabIndex * tabHeight,
+      initialScrollOffset: currentTabIndex <= 0 ? 0 : offsetForTabIndex(currentTabIndex),
     );
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -524,7 +541,7 @@ class _TabManagerPageState extends State<TabManagerPage> {
 
       // final double viewport = scrollController.position.viewportDimension;
       final double maxScroll = scrollController.position.maxScrollExtent;
-      final double itemOffset = currentTabIndex * tabHeight;
+      final double itemOffset = offsetForTabIndex(currentTabIndex);
       double scrollOffset = 0;
       if (itemOffset > maxScroll) {
         scrollOffset = maxScroll;
@@ -998,7 +1015,9 @@ class _TabManagerPageState extends State<TabManagerPage> {
   Widget _groupHeader(BuildContext context, String groupName) {
     final theme = Theme.of(context);
     final int count = searchHandler.tabsInGroup(groupName).length;
-    return Padding(
+    return Container(
+      height: groupHeaderHeight,
+      alignment: Alignment.center,
       padding: const EdgeInsets.fromLTRB(14, 4, 4, 0),
       child: Row(
         children: [
@@ -1137,7 +1156,6 @@ class _TabManagerPageState extends State<TabManagerPage> {
       final theme = Theme.of(context);
       final Color frame = theme.colorScheme.secondary.withValues(alpha: 0.55);
       row = Container(
-        margin: EdgeInsets.only(bottom: isRunEnd ? 6 : 0),
         decoration: BoxDecoration(
           color: theme.colorScheme.secondary.withValues(alpha: 0.05),
           border: Border(
@@ -1151,15 +1169,18 @@ class _TabManagerPageState extends State<TabManagerPage> {
             bottom: Radius.circular(isRunEnd ? 16 : 0),
           ),
         ),
-        padding: EdgeInsets.only(bottom: isRunEnd ? 4 : 0),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             if (isRunStart) _groupHeader(context, groupName),
-            tabItem,
+            SizedBox(height: tabHeight, child: tabItem),
           ],
         ),
       );
+    } else {
+      // Fixed height so scroll-to-index math stays exact (the list has no
+      // itemExtent anymore because grouped rows carry inline headers).
+      row = SizedBox(height: tabHeight, child: row);
     }
 
     return ReorderableDelayedDragStartListener(
