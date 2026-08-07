@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'package:material_symbols_icons/symbols.dart';
 
@@ -286,7 +287,11 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> {
               fit: BoxFit.contain,
               controls: NoVideoControls,
             ),
-            _MediaKitControls(player: entry.player, url: widget.booruItem.fileURL),
+            _MediaKitControls(
+              player: entry.player,
+              controller: entry.controller,
+              url: widget.booruItem.fileURL,
+            ),
           ],
         ),
       ),
@@ -482,10 +487,19 @@ class _MediaKitPlayerPool {
 
 /// LoliControls-style overlay driven by a media_kit [Player]'s streams.
 class _MediaKitControls extends StatefulWidget {
-  const _MediaKitControls({required this.player, required this.url});
+  const _MediaKitControls({
+    required this.player,
+    required this.controller,
+    required this.url,
+    this.isFullscreen = false,
+  });
 
   final Player player;
+  // Carried along so the fullscreen route can reuse the SAME VideoController
+  // (= same platform texture) instead of allocating a new one per entry.
+  final VideoController controller;
   final String url;
+  final bool isFullscreen;
 
   @override
   State<_MediaKitControls> createState() => _MediaKitControlsState();
@@ -513,6 +527,9 @@ class _MediaKitControlsState extends State<_MediaKitControls> {
   Duration _duration = Duration.zero;
   Duration _buffer = Duration.zero;
   double _volume = 100;
+  // Last audible volume, so unmuting restores it instead of forcing 100
+  // (matters when the video started muted or at a custom level).
+  double _lastNonZeroVolume = 100;
 
   bool _fullscreen = false;
 
@@ -524,6 +541,12 @@ class _MediaKitControlsState extends State<_MediaKitControls> {
   bool _showSeekFeedback = false;
   Timer? _hideTimer;
   Timer? _seekFeedbackTimer;
+
+  // Long-press 2× speed (hold anywhere to fast-forward, release to resume).
+  // Rate is player-level state and pooled players stay warm, so every exit
+  // path (release, player swap, dispose) must restore 1×.
+  bool _speedBoosted = false;
+  static const double _boostRate = 2;
 
   @override
   void initState() {
@@ -547,6 +570,7 @@ class _MediaKitControlsState extends State<_MediaKitControls> {
     _duration = s.duration;
     _buffer = s.buffer;
     _volume = s.volume;
+    if (_volume > 0) _lastNonZeroVolume = _volume;
 
     _subs.addAll([
       _p.stream.playing.listen((v) => _safe(() {
@@ -581,7 +605,10 @@ class _MediaKitControlsState extends State<_MediaKitControls> {
           })),
       _p.stream.duration.listen((v) => _safe(() => _duration = v)),
       _p.stream.buffer.listen((v) => _safe(() => _buffer = v)),
-      _p.stream.volume.listen((v) => _safe(() => _volume = v)),
+      _p.stream.volume.listen((v) => _safe(() {
+            _volume = v;
+            if (v > 0) _lastNonZeroVolume = v;
+          })),
     ]);
   }
 
@@ -589,6 +616,12 @@ class _MediaKitControlsState extends State<_MediaKitControls> {
   void didUpdateWidget(covariant _MediaKitControls oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.player != widget.player) {
+      if (_speedBoosted) {
+        _speedBoosted = false;
+        try {
+          oldWidget.player.setRate(1);
+        } catch (_) {}
+      }
       for (final s in _subs) {
         s.cancel();
       }
@@ -604,6 +637,11 @@ class _MediaKitControlsState extends State<_MediaKitControls> {
 
   @override
   void dispose() {
+    if (_speedBoosted) {
+      try {
+        widget.player.setRate(1);
+      } catch (_) {}
+    }
     for (final s in _subs) {
       s.cancel();
     }
@@ -655,6 +693,22 @@ class _MediaKitControlsState extends State<_MediaKitControls> {
   }
 
   void _onDoubleTapDown(TapDownDetails d) => _doubleTapInfo = d;
+
+  void _startSpeedBoost(LongPressStartDetails _) {
+    // Only meaningful while playing (2× on a paused frame does nothing).
+    if (!_playing || _speedBoosted) return;
+    _speedBoosted = true;
+    HapticFeedback.mediumImpact();
+    _p.setRate(_boostRate);
+    setState(() {});
+  }
+
+  void _endSpeedBoost() {
+    if (!_speedBoosted) return;
+    _speedBoosted = false;
+    _p.setRate(1);
+    if (mounted) setState(() {});
+  }
 
   void _onDoubleTap() {
     if (_doubleTapInfo == null) return;
@@ -719,7 +773,34 @@ class _MediaKitControlsState extends State<_MediaKitControls> {
           onTap: _toggleControls,
           onDoubleTapDown: _onDoubleTapDown,
           onDoubleTap: _onDoubleTap,
+          onLongPressStart: _startSpeedBoost,
+          onLongPressEnd: (_) => _endSpeedBoost(),
+          onLongPressCancel: _endSpeedBoost,
         ),
+        if (_speedBoosted)
+          SafeArea(
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 16),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    color: Colors.black45,
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Symbols.fast_forward_rounded, color: Colors.white, size: 22),
+                        SizedBox(width: 6),
+                        Text('2×', style: TextStyle(color: Colors.white, fontSize: 16)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
         if (_showBuffering && !_dragging)
           const Center(
             child: SizedBox(
@@ -826,12 +907,15 @@ class _MediaKitControlsState extends State<_MediaKitControls> {
                 IconButton(
                   icon: Icon(muted ? Symbols.volume_off_rounded : Symbols.volume_up_rounded, color: Colors.white),
                   onPressed: () {
-                    _p.setVolume(muted ? 100 : 0);
+                    _p.setVolume(muted ? _lastNonZeroVolume : 0);
                     _wake();
                   },
                 ),
                 IconButton(
-                  icon: Icon(_fullscreen ? Symbols.fullscreen_exit_rounded : Symbols.fullscreen_rounded, color: Colors.white),
+                  icon: Icon(
+                    (widget.isFullscreen || _fullscreen) ? Symbols.fullscreen_exit_rounded : Symbols.fullscreen_rounded,
+                    color: Colors.white,
+                  ),
                   onPressed: _toggleFullscreen,
                 ),
               ],
@@ -844,7 +928,10 @@ class _MediaKitControlsState extends State<_MediaKitControls> {
 
   Future<void> _toggleFullscreen() async {
     _wake();
-    if (_fullscreen) {
+    // The controls instance living INSIDE the fullscreen route always pops —
+    // its local _fullscreen flag starts false, so without this check the
+    // button there stacked a second fullscreen route instead of leaving.
+    if (widget.isFullscreen || _fullscreen) {
       await Navigator.of(context).maybePop();
       return;
     }
@@ -852,7 +939,11 @@ class _MediaKitControlsState extends State<_MediaKitControls> {
     await Navigator.of(context).push(
       PageRouteBuilder(
         opaque: true,
-        pageBuilder: (_, _, _) => _FullscreenMediaKit(player: _p, url: widget.url),
+        pageBuilder: (_, _, _) => _FullscreenMediaKit(
+          player: _p,
+          controller: widget.controller,
+          url: widget.url,
+        ),
       ),
     );
     if (mounted) setState(() => _fullscreen = false);
@@ -868,27 +959,21 @@ class _MediaKitControlsState extends State<_MediaKitControls> {
   }
 }
 
-/// Fullscreen route — shares the SAME player (no new decoder) and reuses the
-/// same controls overlay, so playback continues seamlessly and double-tap /
-/// scrubber all work in landscape.
-class _FullscreenMediaKit extends StatefulWidget {
-  const _FullscreenMediaKit({required this.player, required this.url});
+/// Fullscreen route — shares the SAME player and VideoController (no new
+/// decoder, no new platform texture) and reuses the same controls overlay,
+/// so playback continues seamlessly and double-tap / scrubber all work in
+/// landscape. Creating a fresh VideoController here used to leak one
+/// texture per fullscreen entry (they only die with the pooled player).
+class _FullscreenMediaKit extends StatelessWidget {
+  const _FullscreenMediaKit({
+    required this.player,
+    required this.controller,
+    required this.url,
+  });
 
   final Player player;
+  final VideoController controller;
   final String url;
-
-  @override
-  State<_FullscreenMediaKit> createState() => _FullscreenMediaKitState();
-}
-
-class _FullscreenMediaKitState extends State<_FullscreenMediaKit> {
-  late final VideoController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = VideoController(widget.player);
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -899,13 +984,18 @@ class _FullscreenMediaKitState extends State<_FullscreenMediaKit> {
           fit: StackFit.expand,
           children: [
             Video(
-              controller: _controller,
+              controller: controller,
               fit: BoxFit.contain,
               controls: NoVideoControls,
             ),
             // A second controls instance bound to the same player; fullscreen
-            // button here pops back.
-            _MediaKitControls(player: widget.player, url: widget.url),
+            // button here pops back (isFullscreen).
+            _MediaKitControls(
+              player: player,
+              controller: controller,
+              url: url,
+              isFullscreen: true,
+            ),
           ],
         ),
       ),

@@ -422,3 +422,20 @@ shows a real hotspot.
   change goes through setState/Obx, so layout never reads stale data).
   Helpers `_groupOfDisplayRow`/`_isDisplayRunStart` were folded into the
   cache pass and removed.
+
+## Build `vid-boost` (2026-08-07) — media_kit player fixes + feature
+- Fullscreen no longer allocates a NEW VideoController per entry (was a
+  platform-texture leak living until the pooled player died). The pooled
+  controller is passed through `_MediaKitControls.controller` into
+  `_FullscreenMediaKit` (now Stateless). Sharing one controller between the
+  page Video and the fullscreen Video is fine — same textureId.
+- `isFullscreen` flag on `_MediaKitControls`: the instance inside the
+  fullscreen route always POPS on the fullscreen button (its local
+  `_fullscreen` starts false, so it previously stacked a second fullscreen
+  route) and shows the exit icon.
+- Unmute restores `_lastNonZeroVolume` (tracked from bind + volume stream)
+  instead of forcing 100.
+- Long-press 2× speed: hold anywhere → `setRate(2)` + medium haptic + top
+  "2×" chip; release/cancel → rate 1. Rate is PLAYER state and pooled
+  players stay warm, so 1× is restored on release, on player swap in
+  didUpdateWidget, and in dispose. Only engages while `_playing`.
