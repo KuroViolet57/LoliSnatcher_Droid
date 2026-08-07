@@ -464,46 +464,82 @@ class _TabManagerPageState extends State<TabManagerPage> {
     });
   }
 
-  // Rows actually rendered: filteredTabs minus the member rows of collapsed
-  // groups (a collapsed group keeps only its run-start header row). Omitting
-  // the members entirely — rather than giving them zero extent — is what
-  // keeps a collapsed group from leaving a tall dead bordered gap.
-  List<SearchTab> get displayTabs {
-    if (_collapsedGroups.isEmpty) return filteredTabs;
-    final List<SearchTab> out = [];
-    for (int i = 0; i < filteredTabs.length; i++) {
-      final String? g = (filteredTabs[i].groupName?.isNotEmpty ?? false) ? filteredTabs[i].groupName : null;
-      if (g != null && _collapsedGroups.contains(g)) {
-        final bool runStart = i == 0 || filteredTabs[i - 1].groupName != g;
-        if (!runStart) continue; // hide members; keep only the header row
+  // Display cache: the display list, per-row extents and prefix offsets are
+  // computed together in one O(n) pass and then read O(1) from anywhere.
+  // itemExtentBuilder queries extents per index during EVERY layout/scroll
+  // frame, so recomputing the display list per query (as a plain getter did)
+  // was O(n²) with a group collapsed — with thousands of tabs that froze
+  // swiping. The cache is invalidated at the top of build(); any data change
+  // (filtering, collapse toggle, group edits, reorder) goes through
+  // setState/Obx and thus rebuilds before the next layout reads it.
+  List<SearchTab>? _displayCache;
+  List<double>? _extentCache;
+  List<double>? _offsetCache; // prefix sums, length n+1
+
+  void _invalidateDisplayCache() {
+    _displayCache = null;
+    _extentCache = null;
+    _offsetCache = null;
+  }
+
+  void _ensureDisplayCache() {
+    if (_displayCache != null) return;
+
+    // Rows actually rendered: filteredTabs minus the member rows of collapsed
+    // groups (a collapsed group keeps only its run-start header row). Omitting
+    // the members entirely — rather than giving them zero extent — is what
+    // keeps a collapsed group from leaving a tall dead bordered gap.
+    final List<SearchTab> out;
+    if (_collapsedGroups.isEmpty) {
+      out = filteredTabs;
+    } else {
+      out = [];
+      for (int i = 0; i < filteredTabs.length; i++) {
+        final String? g = (filteredTabs[i].groupName?.isNotEmpty ?? false) ? filteredTabs[i].groupName : null;
+        if (g != null && _collapsedGroups.contains(g)) {
+          final bool runStart = i == 0 || filteredTabs[i - 1].groupName != g;
+          if (!runStart) continue; // hide members; keep only the header row
+        }
+        out.add(filteredTabs[i]);
       }
-      out.add(filteredTabs[i]);
     }
-    return out;
+
+    // Extents + prefix offsets in the same pass. A collapsed group's single
+    // header row is header-height only; a normal run-start carries header +
+    // tab; other rows are one tab tall. Exact known heights keep the
+    // fixed-extent fast path and scroll-to-index math correct.
+    final List<double> extents = List<double>.filled(out.length, tabHeight);
+    final List<double> offsets = List<double>.filled(out.length + 1, 0);
+    String? prevGroup;
+    for (int i = 0; i < out.length; i++) {
+      final String? g = (out[i].groupName?.isNotEmpty ?? false) ? out[i].groupName : null;
+      final double extent;
+      if (g != null && _collapsedGroups.contains(g)) {
+        extent = groupHeaderHeight;
+      } else if (g != null && g != prevGroup) {
+        extent = tabHeight + groupHeaderHeight;
+      } else {
+        extent = tabHeight;
+      }
+      extents[i] = extent;
+      offsets[i + 1] = offsets[i] + extent;
+      prevGroup = g;
+    }
+
+    _displayCache = out;
+    _extentCache = extents;
+    _offsetCache = offsets;
   }
 
-  String? _groupOfDisplayRow(int i) {
-    final List<SearchTab> d = displayTabs;
-    return (d[i].groupName?.isNotEmpty ?? false) ? d[i].groupName : null;
+  List<SearchTab> get displayTabs {
+    _ensureDisplayCache();
+    return _displayCache!;
   }
 
-  bool _isDisplayRunStart(int i) {
-    final String? g = _groupOfDisplayRow(i);
-    if (g == null) return false;
-    final String? prev = i == 0 ? null : _groupOfDisplayRow(i - 1);
-    return g != prev;
-  }
-
-  // Height of the display row at [index]. A collapsed group's single header
-  // row is header-height only; a normal run-start carries header + tab; other
-  // rows are one tab tall. Exact known heights keep the fixed-extent fast
-  // path and scroll-to-index math correct.
   double rowExtentForIndex(int index) {
-    final List<SearchTab> d = displayTabs;
-    if (index < 0 || index >= d.length) return tabHeight;
-    final String? g = (d[index].groupName?.isNotEmpty ?? false) ? d[index].groupName : null;
-    if (g != null && _collapsedGroups.contains(g)) return groupHeaderHeight;
-    return _isDisplayRunStart(index) ? tabHeight + groupHeaderHeight : tabHeight;
+    _ensureDisplayCache();
+    if (index < 0 || index >= _extentCache!.length) return tabHeight;
+    return _extentCache![index];
   }
 
   void _jumpToGroup(String groupName) {
@@ -518,11 +554,10 @@ class _TabManagerPageState extends State<TabManagerPage> {
 
   // Scroll offset of the display row at [index] = sum of extents above it.
   double offsetForTabIndex(int index) {
-    double offset = 0;
-    for (int i = 0; i < index; i++) {
-      offset += rowExtentForIndex(i);
-    }
-    return offset;
+    _ensureDisplayCache();
+    final List<double> offsets = _offsetCache!;
+    if (offsets.length <= 1) return 0;
+    return offsets[index.clamp(0, offsets.length - 1)];
   }
 
   int get totalTabs => searchHandler.total;
@@ -1840,6 +1875,10 @@ class _TabManagerPageState extends State<TabManagerPage> {
 
   @override
   Widget build(BuildContext context) {
+    // Any state change that could affect rows/extents rebuilds this widget
+    // first (setState/Obx), so refreshing the cache here keeps every
+    // per-frame extent/offset query O(1) against fresh data.
+    _invalidateDisplayCache();
     return Scaffold(
       appBar: AppBar(
         title: Column(

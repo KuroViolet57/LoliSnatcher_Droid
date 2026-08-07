@@ -402,3 +402,23 @@ Conclusion of this pass: the two high-value wins were the shared pooled
 HttpClient (net) and the critical DB indexes. Further gains would be marginal
 and риск-prone; left video pools / interests as future targets only if profiling
 shows a real hotspot.
+
+## Build `open-from` (2026-08-07)
+- Group picker sheet (`pickTabGroupName`, tag_view.dart): "Outside group"
+  quick action is now ALWAYS the first tile; new "Open from" tile below it
+  (returns `kOpenFromSentinel`, a `'\0open-from'` string like the outside
+  sentinel — note the NUL byte, it makes grep call the file binary).
+  "Open from" creates/joins group `from__{tag}` (spaces→underscores) via the
+  normal `addTabByString(group:)` path, so tab-placement settings are
+  honored and the group lands next to the current tab like any new group.
+- Tab manager collapsed-group swipe freeze FIXED (tab_selector.dart):
+  `displayTabs` was a getter rebuilding the whole list per call, and
+  `rowExtentForIndex`/`offsetForTabIndex` called it per index inside
+  `itemExtentBuilder` layout → O(N²) per scroll frame whenever a group was
+  collapsed (the `_collapsedGroups.isEmpty` fast path is why expanded state
+  was fine). Now: `_ensureDisplayCache()` builds display list + per-row
+  extents + prefix offsets in ONE O(n) pass; all queries are O(1) cache
+  reads; cache invalidated at the top of the State's `build()` (every data
+  change goes through setState/Obx, so layout never reads stale data).
+  Helpers `_groupOfDisplayRow`/`_isDisplayRunStart` were folded into the
+  cache pass and removed.

@@ -2328,6 +2328,7 @@ Future<void> showTagDialog({
 /// entry (shown only if [pickTabGroupName]'s allowOutside is set and the
 /// current tab is grouped) is chosen.
 const String kOpenOutsideGroupSentinel = ' outside-group';
+const String kOpenFromSentinel = ' open-from';
 
 /// Group picker: bottom sheet listing existing tab groups (with counts) plus
 /// a "New group…" entry that prompts for a name. Returns the chosen/created
@@ -2337,6 +2338,9 @@ Future<String?> pickTabGroupName(
   BuildContext context, {
   String title = 'Pick a group',
   bool allowOutside = false,
+  // When set, offers an "Open from" entry: a new group named
+  // `from__<tag>` as the seed of a fresh discovery run.
+  String? openFromTag,
 }) async {
   final searchHandler = SearchHandler.instance;
   final List<String> groups = searchHandler.tabGroupNames;
@@ -2391,6 +2395,23 @@ Future<String?> pickTabGroupName(
                 shrinkWrap: true,
                 padding: const EdgeInsets.only(bottom: 8),
                 children: [
+                  // Quick actions first: outside-group escape hatch, then the
+                  // "start a new discovery run from this tag" shortcut.
+                  if (showOutside)
+                    ListTile(
+                      leading: Icon(Symbols.folder_off_rounded, color: theme.iconTheme.color),
+                      title: const Text('Outside group'),
+                      subtitle: const Text("Ungrouped tab after this group's block"),
+                      onTap: () => Navigator.of(ctx).pop(kOpenOutsideGroupSentinel),
+                    ),
+                  if (openFromTag != null)
+                    ListTile(
+                      leading: const Icon(Symbols.conversion_path_rounded, color: Colors.green),
+                      title: const Text('Open from'),
+                      subtitle: Text('New group "from__${openFromTag.replaceAll(' ', '_')}" — a fresh starting point'),
+                      onTap: () => Navigator.of(ctx).pop(kOpenFromSentinel),
+                    ),
+                  if (showOutside || openFromTag != null) const Divider(height: 1),
                   for (final g in groups)
                     ListTile(
                       leading: Icon(Symbols.folder_open_rounded, color: theme.colorScheme.secondary),
@@ -2405,13 +2426,6 @@ Future<String?> pickTabGroupName(
                     title: const Text('New group…'),
                     onTap: () => Navigator.of(ctx).pop(newGroupSentinel),
                   ),
-                  if (showOutside)
-                    ListTile(
-                      leading: Icon(Symbols.folder_off_rounded, color: theme.iconTheme.color),
-                      title: const Text('Outside group'),
-                      subtitle: const Text("Ungrouped tab after this group's block"),
-                      onTap: () => Navigator.of(ctx).pop(kOpenOutsideGroupSentinel),
-                    ),
                 ],
               ),
             ),
@@ -2422,7 +2436,7 @@ Future<String?> pickTabGroupName(
   );
 
   if (chosen == null) return null;
-  if (chosen == kOpenOutsideGroupSentinel) return kOpenOutsideGroupSentinel;
+  if (chosen == kOpenOutsideGroupSentinel || chosen == kOpenFromSentinel) return chosen;
   if (chosen != newGroupSentinel) return chosen;
 
   if (!context.mounted) return null;
@@ -2467,16 +2481,25 @@ Future<void> showOpenTagInGroupSheet(
     context,
     title: 'Open "${tag.replaceAll('_', ' ')}" in group',
     allowOutside: true,
+    openFromTag: tag,
   );
   if (choice == null) return;
 
   final bool outside = choice == kOpenOutsideGroupSentinel;
+  final bool openFrom = choice == kOpenFromSentinel;
+  // "Open from": seed a fresh discovery run — new group named after the tag.
+  final String? groupName = outside
+      ? null
+      : openFrom
+      ? 'from__${tag.replaceAll(' ', '_')}'
+      : choice;
+
   SearchHandler.instance.addTabByString(
     tag,
     customBooru: booru,
     // Outside: ungrouped tab; the insertion snapping places it after the
-    // current group's block.
-    group: outside ? null : choice,
+    // current group's block. New groups honour the placement setting.
+    group: groupName,
     switchToNew: false,
   );
 
@@ -2485,7 +2508,7 @@ Future<void> showOpenTagInGroupSheet(
     key: 'added_new_tab',
     duration: const Duration(seconds: 2),
     title: Text(
-      outside ? 'Opened outside group' : 'Opened in group "$choice"',
+      outside ? 'Opened outside group' : 'Opened in group "$groupName"',
       style: const TextStyle(fontSize: 20),
     ),
     content: Text(tag, style: const TextStyle(fontSize: 16)),
