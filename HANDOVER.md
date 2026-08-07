@@ -463,3 +463,30 @@ shows a real hotspot.
 - Tapping a hit: addTabByString('md5:...'/'hash=...', customBooru,
   switchToNew: true, group: inheritGroup) → lands in the current tab group,
   snackbar reminds the tab is behind the viewer.
+
+## Build `iqdb` (2026-08-07) — similarity search in the find-elsewhere sheet
+- "Similarity search (IQDB)" section at the bottom of the find-elsewhere
+  sheet (find_elsewhere_sheet.dart). Tap-to-run (never automatic — IQDB is
+  slow + rate-limited per IP, 1 concurrent query).
+- Flow: download sample (video→thumbnail) with booru headers → multipart
+  upload to https://iqdb.org/ (field `file`, MAX_FILE_SIZE) → parse HTML.
+- IQDB STREAMS the response: under load it holds the connection open
+  emitting queue()-keep-alive script chunks until the result arrives —
+  timeout is 4 MINUTES on purpose. No receiveTimeout on the shared client,
+  so only our .timeout() applies.
+- Parser (validated against live captures + synthesized result page):
+  tables under #pages + #more1 (collapsed "possible" matches); skip tables
+  without "% similarity" (the "Your image" one); td.image a href
+  (protocol-relative → https:), thumb src → https://iqdb.org prefix, dims
+  regex, [Rating]. div.err (e.g. "Can't read query result! Please try
+  again.", per-IP 1-query limit) → thrown as retryable ERROR, never a
+  false "no matches".
+- Match tap: if host matches a configured booru AND an id is extractable
+  (`[?&]id=` / `/post(s)?(/show)?/<id>` — covers danbooru/gelbooru/
+  moebooru/sankaku), open `id:<n>` tab in current group + switchToNew;
+  else external browser via launchUrlString.
+- NOTE from testing: this container's datacenter IP got "content not
+  available in your country"/504 on the ?url= variant and repeated
+  backend errs on upload — could NOT capture a live success page from
+  here; phone IPs should behave better. If users report persistent
+  errors, consider SauceNAO with API key as alternative.
