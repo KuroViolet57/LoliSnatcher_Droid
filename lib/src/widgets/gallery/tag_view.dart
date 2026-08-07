@@ -984,6 +984,12 @@ class _TagViewState extends State<TagView> {
                   ),
                   IconButton(
                     visualDensity: VisualDensity.compact,
+                    tooltip: 'More actions',
+                    icon: const Icon(Symbols.more_horiz_rounded, size: 20),
+                    onPressed: selectedBatchTags.isEmpty ? null : _showBatchActionsSheet,
+                  ),
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
                     tooltip: 'Cancel selection',
                     icon: const Icon(Symbols.close_rounded, size: 18),
                     onPressed: _exitTagSelectionMode,
@@ -1120,6 +1126,223 @@ class _TagViewState extends State<TagView> {
     );
 
     _exitTagSelectionMode();
+  }
+
+  void _batchSnackbar(String title, List<String> tags) {
+    FlashElements.showSnackbar(
+      context: context,
+      isKeyUnique: true,
+      key: 'batch_tags',
+      duration: const Duration(seconds: 2),
+      title: Text(title, style: const TextStyle(fontSize: 20)),
+      content: Text(
+        tags.join(', '),
+        maxLines: 3,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontSize: 16),
+      ),
+      leadingIcon: Symbols.checklist_rounded,
+      sideColor: Colors.green,
+    );
+  }
+
+  Future<void> _openSelectedTagsInGroup() async {
+    final List<String> toOpen = _selectedBatchTagsOrdered;
+    if (toOpen.isEmpty) return;
+    final String? groupName = await pickTabGroupName(
+      context,
+      title: 'Open ${toOpen.length} ${toOpen.length == 1 ? 'tag' : 'tags'} in group',
+    );
+    if (groupName == null) return;
+
+    final Booru batchBooru = possibleBooruHandler?.booru ?? searchHandler.currentBooru;
+    for (final tag in toOpen) {
+      searchHandler.addTabByString(
+        tag,
+        customBooru: batchBooru,
+        group: groupName,
+        switchToNew: false,
+      );
+    }
+    _batchSnackbar('Opened in group "$groupName"', toOpen);
+    _exitTagSelectionMode();
+  }
+
+  void _batchAddToSearch({bool exclude = false}) {
+    final List<String> toAdd = _selectedBatchTagsOrdered;
+    if (toAdd.isEmpty) return;
+    for (final tag in toAdd) {
+      searchHandler.addTagToSearch(exclude ? '-$tag' : tag);
+    }
+    _batchSnackbar(exclude ? 'Exclusions added to search bar' : 'Added to search bar', toAdd);
+    _exitTagSelectionMode();
+  }
+
+  Future<void> _batchHide() async {
+    final List<String> toHide = _selectedBatchTagsOrdered;
+    if (toHide.isEmpty) return;
+    final Booru scopeBooru = (possibleBooruHandler ?? handler).booru;
+    final scope = await _pickBlacklistScope(context, scopeBooru);
+    if (scope == null) return;
+    for (final tag in toHide) {
+      if (scope == _BlacklistScope.global) {
+        settingsHandler.addTagToList('hidden', tag);
+      } else if (scopeBooru.name?.isNotEmpty == true) {
+        settingsHandler.addTagToBooruHiddenList(scopeBooru.name!, tag);
+      }
+    }
+    searchHandler.filterCurrentFetched();
+    handler.filterFetched();
+    parseSortGroupTagsWithoutCache();
+    _batchSnackbar('Added to blacklist', toHide);
+    _exitTagSelectionMode();
+  }
+
+  void _batchMark() {
+    final List<String> toMark = _selectedBatchTagsOrdered;
+    if (toMark.isEmpty) return;
+    for (final tag in toMark) {
+      settingsHandler.addTagToList('marked', tag);
+    }
+    searchHandler.filterCurrentFetched();
+    handler.filterFetched();
+    parseSortGroupTagsWithoutCache();
+    _batchSnackbar('Marked', toMark);
+    _exitTagSelectionMode();
+  }
+
+  Future<void> _batchPin() async {
+    final List<String> toPin = _selectedBatchTagsOrdered;
+    if (toPin.isEmpty) return;
+    for (final tag in toPin) {
+      try {
+        await settingsHandler.dbHandler.addPinnedTag(tag);
+      } catch (_) {}
+    }
+    _batchSnackbar('Pinned', toPin);
+    _exitTagSelectionMode();
+  }
+
+  Future<void> _batchCopy() async {
+    final List<String> toCopy = _selectedBatchTagsOrdered;
+    if (toCopy.isEmpty) return;
+    await Clipboard.setData(ClipboardData(text: toCopy.join(' ')));
+    _batchSnackbar('Copied to clipboard', toCopy);
+    _exitTagSelectionMode();
+  }
+
+  // Every tag action that makes sense for several tags at once, in one sheet.
+  Future<void> _showBatchActionsSheet() async {
+    if (selectedBatchTags.isEmpty) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        return Container(
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                margin: const EdgeInsets.only(top: 8, bottom: 2),
+                width: 40,
+                height: 4.5,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF4A4260),
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+                child: Row(
+                  children: [
+                    Icon(Symbols.checklist_rounded, size: 20, color: theme.colorScheme.secondary),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        '${selectedBatchTags.length} ${selectedBatchTags.length == 1 ? 'tag' : 'tags'} selected',
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.only(bottom: 8),
+                  children: [
+                    ListTile(
+                      leading: Icon(Symbols.create_new_folder_rounded, color: theme.colorScheme.secondary),
+                      title: const Text('Open in group'),
+                      subtitle: const Text('Each as a background tab inside a tab group'),
+                      onTap: () {
+                        Navigator.of(ctx).pop();
+                        _openSelectedTagsInGroup();
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(Symbols.add_rounded, color: Colors.green),
+                      title: const Text('Add all to search'),
+                      onTap: () {
+                        Navigator.of(ctx).pop();
+                        _batchAddToSearch();
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(Symbols.remove_rounded, color: Colors.red),
+                      title: const Text('Exclude all from search'),
+                      onTap: () {
+                        Navigator.of(ctx).pop();
+                        _batchAddToSearch(exclude: true);
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(CupertinoIcons.eye_slash, color: Colors.red),
+                      title: const Text('Hide all (blacklist)'),
+                      onTap: () {
+                        Navigator.of(ctx).pop();
+                        _batchHide();
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(Symbols.star_rounded, color: Colors.yellow),
+                      title: const Text('Mark all'),
+                      onTap: () {
+                        Navigator.of(ctx).pop();
+                        _batchMark();
+                      },
+                    ),
+                    ListTile(
+                      leading: Icon(Symbols.push_pin_rounded, color: theme.iconTheme.color),
+                      title: const Text('Pin all'),
+                      onTap: () {
+                        Navigator.of(ctx).pop();
+                        _batchPin();
+                      },
+                    ),
+                    ListTile(
+                      leading: Icon(Symbols.content_copy_rounded, color: theme.iconTheme.color),
+                      title: const Text('Copy all'),
+                      onTap: () {
+                        Navigator.of(ctx).pop();
+                        _batchCopy();
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   // Flow post-action row (Favorite / Save / Collect) shown at the top of the
@@ -2172,16 +2395,16 @@ Future<void> showTagDialog({
   );
 }
 
-/// Bottom sheet to open [tag] as a background tab inside a tab group:
-/// pick an existing group or name a new one on the spot.
-Future<void> showOpenTagInGroupSheet(
-  BuildContext context,
-  String tag,
-  Booru booru,
-) async {
+/// Group picker: bottom sheet listing existing tab groups (with counts) plus
+/// a "New group…" entry that prompts for a name. Returns the chosen/created
+/// group name, or null when dismissed.
+Future<String?> pickTabGroupName(
+  BuildContext context, {
+  String title = 'Pick a group',
+}) async {
   final searchHandler = SearchHandler.instance;
   final List<String> groups = searchHandler.tabGroupNames;
-  const String newGroupSentinel = ' new-group';
+  const String newGroupSentinel = ' new-group';
 
   final String? chosen = await showModalBottomSheet<String>(
     context: context,
@@ -2214,7 +2437,7 @@ Future<void> showOpenTagInGroupSheet(
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      'Open "${tag.replaceAll('_', ' ')}" in group',
+                      title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
@@ -2252,42 +2475,54 @@ Future<void> showOpenTagInGroupSheet(
     },
   );
 
-  if (chosen == null) return;
+  if (chosen == null) return null;
+  if (chosen != newGroupSentinel) return chosen;
 
-  String groupName = chosen;
-  if (chosen == newGroupSentinel) {
-    final TextEditingController controller = TextEditingController();
-    final String? name = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('New tab group'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(
-            labelText: 'Group name',
-            border: OutlineInputBorder(),
-          ),
-          onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
+  if (!context.mounted) return null;
+  final TextEditingController controller = TextEditingController();
+  final String? name = await showDialog<String>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('New tab group'),
+      content: TextField(
+        controller: controller,
+        autofocus: true,
+        decoration: const InputDecoration(
+          labelText: 'Group name',
+          border: OutlineInputBorder(),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(ctx.loc.cancel),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
-            child: const Text('Create'),
-          ),
-        ],
+        onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
       ),
-    );
-    controller.dispose();
-    if (name == null || name.isEmpty) return;
-    groupName = name;
-  }
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(),
+          child: Text(ctx.loc.cancel),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+          child: const Text('Create'),
+        ),
+      ],
+    ),
+  );
+  controller.dispose();
+  return (name == null || name.isEmpty) ? null : name;
+}
 
-  searchHandler.addTabByString(
+/// Bottom sheet to open [tag] as a background tab inside a tab group:
+/// pick an existing group or name a new one on the spot.
+Future<void> showOpenTagInGroupSheet(
+  BuildContext context,
+  String tag,
+  Booru booru,
+) async {
+  final String? groupName = await pickTabGroupName(
+    context,
+    title: 'Open "${tag.replaceAll('_', ' ')}" in group',
+  );
+  if (groupName == null) return;
+
+  SearchHandler.instance.addTabByString(
     tag,
     customBooru: booru,
     group: groupName,
@@ -2658,9 +2893,22 @@ class TagContentPreview extends StatefulWidget {
   State<TagContentPreview> createState() => _TagContentPreviewState();
 }
 
-class _TagContentPreviewState extends State<TagContentPreview> {
+class _TagContentPreviewState extends State<TagContentPreview> with AutomaticKeepAliveClientMixin {
+  // Hub strips stay alive off-screen: without this, scrolling a hub unmounts
+  // strips and they re-fetch (and re-collapse) when scrolled back — janky.
+  @override
+  bool get wantKeepAlive => widget.compact;
+
   final settingsHandler = SettingsHandler.instance;
   final viewerHandler = ViewerHandler.instance;
+
+  // Whether this strip has EVER shown results. A strip that once had posts
+  // must not collapse just because a later filter cycle (e.g. gif on a booru
+  // with no gifs for the tag) comes back empty.
+  bool _hadResults = false;
+  // Bounded auto-pagination: some boorus return thin/empty early pages for
+  // rare tags — keep fetching a few pages until there's something to show.
+  int _autoPagesFetched = 0;
 
   final AutoScrollController scrollController = AutoScrollController();
 
@@ -2783,6 +3031,7 @@ class _TagContentPreviewState extends State<TagContentPreview> {
     }
 
     if (refresh || tab == null) {
+      _autoPagesFetched = 0;
       await _maybeResolveAliases();
       if (!mounted) return;
       tab = SearchTab(
@@ -2841,6 +3090,10 @@ class _TagContentPreviewState extends State<TagContentPreview> {
       unawaited(tab!.booruHandler.searchCount(_effectiveTag));
     }
 
+    if (tab!.booruHandler.filteredFetched.isNotEmpty) {
+      _hadResults = true;
+    }
+
     Future.delayed(const Duration(milliseconds: 200), () {
       if (!mounted) return;
       loading = false;
@@ -2848,6 +3101,22 @@ class _TagContentPreviewState extends State<TagContentPreview> {
     });
     if (!mounted) return;
     setState(() {});
+
+    // Thin/empty early pages (rare tags on some boorus): auto-fetch a few
+    // more pages so the strip doesn't claim "nothing found" (or show 3
+    // thumbs) when the tag actually has posts further in.
+    final BooruHandler handlerRef = tab!.booruHandler;
+    if (!isLastPage &&
+        errorString.isEmpty &&
+        handlerRef.filteredFetched.length < 10 &&
+        _autoPagesFetched < 4) {
+      _autoPagesFetched++;
+      Future.delayed(const Duration(milliseconds: 300), () {
+        if (mounted && tab?.booruHandler == handlerRef) {
+          loadPreview();
+        }
+      });
+    }
   }
 
   Future<void> onPreviewTap(int index) async {
@@ -3191,12 +3460,13 @@ class _TagContentPreviewState extends State<TagContentPreview> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     // Search finished (not loading, no error) with zero results — the tag
     // simply doesn't exist on this booru. With hideWhenEmpty the whole strip
     // (header included) collapses instead of wasting a "Nothing found" row.
     final bool isKnownEmpty =
         tab != null && !loading && errorString.isEmpty && tab!.booruHandler.filteredFetched.isEmpty;
-    if (widget.hideWhenEmpty && isKnownEmpty) {
+    if (widget.hideWhenEmpty && isKnownEmpty && !_hadResults) {
       return const AnimatedSize(
         duration: Duration(milliseconds: 200),
         child: SizedBox.shrink(),

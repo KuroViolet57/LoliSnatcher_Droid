@@ -465,6 +465,16 @@ class _TabManagerPageState extends State<TabManagerPage> {
     return _isGroupRunStart(index) ? tabHeight + groupHeaderHeight : tabHeight;
   }
 
+  void _jumpToGroup(String groupName) {
+    final int idx = filteredTabs.indexWhere((t) => t.groupName == groupName);
+    if (idx == -1 || !scrollController.hasClients) return;
+    scrollController.animateTo(
+      offsetForTabIndex(idx).clamp(0, scrollController.position.maxScrollExtent),
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOut,
+    );
+  }
+
   // Scroll offset of the row at [index], accounting for group headers
   // rendered above the first tab of each group run.
   double offsetForTabIndex(int index) {
@@ -672,7 +682,10 @@ class _TabManagerPageState extends State<TabManagerPage> {
     if (filterTextController.text.isNotEmpty) {
       filteredTabs = filteredTabs.where((t) {
         final String filterText = filterTextController.text.toLowerCase().trim();
-        return t.tags.toLowerCase().contains(filterText);
+        // Matches the query OR the tab's group name, so typing "disney"
+        // narrows the list to that group.
+        return t.tags.toLowerCase().contains(filterText) ||
+            (t.groupName?.toLowerCase().contains(filterText) ?? false);
       }).toList();
     }
 
@@ -1764,6 +1777,20 @@ class _TabManagerPageState extends State<TabManagerPage> {
           ],
         ),
         actions: [
+          // Jump to a group's block in the list.
+          if (searchHandler.tabGroupNames.isNotEmpty)
+            PopupMenuButton<String>(
+              icon: const Icon(Symbols.folder_open_rounded),
+              tooltip: 'Jump to group',
+              onSelected: _jumpToGroup,
+              itemBuilder: (_) => [
+                for (final g in searchHandler.tabGroupNames)
+                  PopupMenuItem(
+                    value: g,
+                    child: Text('$g (${searchHandler.tabsInGroup(g).length})'),
+                  ),
+              ],
+            ),
           IconButton(
             icon: const Icon(Symbols.create_new_folder_rounded),
             tooltip: 'New tab group',

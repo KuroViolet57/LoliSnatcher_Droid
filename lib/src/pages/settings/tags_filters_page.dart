@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 
+import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 import 'package:lolisnatcher/src/widgets/common/marquee_text.dart';
@@ -116,6 +117,12 @@ class _TagsFiltersPageState extends State<TagsFiltersPage> with SingleTickerProv
     settingsHandler.filterSnatched = filterSnatched;
     settingsHandler.filterAi = filterAi;
     await settingsHandler.saveSettings(restate: false);
+    // Re-apply the filters to every open tab — otherwise toggling e.g.
+    // "completely hide hidden items" only affects NEW searches and the
+    // already-loaded grids keep showing (blurred) matches.
+    for (final tab in SearchHandler.instance.tabs) {
+      tab.booruHandler.filterFetched();
+    }
   }
 
   List<String> getTagsList(String type) {

@@ -400,9 +400,10 @@ class WorldXyzHandler extends BooruHandler {
   }
 
   // rule34.xyz has no pipe-OR syntax — the default 'animated|video' filter
-  // came back empty. Use its real tags instead (cycled: video -> gif).
+  // came back empty. Use its real tags instead, biggest first
+  // (cycled: animated -> video -> gif).
   @override
-  List<String> get animatedPreviewFilters => const ['video', 'gif'];
+  List<String> get animatedPreviewFilters => const ['animated', 'video', 'gif'];
 
   @override
   String validateTags(String tags) {

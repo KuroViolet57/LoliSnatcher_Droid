@@ -19,6 +19,7 @@ import 'package:lolisnatcher/src/utils/extensions.dart';
 import 'package:lolisnatcher/src/utils/tag_alias_resolver.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 import 'package:lolisnatcher/src/widgets/common/kaomoji.dart';
+import 'package:lolisnatcher/src/widgets/gallery/tag_view.dart';
 import 'package:lolisnatcher/src/widgets/image/booru_favicon.dart';
 import 'package:lolisnatcher/src/widgets/thumbnail/thumbnail_card_build.dart';
 
@@ -179,6 +180,7 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
     bool retry = false,
   }) async {
     if (refresh || tab == null) {
+      _autoPagesFetched = 0;
       tab = SearchTab(
         selectedBooru,
         null,
@@ -254,12 +256,19 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _fillIfNotScrollable());
   }
 
+  // Bounded auto-pagination: some boorus return thin or even EMPTY early
+  // pages for rare tags (the old empty-guard here made the window claim
+  // "nothing found" when page 2 had the posts).
+  int _autoPagesFetched = 0;
+
   void _fillIfNotScrollable() {
     if (!mounted || loading || isLastPage || errorString.isNotEmpty) return;
-    if (tab == null || tab!.booruHandler.filteredFetched.isEmpty) return;
-    if (!scrollController.hasClients) return;
-    final pos = scrollController.position;
-    if (pos.maxScrollExtent <= 0) {
+    if (tab == null) return;
+    final int count = tab!.booruHandler.filteredFetched.length;
+    final bool notScrollable =
+        !scrollController.hasClients || scrollController.position.maxScrollExtent <= 0;
+    if ((count < 10 || notScrollable) && _autoPagesFetched < 4) {
+      _autoPagesFetched++;
       loadPreview();
     }
   }
@@ -608,6 +617,12 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
             tooltip: 'Open in a new tab',
             icon: const Icon(Symbols.fiber_new_rounded, size: 20),
             onPressed: _openInNewTab,
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            tooltip: 'Open in group',
+            icon: const Icon(Symbols.create_new_folder_rounded, size: 20),
+            onPressed: () => showOpenTagInGroupSheet(context, _effectiveTag, selectedBooru),
           ),
           IconButton(
             visualDensity: VisualDensity.compact,
