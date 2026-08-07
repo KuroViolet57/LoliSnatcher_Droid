@@ -23,7 +23,7 @@ class Logger {
     _talkerInstance ??= Talker(
       settings: TalkerSettings(
         enabled: true,
-        maxHistoryItems: 100000,
+        maxHistoryItems: 10000,
         useConsoleLogs: kDebugMode,
         useHistory: true,
       ),

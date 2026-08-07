@@ -146,6 +146,11 @@ class ViewerHandler {
     if (url == null) return null;
     return _savedVideoPositions.remove(url);
   }
+
+  // Bumped by the soft-refresh button and by the 403-probe after a captcha
+  // solve; failed thumbnails listen and retry themselves with the fresh
+  // session instead of staying stuck on their error tile.
+  final RxInt mediaRefreshEpoch = 0.obs;
   final RxBool isZoomed = false.obs; // is current item zoomed in
   final RxBool isLoaded = false.obs; // is current item loaded
   final RxBool isStopped = false.obs; // is current item stopped

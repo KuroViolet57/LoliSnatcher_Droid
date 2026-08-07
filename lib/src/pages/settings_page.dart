@@ -6,7 +6,6 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:get/get.dart';
-import 'package:talker/talker.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
 import 'package:lolisnatcher/src/data/constants.dart';
@@ -216,12 +215,31 @@ class SettingsPage extends StatelessWidget {
                             icon: const Icon(Symbols.check_rounded),
                             label: Text(context.loc.ok),
                             onPressed: () async {
+                              // Build the export newest-first with a hard size
+                              // cap — .text() over the whole history built one
+                              // giant string (HTTP logs carry multi-KB cookie
+                              // blobs) and could OOM-crash the app mid-export.
+                              const int maxChars = 10 * 1024 * 1024;
+                              final history = Logger.talker.history;
+                              final List<String> parts = [];
+                              int size = 0;
+                              for (int i = history.length - 1; i >= 0; i--) {
+                                String msg;
+                                try {
+                                  msg = history[i].generateTextMessage(
+                                    timeFormat: Logger.talker.settings.timeFormat,
+                                  );
+                                } catch (_) {
+                                  continue;
+                                }
+                                if (size + msg.length > maxChars) break;
+                                size += msg.length;
+                                parts.add(msg);
+                              }
                               await Logger.viewController?.downloadLogsFile(
-                                Logger.talker.history.text(
-                                  timeFormat: Logger.talker.settings.timeFormat,
-                                ),
+                                parts.reversed.join('\n'),
                               );
-                              Navigator.of(context).pop();
+                              if (context.mounted) Navigator.of(context).pop();
                             },
                           ),
                         ],

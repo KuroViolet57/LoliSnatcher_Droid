@@ -18,7 +18,9 @@ import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 import 'package:lolisnatcher/src/handlers/database_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/utils/debouncer.dart';
+import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/extensions.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
@@ -75,11 +77,23 @@ class _ThumbnailState extends State<Thumbnail> {
 
   bool isBlurred = true;
 
+  StreamSubscription<int>? _refreshEpochSub;
+
   @override
   void initState() {
     super.initState();
 
     currentUrl = widget.item.thumbnailURL;
+
+    // Soft refresh / post-captcha retry: when the media refresh epoch bumps,
+    // failed thumbnails reload themselves with the current session.
+    _refreshEpochSub = ViewerHandler.instance.mediaRefreshEpoch.listen((_) {
+      if (!mounted) return;
+      if (isFailed.value || errorCode.value != null || failedRendering.value) {
+        restartedCount = 0;
+        restartLoading();
+      }
+    });
   }
 
   @override
@@ -236,6 +250,12 @@ class _ThumbnailState extends State<Thumbnail> {
         isFailed.value = true;
         if (error is DioException) {
           errorCode.value = error.response?.statusCode?.toString();
+          // 403 on a thumbnail usually means the site's session/Cloudflare
+          // cookie died — probe once so the captcha webview can open, then
+          // retry every failed thumb.
+          if (error.response?.statusCode == 403) {
+            unawaited(_probeSessionAfter403());
+          }
         } else {
           errorCode.value = null;
         }
@@ -333,6 +353,42 @@ class _ThumbnailState extends State<Thumbnail> {
     }
   }
 
+  // Global (all thumbnails share it) cooldown so a page full of 403 tiles
+  // fires exactly one probe, not fifty.
+  static int _lastSessionProbeAt = 0;
+
+  Future<void> _probeSessionAfter403() async {
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    if (now - _lastSessionProbeAt < 60000) return;
+    _lastSessionProbeAt = now;
+
+    // The probe runs through the captcha interceptor: if the host is serving
+    // a challenge, the solve webview opens and the request is replayed with
+    // the fresh cookies once it's done.
+    try {
+      final headers = await Tools.getFileCustomHeaders(
+        widget.booru,
+        item: widget.item,
+        checkForReferer: true,
+      );
+      await DioNetwork.get(
+        thumbURL,
+        headers: headers,
+        customInterceptor: (dio) => DioNetwork.captchaInterceptor(
+          dio,
+          customUserAgent: Tools.browserUserAgent,
+        ),
+      );
+    } catch (_) {
+      return;
+    }
+    if (!mounted) return;
+
+    // Probe succeeded (challenge solved or transient) — let every failed
+    // thumbnail retry with the fresh session.
+    ViewerHandler.instance.mediaRefreshEpoch.value++;
+  }
+
   Future<void> restartLoading({bool withItemLoad = false}) async {
     if (failedRendering.value) {
       failedRendering.value = false;
@@ -393,6 +449,7 @@ class _ThumbnailState extends State<Thumbnail> {
 
   @override
   void dispose() {
+    _refreshEpochSub?.cancel();
     disposables();
     super.dispose();
   }

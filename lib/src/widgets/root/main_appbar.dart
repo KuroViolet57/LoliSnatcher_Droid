@@ -154,6 +154,8 @@ class _MainAppBarState extends State<MainAppBar> {
     Tools.forceClearMemoryCache(withLive: true);
     MediaKitPlayerView.resetPool();
     BetterPlayerView.resetPool();
+    // Failed thumbnails listen for this and retry with the fresh session.
+    viewerHandler.mediaRefreshEpoch.value++;
     // Re-emit the item list so grid cells rebuild and re-request their media.
     searchHandler.filterCurrentFetched();
 
