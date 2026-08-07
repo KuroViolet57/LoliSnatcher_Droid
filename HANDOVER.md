@@ -490,3 +490,26 @@ shows a real hotspot.
   backend errs on upload — could NOT capture a live success page from
   here; phone IPs should behave better. If users report persistent
   errors, consider SauceNAO with API key as alternative.
+
+## Build `true-match` (2026-08-07) — find-elsewhere honesty fixes
+- USER REPORT: MD5 lookup "always returns nothing" (their library is
+  heavily 3D/video from rule34hentai — cross-site copies are re-encoded,
+  so byte-identical MD5 hits are genuinely rare for that content; feature
+  works for danbooru↔gelbooru↔r34.xxx mirrored art). rule34.xyz always
+  "matched" = FALSE POSITIVE: its POST search API ignores the unknown
+  md5: token and returns the normal listing; first-result-exists was read
+  as a hit.
+- FIX: hit verification in _lookup — accept only if md5ForItem(hit) ==
+  query md5, or (no hash exposed on the hit) fetched.length == 1. Kills
+  the ignored-metatag false-positive class for ALL boorus.
+- IQDB: matches < 80% similarity (IQDB's own relevance bar) now hidden
+  behind a "Show N low-confidence matches" expander; headline tile says
+  "No confident IQDB matches" when only noise came back.
+- New "Reverse search in browser" chip row (Yandex / Google Lens /
+  SauceNAO) opening the engine with the sample/thumb URL prefilled —
+  Yandex especially has the broadest repost coverage for this content.
+- Alternatives assessment for the user: no public reverse index covers
+  western/3D/video booru content (IQDB/SauceNAO/ascii2d = anime art,
+  fluffle = furry, trace.moe = anime screenshots). The practical
+  alternative is metadata pivots: artist/character-tag searches + source
+  URL matching across boorus — proposed, not yet built.

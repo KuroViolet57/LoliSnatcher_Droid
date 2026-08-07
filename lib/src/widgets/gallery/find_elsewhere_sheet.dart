@@ -189,6 +189,21 @@ class _FindElsewhereSheetState extends State<_FindElsewhereSheet> {
   _IqdbState iqdbState = _IqdbState.idle;
   List<_IqdbMatch> iqdbMatches = [];
   String iqdbError = '';
+  bool showWeakIqdbMatches = false;
+
+  // IQDB's own relevance threshold sits around 80% — anything below is
+  // labelled "possible" and is nearly always noise, especially for content
+  // outside its anime index.
+  static const int _iqdbConfidence = 80;
+
+  /// Image used for similarity/reverse searches: videos have no still to
+  /// compare, so use the preview thumbnail; for images prefer the sample.
+  String get _searchImageUrl {
+    final BooruItem item = widget.original;
+    return item.mediaType.value.isVideo
+        ? item.thumbnailURL
+        : (item.sampleURL.isNotEmpty ? item.sampleURL : item.thumbnailURL);
+  }
 
   @override
   void initState() {
@@ -207,21 +222,13 @@ class _FindElsewhereSheetState extends State<_FindElsewhereSheet> {
       iqdbError = '';
     });
     try {
-      // Videos have no still to compare — use the preview thumbnail. For
-      // images prefer the sample (better similarity signal than the thumb,
-      // still small enough for IQDB's 8MB cap).
-      final BooruItem item = widget.original;
-      final String imgUrl = item.mediaType.value.isVideo
-          ? item.thumbnailURL
-          : (item.sampleURL.isNotEmpty ? item.sampleURL : item.thumbnailURL);
-
       final headers = await Tools.getFileCustomHeaders(
         widget.sourceBooru,
-        item: item,
+        item: widget.original,
         checkForReferer: true,
       );
       final imgRes = await DioNetwork.get(
-        imgUrl,
+        _searchImageUrl,
         headers: headers,
         options: Options(responseType: ResponseType.bytes),
       ).timeout(const Duration(seconds: 20));
@@ -347,9 +354,21 @@ class _FindElsewhereSheetState extends State<_FindElsewhereSheet> {
       // Raw fetched, not filtered — the user's hide-filters shouldn't make a
       // genuine hit look missing.
       final BooruItem? hit = tab.booruHandler.fetched.isNotEmpty ? tab.booruHandler.fetched.first : null;
+      // VERIFY the hit: boorus that don't understand the md5 metatag (e.g.
+      // rule34.xyz's POST search API) silently ignore it and return their
+      // normal listing — "a result came back" is NOT "the file exists
+      // there". Accept only when the hit's own hash equals the query, or —
+      // when the hit exposes no hash at all — when the search returned
+      // exactly one post (a real md5 lookup matches 0 or 1 posts, an
+      // ignored filter returns a whole page).
+      bool verified = false;
+      if (hit != null) {
+        final String? hitMd5 = md5ForItem(hit);
+        verified = hitMd5 != null ? hitMd5 == widget.md5 : tab.booruHandler.fetched.length == 1;
+      }
       setState(() {
-        r.item = hit;
-        r.state = hit != null ? _LookupState.found : _LookupState.notFound;
+        r.item = verified ? hit : null;
+        r.state = verified ? _LookupState.found : _LookupState.notFound;
       });
     } catch (_) {
       if (!mounted) return;
@@ -509,6 +528,7 @@ class _FindElsewhereSheetState extends State<_FindElsewhereSheet> {
                   ),
                 const Divider(height: 8),
                 ..._iqdbSection(theme),
+                ..._browserSearchSection(theme),
               ],
             ),
           ),
@@ -550,44 +570,97 @@ class _FindElsewhereSheetState extends State<_FindElsewhereSheet> {
           ),
         ];
       case _IqdbState.done:
-        if (iqdbMatches.isEmpty) {
-          return [
+        // Confidence gate: below IQDB's own ~80% relevance bar the "matches"
+        // are visually unrelated noise, so they hide behind an expander
+        // instead of polluting the list with false hope.
+        final strong = iqdbMatches.where((m) => m.similarity >= _iqdbConfidence).toList();
+        final weak = iqdbMatches.where((m) => m.similarity < _iqdbConfidence).toList();
+        return [
+          if (strong.isEmpty)
             const ListTile(
               leading: Icon(Symbols.search_off_rounded),
-              title: Text('No similar images on IQDB'),
+              title: Text('No confident IQDB matches'),
               subtitle: Text("IQDB indexes drawn/anime boorus — 3D and real content usually won't match"),
             ),
-          ];
-        }
-        return [
-          for (final m in iqdbMatches)
+          for (final m in strong) _iqdbMatchTile(m),
+          if (weak.isNotEmpty && !showWeakIqdbMatches)
             ListTile(
-              leading: m.thumbUrl == null
-                  ? const Icon(Symbols.image_rounded)
-                  : ClipRRect(
-                      borderRadius: BorderRadius.circular(6),
-                      child: Image.network(
-                        m.thumbUrl!,
-                        width: 42,
-                        height: 42,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => const Icon(Symbols.image_rounded),
-                      ),
-                    ),
-              title: Text(
-                '${m.siteName} — ${m.similarity}% match',
-                style: TextStyle(fontWeight: m.similarity >= 80 ? FontWeight.w700 : FontWeight.w400),
-              ),
-              subtitle: Text(
-                [
-                  if (m.dims != null) m.dims!,
-                  if (m.rating != null) m.rating!,
-                ].join(' · '),
-              ),
-              trailing: const Icon(Symbols.open_in_new_rounded, size: 18),
-              onTap: () => _openIqdbMatch(m),
+              dense: true,
+              leading: const Icon(Symbols.expand_more_rounded),
+              title: Text('Show ${weak.length} low-confidence ${weak.length == 1 ? 'match' : 'matches'}'),
+              subtitle: const Text('Below 80% similarity — almost always unrelated'),
+              onTap: () => setState(() => showWeakIqdbMatches = true),
             ),
+          if (showWeakIqdbMatches) ...weak.map(_iqdbMatchTile),
         ];
     }
+  }
+
+  Widget _iqdbMatchTile(_IqdbMatch m) {
+    return ListTile(
+      leading: m.thumbUrl == null
+          ? const Icon(Symbols.image_rounded)
+          : ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: Image.network(
+                m.thumbUrl!,
+                width: 42,
+                height: 42,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => const Icon(Symbols.image_rounded),
+              ),
+            ),
+      title: Text(
+        '${m.siteName} — ${m.similarity}% match',
+        style: TextStyle(fontWeight: m.similarity >= _iqdbConfidence ? FontWeight.w700 : FontWeight.w400),
+      ),
+      subtitle: Text(
+        [
+          if (m.dims != null) m.dims!,
+          if (m.rating != null) m.rating!,
+        ].join(' · '),
+      ),
+      trailing: const Icon(Symbols.open_in_new_rounded, size: 18),
+      onTap: () => _openIqdbMatch(m),
+    );
+  }
+
+  /// External reverse-image engines, opened in the browser with the image
+  /// URL prefilled. Yandex in particular has far broader coverage of
+  /// reposted content than any booru-specific index.
+  List<Widget> _browserSearchSection(ThemeData theme) {
+    final String img = Uri.encodeComponent(_searchImageUrl);
+    final engines = <(String, String)>[
+      ('Yandex', 'https://yandex.com/images/search?rpt=imageview&url=$img'),
+      ('Google Lens', 'https://lens.google.com/uploadbyurl?url=$img'),
+      ('SauceNAO', 'https://saucenao.com/search.php?url=$img'),
+    ];
+    return [
+      const Divider(height: 8),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Reverse search in browser',
+              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Colors.grey.shade500),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: [
+                for (final (name, url) in engines)
+                  ActionChip(
+                    avatar: Icon(Symbols.open_in_new_rounded, size: 16, color: theme.colorScheme.secondary),
+                    label: Text(name),
+                    onPressed: () => launchUrlString(url, mode: LaunchMode.externalApplication),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    ];
   }
 }
