@@ -42,7 +42,10 @@ class _PageNumberDialogState extends State<PageNumberDialog> {
     final int total = searchHandler.currentBooruHandler.totalCount.value;
     final int possibleMaxPageNum = total != 0 ? (total / settingsHandler.itemLimit).round() : 0;
 
-    return SettingsBottomSheet(
+    return Padding(
+      // Ride above the keyboard when an input IS focused.
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: SettingsBottomSheet(
       title: Text(
         context.loc.pageChanger.title,
         style: const TextStyle(fontSize: 20),
@@ -54,7 +57,8 @@ class _PageNumberDialogState extends State<PageNumberDialog> {
           hintText: context.loc.pageChanger.pageLabel,
           onlyInput: true,
           controller: pageNumberController,
-          autofocus: true,
+          // No autofocus: popping the keyboard immediately covered the sheet.
+          autofocus: false,
           inputType: TextInputType.number,
           numberButtons: true,
           numberStep: 1,
@@ -158,6 +162,7 @@ class _PageNumberDialogState extends State<PageNumberDialog> {
               : const SizedBox.shrink(),
         ),
       ],
+      ),
     );
   }
 }

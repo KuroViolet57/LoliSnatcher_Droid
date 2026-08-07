@@ -203,7 +203,19 @@ class _FlowSearchBarState extends State<FlowSearchBar> {
           padding: const EdgeInsets.only(left: 18, right: 7),
           child: Row(
             children: [
-              const Icon(Symbols.search_rounded, size: 21, color: Color(0xFF8A80A0)),
+              // Tapping the magnifier RUNS the current query (the rest of
+              // the pill opens the editor).
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  searchHandler.searchTextController.clearComposing();
+                  searchHandler.searchAction(searchHandler.searchTextController.text, null);
+                },
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: Icon(Symbols.search_rounded, size: 21, color: Color(0xFF8A80A0)),
+                ),
+              ),
               const SizedBox(width: 10),
               Expanded(
                 child: hasQuery

@@ -193,10 +193,13 @@ class SearchHandler {
     }
 
     TabAddMode resolvedMode = addMode ?? defaultTabAddModeResolved;
-    // Opening into a group the current tab is NOT part of: prev/next would
-    // drop the tab outside the group's block and fragment it — force
-    // end-of-group placement instead.
-    if (groupName != null && (tabs.isEmpty || currentTab.groupName != groupName)) {
+    // Opening into an EXISTING group the current tab is not part of:
+    // prev/next would drop the tab outside the group's block and fragment
+    // it — force end-of-group placement instead. A brand-new group has no
+    // block yet, so it honours the requested placement (e.g. next to the
+    // current tab).
+    final bool groupExists = groupName != null && tabs.any((t) => t.groupName == groupName);
+    if (groupExists && (tabs.isEmpty || currentTab.groupName != groupName)) {
       resolvedMode = TabAddMode.end;
     }
 
@@ -869,6 +872,42 @@ class SearchHandler {
       if (tab.groupName == groupName) tab.groupName = null;
     }
     tabs.value = [...tabs];
+  }
+
+  /// Moves [tabsToMove] into [groupName], keeping their relative order and
+  /// the group block contiguous. An existing group receives them at its end;
+  /// a new group's block forms where the first moved tab sat.
+  void moveTabsToGroup(List<SearchTab> tabsToMove, String groupName) {
+    if (tabsToMove.isEmpty || groupName.isEmpty) return;
+    final SearchTab current = currentTab;
+
+    // Preserve on-screen order of the moved tabs.
+    final List<SearchTab> ordered = tabs.where(tabsToMove.contains).toList();
+    if (ordered.isEmpty) return;
+    final List<SearchTab> remaining = tabs.where((t) => !tabsToMove.contains(t)).toList();
+
+    int insertAt;
+    final int lastMember = remaining.lastIndexWhere((t) => t.groupName == groupName);
+    if (lastMember != -1) {
+      insertAt = lastMember + 1;
+    } else {
+      // New group: keep the block where its first tab was.
+      final int anchor = tabs.indexOf(ordered.first);
+      int before = 0;
+      for (int i = 0; i < anchor; i++) {
+        if (!tabsToMove.contains(tabs[i])) before++;
+      }
+      insertAt = before;
+    }
+
+    for (final t in ordered) {
+      t.groupName = groupName;
+    }
+    remaining.insertAll(insertAt, ordered);
+    tabs.value = remaining;
+
+    final int newIndex = tabs.indexOf(current);
+    changeTabIndex(newIndex == -1 ? 0 : newIndex);
   }
 
   // The TabAddMode matching the user's "New tab position" setting

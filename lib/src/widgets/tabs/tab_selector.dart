@@ -962,11 +962,12 @@ class _TabManagerPageState extends State<TabManagerPage> {
     final String? name = await _promptGroupName();
     if (name == null) return;
     // A group is its tabs — creating one starts it off with a fresh empty
-    // tab on the current booru.
+    // tab on the current booru, placed right after the active tab so the new
+    // block appears where the user is looking.
     searchHandler.addTabByString(
       '',
       customBooru: searchHandler.currentBooru,
-      addMode: TabAddMode.end,
+      addMode: TabAddMode.next,
       group: name,
     );
     getTabs();
@@ -1021,6 +1022,75 @@ class _TabManagerPageState extends State<TabManagerPage> {
         }
         break;
     }
+  }
+
+  // Select mode: move the selected tabs into an existing or freshly named
+  // group.
+  Future<void> _addSelectedToGroup() async {
+    if (selectedTabs.isEmpty) return;
+
+    final List<String> groups = searchHandler.tabGroupNames;
+    const String newGroupSentinel = ' new-group';
+    final String? chosen = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Add ${selectedTabs.length} ${selectedTabs.length == 1 ? 'tab' : 'tabs'} to group'),
+        contentPadding: const EdgeInsets.symmetric(vertical: 8),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              for (final g in groups)
+                ListTile(
+                  leading: Icon(Symbols.folder_open_rounded, color: Theme.of(ctx).colorScheme.secondary),
+                  title: Text(g),
+                  subtitle: Text(
+                    '${searchHandler.tabsInGroup(g).length} ${searchHandler.tabsInGroup(g).length == 1 ? 'tab' : 'tabs'}',
+                  ),
+                  onTap: () => Navigator.of(ctx).pop(g),
+                ),
+              ListTile(
+                leading: const Icon(Symbols.add_rounded, color: Colors.green),
+                title: const Text('New group…'),
+                onTap: () => Navigator.of(ctx).pop(newGroupSentinel),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(context.loc.cancel),
+          ),
+        ],
+      ),
+    );
+    if (chosen == null) return;
+
+    String groupName = chosen;
+    if (chosen == newGroupSentinel) {
+      final String? name = await _promptGroupName();
+      if (name == null) return;
+      groupName = name;
+    }
+
+    searchHandler.moveTabsToGroup([...selectedTabs], groupName);
+    setState(() {
+      selectedTabs.clear();
+      selectMode = false;
+    });
+    getTabs();
+
+    FlashElements.showSnackbar(
+      context: context,
+      isKeyUnique: true,
+      key: 'tabs_grouped',
+      duration: const Duration(seconds: 2),
+      title: Text('Added to group "$groupName"', style: const TextStyle(fontSize: 20)),
+      leadingIcon: Symbols.create_new_folder_rounded,
+      sideColor: Colors.green,
+    );
   }
 
   Widget _groupHeader(BuildContext context, String groupName) {
@@ -1987,6 +2057,14 @@ class _TabManagerPageState extends State<TabManagerPage> {
                 ),
               );
 
+              final groupSelectedBtn = ElevatedButton(
+                onPressed: hasSelected ? _addSelectedToGroup : null,
+                child: const Icon(
+                  Symbols.create_new_folder_rounded,
+                  size: iconSize,
+                ),
+              );
+
               return Container(
                 margin: EdgeInsets.fromLTRB(
                   10,
@@ -2000,6 +2078,8 @@ class _TabManagerPageState extends State<TabManagerPage> {
                     if (settingsHandler.handSide.value.isLeft) ...[
                       if (selectMode) ...[
                         selectAllBtn,
+                        const SizedBox(width: 6),
+                        groupSelectedBtn,
                         const SizedBox(width: 6),
                         deleteSelectedBtn,
                         const SizedBox(width: 6),
@@ -2032,6 +2112,8 @@ class _TabManagerPageState extends State<TabManagerPage> {
                       if (selectMode) ...[
                         const SizedBox(width: 6),
                         deleteSelectedBtn,
+                        const SizedBox(width: 6),
+                        groupSelectedBtn,
                         const SizedBox(width: 6),
                         selectAllBtn,
                       ] else ...[

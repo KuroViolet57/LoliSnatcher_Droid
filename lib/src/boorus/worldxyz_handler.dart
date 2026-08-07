@@ -399,6 +399,11 @@ class WorldXyzHandler extends BooruHandler {
     return '${booru.baseURL}/post/$id';
   }
 
+  // rule34.xyz has no pipe-OR syntax — the default 'animated|video' filter
+  // came back empty. Use its real tags instead (cycled: video -> gif).
+  @override
+  List<String> get animatedPreviewFilters => const ['video', 'gif'];
+
   @override
   String validateTags(String tags) {
     return tags;

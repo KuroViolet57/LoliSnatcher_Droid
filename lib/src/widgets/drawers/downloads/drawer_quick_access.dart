@@ -8,6 +8,7 @@ import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/pinned_tag.dart';
 import 'package:lolisnatcher/src/handlers/followed_artists_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
+import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/tag_handler.dart';
 import 'package:lolisnatcher/src/pages/collections_page.dart';
@@ -141,6 +142,13 @@ class _DrawerQuickAccessState extends State<DrawerQuickAccess> {
     return InkWell(
       borderRadius: BorderRadius.circular(12),
       onTap: () => _addTagAndClose(pt.tagName),
+      // Long-press: add the tag AND run the search right away.
+      onLongPress: () {
+        ServiceHandler.vibrate();
+        searchHandler.addTagToSearch(pt.tagName);
+        searchHandler.searchAction(searchHandler.searchTextController.text, null);
+        widget.toggleDrawer();
+      },
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 3),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
