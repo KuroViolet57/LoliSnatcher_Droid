@@ -64,6 +64,7 @@ import 'package:lolisnatcher/src/widgets/common/settings_widgets.dart';
 import 'package:lolisnatcher/src/widgets/desktop/desktop_scroll.dart';
 import 'package:lolisnatcher/src/widgets/dialogs/comments_dialog.dart';
 import 'package:lolisnatcher/src/widgets/gallery/notes_renderer.dart';
+import 'package:lolisnatcher/src/widgets/gallery/find_elsewhere_sheet.dart';
 import 'package:lolisnatcher/src/widgets/image/booru_favicon.dart';
 import 'package:lolisnatcher/src/widgets/preview/main_search_tag_chip.dart';
 import 'package:lolisnatcher/src/widgets/tabs/tab_booru_selector.dart';
@@ -1770,6 +1771,24 @@ class _TagViewState extends State<TagView> {
                     title: Text(
                       'From ${possibleBooruHandler!.booru.name ?? 'unknown booru'}',
                       style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                //
+                // Cross-booru MD5 lookup: where else does this exact file
+                // exist (better tags / higher res copies)?
+                if (md5ForItem(item) != null)
+                  ListTile(
+                    dense: true,
+                    minVerticalPadding: 0,
+                    leading: Icon(Symbols.travel_explore_rounded, size: 20, color: Theme.of(context).colorScheme.secondary),
+                    title: const Text(
+                      'Find this post elsewhere',
+                      style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
+                    ),
+                    onTap: () => showFindElsewhereSheet(
+                      context,
+                      item,
+                      (possibleBooruHandler ?? handler).booru,
                     ),
                   ),
                 //

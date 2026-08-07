@@ -439,3 +439,27 @@ shows a real hotspot.
   "2×" chip; release/cancel → rate 1. Rate is PLAYER state and pooled
   players stay warm, so 1× is restored on release, on player swap in
   didUpdateWidget, and in dispose. Only engages while `_playing`.
+
+## Build `find-elsewhere` (2026-08-07) — cross-booru MD5 lookup
+- New file lib/src/widgets/gallery/find_elsewhere_sheet.dart:
+  `showFindElsewhereSheet(context, item, sourceBooru)` + `md5ForItem(item)`
+  (validated md5String, else 32-hex regex from file/sample/thumb URL —
+  most boorus name files by MD5).
+- Entry point: "Find this post elsewhere" ListTile in TagView, right under
+  the "From {booru}" source row; only shown when an MD5 is extractable.
+- Queries ALL configured boorus with MD5 search support in parallel
+  (throwaway SearchTab per booru, storeTagsGlobally=false, 15s timeout,
+  reads raw `fetched` so the user's hide-filters can't mask a hit).
+  Excluded: the source booru itself (host-matched vs baseURL/postURL so
+  virtual feeds exclude the true origin, not the feed).
+- Per-type metatag in `_md5QueryFor`: shimmie family (Shimmie, R34Hentai)
+  uses `hash=<md5>`; danbooru/gelbooru/moebooru/e621/sankaku/etc use
+  `md5:<md5>`; types with no MD5 lookup (philomena, szurubooru, hydrus,
+  nozomi, redgifs, xxxtik/xxxfollow, civitai, inkbunny...) are skipped
+  entirely rather than shown as misleading "not found".
+- Row shows favicon + found/not-found/error(tap to retry), subtitle with
+  "{W}×{H} · higher/lower res · N tags (+diff)" vs the viewed copy (5%
+  pixel-count tolerance before claiming higher/lower).
+- Tapping a hit: addTabByString('md5:...'/'hash=...', customBooru,
+  switchToNew: true, group: inheritGroup) → lands in the current tab group,
+  snackbar reminds the tab is behind the viewer.
