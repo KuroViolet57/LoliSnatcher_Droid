@@ -2141,56 +2141,8 @@ Future<void> showTagDialog({
                 Navigator.of(context).pop();
               },
             )
-          else ...[
-            ListTile(
-              leading: const Icon(Symbols.add_rounded, color: Colors.green),
-              title: Text(context.loc.tagView.addToSearch),
-              onTap: () {
-                searchHandler.addTagToSearch(tag);
-
-                FlashElements.showSnackbar(
-                  context: context,
-                  duration: const Duration(seconds: 2),
-                  title: Text(
-                    context.loc.tagView.addedToSearchBar,
-                    style: const TextStyle(fontSize: 20),
-                  ),
-                  content: Text(
-                    tag,
-                    style: const TextStyle(fontSize: 16),
-                  ),
-                  leadingIcon: Symbols.add_rounded,
-                  sideColor: Colors.green,
-                );
-
-                Navigator.of(context).pop();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Symbols.remove_rounded, color: Colors.red),
-              title: Text(context.loc.tagView.excludeFromSearch),
-              onTap: () {
-                searchHandler.addTagToSearch('-$tag');
-
-                FlashElements.showSnackbar(
-                  context: context,
-                  duration: const Duration(seconds: 2),
-                  title: Text(
-                    context.loc.tagView.exclusionAddedToSearchBar,
-                    style: const TextStyle(fontSize: 20),
-                  ),
-                  content: Text(
-                    tag,
-                    style: const TextStyle(fontSize: 16),
-                  ),
-                  leadingIcon: Symbols.add_rounded,
-                  sideColor: Colors.green,
-                );
-
-                Navigator.of(context).pop();
-              },
-            ),
-          ],
+          else
+            const SizedBox.shrink(),
           //
           // Open the tag as a background tab inside a tab group — existing
           // group or a newly named one.
@@ -2200,7 +2152,7 @@ Future<void> showTagDialog({
               color: Theme.of(context).iconTheme.color,
             ),
             title: const Text('Open in group'),
-            subtitle: const Text('As a background tab inside a tab group'),
+            subtitle: const Text('Inside a group, outside it, or a new one'),
             onTap: () {
               Navigator.of(context).pop();
               showOpenTagInGroupSheet(
@@ -2210,40 +2162,6 @@ Future<void> showTagDialog({
               );
             },
           ),
-          //
-          // When browsing inside a group: open the tag as a normal ungrouped
-          // background tab, placed right after this group's block (the
-          // insertion snapping keeps blocks intact).
-          if (searchHandler.tabs.isNotEmpty && (searchHandler.currentTab.groupName?.isNotEmpty ?? false))
-            ListTile(
-              leading: Icon(
-                Symbols.folder_off_rounded,
-                color: Theme.of(context).iconTheme.color,
-              ),
-              title: const Text('Open outside group'),
-              subtitle: const Text("Background tab after this group's block"),
-              onTap: () {
-                searchHandler.addTabByString(
-                  tag,
-                  customBooru: handler.booru,
-                  switchToNew: false,
-                );
-                FlashElements.showSnackbar(
-                  context: context,
-                  isKeyUnique: true,
-                  key: 'added_new_tab',
-                  duration: const Duration(seconds: 2),
-                  title: Text(
-                    context.loc.tagView.addedNewTab,
-                    style: const TextStyle(fontSize: 20),
-                  ),
-                  content: Text(tag, style: const TextStyle(fontSize: 16)),
-                  leadingIcon: Symbols.fiber_new_rounded,
-                  sideColor: Colors.green,
-                );
-                Navigator.of(context).pop();
-              },
-            ),
           //
           if (!isHidden && !isMarked)
             ListTile(
@@ -2394,31 +2312,8 @@ Future<void> showTagDialog({
               title: Text(context.loc.tagView.relatedTabs),
               onTap: () => showRelatedTabsDialog(context, tag),
             ),
-          ListTile(
-            leading: Icon(
-              Symbols.edit_rounded,
-              color: Theme.of(context).iconTheme.color,
-            ),
-            title: Text(context.loc.tagView.editTag),
-            onTap: () async {
-              Navigator.of(context).pop();
-              final item = tagHandler.getTag(tag);
-              await showDialog(
-                context: context,
-                builder: (context) => TagsManagerListItemDialog(
-                  tag: item,
-                  onChangedType: (TagType? newValue) {
-                    if (newValue != null && item.tagType != newValue) {
-                      item.tagType = newValue;
-                      tagHandler.putTag(item, dbEnabled: settingsHandler.dbEnabled);
-                      onUpdate();
-                    }
-                  },
-                ),
-              );
-              onUpdate();
-            },
-          ),
+          // Edit tag removed from this menu — double-tapping the chip opens
+          // the tag editor directly.
                 ],
               ),
             ),
@@ -2429,16 +2324,26 @@ Future<void> showTagDialog({
   );
 }
 
+/// Sentinel returned by [pickTabGroupName] when the "Open outside group"
+/// entry (shown only if [pickTabGroupName]'s allowOutside is set and the
+/// current tab is grouped) is chosen.
+const String kOpenOutsideGroupSentinel = ' outside-group';
+
 /// Group picker: bottom sheet listing existing tab groups (with counts) plus
 /// a "New group…" entry that prompts for a name. Returns the chosen/created
-/// group name, or null when dismissed.
+/// group name, [kOpenOutsideGroupSentinel] for "outside group", or null when
+/// dismissed.
 Future<String?> pickTabGroupName(
   BuildContext context, {
   String title = 'Pick a group',
+  bool allowOutside = false,
 }) async {
   final searchHandler = SearchHandler.instance;
   final List<String> groups = searchHandler.tabGroupNames;
   const String newGroupSentinel = ' new-group';
+  // Only meaningful while browsing inside a group.
+  final bool showOutside =
+      allowOutside && searchHandler.tabs.isNotEmpty && (searchHandler.currentTab.groupName?.isNotEmpty ?? false);
 
   final String? chosen = await showModalBottomSheet<String>(
     context: context,
@@ -2500,6 +2405,13 @@ Future<String?> pickTabGroupName(
                     title: const Text('New group…'),
                     onTap: () => Navigator.of(ctx).pop(newGroupSentinel),
                   ),
+                  if (showOutside)
+                    ListTile(
+                      leading: Icon(Symbols.folder_off_rounded, color: theme.iconTheme.color),
+                      title: const Text('Outside group'),
+                      subtitle: const Text("Ungrouped tab after this group's block"),
+                      onTap: () => Navigator.of(ctx).pop(kOpenOutsideGroupSentinel),
+                    ),
                 ],
               ),
             ),
@@ -2510,6 +2422,7 @@ Future<String?> pickTabGroupName(
   );
 
   if (chosen == null) return null;
+  if (chosen == kOpenOutsideGroupSentinel) return kOpenOutsideGroupSentinel;
   if (chosen != newGroupSentinel) return chosen;
 
   if (!context.mounted) return null;
@@ -2550,16 +2463,20 @@ Future<void> showOpenTagInGroupSheet(
   String tag,
   Booru booru,
 ) async {
-  final String? groupName = await pickTabGroupName(
+  final String? choice = await pickTabGroupName(
     context,
     title: 'Open "${tag.replaceAll('_', ' ')}" in group',
+    allowOutside: true,
   );
-  if (groupName == null) return;
+  if (choice == null) return;
 
+  final bool outside = choice == kOpenOutsideGroupSentinel;
   SearchHandler.instance.addTabByString(
     tag,
     customBooru: booru,
-    group: groupName,
+    // Outside: ungrouped tab; the insertion snapping places it after the
+    // current group's block.
+    group: outside ? null : choice,
     switchToNew: false,
   );
 
@@ -2567,7 +2484,10 @@ Future<void> showOpenTagInGroupSheet(
     isKeyUnique: true,
     key: 'added_new_tab',
     duration: const Duration(seconds: 2),
-    title: Text('Opened in group "$groupName"', style: const TextStyle(fontSize: 20)),
+    title: Text(
+      outside ? 'Opened outside group' : 'Opened in group "$choice"',
+      style: const TextStyle(fontSize: 20),
+    ),
     content: Text(tag, style: const TextStyle(fontSize: 16)),
     leadingIcon: Symbols.fiber_new_rounded,
     sideColor: Colors.green,

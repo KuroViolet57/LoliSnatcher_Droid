@@ -464,23 +464,50 @@ class _TabManagerPageState extends State<TabManagerPage> {
     });
   }
 
-  String? _groupOfRow(int i) => (filteredTabs[i].groupName?.isNotEmpty ?? false) ? filteredTabs[i].groupName : null;
-
-  bool _isGroupRunStart(int i) {
-    final String? g = _groupOfRow(i);
-    return g != null && (i == 0 || _groupOfRow(i - 1) != g);
+  // Rows actually rendered: filteredTabs minus the member rows of collapsed
+  // groups (a collapsed group keeps only its run-start header row). Omitting
+  // the members entirely — rather than giving them zero extent — is what
+  // keeps a collapsed group from leaving a tall dead bordered gap.
+  List<SearchTab> get displayTabs {
+    if (_collapsedGroups.isEmpty) return filteredTabs;
+    final List<SearchTab> out = [];
+    for (int i = 0; i < filteredTabs.length; i++) {
+      final String? g = (filteredTabs[i].groupName?.isNotEmpty ?? false) ? filteredTabs[i].groupName : null;
+      if (g != null && _collapsedGroups.contains(g)) {
+        final bool runStart = i == 0 || filteredTabs[i - 1].groupName != g;
+        if (!runStart) continue; // hide members; keep only the header row
+      }
+      out.add(filteredTabs[i]);
+    }
+    return out;
   }
 
-  // Height of the row at [index]: run-start rows carry the inline group
-  // header. Exact known heights keep the fixed-extent fast path (see
-  // itemExtentBuilder) and the scroll-to-index math correct.
+  String? _groupOfDisplayRow(int i) {
+    final List<SearchTab> d = displayTabs;
+    return (d[i].groupName?.isNotEmpty ?? false) ? d[i].groupName : null;
+  }
+
+  bool _isDisplayRunStart(int i) {
+    final String? g = _groupOfDisplayRow(i);
+    if (g == null) return false;
+    final String? prev = i == 0 ? null : _groupOfDisplayRow(i - 1);
+    return g != prev;
+  }
+
+  // Height of the display row at [index]. A collapsed group's single header
+  // row is header-height only; a normal run-start carries header + tab; other
+  // rows are one tab tall. Exact known heights keep the fixed-extent fast
+  // path and scroll-to-index math correct.
   double rowExtentForIndex(int index) {
-    if (index < 0 || index >= filteredTabs.length) return tabHeight;
-    return _isGroupRunStart(index) ? tabHeight + groupHeaderHeight : tabHeight;
+    final List<SearchTab> d = displayTabs;
+    if (index < 0 || index >= d.length) return tabHeight;
+    final String? g = (d[index].groupName?.isNotEmpty ?? false) ? d[index].groupName : null;
+    if (g != null && _collapsedGroups.contains(g)) return groupHeaderHeight;
+    return _isDisplayRunStart(index) ? tabHeight + groupHeaderHeight : tabHeight;
   }
 
   void _jumpToGroup(String groupName) {
-    final int idx = filteredTabs.indexWhere((t) => t.groupName == groupName);
+    final int idx = displayTabs.indexWhere((t) => t.groupName == groupName);
     if (idx == -1 || !scrollController.hasClients) return;
     scrollController.animateTo(
       offsetForTabIndex(idx).clamp(0, scrollController.position.maxScrollExtent),
@@ -489,20 +516,19 @@ class _TabManagerPageState extends State<TabManagerPage> {
     );
   }
 
-  // Scroll offset of the row at [index], accounting for group headers
-  // rendered above the first tab of each group run.
+  // Scroll offset of the display row at [index] = sum of extents above it.
   double offsetForTabIndex(int index) {
-    int headers = 0;
-    for (int i = 0; i <= index && i < filteredTabs.length; i++) {
-      if (_isGroupRunStart(i)) headers++;
+    double offset = 0;
+    for (int i = 0; i < index; i++) {
+      offset += rowExtentForIndex(i);
     }
-    return index * tabHeight + headers * groupHeaderHeight;
+    return offset;
   }
 
   int get totalTabs => searchHandler.total;
   int get totalFilteredTabs => filteredTabs.length;
   bool get isFilterActive => totalFilteredTabs != totalTabs || filterTextController.text.isNotEmpty || filtersCount > 0;
-  int get currentTabIndex => filteredTabs.indexOf(searchHandler.currentTab);
+  int get currentTabIndex => displayTabs.indexOf(searchHandler.currentTab);
 
   int get filtersCount {
     int count = 0;
@@ -1196,26 +1222,23 @@ class _TabManagerPageState extends State<TabManagerPage> {
   }
 
   Widget itemBuilder(BuildContext context, int index) {
-    final SearchTab tab = filteredTabs[index];
-
-    // if (mode.isViewer && firstRender) {
-    //   return const SizedBox(height: tabHeight);
-    // }
-
-    // print('itemBuilder $index');
+    final List<SearchTab> d = displayTabs;
+    final SearchTab tab = d[index];
 
     final bool isCurrent = tab == searchHandler.currentTab;
     final bool isSelected = selectedTabs.contains(tab);
 
     // Group-block framing: a run of consecutive same-group tabs renders
     // inside one bordered container, with the header above the first row.
+    // Neighbours are read from the DISPLAY list so a collapsed group (only
+    // its header row present) always reads as a self-contained single-row
+    // block (run start AND end).
     final String? groupName = (tab.groupName?.isNotEmpty ?? false) ? tab.groupName : null;
-    final String? prevGroup = index > 0 && (filteredTabs[index - 1].groupName?.isNotEmpty ?? false)
-        ? filteredTabs[index - 1].groupName
+    final String? prevGroup = index > 0 && (d[index - 1].groupName?.isNotEmpty ?? false)
+        ? d[index - 1].groupName
         : null;
-    final String? nextGroup =
-        index < filteredTabs.length - 1 && (filteredTabs[index + 1].groupName?.isNotEmpty ?? false)
-        ? filteredTabs[index + 1].groupName
+    final String? nextGroup = index < d.length - 1 && (d[index + 1].groupName?.isNotEmpty ?? false)
+        ? d[index + 1].groupName
         : null;
     final bool isRunStart = groupName != null && groupName != prevGroup;
     final bool isRunEnd = groupName != null && groupName != nextGroup;
@@ -1281,16 +1304,8 @@ class _TabManagerPageState extends State<TabManagerPage> {
 
     Widget row = tabItem;
     if (groupName != null && _isGroupCollapsed(groupName)) {
-      // Collapsed group: only the run-start row renders (header only, fully
-      // framed); member rows shrink to nothing (their extent is 0).
-      if (!isRunStart) {
-        return ReorderableDelayedDragStartListener(
-          key: ValueKey('item-${tab.id}'),
-          index: index,
-          enabled: false,
-          child: const SizedBox.shrink(),
-        );
-      }
+      // Collapsed group: only the header row is in the display list, rendered
+      // as a self-contained framed header (members are omitted entirely).
       final theme = Theme.of(context);
       final Color frame = theme.colorScheme.secondary.withValues(alpha: 0.55);
       return ReorderableDelayedDragStartListener(
@@ -1375,13 +1390,15 @@ class _TabManagerPageState extends State<TabManagerPage> {
     return ReorderableDelayedDragStartListener(
       key: ValueKey('item-${tab.id}'),
       index: index,
-      enabled: !selectMode && !isFilterActive && sortingMode.isNone,
+      // Reorder disabled while any group is collapsed so display/real indices
+      // stay 1:1 (moveTab works on the real tab list).
+      enabled: !selectMode && !isFilterActive && sortingMode.isNone && _collapsedGroups.isEmpty,
       child: row,
     );
   }
 
   void showOptionsDialog(int index) {
-    final SearchTab tab = filteredTabs[index];
+    final SearchTab tab = displayTabs[index];
     final int originalIndex = searchHandler.tabs.indexOf(tab);
 
     final Widget optionsDialog = SettingsDialog(
@@ -2040,7 +2057,9 @@ class _TabManagerPageState extends State<TabManagerPage> {
                       if (oldIndex == newIndex) {
                         return;
                       }
-
+                      // Reorder is only enabled when no group is collapsed,
+                      // so displayTabs == filteredTabs == tabs here and the
+                      // indices map 1:1.
                       searchHandler.moveTab(oldIndex, newIndex);
                       _normalizeMovedTabGroup(newIndex);
                       getTabs();
@@ -2048,7 +2067,7 @@ class _TabManagerPageState extends State<TabManagerPage> {
                     buildDefaultDragHandles: false,
                     proxyDecorator: proxyDecorator,
                     padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-                    itemCount: totalFilteredTabs,
+                    itemCount: displayTabs.length,
                     itemBuilder: itemBuilder,
                   ),
                 ),
