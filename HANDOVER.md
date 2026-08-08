@@ -594,3 +594,29 @@ in tag_view.dart):
   UserMetaTag + name. NOT re-implemented.
 - NOT done (possible future): re-rank related-strip items by tag overlap
   with the source post (xyz's ordering); For You creator-clustered seeds.
+
+## Build `rank-like` (2026-08-08) — similarity re-ranking of related strips
+- NEW lib/src/utils/post_similarity.dart:
+  `postSimilarityScore(candidate, source)` = sum over SHARED tags of
+  typeWeight * rarityWeight. typeWeight artist 6 / character 5 /
+  copyright 3 / species 2 / general 1 / meta 0.3; rarityWeight =
+  log10(2e6/count) clamped [0.2,4] when the handler reports Tag.count,
+  else 1; untyped tags in `kGenericMediumTags` capped at 0.15.
+  `rankBySimilarity(items, source, {from})` = stable (decorate-sort with
+  index tiebreak) reorder + drops the source post itself. `from` pins
+  already-visible items so pagination never reshuffles under the thumb.
+  `normalizeTagName` handles space-vs-underscore spelling across boorus.
+- TagContentPreview gained `rankAgainst` (BooruItem?): after each
+  search() the newly fetched slice is ranked and `filteredFetched.value`
+  is REASSIGNED (never .refresh() — protected member; and in-place
+  mutation doesn't notify). `_rankedUpTo` watermark resets on refresh.
+- Wired: "Related" strip, "More from artist" and "More from uploader"
+  grids all pass `rankAgainst: item`.
+- InterestsHandler.seedTagsFromItem got the same store-type fix as
+  _buildRelatedQuery (this was the actual source of the user's
+  "Recommend more like this: 3d, blender" screenshot) + rarest-first
+  distinctive fallback via kGenericMediumTags.
+- VALIDATION: replayed the scorer over the captured xyz suggestion data
+  (scratchpad sugg.json/src_post.json): Spearman 0.47 vs xyz's own order,
+  with character/copyright-sharing posts promoted to the top — i.e.
+  aligned with xyz but sharper (xyz ranks on raw shared-tag count).

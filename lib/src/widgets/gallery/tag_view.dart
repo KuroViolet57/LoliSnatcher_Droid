@@ -46,6 +46,7 @@ import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/snatch_handler.dart';
 import 'package:lolisnatcher/src/handlers/tag_alias_resolver.dart';
+import 'package:lolisnatcher/src/utils/post_similarity.dart';
 import 'package:lolisnatcher/src/handlers/tag_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/pages/tag_hub_page.dart';
@@ -793,6 +794,7 @@ class _TagViewState extends State<TagView> {
           booru: currentBooru,
           query: artistQuery,
           parentTab: parentTab,
+          rankAgainst: item,
         ),
       );
     }
@@ -817,6 +819,7 @@ class _TagViewState extends State<TagView> {
               booru: currentBooru,
               query: userQuery,
               parentTab: parentTab,
+              rankAgainst: item,
             ),
           );
         }
@@ -1878,6 +1881,7 @@ class _TagViewState extends State<TagView> {
                             parentTab: searchHandler.currentTab,
                             compact: true,
                             compactTitle: 'Related',
+                            rankAgainst: item,
                           ),
                         ),
                       ],
@@ -2814,6 +2818,7 @@ class _CollapsibleRelatedPreview extends StatefulWidget {
     required this.booru,
     required this.query,
     required this.parentTab,
+    this.rankAgainst,
     super.key,
   });
 
@@ -2822,6 +2827,8 @@ class _CollapsibleRelatedPreview extends StatefulWidget {
   final Booru booru;
   final String query;
   final SearchTab? parentTab;
+  // Post to rank this section's results against (see TagContentPreview).
+  final BooruItem? rankAgainst;
 
   @override
   State<_CollapsibleRelatedPreview> createState() => _CollapsibleRelatedPreviewState();
@@ -2874,6 +2881,7 @@ class _CollapsibleRelatedPreviewState extends State<_CollapsibleRelatedPreview> 
               boorus: [widget.booru],
               parentTab: widget.parentTab,
               compact: true,
+              rankAgainst: widget.rankAgainst,
               // No compactTitle here: the wrapper above already shows the
               // section header, so let TagContentPreview render its default
               // "Preview" sub-label so we don't get a duplicate title.
@@ -2895,6 +2903,7 @@ class TagContentPreview extends StatefulWidget {
     this.onEffectiveTagChanged,
     this.hideWhenEmpty = false,
     this.header,
+    this.rankAgainst,
     super.key,
   }) : assert(
          boorus.isNotEmpty,
@@ -2928,6 +2937,13 @@ class TagContentPreview extends StatefulWidget {
   // [hideWhenEmpty] kicks in.
   final Widget? header;
 
+  // When set, each fetched page is re-ordered so the posts most alike this
+  // item come first (rarity/type-weighted tag overlap — see
+  // post_similarity.dart), and the item itself is dropped from the results.
+  // This is what turns "everything by this artist" into "the ones actually
+  // like the post you're looking at".
+  final BooruItem? rankAgainst;
+
   @override
   State<TagContentPreview> createState() => _TagContentPreviewState();
 }
@@ -2948,6 +2964,8 @@ class _TagContentPreviewState extends State<TagContentPreview> with AutomaticKee
   // Bounded auto-pagination: some boorus return thin/empty early pages for
   // rare tags — keep fetching a few pages until there's something to show.
   int _autoPagesFetched = 0;
+  // How many items of filteredFetched have already been ranked+pinned.
+  int _rankedUpTo = 0;
 
   final AutoScrollController scrollController = AutoScrollController();
 
@@ -3071,6 +3089,7 @@ class _TagContentPreviewState extends State<TagContentPreview> with AutomaticKee
 
     if (refresh || tab == null) {
       _autoPagesFetched = 0;
+      _rankedUpTo = 0;
       await _maybeResolveAliases();
       if (!mounted) return;
       tab = SearchTab(
@@ -3112,7 +3131,19 @@ class _TagContentPreviewState extends State<TagContentPreview> with AutomaticKee
     }
     setState(() {});
 
+    // Remember where this page started so already-visible items keep their
+    // position and only the new batch gets ranked into place.
+    final int rankFrom = _rankedUpTo;
     await tab!.booruHandler.search(_effectiveTag, null);
+
+    if (widget.rankAgainst != null) {
+      // Copy → rank → reassign: writing .value is what makes the RxList
+      // notify the grid (mutating in place silently wouldn't).
+      final List<BooruItem> items = [...tab!.booruHandler.filteredFetched];
+      rankBySimilarity(items, widget.rankAgainst!, from: rankFrom.clamp(0, items.length));
+      _rankedUpTo = items.length;
+      tab!.booruHandler.filteredFetched.value = items;
+    }
 
     if (tab!.booruHandler.locked && !isLastPage) {
       isLastPage = true;

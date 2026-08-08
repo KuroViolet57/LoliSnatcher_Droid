@@ -5,8 +5,11 @@ import 'package:get_it/get_it.dart';
 
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
+import 'package:lolisnatcher/src/data/tag_type.dart';
+import 'package:lolisnatcher/src/handlers/tag_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
+import 'package:lolisnatcher/src/utils/post_similarity.dart';
 
 /// Local behaviour tracker feeding the "For You" recommender.
 ///
@@ -161,6 +164,16 @@ class InterestsHandler {
   /// general tags as fallback.
   static List<String> seedTagsFromItem(BooruItem item, {int limit = 3}) {
     final List<String> picked = [];
+
+    // Tag types come from the app-wide store when the booru sent none —
+    // shimmie-family sites type nothing, and without this every
+    // character/artist/copyright pick below fails and the seed degrades to
+    // whatever generic tag happens to be listed first ("3d, blender").
+    TagType typeOf(Tag t) {
+      if (t.tagType != TagType.none) return t.tagType;
+      return TagHandler.instance.getTag(t.fullString).tagType;
+    }
+
     void pick(bool Function(Tag) test, int cap) {
       int taken = 0;
       for (final t in item.tagsList) {
@@ -174,11 +187,34 @@ class InterestsHandler {
       }
     }
 
-    pick((t) => t.tagType.isCharacter, 2);
-    pick((t) => t.tagType.isArtist, 1);
-    pick((t) => t.tagType.isCopyright, 1);
+    pick((t) => typeOf(t).isCharacter, 2);
+    pick((t) => typeOf(t).isArtist, 1);
+    pick((t) => typeOf(t).isCopyright, 1);
     if (picked.isEmpty) {
-      pick((t) => isMeaningfulTag(t.fullString), 2);
+      // Nothing typed anywhere: seed with the most DISTINCTIVE tags rather
+      // than the first meaningful ones. Medium/format tags match half the
+      // booru and recommend nothing in particular; the booru's own tag
+      // counts (when the handler reports them) are the best rarity signal,
+      // otherwise fall back to name specificity.
+      final List<Tag> candidates = item.tagsList.where((t) {
+        final String name = t.fullString.trim();
+        if (name.isEmpty || !isMeaningfulTag(name)) return false;
+        if (typeOf(t) == TagType.meta) return false;
+        return !kGenericMediumTags.contains(normalizeTagName(name));
+      }).toList()
+        ..sort((a, b) {
+          final int ca = a.count > 0 ? a.count : 1 << 30;
+          final int cb = b.count > 0 ? b.count : 1 << 30;
+          if (ca != cb) return ca.compareTo(cb);
+          int spec(Tag t) => (t.fullString.contains('(') ? 2 : 0) + (t.fullString.contains('_') ? 1 : 0);
+          final int bySpec = spec(b).compareTo(spec(a));
+          if (bySpec != 0) return bySpec;
+          return b.fullString.length.compareTo(a.fullString.length);
+        });
+      for (final t in candidates.take(2)) {
+        if (picked.length >= limit) break;
+        picked.add(t.fullString.trim());
+      }
     }
     return picked;
   }
