@@ -18,57 +18,12 @@ import 'package:lolisnatcher/src/utils/tools.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 import 'package:lolisnatcher/src/widgets/image/booru_favicon.dart';
 
-/// "Find this post elsewhere": queries every other configured booru for the
-/// item's MD5 and lists where the same file exists, with resolution / tag
-/// count compared against the copy being viewed. Tapping a hit opens an
-/// `md5:` search tab on that booru (inheriting the current tab group), so
-/// jumping from a For You / mirror copy to the original with better tags is
-/// one tap.
-
-/// MD5 of [item]: the API-provided hash when the handler parsed one,
-/// otherwise a 32-hex run extracted from the file/sample/thumb URL (most
-/// boorus name files by their MD5).
-String? md5ForItem(BooruItem item) {
-  final String? direct = item.md5String;
-  // Some handlers stuff non-MD5 hashes in md5String (hydrus sha256, merge
-  // sha1) — only trust exact 32-hex.
-  if (direct != null && RegExp(r'^[a-fA-F0-9]{32}$').hasMatch(direct)) {
-    return direct.toLowerCase();
-  }
-  for (final url in [item.fileURL, item.sampleURL, item.thumbnailURL]) {
-    final match = RegExp('[a-fA-F0-9]{32}').firstMatch(url);
-    if (match != null) return match.group(0)!.toLowerCase();
-  }
-  return null;
-}
-
-/// MD5 metatag search string for [type], or null when the site has no
-/// MD5 lookup (those boorus are skipped entirely rather than shown as
-/// misleading "not found").
-String? _md5QueryFor(BooruType? type, String md5) {
-  switch (type) {
-    // Shimmie2 family uses hash= for MD5.
-    case BooruType.Shimmie:
-    case BooruType.R34Hentai:
-      return 'hash=$md5';
-    case BooruType.Danbooru:
-    case BooruType.Gelbooru:
-    case BooruType.GelbooruV1:
-    case BooruType.GelbooruAlike:
-    case BooruType.Realbooru:
-    case BooruType.Moebooru:
-    case BooruType.e621:
-    case BooruType.Sankaku:
-    case BooruType.IdolSankaku:
-    case BooruType.AGNPH:
-    case BooruType.Rule34Dev:
-    case BooruType.R34US:
-    case BooruType.World:
-      return 'md5:$md5';
-    default:
-      return null;
-  }
-}
+/// "Find elsewhere": looks a post up on the user's other boorus by pivoting
+/// on one of its tags (artist/character preferred), with the tag's spelling
+/// resolved per booru. Exact-file (MD5) matching was dropped — re-encoded
+/// cross-site reposts (especially video/3D) never hash-match, so it returned
+/// nothing in practice. IQDB similarity search and browser reverse-search
+/// links round the sheet out.
 
 enum _LookupState { loading, found, notFound, error }
 
@@ -106,15 +61,6 @@ class _IqdbMatch {
   }
 }
 
-class _LookupResult {
-  _LookupResult(this.booru, this.query);
-
-  final Booru booru;
-  final String query;
-  _LookupState state = _LookupState.loading;
-  BooruItem? item;
-}
-
 /// One row of the "Related elsewhere" section: the pivot tag looked up on
 /// another booru (spelling resolved per-site) with a post count.
 class _RelatedResult {
@@ -133,43 +79,6 @@ Future<void> showFindElsewhereSheet(
   BooruItem item,
   Booru? sourceBooru,
 ) async {
-  final String? md5 = md5ForItem(item);
-  if (md5 == null) {
-    FlashElements.showSnackbar(
-      context: context,
-      title: const Text('No MD5 available'),
-      content: const Text('This post has no hash to search for.'),
-      leadingIcon: Symbols.search_off_rounded,
-      sideColor: Colors.orange,
-    );
-    return;
-  }
-
-  // Every configured booru with MD5 search support, except the one this
-  // copy already lives on (matched by host so virtual feeds exclude the
-  // true origin, not the feed itself).
-  final String? sourceHost = Uri.tryParse(sourceBooru?.baseURL ?? '')?.host;
-  final String? postHost = Uri.tryParse(item.postURL)?.host;
-  final candidates = <_LookupResult>[];
-  for (final booru in SettingsHandler.instance.booruList) {
-    final String? query = _md5QueryFor(booru.type, md5);
-    if (query == null) continue;
-    final String? host = Uri.tryParse(booru.baseURL ?? '')?.host;
-    if (host != null && host.isNotEmpty && (host == sourceHost || host == postHost)) continue;
-    candidates.add(_LookupResult(booru, query));
-  }
-
-  if (candidates.isEmpty) {
-    FlashElements.showSnackbar(
-      context: context,
-      title: const Text('No boorus to search'),
-      content: const Text('None of your other boorus support MD5 lookup.'),
-      leadingIcon: Symbols.search_off_rounded,
-      sideColor: Colors.orange,
-    );
-    return;
-  }
-
   await showModalBottomSheet<void>(
     context: context,
     useSafeArea: true,
@@ -177,8 +86,6 @@ Future<void> showFindElsewhereSheet(
     builder: (ctx) => _FindElsewhereSheet(
       original: item,
       sourceBooru: sourceBooru,
-      md5: md5,
-      results: candidates,
     ),
   );
 }
@@ -187,14 +94,10 @@ class _FindElsewhereSheet extends StatefulWidget {
   const _FindElsewhereSheet({
     required this.original,
     required this.sourceBooru,
-    required this.md5,
-    required this.results,
   });
 
   final BooruItem original;
   final Booru? sourceBooru;
-  final String md5;
-  final List<_LookupResult> results;
 
   @override
   State<_FindElsewhereSheet> createState() => _FindElsewhereSheetState();
@@ -230,14 +133,10 @@ class _FindElsewhereSheetState extends State<_FindElsewhereSheet> {
   @override
   void initState() {
     super.initState();
-    for (final r in widget.results) {
-      _lookup(r);
-    }
-    _initRelated();
-  }
-
-  void _initRelated() {
-    // Narrowest useful pivot first: artist > character > copyright.
+    _buildRelatedCandidates();
+    // Auto-pivot on the narrowest useful typed tag: artist > character >
+    // copyright. Boorus without tag-type data (shimmie etc.) leave this
+    // null — the user picks the pivot tag manually instead.
     for (final type in [TagType.artist, TagType.character, TagType.copyright]) {
       final tag = widget.original.tagsList.firstWhereOrNull(
         (t) => t.tagType == type && t.fullString.trim().isNotEmpty,
@@ -248,11 +147,16 @@ class _FindElsewhereSheetState extends State<_FindElsewhereSheet> {
         break;
       }
     }
-    if (pivotTag == null) return;
+    if (pivotTag != null) {
+      for (final r in related) {
+        _lookupRelated(r);
+      }
+    }
+  }
 
-    // Unlike the MD5 rows, every real booru is a candidate here — tag search
-    // needs no md5 support. Virtual/local feeds and the source itself stay
-    // out.
+  void _buildRelatedCandidates() {
+    // Every real booru is a candidate — tag search works everywhere.
+    // Virtual/local feeds and the post's own source stay out.
     const virtualTypes = {
       BooruType.Favourites,
       BooruType.Downloads,
@@ -270,19 +174,84 @@ class _FindElsewhereSheetState extends State<_FindElsewhereSheet> {
       if (host != null && host.isNotEmpty && (host == sourceHost || host == postHost)) continue;
       related.add(_RelatedResult(booru));
     }
+  }
+
+  /// Sets a new pivot tag and reruns every booru lookup against it.
+  void _restartRelated(String tag, TagType? type) {
+    setState(() {
+      pivotTag = tag;
+      pivotType = type;
+      for (final r in related) {
+        r.state = _LookupState.loading;
+        r.resolvedTag = '';
+        r.count = 0;
+        r.totalCount = 0;
+      }
+    });
     for (final r in related) {
       _lookupRelated(r);
     }
+  }
+
+  /// Manual pivot picker: full tag list of the post, typed tags first.
+  /// This is the only way in for boorus that report no tag types at all.
+  Future<void> _pickPivot() async {
+    int rank(TagType t) => switch (t) {
+          TagType.artist => 0,
+          TagType.character => 1,
+          TagType.copyright => 2,
+          TagType.species => 3,
+          TagType.meta => 5,
+          _ => 4,
+        };
+    final tags = [...widget.original.tagsList]..sort((a, b) {
+        final int byType = rank(a.tagType).compareTo(rank(b.tagType));
+        return byType != 0 ? byType : a.fullString.compareTo(b.fullString);
+      });
+    if (tags.isEmpty) return;
+
+    final picked = await showDialog<int>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Pivot on which tag?'),
+        contentPadding: const EdgeInsets.symmetric(vertical: 8),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: 420,
+          child: ListView.builder(
+            itemCount: tags.length,
+            itemBuilder: (_, i) {
+              final t = tags[i];
+              final bool typed = t.tagType != TagType.none;
+              return ListTile(
+                dense: true,
+                title: Text(t.fullString),
+                subtitle: typed ? Text(t.tagType.name) : null,
+                selected: t.fullString == pivotTag,
+                onTap: () => Navigator.of(ctx).pop(i),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+    if (picked == null || !mounted) return;
+    final t = tags[picked];
+    _restartRelated(t.fullString.trim(), t.tagType == TagType.none ? null : t.tagType);
   }
 
   Future<void> _lookupRelated(_RelatedResult r) async {
     if (r.state == _LookupState.error) {
       setState(() => r.state = _LookupState.loading);
     }
+    // The pivot may change while a slow lookup is in flight — bind this run
+    // to the pivot it started with and drop the result if it went stale.
+    final String? runPivot = pivotTag;
+    if (runPivot == null) return;
     try {
       // Resolve the pivot's spelling on the target booru first (e.g.
       // `artistname` -> `artistname_(artist)`), then count what it has.
-      String query = pivotTag!;
+      String query = runPivot;
       try {
         final res = await TagAliasResolver.resolveQuery(query, r.booru).timeout(const Duration(seconds: 15));
         query = res.query;
@@ -292,7 +261,7 @@ class _FindElsewhereSheetState extends State<_FindElsewhereSheet> {
       tab.booruHandler.storeTagsGlobally = false;
       tab.booruHandler.pageNum++;
       await tab.booruHandler.search(query, null).timeout(const Duration(seconds: 15));
-      if (!mounted) return;
+      if (!mounted || pivotTag != runPivot) return;
       if (tab.booruHandler.errorString.isNotEmpty && tab.booruHandler.fetched.isEmpty) {
         setState(() => r.state = _LookupState.error);
         return;
@@ -303,7 +272,7 @@ class _FindElsewhereSheetState extends State<_FindElsewhereSheet> {
           await tab.booruHandler.searchCount(query).timeout(const Duration(seconds: 10));
         } catch (_) {}
       }
-      if (!mounted) return;
+      if (!mounted || pivotTag != runPivot) return;
       setState(() {
         r.resolvedTag = query;
         r.count = count;
@@ -311,7 +280,7 @@ class _FindElsewhereSheetState extends State<_FindElsewhereSheet> {
         r.state = count > 0 ? _LookupState.found : _LookupState.notFound;
       });
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted || pivotTag != runPivot) return;
       setState(() => r.state = _LookupState.error);
     }
   }
@@ -336,7 +305,7 @@ class _FindElsewhereSheetState extends State<_FindElsewhereSheet> {
 
   /// Similarity search: upload the sample/thumbnail image to iqdb.org (no
   /// API key needed) and parse the returned HTML for matches. Catches
-  /// resized/recompressed copies that the exact-MD5 lookup can't.
+  /// resized/recompressed copies of drawn content.
   Future<void> _runIqdb() async {
     setState(() {
       iqdbState = _IqdbState.loading;
@@ -455,118 +424,11 @@ class _FindElsewhereSheetState extends State<_FindElsewhereSheet> {
     }
   }
 
-  Future<void> _lookup(_LookupResult r) async {
-    if (r.state == _LookupState.error) {
-      // Retry path.
-      setState(() => r.state = _LookupState.loading);
-    }
-    try {
-      // Throwaway mini-search, same pattern as the preview strips: never let
-      // it write tag types into the shared store.
-      final tab = SearchTab(r.booru, null, r.query);
-      tab.booruHandler.storeTagsGlobally = false;
-      tab.booruHandler.pageNum++;
-      await tab.booruHandler.search(r.query, null).timeout(const Duration(seconds: 15));
-      if (!mounted) return;
-      if (tab.booruHandler.errorString.isNotEmpty && tab.booruHandler.fetched.isEmpty) {
-        setState(() => r.state = _LookupState.error);
-        return;
-      }
-      // Raw fetched, not filtered — the user's hide-filters shouldn't make a
-      // genuine hit look missing.
-      final BooruItem? hit = tab.booruHandler.fetched.isNotEmpty ? tab.booruHandler.fetched.first : null;
-      // VERIFY the hit: boorus that don't understand the md5 metatag (e.g.
-      // rule34.xyz's POST search API) silently ignore it and return their
-      // normal listing — "a result came back" is NOT "the file exists
-      // there". Accept only when the hit's own hash equals the query, or —
-      // when the hit exposes no hash at all — when the search returned
-      // exactly one post (a real md5 lookup matches 0 or 1 posts, an
-      // ignored filter returns a whole page).
-      bool verified = false;
-      if (hit != null) {
-        final String? hitMd5 = md5ForItem(hit);
-        verified = hitMd5 != null ? hitMd5 == widget.md5 : tab.booruHandler.fetched.length == 1;
-      }
-      setState(() {
-        r.item = verified ? hit : null;
-        r.state = verified ? _LookupState.found : _LookupState.notFound;
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => r.state = _LookupState.error);
-    }
-  }
-
-  void _openResult(_LookupResult r) {
-    SearchHandler.instance.addTabByString(
-      r.query,
-      customBooru: r.booru,
-      switchToNew: true,
-      group: SearchHandler.inheritGroup,
-    );
-    Navigator.of(context).pop();
-    FlashElements.showSnackbar(
-      context: context,
-      duration: const Duration(seconds: 2),
-      title: Text('Opened on ${r.booru.name ?? 'booru'}'),
-      content: const Text('The tab is behind the viewer — back out to see it.'),
-      leadingIcon: Symbols.travel_explore_rounded,
-      sideColor: Colors.green,
-    );
-  }
-
-  /// "1920×1080 · higher res · 45 tags (+12)" — deltas vs the viewed copy.
-  String _foundSubtitle(_LookupResult r) {
-    final BooruItem found = r.item!;
-    final BooruItem orig = widget.original;
-    final parts = <String>[];
-
-    final double? foundPx = (found.fileWidth != null && found.fileHeight != null)
-        ? found.fileWidth! * found.fileHeight!
-        : null;
-    final double? origPx = (orig.fileWidth != null && orig.fileHeight != null)
-        ? orig.fileWidth! * orig.fileHeight!
-        : null;
-    if (foundPx != null) {
-      parts.add('${found.fileWidth!.round()}×${found.fileHeight!.round()}');
-      if (origPx != null && origPx > 0) {
-        if (foundPx > origPx * 1.05) {
-          parts.add('higher res');
-        } else if (foundPx * 1.05 < origPx) {
-          parts.add('lower res');
-        }
-      }
-    }
-
-    final int foundTags = found.tagsList.length;
-    final int diff = foundTags - orig.tagsList.length;
-    parts.add('$foundTags tags${diff == 0 ? '' : ' (${diff > 0 ? '+' : ''}$diff)'}');
-
-    return parts.join(' · ');
-  }
-
-  Widget _trailingFor(_LookupResult r) {
-    switch (r.state) {
-      case _LookupState.loading:
-        return const SizedBox(
-          width: 20,
-          height: 20,
-          child: CircularProgressIndicator(strokeWidth: 2.5),
-        );
-      case _LookupState.found:
-        return const Icon(Symbols.check_circle_rounded, color: Colors.green, fill: 1);
-      case _LookupState.notFound:
-        return Icon(Symbols.remove_circle_outline_rounded, color: Colors.grey.shade600);
-      case _LookupState.error:
-        return const Icon(Symbols.refresh_rounded, color: Colors.orange);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final int foundCount = widget.results.where((r) => r.state == _LookupState.found).length;
-    final bool anyLoading = widget.results.any((r) => r.state == _LookupState.loading);
+    final int foundCount = related.where((r) => r.state == _LookupState.found).length;
+    final bool anyLoading = pivotTag != null && related.any((r) => r.state == _LookupState.loading);
 
     return Container(
       decoration: BoxDecoration(
@@ -586,18 +448,20 @@ class _FindElsewhereSheetState extends State<_FindElsewhereSheet> {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
             child: Row(
               children: [
                 Icon(Symbols.travel_explore_rounded, size: 20, color: theme.colorScheme.secondary),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    anyLoading
-                        ? 'Searching your boorus…'
-                        : foundCount == 0
-                            ? 'No exact copies found'
-                            : 'Also on $foundCount ${foundCount == 1 ? 'booru' : 'boorus'}',
+                    pivotTag == null
+                        ? 'Find elsewhere'
+                        : anyLoading
+                            ? 'Searching your boorus…'
+                            : foundCount == 0
+                                ? 'Nothing related found'
+                                : 'Related on $foundCount ${foundCount == 1 ? 'booru' : 'boorus'}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
@@ -606,47 +470,12 @@ class _FindElsewhereSheetState extends State<_FindElsewhereSheet> {
               ],
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                'md5: ${widget.md5}',
-                style: TextStyle(fontSize: 11.5, color: Colors.grey.shade500, fontFamily: 'monospace'),
-              ),
-            ),
-          ),
           const Divider(height: 1),
           Flexible(
             child: ListView(
               shrinkWrap: true,
               padding: const EdgeInsets.only(bottom: 8),
               children: [
-                for (final r in widget.results)
-                  ListTile(
-                    enabled: r.state == _LookupState.found || r.state == _LookupState.error,
-                    leading: BooruFavicon(r.booru, size: 22),
-                    title: Text(
-                      r.booru.name ?? '?',
-                      style: TextStyle(
-                        fontWeight: r.state == _LookupState.found ? FontWeight.w700 : FontWeight.w400,
-                      ),
-                    ),
-                    subtitle: switch (r.state) {
-                      _LookupState.loading => const Text('Searching…'),
-                      _LookupState.found => Text(_foundSubtitle(r)),
-                      _LookupState.notFound => const Text('Not found'),
-                      _LookupState.error => const Text('Search failed — tap to retry'),
-                    },
-                    trailing: _trailingFor(r),
-                    onTap: () {
-                      if (r.state == _LookupState.found) {
-                        _openResult(r);
-                      } else if (r.state == _LookupState.error) {
-                        _lookup(r);
-                      }
-                    },
-                  ),
                 ..._relatedSection(theme),
                 const Divider(height: 8),
                 ..._iqdbSection(theme),
@@ -657,6 +486,86 @@ class _FindElsewhereSheetState extends State<_FindElsewhereSheet> {
         ],
       ),
     );
+  }
+
+  List<Widget> _relatedSection(ThemeData theme) {
+    // No pivot yet (booru gave no tag types): prompt for a manual pick
+    // instead of silently hiding the whole section.
+    if (pivotTag == null) {
+      return [
+        ListTile(
+          leading: Icon(Symbols.sell_rounded, color: theme.colorScheme.secondary),
+          title: const Text('Pick a tag to search elsewhere', style: TextStyle(fontWeight: FontWeight.w700)),
+          subtitle: const Text(
+            "This booru doesn't say which tag is the artist/character — choose the one to look up on your other boorus",
+          ),
+          onTap: _pickPivot,
+        ),
+      ];
+    }
+    final String typeLabel = switch (pivotType) {
+      TagType.artist => 'artist',
+      TagType.character => 'character',
+      TagType.copyright => 'copyright',
+      _ => 'tag',
+    };
+    return [
+      // Section header doubles as the pivot switcher.
+      InkWell(
+        onTap: _pickPivot,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Related elsewhere — $typeLabel: $pivotTag',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Colors.grey.shade500),
+                ),
+              ),
+              Icon(Symbols.edit_rounded, size: 16, color: theme.colorScheme.secondary),
+            ],
+          ),
+        ),
+      ),
+      for (final r in related)
+        ListTile(
+          dense: true,
+          enabled: r.state == _LookupState.found || r.state == _LookupState.error,
+          leading: BooruFavicon(r.booru, size: 20),
+          title: Text(
+            r.booru.name ?? '?',
+            style: TextStyle(
+              fontWeight: r.state == _LookupState.found ? FontWeight.w700 : FontWeight.w400,
+            ),
+          ),
+          subtitle: switch (r.state) {
+            _LookupState.loading => const Text('Searching…'),
+            _LookupState.found => Text(
+                '${r.totalCount > 0 ? r.totalCount : r.count}${r.hasMore ? '+' : ''} posts'
+                '${r.resolvedTag != pivotTag ? ' · as "${r.resolvedTag}"' : ''}',
+              ),
+            _LookupState.notFound => const Text('Nothing found'),
+            _LookupState.error => const Text('Search failed — tap to retry'),
+          },
+          trailing: r.state == _LookupState.loading
+              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2.5))
+              : r.state == _LookupState.found
+                  ? const Icon(Symbols.arrow_forward_rounded, size: 18)
+                  : r.state == _LookupState.error
+                      ? const Icon(Symbols.refresh_rounded, color: Colors.orange, size: 18)
+                      : const SizedBox.shrink(),
+          onTap: () {
+            if (r.state == _LookupState.found) {
+              _openRelated(r);
+            } else if (r.state == _LookupState.error) {
+              _lookupRelated(r);
+            }
+          },
+        ),
+    ];
   }
 
   List<Widget> _iqdbSection(ThemeData theme) {
@@ -716,60 +625,6 @@ class _FindElsewhereSheetState extends State<_FindElsewhereSheet> {
           if (showWeakIqdbMatches) ...weak.map(_iqdbMatchTile),
         ];
     }
-  }
-
-  List<Widget> _relatedSection(ThemeData theme) {
-    if (pivotTag == null) return const [];
-    final String typeLabel = switch (pivotType) {
-      TagType.artist => 'artist',
-      TagType.character => 'character',
-      _ => 'tag',
-    };
-    return [
-      const Divider(height: 8),
-      Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-        child: Text(
-          'Related elsewhere — $typeLabel: $pivotTag',
-          style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Colors.grey.shade500),
-        ),
-      ),
-      for (final r in related)
-        ListTile(
-          dense: true,
-          enabled: r.state == _LookupState.found || r.state == _LookupState.error,
-          leading: BooruFavicon(r.booru, size: 20),
-          title: Text(
-            r.booru.name ?? '?',
-            style: TextStyle(
-              fontWeight: r.state == _LookupState.found ? FontWeight.w700 : FontWeight.w400,
-            ),
-          ),
-          subtitle: switch (r.state) {
-            _LookupState.loading => const Text('Searching…'),
-            _LookupState.found => Text(
-                '${r.totalCount > 0 ? r.totalCount : r.count}${r.hasMore ? '+' : ''} posts'
-                '${r.resolvedTag != pivotTag ? ' · as "${r.resolvedTag}"' : ''}',
-              ),
-            _LookupState.notFound => const Text('Nothing found'),
-            _LookupState.error => const Text('Search failed — tap to retry'),
-          },
-          trailing: r.state == _LookupState.loading
-              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2.5))
-              : r.state == _LookupState.found
-                  ? const Icon(Symbols.arrow_forward_rounded, size: 18)
-                  : r.state == _LookupState.error
-                      ? const Icon(Symbols.refresh_rounded, color: Colors.orange, size: 18)
-                      : const SizedBox.shrink(),
-          onTap: () {
-            if (r.state == _LookupState.found) {
-              _openRelated(r);
-            } else if (r.state == _LookupState.error) {
-              _lookupRelated(r);
-            }
-          },
-        ),
-    ];
   }
 
   Widget _iqdbMatchTile(_IqdbMatch m) {

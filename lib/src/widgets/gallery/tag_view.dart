@@ -1774,10 +1774,9 @@ class _TagViewState extends State<TagView> {
                     ),
                   ),
                 //
-                // Cross-booru MD5 lookup: where else does this exact file
-                // exist (better tags / higher res copies)?
-                if (md5ForItem(item) != null)
-                  ListTile(
+                // Cross-booru lookup: pivot on the post's artist/character
+                // tag to find related content on the other boorus.
+                ListTile(
                     dense: true,
                     minVerticalPadding: 0,
                     leading: Icon(Symbols.travel_explore_rounded, size: 20, color: Theme.of(context).colorScheme.secondary),

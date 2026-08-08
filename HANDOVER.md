@@ -536,3 +536,21 @@ shows a real hotspot.
   the image attached).
 - Sheet header zero-case retitled "No exact copies found" (related section
   may still have hits below).
+
+## Build `pivot-fix` (2026-08-08) — MD5 removed, pivot picker added
+- USER: related section invisible (recording: shimmie 3D post) + "remove
+  the md5 check, I won't use it". Root cause of invisibility: shimmie-type
+  boorus report NO tag types, so the artist>character>copyright auto-pivot
+  found nothing and the section self-hid.
+- find_elsewhere_sheet.dart REWRITTEN: all MD5 machinery deleted
+  (md5ForItem, _md5QueryFor, _LookupResult rows, verification). Sheet is
+  now: Related elsewhere + IQDB + browser chips. tag_view entry tile no
+  longer gated on md5 presence (always shown).
+- Untyped boorus: section shows "Pick a tag to search elsewhere" tile →
+  AlertDialog listing ALL the post's tags (typed first: artist>character>
+  copyright>species>general>meta, then alphabetical) → picking one runs
+  the lookups. Section header row = pivot switcher (tap to re-pick, edit
+  icon). _lookupRelated guards against stale runs (pivot changed while a
+  15s lookup was in flight) via runPivot capture.
+- Sheet header: 'Find elsewhere' (no pivot yet) / 'Searching…' / 'Related
+  on N boorus' / 'Nothing related found'.
