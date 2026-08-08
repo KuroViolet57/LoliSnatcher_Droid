@@ -13,6 +13,7 @@ import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/tag_alias_resolver.dart';
+import 'package:lolisnatcher/src/handlers/tag_handler.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
@@ -130,16 +131,26 @@ class _FindElsewhereSheetState extends State<_FindElsewhereSheet> {
   TagType? pivotType;
   final List<_RelatedResult> related = [];
 
+  /// A tag's type, falling back to the app-wide tag store: boorus like the
+  /// shimmie family send every tag untyped, but the store usually knows the
+  /// type already (learned from other boorus) — the same source the info
+  /// sheet's Artist/Character grouping uses.
+  static TagType _typeOf(dynamic tag) {
+    final TagType own = tag.tagType as TagType;
+    if (own != TagType.none) return own;
+    return TagHandler.instance.getTag(tag.fullString as String).tagType;
+  }
+
   @override
   void initState() {
     super.initState();
     _buildRelatedCandidates();
     // Auto-pivot on the narrowest useful typed tag: artist > character >
-    // copyright. Boorus without tag-type data (shimmie etc.) leave this
-    // null — the user picks the pivot tag manually instead.
+    // copyright. Only when neither the booru nor the tag store can type
+    // anything does this stay null and the user picks manually.
     for (final type in [TagType.artist, TagType.character, TagType.copyright]) {
       final tag = widget.original.tagsList.firstWhereOrNull(
-        (t) => t.tagType == type && t.fullString.trim().isNotEmpty,
+        (t) => _typeOf(t) == type && t.fullString.trim().isNotEmpty,
       );
       if (tag != null) {
         pivotTag = tag.fullString.trim();
@@ -205,7 +216,7 @@ class _FindElsewhereSheetState extends State<_FindElsewhereSheet> {
           _ => 4,
         };
     final tags = [...widget.original.tagsList]..sort((a, b) {
-        final int byType = rank(a.tagType).compareTo(rank(b.tagType));
+        final int byType = rank(_typeOf(a)).compareTo(rank(_typeOf(b)));
         return byType != 0 ? byType : a.fullString.compareTo(b.fullString);
       });
     if (tags.isEmpty) return;
@@ -222,11 +233,11 @@ class _FindElsewhereSheetState extends State<_FindElsewhereSheet> {
             itemCount: tags.length,
             itemBuilder: (_, i) {
               final t = tags[i];
-              final bool typed = t.tagType != TagType.none;
+              final TagType type = _typeOf(t);
               return ListTile(
                 dense: true,
                 title: Text(t.fullString),
-                subtitle: typed ? Text(t.tagType.name) : null,
+                subtitle: type != TagType.none ? Text(type.name) : null,
                 selected: t.fullString == pivotTag,
                 onTap: () => Navigator.of(ctx).pop(i),
               );
@@ -237,7 +248,8 @@ class _FindElsewhereSheetState extends State<_FindElsewhereSheet> {
     );
     if (picked == null || !mounted) return;
     final t = tags[picked];
-    _restartRelated(t.fullString.trim(), t.tagType == TagType.none ? null : t.tagType);
+    final TagType pickedType = _typeOf(t);
+    _restartRelated(t.fullString.trim(), pickedType == TagType.none ? null : pickedType);
   }
 
   Future<void> _lookupRelated(_RelatedResult r) async {

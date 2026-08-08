@@ -554,3 +554,14 @@ shows a real hotspot.
   15s lookup was in flight) via runPivot capture.
 - Sheet header: 'Find elsewhere' (no pivot yet) / 'Searching…' / 'Related
   on N boorus' / 'Nothing related found'.
+
+## Build `typed-pivot` (2026-08-08)
+- USER (screenshot): the info sheet showed Artist: sfmpov etc. for the
+  same shimmie post whose related-pivot claimed "no types" — the APP's
+  global tag store (TagHandler) knows the types even when the booru sends
+  none; TagView's grouping uses tagHandler.getTag(name).tagType.
+- find_elsewhere_sheet: `_typeOf(tag)` = tag's own type, else
+  TagHandler.instance.getTag(name).tagType. Used by auto-pivot, picker
+  sort, picker subtitles, picked-type. Auto-pivot now fires on shimmie
+  posts (e.g. artist sfmpov auto-selected); manual picker remains the
+  fallback for truly unknown tags.
