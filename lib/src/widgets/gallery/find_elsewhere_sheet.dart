@@ -8,9 +8,11 @@ import 'package:url_launcher/url_launcher_string.dart';
 
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/handlers/tag_alias_resolver.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
@@ -113,6 +115,19 @@ class _LookupResult {
   BooruItem? item;
 }
 
+/// One row of the "Related elsewhere" section: the pivot tag looked up on
+/// another booru (spelling resolved per-site) with a post count.
+class _RelatedResult {
+  _RelatedResult(this.booru);
+
+  final Booru booru;
+  _LookupState state = _LookupState.loading;
+  String resolvedTag = '';
+  int count = 0;
+  int totalCount = 0;
+  bool get hasMore => totalCount == 0 && count >= 20;
+}
+
 Future<void> showFindElsewhereSheet(
   BuildContext context,
   BooruItem item,
@@ -205,12 +220,118 @@ class _FindElsewhereSheetState extends State<_FindElsewhereSheet> {
         : (item.sampleURL.isNotEmpty ? item.sampleURL : item.thumbnailURL);
   }
 
+  // Metadata pivot: the exact file rarely survives cross-site re-encoding
+  // (especially video), but the same artist/character reliably exists on
+  // other boorus under a resolvable tag — so pivot on that instead.
+  String? pivotTag;
+  TagType? pivotType;
+  final List<_RelatedResult> related = [];
+
   @override
   void initState() {
     super.initState();
     for (final r in widget.results) {
       _lookup(r);
     }
+    _initRelated();
+  }
+
+  void _initRelated() {
+    // Narrowest useful pivot first: artist > character > copyright.
+    for (final type in [TagType.artist, TagType.character, TagType.copyright]) {
+      final tag = widget.original.tagsList.firstWhereOrNull(
+        (t) => t.tagType == type && t.fullString.trim().isNotEmpty,
+      );
+      if (tag != null) {
+        pivotTag = tag.fullString.trim();
+        pivotType = type;
+        break;
+      }
+    }
+    if (pivotTag == null) return;
+
+    // Unlike the MD5 rows, every real booru is a candidate here — tag search
+    // needs no md5 support. Virtual/local feeds and the source itself stay
+    // out.
+    const virtualTypes = {
+      BooruType.Favourites,
+      BooruType.Downloads,
+      BooruType.Collections,
+      BooruType.ForYou,
+      BooruType.History,
+      BooruType.Merge,
+      BooruType.WebView,
+    };
+    final String? sourceHost = Uri.tryParse(widget.sourceBooru?.baseURL ?? '')?.host;
+    final String? postHost = Uri.tryParse(widget.original.postURL)?.host;
+    for (final booru in SettingsHandler.instance.booruList) {
+      if (booru.type == null || virtualTypes.contains(booru.type)) continue;
+      final String? host = Uri.tryParse(booru.baseURL ?? '')?.host;
+      if (host != null && host.isNotEmpty && (host == sourceHost || host == postHost)) continue;
+      related.add(_RelatedResult(booru));
+    }
+    for (final r in related) {
+      _lookupRelated(r);
+    }
+  }
+
+  Future<void> _lookupRelated(_RelatedResult r) async {
+    if (r.state == _LookupState.error) {
+      setState(() => r.state = _LookupState.loading);
+    }
+    try {
+      // Resolve the pivot's spelling on the target booru first (e.g.
+      // `artistname` -> `artistname_(artist)`), then count what it has.
+      String query = pivotTag!;
+      try {
+        final res = await TagAliasResolver.resolveQuery(query, r.booru).timeout(const Duration(seconds: 15));
+        query = res.query;
+      } catch (_) {}
+
+      final tab = SearchTab(r.booru, null, query);
+      tab.booruHandler.storeTagsGlobally = false;
+      tab.booruHandler.pageNum++;
+      await tab.booruHandler.search(query, null).timeout(const Duration(seconds: 15));
+      if (!mounted) return;
+      if (tab.booruHandler.errorString.isNotEmpty && tab.booruHandler.fetched.isEmpty) {
+        setState(() => r.state = _LookupState.error);
+        return;
+      }
+      final int count = tab.booruHandler.fetched.length;
+      if (count > 0 && tab.booruHandler.totalCount.value == 0) {
+        try {
+          await tab.booruHandler.searchCount(query).timeout(const Duration(seconds: 10));
+        } catch (_) {}
+      }
+      if (!mounted) return;
+      setState(() {
+        r.resolvedTag = query;
+        r.count = count;
+        r.totalCount = tab.booruHandler.totalCount.value;
+        r.state = count > 0 ? _LookupState.found : _LookupState.notFound;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => r.state = _LookupState.error);
+    }
+  }
+
+  void _openRelated(_RelatedResult r) {
+    SearchHandler.instance.addTabByString(
+      r.resolvedTag,
+      customBooru: r.booru,
+      switchToNew: true,
+      group: SearchHandler.inheritGroup,
+    );
+    Navigator.of(context).pop();
+    FlashElements.showSnackbar(
+      context: context,
+      duration: const Duration(seconds: 2),
+      title: Text('Opened on ${r.booru.name ?? 'booru'}'),
+      content: Text('Searching "${r.resolvedTag}" — the tab is behind the viewer.'),
+      leadingIcon: Symbols.travel_explore_rounded,
+      sideColor: Colors.green,
+    );
   }
 
   /// Similarity search: upload the sample/thumbnail image to iqdb.org (no
@@ -330,7 +451,7 @@ class _FindElsewhereSheetState extends State<_FindElsewhereSheet> {
         sideColor: Colors.green,
       );
     } else {
-      launchUrlString(m.url, mode: LaunchMode.externalApplication);
+      _launchExternal(m.url);
     }
   }
 
@@ -475,7 +596,7 @@ class _FindElsewhereSheetState extends State<_FindElsewhereSheet> {
                     anyLoading
                         ? 'Searching your boorus…'
                         : foundCount == 0
-                            ? 'Not found elsewhere'
+                            ? 'No exact copies found'
                             : 'Also on $foundCount ${foundCount == 1 ? 'booru' : 'boorus'}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -526,6 +647,7 @@ class _FindElsewhereSheetState extends State<_FindElsewhereSheet> {
                       }
                     },
                   ),
+                ..._relatedSection(theme),
                 const Divider(height: 8),
                 ..._iqdbSection(theme),
                 ..._browserSearchSection(theme),
@@ -596,6 +718,60 @@ class _FindElsewhereSheetState extends State<_FindElsewhereSheet> {
     }
   }
 
+  List<Widget> _relatedSection(ThemeData theme) {
+    if (pivotTag == null) return const [];
+    final String typeLabel = switch (pivotType) {
+      TagType.artist => 'artist',
+      TagType.character => 'character',
+      _ => 'tag',
+    };
+    return [
+      const Divider(height: 8),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+        child: Text(
+          'Related elsewhere — $typeLabel: $pivotTag',
+          style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Colors.grey.shade500),
+        ),
+      ),
+      for (final r in related)
+        ListTile(
+          dense: true,
+          enabled: r.state == _LookupState.found || r.state == _LookupState.error,
+          leading: BooruFavicon(r.booru, size: 20),
+          title: Text(
+            r.booru.name ?? '?',
+            style: TextStyle(
+              fontWeight: r.state == _LookupState.found ? FontWeight.w700 : FontWeight.w400,
+            ),
+          ),
+          subtitle: switch (r.state) {
+            _LookupState.loading => const Text('Searching…'),
+            _LookupState.found => Text(
+                '${r.totalCount > 0 ? r.totalCount : r.count}${r.hasMore ? '+' : ''} posts'
+                '${r.resolvedTag != pivotTag ? ' · as "${r.resolvedTag}"' : ''}',
+              ),
+            _LookupState.notFound => const Text('Nothing found'),
+            _LookupState.error => const Text('Search failed — tap to retry'),
+          },
+          trailing: r.state == _LookupState.loading
+              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2.5))
+              : r.state == _LookupState.found
+                  ? const Icon(Symbols.arrow_forward_rounded, size: 18)
+                  : r.state == _LookupState.error
+                      ? const Icon(Symbols.refresh_rounded, color: Colors.orange, size: 18)
+                      : const SizedBox.shrink(),
+          onTap: () {
+            if (r.state == _LookupState.found) {
+              _openRelated(r);
+            } else if (r.state == _LookupState.error) {
+              _lookupRelated(r);
+            }
+          },
+        ),
+    ];
+  }
+
   Widget _iqdbMatchTile(_IqdbMatch m) {
     return ListTile(
       leading: m.thumbUrl == null
@@ -625,6 +801,21 @@ class _FindElsewhereSheetState extends State<_FindElsewhereSheet> {
     );
   }
 
+  /// Opens the engine page in a Custom Tab (in-app browser view) first:
+  /// externalApplication lets an installed native app (the Google app for
+  /// lens.google.com, the Yandex app) capture the link as a deep link and
+  /// drop the ?url= parameter — which showed up as "engine opens but no
+  /// image was passed". A Custom Tab always loads the literal URL.
+  Future<void> _launchExternal(String url) async {
+    try {
+      final ok = await launchUrlString(url, mode: LaunchMode.inAppBrowserView);
+      if (ok) return;
+    } catch (_) {}
+    try {
+      await launchUrlString(url, mode: LaunchMode.externalApplication);
+    } catch (_) {}
+  }
+
   /// External reverse-image engines, opened in the browser with the image
   /// URL prefilled. Yandex in particular has far broader coverage of
   /// reposted content than any booru-specific index.
@@ -632,7 +823,10 @@ class _FindElsewhereSheetState extends State<_FindElsewhereSheet> {
     final String img = Uri.encodeComponent(_searchImageUrl);
     final engines = <(String, String)>[
       ('Yandex', 'https://yandex.com/images/search?rpt=imageview&url=$img'),
-      ('Google Lens', 'https://lens.google.com/uploadbyurl?url=$img'),
+      // searchbyimage is the battle-tested entry point (what reverse-search
+      // extensions use); it redirects into Lens WITH the image attached,
+      // unlike lens.google.com/uploadbyurl which often lands on a bare page.
+      ('Google Lens', 'https://www.google.com/searchbyimage?sbisrc=cr_1_5_2&image_url=$img'),
       ('SauceNAO', 'https://saucenao.com/search.php?url=$img'),
     ];
     return [
@@ -654,7 +848,7 @@ class _FindElsewhereSheetState extends State<_FindElsewhereSheet> {
                   ActionChip(
                     avatar: Icon(Symbols.open_in_new_rounded, size: 16, color: theme.colorScheme.secondary),
                     label: Text(name),
-                    onPressed: () => launchUrlString(url, mode: LaunchMode.externalApplication),
+                    onPressed: () => _launchExternal(url),
                   ),
               ],
             ),

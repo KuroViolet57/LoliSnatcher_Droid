@@ -513,3 +513,26 @@ shows a real hotspot.
   fluffle = furry, trace.moe = anime screenshots). The practical
   alternative is metadata pivots: artist/character-tag searches + source
   URL matching across boorus — proposed, not yet built.
+
+## Build `related-pivot` (2026-08-07) — metadata pivot + browser handoff fix
+- "Related elsewhere — artist/character/tag: {pivot}" section in the
+  find-elsewhere sheet, auto-runs on open. Pivot priority: artist >
+  character > copyright (first non-empty tag of that type on the item);
+  hidden when none. Candidates: ALL real boorus (not just md5-capable;
+  virtual types + source booru excluded by host).
+- Per booru: TagAliasResolver.resolveQuery translates the pivot's spelling
+  (15s timeout, falls back to literal), throwaway SearchTab search (15s),
+  then searchCount when the handler didn't set totalCount. Row subtitle:
+  '154 posts', '20+ posts' (page full, no total), '· as "resolved_tag"'
+  when the spelling differs. Tap -> addTabByString(resolved, customBooru,
+  switchToNew, inheritGroup).
+- Browser reverse-search fix (user: "Yandex/Lens open but no image
+  passed"): externalApplication let native apps (Google app for
+  lens.google.com) deep-link-capture the URL and drop ?url= params. Now
+  _launchExternal tries LaunchMode.inAppBrowserView (Custom Tab, loads the
+  literal URL) with externalApplication fallback; Google switched from
+  lens.google.com/uploadbyurl to www.google.com/searchbyimage?image_url=
+  (the endpoint reverse-search extensions use; redirects into Lens with
+  the image attached).
+- Sheet header zero-case retitled "No exact copies found" (related section
+  may still have hits below).
