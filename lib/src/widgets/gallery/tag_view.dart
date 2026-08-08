@@ -1701,23 +1701,67 @@ class _TagViewState extends State<TagView> {
 
     final List<String> picked = [];
 
+    // Resolve through the app-wide tag store: shimmie-style boorus send
+    // every tag untyped, but the store usually knows (same source as the
+    // Artist/Character grouping above).
+    TagType typeOf(Tag t) {
+      if (t.tagType != TagType.none) return t.tagType;
+      return tagHandler.getTag(t.fullString).tagType;
+    }
+
     void pickFrom(TagType type, int limit) {
       int taken = 0;
       for (final t in item.tagsList) {
         if (taken >= limit) break;
-        if (t.tagType == type && t.fullString.trim().isNotEmpty && !picked.contains(t.fullString)) {
+        final String v = t.fullString.trim();
+        if (v.isEmpty || v.toLowerCase() == 'tagme') continue;
+        if (typeOf(t) == type && !picked.contains(t.fullString)) {
           picked.add(t.fullString);
           taken++;
         }
       }
     }
 
-    // Up to 2 characters + 1 artist + 1 copyright; if all empty, take 2 general.
+    // Up to 2 characters + 1 artist + 1 copyright — the same recipe
+    // rule34.xyz's suggestion feed boils down to (same creator + same
+    // subject, ranked by overlap on the *distinctive* tags).
     pickFrom(TagType.character, 2);
     pickFrom(TagType.artist, 1);
     pickFrom(TagType.copyright, 1);
     if (picked.isEmpty) {
-      pickFrom(TagType.none, 2);
+      // Nothing typed anywhere: fall back to the most DISTINCTIVE general
+      // tags instead of whatever happens to sort first. Medium/format
+      // mega-tags ('3d', 'blender', 'animated', ...) match half the site
+      // and recommend nothing in particular. Rarity = the booru-reported
+      // tag count when the handler provides one (rule34.xyz does),
+      // otherwise a specificity heuristic (longer / qualified names).
+      const Set<String> megaTags = {
+        '3d', '2d', 'blender', 'sfm', 'source_filmmaker', 'koikatsu',
+        'animated', 'animation', 'video', 'webm', 'mp4', 'gif', 'loop',
+        'looping_animation', 'sound', 'no_sound', 'hd', '60fps', '1080p',
+        'nsfw', 'tagme', 'english_text', 'uncensored', 'censored',
+        'longer_than_30_seconds', 'longer_than_one_minute',
+        'shorter_than_30_seconds', 'male', 'female', '1boy', '1girl',
+        '1girls', 'solo', 'straight',
+      };
+      final candidates = item.tagsList.where((t) {
+        final String v = t.fullString.trim().toLowerCase();
+        return v.isNotEmpty && !megaTags.contains(v) && typeOf(t) != TagType.meta;
+      }).toList()
+        ..sort((a, b) {
+          final int ca = a.count > 0 ? a.count : 1 << 30;
+          final int cb = b.count > 0 ? b.count : 1 << 30;
+          if (ca != cb) return ca.compareTo(cb);
+          // No counts: qualified/multi-word names are more specific.
+          int spec(Tag t) =>
+              (t.fullString.contains('(') ? 2 : 0) + (t.fullString.contains('_') ? 1 : 0);
+          final int bySpec = spec(b).compareTo(spec(a));
+          if (bySpec != 0) return bySpec;
+          return b.fullString.length.compareTo(a.fullString.length);
+        });
+      for (final t in candidates.take(2)) {
+        picked.add(t.fullString);
+      }
     }
 
     if (picked.isEmpty) return null;

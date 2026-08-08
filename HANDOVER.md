@@ -565,3 +565,32 @@ shows a real hotspot.
   sort, picker subtitles, picked-type. Auto-pivot now fires on shimmie
   posts (e.g. artist sfmpov auto-selected); manual picker remains the
   fallback for truly unknown tags.
+
+## Build `smart-seed` (2026-08-08) — rule34.xyz suggestion research applied
+RESEARCH (live API probing, scratchpad r34xyz_*/sugg*.json):
+- rule34.xyz post-page suggestions = GET /api/v2/post/suggestion/{id}
+  (anonymous OK, returns 30 posts w/ full tags incl. per-tag counts).
+- ALGORITHM (verified on 2 posts, 30/30 both): candidate pool = SAME
+  UPLOADER as the source post; ranked ~by shared-tag count with the
+  source (mild shuffle/diversity, not strictly monotonic, not IDF-exact).
+  Feels "perfect" because xyz uploaders are creators/single-artist
+  reposters → same-creator + same-theme. Degrades to "imported around
+  the same time" for the bulk-import account (uploader 2).
+- Other endpoints found in the new UI bundle: tag/related/{tag},
+  post/search/hot/, post/search/tag-subscriptions/, playlist APIs.
+APPLIED to the app ("Recommend more like this" seed, _buildRelatedQuery
+in tag_view.dart):
+- Tag types now resolve through TagHandler store (same bug as the pivot:
+  raw t.tagType is none on shimmie → char/artist/copyright picks always
+  failed → fell back to '3d, blender'-style junk seeds. This was the
+  user-visible "Recommend more like this: 3d, blender" screenshot).
+- 'tagme' skipped everywhere.
+- Untyped fallback picks the most DISTINCTIVE general tags: megaTags
+  stoplist (3d/blender/animated/sound/video/1girls/...), then sort by
+  Tag.count ascending when the handler reports counts (worldxyz does),
+  else specificity heuristic (parenthesized/underscored/longer names).
+- The "same creator" pool already exists in-app: inline 'More from
+  artist' grids (store-typed) + uploader grid when handler exposes
+  UserMetaTag + name. NOT re-implemented.
+- NOT done (possible future): re-rank related-strip items by tag overlap
+  with the source post (xyz's ordering); For You creator-clustered seeds.
