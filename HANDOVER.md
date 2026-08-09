@@ -620,3 +620,58 @@ in tag_view.dart):
   (scratchpad sugg.json/src_post.json): Spearman 0.47 vs xyz's own order,
   with character/copyright-sharing posts promoted to the top — i.e.
   aligned with xyz but sharper (xyz ranks on raw shared-tag count).
+
+## Build `blend` (2026-08-08) — recommendation system REBUILT (facet blend)
+USER VERDICT on the previous approach: scrap it. "More from artist,
+reordered" is pointless; picking artist+character just reproduces Tag Hub;
+they want VARIED suggestions (different character same franchise, other
+artists, similar style, act tags), nothing dominating.
+
+RESEARCH REDONE PROPERLY (24 posts, 12 modern; scratchpad dataset.json).
+The earlier "all suggestions share the uploader" claim was an artifact of
+sampling two 2016 bulk-import posts (uploader 2). Real numbers for modern
+posts, per 30-suggestion set:
+  ~17 distinct artists, ~26 distinct characters, median max 7 posts from
+  any one artist. Facet split: 34% share the artist, 44% share a character
+  (different artist), 6% only the franchise, 16% share NONE of those
+  (matched on body/act/style tags). Artist-overlap median across all
+  sampled posts: 3%.
+=> Suggestions are SEVERAL DIFFERENT QUERIES blended, not one ranked list.
+
+NEW lib/src/handlers/suggestion_engine.dart:
+- `facetsForItem(item, seed:)` → facets: character (quota 6, +4 for a 2nd
+  character), franchise (5, excludeCharacters=true → different character,
+  same franchise), artist (4 — deliberately small), act ×2 (4 each, from
+  rarest distinctive general tags), style (4, `<medium> <actTag>` e.g.
+  "3d mating_press" → same style, other artists). `seed` rotates which
+  character/act is used per page so scrolling brings new material.
+- `blend(byFacet, source:, exclude:, limit:)` → round-robin one item per
+  facet, enforcing facet quotas + maxPerArtist 4 + maxPerCharacter 6,
+  dedupe, drops the source post. Franchise facet filters source
+  characters CLIENT-SIDE (not `-tag`, which not all boorus support).
+NEW lib/src/boorus/suggestion_handler.dart: BooruHandler subclass running
+all facets in parallel per page (12s search / 6s resolve budgets), blending
+into afterParseResponse. `targetBoorus` >1 = cross-booru mode with
+TagAliasResolver per-site spelling translation.
+SearchTab gained `customHandler:` so a strip can host a virtual handler.
+
+WIRING:
+- tag_view: "Related" → "Suggested" strip (TagContentPreview.suggestFor).
+  _buildRelatedQuery + _relatedQueryCache DELETED.
+- "More from artist"/"More from uploader": rankAgainst REMOVED — back to
+  plain chronological, as requested.
+- find_elsewhere_sheet: pivot-tag list replaced by a cross-booru blended
+  strip (suggestFor + suggestBoorus = all other real boorus). IQDB +
+  browser chips kept below.
+- foryou_handler: profile mode now `_searchBlended` — 3 recently viewed
+  posts (dbHandler.getViewedPosts) × 3 facets each, fanned across source
+  boorus, blended. Explicit seed mode (seed:/plain tags) keeps the old
+  path untouched.
+- post_similarity.dart trimmed to shared vocabulary (kGenericMediumTags,
+  normalizeTagName, tagRelevanceWeight); rankBySimilarity/
+  postSimilarityScore deleted with the approach that used them.
+
+KNOWN LIMITATION (verified live): rule34.xyz's search API returns items
+WITHOUT tags, so on that booru the per-artist/per-character caps have
+nothing to read and can't fire — variety there comes from the facet
+quotas alone. Gelbooru/danbooru-style APIs do return tags, so caps work.

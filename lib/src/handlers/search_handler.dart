@@ -1746,6 +1746,9 @@ class SearchTab {
     Map<String, String>? tagOverrides,
     Map<String, bool>? inheritMainTags,
     String? tabId,
+    // Virtual/synthetic feeds (blended suggestions) supply their own handler
+    // instead of one built from the booru's type.
+    BooruHandler? customHandler,
   }) : id = (tabId != null && tabId.isNotEmpty) ? tabId : uuid.v4() {
     this.selectedBooru = selectedBooru.obs;
     this.secondaryBoorus = Rxn<List<Booru>?>(secondaryBoorus);
@@ -1760,6 +1763,11 @@ class SearchTab {
     tempBooruList.add(selectedBooru);
     if (secondaryBoorus?.isNotEmpty == true) {
       tempBooruList.addAll(secondaryBoorus!);
+    }
+    if (customHandler != null) {
+      booruHandler = customHandler;
+      booruHandler.pageNum = 0;
+      return;
     }
     final temp = BooruHandlerFactory().getBooruHandler(tempBooruList, null);
     booruHandler = temp.booruHandler;

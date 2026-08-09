@@ -46,7 +46,8 @@ import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/snatch_handler.dart';
 import 'package:lolisnatcher/src/handlers/tag_alias_resolver.dart';
-import 'package:lolisnatcher/src/utils/post_similarity.dart';
+import 'package:lolisnatcher/src/boorus/suggestion_handler.dart';
+import 'package:lolisnatcher/src/handlers/suggestion_engine.dart';
 import 'package:lolisnatcher/src/handlers/tag_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/pages/tag_hub_page.dart';
@@ -133,8 +134,6 @@ class _TagViewState extends State<TagView> {
   final Set<String> selectedBatchTags = {};
   // Cached so collapsing / re-expanding the "Related" tile doesn't re-derive
   // (and the preview widget's own state doesn't get torn down on the second
-  // expand). Filled lazily on the first expand.
-  String? _relatedQueryCache;
 
   Timer? sortTimer;
 
@@ -225,7 +224,6 @@ class _TagViewState extends State<TagView> {
     if (widget.item != item) {
       item = widget.item;
       // Different item -> different related query; bust the cache.
-      _relatedQueryCache = null;
       checkForPossibleBooruHandler();
       tags = [...Set.from(item.tagsList)];
       filteredTags = [...tags];
@@ -794,7 +792,6 @@ class _TagViewState extends State<TagView> {
           booru: currentBooru,
           query: artistQuery,
           parentTab: parentTab,
-          rankAgainst: item,
         ),
       );
     }
@@ -819,7 +816,6 @@ class _TagViewState extends State<TagView> {
               booru: currentBooru,
               query: userQuery,
               parentTab: parentTab,
-              rankAgainst: item,
             ),
           );
         }
@@ -1695,85 +1691,6 @@ class _TagViewState extends State<TagView> {
   }
 
   // Builds a space-separated tag query for the "Related" preview strip.
-  // Prefers character + artist + copyright tags (the narrowest, most-likely-
-  // to-match-vibe categories); falls back to a few general tags if none of
-  // those are present. Always excludes the current post id so the strip
-  // doesn't show this same item back to the user.
-  String? _buildRelatedQuery() {
-    if (_relatedQueryCache != null) return _relatedQueryCache;
-
-    final List<String> picked = [];
-
-    // Resolve through the app-wide tag store: shimmie-style boorus send
-    // every tag untyped, but the store usually knows (same source as the
-    // Artist/Character grouping above).
-    TagType typeOf(Tag t) {
-      if (t.tagType != TagType.none) return t.tagType;
-      return tagHandler.getTag(t.fullString).tagType;
-    }
-
-    void pickFrom(TagType type, int limit) {
-      int taken = 0;
-      for (final t in item.tagsList) {
-        if (taken >= limit) break;
-        final String v = t.fullString.trim();
-        if (v.isEmpty || v.toLowerCase() == 'tagme') continue;
-        if (typeOf(t) == type && !picked.contains(t.fullString)) {
-          picked.add(t.fullString);
-          taken++;
-        }
-      }
-    }
-
-    // Up to 2 characters + 1 artist + 1 copyright — the same recipe
-    // rule34.xyz's suggestion feed boils down to (same creator + same
-    // subject, ranked by overlap on the *distinctive* tags).
-    pickFrom(TagType.character, 2);
-    pickFrom(TagType.artist, 1);
-    pickFrom(TagType.copyright, 1);
-    if (picked.isEmpty) {
-      // Nothing typed anywhere: fall back to the most DISTINCTIVE general
-      // tags instead of whatever happens to sort first. Medium/format
-      // mega-tags ('3d', 'blender', 'animated', ...) match half the site
-      // and recommend nothing in particular. Rarity = the booru-reported
-      // tag count when the handler provides one (rule34.xyz does),
-      // otherwise a specificity heuristic (longer / qualified names).
-      const Set<String> megaTags = {
-        '3d', '2d', 'blender', 'sfm', 'source_filmmaker', 'koikatsu',
-        'animated', 'animation', 'video', 'webm', 'mp4', 'gif', 'loop',
-        'looping_animation', 'sound', 'no_sound', 'hd', '60fps', '1080p',
-        'nsfw', 'tagme', 'english_text', 'uncensored', 'censored',
-        'longer_than_30_seconds', 'longer_than_one_minute',
-        'shorter_than_30_seconds', 'male', 'female', '1boy', '1girl',
-        '1girls', 'solo', 'straight',
-      };
-      final candidates = item.tagsList.where((t) {
-        final String v = t.fullString.trim().toLowerCase();
-        return v.isNotEmpty && !megaTags.contains(v) && typeOf(t) != TagType.meta;
-      }).toList()
-        ..sort((a, b) {
-          final int ca = a.count > 0 ? a.count : 1 << 30;
-          final int cb = b.count > 0 ? b.count : 1 << 30;
-          if (ca != cb) return ca.compareTo(cb);
-          // No counts: qualified/multi-word names are more specific.
-          int spec(Tag t) =>
-              (t.fullString.contains('(') ? 2 : 0) + (t.fullString.contains('_') ? 1 : 0);
-          final int bySpec = spec(b).compareTo(spec(a));
-          if (bySpec != 0) return bySpec;
-          return b.fullString.length.compareTo(a.fullString.length);
-        });
-      for (final t in candidates.take(2)) {
-        picked.add(t.fullString);
-      }
-    }
-
-    if (picked.isEmpty) return null;
-
-    final String? id = item.serverId;
-    final String exclusion = (id != null && id.isNotEmpty) ? ' -id:$id' : '';
-    return _relatedQueryCache = picked.join(' ') + exclusion;
-  }
-
   @override
   Widget build(BuildContext context) {
     final bool tagsAvailable = tags.isNotEmpty || hasLoadItemSupport;
@@ -1854,13 +1771,18 @@ class _TagViewState extends State<TagView> {
                 // Only shows when we can build a meaningful seed query.
                 Builder(
                   builder: (context) {
-                    final String? query = _buildRelatedQuery();
-                    if (query == null) return const SizedBox.shrink();
+                    // Blended suggestions: several different facet queries
+                    // (character / franchise minus that character / artist /
+                    // act / style) mixed under quotas, rather than one tag
+                    // search — a single tag just reproduces Tag Hub.
+                    if (SuggestionEngine.facetsForItem(item).isEmpty) {
+                      return const SizedBox.shrink();
+                    }
                     final Booru previewBooru =
                         possibleBooruHandler?.booru ?? searchHandler.currentBooru;
                     return ExpansionTile(
                       title: const Text(
-                        'Related',
+                        'Suggested',
                         style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
                       ),
                       initiallyExpanded: relatedExpanded,
@@ -1875,13 +1797,13 @@ class _TagViewState extends State<TagView> {
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 8),
                           child: TagContentPreview(
-                            key: ValueKey('related-${previewBooru.name}-${item.serverId ?? item.fileURL}'),
-                            tag: query,
+                            key: ValueKey('suggested-${previewBooru.name}-${item.serverId ?? item.fileURL}'),
+                            tag: 'suggestions',
                             boorus: [previewBooru],
                             parentTab: searchHandler.currentTab,
                             compact: true,
-                            compactTitle: 'Related',
-                            rankAgainst: item,
+                            compactTitle: 'Mixed suggestions',
+                            suggestFor: item,
                           ),
                         ),
                       ],
@@ -2818,7 +2740,6 @@ class _CollapsibleRelatedPreview extends StatefulWidget {
     required this.booru,
     required this.query,
     required this.parentTab,
-    this.rankAgainst,
     super.key,
   });
 
@@ -2827,8 +2748,6 @@ class _CollapsibleRelatedPreview extends StatefulWidget {
   final Booru booru;
   final String query;
   final SearchTab? parentTab;
-  // Post to rank this section's results against (see TagContentPreview).
-  final BooruItem? rankAgainst;
 
   @override
   State<_CollapsibleRelatedPreview> createState() => _CollapsibleRelatedPreviewState();
@@ -2881,7 +2800,6 @@ class _CollapsibleRelatedPreviewState extends State<_CollapsibleRelatedPreview> 
               boorus: [widget.booru],
               parentTab: widget.parentTab,
               compact: true,
-              rankAgainst: widget.rankAgainst,
               // No compactTitle here: the wrapper above already shows the
               // section header, so let TagContentPreview render its default
               // "Preview" sub-label so we don't get a duplicate title.
@@ -2903,7 +2821,8 @@ class TagContentPreview extends StatefulWidget {
     this.onEffectiveTagChanged,
     this.hideWhenEmpty = false,
     this.header,
-    this.rankAgainst,
+    this.suggestFor,
+    this.suggestBoorus,
     super.key,
   }) : assert(
          boorus.isNotEmpty,
@@ -2937,12 +2856,16 @@ class TagContentPreview extends StatefulWidget {
   // [hideWhenEmpty] kicks in.
   final Widget? header;
 
-  // When set, each fetched page is re-ordered so the posts most alike this
-  // item come first (rarity/type-weighted tag overlap — see
-  // post_similarity.dart), and the item itself is dropped from the results.
-  // This is what turns "everything by this artist" into "the ones actually
-  // like the post you're looking at".
-  final BooruItem? rankAgainst;
+  // When set, this strip stops being a single tag search and becomes the
+  // blended suggestion feed for that post: several different facet queries
+  // (character / franchise-minus-character / artist / act / style) fetched in
+  // parallel and interleaved under per-facet quotas and per-artist,
+  // per-character caps. See SuggestionHandler / SuggestionEngine.
+  final BooruItem? suggestFor;
+
+  // Cross-booru discovery: when set (and longer than one), the facets are
+  // spread across these boorus with tag spellings translated per site.
+  final List<Booru>? suggestBoorus;
 
   @override
   State<TagContentPreview> createState() => _TagContentPreviewState();
@@ -2964,8 +2887,6 @@ class _TagContentPreviewState extends State<TagContentPreview> with AutomaticKee
   // Bounded auto-pagination: some boorus return thin/empty early pages for
   // rare tags — keep fetching a few pages until there's something to show.
   int _autoPagesFetched = 0;
-  // How many items of filteredFetched have already been ranked+pinned.
-  int _rankedUpTo = 0;
 
   final AutoScrollController scrollController = AutoScrollController();
 
@@ -3089,13 +3010,20 @@ class _TagContentPreviewState extends State<TagContentPreview> with AutomaticKee
 
     if (refresh || tab == null) {
       _autoPagesFetched = 0;
-      _rankedUpTo = 0;
       await _maybeResolveAliases();
       if (!mounted) return;
       tab = SearchTab(
         selectedBooru!,
         null,
         _effectiveTag,
+        customHandler: widget.suggestFor == null
+            ? null
+            : SuggestionHandler(
+                selectedBooru!,
+                30,
+                sourceItem: widget.suggestFor!,
+                targetBoorus: widget.suggestBoorus,
+              ),
       );
       // Preview strips are throwaway mini-searches. Don't let them write the
       // previewed booru's tag types into the shared store — otherwise
@@ -3131,19 +3059,7 @@ class _TagContentPreviewState extends State<TagContentPreview> with AutomaticKee
     }
     setState(() {});
 
-    // Remember where this page started so already-visible items keep their
-    // position and only the new batch gets ranked into place.
-    final int rankFrom = _rankedUpTo;
     await tab!.booruHandler.search(_effectiveTag, null);
-
-    if (widget.rankAgainst != null) {
-      // Copy → rank → reassign: writing .value is what makes the RxList
-      // notify the grid (mutating in place silently wouldn't).
-      final List<BooruItem> items = [...tab!.booruHandler.filteredFetched];
-      rankBySimilarity(items, widget.rankAgainst!, from: rankFrom.clamp(0, items.length));
-      _rankedUpTo = items.length;
-      tab!.booruHandler.filteredFetched.value = items;
-    }
 
     if (tab!.booruHandler.locked && !isLastPage) {
       isLastPage = true;

@@ -10,7 +10,10 @@ import 'package:lolisnatcher/src/handlers/interests_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
+import 'package:lolisnatcher/src/handlers/suggestion_engine.dart';
 import 'package:lolisnatcher/src/utils/tag_alias_resolver.dart';
+// Multi-term facet queries ('3d mating_press') need the per-term resolver.
+import 'package:lolisnatcher/src/handlers/tag_alias_resolver.dart' as query_resolver;
 
 /// "For You" recommender: a virtual booru that surfaces posts from the user's
 /// real boorus based on their taste profile (see [InterestsHandler]) or an
@@ -51,6 +54,23 @@ class ForYouHandler extends BooruHandler {
   // different every time — otherwise the first page of the feed was fully
   // deterministic and looked identical on every open.
   int _rotationOffset = 0;
+
+  // Recently viewed posts, used as the source posts of the facet blend. The
+  // feed is built the same way the in-post Suggested strip is: each recent
+  // post contributes several DIFFERENT facet queries (its character, its
+  // franchise, its artist, its distinctive act/style tags) which are then
+  // blended under per-artist / per-character caps — so the feed varies
+  // instead of being one seed tag's search results.
+  List<BooruItem> _recentPosts = [];
+  bool _historyLoaded = false;
+  // Explicit seeds (a tag, or "recommend more like this") bypass the history
+  // blend — the user steered the feed deliberately.
+  bool _explicitSeeds = false;
+  final Set<String> _servedKeys = {};
+
+  // Source posts + facets per page, bounding request fan-out.
+  static const int _postsPerPage = 3;
+  static const int _facetsPerPost = 3;
 
   // Bounds how many empty rounds we auto-retry within a single scroll before
   // declaring the feed exhausted (each round fans out to every source).
@@ -182,6 +202,21 @@ class ForYouHandler extends BooruHandler {
 
     // Seeds: explicit if given, else the strongest profile tags.
     _seeds = _parseSeeds(tags);
+    _explicitSeeds = _seeds.isNotEmpty;
+
+    // Recently viewed posts drive the facet blend in profile mode.
+    if (!_explicitSeeds && !_historyLoaded) {
+      _historyLoaded = true;
+      try {
+        _recentPosts = await SettingsHandler.instance.dbHandler
+            .getViewedPosts('', 0, 60)
+            .timeout(const Duration(seconds: 8));
+      } catch (_) {
+        _recentPosts = [];
+      }
+      // Only posts with enough tags to build facets from are useful sources.
+      _recentPosts = _recentPosts.where((p) => SuggestionEngine.facetsForItem(p).isNotEmpty).toList();
+    }
     _profile = {
       for (final e in await InterestsHandler.instance.topTags(limit: 60)) e.key: e.value,
     };
@@ -251,6 +286,14 @@ class ForYouHandler extends BooruHandler {
       locked = true;
       return fetched;
     }
+    // Profile mode with viewing history: build the feed the same way the
+    // in-post Suggested strip does — facets of real posts you looked at,
+    // blended. Falls through to seed-tag mode when there's no history yet or
+    // the user steered the feed explicitly.
+    if (!_explicitSeeds && _recentPosts.isNotEmpty) {
+      return _searchBlended(tags, withCaptchaCheck: withCaptchaCheck);
+    }
+
     if (_seeds.isEmpty) {
       errorString =
           'Not enough history yet. Browse, favourite or preview some tags — or seed this with a tag / favourite from the ⋮ menu.';
@@ -342,6 +385,84 @@ class ForYouHandler extends BooruHandler {
 
     await afterParseResponse(pageItems);
 
+    if (fetched.length == before) {
+      locked = true;
+    }
+    return fetched;
+  }
+
+  /// Facet-blend page: takes a rotating handful of recently viewed posts,
+  /// asks each of their facets (character / franchise / artist / act / style)
+  /// on a rotating source booru, and blends everything under the engine's
+  /// per-artist and per-character caps.
+  Future<dynamic> _searchBlended(String tags, {bool withCaptchaCheck = true}) async {
+    final int before = fetched.length;
+    final List<Future<MapEntry<SuggestionFacet, List<BooruItem>>>> requests = [];
+    int facetIndex = 0;
+
+    for (int p = 0; p < _postsPerPage; p++) {
+      final BooruItem sourcePost = _recentPosts[(_feedPage * _postsPerPage + p + _rotationOffset) % _recentPosts.length];
+      final List<SuggestionFacet> facets = SuggestionEngine.facetsForItem(sourcePost, seed: _feedPage);
+      for (final facet in facets.take(_facetsPerPost)) {
+        final int j = (facetIndex + _feedPage + _rotationOffset) % _sources.length;
+        facetIndex++;
+        final Booru booru = _sources[j];
+        final BooruHandler handler = _sourceHandlers[j];
+
+        requests.add(() async {
+          String query = facet.query;
+          final String? aliased = await _bounded<String?>(
+            () => query_resolver.TagAliasResolver.resolveQuery(query, booru).then((r) => r.query),
+            _resolveTimeout,
+          );
+          if (aliased != null && aliased.trim().isNotEmpty) query = aliased;
+
+          handler.pageNum = _sourceStartPages[j] + 1 + _feedPage;
+          handler.locked = false;
+          final List<BooruItem>? got = await _bounded(
+            () async => (await handler.search(query, null)) as List<BooruItem>? ?? <BooruItem>[],
+            _searchTimeout,
+          );
+          if (got == null) return MapEntry(facet, <BooruItem>[]);
+          // Sub-handlers accumulate across pages; keep only this round's tail.
+          final List<BooruItem> tail = got.length > limit ? got.sublist(got.length - limit) : [...got];
+          return MapEntry(
+            facet,
+            tail.where((i) => !SearchHandler.instance.isPostSeen(i) && !_isDuplicate(i)).toList(),
+          );
+        }());
+      }
+    }
+
+    final Map<SuggestionFacet, List<BooruItem>> byFacet = {};
+    for (final entry in await Future.wait(requests)) {
+      byFacet.putIfAbsent(entry.key, () => []).addAll(entry.value);
+    }
+
+    final List<BooruItem> pageItems = SuggestionEngine.blend(
+      byFacet,
+      source: null,
+      exclude: _servedKeys,
+      limit: limit,
+    );
+    for (final item in pageItems) {
+      _servedKeys.add(item.postURL.isNotEmpty ? item.postURL : item.fileURL);
+    }
+
+    _feedPage++;
+
+    if (pageItems.isEmpty) {
+      _emptyStreak++;
+      if (_emptyStreak <= 2) {
+        return _searchBlended(tags, withCaptchaCheck: withCaptchaCheck);
+      }
+      _emptyStreak = 0;
+      locked = true;
+      return fetched;
+    }
+    _emptyStreak = 0;
+
+    await afterParseResponse(pageItems);
     if (fetched.length == before) {
       locked = true;
     }

@@ -1,18 +1,12 @@
 import 'dart:math';
 
-import 'package:lolisnatcher/src/data/booru_item.dart';
-import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
-import 'package:lolisnatcher/src/handlers/tag_handler.dart';
 
-/// Post-to-post relevance, modelled on how rule34.xyz orders the suggestions
-/// on a post page: candidates from a narrow pool (same creator / same seed
-/// query) ranked by how much they overlap the viewed post — where overlap on
-/// a *distinctive* tag counts for far more than overlap on a medium or
-/// format tag.
+/// Shared vocabulary for the recommendation code: which tags actually carry
+/// meaning, and how to compare tag names across boorus that spell them
+/// differently (spaces vs underscores).
 ///
-/// Sharing `3d`, `animated` and `1girls` means nothing: half the site does.
-/// Sharing an artist, a character, or a rare kink tag is the actual signal.
+/// See SuggestionEngine for how these are used to build varied suggestions.
 
 /// Medium / format / catch-all tags. These match a huge share of any booru,
 /// so they carry almost no relevance information.
@@ -68,79 +62,4 @@ double tagRelevanceWeight(String name, TagType type, int count) {
   }
 
   return typeWeight * rarityWeight;
-}
-
-TagType _resolveType(Tag tag) {
-  if (tag.tagType != TagType.none) return tag.tagType;
-  // Boorus in the shimmie family send every tag untyped; the app-wide store
-  // usually knows the type anyway (learned from other boorus).
-  return TagHandler.instance.getTag(tag.fullString).tagType;
-}
-
-/// Weighted overlap between [candidate] and [source]. Higher = more alike.
-double postSimilarityScore(BooruItem candidate, BooruItem source) {
-  if (source.tagsList.isEmpty || candidate.tagsList.isEmpty) return 0;
-
-  // Source tags carry the rarity counts we score with (the candidate's own
-  // copy of a tag has the same count anyway).
-  final Map<String, Tag> sourceTags = {};
-  for (final t in source.tagsList) {
-    final String key = normalizeTagName(t.fullString);
-    if (key.isEmpty) continue;
-    sourceTags[key] = t;
-  }
-  if (sourceTags.isEmpty) return 0;
-
-  double score = 0;
-  final Set<String> counted = {};
-  for (final t in candidate.tagsList) {
-    final String key = normalizeTagName(t.fullString);
-    if (key.isEmpty || counted.contains(key)) continue;
-    final Tag? sourceTag = sourceTags[key];
-    if (sourceTag == null) continue;
-    counted.add(key);
-    // Prefer whichever copy of the tag actually carries a count.
-    final int count = sourceTag.count > 0 ? sourceTag.count : t.count;
-    score += tagRelevanceWeight(key, _resolveType(sourceTag), count);
-  }
-  return score;
-}
-
-bool _isSamePost(BooruItem a, BooruItem b) {
-  if (a.postURL.isNotEmpty && a.postURL == b.postURL) return true;
-  if (a.fileURL.isNotEmpty && a.fileURL == b.fileURL) return true;
-  return false;
-}
-
-/// Re-orders [items] in place, most-similar-to-[source] first, and drops the
-/// source post itself when the booru returned it.
-///
-/// [from] pins everything before that index: pages already on screen keep
-/// their order while each newly fetched batch is ranked into place, so the
-/// strip never reshuffles under a scrolling thumb.
-void rankBySimilarity(List<BooruItem> items, BooruItem source, {int from = 0}) {
-  if (items.length <= from + 1 && from < items.length) {
-    // Single new item — nothing to sort, but still drop a self-match.
-    if (_isSamePost(items[from], source)) items.removeAt(from);
-    return;
-  }
-  if (from >= items.length) return;
-
-  final List<BooruItem> head = items.sublist(0, from);
-  final List<BooruItem> tail = items.sublist(from)..removeWhere((i) => _isSamePost(i, source));
-
-  // Decorate-sort-undecorate with an index tiebreak: Dart's sort isn't
-  // stable, and equal-score items should keep the booru's own ordering.
-  final List<({BooruItem item, double score, int index})> decorated = [
-    for (int i = 0; i < tail.length; i++)
-      (item: tail[i], score: postSimilarityScore(tail[i], source), index: i),
-  ]..sort((a, b) {
-      final int byScore = b.score.compareTo(a.score);
-      return byScore != 0 ? byScore : a.index.compareTo(b.index);
-    });
-
-  items
-    ..clear()
-    ..addAll(head)
-    ..addAll(decorated.map((d) => d.item));
 }
