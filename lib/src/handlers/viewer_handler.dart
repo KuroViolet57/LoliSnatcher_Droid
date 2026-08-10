@@ -34,7 +34,17 @@ class ViewerHandler {
 
   final RxList<GlobalKey> activeViewers = RxList([]);
 
-  static const int maxActiveViewers = 1;
+  /// How deep viewers may stack before the covered one stops rendering its
+  /// media (gallery_view_page's isViewerTooDeep).
+  ///
+  /// 2, not 1: a post's file carousel opens ON TOP of the viewer that launched
+  /// it, and at 1 the parent unmounted the moment the overlay appeared —
+  /// tearing down its player (the saved-position hand-off exists because of
+  /// exactly that). The tag-preview and waterfall nested viewers read the same
+  /// constant and simply keep their parent alive too. Kept low deliberately:
+  /// each extra level is another live player against a media_kit pool that
+  /// defaults to 4.
+  static const int maxActiveViewers = 2;
 
   void addViewer(GlobalKey key) {
     if (activeViewers.contains(key)) {

@@ -96,6 +96,36 @@ class ThumbnailCardBuild extends StatelessWidget {
                 ),
               ),
             ),
+            // Gallery posts: the API describes only the cover, so mark cards
+            // whose post is known to hold several files. The count is learned
+            // when the post is opened (one page request there, none here), so
+            // this appears from the second visit on rather than costing a
+            // probe per grid cell.
+            if ((item.fileCountHint ?? 0) > 1)
+              Positioned(
+                top: 6,
+                left: 6,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.66),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Symbols.burst_mode_rounded, size: 13, color: Colors.white),
+                        const SizedBox(width: 3),
+                        Text(
+                          '${item.fileCountHint}',
+                          style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             //
             Positioned.fill(
               child: ListenableBuilder(

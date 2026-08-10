@@ -802,3 +802,38 @@ gallery_view_page.dart:658 computes isViewerTooDeep from it; the overlay
 needs it at 2 (the tag-preview + waterfall paths read the same constant),
 and mediaKitMaxPlayers defaults to 4 so the overlay must cap its own
 preload rather than raising the setting.
+
+## Build `multifile` (2026-08-10) — bakemono part 2: gallery posts in the viewer
+- NEW lib/src/handlers/post_files_handler.dart: lazy, deduped, session-cached
+  per-post file lists via SiteProfile.postFilesUrl/parsePostFiles. Fetch is
+  triggered ONLY from gallery_view_page (_loadPostFiles on open + on page
+  change) — never during grid load. Failures are remembered so they don't
+  retry in a loop. Sets item.fileCountHint on success.
+  `itemsFor(post, files)` builds one BooruItem per file (thumb falls back to
+  the post cover, since video entries have thumb/preview = null).
+- NEW lib/src/pages/post_files_page.dart: the carousel overlay +
+  `openPostFilesOverlay`. Registers its key with ViewerHandler.addViewer
+  (same pattern as floating_tag_preview_window / waterfall_view) so zoom,
+  mute, appbar visibility and player position/pause behaviour are inherited.
+  `_PostFileSlide` mirrors gallery_view_page's widget selection exactly
+  (media_kit -> better_player -> chewie -> ImageViewer), so video slides run
+  through the SAME MediaKitPlayerView — no second player implementation.
+  ONLY the visible slide has isViewed=true: no preload, so the overlay holds
+  at most 1 player and the pool (mediaKitMaxPlayers default 4, parent viewer
+  holding 1) is never thrashed. Setting NOT raised.
+- ViewerHandler.maxActiveViewers 1 -> 2. At 1 the parent viewer unmounted the
+  instant the overlay opened (gallery_view_page.dart isViewerTooDeep), which
+  is the same path that tears down players. Side effect: tag-preview and
+  waterfall nested viewers now also keep their parent alive one level.
+- hideable_appbar getActions(): Obx-wrapped ToolbarAction (burst_mode icon,
+  "N files in this post"), rendered ONLY when PostFilesHandler.hasMultiple —
+  so it self-reveals once the lazy fetch lands and never shows otherwise.
+- thumbnail_card_build.dart: top-left badge with the file count when
+  fileCountHint > 1. DECISION: no per-item probe on the dapi path (that would
+  be ~90 HTML requests per page); the count is learned when a post is opened,
+  so the badge shows from the second visit on.
+DESIGN ANSWERS (asked for): snatch = ALL files into a per-post subfolder
+(cover-only silently loses 25 of 26 in the verified fanbox example);
+favourites/history key on the POST (postURL) — files have no stable identity
+across re-scrapes and the grid is one-item-per-post. NEITHER IS IMPLEMENTED
+YET — snatching still takes the cover only; that is the next task.

@@ -25,6 +25,9 @@ import 'package:lolisnatcher/src/handlers/database_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/handlers/post_files_handler.dart';
+import 'package:lolisnatcher/src/data/site_profile.dart';
+import 'package:lolisnatcher/src/pages/post_files_page.dart';
 import 'package:lolisnatcher/src/handlers/snatch_handler.dart';
 import 'package:lolisnatcher/src/handlers/tag_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
@@ -256,6 +259,33 @@ class _HideableAppBarState extends State<HideableAppBar> {
         ),
       );
     }
+
+    // Gallery posts: some sites hold several files behind one post, and the
+    // API only ever describes the cover. The file list is fetched lazily when
+    // a post is opened (see PostFilesHandler), so this action appears as soon
+    // as we know there is more than one file — and never otherwise.
+    actions.add(
+      Obx(() {
+        final BooruItem? item = page.value >= 0 && page.value < widget.tab.booruHandler.filteredFetched.length
+            ? widget.tab.booruHandler.filteredFetched[page.value]
+            : null;
+        final filesHandler = PostFilesHandler.instance;
+        if (item == null || !filesHandler.hasMultiple(item)) {
+          return const SizedBox.shrink();
+        }
+        final List<PostFile> files = filesHandler.cached(item)!;
+        return ToolbarAction(
+          key: const ValueKey('post-files'),
+          icon: const Icon(Symbols.burst_mode_rounded),
+          tooltip: '${files.length} files in this post',
+          onTap: () => openPostFilesOverlay(
+            context,
+            items: filesHandler.itemsFor(item, files),
+            booru: widget.tab.booruHandler.booru,
+          ),
+        );
+      }),
+    );
 
     // Debug - print current item info
     // actions.add(IconButton(

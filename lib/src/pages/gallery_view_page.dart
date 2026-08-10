@@ -23,6 +23,7 @@ import 'package:lolisnatcher/src/handlers/interests_handler.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
+import 'package:lolisnatcher/src/handlers/post_files_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/snatch_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
@@ -95,6 +96,16 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
     _dwellItem = null;
   }
 
+  /// Sites where a post can hold several files only reveal the list on the
+  /// post's own page, so it is fetched HERE — when a post is actually opened,
+  /// never while the grid loads — and cached. The toolbar action appears by
+  /// itself once the list arrives and turns out to hold more than one file.
+  void _loadPostFiles(BooruItem item) {
+    final booru = widget.tab.booruHandler.booru;
+    if (!PostFilesHandler.instance.supports(booru)) return;
+    unawaited(PostFilesHandler.instance.ensureLoaded(item, booru));
+  }
+
   void _startDwell(BooruItem item) {
     if (identical(item, _dwellItem)) return;
     _flushDwell();
@@ -143,6 +154,7 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
       final item = widget.tab.booruHandler.filteredFetched[widget.initialIndex];
       viewerHandler.setCurrent(item);
       _startDwell(item);
+      _loadPostFiles(item);
       if (settingsHandler.dimSeenPosts) {
         unawaited(searchHandler.markPostSeen(item));
       }
@@ -722,6 +734,9 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
                                   _startDwell(item);
                                   if (settingsHandler.dimSeenPosts) {
                                     unawaited(searchHandler.markPostSeen(item));
+                                  }
+                                  {
+                                    _loadPostFiles(item);
                                   }
                                 }
                               } catch (e) {
