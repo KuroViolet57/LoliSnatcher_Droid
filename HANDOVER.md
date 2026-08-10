@@ -702,3 +702,24 @@ FIX:
 - BooruItem: aspect ratios only computed when BOTH dimensions are > 0.
   bakemono reports width="0" height="0", and 0/0 = NaN was flowing into
   thumbnail layout (thumbnail.dart:206) as a NaN aspect ratio.
+
+## Build `bakemono2` (2026-08-10) — autodetect no longer falls back to Nozomi
+FOLLOW-UP log (58e50bf6) after the `bakemono` build: the URL-parsing fix
+WORKED — the booru test now logs "Found Results as BooruType.Gelbooru"
+for bakemono.app. But the user's SAVED booru entry was still typed Nozomi
+from the earlier bad autodetect, so the tab kept loading nozomi.la:
+every "Added N tags to queue from bakemono" was paired with fetches to
+j./w./qtn.gold-usergeneratedcontent.net (NozomiHandler's HARDCODED hosts,
+lines 17-21) and zero requests ever went to bakemono.app/data.
+ROOT CAUSE of the mis-detection: NozomiHandler (and RedGifsHandler)
+ignore booru.baseURL entirely and always hit their own fixed hosts, so
+they "succeed" against ANY entered URL. They were still in
+BooruType.detectable, making Nozomi a silent catch-all: any site that
+failed the other probes got detected as Nozomi and then served nozomi.la
+content under the user's site name.
+FIX: removed BooruType.Nozomi and BooruType.RedGifs from `detectable`
+(same treatment already applied to XXXTik / XXXFollow / Civitai, which
+are also fixed-host). Both remain manually selectable (`saveable`).
+USER ACTION still required for an already-saved wrong entry: edit the
+booru, set type to Gelbooru, save (the stored type doesn't change by
+itself).

@@ -82,7 +82,14 @@ enum BooruType {
       // xxxfollow has a fixed API host; only pick it deliberately.
       ..remove(BooruType.XXXFollow)
       // civitai has a fixed API host; only pick it deliberately.
-      ..remove(BooruType.Civitai);
+      ..remove(BooruType.Civitai)
+      // Nozomi and RedGifs hardcode their own hosts and ignore the entered
+      // URL entirely, so they "succeed" against ANY address — which made
+      // them a silent catch-all: a site that failed every other probe was
+      // detected as Nozomi and then quietly served nozomi.la content under
+      // the user's site name. Only pick them deliberately.
+      ..remove(BooruType.Nozomi)
+      ..remove(BooruType.RedGifs);
   }
 
   bool get isDetectable => detectable.contains(this);
