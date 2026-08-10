@@ -723,3 +723,33 @@ are also fixed-host). Both remain manually selectable (`saveable`).
 USER ACTION still required for an already-saved wrong entry: edit the
 booru, set type to Gelbooru, save (the stored type doesn't change by
 itself).
+
+## Build `booru-swap` (2026-08-10) — editing a booru now affects OPEN tabs
+USER: "I already swapped bakemono from Nozomi to Gelbooru and it didn't
+change anything."
+ROOT CAUSE (real bug, independent of bakemono): `SearchTab.booruHandler`
+was `late final`, built ONCE in the constructor from the booru's type,
+and the tab also holds a reference to the Booru OBJECT that was in
+booruList at creation time. Editing a booru replaces the list entry with
+a NEW Booru object and rewrites its json — but NOTHING re-pointed open
+tabs. So a type swap left every open tab on the old handler indefinitely;
+for a fixed-host handler like Nozomi that means the tab silently keeps
+loading nozomi.la under the user's own site name (log evidence: every
+bakemono.app request in log 58e50bf6 is a booru-TEST probe with limit=5,
+while the tab traffic goes to j./w./qtn.gold-usergeneratedcontent.net,
+including nozomi/doe.nozomi + nozomi/jane.nozomi index fetches).
+FIX:
+- `booruHandler` is no longer final; new `SearchTab.rebuildHandler(booru)`
+  rebuilds it via BooruHandlerFactory, re-applies merge tagOverrides and
+  clears the selection.
+- New `SearchHandler.applyBooruEdit(updated)`: matches open tabs by booru
+  NAME (the identity used by configs + tab backups); rebuilds the handler
+  only when type or baseURL changed (so favicon/API-key edits keep loaded
+  results), otherwise just adopts the new object; logs the type
+  transition and re-runs the current search.
+- booru_edit_page calls it right after settingsHandler.saveBooru.
+- TagHandler.queue log now prints `name [type]` — a booru's NAME never
+  revealed which API a tab was really using, which is what made this
+  invisible in logs.
+NOTE: previously the only way to apply a type change was an app restart
+(tabs are restored by name via parseTabFromBackup -> booruList.firstWhere).

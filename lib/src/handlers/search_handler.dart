@@ -1077,6 +1077,43 @@ class SearchHandler {
   RxString errorString = ''.obs;
 
   // run search on current tab
+  /// Re-points every open tab at an edited booru config.
+  ///
+  /// Called after a booru is saved in the editor. Tabs match by name (the
+  /// booru's identity in configs and tab backups); only a changed type or
+  /// base URL forces a handler rebuild, so ordinary edits (favicon, API key)
+  /// don't throw away loaded results.
+  void applyBooruEdit(Booru updated) {
+    if (updated.name?.isEmpty ?? true) return;
+
+    bool changedAny = false;
+    for (final tab in tabs) {
+      final Booru current = tab.selectedBooru.value;
+      if (current.name != updated.name) continue;
+      final bool needsRebuild = current.type != updated.type || current.baseURL != updated.baseURL;
+      if (needsRebuild) {
+        tab.rebuildHandler(updated);
+        changedAny = true;
+        Logger.Inst().log(
+          'rebuilt tab handler for "${updated.name}": ${current.type?.name} -> ${updated.type?.name}',
+          'SearchHandler',
+          'applyBooruEdit',
+          LogTypes.booruHandlerInfo,
+        );
+      } else {
+        // Same API, new details (key, favicon, ...) — just adopt the object.
+        tab.selectedBooru.value = updated;
+      }
+    }
+
+    if (changedAny) {
+      tabs.value = [...tabs];
+      if (tabs.isNotEmpty) {
+        unawaited(runSearch());
+      }
+    }
+  }
+
   Future<void> runSearch() async {
     final startTabId = currentTab.id;
     // do nothing if reached the end or detected an error
@@ -1806,9 +1843,36 @@ class SearchTab {
     }
   }
 
+  /// Rebuilds this tab around an edited booru config.
+  ///
+  /// A tab builds its handler ONCE, from the booru's type at creation time,
+  /// and holds a reference to that Booru object. Editing the booru replaces
+  /// the entry in the booru list with a new object, so without this the open
+  /// tab kept using the OLD handler forever — changing a site's type from
+  /// (say) Nozomi to Gelbooru appeared to do nothing, and the tab quietly
+  /// went on loading the old handler's hardcoded hosts.
+  void rebuildHandler(Booru booru) {
+    selectedBooru.value = booru;
+
+    final List<Booru> tempBooruList = [booru, ...?secondaryBoorus.value];
+    final temp = BooruHandlerFactory().getBooruHandler(tempBooruList, null);
+    booruHandler = temp.booruHandler;
+    booruHandler.pageNum = temp.startingPage;
+    final handler = booruHandler;
+    if (handler is MergebooruHandler) {
+      handler.tagOverrides = Map<String, String>.from(tagOverrides);
+      handler.inheritMainTags = Map<String, bool>.from(inheritMainTags);
+    }
+    // The previous handler's results came from a different site/API, so they
+    // can't be kept. The tab reloads on its next search.
+    selected.clear();
+  }
+
   late final Rx<Booru> selectedBooru;
   late final Rxn<List<Booru>?> secondaryBoorus;
-  late final BooruHandler booruHandler;
+  // NOT final: editing a booru's config (type/URL) has to be able to swap the
+  // handler of tabs that are already open — see [rebuildHandler].
+  late BooruHandler booruHandler;
 
   double scrollPosition = 0;
   RxList<BooruItem> selected = RxList<BooruItem>.from([]);

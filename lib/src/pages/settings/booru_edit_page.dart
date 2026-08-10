@@ -898,6 +898,10 @@ class _BooruEditState extends State<BooruEdit> {
       }
 
       await settingsHandler.saveBooru(newBooru);
+      // Open tabs built their handler from the OLD config; re-point them at
+      // the saved one so a changed type/URL takes effect immediately instead
+      // of only after an app restart.
+      SearchHandler.instance.applyBooruEdit(newBooru);
 
       FlashElements.showSnackbar(
         context: context,

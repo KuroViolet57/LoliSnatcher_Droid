@@ -222,7 +222,11 @@ class TagHandler {
 
   void queue(List<String> untypedTags, Booru booru, int cooldown) {
     Logger.Inst().log(
-      'Added ${untypedTags.length} tags to queue from ${booru.name}',
+      // Type included: a booru's NAME says nothing about which API a tab is
+      // actually talking to, which made a mis-typed config (loading a
+      // completely different site's content under your name for it) hard to
+      // spot in logs.
+      'Added ${untypedTags.length} tags to queue from ${booru.name} [${booru.type?.name}]',
       'TagHandler',
       'queue',
       LogTypes.tagHandlerInfo,
