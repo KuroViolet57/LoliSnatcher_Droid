@@ -16,6 +16,7 @@ import 'package:lolisnatcher/src/data/tag_suggestion.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_utils.dart';
+import 'package:lolisnatcher/src/handlers/post_files_handler.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 
@@ -177,6 +178,7 @@ class GelbooruHandler extends BooruHandler {
       }
     }
     _usingListing = false;
+    _lastApiTags = tags;
 
     // EXAMPLE: https://gelbooru.com/index.php?page=dapi&s=post&q=index&tags=rating:general%20order:score&limit=20&pid=0&json=1
     return _apiUrl(tags, cappedPage);
@@ -191,10 +193,19 @@ class GelbooruHandler extends BooruHandler {
   // rest of this handler's life and stay on the documented API.
   bool _listingDisabled = false;
   String _listingTags = '';
+  String _lastApiTags = '';
 
   @override
   FutureOr<List<BooruItem>> parseResponse(dynamic response) async {
-    if (!_usingListing) return super.parseResponse(response);
+    if (!_usingListing) {
+      final List<BooruItem> items = await super.parseResponse(response);
+      // Backfill anything the API can't tell us (file counts for gallery
+      // posts) in the background — never block the page on it.
+      if (siteProfile != null) {
+        unawaited(PostFilesHandler.instance.enrichCounts(items, booru, _lastApiTags));
+      }
+      return items;
+    }
 
     final SiteProfile? profile = siteProfile;
     final List<BooruItem>? scraped = profile?.parseListing(response.data?.toString() ?? '', booru);

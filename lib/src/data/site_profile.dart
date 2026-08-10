@@ -88,6 +88,10 @@ abstract class SiteProfile {
   /// markup shifts without warning.
   List<BooruItem>? parseListing(String body, Booru booru) => null;
 
+  /// A listing page used only to backfill metadata the API omits (file
+  /// counts), matched back to API items by id. Null = nothing to backfill.
+  String? enrichmentUrl(Booru booru, String tags, int listingPage) => null;
+
   /// Items a [listingUrl] page can return, when the site caps it and ignores
   /// any limit parameter. 0 = no known cap.
   int get listingPageSize => 0;

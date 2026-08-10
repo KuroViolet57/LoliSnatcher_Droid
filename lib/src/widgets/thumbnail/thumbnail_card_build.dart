@@ -97,12 +97,15 @@ class ThumbnailCardBuild extends StatelessWidget {
               ),
             ),
             // Gallery posts: the API describes only the cover, so mark cards
-            // whose post is known to hold several files. The count is learned
-            // when the post is opened (one page request there, none here), so
-            // this appears from the second visit on rather than costing a
-            // probe per grid cell.
-            if ((item.fileCountHint ?? 0) > 1)
-              Positioned(
+            // whose post holds several files. The count is backfilled in the
+            // background from the site's own listing (see
+            // PostFilesHandler.enrichCounts) and corrected to the exact media
+            // count once the post is opened — hence the Obx, the badge can
+            // arrive after this cell is already on screen.
+            Obx(() {
+              final int count = item.fileCountHint.value ?? 0;
+              if (count <= 1) return const SizedBox.shrink();
+              return Positioned(
                 top: 6,
                 left: 6,
                 child: DecoratedBox(
@@ -118,14 +121,15 @@ class ThumbnailCardBuild extends StatelessWidget {
                         const Icon(Symbols.burst_mode_rounded, size: 13, color: Colors.white),
                         const SizedBox(width: 3),
                         Text(
-                          '${item.fileCountHint}',
+                          '$count',
                           style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700),
                         ),
                       ],
                     ),
                   ),
                 ),
-              ),
+              );
+            }),
             //
             Positioned.fill(
               child: ListenableBuilder(

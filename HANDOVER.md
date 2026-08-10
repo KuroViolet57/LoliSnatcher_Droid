@@ -837,3 +837,33 @@ DESIGN ANSWERS (asked for): snatch = ALL files into a per-post subfolder
 favourites/history key on the POST (postURL) — files have no stable identity
 across re-scrapes and the grid is one-item-per-post. NEITHER IS IMPLEMENTED
 YET — snatching still takes the cover only; that is the next task.
+
+## Build `badge-ahead` (2026-08-10) — file-count badges BEFORE opening a post
+USER: overlay works, but the badge only appeared after opening+closing a
+post, so the grid gave no at-a-glance signal.
+INVESTIGATED FIRST (per the standing rule — don't accept an API gap):
+dapi carries NO multi-file signal at all. Verified on the known 26-file
+post 12402839: sample="0", has_children="false", parent_id="0". So there
+is nothing free to read.
+SOLUTION — background backfill from the site's own listing, matched BY ID:
+- SiteProfile.enrichmentUrl(booru, tags, listingPage) (bakemono: /posts
+  ?page=N, +q= when searching; returns null when sort/source is active
+  since those already come from the listing WITH counts).
+- PostFilesHandler.enrichCounts(items, booru, tags): for items lacking a
+  count, sweeps up to 4 listing pages, reuses parseListing, and matches
+  scraped serverId -> item, stopping early once every item is covered.
+  Sweeps are deduped per (booru,url) for the session; failures log and
+  abort quietly. Items not covered stay unbadged until opened.
+- MEASURED on live data: one dapi page = 83 items; 4 listing pages
+  returned 200 ids covering 72/83 = 86%, of which 58 were multi-file.
+  Cost ~4 requests per ~90 items instead of 90.
+- Triggered from GelbooruHandler.parseResponse (API branch only),
+  unawaited so the page never blocks on it. `_lastApiTags` carries the
+  query into the sweep.
+- BooruItem.fileCountHint is now `Rxn<int>` and the badge is wrapped in
+  Obx: counts land AFTER the cell is built, so a plain field never
+  repainted. thumbnail_card_build updated accordingly.
+CAVEAT (kept honest): the listing's count includes non-media attachments
+(a card reading "7 files" had 4 entries in viewer-data), so the badge is an
+upper bound until the post is opened, at which point ensureLoaded
+overwrites it with the exact media count.

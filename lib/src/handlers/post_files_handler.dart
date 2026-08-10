@@ -66,7 +66,7 @@ class PostFilesHandler {
           return const <PostFile>[];
         }
         // The grid badge reads this on the way back out of the viewer.
-        item.fileCountHint = files.length;
+        item.fileCountHint.value = files.length;
         loaded[key] = files;
         return files;
       } catch (e) {
@@ -82,6 +82,62 @@ class PostFilesHandler {
         _inFlight.remove(key);
       }
     }();
+  }
+
+  // Backfill bookkeeping: which (booru, query, page) sweeps already ran.
+  final Set<String> _enriched = {};
+
+  /// Fills in file counts for items whose API gave none, so gallery posts are
+  /// recognisable in the GRID without opening them.
+  ///
+  /// The API here exposes no multi-file signal whatsoever, and probing each
+  /// post would cost one request per grid cell. The site's own listing prints
+  /// the count, so a handful of listing pages are fetched once per API page
+  /// and matched back BY POST ID — order-independent, and items the sweep
+  /// doesn't cover simply stay unbadged until opened.
+  Future<void> enrichCounts(List<BooruItem> items, Booru? booru, String tags) async {
+    final SiteProfile? profile = SiteProfile.forBooru(booru);
+    if (profile == null || booru == null || items.isEmpty) return;
+
+    final List<BooruItem> missing = items.where((i) => i.fileCountHint.value == null).toList();
+    if (missing.isEmpty) return;
+
+    const int maxPages = 4;
+    final Map<String, BooruItem> byId = {
+      for (final item in missing)
+        if (item.serverId?.isNotEmpty ?? false) item.serverId!: item,
+    };
+    if (byId.isEmpty) return;
+
+    for (int page = 0; page < maxPages && byId.isNotEmpty; page++) {
+      final String? url = profile.enrichmentUrl(booru, tags, page);
+      if (url == null) return;
+      final String sweepKey = '${booru.name}|$url';
+      if (!_enriched.add(sweepKey)) continue;
+
+      try {
+        final response = await DioNetwork.get(url).timeout(const Duration(seconds: 15));
+        final List<BooruItem>? listing = profile.parseListing(response.data?.toString() ?? '', booru);
+        if (listing == null || listing.isEmpty) return;
+
+        for (final scraped in listing) {
+          final String? id = scraped.serverId;
+          final int? count = scraped.fileCountHint.value;
+          if (id == null || count == null) continue;
+          final BooruItem? target = byId.remove(id);
+          // Reactive: the grid cell may already be on screen.
+          target?.fileCountHint.value = count;
+        }
+      } catch (e) {
+        Logger.Inst().log(
+          'file-count backfill failed for $url: $e',
+          'PostFilesHandler',
+          'enrichCounts',
+          LogTypes.booruHandlerInfo,
+        );
+        return;
+      }
+    }
   }
 
   /// Builds viewer-ready items for a post's files.

@@ -130,6 +130,23 @@ class BakemonoProfile extends SiteProfile {
     return Uri.parse('${booru.baseURL}/posts').replace(queryParameters: params).toString();
   }
 
+  /// Plain listing pages, used to backfill file counts for items that came
+  /// from the API (which exposes no multi-file signal at all — verified: a
+  /// 26-file post still reports sample="0", has_children="false",
+  /// parent_id="0"). Four of these cover a full API page of ~90 items, so a
+  /// badge costs ~4 requests per page instead of one per post.
+  @override
+  String? enrichmentUrl(Booru booru, String tags, int listingPage) {
+    final parsed = parseQuery(tags);
+    // Sort/source queries already come FROM the listing, counts included.
+    if (parsed.sort != null || parsed.source != null) return null;
+    final params = <String, String>{
+      'page': '${listingPage + 1}',
+      if (parsed.query.isNotEmpty) 'q': parsed.query,
+    };
+    return Uri.parse('${booru.baseURL}/posts').replace(queryParameters: params).toString();
+  }
+
   @override
   List<BooruItem>? parseListing(String body, Booru booru) {
     final String base = booru.baseURL ?? '';
@@ -182,7 +199,7 @@ class BakemonoProfile extends SiteProfile {
             // The card's file count includes non-media attachments, so it is an
             // upper bound; the post page is authoritative once opened.
             fileNameExtras: '',
-          )..fileCountHint = _firstInt(meta),
+          )..fileCountHint.value = _firstInt(meta),
         );
       }
       return items;

@@ -84,10 +84,12 @@ class BooruItem extends Equatable {
   String? fileExt;
   String? serverId;
 
-  /// Number of media files in this post, when the source can tell us
-  /// cheaply (some sites treat a post as a gallery). Transient: it is a
-  /// display hint for the grid badge, not persisted metadata.
-  int? fileCountHint;
+  /// Number of files in this post, when the source can tell us (some sites
+  /// treat a post as a gallery). Transient display hint, not persisted.
+  ///
+  /// Reactive because it can arrive AFTER the grid cell is built — counts are
+  /// backfilled in the background for sites whose API omits them.
+  final Rxn<int> fileCountHint = Rxn<int>();
   String? rating;
   String? score;
   String? uploaderId;
