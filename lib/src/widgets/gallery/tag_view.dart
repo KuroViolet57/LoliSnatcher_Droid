@@ -3403,6 +3403,10 @@ class _TagContentPreviewState extends State<TagContentPreview> with AutomaticKee
               ),
             ),
           const SizedBox(width: 4),
+          // Hidden when the booru has no way to express "animated" — an empty
+          // filter list means the site profile checked and there is nothing
+          // real to search for, so the button would only append dead tags.
+          if (_animatedFilters.isNotEmpty)
           IconButton(
             tooltip: _animatedButtonTooltip,
             visualDensity: VisualDensity.compact,

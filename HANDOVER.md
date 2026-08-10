@@ -753,3 +753,52 @@ FIX:
   invisible in logs.
 NOTE: previously the only way to apply a type change was an app restart
 (tabs are restored by name via parseTabFromBackup -> booruList.firstWhere).
+
+## Build `site-profile` (2026-08-10) — per-site capability layer + bakemono
+NEW EXTENSION POINT (the architectural ask): `lib/src/data/site_profile.dart`
+`SiteProfile` — per-SITE deviations from a FAMILY handler, resolved per Booru
+by HOST (`SiteProfile.forBooru`, cached). Every hook defaults to null/false =
+"family behaviour unchanged", so shared handlers (gelbooru.com, rule34.xxx,
+safebooru...) are untouched. Hooks: tagSuggestionsUrl, tagSuggestionCount,
+metaTags, animatedFilters, listingUrl/parseListing/listingPageSize,
+hasMultipleFilesPerPost/postFilesUrl/parsePostFiles + `PostFile` model.
+`BooruHandler.siteProfile` (late final) exposes it to every family.
+`lib/src/data/site_profiles/bakemono_profile.dart` — all verified live:
+- autocomplete: /autocomplete.php?q= (gelbooru's index.php?page=autocomplete2
+  is unimplemented there; bakemono ignores page= and returns the POST INDEX,
+  which is why suggestions were silently empty). Count parsed out of
+  `label` ("anna_anon (29603)") since there's no count field.
+- metatags: Sort = Created/Views x asc/desc + a new SourceMetaTag
+  (fanbox/fansly/onlyfans/patreon). Gelbooru's id/rating/user/height/width/
+  updated/random are dropped for this site — none exist.
+- HYBRID FETCH: dapi stays the default (returns ~90 items at limit=100);
+  `listingUrl` takes over ONLY when sort:/source: is present, scraping
+  /posts (hard-capped at 24/page — limit, per_page, count, n all ignored).
+  Sort is deliberately NOT sent alongside a search term (verified: /posts?q=x
+  and /posts?q=x&sort=views return identical order).
+  GelbooruHandler.parseResponse: if the scrape yields nothing it LOGS,
+  sets _listingDisabled permanently and re-fetches the same page via dapi —
+  never an empty grid.
+- animatedFilters() == const [] => the "videos/GIFs only" button is now
+  HIDDEN on this site (both tag_view and floating_tag_preview_window guard
+  on isNotEmpty). Justification: bakemono tags are only creator/platform/
+  title words, and listing cards carry no video marker (a video post's card
+  thumb is a plain .gif/.jpg). File kinds exist ONLY on each post page, so
+  grid-level filtering would cost one request per post.
+- multi-file: postFilesUrl builds /p/{platform}/{creatorId}/{postId} from the
+  dapi `source` link (verified: dapi id 12402839 + creator 98535935 ->
+  /p/fanbox/98535935/12402839 -> 26 files) and parsePostFiles reads the
+  `viewer-data` JSON (explicit kind image/video; video entries have
+  thumb/preview = null so slides must fall back to the post cover).
+  MODEL + FETCH ONLY IN THIS BUILD — no UI yet (badge//overlay pending).
+ALSO: BooruItem.fileCountHint (transient) for the pending grid badge.
+VALIDATION: ran the real parsers over saved live markup (dart run inside the
+project): 24 cards -> correct postURL/file/thumb/creator/views/count/id;
+viewer-data 4 and 26 files; label counts 29603 / 1,234 / null.
+PENDING (next build): multi-file UI — grid badge, viewer action in
+hideable_appbar getActions(), nested carousel overlay reusing the existing
+viewer stack via ViewerHandler.addViewer. NOTE maxActiveViewers is 1 and
+gallery_view_page.dart:658 computes isViewerTooDeep from it; the overlay
+needs it at 2 (the tag-preview + waterfall paths read the same constant),
+and mediaKitMaxPlayers defaults to 4 so the overlay must cap its own
+preload rather than raising the setting.

@@ -602,6 +602,9 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
                 ),
               );
             }),
+          // Hidden when the site has no animated-content tags at all (see
+          // BooruHandler.animatedPreviewFilters / SiteProfile).
+          if (_animatedFilters.isNotEmpty)
           IconButton(
             visualDensity: VisualDensity.compact,
             tooltip: _animatedButtonTooltip,

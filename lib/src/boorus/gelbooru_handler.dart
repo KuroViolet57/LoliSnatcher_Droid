@@ -10,6 +10,7 @@ import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/comment_item.dart';
 import 'package:lolisnatcher/src/data/meta_tag.dart';
 import 'package:lolisnatcher/src/data/note_item.dart';
+import 'package:lolisnatcher/src/data/site_profile.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_suggestion.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
@@ -160,10 +161,71 @@ class GelbooruHandler extends BooruHandler {
 
   @override
   String makeURL(String tags) {
-    // EXAMPLE: https://gelbooru.com/index.php?page=dapi&s=post&q=index&tags=rating:general%20order:score&limit=20&pid=0&json=1
     final int cappedPage = max(0, pageNum);
 
-    return "${booru.baseURL}/index.php?page=dapi&s=post&q=index&tags=${tags.replaceAll(" ", "+")}&limit=$limit&pid=$cappedPage&json=1${buildApiStr()}";
+    // Hybrid fetch: the documented API is the default browse path (it returns
+    // several times more items per request), but some sites can't serve every
+    // query through it — e.g. bakemono's dapi silently ignores sort and source
+    // filters while its HTML listing honours both. The profile decides; when
+    // it hands back a URL we parse that page instead (see parseResponse).
+    if (!_listingDisabled) {
+      final String? listing = siteProfile?.listingUrl(booru, tags, cappedPage, limit);
+      if (listing != null) {
+        _listingTags = tags;
+        _usingListing = true;
+        return listing;
+      }
+    }
+    _usingListing = false;
+
+    // EXAMPLE: https://gelbooru.com/index.php?page=dapi&s=post&q=index&tags=rating:general%20order:score&limit=20&pid=0&json=1
+    return _apiUrl(tags, cappedPage);
+  }
+
+  String _apiUrl(String tags, int page) =>
+      "${booru.baseURL}/index.php?page=dapi&s=post&q=index&tags=${tags.replaceAll(" ", "+")}&limit=$limit&pid=$page&json=1${buildApiStr()}";
+
+  // Whether the CURRENT request went to the site's HTML listing.
+  bool _usingListing = false;
+  // Set when scraping breaks (markup shifted): stop using the listing for the
+  // rest of this handler's life and stay on the documented API.
+  bool _listingDisabled = false;
+  String _listingTags = '';
+
+  @override
+  FutureOr<List<BooruItem>> parseResponse(dynamic response) async {
+    if (!_usingListing) return super.parseResponse(response);
+
+    final SiteProfile? profile = siteProfile;
+    final List<BooruItem>? scraped = profile?.parseListing(response.data?.toString() ?? '', booru);
+    if (scraped != null) return scraped;
+
+    // Fail soft: never show an empty grid because a site changed its markup —
+    // log it, drop back to the API permanently, and serve this page from there.
+    Logger.Inst().log(
+      'listing scrape failed for ${booru.name} (${profile?.id}); falling back to the API',
+      className,
+      'parseResponse',
+      LogTypes.booruHandlerParseFailed,
+    );
+    _listingDisabled = true;
+    _usingListing = false;
+    try {
+      final apiResponse = await DioNetwork.get(
+        _apiUrl(_listingTags, max(0, pageNum)),
+        headers: getHeaders(),
+      );
+      return await super.parseResponse(apiResponse);
+    } catch (e, st) {
+      Logger.Inst().log(
+        'API fallback after listing failure also failed: $e',
+        className,
+        'parseResponse',
+        LogTypes.exception,
+        s: st,
+      );
+      return [];
+    }
   }
 
   // ----------------- Tag suggestions and tag handler stuff
@@ -178,6 +240,13 @@ class GelbooruHandler extends BooruHandler {
 
   @override
   String makeTagURL(String input) {
+    // Gelbooru-compatible sites don't all implement autocomplete2 — bakemono
+    // ignores the unknown page= and answers with the post index instead, so
+    // the suggestion parser silently received posts. Sites that differ say so
+    // through their profile.
+    final String? profileUrl = siteProfile?.tagSuggestionsUrl(booru, input);
+    if (profileUrl != null) return profileUrl;
+
     // EXAMPLE https://gelbooru.com/index.php?page=dapi&s=tag&q=index&name_pattern=nagat%25&limit=20&json=1
     return '${booru.baseURL}/index.php?page=autocomplete2&term=$input&type=tag_query&limit=20${buildApiStr()}'; // limit doesnt work
     // return '${booru.baseURL}/index.php?page=dapi&s=tag&q=index&name_pattern=$input%&limit=20&order=post_count&direction=desc&json=1$apiKeyStr$userIdStr'; // order doesnt work
@@ -207,7 +276,10 @@ class GelbooruHandler extends BooruHandler {
     return TagSuggestion(
       tag: tagStr,
       type: tagType,
-      count: int.tryParse((responseItem['count'] ?? responseItem['post_count'])?.toString() ?? '0') ?? 0,
+      // Some sites only expose the count inside a display label.
+      count: siteProfile?.tagSuggestionCount(responseItem) ??
+          int.tryParse((responseItem['count'] ?? responseItem['post_count'])?.toString() ?? '0') ??
+          0,
     );
   }
 
@@ -386,6 +458,11 @@ class GelbooruHandler extends BooruHandler {
 
   @override
   List<MetaTag> availableMetaTags() {
+    // The family list advertises sorts/filters most compatible sites don't
+    // implement; a profile replaces it with what the site really supports.
+    final List<MetaTag>? profileTags = siteProfile?.metaTags();
+    if (profileTags != null) return profileTags;
+
     return [
       DanbooruGelbooruRatingMetaTag(),
       SortMetaTag(

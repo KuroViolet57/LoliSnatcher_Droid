@@ -11,6 +11,7 @@ import 'package:html/parser.dart';
 
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/data/site_profile.dart';
 import 'package:lolisnatcher/src/data/comment_item.dart';
 import 'package:lolisnatcher/src/data/creator_info.dart';
 import 'package:lolisnatcher/src/data/meta_tag.dart';
@@ -151,8 +152,17 @@ abstract class BooruHandler {
   /// independent video / webm / animated) override this with their own
   /// ordered list. Verified against each site that these tags exist and
   /// that the chosen combine/cycle strategy actually returns results.
-  List<String> get animatedPreviewFilters =>
-      hasNativeOrSupport ? const ['animated|video'] : const ['animated', 'video'];
+  List<String> get animatedPreviewFilters {
+    // A site profile may know this site has no way to express "animated" at
+    // all (empty list => the control hides) or spell it differently.
+    final List<String>? override = siteProfile?.animatedFilters();
+    if (override != null) return override;
+    return hasNativeOrSupport ? const ['animated|video'] : const ['animated', 'video'];
+  }
+
+  /// Per-site deviations from this handler's family behaviour, resolved by
+  /// host. Null for the vast majority of sites, which behave like the family.
+  late final SiteProfile? siteProfile = SiteProfile.forBooru(booru);
 
   Future<bool> searchSetup() async {
     if (hasSignInSupport) {
