@@ -675,3 +675,30 @@ KNOWN LIMITATION (verified live): rule34.xyz's search API returns items
 WITHOUT tags, so on that booru the per-artist/per-character caps have
 nothing to read and can't fire — variety there comes from the facet
 quotas alone. Gelbooru/danbooru-style APIs do return tags, so caps work.
+
+## Build `bakemono` (2026-08-10) — URL parsing fix (bakemono.app support)
+USER: bakemono.app couldn't be added; autodetect picked Nozomi, manual
+Gelbooru options also returned nothing. Site docs (bakemono.app/booru)
+say: type "Gelbooru (0.2 / gelbooru-compatible)", URL https://bakemono.app,
+no API key. Endpoints: index.php?page=dapi&s=post&q=index (XML, &json=1
+for JSON), tag dapi, autocomplete.php?q=. Tags are creator names.
+ROOT CAUSE (found in talker log, verified live): NOT a site problem — the
+dapi endpoint returns valid XML. `Tools.getFileExt` searched the WHOLE url
+for the last '.', but bakemono file URLs are
+`/data/xx/yy/<sha256>.jpeg?f=cover.jpeg` — the last dot sits INSIDE the
+query, so substring(start=110, end=101) threw
+`RangeError (end): Invalid value: Not in inclusive range 110..114: 101`
+(reproduced exactly). BooruItem's constructor calls getFileExt, so EVERY
+post threw; booru_handler.dart:344 catches per-item and logs, so all posts
+were silently dropped -> 0 results -> autodetect scored the site as a
+failure and fell through to Nozomi.
+FIX:
+- Tools.getFileExt / getFileName now operate on the PATH only (new
+  `_pathPart` strips ?query and #fragment). getFileExt also returns ''
+  when the last dot precedes the last slash (no real extension) instead
+  of returning host/path garbage. Regression-checked against gelbooru /
+  danbooru / rule34.xxx (?4567 suffix) / rule34hentai / e621 URL shapes —
+  all unchanged.
+- BooruItem: aspect ratios only computed when BOTH dimensions are > 0.
+  bakemono reports width="0" height="0", and 0/0 = NaN was flowing into
+  thumbnail layout (thumbnail.dart:206) as a NaN aspect ratio.

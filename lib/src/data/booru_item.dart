@@ -48,13 +48,17 @@ class BooruItem extends Equatable {
     }
     fileExt = (fileExt ?? Tools.getFileExt(fileURL)).toLowerCase();
 
-    if (fileWidth != null && fileHeight != null) {
+    // Dimensions must be POSITIVE to give a usable ratio: some boorus report
+    // width="0" height="0" when they don't know the size (bakemono.app does),
+    // and 0/0 is NaN — which then propagates into thumbnail layout as a NaN
+    // aspect ratio. Leaving the ratio null lets the UI fall back properly.
+    if ((fileWidth ?? 0) > 0 && (fileHeight ?? 0) > 0) {
       fileAspectRatio = fileWidth! / fileHeight!;
     }
-    if (sampleWidth != null && sampleHeight != null) {
+    if ((sampleWidth ?? 0) > 0 && (sampleHeight ?? 0) > 0) {
       sampleAspectRatio = sampleWidth! / sampleHeight!;
     }
-    if (previewWidth != null && previewHeight != null) {
+    if ((previewWidth ?? 0) > 0 && (previewHeight ?? 0) > 0) {
       previewAspectRatio = previewWidth! / previewHeight!;
     }
 

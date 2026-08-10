@@ -77,17 +77,33 @@ class Tools {
       return Uri.parse(fileURL).queryParameters['file_ext'] ?? 'png';
     }
 
-    final int queryLastIndex = fileURL.lastIndexOf('?'); // if has GET query parameters
-    final int lastIndex = queryLastIndex != -1 ? queryLastIndex : fileURL.length;
-    final String fileExt = fileURL.substring(fileURL.lastIndexOf('.') + 1, lastIndex);
-    return fileExt;
+    // Look at the PATH only. A query string can carry its own dots and
+    // slashes — bakemono.app serves `/data/../<hash>.jpeg?f=cover.jpeg`, where
+    // searching the whole URL finds the dot inside the query, so the
+    // substring start lands past its end and throws RangeError, which killed
+    // parsing of every post on such a site.
+    final String path = _pathPart(fileURL);
+    final int dotIndex = path.lastIndexOf('.');
+    // A dot before the last slash belongs to the host or a directory, not to
+    // a file extension (e.g. `https://site.app/media/1234`).
+    if (dotIndex == -1 || dotIndex < path.lastIndexOf('/')) return '';
+    return path.substring(dotIndex + 1);
   }
 
   static String getFileName(String fileURL) {
-    final int queryLastIndex = fileURL.lastIndexOf('?'); // if has GET query parameters
-    final int lastIndex = queryLastIndex != -1 ? queryLastIndex : fileURL.length;
-    final String fileExt = fileURL.substring(fileURL.lastIndexOf('/') + 1, lastIndex);
-    return fileExt;
+    final String path = _pathPart(fileURL);
+    final int slashIndex = path.lastIndexOf('/');
+    return slashIndex == -1 ? path : path.substring(slashIndex + 1);
+  }
+
+  /// URL with any query string / fragment removed.
+  static String _pathPart(String url) {
+    int end = url.length;
+    for (final marker in ['?', '#']) {
+      final int i = url.indexOf(marker);
+      if (i != -1 && i < end) end = i;
+    }
+    return url.substring(0, end);
   }
 
   static String sanitize(String str, {String replacement = ''}) {
