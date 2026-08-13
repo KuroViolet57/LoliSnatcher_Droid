@@ -37,14 +37,15 @@ class ViewerHandler {
   /// How deep viewers may stack before the covered one stops rendering its
   /// media (gallery_view_page's isViewerTooDeep).
   ///
-  /// 2, not 1: a post's file carousel opens ON TOP of the viewer that launched
-  /// it, and at 1 the parent unmounted the moment the overlay appeared —
-  /// tearing down its player (the saved-position hand-off exists because of
-  /// exactly that). The tag-preview and waterfall nested viewers read the same
-  /// constant and simply keep their parent alive too. Kept low deliberately:
-  /// each extra level is another live player against a media_kit pool that
-  /// defaults to 4.
-  static const int maxActiveViewers = 2;
+  /// Keep at 1. This is ALSO what pauses playback: covering a viewer unmounts
+  /// its media widget, which disposes the player — there is no explicit
+  /// pause-on-cover anywhere, and the saved-position hand-off below exists to
+  /// restore where you were on the way back. Raising it leaves the covered
+  /// video playing (audio included) underneath whatever you opened on top.
+  /// Nested viewers that push their own route (post-file carousel, tag
+  /// preview, waterfall) do NOT need this raised: isViewerTooDeep is internal
+  /// to GalleryViewPage and doesn't gate them.
+  static const int maxActiveViewers = 1;
 
   void addViewer(GlobalKey key) {
     if (activeViewers.contains(key)) {

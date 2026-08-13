@@ -867,3 +867,31 @@ CAVEAT (kept honest): the listing's count includes non-media attachments
 (a card reading "7 files" had 4 entries in viewer-data), so the badge is an
 upper bound until the post is opened, at which point ensureLoaded
 overwrites it with the exact media count.
+
+## Build `pause-fix2` (2026-08-10) — REVERT maxActiveViewers to 1 (regression)
+USER: after `multifile`, opening a post from a preview window left the video
+underneath still playing.
+CAUSE: mine. `multifile` raised ViewerHandler.maxActiveViewers 1 -> 2.
+There is NO explicit pause-on-cover anywhere in the app — covering a viewer
+stopped playback purely as a side effect of gallery_view_page's
+`isViewerTooDeep` swapping the item widget for a black container, which
+DISPOSED the player (that is exactly why the saved-position hand-off in
+ViewerHandler exists). At 2, the covered GalleryViewPage stayed mounted and
+kept playing, audio included, under whatever was opened on top. This hit
+every nested-viewer path (tag preview, floating window, waterfall), not
+just the new carousel.
+FIX: reverted to 1, with a comment at the constant explaining that it
+doubles as the pause mechanism so nobody raises it again.
+WHY THE RAISE WASN'T NEEDED: isViewerTooDeep is internal to
+GalleryViewPage. The post-file carousel is its OWN route with its own
+player widgets and never consults it, so it works identically at 1 — and
+the covered parent now correctly tears down and restores its position via
+the existing hand-off on the way back.
+IF an explicit pause-on-cover is ever wanted (so a covered viewer can stay
+mounted): the players already pause when isViewed goes false, but the
+`isViewed` flags in gallery_view_page are computed inside
+ValueListenableBuilders bound to `page` only — they would have to listen to
+viewerHandler.activeViewers too, and MediaKitPlayerView.didUpdateWidget
+seeks to zero when isViewed goes true again, so it would also need a
+"covered" concept distinct from "not the current page". Not worth it while
+unmount+hand-off already gives the right behaviour.
