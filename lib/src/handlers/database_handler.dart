@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/data/booru_tag.dart';
 import 'package:lolisnatcher/src/data/collection_info.dart';
 import 'package:lolisnatcher/src/data/constants.dart';
 import 'package:lolisnatcher/src/data/history_item.dart';
@@ -181,6 +182,34 @@ class DBHandler {
       'PRIMARY KEY (sourceTag, booruKey) '
       ')',
     );
+    // Per-booru tag snapshot: what a given SITE says its own tags are. The
+    // global Tag table stores one type per tag string for the whole app,
+    // which breaks down the moment two boorus disagree about the same string
+    // — so per-site truth lives here instead of overloading that column.
+    // `source`: 'api' (the site told us) | 'import' (a snapshot file).
+    await db?.execute(
+      'CREATE TABLE IF NOT EXISTS BooruTag ( '
+      'booruKey TEXT NOT NULL, '
+      'name TEXT NOT NULL, '
+      'tagType TEXT NOT NULL, '
+      'count INTEGER NOT NULL DEFAULT 0, '
+      "source TEXT NOT NULL DEFAULT 'api', "
+      'updatedAt INTEGER NOT NULL, '
+      'PRIMARY KEY (booruKey, name) '
+      ')',
+    );
+    // Your hand-made corrections, and — by existing at all — the permanent
+    // exclusion list: a pair in here is never re-typed automatically again.
+    await db?.execute(
+      'CREATE TABLE IF NOT EXISTS BooruTagOverride ( '
+      'booruKey TEXT NOT NULL, '
+      'name TEXT NOT NULL, '
+      'tagType TEXT NOT NULL, '
+      "source TEXT NOT NULL DEFAULT 'manual', "
+      'updatedAt INTEGER NOT NULL, '
+      'PRIMARY KEY (booruKey, name) '
+      ')',
+    );
     // Collections / albums: named groups of posts. Membership is a join onto
     // the shared BooruItem table so in-collection tag search reuses the same
     // index; the items are protected from deleteUntracked below.
@@ -253,6 +282,12 @@ class DBHandler {
     // Recency ordering for the History feed and the seen/viewed trims.
     await db?.execute('CREATE INDEX IF NOT EXISTS ViewedPost_viewedAt_index ON ViewedPost (viewedAt);');
     await db?.execute('CREATE INDEX IF NOT EXISTS SeenPost_viewedAt_index ON SeenPost (viewedAt);');
+    // Tag browser: every query is "this booru, optionally this type, ordered
+    // by count" — without this it degrades into a full scan of a table that
+    // can hold a site's entire tag database.
+    await db?.execute(
+      'CREATE INDEX IF NOT EXISTS BooruTag_browse_index ON BooruTag (booruKey, tagType, count DESC);',
+    );
   }
 
   Future<bool> dropIndexes() async {
@@ -846,6 +881,118 @@ class DBHandler {
       'INSERT OR REPLACE INTO TagAliasCache(sourceTag, booruKey, targetTag, updatedAt) VALUES(?,?,?,?)',
       [sourceTag.toLowerCase(), booruKey, targetTag, DateTime.now().millisecondsSinceEpoch],
     );
+  }
+
+  //
+  // Per-booru tag snapshot + corrections
+  //
+
+  Future<void> upsertBooruTags(String booruKey, List<BooruTagEntry> entries) async {
+    final db = this.db;
+    if (db == null || entries.isEmpty) return;
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    // One transaction for the whole page: a snapshot pull writes 100 rows at
+    // a time and each autocommit would otherwise be its own fsync.
+    await db.transaction((txn) async {
+      final batch = txn.batch();
+      for (final e in entries) {
+        final String source = e.origin == TagTypeOrigin.inferred ? 'import' : 'api';
+        final int stamp = e.updatedAt == 0 ? now : e.updatedAt;
+        batch.rawInsert(
+          'INSERT OR REPLACE INTO BooruTag(booruKey, name, tagType, count, source, updatedAt) VALUES(?,?,?,?,?,?)',
+          [booruKey, e.name, e.tagType.name, e.count, source, stamp],
+        );
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
+  Future<List<Map<String, Object?>>> queryBooruTags({
+    required String booruKey,
+    String? nameLike,
+    String? tagType,
+    int limit = 60,
+    int offset = 0,
+  }) async {
+    final db = this.db;
+    if (db == null || booruKey.isEmpty) return const [];
+    final List<Object?> args = [booruKey];
+    final StringBuffer where = StringBuffer('booruKey = ?');
+    if (tagType != null) {
+      where.write(' AND tagType = ?');
+      args.add(tagType);
+    }
+    if (nameLike != null && nameLike.isNotEmpty) {
+      where.write(' AND name LIKE ?');
+      args.add('%$nameLike%');
+    }
+    args
+      ..add(limit)
+      ..add(offset);
+    return db.rawQuery(
+      'SELECT name, tagType, count, source, updatedAt FROM BooruTag '
+      'WHERE $where ORDER BY count DESC, name ASC LIMIT ? OFFSET ?',
+      args,
+    );
+  }
+
+  Future<List<Map<String, Object?>>> getBooruTagsByNames(String booruKey, List<String> names) async {
+    final db = this.db;
+    if (db == null || booruKey.isEmpty || names.isEmpty) return const [];
+    final String placeholders = List.filled(names.length, '?').join(',');
+    return db.rawQuery(
+      'SELECT name, tagType, count, source, updatedAt FROM BooruTag '
+      'WHERE booruKey = ? AND name IN ($placeholders)',
+      [booruKey, ...names],
+    );
+  }
+
+  Future<int> countBooruTags(String booruKey, {String? tagType}) async {
+    final db = this.db;
+    if (db == null || booruKey.isEmpty) return 0;
+    final List<Object?> args = [booruKey];
+    String where = 'booruKey = ?';
+    if (tagType != null) {
+      where += ' AND tagType = ?';
+      args.add(tagType);
+    }
+    final rows = await db.rawQuery('SELECT COUNT(*) AS c FROM BooruTag WHERE $where', args);
+    return int.tryParse(rows.first['c']?.toString() ?? '') ?? 0;
+  }
+
+  Future<void> deleteBooruTags(String booruKey) async {
+    await db?.rawDelete('DELETE FROM BooruTag WHERE booruKey = ?', [booruKey]);
+  }
+
+  Future<List<Map<String, Object?>>> getBooruTagOverrides({String? booruKey}) async {
+    final db = this.db;
+    if (db == null) return const [];
+    if (booruKey == null) {
+      return db.rawQuery('SELECT booruKey, name, tagType, source, updatedAt FROM BooruTagOverride');
+    }
+    return db.rawQuery(
+      'SELECT booruKey, name, tagType, source, updatedAt FROM BooruTagOverride WHERE booruKey = ?',
+      [booruKey],
+    );
+  }
+
+  Future<void> setBooruTagOverride(String booruKey, String name, String tagType, String source) async {
+    await db?.rawInsert(
+      'INSERT OR REPLACE INTO BooruTagOverride(booruKey, name, tagType, source, updatedAt) VALUES(?,?,?,?,?)',
+      [booruKey, name, tagType, source, DateTime.now().millisecondsSinceEpoch],
+    );
+  }
+
+  Future<void> deleteBooruTagOverride(String booruKey, String name) async {
+    await db?.rawDelete('DELETE FROM BooruTagOverride WHERE booruKey = ? AND name = ?', [booruKey, name]);
+  }
+
+  Future<void> deleteBooruTagOverrides(String? booruKey) async {
+    if (booruKey == null) {
+      await db?.rawDelete('DELETE FROM BooruTagOverride');
+    } else {
+      await db?.rawDelete('DELETE FROM BooruTagOverride WHERE booruKey = ?', [booruKey]);
+    }
   }
 
   Future<List<Tag>> getAllTags() async {

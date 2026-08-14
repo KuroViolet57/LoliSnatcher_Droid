@@ -36,6 +36,7 @@ import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
+import 'package:lolisnatcher/src/handlers/booru_tag_store.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/database_handler.dart';
 import 'package:lolisnatcher/src/handlers/floating_preview_handler.dart';
@@ -112,6 +113,11 @@ class _TagViewState extends State<TagView> {
   late BooruItem item;
   late BooruHandler handler;
   BooruHandler? possibleBooruHandler;
+
+  /// The booru whose tag vocabulary applies to this post. On virtual feeds
+  /// (For You, favourites, merge) that is the item's real source booru, not
+  /// the feed — a tag's type is a property of the site it came from.
+  Booru get tagBooru => (possibleBooruHandler ?? handler).booru;
   bool hasLoadItemSupport = false;
   bool canLoadItemOnStart = false;
   List<Tag> tags = [];
@@ -359,7 +365,7 @@ class _TagViewState extends State<TagView> {
 
     for (int i = 0; i < tags.length; i++) {
       if (tagHandler.hasTag(tags[i].fullString)) {
-        tagMap[tagHandler.getTag(tags[i].fullString).tagType]?.add(tags[i]);
+        tagMap[tagHandler.getTagFor(tags[i].fullString, tagBooru).tagType]?.add(tags[i]);
       } else {
         tagMap[TagType.none]?.add(tags[i]);
       }
@@ -779,7 +785,7 @@ class _TagViewState extends State<TagView> {
     //    Check both so this works regardless of how the handler tagged it.
     final artists = item.tagsList.where((t) {
       if (t.tagType.isArtist) return true;
-      return tagHandler.getTag(t.fullString).tagType.isArtist;
+      return tagHandler.getTagFor(t.fullString, tagBooru).tagType.isArtist;
     }).take(3).toList();
     for (final artist in artists) {
       if (artist.fullString.trim().isEmpty) continue;
@@ -848,7 +854,7 @@ class _TagViewState extends State<TagView> {
         // Types usually live in TagHandler's enriched store rather than on
         // the item's Tag object; check both (same pattern as groupTagsList).
         final TagType type = tagHandler.hasTag(tag.fullString)
-            ? tagHandler.getTag(tag.fullString).tagType
+            ? tagHandler.getTagFor(tag.fullString, tagBooru).tagType
             : tag.tagType;
         byType[type]!.add(tag);
       }
@@ -1461,7 +1467,7 @@ class _TagViewState extends State<TagView> {
     if (currentTag.isEmpty) return const SizedBox.shrink();
 
     final theme = Theme.of(context);
-    final tag = tagHandler.getTag(currentTag);
+    final tag = tagHandler.getTagFor(currentTag, tagBooru);
     Color? color = tag.getColour();
     color = color == Colors.transparent ? null : color;
 
@@ -1539,17 +1545,25 @@ class _TagViewState extends State<TagView> {
             : () async {
                 // Shortcut straight to the tag editor (same dialog as tap →
                 // "Edit tag") — mainly for quickly recolouring a tag's type.
-                final item = tagHandler.getTag(currentTag);
+                final Booru booru = tagBooru;
+                // A COPY: mutating the object handed out by TagHandler would
+                // edit the app-wide tag map in place.
+                final item = tagHandler.getTagFor(currentTag, booru).copyWith();
                 await showDialog(
                   context: context,
                   builder: (context) => TagsManagerListItemDialog(
                     tag: item,
-                    onChangedType: (TagType? newValue) {
-                      if (newValue != null && item.tagType != newValue) {
-                        item.tagType = newValue;
-                        tagHandler.putTag(item, dbEnabled: settingsHandler.dbEnabled);
-                        parseSortGroupTagsWithoutCache();
-                      }
+                    onChangedType: (TagType? newValue) async {
+                      if (newValue == null || item.tagType == newValue) return;
+                      item.tagType = newValue;
+                      // Stored as a correction for THIS booru only. The global
+                      // tag map holds one type per tag string for the whole
+                      // app, so writing there would recolour the same tag on
+                      // every other site as a side effect. Doing it this way
+                      // also permanently excludes the pair from automatic
+                      // re-typing, which is the point of correcting it.
+                      await BooruTagStore.setManualType(booru, currentTag, newValue);
+                      parseSortGroupTagsWithoutCache();
                     },
                   ),
                 );
@@ -1964,8 +1978,9 @@ Future<void> showTagDialog({
   final searchHandler = SearchHandler.instance;
   final tagHandler = TagHandler.instance;
 
-  final Color typeColor = tagHandler.getTag(tag).getColour() ?? const Color(0xFF8A80A0);
-  final String typeName = tagHandler.getTag(tag).tagType.locName;
+  final Tag resolvedTag = tagHandler.getTagFor(tag, handler.booru);
+  final Color typeColor = resolvedTag.getColour() ?? const Color(0xFF8A80A0);
+  final String typeName = resolvedTag.tagType.locName;
   await showModalBottomSheet<void>(
     context: context,
     routeSettings: RouteSettings(name: 'tagDialog/$tag'),
@@ -2069,12 +2084,12 @@ Future<void> showTagDialog({
           // configured booru. Artists get follow support and their own label.
           ListTile(
             leading: Icon(
-              tagHandler.getTag(tag).tagType.isArtist ? Symbols.artist_rounded : Symbols.hub_rounded,
+              resolvedTag.tagType.isArtist ? Symbols.artist_rounded : Symbols.hub_rounded,
               color: Theme.of(context).colorScheme.secondary,
             ),
-            title: Text(tagHandler.getTag(tag).tagType.isArtist ? 'Artist hub' : 'Tag hub'),
+            title: Text(resolvedTag.tagType.isArtist ? 'Artist hub' : 'Tag hub'),
             subtitle: Text(
-              tagHandler.getTag(tag).tagType.isArtist
+              resolvedTag.tagType.isArtist
                   ? 'Follow + their work across your boorus'
                   : 'This tag across your boorus',
             ),

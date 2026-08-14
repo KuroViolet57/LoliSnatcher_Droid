@@ -130,7 +130,11 @@ class _FlowSearchBarState extends State<FlowSearchBar> {
     final bool isExclude = tag.startsWith('-');
     final bool isOr = tag.startsWith('~');
     final String bare = tag.replaceFirst(RegExp('^[-~]'), '');
-    Color color = TagHandler.instance.getTag(bare).getColour() ?? const Color(0xFF8A80A0);
+    Color color =
+        TagHandler.instance
+            .getTagFor(bare, searchHandler.tabs.isEmpty ? null : searchHandler.currentBooru)
+            .getColour() ??
+        const Color(0xFF8A80A0);
     if (isExclude) color = const Color(0xFFE5766B);
     final Color textColor = Color.lerp(color, Colors.white, context.isLight ? 0.0 : 0.35)!;
 

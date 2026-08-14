@@ -11,6 +11,7 @@ import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
+import 'package:lolisnatcher/src/handlers/booru_tag_store.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/services/get_perms.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
@@ -78,6 +79,20 @@ class TagHandler {
       tag = tagMap[tagString];
     }
     return tag ?? Tag(tagString, tagType: TagType.none);
+  }
+
+  /// The tag as a SPECIFIC booru sees it.
+  ///
+  /// [tagMap] holds one type per tag string for the whole app, so the last
+  /// site you browsed wins whenever two disagree. This applies your per-booru
+  /// correction on top without touching that shared state — see
+  /// [BooruTagStore] for why the two are kept apart. Falls back to the global
+  /// answer when you have not corrected this pair, which is almost always.
+  Tag getTagFor(String tagString, Booru? booru) {
+    final Tag base = getTag(tagString);
+    final TagType? mine = BooruTagStore.manualType(tagString, booru);
+    if (mine == null || mine == base.tagType) return base;
+    return base.copyWith(tagType: mine);
   }
 
   Future<void> putTag(
@@ -240,6 +255,9 @@ class TagHandler {
     if (SettingsHandler.instance.path.isNotEmpty) {
       await loadTags();
     }
+    // Your per-booru corrections are small and consulted on every tag chip
+    // build, so they are held in memory from here on.
+    await BooruTagStore.load();
   }
 
   Future<bool> loadTags() async {

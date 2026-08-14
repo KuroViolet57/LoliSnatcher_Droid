@@ -84,7 +84,12 @@ class MainSearchTagChip extends StatelessWidget {
           }
 
           // get color before removing underscores
-          Color? tagColor = tagHandler.getTag(formattedTag).getColour();
+          Color? tagColor = tagHandler
+              .getTagFor(
+                formattedTag,
+                searchHandler.tabs.isEmpty ? null : searchHandler.currentBooru,
+              )
+              .getColour();
           if (isMetaTag) tagColor = Colors.pink;
           tagColor ??= Colors.blue;
 

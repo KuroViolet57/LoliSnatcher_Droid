@@ -120,7 +120,9 @@ class TabRow extends StatelessWidget {
               final MetaTag? metaTag = metaTags.firstWhereOrNull((p) => p.tagParser(tag).isNotEmpty);
               final bool isMetaTag = metaTag != null;
 
-              final tagData = TagHandler.instance.getTag(tag);
+              // Per-tab booru: two tabs can show the same tag string on
+              // sites that classify it differently.
+              final tagData = TagHandler.instance.getTagFor(tag, tab.selectedBooru.value);
 
               final bool isColored = !tagData.tagType.isNone || isMetaTag;
 

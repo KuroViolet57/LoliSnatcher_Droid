@@ -979,3 +979,94 @@ TAG-INDEX SURVEY (for the pending tag-browser feature):
     returned counts 2,1,1 and xbooru all zeros. Tag indexes come out in id
     order, so "most popular tags first" is NOT free; it needs either local
     accumulation or a different source.
+
+## Build `tag-atlas` (2026-08-14)
+
+Per-booru tag knowledge: a local snapshot of each site's own tag database,
+your corrections on top, and a browser that shows both.
+
+### The bug this uncovered first
+`GelbooruHandler.genTagObjects` was **dead code on every Gelbooru-0.2 site**.
+It requested `…&s=tag&q=index&names=a b c&limit=100&json=1` and read
+`response.data['tag']`. Verified live against rule34.xxx and xbooru with the
+user's own key:
+  - `names=` is IGNORED. The site answers with the first page of its whole
+    tag index, so the tags asked about were never in the reply.
+  - `json=1` is IGNORED on rule34.xxx — it always returns XML. So
+    `data['tag']` threw on a String and the catch swallowed it.
+Net effect: no tag on rule34.xxx/xbooru ever received a type from this path.
+`&name=<tag>` (singular) IS honoured and returns exactly one authoritative
+row (`vocaloid` -> type 3, count 47430), so genTagObjects now resolves one
+tag per request with concurrency 3, capped at 45 per call (the TagHandler
+queue re-feeds the rest), skipping anything the snapshot already answers.
+
+### Storage (both tables in store.db, so DB backup/restore covers them)
+- `BooruTag(booruKey, name, tagType, count, source, updatedAt)` PK
+  (booruKey, name) — the snapshot. `source` = 'api' | 'import'. Disposable.
+- `BooruTagOverride(booruKey, name, tagType, source, updatedAt)` PK
+  (booruKey, name) — your corrections, `source='manual'`. Existing in this
+  table IS the permanent exclusion: `BooruTagStore.record()` refuses to write
+  a snapshot row for a pair you have corrected, so nothing ever re-types it.
+- Index `BooruTag_browse_index (booruKey, tagType, count DESC)`.
+- `booruKey` is the HOST (`rule34.xxx`), not the booru NAME — renaming a
+  booru config must not orphan corrections. (TagAliasCache uses type/name;
+  it was NOT touched, per the brief.)
+- The global `Tag` table is untouched. Per-booru truth is layered on at read
+  time by `TagHandler.getTagFor(tag, booru)`; writing it into the shared map
+  is exactly what would recolour the tag on every other site.
+
+### Resolution order
+manual override -> this booru's snapshot row -> the app's global tag map
+(i.e. some other site's opinion, marked `inferred`) -> untyped. A snapshot
+row typed `none` still falls through to the global map on purpose: that is
+the "this site files an artist under general" case, and surfacing it as
+`inferred` with a dashed border is how you find tags worth correcting.
+
+### lib/src/handlers/tag_index_source.dart
+Per-family tag-database access, three operations: `pageAt` (walk the index),
+`search` (substring), `exact` (one authoritative row). Verified live:
+- Gelbooru 0.2: `name=` exact YES, `name_pattern=%x%` YES, `names=` NO,
+  `orderby=count` NO. **The API index is worthless for snapshots** — six
+  samples spread across rule34.xxx's index all had median post count 1. But
+  the site's own HTML tag list DOES sort: `page=tags&s=list&sort=desc&
+  order_by=index_count` starts at `female` (10.3M) and descends, 20 rows a
+  page, `pid` counting ROWS. So `pageAt` scrapes that (types come from the
+  `tag-type-<name>` span class) and only falls back to the API walk if a fork
+  doesn't render the page. 250 pages deep reaches ~18k posts/tag.
+- Danbooru + e621 `/tags.json`: `search[order]=count` DOES work, so those
+  arrive most-used-first. e621 wants basic auth; danbooru unverified from
+  this container (Cloudflare 403).
+- Philomena `/api/v1/json/search/tags`, category strings not numbers.
+
+### UI — lib/src/pages/tag_browser_page.dart (drawer: "Tag browser")
+One page, both modes. Booru dropdown, live search (falls through to the
+site's own tag search when the snapshot has no match, and stores what comes
+back), type filter chips, and a "Yours" chip that turns the same list into
+the corrections manager. Row borders carry the meaning: solid = the site
+reported it, DASHED (`_DashedBorderPainter`) = inferred from elsewhere,
+thick accent + lock = yours and permanent. Tap opens the tag, long-press
+sets its type, trailing button opens a background tab. Menu: pull index,
+import snapshot from the backup folder / from a URL, export snapshot, clear
+snapshot, remove corrections.
+
+### Snapshot portability (hosted snapshots)
+`BooruTagStore.exportJson/importJson/importFromUrl`; format is
+`{format, version, booru, createdAt, tags:[{n,t,c}]}`. Export/import via the
+backup folder reuses `settingsHandler.backupPath` (ServiceHandler.writeImage
+/ getFileFromSAFDirectory), so pointing that at a synced folder gets you
+off-device backup for free. A file whose `booru` key doesn't match is still
+importable but lands as `inferred`, never as reported.
+
+### Where per-booru types are now read
+tag_view (chip colour, type grouping, the type sections, the tag dialog, and
+the double-tap editor — which now writes a per-booru correction instead of
+overwriting the global type), tab_row (per TAB's booru), the main search bar
+chips and flow search bar (current booru). Everything else still reads the
+global map, which is unchanged behaviour.
+
+NOT DONE: no device testing from here. Danbooru-family index/exact unverified
+(Cloudflare blocks this container). realbooru's tag API is switched off by the
+operator ("API offline because apparently it is broken") so that site can only
+ever collect tags opportunistically. No snapshot files have been published
+anywhere — the import-from-URL mechanism exists and works, but there is no
+hosted snapshot to point it at yet.

@@ -7,6 +7,7 @@ import 'package:html/parser.dart';
 import 'package:xml/xml.dart';
 
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/data/booru_tag.dart';
 import 'package:lolisnatcher/src/data/comment_item.dart';
 import 'package:lolisnatcher/src/data/meta_tag.dart';
 import 'package:lolisnatcher/src/data/note_item.dart';
@@ -16,7 +17,9 @@ import 'package:lolisnatcher/src/data/tag_suggestion.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_utils.dart';
+import 'package:lolisnatcher/src/handlers/booru_tag_store.dart';
 import 'package:lolisnatcher/src/handlers/post_files_handler.dart';
+import 'package:lolisnatcher/src/handlers/tag_index_source.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 
@@ -299,49 +302,88 @@ class GelbooruHandler extends BooruHandler {
 
   @override
   String makeDirectTagURL(List<String> tags) {
-    return "${booru.baseURL}/index.php?page=dapi&s=tag&q=index&names=${tags.join(" ")}&limit=100&json=1${buildApiStr()}";
+    // `name=` is singular and exact — see genTagObjects for why the old
+    // `names=` batch form is gone.
+    return '${booru.baseURL}/index.php?page=dapi&s=tag&q=index'
+        '&name=${Uri.encodeComponent(tags.isEmpty ? '' : tags.first)}&limit=1${buildApiStr()}';
   }
 
+  /// Resolves tag types against the site's own tag database.
+  ///
+  /// This used to issue one request with `&names=a b c&json=1` and parse
+  /// `response.data['tag']`. Both halves of that are wrong on the Gelbooru
+  /// 0.2 family, verified live against rule34.xxx and xbooru with valid
+  /// credentials:
+  ///   * `names=` is ignored completely — the site answers with the first
+  ///     page of its entire tag index, so the tags actually asked about were
+  ///     never in the response;
+  ///   * `json=1` is ignored too on rule34.xxx, which always replies XML, so
+  ///     the `['tag']` lookup threw on a String and the catch below swallowed
+  ///     it. Net effect: this method returned an empty list every time and no
+  ///     tag on those sites ever got a type from here.
+  ///
+  /// `name=` (singular) *is* honoured and returns exactly one authoritative
+  /// row, so types are resolved one tag at a time with bounded concurrency,
+  /// answers already in the per-booru snapshot are reused instead of being
+  /// re-requested, and everything learned is written back to that snapshot.
   @override
   Future<List<Tag>> genTagObjects(List<String> tags) async {
+    final TagIndexSource? source = TagIndexSource.forBooru(booru);
+    if (source == null) return [];
+
+    final List<String> wanted = [
+      for (final t in tags.map((t) => t.trim().toLowerCase()).toSet())
+        if (t.isNotEmpty) t,
+    ];
+    if (wanted.isEmpty) return [];
+
     final List<Tag> tagObjects = [];
-    Logger.Inst().log('Got tag list: $tags', className, 'genTagObjects', LogTypes.booruHandlerTagInfo);
-    final String url = makeDirectTagURL(tags);
-    Logger.Inst().log('DirectTagURL: $url', className, 'genTagObjects', LogTypes.booruHandlerTagInfo);
-    try {
-      final response = await DioNetwork.get(url, headers: getHeaders());
-      // 200 is the success http response code
-      if (response.statusCode == 200) {
-        final parsedResponse = (response.data['tag']) ?? [];
-        if (parsedResponse?.isNotEmpty ?? false) {
-          Logger.Inst().log(
-            'Tag response length: ${parsedResponse.length},Tag list length: ${tags.length}',
-            className,
-            'genTagObjects',
-            LogTypes.booruHandlerTagInfo,
-          );
-          for (int i = 0; i < parsedResponse.length; i++) {
-            final String fullString = parseFragment(parsedResponse.elementAt(i)['name']).text!;
-            final String typeKey = parsedResponse.elementAt(i)['type'].toString();
-            TagType tagType = TagType.none;
-            if (tagTypeMap.containsKey(typeKey)) {
-              tagType = tagTypeMap[typeKey] ?? TagType.none;
-            }
-            if (fullString.isNotEmpty) {
-              tagObjects.add(Tag(fullString, tagType: tagType));
-            }
-          }
-        }
+    final List<String> toFetch = [];
+
+    // Anything a previous snapshot pull already answered costs no request.
+    final Map<String, BooruTagEntry> known = await BooruTagStore.lookup(booru, wanted);
+    for (final name in wanted) {
+      final BooruTagEntry? hit = known[name];
+      if (hit != null) {
+        tagObjects.add(Tag(hit.name, tagType: hit.tagType, count: hit.count));
+      } else {
+        toFetch.add(name);
       }
-    } catch (e, s) {
-      Logger.Inst().log(
-        e.toString(),
-        className,
-        'genTagObjects',
-        LogTypes.exception,
-        s: s,
-      );
     }
+
+    // Politeness cap: the background queue re-feeds whatever is left over on
+    // its next pass, so this never turns a big post into a request storm.
+    const int concurrency = 3;
+    const int maxPerCall = 45;
+    final List<String> batchList = toFetch.take(maxPerCall).toList();
+    final List<BooruTagEntry> learned = [];
+
+    for (int i = 0; i < batchList.length; i += concurrency) {
+      final Iterable<String> batch = batchList.skip(i).take(concurrency);
+      final results = await Future.wait(
+        batch.map((name) async {
+          try {
+            return await source.exact(booru, name);
+          } catch (_) {
+            return null;
+          }
+        }),
+      );
+      for (final entry in results.whereType<BooruTagEntry>()) {
+        learned.add(entry);
+        tagObjects.add(Tag(entry.name, tagType: entry.tagType, count: entry.count));
+      }
+    }
+
+    if (learned.isNotEmpty) {
+      unawaited(BooruTagStore.record(booru, learned));
+    }
+    Logger.Inst().log(
+      'resolved ${tagObjects.length}/${wanted.length} tag types (${learned.length} fetched)',
+      className,
+      'genTagObjects',
+      LogTypes.booruHandlerTagInfo,
+    );
     return tagObjects;
   }
 

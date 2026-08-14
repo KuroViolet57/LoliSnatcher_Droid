@@ -16,6 +16,7 @@ import 'package:lolisnatcher/src/pages/foryou_page.dart';
 import 'package:lolisnatcher/src/handlers/pool_source.dart';
 import 'package:lolisnatcher/src/pages/pools_page.dart';
 import 'package:lolisnatcher/src/pages/settings_page.dart';
+import 'package:lolisnatcher/src/pages/tag_browser_page.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 import 'package:lolisnatcher/src/widgets/common/cancel_button.dart';
 import 'package:lolisnatcher/src/widgets/common/mascot_image.dart';
@@ -268,6 +269,15 @@ class MainDrawer extends StatelessWidget {
                       page: () => const PoolsPage(),
                     );
                   }),
+                  // Always available: even a booru with no browsable tag
+                  // index still has whatever the app collected while you
+                  // browsed it, and still accepts corrections.
+                  if (settingsHandler.dbEnabled && settingsHandler.booruList.isNotEmpty)
+                    SettingsButton(
+                      name: 'Tag browser',
+                      icon: const Icon(Symbols.sell_rounded),
+                      page: () => const TagBrowserPage(),
+                    ),
                   Obx(() {
                     if (settingsHandler.booruList.isNotEmpty &&
                         searchHandler.tabs.isNotEmpty &&
