@@ -895,3 +895,54 @@ viewerHandler.activeViewers too, and MediaKitPlayerView.didUpdateWidget
 seeks to zero when isViewed goes true again, so it would also need a
 "covered" concept distinct from "not the current page". Not worth it while
 unmount+hand-off already gives the right behaviour.
+
+## Build `pools` (2026-08-13) — pool browsing (survey + feature)
+SURVEY (all probed live with the user's own credentials):
+- WORKS NOW: e621, e6ai (/pools.json, ordered post_ids), rule34.xxx,
+  gelbooru.com, realbooru, xbooru (HTML `index.php?page=pool&s=list&pid=N`,
+  25/page), derpibooru (Philomena "galleries",
+  /api/v1/json/search/galleries).
+- API KEY DOES NOT UNLOCK GELBOORU POOLS: `page=dapi&s=pool&q=index` returns
+  an EMPTY body on rule34.xxx and gelbooru.com even with valid
+  api_key+user_id (note: rule34.xxx 301s to api.rule34.xxx — follow it).
+  HTML scrape is the only route. `&search=`/`&q=` on the list are ignored.
+- NO POOLS (entry hidden, verified): tbib.org (pool page, zero pools),
+  blacked/drunkenpumken booru.org, rule34.paheal (all pool routes 404),
+  rule34.us, plus nozomi/civitai/redgifs/xxxtik/sankaku/rule34.dev.
+- UNVERIFIED from this container: danbooru + AiBooru (Cloudflare 403 "Just
+  a moment" on a datacenter IP), AllTheFallen (/pools.json returned HTML),
+  rule34.xyz (playlists exist in their JS bundle; proxy blocked), and
+  rule34hentai.net (site was down/502). Danbooru+Philomena sources are
+  implemented anyway and will light up if the site answers on the phone.
+KEY ORDERING FINDING: e621's `pool:<id>` tag returns DATE order, not pool
+order (verified) — comics would be scrambled. Pool order therefore comes
+from `post_ids` and the fetched members are reordered to match.
+IMPLEMENTATION:
+- lib/src/data/booru_pool.dart — BooruPool model.
+- lib/src/handlers/pool_source.dart — `PoolSource.forBooru(booru)` resolves
+  per Booru (type + host denylist) and returns null for sites without
+  pools, which is exactly what the drawer entry keys off. Four sources:
+  E621 (json, reorder), Danbooru (`ordpool:` = server-side pool order),
+  Philomena (`gallery_id:`), GelbooruHtml (scrape list + scrape ordered ids
+  from `<span class="thumb" id="pNNN">` on the pool page).
+- lib/src/boorus/pool_posts_handler.dart — virtual BooruHandler serving one
+  pool as a normal post feed (so viewer/snatcher/favourites/blacklist all
+  behave normally). Three strategies: delegate straight through when the
+  site's query already preserves order; fetch-all + reorder for e621;
+  per-id fetch (`tags=id:<n>`, verified supported; OR of ids is NOT) in
+  bounded parallel batches for the gelbooru family.
+- SearchTab gained poolId/poolName (+ `isPool`), persisted in TabBackup as
+  'p'/'pn' and passed to the CONSTRUCTOR on restore so the pool handler is
+  rebuilt — a restored pool tab keeps working instead of degrading into a
+  broken text search. addTabByString gained poolId/poolName.
+- TabRow: red "pool" chip (theme error role, not a hex) inline before the
+  MarqueeText; compact and non-flexing so the marquee keeps its width.
+  One change covers both the tab strip and the tab manager.
+- lib/src/pages/pools_page.dart — list with loading/error/empty states,
+  infinite scroll; tap opens the pool, long-press / trailing button opens
+  it as a background tab in the current group.
+- main_drawer: "Pools" SettingsButton wrapped in Obx, hidden entirely when
+  PoolSource.supports(currentBooru) is false.
+NOT DONE: pool thumbnails on list rows (rule34's table has none and it
+would cost a request per row — skipped per the brief). No runtime device
+testing of the UI from here.

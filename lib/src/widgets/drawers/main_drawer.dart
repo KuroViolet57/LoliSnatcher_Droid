@@ -13,6 +13,8 @@ import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/pages/collections_page.dart';
 import 'package:lolisnatcher/src/pages/foryou_page.dart';
+import 'package:lolisnatcher/src/handlers/pool_source.dart';
+import 'package:lolisnatcher/src/pages/pools_page.dart';
 import 'package:lolisnatcher/src/pages/settings_page.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 import 'package:lolisnatcher/src/widgets/common/cancel_button.dart';
@@ -251,6 +253,21 @@ class MainDrawer extends StatelessWidget {
                       icon: const Icon(Symbols.collections_bookmark_rounded),
                       page: () => const CollectionsPage(),
                     ),
+                  // Pools are a PER-SITE capability, so this entry simply
+                  // doesn't exist on boorus without them rather than showing
+                  // up and failing (same shape as the webview button below).
+                  Obx(() {
+                    if (settingsHandler.booruList.isEmpty ||
+                        searchHandler.tabs.isEmpty ||
+                        !PoolSource.supports(searchHandler.currentBooru)) {
+                      return const SizedBox.shrink();
+                    }
+                    return SettingsButton(
+                      name: 'Pools',
+                      icon: const Icon(Symbols.collections_bookmark_rounded),
+                      page: () => const PoolsPage(),
+                    );
+                  }),
                   Obx(() {
                     if (settingsHandler.booruList.isNotEmpty &&
                         searchHandler.tabs.isNotEmpty &&

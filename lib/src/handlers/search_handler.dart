@@ -15,6 +15,7 @@ import 'package:scroll_to_index/scroll_to_index.dart';
 import 'package:uuid/uuid.dart';
 
 import 'package:lolisnatcher/src/boorus/mergebooru_handler.dart';
+import 'package:lolisnatcher/src/boorus/pool_posts_handler.dart';
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
@@ -171,6 +172,10 @@ class SearchHandler {
     Map<String, String>? tagOverrides,
     Map<String, bool>? inheritMainTags,
     String? tabId,
+    // Pool tabs carry the pool as tab state, since several sites can't express
+    // "posts in pool N" as a search at all.
+    String? poolId,
+    String? poolName,
   }) {
     final Booru booru = customBooru ?? currentBooru;
 
@@ -186,6 +191,8 @@ class SearchHandler {
       tabId: tabId,
       tagOverrides: tagOverrides,
       inheritMainTags: inheritMainTags,
+      poolId: poolId,
+      poolName: poolName,
     );
     newTab.groupName = groupName;
     if (customPage != null) {
@@ -1585,6 +1592,8 @@ class SearchHandler {
             booru: booruName,
             id: tab.id,
             group: tab.groupName,
+            poolId: tab.poolId,
+            poolName: tab.poolName,
             secondaryBoorus: secondaryBoorusNames,
             tagOverrides: overrides,
             inheritMainTags: inherit,
@@ -1626,6 +1635,11 @@ class SearchHandler {
       tagOverrides: backup.tagOverrides.isEmpty ? null : Map<String, String>.from(backup.tagOverrides),
       inheritMainTags:
           backup.inheritMainTags.isEmpty ? null : Map<String, bool>.from(backup.inheritMainTags),
+      // Passed to the constructor (not assigned after) so the pool handler is
+      // rebuilt on restore — otherwise the tab would come back as a plain,
+      // broken text search.
+      poolId: (backup.poolId?.isEmpty ?? true) ? null : backup.poolId,
+      poolName: (backup.poolName?.isEmpty ?? true) ? null : backup.poolName,
     )..groupName = (backup.group?.isEmpty ?? true) ? null : backup.group;
   }
 
@@ -1786,7 +1800,14 @@ class SearchTab {
     // Virtual/synthetic feeds (blended suggestions) supply their own handler
     // instead of one built from the booru's type.
     BooruHandler? customHandler,
+    // Pool tabs: identity of the pool this tab shows. Kept as tab STATE (not a
+    // tag string) because several sites have no pool metatag at all — the
+    // pool only exists as its own page there.
+    String? poolId,
+    String? poolName,
   }) : id = (tabId != null && tabId.isNotEmpty) ? tabId : uuid.v4() {
+    this.poolId = poolId;
+    this.poolName = poolName;
     this.selectedBooru = selectedBooru.obs;
     this.secondaryBoorus = Rxn<List<Booru>?>(secondaryBoorus);
     if (tagOverrides != null && tagOverrides.isNotEmpty) {
@@ -1806,6 +1827,18 @@ class SearchTab {
       booruHandler.pageNum = 0;
       return;
     }
+    // Rebuilt from persisted state on restore too, so a pool tab keeps
+    // working across restarts.
+    if (poolId != null && poolId.isNotEmpty) {
+      booruHandler = PoolPostsHandler(
+        selectedBooru,
+        SettingsHandler.instance.itemLimit,
+        poolId: poolId,
+        poolName: poolName,
+      );
+      booruHandler.pageNum = 0;
+      return;
+    }
     final temp = BooruHandlerFactory().getBooruHandler(tempBooruList, null);
     booruHandler = temp.booruHandler;
     booruHandler.pageNum = temp.startingPage;
@@ -1820,6 +1853,12 @@ class SearchTab {
   // visited-tabs history can track a tab as one entry rather than duplicating.
   final String id;
   String tags = '';
+  /// Pool this tab shows, when it is one. Drives the red "pool" chip in
+  /// TabRow and is persisted through TabBackup.
+  String? poolId;
+  String? poolName;
+  bool get isPool => poolId?.isNotEmpty ?? false;
+
   // Tab group this tab belongs to (null = ungrouped). Groups are rendered as
   // bordered blocks in the tab manager; tabs opened from within a grouped tab
   // (tag taps etc.) inherit the group. Persisted via TabBackup.
@@ -1980,6 +2019,8 @@ class TabBackup {
     required this.booru,
     this.id,
     this.group,
+    this.poolId,
+    this.poolName,
     this.secondaryBoorus = const [],
     this.tagOverrides = const {},
     this.inheritMainTags = const {},
@@ -1992,6 +2033,11 @@ class TabBackup {
   final String? id;
   // Tab group name (null/absent = ungrouped).
   final String? group;
+  // Pool this tab shows, when it is a pool tab. Persisted so a restored pool
+  // tab still fetches pool contents (and still shows its chip) instead of
+  // degrading into a plain — and broken — text search.
+  final String? poolId;
+  final String? poolName;
   final List<String> secondaryBoorus;
   // Per-booru tag overrides used in merge mode. Keys are booru names; missing
   // entries (or older backups without this field) fall back to `tags`.
@@ -2007,6 +2053,8 @@ class TabBackup {
       'b': booru,
       if (id != null) 'i': id,
       if (group != null && group!.isNotEmpty) 'g': group,
+      if (poolId != null && poolId!.isNotEmpty) 'p': poolId,
+      if (poolName != null && poolName!.isNotEmpty) 'pn': poolName,
       if (secondaryBoorus.isNotEmpty) 'sb': secondaryBoorus,
       if (tagOverrides.isNotEmpty) 'to': tagOverrides,
       if (inheritMainTags.isNotEmpty) 'in': inheritMainTags,
@@ -2021,6 +2069,8 @@ class TabBackup {
         booru: json['b'] as String,
         id: json['i'] as String?,
         group: json['g'] as String?,
+        poolId: json['p'] as String?,
+        poolName: json['pn'] as String?,
         secondaryBoorus: (json['sb'] as List<dynamic>?)?.map((e) => e as String).toList() ?? const [],
         tagOverrides:
             (json['to'] as Map<String, dynamic>?)?.map((k, v) => MapEntry(k, v.toString())) ?? const {},

@@ -220,6 +220,34 @@ class TabRow extends StatelessWidget {
               //
               const SizedBox(width: 4),
             ],
+            // Pool tabs are otherwise indistinguishable from a tag search, and
+            // several open at once gets confusing. Deliberately RED (the
+            // theme's error role, so it survives theme switches and stays
+            // legible either way) to read as a type marker at a glance.
+            // Compact and non-flexing: the marquee keeps all remaining width.
+            if (tab.isPool) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.error.withValues(alpha: 0.22),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.error.withValues(alpha: 0.75),
+                    width: 0.8,
+                  ),
+                ),
+                child: Text(
+                  'pool',
+                  style: TextStyle(
+                    fontSize: 10,
+                    height: 1.2,
+                    fontWeight: FontWeight.w700,
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 5),
+            ],
             marquee,
           ],
         );
