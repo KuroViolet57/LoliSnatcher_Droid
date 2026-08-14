@@ -39,21 +39,23 @@ abstract class PoolSource {
   /// so the result must not be re-sorted or re-ordered locally.
   bool get queryPreservesOrder => false;
 
-  static const Set<String> _noPoolHosts = {
-    // Verified empty/unsupported despite running booru software that has the
-    // feature: tbib serves a pool page with no pools, the booru.org instances
-    // don't expose the module, paheal 404s every pool route.
-    'tbib.org',
-    'blacked.booru.org',
-    'drunkenpumken.booru.org',
-    'rule34.paheal.net',
+  /// Hosts pool browsing is enabled on.
+  ///
+  /// An ALLOWLIST, not a denylist: several sites run software that has pools
+  /// and still have none worth browsing (or refuse them over the API), so
+  /// membership here means "verified working end to end on this site".
+  static const Set<String> _poolHosts = {
+    'rule34.xxx',
+    'realbooru.com',
+    'xbooru.com',
+    'booru.allthefallen.moe',
   };
 
   /// The pool source for [booru], or null when the site has no pools.
   static PoolSource? forBooru(Booru? booru) {
     if (booru?.type == null) return null;
     final String host = Uri.tryParse(booru!.baseURL ?? '')?.host.replaceFirst('www.', '') ?? '';
-    if (host.isEmpty || _noPoolHosts.contains(host)) return null;
+    if (host.isEmpty || !_poolHosts.contains(host)) return null;
 
     return switch (booru.type!) {
       BooruType.e621 => const E621PoolSource(),

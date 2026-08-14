@@ -70,6 +70,22 @@ abstract class BooruHandler {
   ///
   /// Should always be called after fetched changed (so don't forget to add it in custom afterParseResponse or search methods)
   /// (See gelbooru of favourites handlers for example)
+  /// Items exempted from the FAVOURITES and SNATCHED filters for this
+  /// session.
+  ///
+  /// Those two filters are meant to hide things you've already dealt with
+  /// when a page LOADS — not to yank a post out from under you the moment you
+  /// favourite it (which used to happen mid-video). Anything favourited or
+  /// snatched while browsing lands here and stays visible until the feed is
+  /// actually reloaded. Cleared on a new search / refresh (see search()).
+  /// Deliberately scoped to those two branches: the blacklist and the other
+  /// filters must keep applying live.
+  final Set<String> liveFilterExemptions = {};
+
+  static String exemptionKey(BooruItem item) => item.postURL.isNotEmpty ? item.postURL : item.fileURL;
+
+  void exemptFromLiveFilter(BooruItem item) => liveFilterExemptions.add(exemptionKey(item));
+
   void filterFetched() {
     final SettingsHandler settingsHandler = SettingsHandler.instance;
 
@@ -101,13 +117,15 @@ abstract class BooruHandler {
         if (!keep) continue;
       }
 
+      final bool isExempt = liveFilterExemptions.contains(exemptionKey(item));
+
       final bool filterFavourites = settingsHandler.filterFavourites && booru.type?.isFavourites != true;
-      if (filterFavourites && item.isFavourite.value == true) {
+      if (filterFavourites && item.isFavourite.value == true && !isExempt) {
         continue;
       }
 
       final bool filterSnatched = settingsHandler.filterSnatched && booru.type?.isDownloads != true;
-      if (filterSnatched && item.isSnatched.value == true) {
+      if (filterSnatched && item.isSnatched.value == true && !isExempt) {
         continue;
       }
 
@@ -205,6 +223,9 @@ abstract class BooruHandler {
     if (prevTags != tags) {
       fetched.value = [];
       totalCount.value = 0;
+      // A genuinely new query: favourited/snatched posts should be filtered
+      // again from scratch.
+      liveFilterExemptions.clear();
     }
 
     // get amount of items before fetching

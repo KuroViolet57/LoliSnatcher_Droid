@@ -1967,6 +1967,12 @@ class SearchTab {
         BooruUpdateMode.local,
       );
 
+      // Keep the post visible for the rest of this session: the favourites /
+      // snatched filters are meant to apply on LOAD, not to make a post vanish
+      // the moment you like it (which used to happen mid-video). The refilter
+      // itself stays so the blacklist and the other filters keep updating.
+      booruHandler.exemptFromLiveFilter(item);
+
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         // update filtered items list in case user has favourites filter enabled
         await Future.delayed(const Duration(milliseconds: 200));
@@ -1993,6 +1999,9 @@ class SearchTab {
 
     for (final BooruItem item in items) {
       item.isFavourite.value = newValue;
+      // Same rule as the single-item path: liking something in bulk shouldn't
+      // make it disappear until the feed is reloaded.
+      booruHandler.exemptFromLiveFilter(item);
     }
 
     await settingsHandler.dbHandler.updateMultipleBooruItems(

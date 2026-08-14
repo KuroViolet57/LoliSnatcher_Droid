@@ -12,6 +12,7 @@ import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 import 'package:lolisnatcher/src/handlers/interests_handler.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
+import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/services/image_writer.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
@@ -346,6 +347,16 @@ class SnatchHandler {
       final SnatchItem item = SnatchItem(booruItems, cooldown, booru, ignoreExists);
       queuedList.add(item);
       InterestsHandler.instance.onItemsSnatched(booruItems);
+
+      // "Hide snatched posts" is meant to apply when a feed LOADS, not to make
+      // a post vanish the instant you save it. Keep anything snatched now
+      // visible until the feed is actually reloaded (same rule as favourites).
+      final SearchHandler searchHandler = SearchHandler.instance;
+      if (searchHandler.tabs.isNotEmpty) {
+        for (final snatched in booruItems) {
+          searchHandler.currentTab.booruHandler.exemptFromLiveFilter(snatched);
+        }
+      }
 
       if (booruItems.length > 1) {
         if (SettingsHandler.instance.downloadNotifications) {

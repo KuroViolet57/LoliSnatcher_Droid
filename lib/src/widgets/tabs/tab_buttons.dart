@@ -86,19 +86,29 @@ class TabButtons extends StatelessWidget {
       );
 
       // Add new tab
-      final Widget addButton = GestureDetector(
+      // Tap and long-press live on the SAME widget on purpose. This used to be
+      // a GestureDetector wrapped around an IconButton, and the long-press
+      // never reached the picker: IconButton builds its own InkResponse, whose
+      // tap recognizer is the innermost entry in the gesture arena, so the
+      // ancestor detector lost the contest under real touch input. InkResponse
+      // handles both gestures itself, so there is no arena to lose.
+      final Widget addButton = InkResponse(
+        onTap: () {
+          final String defaultText = searchHandler.currentBooru.defTags?.isNotEmpty == true
+              ? searchHandler.currentBooru.defTags!
+              : SettingsHandler.instance.defTags;
+          // add new tab to the list end and switch to it
+          searchHandler.searchTextController.text = defaultText;
+          searchHandler.addTabByString(defaultText, switchToNew: true);
+        },
         onLongPress: () => showLongTapAddDialog(context),
-        child: IconButton(
-          icon: const Icon(Symbols.add_circle_rounded),
-          color: iconColor,
-          onPressed: () {
-            final String defaultText = searchHandler.currentBooru.defTags?.isNotEmpty == true
-                ? searchHandler.currentBooru.defTags!
-                : SettingsHandler.instance.defTags;
-            // add new tab to the list end and switch to it
-            searchHandler.searchTextController.text = defaultText;
-            searchHandler.addTabByString(defaultText, switchToNew: true);
-          },
+        radius: 24,
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Icon(
+            Symbols.add_circle_rounded,
+            color: iconColor,
+          ),
         ),
       );
 

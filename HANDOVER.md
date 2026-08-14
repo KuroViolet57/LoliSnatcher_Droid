@@ -946,3 +946,36 @@ IMPLEMENTATION:
 NOT DONE: pool thumbnails on list rows (rule34's table has none and it
 would cost a request per row — skipped per the brief). No runtime device
 testing of the UI from here.
+
+## Build `fav-keep` (2026-08-13)
+1. POOLS NARROWED (user tested): PoolSource._poolHosts is now an ALLOWLIST —
+   rule34.xxx, realbooru.com, xbooru.com, booru.allthefallen.moe. Everything
+   else gets no drawer entry. The e621/Philomena sources stay in the file
+   (working code) but are unreachable until a host is added.
+2. NEW-TAB LONG-PRESS FIXED: tab_buttons.dart had
+   GestureDetector(onLongPress) wrapping an IconButton; IconButton builds its
+   own InkResponse whose tap recognizer is the innermost arena entry, so the
+   ancestor's long-press lost under real touch. NOTE the same pattern is in
+   ToolbarAction (and 2.5.0 hotfix 1 was literally "Fixed long tap actions on
+   viewer toolbar buttons"), so this is a recurring trap. Fixed by putting BOTH
+   gestures on one InkResponse (onTap + onLongPress + ripple), no nesting.
+   NOT device-tested from here.
+4. FAVOURITES/SNATCHED FILTER NO LONGER LIVE: BooruHandler gained
+   `liveFilterExemptions` (+ exemptFromLiveFilter / exemptionKey). The
+   favourites AND snatched branches of filterFetched now skip exempt items;
+   every other filter (blacklist etc.) still applies live, and filterFetched
+   itself is still called. Exemptions are added when favouriting (single +
+   bulk in search_handler) and when queueing a snatch (snatch_handler), and
+   cleared in booru_handler.search() where `fetched.value = []` on a new
+   query. So a post you like mid-video stays put until an actual reload.
+TAG-INDEX SURVEY (for the pending tag-browser feature):
+  - rule34.xxx: index.php?page=dapi&s=tag&q=index (XML) works with key;
+    fields type/count/name/ambiguous/id.
+  - xbooru: same XML endpoint works, but count is 0 on everything.
+  - realbooru: tag index returns EMPTY (and orderby -> "Search error").
+  - allthefallen: /tags.json returns HTML, like its /pools.json (unverified
+    from this IP).
+  - CRITICAL: `orderby=count` is IGNORED everywhere tested — rule34.xxx
+    returned counts 2,1,1 and xbooru all zeros. Tag indexes come out in id
+    order, so "most popular tags first" is NOT free; it needs either local
+    accumulation or a different source.
