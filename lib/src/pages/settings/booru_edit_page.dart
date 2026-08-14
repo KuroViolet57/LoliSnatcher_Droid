@@ -204,6 +204,15 @@ class _BooruEditState extends State<BooruEdit> {
                       booruFaviconController.text = 'https://app.rule34.dev/icon.webp';
                     }
                   }
+                  if (selectedBooruType.isTikPorn && booruURLController.text.trim().isEmpty) {
+                    booruURLController.text = 'https://tik.porn';
+                    if (booruNameController.text.trim().isEmpty) {
+                      booruNameController.text = 'Tik.Porn';
+                    }
+                    if (booruFaviconController.text.trim().isEmpty) {
+                      booruFaviconController.text = 'https://tik.porn/apple-touch-icon.png';
+                    }
+                  }
                   if (selectedBooruType.isXXXTik && booruURLController.text.trim().isEmpty) {
                     booruURLController.text = 'https://xxxtik.com';
                     if (booruNameController.text.trim().isEmpty) {
@@ -400,6 +409,19 @@ class _BooruEditState extends State<BooruEdit> {
             'Note: the "real videos" (xvideos) section streams tube sites '
             'through a private proxy and cannot be scraped directly — open '
             'app.rule34.dev in a WebView booru for that part.';
+      case BooruType.TikPorn:
+        return '<b>Tik.Porn</b><br>Leave the URL as https://tik.porn. A '
+            'short-form vertical video site — video only, no images. No '
+            'account or API key is needed.<br><br>'
+            'Leave the search empty to browse the whole catalogue. Type any '
+            "words to search, or use one of the site's own categories: a "
+            'single tag name (e.g. <i>redhead</i>, <i>small-tits</i>) goes '
+            "straight to that tag's feed, and <i>action:anal-doggystyle</i> "
+            "goes to an act's feed. Tap a creator, or type "
+            "<i>creator:name</i>, for that creator's videos.<br><br>"
+            'The <i>sort:</i> chip (Recent / Popular) applies to tag, action '
+            'and creator feeds. Free-text search has a fixed relevance order '
+            'and ignores it — the site itself offers no other orderings.';
       case BooruType.XXXTik:
         return '<b>xxxtik</b><br>Leave the URL as https://xxxtik.com. A '
             'short-form video site.<br><br>'
@@ -578,6 +600,7 @@ class _BooruEditState extends State<BooruEdit> {
     if (selectedBooruType.isRedGifs ||
         selectedBooruType.isWebView ||
         selectedBooruType.isRule34Dev ||
+        selectedBooruType.isTikPorn ||
         selectedBooruType.isXXXTik ||
         selectedBooruType.isXXXFollow) {
       if (booruNameController.text.trim().isEmpty) {
@@ -585,6 +608,8 @@ class _BooruEditState extends State<BooruEdit> {
             ? 'RedGifs'
             : selectedBooruType.isRule34Dev
             ? 'Rule34.dev'
+            : selectedBooruType.isTikPorn
+            ? 'Tik.Porn'
             : selectedBooruType.isXXXTik
             ? 'xxxtik'
             : selectedBooruType.isXXXFollow
@@ -596,6 +621,9 @@ class _BooruEditState extends State<BooruEdit> {
       }
       if (booruURLController.text.trim().isEmpty && selectedBooruType.isRule34Dev) {
         booruURLController.text = 'https://app.rule34.dev';
+      }
+      if (booruURLController.text.trim().isEmpty && selectedBooruType.isTikPorn) {
+        booruURLController.text = 'https://tik.porn';
       }
       if (booruURLController.text.trim().isEmpty && selectedBooruType.isXXXTik) {
         booruURLController.text = 'https://xxxtik.com';

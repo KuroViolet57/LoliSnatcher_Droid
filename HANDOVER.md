@@ -1078,3 +1078,69 @@ HTTP 429 at around page 190 (~3.5k tags). The in-app pull therefore waits
 (reported as "Stopped after N tags", orange, not a red failure), and
 remembers the page it reached per booru so running it again continues rather
 than restarting at `female`.
+
+## Build `tik-porn` (2026-08-14)
+
+New source: **tik.porn** (`BooruType.TikPorn`,
+`lib/src/boorus/tikporn_handler.dart`). Short-form vertical video, video-only,
+no account needed. Not related to the existing `XXXTik` type despite the
+similar shape — different company, different backend.
+
+### How it was found
+Next.js frontend; `__NEXT_DATA__` on any page carries the server props, and
+the client bundle names the real API (`https://apiv2.tik.porn`) plus a full
+endpoint map. No auth on any content endpoint.
+
+### Endpoints used
+- `GET /search?search_term=Q&index=search&search_type=video&limit&offset`
+- `GET /gettagvideos?tagid=ID&limit&offset&sort`
+- `GET /getactionvideos?actionid=ID&…`, `GET /getuservideos?userid=ID&…`
+- `GET /gettaglist` (84 tags), `GET /getactionlist` (131 acts) — the whole
+  vocabulary in two requests, cached statically per app run
+- `GET /getuserbyslug?slug=S` — creator slug -> numeric id (400s on a miss)
+- `GET /getvideocomments?videoid&limit&offset`
+- suggestions: the site's own Elasticsearch term index, with the read
+  credentials its own bundle ships to every browser
+
+Every listing row already carries signed, ready-to-play `mp4_url` / `hls_url`
+/ `download_url` plus poster and list thumbnails, so no per-item request is
+needed. Signed URLs expire — fine, feeds are refetched.
+
+### Query grammar
+Empty -> whole catalogue. Free text -> search. A single bare word that names
+a real tag or act routes to that feed instead (exhaustive + sortable). Also
+`tag:`, `action:`, `creator:`/`artist:`/`user:`, and `sort:recent|popular`.
+
+### Two bugs caught by walking the features end to end
+1. **Underscores zero out free-text search.** The index is natural language,
+   not booru tags: `teen_anal` -> 0 results, `teen anal` -> 26722;
+   `hatsune_miku` -> 0, `hatsune miku` -> 4. Every cross-booru feature (Tag
+   Hub, Artist Hub, suggestions) passes underscored tags, so the site would
+   have looked empty for nearly all of them. `_searchTerm` now converts
+   `_` and `-` to spaces.
+2. **A named-but-unresolved facet fell through to the whole catalogue.**
+   `creator:typo` -> lookup 400s -> `search_term=*` -> 100k confident-looking
+   but completely unrelated results. Now the unresolved name is searched as
+   text instead, and `*` is reserved for "nothing was asked for".
+
+### API quirks worth remembering
+- `sort` only exists on the id-based feeds, and only `recent` (default) and
+  `popular` differ. `views`, `likes`, `trending`, `random`, `best`, `oldest`
+  all silently return `recent` ordering. `/search` ignores `sort` entirely —
+  so the sort chip offers exactly two values, not a longer list that lies.
+- `/getrecentvideos` ignores page AND limit AND offset — a fixed ten-item
+  strip, not a feed. Unused.
+- `/videos/popular` honours `offset` but pins page size to 10. Unused.
+- `search_term=*` returns the whole catalogue (~102k) and pages correctly.
+- `names=`-style batching does not exist here; ids are single-valued.
+
+### Walked end to end against production
+Feeds + 2-page pagination with zero overlap (catalogue 102065, free text
+48340, tag 4583/13905, action 468, creator 229); sort:popular changes the
+result set on tag and action feeds; every first item's mp4 and thumbnail
+return 206 with the right content type; autocomplete returns vocabulary +
+keyword hits for redh/anal/small/teen/cosplay; comments parse; underscore,
+hyphen and uppercase spellings all resolve to the same feed.
+
+NOT DONE: no device testing from here. Not autodetectable on purpose (fixed
+API host, like xxxtik/RedGifs/Civitai) — pick "Tik.Porn" in the type list.
