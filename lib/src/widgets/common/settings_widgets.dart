@@ -62,11 +62,16 @@ class SettingsButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (iconOnly) {
-      return GestureDetector(
-        onLongPress: onLongPress == null ? null : () => {onLongPress!()},
-        child: IconButton(
-          icon: icon ?? const Icon(null),
-          onPressed: interactive ? () => onTapAction(context) : null,
+      // One InkResponse for both gestures — an IconButton inside a
+      // GestureDetector swallows the ancestor's long press (its own ink tap
+      // recognizer is innermost in the gesture arena).
+      return InkResponse(
+        onTap: interactive ? () => onTapAction(context) : null,
+        onLongPress: onLongPress == null ? null : () => onLongPress!(),
+        radius: 24,
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: icon ?? const Icon(null),
         ),
       );
     }

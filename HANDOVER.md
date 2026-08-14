@@ -1144,3 +1144,58 @@ hyphen and uppercase spellings all resolve to the same feed.
 
 NOT DONE: no device testing from here. Not autodetectable on purpose (fixed
 API host, like xxxtik/RedGifs/Civitai) — pick "Tik.Porn" in the type list.
+
+## Build `thumb-fix` (2026-08-14)
+
+Three user-reported bugs, all found and fixed at the source.
+
+### 1. Every video sharing one thumbnail (tik.porn AND xxxtik)
+`ImageWriter.parseThumbUrlToName` named disk-cache files by the URL's **last
+path segment only**. That is fine for boorus that put a hash or post id in
+the filename, but some sites carry the identity in the DIRECTORY:
+
+    tik.porn  …/video/1753/1753144/list-sm.jpg?ver=3  -> "list-sm.jpg"
+    xxxtik    …/{uid}/thumbnail.webp                  -> "thumbnail.webp"
+
+So every post on those sites read and wrote ONE cache entry, and the grid
+rendered whichever thumbnail was fetched first. (The pre-existing `thumb.`
+/ Paheal special-case in that function is the same bug, patched one site at
+a time.) Now a generic basename gets a 10-char md5 of its directory
+prefixed. "Generic" = the stem contains no alphanumeric run of 8+ characters
+that includes a digit, so hash/id filenames are left exactly as they were and
+no existing cache entry is invalidated for any other booru. Verified against
+real URLs from tik.porn, xxxtik, rule34.xxx, r34us, gelbooru, e621, danbooru
+and bakemono. **Both copies** of the function must stay in sync —
+`image_writer.dart` and `image_writer_isolate.dart`.
+
+### 2. New-tab long press still dead
+I fixed the wrong button last time. The Flow UI's app-bar add button is
+`NewTabButton` in `flow_tab_carousel.dart`, not the sidebar's `TabButtons` —
+and it had the identical `GestureDetector(onLongPress:)` wrapped around an
+`IconButton`. The IconButton builds its own InkResponse whose tap recognizer
+is innermost in the gesture arena, so the ancestor's long press never wins.
+
+This bug class has now shipped three times (2.5.0 hotfix 1 for the viewer
+toolbar, the sidebar add button, this one), so the whole tree was swept:
+`main_appbar.dart` menu button, `settings_widgets.dart` iconOnly
+SettingsButton, and `webview_navigation_controls.dart` back button were all
+the same pattern and are all converted. A grep for
+`GestureDetector(onLongPress) -> IconButton` now returns zero hits.
+**RULE: never wrap an IconButton in a GestureDetector. Put every gesture on
+one InkResponse.**
+
+### 3. rule34.us finding no posts for any tag
+rule34.us serves **two completely different layouts by User-Agent**, and the
+handler is written against the desktop one. `Tools.browserUserAgent` prefers
+the device WebView's UA on Android, i.e. a mobile UA, so the app got the
+mobile layout where:
+  - grid thumbnails are lazy-loaded: `<img class="lazyload" data-src="…">`
+    with **no `src` attribute at all** -> every item parsed to null -> "no
+    posts found", and no error anywhere;
+  - the post page has neither `.content_push` nor `.tag-list-left` (media is
+    injected by script into `#ci`), so `loadItem` would have failed too.
+Fixed by sending `Constants.defaultDesktopBrowserUserAgent` from
+`R34USHandler.getHeaders()` (a user-set custom UA still wins), and by making
+the grid parser accept `data-src` and use `querySelector` instead of
+`children[0]`/`firstChild` node-walking. Verified: 42/42 items parse on the
+desktop layout, 21/21 on the mobile one.

@@ -60,17 +60,20 @@ class _MainAppBarState extends State<MainAppBar> {
   Widget menuButton(InnerDrawerDirection direction) {
     return Builder(
       builder: (context) {
-        return GestureDetector(
+        // All three gestures on one InkResponse: an IconButton nested inside
+        // a GestureDetector builds its own ink tap recognizer, which is
+        // innermost in the gesture arena and beats the ancestor's long press.
+        return InkResponse(
+          onTap: () => _toggleDrawer(direction),
           onLongPress: _onMenuLongTap,
           onSecondaryTap: _onMenuLongTap,
-          child: IconButton(
-            icon: Icon(
+          radius: 24,
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: Icon(
               Symbols.menu_rounded,
               color: Theme.of(context).appBarTheme.iconTheme?.color,
             ),
-            onPressed: () {
-              _toggleDrawer(direction);
-            },
           ),
         );
       },

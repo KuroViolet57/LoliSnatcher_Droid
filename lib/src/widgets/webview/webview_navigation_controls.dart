@@ -31,7 +31,21 @@ class WebviewNavigationControls extends StatelessWidget {
 
         return Row(
           children: [
-            GestureDetector(
+            // Both gestures on one InkResponse: nesting an IconButton inside
+            // a GestureDetector loses the long press to the button's own ink
+            // tap recognizer, which sits deeper in the gesture arena.
+            InkResponse(
+              radius: 24,
+              onTap: () async {
+                if (await controller.canGoBack()) {
+                  await controller.goBack();
+                } else {
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(context.loc.webview.navigation.noBackHistoryItem)),
+                  );
+                }
+              },
               onLongPress: () {
                 showDialog(
                   context: context,
@@ -43,18 +57,9 @@ class WebviewNavigationControls extends StatelessWidget {
                   ),
                 );
               },
-              child: IconButton(
-                icon: const Icon(Symbols.arrow_back_ios_rounded),
-                onPressed: () async {
-                  if (await controller.canGoBack()) {
-                    await controller.goBack();
-                  } else {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(context.loc.webview.navigation.noBackHistoryItem)),
-                    );
-                    return;
-                  }
-                },
+              child: const Padding(
+                padding: EdgeInsets.all(8),
+                child: Icon(Symbols.arrow_back_ios_rounded),
               ),
             ),
             IconButton(

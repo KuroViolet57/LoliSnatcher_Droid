@@ -3,9 +3,11 @@ import 'package:html/dom.dart';
 import 'package:html/parser.dart';
 
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/data/constants.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
+import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/extensions.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
@@ -38,6 +40,29 @@ class R34USHandler extends BooruHandler {
   @override
   List<String> get animatedPreviewFilters => const ['animated', 'video'];
 
+  /// rule34.us serves TWO COMPLETELY DIFFERENT LAYOUTS depending on the User
+  /// Agent, and everything below is written against the desktop one.
+  ///
+  /// Under a mobile UA — which is what `Tools.browserUserAgent` returns on
+  /// Android, since it prefers the device WebView's UA — the site switches to
+  /// a lazy-loading grid whose thumbnails carry `data-src` and NO `src` at
+  /// all, and to a post page with neither `.content_push` nor
+  /// `.tag-list-left` (the media is injected by script into `#ci`). The
+  /// result was a booru that returned "no posts found" for every query, with
+  /// no error anywhere, because each item simply parsed to null.
+  ///
+  /// So ask for the desktop layout explicitly. A user who has deliberately
+  /// set a custom User Agent still gets theirs — that is an explicit choice,
+  /// and the parser below also tolerates `data-src` for that case.
+  @override
+  Map<String, String> getHeaders() {
+    final String custom = SettingsHandler.instance.customUserAgent;
+    return {
+      'Accept': 'text/html,application/xml,application/json',
+      'User-Agent': custom.isNotEmpty ? custom : Constants.defaultDesktopBrowserUserAgent,
+    };
+  }
+
   @override
   bool get hasLoadItemSupport => true;
 
@@ -52,13 +77,26 @@ class R34USHandler extends BooruHandler {
 
   @override
   Future<BooruItem?> parseItemFromResponse(dynamic responseItem, int index) async {
-    final current = (responseItem as Element).children[0];
-    if (current.firstChild!.attributes['src'] != null) {
-      final String id = current.attributes['id']!;
-      final String thumbURL = current.firstChild!.attributes['src']!;
+    final Element container = responseItem as Element;
+    // querySelector rather than children[0]/firstChild: those walk raw nodes,
+    // so a stray text node between the tags is enough to lose the image.
+    final Element? link = container.querySelector('a');
+    final Element? image = container.querySelector('img');
+    if (link == null || image == null) return null;
+
+    final String id = link.attributes['id'] ?? '';
+    // `data-src` is the lazy-loading (mobile layout) spelling — see
+    // getHeaders above. Kept as a fallback so a layout switch degrades into
+    // "still works" rather than "silently finds nothing".
+    final String rawSrc = image.attributes['src'] ?? '';
+    final String thumbURL = (rawSrc.isEmpty || rawSrc.startsWith('data:'))
+        ? (image.attributes['data-src'] ?? '')
+        : rawSrc;
+
+    if (id.isNotEmpty && thumbURL.isNotEmpty) {
       final List<String> tags = [];
-      current.firstChild!.attributes['title']!.split(', ').forEach((tag) {
-        tags.add(tag.replaceAll(' ', '_'));
+      (image.attributes['title'] ?? '').split(', ').forEach((tag) {
+        if (tag.trim().isNotEmpty) tags.add(tag.trim().replaceAll(' ', '_'));
       });
 
       final mediaType = (tags.contains('gif') || tags.contains('animated_gif'))

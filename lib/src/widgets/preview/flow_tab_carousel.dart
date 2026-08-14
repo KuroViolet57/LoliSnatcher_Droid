@@ -71,19 +71,31 @@ class NewTabButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final searchHandler = SearchHandler.instance;
     final accent = Theme.of(context).colorScheme.secondary;
-    return GestureDetector(
-      onLongPress: () {
-        ServiceHandler.vibrate();
-        SettingsPageOpen(
-          context: context,
-          asBottomSheet: true,
-          page: (_) => const AddNewTabDialog(),
-        ).open();
-      },
-      child: IconButton(
-        tooltip: 'New tab (hold to choose booru)',
-        icon: Icon(Symbols.add_circle_rounded, color: accent),
-        onPressed: searchHandler.addNewTabRespectingSetting,
+    // Tap and long-press MUST live on the same widget. This was a
+    // GestureDetector wrapped around an IconButton, and the long press never
+    // fired: IconButton builds its own InkResponse, whose tap recognizer is
+    // the innermost entry in the gesture arena, so the ancestor detector
+    // loses the contest under real touch input. (Same trap as the sidebar
+    // add-tab button, and as the viewer toolbar in the 2.5.0 hotfix — if you
+    // ever see GestureDetector wrapped around an IconButton, it is a bug.)
+    // InkResponse handles both itself, so there is no arena to lose.
+    return Tooltip(
+      message: 'New tab (hold to choose booru)',
+      child: InkResponse(
+        onTap: searchHandler.addNewTabRespectingSetting,
+        onLongPress: () {
+          ServiceHandler.vibrate();
+          SettingsPageOpen(
+            context: context,
+            asBottomSheet: true,
+            page: (_) => const AddNewTabDialog(),
+          ).open();
+        },
+        radius: 24,
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Icon(Symbols.add_circle_rounded, color: accent),
+        ),
       ),
     );
   }
