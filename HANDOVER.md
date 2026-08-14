@@ -1070,3 +1070,11 @@ operator ("API offline because apparently it is broken") so that site can only
 ever collect tags opportunistically. No snapshot files have been published
 anywhere — the import-from-URL mechanism exists and works, but there is no
 hosted snapshot to point it at yet.
+
+### Rate limiting (found the hard way)
+Scraping rule34.xxx's tag list back to back at ~7 req/s started returning
+HTTP 429 at around page 190 (~3.5k tags). The in-app pull therefore waits
+350ms between pages, keeps everything it managed to store when a page fails
+(reported as "Stopped after N tags", orange, not a red failure), and
+remembers the page it reached per booru so running it again continues rather
+than restarting at `female`.

@@ -80,6 +80,10 @@ class _TagBrowserPageState extends State<TagBrowserPage> {
   bool _cancelPull = false;
   int _pulled = 0;
 
+  /// Deepest index page reached per booru, so a pull that got cut short can
+  /// pick up instead of re-walking what it already has.
+  static final Map<String, int> _resumePage = {};
+
   static const int _pageSize = 60;
 
   List<Booru> get _boorus => settingsHandler.booruList
@@ -223,7 +227,10 @@ class _TagBrowserPageState extends State<TagBrowserPage> {
       _pulled = 0;
     });
 
-    int page = 0;
+    // Resume where the last attempt stopped: a rate-limited pull is expected
+    // to be run more than once, and starting over from `female` every time
+    // would never get any deeper.
+    int page = _resumePage[BooruTagStore.keyFor(_booru)] ?? 0;
     try {
       // Bounded: a full booru tag database is millions of rows and nobody
       // wants that on a phone. Each source sets its own depth from how big
@@ -237,15 +244,29 @@ class _TagBrowserPageState extends State<TagBrowserPage> {
         setState(() => _pulled += written);
         if (got.length < source.pageSize) break;
         page++;
+        _resumePage[BooruTagStore.keyFor(_booru)] = page;
+        // Sites rate-limit sustained walks: scraping rule34.xxx's tag list
+        // back to back started returning 429 at around page 190. Pacing it
+        // costs a couple of minutes and keeps the pull from being cut off.
+        await Future.delayed(const Duration(milliseconds: 350));
       }
     } catch (e) {
+      // Whatever was stored before the failure is already saved and useful,
+      // so this is a "stopped early", not a "failed".
       if (mounted) {
         FlashElements.showSnackbar(
           context: context,
-          title: const Text('Tag index pull failed'),
-          content: Text(e.toString(), maxLines: 3, overflow: TextOverflow.ellipsis),
+          title: Text(_pulled > 0 ? 'Stopped after $_pulled tags' : 'Tag index pull failed'),
+          content: Text(
+            _pulled > 0
+                ? 'The site stopped answering (usually rate limiting). What was fetched is saved — '
+                      'run it again later to go deeper.\n$e'
+                : e.toString(),
+            maxLines: 4,
+            overflow: TextOverflow.ellipsis,
+          ),
           leadingIcon: Symbols.error_rounded,
-          sideColor: Colors.red,
+          sideColor: _pulled > 0 ? Colors.orange : Colors.red,
         );
       }
     }
