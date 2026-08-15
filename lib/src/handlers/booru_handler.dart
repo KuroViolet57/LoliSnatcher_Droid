@@ -410,8 +410,21 @@ abstract class BooruHandler {
   Future<void> afterParseResponse(List<BooruItem> newItems) async {
     final int lengthBefore = fetched.length;
     fetched.addAll(newItems);
+    // First pass paints the grid immediately: everything that can be decided
+    // from the response alone (blacklist, media type, duplicates).
     filterFetched();
-    unawaited(setMultipleTrackedValues(lengthBefore, fetched.length));
+
+    // isFavourite / isSnatched are NOT known yet — they come from the local
+    // database. This used to be fire-and-forget, which meant the favourites
+    // and snatched filters ran against items whose flags were still false and
+    // so never removed anything on load. (They appeared to work only because
+    // a later favourite toggle re-ran the filter and yanked the post out
+    // mid-view — the very behaviour that was removed.) Wait for the flags,
+    // then filter again, so those two settings apply where they are meant to:
+    // when a page loads.
+    await setMultipleTrackedValues(lengthBefore, fetched.length);
+    filterFetched();
+
     unawaited(populateTagHandler(newItems));
 
     // TODO

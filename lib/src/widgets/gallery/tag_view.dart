@@ -118,6 +118,24 @@ class _TagViewState extends State<TagView> {
   /// (For You, favourites, merge) that is the item's real source booru, not
   /// the feed — a tag's type is a property of the site it came from.
   Booru get tagBooru => (possibleBooruHandler ?? handler).booru;
+
+  /// The type to colour and GROUP a tag by, in priority order:
+  /// your per-booru correction, then the app-wide tag store, then whatever
+  /// the handler stamped on the item itself.
+  ///
+  /// The store lookup used to be gated on `tagHandler.hasTag(...)`, which
+  /// silently dropped corrections for any tag the global store had never
+  /// heard of — so re-typing such a tag recoloured the chip but left it
+  /// sitting in the General group until the whole view was rebuilt.
+  TagType typeOfTag(Tag tag) {
+    final TagType? mine = BooruTagStore.manualType(tag.fullString, tagBooru);
+    if (mine != null) return mine;
+    if (tagHandler.hasTag(tag.fullString)) {
+      final TagType stored = tagHandler.getTag(tag.fullString).tagType;
+      if (stored != TagType.none) return stored;
+    }
+    return tag.tagType;
+  }
   bool hasLoadItemSupport = false;
   bool canLoadItemOnStart = false;
   List<Tag> tags = [];
@@ -364,11 +382,7 @@ class _TagViewState extends State<TagView> {
     }
 
     for (int i = 0; i < tags.length; i++) {
-      if (tagHandler.hasTag(tags[i].fullString)) {
-        tagMap[tagHandler.getTagFor(tags[i].fullString, tagBooru).tagType]?.add(tags[i]);
-      } else {
-        tagMap[TagType.none]?.add(tags[i]);
-      }
+      tagMap[typeOfTag(tags[i])]?.add(tags[i]);
     }
     // tagMap.forEach((key, value) => {
     //   print("Type: $key Tags: $value")
@@ -851,12 +865,7 @@ class _TagViewState extends State<TagView> {
         for (final type in TagType.values) type: <Tag>[],
       };
       for (final tag in filteredTags) {
-        // Types usually live in TagHandler's enriched store rather than on
-        // the item's Tag object; check both (same pattern as groupTagsList).
-        final TagType type = tagHandler.hasTag(tag.fullString)
-            ? tagHandler.getTagFor(tag.fullString, tagBooru).tagType
-            : tag.tagType;
-        byType[type]!.add(tag);
+        byType[typeOfTag(tag)]!.add(tag);
       }
       for (final type in TagType.values) {
         if (byType[type]!.isNotEmpty) {
@@ -1467,8 +1476,8 @@ class _TagViewState extends State<TagView> {
     if (currentTag.isEmpty) return const SizedBox.shrink();
 
     final theme = Theme.of(context);
-    final tag = tagHandler.getTagFor(currentTag, tagBooru);
-    Color? color = tag.getColour();
+    final TagType resolvedType = typeOfTag(rawTag);
+    Color? color = resolvedType.getColour();
     color = color == Colors.transparent ? null : color;
 
     final bool isHidden = tagsData.hiddenTags.contains(currentTag);

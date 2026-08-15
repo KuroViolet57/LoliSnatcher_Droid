@@ -66,6 +66,7 @@ class DBHandler {
     }
     await updateTable();
     await createCriticalIndexes();
+    await purgeTagAliasMisses();
     await fixBooruItems(onStatusUpdate);
     await deleteUntracked();
     return true;
@@ -867,13 +868,29 @@ class DBHandler {
     if (rows == null || rows.isEmpty) return null;
     final int updatedAt = (rows.first['updatedAt'] as int?) ?? 0;
     final String target = rows.first['targetTag'].toString();
-    // Re-resolve misses after a week (the tag may have been created since);
-    // successful mappings are kept for a month.
-    final int ttlDays = target.isEmpty ? 7 : 30;
+    // Re-resolve misses after a day; successful mappings are kept for a
+    // month. Misses are deliberately short-lived: a "miss" can also be a
+    // request that failed, and a week of remembering that is a week of a
+    // booru silently refusing to translate anything.
+    final int ttlDays = target.isEmpty ? 1 : 30;
     if (DateTime.now().millisecondsSinceEpoch - updatedAt > ttlDays * Duration.millisecondsPerDay) {
       return null;
     }
     return target;
+  }
+
+  /// Drops cached "this tag does not exist here" rows on startup.
+  ///
+  /// Those rows were also written when a suggestion lookup FAILED (a 403, a
+  /// CAPTCHA, a rate-limit), which made cross-booru translation stay dead for
+  /// a week after a single bad moment. The resolver no longer stores a
+  /// negative it did not actually observe, but databases in the wild still
+  /// carry the old ones — and a miss costs one cheap request to re-derive, so
+  /// clearing them every launch is the safe side to err on.
+  Future<void> purgeTagAliasMisses() async {
+    try {
+      await db?.rawDelete("DELETE FROM TagAliasCache WHERE targetTag = ''");
+    } catch (_) {}
   }
 
   Future<void> setTagAlias(String sourceTag, String booruKey, String targetTag) async {

@@ -122,12 +122,21 @@ class TagAliasResolver {
 
     String? best;
     double bestScore = 0;
+    // Whether ANY lookup actually returned. A booru that answers every
+    // request with a 403 or a CAPTCHA would otherwise look identical to one
+    // that simply has none of these tags, and the empty answer would be
+    // cached for the rest of the session — translation silently dead until
+    // the app restarts.
+    bool answered = false;
 
     for (final candidate in candidates) {
       List<TagSuggestion> suggestions = [];
       try {
         final res = await handler.getTagSuggestions(candidate);
-        res.fold((_) {}, (data) => suggestions = data);
+        res.fold((_) {}, (data) {
+          answered = true;
+          suggestions = data;
+        });
       } catch (e) {
         Logger.Inst().log(
           'alias suggestions failed for "$candidate" on ${target.name}: $e',
@@ -178,7 +187,9 @@ class TagAliasResolver {
     // first-word match for single-word ones.
     final double minScore = words.length > 1 ? 10 : 5;
     final String? result = (bestScore >= minScore) ? best : null;
-    _cache[key] = result;
+    // Only remember a miss we actually observed; a failed lookup gets to be
+    // retried next time.
+    if (answered) _cache[key] = result;
     return result;
   }
 }

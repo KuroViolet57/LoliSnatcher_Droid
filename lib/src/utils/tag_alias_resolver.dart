@@ -74,20 +74,37 @@ class TagAliasResolver {
       // Query with the base name: its results contain both the exact tag and
       // qualified variants, covering buckets 1-5 in one request when the
       // qualifier was the only difference.
+      // An EMPTY suggestion list and a FAILED suggestion request are not the
+      // same thing, and conflating them is how translation dies quietly: a
+      // 403, a CAPTCHA page or a rate-limit used to look exactly like "this
+      // booru has no such tag", and the miss was then written to the DB and
+      // honoured for a week — across restarts. rule34.xxx now answers some
+      // paths with a CAPTCHA, so this is not hypothetical. Track whether any
+      // lookup actually came back, and never persist a negative we did not
+      // genuinely observe.
       List<TagSuggestion> candidates = [];
+      bool answered = false;
       final res = await handler.getTagSuggestions(base);
-      res.fold((_) {}, (list) => candidates = list);
+      res.fold((_) {}, (list) {
+        answered = true;
+        candidates = list;
+      });
 
       // If the tag has no qualifier and the base search found nothing,
       // there's nothing more to relax — confirmed miss.
       if (candidates.isEmpty && base == tag) {
+        if (!answered) return tag;
         result = null;
       } else {
         if (candidates.isEmpty && base != tag) {
           // Base yielded nothing; try the full spelling as a last resort.
           final resFull = await handler.getTagSuggestions(tag);
-          resFull.fold((_) {}, (list) => candidates = list);
+          resFull.fold((_) {}, (list) {
+            answered = true;
+            candidates = list;
+          });
         }
+        if (!answered) return tag;
         result = _pickBest(tag, base, candidates);
       }
     } catch (e, s) {

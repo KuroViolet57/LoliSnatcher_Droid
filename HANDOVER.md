@@ -1199,3 +1199,55 @@ Fixed by sending `Constants.defaultDesktopBrowserUserAgent` from
 the grid parser accept `data-src` and use `querySelector` instead of
 `children[0]`/`firstChild` node-walking. Verified: 42/42 items parse on the
 desktop layout, 21/21 on the mobile one.
+
+## Build `tag-flow` (2026-08-14)
+
+### 1. Favourites filter never applied on load (real cause found)
+`BooruHandler.afterParseResponse` called `filterFetched()` and only THEN
+fired `setMultipleTrackedValues()` unawaited. `isFavourite` / `isSnatched`
+come from the local DB via that call, so at filter time every freshly parsed
+item still had both flags false and the favourites/snatched filters removed
+nothing. They only ever appeared to work because favouriting a post later
+re-ran the filter and yanked it out mid-view — the exact behaviour removed in
+`fav-keep`, which is why the filter then looked completely dead. Now the
+tracked values are awaited and `filterFetched()` runs a second time, so those
+two settings apply where they are documented to: on load.
+
+### 2. Re-typing a tag didn't move it between groups
+`groupTagsList` and the section builder both gated the type lookup on
+`tagHandler.hasTag(...)`, so a per-booru correction was ignored for any tag
+the GLOBAL store had never seen — the chip recoloured but the tag stayed in
+General. Replaced both with one `typeOfTag(tag)` helper: manual override ->
+global store -> the item's own Tag. The chip colour now uses the same helper,
+so colour and grouping can no longer disagree.
+
+### 3. Cross-booru tag translation dying permanently
+`getTagSuggestions` returns `Either`, and BOTH resolvers did
+`res.fold((_) {}, (list) => candidates = list)` — silently discarding the
+error branch. A 403, a CAPTCHA page or a rate-limit therefore looked exactly
+like "this booru has no such tag":
+  - `utils/tag_alias_resolver.dart` wrote that miss to the `TagAliasCache`
+    table, honoured for SEVEN DAYS and surviving restarts;
+  - `handlers/tag_alias_resolver.dart` cached it in memory for the session.
+rule34.xxx now answers `page=autocomplete2` and `autocomplete.php` on its
+www host with a CAPTCHA / 403, so a poisoning event is routine. Both
+resolvers now track whether a lookup actually answered and never store a
+negative they did not observe. Existing poisoned rows are cleared by
+`DBHandler.purgeTagAliasMisses()` on every DB open, and the miss TTL dropped
+from 7 days to 1.
+
+NOTE: the resolver ALGORITHM was verified working against live gelbooru-alike
+autocomplete — `robin` -> `robin_(honkai:_star_rail)`, `tifa` ->
+`tifa_lockhart`, `2b` -> `2b_(nier:automata)`, `power` ->
+`power_(chainsaw_man)`. The user's specific failure was NOT reproduced from
+here; the caching bug above is the best-supported explanation, not a
+confirmed one.
+
+Endpoint notes found while investigating (not acted on):
+  - `page=autocomplete2` returns the site homepage as HTML on xbooru,
+    realbooru, safebooru, tbib and api.rule34.xxx — only gelbooru.com
+    implements it. It is only used by `GelbooruHandler` (gelbooru.com), so
+    nothing is broken today, but it is a trap for any future 0.2-family work.
+  - `GelbooruAlikesHandler.makeTagURL` uses dapi `name_pattern=<input>%`,
+    which is PREFIX-only. Tags whose target spelling reorders the words
+    (`hatsune_miku` vs `miku_hatsune`) can never be found by it.
