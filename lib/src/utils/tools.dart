@@ -106,6 +106,38 @@ class Tools {
     return url.substring(0, end);
   }
 
+  /// Parses a `a=1; b=2` cookie header into name -> value, last one winning.
+  static Map<String, String> parseCookieString(String cookies) {
+    final Map<String, String> out = {};
+    for (final part in cookies.split(';')) {
+      final String piece = part.trim();
+      if (piece.isEmpty) continue;
+      final int eq = piece.indexOf('=');
+      if (eq <= 0) continue;
+      out[piece.substring(0, eq).trim()] = piece.substring(eq + 1).trim();
+    }
+    return out;
+  }
+
+  static String buildCookieString(Map<String, String> cookies) =>
+      cookies.entries.map((e) => '${e.key}=${e.value}').join('; ');
+
+  /// Merges cookie header strings into one, later sources winning per name.
+  ///
+  /// Cookie headers were previously built by STRING CONCATENATION from two
+  /// sources that both already contained the full jar, so every request went
+  /// out with each cookie two or three times over — several KB of header with
+  /// `cf_clearance` repeated. A duplicated clearance cookie reads as replay
+  /// or tampering to Cloudflare, which is a very good way to be handed a
+  /// "Just a moment..." challenge on any IP it does not already trust.
+  static String mergeCookieStrings(Iterable<String> sources) {
+    final Map<String, String> merged = {};
+    for (final source in sources) {
+      merged.addAll(parseCookieString(source));
+    }
+    return buildCookieString(merged);
+  }
+
   static String sanitize(String str, {String replacement = ''}) {
     final RegExp illegalRe = RegExp(r'[\/\?<>\\:\*\|"]');
     final RegExp controlRe = RegExp(r'[\x00-\x1f\x80-\x9f]');
@@ -403,9 +435,15 @@ class Tools {
         } else {
           cookies = await cookieManager.getCookies(url: WebUri(uri));
         }
+        // Build through a map: the WebView jar can hold the SAME cookie name
+        // more than once (host vs domain scope, or Cloudflare rotating
+        // cf_clearance), and emitting both makes the header look like cookie
+        // replay to a bot filter.
+        final Map<String, String> jar = {};
         for (final Cookie cookie in cookies) {
-          cookieString += '${cookie.name}=${cookie.value}; ';
+          jar[cookie.name] = cookie.value;
         }
+        cookieString = buildCookieString(jar);
       } catch (e, s) {
         Logger.Inst().log(
           e.toString(),

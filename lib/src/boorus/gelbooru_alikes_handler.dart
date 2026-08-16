@@ -383,9 +383,9 @@ class GelbooruAlikesHandler extends BooruHandler {
     String cookieString = await Tools.getCookies(postUrl);
 
     final Map<String, String> headers = getHeaders();
-    if (headers['Cookie']?.isNotEmpty ?? false) {
-      cookieString += headers['Cookie']!;
-    }
+    // MERGE, never concatenate: both sources carry the whole jar, so adding
+    // one to the other sent every cookie twice (see Tools.mergeCookieStrings).
+    cookieString = Tools.mergeCookieStrings([cookieString, headers['Cookie'] ?? '']);
 
     Logger.Inst().log(
       '$baseURL: $cookieString',

@@ -1296,3 +1296,46 @@ frequently poisoned, and the app cannot influence which IP the carrier gives
 you. If it recurs, the thing to capture is whether the app request that fails
 carries the same `cf_clearance`/`shm_session` cookie AND the same UA as the
 webview that solved it.
+
+## Build `cookie-merge` (2026-08-16)
+
+### rule34hentai.net "captcha only passes on wifi" — ROOT CAUSE FOUND
+From the user's talker log (Samsung S24 Ultra, mobile data):
+  - the login POST to `/user_admin/login` SUCCEEDS — 302 with
+    `Set-Cookie: shm_user` + `shm_session`, and the handler does capture them
+    from the DioException path, so login was never the problem;
+  - every subsequent `GET /post/list/...` returns **403 with Cloudflare's
+    "Just a moment..." interstitial**;
+  - the outgoing `Cookie` header is **6255 bytes with `cf_clearance` sent
+    TWICE** and most other cookies four times over.
+
+Cause: cookie headers were assembled by STRING CONCATENATION from two
+sources that each already contained the whole jar —
+`BooruHandler.getCookies()` (and the identical
+`GelbooruAlikesHandler.getCookiesForPost()`) did
+`cookieString += headers['Cookie']!`, where `getHeaders()` had already been
+filled by `Tools.getFileCustomHeaders()` -> `Tools.getCookies()`. On top of
+that `Tools.getCookies()` itself emitted every entry the WebView jar held,
+and that jar can hold one name twice (host vs domain scope, and Cloudflare
+rotating `cf_clearance` -> `cf_clearance_old`).
+
+A repeated `cf_clearance` reads as cookie replay/tampering to Cloudflare, so
+the request gets challenged. On a trusted home-wifi IP that is often waved
+through; on a CGNAT mobile-data IP it is not — which is precisely the
+"works on wifi, never on data" shape, and why clearing cookies used to
+"fix" it (a freshly emptied jar has nothing to duplicate yet).
+
+Fix: `Tools.parseCookieString` / `buildCookieString` / `mergeCookieStrings`.
+`Tools.getCookies` now builds through a map so the jar cannot yield the same
+name twice, and both handlers MERGE (last value wins) instead of
+concatenating. Verified on the exact header from the log: 6255 -> 2192 bytes,
+`cf_clearance` 2 -> 1, zero duplicate names.
+
+CAVEAT: that duplicated clearance cookie is a very strong suspect for the
+403, but Cloudflare's decision is opaque and IP reputation is also in play —
+this is not proven causation. If it still challenges on data, the next thing
+to check is whether the 403 persists with a *single* clean cookie set.
+
+Related, NOT changed: the login POST 302 is thrown by Dio's validateStatus
+and only works because the handler reads `set-cookie` off the exception.
+Fragile but functional; left alone deliberately.

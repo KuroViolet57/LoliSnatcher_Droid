@@ -963,9 +963,9 @@ abstract class BooruHandler {
     String cookieString = await Tools.getCookies(booru.baseURL!);
 
     final Map<String, String> headers = getHeaders();
-    if (headers['Cookie']?.isNotEmpty ?? false) {
-      cookieString += headers['Cookie']!;
-    }
+    // MERGE, never concatenate: both sources carry the whole jar, so adding
+    // one to the other sent every cookie twice (see Tools.mergeCookieStrings).
+    cookieString = Tools.mergeCookieStrings([cookieString, headers['Cookie'] ?? '']);
 
     Logger.Inst().log('${booru.baseURL}: $cookieString', className, 'getCookies', LogTypes.booruHandlerSearchURL);
 
