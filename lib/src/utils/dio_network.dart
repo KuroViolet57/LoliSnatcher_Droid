@@ -169,11 +169,27 @@ class DioNetwork {
             return handler.next(response);
           }
 
+          // MERGE, never concatenate — and never join with a bare space.
+          // This used to build `'$oldCookie $newCookie'`, where both strings
+          // already held the whole jar. The result was every cookie sent two
+          // to four times over (7979 bytes in one user's log, with
+          // cf_clearance present twice), joined by spaces instead of `; ` so
+          // the header was malformed as well. A repeated clearance cookie
+          // reads as replay to a bot filter, which is a good way to be handed
+          // the very captcha this retry is trying to get past.
           final String oldCookie = response.requestOptions.headers['Cookie'] as String? ?? '';
           final String newCookie = await Tools.getCookies(response.requestOptions.uri.toString());
+          // Retire the stale clearance under its own name by KEY, not by
+          // substring: replaceAll('cf_clearance', …) also rewrites an
+          // existing cf_clearance_old into cf_clearance_old_old.
+          final Map<String, String> previous = Tools.parseCookieString(oldCookie);
+          final String? staleClearance = previous.remove('cf_clearance');
+          if (staleClearance != null) {
+            previous['cf_clearance_old'] = staleClearance;
+          }
           final headers = {
             ...response.requestOptions.headers,
-            'Cookie': '${oldCookie.replaceAll('cf_clearance', 'cf_clearance_old')} $newCookie'.trim(),
+            'Cookie': Tools.mergeCookieStrings([Tools.buildCookieString(previous), newCookie]),
             Tools.captchaCheckHeader: 'done',
           };
 
@@ -201,11 +217,27 @@ class DioNetwork {
             return handler.next(error);
           }
 
+          // MERGE, never concatenate — and never join with a bare space.
+          // This used to build `'$oldCookie $newCookie'`, where both strings
+          // already held the whole jar. The result was every cookie sent two
+          // to four times over (7979 bytes in one user's log, with
+          // cf_clearance present twice), joined by spaces instead of `; ` so
+          // the header was malformed as well. A repeated clearance cookie
+          // reads as replay to a bot filter, which is a good way to be handed
+          // the very captcha this retry is trying to get past.
           final String oldCookie = error.requestOptions.headers['Cookie'] as String? ?? '';
           final String newCookie = await Tools.getCookies(error.requestOptions.uri.toString());
+          // Retire the stale clearance under its own name by KEY, not by
+          // substring: replaceAll('cf_clearance', …) also rewrites an
+          // existing cf_clearance_old into cf_clearance_old_old.
+          final Map<String, String> previous = Tools.parseCookieString(oldCookie);
+          final String? staleClearance = previous.remove('cf_clearance');
+          if (staleClearance != null) {
+            previous['cf_clearance_old'] = staleClearance;
+          }
           final headers = {
             ...error.requestOptions.headers,
-            'Cookie': '${oldCookie.replaceAll('cf_clearance', 'cf_clearance_old')} $newCookie'.trim(),
+            'Cookie': Tools.mergeCookieStrings([Tools.buildCookieString(previous), newCookie]),
             Tools.captchaCheckHeader: 'done',
           };
 
@@ -235,11 +267,14 @@ class DioNetwork {
     client.interceptors.add(
       InterceptorsWrapper(
         onRequest: (RequestOptions options, RequestInterceptorHandler handler) async {
+          // Runs on EVERY request, and both sides carry the full jar, so
+          // concatenating here doubled the header before anything else even
+          // touched it. Merge by name instead (last value wins).
           final String oldCookie = options.headers['Cookie'] as String? ?? '';
           final String newCookie = await Tools.getCookies(options.uri.toString());
           final headers = {
             ...options.headers,
-            'Cookie': '$oldCookie $newCookie'.trim(),
+            'Cookie': Tools.mergeCookieStrings([oldCookie, newCookie]),
           };
           options.headers = headers;
           return handler.next(options);

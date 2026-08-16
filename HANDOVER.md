@@ -1339,3 +1339,36 @@ to check is whether the 403 persists with a *single* clean cookie set.
 Related, NOT changed: the login POST 302 is thrown by Dio's validateStatus
 and only works because the handler reads `set-cookie` off the exception.
 Fragile but functional; left alone deliberately.
+
+## Build `clean-cookie` (2026-08-16)
+
+`cookie-merge` fixed the WRONG LAYER. The duplication was never in the
+handlers — it is in the Dio interceptor pipeline in `dio_network.dart`, so
+the previous build changed nothing and the user's second log was identical
+(7979 bytes, cf_clearance twice, everything else four times).
+
+Three concatenation sites, all now `Tools.mergeCookieStrings`:
+1. `cookieInterceptor.onRequest` — `'$oldCookie $newCookie'`. Runs on EVERY
+   request; `oldCookie` already came from `Tools.getFileCustomHeaders` (full
+   jar) and `newCookie` re-reads the same jar, so the header was doubled
+   before anything else touched it.
+2. `onResponse` captcha retry — same concatenation, doubling it again.
+3. `onError` captcha retry — likewise. Hence 4x after a retry.
+
+Second, independent bug at all three: the join was a bare SPACE, not `'; '`.
+Cookie pairs must be `; `-separated, so the header was genuinely malformed —
+16 boundaries like `...h0 _ga=` in the log.
+
+Third: `oldCookie.replaceAll('cf_clearance', 'cf_clearance_old')` renames by
+SUBSTRING, so an existing `cf_clearance_old` becomes `cf_clearance_old_old`
+on the next pass. Now renamed by KEY after parsing.
+
+Verified by replaying the log's own worst header through the real pipeline:
+7979 -> 2608 bytes, cf_clearance 2 -> 1, zero duplicate names, zero
+space-joined boundaries, and STABLE across the captcha retry instead of
+growing.
+
+STILL NOT PROVEN to be the cause of the 403. Cloudflare's decision is opaque
+and carrier IP reputation remains a factor. What is certain is that the app
+was sending a malformed, duplicated, multi-KB cookie header on every request,
+which no browser would ever do.
