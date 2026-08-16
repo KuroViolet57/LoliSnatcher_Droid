@@ -45,4 +45,10 @@ class SecureStorageHandler {
 
 enum SecureStorageKey {
   viewedUpdateChangelogForBuild,
+  // Google Drive backup. The OAuth client is entered by the user rather than
+  // compiled in — a client secret in a public repo gets auto-revoked, and it
+  // would be shared by every install besides.
+  driveClientId,
+  driveClientSecret,
+  driveRefreshToken,
 }

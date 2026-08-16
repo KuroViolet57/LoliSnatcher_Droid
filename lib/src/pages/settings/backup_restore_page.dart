@@ -14,6 +14,7 @@ import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/tag_handler.dart';
+import 'package:lolisnatcher/src/services/drive_backup.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/widgets/common/cancel_button.dart';
 import 'package:lolisnatcher/src/widgets/common/confirm_button.dart';
@@ -36,11 +37,19 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
   bool inProgress = false;
   int progress = 0, total = 0;
 
+  // Google Drive
+  bool driveLinked = false;
+  bool driveHasCreds = false;
+  bool driveBusy = false;
+  String driveStatus = '';
+  List<DriveFile> driveFiles = const [];
+
   @override
   void initState() {
     super.initState();
     backupPath = settingsHandler.backupPath;
     validateBackupPathAccess();
+    unawaited(_refreshDriveState());
   }
 
   Future<void> validateBackupPathAccess() async {
@@ -341,6 +350,223 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
     } else {
       showSnackbar('Restore finished with errors: ${failures.join(", ")}', isError: true);
     }
+  }
+
+  // ───────────────────────────── Google Drive ─────────────────────────────
+
+  Future<void> _refreshDriveState() async {
+    final bool linked = await DriveBackup.isLinked;
+    final bool hasCreds = await DriveBackup.hasCredentials;
+    final List<DriveFile> files = linked ? await DriveBackup.list() : const [];
+    if (!mounted) return;
+    setState(() {
+      driveLinked = linked;
+      driveHasCreds = hasCreds;
+      driveFiles = files;
+    });
+  }
+
+  Future<void> _editDriveCredentials() async {
+    final idController = TextEditingController(text: await DriveBackup.clientId ?? '');
+    final secretController = TextEditingController(text: await DriveBackup.clientSecret ?? '');
+    if (!mounted) return;
+
+    final bool? saved = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Google OAuth client'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'These are not stored in the app source, so you paste them once here and '
+                'they stay in the phone’s encrypted storage.\n\n'
+                'Create them at console.cloud.google.com → APIs & Services → Credentials → '
+                'Create credentials → OAuth client ID, application type "Desktop app", '
+                'and enable the Google Drive API for that project.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: idController,
+                decoration: const InputDecoration(labelText: 'Client ID', border: OutlineInputBorder()),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: secretController,
+                decoration: const InputDecoration(labelText: 'Client secret', border: OutlineInputBorder()),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Save')),
+        ],
+      ),
+    );
+
+    if (saved == true) {
+      await DriveBackup.setCredentials(idController.text, secretController.text);
+      await _refreshDriveState();
+    }
+  }
+
+  Future<void> _linkDrive() async {
+    setState(() {
+      driveBusy = true;
+      driveStatus = 'Waiting for Google sign-in in your browser…';
+    });
+    final String? error = await DriveBackup.link();
+    if (!mounted) return;
+    setState(() {
+      driveBusy = false;
+      driveStatus = '';
+    });
+    showSnackbar(error ?? 'Google Drive linked.', isError: error != null);
+    await _refreshDriveState();
+  }
+
+  /// Uploads the same three artefacts the folder backup writes.
+  Future<void> _backupToDrive() async {
+    setState(() {
+      driveBusy = true;
+      driveStatus = 'Starting…';
+    });
+    final List<String> failures = [];
+
+    Future<void> step(String label, String name, String mime, Future<List<int>> Function() read) async {
+      if (!mounted) return;
+      setState(() => driveStatus = 'Uploading $label…');
+      try {
+        final List<int> bytes = await read();
+        final String? error = await DriveBackup.upload(
+          name,
+          bytes,
+          mime,
+          onProgress: (sent, total) {
+            if (!mounted || total == 0) return;
+            setState(() => driveStatus = 'Uploading $label — ${(100 * sent / total).round()}%');
+          },
+        );
+        if (error != null) failures.add('$label: $error');
+      } catch (e) {
+        failures.add('$label: $e');
+      }
+    }
+
+    final String configDir = await ServiceHandler.getConfigDir();
+
+    await step('settings', 'settings.json', 'application/json', () async {
+      return File('${configDir}settings.json').readAsBytes();
+    });
+    await step('boorus', 'boorus.json', 'application/json', () async {
+      final List<Booru> booruList =
+          settingsHandler.booruList.where((e) => BooruType.saveable.contains(e.type)).toList();
+      return utf8.encode(json.encode(booruList));
+    });
+    await step('database', 'store.db', 'application/x-sqlite3', () async {
+      final File file = File('${configDir}store.db');
+      if (!await file.exists()) throw Exception('database file not found');
+      return file.readAsBytes();
+    });
+
+    if (!mounted) return;
+    setState(() {
+      driveBusy = false;
+      driveStatus = '';
+    });
+    showSnackbar(
+      failures.isEmpty ? 'Backed up to Google Drive.' : 'Finished with errors: ${failures.join(", ")}',
+      isError: failures.isNotEmpty,
+    );
+    await _refreshDriveState();
+  }
+
+  Future<void> _restoreFromDrive() async {
+    final bool ok = await confirmRestore('Restore everything from Google Drive');
+    if (!ok) return;
+
+    setState(() {
+      driveBusy = true;
+      driveStatus = 'Downloading…';
+    });
+    final List<String> failures = [];
+    final String configDir = await ServiceHandler.getConfigDir();
+
+    // Settings and boorus first, database last — restoring the database is
+    // what triggers the restart, same order the folder restore uses.
+    try {
+      final bytes = await DriveBackup.download('settings.json');
+      if (bytes == null) {
+        failures.add('settings: not on Drive');
+      } else {
+        await File('${configDir}settings.json').writeAsBytes(bytes, flush: true);
+        await settingsHandler.loadSettings();
+      }
+    } catch (e) {
+      failures.add('settings: $e');
+    }
+
+    try {
+      final bytes = await DriveBackup.download('boorus.json');
+      if (bytes == null) {
+        failures.add('boorus: not on Drive');
+      } else {
+        final List<dynamic> raw = json.decode(utf8.decode(bytes)) as List<dynamic>;
+        final List<Booru> boorus = raw.map((e) => Booru.fromMap(e)).toList();
+        for (final booru in boorus) {
+          if (!settingsHandler.booruList.contains(booru)) {
+            await settingsHandler.saveBooru(booru);
+          }
+        }
+      }
+    } catch (e) {
+      failures.add('boorus: $e');
+    }
+
+    try {
+      final bytes = await DriveBackup.download('store.db');
+      if (bytes == null) {
+        failures.add('database: not on Drive');
+      } else {
+        await settingsHandler.dbHandler.closeDb();
+        await File('${configDir}store.db').writeAsBytes(bytes, flush: true);
+      }
+    } catch (e) {
+      failures.add('database: $e');
+    }
+
+    if (!mounted) return;
+    setState(() {
+      driveBusy = false;
+      driveStatus = '';
+    });
+
+    if (failures.isEmpty) {
+      showSnackbar('Restored from Drive. App will restart in a moment.', isError: false);
+      await Future.delayed(const Duration(seconds: 3));
+      unawaited(ServiceHandler.restartApp());
+    } else {
+      showSnackbar('Restore finished with errors: ${failures.join(", ")}', isError: true);
+    }
+  }
+
+  String _driveSummary() {
+    if (!driveHasCreds) return 'No OAuth client set yet';
+    if (!driveLinked) return 'Client set — not linked to an account yet';
+    if (driveFiles.isEmpty) return 'Linked — nothing backed up yet';
+    final DriveFile newest = driveFiles.reduce(
+      (a, b) => (a.modifiedTime ?? DateTime(0)).isAfter(b.modifiedTime ?? DateTime(0)) ? a : b,
+    );
+    final DateTime? when = newest.modifiedTime?.toLocal();
+    final String stamp = when == null
+        ? 'unknown time'
+        : '${when.year}-${when.month.toString().padLeft(2, '0')}-${when.day.toString().padLeft(2, '0')} '
+              '${when.hour.toString().padLeft(2, '0')}:${when.minute.toString().padLeft(2, '0')}';
+    return 'Last backup: $stamp — ${driveFiles.length} file(s)';
   }
 
   //called when page is closed, sets settingshandler variables and then writes settings to disk
@@ -655,6 +881,78 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
                           setState(() {});
                         },
                       ),
+
+                    // ── Google Drive ────────────────────────────────
+                    const SettingsButton(name: '', enabled: false),
+                    Container(
+                      margin: const EdgeInsets.fromLTRB(10, 10, 10, 4),
+                      width: double.infinity,
+                      child: Text(
+                        'Google Drive',
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                    Container(
+                      margin: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+                      width: double.infinity,
+                      child: Text(
+                        'Backs up settings, boorus and the database into a "${DriveBackup.folderName}" '
+                        'folder on your Drive. The app only ever sees files it created there — it has no '
+                        'access to the rest of your Drive.\n\n${_driveSummary()}',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+                    if (driveBusy && driveStatus.isNotEmpty)
+                      Container(
+                        margin: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+                        width: double.infinity,
+                        child: Row(
+                          children: [
+                            const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(child: Text(driveStatus)),
+                          ],
+                        ),
+                      ),
+                    SettingsButton(
+                      name: driveHasCreds ? 'Change OAuth client' : 'Set OAuth client…',
+                      icon: const Icon(Symbols.key_rounded),
+                      action: driveBusy ? null : _editDriveCredentials,
+                      drawTopBorder: true,
+                    ),
+                    if (driveHasCreds && !driveLinked)
+                      SettingsButton(
+                        name: 'Link Google account',
+                        icon: const Icon(Symbols.link_rounded),
+                        action: driveBusy ? null : _linkDrive,
+                      ),
+                    if (driveLinked) ...[
+                      SettingsButton(
+                        name: 'Back up to Google Drive',
+                        icon: const Icon(Symbols.cloud_upload_rounded),
+                        action: driveBusy ? null : _backupToDrive,
+                      ),
+                      SettingsButton(
+                        name: 'Restore from Google Drive',
+                        icon: const Icon(Symbols.cloud_download_rounded),
+                        action: driveBusy ? null : _restoreFromDrive,
+                      ),
+                      SettingsButton(
+                        name: 'Unlink Google account',
+                        icon: const Icon(Symbols.link_off_rounded),
+                        action: driveBusy
+                            ? null
+                            : () async {
+                                await DriveBackup.unlink();
+                                await _refreshDriveState();
+                                showSnackbar('Google account unlinked.', isError: false);
+                              },
+                      ),
+                    ],
 
                     // Restore
                     const SettingsButton(name: '', enabled: false),

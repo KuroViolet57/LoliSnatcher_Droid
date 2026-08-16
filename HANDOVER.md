@@ -1372,3 +1372,47 @@ STILL NOT PROVEN to be the cause of the 403. Cloudflare's decision is opaque
 and carrier IP reputation remains a factor. What is certain is that the app
 was sending a malformed, duplicated, multi-KB cookie header on every request,
 which no browser would ever do.
+
+## Build `drive-backup` (2026-08-16)
+
+Google Drive as a backup target, alongside the existing folder backup.
+
+`lib/src/services/drive_backup.dart` + a section in `backup_restore_page.dart`.
+
+### Credentials are NOT compiled in — on purpose
+The OAuth client id/secret are entered once by the user and kept in
+`FlutterSecureStorage` (`SecureStorageKey.driveClientId/driveClientSecret/
+driveRefreshToken`). A client secret committed to a public GitHub repo is
+detected and auto-revoked by Google, and it would be a shared secret across
+every install of the build. The user already has a Desktop-app client (the
+one the build uploader uses) and can paste that.
+
+### Flow
+Installed-application loopback, which is what Google mandates for native
+clients:
+  1. `HttpServer.bind(loopbackIPv4, 0)` — OS-assigned port;
+  2. consent screen opened in the SYSTEM BROWSER via url_launcher. It cannot
+     be the app's own webview: Google rejects OAuth in embedded webviews with
+     `disallowed_useragent`;
+  3. browser redirects to `http://127.0.0.1:<port>/?code=…`, the local server
+     answers with a small "you can close this" page;
+  4. code -> refresh token, only the refresh token is persisted.
+`access_type=offline` AND `prompt=consent` are both required — without the
+latter Google omits the refresh token on every authorisation after the first,
+so linking would appear to work once and never again.
+
+Scope is `drive.file`, so the app can only see files it created itself.
+
+### Storage
+Uploads settings.json, boorus.json and store.db into a `LoliSnatcher` folder,
+replacing the previous copies (looked up by name within the folder). Resumable
+upload rather than simple: store.db runs to tens of MB, which is past what one
+request should carry on a phone connection, and it gives real progress. The
+restore order matches the folder restore — settings, boorus, then database
+last, since the database triggers the restart.
+
+NOT DONE / NOT TESTED FROM HERE: no device test of the OAuth round trip. The
+loopback listener needs the browser and the app on the same device (true on
+Android). No automatic/scheduled backup — it is manual, same as the folder
+one. tags.json is not included (the DB already carries the tags when the
+database is enabled).
