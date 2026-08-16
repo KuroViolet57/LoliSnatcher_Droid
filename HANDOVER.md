@@ -1251,3 +1251,48 @@ Endpoint notes found while investigating (not acted on):
   - `GelbooruAlikesHandler.makeTagURL` uses dapi `name_pattern=<input>%`,
     which is PREFIX-only. Tags whose target spelling reorders the words
     (`hatsune_miku` vs `miku_hatsune`) can never be found by it.
+
+## Build `ua-parity` (2026-08-14)
+
+### The invariant: ONE User-Agent for the whole app
+The captcha WebView signs in with `Tools.browserUserAgent`, and
+Cloudflare-style clearance cookies are bound to (IP + User-Agent). If the
+app's HTTP requests use a DIFFERENT UA from the one that solved the captcha,
+the cookie is rejected — loosely tolerated on a trusted home-wifi IP, firmly
+refused on a rotating mobile-data (CGNAT) IP. This is already documented on
+`Tools.deviceWebViewUserAgent`; it is why the old fake `LoliSnatcher_Droid/x.y`
+UA "only worked on wifi".
+
+The `thumb-fix` build broke that invariant for rule34.us by hardcoding
+`Constants.defaultDesktopBrowserUserAgent` in `R34USHandler.getHeaders()` to
+force the desktop layout. Reverted. **Never send a UA other than
+`Tools.browserUserAgent` from a handler** (sankaku's app UAs are the
+deliberate exception — a private API with no captcha/webview flow).
+
+### rule34.us now parses BOTH layouts instead of forcing one
+- grid: `data-src` accepted alongside `src` (mobile lazy-loads), selection via
+  `querySelector` rather than raw node walking;
+- post media: `.content_push > img|video` (desktop) else the first `<img>`
+  whose src matches `rule34\.us/(images|videos)/` or the bare `<video>`
+  (mobile puts media directly in `.container`); mp4 `<source>` preferred over
+  first-child order;
+- tags: **the desktop id is `"tag-list "` WITH A TRAILING SPACE**, so
+  `getElementById('tag-list')` has always returned null and desktop posts
+  never got tag types at all. Now selected by `.tag-list-left`. The mobile
+  layout has no sidebar — one `<a class="card-light">` per tag with an empty
+  type div as a child and the underscored name in the href `q=` param — and
+  gets its own branch.
+Verified against saved desktop + mobile image and video post pages: media OK
+on all three, desktop tags 1 artist / 1 copyright / 44 general / 4 meta,
+mobile equivalent.
+
+### rule34hentai.net captcha on mobile data — NOT reproduced, NOT fixed
+Nothing in this session touched `dio_network.dart`, the cookie layer,
+`Tools.browserUserAgent`, or `r34hentai_handler.dart` (which does not
+override `getHeaders`, so it uses the shared UA). The r34us UA divergence
+above was the only UA change and it is a different site. The remaining
+mechanism is IP reputation: mobile-data CGNAT addresses are shared and
+frequently poisoned, and the app cannot influence which IP the carrier gives
+you. If it recurs, the thing to capture is whether the app request that fails
+carries the same `cf_clearance`/`shm_session` cookie AND the same UA as the
+webview that solved it.

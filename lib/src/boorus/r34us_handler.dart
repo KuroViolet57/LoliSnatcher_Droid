@@ -3,11 +3,9 @@ import 'package:html/dom.dart';
 import 'package:html/parser.dart';
 
 import 'package:lolisnatcher/src/data/booru_item.dart';
-import 'package:lolisnatcher/src/data/constants.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/extensions.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
@@ -41,28 +39,21 @@ class R34USHandler extends BooruHandler {
   List<String> get animatedPreviewFilters => const ['animated', 'video'];
 
   /// rule34.us serves TWO COMPLETELY DIFFERENT LAYOUTS depending on the User
-  /// Agent, and everything below is written against the desktop one.
+  /// Agent, and both are parsed below.
   ///
-  /// Under a mobile UA — which is what `Tools.browserUserAgent` returns on
-  /// Android, since it prefers the device WebView's UA — the site switches to
-  /// a lazy-loading grid whose thumbnails carry `data-src` and NO `src` at
-  /// all, and to a post page with neither `.content_push` nor
-  /// `.tag-list-left` (the media is injected by script into `#ci`). The
-  /// result was a booru that returned "no posts found" for every query, with
-  /// no error anywhere, because each item simply parsed to null.
+  /// Under a mobile UA — what `Tools.browserUserAgent` returns on Android,
+  /// since it prefers the device WebView's own UA — the grid lazy-loads
+  /// (`data-src`, no `src`) and the post page drops `.content_push` and
+  /// `.tag-list-left` entirely.
   ///
-  /// So ask for the desktop layout explicitly. A user who has deliberately
-  /// set a custom User Agent still gets theirs — that is an explicit choice,
-  /// and the parser below also tolerates `data-src` for that case.
-  @override
-  Map<String, String> getHeaders() {
-    final String custom = SettingsHandler.instance.customUserAgent;
-    return {
-      'Accept': 'text/html,application/xml,application/json',
-      'User-Agent': custom.isNotEmpty ? custom : Constants.defaultDesktopBrowserUserAgent,
-    };
-  }
-
+  /// An earlier fix forced a desktop UA here to get the layout the parser
+  /// already understood. That was the wrong trade: the captcha WebView signs
+  /// in with `Tools.browserUserAgent`, and Cloudflare-style clearance cookies
+  /// are bound to (IP + User-Agent). Sending a different UA from the app than
+  /// the one that solved the captcha gets the cookie rejected — loosely
+  /// tolerated on a trusted home IP, strictly refused on mobile data (see the
+  /// note on `Tools.deviceWebViewUserAgent`). So the UA stays whatever the
+  /// rest of the app uses, and the parsing below adapts instead.
   @override
   bool get hasLoadItemSupport => true;
 
@@ -148,8 +139,17 @@ class R34USHandler extends BooruHandler {
         return (item: null, failed: true, error: 'Invalid status code ${response.statusCode}');
       } else {
         final html = parse(response.data);
-        final Element? imageEl = html.querySelector('div.content_push > img');
-        final Element? videoEl = html.querySelector('div.content_push > video');
+        Element? imageEl = html.querySelector('div.content_push > img');
+        Element? videoEl = html.querySelector('div.content_push > video');
+
+        // Mobile layout: the media sits bare inside .container with no
+        // wrapper, so select it by where it POINTS rather than where it sits.
+        if (imageEl == null && videoEl == null) {
+          videoEl = html.querySelector('video');
+          imageEl = html
+              .querySelectorAll('img')
+              .firstWhereOrNull((e) => _isMediaUrl(e.attributes['src'] ?? ''));
+        }
 
         // link to full res has the same html as a tag, but is the only/first(?) element inside .tag-list-left which is wrapped into <a>
         final Element? origEl = html.querySelector('.tag-list-left > a');
@@ -172,11 +172,22 @@ class R34USHandler extends BooruHandler {
           return (item: null, failed: true, error: 'Failed to parse html');
         }
 
+        // Prefer an mp4 <source> over the first child: the mobile player
+        // lists mp4 and webm as siblings and the order is not guaranteed.
+        final List<Element> sources = videoEl?.querySelectorAll('source') ?? const [];
+        final String? videoSrc =
+            sources.firstWhereOrNull((e) => (e.attributes['src'] ?? '').contains('.mp4'))?.attributes['src'] ??
+            sources.firstOrNull?.attributes['src'] ??
+            videoEl?.attributes['src'];
+
         item.fileURL =
             imageEl?.attributes['src'] ??
-            (videoEl != null ? origEl?.attributes['href'] ?? videoEl.children.firstOrNull?.attributes['src'] : null) ??
+            (videoEl != null ? origEl?.attributes['href'] ?? videoSrc : null) ??
             item.fileURL;
         item.sampleURL = imageEl?.attributes['src'] ?? videoEl?.attributes['poster'] ?? item.sampleURL;
+        if (videoEl != null && (item.fileURL.isEmpty || !_isMediaUrl(item.fileURL))) {
+          item.fileURL = videoSrc ?? item.fileURL;
+        }
         item.fileHeight = double.tryParse((imageEl ?? videoEl)?.attributes['height'] ?? '');
         item.fileWidth = double.tryParse((imageEl ?? videoEl)?.attributes['width'] ?? '');
         item.fileAspectRatio = (item.fileWidth != null && item.fileHeight != null)
@@ -200,17 +211,45 @@ class R34USHandler extends BooruHandler {
           );
         }
 
-        final sidebar = html.getElementById('tag-list');
-        final copyrightTags = _tagsFromHtml(sidebar?.getElementsByClassName('copyright-tag'));
-        addTagsWithType(copyrightTags, TagType.copyright);
-        final characterTags = _tagsFromHtml(sidebar?.getElementsByClassName('character-tag'));
-        addTagsWithType(characterTags, TagType.character);
-        final artistTags = _tagsFromHtml(sidebar?.getElementsByClassName('artist-tag'));
-        addTagsWithType(artistTags, TagType.artist);
-        final generalTags = _tagsFromHtml(sidebar?.getElementsByClassName('general-tag'));
-        addTagsWithType(generalTags, TagType.none);
-        final metaTags = _tagsFromHtml(sidebar?.getElementsByClassName('metadata-tag'));
-        addTagsWithType(metaTags, TagType.meta);
+        // The desktop markup is `<ul id="tag-list " class="tag-list-left">` —
+        // note the TRAILING SPACE in the id, which makes getElementById('tag-list')
+        // return null and silently cost every post its tag types. Match the
+        // class instead, and keep the id lookup as a fallback in case they
+        // ever fix it.
+        final Element? sidebar =
+            html.querySelector('.tag-list-left') ??
+            html.querySelector('[id^="tag-list"]') ??
+            html.getElementById('tag-list');
+        if (sidebar != null) {
+          addTagsWithType(_tagsFromHtml(sidebar.getElementsByClassName('copyright-tag')), TagType.copyright);
+          addTagsWithType(_tagsFromHtml(sidebar.getElementsByClassName('character-tag')), TagType.character);
+          addTagsWithType(_tagsFromHtml(sidebar.getElementsByClassName('artist-tag')), TagType.artist);
+          addTagsWithType(_tagsFromHtml(sidebar.getElementsByClassName('general-tag')), TagType.none);
+          addTagsWithType(_tagsFromHtml(sidebar.getElementsByClassName('metadata-tag')), TagType.meta);
+        } else {
+          // Mobile layout: one <a class="card-light"> per tag, carrying an
+          // EMPTY type div as a child and the underscored tag name in its
+          // href (the visible text is space-separated and would not search).
+          final Map<TagType, List<String>> byType = {};
+          for (final link in html.querySelectorAll('a.card-light')) {
+            final String href = link.attributes['href'] ?? '';
+            final String name = RegExp('q=([^&]+)').firstMatch(href)?.group(1) ?? '';
+            if (name.isEmpty) continue;
+            final TagType type = link.querySelector('.artist-tag') != null
+                ? TagType.artist
+                : link.querySelector('.character-tag') != null
+                ? TagType.character
+                : link.querySelector('.copyright-tag') != null
+                ? TagType.copyright
+                : link.querySelector('.metadata-tag') != null
+                ? TagType.meta
+                : TagType.none;
+            byType.putIfAbsent(type, () => []).add(Uri.decodeComponent(name));
+          }
+          for (final entry in byType.entries) {
+            addTagsWithType(entry.value, entry.key);
+          }
+        }
         item.isUpdated = true;
       }
     } catch (e, s) {
@@ -226,6 +265,11 @@ class R34USHandler extends BooruHandler {
 
     return (item: item, failed: false, error: null);
   }
+
+  /// Whether a URL points at rule34.us post media rather than site chrome
+  /// (the mobile layout's header is full of `/v1/icons/*.svg`).
+  static bool _isMediaUrl(String url) =>
+      RegExp(r'rule34\.us/(?:images|videos)/').hasMatch(url) && !url.contains('/v1/');
 
   String getHashFromURL(String url) {
     final String hash = url.substring(url.lastIndexOf('_') + 1, url.lastIndexOf('.'));
