@@ -15,6 +15,7 @@ enum BooruType {
   GelbooruV1,
   Hydrus,
   InkBunny,
+  Kusowanka,
   Moebooru,
   Nozomi,
   NyanPals,
@@ -78,9 +79,10 @@ enum BooruType {
       ..remove(BooruType.WebView)
       // Rule34.dev shares CDNs with rule34.xxx; only pick it deliberately.
       ..remove(BooruType.Rule34Dev)
-      // tik.porn and xxxtik both have fixed API hosts that ignore the
-      // entered URL; only pick them deliberately.
+      // tik.porn, xxxtik and kusowanka all have fixed hosts that ignore
+      // the entered URL; only pick them deliberately.
       ..remove(BooruType.TikPorn)
+      ..remove(BooruType.Kusowanka)
       // xxxtik has a fixed API host; only pick it deliberately.
       ..remove(BooruType.XXXTik)
       // xxxfollow has a fixed API host; only pick it deliberately.
@@ -121,6 +123,8 @@ enum BooruType {
         return 'WebView (browser)';
       case Rule34Dev:
         return 'Rule34.dev (aggregator)';
+      case Kusowanka:
+        return 'Kusowanka';
       case TikPorn:
         return 'Tik.Porn';
       case XXXTik:
@@ -152,6 +156,7 @@ enum BooruType {
   bool get isRealbooru => this == BooruType.Realbooru;
   bool get isRedGifs => this == BooruType.RedGifs;
   bool get isRule34Dev => this == BooruType.Rule34Dev;
+  bool get isKusowanka => this == BooruType.Kusowanka;
   bool get isTikPorn => this == BooruType.TikPorn;
   bool get isXXXTik => this == BooruType.XXXTik;
   bool get isXXXFollow => this == BooruType.XXXFollow;

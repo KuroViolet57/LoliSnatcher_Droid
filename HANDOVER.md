@@ -1416,3 +1416,70 @@ loopback listener needs the browser and the app on the same device (true on
 Android). No automatic/scheduled backup — it is manual, same as the folder
 one. tags.json is not included (the DB already carries the tags when the
 database is enabled).
+
+## Build `kusowanka` (2026-08-16)
+
+New source: **kusowanka.com** (`BooruType.Kusowanka`,
+`lib/src/boorus/kusowanka_handler.dart`). Bespoke PHP site, not a booru
+engine, and its tag model drives every decision in the handler.
+
+### Tags: FIVE namespaces, ids in the grid, names only on the post page
+`tags | parodies | artists | characters | metadatas`, each with its own id
+space and browse route, mapping onto general/copyright/artist/character/meta.
+
+The grid exposes ONLY numeric ids:
+`<div class="box_thumb" data-tags="1 11 16 …" data-artists="548284" …>`
+
+Those numbers mean nothing outside this site, so they are deliberately NOT
+emitted as tags — writing `1988` into the shared tag store would poison
+colouring, the tag browser, cross-booru translation and For You seeds with
+tokens that can never match anything. Grid items therefore carry NO tags and
+are marked `needToLoadItem`; `loadItem` reads the post page, which spells
+names out with their namespace
+(`<button type="artist" data_id="548284" name="chun jian he">`) and produces
+properly typed tags.
+**Consequence: the tag blacklist cannot act on this booru until a post is
+opened.** Emitting placeholder tags would be worse — it would filter wrongly.
+
+### Search: the form does NOT work, the slug routes do
+`/search/?qt_key=<id>,` accepts ids and ignores them. Caught by verifying
+that returned posts actually carry the requested id: `qt_key=30` -> 55 posts,
+0 matching; `qt_key=1` "matched" 41/55 only because `1girl` is on most posts.
+It presumably needs the site's session/CSRF dance. `&submit=Filter` does not
+help.
+
+`/tag/{slug}/`, `/artist/{slug}/`, `/character/{slug}/`, `/parody/{slug}/`,
+`/metadata/{slug}/` (+`?page=N`) all work, verified the same way — 100% of
+returned posts carry the requested id on every route tested.
+
+ONE facet only: `/tag/1girl+solo/`, `/tag/1girl/solo/` and `/tag/1girl,solo/`
+all 404. A multi-term query is refused with an explanatory error rather than
+silently searching just the first word.
+
+Query grammar: bare word = tag; `artist:` `character:` `parody:` `metadata:`.
+The prefix is matched against the WHOLE query before splitting on spaces —
+`artist:chun jian he` is one three-word name, and splitting first rejected
+every multi-word name (caught in simulation).
+
+### Media
+Grid `data-bg` is the thumb; `thumbs/` -> `samples/` gives the preview
+(same directory tree and hash, verified). Full size follows the site's own
+viewer: strip the sample's extension, `samples` -> `original`, append
+`data-type` (the real extension, also the media type). `/images/` 404s.
+
+### Autocomplete
+`/inc/search.php?type=<tags|parodies|artists|characters|metadatas>&name=<q>`
+-> `[{id,name}]`. All five are queried in parallel and returned as typed,
+prefixed suggestions. Site's own minimum is 3 characters; honoured.
+
+### Verified live
+Routing + 2-page pagination for empty / `1girl` / `artist:` / `character:` /
+`parody:` / `metadata:animated`; every route's posts verified to carry the
+requested id; thumb, sample and original all return 200; post page yields
+2 copyright / 1 character / 1 artist / 3 meta / 46 general typed names.
+
+KNOWN QUIRK: the FRONT page (empty query) repeats heavily across pages
+(~50/56 overlap p1 vs p2); the app's existing duplicate filter absorbs it, so
+it shows as fewer new items per page rather than duplicates. Tag routes
+paginate correctly. Not autodetectable — fixed host, like tik.porn/xxxtik.
+NOT device-tested from here.

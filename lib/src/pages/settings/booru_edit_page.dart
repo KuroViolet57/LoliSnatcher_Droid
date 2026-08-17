@@ -204,6 +204,15 @@ class _BooruEditState extends State<BooruEdit> {
                       booruFaviconController.text = 'https://app.rule34.dev/icon.webp';
                     }
                   }
+                  if (selectedBooruType.isKusowanka && booruURLController.text.trim().isEmpty) {
+                    booruURLController.text = 'https://kusowanka.com';
+                    if (booruNameController.text.trim().isEmpty) {
+                      booruNameController.text = 'Kusowanka';
+                    }
+                    if (booruFaviconController.text.trim().isEmpty) {
+                      booruFaviconController.text = 'https://kusowanka.com/favicon.ico';
+                    }
+                  }
                   if (selectedBooruType.isTikPorn && booruURLController.text.trim().isEmpty) {
                     booruURLController.text = 'https://tik.porn';
                     if (booruNameController.text.trim().isEmpty) {
@@ -409,6 +418,23 @@ class _BooruEditState extends State<BooruEdit> {
             'Note: the "real videos" (xvideos) section streams tube sites '
             'through a private proxy and cannot be scraped directly — open '
             'app.rule34.dev in a WebView booru for that part.';
+      case BooruType.Kusowanka:
+        return '<b>Kusowanka</b><br>Leave the URL as https://kusowanka.com. '
+            'No account or API key needed.<br><br>'
+            '<b>One tag at a time.</b> This site is not a booru engine and has '
+            'no way to combine tags, so a two-word search is refused rather '
+            'than quietly showing you the wrong thing. Leave the search empty '
+            'to browse everything newest-first.<br><br>'
+            'It keeps five separate kinds of tag, and you pick one with a '
+            'prefix: a bare word is a normal tag, or use '
+            '<i>artist:name</i>, <i>character:name</i>, <i>parody:name</i> '
+            '(series/copyright) or <i>metadata:name</i>. For example '
+            '<i>metadata:animated</i> for animations. Autocomplete searches '
+            'all five and labels each result.<br><br>'
+            '<b>Note on tags:</b> the thumbnail grid on this site only carries '
+            'numeric tag IDs, not names, so tags appear once you open a post. '
+            'That also means the tag blacklist cannot hide anything on this '
+            'booru until a post has been opened.';
       case BooruType.TikPorn:
         return '<b>Tik.Porn</b><br>Leave the URL as https://tik.porn. A '
             'short-form vertical video site — video only, no images. No '
@@ -600,6 +626,7 @@ class _BooruEditState extends State<BooruEdit> {
     if (selectedBooruType.isRedGifs ||
         selectedBooruType.isWebView ||
         selectedBooruType.isRule34Dev ||
+        selectedBooruType.isKusowanka ||
         selectedBooruType.isTikPorn ||
         selectedBooruType.isXXXTik ||
         selectedBooruType.isXXXFollow) {
@@ -608,6 +635,8 @@ class _BooruEditState extends State<BooruEdit> {
             ? 'RedGifs'
             : selectedBooruType.isRule34Dev
             ? 'Rule34.dev'
+            : selectedBooruType.isKusowanka
+            ? 'Kusowanka'
             : selectedBooruType.isTikPorn
             ? 'Tik.Porn'
             : selectedBooruType.isXXXTik
@@ -621,6 +650,9 @@ class _BooruEditState extends State<BooruEdit> {
       }
       if (booruURLController.text.trim().isEmpty && selectedBooruType.isRule34Dev) {
         booruURLController.text = 'https://app.rule34.dev';
+      }
+      if (booruURLController.text.trim().isEmpty && selectedBooruType.isKusowanka) {
+        booruURLController.text = 'https://kusowanka.com';
       }
       if (booruURLController.text.trim().isEmpty && selectedBooruType.isTikPorn) {
         booruURLController.text = 'https://tik.porn';
