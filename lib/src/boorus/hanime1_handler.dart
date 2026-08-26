@@ -340,32 +340,56 @@ class Hanime1Handler extends BooruHandler {
       item.possibleMediaType.value = null;
       item.mediaType.value = MediaType.video;
 
-      // Tags come as /search?tags[]=<zh> links; translate through the
-      // dictionary so the app-facing tag is English. A tag the dictionary
-      // does not know stays in Chinese — visible and searchable, not dropped.
+      // The tag strip carries two link shapes, both inside `single-video-tag`:
+      //
+      //   /search?tags[]=<zh>   the site's 240 attribute tags -> dictionary
+      //   /search?query=<zh>    `#`-prefixed source work and its characters
+      //
+      // Attribute tags are translated to English through the dictionary. The
+      // `query=` ones are proper nouns and stay in Chinese on purpose: a
+      // machine translation of a character name would no longer match
+      // anything when tapped, and searchable beats readable. Scoping to the
+      // strip also keeps unrelated `tags[]` links elsewhere on the page out.
       final List<Tag> tags = [];
       final Map<TagType, List<String>> byType = {};
-      for (final link in html.querySelectorAll('a[href*="tags%5B%5D="], a[href*="tags[]="]')) {
-        final String href = link.attributes['href'] ?? '';
-        final String zh = Uri.decodeQueryComponent(
-          RegExp(r'tags(?:%5B%5D|\[\])=([^&"]+)').firstMatch(href)?.group(1) ?? '',
-        ).trim();
-        if (zh.isEmpty) continue;
-        final HanimeTag? known = HanimeDictionary.fromZh(zh);
-        final String token = known?.en ?? zh;
-        final TagType type = known?.type ?? TagType.none;
-        if (tags.any((t) => t.fullString == token)) continue;
+      String? franchise;
+
+      void addTag(String token, TagType type) {
+        if (token.isEmpty || tags.any((t) => t.fullString == token)) return;
         tags.add(Tag(token, tagType: type));
         byType.putIfAbsent(type, () => []).add(token);
       }
 
+      for (final container in html.querySelectorAll('div.single-video-tag')) {
+        final String href = container.querySelector('a')?.attributes['href'] ?? '';
+        if (href.isEmpty) continue;
+
+        final String? attribute = RegExp(r'tags(?:%5B%5D|\[\])=([^&"]+)').firstMatch(href)?.group(1);
+        if (attribute != null) {
+          final String zh = _decodeParam(attribute);
+          if (zh.isEmpty) continue;
+          final HanimeTag? known = HanimeDictionary.fromZh(zh);
+          addTag(known?.en ?? zh, known?.type ?? TagType.none);
+          continue;
+        }
+
+        final String? named = RegExp(r'[?&]query=([^&"]+)').firstMatch(href)?.group(1);
+        if (named == null) continue;
+        final String zh = _decodeParam(named);
+        if (zh.isEmpty) continue;
+        // The work is listed before its characters, so the first entry is
+        // always the franchise; a later entry that extends it (e.g. 偶像大師
+        // 閃耀色彩 under 偶像大師) is a sub-series rather than a character.
+        final bool isWork = franchise == null || zh.startsWith(franchise!);
+        franchise ??= zh;
+        // Spaces would split into two tags under the app's tag conventions;
+        // `_parse` turns the underscores back into spaces when searching.
+        addTag(zh.replaceAll(' ', '_'), isWork ? TagType.copyright : TagType.character);
+      }
+
       final String artist = html.querySelector('#video-artist-name')?.text.trim() ?? '';
       if (artist.isNotEmpty) {
-        final String artistTag = 'artist:${artist.toLowerCase().replaceAll(' ', '_')}';
-        if (!tags.any((t) => t.fullString == artistTag)) {
-          tags.add(Tag(artistTag, tagType: TagType.artist));
-          byType.putIfAbsent(TagType.artist, () => []).add(artistTag);
-        }
+        addTag('artist:${artist.toLowerCase().replaceAll(' ', '_')}', TagType.artist);
         item.uploaderName = artist;
       }
 
@@ -405,6 +429,22 @@ class Hanime1Handler extends BooruHandler {
     } catch (e, s) {
       Logger.Inst().log(e.toString(), className, 'loadItem', LogTypes.exception, s: s);
       return (item: null, failed: true, error: e.toString());
+    }
+  }
+
+  /// hanime1 writes its tag links with raw UTF-8 in the query string
+  /// (`/search?tags[]=同人作品`), and Dart's URI decoders throw
+  /// `Illegal percent encoding` on any unencoded non-ASCII byte — not just on
+  /// a malformed `%` sequence. Decoding unconditionally therefore threw on the
+  /// first Chinese tag of every single item and took all of [loadItem] down
+  /// with it. Decode only what is actually percent-encoded, and never let a
+  /// malformed value escape as an exception.
+  static String _decodeParam(String raw) {
+    if (!raw.contains('%')) return raw.trim();
+    try {
+      return Uri.decodeComponent(raw).trim();
+    } catch (_) {
+      return raw.trim();
     }
   }
 

@@ -1566,3 +1566,49 @@ CAVEAT: not verified from the user's network — the .com domain's laxer WAF
 is an observation from this container's (datacenter) IP. If .com ever gets
 the same strict rules, the remaining option is routing this site's requests
 through the WebView (real browser TLS), which is a much bigger change.
+
+## Build `hanime1-tags` (2026-08-26)
+
+hanime1 "now it loads but the tags dont". The domain fallback and the URL fix
+from `hanime1-fix` both worked (log shows the .me 403, the .com retry, and 8
+successful `watch?v=` fetches). The failure was one line inside `loadItem`.
+
+**Root cause: `Uri.decodeQueryComponent` throws on raw non-ASCII input.**
+Not just on a malformed `%` sequence — on ANY unencoded byte >= 128. hanime1
+writes its tag links with literal UTF-8 in the query string
+(`/search?tags%5B%5D=同人作品`, verified in the served HTML), so the decode
+threw `Illegal argument(s): Illegal percent encoding in URI` on the FIRST
+Chinese tag of every item. The outer `try/catch` turned that into
+`failed: true`, so the item got no tags at all — only pure-ASCII tags like
+`1080p` ever survived, and they were discarded with the rest. Reproduced on
+all 15 watch pages from the user's log; the log's own stack trace points at
+`hanime1_handler.dart:350`, exactly the decode call.
+
+Fix: `_decodeParam` decodes only values that actually contain `%`, and
+swallows a malformed one back to the raw string. Never throws.
+
+**Also found while verifying: the `#` tags were being dropped entirely.**
+The tag strip carries two link shapes, both inside `div.single-video-tag`:
+
+    /search?tags[]=<zh>   the site's 240 attribute tags  -> dictionary
+    /search?query=<zh>    `#`-prefixed work + characters -> was ignored
+
+The old code only looked for `tags[]`, so the source work and character names
+— the most useful tags on the site — never reached the app. Both shapes are
+now read, and the loop is scoped to the strip instead of scanning the whole
+document for `tags[]` anchors.
+
+Typing the `query=` tags: the DOM does NOT distinguish work from character
+(identical markup, identical `#` span). Verified across the 15 pages that the
+site lists the work first and its characters after, so the first entry is the
+franchise (copyright) and later ones are characters — with one refinement,
+that a later entry which extends the first is a sub-series, not a character
+(偶像大師 -> 偶像大師 閃耀色彩). That rule is correct on all 29 named tags in
+the sample (Arknights/Yvonne, Genshin/Citlali, Honkai:Star Rail/Silver Wolf,
+LoL/Ahri, Blue Archive, ZZZ with two characters, ...).
+
+These stay in CHINESE deliberately, unlike the attribute tags. They are proper
+nouns, and the site searches them via free-text `query=`; a machine-translated
+character name would find nothing when tapped. Searchable beats readable —
+the title already carries an `EN:` translation line. Spaces become underscores
+so a tag does not split in two; `_parse` already turns them back into spaces.
