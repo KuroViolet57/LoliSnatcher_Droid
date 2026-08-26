@@ -142,7 +142,15 @@ class DioNetwork {
       throw Exception('Url parsing failed: $url');
     }
 
-    final String cleanUrl = temp.replace(queryParameters: {}).toString();
+    String cleanUrl = temp.replace(queryParameters: {}).toString();
+    // Uri.replace with an empty map leaves a dangling '?', and Dio then
+    // appends its own params AFTER it — every request went out as
+    // `path?&a=b`. Most servers shrug; Cloudflare's WAF documents
+    // "malformed data" as a block trigger, and hanime1.me's block page was
+    // reproduced with exactly such a URL.
+    if (cleanUrl.endsWith('?')) {
+      cleanUrl = cleanUrl.substring(0, cleanUrl.length - 1);
+    }
     final Map<String, dynamic> queryParams = {
       ...temp.queryParameters,
       ...?givenQueryParams,

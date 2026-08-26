@@ -49,9 +49,58 @@ import 'package:lolisnatcher/src/utils/tools.dart';
 class Hanime1Handler extends BooruHandler {
   Hanime1Handler(super.booru, super.limit);
 
+  /// hanime1.me and hanime1.com serve the IDENTICAL site, but their
+  /// Cloudflare configs differ: .me hard-blocks clients whose TLS handshake
+  /// is not a real browser's (a user's log showed "Sorry, you have been
+  /// blocked" from a residential IP that browses the site fine in Chrome —
+  /// so the block keys on the client fingerprint, not the address, and there
+  /// is no captcha to solve on that page). .com accepted plain HTTP clients
+  /// in every test. When one domain serves the block page, the same request
+  /// is retried on the other, and the winner is remembered for the session.
+  static String? _workingHost;
+
+  static const List<String> _hosts = ['hanime1.me', 'hanime1.com'];
+
   String get _base {
-    final String url = booru.baseURL ?? 'https://hanime1.me';
-    return url.endsWith('/') ? url.substring(0, url.length - 1) : url;
+    String url = booru.baseURL ?? 'https://hanime1.me';
+    if (url.endsWith('/')) url = url.substring(0, url.length - 1);
+    final String? host = _workingHost;
+    if (host != null) {
+      url = url.replaceFirst(RegExp(r'hanime1\.(me|com)'), host);
+    }
+    return url;
+  }
+
+  static bool _isCfBlock(Response? response) =>
+      response?.statusCode == 403 && (response?.data?.toString().contains('cf-error-details') ?? false);
+
+  static String? _flipDomain(String url) {
+    for (final host in _hosts) {
+      if (url.contains(host)) {
+        final String other = _hosts.firstWhere((h) => h != host);
+        return url.replaceFirst(host, other);
+      }
+    }
+    return null;
+  }
+
+  /// GET with the cross-domain retry described on [_workingHost].
+  Future<Response<dynamic>> _getWithDomainFallback(String url, {CancelToken? cancelToken}) async {
+    try {
+      return await DioNetwork.get(url, headers: getHeaders(), cancelToken: cancelToken);
+    } on DioException catch (e) {
+      final String? flipped = _flipDomain(url);
+      if (!_isCfBlock(e.response) || flipped == null) rethrow;
+      Logger.Inst().log(
+        'cloudflare block on $url — retrying via alternate domain',
+        className,
+        '_getWithDomainFallback',
+        LogTypes.booruHandlerInfo,
+      );
+      final response = await DioNetwork.get(flipped, headers: getHeaders(), cancelToken: cancelToken);
+      _workingHost = Uri.parse(flipped).host;
+      return response;
+    }
   }
 
   @override
@@ -190,7 +239,7 @@ class Hanime1Handler extends BooruHandler {
     bool withCaptchaCheck = true,
     Map<String, dynamic>? queryParams,
   }) async {
-    return DioNetwork.get(uri.toString(), headers: getHeaders(), queryParameters: queryParams);
+    return _getWithDomainFallback(uri.toString());
   }
 
   // ───────────────────────────── parsing ─────────────────────────────
@@ -261,7 +310,7 @@ class Hanime1Handler extends BooruHandler {
     bool withCapcthaCheck = false,
   }) async {
     try {
-      final response = await DioNetwork.get(item.postURL, headers: getHeaders(), cancelToken: cancelToken);
+      final response = await _getWithDomainFallback(item.postURL, cancelToken: cancelToken);
       if (response.statusCode != 200) {
         return (item: null, failed: true, error: 'Invalid status code ${response.statusCode}');
       }

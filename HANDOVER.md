@@ -1534,3 +1534,35 @@ artist:ADLER / free text "love live" / tentacles genre:3dcg — all with
 NOT DONE: no device test. The `?secure=` URLs expire — snatching must happen
 reasonably soon after load (same caveat as tik.porn). H漫畫/新番預告/無碼18禁遊
 sections are not genres and are NOT covered. Not autodetectable.
+
+## Build `hanime1-fix` (2026-08-26)
+
+hanime1.me "doesn't load" — user's log showed every request answered with
+Cloudflare's HARD block page ("Sorry, you have been blocked", no captcha to
+solve) from their RESIDENTIAL IP, which browses the site fine in Chrome. So
+the block keys on the client, not the address: .me's WAF rejects non-browser
+TLS fingerprints (Dart's HttpClient), which no header change can disguise
+and the captcha webview cannot fix (nothing to solve on that page).
+
+Two fixes:
+
+1. **Global: `DioNetwork.separateUrlAndQueryParams` produced malformed URLs
+   for EVERY handler.** `Uri.replace(queryParameters: {})` leaves a dangling
+   `?`, and Dio appends its own params after it, so every request went out
+   as `path?&a=b` (visible verbatim in the user's log:
+   `search?&query=&page=1`). Most servers tolerate it; Cloudflare documents
+   "malformed data" as a block trigger. The dangling `?` is now stripped.
+   App-wide change, but strictly makes URLs MORE correct.
+
+2. **Hanime1Handler: automatic .me <-> .com domain fallback.** hanime1.com
+   serves the identical site but its Cloudflare config accepted plain HTTP
+   clients in every test (from an IP that .me hard-blocks). On a response
+   that is 403 + `cf-error-details`, the same request is retried on the
+   other domain; success is remembered in a session-static `_workingHost`
+   that `_base` applies, so subsequent searches/loadItems go straight to
+   the working domain. Applied in fetchSearch and loadItem.
+
+CAVEAT: not verified from the user's network — the .com domain's laxer WAF
+is an observation from this container's (datacenter) IP. If .com ever gets
+the same strict rules, the remaining option is routing this site's requests
+through the WebView (real browser TLS), which is a much bigger change.
