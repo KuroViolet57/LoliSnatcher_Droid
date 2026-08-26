@@ -13,6 +13,7 @@ enum BooruType {
   //FurAffinity,
   Gelbooru,
   GelbooruV1,
+  Hanime1,
   Hydrus,
   InkBunny,
   Kusowanka,
@@ -83,6 +84,7 @@ enum BooruType {
       // the entered URL; only pick them deliberately.
       ..remove(BooruType.TikPorn)
       ..remove(BooruType.Kusowanka)
+      ..remove(BooruType.Hanime1)
       // xxxtik has a fixed API host; only pick it deliberately.
       ..remove(BooruType.XXXTik)
       // xxxfollow has a fixed API host; only pick it deliberately.
@@ -123,6 +125,8 @@ enum BooruType {
         return 'WebView (browser)';
       case Rule34Dev:
         return 'Rule34.dev (aggregator)';
+      case Hanime1:
+        return 'Hanime1';
       case Kusowanka:
         return 'Kusowanka';
       case TikPorn:
@@ -156,6 +160,7 @@ enum BooruType {
   bool get isRealbooru => this == BooruType.Realbooru;
   bool get isRedGifs => this == BooruType.RedGifs;
   bool get isRule34Dev => this == BooruType.Rule34Dev;
+  bool get isHanime1 => this == BooruType.Hanime1;
   bool get isKusowanka => this == BooruType.Kusowanka;
   bool get isTikPorn => this == BooruType.TikPorn;
   bool get isXXXTik => this == BooruType.XXXTik;

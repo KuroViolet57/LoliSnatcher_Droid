@@ -204,6 +204,15 @@ class _BooruEditState extends State<BooruEdit> {
                       booruFaviconController.text = 'https://app.rule34.dev/icon.webp';
                     }
                   }
+                  if (selectedBooruType.isHanime1 && booruURLController.text.trim().isEmpty) {
+                    booruURLController.text = 'https://hanime1.me';
+                    if (booruNameController.text.trim().isEmpty) {
+                      booruNameController.text = 'Hanime1';
+                    }
+                    if (booruFaviconController.text.trim().isEmpty) {
+                      booruFaviconController.text = 'https://hanime1.me/favicon.ico';
+                    }
+                  }
                   if (selectedBooruType.isKusowanka && booruURLController.text.trim().isEmpty) {
                     booruURLController.text = 'https://kusowanka.com';
                     if (booruNameController.text.trim().isEmpty) {
@@ -418,6 +427,25 @@ class _BooruEditState extends State<BooruEdit> {
             'Note: the "real videos" (xvideos) section streams tube sites '
             'through a private proxy and cannot be scraped directly — open '
             'app.rule34.dev in a WebView booru for that part.';
+      case BooruType.Hanime1:
+        return '<b>Hanime1</b><br>Leave the URL as https://hanime1.me. A '
+            'Chinese-language hentai video site — the app translates it for '
+            'you.<br><br>'
+            '<b>Search in English.</b> The site\'s entire tag list is built '
+            'into the app with English names, so type <i>creampie</i>, '
+            '<i>ntr</i>, <i>chinese_subtitles</i>… and the matching Chinese '
+            'tag is sent automatically. Autocomplete understands both '
+            'languages and suggests the English name. Multiple tags combine '
+            'as AND; add <i>mode:any</i> to match ANY of them instead.<br><br>'
+            'Extras: <i>genre:</i> (hentai / shorts / motion_anime / 3dcg / '
+            '2.5d / 2d / ai / mmd / cosplay), <i>sort:</i> (newest / '
+            'latest_upload / daily / weekly / monthly / views / trending), '
+            '<i>artist:name</i>, and any other words search titles as free '
+            'text.<br><br>'
+            'Tags on posts show in English too (appearing after you open a '
+            'post — the site\'s grid carries none). Titles stay original with '
+            'a machine-translated English line added underneath when '
+            'translation is reachable.';
       case BooruType.Kusowanka:
         return '<b>Kusowanka</b><br>Leave the URL as https://kusowanka.com. '
             'No account or API key needed.<br><br>'
@@ -626,6 +654,7 @@ class _BooruEditState extends State<BooruEdit> {
     if (selectedBooruType.isRedGifs ||
         selectedBooruType.isWebView ||
         selectedBooruType.isRule34Dev ||
+        selectedBooruType.isHanime1 ||
         selectedBooruType.isKusowanka ||
         selectedBooruType.isTikPorn ||
         selectedBooruType.isXXXTik ||
@@ -635,6 +664,8 @@ class _BooruEditState extends State<BooruEdit> {
             ? 'RedGifs'
             : selectedBooruType.isRule34Dev
             ? 'Rule34.dev'
+            : selectedBooruType.isHanime1
+            ? 'Hanime1'
             : selectedBooruType.isKusowanka
             ? 'Kusowanka'
             : selectedBooruType.isTikPorn
@@ -650,6 +681,9 @@ class _BooruEditState extends State<BooruEdit> {
       }
       if (booruURLController.text.trim().isEmpty && selectedBooruType.isRule34Dev) {
         booruURLController.text = 'https://app.rule34.dev';
+      }
+      if (booruURLController.text.trim().isEmpty && selectedBooruType.isHanime1) {
+        booruURLController.text = 'https://hanime1.me';
       }
       if (booruURLController.text.trim().isEmpty && selectedBooruType.isKusowanka) {
         booruURLController.text = 'https://kusowanka.com';

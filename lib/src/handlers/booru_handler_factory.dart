@@ -34,6 +34,7 @@ import 'package:lolisnatcher/src/boorus/wildcritters_handler.dart';
 import 'package:lolisnatcher/src/boorus/worldxyz_handler.dart';
 import 'package:lolisnatcher/src/boorus/civitai_handler.dart';
 import 'package:lolisnatcher/src/boorus/xxxfollow_handler.dart';
+import 'package:lolisnatcher/src/boorus/hanime1_handler.dart';
 import 'package:lolisnatcher/src/boorus/kusowanka_handler.dart';
 import 'package:lolisnatcher/src/boorus/tikporn_handler.dart';
 import 'package:lolisnatcher/src/boorus/xxxtik_handler.dart';
@@ -179,6 +180,11 @@ class BooruHandlerFactory {
           // rule34.dev data route is 0-based; leave pageNum at -1 so the
           // first search increments it to page 0.
           booruHandler = Rule34DevHandler(booru, limit);
+          break;
+        case BooruType.Hanime1:
+          // 1-based ?page=N; default pageNum of -1 makes the first fetch
+          // page 1.
+          booruHandler = Hanime1Handler(booru, limit);
           break;
         case BooruType.Kusowanka:
           // 1-based ?page=N; the default pageNum of -1 makes the first

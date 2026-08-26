@@ -1483,3 +1483,54 @@ KNOWN QUIRK: the FRONT page (empty query) repeats heavily across pages
 it shows as fewer new items per page rather than duplicates. Tag routes
 paginate correctly. Not autodetectable — fixed host, like tik.porn/xxxtik.
 NOT device-tested from here.
+
+## Build `hanime1` (2026-08-17)
+
+New source: **hanime1.me** (`BooruType.Hanime1`,
+`lib/src/boorus/hanime1_handler.dart`) — a Chinese-language hentai video
+site, presented in English via a built-in dictionary.
+
+### The translation approach
+The site's `/search` form enumerates its ENTIRE tag vocabulary: 240 tags in
+7 groups, 9 genres, 7 sort orders. A fixed vocabulary means no translation
+service is needed for tags — `lib/src/data/hanime_dictionary.dart` is a
+complete hand-translated zh<->en map (`HanimeTag{zh,en,type}`):
+  - display: watch-page zh tags -> EN tokens at parse time (unknown zh tags
+    pass through visibly rather than being dropped);
+  - search: EN tokens -> exact zh strings in `tags[]` (raw zh also accepted);
+  - autocomplete: local dictionary filter matching BOTH languages.
+影片屬性 group -> TagType.meta, all else general; artist -> `artist:` typed.
+Titles/artist names are FREE TEXT — dictionary can't cover them. Original is
+kept; an English line is added best-effort via the keyless
+`translate.googleapis.com/translate_a/single?client=gtx` endpoint (cached
+per title incl. misses, never blocks the post; note: unofficial endpoint).
+
+### Site behaviour (verified live via hanime1.com — .me Cloudflare-blocks
+### datacenter IPs, SAME site, so the handler uses booru.baseURL)
+- `GET /search`: `query=` free text, `genre=`, repeated `tags[]=` (AND;
+  `broad=on` = OR -> exposed as `mode:any`), `sort=`, `page=` (1-based).
+- Sorts (all verified to change results): 最新上市 newest / 最新上傳
+  latest_upload / 本日排行 daily / 本週排行 weekly / 本月排行 monthly /
+  觀看次數 views / 他們在看 trending.
+- Genres (verified): 裏番 hentai / 泡麵番 shorts / Motion Anime / 3DCG /
+  2.5D / 2D動畫 2d / AI生成 ai / MMD / Cosplay.
+- TWO grid layouts chosen per genre: horizontal `video-item-container`
+  (title attr + img.main-thumb) for most queries, vertical
+  `home-rows-videos-div` (link WRAPS card, `.home-rows-videos-title`) for
+  裏番 pages. Both parsed; sponsor cards (same markup, outbound links)
+  skipped by requiring `watch?v=`.
+- Watch page: `<video id=player>` with up to three mp4 `<source size=…>`
+  (480/720/1080, signed EXPIRING urls — highest wins), poster, tags as
+  `search?tags[]=` links, `#video-artist-name`, `觀看次數：N萬次 date`
+  (萬 = x10000 -> score), `.video-caption-text` -> description.
+- Grid has NO tags -> needToLoadItem + loadItem pattern.
+
+### Verified end to end
+creampie / +chinese_subtitles / mode:any / genre:hentai sort:views /
+artist:ADLER / free text "love live" / tentacles genre:3dcg — all with
+2-page pagination, zero overlap; loadItem yields 1080p mp4 (206 reachable) +
+15 typed tags + artist + views/date; gtx translation returns correct EN.
+
+NOT DONE: no device test. The `?secure=` URLs expire — snatching must happen
+reasonably soon after load (same caveat as tik.porn). H漫畫/新番預告/無碼18禁遊
+sections are not genres and are NOT covered. Not autodetectable.
