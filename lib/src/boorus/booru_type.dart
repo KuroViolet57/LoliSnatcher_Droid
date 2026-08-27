@@ -18,6 +18,7 @@ enum BooruType {
   InkBunny,
   Kusowanka,
   Moebooru,
+  NHentai,
   Nozomi,
   NyanPals,
   Philomena,
@@ -85,6 +86,8 @@ enum BooruType {
       ..remove(BooruType.TikPorn)
       ..remove(BooruType.Kusowanka)
       ..remove(BooruType.Hanime1)
+      // nhentai has a fixed host too; only pick it deliberately.
+      ..remove(BooruType.NHentai)
       // xxxtik has a fixed API host; only pick it deliberately.
       ..remove(BooruType.XXXTik)
       // xxxfollow has a fixed API host; only pick it deliberately.
@@ -129,6 +132,8 @@ enum BooruType {
         return 'Hanime1';
       case Kusowanka:
         return 'Kusowanka';
+      case NHentai:
+        return 'nhentai';
       case TikPorn:
         return 'Tik.Porn';
       case XXXTik:
@@ -162,6 +167,7 @@ enum BooruType {
   bool get isRule34Dev => this == BooruType.Rule34Dev;
   bool get isHanime1 => this == BooruType.Hanime1;
   bool get isKusowanka => this == BooruType.Kusowanka;
+  bool get isNHentai => this == BooruType.NHentai;
   bool get isTikPorn => this == BooruType.TikPorn;
   bool get isXXXTik => this == BooruType.XXXTik;
   bool get isXXXFollow => this == BooruType.XXXFollow;

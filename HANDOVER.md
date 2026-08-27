@@ -1612,3 +1612,70 @@ nouns, and the site searches them via free-text `query=`; a machine-translated
 character name would find nothing when tapped. Searchable beats readable —
 the title already carries an `EN:` translation line. Spaces become underscores
 so a tag does not split in two; `_parse` already turns them back into spaces.
+
+## Build `doujin` (2026-08-27) — doujin reading system + nhentai.net
+
+New branch `claude/experimental-doujin` (from megabuild head). First DOUJIN
+source: galleries of ordered pages with a real reader, not single files.
+
+### nhentai API research (all verified live from this container)
+The old unofficial endpoints (`/api/galleries/...`) are DEAD — they answer
+403 "Use new API https://nhentai.net/api/v2/docs". The v2 API is an official,
+OpenAPI-documented REST API:
+
+  * auth OPTIONAL: `Authorization: Key <api key>` (user generates at
+    nhentai.net/user/settings#apikeys). EVERY read endpoint worked without
+    auth from this container: search, galleries, gallery detail, related,
+    tagged, popular, tags. A key adds favorites (GET/POST/DELETE
+    /api/v2/galleries/{id}/favorite) and blacklist flags. Full login
+    (/auth/login) needs PoW + captcha — not worth it; key covers everything.
+  * `GET /api/v2/search?query&sort&page` — 25/page, `num_pages` for paging,
+    full site search syntax passes through the query param verbatim
+    (verified: `tag:"school swimsuit" language:english`, `pages:>100`,
+    `artist:shindol`, `-tag:x` exclusions).
+    sort: date|popular|popular-today|popular-week|popular-month.
+  * `GET /api/v2/galleries?page` — newest feed (empty-query default).
+  * `GET /api/v2/galleries/{id}?include=related,comments` — ONE call returns
+    the whole book: pages[] (path, width, height, per-page thumbnail), typed
+    tags (tag/artist/parody/character/group/language/category), title
+    (english/japanese/pretty), related[5], comments. Works keyless.
+  * `GET /api/v2/cdn` (open) → image_servers i1-i4.nhentai.net, thumb_servers
+    t1-t4.nhentai.net. Image = `{server}/{path}` verbatim. COVERS ARE ON THE
+    T-SERVERS ONLY (i-server 404s cover paths).
+  * `POST /api/v2/tags/search {query,limit}` (open) — typed autocomplete
+    with counts.
+  * List items carry `tag_ids` (ints), not names → resolved via open
+    `GET /api/v2/tags/ids?ids=csv`, session-cached.
+  * Cloudflare: HTML pages are challenge-gated, but /api/v2/* and the image
+    CDNs answered plainly, browser UA or custom. UA: Tools.browserUserAgent
+    (one-UA invariant) — verified accepted. CAVEAT: like hanime1, the user's
+    residential IP may still get challenged where this container is not; the
+    captcha webview + cookie path stays available.
+
+### Design
+One gallery = ONE BooruItem in the grid (cover-backed; fileCountHint =
+num_pages so the grid badge shows immediately). loadItem upgrades it (page-1
+full image as fileURL, typed tags, title EN/JP in description) and caches the
+page list. A new READER opens the ordered pages on top of the viewer.
+
+  * `ReaderHandler` (new): session cache postURL -> List<BooruItem> pages +
+    persistent per-gallery progress in new DB table ReaderProgress
+    (booru, galleryId, page, totalPages, updatedAt; memory fallback when DB
+    off). Handlers push pages in from loadItem; UI asks it.
+  * `DoujinReaderPage` (new): PreloadPageView of ImageViewer pages (same
+    zoom/media-cache pipeline as the main viewer; preloadCount from
+    settings), registered as a nested viewer via ViewerHandler like
+    PostFilesPage. RTL toggle (reverse:), page slider, resume to saved page,
+    progress written on every turn. Menu: save this page / save all pages
+    (pages are real BooruItems -> existing SnatchHandler.queue unchanged).
+  * Entry points: viewer toolbar action "Read · N pages" (replaces the
+    burst-carousel action for reader handlers), "Read"/"Continue p.X" row in
+    the item drawer.
+  * Related: nhentai's native related endpoint is exposed as a QUERY —
+    `related:<id>` in makeURL — so the existing TagContentPreview strip
+    machinery serves a "More like this" strip in the drawer with zero new
+    strip code, and the query is even typeable by hand.
+  * Recommended: sort:popular[-today|-week|-month] metatags; typed
+    artist/parody/character tags feed the existing SuggestionEngine strips
+    automatically.
+  * Comments: getComments via gallery?include=comments (works keyless).

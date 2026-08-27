@@ -817,6 +817,10 @@ abstract class BooruHandler {
 
   bool get shouldUpdateIteminTagView => false;
 
+  /// True for doujin sources: a post is an ordered BOOK of pages, opened in
+  /// the reader (see ReaderHandler) instead of the multi-file carousel.
+  bool get hasReader => false;
+
   Future<({BooruItem? item, bool failed, String? error})> loadItem({
     required BooruItem item,
     CancelToken? cancelToken,

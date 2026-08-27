@@ -26,7 +26,9 @@ import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/post_files_handler.dart';
+import 'package:lolisnatcher/src/handlers/reader_handler.dart';
 import 'package:lolisnatcher/src/data/site_profile.dart';
+import 'package:lolisnatcher/src/pages/doujin_reader_page.dart';
 import 'package:lolisnatcher/src/pages/post_files_page.dart';
 import 'package:lolisnatcher/src/handlers/snatch_handler.dart';
 import 'package:lolisnatcher/src/handlers/tag_handler.dart';
@@ -259,6 +261,31 @@ class _HideableAppBarState extends State<HideableAppBar> {
         ),
       );
     }
+
+    // Doujin sources: the post is a BOOK — its pages arrive with loadItem
+    // (see ReaderHandler), and this opens the reader on them.
+    actions.add(
+      Obx(() {
+        final BooruItem? item = page.value >= 0 && page.value < widget.tab.booruHandler.filteredFetched.length
+            ? widget.tab.booruHandler.filteredFetched[page.value]
+            : null;
+        final readerHandler = ReaderHandler.instance;
+        if (item == null || !widget.tab.booruHandler.hasReader || !readerHandler.hasBook(item)) {
+          return const SizedBox.shrink();
+        }
+        final int pageCount = readerHandler.pagesFor(item)!.length;
+        return ToolbarAction(
+          key: const ValueKey('doujin-reader'),
+          icon: const Icon(Symbols.menu_book_rounded),
+          tooltip: 'Read · $pageCount pages',
+          onTap: () => openDoujinReader(
+            context,
+            item: item,
+            booru: widget.tab.booruHandler.booru,
+          ),
+        );
+      }),
+    );
 
     // Gallery posts: some sites hold several files behind one post, and the
     // API only ever describes the cover. The file list is fetched lazily when

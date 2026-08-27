@@ -211,6 +211,16 @@ class DBHandler {
       'PRIMARY KEY (booruKey, name) '
       ')',
     );
+    // Doujin reading positions, keyed on "host|galleryId" (see
+    // ReaderHandler.progressKey) so the key survives booru renames.
+    await db?.execute(
+      'CREATE TABLE IF NOT EXISTS ReaderProgress ( '
+      'galleryKey TEXT NOT NULL PRIMARY KEY, '
+      'page INTEGER NOT NULL, '
+      'totalPages INTEGER NOT NULL, '
+      'updatedAt INTEGER NOT NULL '
+      ')',
+    );
     // Collections / albums: named groups of posts. Membership is a join onto
     // the shared BooruItem table so in-collection tag search reuses the same
     // index; the items are protected from deleteUntracked below.
@@ -1640,6 +1650,24 @@ class DBHandler {
 
   Future<void> clearViewedPosts() async {
     await db?.rawDelete('DELETE FROM ViewedPost');
+  }
+
+  ///////
+  /// Doujin reader progress
+
+  Future<Map<String, Object?>?> getReaderProgress(String galleryKey) async {
+    final List<Map<String, Object?>>? result = await db?.rawQuery(
+      'SELECT page, totalPages, updatedAt FROM ReaderProgress WHERE galleryKey = ?',
+      [galleryKey],
+    );
+    return (result?.isNotEmpty ?? false) ? result!.first : null;
+  }
+
+  Future<void> updateReaderProgress(String galleryKey, int page, int totalPages, int updatedAt) async {
+    await db?.rawInsert(
+      'INSERT OR REPLACE INTO ReaderProgress (galleryKey, page, totalPages, updatedAt) VALUES (?, ?, ?, ?)',
+      [galleryKey, page, totalPages, updatedAt],
+    );
   }
 
   ///////

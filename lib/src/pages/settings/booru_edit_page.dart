@@ -222,6 +222,15 @@ class _BooruEditState extends State<BooruEdit> {
                       booruFaviconController.text = 'https://kusowanka.com/favicon.ico';
                     }
                   }
+                  if (selectedBooruType.isNHentai && booruURLController.text.trim().isEmpty) {
+                    booruURLController.text = 'https://nhentai.net';
+                    if (booruNameController.text.trim().isEmpty) {
+                      booruNameController.text = 'nhentai';
+                    }
+                    if (booruFaviconController.text.trim().isEmpty) {
+                      booruFaviconController.text = 'https://nhentai.net/favicon.ico';
+                    }
+                  }
                   if (selectedBooruType.isTikPorn && booruURLController.text.trim().isEmpty) {
                     booruURLController.text = 'https://tik.porn';
                     if (booruNameController.text.trim().isEmpty) {
@@ -427,6 +436,22 @@ class _BooruEditState extends State<BooruEdit> {
             'Note: the "real videos" (xvideos) section streams tube sites '
             'through a private proxy and cannot be scraped directly — open '
             'app.rule34.dev in a WebView booru for that part.';
+      case BooruType.NHentai:
+        return '<b>nhentai</b><br>Leave the URL as https://nhentai.net. A '
+            'DOUJIN source: every post is a whole gallery, read page by page '
+            'in the built-in reader (the book icon in the viewer, or the '
+            '"Read" row in the post drawer). Your position in each book is '
+            'remembered.<br><br>'
+            '<b>Search</b> uses the site\'s own syntax: plain words search '
+            'titles and tags, <i>tag:x</i>, <i>artist:x</i>, <i>parody:x</i>, '
+            '<i>character:x</i>, <i>group:x</i>, <i>language:english</i>, '
+            '<i>category:doujinshi</i>, <i>pages:&gt;20</i>, and <i>-tag:x</i> '
+            'to exclude. <i>sort:popular</i> / <i>sort:popular-today</i> / '
+            '<i>sort:popular-week</i> / <i>sort:popular-month</i> for the '
+            'popular feeds; empty search shows the newest uploads.<br><br>'
+            '<b>API key (optional):</b> works fine without one. To use your '
+            'account later (favorites), generate a key at '
+            'nhentai.net/user/settings and paste it into the API key field.';
       case BooruType.Hanime1:
         return '<b>Hanime1</b><br>Leave the URL as https://hanime1.me. A '
             'Chinese-language hentai video site — the app translates it for '
@@ -656,6 +681,7 @@ class _BooruEditState extends State<BooruEdit> {
         selectedBooruType.isRule34Dev ||
         selectedBooruType.isHanime1 ||
         selectedBooruType.isKusowanka ||
+        selectedBooruType.isNHentai ||
         selectedBooruType.isTikPorn ||
         selectedBooruType.isXXXTik ||
         selectedBooruType.isXXXFollow) {
@@ -668,6 +694,8 @@ class _BooruEditState extends State<BooruEdit> {
             ? 'Hanime1'
             : selectedBooruType.isKusowanka
             ? 'Kusowanka'
+            : selectedBooruType.isNHentai
+            ? 'nhentai'
             : selectedBooruType.isTikPorn
             ? 'Tik.Porn'
             : selectedBooruType.isXXXTik
@@ -687,6 +715,9 @@ class _BooruEditState extends State<BooruEdit> {
       }
       if (booruURLController.text.trim().isEmpty && selectedBooruType.isKusowanka) {
         booruURLController.text = 'https://kusowanka.com';
+      }
+      if (booruURLController.text.trim().isEmpty && selectedBooruType.isNHentai) {
+        booruURLController.text = 'https://nhentai.net';
       }
       if (booruURLController.text.trim().isEmpty && selectedBooruType.isTikPorn) {
         booruURLController.text = 'https://tik.porn';

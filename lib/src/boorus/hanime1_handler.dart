@@ -380,7 +380,7 @@ class Hanime1Handler extends BooruHandler {
         // The work is listed before its characters, so the first entry is
         // always the franchise; a later entry that extends it (e.g. 偶像大師
         // 閃耀色彩 under 偶像大師) is a sub-series rather than a character.
-        final bool isWork = franchise == null || zh.startsWith(franchise!);
+        final bool isWork = franchise == null || zh.startsWith(franchise);
         franchise ??= zh;
         // Spaces would split into two tags under the app's tag conventions;
         // `_parse` turns the underscores back into spaces when searching.

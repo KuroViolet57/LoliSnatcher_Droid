@@ -38,6 +38,8 @@ import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 import 'package:lolisnatcher/src/handlers/booru_tag_store.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
+import 'package:lolisnatcher/src/handlers/reader_handler.dart';
+import 'package:lolisnatcher/src/pages/doujin_reader_page.dart';
 import 'package:lolisnatcher/src/handlers/database_handler.dart';
 import 'package:lolisnatcher/src/handlers/floating_preview_handler.dart';
 import 'package:lolisnatcher/src/handlers/interests_handler.dart';
@@ -1778,6 +1780,38 @@ class _TagViewState extends State<TagView> {
                     ),
                   ),
                 //
+                // Doujin sources: the post is a book — open the reader.
+                // Appears once loadItem has registered the pages, and shows
+                // where you left off when there is saved progress.
+                Obx(() {
+                  final BooruHandler readerHandlerRef = possibleBooruHandler ?? handler;
+                  final List<BooruItem>? bookPages = ReaderHandler.instance.books[item.postURL.isNotEmpty ? item.postURL : item.fileURL];
+                  if (!readerHandlerRef.hasReader || bookPages == null || bookPages.isEmpty) {
+                    return const SizedBox.shrink();
+                  }
+                  final progress = ReaderHandler.instance.cachedProgress(
+                    readerHandlerRef.booru,
+                    item.serverId ?? item.postURL,
+                  );
+                  final bool resuming = progress != null && !progress.isFinished && progress.page > 0;
+                  return ListTile(
+                    dense: true,
+                    minVerticalPadding: 0,
+                    leading: Icon(Symbols.menu_book_rounded, size: 20, color: Theme.of(context).colorScheme.secondary),
+                    title: Text(
+                      resuming
+                          ? 'Continue reading · page ${progress.page + 1} of ${bookPages.length}'
+                          : 'Read · ${bookPages.length} pages',
+                      style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
+                    ),
+                    onTap: () => openDoujinReader(
+                      context,
+                      item: item,
+                      booru: readerHandlerRef.booru,
+                    ),
+                  );
+                }),
+                //
                 // Inline "more from artist / uploader" grids — Boorusama-style.
                 // Each grid is gated on:
                 //   - the global Settings → Interface → inlineRelatedGrids toggle
@@ -1789,6 +1823,42 @@ class _TagViewState extends State<TagView> {
                 // covers all of it. Comments have no other home, so they stay
                 // as a standalone row.
                 commentsButton(),
+                // Native "more like this": doujin sources expose the site's
+                // own related list as a `related:<id>` query, so the normal
+                // strip machinery serves it — no bespoke widget.
+                Builder(
+                  builder: (context) {
+                    final BooruHandler relatedHandlerRef = possibleBooruHandler ?? handler;
+                    final String? galleryId = item.serverId;
+                    if (!relatedHandlerRef.hasReader || galleryId == null || galleryId.isEmpty) {
+                      return const SizedBox.shrink();
+                    }
+                    return ExpansionTile(
+                      title: const Text(
+                        'More like this',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
+                      ),
+                      initiallyExpanded: relatedExpanded,
+                      iconColor: Colors.white.withValues(alpha: 0.66),
+                      collapsedIconColor: Colors.white.withValues(alpha: 0.66),
+                      shape: const Border(),
+                      collapsedShape: const Border(),
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          child: TagContentPreview(
+                            key: ValueKey('native-related-$galleryId'),
+                            tag: 'related:$galleryId',
+                            boorus: [relatedHandlerRef.booru],
+                            parentTab: searchHandler.currentTab,
+                            compact: true,
+                            compactTitle: "From the site's own related list",
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
                 // "Related" — preview strip seeded from the item's strongest
                 // tags (character/artist/copyright, falling back to general).
                 // Only shows when we can build a meaningful seed query.
