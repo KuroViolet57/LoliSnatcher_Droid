@@ -821,6 +821,15 @@ abstract class BooruHandler {
   /// the reader (see ReaderHandler) instead of the multi-file carousel.
   bool get hasReader => false;
 
+  /// Site-native namespace for a tag, when the source's own grouping is
+  /// richer than TagType (nhentai: parody / character / artist / group /
+  /// category / language / tag). The drawer's tag cloud groups by these
+  /// instead of TagType when [tagNamespaceSections] is non-empty.
+  String? tagNamespace(String tag) => null;
+
+  /// Render order + display label of the native namespace sections.
+  List<(String key, String label)> get tagNamespaceSections => const [];
+
   Future<({BooruItem? item, bool failed, String? error})> loadItem({
     required BooruItem item,
     CancelToken? cancelToken,

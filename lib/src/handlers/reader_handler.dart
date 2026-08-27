@@ -23,7 +23,7 @@ class ReaderProgress {
 
 /// Doujin books: per-post ordered page lists + persistent reading progress.
 ///
-/// This is the reader-shaped sibling of [PostFilesHandler]: that one serves
+/// This is the reader-shaped sibling of PostFilesHandler: that one serves
 /// sites where a post happens to hold a few files (carousel), this one serves
 /// sites where a post IS a book — ordered pages read front to back, where
 /// remembering the position matters. Handlers whose `hasReader` is true push

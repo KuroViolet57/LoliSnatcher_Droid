@@ -145,7 +145,7 @@ class _DoujinReaderPageState extends State<DoujinReaderPage> {
           );
         },
       ),
-      bottomNavigationBar: Container(
+      bottomNavigationBar: ColoredBox(
         color: Colors.black38,
         child: SafeArea(
           top: false,
@@ -191,6 +191,8 @@ Future<void> openDoujinReader(
   BuildContext context, {
   required BooruItem item,
   required Booru booru,
+  // Jump straight to this page (Pages grid), ignoring saved progress.
+  int? startAt,
 }) async {
   final List<BooruItem>? pages = ReaderHandler.instance.pagesFor(item);
   if (pages == null || pages.isEmpty) return;
@@ -198,7 +200,7 @@ Future<void> openDoujinReader(
   final String galleryId = item.serverId ?? item.postURL;
   final ReaderProgress? progress = await ReaderHandler.instance.loadProgress(booru, galleryId);
   // A finished book starts over; an unfinished one resumes.
-  final int initialPage = (progress != null && !progress.isFinished) ? progress.page : 0;
+  final int initialPage = startAt ?? ((progress != null && !progress.isFinished) ? progress.page : 0);
 
   final String title = (item.description ?? '').split('\n').firstWhere((line) => line.trim().isNotEmpty, orElse: () => '');
 

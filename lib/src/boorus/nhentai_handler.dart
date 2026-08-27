@@ -237,6 +237,36 @@ class NHentaiHandler extends BooruHandler {
   /// the open /tags/ids endpoint once per unknown id per session.
   static final Map<int, ({String name, TagType type})> _tagCache = {};
 
+  /// name -> (site namespace, site-wide count), for the drawer's native
+  /// namespace sections and per-chip counts. Filled by every tag the API
+  /// hands over, list rows and detail alike.
+  static final Map<String, ({String namespace, int count})> _tagSiteInfo = {};
+
+  static void _recordSiteInfo(dynamic row) {
+    final String name = _normalizeName(row['name'].toString());
+    if (name.isEmpty) return;
+    _tagSiteInfo[name] = (
+      namespace: row['type'].toString(),
+      count: row['count'] as int? ?? 0,
+    );
+  }
+
+  @override
+  String? tagNamespace(String tag) => _tagSiteInfo[tag]?.namespace;
+
+  static int tagSiteCount(String tag) => _tagSiteInfo[tag]?.count ?? 0;
+
+  @override
+  List<(String key, String label)> get tagNamespaceSections => const [
+    ('parody', 'Parodies'),
+    ('character', 'Characters'),
+    ('artist', 'Artists'),
+    ('group', 'Groups'),
+    ('category', 'Categories'),
+    ('language', 'Languages'),
+    ('tag', 'Tags'),
+  ];
+
   static TagType _mapType(String type) => switch (type) {
     'artist' => TagType.artist,
     // Circles publish the work; the closest booru concept is artist.
@@ -262,6 +292,7 @@ class NHentaiHandler extends BooruHandler {
         );
         for (final row in _json(response.data) as List) {
           _tagCache[row['id'] as int] = (name: _normalizeName(row['name'].toString()), type: _mapType(row['type'].toString()));
+          _recordSiteInfo(row);
         }
       } catch (e) {
         // Names stay unresolved for this page; the grid still works and
@@ -303,7 +334,12 @@ class NHentaiHandler extends BooruHandler {
 
     final List<Tag> tags = [
       for (final tagId in List<int>.from(row['tag_ids'] as List? ?? []))
-        if (_tagCache[tagId] != null) Tag(_tagCache[tagId]!.name, tagType: _tagCache[tagId]!.type),
+        if (_tagCache[tagId] != null)
+          Tag(
+            _tagCache[tagId]!.name,
+            tagType: _tagCache[tagId]!.type,
+            count: tagSiteCount(_tagCache[tagId]!.name),
+          ),
     ];
 
     final String english = row['english_title']?.toString() ?? '';
@@ -362,7 +398,8 @@ class NHentaiHandler extends BooruHandler {
         final TagType type = _mapType(t['type'].toString());
         final String name = _normalizeName(t['name'].toString());
         if (name.isEmpty || tags.any((x) => x.fullString == name)) continue;
-        tags.add(Tag(name, tagType: type));
+        _recordSiteInfo(t);
+        tags.add(Tag(name, tagType: type, count: tagSiteCount(name)));
         byType.putIfAbsent(type, () => []).add(name);
       }
       if (tags.isNotEmpty) {
@@ -446,6 +483,7 @@ class NHentaiHandler extends BooruHandler {
         cancelToken: cancelToken,
       );
       final List rows = _json(response.data) as List? ?? [];
+      rows.forEach(_recordSiteInfo);
       return Right([
         for (final row in rows)
           TagSuggestion(

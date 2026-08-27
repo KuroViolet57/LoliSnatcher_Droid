@@ -40,6 +40,7 @@ import 'package:lolisnatcher/src/handlers/booru_tag_store.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/reader_handler.dart';
 import 'package:lolisnatcher/src/pages/doujin_reader_page.dart';
+import 'package:lolisnatcher/src/widgets/thumbnail/thumbnail_build.dart';
 import 'package:lolisnatcher/src/handlers/database_handler.dart';
 import 'package:lolisnatcher/src/handlers/floating_preview_handler.dart';
 import 'package:lolisnatcher/src/handlers/interests_handler.dart';
@@ -861,8 +862,28 @@ class _TagViewState extends State<TagView> {
   List<Widget> tagChipSectionSlivers(BuildContext context) {
     if (filteredTags.isEmpty) return const [];
 
-    final List<(TagType?, List<Tag>)> sections = [];
-    if (sortTags == null) {
+    final List<(String?, Color?, List<Tag>)> sections = [];
+    final BooruHandler nsHandler = possibleBooruHandler ?? handler;
+    final List<(String, String)> nsSections = nsHandler.tagNamespaceSections;
+    final bool useNativeNamespaces = sortTags == null &&
+        nsSections.isNotEmpty &&
+        filteredTags.any((t) => nsHandler.tagNamespace(t.fullString) != null);
+    if (useNativeNamespaces) {
+      // Doujin sources: the site's own namespaces (Parodies / Characters /
+      // Artists / Groups / Categories / Languages / Tags) are richer than
+      // TagType, so section by those; chip colours still follow TagType.
+      final Map<String, List<Tag>> byNs = {for (final s in nsSections) s.$1: <Tag>[]};
+      final String fallbackNs = nsSections.last.$1;
+      for (final tag in filteredTags) {
+        final String ns = nsHandler.tagNamespace(tag.fullString) ?? fallbackNs;
+        (byNs[ns] ?? byNs[fallbackNs]!).add(tag);
+      }
+      for (final s in nsSections) {
+        if (byNs[s.$1]!.isNotEmpty) {
+          sections.add((s.$2, typeOfTag(byNs[s.$1]!.first).getColour(), byNs[s.$1]!));
+        }
+      }
+    } else if (sortTags == null) {
       final Map<TagType, List<Tag>> byType = {
         for (final type in TagType.values) type: <Tag>[],
       };
@@ -871,11 +892,11 @@ class _TagViewState extends State<TagView> {
       }
       for (final type in TagType.values) {
         if (byType[type]!.isNotEmpty) {
-          sections.add((type, byType[type]!));
+          sections.add((type.locName, type.getColour(), byType[type]!));
         }
       }
     } else {
-      sections.add((null, filteredTags));
+      sections.add((null, null, filteredTags));
     }
 
     return [
@@ -1028,19 +1049,19 @@ class _TagViewState extends State<TagView> {
                     height: 16,
                     decoration: BoxDecoration(
                       color:
-                          section.$1!.getColour() ??
+                          section.$2 ??
                           Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4),
                       borderRadius: BorderRadius.circular(3),
                     ),
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    section.$1!.locName,
+                    section.$1!,
                     style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
                   ),
                   const SizedBox(width: 6),
                   Text(
-                    '${section.$2.length}',
+                    '${section.$3.length}',
                     style: TextStyle(
                       fontSize: 12,
                       color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
@@ -1057,7 +1078,7 @@ class _TagViewState extends State<TagView> {
               spacing: 6,
               runSpacing: 6,
               children: [
-                for (final tag in section.$2) buildTagChip(context, tag),
+                for (final tag in section.$3) buildTagChip(context, tag),
               ],
             ),
           ),
@@ -1473,6 +1494,167 @@ class _TagViewState extends State<TagView> {
     );
   }
 
+  /// Reference-style "Pages" grid for doujin sources: every page's own
+  /// thumbnail; tapping one opens the reader at exactly that page.
+  List<Widget> _pagesGridSlivers(BuildContext context) {
+    final BooruHandler bookHandler = possibleBooruHandler ?? handler;
+    if (!bookHandler.hasReader) return const [];
+    final List<BooruItem>? pages =
+        ReaderHandler.instance.books[item.postURL.isNotEmpty ? item.postURL : item.fileURL];
+    if (pages == null || pages.isEmpty) return const [];
+    return [
+      SliverPadding(
+        padding: const EdgeInsets.fromLTRB(14, 16, 14, 2),
+        sliver: SliverToBoxAdapter(
+          child: Row(
+            children: [
+              Text(
+                'Pages',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                '${pages.length}',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      SliverPadding(
+        padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+        sliver: SliverGrid(
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 3,
+            mainAxisSpacing: 6,
+            crossAxisSpacing: 6,
+            // Doujin pages are portrait; the fixed ratio keeps rows tidy and
+            // the thumbnail crops the difference.
+            childAspectRatio: 0.7,
+          ),
+          delegate: SliverChildBuilderDelegate(
+            (context, index) {
+              final BooruItem page = pages[index];
+              return GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => openDoujinReader(
+                  context,
+                  item: item,
+                  booru: bookHandler.booru,
+                  startAt: index,
+                ),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    ThumbnailBuild(
+                      item: page,
+                      handler: bookHandler,
+                      selectable: false,
+                      simple: true,
+                    ),
+                    Positioned(
+                      right: 4,
+                      bottom: 4,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.55),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          '${index + 1}',
+                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+            childCount: pages.length,
+          ),
+        ),
+      ),
+    ];
+  }
+
+  /// Book header for doujin sources: language / category / page count /
+  /// favourites pulled from the site's own namespaces, and the Read button
+  /// as the drawer's primary action — "Continue" with the saved page when
+  /// the book was started before.
+  Widget _doujinBookHeader(BuildContext context) {
+    final BooruHandler bookHandler = possibleBooruHandler ?? handler;
+    if (!bookHandler.hasReader) return const SizedBox.shrink();
+    return Obx(() {
+      final List<BooruItem>? pages =
+          ReaderHandler.instance.books[item.postURL.isNotEmpty ? item.postURL : item.fileURL];
+      if (pages == null || pages.isEmpty) return const SizedBox.shrink();
+      final progress = ReaderHandler.instance.cachedProgress(
+        bookHandler.booru,
+        item.serverId ?? item.postURL,
+      );
+      final bool resuming = progress != null && !progress.isFinished && progress.page > 0;
+
+      final List<String> languages = [];
+      String? category;
+      for (final t in item.tagsList) {
+        final String? ns = bookHandler.tagNamespace(t.fullString);
+        if (ns == 'language' && t.fullString != 'translated') languages.add(t.fullString);
+        if (ns == 'category') category ??= t.fullString;
+      }
+      final List<String> infoParts = [
+        if (languages.isNotEmpty) languages.join(' / '),
+        ?category,
+        '${pages.length} pages',
+        if (item.score?.isNotEmpty ?? false) '♥ ${item.score}',
+      ];
+
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(14, 2, 14, 4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              infoParts.join('  ·  '),
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+              ),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              height: 44,
+              child: FilledButton.icon(
+                icon: Icon(resuming ? Symbols.auto_stories_rounded : Symbols.menu_book_rounded, size: 20),
+                label: Text(
+                  resuming
+                      ? 'Continue reading · page ${progress.page + 1} of ${pages.length}'
+                      : 'Read · ${pages.length} pages',
+                  style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800),
+                ),
+                onPressed: () => openDoujinReader(
+                  context,
+                  item: item,
+                  booru: bookHandler.booru,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    });
+  }
+
   Widget buildTagChip(BuildContext context, Tag rawTag) {
     final String currentTag = rawTag.fullString;
     if (currentTag.isEmpty) return const SizedBox.shrink();
@@ -1747,6 +1929,11 @@ class _TagViewState extends State<TagView> {
                 else
                   const SizedBox(height: kMinInteractiveDimension),
                 //
+                // Doujin sources: reference-style book header — metadata line
+                // and a prominent Read/Continue button, shown the moment
+                // loadItem registers the pages.
+                _doujinBookHeader(context),
+                //
                 // Flow post actions (Favorite / Save / Collect).
                 _flowActionRow(context),
                 //
@@ -1779,38 +1966,6 @@ class _TagViewState extends State<TagView> {
                       (possibleBooruHandler ?? handler).booru,
                     ),
                   ),
-                //
-                // Doujin sources: the post is a book — open the reader.
-                // Appears once loadItem has registered the pages, and shows
-                // where you left off when there is saved progress.
-                Obx(() {
-                  final BooruHandler readerHandlerRef = possibleBooruHandler ?? handler;
-                  final List<BooruItem>? bookPages = ReaderHandler.instance.books[item.postURL.isNotEmpty ? item.postURL : item.fileURL];
-                  if (!readerHandlerRef.hasReader || bookPages == null || bookPages.isEmpty) {
-                    return const SizedBox.shrink();
-                  }
-                  final progress = ReaderHandler.instance.cachedProgress(
-                    readerHandlerRef.booru,
-                    item.serverId ?? item.postURL,
-                  );
-                  final bool resuming = progress != null && !progress.isFinished && progress.page > 0;
-                  return ListTile(
-                    dense: true,
-                    minVerticalPadding: 0,
-                    leading: Icon(Symbols.menu_book_rounded, size: 20, color: Theme.of(context).colorScheme.secondary),
-                    title: Text(
-                      resuming
-                          ? 'Continue reading · page ${progress.page + 1} of ${bookPages.length}'
-                          : 'Read · ${bookPages.length} pages',
-                      style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
-                    ),
-                    onTap: () => openDoujinReader(
-                      context,
-                      item: item,
-                      booru: readerHandlerRef.booru,
-                    ),
-                  );
-                }),
                 //
                 // Inline "more from artist / uploader" grids — Boorusama-style.
                 // Each grid is gated on:
@@ -1993,6 +2148,7 @@ class _TagViewState extends State<TagView> {
                 : const SizedBox.shrink(),
           ),
           ...tagChipSectionSlivers(context),
+          ..._pagesGridSlivers(context),
           SliverToBoxAdapter(
             child: SizedBox(
               height: MediaQuery.viewInsetsOf(context).bottom + kMinInteractiveDimension,

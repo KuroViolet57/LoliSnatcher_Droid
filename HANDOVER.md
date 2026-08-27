@@ -1679,3 +1679,35 @@ page list. A new READER opens the ordered pages on top of the viewer.
     artist/parody/character tags feed the existing SuggestionEngine strips
     automatically.
   * Comments: getComments via gallery?include=comments (works keyless).
+
+## Build `doujin-ux` (2026-08-27)
+
+User sent a 43s recording of a reference app (browser-tab style multi-source
+doujin reader: nhentai/asmhentai/hitomi.la) and picked "Doujin detail UX"
+from the adoption options. Changes, all scoped to reader-handler sources:
+
+1. **Native namespace tag sections.** New BooruHandler API:
+   `tagNamespace(tag)` + `tagNamespaceSections` (ordered key/label pairs).
+   NhentaiHandler records every API tag's site namespace + count in a static
+   `_tagSiteInfo` (fed from /tags/ids, gallery detail, and autocomplete).
+   tag_view's `tagChipSectionSlivers` now sections by native namespace
+   (Parodies / Characters / Artists / Groups / Categories / Languages /
+   Tags) when the handler provides them; section tuple generalized from
+   `(TagType?, List<Tag>)` to `(String? label, Color? color, List<Tag>)` —
+   the TagType path still works for every other booru. Chip colours still
+   follow TagType.
+2. **Counts on chips.** `buildTagChip` ALREADY rendered `Tag.count` (dead
+   data until now) — nhentai populates it, so chips read
+   "big breasts 231k" like the reference.
+3. **Book header.** The old "Read · N pages" ListTile is replaced by
+   `_doujinBookHeader`: an info line (languages · category · N pages ·
+   ♥ favs, from the namespaces) + a full-width FilledButton that reads
+   "Read · N pages" or "Continue reading · page X of N".
+4. **Pages grid.** `_pagesGridSlivers` after the tag sections: 3-column grid
+   of every page's own thumbnail (per-page thumbs come with the nhentai
+   detail response) with page-number badges; tapping opens the reader AT
+   that page (`openDoujinReader(startAt:)` skips saved progress).
+
+Reference features NOT adopted yet (user chose detail UX only): vertical/
+webtoon reading modes, tap zones, keep-screen-on, nhentai account
+favourites/blacklist sync, per-source settings overrides layer.
