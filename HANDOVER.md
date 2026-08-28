@@ -1711,3 +1711,50 @@ from the adoption options. Changes, all scoped to reader-handler sources:
 Reference features NOT adopted yet (user chose detail UX only): vertical/
 webtoon reading modes, tap zones, keep-screen-on, nhentai account
 favourites/blacklist sync, per-source settings overrides layer.
+
+## Build `doujin-fix` (2026-08-28)
+
+User's 5-min recording of the doujin-ux build + a list. THE READER WAS BLACK
+ON EVERY PAGE (title bar + slider fine, images never appeared) while the
+MAIN viewer rendered the very same i-server URL fine — so the failure was in
+the reader's widget wiring, not the network. Root cause could not be pinned
+statically (ImageViewer is welded to gallery machinery: hero tags,
+viewer-handler state, notes, tiling — and renders black with no error
+surface).
+
+1. **Reader rebuilt on a self-contained image path.** _ReaderPageSlide =
+   PhotoView over CustomNetworkImage (same provider the thumbnails use,
+   same headers via Tools.getFileCustomHeaders, media cache on). Explicit
+   per-page loading progress, and failures print URL + error ON the page
+   with a Retry button — a broken page is now diagnosable from a
+   screenshot. Reader open + every page failure also goes to the talker
+   log. Wrapped in PhotoViewGestureDetectorScope(axis: Axis.values) exactly
+   like the main viewer so zoom-pan vs page-swipe negotiate.
+2. **Reader features**: tap zones (edges turn pages, middle toggles the
+   chrome — via PhotoView's own onTapUp, no competing recognizers),
+   reading direction now cycles LTR -> RTL -> VERTICAL (paged) and the
+   choice persists per source, instant vs animated turns, keep-screen-on
+   via ServiceHandler.disableSleep.
+3. **Per-source settings** (reference's "<source> settings" screen):
+   SourceSettingsHandler persists sourceSettings.json keyed by host;
+   SourceSettingsPage reachable from booru edit ("Source settings").
+   Reading direction / page-turn animation / tap zones / preload pages /
+   keep screen on / default sort (applied in makeURL when the query has no
+   sort:) / grid tag strip toggle.
+4. **Grid cards (doujin sources)**: language badge top-right (EN/JP/CH/KR
+   from the language namespace, 'translated' ignored); bottom gradient
+   strip with the 5 most relevant tags (favourited/marked first in GOLD,
+   rest by site count); a +N button that opens a bottom sheet with ALL tags
+   grouped by native namespace — tags visible without opening the doujin,
+   tapping one in the sheet opens a background tab.
+5. **Drawer**: "More like this" renamed Recommended and OPEN BY DEFAULT;
+   new "Related — chapters & versions" (collapsed): a `versions:<id>` query
+   that quoted-phrase-searches the gallery's base pretty title
+   (_versionsBaseTitle strips trailing ~subtitles~, brackets, volume
+   markers; "Mesu no Ie III ~...~" -> "Mesu no Ie" = 16 live hits covering
+   all chapters + languages).
+
+NOT done from the user's list: webtoon CONTINUOUS scroll (vertical paged
+shipped instead), account favourites/blacklist sync. If pages are STILL
+black in this build, the on-page error text + talker log now say exactly
+why — ask for either.

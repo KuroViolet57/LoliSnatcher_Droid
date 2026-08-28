@@ -13,6 +13,7 @@ import 'package:lolisnatcher/src/data/tag_suggestion.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/reader_handler.dart';
+import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
@@ -197,8 +198,22 @@ class NHentaiHandler extends BooruHandler {
         if (int.tryParse(value) != null) relatedId = value;
         continue;
       }
+      // Chapters + other-language versions of a gallery: a quoted phrase
+      // search on its base title (see _versionsBaseTitle).
+      if (lower.startsWith('versions:')) {
+        final String? pretty = _prettyTitles[lower.substring(9)];
+        if (pretty != null) {
+          terms.add('"${_versionsBaseTitle(pretty)}"');
+        }
+        continue;
+      }
       terms.add(_siteTerm(term));
     }
+    // Per-source default sort applies only when the query didn't pick one.
+    sort ??= () {
+      final String? def = SourceSettingsHandler.instance.defaultSort(booru);
+      return (def != null && _sorts.contains(def) && def != 'date') ? def : null;
+    }();
     return (query: terms.join(' '), sort: sort, relatedId: relatedId);
   }
 
@@ -237,27 +252,29 @@ class NHentaiHandler extends BooruHandler {
   /// the open /tags/ids endpoint once per unknown id per session.
   static final Map<int, ({String name, TagType type})> _tagCache = {};
 
-  /// name -> (site namespace, site-wide count), for the drawer's native
-  /// namespace sections and per-chip counts. Filled by every tag the API
-  /// hands over, list rows and detail alike.
+  /// name -> the site's own namespace + gallery count, recorded from every
+  /// API response that carries tag objects. Feeds the drawer's native
+  /// sections, the chip counts, and the grid cards' language badges.
   static final Map<String, ({String namespace, int count})> _tagSiteInfo = {};
 
+  /// gallery id -> "pretty" title (no bracket groups), from the detail call.
+  /// Powers the versions/chapters search behind `versions:<id>`.
+  static final Map<String, String> _prettyTitles = {};
+
   static void _recordSiteInfo(dynamic row) {
-    final String name = _normalizeName(row['name'].toString());
-    if (name.isEmpty) return;
-    _tagSiteInfo[name] = (
-      namespace: row['type'].toString(),
-      count: row['count'] as int? ?? 0,
-    );
+    final String name = _normalizeName(row['name']?.toString() ?? '');
+    final String namespace = row['type']?.toString() ?? '';
+    if (name.isEmpty || namespace.isEmpty) return;
+    _tagSiteInfo[name] = (namespace: namespace, count: row['count'] as int? ?? 0);
   }
+
+  static int tagSiteCount(String name) => _tagSiteInfo[name]?.count ?? 0;
 
   @override
   String? tagNamespace(String tag) => _tagSiteInfo[tag]?.namespace;
 
-  static int tagSiteCount(String tag) => _tagSiteInfo[tag]?.count ?? 0;
-
   @override
-  List<(String key, String label)> get tagNamespaceSections => const [
+  List<(String, String)> get tagNamespaceSections => const [
     ('parody', 'Parodies'),
     ('character', 'Characters'),
     ('artist', 'Artists'),
@@ -266,6 +283,39 @@ class NHentaiHandler extends BooruHandler {
     ('language', 'Languages'),
     ('tag', 'Tags'),
   ];
+
+  @override
+  String? relatedVersionsQuery(BooruItem item) {
+    final String? id = item.serverId;
+    if (id == null || _prettyTitles[id] == null) return null;
+    return 'versions:$id';
+  }
+
+  /// Base title for finding other chapters and language versions: the pretty
+  /// title with trailing subtitle blocks and volume markers stripped, so
+  /// "Mesu no Ie III ~Oyako wa...~" searches as "Mesu no Ie" and returns
+  /// every chapter in every language (verified live: 16 hits).
+  static String _versionsBaseTitle(String pretty) {
+    String base = pretty.trim();
+    String previous;
+    do {
+      previous = base;
+      base = base
+          // trailing ~subtitle~ / (...) / [...] / 【...】 blocks
+          .replaceFirst(RegExp(r'[~〜([【][^~〜)\]】]*[~〜)\]】]$'), '')
+          // trailing volume/chapter markers
+          .replaceFirst(
+            RegExp(
+              r'(?:[#♯]?\d+|[IVXivx]+|Ch\.?\s*\d+|Vol\.?\s*\d+|Part\s*\d+|前編|中編|後編|上|中|下|続)$',
+              caseSensitive: false,
+            ),
+            '',
+          )
+          .replaceFirst(RegExp(r'[\s\-–—|:：・]+$'), '')
+          .trim();
+    } while (base != previous);
+    return base.length >= 3 ? base : pretty.trim();
+  }
 
   static TagType _mapType(String type) => switch (type) {
     'artist' => TagType.artist,
@@ -443,6 +493,8 @@ class NHentaiHandler extends BooruHandler {
       final title = data['title'] as Map? ?? {};
       final String english = title['english']?.toString() ?? '';
       final String? japanese = title['japanese']?.toString();
+      final String pretty = title['pretty']?.toString() ?? '';
+      if (pretty.isNotEmpty) _prettyTitles[id] = pretty;
       final String scanlator = data['scanlator']?.toString() ?? '';
       item.description = [
         english,

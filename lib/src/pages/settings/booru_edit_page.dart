@@ -30,6 +30,7 @@ import 'package:lolisnatcher/src/widgets/common/html.dart';
 import 'package:lolisnatcher/src/widgets/common/settings_widgets.dart';
 import 'package:lolisnatcher/src/widgets/tags_filters/tf_add_dialog.dart';
 import 'package:lolisnatcher/src/widgets/image/booru_favicon.dart';
+import 'package:lolisnatcher/src/pages/settings/source_settings_page.dart';
 import 'package:lolisnatcher/src/widgets/preview/tag_search_query_editor_page.dart';
 import 'package:lolisnatcher/src/widgets/webview/webview_page.dart';
 
@@ -178,6 +179,24 @@ class _BooruEditState extends State<BooruEdit> {
                   }
                 },
               ),
+            //
+            // Per-source preferences (reader behaviour, default sort, grid
+            // tag strip) — the reference apps' "<source> settings" screen.
+            // Keyed by host, so only offered once the booru actually exists.
+            if (widget.booru.baseURL?.isNotEmpty ?? false)
+            SettingsButton(
+              name: 'Source settings',
+              subtitle: const Text('Reader, default sort and grid options for this source only'),
+              icon: const Icon(Symbols.tune_rounded),
+              action: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => SourceSettingsPage(booru: widget.booru),
+                  ),
+                );
+              },
+            ),
             //
             SettingsDropdown(
               value: selectedBooruType,

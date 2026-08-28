@@ -8,11 +8,15 @@ import 'package:get/get.dart';
 import 'package:scroll_to_index/scroll_to_index.dart';
 
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/snatch_handler.dart';
+import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
+import 'package:lolisnatcher/src/utils/extensions.dart';
 import 'package:lolisnatcher/src/widgets/common/animated_progress_indicator.dart';
+import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 import 'package:lolisnatcher/src/widgets/thumbnail/thumbnail_build.dart';
 
 class ThumbnailCardBuild extends StatelessWidget {
@@ -131,6 +135,12 @@ class ThumbnailCardBuild extends StatelessWidget {
               );
             }),
             //
+            // Doujin cards: language badge + a strip of the most relevant
+            // tags under the cover (favourited tags first, in gold) + a
+            // button showing the whole tag list without opening the post.
+            if (handler.hasReader && SourceSettingsHandler.instance.gridTagStrip(handler.booru))
+              ..._doujinOverlays(context),
+            //
             Positioned.fill(
               child: ListenableBuilder(
                 listenable: Listenable.merge([
@@ -194,6 +204,268 @@ class ThumbnailCardBuild extends StatelessWidget {
                 ),
               ),
           ],
+        ),
+      ),
+    );
+  }
+
+  static const Map<String, String> _languageCodes = {
+    'english': 'EN',
+    'japanese': 'JP',
+    'chinese': 'CH',
+    'korean': 'KR',
+  };
+
+  List<Widget> _doujinOverlays(BuildContext context) {
+    final Set<String> markedTags = SettingsHandler.instance.markedTags.toSet();
+
+    String? language;
+    final List<Tag> marked = [];
+    final List<Tag> rest = [];
+    for (final tag in item.tagsList) {
+      final String? ns = handler.tagNamespace(tag.fullString);
+      if (ns == 'language') {
+        language ??= _languageCodes[tag.fullString];
+        continue;
+      }
+      if (ns == 'category') continue;
+      (markedTags.contains(tag.fullString) ? marked : rest).add(tag);
+    }
+    // The site's counts double as relevance: a 200k tag says more about the
+    // work than a 300-use one. Favourites always lead.
+    rest.sort((a, b) => b.count.compareTo(a.count));
+    final List<Tag> shown = [...marked, ...rest].take(5).toList();
+    final int more = item.tagsList.length - shown.length;
+
+    return [
+      if (language != null)
+        Positioned(
+          top: 6,
+          right: 6,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.66),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+              child: Text(
+                language,
+                style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w800),
+              ),
+            ),
+          ),
+        ),
+      if (shown.isNotEmpty)
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.transparent,
+                  Colors.black.withValues(alpha: 0.75),
+                ],
+              ),
+              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(14)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(6, 14, 6, 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Expanded(
+                    child: Wrap(
+                      spacing: 3,
+                      runSpacing: 3,
+                      children: [
+                        for (final tag in shown) _miniTagChip(context, tag, isMarked: marked.contains(tag)),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  // The whole card opens the post; this small target on top
+                  // of it shows every tag instead.
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => _showAllTagsSheet(context),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.18),
+                        borderRadius: BorderRadius.circular(9),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                        child: Text(
+                          more > 0 ? '+$more' : '···',
+                          style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+    ];
+  }
+
+  Widget _miniTagChip(BuildContext context, Tag tag, {required bool isMarked}) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: isMarked ? const Color(0xFFB8860B).withValues(alpha: 0.9) : Colors.white.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(9),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (isMarked) ...[
+              const Icon(Symbols.star_rounded, size: 10, color: Colors.white),
+              const SizedBox(width: 2),
+            ],
+            Text(
+              tag.fullString.replaceAll('_', ' '),
+              style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w600),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Full tag list, grouped by the site's namespaces, without opening the
+  /// post. Tapping a tag opens it as a background tab.
+  void _showAllTagsSheet(BuildContext context) {
+    final Set<String> markedTags = SettingsHandler.instance.markedTags.toSet();
+    final sections = handler.tagNamespaceSections;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetContext) {
+        final Map<String, List<Tag>> byNs = {for (final s in sections) s.$1: <Tag>[]};
+        final String fallback = sections.isNotEmpty ? sections.last.$1 : 'tag';
+        for (final tag in item.tagsList) {
+          final String ns = handler.tagNamespace(tag.fullString) ?? fallback;
+          (byNs[ns] ?? byNs[fallback])?.add(tag);
+        }
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.5,
+          maxChildSize: 0.9,
+          builder: (context, scrollController) {
+            return ListView(
+              controller: scrollController,
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 24),
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 5,
+                    margin: const EdgeInsets.only(bottom: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.5),
+                      borderRadius: BorderRadius.circular(2.5),
+                    ),
+                  ),
+                ),
+                Text(
+                  '${item.tagsList.length} tags — tap one to open it in a new tab',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                  ),
+                ),
+                for (final section in sections)
+                  if (byNs[section.$1]?.isNotEmpty ?? false) ...[
+                    Padding(
+                      padding: const EdgeInsets.only(top: 12, bottom: 4),
+                      child: Text(
+                        section.$2,
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        for (final tag in byNs[section.$1]!)
+                          _sheetTagChip(sheetContext, tag, isMarked: markedTags.contains(tag.fullString)),
+                      ],
+                    ),
+                  ],
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _sheetTagChip(BuildContext context, Tag tag, {required bool isMarked}) {
+    final Color? typeColor = tag.tagType.getColour();
+    final Color base = (typeColor == null || typeColor == Colors.transparent)
+        ? Theme.of(context).colorScheme.onSurface
+        : typeColor;
+    return Material(
+      color: isMarked ? const Color(0xFFB8860B).withValues(alpha: 0.35) : base.withValues(alpha: 0.14),
+      shape: StadiumBorder(
+        side: BorderSide(color: isMarked ? const Color(0xFFDAA520) : base.withValues(alpha: 0.4)),
+      ),
+      child: InkWell(
+        customBorder: const StadiumBorder(),
+        onTap: () {
+          SearchHandler.instance.addTabByString(
+            tag.fullString,
+            customBooru: handler.booru,
+            switchToNew: false,
+          );
+          FlashElements.showSnackbar(
+            context: context,
+            title: const Text('Added new tab', style: TextStyle(fontSize: 18)),
+            content: Text(tag.fullString, style: const TextStyle(fontSize: 14)),
+            duration: const Duration(seconds: 2),
+            sideColor: Colors.green,
+          );
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (isMarked) ...[
+                const Icon(Symbols.star_rounded, size: 13, color: Color(0xFFDAA520)),
+                const SizedBox(width: 3),
+              ],
+              Text(
+                tag.fullString.replaceAll('_', ' '),
+                style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+              ),
+              if (tag.count > 0) ...[
+                const SizedBox(width: 5),
+                Text(
+                  tag.count.toFormattedString(),
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.55),
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
       ),
     );

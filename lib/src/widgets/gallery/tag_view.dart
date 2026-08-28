@@ -1978,9 +1978,44 @@ class _TagViewState extends State<TagView> {
                 // covers all of it. Comments have no other home, so they stay
                 // as a standalone row.
                 commentsButton(),
-                // Native "more like this": doujin sources expose the site's
-                // own related list as a `related:<id>` query, so the normal
-                // strip machinery serves it — no bespoke widget.
+                // Doujin "Related": other CHAPTERS and language versions of
+                // this very work, found by a quoted phrase search on the base
+                // title (the reference apps' Related semantics). Collapsed by
+                // default — most one-shots only find themselves.
+                Builder(
+                  builder: (context) {
+                    final BooruHandler versionsHandlerRef = possibleBooruHandler ?? handler;
+                    final String? versionsQuery = versionsHandlerRef.relatedVersionsQuery(item);
+                    if (versionsQuery == null) return const SizedBox.shrink();
+                    return ExpansionTile(
+                      title: const Text(
+                        'Related — chapters & versions',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
+                      ),
+                      initiallyExpanded: false,
+                      iconColor: Colors.white.withValues(alpha: 0.66),
+                      collapsedIconColor: Colors.white.withValues(alpha: 0.66),
+                      shape: const Border(),
+                      collapsedShape: const Border(),
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          child: TagContentPreview(
+                            key: ValueKey('versions-${item.serverId}'),
+                            tag: versionsQuery,
+                            boorus: [versionsHandlerRef.booru],
+                            parentTab: searchHandler.currentTab,
+                            compact: true,
+                            compactTitle: 'Other chapters and languages of this work',
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+                // Doujin "Recommended": the site's own related list, served
+                // through the normal strip machinery via a `related:<id>`
+                // query. Open by default, like the reference app.
                 Builder(
                   builder: (context) {
                     final BooruHandler relatedHandlerRef = possibleBooruHandler ?? handler;
@@ -1990,10 +2025,10 @@ class _TagViewState extends State<TagView> {
                     }
                     return ExpansionTile(
                       title: const Text(
-                        'More like this',
+                        'Recommended',
                         style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
                       ),
-                      initiallyExpanded: relatedExpanded,
+                      initiallyExpanded: true,
                       iconColor: Colors.white.withValues(alpha: 0.66),
                       collapsedIconColor: Colors.white.withValues(alpha: 0.66),
                       shape: const Border(),

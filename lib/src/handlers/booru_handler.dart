@@ -830,6 +830,10 @@ abstract class BooruHandler {
   /// Render order + display label of the native namespace sections.
   List<(String key, String label)> get tagNamespaceSections => const [];
 
+  /// Query returning the other chapters / language versions of this post
+  /// (the reference apps' "Related" section), or null when unknown.
+  String? relatedVersionsQuery(BooruItem item) => null;
+
   Future<({BooruItem? item, bool failed, String? error})> loadItem({
     required BooruItem item,
     CancelToken? cancelToken,
