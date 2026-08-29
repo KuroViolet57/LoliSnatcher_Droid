@@ -5,7 +5,6 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
-import 'package:lolisnatcher/src/handlers/bookmark_handler.dart';
 import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/floating_preview_handler.dart';
 import 'package:lolisnatcher/src/handlers/reader_handler.dart';
@@ -156,14 +155,24 @@ Future<void> showDoujinItemMenu(
                 ),
                 row(
                   key: const Key('doujin-menu-bookmark'),
-                  icon: BookmarkHandler.instance.isBookmarked(item)
+                  icon: DoujinDataHandler.instance.isInAnyCollection(item)
                       ? Symbols.bookmark_rounded
                       : Symbols.bookmark_add_rounded,
-                  iconFill: BookmarkHandler.instance.isBookmarked(item) ? 1 : 0,
-                  label: BookmarkHandler.instance.isBookmarked(item) ? 'Remove bookmark' : 'Bookmark',
+                  iconFill: DoujinDataHandler.instance.isInAnyCollection(item) ? 1 : 0,
+                  label: DoujinDataHandler.instance.isInAnyCollection(item)
+                      ? 'Remove from collections'
+                      : 'Bookmark into "${DoujinDataHandler.instance.bookmarkCollection().name}"',
                   onTap: () {
                     Navigator.of(dialogContext).pop();
-                    BookmarkHandler.instance.toggle(item, booru);
+                    final (bool nowBookmarked, collection) = DoujinDataHandler.instance.toggleBookmark(item, booru);
+                    FlashElements.showSnackbar(
+                      context: context,
+                      title: Text(
+                        nowBookmarked ? 'Bookmarked into "${collection!.name}"' : 'Removed from collections',
+                      ),
+                      duration: const Duration(seconds: 2),
+                      sideColor: Colors.blue,
+                    );
                   },
                 ),
                 row(

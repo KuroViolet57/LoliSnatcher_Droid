@@ -223,6 +223,7 @@ class DoujinDataHandler {
   final RxList<DoujinPin> pins = <DoujinPin>[].obs;
   int? lastBookmarkCollectionId;
   bool migrationDone = false;
+  bool legacyBookmarksMerged = false;
 
   bool _loaded = false;
 
@@ -243,6 +244,7 @@ class DoujinDataHandler {
   Map<String, dynamic> exportJson() => {
     'version': 1,
     'migrationDone': migrationDone,
+    'legacyBookmarksMerged': legacyBookmarksMerged,
     'lastBookmarkCollectionId': lastBookmarkCollectionId,
     'favourites': [for (final e in favourites.values) e.toJson()],
     'collections': [for (final c in collections) c.toJson()],
@@ -254,6 +256,7 @@ class DoujinDataHandler {
 
   void importJson(Map<String, dynamic> data) {
     migrationDone = data['migrationDone'] as bool? ?? false;
+    legacyBookmarksMerged = data['legacyBookmarksMerged'] as bool? ?? false;
     lastBookmarkCollectionId = data['lastBookmarkCollectionId'] as int?;
     favourites.clear();
     for (final entry in data['favourites'] as List? ?? []) {
@@ -296,6 +299,7 @@ class DoujinDataHandler {
     pins.clear();
     lastBookmarkCollectionId = null;
     migrationDone = false;
+    legacyBookmarksMerged = false;
     _loaded = false;
     ensureLoaded();
   }
@@ -311,6 +315,7 @@ class DoujinDataHandler {
     pins.clear();
     lastBookmarkCollectionId = null;
     migrationDone = false;
+    legacyBookmarksMerged = false;
     _loaded = false;
   }
 
@@ -400,9 +405,12 @@ class DoujinDataHandler {
     save();
   }
 
-  void removeFromCollection(DoujinCollection collection, BooruItem item) {
+  void removeFromCollection(DoujinCollection collection, BooruItem item) =>
+      removeEntryFromCollection(collection, item.postURL);
+
+  void removeEntryFromCollection(DoujinCollection collection, String postURL) {
     ensureLoaded();
-    collection.items.removeWhere((e) => e.postURL == item.postURL);
+    collection.items.removeWhere((e) => e.postURL == postURL);
     collections.assignAll(collections.toList());
     save();
   }
@@ -419,6 +427,47 @@ class DoujinDataHandler {
   bool isInAnyCollection(BooruItem item) {
     ensureLoaded();
     return collections.any((c) => collectionContains(c, item));
+  }
+
+  /// Which collection a NEW bookmark goes into: the last one used for
+  /// bookmarking, else the first existing one, else a fresh "Default".
+  DoujinCollection bookmarkCollection() {
+    ensureLoaded();
+    final DoujinCollection? last = collectionById(lastBookmarkCollectionId);
+    if (last != null) return last;
+    if (collections.isNotEmpty) return collections.first;
+    return createCollection('Default');
+  }
+
+  /// The bookmark action: files the doujin into [bookmarkCollection] (or
+  /// pulls it out of every collection when it's already in one). Returns the
+  /// new bookmarked state and the collection involved.
+  (bool, DoujinCollection?) toggleBookmark(BooruItem item, Booru? booru) {
+    ensureLoaded();
+    if (isInAnyCollection(item)) {
+      removeFromCollections(item);
+      return (false, null);
+    }
+    final DoujinCollection target = bookmarkCollection();
+    addToCollection(target, item, booru);
+    return (true, target);
+  }
+
+  /// One-time merge of the old flat bookmarks.json list into the bookmark
+  /// collection — bookmarks ARE collection entries now.
+  void mergeLegacyBookmarks(Iterable<DoujinEntry> legacy) {
+    ensureLoaded();
+    if (legacyBookmarksMerged) return;
+    final List<DoujinEntry> entries = legacy.toList();
+    if (entries.isNotEmpty) {
+      final DoujinCollection target = bookmarkCollection();
+      for (final e in entries) {
+        if (!target.items.any((x) => x.postURL == e.postURL)) target.items.add(e);
+      }
+      collections.assignAll(collections.toList());
+    }
+    legacyBookmarksMerged = true;
+    save();
   }
 
   // ── followed artists ──

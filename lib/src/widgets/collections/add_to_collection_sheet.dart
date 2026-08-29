@@ -33,14 +33,10 @@ Future<void> showAddToCollectionSheet(
       if (!DoujinDataHandler.isDoujinItem(i)) i,
   ];
   if (doujinItems.isNotEmpty) {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (_) => _AddToDoujinCollectionSheet(
-        items: doujinItems,
-        booru: DoujinDataHandler.doujinBooruForItem(doujinItems.first),
-      ),
+    await showDoujinCollectionPicker(
+      context,
+      items: doujinItems,
+      booru: DoujinDataHandler.doujinBooruForItem(doujinItems.first),
     );
   }
   if (booruItems.isNotEmpty && context.mounted) {
@@ -53,18 +49,40 @@ Future<void> showAddToCollectionSheet(
   }
 }
 
-/// The doujin twin of the sheet below, backed by [DoujinDataHandler] only.
-class _AddToDoujinCollectionSheet extends StatefulWidget {
-  const _AddToDoujinCollectionSheet({required this.items, required this.booru});
+/// The doujin collection picker — a CENTERED popup (doujin surfaces use
+/// dialogs, not sheets), backed by [DoujinDataHandler] only. Used by the
+/// add-to-collection flow and the bookmark button's long-press.
+Future<void> showDoujinCollectionPicker(
+  BuildContext context, {
+  required List<BooruItem> items,
+  Booru? booru,
+}) async {
+  if (items.isEmpty) return;
+  await showDialog<void>(
+    context: context,
+    builder: (_) => Dialog(
+      clipBehavior: Clip.antiAlias,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 360),
+        child: SingleChildScrollView(
+          child: _DoujinCollectionPicker(items: items, booru: booru),
+        ),
+      ),
+    ),
+  );
+}
+
+class _DoujinCollectionPicker extends StatefulWidget {
+  const _DoujinCollectionPicker({required this.items, required this.booru});
 
   final List<BooruItem> items;
   final Booru? booru;
 
   @override
-  State<_AddToDoujinCollectionSheet> createState() => _AddToDoujinCollectionSheetState();
+  State<_DoujinCollectionPicker> createState() => _DoujinCollectionPickerState();
 }
 
-class _AddToDoujinCollectionSheetState extends State<_AddToDoujinCollectionSheet> {
+class _DoujinCollectionPickerState extends State<_DoujinCollectionPicker> {
   final store = DoujinDataHandler.instance..ensureLoaded();
 
   bool get isSingle => widget.items.length == 1;

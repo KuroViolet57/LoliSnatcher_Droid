@@ -19,6 +19,8 @@ import 'package:talker_flutter/talker_flutter.dart';
 
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/theme_item.dart';
+import 'package:lolisnatcher/src/handlers/bookmark_handler.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/doujin_migration.dart';
 import 'package:lolisnatcher/src/handlers/floating_preview_handler.dart';
 import 'package:lolisnatcher/src/handlers/interests_handler.dart';
@@ -137,6 +139,20 @@ class _MainAppState extends State<MainApp> {
       // One-time move of doujin entries out of the shared booru stores into
       // doujinData.json; no-ops after the first successful run.
       await runDoujinMigrationIfNeeded();
+      // Bookmarks became collection entries: fold the old flat bookmark list
+      // into the bookmark collection, once.
+      BookmarkHandler.instance.ensureLoaded();
+      DoujinDataHandler.instance.mergeLegacyBookmarks([
+        for (final b in BookmarkHandler.instance.all())
+          DoujinEntry(
+            postURL: b.postURL,
+            serverId: b.serverId,
+            thumbnailURL: b.thumbnailURL,
+            title: b.title,
+            booruHost: b.booruHost,
+            addedAt: b.addedAt,
+          ),
+      ]);
     });
 
     settingsHandler.isDebug.addListener(devOverlayListener);

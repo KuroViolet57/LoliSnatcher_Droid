@@ -6,7 +6,6 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
-import 'package:lolisnatcher/src/handlers/bookmark_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/reader_handler.dart';
@@ -15,6 +14,7 @@ import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/snatch_handler.dart';
 import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/pages/doujin_reader_page.dart';
+import 'package:lolisnatcher/src/widgets/collections/add_to_collection_sheet.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 import 'package:lolisnatcher/src/widgets/gallery/doujin_tag_chip.dart';
 import 'package:lolisnatcher/src/widgets/tabs/doujin_mini_tab_manager.dart';
@@ -180,14 +180,25 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
   }
 
   void _toggleBookmark() {
-    final bool nowBookmarked = BookmarkHandler.instance.toggle(item, booru);
+    // Bookmarks ARE collection entries: filed into the last-used bookmark
+    // collection (auto-creating "Default" on first use); toggling off pulls
+    // the doujin out of every collection.
+    final (bool nowBookmarked, collection) = DoujinDataHandler.instance.toggleBookmark(item, booru);
     setState(() {});
     FlashElements.showSnackbar(
       context: context,
-      title: Text(nowBookmarked ? 'Bookmarked' : 'Bookmark removed'),
-      duration: const Duration(seconds: 1),
+      title: Text(nowBookmarked ? 'Bookmarked into "${collection!.name}"' : 'Removed from collections'),
+      duration: const Duration(seconds: 2),
       sideColor: Colors.blue,
     );
+  }
+
+  /// Long-press on the bookmark button: pick the collection explicitly
+  /// (centered popup, like every doujin menu).
+  void _pickBookmarkCollection() {
+    showDoujinCollectionPicker(context, items: [item], booru: booru).then((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   // ─────────────────────────── sections ───────────────────────────
@@ -294,7 +305,7 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
     final List<BooruItem>? pages = ReaderHandler.instance.pagesFor(item);
     final progress = ReaderHandler.instance.cachedProgress(booru, item.serverId ?? item.postURL);
     final bool resuming = progress != null && !progress.isFinished && progress.page > 0;
-    final bool isBookmarked = BookmarkHandler.instance.isBookmarked(item);
+    final bool isBookmarked = DoujinDataHandler.instance.isInAnyCollection(item);
     final bool? isFav = item.isFavourite.value;
 
     return Padding(
@@ -325,13 +336,16 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
             onPressed: pages == null ? null : _saveAll,
           ),
           IconButton.filledTonal(
-            tooltip: isBookmarked ? 'Remove bookmark (local)' : 'Bookmark (local only)',
+            tooltip: isBookmarked
+                ? 'In a collection — tap to remove, hold to pick'
+                : 'Bookmark into a collection (hold to pick which)',
             icon: Icon(
               isBookmarked ? Symbols.bookmark_rounded : Symbols.bookmark_add_rounded,
               fill: isBookmarked ? 1 : 0,
               color: isBookmarked ? Colors.lightBlueAccent : null,
             ),
             onPressed: _toggleBookmark,
+            onLongPress: _pickBookmarkCollection,
           ),
           IconButton.filledTonal(
             tooltip: isFav == true ? 'Unfavourite' : 'Favourite',

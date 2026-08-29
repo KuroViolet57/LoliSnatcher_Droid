@@ -4,7 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/handlers/bookmark_handler.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/pages/doujin_library_pages.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -32,7 +32,14 @@ class _DoujinFavouritesPageState extends State<DoujinFavouritesPage> {
 
   @override
   Widget build(BuildContext context) {
-    final List<DoujinBookmark> bookmarks = BookmarkHandler.instance.all();
+    // Bookmarks are collection entries now — this lists the bookmark
+    // collection's contents, newest first.
+    final store = DoujinDataHandler.instance..ensureLoaded();
+    final DoujinCollection? bookmarkCollection = store.collections.isEmpty
+        ? null
+        : store.collectionById(store.lastBookmarkCollectionId) ?? store.collections.first;
+    final List<DoujinEntry> bookmarks = [...?bookmarkCollection?.items]
+      ..sort((a, b) => b.addedAt.compareTo(a.addedAt));
     final bool hasKey = widget.booru.apiKey?.isNotEmpty ?? false;
 
     return Scaffold(
@@ -62,7 +69,7 @@ class _DoujinFavouritesPageState extends State<DoujinFavouritesPage> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
             child: Text(
-              'BOOKMARKS · ${bookmarks.length}',
+              '${bookmarkCollection?.name.toUpperCase() ?? 'BOOKMARKS'} · ${bookmarks.length}',
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w800,
@@ -86,7 +93,9 @@ class _DoujinFavouritesPageState extends State<DoujinFavouritesPage> {
                 child: const Icon(Symbols.delete_rounded, color: Colors.white),
               ),
               onDismissed: (_) {
-                BookmarkHandler.instance.remove(bookmark.postURL);
+                if (bookmarkCollection != null) {
+                  store.removeEntryFromCollection(bookmarkCollection, bookmark.postURL);
+                }
                 setState(() {});
               },
               child: ListTile(
