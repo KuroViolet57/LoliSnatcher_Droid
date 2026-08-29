@@ -33,6 +33,7 @@ class ThumbnailCardBuild extends StatelessWidget {
     this.onDoubleTap,
     this.onLongPress,
     this.onSecondaryTap,
+    this.stripMode = false,
     super.key,
   });
 
@@ -49,13 +50,21 @@ class ThumbnailCardBuild extends StatelessWidget {
   final void Function(int)? onLongPress;
   final void Function(int)? onSecondaryTap;
 
+  /// Compact rendering for horizontal strips (Related/Recommended): cover +
+  /// language badge + ellipsized title BELOW — no tag strip. Only affects
+  /// doujin sources; the main feed keeps the full card.
+  final bool stripMode;
+
   @override
   Widget build(BuildContext context) {
     final snatchHandler = SnatchHandler.instance;
 
     // Doujin cards: tags live UNDER the cover, never on the artwork, and
-    // the cover's fit follows the per-source display setting.
-    final bool isDoujinCard = handler.hasReader && SourceSettingsHandler.instance.gridTagStrip(handler.booru);
+    // the cover's fit follows the per-source display setting. Strip cells
+    // trade the tag strip for the title and ignore the grid setting.
+    final bool isDoujinStripCard = stripMode && handler.hasReader;
+    final bool isDoujinCard =
+        isDoujinStripCard || (handler.hasReader && SourceSettingsHandler.instance.gridTagStrip(handler.booru));
     final String coverDisplay = SourceSettingsHandler.instance.coverDisplay(handler.booru);
     final BoxFit? coverFit = isDoujinCard ? (coverDisplay == 'crop' ? BoxFit.cover : BoxFit.contain) : null;
 
@@ -109,7 +118,7 @@ class ThumbnailCardBuild extends StatelessWidget {
                                 fit: coverFit,
                               ),
                             ),
-                            _doujinFooter(context),
+                            if (isDoujinStripCard) _stripTitle(context) else _doujinFooter(context),
                           ],
                         )
                       : ThumbnailBuild(
@@ -239,7 +248,10 @@ class ThumbnailCardBuild extends StatelessWidget {
   List<Widget> _languageBadgeOverlay(BuildContext context) {
     String? language;
     for (final tag in item.tagsList) {
-      if (handler.tagNamespace(tag.fullString) == 'language') {
+      final String? ns = handler.tagNamespace(tag.fullString);
+      // Namespace when the site told us; otherwise the plain names are
+      // unambiguous enough ('english' etc.) to still show the badge.
+      if (ns == 'language' || (ns == null && _languageCodes.containsKey(tag.fullString))) {
         language ??= _languageCodes[tag.fullString];
       }
     }
@@ -265,6 +277,27 @@ class ThumbnailCardBuild extends StatelessWidget {
         ),
       ),
     ];
+  }
+
+  /// Strip cells: just the title under the cover, two lines, ellipsized.
+  Widget _stripTitle(BuildContext context) {
+    final String title =
+        (item.description ?? '').split('\n').firstWhere((l) => l.trim().isNotEmpty, orElse: () => '');
+    return ColoredBox(
+      color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.55),
+      child: SizedBox(
+        width: double.infinity,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(6, 4, 6, 5),
+          child: Text(
+            title.isEmpty ? '…' : title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, height: 1.25),
+          ),
+        ),
+      ),
+    );
   }
 
   /// The under-cover strip: up to 5 most relevant tags (favourited first,
@@ -354,15 +387,19 @@ class ThumbnailCardBuild extends StatelessWidget {
               const Icon(Symbols.star_rounded, size: 10, color: Colors.white),
               const SizedBox(width: 2),
             ],
-            Text(
-              tag.fullString.replaceAll('_', ' '),
-              style: TextStyle(
-                color: isMarked ? Colors.white : onSurface,
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
+            // Flexible: a long tag on a narrow card must ellipsize, not
+            // overflow the wrap row.
+            Flexible(
+              child: Text(
+                tag.fullString.replaceAll('_', ' '),
+                style: TextStyle(
+                  color: isMarked ? Colors.white : onSurface,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
             ),
           ],
         ),

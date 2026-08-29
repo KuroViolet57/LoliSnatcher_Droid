@@ -3687,6 +3687,36 @@ class _TagContentPreviewState extends State<TagContentPreview> with AutomaticKee
   /// picker arrow. The chip surface is non-tappable — the arrow is the only
   /// way to open the booru picker, so the inline action buttons aren't
   /// swallowed by a wrapping button.
+  /// The rehomed open-in-new-tab action for doujin strips — the only piece
+  /// of the booru chip that still makes sense there.
+  Widget _buildDoujinStripNewTabButton(BuildContext context) {
+    final hasTabResult = SearchHandler.instance.hasTabWithTag(
+      _effectiveTag,
+      customBooru: selectedBooru,
+    );
+    return IconButton(
+      tooltip: 'Open in a new tab',
+      visualDensity: VisualDensity.compact,
+      icon: Stack(
+        children: [
+          const Icon(Symbols.fiber_new_rounded),
+          if (hasTabResult.hasTagInAnyForm)
+            Positioned(
+              right: 0,
+              top: 0,
+              child: Icon(
+                Symbols.circle_rounded,
+                size: 6,
+                color: hasTabResult.color(context),
+              ),
+            ),
+        ],
+      ),
+      onPressed: () => _openInNewTab(context),
+      onLongPress: () => _openInNewTabLongPress(context),
+    );
+  }
+
   Widget _buildBooruChip(BuildContext context) {
     final boo = selectedBooru;
     final theme = Theme.of(context);
@@ -3875,10 +3905,23 @@ class _TagContentPreviewState extends State<TagContentPreview> with AutomaticKee
                         // compact (tag-chevron / "More from artist X") and
                         // non-compact paths, because the original booru
                         // dropdown was present in both too.
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
-                          child: _buildBooruChip(context),
-                        ),
+                        // Doujin strips are source-locked (related/recommend
+                        // only exist on their own site), so the source-picker
+                        // chip is noise there — keep just the open-in-new-tab
+                        // button, rehomed to the strip's corner.
+                        if (tab!.booruHandler.hasReader)
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(8, 0, 8, 0),
+                            child: Align(
+                              alignment: Alignment.centerRight,
+                              child: _buildDoujinStripNewTabButton(context),
+                            ),
+                          )
+                        else
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+                            child: _buildBooruChip(context),
+                          ),
                         const SizedBox(height: 6),
                         SizedBox(
                           height: 220 + 10 + 16, // bigger thumbs + listview paddings
@@ -4011,6 +4054,10 @@ class _TagContentPreviewState extends State<TagContentPreview> with AutomaticKee
                                                 scrollController: scrollController,
                                                 isHighlighted: viewedIndex == index,
                                                 selectable: false,
+                                                // Strips render the compact
+                                                // doujin cell: cover + badge
+                                                // + title, no tag strip.
+                                                stripMode: true,
                                                 onTap: onPreviewTap,
                                                 onDoubleTap: onPreviewDoubleTap,
                                                 // Doujin strips get the full item context menu; other
