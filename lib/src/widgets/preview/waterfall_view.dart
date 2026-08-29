@@ -16,6 +16,7 @@ import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/pages/gallery_view_page.dart';
+import 'package:lolisnatcher/src/pages/doujin_detail_page.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 import 'package:lolisnatcher/src/widgets/common/long_press_repeater.dart';
 import 'package:lolisnatcher/src/widgets/preview/grid_builder.dart';
@@ -246,6 +247,27 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware {
   }
 
   Future<void> onTap(int index) async {
+    // Doujin sources: a card opens the DETAIL page (cover, tags, Related /
+    // Recommended, Pages, Read), not the image viewer — the viewer flow
+    // stays untouched for every other source.
+    if (searchHandler.currentBooruHandler.hasReader) {
+      if (!isActive.value) return;
+      isActive.value = false;
+      try {
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => DoujinDetailPage(
+              tab: searchHandler.currentTab,
+              index: index,
+            ),
+          ),
+        );
+      } finally {
+        isActive.value = true;
+      }
+      return;
+    }
+
     if (isMobile) {
       // protection from opening multiple viewers at once
       if (!isActive.value) {
