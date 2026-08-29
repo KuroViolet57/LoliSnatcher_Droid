@@ -75,6 +75,39 @@ class _DoujinReaderPageState extends State<DoujinReaderPage> {
   late String _direction;
   bool _chromeVisible = true;
 
+  /// Filmstrip scroll state. One controller for the strip's lifetime; the
+  /// strip re-attaches whenever the chrome toggles, so tracking re-centers
+  /// post-frame on every build too.
+  final ScrollController _stripController = ScrollController();
+  static const double _stripThumbWidth = 64;
+  static const double _stripThumbHeight = 88;
+  static const double _stripSpacing = 6;
+
+  double _stripOffsetFor(int page, double viewportWidth) {
+    final double target =
+        page * (_stripThumbWidth + _stripSpacing) - (viewportWidth - _stripThumbWidth) / 2;
+    if (!_stripController.hasClients) return target < 0 ? 0 : target;
+    return target.clamp(0.0, _stripController.position.maxScrollExtent);
+  }
+
+  void _trackStrip({bool animated = true}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_stripController.hasClients) return;
+      final double offset =
+          _stripOffsetFor(_effectivePage, _stripController.position.viewportDimension);
+      if ((offset - _stripController.offset).abs() < 1) return;
+      if (animated) {
+        _stripController.animateTo(
+          offset,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        );
+      } else {
+        _stripController.jumpTo(offset);
+      }
+    });
+  }
+
   bool get _rtl => _direction == 'rtl';
   bool get _vertical => _direction == 'vertical';
 
@@ -107,6 +140,7 @@ class _DoujinReaderPageState extends State<DoujinReaderPage> {
   void dispose() {
     _pendingTapTimer?.cancel();
     _controller.dispose();
+    _stripController.dispose();
     try {
       // The gallery viewer below expects sleep disabled while it is open.
       ServiceHandler.disableSleep();
@@ -122,6 +156,7 @@ class _DoujinReaderPageState extends State<DoujinReaderPage> {
   void _onPageChanged(int page) {
     setState(() => _current = page);
     if (_turnTarget == page) _turnTarget = null;
+    _trackStrip();
     ReaderHandler.instance.saveProgress(widget.booru, widget.galleryId, page, widget.pages.length);
   }
 
@@ -279,6 +314,16 @@ class _DoujinReaderPageState extends State<DoujinReaderPage> {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
+              // The page counter lives HERE — the bottom bar is the
+              // filmstrip alone.
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: Text(
+                  key: const ValueKey('reader-page-counter'),
+                  '${_current + 1} / ${widget.pages.length}',
+                  style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700),
+                ),
+              ),
               IconButton(
                 key: const ValueKey('reader-direction-button'),
                 tooltip: dirLabel,
@@ -317,6 +362,9 @@ class _DoujinReaderPageState extends State<DoujinReaderPage> {
 
   Widget _bottomBar(BuildContext context) {
     final int count = widget.pages.length;
+    // Re-center on the current page whenever the bar (re)builds — it detaches
+    // every time the chrome hides.
+    _trackStrip(animated: false);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () {},
@@ -325,33 +373,90 @@ class _DoujinReaderPageState extends State<DoujinReaderPage> {
       color: Colors.black.withValues(alpha: 0.62),
       child: SafeArea(
         top: false,
-        child: Row(
-          children: [
-            const SizedBox(width: 12),
-            Text(
-              '${_current + 1} / $count',
-              style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700),
-            ),
-            Expanded(
-              child: count > 1
-                  ? Directionality(
-                      // The slider runs in reading order too.
-                      textDirection: _rtl ? TextDirection.rtl : TextDirection.ltr,
-                      child: Slider(
-                        value: (_current + 1).toDouble(),
-                        min: 1,
-                        max: count.toDouble(),
-                        divisions: count - 1,
-                        label: '${_current + 1}',
-                        onChanged: (value) => _controller.jumpToPage(value.round() - 1),
-                      ),
-                    )
-                  : const SizedBox.shrink(),
-            ),
-            const SizedBox(width: 12),
-          ],
+        child: SizedBox(
+          key: const ValueKey('reader-filmstrip'),
+          height: _stripThumbHeight + 12,
+          child: ListView.builder(
+            key: const PageStorageKey('reader-filmstrip-list'),
+            controller: _stripController,
+            scrollDirection: Axis.horizontal,
+            // The strip runs in reading order, like the pages.
+            reverse: _rtl,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            itemCount: count,
+            itemExtent: _stripThumbWidth + _stripSpacing,
+            itemBuilder: _stripThumb,
+          ),
         ),
       ),
+      ),
+    );
+  }
+
+  /// One numbered filmstrip cell: page thumbnail, page number chip, and a
+  /// highlight border on the current page. Tap jumps straight there.
+  Widget _stripThumb(BuildContext context, int index) {
+    final bool isCurrent = index == _effectivePage;
+    final Color highlight = Theme.of(context).colorScheme.secondary;
+    final BooruItem page = widget.pages[index];
+    final ImageProvider? provider = DoujinReaderPage.testImageProviderBuilder != null
+        ? DoujinReaderPage.testImageProviderBuilder!(page)
+        : (page.thumbnailURL.isEmpty
+              ? null
+              : CustomNetworkImage(
+                  page.thumbnailURL,
+                  withCache: settingsHandler.thumbnailCache,
+                  cacheFolder: 'thumbnails',
+                ));
+    return Padding(
+      padding: const EdgeInsets.only(right: _stripSpacing),
+      child: GestureDetector(
+        key: ValueKey('reader-strip-thumb-$index'),
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _goTo(index),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(7),
+            border: Border.all(
+              color: isCurrent ? highlight : Colors.white24,
+              width: isCurrent ? 2.5 : 1,
+            ),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(5),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                if (provider != null)
+                  Image(
+                    image: provider,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => const ColoredBox(color: Colors.white10),
+                  )
+                else
+                  const ColoredBox(color: Colors.white10),
+                Align(
+                  alignment: Alignment.bottomCenter,
+                  child: Container(
+                    width: double.infinity,
+                    color: Colors.black.withValues(alpha: 0.55),
+                    padding: const EdgeInsets.symmetric(vertical: 1.5),
+                    child: Text(
+                      '${index + 1}',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: isCurrent ? highlight : Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

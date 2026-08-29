@@ -32,7 +32,7 @@ final Uint8List kTinyPng = Uint8List.fromList(const [
 /// missed: its bottom bar floated mid-screen, its top buttons were dead
 /// under an unclipped PhotoView's hit test area, and taps scrubbed the
 /// slider instead of turning pages. These tests pin the contract:
-///  * the slider is DOCKED at the bottom of the screen, view insets or not;
+///  * the filmstrip bar is DOCKED at the bottom of the screen, insets or not;
 ///  * edge taps advance/reverse pages, middle tap toggles the chrome;
 ///  * the top-bar buttons actually receive input and fire.
 void main() {
@@ -128,14 +128,14 @@ void main() {
 
       expect(find.byType(DoujinReaderPage), findsOneWidget);
 
-      // The bottom bar (and its slider) hug the BOTTOM of the screen — the
-      // recorded bug had them floating at 50% height.
+      // The bottom bar (the filmstrip) hugs the BOTTOM of the screen — the
+      // recorded bug had it floating at 50% height.
       final Rect bottomBar = tester.getRect(find.byKey(const ValueKey('reader-bottom-bar')));
       expect(bottomBar.bottom, moreOrLessEquals(screen.height, epsilon: 1));
-      expect(bottomBar.top, greaterThan(screen.height * 0.8));
+      expect(bottomBar.top, greaterThan(screen.height * 0.75));
 
-      final Offset sliderCenter = tester.getCenter(find.byType(Slider));
-      expect(sliderCenter.dy, greaterThan(screen.height * 0.8));
+      final Offset stripCenter = tester.getCenter(find.byKey(const ValueKey('reader-filmstrip')));
+      expect(stripCenter.dy, greaterThan(screen.height * 0.75));
 
       // The top bar hugs the top and shows the reader's own controls.
       final Rect topBar = tester.getRect(find.byKey(const ValueKey('reader-top-bar')));
@@ -223,14 +223,56 @@ void main() {
       expect(find.byType(DoujinReaderPage), findsNothing);
     });
 
-    testWidgets('slider scrubs to a page through real input', (tester) async {
-      await pumpReader(tester, pageCount: 11);
-      // Tap the slider's true center via hit testing — a covered or
-      // input-blocked slider must fail this, unlike calling onChanged.
-      await tester.tapAt(tester.getCenter(find.byType(Slider)));
+    testWidgets('filmstrip: numbered thumbs, tap jumps, highlight + auto-tracking follow', (tester) async {
+      await pumpReader(tester, pageCount: 30);
+
+      // The counter lives in the TOP bar now; the bottom bar holds only the
+      // numbered strip.
+      final Rect topBar = tester.getRect(find.byKey(const ValueKey('reader-top-bar')));
+      final Offset counterPos = tester.getCenter(find.byKey(const ValueKey('reader-page-counter')));
+      expect(counterPos.dy, lessThan(topBar.bottom + 1));
+      expect(find.text('1 / 30'), findsOneWidget);
+
+      // Numbered cells render in the strip (some virtualized off-screen).
+      expect(find.byKey(const ValueKey('reader-strip-thumb-0')), findsOneWidget);
+      expect(find.text('1'), findsWidgets);
+      expect(find.text('4'), findsWidgets);
+
+      // Tap a visible thumb via REAL hit-tested input — jumps to that page.
+      await tester.tap(find.byKey(const ValueKey('reader-strip-thumb-3')));
       await tester.pump(const Duration(milliseconds: 300));
       await tester.pump(const Duration(milliseconds: 300));
-      expect(find.text('6 / 11'), findsOneWidget);
+      expect(find.text('4 / 30'), findsOneWidget);
+
+      // The tapped thumb carries the highlight border now; page 1 does not.
+      AnimatedContainer thumbBox(int i) => tester.widget<AnimatedContainer>(
+        find.descendant(
+          of: find.byKey(ValueKey('reader-strip-thumb-$i')),
+          matching: find.byType(AnimatedContainer),
+        ),
+      );
+      Border borderOf(AnimatedContainer c) => (c.decoration! as BoxDecoration).border! as Border;
+      expect(borderOf(thumbBox(3)).top.width, greaterThan(2));
+      expect(borderOf(thumbBox(0)).top.width, lessThan(2));
+
+      // Auto-tracking: turning pages by edge taps keeps the strip following
+      // without the strip being touched (offset moves once the current cell
+      // would leave the center region — just assert the controller reacted).
+      final ScrollableState strip = tester.state<ScrollableState>(
+        find.descendant(
+          of: find.byKey(const ValueKey('reader-filmstrip')),
+          matching: find.byType(Scrollable),
+        ),
+      );
+      final double before = strip.position.pixels;
+      final Size screen = screenSize(tester);
+      for (int i = 0; i < 4; i++) {
+        await tester.tapAt(Offset(screen.width * 0.9, screen.height * 0.5));
+        await tester.pump(const Duration(milliseconds: 300));
+        await tester.pump(const Duration(milliseconds: 300));
+      }
+      expect(find.text('8 / 30'), findsOneWidget);
+      expect(strip.position.pixels, greaterThan(before));
     });
 
     testWidgets('openDoujinReader pushes an OPAQUE MaterialPageRoute and never stacks two readers', (tester) async {
