@@ -170,6 +170,30 @@ class _SourceSettingsPageState extends State<SourceSettingsPage> {
             ),
           ],
           //
+          _header('RECOMMENDATIONS'),
+          ListTile(
+            title: const Text('Related items per gallery'),
+            subtitle: const Text('The source supplies a handful; the rest are found by matching the gallery\'s tags and artist.'),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Symbols.remove_rounded),
+                  onPressed: () => _update(
+                    (s) => s.recommendedCount = ((s.recommendedCount ?? 30) - 5).clamp(5, 100),
+                  ),
+                ),
+                Text('${s.recommendedCount ?? 30}'),
+                IconButton(
+                  icon: const Icon(Symbols.add_rounded),
+                  onPressed: () => _update(
+                    (s) => s.recommendedCount = ((s.recommendedCount ?? 30) + 5).clamp(5, 100),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          //
           _header('GRID'),
           _choiceRow<String>(
             title: 'Cover display',

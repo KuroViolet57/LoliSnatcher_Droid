@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:dio/dio.dart';
 import 'package:fpdart/fpdart.dart';
@@ -183,10 +184,12 @@ class NHentaiHandler extends BooruHandler {
     return '${negated ? '-' : ''}${body.replaceAll('_', ' ')}';
   }
 
-  ({String query, String? sort, String? relatedId}) _parse(String input) {
+  ({String query, String? sort, String? relatedId, String? versionsId, String? recommendId}) _parse(String input) {
     final List<String> terms = [];
     String? sort;
     String? relatedId;
+    String? versionsId;
+    String? recommendId;
 
     for (final term in input.split(' ').where((t) => t.trim().isNotEmpty)) {
       final String lower = term.toLowerCase();
@@ -201,12 +204,19 @@ class NHentaiHandler extends BooruHandler {
         continue;
       }
       // Chapters + other-language versions of a gallery: a quoted phrase
-      // search on its base title (see _versionsBaseTitle).
+      // search on its base title (see _versionsBaseTitle). Resolved in
+      // parseListFromResponse when the title isn't known yet — NEVER
+      // degraded to a plain (firehose) query.
       if (lower.startsWith('versions:')) {
-        final String? pretty = _prettyTitles[lower.substring(9)];
-        if (pretty != null) {
-          terms.add('"${_versionsBaseTitle(pretty)}"');
-        }
+        final String value = lower.substring(9);
+        if (int.tryParse(value) != null) versionsId = value;
+        continue;
+      }
+      // Blended recommendations seeded from this gallery (see
+      // _buildRecommendations).
+      if (lower.startsWith('recommend:')) {
+        final String value = lower.substring(10);
+        if (int.tryParse(value) != null) recommendId = value;
         continue;
       }
       terms.add(_siteTerm(term));
@@ -216,12 +226,18 @@ class NHentaiHandler extends BooruHandler {
       final String? def = SourceSettingsHandler.instance.defaultSort(booru);
       return (def != null && _sorts.contains(def) && def != 'date') ? def : null;
     }();
-    return (query: terms.join(' '), sort: sort, relatedId: relatedId);
+    return (query: terms.join(' '), sort: sort, relatedId: relatedId, versionsId: versionsId, recommendId: recommendId);
   }
 
   /// Related feeds are a single fixed list — makeURL flags it so parsing can
   /// refuse to "paginate" the same five items forever.
   bool _relatedMode = false;
+
+  /// Set when the current fetch must be post-processed by
+  /// parseListFromResponse: 'versions'/'recommend' fetches bounce through
+  /// the gallery-detail endpoint first when the needed signals are missing.
+  String? _pendingVersionsId;
+  String? _pendingRecommendId;
 
   @override
   String makeURL(String tags) {
@@ -229,8 +245,27 @@ class NHentaiHandler extends BooruHandler {
     final int page = pageNum < 0 ? 1 : pageNum + 1;
 
     _relatedMode = parsed.relatedId != null;
+    _pendingVersionsId = null;
+    _pendingRecommendId = null;
+
     if (parsed.relatedId != null) {
       return '$_base/api/v2/galleries/${parsed.relatedId}/related';
+    }
+    if (parsed.recommendId != null) {
+      // Single blended page built in parseListFromResponse.
+      _pendingRecommendId = parsed.recommendId;
+      return '$_base/api/v2/galleries/${parsed.recommendId}';
+    }
+    if (parsed.versionsId != null) {
+      final String? pretty = _prettyTitles[parsed.versionsId!];
+      if (pretty == null) {
+        // Title unknown (fresh session, restored tab): fetch the detail
+        // first; parseListFromResponse runs the real search after.
+        _pendingVersionsId = parsed.versionsId;
+        return '$_base/api/v2/galleries/${parsed.versionsId}';
+      }
+      final String phrase = '"${_versionsBaseTitle(pretty)}"';
+      return '$_base/api/v2/search?query=${Uri.encodeQueryComponent(phrase)}&page=$page';
     }
     if (parsed.query.isEmpty) {
       // The search endpoint rejects an empty query; the newest-first firehose
@@ -360,11 +395,39 @@ class NHentaiHandler extends BooruHandler {
   @override
   FutureOr<List> parseListFromResponse(dynamic response) async {
     await _ensureCdnConfig();
-    final dynamic data = _json(response.data);
+    dynamic data = _json(response.data);
 
-    // Related endpoint: fixed list, no pagination — a second "page" would
-    // return the same items forever.
-    if (_relatedMode && pageNum > 0) return [];
+    // Related / recommend feeds: one fixed list, no pagination — a second
+    // "page" would return the same items forever.
+    if ((_relatedMode || _pendingRecommendId != null) && pageNum > 0) return [];
+
+    // versions:<id> with an unknown title bounced through the gallery detail
+    // endpoint — record the title, then run the REAL phrase search. Never
+    // silently degrades to a plain query.
+    if (_pendingVersionsId != null && pageNum <= 0) {
+      final String id = _pendingVersionsId!;
+      _recordDetailSignals(id, data);
+      final String? pretty = _prettyTitles[id];
+      if (pretty == null) return [];
+      final String phrase = '"${_versionsBaseTitle(pretty)}"';
+      final versionsResponse = await DioNetwork.get(
+        '$_base/api/v2/search?query=${Uri.encodeQueryComponent(phrase)}&page=1',
+        headers: getHeaders(),
+      );
+      data = _json(versionsResponse.data);
+    }
+
+    // recommend:<id>: the detail response IS the seed — build the blended
+    // recommendation list from it.
+    if (_pendingRecommendId != null && pageNum <= 0) {
+      final String id = _pendingRecommendId!;
+      _recordDetailSignals(id, data);
+      final List recommended = await _buildRecommendations(id, data);
+      await _resolveTagIds([
+        for (final row in recommended) ...List<int>.from(row['tag_ids'] as List? ?? []),
+      ]);
+      return recommended;
+    }
 
     final List rows = (data is Map ? data['result'] : data) as List? ?? [];
     if (data is Map && data['total'] != null) {
@@ -375,6 +438,116 @@ class NHentaiHandler extends BooruHandler {
       for (final row in rows) ...List<int>.from(row['tag_ids'] as List? ?? []),
     ]);
     return rows;
+  }
+
+  /// Pulls the reusable signals out of a gallery DETAIL response: pretty
+  /// title and per-tag site info.
+  void _recordDetailSignals(String id, dynamic detail) {
+    if (detail is! Map) return;
+    final String pretty = (detail['title'] as Map?)?['pretty']?.toString() ?? '';
+    if (pretty.isNotEmpty) _prettyTitles[id] = pretty;
+    for (final t in detail['tags'] as List? ?? []) {
+      _recordSiteInfo(t);
+    }
+  }
+
+  // ─────────────────────── recommendation engine ───────────────────────
+
+  /// Real recommendations, reference-app style: "the source supplies a
+  /// handful; the rest are found by matching this gallery's tags".
+  ///
+  /// Seeds = the API's own related list (hard-capped at 5 by the site),
+  /// extended by searches on the gallery's signals — its artist/group and
+  /// its most DISTINCTIVE tags (lowest site-wide count = most specific) —
+  /// scored by tag overlap, deduplicated, self and other chapters/language
+  /// versions of the same work excluded. All verified live: the artist
+  /// search returns the author's other works, the two-distinctive-tag AND
+  /// search returns thematically close galleries.
+  Future<List> _buildRecommendations(String id, dynamic detail) async {
+    if (detail is! Map) return [];
+    final int limit = SourceSettingsHandler.instance.recommendedCount(booru);
+
+    final Set<int> sourceTagIds = {
+      for (final t in detail['tags'] as List? ?? []) t['id'] as int,
+    };
+    final String pretty = (detail['title'] as Map?)?['pretty']?.toString() ?? '';
+    final String baseTitle = pretty.isEmpty ? '' : _versionsBaseTitle(pretty).toLowerCase();
+
+    String? artist;
+    final List<(String, int)> generalTags = [];
+    for (final t in detail['tags'] as List? ?? []) {
+      final String type = t['type'].toString();
+      final String name = t['name'].toString();
+      if (type == 'artist' || type == 'group') artist ??= name;
+      if (type == 'tag') generalTags.add((name, t['count'] as int? ?? 0));
+    }
+    // Low count = specific. 'original' & co. are parodies, already skipped.
+    generalTags.sort((a, b) => a.$2.compareTo(b.$2));
+    final List<String> distinctive = [for (final t in generalTags.take(3)) t.$1];
+
+    Future<List> search(String query, {String sort = 'popular'}) async {
+      try {
+        final response = await DioNetwork.get(
+          '$_base/api/v2/search?query=${Uri.encodeQueryComponent(query)}&sort=$sort&page=1',
+          headers: getHeaders(),
+        );
+        return (_json(response.data) as Map)['result'] as List? ?? [];
+      } catch (_) {
+        return [];
+      }
+    }
+
+    Future<List> related() async {
+      try {
+        final response = await DioNetwork.get(
+          '$_base/api/v2/galleries/$id/related',
+          headers: getHeaders(),
+        );
+        return (_json(response.data) as Map)['result'] as List? ?? [];
+      } catch (_) {
+        return [];
+      }
+    }
+
+    final results = await Future.wait([
+      related(),
+      if (artist != null) search('artist:"$artist"'),
+      if (distinctive.length >= 2) search('tag:"${distinctive[0]}" tag:"${distinctive[1]}"'),
+      if (distinctive.isNotEmpty) search('tag:"${distinctive[0]}"'),
+    ]);
+
+    final List seeds = results.first;
+    final Set<int> seen = {int.parse(id)};
+    bool isVersionOfSource(dynamic row) =>
+        baseTitle.isNotEmpty && row['english_title'].toString().toLowerCase().contains(baseTitle);
+
+    final List out = [];
+    for (final row in seeds) {
+      final int rowId = row['id'] as int;
+      if (seen.add(rowId) && !isVersionOfSource(row)) out.add(row);
+    }
+
+    // Extension candidates, scored by tag overlap with the source gallery
+    // (cosine-ish), same-artist results get a small boost.
+    final List<(double, dynamic)> scored = [];
+    for (int i = 1; i < results.length; i++) {
+      final bool isArtistBucket = artist != null && i == 1;
+      for (final row in results[i]) {
+        final int rowId = row['id'] as int;
+        if (seen.contains(rowId) || isVersionOfSource(row)) continue;
+        seen.add(rowId);
+        final List<int> tagIds = List<int>.from(row['tag_ids'] as List? ?? []);
+        final int overlap = tagIds.where(sourceTagIds.contains).length;
+        final double denominator = tagIds.isEmpty || sourceTagIds.isEmpty
+            ? 1
+            : math.sqrt(tagIds.length * sourceTagIds.length);
+        scored.add((overlap / denominator + (isArtistBucket ? 0.3 : 0), row));
+      }
+    }
+    scored.sort((a, b) => b.$1.compareTo(a.$1));
+    out.addAll([for (final s in scored) s.$2]);
+
+    return out.take(limit).toList();
   }
 
   @override

@@ -22,6 +22,7 @@ class SourceSettings {
     this.defaultSort,
     this.gridTagStrip,
     this.coverDisplay,
+    this.recommendedCount,
   });
 
   factory SourceSettings.fromJson(Map<String, dynamic> json) => SourceSettings(
@@ -34,6 +35,7 @@ class SourceSettings {
     defaultSort: json['defaultSort'] as String?,
     gridTagStrip: json['gridTagStrip'] as bool?,
     coverDisplay: json['coverDisplay'] as String?,
+    recommendedCount: json['recommendedCount'] as int?,
   );
 
   /// 'ltr' | 'rtl' | 'vertical'
@@ -67,6 +69,10 @@ class SourceSettings {
   /// the cover's aspect ratio (staggered grid).
   String? coverDisplay;
 
+  /// How many items the Recommended strip shows (the site supplies 5; the
+  /// rest are found by matching the gallery's signals).
+  int? recommendedCount;
+
   Map<String, dynamic> toJson() => {
     if (readingDirection != null) 'readingDirection': readingDirection,
     if (pageTurnAnimation != null) 'pageTurnAnimation': pageTurnAnimation,
@@ -77,6 +83,7 @@ class SourceSettings {
     if (defaultSort != null) 'defaultSort': defaultSort,
     if (gridTagStrip != null) 'gridTagStrip': gridTagStrip,
     if (coverDisplay != null) 'coverDisplay': coverDisplay,
+    if (recommendedCount != null) 'recommendedCount': recommendedCount,
   };
 
   bool get isEmpty => toJson().isEmpty;
@@ -168,4 +175,6 @@ class SourceSettingsHandler {
 
   /// 'fit' (default — the whole cover is visible) | 'crop' | 'adapt'.
   String coverDisplay(Booru? booru) => settingsFor(booru).coverDisplay ?? 'fit';
+
+  int recommendedCount(Booru? booru) => (settingsFor(booru).recommendedCount ?? 30).clamp(5, 100);
 }

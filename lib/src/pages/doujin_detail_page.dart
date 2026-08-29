@@ -532,9 +532,9 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
             _strip(
               context,
               title: 'Recommended',
-              query: 'related:$galleryId',
+              query: 'recommend:$galleryId',
               expanded: true,
-              compactTitle: "From the site's own related list",
+              compactTitle: "The site's related list, extended by this gallery's tags and artist",
             ),
           _pagesGrid(context),
         ],

@@ -40,6 +40,7 @@ import 'package:lolisnatcher/src/handlers/booru_tag_store.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/reader_handler.dart';
 import 'package:lolisnatcher/src/pages/doujin_reader_page.dart';
+import 'package:lolisnatcher/src/widgets/gallery/doujin_item_sheet.dart';
 import 'package:lolisnatcher/src/widgets/thumbnail/thumbnail_build.dart';
 import 'package:lolisnatcher/src/handlers/database_handler.dart';
 import 'package:lolisnatcher/src/handlers/floating_preview_handler.dart';
@@ -2038,11 +2039,11 @@ class _TagViewState extends State<TagView> {
                           padding: const EdgeInsets.symmetric(horizontal: 8),
                           child: TagContentPreview(
                             key: ValueKey('native-related-$galleryId'),
-                            tag: 'related:$galleryId',
+                            tag: 'recommend:$galleryId',
                             boorus: [relatedHandlerRef.booru],
                             parentTab: searchHandler.currentTab,
                             compact: true,
-                            compactTitle: "From the site's own related list",
+                            compactTitle: "The site's related list, extended by this gallery's tags and artist",
                           ),
                         ),
                       ],
@@ -3960,7 +3961,11 @@ class _TagContentPreviewState extends State<TagContentPreview> with AutomaticKee
                                                 selectable: false,
                                                 onTap: onPreviewTap,
                                                 onDoubleTap: onPreviewDoubleTap,
-                                                // onLongPress: onPreviewLongPress, // TODO use select here somehow?
+                                                // Doujin strips get the full item context menu; other
+                                                // sources keep the old no-op (select doesn't fit here).
+                                                onLongPress: tab!.booruHandler.hasReader
+                                                    ? (i) => showDoujinItemSheet(context, tab: tab!, index: i)
+                                                    : null,
                                                 onSecondaryTap: onPreviewSecondaryTap,
                                               );
                                             },
