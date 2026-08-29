@@ -379,6 +379,32 @@ class DioNetwork {
     return res;
   }
 
+  static Future<Response> delete(
+    String url, {
+    Object? data,
+    Map<String, dynamic>? queryParameters,
+    Options? options,
+    Map<String, dynamic>? headers = const {},
+    CancelToken? cancelToken,
+    Dio Function(Dio)? customInterceptor,
+  }) async {
+    final client = customInterceptor != null ? customInterceptor(getClient()) : getClient();
+    final urlAndQuery = separateUrlAndQueryParams(url, queryParameters);
+
+    final res = await _withTransientRetries(
+      cancelToken: cancelToken,
+      request: () => client.delete(
+        urlAndQuery['url'],
+        data: data,
+        queryParameters: urlAndQuery['query'],
+        options: mergeOptions(options, headers),
+        cancelToken: cancelToken,
+      ),
+    );
+    // Shared HttpClient — do NOT close (see getClient).
+    return res;
+  }
+
   static Future<Response> head(
     String url, {
     Object? data,

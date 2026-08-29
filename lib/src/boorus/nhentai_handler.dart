@@ -112,6 +112,37 @@ class NHentaiHandler extends BooruHandler {
   @override
   String? get metatagsCheatSheetLink => 'https://nhentai.net/info/';
 
+  /// Account favourites work through the API key ('Authorization: Key ...').
+  @override
+  bool get hasSiteFavourites => booru.apiKey?.isNotEmpty ?? false;
+
+  @override
+  Future<(bool, String)> setSiteFavourite(BooruItem item, bool value) async {
+    final String? id = item.serverId;
+    if (id == null || id.isEmpty) return (false, 'No gallery id');
+    if (!hasSiteFavourites) {
+      return (false, 'Local only — add your nhentai API key in the booru settings to sync');
+    }
+    try {
+      final response = value
+          ? await DioNetwork.post('$_base/api/v2/galleries/$id/favorite', headers: getHeaders())
+          : await DioNetwork.delete('$_base/api/v2/galleries/$id/favorite', headers: getHeaders());
+      final data = _json(response.data);
+      final bool favorited = data is Map && data['favorited'] == true;
+      if (favorited == value) {
+        return (true, value ? 'Synced to your nhentai account' : 'Removed from your nhentai account');
+      }
+      return (false, 'The site did not accept the change');
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401) {
+        return (false, 'nhentai rejected the API key — check it in the booru settings');
+      }
+      return (false, 'Sync failed: ${e.response?.statusCode ?? e.type.name}');
+    } catch (e) {
+      return (false, 'Sync failed: $e');
+    }
+  }
+
   @override
   Map<String, String> getHeaders() => {
     'Accept': 'application/json',
@@ -184,12 +215,13 @@ class NHentaiHandler extends BooruHandler {
     return '${negated ? '-' : ''}${body.replaceAll('_', ' ')}';
   }
 
-  ({String query, String? sort, String? relatedId, String? versionsId, String? recommendId}) _parse(String input) {
+  ({String query, String? sort, String? relatedId, String? versionsId, String? recommendId, bool accountFavorites}) _parse(String input) {
     final List<String> terms = [];
     String? sort;
     String? relatedId;
     String? versionsId;
     String? recommendId;
+    bool wantsAccountFavorites = false;
 
     for (final term in input.split(' ').where((t) => t.trim().isNotEmpty)) {
       final String lower = term.toLowerCase();
@@ -219,6 +251,11 @@ class NHentaiHandler extends BooruHandler {
         if (int.tryParse(value) != null) recommendId = value;
         continue;
       }
+      // The account's favourites feed (needs the API key).
+      if (lower == 'favorites:me' || lower == 'favourites:me') {
+        wantsAccountFavorites = true;
+        continue;
+      }
       terms.add(_siteTerm(term));
     }
     // Per-source default sort applies only when the query didn't pick one.
@@ -226,7 +263,14 @@ class NHentaiHandler extends BooruHandler {
       final String? def = SourceSettingsHandler.instance.defaultSort(booru);
       return (def != null && _sorts.contains(def) && def != 'date') ? def : null;
     }();
-    return (query: terms.join(' '), sort: sort, relatedId: relatedId, versionsId: versionsId, recommendId: recommendId);
+    return (
+      query: terms.join(' '),
+      sort: sort,
+      relatedId: relatedId,
+      versionsId: versionsId,
+      recommendId: recommendId,
+      accountFavorites: wantsAccountFavorites,
+    );
   }
 
   /// Related feeds are a single fixed list — makeURL flags it so parsing can
@@ -248,6 +292,12 @@ class NHentaiHandler extends BooruHandler {
     _pendingVersionsId = null;
     _pendingRecommendId = null;
 
+    if (parsed.accountFavorites) {
+      // Normal paginated GalleryListItem shape; the q param carries any
+      // remaining free text.
+      final String q = parsed.query.isEmpty ? '' : '&q=${Uri.encodeQueryComponent(parsed.query)}';
+      return '$_base/api/v2/favorites?page=$page$q';
+    }
     if (parsed.relatedId != null) {
       return '$_base/api/v2/galleries/${parsed.relatedId}/related';
     }

@@ -834,6 +834,15 @@ abstract class BooruHandler {
   /// (the reference apps' "Related" section), or null when unknown.
   String? relatedVersionsQuery(BooruItem item) => null;
 
+  /// True when favourites can be pushed to the USER'S ACCOUNT on the site
+  /// (auth configured). Purely-local favourites stay available regardless.
+  bool get hasSiteFavourites => false;
+
+  /// Adds/removes the post from the user's account favourites on the site.
+  /// Returns (ok, user-facing message).
+  Future<(bool, String)> setSiteFavourite(BooruItem item, bool value) async =>
+      (false, 'Not supported on this source');
+
   Future<({BooruItem? item, bool failed, String? error})> loadItem({
     required BooruItem item,
     CancelToken? cancelToken,

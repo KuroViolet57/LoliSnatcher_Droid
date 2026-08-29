@@ -133,9 +133,39 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
     );
   }
 
+  /// null = idle, otherwise the current sync-state line under the buttons.
+  String? _favSyncStatus;
+
   Future<void> _toggleFavourite() async {
+    final bool? before = item.isFavourite.value;
     await widget.tab.toggleItemFavourite(widget.index);
-    setState(() {});
+    final bool nowFavourite = item.isFavourite.value == true;
+    if (item.isFavourite.value == before) {
+      // Local toggle didn't happen (load failure etc.) — no site push.
+      setState(() {});
+      return;
+    }
+
+    // Favourite = the ACCOUNT action when the source can sync (bookmark is
+    // the purely-local sibling). Degrades to local-only with a visible note.
+    if (!handler.hasSiteFavourites) {
+      setState(
+        () => _favSyncStatus = nowFavourite
+            ? 'Saved locally — add your nhentai API key in the booru settings to sync with your account'
+            : null,
+      );
+      return;
+    }
+    setState(() => _favSyncStatus = 'Syncing to your nhentai account…');
+    final (bool ok, String message) = await handler.setSiteFavourite(item, nowFavourite);
+    if (!mounted) return;
+    setState(() => _favSyncStatus = message);
+    if (ok) {
+      // Let the confirmation breathe, then clear it.
+      Future.delayed(const Duration(seconds: 4), () {
+        if (mounted && _favSyncStatus == message) setState(() => _favSyncStatus = null);
+      });
+    }
   }
 
   void _toggleBookmark() {
@@ -259,6 +289,20 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
             onPressed: isFav == null ? null : _toggleFavourite,
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _favSyncLine(BuildContext context) {
+    if (_favSyncStatus == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 2, 16, 0),
+      child: Text(
+        _favSyncStatus!,
+        style: TextStyle(
+          fontSize: 11.5,
+          color: Theme.of(context).colorScheme.secondary,
+        ),
       ),
     );
   }
@@ -490,6 +534,7 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
         children: [
           _header(context),
           _actionRow(context),
+          _favSyncLine(context),
           if (_loading)
             const Padding(
               padding: EdgeInsets.all(20),
