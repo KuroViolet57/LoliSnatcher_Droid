@@ -12,6 +12,7 @@ import 'package:lolisnatcher/src/data/constants.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/pages/about_page.dart';
 import 'package:lolisnatcher/src/pages/loli_sync_page.dart';
+import 'package:lolisnatcher/src/pages/settings/doujin_settings_page.dart';
 import 'package:lolisnatcher/src/pages/settings/backup_restore_page.dart';
 import 'package:lolisnatcher/src/pages/settings/booru_page.dart';
 import 'package:lolisnatcher/src/pages/settings/database_page.dart';
@@ -80,6 +81,12 @@ class SettingsPage extends StatelessWidget {
                 name: context.loc.settings.itemFilters.title,
                 icon: const Icon(CupertinoIcons.tag),
                 page: () => const TagsFiltersPage(),
+              ),
+              _sectionLabel(context, 'DOUJIN'),
+              SettingsButton(
+                name: 'Doujin',
+                icon: const Icon(Symbols.menu_book_rounded),
+                page: () => const DoujinSettingsPage(),
               ),
               _sectionLabel(context, 'LOOK & FEEL'),
               SettingsButton(

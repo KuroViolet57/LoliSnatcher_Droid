@@ -318,16 +318,38 @@ class NHentaiHandler extends BooruHandler {
       return '$_base/api/v2/search?query=${Uri.encodeQueryComponent(phrase)}&page=$page';
     }
     if (parsed.query.isEmpty) {
-      // The search endpoint rejects an empty query; the newest-first firehose
-      // has its own endpoint. Its `sort` is fixed, so popular sorts go
-      // through search with a match-everything pages filter instead.
+      // With content filters set, even the "empty" feed must be a search so
+      // the filters can apply; otherwise the newest-first firehose has its
+      // own endpoint (the search endpoint rejects an empty query).
+      final String filtered = _applySearchFilters('');
+      if (filtered.isNotEmpty) {
+        final String s = parsed.sort ?? 'date';
+        return '$_base/api/v2/search?query=${Uri.encodeQueryComponent('pages:>0 $filtered')}&sort=$s&page=$page';
+      }
       if (parsed.sort == null || parsed.sort == 'date') {
         return '$_base/api/v2/galleries?page=$page';
       }
       return '$_base/api/v2/search?query=${Uri.encodeQueryComponent('pages:>0')}&sort=${parsed.sort}&page=$page';
     }
     final String sortParam = parsed.sort != null ? '&sort=${parsed.sort}' : '';
-    return '$_base/api/v2/search?query=${Uri.encodeQueryComponent(parsed.query)}$sortParam&page=$page';
+    return '$_base/api/v2/search?query=${Uri.encodeQueryComponent(_applySearchFilters(parsed.query))}$sortParam&page=$page';
+  }
+
+  /// Per-source content filters: the "only show language" choice and the
+  /// tag blacklist, appended to every ordinary search (never to
+  /// related/versions/recommend feeds — those are already scoped).
+  String _applySearchFilters(String query) {
+    final settings = SourceSettingsHandler.instance;
+    final List<String> parts = [query];
+    final String? language = settings.languageFilter(booru);
+    if (language != null && !query.contains('language:')) {
+      parts.add('language:"$language"');
+    }
+    for (final tag in settings.tagBlacklist(booru)) {
+      final String spaced = tag.replaceAll('_', ' ');
+      if (!query.contains(spaced)) parts.add('-tag:"$spaced"');
+    }
+    return parts.where((p) => p.isNotEmpty).join(' ');
   }
 
   @override
@@ -619,6 +641,7 @@ class NHentaiHandler extends BooruHandler {
 
     final String english = row['english_title']?.toString() ?? '';
     final String? japanese = row['japanese_title']?.toString();
+    final bool preferJapanese = SourceSettingsHandler.instance.titleLanguage(booru) == 'japanese';
 
     final item = BooruItem(
       fileURL: thumb,
@@ -631,7 +654,11 @@ class NHentaiHandler extends BooruHandler {
       // ratio is what the grid needs now.
       fileWidth: (row['thumbnail_width'] as num?)?.toDouble(),
       fileHeight: (row['thumbnail_height'] as num?)?.toDouble(),
-      description: [english, if (japanese?.isNotEmpty ?? false) japanese].join('\n'),
+      description: [
+        if (preferJapanese && (japanese?.isNotEmpty ?? false)) japanese,
+        english,
+        if (!preferJapanese && (japanese?.isNotEmpty ?? false)) japanese,
+      ].join('\n'),
     );
     item.fileCountHint.value = row['num_pages'] as int? ?? 0;
     final int favs = row['num_favorites'] as int? ?? 0;
@@ -721,9 +748,11 @@ class NHentaiHandler extends BooruHandler {
       final String pretty = title['pretty']?.toString() ?? '';
       if (pretty.isNotEmpty) _prettyTitles[id] = pretty;
       final String scanlator = data['scanlator']?.toString() ?? '';
+      final bool preferJapanese = SourceSettingsHandler.instance.titleLanguage(booru) == 'japanese';
       item.description = [
+        if (preferJapanese && (japanese?.isNotEmpty ?? false)) japanese,
         english,
-        if (japanese?.isNotEmpty ?? false) japanese,
+        if (!preferJapanese && (japanese?.isNotEmpty ?? false)) japanese,
         if (scanlator.isNotEmpty) 'Scanlator: $scanlator',
       ].join('\n');
 

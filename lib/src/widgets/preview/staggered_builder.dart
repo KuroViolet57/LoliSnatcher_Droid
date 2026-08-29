@@ -37,7 +37,16 @@ class StaggeredBuilder extends StatelessWidget {
   Widget build(BuildContext context) {
     final SettingsHandler settingsHandler = SettingsHandler.instance;
 
-    final int columnCount = context.isPortrait ? settingsHandler.portraitColumns : settingsHandler.landscapeColumns;
+    // Doujin sources can override the app-wide column counts.
+    final int columnCount = context.isPortrait
+        ? (tab.booruHandler.hasReader
+                  ? SourceSettingsHandler.instance.columnsPortrait(tab.booruHandler.booru)
+                  : null) ??
+              settingsHandler.portraitColumns
+        : (tab.booruHandler.hasReader
+                  ? SourceSettingsHandler.instance.columnsLandscape(tab.booruHandler.booru)
+                  : null) ??
+              settingsHandler.landscapeColumns;
 
     return ValueListenableBuilder(
       valueListenable: tab.booruHandler.filteredFetched,

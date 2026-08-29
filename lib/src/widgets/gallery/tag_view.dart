@@ -39,6 +39,7 @@ import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 import 'package:lolisnatcher/src/handlers/booru_tag_store.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/reader_handler.dart';
+import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/pages/doujin_reader_page.dart';
 import 'package:lolisnatcher/src/widgets/gallery/doujin_item_sheet.dart';
 import 'package:lolisnatcher/src/widgets/thumbnail/thumbnail_build.dart';
@@ -1533,8 +1534,8 @@ class _TagViewState extends State<TagView> {
       SliverPadding(
         padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
         sliver: SliverGrid(
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 3,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: SourceSettingsHandler.instance.pagePreviewColumns(bookHandler.booru),
             mainAxisSpacing: 6,
             crossAxisSpacing: 6,
             // Doujin pages are portrait; the fixed ratio keeps rows tidy and

@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import 'package:scroll_to_index/scroll_to_index.dart';
 
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
@@ -37,7 +38,16 @@ class GridBuilder extends StatelessWidget {
         ? settingsHandler.previewDisplayFallback
         : settingsHandler.previewDisplay;
 
-    final int columnCount = context.isPortrait ? settingsHandler.portraitColumns : settingsHandler.landscapeColumns;
+    // Doujin sources can override the app-wide column counts.
+    final int columnCount = context.isPortrait
+        ? (tab.booruHandler.hasReader
+                  ? SourceSettingsHandler.instance.columnsPortrait(tab.booruHandler.booru)
+                  : null) ??
+              settingsHandler.portraitColumns
+        : (tab.booruHandler.hasReader
+                  ? SourceSettingsHandler.instance.columnsLandscape(tab.booruHandler.booru)
+                  : null) ??
+              settingsHandler.landscapeColumns;
 
     return ValueListenableBuilder(
       valueListenable: tab.booruHandler.filteredFetched,

@@ -7,10 +7,8 @@ import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 
-/// Per-source preferences for one site, keyed by host.
-///
-/// Every field is nullable = "no override, use the app default"; the getters
-/// on [SourceSettingsHandler] resolve the effective value.
+/// One layer of doujin preferences — either the GLOBAL layer or one
+/// source's overrides. Every field is nullable = "not set at this layer".
 class SourceSettings {
   SourceSettings({
     this.readingDirection,
@@ -23,6 +21,12 @@ class SourceSettings {
     this.gridTagStrip,
     this.coverDisplay,
     this.recommendedCount,
+    this.pagePreviewColumns,
+    this.titleLanguage,
+    this.languageFilter,
+    this.tagBlacklist,
+    this.columnsPortrait,
+    this.columnsLandscape,
   });
 
   factory SourceSettings.fromJson(Map<String, dynamic> json) => SourceSettings(
@@ -36,6 +40,12 @@ class SourceSettings {
     gridTagStrip: json['gridTagStrip'] as bool?,
     coverDisplay: json['coverDisplay'] as String?,
     recommendedCount: json['recommendedCount'] as int?,
+    pagePreviewColumns: json['pagePreviewColumns'] as int?,
+    titleLanguage: json['titleLanguage'] as String?,
+    languageFilter: json['languageFilter'] as String?,
+    tagBlacklist: json['tagBlacklist'] as String?,
+    columnsPortrait: json['columnsPortrait'] as int?,
+    columnsLandscape: json['columnsLandscape'] as int?,
   );
 
   /// 'ltr' | 'rtl' | 'vertical'
@@ -73,6 +83,22 @@ class SourceSettings {
   /// rest are found by matching the gallery's signals).
   int? recommendedCount;
 
+  /// Columns of the Pages thumbnail grid (detail page / drawer).
+  int? pagePreviewColumns;
+
+  /// Preferred title on doujin sources: 'english' | 'japanese'.
+  String? titleLanguage;
+
+  /// Only show this language ('english'/'japanese'/'chinese'; null = all).
+  String? languageFilter;
+
+  /// Comma-separated tags excluded from every search on this source.
+  String? tagBlacklist;
+
+  /// Grid columns for doujin feeds, overriding the app-wide columns.
+  int? columnsPortrait;
+  int? columnsLandscape;
+
   Map<String, dynamic> toJson() => {
     if (readingDirection != null) 'readingDirection': readingDirection,
     if (pageTurnAnimation != null) 'pageTurnAnimation': pageTurnAnimation,
@@ -84,21 +110,30 @@ class SourceSettings {
     if (gridTagStrip != null) 'gridTagStrip': gridTagStrip,
     if (coverDisplay != null) 'coverDisplay': coverDisplay,
     if (recommendedCount != null) 'recommendedCount': recommendedCount,
+    if (pagePreviewColumns != null) 'pagePreviewColumns': pagePreviewColumns,
+    if (titleLanguage != null) 'titleLanguage': titleLanguage,
+    if (languageFilter != null) 'languageFilter': languageFilter,
+    if (tagBlacklist != null) 'tagBlacklist': tagBlacklist,
+    if (columnsPortrait != null) 'columnsPortrait': columnsPortrait,
+    if (columnsLandscape != null) 'columnsLandscape': columnsLandscape,
   };
 
   bool get isEmpty => toJson().isEmpty;
 }
 
-/// Per-source settings store (the reference app's "nhentai settings" screen):
-/// reading direction, page-turn style, tap zones, preload depth, keep screen
-/// on, default sort — resolved per site so each source can differ.
+/// Doujin settings in two layers, exactly like the reference app:
+/// a GLOBAL layer applying to every doujin source, and per-source overrides
+/// on top ("Overridden for this source · tap to reset"). Effective value =
+/// source override ?? global ?? hardcoded default.
 ///
-/// Persisted as sourceSettings.json next to settings.json; loaded lazily on
-/// first use, so app startup doesn't pay for it.
+/// Persisted as sourceSettings.json next to settings.json; the global layer
+/// lives under the reserved '_global' key. Loaded lazily on first use.
 class SourceSettingsHandler {
   SourceSettingsHandler._();
 
   static final SourceSettingsHandler instance = SourceSettingsHandler._();
+
+  static const String globalKey = '_global';
 
   final Map<String, SourceSettings> _byHost = {};
   bool _loaded = false;
@@ -148,33 +183,73 @@ class SourceSettingsHandler {
     return _byHost.putIfAbsent(keyFor(booru), SourceSettings.new);
   }
 
+  SourceSettings get globalSettings {
+    _ensureLoaded();
+    return _byHost.putIfAbsent(globalKey, SourceSettings.new);
+  }
+
   void update(Booru? booru, void Function(SourceSettings) change) {
     _ensureLoaded();
     change(settingsFor(booru));
     _save();
   }
 
-  // ── effective values (override or app default) ──
+  void updateGlobal(void Function(SourceSettings) change) {
+    _ensureLoaded();
+    change(globalSettings);
+    _save();
+  }
 
-  String readingDirection(Booru? booru) => settingsFor(booru).readingDirection ?? 'ltr';
+  // ── effective values: source override ?? global ?? default ──
 
-  bool instantPageTurns(Booru? booru) => settingsFor(booru).pageTurnAnimation == 'instant';
+  T _resolve<T>(Booru? booru, T? Function(SourceSettings) pick, T fallback) =>
+      pick(settingsFor(booru)) ?? pick(globalSettings) ?? fallback;
 
-  bool tapZones(Booru? booru) => settingsFor(booru).tapZones ?? true;
+  String readingDirection(Booru? booru) => _resolve(booru, (s) => s.readingDirection, 'ltr');
 
-  bool doubleTapZoom(Booru? booru) => settingsFor(booru).doubleTapZoom ?? false;
+  bool instantPageTurns(Booru? booru) => _resolve(booru, (s) => s.pageTurnAnimation, 'animated') == 'instant';
+
+  bool tapZones(Booru? booru) => _resolve(booru, (s) => s.tapZones, true);
+
+  bool doubleTapZoom(Booru? booru) => _resolve(booru, (s) => s.doubleTapZoom, false);
 
   int preloadPages(Booru? booru) =>
-      settingsFor(booru).preloadPages ?? SettingsHandler.instance.preloadCount;
+      _resolve(booru, (s) => s.preloadPages, SettingsHandler.instance.preloadCount);
 
-  bool keepScreenOn(Booru? booru) => settingsFor(booru).keepScreenOn ?? true;
+  bool keepScreenOn(Booru? booru) => _resolve(booru, (s) => s.keepScreenOn, true);
 
-  String? defaultSort(Booru? booru) => settingsFor(booru).defaultSort;
+  String? defaultSort(Booru? booru) =>
+      settingsFor(booru).defaultSort ?? globalSettings.defaultSort;
 
-  bool gridTagStrip(Booru? booru) => settingsFor(booru).gridTagStrip ?? true;
+  bool gridTagStrip(Booru? booru) => _resolve(booru, (s) => s.gridTagStrip, true);
 
   /// 'fit' (default — the whole cover is visible) | 'crop' | 'adapt'.
-  String coverDisplay(Booru? booru) => settingsFor(booru).coverDisplay ?? 'fit';
+  String coverDisplay(Booru? booru) => _resolve(booru, (s) => s.coverDisplay, 'fit');
 
-  int recommendedCount(Booru? booru) => (settingsFor(booru).recommendedCount ?? 30).clamp(5, 100);
+  int recommendedCount(Booru? booru) => _resolve(booru, (s) => s.recommendedCount, 30).clamp(5, 100);
+
+  int pagePreviewColumns(Booru? booru) => _resolve(booru, (s) => s.pagePreviewColumns, 3).clamp(1, 6);
+
+  /// 'english' | 'japanese'
+  String titleLanguage(Booru? booru) => _resolve(booru, (s) => s.titleLanguage, 'english');
+
+  String? languageFilter(Booru? booru) =>
+      settingsFor(booru).languageFilter ?? globalSettings.languageFilter;
+
+  List<String> tagBlacklist(Booru? booru) {
+    final String raw = [
+      settingsFor(booru).tagBlacklist ?? '',
+      globalSettings.tagBlacklist ?? '',
+    ].join(',');
+    return [
+      for (final part in raw.split(','))
+        if (part.trim().isNotEmpty) part.trim().toLowerCase().replaceAll(' ', '_'),
+    ];
+  }
+
+  int? columnsPortrait(Booru? booru) =>
+      settingsFor(booru).columnsPortrait ?? globalSettings.columnsPortrait;
+
+  int? columnsLandscape(Booru? booru) =>
+      settingsFor(booru).columnsLandscape ?? globalSettings.columnsLandscape;
 }
