@@ -7,7 +7,6 @@ import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/collection_info.dart';
 import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/interests_handler.dart';
-import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 
@@ -21,24 +20,37 @@ Future<void> showAddToCollectionSheet(
   List<BooruItem> items,
 ) async {
   if (items.isEmpty) return;
-  // Doujin items go to DOUJIN collections (doujinData.json) — never the
-  // booru Collection tables, and vice versa.
-  final searchHandler = SearchHandler.instance;
-  if (searchHandler.tabs.isNotEmpty && searchHandler.currentTab.booruHandler.hasReader) {
+  // Per-ITEM routing: doujin items go to DOUJIN collections (doujinData.json),
+  // booru items to the booru Collection tables — regardless of which tab or
+  // viewer they came from (merge tabs / floating previews included). A mixed
+  // batch shows both sheets, one after the other.
+  final List<BooruItem> doujinItems = [
+    for (final i in items)
+      if (DoujinDataHandler.isDoujinItem(i)) i,
+  ];
+  final List<BooruItem> booruItems = [
+    for (final i in items)
+      if (!DoujinDataHandler.isDoujinItem(i)) i,
+  ];
+  if (doujinItems.isNotEmpty) {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (_) => _AddToDoujinCollectionSheet(items: items, booru: searchHandler.currentBooru),
+      builder: (_) => _AddToDoujinCollectionSheet(
+        items: doujinItems,
+        booru: DoujinDataHandler.doujinBooruForItem(doujinItems.first),
+      ),
     );
-    return;
   }
-  await showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    showDragHandle: true,
-    builder: (_) => _AddToCollectionSheet(items: items),
-  );
+  if (booruItems.isNotEmpty && context.mounted) {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => _AddToCollectionSheet(items: booruItems),
+    );
+  }
 }
 
 /// The doujin twin of the sheet below, backed by [DoujinDataHandler] only.
@@ -46,7 +58,7 @@ class _AddToDoujinCollectionSheet extends StatefulWidget {
   const _AddToDoujinCollectionSheet({required this.items, required this.booru});
 
   final List<BooruItem> items;
-  final Booru booru;
+  final Booru? booru;
 
   @override
   State<_AddToDoujinCollectionSheet> createState() => _AddToDoujinCollectionSheetState();

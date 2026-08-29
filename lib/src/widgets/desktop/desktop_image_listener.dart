@@ -9,6 +9,8 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:get/get.dart';
 
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/boorus/mergebooru_handler.dart';
+import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/database_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
@@ -185,10 +187,15 @@ class _DesktopImageListenerState extends State<DesktopImageListener> {
                       // (doujin store + site sync), never the booru DB.
                       if (searchHandler.currentTab.booruHandler.hasReader ||
                           DoujinDataHandler.isDoujinItem(item)) {
-                        DoujinDataHandler.instance.toggleFavouriteSynced(
-                          item,
-                          searchHandler.currentTab.booruHandler,
-                        );
+                        // In a merge tab, sync through the item's real
+                        // sub-handler (the Merge handler can't reach the
+                        // site account and has no host).
+                        BooruHandler syncHandler = searchHandler.currentTab.booruHandler;
+                        final h = syncHandler;
+                        if (!h.hasReader && h is MergebooruHandler) {
+                          syncHandler = h.subHandlerForItem(item) ?? h;
+                        }
+                        DoujinDataHandler.instance.toggleFavouriteSynced(item, syncHandler);
                         return;
                       }
                       if (item.isFavourite.value != null) {

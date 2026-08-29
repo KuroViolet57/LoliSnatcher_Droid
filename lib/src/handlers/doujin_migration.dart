@@ -162,14 +162,22 @@ DoujinMigrationPlan planDoujinMigration({
   }
 
   // ── saved searches ──
+  // Payloads use TabBackup's compact schema: 't' = tags, 'b' = booru name,
+  // 'sb' = secondary boorus (see SavedSearch.payloadJson).
   for (final row in savedSearchRows) {
     String booru = '';
     String tags = '';
+    bool hasSecondaries = false;
     try {
       final Map<String, dynamic> j = jsonDecode(row['payload']?.toString() ?? '') as Map<String, dynamic>;
-      booru = j['booru']?.toString() ?? '';
-      tags = j['tags']?.toString() ?? '';
+      booru = j['b']?.toString() ?? '';
+      tags = j['t']?.toString() ?? '';
+      hasSecondaries = (j['sb'] as List?)?.isNotEmpty ?? false;
     } catch (_) {}
+    // Merge saved searches (secondaries present) deliberately stay
+    // booru-side — same rule as addCurrentTabAsSavedSearch — otherwise a
+    // migration re-arm after a DB restore would strip them.
+    if (hasSecondaries) continue;
     final String? host = doujinBooruNames[booru];
     if (host == null) continue;
     plan.savedSearches.add((

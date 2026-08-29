@@ -267,6 +267,11 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
     await step('database', () async {
       final File file = File('${await ServiceHandler.getConfigDir()}store.db');
       if (!await file.exists()) throw Exception('database file not found');
+      // Same SAF dedupe trap as the JSON files: createFile would write
+      // "store (1).db" and restore would keep reading the first-ever copy.
+      if (await ServiceHandler.existsFileFromSAFDirectory(backupPath, 'store.db')) {
+        await ServiceHandler.deleteFileFromSAFDirectory(backupPath, 'store.db');
+      }
       await ServiceHandler.copyFileToSafDir(
         await ServiceHandler.getConfigDir(),
         'store.db',

@@ -8,6 +8,7 @@ import 'package:lolisnatcher/src/boorus/gelbooru_handler.dart';
 import 'package:lolisnatcher/src/boorus/nhentai_handler.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/data/saved_search.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/doujin_migration.dart';
@@ -279,18 +280,32 @@ void main() {
         {'id': 2, 'tagName': 'landscape', 'booruType': 'Gelbooru', 'booruName': 'gelbooru', 'label': null},
         {'id': 3, 'tagName': 'global_pin', 'booruType': null, 'booruName': null, 'label': null},
       ];
+      // Payloads in the REAL TabBackup compact schema ('t'/'b'/'sb') — the
+      // exact bytes SavedSearch.payloadJson writes to the DB.
       final savedSearchRows = <Map<String, Object?>>[
         {
           'id': 1,
           'name': 'doujin search',
-          'payload': jsonEncode({'tags': 'tag:"vanilla"', 'booru': 'nhentai'}),
+          'payload': jsonEncode({'t': 'tag:"vanilla"', 'b': 'nhentai'}),
           'createdAt': 1,
         },
         {
           'id': 2,
           'name': 'booru search',
-          'payload': jsonEncode({'tags': 'landscape', 'booru': 'gelbooru'}),
+          'payload': jsonEncode({'t': 'landscape', 'b': 'gelbooru'}),
           'createdAt': 2,
+        },
+        {
+          // doujin-primary MERGE search: stays booru-side (secondaries would
+          // be lost in the doujin store).
+          'id': 3,
+          'name': 'merge search',
+          'payload': jsonEncode({
+            't': 'vanilla',
+            'b': 'nhentai',
+            'sb': ['gelbooru'],
+          }),
+          'createdAt': 3,
         },
       ];
       final collectionRows = <Map<String, Object?>>[
@@ -343,7 +358,8 @@ void main() {
       expect(plan.pins, [(tag: 'vanilla', host: 'nhentai.net')]);
       expect(plan.pinIdsToDelete, [1]);
 
-      // saved searches: only the nhentai one
+      // saved searches: only the single-source nhentai one — the gelbooru
+      // one and the doujin-primary MERGE one both stay booru-side
       expect(plan.savedSearches.single.query, 'tag:"vanilla"');
       expect(plan.savedSearchIdsToDelete, [1]);
 
@@ -373,6 +389,31 @@ void main() {
       expect(store.pins.length, 1);
       expect(store.savedSearches.length, 1);
       expect(store.collections.single.items.length, 1);
+    });
+
+    test('planner parses the EXACT payload SavedSearch.payloadJson writes (schema coupling pin)', () {
+      final String payload = SavedSearch(
+        id: null,
+        name: 'x',
+        tags: 'tag:"vanilla"',
+        booru: 'nhentai',
+        createdAt: DateTime.now(),
+      ).payloadJson();
+      final plan = planDoujinMigration(
+        doujinHosts: {'nhentai.net'},
+        doujinBooruNames: {'nhentai': 'nhentai.net'},
+        favouriteRows: const [],
+        viewedRows: const [],
+        pinRows: const [],
+        savedSearchRows: [
+          {'id': 9, 'name': 'x', 'payload': payload, 'createdAt': 1},
+        ],
+        collectionRows: const [],
+        collectionItemRows: const [],
+        booruItemsById: const {},
+      );
+      expect(plan.savedSearches.single.query, 'tag:"vanilla"');
+      expect(plan.savedSearchIdsToDelete, [9]);
     });
 
     test('history migration respects the cap', () {

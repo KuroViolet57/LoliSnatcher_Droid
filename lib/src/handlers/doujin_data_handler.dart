@@ -34,14 +34,20 @@ class DoujinEntry {
     addedAt: json['addedAt'] as int? ?? 0,
   );
 
-  factory DoujinEntry.fromItem(BooruItem item, Booru? booru) => DoujinEntry(
-    postURL: item.postURL,
-    serverId: item.serverId ?? '',
-    thumbnailURL: item.thumbnailURL,
-    title: (item.description ?? '').split('\n').firstWhere((l) => l.trim().isNotEmpty, orElse: () => ''),
-    booruHost: Uri.tryParse(booru?.baseURL ?? '')?.host ?? '',
-    addedAt: DateTime.now().millisecondsSinceEpoch,
-  );
+  factory DoujinEntry.fromItem(BooruItem item, Booru? booru) {
+    // Host from the booru config when it has one; otherwise from the item's
+    // own post URL (merge tabs pass the Merge placeholder, which has none).
+    String host = Uri.tryParse(booru?.baseURL ?? '')?.host ?? '';
+    if (host.isEmpty) host = Uri.tryParse(item.postURL)?.host ?? '';
+    return DoujinEntry(
+      postURL: item.postURL,
+      serverId: item.serverId ?? '',
+      thumbnailURL: item.thumbnailURL,
+      title: (item.description ?? '').split('\n').firstWhere((l) => l.trim().isNotEmpty, orElse: () => ''),
+      booruHost: host,
+      addedAt: DateTime.now().millisecondsSinceEpoch,
+    );
+  }
 
   final String postURL;
   final String serverId;

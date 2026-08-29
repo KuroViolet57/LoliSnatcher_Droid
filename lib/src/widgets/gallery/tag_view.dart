@@ -1402,9 +1402,33 @@ class _TagViewState extends State<TagView> {
   // Flow post-action row (Favorite / Save / Collect) shown at the top of the
   // info panel. Reuses the existing favourite / snatch / collection plumbing.
   void _toggleFavourite() {
+    // Route by the ITEM on ITS OWN feed — this panel can belong to a
+    // floating preview whose tab is NOT the current one, so indexing into
+    // currentTab could toggle a different item in a different store.
+    if (handler.hasReader || DoujinDataHandler.isDoujinItem(item)) {
+      DoujinDataHandler.instance.toggleFavouriteSynced(item, possibleBooruHandler ?? handler);
+      return;
+    }
     final int idx = handler.filteredFetched.indexOf(item);
     if (idx < 0) return;
-    searchHandler.currentTab.toggleItemFavourite(idx);
+    // Prefer the real tab that owns this handler; floating previews have
+    // stand-alone tabs, so fall back to a direct item toggle + DB write.
+    SearchTab? ownerTab;
+    for (final t in searchHandler.tabs) {
+      if (t.booruHandler == handler) {
+        ownerTab = t;
+        break;
+      }
+    }
+    if (ownerTab != null) {
+      ownerTab.toggleItemFavourite(idx);
+      return;
+    }
+    if (item.isFavourite.value != null) {
+      item.isFavourite.value = item.isFavourite.value != true;
+      handler.exemptFromLiveFilter(item);
+      settingsHandler.dbHandler.updateBooruItem(item, BooruUpdateMode.local);
+    }
   }
 
   void _snatchItem(BuildContext context) {
