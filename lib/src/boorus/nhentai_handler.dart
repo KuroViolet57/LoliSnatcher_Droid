@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
+
 import 'package:dio/dio.dart';
 import 'package:fpdart/fpdart.dart';
 
@@ -484,10 +486,17 @@ class NHentaiHandler extends BooruHandler {
     await _ensureCdnConfig();
     dynamic data = _json(response.data);
 
-    // Related / recommend / single-id feeds: one fixed list, no pagination —
-    // a second "page" would return the same items forever.
-    if ((_relatedMode || _pendingRecommendId != null || _pendingSingleId != null) && pageNum > 0) {
+    // Related / single-id feeds: one fixed list, no pagination — a second
+    // "page" would return the same items forever.
+    if ((_relatedMode || _pendingSingleId != null) && pageNum > 0) {
       return [];
+    }
+    // recommend:<id> beyond page 0: fixed mode is a single page; endless
+    // mode (count setting = 0) keeps serving scored chunks, digging deeper
+    // into the search buckets as needed.
+    if (_pendingRecommendId != null && pageNum > 0) {
+      if (SourceSettingsHandler.instance.recommendedCount(booru) != 0) return [];
+      return _moreRecommendations();
     }
 
     // id:<n> — one exact gallery: the detail response becomes a single row.
@@ -563,25 +572,139 @@ class NHentaiHandler extends BooruHandler {
 
   // ─────────────────────── recommendation engine ───────────────────────
 
+  // ── recommendation state — survives across pages in endless mode ──
+  String? _recId;
+  Set<int> _recSourceTagIds = {};
+  String _recBaseTitle = '';
+  List<String> _recTitleTokens = [];
+  final Set<int> _recSeen = {};
+  List<(double, bool, dynamic)> _recLeftover = []; // (score, isArtistBucket, row)
+  List<String> _recBucketQueries = [];
+  List<int> _recBucketPages = []; // next page per bucket; <=0 = exhausted
+  int _recArtistBucketIndex = -1;
+
+  /// Page size for endless mode; fixed mode uses the count setting directly.
+  static const int _recPageSize = 30;
+
+  /// How many same-artist results a recommendation page may carry — a small
+  /// minority by design; the artist's full catalogue is one tag-tap away.
+  static int _recArtistCap(int listLen) => math.max(2, (listLen * 0.15).round());
+
+  static List<String> _titleTokens(String s) => [
+    for (final w in s.toLowerCase().split(RegExp('[^a-z0-9]+')))
+      if (w.length > 2) w,
+  ];
+
+  double _titleSimTo(String title) => titleSimilarity(_recTitleTokens, title);
+
+  /// Overlap of significant title words, 0..1 (against the smaller set).
+  @visibleForTesting
+  static double titleSimilarity(List<String> sourceTokens, String title) {
+    if (sourceTokens.isEmpty) return 0;
+    final Set<String> b = _titleTokens(title).toSet();
+    if (b.isEmpty) return 0;
+    final int common = sourceTokens.where(b.contains).length;
+    return common / math.min(sourceTokens.length, b.length);
+  }
+
+  @visibleForTesting
+  static List<String> titleTokensForTests(String s) => _titleTokens(s);
+
+  bool _recIsVersionOfSource(dynamic row) =>
+      _recBaseTitle.isNotEmpty && row['english_title'].toString().toLowerCase().contains(_recBaseTitle);
+
+  /// Scores one candidate (tag overlap + title similarity; NO artist bonus —
+  /// same-artist results are capped instead) or null when it's a duplicate /
+  /// a version of the source gallery.
+  (double, bool, dynamic)? _recScore(dynamic row, {required bool isArtistBucket}) {
+    final int rowId = row['id'] as int;
+    if (_recSeen.contains(rowId) || _recIsVersionOfSource(row)) return null;
+    _recSeen.add(rowId);
+    final List<int> tagIds = List<int>.from(row['tag_ids'] as List? ?? []);
+    final int overlap = tagIds.where(_recSourceTagIds.contains).length;
+    final double denominator = tagIds.isEmpty || _recSourceTagIds.isEmpty
+        ? 1
+        : math.sqrt(tagIds.length * _recSourceTagIds.length);
+    final double titleSim = _titleSimTo(row['english_title'].toString());
+    return (overlap / denominator + 0.25 * titleSim, isArtistBucket, row);
+  }
+
+  /// Serves up to [count] best-scored rows from the leftover pool, keeping
+  /// artist-bucket rows a minority (over-cap ones are dropped, not queued —
+  /// they'd otherwise pile up and take over later pages).
+  List _recTake(int count) {
+    final (List out, List<(double, bool, dynamic)> keep) = takeWithArtistCap(_recLeftover, count);
+    _recLeftover = keep;
+    return out;
+  }
+
+  /// Pure core of [_recTake], extracted for tests: (served rows, remaining
+  /// pool). Entries are (score, isArtistBucket, row).
+  @visibleForTesting
+  static (List, List<(double, bool, dynamic)>) takeWithArtistCap(
+    List<(double, bool, dynamic)> pool,
+    int count,
+  ) {
+    if (count <= 0) return (const [], pool);
+    final sorted = [...pool]..sort((a, b) => b.$1.compareTo(a.$1));
+    final int cap = _recArtistCap(count);
+    int artistTaken = 0;
+    final List out = [];
+    final List<(double, bool, dynamic)> keep = [];
+    for (final e in sorted) {
+      if (out.length >= count) {
+        keep.add(e);
+        continue;
+      }
+      if (e.$2) {
+        if (artistTaken >= cap) continue;
+        artistTaken++;
+      }
+      out.add(e.$3);
+    }
+    return (out, keep);
+  }
+
+  Future<List> _recSearchRows(String query, int page) async {
+    try {
+      final response = await DioNetwork.get(
+        '$_base/api/v2/search?query=${Uri.encodeQueryComponent(query)}&sort=popular&page=$page',
+        headers: getHeaders(),
+      );
+      return (_json(response.data) as Map)['result'] as List? ?? [];
+    } catch (_) {
+      return [];
+    }
+  }
+
   /// Real recommendations, reference-app style: "the source supplies a
   /// handful; the rest are found by matching this gallery's tags".
   ///
   /// Seeds = the API's own related list (hard-capped at 5 by the site),
-  /// extended by searches on the gallery's signals — its artist/group and
-  /// its most DISTINCTIVE tags (lowest site-wide count = most specific) —
-  /// scored by tag overlap, deduplicated, self and other chapters/language
-  /// versions of the same work excluded. All verified live: the artist
-  /// search returns the author's other works, the two-distinctive-tag AND
-  /// search returns thematically close galleries.
+  /// extended by searches on the gallery's signals — its most DISTINCTIVE
+  /// tags (lowest site-wide count = most specific) and, as a capped small
+  /// minority, its artist/group — scored by tag overlap plus base-title
+  /// similarity, deduplicated, self and other chapters/language versions of
+  /// the same work excluded. With the count setting on "endless" the state
+  /// is kept so later pages continue through deeper bucket pages.
   Future<List> _buildRecommendations(String id, dynamic detail) async {
     if (detail is! Map) return [];
     final int limit = SourceSettingsHandler.instance.recommendedCount(booru);
+    final bool endless = limit == 0;
+    final int pageSize = endless ? _recPageSize : limit;
 
-    final Set<int> sourceTagIds = {
+    // fresh state per seed gallery
+    _recId = id;
+    _recSeen
+      ..clear()
+      ..add(int.parse(id));
+    _recLeftover = [];
+    _recSourceTagIds = {
       for (final t in detail['tags'] as List? ?? []) t['id'] as int,
     };
     final String pretty = (detail['title'] as Map?)?['pretty']?.toString() ?? '';
-    final String baseTitle = pretty.isEmpty ? '' : _versionsBaseTitle(pretty).toLowerCase();
+    _recBaseTitle = pretty.isEmpty ? '' : _versionsBaseTitle(pretty).toLowerCase();
+    _recTitleTokens = _titleTokens(_recBaseTitle);
 
     String? artist;
     final List<(String, int)> generalTags = [];
@@ -595,17 +718,16 @@ class NHentaiHandler extends BooruHandler {
     generalTags.sort((a, b) => a.$2.compareTo(b.$2));
     final List<String> distinctive = [for (final t in generalTags.take(3)) t.$1];
 
-    Future<List> search(String query, {String sort = 'popular'}) async {
-      try {
-        final response = await DioNetwork.get(
-          '$_base/api/v2/search?query=${Uri.encodeQueryComponent(query)}&sort=$sort&page=1',
-          headers: getHeaders(),
-        );
-        return (_json(response.data) as Map)['result'] as List? ?? [];
-      } catch (_) {
-        return [];
-      }
-    }
+    // Tag buckets lead; the artist bucket exists but its output is capped.
+    _recBucketQueries = [
+      if (artist != null) 'artist:"$artist"',
+      if (distinctive.length >= 2) 'tag:"${distinctive[0]}" tag:"${distinctive[1]}"',
+      if (distinctive.isNotEmpty) 'tag:"${distinctive[0]}"',
+      if (distinctive.length >= 2) 'tag:"${distinctive[1]}"',
+      if (distinctive.length >= 3) 'tag:"${distinctive[2]}"',
+    ];
+    _recArtistBucketIndex = artist != null ? 0 : -1;
+    _recBucketPages = List.filled(_recBucketQueries.length, 2);
 
     Future<List> related() async {
       try {
@@ -621,43 +743,66 @@ class NHentaiHandler extends BooruHandler {
 
     final results = await Future.wait([
       related(),
-      if (artist != null) search('artist:"$artist"'),
-      if (distinctive.length >= 2) search('tag:"${distinctive[0]}" tag:"${distinctive[1]}"'),
-      if (distinctive.isNotEmpty) search('tag:"${distinctive[0]}"'),
+      for (final q in _recBucketQueries) _recSearchRows(q, 1),
     ]);
 
-    final List seeds = results.first;
-    final Set<int> seen = {int.parse(id)};
-    bool isVersionOfSource(dynamic row) =>
-        baseTitle.isNotEmpty && row['english_title'].toString().toLowerCase().contains(baseTitle);
-
     final List out = [];
-    for (final row in seeds) {
+    for (final row in results.first) {
       final int rowId = row['id'] as int;
-      if (seen.add(rowId) && !isVersionOfSource(row)) out.add(row);
-    }
-
-    // Extension candidates, scored by tag overlap with the source gallery
-    // (cosine-ish), same-artist results get a small boost.
-    final List<(double, dynamic)> scored = [];
-    for (int i = 1; i < results.length; i++) {
-      final bool isArtistBucket = artist != null && i == 1;
-      for (final row in results[i]) {
-        final int rowId = row['id'] as int;
-        if (seen.contains(rowId) || isVersionOfSource(row)) continue;
-        seen.add(rowId);
-        final List<int> tagIds = List<int>.from(row['tag_ids'] as List? ?? []);
-        final int overlap = tagIds.where(sourceTagIds.contains).length;
-        final double denominator = tagIds.isEmpty || sourceTagIds.isEmpty
-            ? 1
-            : math.sqrt(tagIds.length * sourceTagIds.length);
-        scored.add((overlap / denominator + (isArtistBucket ? 0.3 : 0), row));
+      if (!_recSeen.contains(rowId) && !_recIsVersionOfSource(row)) {
+        _recSeen.add(rowId);
+        out.add(row);
       }
     }
-    scored.sort((a, b) => b.$1.compareTo(a.$1));
-    out.addAll([for (final s in scored) s.$2]);
 
-    return out.take(limit).toList();
+    for (int i = 1; i < results.length; i++) {
+      final bool isArtistBucket = (i - 1) == _recArtistBucketIndex;
+      for (final row in results[i]) {
+        final entry = _recScore(row, isArtistBucket: isArtistBucket);
+        if (entry != null) _recLeftover.add(entry);
+      }
+    }
+    out.addAll(_recTake(math.max(0, pageSize - out.length)));
+
+    if (!endless) {
+      // Fixed mode: one page, drop the state.
+      _recId = null;
+      _recLeftover = [];
+      _recBucketPages = List.filled(_recBucketQueries.length, -1);
+    }
+    return out;
+  }
+
+  /// Endless mode, pages > 0: top the leftover pool up from deeper pages of
+  /// the search buckets, then serve the next scored chunk. Empty result =
+  /// every bucket exhausted = the strip's last page.
+  Future<List> _moreRecommendations() async {
+    if (_recId == null) return [];
+    bool progressed = true;
+    while (_recLeftover.length < _recPageSize && progressed) {
+      progressed = false;
+      for (int i = 0; i < _recBucketQueries.length; i++) {
+        final int page = _recBucketPages[i];
+        if (page <= 0) continue;
+        final List rows = await _recSearchRows(_recBucketQueries[i], page);
+        if (rows.isEmpty) {
+          _recBucketPages[i] = -1;
+          continue;
+        }
+        _recBucketPages[i] = page + 1;
+        progressed = true;
+        final bool isArtistBucket = i == _recArtistBucketIndex;
+        for (final row in rows) {
+          final entry = _recScore(row, isArtistBucket: isArtistBucket);
+          if (entry != null) _recLeftover.add(entry);
+        }
+      }
+    }
+    final List out = _recTake(_recPageSize);
+    await _resolveTagIds([
+      for (final row in out) ...List<int>.from(row['tag_ids'] as List? ?? []),
+    ]);
+    return out;
   }
 
   @override

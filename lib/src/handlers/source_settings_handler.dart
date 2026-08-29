@@ -264,7 +264,11 @@ class SourceSettingsHandler {
   /// 'fit' (default — the whole cover is visible) | 'crop' | 'adapt'.
   String coverDisplay(Booru? booru) => _resolve(booru, (s) => s.coverDisplay, 'fit');
 
-  int recommendedCount(Booru? booru) => _resolve(booru, (s) => s.recommendedCount, 30).clamp(5, 100);
+  /// 0 = endless (the Recommended strip keeps loading on scroll).
+  int recommendedCount(Booru? booru) {
+    final int v = _resolve(booru, (s) => s.recommendedCount, 30);
+    return v <= 0 ? 0 : v.clamp(5, 100);
+  }
 
   int pagePreviewColumns(Booru? booru) => _resolve(booru, (s) => s.pagePreviewColumns, 3).clamp(1, 6);
 

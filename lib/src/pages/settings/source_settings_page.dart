@@ -362,16 +362,24 @@ class _SourceSettingsPageState extends State<SourceSettingsPage> {
             ),
           //
           _header('RECOMMENDATIONS'),
-          _stepperRow(
-            title: 'Related items per gallery',
-            subtitle: "The source supplies a handful; the rest are found by matching the gallery's tags and artist.",
-            layerValue: layer.recommendedCount,
-            effective: sourceSettings.recommendedCount(booru),
-            min: 5,
-            max: 100,
-            step: 5,
-            onChanged: (v) => _update((s) => s.recommendedCount = v),
+          _switchRow(
+            title: 'Endless recommendations',
+            subtitle: 'The Recommended strip keeps loading more as you scroll.',
+            layerValue: layer.recommendedCount == null ? null : layer.recommendedCount == 0,
+            inheritedValue: sourceSettings.recommendedCount(booru) == 0,
+            onChanged: (v) => _update((s) => s.recommendedCount = (v ?? false) ? 0 : 30),
           ),
+          if (sourceSettings.recommendedCount(booru) != 0)
+            _stepperRow(
+              title: 'Recommended items per gallery',
+              subtitle: "The source supplies a handful; the rest are found by matching the gallery's tags (artist stays a small minority).",
+              layerValue: layer.recommendedCount,
+              effective: sourceSettings.recommendedCount(booru),
+              min: 5,
+              max: 100,
+              step: 5,
+              onChanged: (v) => _update((s) => s.recommendedCount = v),
+            ),
           //
           _header('GRID'),
           _choiceRow<String>(
