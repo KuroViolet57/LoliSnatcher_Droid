@@ -263,10 +263,11 @@ Future<void> runDoujinMigrationIfNeeded() async {
   if (store.migrationDone) return;
 
   final settings = SettingsHandler.instance;
-  if (!settings.dbEnabled) {
-    // Nothing shared to migrate out of; done.
-    store.migrationDone = true;
-    store.save();
+  // Only ever mark the migration done after actually inspecting an OPEN
+  // database. DB disabled or failed-to-open → retry next startup (cheap
+  // no-op), so old doujin rows can't get stranded in the booru stores if the
+  // DB comes back later.
+  if (!settings.dbEnabled || settings.dbHandler.db == null) {
     return;
   }
 

@@ -9,6 +9,7 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:get/get.dart';
 
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/database_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -180,6 +181,16 @@ class _DesktopImageListenerState extends State<DesktopImageListener> {
                   margin: const EdgeInsets.fromLTRB(10, 0, 10, 10),
                   child: FloatingActionButton(
                     onPressed: () {
+                      // Doujin items go through the one doujin favourite path
+                      // (doujin store + site sync), never the booru DB.
+                      if (searchHandler.currentTab.booruHandler.hasReader ||
+                          DoujinDataHandler.isDoujinItem(item)) {
+                        DoujinDataHandler.instance.toggleFavouriteSynced(
+                          item,
+                          searchHandler.currentTab.booruHandler,
+                        );
+                        return;
+                      }
                       if (item.isFavourite.value != null) {
                         item.isFavourite.toggle();
                         settingsHandler.dbHandler.updateBooruItem(item, BooruUpdateMode.local);

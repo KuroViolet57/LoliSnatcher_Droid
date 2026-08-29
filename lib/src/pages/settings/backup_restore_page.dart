@@ -52,6 +52,16 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
     BookmarkHandler.instance.reloadFromDisk();
   }
 
+  /// A restored store.db may predate the doujin split and still carry doujin
+  /// rows in the shared stores — re-arm the one-time migration so they get
+  /// moved out again on the post-restore restart. The migration is additive
+  /// and idempotent, so re-running it on already-migrated data is safe.
+  void _rearmDoujinMigration() {
+    final store = DoujinDataHandler.instance..ensureLoaded();
+    store.migrationDone = false;
+    store.save();
+  }
+
   bool inProgress = false;
   int progress = 0, total = 0;
 
@@ -202,6 +212,9 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
     // settings.json
     await step('settings', () async {
       final File file = File('${await ServiceHandler.getConfigDir()}settings.json');
+      if (await ServiceHandler.existsFileFromSAFDirectory(backupPath, 'settings.json')) {
+        await ServiceHandler.deleteFileFromSAFDirectory(backupPath, 'settings.json');
+      }
       await ServiceHandler.writeImage(
         await file.readAsBytes(),
         'settings',
@@ -215,6 +228,9 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
     await step('boorus', () async {
       final List<Booru> booruList =
           settingsHandler.booruList.where((e) => BooruType.saveable.contains(e.type)).toList();
+      if (await ServiceHandler.existsFileFromSAFDirectory(backupPath, 'boorus.json')) {
+        await ServiceHandler.deleteFileFromSAFDirectory(backupPath, 'boorus.json');
+      }
       await ServiceHandler.writeImage(
         utf8.encode(json.encode(booruList)),
         'boorus',
@@ -227,10 +243,16 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
     // Doujin-side stores (favourites/collections/pins/history + doujin
     // settings + bookmarks) — separate files, so the separated data
     // round-trips through backups too. Missing files just aren't written yet.
+    // SAF createFile never overwrites (it dedupes to "name (1).json", which
+    // restore would never read), so delete any existing copy first — the
+    // bulk dialog already promises overwriting.
     for (final name in _doujinStoreFiles) {
       await step(name, () async {
         final File file = File('${await ServiceHandler.getConfigDir()}$name');
         if (!await file.exists()) return;
+        if (await ServiceHandler.existsFileFromSAFDirectory(backupPath, name)) {
+          await ServiceHandler.deleteFileFromSAFDirectory(backupPath, name);
+        }
         await ServiceHandler.writeImage(
           await file.readAsBytes(),
           name.replaceAll('.json', ''),
@@ -383,6 +405,8 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
           if (!await newFile.exists()) {
             failures.add('database (post-copy missing)');
             searchHandler.canBackup.value = true;
+          } else {
+            _rearmDoujinMigration();
           }
         }
       }
@@ -605,6 +629,7 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
       } else {
         await settingsHandler.dbHandler.closeDb();
         await File('${configDir}store.db').writeAsBytes(bytes, flush: true);
+        _rearmDoujinMigration();
       }
     } catch (e) {
       failures.add('database: $e');
@@ -1231,6 +1256,7 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
                             setState(() {});
                             return;
                           }
+                          _rearmDoujinMigration();
                           showSnackbar(
                             context.loc.settings.backupAndRestore.databaseRestored,
                             isError: false,

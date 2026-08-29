@@ -20,6 +20,7 @@ import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/tag_handler.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/handlers/interests_handler.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
@@ -90,7 +91,9 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
 
   void _flushDwell() {
     final item = _dwellItem;
-    if (item != null) {
+    // Doujin items (however they reached the classic viewer) must not feed
+    // the booru taste profile — per item, so merge tabs are covered too.
+    if (item != null && !widget.tab.booruHandler.hasReader && !DoujinDataHandler.isDoujinItem(item)) {
       InterestsHandler.instance.onItemViewed(item, DateTime.now().difference(_dwellSince));
     }
     _dwellItem = null;
@@ -156,7 +159,7 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
       _startDwell(item);
       _loadPostFiles(item);
       if (settingsHandler.dimSeenPosts) {
-        unawaited(searchHandler.markPostSeen(item));
+        unawaited(searchHandler.markPostSeen(item, tab: widget.tab));
       }
     } catch (e) {
       viewerHandler.dropCurrent();
@@ -733,7 +736,7 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
                                   viewerHandler.setCurrent(item);
                                   _startDwell(item);
                                   if (settingsHandler.dimSeenPosts) {
-                                    unawaited(searchHandler.markPostSeen(item));
+                                    unawaited(searchHandler.markPostSeen(item, tab: widget.tab));
                                   }
                                   {
                                     _loadPostFiles(item);

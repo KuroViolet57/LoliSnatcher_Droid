@@ -36,6 +36,17 @@ class MergebooruHandler extends BooruHandler {
 
   Map<int, ({Booru booru, List<BooruItem> items})> fetchedMap = {};
 
+  /// The sub-handler an item came from, matched by post URL host — used to
+  /// route doujin items (favourite sync etc.) to their real source handler.
+  BooruHandler? subHandlerForItem(BooruItem item) {
+    final String? host = Uri.tryParse(item.postURL)?.host;
+    if (host == null || host.isEmpty) return null;
+    for (final h in booruHandlers) {
+      if (Uri.tryParse(h.booru.baseURL ?? '')?.host == host) return h;
+    }
+    return null;
+  }
+
   @override
   bool get hasSizeData => booruHandlers.every((e) => e.hasSizeData);
 

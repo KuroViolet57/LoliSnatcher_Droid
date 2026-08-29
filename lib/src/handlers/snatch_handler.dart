@@ -11,6 +11,7 @@ import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 import 'package:lolisnatcher/src/handlers/interests_handler.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -346,7 +347,17 @@ class SnatchHandler {
     if (booruItems.isNotEmpty) {
       final SnatchItem item = SnatchItem(booruItems, cooldown, booru, ignoreExists);
       queuedList.add(item);
-      InterestsHandler.instance.onItemsSnatched(booruItems);
+      // Doujin downloads must not feed the booru taste profile — checked per
+      // item so merge tabs mixing both worlds stay separated too.
+      if (!DoujinDataHandler.isDoujinBooru(booru)) {
+        final List<BooruItem> booruOnly = [
+          for (final i in booruItems)
+            if (!DoujinDataHandler.isDoujinItem(i)) i,
+        ];
+        if (booruOnly.isNotEmpty) {
+          InterestsHandler.instance.onItemsSnatched(booruOnly);
+        }
+      }
 
       // "Hide snatched posts" is meant to apply when a feed LOADS, not to make
       // a post vanish the instant you save it. Keep anything snatched now

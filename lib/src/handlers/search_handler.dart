@@ -627,9 +627,14 @@ class SearchHandler {
     // Remove extra spaces
     text = text.trim();
 
-    // Record the search as a taste signal (skip virtual/local feeds).
-    final BooruType? actionType = (newBooru ?? currentBooru).type;
-    if (text.isNotEmpty && actionType?.isLocalDb != true && actionType?.isForYou != true) {
+    // Record the search as a taste signal (skip virtual/local feeds AND
+    // doujin sources — doujin activity must not feed the booru For You).
+    final Booru actionBooru = newBooru ?? currentBooru;
+    final BooruType? actionType = actionBooru.type;
+    if (text.isNotEmpty &&
+        actionType?.isLocalDb != true &&
+        actionType?.isForYou != true &&
+        !DoujinDataHandler.isDoujinBooru(actionBooru)) {
       InterestsHandler.instance.onSearch(text);
     }
 
@@ -776,7 +781,10 @@ class SearchHandler {
     } catch (_) {}
   }
 
-  Future<void> markPostSeen(BooruItem item) async {
+  /// [tab] is the tab the item actually belongs to — viewers opened off the
+  /// current tab (floating previews) must pass their own, or history could be
+  /// routed to the wrong store.
+  Future<void> markPostSeen(BooruItem item, {SearchTab? tab}) async {
     final String? key = seenKeyFor(item);
     if (key == null) return;
     item.isSeen.value = true;
@@ -787,10 +795,13 @@ class SearchHandler {
       } catch (_) {}
     }
     // Viewing history: store the full item every time (a re-view bumps the
-    // entry back to the top of the History feed). Doujin items go to the
-    // doujin history store instead — never the booru ViewedPost table.
-    if (tabs.isNotEmpty && currentTab.booruHandler.hasReader) {
-      DoujinDataHandler.instance.addHistory(item, currentBooru);
+    // entry back to the top of the History feed). Doujin ITEMS go to the
+    // doujin history store instead — never the booru ViewedPost table — no
+    // matter which tab or viewer they were opened from.
+    final SearchTab? owner = tab ?? (tabs.isNotEmpty ? currentTab : null);
+    if ((owner?.booruHandler.hasReader ?? false) || DoujinDataHandler.isDoujinItem(item)) {
+      final Booru? itemBooru = DoujinDataHandler.doujinBooruForItem(item) ?? owner?.selectedBooru.value;
+      DoujinDataHandler.instance.addHistory(item, itemBooru);
       return;
     }
     try {
@@ -835,7 +846,10 @@ class SearchHandler {
     final SearchTab tab = currentTab;
     // Doujin tabs save into the doujin store, never the booru SavedSearch
     // table — the doujin saved-searches screen scopes them per source.
-    if (DoujinDataHandler.isDoujinBooru(tab.selectedBooru.value)) {
+    // Merge tabs (secondaries present) are hybrids and stay booru-side so
+    // their secondaries/overrides aren't dropped.
+    if (DoujinDataHandler.isDoujinBooru(tab.selectedBooru.value) &&
+        (tab.secondaryBoorus.value?.isEmpty ?? true)) {
       final entry = DoujinDataHandler.instance.addSavedSearch(
         name: name?.trim() ?? '',
         query: tab.tags,
@@ -1943,13 +1957,19 @@ class SearchTab {
   }) async {
     final BooruItem item = booruHandler.filteredFetched[itemIndex];
     // Doujin items NEVER touch the shared favourites DB — any caller that
-    // lands here with a doujin tab is rerouted to the one doujin path
-    // (doujin store + site account sync).
-    if (booruHandler.hasReader) {
+    // lands here with a doujin item (doujin tab OR a merge tab mixing one in)
+    // is rerouted to the one doujin path (doujin store + site account sync).
+    if (booruHandler.hasReader || DoujinDataHandler.isDoujinItem(item)) {
       if (forcedValue != null && DoujinDataHandler.instance.isFavourite(item) == forcedValue) {
         return forcedValue;
       }
-      final result = await DoujinDataHandler.instance.toggleFavouriteSynced(item, booruHandler);
+      // In a merge tab, sync through the item's real source handler.
+      BooruHandler syncHandler = booruHandler;
+      final handler = booruHandler;
+      if (!handler.hasReader && handler is MergebooruHandler) {
+        syncHandler = handler.subHandlerForItem(item) ?? handler;
+      }
+      final result = await DoujinDataHandler.instance.toggleFavouriteSynced(item, syncHandler);
       return result.nowFavourite;
     }
     if (item.isFavourite.value != null) {
@@ -2014,6 +2034,31 @@ class SearchTab {
     bool skipSnatching = false,
   }) async {
     final SettingsHandler settingsHandler = SettingsHandler.instance;
+
+    // Split off doujin items: they go through the one doujin favourite path
+    // (doujin store + site sync), never the booru favourites DB.
+    final List<BooruItem> doujinItems = [
+      for (final i in items)
+        if (booruHandler.hasReader || DoujinDataHandler.isDoujinItem(i)) i,
+    ];
+    if (doujinItems.isNotEmpty) {
+      items = [
+        for (final i in items)
+          if (!doujinItems.contains(i)) i,
+      ];
+      final handler = booruHandler;
+      for (final item in doujinItems) {
+        BooruHandler syncHandler = handler;
+        if (!handler.hasReader && handler is MergebooruHandler) {
+          syncHandler = handler.subHandlerForItem(item) ?? handler;
+        }
+        if (DoujinDataHandler.instance.isFavourite(item) != newValue) {
+          await DoujinDataHandler.instance.toggleFavouriteSynced(item, syncHandler);
+        }
+        booruHandler.exemptFromLiveFilter(item);
+      }
+      if (items.isEmpty) return;
+    }
     if (!skipSnatching && settingsHandler.snatchOnFavourite && newValue) {
       SnatchHandler.instance.queue(
         items.where((e) => e.isSnatched.value != true).toList(),

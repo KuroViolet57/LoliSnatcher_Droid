@@ -180,6 +180,34 @@ class DoujinDataHandler {
 
   static String hostOf(Booru? booru) => Uri.tryParse(booru?.baseURL ?? '')?.host ?? (booru?.name ?? '');
 
+  /// Hosts that are always doujin, even without a matching config — keeps
+  /// item-level attribution working after a source is renamed/removed.
+  static const Set<String> knownDoujinHosts = {'nhentai.net'};
+
+  /// ITEM-level doujin check, for mixed feeds (merge tabs, floating
+  /// previews): a doujin item is recognized by its post URL host no matter
+  /// which handler fetched it.
+  static bool isDoujinItem(BooruItem item) {
+    final String? host = Uri.tryParse(item.postURL)?.host;
+    if (host == null || host.isEmpty) return false;
+    if (knownDoujinHosts.contains(host)) return true;
+    for (final b in SettingsHandler.instance.booruList) {
+      if (isDoujinBooru(b) && hostOf(b) == host) return true;
+    }
+    return false;
+  }
+
+  /// The configured doujin booru an item belongs to (by post URL host), or
+  /// null when none matches.
+  static Booru? doujinBooruForItem(BooruItem item) {
+    final String? host = Uri.tryParse(item.postURL)?.host;
+    if (host == null || host.isEmpty) return null;
+    for (final b in SettingsHandler.instance.booruList) {
+      if (isDoujinBooru(b) && hostOf(b) == host) return b;
+    }
+    return null;
+  }
+
   // ── state ──
   final RxMap<String, DoujinEntry> favourites = <String, DoujinEntry>{}.obs; // by postURL
   final RxList<DoujinCollection> collections = <DoujinCollection>[].obs;

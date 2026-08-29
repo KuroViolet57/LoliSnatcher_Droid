@@ -130,6 +130,25 @@ void main() {
       expect(booru.filteredFetched.length, 1);
     });
 
+    test('MERGE feeds: attribution is per ITEM — booru blacklist skips doujin items, doujin blacklist skips booru items', () {
+      final settings = SettingsHandler.instance;
+      settings.hiddenTags.add('netorare');
+      settings.invalidateBlacklistCache();
+      settings.filterHated = true;
+      SourceSettingsHandler.instance.updateGlobal((s) => s.tagBlacklist = 'guro');
+
+      // A non-doujin handler carrying BOTH kinds of items, like a merge tab.
+      final mixed = GelbooruHandler(gelbooruBooru(), 20);
+      mixed.fetched.addAll([
+        doujinItem('1001', ['netorare']), // booru blacklist must NOT hide it
+        doujinItem('1002', ['guro']), // doujin blacklist MUST hide it
+        booruItem('2001', ['netorare']), // booru blacklist MUST hide it
+        booruItem('2002', ['guro']), // doujin blacklist must NOT hide it
+      ]);
+      mixed.filterFetched();
+      expect(mixed.filteredFetched.map((e) => e.serverId).toList(), ['1001', '2002']);
+    });
+
     test('per-source blacklist extend vs override', () {
       final source = SourceSettingsHandler.instance;
       final booru = nhentaiBooru();

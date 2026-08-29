@@ -26,6 +26,9 @@ Future<void> showDoujinItemSheet(
 }) async {
   if (index < 0 || index >= tab.booruHandler.filteredFetched.length) return;
   final BooruItem item = tab.booruHandler.filteredFetched[index];
+  // The heart label must reflect the DOUJIN store, never a stale booru-DB
+  // flag — otherwise "Favourite" could silently un-favourite.
+  item.isFavourite.value = DoujinDataHandler.instance.isFavourite(item);
   final Booru booru = tab.booruHandler.booru;
   final String title =
       (item.description ?? '').split('\n').firstWhere((l) => l.trim().isNotEmpty, orElse: () => item.postURL);

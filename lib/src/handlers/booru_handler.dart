@@ -20,6 +20,7 @@ import 'package:lolisnatcher/src/data/response_error.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_suggestion.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/tag_handler.dart';
@@ -92,17 +93,28 @@ abstract class BooruHandler {
 
     final List<BooruItem> itemsBeforeFilter = [...filteredFetched];
 
-    // Doujin sources use the doujin blacklist (SourceSettingsHandler) and are
-    // NEVER touched by the booru hidden-tags filters — the two systems are
-    // fully separate, even when tag names coincide. Precomputed once per
-    // filter pass, not per item.
-    final Set<String> doujinBlacklist = hasReader
+    // Doujin items use the doujin blacklist (SourceSettingsHandler) and are
+    // NEVER touched by the booru hidden/marked filters — the two systems are
+    // fully separate, even when tag names coincide. The check is per ITEM
+    // (post URL host) so merge tabs mixing both worlds stay separated too.
+    final Set<String> ownDoujinBlacklist = hasReader
         ? SourceSettingsHandler.instance.tagBlacklist(booru).toSet()
         : const {};
+    final Map<String, Set<String>> doujinBlacklistByHost = {};
+    Set<String> doujinBlacklistFor(BooruItem item) {
+      if (hasReader) return ownDoujinBlacklist;
+      final String host = Uri.tryParse(item.postURL)?.host ?? '';
+      return doujinBlacklistByHost.putIfAbsent(
+        host,
+        () => SourceSettingsHandler.instance.tagBlacklist(DoujinDataHandler.doujinBooruForItem(item)).toSet(),
+      );
+    }
 
     final List<BooruItem> filteredItems = [];
     for (final item in fetched) {
-      if (hasReader) {
+      final bool itemIsDoujin = hasReader || DoujinDataHandler.isDoujinItem(item);
+      if (itemIsDoujin) {
+        final Set<String> doujinBlacklist = doujinBlacklistFor(item);
         if (doujinBlacklist.isNotEmpty && _matchesDoujinBlacklist(item, doujinBlacklist)) {
           continue;
         }
@@ -111,7 +123,9 @@ abstract class BooruHandler {
         continue;
       }
 
-      if (settingsHandler.filterMarked && item.isMarked) {
+      // isMarked reads the booru marked-tags list — a booru system, so it
+      // must never hide doujin items (coinciding tag names included).
+      if (!itemIsDoujin && settingsHandler.filterMarked && item.isMarked) {
         continue;
       }
 
@@ -1110,9 +1124,22 @@ abstract class BooruHandler {
       ); //.map((e) => e.fileURL).toList()
 
       valuesList.asMap().forEach((index, values) {
-        fetched[fetchedIndexes[index]].isSnatched.value = values[0];
-        fetched[fetchedIndexes[index]].isFavourite.value = values[1];
+        final BooruItem item = fetched[fetchedIndexes[index]];
+        item.isSnatched.value = values[0];
+        // Doujin favourite state comes from the DOUJIN store, never the booru
+        // DB (snatched stays DB-backed: downloads are one shared system).
+        // Per item, so merge feeds attribute correctly too.
+        item.isFavourite.value = (hasReader || DoujinDataHandler.isDoujinItem(item))
+            ? DoujinDataHandler.instance.isFavourite(item)
+            : values[1];
       });
+    } else {
+      // Even with the DB off, doujin hearts must reflect the doujin store.
+      for (final i in fetchedIndexes) {
+        if (i < fetched.length && (hasReader || DoujinDataHandler.isDoujinItem(fetched[i]))) {
+          fetched[i].isFavourite.value = DoujinDataHandler.instance.isFavourite(fetched[i]);
+        }
+      }
     }
 
     return;
