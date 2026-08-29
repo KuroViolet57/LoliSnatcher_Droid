@@ -215,12 +215,13 @@ class NHentaiHandler extends BooruHandler {
     return '${negated ? '-' : ''}${body.replaceAll('_', ' ')}';
   }
 
-  ({String query, String? sort, String? relatedId, String? versionsId, String? recommendId, bool accountFavorites}) _parse(String input) {
+  ({String query, String? sort, String? relatedId, String? versionsId, String? recommendId, String? singleId, bool accountFavorites}) _parse(String input) {
     final List<String> terms = [];
     String? sort;
     String? relatedId;
     String? versionsId;
     String? recommendId;
+    String? singleId;
     bool wantsAccountFavorites = false;
 
     for (final term in input.split(' ').where((t) => t.trim().isNotEmpty)) {
@@ -256,6 +257,12 @@ class NHentaiHandler extends BooruHandler {
         wantsAccountFavorites = true;
         continue;
       }
+      // One exact gallery (bookmarks, shared links).
+      if (lower.startsWith('id:')) {
+        final String value = lower.substring(3);
+        if (int.tryParse(value) != null) singleId = value;
+        continue;
+      }
       terms.add(_siteTerm(term));
     }
     // Per-source default sort applies only when the query didn't pick one.
@@ -269,6 +276,7 @@ class NHentaiHandler extends BooruHandler {
       relatedId: relatedId,
       versionsId: versionsId,
       recommendId: recommendId,
+      singleId: singleId,
       accountFavorites: wantsAccountFavorites,
     );
   }
@@ -282,6 +290,7 @@ class NHentaiHandler extends BooruHandler {
   /// the gallery-detail endpoint first when the needed signals are missing.
   String? _pendingVersionsId;
   String? _pendingRecommendId;
+  String? _pendingSingleId;
 
   @override
   String makeURL(String tags) {
@@ -291,6 +300,12 @@ class NHentaiHandler extends BooruHandler {
     _relatedMode = parsed.relatedId != null;
     _pendingVersionsId = null;
     _pendingRecommendId = null;
+    _pendingSingleId = null;
+
+    if (parsed.singleId != null) {
+      _pendingSingleId = parsed.singleId;
+      return '$_base/api/v2/galleries/${parsed.singleId}';
+    }
 
     if (parsed.accountFavorites) {
       // Normal paginated GalleryListItem shape; the q param carries any
@@ -469,9 +484,32 @@ class NHentaiHandler extends BooruHandler {
     await _ensureCdnConfig();
     dynamic data = _json(response.data);
 
-    // Related / recommend feeds: one fixed list, no pagination — a second
-    // "page" would return the same items forever.
-    if ((_relatedMode || _pendingRecommendId != null) && pageNum > 0) return [];
+    // Related / recommend / single-id feeds: one fixed list, no pagination —
+    // a second "page" would return the same items forever.
+    if ((_relatedMode || _pendingRecommendId != null || _pendingSingleId != null) && pageNum > 0) {
+      return [];
+    }
+
+    // id:<n> — one exact gallery: the detail response becomes a single row.
+    if (_pendingSingleId != null && pageNum <= 0) {
+      if (data is! Map || data['id'] == null) return [];
+      _recordDetailSignals(_pendingSingleId!, data);
+      final thumb = data['thumbnail'] as Map? ?? {};
+      final row = {
+        'id': data['id'],
+        'media_id': data['media_id'],
+        'english_title': (data['title'] as Map?)?['english'] ?? '',
+        'japanese_title': (data['title'] as Map?)?['japanese'],
+        'thumbnail': thumb['path'] ?? '',
+        'thumbnail_width': thumb['width'] ?? 250,
+        'thumbnail_height': thumb['height'] ?? 350,
+        'num_pages': data['num_pages'] ?? 0,
+        'num_favorites': data['num_favorites'] ?? 0,
+        'tag_ids': [for (final t in data['tags'] as List? ?? []) t['id']],
+      };
+      totalCount.value = 1;
+      return [row];
+    }
 
     // versions:<id> with an unknown title bounced through the gallery detail
     // endpoint — record the title, then run the REAL phrase search. Never

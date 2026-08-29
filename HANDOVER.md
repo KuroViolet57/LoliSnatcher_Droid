@@ -1790,3 +1790,41 @@ test/doujin_reader_test.dart pins the class: slider DOCKED at the bottom
 both directions, middle tap toggles chrome, direction/menu/close buttons
 all fire, slider scrubs. 6/6 pass; the 10 pre-existing booru_test failures
 are live-site probes and fail identically on the previous commit.
+
+## Builds `reader-r1` … `doujin-item7` (2026-08-29) — the 7-item batch
+
+User sent a strict, ordered 7-item work list with per-item builds. All on
+claude/experimental-doujin, one commit+build+Drive upload per item:
+
+1. `reader-r1` — reader rebuilt against a written layout contract (opaque
+   MaterialPageRoute, Stack chrome, ClipRects, raw-pointer tap zones,
+   InteractiveViewer instead of photo_view whose fork force-registers a
+   double-tap recognizer). 8 widget tests in test/doujin_reader_test.dart.
+   Adversarial subagent review confirmed no surviving path to the recorded
+   symptoms and surfaced the double-tap steal + re-entrancy + keepScreenOn
+   + bar-gap issues, all fixed. DEVICE VERIFICATION IMPOSSIBLE in this
+   container — flagged to user, tests + review are the evidence.
+2. `doujin-item2` — DoujinDetailPage on card tap (viewer untouched
+   elsewhere); BookmarkHandler (bookmarks.json, local-only).
+3. `doujin-item3` — card = cover + tag strip BELOW; coverDisplay
+   fit/crop/adapt (adapt routes through the staggered grid; nhentai now
+   hasSizeData=true); staggered cells reserve footer height.
+4. `doujin-item4` — versions: self-heals via detail-endpoint bounce (the
+   silent firehose degrade WAS the "Related returns unrelated stuff" bug);
+   recommend:<id> engine (related seeds + artist + distinctive-tag
+   searches, overlap-scored, versions excluded, count setting);
+   showDoujinItemSheet long-press menu on strip cards.
+5. `doujin-item5` — hasSiteFavourites/setSiteFavourite (POST/DELETE
+   /api/v2/galleries/{id}/favorite, Key auth), sync-state line on the
+   detail page, favorites:me feed, DioNetwork.delete added. NOT verified
+   with a real key (user's key unavailable here) — code-vs-spec only.
+6. `doujin-item6` — Settings root DOUJIN section; SourceSettingsHandler
+   gained a GLOBAL layer ('_global' in sourceSettings.json), effective =
+   source ?? global ?? default; per-source page shows "Overridden for this
+   source · tap to reset"; new working settings: language filter, tag
+   blacklist (merged layers, -tag:"x" per search), title language, feed
+   columns override (grid+staggered builders), page-preview columns (both
+   Pages grids). Webtoon/wifi-only/rec-thumb-size deliberately NOT offered.
+7. `doujin-item7` — drawer block on doujin sources (favourites & bookmarks
+   page, favourite tags, one-tap source settings); id:<n> single-gallery
+   query (bookmarks reopen through it).

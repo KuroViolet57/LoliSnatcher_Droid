@@ -109,6 +109,11 @@ class BookmarkHandler {
     return true;
   }
 
+  void remove(String postURL) {
+    ensureLoaded();
+    if (bookmarks.remove(postURL) != null) _save();
+  }
+
   List<DoujinBookmark> all() {
     ensureLoaded();
     final List<DoujinBookmark> list = bookmarks.values.toList()

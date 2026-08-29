@@ -11,6 +11,8 @@ import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/handlers/local_auth_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/pages/settings/source_settings_page.dart';
+import 'package:lolisnatcher/src/pages/doujin_favourites_page.dart';
 import 'package:lolisnatcher/src/pages/collections_page.dart';
 import 'package:lolisnatcher/src/pages/foryou_page.dart';
 import 'package:lolisnatcher/src/handlers/pool_source.dart';
@@ -237,6 +239,37 @@ class MainDrawer extends StatelessWidget {
                       action: () => LocalAuthHandler.instance.lock(manually: true),
                     ),
                   ),
+                  // Doujin sources swap in their own quick access: favourites
+                  // & bookmarks, favourite tags, and a ONE-TAP shortcut to
+                  // this source's settings (no Booru-config crawl).
+                  Obx(() {
+                    if (settingsHandler.booruList.isEmpty ||
+                        searchHandler.tabs.isEmpty ||
+                        !searchHandler.currentBooruHandler.hasReader) {
+                      return const SizedBox.shrink();
+                    }
+                    final Booru doujinBooru = searchHandler.currentBooru;
+                    return Column(
+                      children: [
+                        SettingsButton(
+                          name: 'Doujin favourites & bookmarks',
+                          icon: const Icon(Symbols.bookmark_heart_rounded),
+                          page: () => DoujinFavouritesPage(booru: doujinBooru),
+                        ),
+                        SettingsButton(
+                          name: 'Favourite tags',
+                          subtitle: const Text('Your marked tags, browsable'),
+                          icon: const Icon(Symbols.star_rounded),
+                          page: () => const TagBrowserPage(),
+                        ),
+                        SettingsButton(
+                          name: '${doujinBooru.name ?? 'Source'} settings',
+                          icon: const Icon(Symbols.tune_rounded),
+                          page: () => SourceSettingsPage(booru: doujinBooru),
+                        ),
+                      ],
+                    );
+                  }),
                   SettingsButton(
                     name: context.loc.settings.title,
                     icon: const Icon(Symbols.settings_rounded),
