@@ -17,6 +17,7 @@ import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/pages/doujin_reader_page.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 import 'package:lolisnatcher/src/widgets/gallery/doujin_tag_chip.dart';
+import 'package:lolisnatcher/src/widgets/tabs/doujin_mini_tab_manager.dart';
 import 'package:lolisnatcher/src/widgets/gallery/tag_view.dart';
 import 'package:lolisnatcher/src/widgets/thumbnail/thumbnail.dart';
 import 'package:lolisnatcher/src/widgets/thumbnail/thumbnail_build.dart';
@@ -37,11 +38,16 @@ class DoujinDetailPage extends StatefulWidget {
   const DoujinDetailPage({
     required this.tab,
     required this.index,
+    this.embedded = false,
     super.key,
   });
 
   final SearchTab tab;
   final int index;
+
+  /// True when the page IS a tab's content (a doujin tab): the main app bar
+  /// stays above it, so the page's own app bar is dropped.
+  final bool embedded;
 
   @override
   State<DoujinDetailPage> createState() => _DoujinDetailPageState();
@@ -487,15 +493,19 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
     final String? galleryId = item.serverId;
 
     return Scaffold(
-      appBar: AppBar(
-        titleSpacing: 0,
-        title: Text(
-          _titleLines.isNotEmpty ? _titleLines.first : 'Doujin',
-          style: const TextStyle(fontSize: 15),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-      ),
+      appBar: widget.embedded
+          ? null
+          : AppBar(
+              titleSpacing: 0,
+              title: Text(
+                _titleLines.isNotEmpty ? _titleLines.first : 'Doujin',
+                style: const TextStyle(fontSize: 15),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+      // Right-edge swipe: the mini tab manager sidebar.
+      endDrawer: const DoujinMiniTabManager(),
       body: ListView(
         padding: const EdgeInsets.only(bottom: 40),
         children: [

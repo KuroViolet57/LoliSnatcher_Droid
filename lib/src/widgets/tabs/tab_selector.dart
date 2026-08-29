@@ -416,6 +416,14 @@ class _TabManagerPageState extends State<TabManagerPage> {
   bool? isMultiBooruMode;
   bool selectMode = false;
 
+  /// The three-view source toggle: 'doujins' | 'boorus' | 'all'. Defaults by
+  /// CONTEXT — opened from a doujin tab it shows doujin tabs, from a booru
+  /// tab the booru ones; 'all' shows everything. Groups work in all three.
+  late String sourceView = () {
+    if (searchHandler.tabs.isEmpty) return 'all';
+    return searchHandler.currentTab.booruHandler.hasReader ? 'doujins' : 'boorus';
+  }();
+
   // App-session persistence of the sort + filter state. The tab manager is a
   // transient page (built on each open), and the user reported that the sort
   // mode and filters reset every time it's reopened. Stashing them on the
@@ -695,6 +703,14 @@ class _TabManagerPageState extends State<TabManagerPage> {
   void filterTabs() {
     filteredTabs = [...tabs];
 
+    // Source view: doujin tabs and booru tabs live in separate views (with
+    // 'all' as the everything view).
+    if (sourceView == 'doujins') {
+      filteredTabs = filteredTabs.where((t) => t.booruHandler.hasReader).toList();
+    } else if (sourceView == 'boorus') {
+      filteredTabs = filteredTabs.where((t) => !t.booruHandler.hasReader).toList();
+    }
+
     if (booruFilter != null) {
       filteredTabs = filteredTabs.where((t) => t.selectedBooru.value == booruFilter).toList();
     }
@@ -932,6 +948,48 @@ class _TabManagerPageState extends State<TabManagerPage> {
   }
 
   Widget filterBuild() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // The three-view source toggle — always visible so the split between
+        // doujin tabs and booru tabs is one tap away.
+        Padding(
+          padding: const EdgeInsets.fromLTRB(10, 8, 10, 0),
+          child: SizedBox(
+            width: double.infinity,
+            child: SegmentedButton<String>(
+              style: const ButtonStyle(visualDensity: VisualDensity.compact),
+              segments: const [
+                ButtonSegment(
+                  value: 'doujins',
+                  label: Text('Doujins'),
+                  icon: Icon(Symbols.menu_book_rounded, size: 16),
+                ),
+                ButtonSegment(
+                  value: 'boorus',
+                  label: Text('Boorus & other'),
+                  icon: Icon(Symbols.image_rounded, size: 16),
+                ),
+                ButtonSegment(
+                  value: 'all',
+                  label: Text('All'),
+                  icon: Icon(Symbols.select_all_rounded, size: 16),
+                ),
+              ],
+              selected: {sourceView},
+              onSelectionChanged: (selection) {
+                sourceView = selection.first;
+                getTabs();
+              },
+            ),
+          ),
+        ),
+        _filterRowBuild(),
+      ],
+    );
+  }
+
+  Widget _filterRowBuild() {
     return Container(
       margin: const EdgeInsets.only(right: 10),
       width: double.infinity,

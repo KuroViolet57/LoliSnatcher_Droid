@@ -19,6 +19,7 @@ import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/pages/gallery_view_page.dart';
 import 'package:lolisnatcher/src/pages/doujin_detail_page.dart';
 import 'package:lolisnatcher/src/widgets/gallery/doujin_item_menu.dart';
+import 'package:lolisnatcher/src/widgets/tabs/tab_row.dart';
 import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 import 'package:lolisnatcher/src/widgets/common/long_press_repeater.dart';
@@ -531,6 +532,22 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware {
                               child: DiscoveryStrip(tab: searchHandler.currentTab),
                             ),
                           ),
+                          // A doujin tab (id:<n> on a doujin source) IS the
+                          // doujin: its content is the DETAIL PAGE, not a
+                          // one-card grid.
+                          if (TabRow.isDoujinTab(searchHandler.currentTab) &&
+                              searchHandler.currentFetched.isNotEmpty)
+                            SliverFillRemaining(
+                              child: DoujinDetailPage(
+                                key: ValueKey(
+                                  'doujin-tab-${searchHandler.currentTabId}-${searchHandler.currentFetched.first.serverId}',
+                                ),
+                                tab: searchHandler.currentTab,
+                                index: 0,
+                                embedded: true,
+                              ),
+                            )
+                          else
                           SliverPadding(
                             padding: const EdgeInsets.fromLTRB(10, 16, 10, 180),
                             sliver: Builder(

@@ -2,8 +2,9 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import 'package:get/get.dart' hide FirstWhereOrNullExt;
-import 'package:lolisnatcher/gen/strings.g.dart';
-
+import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/widgets/image/custom_network_image.dart';
+import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/data/meta_tag.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/tag_handler.dart';
@@ -31,12 +32,30 @@ class TabRow extends StatelessWidget {
   final String? filterText;
   final bool isExpanded;
 
+  /// A tab that IS a doujin: a doujin source opened on one exact gallery.
+  static bool isDoujinTab(SearchTab tab) =>
+      tab.booruHandler.hasReader && tab.tags.trim().toLowerCase().startsWith('id:');
+
   @override
   Widget build(BuildContext context) {
     return Obx(
       () {
         final String rawTagsStr = tab.tags;
-        final String tagText = (rawTagsStr.trim().isEmpty ? context.loc.tabs.empty : rawTagsStr).trim();
+
+        // Doujin tabs: the gallery's COVER + title stand in for favicon +
+        // query text, in every tab list that renders through this row.
+        final BooruItem? doujin =
+            isDoujinTab(tab) && tab.booruHandler.filteredFetched.isNotEmpty
+            ? tab.booruHandler.filteredFetched.first
+            : null;
+        final String? doujinTitle = doujin == null
+            ? null
+            : (doujin.description ?? '')
+                  .split('\n')
+                  .firstWhere((l) => l.trim().isNotEmpty, orElse: rawTagsStr.trim);
+
+        final String tagText =
+            doujinTitle ?? (rawTagsStr.trim().isEmpty ? context.loc.tabs.empty : rawTagsStr).trim();
 
         final bool hasItems = tab.booruHandler.filteredFetched.isNotEmpty;
 
@@ -54,7 +73,8 @@ class TabRow extends StatelessWidget {
           ),
         );
 
-        if (tab.tags.trim().isNotEmpty) {
+        // Doujin tabs show a plain title — never tag-coloured spans.
+        if (doujin == null && tab.tags.trim().isNotEmpty) {
           if (filterText?.isNotEmpty == true) {
             final List<TextSpan> spans = [];
             final List<String> split = tagText.split(filterText!);
@@ -200,7 +220,28 @@ class TabRow extends StatelessWidget {
 
         return Row(
           children: [
-            if (withFavicon) ...[
+            if (doujin != null) ...[
+              // Cover thumbnail marks the tab as a doujin at a glance.
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: SizedBox(
+                  width: 24,
+                  height: 32,
+                  child: doujin.thumbnailURL.isEmpty
+                      ? const ColoredBox(color: Colors.black26)
+                      : Image(
+                          image: CustomNetworkImage(
+                            doujin.thumbnailURL,
+                            withCache: SettingsHandler.instance.thumbnailCache,
+                            cacheFolder: 'thumbnails',
+                          ),
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => const ColoredBox(color: Colors.black26),
+                        ),
+                ),
+              ),
+              const SizedBox(width: 6),
+            ] else if (withFavicon) ...[
               ValueListenableBuilder(
                 valueListenable: tab.selectedBooru,
                 builder: (context, selectedBooru, child) {
