@@ -1,8 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'package:dio/dio.dart';
 import 'package:material_symbols_icons/symbols.dart';
-import 'package:photo_view/photo_view.dart';
 import 'package:preload_page_view/preload_page_view.dart';
 
 import 'package:lolisnatcher/src/data/booru.dart';
@@ -20,19 +21,25 @@ import 'package:lolisnatcher/src/widgets/image/custom_network_image.dart';
 
 /// The doujin reader: ordered pages of one gallery, read like a book.
 ///
-/// Pages render through their own self-contained image path (a PhotoView on
-/// a CustomNetworkImage) rather than the main viewer's ImageViewer. The
-/// first shipped reader reused ImageViewer and came back from the field as a
-/// black screen on every page — ImageViewer is welded to the gallery
-/// machinery (hero tags, viewer-handler state, notes, tiling) and none of
-/// its failure modes are visible. This path owes nothing to that machinery,
-/// shows real progress while loading, and prints the URL + error ON the page
-/// with a retry button when loading fails, so a broken page can be diagnosed
-/// from a screenshot alone.
+/// LAYOUT CONTRACT — this page has shipped broken twice, so the rules its
+/// structure follows are spelled out:
 ///
-/// Reading behaviour comes from the per-source settings (reading direction
-/// including vertical, tap zones, instant/animated turns, preload depth,
-/// keep screen on) — see [SourceSettingsHandler].
+///  * It is pushed as an ordinary OPAQUE [MaterialPageRoute] — the same
+///    route type the comments page uses from the same drawer — never a
+///    transparent PageRouteBuilder. Field recordings of the transparent
+///    version showed the page's chrome half-height with other routes' UI
+///    interleaved; opaque removes the entire class.
+///  * NO Scaffold slots. The chrome is a [Stack]: the page view fills the
+///    stack, the top bar is Positioned(top: 0), the bottom bar is
+///    Positioned(bottom: 0). Nothing (keyboard insets, sheet extents,
+///    Scaffold slot behaviour) can float them mid-screen, and
+///    resizeToAvoidBottomInset is false so view insets are ignored outright.
+///  * The page view is wrapped in [ClipRect]. PhotoView paints — and hit
+///    tests — outside its bounds when unclipped, which is how the previous
+///    build's images covered the whole screen while its buttons went dead.
+///  * Tap zones live on their OWN transparent layer above the page view and
+///    below the chrome, so they keep working while a page is still loading
+///    or failed — PhotoView keeps pinch/pan/double-tap-zoom only.
 class DoujinReaderPage extends StatefulWidget {
   const DoujinReaderPage({
     required this.pages,
@@ -48,6 +55,12 @@ class DoujinReaderPage extends StatefulWidget {
   final String galleryId;
   final String title;
   final int initialPage;
+
+  /// Test hook: lets widget tests substitute a working in-memory image so a
+  /// LIVE zoomable page is on screen while chrome/input is exercised —
+  /// otherwise every slide settles into its error state under test and the
+  /// clipping/zoom layers guard nothing.
+  static ImageProvider Function(BooruItem item)? testImageProviderBuilder;
 
   @override
   State<DoujinReaderPage> createState() => _DoujinReaderPageState();
@@ -71,9 +84,16 @@ class _DoujinReaderPageState extends State<DoujinReaderPage> {
     _current = widget.initialPage.clamp(0, widget.pages.length - 1);
     _controller = PreloadPageController(initialPage: _current);
     _direction = sourceSettings.readingDirection(widget.booru);
-    if (sourceSettings.keepScreenOn(widget.booru)) {
-      ServiceHandler.disableSleep();
-    }
+    // Both directions on purpose: the gallery below disables sleep for its
+    // own lifetime, so honouring keepScreenOn=false here means actively
+    // re-enabling, and restoring the disable on dispose.
+    try {
+      if (sourceSettings.keepScreenOn(widget.booru)) {
+        ServiceHandler.disableSleep();
+      } else {
+        ServiceHandler.enableSleep();
+      }
+    } catch (_) {}
     Logger.Inst().log(
       'reader open: gallery=${widget.galleryId} pages=${widget.pages.length} '
       'start=${_current + 1} first=${widget.pages.first.fileURL}',
@@ -85,17 +105,32 @@ class _DoujinReaderPageState extends State<DoujinReaderPage> {
 
   @override
   void dispose() {
+    _pendingTapTimer?.cancel();
     _controller.dispose();
+    try {
+      // The gallery viewer below expects sleep disabled while it is open.
+      ServiceHandler.disableSleep();
+    } catch (_) {}
     super.dispose();
   }
 
+  /// Where a page-turn in flight is headed. Rapid tap-tap paging arrives
+  /// FASTER than onPageChanged, so chaining turns off [_current] alone
+  /// swallows every second tap — turns chain off this instead.
+  int? _turnTarget;
+
   void _onPageChanged(int page) {
     setState(() => _current = page);
+    if (_turnTarget == page) _turnTarget = null;
     ReaderHandler.instance.saveProgress(widget.booru, widget.galleryId, page, widget.pages.length);
   }
 
+  int get _effectivePage => _turnTarget ?? _current;
+
   void _goTo(int page) {
     final int target = page.clamp(0, widget.pages.length - 1);
+    if (target == _effectivePage) return;
+    _turnTarget = target;
     if (sourceSettings.instantPageTurns(widget.booru)) {
       _controller.jumpToPage(target);
     } else {
@@ -107,30 +142,82 @@ class _DoujinReaderPageState extends State<DoujinReaderPage> {
     }
   }
 
-  /// PhotoView's own tap callback — no competing gesture recognizers.
-  /// Edges turn pages (respecting reading direction), the middle toggles
-  /// the chrome.
-  void _onTapUp(BuildContext context, TapUpDetails details, PhotoViewControllerValue value) {
+  // ── raw-pointer tap zones ──────────────────────────────────────────────
+  // A GestureDetector tap loses the arena to the PageView's scrollable the
+  // moment a page-turn animation is in flight (the scrollable claims the
+  // pointer to interrupt the animation) — which drops every second tap of
+  // rapid tap-tap paging. Raw pointer events are not arena-gated, so taps
+  // are detected manually: single pointer, short, and no movement.
+  Offset? _tapDownPosition;
+  int _tapDownTime = 0;
+  int _activePointers = 0;
+  Timer? _pendingTapTimer;
+
+  void _onPointerDown(PointerDownEvent event) {
+    _activePointers++;
+    if (_activePointers == 1) {
+      _tapDownPosition = event.position;
+      _tapDownTime = DateTime.now().millisecondsSinceEpoch;
+    } else {
+      // Second finger = pinch, not a tap.
+      _tapDownPosition = null;
+    }
+  }
+
+  void _onPointerUp(PointerUpEvent event) {
+    _activePointers = (_activePointers - 1).clamp(0, 10);
+    final Offset? down = _tapDownPosition;
+    _tapDownPosition = null;
+    if (down == null) return;
+    final int elapsed = DateTime.now().millisecondsSinceEpoch - _tapDownTime;
+    if (elapsed > 260 || (event.position - down).distance > 18) return;
+
+    if (sourceSettings.doubleTapZoom(widget.booru)) {
+      // Double-tap zoom is on: hold single taps for the double-tap window
+      // so a double-tap zooms instead of turning two pages.
+      if (_pendingTapTimer?.isActive ?? false) {
+        _pendingTapTimer!.cancel();
+        return; // second tap of a double-tap — the slide's zoom handles it
+      }
+      final Offset position = event.position;
+      _pendingTapTimer = Timer(const Duration(milliseconds: 260), () {
+        if (mounted) _handleTap(position);
+      });
+      return;
+    }
+    _handleTap(event.position);
+  }
+
+  void _onPointerCancel(PointerCancelEvent event) {
+    _activePointers = (_activePointers - 1).clamp(0, 10);
+    _tapDownPosition = null;
+  }
+
+  /// Edge taps turn pages (respecting reading direction), middle taps toggle
+  /// the chrome. Works regardless of whether the page under it is showing,
+  /// loading, failed, or mid page-turn animation.
+  void _handleTap(Offset position) {
+    final Size size = MediaQuery.sizeOf(context);
     if (!sourceSettings.tapZones(widget.booru)) {
       setState(() => _chromeVisible = !_chromeVisible);
       return;
     }
     if (_vertical) {
-      final double dy = details.globalPosition.dy / MediaQuery.sizeOf(context).height;
+      final double dy = position.dy / size.height;
       if (dy < 0.25) {
-        _goTo(_current - 1);
+        _goTo(_effectivePage - 1);
       } else if (dy > 0.75) {
-        _goTo(_current + 1);
+        _goTo(_effectivePage + 1);
       } else {
         setState(() => _chromeVisible = !_chromeVisible);
       }
       return;
     }
-    final double dx = details.globalPosition.dx / MediaQuery.sizeOf(context).width;
+    final double dx = position.dx / size.width;
     if (dx < 0.3) {
-      _goTo(_rtl ? _current + 1 : _current - 1);
+      _goTo(_rtl ? _effectivePage + 1 : _effectivePage - 1);
     } else if (dx > 0.7) {
-      _goTo(_rtl ? _current - 1 : _current + 1);
+      _goTo(_rtl ? _effectivePage - 1 : _effectivePage + 1);
     } else {
       setState(() => _chromeVisible = !_chromeVisible);
     }
@@ -163,146 +250,225 @@ class _DoujinReaderPageState extends State<DoujinReaderPage> {
     _ => (Symbols.format_textdirection_l_to_r_rounded, 'Left-to-right — tap to change'),
   };
 
-  @override
-  Widget build(BuildContext context) {
-    final int count = widget.pages.length;
+  Widget _topBar(BuildContext context) {
     final (IconData dirIcon, String dirLabel) = _directionIconLabel;
-
-    return Scaffold(
-      backgroundColor: Colors.black,
-      extendBodyBehindAppBar: true,
-      extendBody: true,
-      appBar: _chromeVisible
-          ? AppBar(
-              backgroundColor: Colors.black38,
-              elevation: 0,
-              titleSpacing: 0,
-              title: Text(
-                widget.title.isNotEmpty ? widget.title : 'Reader',
-                style: const TextStyle(fontSize: 14),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
+    return GestureDetector(
+      // Absorb taps anywhere on the bar (including spacer gaps and the
+      // status-bar strip) so they never fall through to the tap zones.
+      behavior: HitTestBehavior.opaque,
+      onTap: () {},
+      child: Material(
+      key: const ValueKey('reader-top-bar'),
+      color: Colors.black.withValues(alpha: 0.62),
+      child: SafeArea(
+        bottom: false,
+        child: SizedBox(
+          height: kToolbarHeight,
+          child: Row(
+            children: [
+              IconButton(
+                tooltip: 'Back',
+                icon: const Icon(Symbols.arrow_back_rounded, color: Colors.white),
+                onPressed: () => Navigator.of(context).maybePop(),
               ),
-              actions: [
-                IconButton(
-                  tooltip: dirLabel,
-                  icon: Icon(dirIcon),
-                  onPressed: _cycleDirection,
+              Expanded(
+                child: Text(
+                  widget.title.isNotEmpty ? widget.title : 'Reader',
+                  style: const TextStyle(color: Colors.white, fontSize: 14),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                PopupMenuButton<String>(
-                  icon: const Icon(Symbols.more_vert_rounded),
-                  onSelected: (value) {
-                    switch (value) {
-                      case 'save-page':
-                        _snatch([widget.pages[_current]]);
-                      case 'save-all':
-                        _snatch(widget.pages);
-                    }
-                  },
-                  itemBuilder: (context) => const [
-                    PopupMenuItem(value: 'save-page', child: Text('Save this page')),
-                    PopupMenuItem(value: 'save-all', child: Text('Save all pages')),
-                  ],
-                ),
-                IconButton(
-                  tooltip: 'Close',
-                  icon: const Icon(Symbols.close_rounded),
-                  onPressed: () => Navigator.of(context).maybePop(),
-                ),
-              ],
-            )
-          : null,
-      // Same scope wrapper as the main viewer: lets PhotoView's pan (while
-      // zoomed) and the PageView's swipe negotiate instead of fighting.
-      body: PhotoViewGestureDetectorScope(
-        axis: Axis.values,
-        child: PreloadPageView.builder(
-          controller: _controller,
-          reverse: _rtl,
-          scrollDirection: _vertical ? Axis.vertical : Axis.horizontal,
-          preloadPagesCount: sourceSettings.preloadPages(widget.booru),
-          itemCount: count,
-          onPageChanged: _onPageChanged,
-          itemBuilder: (context, index) {
-            return _ReaderPageSlide(
-              key: ValueKey('reader-page-${widget.galleryId}-$index'),
-              item: widget.pages[index],
-              booru: widget.booru,
-              pageNumber: index + 1,
-              onTapUp: _onTapUp,
-            );
-          },
+              ),
+              IconButton(
+                key: const ValueKey('reader-direction-button'),
+                tooltip: dirLabel,
+                icon: Icon(dirIcon, color: Colors.white),
+                onPressed: _cycleDirection,
+              ),
+              PopupMenuButton<String>(
+                key: const ValueKey('reader-menu-button'),
+                icon: const Icon(Symbols.more_vert_rounded, color: Colors.white),
+                onSelected: (value) {
+                  switch (value) {
+                    case 'save-page':
+                      _snatch([widget.pages[_current]]);
+                    case 'save-all':
+                      _snatch(widget.pages);
+                  }
+                },
+                itemBuilder: (context) => const [
+                  PopupMenuItem(value: 'save-page', child: Text('Save this page')),
+                  PopupMenuItem(value: 'save-all', child: Text('Save all pages')),
+                ],
+              ),
+              IconButton(
+                key: const ValueKey('reader-close-button'),
+                tooltip: 'Close',
+                icon: const Icon(Symbols.close_rounded, color: Colors.white),
+                onPressed: () => Navigator.of(context).maybePop(),
+              ),
+            ],
+          ),
         ),
       ),
-      bottomNavigationBar: !_chromeVisible
-          ? null
-          : ColoredBox(
-              color: Colors.black38,
-              child: SafeArea(
-                top: false,
-                child: Row(
-                  children: [
-                    const SizedBox(width: 12),
-                    Text(
-                      '${_current + 1} / $count',
-                      style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700),
-                    ),
-                    Expanded(
-                      child: count > 1
-                          ? Directionality(
-                              // The slider runs in reading order too.
-                              textDirection: _rtl ? TextDirection.rtl : TextDirection.ltr,
-                              child: Slider(
-                                value: (_current + 1).toDouble(),
-                                min: 1,
-                                max: count.toDouble(),
-                                divisions: count - 1,
-                                label: '${_current + 1}',
-                                onChanged: (value) => _controller.jumpToPage(value.round() - 1),
-                              ),
-                            )
-                          : const SizedBox.shrink(),
-                    ),
-                    const SizedBox(width: 12),
-                  ],
-                ),
-              ),
+      ),
+    );
+  }
+
+  Widget _bottomBar(BuildContext context) {
+    final int count = widget.pages.length;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {},
+      child: Material(
+      key: const ValueKey('reader-bottom-bar'),
+      color: Colors.black.withValues(alpha: 0.62),
+      child: SafeArea(
+        top: false,
+        child: Row(
+          children: [
+            const SizedBox(width: 12),
+            Text(
+              '${_current + 1} / $count',
+              style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700),
             ),
+            Expanded(
+              child: count > 1
+                  ? Directionality(
+                      // The slider runs in reading order too.
+                      textDirection: _rtl ? TextDirection.rtl : TextDirection.ltr,
+                      child: Slider(
+                        value: (_current + 1).toDouble(),
+                        min: 1,
+                        max: count.toDouble(),
+                        divisions: count - 1,
+                        label: '${_current + 1}',
+                        onChanged: (value) => _controller.jumpToPage(value.round() - 1),
+                      ),
+                    )
+                  : const SizedBox.shrink(),
+            ),
+            const SizedBox(width: 12),
+          ],
+        ),
+      ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      // Insets must never move the chrome — the bars are Positioned, and the
+      // body ignores the keyboard/IME area entirely.
+      resizeToAvoidBottomInset: false,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Pages. Clipped: PhotoView paints and hit-tests outside its
+          // bounds when left unclipped.
+          ClipRect(
+            child: PreloadPageView.builder(
+              controller: _controller,
+              reverse: _rtl,
+              scrollDirection: _vertical ? Axis.vertical : Axis.horizontal,
+              preloadPagesCount: sourceSettings.preloadPages(widget.booru),
+              itemCount: widget.pages.length,
+              onPageChanged: _onPageChanged,
+              itemBuilder: (context, index) {
+                return _ReaderPageSlide(
+                  key: ValueKey('reader-page-${widget.galleryId}-$index'),
+                  item: widget.pages[index],
+                  booru: widget.booru,
+                  pageNumber: index + 1,
+                  doubleTapZoom: sourceSettings.doubleTapZoom(widget.booru),
+                );
+              },
+            ),
+          ),
+          // Tap zones: raw pointer events (see _onPointerDown) — never in
+          // any gesture arena, so pinch/pan/swipe pass through untouched
+          // and taps still land mid page-turn animation.
+          Positioned.fill(
+            child: Listener(
+              key: const ValueKey('reader-tap-zones'),
+              behavior: HitTestBehavior.translucent,
+              onPointerDown: _onPointerDown,
+              onPointerUp: _onPointerUp,
+              onPointerCancel: _onPointerCancel,
+            ),
+          ),
+          if (_chromeVisible)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: _topBar(context),
+            ),
+          if (_chromeVisible)
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: _bottomBar(context),
+            ),
+        ],
+      ),
     );
   }
 }
 
 /// One page: zoomable image with explicit loading progress and an on-page
-/// error message + retry. Headers match what the grid thumbnails send, so a
-/// page can never fail for header reasons the thumbs don't share.
+/// error message + retry.
+///
+/// Zoom is a stock [InteractiveViewer] — no photo_view: its fork
+/// unconditionally registers a double-tap zoom recognizer, which delays
+/// every single tap by the double-tap window and turns rapid tap-tap paging
+/// into a zoom. Double-tap zoom here is opt-in per source; pinch always
+/// works. The viewer claims drags only while zoomed in, so page swipes
+/// reach the PageView at rest.
 class _ReaderPageSlide extends StatefulWidget {
   const _ReaderPageSlide({
     required this.item,
     required this.booru,
     required this.pageNumber,
-    required this.onTapUp,
+    required this.doubleTapZoom,
     super.key,
   });
 
   final BooruItem item;
   final Booru booru;
   final int pageNumber;
-  final void Function(BuildContext, TapUpDetails, PhotoViewControllerValue) onTapUp;
+  final bool doubleTapZoom;
 
   @override
   State<_ReaderPageSlide> createState() => _ReaderPageSlideState();
 }
 
 class _ReaderPageSlideState extends State<_ReaderPageSlide> {
-  CustomNetworkImage? _provider;
+  ImageProvider? _provider;
   CancelToken? _cancelToken;
   Object? _error;
-  int _epoch = 0;
+
+  final TransformationController _transform = TransformationController();
+  bool _zoomed = false;
+  TapDownDetails? _lastDoubleTapDown;
 
   @override
   void initState() {
     super.initState();
+    _transform.addListener(_onTransformChanged);
     _initProvider();
+  }
+
+  void _onTransformChanged() {
+    final bool zoomed = _transform.value.getMaxScaleOnAxis() > 1.01;
+    if (zoomed != _zoomed) {
+      // panEnabled flips with this: at rest the viewer must not claim drags
+      // or the PageView never receives swipes.
+      setState(() => _zoomed = zoomed);
+    }
   }
 
   Future<void> _initProvider() async {
@@ -316,36 +482,51 @@ class _ReaderPageSlideState extends State<_ReaderPageSlide> {
     if (!mounted) return;
     setState(() {
       _error = null;
-      _provider = CustomNetworkImage(
-        widget.item.fileURL,
-        headers: headers,
-        cancelToken: _cancelToken,
-        withCache: SettingsHandler.instance.mediaCache,
-        cacheFolder: 'media',
-        fileNameExtras: widget.item.fileNameExtras,
-        onError: (e) {
-          Logger.Inst().log(
-            'reader page ${widget.pageNumber} failed: $e url=${widget.item.fileURL}',
-            '_ReaderPageSlide',
-            'onError',
-            LogTypes.imageLoadingError,
+      _provider =
+          DoujinReaderPage.testImageProviderBuilder?.call(widget.item) ??
+          CustomNetworkImage(
+            widget.item.fileURL,
+            headers: headers,
+            cancelToken: _cancelToken,
+            withCache: SettingsHandler.instance.mediaCache,
+            cacheFolder: 'media',
+            fileNameExtras: widget.item.fileNameExtras,
+            onError: (e) {
+              Logger.Inst().log(
+                'reader page ${widget.pageNumber} failed: $e url=${widget.item.fileURL}',
+                '_ReaderPageSlide',
+                'onError',
+                LogTypes.imageLoadingError,
+              );
+              if (mounted) setState(() => _error = e);
+            },
           );
-          if (mounted) setState(() => _error = e);
-        },
-      );
     });
   }
 
   Future<void> _retry() async {
     final provider = _provider;
     if (provider != null) await provider.evict();
-    _epoch++;
     await _initProvider();
+  }
+
+  void _toggleDoubleTapZoom() {
+    if (_zoomed) {
+      _transform.value = Matrix4.identity();
+      return;
+    }
+    final Offset position = _lastDoubleTapDown?.localPosition ?? Offset.zero;
+    const double scale = 2.5;
+    _transform.value = Matrix4.identity()
+      ..translateByDouble(-position.dx * (scale - 1), -position.dy * (scale - 1), 0, 1)
+      ..scaleByDouble(scale, scale, 1, 1);
   }
 
   @override
   void dispose() {
     _cancelToken?.cancel();
+    _transform.removeListener(_onTransformChanged);
+    _transform.dispose();
     super.dispose();
   }
 
@@ -385,54 +566,69 @@ class _ReaderPageSlideState extends State<_ReaderPageSlide> {
       );
     }
 
-    return PhotoView(
-      key: ValueKey('reader-photo-$_epoch'),
-      imageProvider: _provider,
-      backgroundDecoration: const BoxDecoration(color: Colors.black),
-      minScale: PhotoViewComputedScale.contained,
-      maxScale: PhotoViewComputedScale.covered * 8,
-      initialScale: PhotoViewComputedScale.contained,
-      basePosition: Alignment.center,
-      onTapUp: widget.onTapUp,
-      loadingBuilder: (context, event) {
-        final double? progress = (event == null || (event.expectedTotalBytes ?? 0) == 0)
-            ? null
-            : event.cumulativeBytesLoaded / event.expectedTotalBytes!;
-        return Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SizedBox(
-                width: 42,
-                height: 42,
-                child: CircularProgressIndicator(value: progress),
+    Widget viewer = InteractiveViewer(
+      transformationController: _transform,
+      maxScale: 8,
+      // Claim drags only while zoomed; at rest the PageView owns them.
+      panEnabled: _zoomed,
+      clipBehavior: Clip.hardEdge,
+      child: Center(
+        child: Image(
+          image: _provider!,
+          fit: BoxFit.contain,
+          gaplessPlayback: true,
+          loadingBuilder: (context, child, progress) {
+            if (progress == null) return child;
+            final double? value = (progress.expectedTotalBytes ?? 0) == 0
+                ? null
+                : progress.cumulativeBytesLoaded / progress.expectedTotalBytes!;
+            return Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(width: 42, height: 42, child: CircularProgressIndicator(value: value)),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Page ${widget.pageNumber}',
+                    style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 12),
+                  ),
+                ],
               ),
-              const SizedBox(height: 10),
-              Text(
-                'Page ${widget.pageNumber}',
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 12),
-              ),
-            ],
-          ),
-        );
-      },
-      errorBuilder: (context, error, stackTrace) {
-        // PhotoView's own decode-level failures land here (provider-level
-        // ones go through onError above) — same presentation.
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted && _error == null) setState(() => _error = error);
-        });
-        return const SizedBox.shrink();
-      },
+            );
+          },
+          errorBuilder: (context, error, stackTrace) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted && _error == null) setState(() => _error = error);
+            });
+            return const SizedBox.shrink();
+          },
+        ),
+      ),
     );
+
+    if (widget.doubleTapZoom) {
+      // Opt-in: this recognizer is exactly what delays single taps, so it
+      // only exists when the user asked for it.
+      viewer = GestureDetector(
+        onDoubleTapDown: (details) => _lastDoubleTapDown = details,
+        onDoubleTap: _toggleDoubleTapZoom,
+        child: viewer,
+      );
+    }
+
+    return ClipRect(child: viewer);
   }
 }
 
 /// Opens the reader for [item]'s registered book, resuming saved progress.
 ///
-/// Registered with [ViewerHandler] as a nested viewer, exactly like the
-/// tag-preview and post-files overlays — that keeps the parent viewer's
-/// player paused (maxActiveViewers doubles as the pause mechanism).
+/// Pushed as an ordinary opaque [MaterialPageRoute] — see the layout
+/// contract on [DoujinReaderPage]. Registered with [ViewerHandler] as a
+/// nested viewer so the parent viewer's player stays paused
+/// (maxActiveViewers doubles as the pause mechanism). Re-entrancy guarded:
+/// a double-tap on a Read button must not stack two readers.
+bool _readerOpening = false;
+
 Future<void> openDoujinReader(
   BuildContext context, {
   required BooruItem item,
@@ -440,36 +636,39 @@ Future<void> openDoujinReader(
   // Jump straight to this page (Pages grid), ignoring saved progress.
   int? startAt,
 }) async {
-  final List<BooruItem>? pages = ReaderHandler.instance.pagesFor(item);
-  if (pages == null || pages.isEmpty) return;
-
-  final String galleryId = item.serverId ?? item.postURL;
-  final ReaderProgress? progress = await ReaderHandler.instance.loadProgress(booru, galleryId);
-  // A finished book starts over; an unfinished one resumes.
-  final int initialPage = startAt ?? ((progress != null && !progress.isFinished) ? progress.page : 0);
-
-  final String title = (item.description ?? '').split('\n').firstWhere((line) => line.trim().isNotEmpty, orElse: () => '');
-
-  if (!context.mounted) return;
-  final GlobalKey viewerKey = GlobalKey(debugLabel: 'viewer-doujin-reader');
-  ViewerHandler.instance.addViewer(viewerKey);
+  if (_readerOpening) return;
+  _readerOpening = true;
   try {
-    await Navigator.of(context).push(
-      PageRouteBuilder(
-        opaque: false,
-        barrierColor: Colors.black,
-        transitionDuration: const Duration(milliseconds: 250),
-        pageBuilder: (_, _, _) => DoujinReaderPage(
-          key: viewerKey,
-          pages: pages,
-          booru: booru,
-          galleryId: galleryId,
-          title: title,
-          initialPage: initialPage,
+    final List<BooruItem>? pages = ReaderHandler.instance.pagesFor(item);
+    if (pages == null || pages.isEmpty) return;
+
+    final String galleryId = item.serverId ?? item.postURL;
+    final ReaderProgress? progress = await ReaderHandler.instance.loadProgress(booru, galleryId);
+    // A finished book starts over; an unfinished one resumes.
+    final int initialPage = startAt ?? ((progress != null && !progress.isFinished) ? progress.page : 0);
+
+    final String title = (item.description ?? '').split('\n').firstWhere((line) => line.trim().isNotEmpty, orElse: () => '');
+
+    if (!context.mounted) return;
+    final GlobalKey viewerKey = GlobalKey(debugLabel: 'viewer-doujin-reader');
+    ViewerHandler.instance.addViewer(viewerKey);
+    try {
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => DoujinReaderPage(
+            key: viewerKey,
+            pages: pages,
+            booru: booru,
+            galleryId: galleryId,
+            title: title,
+            initialPage: initialPage,
+          ),
         ),
-      ),
-    );
+      );
+    } finally {
+      ViewerHandler.instance.removeViewer(viewerKey);
+    }
   } finally {
-    ViewerHandler.instance.removeViewer(viewerKey);
+    _readerOpening = false;
   }
 }

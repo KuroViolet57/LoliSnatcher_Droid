@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
@@ -14,6 +16,7 @@ class SourceSettings {
     this.readingDirection,
     this.pageTurnAnimation,
     this.tapZones,
+    this.doubleTapZoom,
     this.preloadPages,
     this.keepScreenOn,
     this.defaultSort,
@@ -24,6 +27,7 @@ class SourceSettings {
     readingDirection: json['readingDirection'] as String?,
     pageTurnAnimation: json['pageTurnAnimation'] as String?,
     tapZones: json['tapZones'] as bool?,
+    doubleTapZoom: json['doubleTapZoom'] as bool?,
     preloadPages: json['preloadPages'] as int?,
     keepScreenOn: json['keepScreenOn'] as bool?,
     defaultSort: json['defaultSort'] as String?,
@@ -38,6 +42,12 @@ class SourceSettings {
 
   /// Tap left/right screen edges to turn pages.
   bool? tapZones;
+
+  /// Double-tap to zoom in the reader. OFF by default: any double-tap
+  /// recognizer under the pointer delays every single tap by the double-tap
+  /// window (~300ms) and turns rapid tap-tap paging into a zoom — pinch
+  /// zoom always works regardless.
+  bool? doubleTapZoom;
 
   /// Pages fetched ahead in the reader.
   int? preloadPages;
@@ -54,6 +64,7 @@ class SourceSettings {
     if (readingDirection != null) 'readingDirection': readingDirection,
     if (pageTurnAnimation != null) 'pageTurnAnimation': pageTurnAnimation,
     if (tapZones != null) 'tapZones': tapZones,
+    if (doubleTapZoom != null) 'doubleTapZoom': doubleTapZoom,
     if (preloadPages != null) 'preloadPages': preloadPages,
     if (keepScreenOn != null) 'keepScreenOn': keepScreenOn,
     if (defaultSort != null) 'defaultSort': defaultSort,
@@ -109,6 +120,14 @@ class SourceSettingsHandler {
     }
   }
 
+  /// Tests only: forget everything and reload from the (per-test) file on
+  /// next access — the singleton otherwise leaks state between tests.
+  @visibleForTesting
+  void resetForTests() {
+    _byHost.clear();
+    _loaded = false;
+  }
+
   SourceSettings settingsFor(Booru? booru) {
     _ensureLoaded();
     return _byHost.putIfAbsent(keyFor(booru), SourceSettings.new);
@@ -127,6 +146,8 @@ class SourceSettingsHandler {
   bool instantPageTurns(Booru? booru) => settingsFor(booru).pageTurnAnimation == 'instant';
 
   bool tapZones(Booru? booru) => settingsFor(booru).tapZones ?? true;
+
+  bool doubleTapZoom(Booru? booru) => settingsFor(booru).doubleTapZoom ?? false;
 
   int preloadPages(Booru? booru) =>
       settingsFor(booru).preloadPages ?? SettingsHandler.instance.preloadCount;

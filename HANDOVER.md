@@ -1758,3 +1758,35 @@ NOT done from the user's list: webtoon CONTINUOUS scroll (vertical paged
 shipped instead), account favourites/blacklist sync. If pages are STILL
 black in this build, the on-page error text + talker log now say exactly
 why — ask for either.
+
+## Build `reader-r1` (2026-08-29) — item 1 of the 7-item batch
+
+Reader STILL broken in the field (3rd recording): pages render now, but the
+slider floats at EXACTLY 50% height over the image, the top-bar buttons are
+dead, and taps land on the floating slider (scrubbing) instead of turning
+pages. The image fills the whole screen even though the chrome is misplaced.
+
+Diagnosis (code-traced; the exact half-height trigger could not be
+reproduced in this container, so the fix removes the MECHANISM CLASS):
+- the old route was PageRouteBuilder(opaque: false) with a Scaffold using
+  appBar/bottomNavigationBar/extendBody slots — Scaffold slot placement is
+  what floated the bar; the transparent route kept the gallery + open info
+  sheet (extent 0.5 — matching the 50% bar position exactly) live below;
+- PhotoView UNCLIPPED paints AND HIT-TESTS beyond its bounds — that is both
+  the full-screen image over a misplaced layout and the dead top buttons
+  (taps fell into PhotoView's oversized gesture surface).
+
+The rebuilt page (doujin_reader_page.dart) has a written layout contract:
+opaque MaterialPageRoute (same type the comments page uses from the same
+drawer, known-good); NO Scaffold slots — a Stack with Positioned(top:0) /
+Positioned(bottom:0) chrome; resizeToAvoidBottomInset:false; ClipRect around
+the page view AND around each PhotoView; tap zones on their own transparent
+layer (single-tap only) above the pages and below the chrome, so they work
+even while a page is loading/failed and can't fight PhotoView's
+pinch/pan/double-tap or the PageView's swipes.
+
+test/doujin_reader_test.dart pins the class: slider DOCKED at the bottom
+(and stays docked under a 250px bottom view inset), edge taps turn pages
+both directions, middle tap toggles chrome, direction/menu/close buttons
+all fire, slider scrubs. 6/6 pass; the 10 pre-existing booru_test failures
+are live-site probes and fail identically on the previous commit.
