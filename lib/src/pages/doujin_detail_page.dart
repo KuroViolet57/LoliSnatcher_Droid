@@ -15,8 +15,8 @@ import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/snatch_handler.dart';
 import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/pages/doujin_reader_page.dart';
-import 'package:lolisnatcher/src/utils/extensions.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
+import 'package:lolisnatcher/src/widgets/gallery/doujin_tag_chip.dart';
 import 'package:lolisnatcher/src/widgets/gallery/tag_view.dart';
 import 'package:lolisnatcher/src/widgets/thumbnail/thumbnail.dart';
 import 'package:lolisnatcher/src/widgets/thumbnail/thumbnail_build.dart';
@@ -382,49 +382,11 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
   }
 
   Widget _tagChip(BuildContext context, Tag tag, {required bool isMarked, required bool isHidden}) {
-    final Color? typeColor = tag.tagType.getColour();
-    final Color base = (typeColor == null || typeColor == Colors.transparent)
-        ? Theme.of(context).colorScheme.onSurface
-        : typeColor;
-    return Material(
-      color: isMarked ? const Color(0xFFB8860B).withValues(alpha: 0.3) : base.withValues(alpha: 0.13),
-      shape: StadiumBorder(
-        side: BorderSide(color: isMarked ? const Color(0xFFDAA520) : base.withValues(alpha: 0.4)),
-      ),
-      child: InkWell(
-        customBorder: const StadiumBorder(),
-        // Tap AND long-press both open the full tag context menu (preview /
-        // search / open in tab / copy / favourite / hide), same as the
-        // viewer's tag list.
-        onTap: () => _openTagMenu(tag, isMarked: isMarked, isHidden: isHidden),
-        onLongPress: () => _openTagMenu(tag, isMarked: isMarked, isHidden: isHidden),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (isMarked) ...[
-                const Icon(Symbols.star_rounded, size: 13, color: Color(0xFFDAA520)),
-                const SizedBox(width: 3),
-              ],
-              Text(
-                tag.fullString.replaceAll('_', ' '),
-                style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
-              ),
-              if (tag.count > 0) ...[
-                const SizedBox(width: 5),
-                Text(
-                  tag.count.toFormattedString(),
-                  style: TextStyle(
-                    fontSize: 10.5,
-                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.55),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
+    return DoujinTagChip(
+      tag: tag,
+      booru: booru,
+      isMarked: isMarked,
+      onOpenMenu: () => _openTagMenu(tag, isMarked: isMarked, isHidden: isHidden),
     );
   }
 

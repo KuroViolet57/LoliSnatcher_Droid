@@ -370,6 +370,14 @@ class _SourceSettingsPageState extends State<SourceSettingsPage> {
             inheritedValue: globalLayer.tabPlacement ?? 'end',
             onChanged: (v) => _update((s) => s.tabPlacement = v),
           ),
+          _choiceRow<String>(
+            title: 'Tag chip tap',
+            subtitle: 'What tapping a tag chip does — long-press always does the other one. Cards keep the opposite: tap opens, long-press menus.',
+            options: const [('menu', 'Open menu'), ('newtab', 'Background tab')],
+            layerValue: layer.tagChipTap,
+            inheritedValue: globalLayer.tagChipTap ?? 'menu',
+            onChanged: (v) => _update((s) => s.tagChipTap = v),
+          ),
           //
           _header('RECOMMENDATIONS'),
           _switchRow(

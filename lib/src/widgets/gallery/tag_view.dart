@@ -2292,22 +2292,18 @@ Future<void> showTagDialog({
   final Tag resolvedTag = tagHandler.getTagFor(tag, handler.booru);
   final Color typeColor = resolvedTag.getColour() ?? const Color(0xFF8A80A0);
   final String typeName = resolvedTag.tagType.locName;
-  await showModalBottomSheet<void>(
-    context: context,
-    routeSettings: RouteSettings(name: 'tagDialog/$tag'),
-    isScrollControlled: true,
-    useSafeArea: true,
-    backgroundColor: Colors.transparent,
-    builder: (BuildContext context) {
+  final bool isDoujin = handler.hasReader;
+  Widget buildContent(BuildContext context) {
       return Container(
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          borderRadius: isDoujin ? null : const BorderRadius.vertical(top: Radius.circular(24)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // drag handle
+            // drag handle (sheet only)
+            if (!isDoujin)
             Container(
               margin: const EdgeInsets.only(top: 8, bottom: 2),
               width: 40,
@@ -2647,7 +2643,32 @@ Future<void> showTagDialog({
           ],
         ),
       );
-    },
+  }
+
+  // Doujin sources get the tag menu as a CENTERED popup; boorus keep the
+  // bottom sheet.
+  if (isDoujin) {
+    await showDialog<void>(
+      context: context,
+      routeSettings: RouteSettings(name: 'tagDialog/$tag'),
+      builder: (BuildContext context) => Dialog(
+        clipBehavior: Clip.antiAlias,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 380),
+          child: buildContent(context),
+        ),
+      ),
+    );
+    return;
+  }
+
+  await showModalBottomSheet<void>(
+    context: context,
+    routeSettings: RouteSettings(name: 'tagDialog/$tag'),
+    isScrollControlled: true,
+    useSafeArea: true,
+    backgroundColor: Colors.transparent,
+    builder: buildContent,
   );
 }
 
