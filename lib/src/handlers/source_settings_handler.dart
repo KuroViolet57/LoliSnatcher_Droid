@@ -21,6 +21,7 @@ class SourceSettings {
     this.keepScreenOn,
     this.defaultSort,
     this.gridTagStrip,
+    this.coverDisplay,
   });
 
   factory SourceSettings.fromJson(Map<String, dynamic> json) => SourceSettings(
@@ -32,6 +33,7 @@ class SourceSettings {
     keepScreenOn: json['keepScreenOn'] as bool?,
     defaultSort: json['defaultSort'] as String?,
     gridTagStrip: json['gridTagStrip'] as bool?,
+    coverDisplay: json['coverDisplay'] as String?,
   );
 
   /// 'ltr' | 'rtl' | 'vertical'
@@ -60,6 +62,11 @@ class SourceSettings {
   /// Show the tag strip + language badge on grid cards.
   bool? gridTagStrip;
 
+  /// How feed cards show the cover: 'fit' letterboxes the whole cover,
+  /// 'crop' fills the card (the old behaviour), 'adapt' sizes the card to
+  /// the cover's aspect ratio (staggered grid).
+  String? coverDisplay;
+
   Map<String, dynamic> toJson() => {
     if (readingDirection != null) 'readingDirection': readingDirection,
     if (pageTurnAnimation != null) 'pageTurnAnimation': pageTurnAnimation,
@@ -69,6 +76,7 @@ class SourceSettings {
     if (keepScreenOn != null) 'keepScreenOn': keepScreenOn,
     if (defaultSort != null) 'defaultSort': defaultSort,
     if (gridTagStrip != null) 'gridTagStrip': gridTagStrip,
+    if (coverDisplay != null) 'coverDisplay': coverDisplay,
   };
 
   bool get isEmpty => toJson().isEmpty;
@@ -157,4 +165,7 @@ class SourceSettingsHandler {
   String? defaultSort(Booru? booru) => settingsFor(booru).defaultSort;
 
   bool gridTagStrip(Booru? booru) => settingsFor(booru).gridTagStrip ?? true;
+
+  /// 'fit' (default — the whole cover is visible) | 'crop' | 'adapt'.
+  String coverDisplay(Booru? booru) => settingsFor(booru).coverDisplay ?? 'fit';
 }

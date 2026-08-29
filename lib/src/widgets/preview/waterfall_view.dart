@@ -17,6 +17,7 @@ import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/pages/gallery_view_page.dart';
 import 'package:lolisnatcher/src/pages/doujin_detail_page.dart';
+import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 import 'package:lolisnatcher/src/widgets/common/long_press_repeater.dart';
 import 'package:lolisnatcher/src/widgets/preview/grid_builder.dart';
@@ -82,7 +83,7 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware {
       ),
     );
 
-    isStaggered = settingsHandler.previewDisplay.isStaggered && searchHandler.currentBooruHandler.hasSizeData;
+    isStaggered = _computeIsStaggered();
   }
 
   @override
@@ -140,7 +141,7 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware {
 
     // check if grid type changed when changing tab
     final bool newIsStaggered =
-        settingsHandler.previewDisplay.isStaggered && searchHandler.currentBooruHandler.hasSizeData;
+        _computeIsStaggered();
     if (isStaggered != newIsStaggered) {
       isStaggered = newIsStaggered;
       setState(() {});
@@ -244,6 +245,16 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware {
       // don't auto scroll on viewed index change on desktop
       // call jumpTo only when viewed item is possibly out of view (i.e. selected by arrow keys)
     }
+  }
+
+  /// Staggered = cells sized by each item's aspect ratio. Also forced by
+  /// the doujin 'adapt' cover-display mode, which IS this behaviour.
+  bool _computeIsStaggered() {
+    final bool adaptCovers =
+        searchHandler.currentBooruHandler.hasReader &&
+        SourceSettingsHandler.instance.coverDisplay(searchHandler.currentBooru) == 'adapt';
+    return (settingsHandler.previewDisplay.isStaggered || adaptCovers) &&
+        searchHandler.currentBooruHandler.hasSizeData;
   }
 
   Future<void> onTap(int index) async {
@@ -374,7 +385,7 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware {
   Widget build(BuildContext context) {
     // check if grid type changed when rebuilding the widget (must happen only on start and when saving settings)
     final bool newIsStaggered =
-        settingsHandler.previewDisplay.isStaggered && searchHandler.currentBooruHandler.hasSizeData;
+        _computeIsStaggered();
     if (isStaggered != newIsStaggered) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         isStaggered = newIsStaggered;

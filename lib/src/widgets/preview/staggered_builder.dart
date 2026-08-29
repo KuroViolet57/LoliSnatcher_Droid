@@ -10,6 +10,7 @@ import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
+import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/widgets/thumbnail/thumbnail_card_build.dart';
 
 class StaggeredBuilder extends StatelessWidget {
@@ -70,6 +71,12 @@ class StaggeredBuilder extends StatelessWidget {
                 }
                 // force to use minimum 100 px and max 60% of screen height
                 possibleHeight = max(min(itemMaxHeight, possibleHeight), 100);
+                // Doujin cards carry a tag strip BELOW the cover — give the
+                // cell that extra height so the cover keeps its aspect.
+                if (tab.booruHandler.hasReader &&
+                    SourceSettingsHandler.instance.gridTagStrip(tab.booruHandler.booru)) {
+                  possibleHeight += 58;
+                }
 
                 final bool hasSelected = tab.selected.isNotEmpty;
                 final selectedIndex = tab.selected.indexOf(item);

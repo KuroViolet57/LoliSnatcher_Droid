@@ -171,6 +171,13 @@ class _SourceSettingsPageState extends State<SourceSettingsPage> {
           ],
           //
           _header('GRID'),
+          _choiceRow<String>(
+            title: 'Cover display',
+            subtitle: 'Fit letterboxes the whole cover; crop fills the card; adapt sizes the card to the cover (staggered grid mode).',
+            options: const [('fit', 'Fit'), ('crop', 'Crop'), ('adapt', 'Adapt')],
+            current: s.coverDisplay,
+            onChanged: (v) => _update((s) => s.coverDisplay = v),
+          ),
           SwitchListTile(
             title: const Text('Tags on grid cards'),
             subtitle: const Text('Most relevant tags under each cover, favourites in gold, and the +N button with the full list.'),

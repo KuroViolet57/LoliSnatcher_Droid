@@ -53,6 +53,12 @@ class ThumbnailCardBuild extends StatelessWidget {
   Widget build(BuildContext context) {
     final snatchHandler = SnatchHandler.instance;
 
+    // Doujin cards: tags live UNDER the cover, never on the artwork, and
+    // the cover's fit follows the per-source display setting.
+    final bool isDoujinCard = handler.hasReader && SourceSettingsHandler.instance.gridTagStrip(handler.booru);
+    final String coverDisplay = SourceSettingsHandler.instance.coverDisplay(handler.booru);
+    final BoxFit? coverFit = isDoujinCard ? (coverDisplay == 'crop' ? BoxFit.cover : BoxFit.contain) : null;
+
     final bool isSelected = selectable && selectedIndex != null;
     final bool showHighlightBorder = isHighlighted || isSelected;
     final double defaultBorderWidth = max(2, MediaQuery.devicePixelRatioOf(context));
@@ -90,13 +96,29 @@ class ThumbnailCardBuild extends StatelessWidget {
                 onSecondaryTap: onSecondaryTap == null ? null : () => onSecondaryTap?.call(index),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(14),
-                  child: ThumbnailBuild(
-                    item: item,
-                    handler: handler,
-                    selectable: selectable,
-                    selectedIndex: isSelected ? selectedIndex : null,
-                    onSelected: onSelected == null ? null : () => onSelected!(index),
-                  ),
+                  child: isDoujinCard
+                      ? Column(
+                          children: [
+                            Expanded(
+                              child: ThumbnailBuild(
+                                item: item,
+                                handler: handler,
+                                selectable: selectable,
+                                selectedIndex: isSelected ? selectedIndex : null,
+                                onSelected: onSelected == null ? null : () => onSelected!(index),
+                                fit: coverFit,
+                              ),
+                            ),
+                            _doujinFooter(context),
+                          ],
+                        )
+                      : ThumbnailBuild(
+                          item: item,
+                          handler: handler,
+                          selectable: selectable,
+                          selectedIndex: isSelected ? selectedIndex : null,
+                          onSelected: onSelected == null ? null : () => onSelected!(index),
+                        ),
                 ),
               ),
             ),
@@ -135,11 +157,9 @@ class ThumbnailCardBuild extends StatelessWidget {
               );
             }),
             //
-            // Doujin cards: language badge + a strip of the most relevant
-            // tags under the cover (favourited tags first, in gold) + a
-            // button showing the whole tag list without opening the post.
-            if (handler.hasReader && SourceSettingsHandler.instance.gridTagStrip(handler.booru))
-              ..._doujinOverlays(context),
+            // Language badge stays on the cover's corner; the tag strip is
+            // part of the card COLUMN below the artwork.
+            if (isDoujinCard) ..._languageBadgeOverlay(context),
             //
             Positioned.fill(
               child: ListenableBuilder(
@@ -216,32 +236,19 @@ class ThumbnailCardBuild extends StatelessWidget {
     'korean': 'KR',
   };
 
-  List<Widget> _doujinOverlays(BuildContext context) {
-    final Set<String> markedTags = SettingsHandler.instance.markedTags.toSet();
-
+  List<Widget> _languageBadgeOverlay(BuildContext context) {
     String? language;
-    final List<Tag> marked = [];
-    final List<Tag> rest = [];
     for (final tag in item.tagsList) {
-      final String? ns = handler.tagNamespace(tag.fullString);
-      if (ns == 'language') {
+      if (handler.tagNamespace(tag.fullString) == 'language') {
         language ??= _languageCodes[tag.fullString];
-        continue;
       }
-      if (ns == 'category') continue;
-      (markedTags.contains(tag.fullString) ? marked : rest).add(tag);
     }
-    // The site's counts double as relevance: a 200k tag says more about the
-    // work than a 300-use one. Favourites always lead.
-    rest.sort((a, b) => b.count.compareTo(a.count));
-    final List<Tag> shown = [...marked, ...rest].take(5).toList();
-    final int more = item.tagsList.length - shown.length;
-
+    if (language == null) return const [];
     return [
-      if (language != null)
-        Positioned(
-          top: 6,
-          right: 6,
+      Positioned(
+        top: 6,
+        right: 6,
+        child: IgnorePointer(
           child: DecoratedBox(
             decoration: BoxDecoration(
               color: Colors.black.withValues(alpha: 0.66),
@@ -256,69 +263,86 @@ class ThumbnailCardBuild extends StatelessWidget {
             ),
           ),
         ),
-      if (shown.isNotEmpty)
-        Positioned(
-          left: 0,
-          right: 0,
-          bottom: 0,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.transparent,
-                  Colors.black.withValues(alpha: 0.75),
-                ],
-              ),
-              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(14)),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(6, 14, 6, 6),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Expanded(
-                    child: Wrap(
+      ),
+    ];
+  }
+
+  /// The under-cover strip: up to 5 most relevant tags (favourited first,
+  /// in gold) + the +N button that opens the full tag sheet.
+  Widget _doujinFooter(BuildContext context) {
+    final Set<String> markedTags = SettingsHandler.instance.markedTags.toSet();
+
+    final List<Tag> marked = [];
+    final List<Tag> rest = [];
+    for (final tag in item.tagsList) {
+      final String? ns = handler.tagNamespace(tag.fullString);
+      if (ns == 'language' || ns == 'category') continue;
+      (markedTags.contains(tag.fullString) ? marked : rest).add(tag);
+    }
+    // The site's counts double as relevance; favourites always lead.
+    rest.sort((a, b) => b.count.compareTo(a.count));
+    final List<Tag> shown = [...marked, ...rest].take(5).toList();
+    final int more = item.tagsList.length - shown.length;
+
+    return ColoredBox(
+      color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.55),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(6, 5, 6, 6),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              child: shown.isEmpty
+                  ? Text(
+                      'no tags yet',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4),
+                      ),
+                    )
+                  : Wrap(
                       spacing: 3,
                       runSpacing: 3,
                       children: [
                         for (final tag in shown) _miniTagChip(context, tag, isMarked: marked.contains(tag)),
                       ],
                     ),
-                  ),
-                  const SizedBox(width: 4),
-                  // The whole card opens the post; this small target on top
-                  // of it shows every tag instead.
-                  GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => _showAllTagsSheet(context),
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.18),
-                        borderRadius: BorderRadius.circular(9),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                        child: Text(
-                          more > 0 ? '+$more' : '···',
-                          style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w800),
-                        ),
-                      ),
+            ),
+            const SizedBox(width: 4),
+            // The whole card opens the post; this small target on top of it
+            // shows every tag instead.
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => _showAllTagsSheet(context),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  child: Text(
+                    more > 0 ? '+$more' : '\u00b7\u00b7\u00b7',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurface,
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
-                ],
+                ),
               ),
             ),
-          ),
+          ],
         ),
-    ];
+      ),
+    );
   }
 
   Widget _miniTagChip(BuildContext context, Tag tag, {required bool isMarked}) {
+    final Color onSurface = Theme.of(context).colorScheme.onSurface;
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: isMarked ? const Color(0xFFB8860B).withValues(alpha: 0.9) : Colors.white.withValues(alpha: 0.14),
+        color: isMarked ? const Color(0xFFB8860B).withValues(alpha: 0.85) : onSurface.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(9),
       ),
       child: Padding(
@@ -332,7 +356,11 @@ class ThumbnailCardBuild extends StatelessWidget {
             ],
             Text(
               tag.fullString.replaceAll('_', ' '),
-              style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w600),
+              style: TextStyle(
+                color: isMarked ? Colors.white : onSurface,
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+              ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),

@@ -77,8 +77,10 @@ class NHentaiHandler extends BooruHandler {
 
   // ─────────────────────────── capabilities ───────────────────────────
 
+  /// Real per-item dimensions (the thumb's aspect ratio) come with every
+  /// list row, so the staggered grid can adapt cells to the cover.
   @override
-  bool get hasSizeData => false;
+  bool get hasSizeData => true;
 
   @override
   bool get hasTagSuggestions => true;

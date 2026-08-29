@@ -34,6 +34,7 @@ class ThumbnailBuild extends StatelessWidget {
     this.selectable = true,
     this.onSelected,
     this.simple = false,
+    this.fit,
     super.key,
   });
 
@@ -43,6 +44,7 @@ class ThumbnailBuild extends StatelessWidget {
   final bool selectable;
   final void Function()? onSelected;
   final bool simple;
+  final BoxFit? fit;
 
   @override
   Widget build(BuildContext context) {
@@ -92,6 +94,7 @@ class ThumbnailBuild extends StatelessWidget {
                   booru: possibleBooru ?? handler.booru,
                   isStandalone: true,
                   useHero: selectable,
+                  fitOverride: fit,
                 );
               },
             ),

@@ -34,6 +34,7 @@ class Thumbnail extends StatefulWidget {
     required this.booru,
     this.isStandalone = false,
     this.useHero = true,
+    this.fitOverride,
     super.key,
   });
 
@@ -43,6 +44,10 @@ class Thumbnail extends StatefulWidget {
   /// set to true when used in a list
   final bool isStandalone;
   final bool useHero;
+
+  /// Overrides the standalone/embedded fit choice — doujin cards use it to
+  /// show the whole cover (contain) instead of cropping.
+  final BoxFit? fitOverride;
 
   @override
   State<Thumbnail> createState() => _ThumbnailState();
@@ -556,7 +561,7 @@ class _ThumbnailState extends State<Thumbnail> {
                       if (extraProvider != null) {
                         child = Image(
                           image: extraProvider,
-                          fit: widget.isStandalone ? BoxFit.cover : BoxFit.contain,
+                          fit: widget.fitOverride ?? (widget.isStandalone ? BoxFit.cover : BoxFit.contain),
                           isAntiAlias: true,
                           filterQuality: FilterQuality.medium,
                           width: double.infinity,
@@ -618,7 +623,7 @@ class _ThumbnailState extends State<Thumbnail> {
                       if (mainProvider != null) {
                         child = Image(
                           image: mainProvider,
-                          fit: widget.isStandalone ? BoxFit.cover : BoxFit.contain,
+                          fit: widget.fitOverride ?? (widget.isStandalone ? BoxFit.cover : BoxFit.contain),
                           isAntiAlias: true,
                           filterQuality: FilterQuality.medium,
                           width: double.infinity,
