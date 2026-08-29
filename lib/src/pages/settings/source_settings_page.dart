@@ -5,6 +5,8 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/meta_tag.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
+import 'package:lolisnatcher/src/boorus/nhentai_handler.dart';
+import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/pages/settings/booru_edit_page.dart';
@@ -37,6 +39,57 @@ class _SourceSettingsPageState extends State<SourceSettingsPage> {
 
   late final TextEditingController _blacklistController =
       TextEditingController(text: layer.tagBlacklist ?? '');
+
+  bool _importingBlacklist = false;
+
+  /// The source handler when it can serve the ACCOUNT's blacklist (nhentai).
+  NHentaiHandler? get _accountBlacklistHandler {
+    final Booru? booru = widget.booru;
+    if (booru == null) return null;
+    final handler = BooruHandlerFactory().getBooruHandler([booru], null).booruHandler;
+    return handler is NHentaiHandler ? handler : null;
+  }
+
+  /// Pulls the account's blacklisted tags and MERGES them into this source's
+  /// list (dedup, existing entries kept).
+  Future<void> _importAccountBlacklist() async {
+    final handler = _accountBlacklistHandler;
+    if (handler == null) return;
+    setState(() => _importingBlacklist = true);
+    final (bool ok, String message, List<String> names) = await handler.fetchAccountBlacklist();
+    if (!mounted) return;
+    setState(() => _importingBlacklist = false);
+    if (!ok) {
+      FlashElements.showSnackbar(
+        context: context,
+        title: Text(message),
+        duration: const Duration(seconds: 3),
+        sideColor: Colors.red,
+      );
+      return;
+    }
+    final List<String> existing = [
+      for (final part in (layer.tagBlacklist ?? '').split(','))
+        if (part.trim().isNotEmpty) part.trim(),
+    ];
+    final Set<String> lower = {for (final t in existing) t.toLowerCase()};
+    int added = 0;
+    for (final name in names) {
+      if (lower.add(name.toLowerCase())) {
+        existing.add(name);
+        added++;
+      }
+    }
+    _update((s) => s.tagBlacklist = existing.isEmpty ? null : existing.join(', '));
+    _blacklistController.text = layer.tagBlacklist ?? '';
+    FlashElements.showSnackbar(
+      context: context,
+      title: Text(added > 0 ? 'Imported $added tags from your account' : 'Nothing new — already in your list'),
+      content: Text(message),
+      duration: const Duration(seconds: 3),
+      sideColor: Colors.green,
+    );
+  }
 
   @override
   void dispose() {
@@ -359,6 +412,20 @@ class _SourceSettingsPageState extends State<SourceSettingsPage> {
               layerValue: layer.blacklistMode,
               inheritedValue: 'extend',
               onChanged: (v) => _update((s) => s.blacklistMode = v),
+            ),
+          if (!isGlobal && _accountBlacklistHandler != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: OutlinedButton.icon(
+                  icon: _importingBlacklist
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Symbols.cloud_download_rounded, size: 18),
+                  label: const Text('Import blacklist from my account'),
+                  onPressed: _importingBlacklist ? null : _importAccountBlacklist,
+                ),
+              ),
             ),
           //
           _header('DETAIL PAGE'),

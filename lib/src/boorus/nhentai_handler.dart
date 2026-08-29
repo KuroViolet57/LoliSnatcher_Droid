@@ -145,6 +145,30 @@ class NHentaiHandler extends BooruHandler {
     }
   }
 
+  /// The account's tag blacklist (GET /api/v2/blacklist, needs the API key).
+  /// Returns (ok, message, tag names).
+  Future<(bool, String, List<String>)> fetchAccountBlacklist() async {
+    if (!hasSiteFavourites) {
+      return (false, 'Add your nhentai API key in the booru settings first', const <String>[]);
+    }
+    try {
+      final response = await DioNetwork.get('$_base/api/v2/blacklist', headers: getHeaders());
+      final data = _json(response.data);
+      final List<String> names = [
+        for (final t in (data is Map ? data['tags'] : null) as List? ?? [])
+          if (t is Map && (t['name']?.toString().isNotEmpty ?? false)) t['name'].toString(),
+      ];
+      return (true, '${names.length} blacklisted tags on your account', names);
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401) {
+        return (false, 'nhentai rejected the API key — check it in the booru settings', const <String>[]);
+      }
+      return (false, 'Fetch failed: ${e.response?.statusCode ?? e.type.name}', const <String>[]);
+    } catch (e) {
+      return (false, 'Fetch failed: $e', const <String>[]);
+    }
+  }
+
   @override
   Map<String, String> getHeaders() => {
     'Accept': 'application/json',

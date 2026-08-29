@@ -13,6 +13,8 @@ import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/pages/settings/source_settings_page.dart';
 import 'package:lolisnatcher/src/pages/doujin_favourites_page.dart';
+import 'package:lolisnatcher/src/pages/doujin_favourite_tags_page.dart';
+import 'package:lolisnatcher/src/pages/doujin_library_pages.dart';
 import 'package:lolisnatcher/src/pages/collections_page.dart';
 import 'package:lolisnatcher/src/pages/foryou_page.dart';
 import 'package:lolisnatcher/src/handlers/pool_source.dart';
@@ -198,6 +200,8 @@ class MainDrawer extends StatelessWidget {
                         searchHandler.addTabByString('', customBooru: b, switchToNew: true);
                       }
 
+                      final bool isDoujinTab =
+                          searchHandler.tabs.isNotEmpty && searchHandler.currentBooruHandler.hasReader;
                       final downloads = virtual((t) => t.isDownloads);
                       final favourites = virtual((t) => t.isFavourites);
                       return Column(
@@ -208,7 +212,9 @@ class MainDrawer extends StatelessWidget {
                               icon: const Icon(Symbols.download_rounded),
                               action: () => openVirtual(downloads),
                             ),
-                          if (favourites != null)
+                          // Redundant on doujin tabs: the doujin block below
+                          // has its own favourites entry (own store).
+                          if (favourites != null && !isDoujinTab)
                             SettingsButton(
                               name: 'Favourites',
                               icon: const Icon(Symbols.favorite_rounded),
@@ -258,9 +264,9 @@ class MainDrawer extends StatelessWidget {
                         ),
                         SettingsButton(
                           name: 'Favourite tags',
-                          subtitle: const Text('Your marked tags, browsable'),
+                          subtitle: const Text('Tags you starred, one tap from a search'),
                           icon: const Icon(Symbols.star_rounded),
-                          page: () => const TagBrowserPage(),
+                          page: () => DoujinFavouriteTagsPage(booru: doujinBooru),
                         ),
                         SettingsButton(
                           name: '${doujinBooru.name ?? 'Source'} settings',
@@ -275,18 +281,36 @@ class MainDrawer extends StatelessWidget {
                     icon: const Icon(Symbols.settings_rounded),
                     page: () => const SettingsPage(),
                   ),
-                  if (settingsHandler.dbEnabled)
-                    SettingsButton(
+                  // For You is the BOORU taste engine — doujin activity
+                  // doesn't feed it (by design), so it hides on doujin tabs.
+                  Obx(() {
+                    final bool isDoujinTab =
+                        searchHandler.tabs.isNotEmpty && searchHandler.currentBooruHandler.hasReader;
+                    if (!settingsHandler.dbEnabled || isDoujinTab) return const SizedBox.shrink();
+                    return SettingsButton(
                       name: 'For You',
                       icon: const Icon(Symbols.auto_awesome_rounded),
                       page: () => const ForYouPage(),
-                    ),
-                  if (settingsHandler.dbEnabled)
-                    SettingsButton(
+                    );
+                  }),
+                  // Collections route to the store matching the tab's world.
+                  Obx(() {
+                    final bool isDoujinTab =
+                        searchHandler.tabs.isNotEmpty && searchHandler.currentBooruHandler.hasReader;
+                    if (isDoujinTab) {
+                      return SettingsButton(
+                        name: 'Collections',
+                        icon: const Icon(Symbols.collections_bookmark_rounded),
+                        page: () => DoujinCollectionsPage(booru: searchHandler.currentBooru),
+                      );
+                    }
+                    if (!settingsHandler.dbEnabled) return const SizedBox.shrink();
+                    return SettingsButton(
                       name: 'Collections',
                       icon: const Icon(Symbols.collections_bookmark_rounded),
                       page: () => const CollectionsPage(),
-                    ),
+                    );
+                  }),
                   // Pools are a PER-SITE capability, so this entry simply
                   // doesn't exist on boorus without them rather than showing
                   // up and failing (same shape as the webview button below).
@@ -302,15 +326,22 @@ class MainDrawer extends StatelessWidget {
                       page: () => const PoolsPage(),
                     );
                   }),
-                  // Always available: even a booru with no browsable tag
-                  // index still has whatever the app collected while you
-                  // browsed it, and still accepts corrections.
-                  if (settingsHandler.dbEnabled && settingsHandler.booruList.isNotEmpty)
-                    SettingsButton(
+                  // Even a booru with no browsable tag index still has
+                  // whatever the app collected while you browsed it. Hidden
+                  // on doujin tabs — their world navigates by tag chips and
+                  // the Favourite tags screen instead.
+                  Obx(() {
+                    final bool isDoujinTab =
+                        searchHandler.tabs.isNotEmpty && searchHandler.currentBooruHandler.hasReader;
+                    if (!settingsHandler.dbEnabled || settingsHandler.booruList.isEmpty || isDoujinTab) {
+                      return const SizedBox.shrink();
+                    }
+                    return SettingsButton(
                       name: 'Tag browser',
                       icon: const Icon(Symbols.sell_rounded),
                       page: () => const TagBrowserPage(),
-                    ),
+                    );
+                  }),
                   Obx(() {
                     if (settingsHandler.booruList.isNotEmpty &&
                         searchHandler.tabs.isNotEmpty &&
