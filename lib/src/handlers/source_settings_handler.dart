@@ -28,6 +28,7 @@ class SourceSettings {
     this.blacklistMode,
     this.tabPlacement,
     this.tagChipTap,
+    this.detailLayout,
     this.columnsPortrait,
     this.columnsLandscape,
   });
@@ -50,6 +51,7 @@ class SourceSettings {
     blacklistMode: json['blacklistMode'] as String?,
     tabPlacement: json['tabPlacement'] as String?,
     tagChipTap: json['tagChipTap'] as String?,
+    detailLayout: json['detailLayout'] as String?,
     columnsPortrait: json['columnsPortrait'] as int?,
     columnsLandscape: json['columnsLandscape'] as int?,
   );
@@ -112,6 +114,10 @@ class SourceSettings {
   /// opens a background tab) | 'newtab' (background tab; long-press = menu).
   String? tagChipTap;
 
+  /// Detail page header layout: 'compact' (side-by-side cover + titles) |
+  /// 'cover' (full-width cover, titles and metadata below).
+  String? detailLayout;
+
   /// Grid columns for doujin feeds, overriding the app-wide columns.
   int? columnsPortrait;
   int? columnsLandscape;
@@ -134,6 +140,7 @@ class SourceSettings {
     if (blacklistMode != null) 'blacklistMode': blacklistMode,
     if (tabPlacement != null) 'tabPlacement': tabPlacement,
     if (tagChipTap != null) 'tagChipTap': tagChipTap,
+    if (detailLayout != null) 'detailLayout': detailLayout,
     if (columnsPortrait != null) 'columnsPortrait': columnsPortrait,
     if (columnsLandscape != null) 'columnsLandscape': columnsLandscape,
   };
@@ -300,6 +307,9 @@ class SourceSettingsHandler {
   /// 'menu' | 'newtab' — what tapping a doujin tag chip does (long-press
   /// always does the other one).
   String tagChipTap(Booru? booru) => _resolve(booru, (s) => s.tagChipTap, 'menu');
+
+  /// 'compact' | 'cover' — detail page header layout.
+  String detailLayout(Booru? booru) => _resolve(booru, (s) => s.detailLayout, 'compact');
 
   List<String> tagBlacklist(Booru? booru) {
     final bool override = blacklistMode(booru) == 'override';

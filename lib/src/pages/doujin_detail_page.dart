@@ -193,7 +193,51 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
   // ─────────────────────────── sections ───────────────────────────
 
   Widget _header(BuildContext context) {
+    // Layout follows the doujin "Detail layout" setting: 'cover' puts a
+    // full-width cover on top with titles + metadata below; 'compact' keeps
+    // the side-by-side card.
+    return SourceSettingsHandler.instance.detailLayout(booru) == 'cover'
+        ? _bigCoverHeader(context)
+        : _compactHeader(context);
+  }
+
+  Widget _titleBlock(BuildContext context, {required int titleLines}) {
     final List<String> titles = _titleLines;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          titles.isNotEmpty ? titles.first : 'Untitled',
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+          maxLines: titleLines,
+          overflow: TextOverflow.ellipsis,
+        ),
+        if (titles.length > 1) ...[
+          const SizedBox(height: 4),
+          Text(
+            titles[1],
+            style: TextStyle(
+              fontSize: 12.5,
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+            ),
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+        const SizedBox(height: 8),
+        Text(
+          _metaLine,
+          style: TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w600,
+            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.75),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _compactHeader(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
       child: Row(
@@ -208,42 +252,41 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
             ),
           ),
           const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  titles.isNotEmpty ? titles.first : 'Untitled',
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
-                  maxLines: 4,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (titles.length > 1) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    titles[1],
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
-                    ),
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-                const SizedBox(height: 8),
-                Text(
-                  _metaLine,
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.75),
-                  ),
-                ),
-              ],
-            ),
-          ),
+          Expanded(child: _titleBlock(context, titleLines: 4)),
         ],
       ),
+    );
+  }
+
+  Widget _bigCoverHeader(BuildContext context) {
+    // The cover's own aspect ratio when known; a typical doujin cover shape
+    // otherwise. Height-capped so extreme covers can't fill the screen.
+    final double aspect = (item.fileWidth != null && item.fileHeight != null && item.fileHeight! > 0)
+        ? (item.fileWidth! / item.fileHeight!).clamp(0.5, 1.5)
+        : 0.7;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.55),
+            child: Center(
+              child: AspectRatio(
+                aspectRatio: aspect,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Thumbnail(item: item, booru: booru, isStandalone: true, useHero: false),
+                ),
+              ),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+          child: _titleBlock(context, titleLines: 3),
+        ),
+      ],
     );
   }
 

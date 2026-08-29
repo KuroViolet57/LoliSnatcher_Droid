@@ -361,6 +361,16 @@ class _SourceSettingsPageState extends State<SourceSettingsPage> {
               onChanged: (v) => _update((s) => s.blacklistMode = v),
             ),
           //
+          _header('DETAIL PAGE'),
+          _choiceRow<String>(
+            title: 'Detail layout',
+            subtitle: 'Compact puts the cover beside the titles; big cover puts a full-width cover on top with everything below.',
+            options: const [('compact', 'Compact'), ('cover', 'Big cover')],
+            layerValue: layer.detailLayout,
+            inheritedValue: globalLayer.detailLayout ?? 'compact',
+            onChanged: (v) => _update((s) => s.detailLayout = v),
+          ),
+          //
           _header('TABS'),
           _choiceRow<String>(
             title: 'New-tab placement',
