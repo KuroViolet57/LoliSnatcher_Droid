@@ -40,8 +40,9 @@ import 'package:lolisnatcher/src/handlers/booru_tag_store.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/reader_handler.dart';
 import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
+import 'package:lolisnatcher/src/pages/doujin_detail_page.dart';
 import 'package:lolisnatcher/src/pages/doujin_reader_page.dart';
-import 'package:lolisnatcher/src/widgets/gallery/doujin_item_sheet.dart';
+import 'package:lolisnatcher/src/widgets/gallery/doujin_item_menu.dart';
 import 'package:lolisnatcher/src/widgets/thumbnail/thumbnail_build.dart';
 import 'package:lolisnatcher/src/handlers/database_handler.dart';
 import 'package:lolisnatcher/src/handlers/floating_preview_handler.dart';
@@ -3444,6 +3445,14 @@ class _TagContentPreviewState extends State<TagContentPreview> with AutomaticKee
   }
 
   Future<void> onPreviewTap(int index) async {
+    // Doujin strips: a card tap opens the DETAIL PAGE, never the old image
+    // viewer flow.
+    if (tab!.booruHandler.hasReader) {
+      await Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => DoujinDetailPage(tab: tab!, index: index)),
+      );
+      return;
+    }
     viewedIndex.value = index;
     final viewerKey = GlobalKey(debugLabel: 'viewer-${tab!.tags.replaceAll(' ', '_')}');
     ViewerHandler.instance.addViewer(viewerKey);
@@ -4063,7 +4072,7 @@ class _TagContentPreviewState extends State<TagContentPreview> with AutomaticKee
                                                 // Doujin strips get the full item context menu; other
                                                 // sources keep the old no-op (select doesn't fit here).
                                                 onLongPress: tab!.booruHandler.hasReader
-                                                    ? (i) => showDoujinItemSheet(context, tab: tab!, index: i)
+                                                    ? (i) => showDoujinItemMenu(context, tab: tab!, index: i)
                                                     : null,
                                                 onSecondaryTap: onPreviewSecondaryTap,
                                               );

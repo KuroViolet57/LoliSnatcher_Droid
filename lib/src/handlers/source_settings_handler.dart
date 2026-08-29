@@ -26,6 +26,7 @@ class SourceSettings {
     this.languageFilter,
     this.tagBlacklist,
     this.blacklistMode,
+    this.tabPlacement,
     this.columnsPortrait,
     this.columnsLandscape,
   });
@@ -46,6 +47,7 @@ class SourceSettings {
     languageFilter: json['languageFilter'] as String?,
     tagBlacklist: json['tagBlacklist'] as String?,
     blacklistMode: json['blacklistMode'] as String?,
+    tabPlacement: json['tabPlacement'] as String?,
     columnsPortrait: json['columnsPortrait'] as int?,
     columnsLandscape: json['columnsLandscape'] as int?,
   );
@@ -101,6 +103,9 @@ class SourceSettings {
   /// 'extend' (default; both apply) | 'override' (only this source's list).
   String? blacklistMode;
 
+  /// Where "Open in new tab" places doujin tabs: 'end' | 'next'.
+  String? tabPlacement;
+
   /// Grid columns for doujin feeds, overriding the app-wide columns.
   int? columnsPortrait;
   int? columnsLandscape;
@@ -121,6 +126,7 @@ class SourceSettings {
     if (languageFilter != null) 'languageFilter': languageFilter,
     if (tagBlacklist != null) 'tagBlacklist': tagBlacklist,
     if (blacklistMode != null) 'blacklistMode': blacklistMode,
+    if (tabPlacement != null) 'tabPlacement': tabPlacement,
     if (columnsPortrait != null) 'columnsPortrait': columnsPortrait,
     if (columnsLandscape != null) 'columnsLandscape': columnsLandscape,
   };
@@ -280,6 +286,9 @@ class SourceSettingsHandler {
 
   /// 'extend' | 'override' — how [tagBlacklist] combines the two layers.
   String blacklistMode(Booru? booru) => settingsFor(booru).blacklistMode ?? 'extend';
+
+  /// 'end' | 'next' — where doujin "Open in new tab" places the tab.
+  String tabPlacement(Booru? booru) => _resolve(booru, (s) => s.tabPlacement, 'end');
 
   List<String> tagBlacklist(Booru? booru) {
     final bool override = blacklistMode(booru) == 'override';

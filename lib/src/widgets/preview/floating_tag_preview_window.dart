@@ -14,6 +14,7 @@ import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/pages/gallery_view_page.dart';
+import 'package:lolisnatcher/src/pages/doujin_detail_page.dart';
 import 'package:lolisnatcher/src/pages/tag_hub_page.dart';
 import 'package:lolisnatcher/src/utils/extensions.dart';
 import 'package:lolisnatcher/src/utils/tag_alias_resolver.dart';
@@ -461,10 +462,17 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
                 Column(
                   children: [
                     _buildTitleBar(context, screen),
-                    _buildBooruRow(context),
-                    _buildSearchRow(context),
-                    if (_aliasNote != null) _buildAliasBanner(context),
-                    Expanded(child: _buildGrid(context, rect.width)),
+                    // Doujin detail windows host the detail page (with its
+                    // own navigator, so Read stays inside the window) — no
+                    // search chrome, it's a single fixed gallery.
+                    if (isDoujinDetailWindow)
+                      Expanded(child: _buildDoujinDetail(context))
+                    else ...[
+                      _buildBooruRow(context),
+                      _buildSearchRow(context),
+                      if (_aliasNote != null) _buildAliasBanner(context),
+                      Expanded(child: _buildGrid(context, rect.width)),
+                    ],
                   ],
                 ),
                 // In-window booru picker — floats above the grid so it can't
@@ -504,6 +512,36 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
     );
   }
 
+  bool get isDoujinDetailWindow => widget.entry.doujinItem != null;
+
+  /// Doujin detail windows: once the `id:<n>` search delivers the gallery, a
+  /// NESTED navigator hosts the detail page — so its pushes (the reader,
+  /// most importantly) render inside the window instead of over the app.
+  /// Insets are zeroed: the window floats mid-screen, system bars don't
+  /// apply to it.
+  Widget _buildDoujinDetail(BuildContext context) {
+    final t = tab;
+    if (t == null || t.booruHandler.filteredFetched.isEmpty) {
+      if (errorString.isNotEmpty) return _buildError(context);
+      return const Center(child: CircularProgressIndicator());
+    }
+    return MediaQuery(
+      data: MediaQuery.of(context).copyWith(
+        padding: EdgeInsets.zero,
+        viewPadding: EdgeInsets.zero,
+        viewInsets: EdgeInsets.zero,
+      ),
+      child: ClipRect(
+        child: Navigator(
+          onGenerateRoute: (settings) => MaterialPageRoute(
+            settings: settings,
+            builder: (_) => DoujinDetailPage(tab: t, index: 0),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildTitleBar(BuildContext context, Size screen) {
     final theme = Theme.of(context);
 
@@ -530,7 +568,11 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
             const SizedBox(width: 6),
             Expanded(
               child: Text(
-                widget.entry.tag,
+                isDoujinDetailWindow
+                    ? (widget.entry.doujinItem!.description ?? '')
+                          .split('\n')
+                          .firstWhere((l) => l.trim().isNotEmpty, orElse: () => widget.entry.tag)
+                    : widget.entry.tag,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontWeight: FontWeight.w600),

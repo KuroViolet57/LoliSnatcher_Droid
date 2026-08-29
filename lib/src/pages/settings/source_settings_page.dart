@@ -361,6 +361,16 @@ class _SourceSettingsPageState extends State<SourceSettingsPage> {
               onChanged: (v) => _update((s) => s.blacklistMode = v),
             ),
           //
+          _header('TABS'),
+          _choiceRow<String>(
+            title: 'New-tab placement',
+            subtitle: 'Where "Open in new tab" on a doujin card puts the tab.',
+            options: const [('end', 'End of list'), ('next', 'Next to current')],
+            layerValue: layer.tabPlacement,
+            inheritedValue: globalLayer.tabPlacement ?? 'end',
+            onChanged: (v) => _update((s) => s.tabPlacement = v),
+          ),
+          //
           _header('RECOMMENDATIONS'),
           _switchRow(
             title: 'Endless recommendations',

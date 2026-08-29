@@ -18,6 +18,7 @@ import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/pages/gallery_view_page.dart';
 import 'package:lolisnatcher/src/pages/doujin_detail_page.dart';
+import 'package:lolisnatcher/src/widgets/gallery/doujin_item_menu.dart';
 import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 import 'package:lolisnatcher/src/widgets/common/long_press_repeater.dart';
@@ -377,6 +378,14 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware {
   Future<void> onLongPress(int index) async {
     final BooruItem item = searchHandler.currentFetched[index];
     await ServiceHandler.vibrate();
+
+    // Doujin feeds: long-press opens the item's context menu (the centered
+    // popup), not multi-select.
+    if (searchHandler.currentTab.booruHandler.hasReader) {
+      if (!mounted) return;
+      await showDoujinItemMenu(context, tab: searchHandler.currentTab, index: index);
+      return;
+    }
 
     if (searchHandler.currentSelected.contains(item)) {
       searchHandler.currentTab.selected.remove(item);

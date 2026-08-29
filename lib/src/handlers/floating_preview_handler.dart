@@ -4,6 +4,7 @@ import 'package:get_it/get_it.dart';
 import 'package:uuid/uuid.dart';
 
 import 'package:lolisnatcher/src/data/booru.dart';
+import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/handlers/interests_handler.dart';
 import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
@@ -21,12 +22,18 @@ class FloatingPreviewEntry {
     required this.tag,
     required this.booru,
     required this.ownerRoute,
+    this.doujinItem,
   }) : id = const Uuid().v4();
 
   final String id;
   final String tag;
   final Booru booru;
   final Route<dynamic>? ownerRoute;
+
+  /// When set, the window hosts this doujin's DETAIL PAGE (with its own
+  /// nested navigator, so Read opens the reader inside the window) instead
+  /// of a tag-result grid.
+  final BooruItem? doujinItem;
 }
 
 /// Manages the floating tag-preview windows (Boorusama-style).
@@ -99,6 +106,25 @@ class FloatingPreviewHandler extends ChangeNotifier {
     if (!DoujinDataHandler.isDoujinBooru(booru)) {
       InterestsHandler.instance.onTagPreviewOpened(tag);
     }
+    notifyListeners();
+  }
+
+  /// Opens a floating DETAIL-PAGE window for one doujin. Same ownership
+  /// rules as tag windows; never feeds the booru taste profile.
+  void openDoujinPreview({
+    required BooruItem item,
+    required Booru booru,
+  }) {
+    entries.removeWhere((e) => e.ownerRoute == topPageRoute);
+    entries.add(
+      FloatingPreviewEntry(
+        tag: 'id:${item.serverId}',
+        booru: booru,
+        ownerRoute: topPageRoute,
+        doujinItem: item,
+      ),
+    );
+    _ensureOverlay();
     notifyListeners();
   }
 
