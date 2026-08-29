@@ -23,6 +23,7 @@ import 'package:lolisnatcher/src/data/saved_search.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 import 'package:lolisnatcher/src/handlers/database_handler.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/interests_handler.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
@@ -786,7 +787,12 @@ class SearchHandler {
       } catch (_) {}
     }
     // Viewing history: store the full item every time (a re-view bumps the
-    // entry back to the top of the History feed).
+    // entry back to the top of the History feed). Doujin items go to the
+    // doujin history store instead — never the booru ViewedPost table.
+    if (tabs.isNotEmpty && currentTab.booruHandler.hasReader) {
+      DoujinDataHandler.instance.addHistory(item, currentBooru);
+      return;
+    }
     try {
       await SettingsHandler.instance.dbHandler.addViewedPost(
         key,
@@ -827,6 +833,16 @@ class SearchHandler {
     if (tabs.isEmpty) return null;
     final SettingsHandler settingsHandler = SettingsHandler.instance;
     final SearchTab tab = currentTab;
+    // Doujin tabs save into the doujin store, never the booru SavedSearch
+    // table — the doujin saved-searches screen scopes them per source.
+    if (DoujinDataHandler.isDoujinBooru(tab.selectedBooru.value)) {
+      final entry = DoujinDataHandler.instance.addSavedSearch(
+        name: name?.trim() ?? '',
+        query: tab.tags,
+        booru: tab.selectedBooru.value,
+      );
+      return entry.id;
+    }
     final entry = SavedSearch(
       id: null,
       name: name?.trim() ?? '',
@@ -1926,6 +1942,16 @@ class SearchTab {
     bool skipSnatching = false,
   }) async {
     final BooruItem item = booruHandler.filteredFetched[itemIndex];
+    // Doujin items NEVER touch the shared favourites DB — any caller that
+    // lands here with a doujin tab is rerouted to the one doujin path
+    // (doujin store + site account sync).
+    if (booruHandler.hasReader) {
+      if (forcedValue != null && DoujinDataHandler.instance.isFavourite(item) == forcedValue) {
+        return forcedValue;
+      }
+      final result = await DoujinDataHandler.instance.toggleFavouriteSynced(item, booruHandler);
+      return result.nowFavourite;
+    }
     if (item.isFavourite.value != null) {
       if (item.tagsList.isEmpty || item.mediaType.value.isNeedToLoadItem) {
         // try to update the item before favouriting, do nothing on fail

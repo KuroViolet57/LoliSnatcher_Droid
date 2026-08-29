@@ -351,6 +351,15 @@ class _SourceSettingsPageState extends State<SourceSettingsPage> {
               ],
             ),
           ),
+          if (!isGlobal)
+            _choiceRow<String>(
+              title: 'Blacklist mode',
+              subtitle: 'Extend applies this list on top of the global doujin blacklist; override uses only this list here.',
+              options: const [('extend', 'Extend'), ('override', 'Override')],
+              layerValue: layer.blacklistMode,
+              inheritedValue: 'extend',
+              onChanged: (v) => _update((s) => s.blacklistMode = v),
+            ),
           //
           _header('RECOMMENDATIONS'),
           _stepperRow(

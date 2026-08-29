@@ -8,6 +8,7 @@ import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/handlers/bookmark_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/reader_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -25,7 +26,7 @@ import 'package:lolisnatcher/src/widgets/thumbnail/thumbnail_build.dart';
 ///
 ///   cover + titles
 ///   language · category · pages · favourites · date
-///   [ Read ]  [save] [bookmark] [favourite]
+///   Read button · save · bookmark · favourite
 ///   tag filter + tags grouped by the site's own namespaces
 ///   Related (chapters & versions) — Recommended — Pages grid
 ///
@@ -61,6 +62,12 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
   @override
   void initState() {
     super.initState();
+    // Opening the detail page IS the doujin "viewed" event; doujin history
+    // lives in its own store, never in the booru ViewedPost table.
+    DoujinDataHandler.instance.addHistory(item, booru);
+    // Reflect the doujin store's favourite state on the item so the heart
+    // renders correctly regardless of which feed the card came from.
+    item.isFavourite.value = DoujinDataHandler.instance.isFavourite(item);
     _load();
   }
 
@@ -111,7 +118,7 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
       if (_firstOfNamespace('category') != null) _firstOfNamespace('category')!,
       if (pages != null) '${pages.length} pages',
       if (item.score?.isNotEmpty ?? false) '♥ ${item.score}',
-      if (date != null) date,
+      ?date,
     ];
     return parts.join('  ·  ');
   }
@@ -138,30 +145,27 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
   String? _favSyncStatus;
 
   Future<void> _toggleFavourite() async {
-    final bool? before = item.isFavourite.value;
-    await widget.tab.toggleItemFavourite(widget.index);
-    final bool nowFavourite = item.isFavourite.value == true;
-    if (item.isFavourite.value == before) {
-      // Local toggle didn't happen (load failure etc.) — no site push.
-      setState(() {});
-      return;
+    // Doujin favourites live in the doujin store (doujinData.json), never in
+    // the shared booru favourites DB. toggleFavouriteSynced is the ONE path
+    // that also pushes to the site account when a key is set.
+    if (handler.hasSiteFavourites) {
+      setState(() => _favSyncStatus = 'Syncing to your nhentai account…');
     }
-
-    // Favourite = the ACCOUNT action when the source can sync (bookmark is
-    // the purely-local sibling). Degrades to local-only with a visible note.
-    if (!handler.hasSiteFavourites) {
+    final result = await DoujinDataHandler.instance.toggleFavouriteSynced(item, handler);
+    if (!mounted) return;
+    if (!result.syncAttempted) {
+      // Favourite = the ACCOUNT action when the source can sync (bookmark is
+      // the purely-local sibling). Degrades to local-only with a visible note.
       setState(
-        () => _favSyncStatus = nowFavourite
+        () => _favSyncStatus = result.nowFavourite
             ? 'Saved locally — add your nhentai API key in the booru settings to sync with your account'
             : null,
       );
       return;
     }
-    setState(() => _favSyncStatus = 'Syncing to your nhentai account…');
-    final (bool ok, String message) = await handler.setSiteFavourite(item, nowFavourite);
-    if (!mounted) return;
+    final String? message = result.message;
     setState(() => _favSyncStatus = message);
-    if (ok) {
+    if (result.syncOk) {
       // Let the confirmation breathe, then clear it.
       Future.delayed(const Duration(seconds: 4), () {
         if (mounted && _favSyncStatus == message) setState(() => _favSyncStatus = null);

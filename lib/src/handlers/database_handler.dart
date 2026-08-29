@@ -1652,6 +1652,34 @@ class DBHandler {
     await db?.rawDelete('DELETE FROM ViewedPost');
   }
 
+  /// Removes the History-feed row only. SeenPost (grid dimming) is left
+  /// alone: it's a per-post key set, not a history surface.
+  Future<void> deleteViewedPost(String postKey) async {
+    await db?.rawDelete('DELETE FROM ViewedPost WHERE postKey = ?', [postKey]);
+  }
+
+  ///////
+  /// Doujin migration helpers
+
+  /// Raw SELECT for the doujin migration planner; empty when the DB is off.
+  Future<List<Map<String, Object?>>> rawRows(String sql) async => (await db?.rawQuery(sql)) ?? const [];
+
+  Future<void> clearFavouriteFlag(List<int> itemIds) async {
+    if (itemIds.isEmpty) return;
+    // Chunked so huge favourite migrations don't overrun the SQL length cap.
+    for (int i = 0; i < itemIds.length; i += 500) {
+      final chunk = itemIds.sublist(i, i + 500 > itemIds.length ? itemIds.length : i + 500);
+      await db?.rawUpdate('UPDATE BooruItem SET isFavourite = 0 WHERE id IN (${chunk.join(',')})');
+    }
+  }
+
+  Future<void> removeCollectionItem(int collectionId, int booruItemId) async {
+    await db?.rawDelete(
+      'DELETE FROM CollectionItem WHERE collectionId = ? AND booruItemID = ?',
+      [collectionId, booruItemId],
+    );
+  }
+
   ///////
   /// Doujin reader progress
 

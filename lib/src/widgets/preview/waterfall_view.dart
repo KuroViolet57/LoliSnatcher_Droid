@@ -11,6 +11,7 @@ import 'package:scroll_to_index/scroll_to_index.dart';
 
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -355,7 +356,22 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware {
   }
 
   Future<void> onDoubleTap(int index) async {
-    await searchHandler.currentTab.toggleItemFavourite(index);
+    final tab = searchHandler.currentTab;
+    if (tab.booruHandler.hasReader) {
+      // Doujin cards: doujin store + account sync — the SAME path as the
+      // detail page heart, so a double-tap favourite reaches the site too.
+      final BooruItem item = searchHandler.currentFetched[index];
+      final result = await DoujinDataHandler.instance.toggleFavouriteSynced(item, tab.booruHandler);
+      if (result.syncAttempted && !result.syncOk && mounted) {
+        FlashElements.showSnackbar(
+          duration: const Duration(seconds: 3),
+          title: Text(result.message ?? 'Account sync failed', style: const TextStyle(fontSize: 16)),
+          sideColor: Colors.red,
+        );
+      }
+      return;
+    }
+    await tab.toggleItemFavourite(index);
   }
 
   Future<void> onLongPress(int index) async {

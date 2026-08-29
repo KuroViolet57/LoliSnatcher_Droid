@@ -21,6 +21,7 @@ import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_suggestion.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/tag_handler.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
@@ -91,9 +92,21 @@ abstract class BooruHandler {
 
     final List<BooruItem> itemsBeforeFilter = [...filteredFetched];
 
+    // Doujin sources use the doujin blacklist (SourceSettingsHandler) and are
+    // NEVER touched by the booru hidden-tags filters — the two systems are
+    // fully separate, even when tag names coincide. Precomputed once per
+    // filter pass, not per item.
+    final Set<String> doujinBlacklist = hasReader
+        ? SourceSettingsHandler.instance.tagBlacklist(booru).toSet()
+        : const {};
+
     final List<BooruItem> filteredItems = [];
     for (final item in fetched) {
-      if (settingsHandler.filterHated &&
+      if (hasReader) {
+        if (doujinBlacklist.isNotEmpty && _matchesDoujinBlacklist(item, doujinBlacklist)) {
+          continue;
+        }
+      } else if (settingsHandler.filterHated &&
           settingsHandler.isItemHiddenForBooru(item, booru)) {
         continue;
       }
@@ -142,6 +155,19 @@ abstract class BooruHandler {
     if (!listEquals(itemsBeforeFilter, filteredItems)) {
       filteredFetched.value = filteredItems;
     }
+  }
+
+  /// Client-side doujin blacklist check (server-side -tag filters can't cover
+  /// related/recommend/id feeds). Blacklist entries are already normalized to
+  /// lowercase_underscores; item tags may carry a namespace prefix.
+  static bool _matchesDoujinBlacklist(BooruItem item, Set<String> blacklist) {
+    for (final tag in item.tagsList) {
+      String name = tag.fullString.toLowerCase().replaceAll(' ', '_');
+      final int colon = name.indexOf(':');
+      if (colon != -1) name = name.substring(colon + 1);
+      if (blacklist.contains(name)) return true;
+    }
+    return false;
   }
 
   String get className => runtimeType.toString();

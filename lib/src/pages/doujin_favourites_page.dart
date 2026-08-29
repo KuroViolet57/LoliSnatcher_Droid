@@ -6,6 +6,7 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/handlers/bookmark_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
+import 'package:lolisnatcher/src/pages/doujin_library_pages.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/widgets/image/custom_network_image.dart';
 
@@ -52,16 +53,10 @@ class _DoujinFavouritesPageState extends State<DoujinFavouritesPage> {
           ListTile(
             leading: const Icon(Symbols.favorite_border_rounded),
             title: const Text('Local favourites'),
-            subtitle: const Text("The app's own favourites (every source, incl. doujins)"),
-            enabled: SettingsHandler.instance.dbEnabled,
-            onTap: () {
-              final favourites = SettingsHandler.instance.booruList
-                  .where((b) => b.type?.isFavourites ?? false)
-                  .toList();
-              if (favourites.isEmpty) return;
-              searchHandler.addTabByString('', customBooru: favourites.first, switchToNew: true);
-              Navigator.of(context).popUntil((route) => route.isFirst);
-            },
+            subtitle: const Text('Doujins favourited in the app (own store, separate from boorus)'),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => DoujinFavouritesListPage(booru: widget.booru)),
+            ),
           ),
           const Divider(),
           Padding(

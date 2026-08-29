@@ -47,6 +47,7 @@ import 'package:lolisnatcher/src/handlers/database_handler.dart';
 import 'package:lolisnatcher/src/handlers/floating_preview_handler.dart';
 import 'package:lolisnatcher/src/handlers/interests_handler.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -1224,8 +1225,15 @@ class _TagViewState extends State<TagView> {
     final Booru scopeBooru = (possibleBooruHandler ?? handler).booru;
     final scope = await _pickBlacklistScope(context, scopeBooru);
     if (scope == null) return;
+    final bool isDoujin = DoujinDataHandler.isDoujinBooru(scopeBooru);
     for (final tag in toHide) {
-      if (scope == _BlacklistScope.global) {
+      if (isDoujin) {
+        // Doujin sources blacklist via sourceSettings, never the booru lists.
+        SourceSettingsHandler.instance.addBlacklistTag(
+          scope == _BlacklistScope.global ? null : scopeBooru,
+          tag,
+        );
+      } else if (scope == _BlacklistScope.global) {
         settingsHandler.addTagToList('hidden', tag);
       } else if (scopeBooru.name?.isNotEmpty == true) {
         settingsHandler.addTagToBooruHiddenList(scopeBooru.name!, tag);
@@ -1254,9 +1262,15 @@ class _TagViewState extends State<TagView> {
   Future<void> _batchPin() async {
     final List<String> toPin = _selectedBatchTagsOrdered;
     if (toPin.isEmpty) return;
+    final Booru scopeBooru = (possibleBooruHandler ?? handler).booru;
     for (final tag in toPin) {
       try {
-        await settingsHandler.dbHandler.addPinnedTag(tag);
+        if (DoujinDataHandler.isDoujinBooru(scopeBooru)) {
+          // Doujin pins live in the doujin store, scoped to this source.
+          DoujinDataHandler.instance.addPin(tag, scopeBooru);
+        } else {
+          await settingsHandler.dbHandler.addPinnedTag(tag);
+        }
       } catch (_) {}
     }
     _batchSnackbar('Pinned', toPin);
@@ -2457,7 +2471,13 @@ Future<void> showTagDialog({
               onTap: () async {
                 final scope = await _pickBlacklistScope(context, handler.booru);
                 if (scope == null) return;
-                if (scope == _BlacklistScope.global) {
+                if (DoujinDataHandler.isDoujinBooru(handler.booru)) {
+                  // Doujin sources blacklist via sourceSettings only.
+                  SourceSettingsHandler.instance.addBlacklistTag(
+                    scope == _BlacklistScope.global ? null : handler.booru,
+                    tag,
+                  );
+                } else if (scope == _BlacklistScope.global) {
                   settingsHandler.addTagToList('hidden', tag);
                 } else if (handler.booru.name?.isNotEmpty == true) {
                   settingsHandler.addTagToBooruHiddenList(handler.booru.name!, tag);
@@ -2515,11 +2535,18 @@ Future<void> showTagDialog({
             ),
           //
           FutureBuilder<PinnedTag?>(
-            future: settingsHandler.dbHandler.getPinnedTag(
-              tag,
-              booruType: searchHandler.currentBooru.type?.name,
-              booruName: searchHandler.currentBooru.name,
-            ),
+            future: DoujinDataHandler.isDoujinBooru(searchHandler.currentBooru)
+                ? Future.value(() {
+                    for (final p in doujinPinsAsPinnedTags(searchHandler.currentBooru)) {
+                      if (p.tagName == tag) return p;
+                    }
+                    return null;
+                  }())
+                : settingsHandler.dbHandler.getPinnedTag(
+                    tag,
+                    booruType: searchHandler.currentBooru.type?.name,
+                    booruName: searchHandler.currentBooru.name,
+                  ),
             builder: (_, snapshot) {
               final isPinned = snapshot.data != null;
               final pinnedTag = snapshot.data;

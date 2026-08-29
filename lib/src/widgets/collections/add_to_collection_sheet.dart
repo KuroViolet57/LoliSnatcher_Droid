@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 
 import 'package:material_symbols_icons/symbols.dart';
 
+import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/collection_info.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/interests_handler.dart';
+import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 
@@ -18,12 +21,118 @@ Future<void> showAddToCollectionSheet(
   List<BooruItem> items,
 ) async {
   if (items.isEmpty) return;
+  // Doujin items go to DOUJIN collections (doujinData.json) — never the
+  // booru Collection tables, and vice versa.
+  final searchHandler = SearchHandler.instance;
+  if (searchHandler.tabs.isNotEmpty && searchHandler.currentTab.booruHandler.hasReader) {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => _AddToDoujinCollectionSheet(items: items, booru: searchHandler.currentBooru),
+    );
+    return;
+  }
   await showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
     builder: (_) => _AddToCollectionSheet(items: items),
   );
+}
+
+/// The doujin twin of the sheet below, backed by [DoujinDataHandler] only.
+class _AddToDoujinCollectionSheet extends StatefulWidget {
+  const _AddToDoujinCollectionSheet({required this.items, required this.booru});
+
+  final List<BooruItem> items;
+  final Booru booru;
+
+  @override
+  State<_AddToDoujinCollectionSheet> createState() => _AddToDoujinCollectionSheetState();
+}
+
+class _AddToDoujinCollectionSheetState extends State<_AddToDoujinCollectionSheet> {
+  final store = DoujinDataHandler.instance..ensureLoaded();
+
+  bool get isSingle => widget.items.length == 1;
+
+  Future<void> _createNew() async {
+    final controller = TextEditingController();
+    final String? name = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('New doujin collection'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: 'Name'),
+          onSubmitted: (v) => Navigator.of(context).pop(v),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.of(context).pop(controller.text), child: const Text('Create')),
+        ],
+      ),
+    );
+    if (name == null || name.trim().isEmpty) return;
+    final collection = store.createCollection(name.trim());
+    _addAllTo(collection);
+  }
+
+  void _addAllTo(DoujinCollection collection) {
+    for (final item in widget.items) {
+      store.addToCollection(collection, item, widget.booru);
+    }
+    if (mounted) Navigator.of(context).pop();
+    FlashElements.showSnackbar(
+      title: Text('Added to "${collection.name}"'),
+      duration: const Duration(seconds: 2),
+      sideColor: Colors.green,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Text(
+              isSingle ? 'Add to doujin collection' : 'Add ${widget.items.length} doujins to collection',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Symbols.create_new_folder_rounded),
+            title: const Text('New collection'),
+            onTap: _createNew,
+          ),
+          for (final c in store.collections)
+            ListTile(
+              leading: Icon(
+                isSingle && store.collectionContains(c, widget.items.first)
+                    ? Symbols.check_circle_rounded
+                    : Symbols.folder_rounded,
+              ),
+              title: Text(c.name),
+              subtitle: Text('${c.items.length} doujins'),
+              onTap: () {
+                if (isSingle && store.collectionContains(c, widget.items.first)) {
+                  // toggle off for a single item
+                  store.removeFromCollection(c, widget.items.first);
+                  Navigator.of(context).pop();
+                  return;
+                }
+                _addAllTo(c);
+              },
+            ),
+        ],
+      ),
+    );
+  }
 }
 
 class _AddToCollectionSheet extends StatefulWidget {

@@ -6,6 +6,7 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/handlers/bookmark_handler.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/reader_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -82,7 +83,16 @@ Future<void> showDoujinItemSheet(
               title: Text(item.isFavourite.value == true ? 'Unfavourite' : 'Favourite'),
               onTap: () async {
                 Navigator.of(sheetContext).pop();
-                await tab.toggleItemFavourite(index);
+                // Doujin favourites: doujin store + account sync, one path.
+                final result = await DoujinDataHandler.instance.toggleFavouriteSynced(item, tab.booruHandler);
+                if (result.syncAttempted && context.mounted) {
+                  FlashElements.showSnackbar(
+                    context: context,
+                    title: Text(result.message ?? (result.syncOk ? 'Synced' : 'Sync failed')),
+                    duration: const Duration(seconds: 2),
+                    sideColor: result.syncOk ? Colors.green : Colors.red,
+                  );
+                }
               },
             ),
             ListTile(

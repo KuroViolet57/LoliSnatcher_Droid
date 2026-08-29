@@ -19,6 +19,7 @@ import 'package:talker_flutter/talker_flutter.dart';
 
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/theme_item.dart';
+import 'package:lolisnatcher/src/handlers/doujin_migration.dart';
 import 'package:lolisnatcher/src/handlers/floating_preview_handler.dart';
 import 'package:lolisnatcher/src/handlers/interests_handler.dart';
 import 'package:lolisnatcher/src/handlers/local_auth_handler.dart';
@@ -133,6 +134,9 @@ class _MainAppState extends State<MainApp> {
       await tagHandler.initialize();
       settingsHandler.postInitMessage.value = loc.init.restoringTabs;
       await searchHandler.restoreTabs();
+      // One-time move of doujin entries out of the shared booru stores into
+      // doujinData.json; no-ops after the first successful run.
+      await runDoujinMigrationIfNeeded();
     });
 
     settingsHandler.isDebug.addListener(devOverlayListener);

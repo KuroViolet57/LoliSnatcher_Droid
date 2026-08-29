@@ -26,6 +26,7 @@ import 'package:lolisnatcher/src/data/history_item.dart';
 import 'package:lolisnatcher/src/data/meta_tag.dart';
 import 'package:lolisnatcher/src/data/pinned_tag.dart';
 import 'package:lolisnatcher/src/data/tag_suggestion.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/followed_artists_handler.dart';
@@ -581,11 +582,17 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
               },
             ),
             FutureBuilder<PinnedTag?>(
-              future: settingsHandler.dbHandler.getPinnedTag(
-                tag.tag,
-                booruType: searchHandler.currentBooru.type?.name,
-                booruName: searchHandler.currentBooru.name,
-              ),
+              future: DoujinDataHandler.isDoujinBooru(searchHandler.currentBooru)
+                  ? Future.value(
+                      doujinPinsAsPinnedTags(searchHandler.currentBooru)
+                          .where((p) => p.tagName == tag.tag)
+                          .firstOrNull,
+                    )
+                  : settingsHandler.dbHandler.getPinnedTag(
+                      tag.tag,
+                      booruType: searchHandler.currentBooru.type?.name,
+                      booruName: searchHandler.currentBooru.name,
+                    ),
               builder: (_, snapshot) {
                 final isPinned = snapshot.data != null || tag.isPinned == true;
                 final pinnedTag = snapshot.data;
@@ -2644,12 +2651,17 @@ class _PinnedTagsBlockState extends State<PinnedTagsBlock> {
     if (mounted) setState(() {});
 
     final booru = searchHandler.currentBooru;
-    allPinnedTags = await settingsHandler.dbHandler.getPinnedTags(
-      booruType: booru.type?.name,
-      booruName: booru.name,
-    );
-    // Follows are stored as labelled pins but have their own screen.
-    allPinnedTags.removeWhere(FollowedArtistsHandler.isFollowPin);
+    if (DoujinDataHandler.isDoujinBooru(booru)) {
+      // Doujin tabs: pins come from the doujin store only.
+      allPinnedTags = doujinPinsAsPinnedTags(booru);
+    } else {
+      allPinnedTags = await settingsHandler.dbHandler.getPinnedTags(
+        booruType: booru.type?.name,
+        booruName: booru.name,
+      );
+      // Follows are stored as labelled pins but have their own screen.
+      allPinnedTags.removeWhere(FollowedArtistsHandler.isFollowPin);
+    }
 
     // Get unique labels from all tags
     final labelsSet = <String>{};
@@ -3131,6 +3143,18 @@ class _PinTagDialogState extends State<PinTagDialog> {
   }
 }
 
+/// Doujin pins rendered as PinnedTag rows for the shared pin UI.
+/// id == -1 marks them: never a DB row, unpin routes to the doujin store.
+List<PinnedTag> doujinPinsAsPinnedTags(Booru booru) => [
+  for (final p in DoujinDataHandler.instance.pinsFor(booru))
+    PinnedTag(
+      id: -1,
+      tagName: p.tag,
+      pinnedAt: p.addedAt,
+      labels: p.booruHost == null ? const ['all doujins'] : const [],
+    ),
+];
+
 Future<void> showPinTagDialog(
   BuildContext context,
   String tagName,
@@ -3138,12 +3162,15 @@ Future<void> showPinTagDialog(
   VoidCallback onTagPinned,
 ) async {
   final settingsHandler = SettingsHandler.instance;
+  final bool isDoujin = DoujinDataHandler.isDoujinBooru(currentBooru);
 
-  // Load existing labels for the dropdown
-  final existingLabels = await settingsHandler.dbHandler.getPinnedTagLabels(
-    booruType: currentBooru.type?.name,
-    booruName: currentBooru.name,
-  );
+  // Load existing labels for the dropdown (doujin pins don't do labels)
+  final existingLabels = isDoujin
+      ? const <String>[]
+      : await settingsHandler.dbHandler.getPinnedTagLabels(
+          booruType: currentBooru.type?.name,
+          booruName: currentBooru.name,
+        );
 
   final result = await showModalBottomSheet<PinTagDialogResult>(
     context: context,
@@ -3158,12 +3185,22 @@ Future<void> showPinTagDialog(
   );
 
   if (result != null) {
-    await settingsHandler.dbHandler.addPinnedTag(
-      tagName,
-      booruType: result.pinForCurrentBooru ? currentBooru.type?.name : null,
-      booruName: result.pinForCurrentBooru ? currentBooru.name : null,
-      labels: result.labels,
-    );
+    if (isDoujin) {
+      // Doujin pins live in the doujin store, never in the PinnedTag table.
+      // "Global" here means all DOUJIN sources, not booru-global.
+      DoujinDataHandler.instance.addPin(
+        tagName,
+        currentBooru,
+        global: !result.pinForCurrentBooru,
+      );
+    } else {
+      await settingsHandler.dbHandler.addPinnedTag(
+        tagName,
+        booruType: result.pinForCurrentBooru ? currentBooru.type?.name : null,
+        booruName: result.pinForCurrentBooru ? currentBooru.name : null,
+        labels: result.labels,
+      );
+    }
 
     onTagPinned();
 
@@ -3246,7 +3283,12 @@ Future<bool> showUnpinTagDialog(
 
   if (result == true) {
     final settingsHandler = SettingsHandler.instance;
-    await settingsHandler.dbHandler.removePinnedTag(pinnedTag.id);
+    if (pinnedTag.id == -1) {
+      // Sentinel id: a doujin pin — remove from the doujin store.
+      DoujinDataHandler.instance.removePin(tagName, SearchHandler.instance.currentBooru);
+    } else {
+      await settingsHandler.dbHandler.removePinnedTag(pinnedTag.id);
+    }
 
     onTagUnpinned();
 
@@ -3488,12 +3530,17 @@ class _PinnedTagsManagerDialogState extends State<PinnedTagsManagerDialog> {
     if (mounted) setState(() {});
 
     final booru = searchHandler.currentBooru;
-    allTags = await settingsHandler.dbHandler.getPinnedTags(
-      booruType: booru.type?.name,
-      booruName: booru.name,
-    );
-    // Follows are stored as labelled pins but have their own screen.
-    allTags.removeWhere(FollowedArtistsHandler.isFollowPin);
+    if (DoujinDataHandler.isDoujinBooru(booru)) {
+      // Doujin tabs: pins come from the doujin store only.
+      allTags = doujinPinsAsPinnedTags(booru);
+    } else {
+      allTags = await settingsHandler.dbHandler.getPinnedTags(
+        booruType: booru.type?.name,
+        booruName: booru.name,
+      );
+      // Follows are stored as labelled pins but have their own screen.
+      allTags.removeWhere(FollowedArtistsHandler.isFollowPin);
+    }
 
     _applySorting();
     _applyFilter();
@@ -3562,6 +3609,8 @@ class _PinnedTagsManagerDialogState extends State<PinnedTagsManagerDialog> {
   }
 
   Future<void> _editTagLabels(PinnedTag tag) async {
+    // Doujin pins (sentinel id) have no labels to edit.
+    if (tag.id == -1) return;
     // Collect all unique labels from all tags
     final existingLabels = <String>{};
     for (final t in allTags) {
@@ -3594,6 +3643,8 @@ class _PinnedTagsManagerDialogState extends State<PinnedTagsManagerDialog> {
   }
 
   Future<void> _openReorderDialog() async {
+    // Doujin pins keep their pin order; the reorder dialog writes to the DB.
+    if (allTags.any((t) => t.id == -1)) return;
     final result = await showPinnedTagsReorderDialog(context, allTags);
     if (result == true) {
       hasChanges = true;
@@ -3616,12 +3667,20 @@ class _PinnedTagsManagerDialogState extends State<PinnedTagsManagerDialog> {
     );
 
     if (result != null) {
-      await settingsHandler.dbHandler.addPinnedTag(
-        result.tagName,
-        booruType: result.pinForCurrentBooru ? widget.currentBooru.type?.name : null,
-        booruName: result.pinForCurrentBooru ? widget.currentBooru.name : null,
-        labels: result.labels,
-      );
+      if (DoujinDataHandler.isDoujinBooru(widget.currentBooru)) {
+        DoujinDataHandler.instance.addPin(
+          result.tagName,
+          widget.currentBooru,
+          global: !result.pinForCurrentBooru,
+        );
+      } else {
+        await settingsHandler.dbHandler.addPinnedTag(
+          result.tagName,
+          booruType: result.pinForCurrentBooru ? widget.currentBooru.type?.name : null,
+          booruName: result.pinForCurrentBooru ? widget.currentBooru.name : null,
+          labels: result.labels,
+        );
+      }
       hasChanges = true;
       await init();
     }

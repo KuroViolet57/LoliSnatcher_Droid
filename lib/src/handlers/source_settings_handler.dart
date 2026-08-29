@@ -25,6 +25,7 @@ class SourceSettings {
     this.titleLanguage,
     this.languageFilter,
     this.tagBlacklist,
+    this.blacklistMode,
     this.columnsPortrait,
     this.columnsLandscape,
   });
@@ -44,6 +45,7 @@ class SourceSettings {
     titleLanguage: json['titleLanguage'] as String?,
     languageFilter: json['languageFilter'] as String?,
     tagBlacklist: json['tagBlacklist'] as String?,
+    blacklistMode: json['blacklistMode'] as String?,
     columnsPortrait: json['columnsPortrait'] as int?,
     columnsLandscape: json['columnsLandscape'] as int?,
   );
@@ -95,6 +97,10 @@ class SourceSettings {
   /// Comma-separated tags excluded from every search on this source.
   String? tagBlacklist;
 
+  /// How the per-source blacklist combines with the doujin-global one:
+  /// 'extend' (default; both apply) | 'override' (only this source's list).
+  String? blacklistMode;
+
   /// Grid columns for doujin feeds, overriding the app-wide columns.
   int? columnsPortrait;
   int? columnsLandscape;
@@ -114,6 +120,7 @@ class SourceSettings {
     if (titleLanguage != null) 'titleLanguage': titleLanguage,
     if (languageFilter != null) 'languageFilter': languageFilter,
     if (tagBlacklist != null) 'tagBlacklist': tagBlacklist,
+    if (blacklistMode != null) 'blacklistMode': blacklistMode,
     if (columnsPortrait != null) 'columnsPortrait': columnsPortrait,
     if (columnsLandscape != null) 'columnsLandscape': columnsLandscape,
   };
@@ -178,6 +185,14 @@ class SourceSettingsHandler {
     _loaded = false;
   }
 
+  /// Forgets the in-memory state and reloads from the file — used after a
+  /// backup restore replaces sourceSettings.json on disk.
+  void reloadFromDisk() {
+    _byHost.clear();
+    _loaded = false;
+    _ensureLoaded();
+  }
+
   SourceSettings settingsFor(Booru? booru) {
     _ensureLoaded();
     return _byHost.putIfAbsent(keyFor(booru), SourceSettings.new);
@@ -198,6 +213,29 @@ class SourceSettingsHandler {
     _ensureLoaded();
     change(globalSettings);
     _save();
+  }
+
+  /// Appends [tag] to the blacklist of one layer: [booru] == null targets the
+  /// doujin-global layer, otherwise that source's own list. No-op when the
+  /// layer already lists the tag.
+  void addBlacklistTag(Booru? booru, String tag) {
+    final String normalized = tag.trim();
+    if (normalized.isEmpty) return;
+    void change(SourceSettings s) {
+      final existing = [
+        for (final part in (s.tagBlacklist ?? '').split(','))
+          if (part.trim().isNotEmpty) part.trim(),
+      ];
+      if (existing.any((t) => t.toLowerCase() == normalized.toLowerCase())) return;
+      existing.add(normalized);
+      s.tagBlacklist = existing.join(', ');
+    }
+
+    if (booru == null) {
+      updateGlobal(change);
+    } else {
+      update(booru, change);
+    }
   }
 
   // ── effective values: source override ?? global ?? default ──
@@ -236,10 +274,14 @@ class SourceSettingsHandler {
   String? languageFilter(Booru? booru) =>
       settingsFor(booru).languageFilter ?? globalSettings.languageFilter;
 
+  /// 'extend' | 'override' — how [tagBlacklist] combines the two layers.
+  String blacklistMode(Booru? booru) => settingsFor(booru).blacklistMode ?? 'extend';
+
   List<String> tagBlacklist(Booru? booru) {
+    final bool override = blacklistMode(booru) == 'override';
     final String raw = [
       settingsFor(booru).tagBlacklist ?? '',
-      globalSettings.tagBlacklist ?? '',
+      if (!override) globalSettings.tagBlacklist ?? '',
     ].join(',');
     return [
       for (final part in raw.split(','))

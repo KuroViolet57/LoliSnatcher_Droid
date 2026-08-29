@@ -5,6 +5,7 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/followed_artists_handler.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/tag_handler.dart';
@@ -64,8 +65,14 @@ class _TagHubPageState extends State<TagHubPage> {
     _load();
   }
 
+  bool get _isDoujinOrigin => DoujinDataHandler.isDoujinBooru(widget.originBooru);
+
   Future<void> _load() async {
-    final bool following = _isArtist && await FollowedArtistsHandler.isFollowed(widget.tag);
+    // Follows from a doujin source live in the doujin store, scoped to that
+    // source — booru follows never mix in.
+    final bool following = _isDoujinOrigin
+        ? DoujinDataHandler.instance.isFollowed(widget.tag, widget.originBooru)
+        : _isArtist && await FollowedArtistsHandler.isFollowed(widget.tag);
     int fav = 0;
     try {
       fav = await settingsHandler.dbHandler.searchDBCount(widget.tag);
@@ -80,7 +87,9 @@ class _TagHubPageState extends State<TagHubPage> {
   }
 
   Future<void> _toggleFollow() async {
-    final bool now = await FollowedArtistsHandler.toggle(widget.tag);
+    final bool now = _isDoujinOrigin
+        ? DoujinDataHandler.instance.toggleFollow(widget.tag, widget.originBooru)
+        : await FollowedArtistsHandler.toggle(widget.tag);
     if (mounted) setState(() => _following = now);
   }
 

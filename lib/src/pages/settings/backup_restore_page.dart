@@ -10,9 +10,12 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
+import 'package:lolisnatcher/src/handlers/bookmark_handler.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/tag_handler.dart';
 import 'package:lolisnatcher/src/services/drive_backup.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
@@ -33,6 +36,21 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
   final SearchHandler searchHandler = SearchHandler.instance;
   final TagHandler tagHandler = TagHandler.instance;
   String backupPath = '';
+
+  /// The doujin side's own store files, backed up alongside the booru data.
+  static const List<String> _doujinStoreFiles = [
+    'doujinData.json',
+    'sourceSettings.json',
+    'bookmarks.json',
+  ];
+
+  /// After restoring the doujin store files, drop the lazily-loaded singleton
+  /// state so the next read comes from the restored files.
+  void _reloadDoujinStores() {
+    DoujinDataHandler.instance.reloadFromDisk();
+    SourceSettingsHandler.instance.reloadFromDisk();
+    BookmarkHandler.instance.reloadFromDisk();
+  }
 
   bool inProgress = false;
   int progress = 0, total = 0;
@@ -206,6 +224,23 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
       );
     });
 
+    // Doujin-side stores (favourites/collections/pins/history + doujin
+    // settings + bookmarks) — separate files, so the separated data
+    // round-trips through backups too. Missing files just aren't written yet.
+    for (final name in _doujinStoreFiles) {
+      await step(name, () async {
+        final File file = File('${await ServiceHandler.getConfigDir()}$name');
+        if (!await file.exists()) return;
+        await ServiceHandler.writeImage(
+          await file.readAsBytes(),
+          name.replaceAll('.json', ''),
+          'text/json',
+          'json',
+          backupPath,
+        );
+      });
+    }
+
     // store.db
     await step('database', () async {
       final File file = File('${await ServiceHandler.getConfigDir()}store.db');
@@ -308,6 +343,23 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
       failures.add('boorus');
       Logger.Inst().log(e.toString(), 'BackupRestorePage', 'restoreAll/boorus', LogTypes.exception, s: s);
     }
+
+    // Doujin-side stores — absent in older backups, so missing files are
+    // skipped silently rather than reported.
+    for (final name in _doujinStoreFiles) {
+      try {
+        final Uint8List? bytes = await ServiceHandler.getFileFromSAFDirectory(backupPath, name);
+        if (bytes != null) {
+          final File f = File('${await ServiceHandler.getConfigDir()}$name');
+          if (!await f.exists()) await f.create();
+          await f.writeAsBytes(bytes);
+        }
+      } catch (e, s) {
+        failures.add(name);
+        Logger.Inst().log(e.toString(), 'BackupRestorePage', 'restoreAll/$name', LogTypes.exception, s: s);
+      }
+    }
+    _reloadDoujinStores();
 
     // store.db — last because it restarts the app on success
     try {
@@ -467,6 +519,12 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
           settingsHandler.booruList.where((e) => BooruType.saveable.contains(e.type)).toList();
       return utf8.encode(json.encode(booruList));
     });
+    for (final name in _doujinStoreFiles) {
+      final File file = File('$configDir$name');
+      if (await file.exists()) {
+        await step(name, name, 'application/json', file.readAsBytes);
+      }
+    }
     await step('database', 'store.db', 'application/x-sqlite3', () async {
       final File file = File('${configDir}store.db');
       if (!await file.exists()) throw Exception('database file not found');
@@ -526,6 +584,19 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
     } catch (e) {
       failures.add('boorus: $e');
     }
+
+    for (final name in _doujinStoreFiles) {
+      try {
+        final bytes = await DriveBackup.download(name);
+        // Older backups simply don't have these files — skip silently.
+        if (bytes != null) {
+          await File('$configDir$name').writeAsBytes(bytes, flush: true);
+        }
+      } catch (e) {
+        failures.add('$name: $e');
+      }
+    }
+    _reloadDoujinStores();
 
     try {
       final bytes = await DriveBackup.download('store.db');

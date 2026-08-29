@@ -6,14 +6,18 @@ import 'package:get/get.dart' hide ContextExt, FirstWhereOrNullExt;
 
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/pinned_tag.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/followed_artists_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/tag_handler.dart';
 import 'package:lolisnatcher/src/pages/collections_page.dart';
+import 'package:lolisnatcher/src/pages/doujin_library_pages.dart';
 import 'package:lolisnatcher/src/pages/followed_artists_page.dart';
 import 'package:lolisnatcher/src/pages/settings/booru_edit_page.dart';
+import 'package:lolisnatcher/src/pages/settings/source_settings_page.dart';
 import 'package:lolisnatcher/src/pages/settings/tags_filters_page.dart';
 import 'package:lolisnatcher/src/widgets/saved_searches/saved_searches_page.dart';
 
@@ -57,8 +61,34 @@ class _DrawerQuickAccessState extends State<DrawerQuickAccess> {
 
   Future<void> _load() async {
     try {
-      // Global pins + the ones scoped to the currently active booru only.
       final Booru? current = searchHandler.tabs.isNotEmpty ? searchHandler.currentBooru : null;
+
+      // Doujin tabs read ONLY the doujin store — booru pins/counts must never
+      // show up here, even global ones.
+      if (DoujinDataHandler.isDoujinBooru(current)) {
+        final store = DoujinDataHandler.instance..ensureLoaded();
+        final pinned = [
+          for (final p in store.pinsFor(current))
+            PinnedTag(
+              id: -1,
+              tagName: p.tag,
+              pinnedAt: p.addedAt,
+              labels: p.booruHost == null ? const ['all doujins'] : const [],
+            ),
+        ];
+        if (mounted) {
+          setState(() {
+            _pinned = pinned;
+            _favCount = store.favourites.length;
+            _collectionCount = store.collections.length;
+            _followedCount = store.followed.length;
+            _historyCount = store.history.length;
+          });
+        }
+        return;
+      }
+
+      // Global pins + the ones scoped to the currently active booru only.
       final pinned = current == null
           ? await settingsHandler.dbHandler.getAllPinnedTags()
           : await settingsHandler.dbHandler.getPinnedTags(
@@ -313,60 +343,122 @@ class _DrawerQuickAccessState extends State<DrawerQuickAccess> {
           const Divider(height: 1),
           const SizedBox(height: 8),
           _sectionLabel('QUICK ACCESS'),
-          _quickAccessRow(
-            icon: Symbols.block_rounded,
-            iconColor: const Color(0xFFE5766B),
-            label: 'Global blacklist',
-            count: '${settingsHandler.hiddenTags.length} tags',
-            onTap: () => _openPage(const TagsFiltersPage()),
-          ),
-          Obx(() {
-            final Booru? current = searchHandler.tabs.isNotEmpty ? searchHandler.currentBooru : null;
-            if (current == null) return const SizedBox.shrink();
-            return _quickAccessRow(
-              icon: Symbols.visibility_off_rounded,
-              iconColor: const Color(0xFFE5766B),
-              label: '${current.name} blacklist',
-              onTap: _openCurrentBooruBlacklist,
-            );
-          }),
-          _quickAccessRow(
-            icon: Symbols.favorite_rounded,
-            iconColor: const Color(0xFFF0708A),
-            label: 'Favorites',
-            count: _favCount > 0 ? '$_favCount' : null,
-            onTap: _openFavourites,
-          ),
-          _quickAccessRow(
-            icon: Symbols.history_rounded,
-            iconColor: const Color(0xFF8FBFD4),
-            label: 'History',
-            count: _historyCount > 0 ? '$_historyCount' : null,
-            onTap: _openHistory,
-          ),
-          _quickAccessRow(
-            icon: Symbols.artist_rounded,
-            iconColor: const Color(0xFFB9A0E8),
-            label: 'Followed artists',
-            count: _followedCount > 0 ? '$_followedCount' : null,
-            onTap: () => _openPage(const FollowedArtistsPage()),
-          ),
-          _quickAccessRow(
-            icon: Symbols.bookmark_rounded,
-            iconColor: const Color(0xFFE8C46B),
-            label: 'Saved searches',
-            count: '${searchHandler.savedSearches.length} kept',
-            onTap: () => _openPage(const SavedSearchesPage()),
-          ),
-          _quickAccessRow(
-            icon: Symbols.folder_rounded,
-            iconColor: const Color(0xFF93AECC),
-            label: 'Collections',
-            count: _collectionCount > 0 ? '$_collectionCount sets' : null,
-            onTap: () => _openPage(const CollectionsPage()),
-          ),
+          ..._quickAccessRows(),
         ],
       ),
     );
+  }
+
+  List<Widget> _quickAccessRows() {
+    final Booru? current = searchHandler.tabs.isNotEmpty ? searchHandler.currentBooru : null;
+
+    // On a doujin tab every entry points at the doujin store's screens; on a
+    // booru tab at the booru ones. The two never mix.
+    if (DoujinDataHandler.isDoujinBooru(current)) {
+      final store = DoujinDataHandler.instance..ensureLoaded();
+      final int globalBlacklistCount = SourceSettingsHandler.instance.tagBlacklist(null).length;
+      return [
+        _quickAccessRow(
+          icon: Symbols.block_rounded,
+          iconColor: const Color(0xFFE5766B),
+          label: 'Doujin blacklist',
+          count: globalBlacklistCount > 0 ? '$globalBlacklistCount tags' : null,
+          onTap: () => _openPage(const SourceSettingsPage()),
+        ),
+        _quickAccessRow(
+          icon: Symbols.visibility_off_rounded,
+          iconColor: const Color(0xFFE5766B),
+          label: '${current!.name} blacklist',
+          onTap: () => _openPage(SourceSettingsPage(booru: current)),
+        ),
+        _quickAccessRow(
+          icon: Symbols.favorite_rounded,
+          iconColor: const Color(0xFFF0708A),
+          label: 'Favorites',
+          count: _favCount > 0 ? '$_favCount' : null,
+          onTap: () => _openPage(DoujinFavouritesListPage(booru: current)),
+        ),
+        _quickAccessRow(
+          icon: Symbols.history_rounded,
+          iconColor: const Color(0xFF8FBFD4),
+          label: 'History',
+          count: _historyCount > 0 ? '$_historyCount' : null,
+          onTap: () => _openPage(DoujinHistoryPage(booru: current)),
+        ),
+        _quickAccessRow(
+          icon: Symbols.artist_rounded,
+          iconColor: const Color(0xFFB9A0E8),
+          label: 'Followed artists',
+          count: _followedCount > 0 ? '$_followedCount' : null,
+          onTap: () => _openPage(DoujinFollowedPage(booru: current)),
+        ),
+        _quickAccessRow(
+          icon: Symbols.bookmark_rounded,
+          iconColor: const Color(0xFFE8C46B),
+          label: 'Saved searches',
+          count: '${store.savedSearches.length} kept',
+          onTap: () => _openPage(DoujinSavedSearchesPage(booru: current)),
+        ),
+        _quickAccessRow(
+          icon: Symbols.folder_rounded,
+          iconColor: const Color(0xFF93AECC),
+          label: 'Collections',
+          count: _collectionCount > 0 ? '$_collectionCount sets' : null,
+          onTap: () => _openPage(DoujinCollectionsPage(booru: current)),
+        ),
+      ];
+    }
+
+    return [
+      _quickAccessRow(
+        icon: Symbols.block_rounded,
+        iconColor: const Color(0xFFE5766B),
+        label: 'Global blacklist',
+        count: '${settingsHandler.hiddenTags.length} tags',
+        onTap: () => _openPage(const TagsFiltersPage()),
+      ),
+      if (current != null)
+        _quickAccessRow(
+          icon: Symbols.visibility_off_rounded,
+          iconColor: const Color(0xFFE5766B),
+          label: '${current.name} blacklist',
+          onTap: _openCurrentBooruBlacklist,
+        ),
+      _quickAccessRow(
+        icon: Symbols.favorite_rounded,
+        iconColor: const Color(0xFFF0708A),
+        label: 'Favorites',
+        count: _favCount > 0 ? '$_favCount' : null,
+        onTap: _openFavourites,
+      ),
+      _quickAccessRow(
+        icon: Symbols.history_rounded,
+        iconColor: const Color(0xFF8FBFD4),
+        label: 'History',
+        count: _historyCount > 0 ? '$_historyCount' : null,
+        onTap: _openHistory,
+      ),
+      _quickAccessRow(
+        icon: Symbols.artist_rounded,
+        iconColor: const Color(0xFFB9A0E8),
+        label: 'Followed artists',
+        count: _followedCount > 0 ? '$_followedCount' : null,
+        onTap: () => _openPage(const FollowedArtistsPage()),
+      ),
+      _quickAccessRow(
+        icon: Symbols.bookmark_rounded,
+        iconColor: const Color(0xFFE8C46B),
+        label: 'Saved searches',
+        count: '${searchHandler.savedSearches.length} kept',
+        onTap: () => _openPage(const SavedSearchesPage()),
+      ),
+      _quickAccessRow(
+        icon: Symbols.folder_rounded,
+        iconColor: const Color(0xFF93AECC),
+        label: 'Collections',
+        count: _collectionCount > 0 ? '$_collectionCount sets' : null,
+        onTap: () => _openPage(const CollectionsPage()),
+      ),
+    ];
   }
 }

@@ -84,6 +84,14 @@ class BookmarkHandler {
     }
   }
 
+  /// Forgets the in-memory state and reloads from the file — used after a
+  /// backup restore replaces bookmarks.json on disk.
+  void reloadFromDisk() {
+    bookmarks.clear();
+    _loaded = false;
+    ensureLoaded();
+  }
+
   bool isBookmarked(BooruItem item) {
     ensureLoaded();
     return bookmarks.containsKey(item.postURL);
