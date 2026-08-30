@@ -61,6 +61,11 @@ class EaHentaiHandler extends BooruHandler with DoujinListingTagBackfill {
     if (_sessionCookie.isNotEmpty) 'Cookie': _sessionCookie,
   };
 
+  /// eahentai's CDN serves without a referer today; sending the one a browser
+  /// would send keeps a future hotlink rule from silently blanking covers.
+  @override
+  Map<String, String> getMediaHeaders() => {'Referer': '$_site/'};
+
   @override
   String validateTags(String tags) => tags.trim();
 

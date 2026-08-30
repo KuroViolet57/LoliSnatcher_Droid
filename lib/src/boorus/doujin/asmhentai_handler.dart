@@ -59,6 +59,12 @@ class AsmHentaiHandler extends BooruHandler with DoujinListingTagBackfill {
     if (_sessionCookie.isNotEmpty) 'Cookie': _sessionCookie,
   };
 
+  /// asmhentai's image host serves without a referer today; this is the one a
+  /// browser on the site would send, so a future hotlink rule cannot silently
+  /// blank every cover.
+  @override
+  Map<String, String> getMediaHeaders() => {'Referer': '$_site/'};
+
   @override
   String validateTags(String tags) => tags.trim();
 

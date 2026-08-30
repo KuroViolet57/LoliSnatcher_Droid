@@ -1031,6 +1031,21 @@ abstract class BooruHandler {
     };
   }
 
+  /// Extra headers needed to fetch MEDIA — thumbnails, covers, page images —
+  /// from wherever this source keeps them.
+  ///
+  /// Deliberately separate from [getHeaders]: that describes how to talk to the
+  /// source's API and carries an `Accept` for markup and JSON, which is the
+  /// wrong thing to send a CDN. This is only the handful of headers an image
+  /// host demands, and it is empty for the many sources that demand none.
+  ///
+  /// Sources with hotlink protection MUST override this. Before it existed the
+  /// image loader consulted a hardcoded list of hosts in [Tools], so any source
+  /// not written into that list silently lost its referer and every thumbnail
+  /// 404'd — with the URLs themselves perfectly correct, which makes it a
+  /// genuinely confusing failure to diagnose.
+  Map<String, String> getMediaHeaders() => const {};
+
   Future<String?> getCookies() async {
     String cookieString = await Tools.getCookies(booru.baseURL!);
 

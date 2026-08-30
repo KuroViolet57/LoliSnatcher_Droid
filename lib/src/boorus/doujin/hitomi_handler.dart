@@ -227,6 +227,15 @@ class HitomiHandler extends BooruHandler {
     'Origin': _site,
   };
 
+  /// hitomi's image hosts hotlink-protect hard: the exact same URL returns 404
+  /// with no referer and 200 with one. Verified live against a failing
+  /// thumbnail from a device log.
+  @override
+  Map<String, String> getMediaHeaders() => const {
+    'Referer': '$_site/',
+    'Origin': _site,
+  };
+
   @override
   String validateTags(String tags) => tags.trim();
 

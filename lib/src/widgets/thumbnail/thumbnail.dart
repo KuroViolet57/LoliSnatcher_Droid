@@ -144,6 +144,9 @@ class _ThumbnailState extends State<Thumbnail> {
               }
             },
             withCaptchaCheck: withCaptchaCheck,
+            // Sources that publish a spare CDN put it here, so the loader
+            // falls back to it instead of showing a broken cover.
+            fallbackUrls: widget.item.sources ?? const [],
           )
         : CustomNetworkImage(
             url,
@@ -165,6 +168,9 @@ class _ThumbnailState extends State<Thumbnail> {
               }
             },
             withCaptchaCheck: withCaptchaCheck,
+            // Sources that publish a spare CDN put it here, so the loader
+            // falls back to it instead of showing a broken cover.
+            fallbackUrls: widget.item.sources ?? const [],
           );
 
     // on desktop devicePixelRatio is not working?

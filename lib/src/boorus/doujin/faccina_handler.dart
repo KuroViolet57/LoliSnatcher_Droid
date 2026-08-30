@@ -66,6 +66,11 @@ class FaccinaHandler extends BooruHandler {
 
   static dynamic _json(dynamic data) => data is String ? jsonDecode(data) : data;
 
+  /// hentalk serves its own images and needs no referer today; sending the one a
+  /// browser would send keeps a future hotlink rule from blanking covers.
+  @override
+  Map<String, String> getMediaHeaders() => {'Referer': '$_site/'};
+
   @override
   String validateTags(String tags) => tags.trim();
 

@@ -79,6 +79,12 @@ class SchaleHandler extends BooruHandler with DoujinListingTagBackfill {
 
   static dynamic _json(dynamic data) => data is String ? jsonDecode(data) : data;
 
+  /// niyaniya keeps its images on erocdn mirrors, which serve them without a
+  /// referer today. Sending the one a browser would send anyway costs nothing
+  /// and means a future hotlink rule does not silently blank every cover.
+  @override
+  Map<String, String> getMediaHeaders() => {'Referer': '$_site/'};
+
   @override
   String validateTags(String tags) => tags.trim();
 

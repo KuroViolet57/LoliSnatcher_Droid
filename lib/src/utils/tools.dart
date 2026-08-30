@@ -14,6 +14,7 @@ import 'package:lolisnatcher/src/boorus/sankaku_handler.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/constants.dart';
+import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/utils/extensions.dart';
@@ -210,6 +211,19 @@ class Tools {
         // so the loader fails. A same-origin Referer serves the image.
         headers['Referer'] = 'https://realbooru.com/';
       }
+    }
+
+    // Whatever the source itself says its CDN needs.
+    //
+    // The cases above are a hardcoded list of hosts, which means a source not
+    // written into it silently loses its referer and every image 404s while the
+    // URLs stay perfectly correct. Asking the handler instead lets a source
+    // declare this once, next to the code that builds those URLs. Handler
+    // values win: they are specific to that source, the list above is not.
+    if (booru != null) {
+      try {
+        headers.addAll(BooruHandlerFactory.mediaHeadersFor(booru));
+      } catch (_) {}
     }
 
     return headers;

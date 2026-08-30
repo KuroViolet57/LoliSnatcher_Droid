@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import 'package:lolisnatcher/src/boorus/agnph_handler.dart';
 import 'package:lolisnatcher/src/boorus/booru_on_rails_handler.dart';
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
@@ -51,6 +53,33 @@ import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 class BooruHandlerFactory {
   late BooruHandler booruHandler;
   int pageNum = -1;
+
+  /// Media headers per booru, so the image loader can ask a source what its CDN
+  /// needs instead of a shared list of hosts having to know about every source.
+  static final Map<String, Map<String, String>> _mediaHeaderCache = {};
+
+  /// The headers this booru's own handler says its media host requires.
+  ///
+  /// Cached because it is consulted once per thumbnail and a grid asks for
+  /// dozens at a time; the answer only depends on which source this is.
+  static Map<String, String> mediaHeadersFor(Booru booru) {
+    final String key = '${booru.type?.name ?? '?'}|${booru.baseURL ?? ''}';
+    final Map<String, String>? cached = _mediaHeaderCache[key];
+    if (cached != null) return cached;
+
+    Map<String, String> resolved = const {};
+    try {
+      resolved = BooruHandlerFactory().getBooruHandler([booru], 1).booruHandler.getMediaHeaders();
+    } catch (_) {
+      // A source that cannot even be constructed here is not one whose images
+      // are about to load anyway; an empty map keeps the old behaviour.
+    }
+    _mediaHeaderCache[key] = resolved;
+    return resolved;
+  }
+
+  @visibleForTesting
+  static void clearMediaHeaderCache() => _mediaHeaderCache.clear();
 
   ({BooruHandler booruHandler, int startingPage}) getBooruHandler(
     List<Booru> boorus,

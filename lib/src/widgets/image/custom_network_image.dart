@@ -72,6 +72,7 @@ mixin _NetworkImageLoaderMixin {
     required bool withCaptchaCheck,
     required StreamController<ImageChunkEvent> chunkEvents,
     required void Function(bool)? onCacheDetected,
+    List<String> fallbackUrls = const [],
   }) async {
     final Uri resolved = Uri.base.resolve(url);
     final String cacheFilePath = await ImageWriter().getCachePathString(
@@ -129,67 +130,98 @@ mixin _NetworkImageLoaderMixin {
       );
     }
 
-    Response? response;
-    try {
-      response = withCache
-          ? await client.downloadUri(
-              resolved,
+    // Mirrors to try if the first URL fails.
+    //
+    // Some sources publish a spare CDN alongside the primary for exactly this
+    // reason — niyaniya's API returns a `fallback` host with every thumbnail
+    // because its main mirrors intermittently drop requests. The loader used to
+    // give up on the first error, so that spare was carried all the way into
+    // the item and then never used, and a flaky mirror read as a broken source.
+    final List<Uri> candidates = [
+      resolved,
+      for (final fallback in fallbackUrls)
+        if (fallback.isNotEmpty && fallback != url) Uri.base.resolve(fallback),
+    ];
+
+    Future<Response<dynamic>> attempt(Uri uri) {
+      void onReceiveProgress(int count, int total) {
+        chunkEvents.add(
+          ImageChunkEvent(
+            cumulativeBytesLoaded: count,
+            expectedTotalBytes: total <= 0 ? null : total,
+          ),
+        );
+      }
+
+      final bool noRedirects = headers?.containsKey('LS-IGNORE-REDIRECT') == true;
+      return withCache
+          ? client.downloadUri(
+              uri,
               tempFilePath,
               options: Options(
                 headers: headers,
                 sendTimeout: sendTimeout,
                 receiveTimeout: receiveTimeout,
-                followRedirects: headers?.containsKey('LS-IGNORE-REDIRECT') == true ? false : true,
+                followRedirects: !noRedirects,
               ),
-              onReceiveProgress: (int count, int total) {
-                chunkEvents.add(
-                  ImageChunkEvent(
-                    cumulativeBytesLoaded: count,
-                    expectedTotalBytes: total <= 0 ? null : total,
-                  ),
-                );
-              },
+              onReceiveProgress: onReceiveProgress,
               cancelToken: cancelToken,
             )
-          : await client.getUri(
-              resolved,
+          : client.getUri(
+              uri,
               options: Options(
                 headers: headers,
                 responseType: ResponseType.bytes,
                 sendTimeout: sendTimeout,
                 receiveTimeout: receiveTimeout,
-                followRedirects: headers?.containsKey('LS-IGNORE-REDIRECT') == true ? false : true,
+                followRedirects: !noRedirects,
               ),
-              onReceiveProgress: (int count, int total) {
-                chunkEvents.add(
-                  ImageChunkEvent(
-                    cumulativeBytesLoaded: count,
-                    expectedTotalBytes: total <= 0 ? null : total,
-                  ),
-                );
-              },
+              onReceiveProgress: onReceiveProgress,
               cancelToken: cancelToken,
             );
-    } catch (e) {
+    }
+
+    Response? response;
+    Exception? lastError;
+    for (final Uri candidate in candidates) {
+      try {
+        final Response<dynamic> attempted = await attempt(candidate);
+        if (Tools.isGoodResponse(attempted)) {
+          response = attempted;
+          break;
+        }
+        lastError = NetworkImageLoadException(
+          statusCode: attempted.statusCode ?? 0,
+          uri: candidate,
+        );
+      } catch (e) {
+        // A cancelled request is the caller's decision, not a mirror failing;
+        // trying the next one would defeat the cancellation.
+        if (e is DioException && CancelToken.isCancel(e)) {
+          try {
+            await File(tempFilePath).delete();
+          } catch (_) {}
+          rethrow;
+        }
+        lastError = e is Exception ? e : Exception(e.toString());
+      }
+      // Each attempt writes to the same temp path, so clear it before the next.
       try {
         await File(tempFilePath).delete();
       } catch (_) {}
-      rethrow;
     }
+
+    if (response == null) {
+      try {
+        await File(tempFilePath).delete();
+      } catch (_) {}
+      throw lastError ?? NetworkImageLoadException(statusCode: 0, uri: resolved);
+    }
+    // Every candidate above is checked with isGoodResponse before being
+    // accepted, so reaching here means a good response.
     // NOTE: do NOT close `client` — it now shares the app-wide pooled
     // HttpClient (see DioNetwork.getClient); closing would drop every other
     // request's warm connections.
-
-    if (!Tools.isGoodResponse(response)) {
-      try {
-        await File(tempFilePath).delete();
-      } catch (_) {}
-
-      throw NetworkImageLoadException(
-        statusCode: response.statusCode ?? 0,
-        uri: resolved,
-      );
-    }
 
     if (withCache) {
       final tempFile = File(tempFilePath);
@@ -302,6 +334,7 @@ class CustomNetworkImage extends ImageProvider<custom_network_image.CustomNetwor
     this.sendTimeout,
     this.receiveTimeout,
     this.withCaptchaCheck = false,
+    this.fallbackUrls = const [],
   }) : assert(!withCache || cacheFolder != null, 'cacheFolder must be set when withCache is true');
 
   @override
@@ -318,6 +351,10 @@ class CustomNetworkImage extends ImageProvider<custom_network_image.CustomNetwor
   final void Function(Object)? onError;
   final Duration? sendTimeout;
   final Duration? receiveTimeout;
+
+  /// Spare mirrors for [url], tried in order if it fails. Sources that publish
+  /// a backup CDN (niyaniya returns one with every thumbnail) put it here.
+  final List<String> fallbackUrls;
   final bool withCaptchaCheck;
 
   @override
@@ -369,6 +406,7 @@ class CustomNetworkImage extends ImageProvider<custom_network_image.CustomNetwor
         withCaptchaCheck: withCaptchaCheck,
         chunkEvents: chunkEvents,
         onCacheDetected: onCacheDetected,
+        fallbackUrls: fallbackUrls,
       );
 
       if (bytes.isEmpty) {
@@ -442,6 +480,7 @@ class CustomNetworkAvifImage extends ImageProvider<custom_network_image.CustomNe
     this.sendTimeout,
     this.receiveTimeout,
     this.withCaptchaCheck = false,
+    this.fallbackUrls = const [],
   }) : assert(!withCache || cacheFolder != null, 'cacheFolder must be set when withCache is true');
 
   @override
@@ -458,6 +497,10 @@ class CustomNetworkAvifImage extends ImageProvider<custom_network_image.CustomNe
   final void Function(Object)? onError;
   final Duration? sendTimeout;
   final Duration? receiveTimeout;
+
+  /// Spare mirrors for [url], tried in order if it fails. Sources that publish
+  /// a backup CDN (niyaniya returns one with every thumbnail) put it here.
+  final List<String> fallbackUrls;
   final bool withCaptchaCheck;
 
   @override
@@ -509,6 +552,7 @@ class CustomNetworkAvifImage extends ImageProvider<custom_network_image.CustomNe
         withCaptchaCheck: withCaptchaCheck,
         chunkEvents: chunkEvents,
         onCacheDetected: onCacheDetected,
+        fallbackUrls: fallbackUrls,
       );
 
       if (bytes.isEmpty) {
