@@ -43,6 +43,8 @@ import 'package:lolisnatcher/src/data/settings/video_cache_mode.dart';
 import 'package:lolisnatcher/src/data/theme_item.dart';
 import 'package:lolisnatcher/src/data/update_info.dart';
 import 'package:lolisnatcher/src/handlers/database_handler.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
+import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/secure_storage_handler.dart';
@@ -2317,15 +2319,40 @@ class SettingsHandler {
     'stable-diffusion',
   ];
 
-  TagsListData parseTagsList(List<Tag> itemTags, {bool isCapped = true}) {
+  /// Domain-aware wrapper around [parseTagsList]: doujin items (post URL
+  /// host attribution) get their hidden-tag badges from the DOUJIN blacklist;
+  /// everything else from the booru global blacklist. Every per-item surface
+  /// (thumbnails, viewers, tag lists) should call this instead of
+  /// [parseTagsList] so booru blacklist data never decorates doujin items.
+  TagsListData parseTagsListForItem(BooruItem item, {bool isCapped = true}) {
+    if (DoujinDataHandler.isDoujinItem(item)) {
+      return parseTagsList(
+        item.tagsList,
+        isCapped: isCapped,
+        hiddenTokensOverride: SourceSettingsHandler.instance.tagBlacklistForItem(item),
+      );
+    }
+    return parseTagsList(item.tagsList, isCapped: isCapped);
+  }
+
+  TagsListData parseTagsList(List<Tag> itemTags, {bool isCapped = true, Set<String>? hiddenTokensOverride}) {
     final List<String> cleanItemTags = cleanTagsList(itemTags);
     // For the visual "this tag is in your blacklist" indicator we check the
     // tag against any plain-tag token mentioned in a global blacklist line.
     // (Multi-token lines still don't surface per-tag, but at least the
     // single-tag entries — which are what every existing user has — keep
     // their badge.)
-    final Set<String> globalTokens = blacklistedTagTokens;
-    List<String> hiddenInItem = cleanItemTags.where(globalTokens.contains).toList();
+    // `hiddenTokensOverride` swaps in a different blacklist (the doujin one,
+    // normalized lowercase_underscores) in place of the booru-global tokens.
+    List<String> hiddenInItem;
+    if (hiddenTokensOverride != null) {
+      hiddenInItem = cleanItemTags
+          .where((tag) => hiddenTokensOverride.contains(SourceSettingsHandler.normalizeTagName(tag)))
+          .toList();
+    } else {
+      final Set<String> globalTokens = blacklistedTagTokens;
+      hiddenInItem = cleanItemTags.where(globalTokens.contains).toList();
+    }
     List<String> markedInItem = cleanItemTags.where(markedTags.contains).toList();
     final List<String> soundInItem = soundTags.where(cleanItemTags.contains).toList();
     final List<String> aiInItem = aiTags.where(cleanItemTags.contains).toList();

@@ -350,7 +350,15 @@ class _TagViewState extends State<TagView> {
   }
 
   void parseTags() {
-    tagsData = settingsHandler.parseTagsList(tags, isCapped: false);
+    // Doujin items get their hidden badges from the doujin blacklist, never
+    // the booru-global one (and vice versa).
+    tagsData = settingsHandler.parseTagsList(
+      tags,
+      isCapped: false,
+      hiddenTokensOverride: DoujinDataHandler.isDoujinItem(item)
+          ? SourceSettingsHandler.instance.tagBlacklistForItem(item)
+          : null,
+    );
   }
 
   List<Tag> filterTags(List<Tag> tagsToFilter) {

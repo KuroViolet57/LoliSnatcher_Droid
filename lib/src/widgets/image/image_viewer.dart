@@ -229,8 +229,8 @@ class ImageViewerState extends State<ImageViewer> {
         stopLoading(
           reason: .hidden,
           details: settingsHandler
-              .parseTagsList(
-                widget.booruItem.tagsList,
+              .parseTagsListForItem(
+                widget.booruItem,
                 isCapped: true,
               )
               .hiddenTags

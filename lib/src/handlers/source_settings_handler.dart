@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 import 'package:lolisnatcher/src/data/booru.dart';
+import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 
@@ -328,4 +330,36 @@ class SourceSettingsHandler {
 
   int? columnsLandscape(Booru? booru) =>
       settingsFor(booru).columnsLandscape ?? globalSettings.columnsLandscape;
+
+  /// The resolved doujin blacklist for the source an ITEM belongs to (post
+  /// URL host attribution — works in merge feeds too).
+  Set<String> tagBlacklistForItem(BooruItem item) =>
+      tagBlacklist(DoujinDataHandler.doujinBooruForItem(item)).toSet();
+
+  /// Doujin counterpart of [SettingsHandler.isItemHiddenGlobally] — the ONLY
+  /// hidden-check doujin items may use. Booru blacklists never apply to
+  /// doujin items and vice versa, even when tag names coincide.
+  bool isItemHiddenForDoujin(BooruItem item) {
+    final Set<String> blacklist = tagBlacklistForItem(item);
+    return blacklist.isNotEmpty && matchesBlacklist(item, blacklist);
+  }
+
+  /// Client-side doujin blacklist check (server-side -tag filters can't cover
+  /// related/recommend/id feeds). Blacklist entries are already normalized to
+  /// lowercase_underscores; item tags may carry a namespace prefix.
+  static bool matchesBlacklist(BooruItem item, Set<String> blacklist) {
+    for (final tag in item.tagsList) {
+      if (blacklist.contains(normalizeTagName(tag.fullString))) return true;
+    }
+    return false;
+  }
+
+  /// Normalizes an item tag to the blacklist token form: namespace stripped,
+  /// lowercased, spaces to underscores.
+  static String normalizeTagName(String raw) {
+    String name = raw.toLowerCase().replaceAll(' ', '_');
+    final int colon = name.indexOf(':');
+    if (colon != -1) name = name.substring(colon + 1);
+    return name;
+  }
 }

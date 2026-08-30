@@ -391,7 +391,7 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
       (byNs[ns] ?? byNs[fallback])?.add(tag);
     }
 
-    final tagsData = settingsHandler.parseTagsList(item.tagsList, isCapped: false);
+    final tagsData = settingsHandler.parseTagsListForItem(item, isCapped: false);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

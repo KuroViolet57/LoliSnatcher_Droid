@@ -115,7 +115,7 @@ abstract class BooruHandler {
       final bool itemIsDoujin = hasReader || DoujinDataHandler.isDoujinItem(item);
       if (itemIsDoujin) {
         final Set<String> doujinBlacklist = doujinBlacklistFor(item);
-        if (doujinBlacklist.isNotEmpty && _matchesDoujinBlacklist(item, doujinBlacklist)) {
+        if (doujinBlacklist.isNotEmpty && SourceSettingsHandler.matchesBlacklist(item, doujinBlacklist)) {
           continue;
         }
       } else if (settingsHandler.filterHated &&
@@ -169,19 +169,6 @@ abstract class BooruHandler {
     if (!listEquals(itemsBeforeFilter, filteredItems)) {
       filteredFetched.value = filteredItems;
     }
-  }
-
-  /// Client-side doujin blacklist check (server-side -tag filters can't cover
-  /// related/recommend/id feeds). Blacklist entries are already normalized to
-  /// lowercase_underscores; item tags may carry a namespace prefix.
-  static bool _matchesDoujinBlacklist(BooruItem item, Set<String> blacklist) {
-    for (final tag in item.tagsList) {
-      String name = tag.fullString.toLowerCase().replaceAll(' ', '_');
-      final int colon = name.indexOf(':');
-      if (colon != -1) name = name.substring(colon + 1);
-      if (blacklist.contains(name)) return true;
-    }
-    return false;
   }
 
   String get className => runtimeType.toString();

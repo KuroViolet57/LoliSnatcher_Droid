@@ -394,8 +394,8 @@ class _ThumbnailBottomRightIcons extends StatelessWidget {
     final SettingsHandler settingsHandler = SettingsHandler.instance;
     final SnatchHandler snatchHandler = SnatchHandler.instance;
 
-    final tagsData = settingsHandler.parseTagsList(
-      item.tagsList,
+    final tagsData = settingsHandler.parseTagsListForItem(
+      item,
       isCapped: false,
     );
     final bool isSound = tagsData.soundTags.isNotEmpty;

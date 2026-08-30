@@ -165,6 +165,53 @@ void main() {
     });
   });
 
+  group('hidden state (blur/crossed-eye path) is domain-scoped', () {
+    test('REGRESSION: booru global blacklist must NOT blur doujin items (isHidden stays false)', () {
+      final settings = SettingsHandler.instance;
+      // The user's real repro: `vore` sits in a 109-tag booru global
+      // blacklist and blurred a doujin card in the nhentai feed.
+      settings.hiddenTags.add('vore');
+      settings.invalidateBlacklistCache();
+
+      final doujin = doujinItem('1001', ['vore', 'big breasts']);
+      expect(doujin.isHidden, isFalse);
+
+      // Control: the same tag on a booru item DOES report hidden.
+      final booru = booruItem('2001', ['vore']);
+      expect(booru.isHidden, isTrue);
+    });
+
+    test('doujin blacklist DOES drive isHidden for doujin items, never for booru items', () {
+      SourceSettingsHandler.instance.updateGlobal((s) => s.tagBlacklist = 'vore');
+
+      expect(doujinItem('1001', ['vore']).isHidden, isTrue);
+      expect(doujinItem('1002', ['vanilla']).isHidden, isFalse);
+      // Booru item with the same tag: booru blacklist is empty, so no blur.
+      expect(booruItem('2001', ['vore']).isHidden, isFalse);
+    });
+
+    test('doujin blacklist matches namespaced/spaced item tags', () {
+      SourceSettingsHandler.instance.updateGlobal((s) => s.tagBlacklist = 'big breasts');
+      expect(doujinItem('1001', ['tag:Big Breasts']).isHidden, isTrue);
+    });
+
+    test('parseTagsListForItem: hidden badges come from the right blacklist per domain', () {
+      final settings = SettingsHandler.instance;
+      settings.hiddenTags.add('vore');
+      settings.invalidateBlacklistCache();
+      SourceSettingsHandler.instance.updateGlobal((s) => s.tagBlacklist = 'netorare');
+
+      // Doujin item: booru-blacklisted tag gets NO badge, doujin-blacklisted
+      // tag does.
+      final doujinData = settings.parseTagsListForItem(doujinItem('1001', ['vore', 'netorare', 'vanilla']));
+      expect(doujinData.hiddenTags, ['netorare']);
+
+      // Booru item: exactly the opposite.
+      final booruData = settings.parseTagsListForItem(booruItem('2001', ['vore', 'netorare', 'vanilla']));
+      expect(booruData.hiddenTags, ['vore']);
+    });
+  });
+
   group('fresh doujin stores are empty', () {
     test('pins for a fresh doujin source are empty even with booru pins around', () {
       // (booru pins live in the DB, which isn't even open here — but the
