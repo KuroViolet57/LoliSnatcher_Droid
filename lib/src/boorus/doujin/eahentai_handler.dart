@@ -11,6 +11,7 @@ import 'package:lolisnatcher/src/boorus/doujin/doujin_tag_namespaces.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/meta_tag.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
+import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/reader_handler.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
@@ -488,12 +489,22 @@ class EaHentaiHandler extends BooruHandler with DoujinListingTagBackfill, Doujin
     final source = await _sourceItem(id);
     if (source == null) return [];
     final candidates = await _candidatesFor(source);
+    // The tag TYPE, not an `artist:` prefix: names are bare now, so a prefix
+
+    // test finds nothing and the same-artist cap below quietly stops working.
+
     String? artist;
-    for (final t in source.tagsList) {
-      if (t.fullString.startsWith('artist:')) {
-        artist = t.fullString.substring('artist:'.length);
+
+    for (final tag in source.tagsList) {
+
+      if (tag.tagType == TagType.artist) {
+
+        artist = tag.fullString;
+
         break;
+
       }
+
     }
     return DoujinRecommendationEngine.rank(
       source,

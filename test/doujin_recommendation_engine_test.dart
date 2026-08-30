@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lolisnatcher/src/boorus/doujin/doujin_recommendation_engine.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
+import 'package:lolisnatcher/src/data/tag_type.dart';
 
 /// Round 4: Related and Recommended have to exist on EVERY doujin source,
 /// including the ones whose sites publish nothing of the kind. This engine
@@ -175,11 +176,22 @@ void main() {
   });
 
   group('Related is never empty when anything is close', () {
+    /// Tags as the handlers really build them: bare names carrying a type.
+    /// A `namespace:name` string here would be fiction, and fiction in a
+    /// fixture is how the prefix-matching bug survived a green suite.
     BooruItem make(String title, List<String> tags, String url) => BooruItem(
       fileURL: url,
       sampleURL: url,
       thumbnailURL: url,
-      tagsList: [for (final t in tags) Tag(t)],
+      tagsList: [
+        for (final t in tags)
+          if (t.startsWith('artist:'))
+            Tag(t.substring(7), tagType: TagType.artist)
+          else if (t.startsWith('parody:'))
+            Tag(t.substring(7), tagType: TagType.copyright)
+          else
+            Tag(t),
+      ],
       postURL: url,
     )..description = title;
 
@@ -231,5 +243,53 @@ void main() {
     expect(DoujinRecommendationEngine.tagsOf(item), contains('blue_archive'));
     expect(DoujinRecommendationEngine.namespacedTagsOf(item), contains('parody:blue_archive'));
     expect(DoujinRecommendationEngine.namespacedTagsOf(item), contains('big_breasts'));
+  });
+
+  group('relatedness reads the tag TYPE, not a name prefix', () {
+    // Regression: tag names are bare now, so `fullString.startsWith('artist:')`
+    // matches nothing. That scored every candidate at zero and emptied Related
+    // across all five sources — with no error anywhere, which is what made it
+    // slip through until a live walk caught it.
+    BooruItem make(String title, List<Tag> tags, String url) => BooruItem(
+      fileURL: url,
+      sampleURL: url,
+      thumbnailURL: url,
+      tagsList: tags,
+      postURL: url,
+    )..description = title;
+
+    test('a shared artist counts, with bare names', () {
+      final source = make('One Book', [Tag('wakahi_chan', tagType: TagType.artist)], 'u/0');
+      final candidate = make('Another Book', [Tag('wakahi_chan', tagType: TagType.artist)], 'u/1');
+
+      expect(DoujinRecommendationEngine.relatedness(source, candidate), greaterThan(0.3));
+    });
+
+    test('a shared series counts, with bare names', () {
+      final source = make('One', [Tag('blue_archive', tagType: TagType.copyright)], 'u/0');
+      final candidate = make('Two', [Tag('blue_archive', tagType: TagType.copyright)], 'u/1');
+
+      expect(DoujinRecommendationEngine.relatedness(source, candidate), greaterThan(0.4));
+    });
+
+    test('the same name under a different type is not a match', () {
+      // `original` as a series and `original` as a general tag are not the
+      // same thing, and pretending otherwise would fill Related with noise.
+      final source = make('One', [Tag('original', tagType: TagType.copyright)], 'u/0');
+      final candidate = make('Two', [Tag('original')], 'u/1');
+
+      expect(DoujinRecommendationEngine.relatedness(source, candidate), 0);
+    });
+
+    test('Related is not empty for a book that shares only its artist', () {
+      final source = make('Hidden Emotions', [Tag('wakahi_chan', tagType: TagType.artist)], 'u/0');
+      final candidates = [
+        make('Something Else', [Tag('wakahi_chan', tagType: TagType.artist)], 'u/1'),
+        make('Unrelated', [Tag('someone_else', tagType: TagType.artist)], 'u/2'),
+      ];
+
+      final related = DoujinRecommendationEngine.related(source, candidates);
+      expect(related.map((e) => e.postURL), ['u/1']);
+    });
   });
 }

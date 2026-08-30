@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 
 /// Generated Related / Recommended for doujin sources.
@@ -179,24 +180,33 @@ class DoujinRecommendationEngine {
   /// is meant to widen taste rather than narrow it to one artist.
   static double relatedness(BooruItem source, BooruItem candidate) {
     final double title = titleSimilarity(titleTokens(_titleOf(source)), _titleOf(candidate));
-    // NB: namespaced, not [tagsOf] - that normalises `parody:blue_archive` down
-    // to `blue_archive`, which would make every namespace test below fail
-    // silently and leave Related empty.
-    final Set<String> theirs = namespacedTagsOf(candidate);
+
+    // Read the tag TYPE, not a `artist:` prefix on the name.
+    //
+    // Tag names are bare — the namespace lives on the handler — so a prefix
+    // test matches nothing and silently scores every candidate at zero, which
+    // empties Related without any error. The type carries the same information
+    // and is already on the tag.
+    final Map<String, TagType> theirs = {
+      for (final tag in candidate.tagsList)
+        SourceSettingsHandler.normalizeTagName(tag.fullString): tag.tagType,
+    };
+
     int series = 0;
     int author = 0;
-    for (final tag in namespacedTagsOf(source)) {
-      final bool isSeries = tag.startsWith('parody:') || tag.startsWith('series:');
-      final bool isAuthor =
-          tag.startsWith('artist:') || tag.startsWith('circle:') || tag.startsWith('group:');
+    for (final tag in source.tagsList) {
+      final bool isSeries = tag.tagType == TagType.copyright;
+      final bool isAuthor = tag.tagType == TagType.artist;
       if (!isSeries && !isAuthor) continue;
-      if (!theirs.contains(tag)) continue;
+      final String name = SourceSettingsHandler.normalizeTagName(tag.fullString);
+      if (theirs[name] != tag.tagType) continue;
       if (isSeries) {
         series++;
       } else {
         author++;
       }
     }
+
     return title +
         (series == 0 ? 0 : 0.5 + 0.1 * (series - 1)) +
         (author == 0 ? 0 : 0.4 + 0.1 * (author - 1));
