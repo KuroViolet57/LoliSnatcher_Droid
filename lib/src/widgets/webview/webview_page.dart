@@ -23,6 +23,7 @@ class InAppWebviewView extends StatefulWidget {
     this.title,
     this.subtitle,
     this.onLoadStop,
+    this.onResourceLoaded,
     super.key,
   });
 
@@ -31,6 +32,11 @@ class InAppWebviewView extends StatefulWidget {
   final String? title;
   final String? subtitle;
   final void Function(BuildContext context, InAppWebViewController controller, WebUri? url)? onLoadStop;
+
+  /// Every URL the page asks for, as the webview sees it. The source-capture
+  /// tool uses this to discover that a site has an API at all — a front end
+  /// calling `/api/…` is the only evidence of one from the outside.
+  final void Function(String url)? onResourceLoaded;
 
   @override
   State<InAppWebviewView> createState() => _InAppWebviewViewState();
@@ -146,6 +152,7 @@ class _InAppWebviewViewState extends State<InAppWebviewView> {
                 });
               },
               onLoadResource: (controller, res) {
+                widget.onResourceLoaded?.call(res.url?.toString() ?? '');
                 setState(() {
                   loadingPercentage = 100;
                 });

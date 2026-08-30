@@ -16,6 +16,7 @@ import 'package:lolisnatcher/src/handlers/secure_storage_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/pages/settings/logger_page.dart';
+import 'package:lolisnatcher/src/pages/settings/source_capture_page.dart';
 import 'package:lolisnatcher/src/pages/settings/text_parser_test_page.dart';
 import 'package:lolisnatcher/src/utils/extensions.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
@@ -183,6 +184,15 @@ class _DebugPageState extends State<DebugPage> {
                 name: context.loc.settings.debug.webview,
                 icon: const Icon(Symbols.public_rounded),
                 page: () => const InAppWebviewView(initialUrl: 'gelbooru.com'),
+              ),
+              SettingsButton(
+                name: 'Source capture',
+                subtitle: const Text(
+                  'Record what a site actually serves — including one behind a bot filter — '
+                  'so support can be written for it',
+                ),
+                icon: const Icon(Symbols.frame_inspect_rounded),
+                page: () => const SourceCapturePage(),
               ),
               SettingsButton(
                 name: context.loc.settings.debug.deleteAllCookies,
