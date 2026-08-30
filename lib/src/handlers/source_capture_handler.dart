@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -173,6 +174,15 @@ class SourceCaptureHandler {
           'Referer': _target.isEmpty ? url : _target,
           'Accept': '*/*',
         },
+        options: Options(
+          // The default response type is json, which would put an HTML page
+          // through the json transformer on its way in. Plain keeps whatever
+          // the server actually sent.
+          responseType: ResponseType.plain,
+          // A 403 or a 404 is itself worth recording — it says the endpoint
+          // exists but wants something we are not sending.
+          validateStatus: (_) => true,
+        ),
       );
       final ({String body, int? from}) capped = _cap(redact(response.data?.toString() ?? ''));
       final entry = CaptureEntry(
