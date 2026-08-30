@@ -19,7 +19,6 @@ import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/pages/gallery_view_page.dart';
 import 'package:lolisnatcher/src/pages/doujin_detail_page.dart';
 import 'package:lolisnatcher/src/widgets/gallery/doujin_item_menu.dart';
-import 'package:lolisnatcher/src/widgets/tabs/tab_row.dart';
 import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 import 'package:lolisnatcher/src/widgets/common/long_press_repeater.dart';
@@ -27,6 +26,7 @@ import 'package:lolisnatcher/src/widgets/preview/grid_builder.dart';
 import 'package:lolisnatcher/src/widgets/preview/shimmer_builder.dart';
 import 'package:lolisnatcher/src/widgets/preview/staggered_builder.dart';
 import 'package:lolisnatcher/src/widgets/preview/discovery_strip.dart';
+import 'package:lolisnatcher/src/widgets/preview/doujin_tab_view.dart';
 import 'package:lolisnatcher/src/widgets/preview/flow_tab_carousel.dart';
 import 'package:lolisnatcher/src/widgets/preview/media_filter_chips.dart';
 import 'package:lolisnatcher/src/widgets/preview/waterfall_bottom_bar.dart';
@@ -438,7 +438,7 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware {
       });
     }
 
-    return Stack(
+    final Widget feedView = Stack(
       alignment: Alignment.bottomCenter,
       children: [
         NotificationListener<ScrollNotification>(
@@ -532,22 +532,6 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware {
                               child: DiscoveryStrip(tab: searchHandler.currentTab),
                             ),
                           ),
-                          // A doujin tab (id:<n> on a doujin source) IS the
-                          // doujin: its content is the DETAIL PAGE, not a
-                          // one-card grid.
-                          if (TabRow.isDoujinTab(searchHandler.currentTab) &&
-                              searchHandler.currentFetched.isNotEmpty)
-                            SliverFillRemaining(
-                              child: DoujinDetailPage(
-                                key: ValueKey(
-                                  'doujin-tab-${searchHandler.currentTabId}-${searchHandler.currentFetched.first.serverId}',
-                                ),
-                                tab: searchHandler.currentTab,
-                                index: 0,
-                                embedded: true,
-                              ),
-                            )
-                          else
                           SliverPadding(
                             padding: const EdgeInsets.fromLTRB(10, 16, 10, 180),
                             sliver: Builder(
@@ -672,6 +656,18 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware {
         ),
       ],
     );
+
+    // A doujin tab IS its detail page — none of the feed chrome above
+    // applies, so the whole subtree is swapped out, not just the grid sliver.
+    return Obx(() {
+      if (searchHandler.tabs.isNotEmpty && searchHandler.currentTab.isDoujinDetail) {
+        return DoujinTabView(
+          key: ValueKey('doujin-tab-view-${searchHandler.currentTabId}'),
+          tab: searchHandler.currentTab,
+        );
+      }
+      return feedView;
+    });
   }
 }
 

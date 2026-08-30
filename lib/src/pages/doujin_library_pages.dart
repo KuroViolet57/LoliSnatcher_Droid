@@ -30,7 +30,14 @@ void _openEntry(BuildContext context, DoujinEntry entry, {Booru? fallback}) {
   if (entry.serverId.isEmpty) return;
   final Booru? booru = _booruForHost(entry.booruHost, fallback: fallback);
   if (booru == null) return;
-  SearchHandler.instance.addTabByString('id:${entry.serverId}', customBooru: booru, switchToNew: true);
+  SearchHandler.instance.addTabByString(
+    'id:${entry.serverId}',
+    customBooru: booru,
+    switchToNew: true,
+    doujinPostURL: entry.postURL,
+    doujinTitle: entry.title,
+    doujinThumb: entry.thumbnailURL,
+  );
   Navigator.of(context).popUntil((route) => route.isFirst);
 }
 

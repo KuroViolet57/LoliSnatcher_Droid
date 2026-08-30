@@ -66,6 +66,84 @@ void main() {
     } catch (_) {}
   });
 
+  group('doujin detail tab type (round 3, item 3)', () {
+    test('a tab created with doujin identity IS a doujin detail tab; a plain search is not', () {
+      final detail = SearchTab(
+        nhentaiBooru(),
+        null,
+        'id:177013',
+        doujinPostURL: 'https://nhentai.net/g/177013/',
+        doujinTitle: 'Metamorphosis',
+        doujinThumb: 'https://thumbs.invalid/177013.png',
+      );
+      expect(detail.isDoujinDetail, isTrue);
+
+      final search = SearchTab(nhentaiBooru(), null, 'vanilla');
+      expect(search.isDoujinDetail, isFalse);
+
+      // Legacy tabs (id: search on a doujin source, no marker) still count.
+      final legacy = SearchTab(nhentaiBooru(), null, 'id:123');
+      expect(legacy.isDoujinDetail, isTrue);
+
+      // id: on a NON-doujin source is just a search.
+      final booruIdSearch = SearchTab(gelbooruBooru(), null, 'id:123');
+      expect(booruIdSearch.isDoujinDetail, isFalse);
+    });
+
+    test('doujin identity serializes through TabBackup and restores as a detail tab', () {
+      SettingsHandler.instance.booruList.add(nhentaiBooru());
+
+      final backup = TabBackup(
+        tags: 'id:177013',
+        booru: 'nhentai',
+        doujinPostURL: 'https://nhentai.net/g/177013/',
+        doujinTitle: 'Metamorphosis',
+        doujinThumb: 'https://thumbs.invalid/177013.png',
+      );
+      // Round-trip the exact bytes that go to disk.
+      final restoredBackup = TabBackup.fromJson(backup.toJson());
+      expect(restoredBackup!.doujinPostURL, 'https://nhentai.net/g/177013/');
+      expect(restoredBackup.doujinTitle, 'Metamorphosis');
+      expect(restoredBackup.doujinThumb, 'https://thumbs.invalid/177013.png');
+
+      final SearchTab restored = SearchHandler.instance.parseTabFromBackup(restoredBackup);
+      expect(restored.isDoujinDetail, isTrue);
+      expect(restored.doujinPostURL, 'https://nhentai.net/g/177013/');
+      expect(restored.doujinTitle, 'Metamorphosis');
+      expect(restored.doujinThumb, 'https://thumbs.invalid/177013.png');
+
+      // And generateBackupJson writes the marker for open tabs.
+      SearchHandler.instance.tabs.add(restored);
+      SearchHandler.instance.tabs.add(SearchTab(nhentaiBooru(), null, 'vanilla'));
+      final String? dump = SearchHandler.instance.generateBackupJson();
+      expect(dump, isNotNull);
+      expect(dump, contains('"dp":"https://nhentai.net/g/177013/"'));
+
+      SettingsHandler.instance.booruList.clear();
+    });
+
+    testWidgets('TabRow renders the PERSISTED cover/title before any fetch', (tester) async {
+      final tab = SearchTab(
+        nhentaiBooru(),
+        null,
+        'id:177013',
+        doujinPostURL: 'https://nhentai.net/g/177013/',
+        doujinTitle: 'Metamorphosis',
+        doujinThumb: 'https://thumbs.invalid/177013.png',
+      );
+      // NO fetch — the tab was just restored.
+      expect(tab.booruHandler.filteredFetched, isEmpty);
+
+      await tester.pumpWidget(
+        TranslationProvider(child: MaterialApp(home: Scaffold(body: TabRow(tab: tab)))),
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.textContaining('Metamorphosis'), findsOneWidget);
+      expect(find.textContaining('id:177013'), findsNothing);
+    });
+  });
+
   group('TabRow doujin rendering', () {
     testWidgets('a doujin tab shows the COVER + TITLE, not the id: query', (tester) async {
       final tab = doujinTab('1001', 'My Tab Doujin Title');

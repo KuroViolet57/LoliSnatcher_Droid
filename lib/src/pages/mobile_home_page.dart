@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 
+import 'package:get/get.dart' hide ContextExt, FirstWhereOrNullExt;
+
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/utils/extensions.dart';
@@ -96,11 +98,16 @@ class _MobileHomeState extends State<MobileHome> {
   Widget build(BuildContext context) {
     return OrientationBuilder(
       builder: (BuildContext context, Orientation orientation) {
+        return Obx(() {
+          // A doujin tab has no booru drawers: its right edge belongs to the
+          // mini tab manager, and there are no pinned tags / booru settings to
+          // slide in. Disable the InnerDrawer swipe entirely for those tabs.
+          final bool isDoujinTab = searchHandler.tabs.isNotEmpty && searchHandler.currentTab.isDoujinDetail;
         return InnerDrawer(
           key: searchHandler.mainDrawerKey,
           onTapClose: true,
-          swipe: true,
-          swipeChild: true,
+          swipe: !isDoujinTab,
+          swipeChild: !isDoujinTab,
 
           //When setting the vertical offset, be sure to use only top or bottom
           offset: IDOffset.only(
@@ -156,6 +163,7 @@ class _MobileHomeState extends State<MobileHome> {
             ),
           ),
         );
+        });
       },
     );
   }

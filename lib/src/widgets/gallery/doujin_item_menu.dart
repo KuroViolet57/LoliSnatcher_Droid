@@ -92,6 +92,9 @@ Future<void> showDoujinItemMenu(
                       customBooru: booru,
                       addMode: placement == 'next' ? TabAddMode.next : TabAddMode.end,
                       switchToNew: false,
+                      doujinPostURL: item.postURL,
+                      doujinTitle: DoujinDataHandler.titleOf(item),
+                      doujinThumb: item.thumbnailURL,
                     );
                     FlashElements.showSnackbar(
                       context: context,
@@ -130,7 +133,7 @@ Future<void> showDoujinItemMenu(
                   label: 'Open in group',
                   onTap: () {
                     Navigator.of(dialogContext).pop();
-                    showOpenTagInGroupSheet(context, 'id:${item.serverId}', booru);
+                    showOpenTagInGroupSheet(context, 'id:${item.serverId}', booru, doujinItem: item);
                   },
                 ),
                 row(

@@ -39,15 +39,22 @@ class DoujinDetailPage extends StatefulWidget {
     required this.tab,
     required this.index,
     this.embedded = false,
+    this.asTab = false,
     super.key,
   });
 
   final SearchTab tab;
   final int index;
 
-  /// True when the page IS a tab's content (a doujin tab): the main app bar
-  /// stays above it, so the page's own app bar is dropped.
+  /// True when the page renders inside another chrome (floating preview
+  /// window): the page's own app bar is dropped.
   final bool embedded;
+
+  /// True when the page IS a doujin tab's whole content: keeps its app bar
+  /// but WITHOUT a back button (there's nowhere to go back to), and widens
+  /// the right-edge drag zone for the mini tab manager to the right third of
+  /// the screen so it doesn't fight Android gesture nav.
+  final bool asTab;
 
   @override
   State<DoujinDetailPage> createState() => _DoujinDetailPageState();
@@ -553,7 +560,9 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
       appBar: widget.embedded
           ? null
           : AppBar(
-              titleSpacing: 0,
+              titleSpacing: widget.asTab ? 16 : 0,
+              // A doujin TAB is not a pushed route — no back button.
+              automaticallyImplyLeading: !widget.asTab,
               title: Text(
                 _titleLines.isNotEmpty ? _titleLines.first : 'Doujin',
                 style: const TextStyle(fontSize: 15),
@@ -561,8 +570,11 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-      // Right-edge swipe: the mini tab manager sidebar.
+      // Right-edge swipe: the mini tab manager sidebar. On a doujin tab the
+      // drag zone is the right THIRD of the screen — the ~20px default sits
+      // under Android's gesture-nav area and barely triggers.
       endDrawer: const DoujinMiniTabManager(),
+      drawerEdgeDragWidth: widget.asTab ? MediaQuery.sizeOf(context).width / 3 : null,
       body: ListView(
         padding: const EdgeInsets.only(bottom: 40),
         children: [
