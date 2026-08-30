@@ -3,13 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:lolisnatcher/src/data/booru.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 
-/// The doujin drawer's "Favourite tags" screen: every tag you MARKED (the
-/// gold star), as chips — tap opens the tag on this doujin source, the star
-/// button unmarks it. This replaced a mislink to the tag browser.
+/// The doujin drawer's "Favourite tags" screen: every tag STARRED on doujin
+/// sources (the doujin star store — booru marked tags never show here), as
+/// chips — tap opens the tag on this doujin source, the star button unstars
+/// it.
 class DoujinFavouriteTagsPage extends StatefulWidget {
   const DoujinFavouriteTagsPage({required this.booru, super.key});
 
@@ -20,7 +21,7 @@ class DoujinFavouriteTagsPage extends StatefulWidget {
 }
 
 class _DoujinFavouriteTagsPageState extends State<DoujinFavouriteTagsPage> {
-  final settingsHandler = SettingsHandler.instance;
+  final doujinData = DoujinDataHandler.instance..ensureLoaded();
   final TextEditingController filterController = TextEditingController();
 
   @override
@@ -41,7 +42,7 @@ class _DoujinFavouriteTagsPageState extends State<DoujinFavouriteTagsPage> {
   }
 
   void _unmark(String tag) {
-    settingsHandler.removeTagFromList('marked', tag);
+    doujinData.unstarTag(tag);
     setState(() {});
   }
 
@@ -49,8 +50,7 @@ class _DoujinFavouriteTagsPageState extends State<DoujinFavouriteTagsPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final String filter = filterController.text.trim().toLowerCase();
-    final List<String> marked = settingsHandler.markedTags.toList()
-      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    final List<String> marked = doujinData.starredTags.toList()..sort();
     final List<String> shown = [
       for (final t in marked)
         if (filter.isEmpty || t.toLowerCase().contains(filter)) t,
@@ -78,7 +78,7 @@ class _DoujinFavouriteTagsPageState extends State<DoujinFavouriteTagsPage> {
             child: Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                '${shown.length} marked tags — tap one to search it on ${widget.booru.name ?? 'this source'}, star to unmark',
+                '${shown.length} starred tags — tap one to search it on ${widget.booru.name ?? 'this source'}, star to unstar',
                 style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurface.withValues(alpha: 0.6)),
               ),
             ),
@@ -89,7 +89,7 @@ class _DoujinFavouriteTagsPageState extends State<DoujinFavouriteTagsPage> {
                     child: Padding(
                       padding: EdgeInsets.all(24),
                       child: Text(
-                        'No marked tags yet — star a tag from its menu to keep it here.',
+                        'No starred tags yet — star a tag from its menu to keep it here.',
                         textAlign: TextAlign.center,
                       ),
                     ),

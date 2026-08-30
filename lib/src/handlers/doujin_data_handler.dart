@@ -221,6 +221,12 @@ class DoujinDataHandler {
   final RxList<DoujinEntry> history = <DoujinEntry>[].obs; // newest first
   final RxList<DoujinSavedSearch> savedSearches = <DoujinSavedSearch>[].obs;
   final RxList<DoujinPin> pins = <DoujinPin>[].obs;
+
+  /// Favourite ("starred") tags on doujin sources — the doujin counterpart
+  /// of the booru markedTags list, stored normalized (lowercase_underscores,
+  /// namespace stripped). A star here has zero effect on booru surfaces and
+  /// booru stars have zero effect here.
+  final RxSet<String> starredTags = <String>{}.obs;
   int? lastBookmarkCollectionId;
   bool migrationDone = false;
   bool legacyBookmarksMerged = false;
@@ -252,6 +258,7 @@ class DoujinDataHandler {
     'history': [for (final e in history) e.toJson()],
     'savedSearches': [for (final s in savedSearches) s.toJson()],
     'pins': [for (final p in pins) p.toJson()],
+    'starredTags': starredTags.toList(),
   };
 
   void importJson(Map<String, dynamic> data) {
@@ -278,6 +285,9 @@ class DoujinDataHandler {
     pins.assignAll([
       for (final p in data['pins'] as List? ?? []) DoujinPin.fromJson(p as Map<String, dynamic>),
     ]);
+    starredTags.assignAll({
+      for (final t in data['starredTags'] as List? ?? []) t.toString(),
+    });
   }
 
   void save() {
@@ -297,6 +307,7 @@ class DoujinDataHandler {
     history.clear();
     savedSearches.clear();
     pins.clear();
+    starredTags.clear();
     lastBookmarkCollectionId = null;
     migrationDone = false;
     legacyBookmarksMerged = false;
@@ -313,10 +324,50 @@ class DoujinDataHandler {
     history.clear();
     savedSearches.clear();
     pins.clear();
+    starredTags.clear();
     lastBookmarkCollectionId = null;
     migrationDone = false;
     legacyBookmarksMerged = false;
     _loaded = false;
+  }
+
+  // ── starred (favourite) tags ──
+
+  /// Normalizes to the store's token form: namespace stripped, lowercased,
+  /// spaces to underscores — same as the doujin blacklist.
+  static String normalizeTag(String raw) {
+    String name = raw.trim().toLowerCase().replaceAll(' ', '_');
+    final int colon = name.indexOf(':');
+    if (colon != -1) name = name.substring(colon + 1);
+    return name;
+  }
+
+  bool isTagStarred(String raw) {
+    ensureLoaded();
+    return starredTags.contains(normalizeTag(raw));
+  }
+
+  void starTag(String raw) {
+    ensureLoaded();
+    final String tag = normalizeTag(raw);
+    if (tag.isEmpty || starredTags.contains(tag)) return;
+    starredTags.add(tag);
+    save();
+  }
+
+  void unstarTag(String raw) {
+    ensureLoaded();
+    if (starredTags.remove(normalizeTag(raw))) save();
+  }
+
+  /// Which of [itemTags] are starred, in item order (raw tag strings back).
+  List<String> starredIn(List<String> itemTags) {
+    ensureLoaded();
+    if (starredTags.isEmpty) return const [];
+    return [
+      for (final t in itemTags)
+        if (starredTags.contains(normalizeTag(t))) t,
+    ];
   }
 
   // ── favourites ──

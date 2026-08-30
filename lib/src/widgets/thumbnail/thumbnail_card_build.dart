@@ -10,6 +10,7 @@ import 'package:scroll_to_index/scroll_to_index.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/snatch_handler.dart';
@@ -303,14 +304,16 @@ class ThumbnailCardBuild extends StatelessWidget {
   /// The under-cover strip: up to 5 most relevant tags (favourited first,
   /// in gold) + the +N button that opens the full tag sheet.
   Widget _doujinFooter(BuildContext context) {
-    final Set<String> markedTags = SettingsHandler.instance.markedTags.toSet();
+    // Doujin cards star from the doujin store — the booru markedTags list
+    // must never gild a doujin chip.
+    final DoujinDataHandler doujinData = DoujinDataHandler.instance..ensureLoaded();
 
     final List<Tag> marked = [];
     final List<Tag> rest = [];
     for (final tag in item.tagsList) {
       final String? ns = handler.tagNamespace(tag.fullString);
       if (ns == 'language' || ns == 'category') continue;
-      (markedTags.contains(tag.fullString) ? marked : rest).add(tag);
+      (doujinData.isTagStarred(tag.fullString) ? marked : rest).add(tag);
     }
     // The site's counts double as relevance; favourites always lead.
     rest.sort((a, b) => b.count.compareTo(a.count));
@@ -410,7 +413,7 @@ class ThumbnailCardBuild extends StatelessWidget {
   /// Full tag list, grouped by the site's namespaces, without opening the
   /// post. Tapping a tag opens it as a background tab.
   void _showAllTagsSheet(BuildContext context) {
-    final Set<String> markedTags = SettingsHandler.instance.markedTags.toSet();
+    final DoujinDataHandler doujinData = DoujinDataHandler.instance..ensureLoaded();
     final sections = handler.tagNamespaceSections;
 
     showModalBottomSheet(
@@ -468,7 +471,7 @@ class ThumbnailCardBuild extends StatelessWidget {
                       runSpacing: 6,
                       children: [
                         for (final tag in byNs[section.$1]!)
-                          _sheetTagChip(sheetContext, tag, isMarked: markedTags.contains(tag.fullString)),
+                          _sheetTagChip(sheetContext, tag, isMarked: doujinData.isTagStarred(tag.fullString)),
                       ],
                     ),
                   ],

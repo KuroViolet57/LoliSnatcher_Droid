@@ -8,15 +8,16 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/pages/doujin_favourite_tags_page.dart';
 
-/// Round 2, item 9: the doujin drawer's "Favourite tags" entry opens a REAL
-/// marked-tags screen (not the tag browser): chips, filter, open-as-search,
-/// unmark.
+/// Round 3, item 2: the doujin drawer's "Favourite tags" screen lists ONLY
+/// tags starred in the DOUJIN star store — booru markedTags never appear —
+/// with filter, open-as-search and unstar.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -31,6 +32,7 @@ void main() {
     tempDir = Directory.systemTemp.createTempSync('doujin_fav_tags_test');
     SettingsHandler.instance.path = '${tempDir.path}${Platform.pathSeparator}';
     SourceSettingsHandler.instance.resetForTests();
+    DoujinDataHandler.instance.resetForTests();
     SearchHandler.instance.tabs.clear();
     SettingsHandler.instance.markedTags.clear();
   });
@@ -39,14 +41,19 @@ void main() {
     SettingsHandler.instance.markedTags.clear();
     SearchHandler.instance.tabs.clear();
     SourceSettingsHandler.instance.resetForTests();
+    DoujinDataHandler.instance.resetForTests();
     try {
       tempDir.deleteSync(recursive: true);
     } catch (_) {}
   });
 
-  testWidgets('shows marked tags, filters, opens a search tab, unmarks', (tester) async {
+  testWidgets('shows DOUJIN starred tags only (never booru marked), filters, opens a search tab, unstars', (tester) async {
     final booru = nhentaiBooru();
-    SettingsHandler.instance.markedTags.addAll(['vanilla', 'glasses', 'ponytail']);
+    // Booru marked tags must NOT appear on this screen.
+    SettingsHandler.instance.markedTags.addAll(['booru_artist_a', 'booru_artist_b']);
+    DoujinDataHandler.instance.starTag('vanilla');
+    DoujinDataHandler.instance.starTag('glasses');
+    DoujinDataHandler.instance.starTag('ponytail');
     SearchHandler.instance.tabs.add(SearchTab(booru, null, 'origin'));
     SearchHandler.instance.changeTabIndex(0);
 
@@ -56,6 +63,8 @@ void main() {
     expect(find.text('vanilla'), findsOneWidget);
     expect(find.text('glasses'), findsOneWidget);
     expect(find.text('ponytail'), findsOneWidget);
+    expect(find.textContaining('booru artist', findRichText: true), findsNothing);
+    expect(find.text('booru_artist_a'), findsNothing);
 
     // filter
     await tester.enterText(find.byType(TextField), 'gla');
@@ -69,9 +78,9 @@ void main() {
       warnIfMissed: false,
     );
     await tester.pump(const Duration(milliseconds: 300));
-    expect(SettingsHandler.instance.markedTags.contains('glasses'), isFalse);
-    // unmark fires an async settings.json save — let it flush inside the
-    // test's lifetime instead of exploding after the temp dir is gone.
+    expect(DoujinDataHandler.instance.starredTags.contains('glasses'), isFalse);
+    // Unstar must NOT touch the booru marked list.
+    expect(SettingsHandler.instance.markedTags.length, 2);
     await tester.runAsync(() => Future.delayed(const Duration(milliseconds: 100)));
 
     // clear filter, tap a chip -> opens a search tab on this source

@@ -352,12 +352,13 @@ class _TagViewState extends State<TagView> {
   void parseTags() {
     // Doujin items get their hidden badges from the doujin blacklist, never
     // the booru-global one (and vice versa).
+    final bool itemIsDoujin = DoujinDataHandler.isDoujinItem(item);
+    if (itemIsDoujin) DoujinDataHandler.instance.ensureLoaded();
     tagsData = settingsHandler.parseTagsList(
       tags,
       isCapped: false,
-      hiddenTokensOverride: DoujinDataHandler.isDoujinItem(item)
-          ? SourceSettingsHandler.instance.tagBlacklistForItem(item)
-          : null,
+      hiddenTokensOverride: itemIsDoujin ? SourceSettingsHandler.instance.tagBlacklistForItem(item) : null,
+      markedTokensOverride: itemIsDoujin ? DoujinDataHandler.instance.starredTags : null,
     );
   }
 
@@ -1258,8 +1259,15 @@ class _TagViewState extends State<TagView> {
   void _batchMark() {
     final List<String> toMark = _selectedBatchTagsOrdered;
     if (toMark.isEmpty) return;
+    final bool isDoujin = DoujinDataHandler.isDoujinBooru((possibleBooruHandler ?? handler).booru);
     for (final tag in toMark) {
-      settingsHandler.addTagToList('marked', tag);
+      if (isDoujin) {
+        // Doujin sources star tags in the doujin store, never the booru
+        // markedTags list.
+        DoujinDataHandler.instance.starTag(tag);
+      } else {
+        settingsHandler.addTagToList('marked', tag);
+      }
     }
     searchHandler.filterCurrentFetched();
     handler.filterFetched();
@@ -2486,7 +2494,12 @@ Future<void> showTagDialog({
               leading: const Icon(Symbols.star_rounded, color: Colors.yellow),
               title: Text(context.loc.tagView.addToMarked),
               onTap: () {
-                settingsHandler.addTagToList('marked', tag);
+                if (DoujinDataHandler.isDoujinBooru(handler.booru)) {
+                  // Doujin stars live in the doujin store only.
+                  DoujinDataHandler.instance.starTag(tag);
+                } else {
+                  settingsHandler.addTagToList('marked', tag);
+                }
                 searchHandler.filterCurrentFetched();
                 handler.filterFetched();
                 onUpdate();
@@ -2525,7 +2538,11 @@ Future<void> showTagDialog({
               ),
               title: Text(context.loc.tagView.removeFromMarked),
               onTap: () {
-                settingsHandler.removeTagFromList('marked', tag);
+                if (DoujinDataHandler.isDoujinBooru(handler.booru)) {
+                  DoujinDataHandler.instance.unstarTag(tag);
+                } else {
+                  settingsHandler.removeTagFromList('marked', tag);
+                }
                 onUpdate();
                 Navigator.of(context).pop();
               },
@@ -2538,7 +2555,15 @@ Future<void> showTagDialog({
               ),
               title: Text(context.loc.tagView.removeFromHidden),
               onTap: () {
-                settingsHandler.removeTagFromList('hidden', tag);
+                if (DoujinDataHandler.isDoujinBooru(handler.booru)) {
+                  // The doujin hidden state comes from the doujin blacklist,
+                  // so removal has to happen there.
+                  SourceSettingsHandler.instance.removeBlacklistTag(handler.booru, tag);
+                } else {
+                  settingsHandler.removeTagFromList('hidden', tag);
+                }
+                searchHandler.filterCurrentFetched();
+                handler.filterFetched();
                 onUpdate();
                 Navigator.of(context).pop();
               },

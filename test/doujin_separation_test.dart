@@ -59,6 +59,7 @@ void main() {
   tearDown(() {
     SettingsHandler.instance.hiddenTags.clear();
     SettingsHandler.instance.hiddenTagsPerBooru.clear();
+    SettingsHandler.instance.markedTags.clear();
     SettingsHandler.instance.invalidateBlacklistCache();
     SettingsHandler.instance.filterHated = false;
     SourceSettingsHandler.instance.resetForTests();
@@ -209,6 +210,63 @@ void main() {
       // Booru item: exactly the opposite.
       final booruData = settings.parseTagsListForItem(booruItem('2001', ['vore', 'netorare', 'vanilla']));
       expect(booruData.hiddenTags, ['vore']);
+    });
+  });
+
+  group('favourite/marked tags are domain-scoped both directions', () {
+    test('REGRESSION: booru-starred tags must NOT decorate doujin items', () {
+      final settings = SettingsHandler.instance;
+      // The user's repro: `blowjob` marked on a booru gilded doujin chips.
+      settings.markedTags.add('blowjob');
+
+      final doujin = doujinItem('1001', ['blowjob', 'vanilla']);
+      expect(doujin.isMarked, isFalse);
+      expect(settings.parseTagsListForItem(doujin).markedTags, isEmpty);
+
+      // Control: the same tag on a booru item IS marked.
+      final booru = booruItem('2001', ['blowjob']);
+      expect(booru.isMarked, isTrue);
+      expect(settings.parseTagsListForItem(booru).markedTags, ['blowjob']);
+    });
+
+    test('doujin-starred tags decorate doujin items only, never booru items', () {
+      DoujinDataHandler.instance.starTag('blowjob');
+
+      final doujin = doujinItem('1001', ['blowjob', 'vanilla']);
+      expect(doujin.isMarked, isTrue);
+      expect(SettingsHandler.instance.parseTagsListForItem(doujin).markedTags, ['blowjob']);
+
+      final booru = booruItem('2001', ['blowjob']);
+      expect(booru.isMarked, isFalse);
+      expect(SettingsHandler.instance.parseTagsListForItem(booru).markedTags, isEmpty);
+    });
+
+    test('star store normalizes namespaces/spacing/case', () {
+      final store = DoujinDataHandler.instance;
+      store.starTag('tag:Big Breasts');
+      expect(store.starredTags, {'big_breasts'});
+      expect(store.isTagStarred('BIG BREASTS'), isTrue);
+      expect(store.isTagStarred('artist:big_breasts'), isTrue);
+      store.unstarTag('Big_Breasts');
+      expect(store.starredTags, isEmpty);
+    });
+
+    test('starred tags round-trip through export/import', () {
+      final store = DoujinDataHandler.instance;
+      store.starTag('netorare');
+      store.starTag('vanilla');
+      final json = store.exportJson();
+      store.resetForTests();
+      expect(store.starredTags, isEmpty);
+      store.importJson(json);
+      expect(store.starredTags, {'netorare', 'vanilla'});
+    });
+
+    test('booru marked-tags list and doujin star store never mix', () {
+      SettingsHandler.instance.markedTags.add('booru_only');
+      DoujinDataHandler.instance.starTag('doujin_only');
+      expect(SettingsHandler.instance.markedTags.contains('doujin_only'), isFalse);
+      expect(DoujinDataHandler.instance.starredTags.contains('booru_only'), isFalse);
     });
   });
 

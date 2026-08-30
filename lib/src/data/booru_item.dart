@@ -134,7 +134,12 @@ class BooruItem extends Equatable {
     return SettingsHandler.instance.isItemHiddenGlobally(this);
   }
 
+  /// Domain-scoped like [isHidden]: doujin items check the doujin starred-tag
+  /// store, everything else the booru markedTags list.
   bool get isMarked {
+    if (DoujinDataHandler.isDoujinItem(this)) {
+      return DoujinDataHandler.instance.starredIn(tagsList.map((t) => t.fullString).toList()).isNotEmpty;
+    }
     return SettingsHandler.instance.containsMarked(tagsList.map((t) => t.fullString).toList());
   }
 

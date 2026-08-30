@@ -2326,16 +2326,23 @@ class SettingsHandler {
   /// [parseTagsList] so booru blacklist data never decorates doujin items.
   TagsListData parseTagsListForItem(BooruItem item, {bool isCapped = true}) {
     if (DoujinDataHandler.isDoujinItem(item)) {
+      DoujinDataHandler.instance.ensureLoaded();
       return parseTagsList(
         item.tagsList,
         isCapped: isCapped,
         hiddenTokensOverride: SourceSettingsHandler.instance.tagBlacklistForItem(item),
+        markedTokensOverride: DoujinDataHandler.instance.starredTags,
       );
     }
     return parseTagsList(item.tagsList, isCapped: isCapped);
   }
 
-  TagsListData parseTagsList(List<Tag> itemTags, {bool isCapped = true, Set<String>? hiddenTokensOverride}) {
+  TagsListData parseTagsList(
+    List<Tag> itemTags, {
+    bool isCapped = true,
+    Set<String>? hiddenTokensOverride,
+    Set<String>? markedTokensOverride,
+  }) {
     final List<String> cleanItemTags = cleanTagsList(itemTags);
     // For the visual "this tag is in your blacklist" indicator we check the
     // tag against any plain-tag token mentioned in a global blacklist line.
@@ -2353,7 +2360,16 @@ class SettingsHandler {
       final Set<String> globalTokens = blacklistedTagTokens;
       hiddenInItem = cleanItemTags.where(globalTokens.contains).toList();
     }
-    List<String> markedInItem = cleanItemTags.where(markedTags.contains).toList();
+    // `markedTokensOverride` swaps in the doujin starred-tag store (normalized
+    // tokens) in place of the booru markedTags list.
+    List<String> markedInItem;
+    if (markedTokensOverride != null) {
+      markedInItem = cleanItemTags
+          .where((tag) => markedTokensOverride.contains(SourceSettingsHandler.normalizeTagName(tag)))
+          .toList();
+    } else {
+      markedInItem = cleanItemTags.where(markedTags.contains).toList();
+    }
     final List<String> soundInItem = soundTags.where(cleanItemTags.contains).toList();
     final List<String> aiInItem = aiTags.where(cleanItemTags.contains).toList();
 

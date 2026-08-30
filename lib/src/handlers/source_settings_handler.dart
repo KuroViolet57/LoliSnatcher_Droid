@@ -260,6 +260,27 @@ class SourceSettingsHandler {
     }
   }
 
+  /// Removes [tag] from BOTH doujin blacklist layers (the source's own list
+  /// and the doujin-global one) — used by the "remove from hidden" action,
+  /// where the user just wants the tag unhidden no matter which layer holds
+  /// it.
+  void removeBlacklistTag(Booru? booru, String tag) {
+    final String normalized = DoujinDataHandler.normalizeTag(tag);
+    if (normalized.isEmpty) return;
+    void change(SourceSettings s) {
+      final kept = [
+        for (final part in (s.tagBlacklist ?? '').split(','))
+          if (part.trim().isNotEmpty && DoujinDataHandler.normalizeTag(part) != normalized) part.trim(),
+      ];
+      s.tagBlacklist = kept.isEmpty ? null : kept.join(', ');
+    }
+
+    updateGlobal(change);
+    if (booru != null) {
+      update(booru, change);
+    }
+  }
+
   // ── effective values: source override ?? global ?? default ──
 
   T _resolve<T>(Booru? booru, T? Function(SourceSettings) pick, T fallback) =>
@@ -355,11 +376,7 @@ class SourceSettingsHandler {
   }
 
   /// Normalizes an item tag to the blacklist token form: namespace stripped,
-  /// lowercased, spaces to underscores.
-  static String normalizeTagName(String raw) {
-    String name = raw.toLowerCase().replaceAll(' ', '_');
-    final int colon = name.indexOf(':');
-    if (colon != -1) name = name.substring(colon + 1);
-    return name;
-  }
+  /// lowercased, spaces to underscores. One canonical implementation shared
+  /// with the starred-tags store.
+  static String normalizeTagName(String raw) => DoujinDataHandler.normalizeTag(raw);
 }
