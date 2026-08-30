@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/tag_handler.dart';
 import 'package:lolisnatcher/src/utils/post_similarity.dart';
 
@@ -73,8 +74,13 @@ class SuggestionEngine {
   static const int maxPerArtist = 4;
   static const int maxPerCharacter = 6;
 
-  static TagType typeOf(Tag t) {
+  /// [item], when given, decides whether the shared booru tag store may be
+  /// consulted: doujin tags already carry the site's own type, and borrowing
+  /// a booru's classification of a coinciding name changed which facet
+  /// queries the doujin "Suggested" strip actually ran.
+  static TagType typeOf(Tag t, {BooruItem? item}) {
     if (t.tagType != TagType.none) return t.tagType;
+    if (item != null && DoujinDataHandler.isDoujinItem(item)) return TagType.none;
     // Shimmie-family boorus type nothing; the app-wide store usually knows.
     return TagHandler.instance.getTag(t.fullString).tagType;
   }
@@ -84,7 +90,7 @@ class SuggestionEngine {
     for (final t in item.tagsList) {
       final String v = t.fullString.trim();
       if (v.isEmpty || v.toLowerCase() == 'tagme') continue;
-      if (typeOf(t) == type && !out.contains(v)) out.add(v);
+      if (typeOf(t, item: item) == type && !out.contains(v)) out.add(v);
     }
     return out;
   }
@@ -97,7 +103,7 @@ class SuggestionEngine {
     final List<Tag> candidates = item.tagsList.where((t) {
       final String v = normalizeTagName(t.fullString);
       if (v.isEmpty || v == 'tagme') return false;
-      final TagType type = typeOf(t);
+      final TagType type = typeOf(t, item: item);
       if (type != TagType.none && type != TagType.species) return false;
       return !kGenericMediumTags.contains(v);
     }).toList()

@@ -72,9 +72,10 @@ class _HistoryListState extends State<HistoryList> {
     isLoading = true;
     setState(() {});
 
-    history = (settingsHandler.dbEnabled && settingsHandler.searchHistoryEnabled)
-        ? await SearchHistoryStore.all()
-        : [];
+    // Doujin history lives in its own file, so the booru DB toggle must not
+    // blank it — only the "record searches" preference applies to both.
+    final bool storeAvailable = SearchHistoryStore.currentIsDoujin || settingsHandler.dbEnabled;
+    history = (storeAvailable && settingsHandler.searchHistoryEnabled) ? await SearchHistoryStore.all() : [];
 
     history.sort(compareFavourites);
     filteredHistory = history;

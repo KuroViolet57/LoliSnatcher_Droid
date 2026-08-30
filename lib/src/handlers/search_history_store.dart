@@ -33,6 +33,12 @@ class SearchHistoryStore {
     return DoujinDataHandler.isDoujinBooru(searchHandler.currentBooru);
   }
 
+  /// The domain to route by. A query editor can target a booru that is NOT
+  /// the current tab's (the "add new tab" dialog, the snatcher page), and
+  /// history must follow the booru being searched, not the tab behind it.
+  static bool _isDoujin(Booru? forBooru) =>
+      forBooru != null ? DoujinDataHandler.isDoujinBooru(forBooru) : currentIsDoujin;
+
   /// SQLite writes CURRENT_TIMESTAMP as UTC digits with no zone marker, and
   /// the UI parses that then adds the local offset. Doujin entries render
   /// through the same path, so they use the same shape.
@@ -82,8 +88,8 @@ class SearchHistoryStore {
   }
 
   /// The 20 most recent entries of the CURRENT domain.
-  static Future<List<HistoryItem>> latest() async {
-    if (currentIsDoujin) {
+  static Future<List<HistoryItem>> latest({Booru? forBooru}) async {
+    if (_isDoujin(forBooru)) {
       DoujinDataHandler.instance.ensureLoaded();
       return _doujinItems().take(20).toList();
     }
@@ -91,8 +97,8 @@ class SearchHistoryStore {
   }
 
   /// Every entry of the current domain (the full history page).
-  static Future<List<HistoryItem>> all() async {
-    if (currentIsDoujin) {
+  static Future<List<HistoryItem>> all({Booru? forBooru}) async {
+    if (_isDoujin(forBooru)) {
       DoujinDataHandler.instance.ensureLoaded();
       return _doujinItems();
     }
@@ -100,25 +106,33 @@ class SearchHistoryStore {
   }
 
   /// Prefix matches for the typed-suggestion blend, current domain only.
-  static Future<List<String>> byInput(String query, int limit) async {
-    if (currentIsDoujin) {
+  static Future<List<String>> byInput(String query, int limit, {Booru? forBooru}) async {
+    if (_isDoujin(forBooru)) {
       return DoujinDataHandler.instance.searchHistoryByInput(query, limit);
     }
-    final List<String> out = await _settings.dbHandler.getSearchHistoryByInput(query, limit);
+    // Legacy rows from before the split carry a doujin booru's name; they are
+    // dropped here the same way they are in the other two reads.
+    final names = _doujinBooruNames;
+    final rows = await _settings.dbHandler.getSearchHistoryByInputWithBooru(query, limit);
+    final List<String> out = [];
+    for (final row in rows) {
+      if (names.contains(row.booruName)) continue;
+      if (!out.contains(row.searchText)) out.add(row.searchText);
+    }
     return out;
   }
 
   /// [id] null = clear the whole current-domain history.
-  static Future<void> delete(int? id) async {
-    if (currentIsDoujin) {
+  static Future<void> delete(int? id, {Booru? forBooru}) async {
+    if (_isDoujin(forBooru)) {
       DoujinDataHandler.instance.deleteSearchHistory(id);
       return;
     }
     await _settings.dbHandler.deleteFromSearchHistory(id);
   }
 
-  static Future<void> setFavourite(int id, bool isFavourite) async {
-    if (currentIsDoujin) {
+  static Future<void> setFavourite(int id, bool isFavourite, {Booru? forBooru}) async {
+    if (_isDoujin(forBooru)) {
       DoujinDataHandler.instance.setSearchHistoryFavourite(id, isFavourite);
       return;
     }

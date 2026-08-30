@@ -252,13 +252,15 @@ class _TagSearchQueryEditorPageState extends State<TagSearchQueryEditorPage> {
                   width: 6,
                   height: 24,
                   decoration: BoxDecoration(
-                    color: tagHandler.getTag(tag.tag).getColour(),
+                    // Domain-aware: the site's own type wins, and a doujin
+                    // source never reads the shared booru tag map.
+                    color: tagHandler.colourForDisplay(tag.tag, selectedBooru, ownType: tag.type),
                     borderRadius: BorderRadius.circular(5),
                   ),
                 ),
                 const SizedBox(width: 10),
                 Text(
-                  tagHandler.getTag(tag.tag).tagType.locName,
+                  tagHandler.typeForDisplay(tag.tag, selectedBooru, ownType: tag.type).locName,
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
@@ -470,7 +472,7 @@ class _TagSearchQueryEditorPageState extends State<TagSearchQueryEditorPage> {
                           }
 
                           final TagSuggestion tag = queryController.suggestedTags[index];
-                          final tagColor = tagHandler.getTag(tag.tag).getColour();
+                          final tagColor = tagHandler.colourForDisplay(tag.tag, selectedBooru, ownType: tag.type);
 
                           return Container(
                             height: kMinInteractiveDimension + (tag.hasDescription ? 8 : 0),
@@ -505,7 +507,7 @@ class _TagSearchQueryEditorPageState extends State<TagSearchQueryEditorPage> {
                                             MarqueeText(
                                               text: tag.tag.replaceAll('_', ' '),
                                               style: context.theme.textTheme.bodyLarge?.copyWith(
-                                                color: tagHandler.getTag(tag.tag).getColour(),
+                                                color: tagHandler.colourForDisplay(tag.tag, selectedBooru, ownType: tag.type),
                                                 fontWeight: FontWeight.w600,
                                               ),
                                             ),
@@ -917,7 +919,7 @@ class _TagSearchBoxState extends State<TagSearchBox> {
                           : Text(
                               _controller.text.replaceAll('_', ' '),
                               style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                color: tagHandler.getTag(_controller.text).getColour(),
+                                color: tagHandler.colourForDisplay(_controller.text, _selectedBooru),
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,

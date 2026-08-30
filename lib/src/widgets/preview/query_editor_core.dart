@@ -204,7 +204,7 @@ class QueryEditorController {
           }).toList();
 
           final historySearch =
-              (await SearchHistoryStore.byInput(suggestionTextControllerRawInput, 10))
+              (await SearchHistoryStore.byInput(suggestionTextControllerRawInput, 10, forBooru: currentBooru))
                   .map((tag) {
                     return TagSuggestion(
                       tag: tag,

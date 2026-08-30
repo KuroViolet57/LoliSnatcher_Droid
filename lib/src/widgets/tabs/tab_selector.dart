@@ -13,6 +13,7 @@ import 'package:get/get.dart';
 import 'package:lolisnatcher/src/boorus/mergebooru_handler.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/tag_handler.dart';
@@ -727,6 +728,9 @@ class _TabManagerPageState extends State<TabManagerPage> {
 
     if (tagTypeFilter != null) {
       filteredTabs = filteredTabs.where((tab) {
+        // Tag types come from the shared BOORU store, so a doujin tab can
+        // never be classified by it — filtering by type is a booru filter.
+        if (DoujinDataHandler.isDoujinBooru(tab.selectedBooru.value)) return false;
         final List<String> tags = tab.tags.toLowerCase().trim().split(' ');
         for (final tag in tags) {
           if (tagHandler.getTag(tag).tagType == tagTypeFilter) {

@@ -753,6 +753,11 @@ class DBHandler {
     int added = 0;
     for (final BooruItem item in items) {
       String? itemID = await getItemID(item.postURL);
+      // Same domain rule as the other two BooruItem writers: a doujin row
+      // never carries a favourite flag or its tags into store.db. Callers
+      // split by domain before getting here, so this is a guard rail rather
+      // than a live path — but it is one careless caller away from mattering.
+      final bool isDoujin = DoujinDataHandler.isDoujinItem(item);
       if (itemID == null || itemID.isEmpty) {
         final result = await db?.rawInsert(
           'INSERT INTO BooruItem(thumbnailURL, sampleURL, fileURL, postURL, mediaType, isSnatched, isFavourite) VALUES(?,?,?,?,?,?,?)',
@@ -763,11 +768,13 @@ class DBHandler {
             item.postURL,
             item.mediaType.value.toJson(),
             Tools.boolToInt(item.isSnatched.value == true),
-            Tools.boolToInt(item.isFavourite.value == true),
+            Tools.boolToInt(!isDoujin && item.isFavourite.value == true),
           ],
         );
         itemID = result?.toString();
-        await updateTags(item.tagsList.map((t) => t.fullString).toList(), itemID);
+        if (!isDoujin) {
+          await updateTags(item.tagsList.map((t) => t.fullString).toList(), itemID);
+        }
       }
       if (itemID == null || itemID.isEmpty) continue;
       final int count = Sqflite.firstIntValue(
@@ -1441,6 +1448,26 @@ class DBHandler {
       });
     });
     return List.from(result.map(HistoryItem.fromMap));
+  }
+
+  /// Like [getSearchHistoryByInput], but keeps each row's booru name so the
+  /// caller can drop rows belonging to another domain (doujin searches
+  /// recorded before they got their own store).
+  Future<List<({String searchText, String booruName})>> getSearchHistoryByInputWithBooru(
+    String queryStr,
+    int limit,
+  ) async {
+    final out = <({String searchText, String booruName})>[];
+    final result = await db?.rawQuery(
+      'SELECT DISTINCT searchText, booruName FROM SearchHistory WHERE lower(searchText) LIKE (?) LIMIT $limit',
+      ['${queryStr.toLowerCase()}%'],
+    );
+    if (result != null) {
+      for (final row in result) {
+        out.add((searchText: row['searchText'].toString(), booruName: row['booruName']?.toString() ?? ''));
+      }
+    }
+    return out;
   }
 
   Future<List<String>> getSearchHistoryByInput(String queryStr, int limit) async {

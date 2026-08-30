@@ -12,6 +12,7 @@ import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 import 'package:lolisnatcher/src/handlers/booru_tag_store.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/services/get_perms.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
@@ -93,6 +94,26 @@ class TagHandler {
     final TagType? mine = BooruTagStore.manualType(tagString, booru);
     if (mine == null || mine == base.tagType) return base;
     return base.copyWith(tagType: mine);
+  }
+
+  /// Domain-aware type lookup for DISPLAY (chip colours, type labels, icons).
+  ///
+  /// The shared tag map is a BOORU store: two sites that use the same tag
+  /// name for different things overwrite each other in it, and a doujin
+  /// source must not be coloured by a booru's classification of a coinciding
+  /// name. Doujin tags already carry the site's own type, so on a doujin
+  /// source the caller's [ownType] is the whole answer and the shared map is
+  /// never consulted.
+  TagType typeForDisplay(String tagString, Booru? booru, {TagType? ownType}) {
+    if (ownType != null && ownType != TagType.none) return ownType;
+    if (DoujinDataHandler.isDoujinBooru(booru)) return TagType.none;
+    return getTagFor(tagString, booru).tagType;
+  }
+
+  /// The colour [typeForDisplay] resolves to, or null for an untyped tag.
+  Color? colourForDisplay(String tagString, Booru? booru, {TagType? ownType}) {
+    final Color? colour = typeForDisplay(tagString, booru, ownType: ownType).getColour();
+    return colour == Colors.transparent ? null : colour;
   }
 
   Future<void> putTag(

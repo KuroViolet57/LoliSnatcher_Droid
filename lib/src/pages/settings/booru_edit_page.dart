@@ -17,6 +17,7 @@ import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/pages/settings/redgifs_login_page.dart';
 import 'package:lolisnatcher/src/services/get_perms.dart';
@@ -335,23 +336,30 @@ class _BooruEditState extends State<BooruEdit> {
                 );
               },
             ),
-            SettingsToggle(
-              value: ignoreGlobalBlacklist,
-              onChanged: (newValue) {
-                setState(() {
-                  ignoreGlobalBlacklist = newValue;
-                });
-              },
-              title: 'Ignore global blacklist for this booru',
-              leadingIcon: const Icon(Symbols.visibility_off_rounded),
-              subtitle: const Text(
-                "When on, the global hidden-tags list won't filter items from this booru. Per-booru hidden tags still apply.",
+            // Both of these edit BOORU blacklist state, which never filters a
+            // doujin source (its blacklist lives in the source settings page
+            // linked above). Offering them here meant entries that did
+            // nothing - and which then removed "Add to hidden" from the tag
+            // menu on that source.
+            if (!DoujinDataHandler.isDoujinBooru(widget.booru)) ...[
+              SettingsToggle(
+                value: ignoreGlobalBlacklist,
+                onChanged: (newValue) {
+                  setState(() {
+                    ignoreGlobalBlacklist = newValue;
+                  });
+                },
+                title: 'Ignore global blacklist for this booru',
+                leadingIcon: const Icon(Symbols.visibility_off_rounded),
+                subtitle: const Text(
+                  "When on, the global hidden-tags list won't filter items from this booru. Per-booru hidden tags still apply.",
+                ),
               ),
-            ),
-            _PerBooruBlacklistEditor(
-              booruName: widget.booru.name,
-              onChanged: () => setState(() {}),
-            ),
+              _PerBooruBlacklistEditor(
+                booruName: widget.booru.name,
+                onChanged: () => setState(() {}),
+              ),
+            ],
             Container(
               margin: const EdgeInsets.fromLTRB(10, 16, 10, 16),
               width: double.infinity,

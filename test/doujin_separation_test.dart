@@ -14,6 +14,9 @@ import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/doujin_migration.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
+import 'package:lolisnatcher/src/boorus/mergebooru_handler.dart';
+import 'package:lolisnatcher/src/data/tag_type.dart';
+import 'package:lolisnatcher/src/handlers/tag_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 
 /// The round-2 gate: doujin data and booru data are fully separate systems.
@@ -50,6 +53,7 @@ void main() {
   setUp(() {
     SettingsHandler.register();
     ViewerHandler.register();
+    TagHandler.register();
     tempDir = Directory.systemTemp.createTempSync('doujin_separation_test');
     SettingsHandler.instance.path = '${tempDir.path}${Platform.pathSeparator}';
     SourceSettingsHandler.instance.resetForTests();
@@ -267,6 +271,45 @@ void main() {
       DoujinDataHandler.instance.starTag('doujin_only');
       expect(SettingsHandler.instance.markedTags.contains('doujin_only'), isFalse);
       expect(DoujinDataHandler.instance.starredTags.contains('booru_only'), isFalse);
+    });
+  });
+
+  group('gate round 5: tag types and history stay in their own domain', () {
+    test('typeForDisplay never reads the booru tag map on a doujin source', () {
+      final tagHandler = TagHandler.instance;
+      // A booru has typed `glasses` as a character.
+      tagHandler.addTagsWithType(['glasses'], TagType.character);
+
+      // On a booru that classification still applies...
+      expect(tagHandler.typeForDisplay('glasses', gelbooruBooru()), TagType.character);
+      // ...but a doujin source uses the site's own type, which for a plain
+      // nhentai tag is none - never the booru's.
+      expect(tagHandler.typeForDisplay('glasses', nhentaiBooru()), TagType.none);
+      expect(tagHandler.colourForDisplay('glasses', nhentaiBooru()), isNull);
+
+      // The site's OWN type always wins, on either domain.
+      expect(
+        tagHandler.typeForDisplay('glasses', nhentaiBooru(), ownType: TagType.artist),
+        TagType.artist,
+      );
+    });
+
+    test('a merge feed does not queue doujin tags into the shared tag store', () async {
+      final merge = MergebooruHandler(Booru('Merge', BooruType.Merge, '', '', ''), 20)
+        ..booruList = [gelbooruBooru(), nhentaiBooru()];
+      // A merge handler is a booru handler, so it DOES populate the store...
+      expect(merge.storeTagsGlobally, isTrue);
+
+      final int before = TagHandler.instance.untypedQueue.value.length;
+      await merge.populateTagHandler([doujinItem('1001', ['netorare', 'glasses'])]);
+      // ...but not for the doujin items it carries: queueing those would send
+      // doujin tag names to an unrelated booru's tag API.
+      expect(TagHandler.instance.untypedQueue.value.length, before);
+
+      // A booru item in the same feed still goes through.
+      await merge.populateTagHandler([booruItem('2001', ['unseen_booru_tag'])]);
+      expect(TagHandler.instance.untypedQueue.value.length, greaterThan(before));
+      TagHandler.instance.untypedQueue.value = [];
     });
   });
 

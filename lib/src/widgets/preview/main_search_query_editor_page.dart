@@ -517,13 +517,21 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
                   width: 6,
                   height: 24,
                   decoration: BoxDecoration(
-                    color: tagHandler.getTag(tag.tag).getColour(),
+                    // Domain-aware: the site's own type wins, and the shared
+                    // booru tag map is never consulted on a doujin source.
+                    color: tagHandler.colourForDisplay(
+                      tag.tag,
+                      searchHandler.currentBooru,
+                      ownType: tag.type,
+                    ),
                     borderRadius: BorderRadius.circular(5),
                   ),
                 ),
                 const SizedBox(width: 10),
                 Text(
-                  tagHandler.getTag(tag.tag).tagType.locName,
+                  tagHandler
+                      .typeForDisplay(tag.tag, searchHandler.currentBooru, ownType: tag.type)
+                      .locName,
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
@@ -942,7 +950,11 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
                           }
 
                           final TagSuggestion tag = suggestedTags[index];
-                          final tagColor = tagHandler.getTag(tag.tag).getColour();
+                          final tagColor = tagHandler.colourForDisplay(
+                            tag.tag,
+                            searchHandler.currentBooru,
+                            ownType: tag.type,
+                          );
 
                           return Container(
                             height: kMinInteractiveDimension + (tag.hasDescription ? 8 : 0),
@@ -1004,11 +1016,22 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
                                       ),
                                       //
                                       FutureBuilder<PinnedTag?>(
-                                        future: settingsHandler.dbHandler.getPinnedTag(
-                                          tag.tag,
-                                          booruType: searchHandler.currentBooru.type?.name,
-                                          booruName: searchHandler.currentBooru.name,
-                                        ),
+                                        // Doujin pins live in the doujin
+                                        // store; the booru table also answers
+                                        // with GLOBAL booru pins, which would
+                                        // mark doujin suggestions as pinned
+                                        // while the drawer showed nothing.
+                                        future: DoujinDataHandler.isDoujinBooru(searchHandler.currentBooru)
+                                            ? Future.value(
+                                                doujinPinsAsPinnedTags(searchHandler.currentBooru)
+                                                    .where((p) => p.tagName == tag.tag)
+                                                    .firstOrNull,
+                                              )
+                                            : settingsHandler.dbHandler.getPinnedTag(
+                                                tag.tag,
+                                                booruType: searchHandler.currentBooru.type?.name,
+                                                booruName: searchHandler.currentBooru.name,
+                                              ),
                                         builder: (context, snapshot) {
                                           final isPinned = snapshot.data != null || tag.isPinned == true;
                                           if (isPinned) return const Icon(Symbols.push_pin_rounded, size: 16);
@@ -2412,7 +2435,11 @@ class _PopularTagsBlockState extends State<PopularTagsBlock> {
                   itemCount: popularTags.length,
                   itemBuilder: (BuildContext context, int index) {
                     final tag = popularTags[index];
-                    final tagColor = tagHandler.getTag(tag.tag).getColour();
+                    final tagColor = tagHandler.colourForDisplay(
+                      tag.tag,
+                      searchHandler.currentBooru,
+                      ownType: tag.type,
+                    );
 
                     return Padding(
                       padding: const EdgeInsets.only(right: 8),
@@ -2908,7 +2935,7 @@ class _PinnedTagsBlockState extends State<PinnedTagsBlock> {
                   }
 
                   final pinnedTag = filteredPinnedTags[index];
-                  final tagColor = tagHandler.getTag(pinnedTag.tagName).getColour();
+                  final tagColor = tagHandler.colourForDisplay(pinnedTag.tagName, SearchHandler.instance.tabs.isEmpty ? null : SearchHandler.instance.currentBooru);
                   final bool isMultiword = pinnedTag.tagName.split(' ').length > 1;
 
                   return Padding(
@@ -3389,7 +3416,7 @@ class _PinnedTagsReorderDialogState extends State<PinnedTagsReorderDialog> {
                 },
                 itemBuilder: (context, index) {
                   final pinnedTag = tags[index];
-                  final tagColor = tagHandler.getTag(pinnedTag.tagName).getColour();
+                  final tagColor = tagHandler.colourForDisplay(pinnedTag.tagName, SearchHandler.instance.tabs.isEmpty ? null : SearchHandler.instance.currentBooru);
                   final bool isMultiword = pinnedTag.tagName.split(' ').length > 1;
 
                   return ListTile(
@@ -3804,7 +3831,7 @@ class _PinnedTagsManagerDialogState extends State<PinnedTagsManagerDialog> {
                       itemCount: filteredTags.length,
                       itemBuilder: (context, index) {
                         final pinnedTag = filteredTags[index];
-                        final tagColor = tagHandler.getTag(pinnedTag.tagName).getColour();
+                        final tagColor = tagHandler.colourForDisplay(pinnedTag.tagName, widget.currentBooru);
                         final bool isMultiword = pinnedTag.tagName.split(' ').length > 1;
 
                         final scopeText = pinnedTag.isGlobal ? null : '${pinnedTag.booruName ?? ''} '.trim();

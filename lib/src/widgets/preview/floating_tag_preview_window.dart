@@ -11,6 +11,7 @@ import 'package:scroll_to_index/scroll_to_index.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/handlers/floating_preview_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/pages/gallery_view_page.dart';
@@ -869,6 +870,13 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
   }
 
   bool _booruMatchesFilter(Booru b) {
+    // Stay in the window's own DOMAIN: a window opened from a doujin tag must
+    // not be switchable to a booru (and vice versa) — the two have different
+    // tag vocabularies and are separate systems, the same rule the
+    // "find this post elsewhere" candidates follow.
+    if (DoujinDataHandler.isDoujinBooru(b) != DoujinDataHandler.isDoujinBooru(widget.entry.booru)) {
+      return false;
+    }
     final String q = booruFilterController.text.trim().toLowerCase();
     if (q.isEmpty) return true;
     return (b.name?.toLowerCase().contains(q) ?? false) || (b.type?.name.toLowerCase().contains(q) ?? false);

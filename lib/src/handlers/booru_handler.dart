@@ -1045,6 +1045,11 @@ abstract class BooruHandler {
     if (!storeTagsGlobally) return;
     final List<String> unTyped = [];
     for (int x = 0; x < items.length; x++) {
+      // Per ITEM, not just per handler: a merge feed is a booru handler
+      // (storeTagsGlobally true) that can carry doujin items, and queueing
+      // those would send doujin tag names to some unrelated booru's tag API
+      // and write its answers into the app-wide tag map.
+      if (DoujinDataHandler.isDoujinItem(items[x])) continue;
       for (int i = 0; i < items[x].tagsList.length; i++) {
         final Tag tag = items[x].tagsList[i];
 

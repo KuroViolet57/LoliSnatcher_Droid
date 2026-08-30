@@ -4,6 +4,7 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/tag_handler.dart';
@@ -293,6 +294,9 @@ class _TagTypeDropdownItem extends StatelessWidget {
 
     if (showColor) {
       final int tabCount = SearchHandler.instance.tabs.where((t) {
+        // Same rule as the manager's own filter: tag types are booru data,
+        // so doujin tabs are never counted by them.
+        if (DoujinDataHandler.isDoujinBooru(t.selectedBooru.value)) return false;
         final List<String> tags = t.tags.toLowerCase().trim().split(' ');
         for (final tag in tags) {
           if (TagHandler.instance.getTag(tag).tagType == item) {

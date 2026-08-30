@@ -48,7 +48,30 @@ class _TagHubPageState extends State<TagHubPage> {
   bool _followLoaded = false;
   int _favCount = 0;
 
-  bool get _isArtist => TagHandler.instance.getTag(widget.tag).tagType.isArtist;
+  /// The tag's type for THIS hub's domain. A doujin hub reads the site's own
+  /// namespace (nhentai prefixes artist/group tags) and never the shared
+  /// booru tag map, which otherwise decided — from unrelated booru browsing —
+  /// whether this page called itself an "Artist hub".
+  TagType get _tagType => TagHandler.instance.typeForDisplay(
+    widget.tag,
+    widget.originBooru,
+    ownType: _isDoujinOrigin ? _doujinOwnType : null,
+  );
+
+  /// nhentai-style namespaces carried in the tag string itself.
+  TagType? get _doujinOwnType {
+    final int colon = widget.tag.indexOf(':');
+    if (colon <= 0) return null;
+    return switch (widget.tag.substring(0, colon).toLowerCase()) {
+      'artist' => TagType.artist,
+      'group' => TagType.artist,
+      'character' => TagType.character,
+      'parody' => TagType.copyright,
+      _ => null,
+    };
+  }
+
+  bool get _isArtist => _tagType.isArtist;
 
   // The origin tab drives TagContentPreview's alias translation (origin booru
   // vs each target booru). Reuses the current tab when available.
@@ -108,7 +131,7 @@ class _TagHubPageState extends State<TagHubPage> {
   }
 
   IconData get _typeIcon {
-    final TagType type = TagHandler.instance.getTag(widget.tag).tagType;
+    final TagType type = _tagType;
     switch (type) {
       case TagType.artist:
         return Symbols.brush_rounded;
@@ -129,8 +152,8 @@ class _TagHubPageState extends State<TagHubPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final String display = widget.tag.replaceAll('_', ' ');
-    final Color typeColor = TagHandler.instance.getTag(widget.tag).getColour() ?? const Color(0xFFB9A0E8);
-    final String typeName = TagHandler.instance.getTag(widget.tag).tagType.locName;
+    final Color typeColor = _tagType.getColour() ?? const Color(0xFFB9A0E8);
+    final String typeName = _tagType.locName;
     final boorus = _boorus;
 
     return Scaffold(

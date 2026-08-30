@@ -24,6 +24,7 @@ import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/database_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/post_files_handler.dart';
 import 'package:lolisnatcher/src/handlers/reader_handler.dart';
@@ -845,7 +846,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
           return;
         }
 
-        final tags = await showSelectTagsDialog(context, item.tagsList);
+        final tags = await showSelectTagsDialog(context, item.tagsList, forItem: item);
         if (tags.isNotEmpty) {
           shareTextAction('${item.postURL} \n ${tags.join(' ')}');
         } else {
@@ -856,7 +857,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
         shareTextAction(item.fileURL);
         break;
       case .fileUrlWithTags:
-        final tags = await showSelectTagsDialog(context, item.tagsList);
+        final tags = await showSelectTagsDialog(context, item.tagsList, forItem: item);
         if (tags.isNotEmpty) {
           shareTextAction('${item.fileURL} \n ${tags.join(' ')}');
         } else {
@@ -867,7 +868,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
         await shareFileAction();
         break;
       case .fileWithTags:
-        final tags = await showSelectTagsDialog(context, item.tagsList);
+        final tags = await showSelectTagsDialog(context, item.tagsList, forItem: item);
         if (tags.isNotEmpty) {
           await shareFileAction(text: tags.join(' '));
         } else {
@@ -1195,7 +1196,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
                     ),
                     onTap: () async {
                       Navigator.of(context).pop();
-                      final tags = await showSelectTagsDialog(context, item.tagsList);
+                      final tags = await showSelectTagsDialog(context, item.tagsList, forItem: item);
                       if (tags.isNotEmpty) {
                         shareTextAction('${item.postURL} \n ${tags.join(' ')}');
                       } else {
@@ -1243,7 +1244,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
                   ),
                   onTap: () async {
                     Navigator.of(context).pop();
-                    final tags = await showSelectTagsDialog(context, item.tagsList);
+                    final tags = await showSelectTagsDialog(context, item.tagsList, forItem: item);
                     if (tags.isNotEmpty) {
                       shareTextAction('${item.fileURL} \n ${tags.join(' ')}');
                     } else {
@@ -1290,7 +1291,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
                   ),
                   onTap: () async {
                     Navigator.of(context).pop();
-                    final tags = await showSelectTagsDialog(context, item.tagsList);
+                    final tags = await showSelectTagsDialog(context, item.tagsList, forItem: item);
                     if (tags.isNotEmpty) {
                       await shareFileAction(text: tags.join(' '));
                     } else {
@@ -1447,8 +1448,12 @@ class _HideableAppBarState extends State<HideableAppBar> {
 
 Future<List<String>> showSelectTagsDialog(
   BuildContext context,
-  List<Tag> tags,
-) async {
+  List<Tag> tags, {
+  /// The item those tags came from, when known — decides whether the shared
+  /// booru tag store may be consulted for their types.
+  BooruItem? forItem,
+}) async {
+  final bool isDoujin = forItem != null && DoujinDataHandler.isDoujinItem(forItem);
   if (tags.isEmpty) return [];
 
   tags = tags.where((t) => t.fullString.trim().isNotEmpty).toList();
@@ -1459,7 +1464,10 @@ Future<List<String>> showSelectTagsDialog(
     for (final type in TagType.values) type: [],
   };
   for (final t in tags) {
-    final tag = tagHandler.getTag(t.fullString);
+    // Keep the item's OWN type when it has one (doujin tags always do), and
+    // never consult the shared booru tag store for a doujin item - that
+    // replaced its tags with a booru's classification of the same names.
+    final Tag tag = (t.tagType != TagType.none || isDoujin) ? t : tagHandler.getTag(t.fullString);
     tagMap[tag.tagType]?.add(tag);
   }
   final List<Tag> items = tagMap.values.expand((i) => i).toList();

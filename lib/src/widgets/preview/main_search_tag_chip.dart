@@ -83,13 +83,15 @@ class MainSearchTagChip extends StatelessWidget {
             formattedTag = (metaTagParseData['value'] ?? '').trim();
           }
 
-          // get color before removing underscores
-          Color? tagColor = tagHandler
-              .getTagFor(
-                formattedTag,
-                searchHandler.tabs.isEmpty ? null : searchHandler.currentBooru,
-              )
-              .getColour();
+          // get color before removing underscores.
+          // Domain-aware, and against THIS chip's booru rather than whatever
+          // tab happens to be current: the shared tag map is a booru store,
+          // so a doujin query's chips must not take a booru's colouring of a
+          // coinciding tag name. (Desktop has no collapsed search bar, so
+          // this is the only place those chips are drawn there.)
+          final Booru? chipBooru =
+              booru ?? tab?.selectedBooru.value ?? (searchHandler.tabs.isEmpty ? null : searchHandler.currentBooru);
+          Color? tagColor = tagHandler.colourForDisplay(formattedTag, chipBooru);
           if (isMetaTag) tagColor = Colors.pink;
           tagColor ??= Colors.blue;
 

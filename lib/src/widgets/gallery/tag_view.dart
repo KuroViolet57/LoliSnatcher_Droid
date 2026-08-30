@@ -1809,7 +1809,12 @@ class _TagViewState extends State<TagView> {
                 final Booru booru = tagBooru;
                 // A COPY: mutating the object handed out by TagHandler would
                 // edit the app-wide tag map in place.
-                final item = tagHandler.getTagFor(currentTag, booru).copyWith();
+                // Seeded from the source's own type on a doujin booru: the
+                // shared map is a booru store and would preselect a booru's
+                // classification for a coinciding name.
+                final item = tagHandler
+                    .getTagFor(currentTag, booru)
+                    .copyWith(tagType: typeOfTag(rawTag));
                 await showDialog(
                   context: context,
                   builder: (context) => TagsManagerListItemDialog(
@@ -2041,7 +2046,11 @@ class _TagViewState extends State<TagView> {
                 // Each grid is gated on:
                 //   - the global Settings → Interface → inlineRelatedGrids toggle
                 //   - the data being available for this item + handler
-                if (settingsHandler.inlineRelatedGrids) ..._buildRelatedGrids(),
+                // Booru-only: the strips are built for the current booru and
+                // decide artist-ness from the shared booru tag map, so on a
+                // doujin item they render booru posts inside a doujin panel.
+                // Doujin sources have their own Related / Recommended.
+                if (settingsHandler.inlineRelatedGrids && !isDoujinContext) ..._buildRelatedGrids(),
                 //
                 // The old "Details" expansion (url/extension/resolution/...)
                 // is gone — the Flow Details sheet (action row → Details)
@@ -2320,9 +2329,13 @@ Future<void> showTagDialog({
   final searchHandler = SearchHandler.instance;
   final tagHandler = TagHandler.instance;
 
-  final Tag resolvedTag = tagHandler.getTagFor(tag, handler.booru);
-  final Color typeColor = resolvedTag.getColour() ?? const Color(0xFF8A80A0);
-  final String typeName = resolvedTag.tagType.locName;
+  // Domain-aware: on a doujin source the shared booru tag map is not
+  // consulted, so the dialog's header can't contradict the chip the user
+  // just tapped (or offer an "Artist hub" for a tag the site doesn't call an
+  // artist).
+  final TagType resolvedType = tagHandler.typeForDisplay(tag, handler.booru);
+  final Color typeColor = resolvedType.getColour() ?? const Color(0xFF8A80A0);
+  final String typeName = resolvedType.locName;
   final bool isDoujin = handler.hasReader;
   Widget buildContent(BuildContext context) {
       return Container(
@@ -2422,12 +2435,12 @@ Future<void> showTagDialog({
           // configured booru. Artists get follow support and their own label.
           ListTile(
             leading: Icon(
-              resolvedTag.tagType.isArtist ? Symbols.artist_rounded : Symbols.hub_rounded,
+              resolvedType.isArtist ? Symbols.artist_rounded : Symbols.hub_rounded,
               color: Theme.of(context).colorScheme.secondary,
             ),
-            title: Text(resolvedTag.tagType.isArtist ? 'Artist hub' : 'Tag hub'),
+            title: Text(resolvedType.isArtist ? 'Artist hub' : 'Tag hub'),
             subtitle: Text(
-              resolvedTag.tagType.isArtist
+              resolvedType.isArtist
                   ? 'Follow + their work across your boorus'
                   : 'This tag across your boorus',
             ),
@@ -2521,7 +2534,12 @@ Future<void> showTagDialog({
                 Navigator.of(context).pop(true);
               },
             ),
-          if (!isHidden && !isMarked && !settingsHandler.isTagHiddenForBooru(tag, handler.booru.name))
+          // The per-booru list is a BOORU store and never filters doujin
+          // items, so it must not decide whether a doujin tag can be hidden.
+          if (!isHidden &&
+              !isMarked &&
+              (DoujinDataHandler.isDoujinBooru(handler.booru) ||
+                  !settingsHandler.isTagHiddenForBooru(tag, handler.booru.name)))
             ListTile(
               leading: const Icon(CupertinoIcons.eye_slash, color: Colors.red),
               title: Text(context.loc.tagView.addToHidden),
@@ -2583,7 +2601,8 @@ Future<void> showTagDialog({
                 Navigator.of(context).pop();
               },
             ),
-          if (settingsHandler.isTagHiddenForBooru(tag, handler.booru.name))
+          if (!DoujinDataHandler.isDoujinBooru(handler.booru) &&
+              settingsHandler.isTagHiddenForBooru(tag, handler.booru.name))
             ListTile(
               leading: Icon(
                 CupertinoIcons.eye_slash,
@@ -2604,17 +2623,21 @@ Future<void> showTagDialog({
             ),
           //
           FutureBuilder<PinnedTag?>(
-            future: DoujinDataHandler.isDoujinBooru(searchHandler.currentBooru)
+            // Against THIS dialog's source, like every other action here. On
+            // a merge tab the current booru is the Merge placeholder, so
+            // reading the pin state from it disagreed with the batch bar,
+            // which pins against the item's real source.
+            future: DoujinDataHandler.isDoujinBooru(handler.booru)
                 ? Future.value(() {
-                    for (final p in doujinPinsAsPinnedTags(searchHandler.currentBooru)) {
+                    for (final p in doujinPinsAsPinnedTags(handler.booru)) {
                       if (p.tagName == tag) return p;
                     }
                     return null;
                   }())
                 : settingsHandler.dbHandler.getPinnedTag(
                     tag,
-                    booruType: searchHandler.currentBooru.type?.name,
-                    booruName: searchHandler.currentBooru.name,
+                    booruType: handler.booru.type?.name,
+                    booruName: handler.booru.name,
                   ),
             builder: (_, snapshot) {
               final isPinned = snapshot.data != null;
@@ -2649,7 +2672,7 @@ Future<void> showTagDialog({
                     await showPinTagDialog(
                       context,
                       tag,
-                      searchHandler.currentBooru,
+                      handler.booru,
                       () {},
                     );
                   }
