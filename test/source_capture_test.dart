@@ -235,7 +235,7 @@ void main() {
       h.recordPage('https://hentaipaw.com/', '<html>listing</html>');
       h.recordPage('https://hentaipaw.com/g/1', '<html>gallery</html>');
       h.recordResource('https://hentaipaw.com/api/list');
-      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await SourceCaptureHandler.instance.journalFlushed;
 
       expect(h.hasRecoverableSession, isTrue);
 
@@ -259,7 +259,7 @@ void main() {
       final h = SourceCaptureHandler.instance..start('https://example.test/');
       h.recordPage('https://example.test/a', '<html>a</html>');
       h.recordPage('https://example.test/b', '<html>b</html>');
-      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await SourceCaptureHandler.instance.journalFlushed;
 
       // Simulate the kill landing mid-write.
       final File journal = File('${tempDir.path}${Platform.pathSeparator}'
@@ -278,7 +278,7 @@ void main() {
       final h = SourceCaptureHandler.instance..start('https://example.test/');
       h.recordPage('https://example.test/', '<html>first</html>');
       h.recordPage('https://example.test/', '<html>hydrated</html>');
-      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await SourceCaptureHandler.instance.journalFlushed;
 
       h.clearMemoryOnlyForTests();
       await h.restoreSession();
@@ -290,11 +290,11 @@ void main() {
     test('starting a new capture does not inherit the previous one', () async {
       final h = SourceCaptureHandler.instance..start('https://first.test/');
       h.recordPage('https://first.test/', '<html>old</html>');
-      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await SourceCaptureHandler.instance.journalFlushed;
 
       h.start('https://second.test/');
       h.recordPage('https://second.test/', '<html>new</html>');
-      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await SourceCaptureHandler.instance.journalFlushed;
 
       h.clearMemoryOnlyForTests();
       await h.restoreSession();
@@ -307,11 +307,11 @@ void main() {
     test('discarding a capture removes it from disk too', () async {
       final h = SourceCaptureHandler.instance..start('https://example.test/');
       h.recordPage('https://example.test/', '<html>x</html>');
-      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await SourceCaptureHandler.instance.journalFlushed;
       expect(h.hasRecoverableSession, isTrue);
 
       h.clear();
-      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await SourceCaptureHandler.instance.journalFlushed;
 
       expect(h.hasRecoverableSession, isFalse);
     });
@@ -321,7 +321,7 @@ void main() {
       // place the clearance cookie survives in the clear.
       final h = SourceCaptureHandler.instance..start('https://example.test/');
       h.recordPage('https://example.test/', 'cf_clearance=SECRETVALUE123; rest');
-      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await SourceCaptureHandler.instance.journalFlushed;
 
       final File journal = File('${tempDir.path}${Platform.pathSeparator}'
           '${SourceCaptureHandler.journalName}');

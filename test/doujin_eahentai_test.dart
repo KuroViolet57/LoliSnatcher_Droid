@@ -72,7 +72,7 @@ void main() {
 
     test('tags become normalised app tags, spaces to underscores', () {
       final payload = EaHentaiHandler.decodeNextPayload(fixture('eahentai_payload.html'));
-      final tags = EaHentaiHandler.tagsFromPayload(payload).map((t) => t.fullString).toList();
+      final tags = EaHentaiHandler(ea(), 20).tagsFromPayload(payload).map((t) => t.fullString).toList();
 
       expect(tags, contains('big_breasts'));
       expect(tags, contains('glasses'));
@@ -82,7 +82,7 @@ void main() {
     test('a missing field yields nothing rather than throwing', () {
       expect(EaHentaiHandler.pipeField('', 'tags'), isEmpty);
       expect(EaHentaiHandler.pipeField('{"other":"x"}', 'tags'), isEmpty);
-      expect(EaHentaiHandler.tagsFromPayload(''), isEmpty);
+      expect(EaHentaiHandler(ea(), 20).tagsFromPayload(''), isEmpty);
     });
 
     test('a page with no payload at all decodes to empty, not an exception', () {

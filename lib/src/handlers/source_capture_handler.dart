@@ -253,6 +253,14 @@ class SourceCaptureHandler {
   /// arriving together cannot interleave halfway through a line.
   Future<void> _journalQueue = Future.value();
 
+  /// Completes once every journal write queued so far has landed.
+  ///
+  /// Recording is deliberately fire-and-forget so the UI never waits on disk,
+  /// which leaves no moment a caller can observe. Tests await this instead of
+  /// sleeping — a fixed delay passes alone and fails the moment the machine is
+  /// busy, which is exactly the kind of flake that gets a real failure ignored.
+  Future<void> get journalFlushed => _journalQueue;
+
   File? get _journalFile {
     try {
       return File('${SettingsHandler.instance.path}$journalName');

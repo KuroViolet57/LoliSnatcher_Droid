@@ -20,6 +20,7 @@ void main() {
 
   late Directory tempDir;
   Booru niyaniya() => Booru('niyaniya', BooruType.NiyaNiya, '', 'https://niyaniya.moe', '');
+  SchaleHandler schaleHandler() => SchaleHandler(niyaniya(), 20);
   Booru gelbooru() => Booru('gelbooru', BooruType.Gelbooru, '', 'https://gelbooru.com', '');
 
   setUp(() {
@@ -141,22 +142,31 @@ void main() {
     // schale marks every tag with a numeric namespace. Each code below was
     // confirmed against the live API: search a namespaced query, then read
     // back which code the matching tag came home with.
-    Tag? tag(int? namespace, String name) => SchaleHandler.tagFromEntry({
+    final SchaleHandler sharedHandler = schaleHandler();
+    Tag? tag(int? namespace, String name) => sharedHandler.tagFromEntry({
       'name': name,
       'namespace': ?namespace,
       'count': 7,
     });
 
     test("the confirmed codes become the app's namespaces", () {
-      expect(tag(1, 'shindol')?.fullString, 'artist:shindol');
-      expect(tag(2, 'karomix')?.fullString, 'circle:karomix');
-      expect(tag(3, 'expelled from paradise')?.fullString, 'parody:expelled_from_paradise');
-      expect(tag(4, 'comic bavel 2026-09')?.fullString, 'magazine:comic_bavel_2026-09');
-      expect(tag(8, 'yaoi')?.fullString, 'male:yaoi');
-      expect(tag(9, 'busty')?.fullString, 'female:busty');
-      expect(tag(10, 'group')?.fullString, 'mixed:group');
-      expect(tag(11, 'english')?.fullString, 'language:english');
-      expect(tag(12, 'uncensored')?.fullString, 'other:uncensored');
+      // The tag NAME is bare; the namespace is recorded beside it.
+      final h = schaleHandler();
+      void check(int code, String raw, String name, String? ns) {
+        final Tag? t = h.tagFromEntry({'name': raw, 'namespace': code, 'count': 7});
+        expect(t?.fullString, name);
+        expect(h.tagNamespace(name), ns);
+      }
+
+      check(1, 'shindol', 'shindol', 'artist');
+      check(2, 'karomix', 'karomix', 'circle');
+      check(3, 'expelled from paradise', 'expelled_from_paradise', 'parody');
+      check(4, 'comic bavel 2026-09', 'comic_bavel_2026-09', 'magazine');
+      check(8, 'yaoi', 'yaoi', 'male');
+      check(9, 'busty', 'busty', 'female');
+      check(10, 'group', 'group', 'mixed');
+      check(11, 'english', 'english', 'language');
+      check(12, 'uncensored', 'uncensored', 'other');
     });
 
     test('a tag with no namespace stays bare', () {
@@ -179,7 +189,7 @@ void main() {
     });
 
     test('a detail payload is flattened without duplicates', () {
-      final tags = SchaleHandler.tagsFromDetail({
+      final tags = schaleHandler().tagsFromDetail({
         'tags': [
           {'name': 'ahegao', 'count': 1},
           {'name': 'ahegao', 'count': 1},
@@ -188,7 +198,7 @@ void main() {
         ],
       }).map((t) => t.fullString).toList();
 
-      expect(tags, ['ahegao', 'artist:shindol']);
+      expect(tags, ['ahegao', 'shindol']);
     });
   });
 

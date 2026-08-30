@@ -385,29 +385,35 @@ b: '123/' };
 
     test("flattens hitomi's six separate tag keys into namespaced tags", () {
       final gallery = HitomiHandler.parseGalleryInfo(galleryInfoSource);
-      final tags = HitomiHandler.tagsFromGallery(gallery).map((t) => t.fullString).toList();
+      final tags = HitomiHandler(hitomi(), 20).tagsFromGallery(gallery).map((t) => t.fullString).toList();
 
-      expect(tags, contains('artist:remora'));
-      expect(tags, contains('circle:remora_field'));
-      expect(tags, contains('parody:blue_archive'));
-      expect(tags, contains('character:kei_tendou'));
-      expect(tags, contains('type:doujinshi'));
-      expect(tags, contains('language:japanese'));
+      // Bare names, exactly as nhentai stores them — the namespace lives on
+      // the handler, not inside the tag.
+      expect(tags, contains('remora'));
+      expect(tags, contains('remora_field'));
+      expect(tags, contains('blue_archive'));
+      expect(tags, contains('kei_tendou'));
+      expect(tags, contains('doujinshi'));
+      expect(tags, contains('japanese'));
+      expect(tags.any((t) => t.contains(':')), isFalse, reason: 'a raw namespace leaked into a chip');
     });
 
     test('gendered flags become the namespace, ungendered tags stay bare', () {
       final gallery = HitomiHandler.parseGalleryInfo(galleryInfoSource);
-      final tags = HitomiHandler.tagsFromGallery(gallery).map((t) => t.fullString).toList();
+      final tags = HitomiHandler(hitomi(), 20).tagsFromGallery(gallery).map((t) => t.fullString).toList();
 
-      expect(tags, contains('female:bikini'));
+      final handler = HitomiHandler(hitomi(), 20);
+      handler.tagsFromGallery(gallery);
+      expect(tags, contains('bikini'));
+      expect(handler.tagNamespace('bikini'), 'female');
       // `digital` carries neither flag on the real payload.
       expect(tags, contains('digital'));
-      expect(tags, isNot(contains('female:digital')));
+      expect(handler.tagNamespace('digital'), isNull);
     });
 
     test('does not emit the same tag twice', () {
       final gallery = HitomiHandler.parseGalleryInfo(galleryInfoSource);
-      final tags = HitomiHandler.tagsFromGallery(gallery).map((t) => t.fullString).toList();
+      final tags = HitomiHandler(hitomi(), 20).tagsFromGallery(gallery).map((t) => t.fullString).toList();
       expect(tags.length, tags.toSet().length);
     });
   });
@@ -445,7 +451,8 @@ b: '123/' };
       expect(item.postURL, 'https://hitomi.la/galleries/4157254.html');
       expect(item.fileCountHint.value, 25);
       expect(item.description, contains('Sample Gallery Title'));
-      expect(item.tagsList.map((t) => t.fullString), contains('artist:remora'));
+      expect(item.tagsList.map((t) => t.fullString), contains('remora'));
+      expect(handler.tagNamespace('remora'), 'artist');
       // The cover is a thumbnail, not a full-size page.
       expect(item.thumbnailURL, contains('/webpbigtn/'));
       // Related is offered because hitomi publishes its own related list.

@@ -119,12 +119,29 @@ void main() {
       ],
     };
 
-    test('tags keep their namespace and are normalised', () {
-      final tags = FaccinaHandler.tagsFromArchive(archive).map((t) => t.fullString).toList();
-      expect(tags, contains('artist:wakahi-chan'));
-      expect(tags, contains('magazine:comic_something_2026-08'));
-      // An empty namespace means a plain tag.
+    test('tag names are bare, with the namespace kept beside them', () {
+      final h = FaccinaHandler(hentalk(), 20);
+      final tags = h.tagsFromArchive(archive).map((t) => t.fullString).toList();
+
+      // The screenshots showed `artist:wakahi-chan` on a chip; the name is the
+      // bare part and the namespace lives on the handler.
+      expect(tags, contains('wakahi-chan'));
+      expect(h.tagNamespace('wakahi-chan'), 'artist');
+      expect(tags, contains('comic_something_2026-08'));
+      expect(h.tagNamespace('comic_something_2026-08'), 'magazine');
+      // An empty namespace means a plain tag, with no namespace at all.
       expect(tags, contains('big_breasts'));
+      expect(h.tagNamespace('big_breasts'), isNull);
+      expect(tags.any((t) => t.contains(':')), isFalse);
+    });
+
+    test('a bare tag is put back into its namespaced form for searching', () {
+      // faccina matches on `artist:"wakahi chan"`, so a chip that displays bare
+      // still has to round-trip to the qualified form.
+      final h = FaccinaHandler(hentalk(), 20);
+      h.tagsFromArchive(archive);
+      expect(h.qualifyTag('wakahi-chan'), 'artist:wakahi-chan');
+      expect(h.qualifyTag('big_breasts'), 'big_breasts');
     });
 
     test('the cover is built from the thumbnail PAGE, not treated as a URL', () {

@@ -91,19 +91,28 @@ void main() {
           .map((t) => t.fullString)
           .toList();
 
-      // Plain tags stay bare; everything else is namespaced.
+      // Tag NAMES are bare — the namespace is kept beside them, so a chip
+      // never shows a raw `artist:` prefix.
       expect(tags, contains('sleeping'));
-      expect(tags.any((t) => t.startsWith('parody:')), isTrue);
-      expect(tags.any((t) => t.startsWith('artist:')), isTrue);
-      expect(tags.any((t) => t.startsWith('character:')), isTrue);
+      expect(tags.any((t) => t.contains(':')), isFalse);
+      expect(h.namespacesByTag.values, contains('parody'));
+      expect(h.namespacesByTag.values, contains('artist'));
+      expect(h.namespacesByTag.values, contains('character'));
     });
 
     test('the namespace round-trips through tagNamespace', () {
       final h = AsmHentaiHandler(asm(), 20);
+      h.tagsFromHtmlForTests(fixture('asmhentai_gallery.html'));
+
+      // A general tag has no namespace at all, which is what puts it in the
+      // ordinary section rather than a named one.
+      expect(h.tagNamespace('sleeping'), isNull);
+      // Anything the site filed under a namespace answers with it.
+      final String artist = h.namespacesByTag.entries.firstWhere((e) => e.value == 'artist').key;
+      expect(h.tagNamespace(artist), 'artist');
+      // A tag saved by an older build still carries its prefix inline; reading
+      // it keeps those favourites and blacklists grouping correctly.
       expect(h.tagNamespace('artist:yurimo'), 'artist');
-      expect(h.tagNamespace('sleeping'), 'tag');
-      // An unknown prefix is not treated as a namespace.
-      expect(h.tagNamespace('something:else'), 'tag');
     });
 
     test('the page count comes off the page', () {
