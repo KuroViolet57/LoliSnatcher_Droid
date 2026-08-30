@@ -19,6 +19,7 @@ enum BooruType {
   Kusowanka,
   Moebooru,
   AsmHentai,
+  EaHentai,
   NHentai,
   NiyaNiya,
   Nozomi,
@@ -94,6 +95,8 @@ enum BooruType {
       ..remove(BooruType.NiyaNiya)
       // asmhentai has a fixed host as well.
       ..remove(BooruType.AsmHentai)
+      // ...and so does eahentai.
+      ..remove(BooruType.EaHentai)
       // xxxtik has a fixed API host; only pick it deliberately.
       ..remove(BooruType.XXXTik)
       // xxxfollow has a fixed API host; only pick it deliberately.
@@ -144,6 +147,8 @@ enum BooruType {
         return 'niyaniya (Schale)';
       case AsmHentai:
         return 'ASMHentai';
+      case EaHentai:
+        return 'EAHentai';
       case TikPorn:
         return 'Tik.Porn';
       case XXXTik:
@@ -180,6 +185,7 @@ enum BooruType {
   bool get isNHentai => this == BooruType.NHentai;
   bool get isNiyaNiya => this == BooruType.NiyaNiya;
   bool get isAsmHentai => this == BooruType.AsmHentai;
+  bool get isEaHentai => this == BooruType.EaHentai;
   bool get isTikPorn => this == BooruType.TikPorn;
   bool get isXXXTik => this == BooruType.XXXTik;
   bool get isXXXFollow => this == BooruType.XXXFollow;
