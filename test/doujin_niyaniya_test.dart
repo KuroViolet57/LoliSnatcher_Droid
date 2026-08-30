@@ -7,6 +7,7 @@ import 'package:lolisnatcher/src/boorus/doujin/schale_handler.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
+import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -133,6 +134,83 @@ void main() {
         serverId: '27531',
       );
       expect(h.relatedVersionsQuery(item), 'related:27531');
+    });
+  });
+
+  group('tag namespaces', () {
+    // schale marks every tag with a numeric namespace. Each code below was
+    // confirmed against the live API: search a namespaced query, then read
+    // back which code the matching tag came home with.
+    Tag? tag(int? namespace, String name) => SchaleHandler.tagFromEntry({
+      'name': name,
+      'namespace': ?namespace,
+      'count': 7,
+    });
+
+    test("the confirmed codes become the app's namespaces", () {
+      expect(tag(1, 'shindol')?.fullString, 'artist:shindol');
+      expect(tag(2, 'karomix')?.fullString, 'circle:karomix');
+      expect(tag(3, 'expelled from paradise')?.fullString, 'parody:expelled_from_paradise');
+      expect(tag(4, 'comic bavel 2026-09')?.fullString, 'magazine:comic_bavel_2026-09');
+      expect(tag(8, 'yaoi')?.fullString, 'male:yaoi');
+      expect(tag(9, 'busty')?.fullString, 'female:busty');
+      expect(tag(10, 'group')?.fullString, 'mixed:group');
+      expect(tag(11, 'english')?.fullString, 'language:english');
+      expect(tag(12, 'uncensored')?.fullString, 'other:uncensored');
+    });
+
+    test('a tag with no namespace stays bare', () {
+      expect(tag(null, 'ahegao')?.fullString, 'ahegao');
+      expect(tag(0, 'big penis')?.fullString, 'big_penis');
+    });
+
+    test('an unobserved code is left bare rather than guessed at', () {
+      // Codes 5-7 were never seen and character:/event:/publisher: queries are
+      // rejected by the API. Guessing would file the tag under the wrong hub
+      // section and stop the blacklist matching it.
+      expect(tag(6, 'mystery')?.fullString, 'mystery');
+    });
+
+    test('artists and series get the tag types the UI colours by', () {
+      expect(tag(1, 'shindol')?.tagType, TagType.artist);
+      expect(tag(2, 'karomix')?.tagType, TagType.artist);
+      expect(tag(3, 'blue archive')?.tagType, TagType.copyright);
+      expect(tag(9, 'busty')?.tagType, TagType.none);
+    });
+
+    test('a detail payload is flattened without duplicates', () {
+      final tags = SchaleHandler.tagsFromDetail({
+        'tags': [
+          {'name': 'ahegao', 'count': 1},
+          {'name': 'ahegao', 'count': 1},
+          {'name': 'shindol', 'namespace': 1},
+          {'name': '', 'namespace': 1},
+        ],
+      }).map((t) => t.fullString).toList();
+
+      expect(tags, ['ahegao', 'artist:shindol']);
+    });
+  });
+
+  group('query translation', () {
+    test('underscores become spaces, which is what schale actually stores', () {
+      expect(SchaleHandler.translateQuery('artist:asami_asami'), 'artist:asami asami');
+      expect(SchaleHandler.translateQuery('big_breasts'), 'big breasts');
+    });
+
+    test('namespaces and negation survive', () {
+      expect(
+        SchaleHandler.translateQuery('parody:blue_archive -female:ahegao'),
+        'parody:blue archive -female:ahegao',
+      );
+    });
+
+    test('an already-quoted term is left alone', () {
+      expect(SchaleHandler.translateQuery('"comic bavel"'), '"comic bavel"');
+    });
+
+    test('an empty query stays empty, so browse means browse', () {
+      expect(SchaleHandler.translateQuery('   '), '');
     });
   });
 }

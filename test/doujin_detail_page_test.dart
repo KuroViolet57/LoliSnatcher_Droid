@@ -87,12 +87,27 @@ void main() {
     SearchHandler.instance.tabs.add(tab);
     SearchHandler.instance.changeTabIndex(0);
     await tester.pumpWidget(
-      MaterialApp(
-        navigatorKey: NavigationHandler.instance.navigatorKey,
-        home: DoujinDetailPage(tab: tab, index: 0),
+      // The strips reach for context.loc once their content resolves, which
+      // happens a frame or two in - so the page needs the translations even
+      // though nothing visible at first paint uses them.
+      TranslationProvider(
+        child: MaterialApp(
+          navigatorKey: NavigationHandler.instance.navigatorKey,
+          home: DoujinDetailPage(tab: tab, index: 0),
+        ),
       ),
     );
     await tester.pump(const Duration(milliseconds: 400));
+  }
+
+  /// Unmounting the page runs TagContentPreview.dispose, which records the
+  /// preview in the tag-preview history behind a 600ms debounce. The binding
+  /// checks for pending timers at the end of the test BODY, so the page has to
+  /// be torn down and the debounce run out here rather than in a tearDown -
+  /// otherwise every test below fails on a timer it has nothing to do with.
+  Future<void> closeDetail(WidgetTester tester) async {
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(milliseconds: 800));
   }
 
   testWidgets('strip sections carry their new-tab button in the HEADER, not a row of their own', (tester) async {
@@ -113,6 +128,8 @@ void main() {
       find.descendant(of: find.byType(ExpansionTile).first, matching: newTabButtons),
       findsOneWidget,
     );
+
+    await closeDetail(tester);
   });
 
   testWidgets('big-cover header is capped to about half the viewport', (tester) async {
@@ -133,5 +150,7 @@ void main() {
     // tags below the fold.
     expect(size.height, lessThanOrEqualTo(viewportHeight * 0.55 + 1));
     expect(size.height, greaterThan(viewportHeight * 0.2));
+
+    await closeDetail(tester);
   });
 }

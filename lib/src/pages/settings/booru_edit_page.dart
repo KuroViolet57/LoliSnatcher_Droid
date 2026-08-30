@@ -251,6 +251,53 @@ class _BooruEditState extends State<BooruEdit> {
                       booruFaviconController.text = 'https://nhentai.net/favicon.ico';
                     }
                   }
+                  if (selectedBooruType.isNiyaNiya && booruURLController.text.trim().isEmpty) {
+                    booruURLController.text = 'https://niyaniya.moe';
+                    if (booruNameController.text.trim().isEmpty) {
+                      booruNameController.text = 'niyaniya';
+                    }
+                    if (booruFaviconController.text.trim().isEmpty) {
+                      booruFaviconController.text = 'https://niyaniya.moe/favicon.ico';
+                    }
+                  }
+                  if (selectedBooruType.isAsmHentai && booruURLController.text.trim().isEmpty) {
+                    booruURLController.text = 'https://asmhentai.com';
+                    if (booruNameController.text.trim().isEmpty) {
+                      booruNameController.text = 'ASMHentai';
+                    }
+                    if (booruFaviconController.text.trim().isEmpty) {
+                      booruFaviconController.text = 'https://asmhentai.com/favicon.ico';
+                    }
+                  }
+                  if (selectedBooruType.isEaHentai && booruURLController.text.trim().isEmpty) {
+                    booruURLController.text = 'https://eahentai.com';
+                    if (booruNameController.text.trim().isEmpty) {
+                      booruNameController.text = 'EAHentai';
+                    }
+                    if (booruFaviconController.text.trim().isEmpty) {
+                      booruFaviconController.text = 'https://eahentai.com/favicon.ico';
+                    }
+                  }
+                  if (selectedBooruType.isFaccina && booruURLController.text.trim().isEmpty) {
+                    booruURLController.text = 'https://hentalk.pw';
+                    if (booruNameController.text.trim().isEmpty) {
+                      booruNameController.text = 'hentalk';
+                    }
+                    if (booruFaviconController.text.trim().isEmpty) {
+                      booruFaviconController.text = 'https://hentalk.pw/favicon.png';
+                    }
+                  }
+                  if (selectedBooruType.isHitomi && booruURLController.text.trim().isEmpty) {
+                    booruURLController.text = 'https://hitomi.la';
+                    if (booruNameController.text.trim().isEmpty) {
+                      booruNameController.text = 'hitomi.la';
+                    }
+                    if (booruFaviconController.text.trim().isEmpty) {
+                      // hitomi serves nothing from its own host but HTML; the icon lives on ltn.
+                      booruFaviconController.text =
+                          'https://ltn.gold-usergeneratedcontent.net/favicon-192x192.png';
+                    }
+                  }
                   if (selectedBooruType.isTikPorn && booruURLController.text.trim().isEmpty) {
                     booruURLController.text = 'https://tik.porn';
                     if (booruNameController.text.trim().isEmpty) {

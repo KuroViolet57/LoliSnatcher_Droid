@@ -128,6 +128,31 @@ void main() {
       }
       expect(items.map((e) => e.serverId).toSet().length, items.length);
     });
+
+    test('every card gets a cover and a title', () {
+      // The site puts the title on the anchor's aria-label and leaves the
+      // <img alt> empty, so reading alt produced blank cards.
+      final h = EaHentaiHandler(ea(), 20);
+      final items = h.itemsFromListing(fixture('eahentai_listing.html'));
+
+      for (final item in items) {
+        expect(item.thumbnailURL, isNotEmpty, reason: 'no cover for ${item.postURL}');
+        expect(item.description, isNotEmpty, reason: 'no title for ${item.postURL}');
+        expect(item.description, isNot('Read Now'));
+      }
+    });
+
+    test("the hero card's icon-only \"Read Now\" anchor does not shadow its real card", () {
+      // The featured gallery is linked several times on a listing page: twice
+      // as a play button holding nothing but an svg, and again as the card
+      // itself. Taking the first anchor per id gave that gallery no cover.
+      final h = EaHentaiHandler(ea(), 20);
+      final items = h.itemsFromListing(fixture('eahentai_listing.html'));
+
+      final hero = items.firstWhere((e) => e.serverId == '73480');
+      expect(hero.thumbnailURL, contains('/thumbnail/'));
+      expect(hero.description, isNot('Read Now'));
+    });
   });
 
   group('wiring', () {

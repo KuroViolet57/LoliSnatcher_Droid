@@ -266,7 +266,7 @@ class FaccinaHandler extends BooruHandler {
 
   @override
   FutureOr<List> parseListFromResponse(dynamic response) async {
-    final protocol = _parseProtocol(prevTags);
+    final protocol = _parseProtocol(currentTags);
     if (protocol != null && protocol.kind != 'id') {
       return protocol.kind == 'related'
           ? await _fetchRelated(protocol.id)
@@ -286,6 +286,15 @@ class FaccinaHandler extends BooruHandler {
         if (itemFromArchive(row) != null) itemFromArchive(row)!,
     ];
   }
+
+  /// [parseListFromResponse] already builds finished items, so the base class's
+  /// per-entry hook is a passthrough. Without this override it would replace
+  /// every one of them with the default blank [BooruItem] and the grid would
+  /// fill with empty cards.
+  @override
+  FutureOr<BooruItem?> parseItemFromResponse(dynamic responseItem, int index) =>
+      responseItem is BooruItem ? responseItem : null;
+
 
   // ── detail + reader ───────────────────────────────────────────────────
 

@@ -38,6 +38,15 @@ abstract class BooruHandler {
   int pageNum = -1;
   int limit = 20;
   String prevTags = '';
+
+  /// The query currently being fetched.
+  ///
+  /// [prevTags] is only assigned once a fetch has parsed successfully, so while
+  /// [parseListFromResponse] runs it still holds the PREVIOUS query - which
+  /// makes it useless to any handler whose parsing depends on what was asked
+  /// for (the doujin sources switch on `id:`/`related:`/`recommend:` there).
+  /// This is set before the fetch starts instead.
+  String currentTags = '';
   bool locked = false;
   Booru booru;
 
@@ -254,6 +263,7 @@ abstract class BooruHandler {
     tags = translateOrSyntax(tags.trim());
     // validate tags (usually just convert empty string to current booru "search all" query)
     tags = validateTags(tags.trim());
+    currentTags = tags;
 
     // if tags are different than previous tags, reset fetched
     if (prevTags != tags) {

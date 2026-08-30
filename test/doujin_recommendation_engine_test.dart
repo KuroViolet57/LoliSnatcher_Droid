@@ -140,4 +140,96 @@ void main() {
       expect(ranked.first.serverId, '3');
     });
   });
+
+  group('CJK titles', () {
+    // Most of the catalogue on these sites has a Japanese or Chinese title.
+    // A word split on those yields nothing at all, which used to make every
+    // CJK-titled work look unrelated to every other.
+    test('a Japanese title produces tokens instead of nothing', () {
+      expect(DoujinRecommendationEngine.titleTokens('ケイちゃんといちゃいちゃする本'), isNotEmpty);
+      expect(DoujinRecommendationEngine.titleTokens('想被狂挠脚底痒'), isNotEmpty);
+    });
+
+    test('two Japanese titles about the same thing score as similar', () {
+      final tokens = DoujinRecommendationEngine.titleTokens('ケイちゃんといちゃいちゃする本');
+      expect(
+        DoujinRecommendationEngine.titleSimilarity(tokens, 'ヒナちゃんといちゃいちゃする本'),
+        greaterThan(0.4),
+      );
+      expect(
+        DoujinRecommendationEngine.titleSimilarity(tokens, '全然関係ない題名'),
+        lessThan(0.2),
+      );
+    });
+
+    test('a mixed title keeps both its words and its kana', () {
+      final tokens = DoujinRecommendationEngine.titleTokens('Gravity ケイちゃん');
+      expect(tokens, contains('gravity'));
+      expect(tokens.any((t) => t.contains('ケ')), isTrue);
+    });
+
+    test('a single stray ideograph is not a token on its own', () {
+      // One character says nothing and would match half the catalogue.
+      expect(DoujinRecommendationEngine.titleTokens('本'), isEmpty);
+    });
+  });
+
+  group('Related is never empty when anything is close', () {
+    BooruItem make(String title, List<String> tags, String url) => BooruItem(
+      fileURL: url,
+      sampleURL: url,
+      thumbnailURL: url,
+      tagsList: [for (final t in tags) Tag(t)],
+      postURL: url,
+    )..description = title;
+
+    test('a work with no second version still gets its series and artist mates', () {
+      final source = make('Hidden Emotions', ['artist:wakahi', 'parody:original'], 'u/0');
+      final candidates = [
+        make('Something Else Entirely', ['artist:wakahi'], 'u/1'),
+        make('Another Original Thing', ['parody:original'], 'u/2'),
+        make('Nothing In Common', ['artist:someone', 'parody:other'], 'u/3'),
+      ];
+
+      final related = DoujinRecommendationEngine.related(source, candidates);
+
+      expect(related, isNotEmpty);
+      expect(related.map((e) => e.postURL), isNot(contains('u/3')));
+    });
+
+    test('same-work entries still come first, and are never dropped', () {
+      final source = make('Kei-chan to Ichaicha Suru Hon', ['artist:remora'], 'u/0');
+      final candidates = [
+        make('Some Other Book', ['artist:remora'], 'u/filler'),
+        make('Kei-chan to Ichaicha Suru Hon 2', ['artist:remora'], 'u/same'),
+      ];
+
+      final related = DoujinRecommendationEngine.related(source, candidates);
+
+      expect(related.first.postURL, 'u/same');
+    });
+
+    test('a candidate sharing nothing at all is filler, not Related', () {
+      final source = make('Hidden Emotions', ['artist:wakahi'], 'u/0');
+      final candidates = [make('Unrelated Book', ['artist:nobody'], 'u/1')];
+
+      expect(DoujinRecommendationEngine.related(source, candidates), isEmpty);
+    });
+  });
+
+  test('namespaces survive where they matter and are dropped where they do not', () {
+    // A real trap: tagsOf normalises `parody:x` to `x` for the blacklist, so
+    // anything asking "is this a series tag?" has to read the raw tags.
+    final item = BooruItem(
+      fileURL: 'u',
+      sampleURL: 'u',
+      thumbnailURL: 'u',
+      tagsList: [Tag('parody:Blue Archive'), Tag('big breasts')],
+      postURL: 'u',
+    );
+
+    expect(DoujinRecommendationEngine.tagsOf(item), contains('blue_archive'));
+    expect(DoujinRecommendationEngine.namespacedTagsOf(item), contains('parody:blue_archive'));
+    expect(DoujinRecommendationEngine.namespacedTagsOf(item), contains('big_breasts'));
+  });
 }
