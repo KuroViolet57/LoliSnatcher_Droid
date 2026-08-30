@@ -109,4 +109,26 @@ void main() {
       expect(find.text('N'), findsOneWidget);
     });
   });
+
+  group('the letter tile never gives up on a "?"', () {
+    test('a source added without a name falls back to its type and address', () {
+      // The name field is optional, so leaving it blank is easy — and it used
+      // to put a bare "?" on every card in that source's feed.
+      expect(FaviconLetterTile.letterFor(null, 'hitomi.la'), 'H');
+      expect(FaviconLetterTile.letterFor('', 'asmhentai.com'), 'A');
+    });
+
+    test('a name still wins over the address', () {
+      expect(FaviconLetterTile.letterFor('Kuro', 'hitomi.la'), 'K');
+    });
+
+    test('www is skipped so the letter is the site\'s own initial', () {
+      expect(FaviconLetterTile.letterFor(null, 'www.eahentai.com'), 'E');
+    });
+
+    test('"?" is only reached when there is genuinely nothing', () {
+      expect(FaviconLetterTile.letterFor(null, null), '?');
+      expect(FaviconLetterTile.letterFor('   ', '  '), '?');
+    });
+  });
 }

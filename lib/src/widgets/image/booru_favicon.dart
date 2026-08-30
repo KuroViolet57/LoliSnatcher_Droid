@@ -462,8 +462,16 @@ class _BooruFaviconState extends State<BooruFavicon> {
               },
               child: FaviconLetterTile(
                 size: size,
-                label: widget.booru?.name,
-                host: FaviconResolver.hostOf(_baseUrl),
+                // A source added without a name — which is easy to do, the
+                // field is optional — used to leave both of these empty and
+                // render a bare "?" on every card. The type's own name and the
+                // site's address are always there to fall back on.
+                label: widget.booru?.name?.isNotEmpty == true
+                    ? widget.booru!.name
+                    : widget.booru?.type?.alias,
+                host: FaviconResolver.hostOf(_baseUrl).isNotEmpty
+                    ? FaviconResolver.hostOf(_baseUrl)
+                    : FaviconResolver.hostOf(widget.booru?.baseURL ?? ''),
               ),
             )
           else if (mainProvider != null)
