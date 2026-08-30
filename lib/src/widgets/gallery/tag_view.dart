@@ -3332,11 +3332,43 @@ class TagContentPreview extends StatefulWidget {
   // spend a whole row on it.
   final bool showDoujinNewTabButton;
 
+  // ── strip cell geometry ────────────────────────────────────────────────
+  // The strip's height is DERIVED from the card height rather than written
+  // out separately. The two had drifted: when the doujin strips' header row
+  // was moved into the section title, the cards stayed at their old size and
+  // the reclaimed height simply became a gap.
+
+  static const double stripCardWidth = 148;
+
+  /// Card height when the strip still carries a header row of its own (the
+  /// booru source chip).
+  static const double stripCardBaseHeight = 220;
+
+  /// What the removed header row was worth. Strips without that row give the
+  /// height back to the cards - a taller cover, since the cover is the
+  /// flexible part of the cell and the title sits under it at a fixed size.
+  static const double stripReclaimedHeight = 38;
+
+  /// The ListView's own vertical padding inside the strip.
+  static const double stripListPadding = 26;
+
+  static double stripCardHeight({required bool hasHeaderRow}) =>
+      hasHeaderRow ? stripCardBaseHeight : stripCardBaseHeight + stripReclaimedHeight;
+
+  static double stripHeight({required bool hasHeaderRow}) =>
+      stripCardHeight(hasHeaderRow: hasHeaderRow) + stripListPadding;
+
   @override
   State<TagContentPreview> createState() => _TagContentPreviewState();
 }
 
 class _TagContentPreviewState extends State<TagContentPreview> with AutomaticKeepAliveClientMixin {
+
+  /// Whether this strip draws a header row of its own above the cards. Doujin
+  /// strips whose host renders the open-in-new-tab action in its own section
+  /// header (the detail page) have none, and the cards take that height back.
+  bool get _stripHasHeaderRow => !(tab?.booruHandler.hasReader == true && !widget.showDoujinNewTabButton);
+
   // Hub strips stay alive off-screen: without this, scrolling a hub unmounts
   // strips and they re-fetch (and re-collapse) when scrolled back — janky.
   @override
@@ -4064,7 +4096,7 @@ class _TagContentPreviewState extends State<TagContentPreview> with AutomaticKee
                           ),
                         const SizedBox(height: 6),
                         SizedBox(
-                          height: 220 + 10 + 16, // bigger thumbs + listview paddings
+                          height: TagContentPreview.stripHeight(hasHeaderRow: _stripHasHeaderRow),
                           width: MediaQuery.sizeOf(context).width,
                           child: NotificationListener<ScrollUpdateNotification>(
                             onNotification: (notif) {
@@ -4182,8 +4214,10 @@ class _TagContentPreviewState extends State<TagContentPreview> with AutomaticKee
                                         color: Colors.transparent,
                                         child: Container(
                                           padding: const EdgeInsets.only(right: 8),
-                                          height: 220,
-                                          width: 148,
+                                          height: TagContentPreview.stripCardHeight(
+                                            hasHeaderRow: _stripHasHeaderRow,
+                                          ),
+                                          width: TagContentPreview.stripCardWidth,
                                           child: ValueListenableBuilder(
                                             valueListenable: viewedIndex,
                                             builder: (context, viewedIndex, _) {
