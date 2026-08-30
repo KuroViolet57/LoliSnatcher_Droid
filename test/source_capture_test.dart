@@ -227,6 +227,107 @@ void main() {
       expect(h.entries.single.body, isNot(contains('SECRETVALUE123')));
     });
 
+    test('surviving the app being killed', () async {
+      // The tool asks someone to browse a heavy site in a webview, which is
+      // exactly when Android reaps an app. A memory-only capture would vanish
+      // after ten minutes of work with no indication why.
+      final h = SourceCaptureHandler.instance..start('https://hentaipaw.com/');
+      h.recordPage('https://hentaipaw.com/', '<html>listing</html>');
+      h.recordPage('https://hentaipaw.com/g/1', '<html>gallery</html>');
+      h.recordResource('https://hentaipaw.com/api/list');
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(h.hasRecoverableSession, isTrue);
+
+      // The process dies: everything in memory goes with it.
+      h.clearMemoryOnlyForTests();
+      expect(h.entries, isEmpty);
+
+      final int skipped = await h.restoreSession();
+
+      expect(skipped, 0);
+      expect(h.target, 'https://hentaipaw.com/');
+      expect(h.pageCount, 2);
+      expect(h.resourceCount, 1);
+      expect(
+        h.entries.firstWhere((e) => e.url.endsWith('/g/1')).body,
+        contains('<html>gallery</html>'),
+      );
+    });
+
+    test('a half-written last line costs that entry, not the session', () async {
+      final h = SourceCaptureHandler.instance..start('https://example.test/');
+      h.recordPage('https://example.test/a', '<html>a</html>');
+      h.recordPage('https://example.test/b', '<html>b</html>');
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      // Simulate the kill landing mid-write.
+      final File journal = File('${tempDir.path}${Platform.pathSeparator}'
+          '${SourceCaptureHandler.journalName}');
+      await journal.writeAsString('${journal.readAsStringSync()}{"kind":"page","url":"htt',
+          flush: true);
+
+      h.clearMemoryOnlyForTests();
+      final int skipped = await h.restoreSession();
+
+      expect(skipped, 1);
+      expect(h.pageCount, 2);
+    });
+
+    test('a page recorded twice restores once, at its latest version', () async {
+      final h = SourceCaptureHandler.instance..start('https://example.test/');
+      h.recordPage('https://example.test/', '<html>first</html>');
+      h.recordPage('https://example.test/', '<html>hydrated</html>');
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      h.clearMemoryOnlyForTests();
+      await h.restoreSession();
+
+      expect(h.pageCount, 1);
+      expect(h.entries.single.body, contains('hydrated'));
+    });
+
+    test('starting a new capture does not inherit the previous one', () async {
+      final h = SourceCaptureHandler.instance..start('https://first.test/');
+      h.recordPage('https://first.test/', '<html>old</html>');
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      h.start('https://second.test/');
+      h.recordPage('https://second.test/', '<html>new</html>');
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      h.clearMemoryOnlyForTests();
+      await h.restoreSession();
+
+      expect(h.target, 'https://second.test/');
+      expect(h.pageCount, 1);
+      expect(h.entries.single.body, contains('new'));
+    });
+
+    test('discarding a capture removes it from disk too', () async {
+      final h = SourceCaptureHandler.instance..start('https://example.test/');
+      h.recordPage('https://example.test/', '<html>x</html>');
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(h.hasRecoverableSession, isTrue);
+
+      h.clear();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(h.hasRecoverableSession, isFalse);
+    });
+
+    test('what lands on disk is already redacted', () async {
+      // The journal is an ordinary file on the device; it must not be the one
+      // place the clearance cookie survives in the clear.
+      final h = SourceCaptureHandler.instance..start('https://example.test/');
+      h.recordPage('https://example.test/', 'cf_clearance=SECRETVALUE123; rest');
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      final File journal = File('${tempDir.path}${Platform.pathSeparator}'
+          '${SourceCaptureHandler.journalName}');
+      expect(journal.readAsStringSync(), isNot(contains('SECRETVALUE123')));
+    });
+
     test('writes a file named after the site', () async {
       final h = SourceCaptureHandler.instance..start('https://hentaipaw.com/');
       h.recordPage('https://hentaipaw.com/', '<html>listing</html>');

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -39,10 +41,36 @@ class _SourceCapturePageState extends State<SourceCapturePage> {
 
   bool busy = false;
 
+  bool recovered = false;
+
   @override
   void initState() {
     super.initState();
+    // A session interrupted by the app being killed is still on disk. Pick it
+    // up before anything else, so a browse that took ten minutes is not lost
+    // to a restart the person never asked for.
+    if (capture.entries.isEmpty && capture.hasRecoverableSession) {
+      unawaited(_recover());
+    }
     urlController.text = capture.target.isEmpty ? 'https://' : capture.target;
+  }
+
+  Future<void> _recover() async {
+    final int skipped = await capture.restoreSession();
+    if (!mounted) return;
+    setState(() {
+      recovered = true;
+      urlController.text = capture.target.isEmpty ? 'https://' : capture.target;
+    });
+    if (capture.entries.isEmpty) return;
+    FlashElements.showSnackbar(
+      context: context,
+      title: Text(
+        'Recovered ${capture.pageCount} pages from an interrupted capture'
+        '${skipped > 0 ? ' ($skipped damaged entries dropped)' : ''}',
+      ),
+      leadingIcon: Symbols.restore_rounded,
+    );
   }
 
   @override
@@ -161,7 +189,8 @@ class _SourceCapturePageState extends State<SourceCapturePage> {
                   'Records what a site actually serves, so a handler can be written for it. '
                   'Open the site below, get past any challenge, then browse a listing, a gallery '
                   'and a reader page. Everything the site sends is written to one file you can share.\n\n'
-                  'Logins and session cookies are stripped from the file before it is written.',
+                  'Logins and session cookies are stripped from the file before it is written. '
+                  'The capture is saved as it goes, so closing the app does not lose it.',
                 ),
               ),
               Padding(

@@ -100,6 +100,7 @@ class SourceCaptureHandler {
     _totalChars = 0;
     _target = target;
     _recording = true;
+    _resetJournal();
     _bump();
   }
 
@@ -113,6 +114,7 @@ class SourceCaptureHandler {
     _seenResources.clear();
     _totalChars = 0;
     _recording = false;
+    _deleteJournal();
     _bump();
   }
 
@@ -121,6 +123,7 @@ class SourceCaptureHandler {
   void _add(CaptureEntry entry) {
     _entries.add(entry);
     _totalChars += entry.size;
+    _appendToJournal(entry);
     _bump();
   }
 
@@ -228,6 +231,164 @@ class SourceCaptureHandler {
   ({String body, int? from}) _cap(String body) {
     if (body.length <= maxBodyChars) return (body: body, from: null);
     return (body: body.substring(0, maxBodyChars), from: body.length);
+  }
+
+  // ── the journal ───────────────────────────────────────────────────────
+  //
+  // A capture is gathered by browsing a heavy site inside a webview, which is
+  // exactly the situation Android reaps an app in. Held only in memory, a
+  // session that took ten minutes to collect would vanish with no indication
+  // why - and the developer-mode flag that reveals this tool is not persisted
+  // either, so the app would come back with neither the capture nor an obvious
+  // way back to it.
+  //
+  // So every entry is appended to a journal as it arrives. Append-only, one
+  // JSON object per line: rewriting a whole 8MB bundle on every page load
+  // would be far too much writing, and a half-written journal costs at most
+  // its last line rather than the whole session.
+
+  static const String journalName = 'source-capture-session.jsonl';
+
+  /// Writes are chained rather than fired off in parallel, so two entries
+  /// arriving together cannot interleave halfway through a line.
+  Future<void> _journalQueue = Future.value();
+
+  File? get _journalFile {
+    try {
+      return File('${SettingsHandler.instance.path}$journalName');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _resetJournal() {
+    final File? file = _journalFile;
+    if (file == null) return;
+    _journalQueue = _journalQueue.then((_) async {
+      try {
+        await file.writeAsString(
+          '${jsonEncode({'target': _target, 'started': DateTime.now().toIso8601String()})}\n',
+          flush: true,
+        );
+      } catch (_) {}
+    });
+  }
+
+  void _appendToJournal(CaptureEntry entry) {
+    final File? file = _journalFile;
+    if (file == null) return;
+    _journalQueue = _journalQueue.then((_) async {
+      try {
+        await file.writeAsString(
+          '${jsonEncode(_entryToJson(entry))}\n',
+          mode: FileMode.append,
+          flush: true,
+        );
+      } catch (_) {}
+    });
+  }
+
+  void _deleteJournal() {
+    final File? file = _journalFile;
+    if (file == null) return;
+    _journalQueue = _journalQueue.then((_) async {
+      try {
+        if (file.existsSync()) await file.delete();
+      } catch (_) {}
+    });
+  }
+
+  /// Drops what is in memory while leaving the journal alone — how the world
+  /// looks after the process is killed. Tests use this to prove a session
+  /// really does come back from disk rather than from a leftover field.
+  @visibleForTesting
+  void clearMemoryOnlyForTests() {
+    _entries.clear();
+    _seenResources.clear();
+    _totalChars = 0;
+    _target = '';
+    _recording = false;
+    _bump();
+  }
+
+  /// True when a previous session is sitting on disk waiting to be picked up.
+  bool get hasRecoverableSession {
+    final File? file = _journalFile;
+    return file != null && file.existsSync() && file.lengthSync() > 0;
+  }
+
+  /// Reads an interrupted session back in. A trailing half-written line is
+  /// dropped rather than failing the whole restore - losing the last page is
+  /// recoverable by revisiting it, losing all of them is not.
+  Future<int> restoreSession() async {
+    final File? file = _journalFile;
+    if (file == null || !file.existsSync()) return 0;
+
+    _entries.clear();
+    _seenResources.clear();
+    _totalChars = 0;
+
+    int skipped = 0;
+    final List<String> lines = await file.readAsLines();
+    for (final line in lines) {
+      if (line.trim().isEmpty) continue;
+      try {
+        final decoded = jsonDecode(line);
+        if (decoded is! Map) continue;
+        if (decoded.containsKey('started')) {
+          _target = decoded['target']?.toString() ?? '';
+          continue;
+        }
+        final CaptureEntry? entry = _entryFromJson(decoded);
+        if (entry == null) continue;
+        if (entry.kind == CaptureKind.resource && !_seenResources.add(entry.url)) continue;
+        // A page recorded more than once replaces its earlier copy, matching
+        // what happened in memory as the page hydrated.
+        if (entry.kind == CaptureKind.page) {
+          final int existing = _entries.indexWhere(
+            (e) => e.kind == CaptureKind.page && e.url == entry.url,
+          );
+          if (existing != -1) {
+            _totalChars -= _entries[existing].size;
+            _entries.removeAt(existing);
+          }
+        }
+        _entries.add(entry);
+        _totalChars += entry.size;
+      } catch (_) {
+        skipped++;
+      }
+    }
+
+    _recording = false;
+    _bump();
+    return skipped;
+  }
+
+  static Map<String, dynamic> _entryToJson(CaptureEntry entry) => {
+    'kind': entry.kind.name,
+    'url': entry.url,
+    'status': ?entry.status,
+    'contentType': ?entry.contentType,
+    'truncatedFrom': ?entry.truncatedFrom,
+    'body': ?entry.body,
+  };
+
+  static CaptureEntry? _entryFromJson(Map json) {
+    final String url = json['url']?.toString() ?? '';
+    if (url.isEmpty) return null;
+    final CaptureKind kind = CaptureKind.values.firstWhere(
+      (k) => k.name == json['kind'],
+      orElse: () => CaptureKind.resource,
+    );
+    return CaptureEntry(
+      kind: kind,
+      url: url,
+      status: (json['status'] as num?)?.toInt(),
+      contentType: json['contentType']?.toString(),
+      body: json['body']?.toString(),
+      truncatedFrom: (json['truncatedFrom'] as num?)?.toInt(),
+    );
   }
 
   // ── redaction ─────────────────────────────────────────────────────────
