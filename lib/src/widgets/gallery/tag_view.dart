@@ -3258,6 +3258,7 @@ class TagContentPreview extends StatefulWidget {
     this.header,
     this.suggestFor,
     this.suggestBoorus,
+    this.showDoujinNewTabButton = true,
     super.key,
   }) : assert(
          boorus.isNotEmpty,
@@ -3301,6 +3302,12 @@ class TagContentPreview extends StatefulWidget {
   // Cross-booru discovery: when set (and longer than one), the facets are
   // spread across these boorus with tag spellings translated per site.
   final List<Booru>? suggestBoorus;
+
+  // Doujin strips replace the booru chip with a lone open-in-new-tab button.
+  // Callers that render that action in their own section header (the detail
+  // page puts it beside the chevron) set this false so the strip doesn't
+  // spend a whole row on it.
+  final bool showDoujinNewTabButton;
 
   @override
   State<TagContentPreview> createState() => _TagContentPreviewState();
@@ -4015,13 +4022,18 @@ class _TagContentPreviewState extends State<TagContentPreview> with AutomaticKee
                         // chip is noise there — keep just the open-in-new-tab
                         // button, rehomed to the strip's corner.
                         if (tab!.booruHandler.hasReader)
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(8, 0, 8, 0),
-                            child: Align(
-                              alignment: Alignment.centerRight,
-                              child: _buildDoujinStripNewTabButton(context),
-                            ),
-                          )
+                          // ...unless the host renders it in its own header
+                          // (see showDoujinNewTabButton), in which case the
+                          // strip adds no vertical space at all here.
+                          widget.showDoujinNewTabButton
+                              ? Padding(
+                                  padding: const EdgeInsets.fromLTRB(8, 0, 8, 0),
+                                  child: Align(
+                                    alignment: Alignment.centerRight,
+                                    child: _buildDoujinStripNewTabButton(context),
+                                  ),
+                                )
+                              : const SizedBox.shrink()
                         else
                           Padding(
                             padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),

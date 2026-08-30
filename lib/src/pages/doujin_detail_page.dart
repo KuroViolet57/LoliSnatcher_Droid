@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import 'package:intl/intl.dart';
@@ -56,6 +58,41 @@ class DoujinDetailPage extends StatefulWidget {
   /// the screen so it doesn't fight Android gesture nav.
   final bool asTab;
 
+  /// Share of the viewport the big cover may occupy at most. A portrait cover
+  /// at its natural ratio is nearly twice as tall as it is wide, which pushed
+  /// the title, action row and tags entirely below the fold.
+  static const double maxCoverViewportFraction = 0.5;
+
+  /// Horizontal padding either side of the big cover.
+  static const double coverSidePadding = 14;
+
+  /// The big cover's box for a given viewport and source image: full width,
+  /// and the cover's natural height at that width capped to
+  /// [maxCoverViewportFraction] of the viewport. `capped` says whether the
+  /// natural height was cut - i.e. whether the image has to crop or letterbox
+  /// rather than sit at its own size.
+  @visibleForTesting
+  static ({double width, double height, bool capped}) bigCoverBox({
+    required Size screen,
+    double? imageWidth,
+    double? imageHeight,
+  }) {
+    // The cover's own aspect ratio when known; a typical doujin cover shape
+    // otherwise.
+    final double aspect = (imageWidth != null && imageHeight != null && imageHeight > 0)
+        ? (imageWidth / imageHeight).clamp(0.5, 1.5)
+        : 0.7;
+
+    final double width = screen.width - coverSidePadding * 2;
+    final double naturalHeight = width / aspect;
+    final double maxHeight = screen.height * maxCoverViewportFraction;
+    return (
+      width: width,
+      height: math.min(naturalHeight, maxHeight),
+      capped: naturalHeight > maxHeight,
+    );
+  }
+
   @override
   State<DoujinDetailPage> createState() => _DoujinDetailPageState();
 }
@@ -70,6 +107,8 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
 
   bool _loading = true;
   String? _loadError;
+  // Per-strip expansion state, so the header's own chevron reflects it.
+  final Map<String, bool> _stripExpanded = {};
   final TextEditingController _tagFilter = TextEditingController();
 
   @override
@@ -277,25 +316,37 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
   }
 
   Widget _bigCoverHeader(BuildContext context) {
-    // The cover's own aspect ratio when known; a typical doujin cover shape
-    // otherwise. Height-capped so extreme covers can't fill the screen.
-    final double aspect = (item.fileWidth != null && item.fileHeight != null && item.fileHeight! > 0)
-        ? (item.fileWidth! / item.fileHeight!).clamp(0.5, 1.5)
-        : 0.7;
+    const double sidePadding = DoujinDetailPage.coverSidePadding;
+    final box = DoujinDetailPage.bigCoverBox(
+      screen: MediaQuery.sizeOf(context),
+      imageWidth: item.fileWidth,
+      imageHeight: item.fileHeight,
+    );
+    final double height = box.height;
+
+    // Past the cap the cover is cropped or letterboxed rather than squashed:
+    // 'fit' keeps the whole cover visible (bars at the sides), the other
+    // modes fill the box and crop the overflow.
+    final String coverDisplay = SourceSettingsHandler.instance.coverDisplay(booru);
+    final BoxFit fit = box.capped && coverDisplay != 'fit' ? BoxFit.cover : BoxFit.contain;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.55),
-            child: Center(
-              child: AspectRatio(
-                aspectRatio: aspect,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Thumbnail(item: item, booru: booru, isStandalone: true, useHero: false),
-                ),
+          padding: const EdgeInsets.fromLTRB(sidePadding, 10, sidePadding, 0),
+          child: SizedBox(
+            key: const Key('doujin-big-cover'),
+            width: double.infinity,
+            height: height,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Thumbnail(
+                item: item,
+                booru: booru,
+                isStandalone: true,
+                useHero: false,
+                fitOverride: fit,
               ),
             ),
           ),
@@ -473,12 +524,52 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
     );
   }
 
+  /// Opens a strip's query as its own tab, honouring the source's new-tab
+  /// placement setting like every other doujin new-tab action.
+  void _openStripInNewTab(String query) {
+    final String placement = SourceSettingsHandler.instance.tabPlacement(booru);
+    searchHandler.addTabByString(
+      query,
+      customBooru: booru,
+      addMode: placement == 'next' ? TabAddMode.next : TabAddMode.end,
+      switchToNew: false,
+    );
+    FlashElements.showSnackbar(
+      context: context,
+      title: const Text('Added new tab', style: TextStyle(fontSize: 18)),
+      content: Text(query, style: const TextStyle(fontSize: 14)),
+      duration: const Duration(seconds: 2),
+      leadingIcon: Symbols.fiber_new_rounded,
+      sideColor: Colors.green,
+    );
+  }
+
   Widget _strip(BuildContext context, {required String title, required String query, required bool expanded, required String compactTitle}) {
+    // The open-in-new-tab action sits in the header next to the chevron
+    // rather than in a full-width row of its own inside the strip, which
+    // cost a whole row of screen for one button. A custom `trailing`
+    // replaces ExpansionTile's chevron, so the chevron is drawn here too and
+    // follows the tile's expansion state.
+    final bool isExpanded = _stripExpanded[title] ?? expanded;
     return ExpansionTile(
       title: Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900)),
       initiallyExpanded: expanded,
       shape: const Border(),
       collapsedShape: const Border(),
+      onExpansionChanged: (v) => setState(() => _stripExpanded[title] = v),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            key: ValueKey('strip-new-tab-$title'),
+            tooltip: 'Open in a new tab',
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Symbols.fiber_new_rounded),
+            onPressed: () => _openStripInNewTab(query),
+          ),
+          Icon(isExpanded ? Symbols.expand_less_rounded : Symbols.expand_more_rounded),
+        ],
+      ),
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -489,6 +580,8 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
             parentTab: widget.tab,
             compact: true,
             compactTitle: compactTitle,
+            // rendered in the header above instead
+            showDoujinNewTabButton: false,
           ),
         ),
       ],
