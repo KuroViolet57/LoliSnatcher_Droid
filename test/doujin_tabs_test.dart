@@ -212,11 +212,7 @@ void main() {
   });
 
   group('mini tab manager', () {
-    testWidgets('lists tabs, filters, and closes them', (tester) async {
-      SearchHandler.instance.tabs.add(doujinTab('1001', 'Sidebar Doujin'));
-      SearchHandler.instance.tabs.add(SearchTab(gelbooruBooru(), null, 'landscape'));
-      SearchHandler.instance.changeTabIndex(0);
-
+    Future<void> pumpManager(WidgetTester tester) async {
       await tester.pumpWidget(
         TranslationProvider(
           child: MaterialApp(
@@ -226,22 +222,92 @@ void main() {
         ),
       );
       await tester.pump(const Duration(milliseconds: 300));
+    }
 
-      // both tabs listed — the doujin one by TITLE
+    testWidgets('defaults to the DOUJIN view when opened from a doujin tab, and switches views', (tester) async {
+      SearchHandler.instance.tabs.add(doujinTab('1001', 'Sidebar Doujin'));
+      SearchHandler.instance.tabs.add(SearchTab(gelbooruBooru(), null, 'landscape'));
+      SearchHandler.instance.changeTabIndex(0);
+
+      await pumpManager(tester);
+
+      // Opened from a doujin tab: booru tabs are not in the way.
       expect(find.textContaining('Sidebar Doujin'), findsOneWidget);
-      expect(find.textContaining('landscape'), findsOneWidget);
+      expect(find.textContaining('landscape'), findsNothing);
 
-      // filter narrows the list
-      await tester.enterText(find.byType(TextField), 'landscape');
+      // Manual switch to the booru view.
+      await tester.tap(find.text('Boorus'));
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.textContaining('Sidebar Doujin'), findsNothing);
-      expect(find.textContaining('landscape'), findsWidgets);
+      expect(find.textContaining('landscape'), findsOneWidget);
+
+      // ...and to everything.
+      await tester.tap(find.text('All'));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.textContaining('Sidebar Doujin'), findsOneWidget);
+      expect(find.textContaining('landscape'), findsOneWidget);
+    });
+
+    testWidgets('filters and closes tabs', (tester) async {
+      SearchHandler.instance.tabs.add(doujinTab('1001', 'Sidebar Doujin'));
+      SearchHandler.instance.tabs.add(doujinTab('1002', 'Second Doujin'));
+      SearchHandler.instance.changeTabIndex(0);
+
+      await pumpManager(tester);
+      expect(find.textContaining('Sidebar Doujin'), findsOneWidget);
+      expect(find.textContaining('Second Doujin'), findsOneWidget);
+
+      // filter narrows the list — doujin tabs match on their TITLE
+      await tester.enterText(find.byType(TextField), 'second');
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.textContaining('Sidebar Doujin'), findsNothing);
+      expect(find.textContaining('Second Doujin'), findsOneWidget);
 
       // close the remaining tab
       await tester.tap(find.byTooltip('Close tab'));
       await tester.pump(const Duration(milliseconds: 300));
       expect(SearchHandler.instance.tabs.length, 1);
       expect(SearchHandler.instance.tabs.first.tags.trim(), 'id:1001');
+    });
+
+    testWidgets('highlights the CURRENT tab', (tester) async {
+      SearchHandler.instance.tabs.add(doujinTab('1001', 'First Doujin'));
+      SearchHandler.instance.tabs.add(doujinTab('1002', 'Second Doujin'));
+      SearchHandler.instance.changeTabIndex(1);
+
+      await pumpManager(tester);
+
+      // The current row is the one carrying a non-transparent Material.
+      final highlighted = tester
+          .widgetList<Material>(find.byType(Material))
+          .where((m) => m.color != null && m.color != Colors.transparent)
+          .toList();
+      expect(highlighted, isNotEmpty);
+    });
+
+    testWidgets('creates a new tab from the sidebar', (tester) async {
+      SearchHandler.instance.tabs.add(doujinTab('1001', 'Sidebar Doujin'));
+      SearchHandler.instance.changeTabIndex(0);
+
+      await pumpManager(tester);
+      expect(SearchHandler.instance.tabs.length, 1);
+
+      await tester.tap(find.byKey(const Key('mini-manager-new-tab')));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(SearchHandler.instance.tabs.length, 2);
+    });
+
+    testWidgets('offers reorder handles on the unfiltered list only', (tester) async {
+      SearchHandler.instance.tabs.add(doujinTab('1001', 'First Doujin'));
+      SearchHandler.instance.tabs.add(doujinTab('1002', 'Second Doujin'));
+      SearchHandler.instance.changeTabIndex(0);
+
+      await pumpManager(tester);
+      expect(find.byType(ReorderableDragStartListener), findsNWidgets(2));
+
+      await tester.enterText(find.byType(TextField), 'second');
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.byType(ReorderableDragStartListener), findsNothing);
     });
   });
 }
