@@ -122,7 +122,7 @@ void main() {
       expect(FaviconLetterTile.letterFor('Kuro', 'hitomi.la'), 'K');
     });
 
-    test('www is skipped so the letter is the site\'s own initial', () {
+    test("www is skipped so the letter is the site's own initial", () {
       expect(FaviconLetterTile.letterFor(null, 'www.eahentai.com'), 'E');
     });
 
