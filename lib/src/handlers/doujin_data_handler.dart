@@ -9,6 +9,7 @@ import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
+import 'package:lolisnatcher/src/handlers/drawer_refresh.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 
@@ -346,6 +347,9 @@ class DoujinDataHandler {
   }
 
   void save() {
+    // Every doujin mutation lands here, so it is also the one place that can
+    // tell the drawers their counts just changed.
+    DrawerRefresh.request();
     try {
       _file.writeAsStringSync(jsonEncode(exportJson()));
     } catch (e, s) {

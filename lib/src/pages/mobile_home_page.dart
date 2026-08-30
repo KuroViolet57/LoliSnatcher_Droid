@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 
 import 'package:get/get.dart' hide ContextExt, FirstWhereOrNullExt;
 
+import 'package:lolisnatcher/src/handlers/drawer_refresh.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/utils/extensions.dart';
@@ -133,6 +134,9 @@ class _MobileHomeState extends State<MobileHome> {
 
           innerDrawerCallback: (bool isOpen, InnerDrawerDirection? direction) {
             isDrawerOpened = isOpen;
+            // Opening a drawer is the moment its cached counts/pins must be
+            // current — they are not observable, so they are re-read here.
+            if (isOpen) DrawerRefresh.request();
           }, // return  true (open) or false (close)
 
           leftChild: RepaintBoundary(

@@ -7,6 +7,7 @@ import 'package:get/get.dart' hide ContextExt, FirstWhereOrNullExt;
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/pinned_tag.dart';
 import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
+import 'package:lolisnatcher/src/handlers/drawer_refresh.dart';
 import 'package:lolisnatcher/src/handlers/followed_artists_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
@@ -45,17 +46,25 @@ class _DrawerQuickAccessState extends State<DrawerQuickAccess> {
   int _historyCount = 0;
   Worker? _tabWorker;
 
+  void _onRefreshRequested() => _load();
+
   @override
   void initState() {
     super.initState();
     _load();
     // Re-scope the pinned list when the active tab (and so the booru) changes.
     _tabWorker = ever(searchHandler.index, (_) => _load());
+    // ...and re-read whenever anything says the drawer content may be stale:
+    // the drawer being opened, a page opened from it closing again, or a
+    // doujin-store write. These counts come from async DB queries, so they
+    // can't observe their source directly.
+    DrawerRefresh.tick.addListener(_onRefreshRequested);
   }
 
   @override
   void dispose() {
     _tabWorker?.dispose();
+    DrawerRefresh.tick.removeListener(_onRefreshRequested);
     super.dispose();
   }
 
@@ -131,9 +140,12 @@ class _DrawerQuickAccessState extends State<DrawerQuickAccess> {
     widget.toggleDrawer();
   }
 
-  void _openPage(Widget page) {
+  Future<void> _openPage(Widget page) async {
     widget.toggleDrawer();
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
+    // Whatever the user did in there (deleted favourites, pinned a tag)
+    // changed what this drawer shows.
+    if (mounted) await _load();
   }
 
   Booru? _virtual(bool Function(dynamic) test) {
