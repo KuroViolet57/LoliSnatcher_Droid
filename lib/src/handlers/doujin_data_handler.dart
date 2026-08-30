@@ -224,14 +224,20 @@ class DoujinDataHandler {
 
   static const int historyCap = 1000;
 
-  /// The doujin source types. Extend when new doujin engines land.
-  static bool isDoujinBooru(Booru? booru) => booru?.type == BooruType.NHentai;
+  /// The doujin source types. Extend when new doujin engines land - adding a
+  /// type here is what hands a new source the whole doujin system:
+  /// favourites, collections, history, follows, saved searches, pins, the
+  /// per-source blacklist and settings, backup coverage, doujin tabs and the
+  /// tag-star store all key off this.
+  static const Set<BooruType> doujinTypes = {BooruType.NHentai, BooruType.NiyaNiya};
+
+  static bool isDoujinBooru(Booru? booru) => booru?.type != null && doujinTypes.contains(booru!.type);
 
   static String hostOf(Booru? booru) => Uri.tryParse(booru?.baseURL ?? '')?.host ?? (booru?.name ?? '');
 
   /// Hosts that are always doujin, even without a matching config — keeps
   /// item-level attribution working after a source is renamed/removed.
-  static const Set<String> knownDoujinHosts = {'nhentai.net'};
+  static const Set<String> knownDoujinHosts = {'nhentai.net', 'niyaniya.moe'};
 
   /// ITEM-level doujin check, for mixed feeds (merge tabs, floating
   /// previews): a doujin item is recognized by its post URL host no matter

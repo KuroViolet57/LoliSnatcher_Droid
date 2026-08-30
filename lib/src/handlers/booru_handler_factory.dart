@@ -35,6 +35,7 @@ import 'package:lolisnatcher/src/boorus/worldxyz_handler.dart';
 import 'package:lolisnatcher/src/boorus/civitai_handler.dart';
 import 'package:lolisnatcher/src/boorus/xxxfollow_handler.dart';
 import 'package:lolisnatcher/src/boorus/hanime1_handler.dart';
+import 'package:lolisnatcher/src/boorus/doujin/schale_handler.dart';
 import 'package:lolisnatcher/src/boorus/nhentai_handler.dart';
 import 'package:lolisnatcher/src/boorus/kusowanka_handler.dart';
 import 'package:lolisnatcher/src/boorus/tikporn_handler.dart';
@@ -191,6 +192,10 @@ class BooruHandlerFactory {
           // 1-based &page=N; default pageNum of -1 makes the first fetch
           // page 1.
           booruHandler = NHentaiHandler(booru, limit);
+          break;
+        case BooruType.NiyaNiya:
+          // 1-based ?page=N, same as the other doujin sources.
+          booruHandler = SchaleHandler(booru, limit);
           break;
         case BooruType.Kusowanka:
           // 1-based ?page=N; the default pageNum of -1 makes the first
