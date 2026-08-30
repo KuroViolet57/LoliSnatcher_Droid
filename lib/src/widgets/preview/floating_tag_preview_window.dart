@@ -874,9 +874,7 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
     // not be switchable to a booru (and vice versa) — the two have different
     // tag vocabularies and are separate systems, the same rule the
     // "find this post elsewhere" candidates follow.
-    if (DoujinDataHandler.isDoujinBooru(b) != DoujinDataHandler.isDoujinBooru(widget.entry.booru)) {
-      return false;
-    }
+    if (!DoujinDataHandler.sameDomain(b, widget.entry.booru)) return false;
     final String q = booruFilterController.text.trim().toLowerCase();
     if (q.isEmpty) return true;
     return (b.name?.toLowerCase().contains(q) ?? false) || (b.type?.name.toLowerCase().contains(q) ?? false);

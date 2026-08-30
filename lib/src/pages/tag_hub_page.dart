@@ -87,7 +87,7 @@ class _TagHubPageState extends State<TagHubPage> {
             !b.type!.isLocalDb &&
             !b.type!.isForYou &&
             !b.type!.isMerge &&
-            DoujinDataHandler.isDoujinBooru(b) == _isDoujinOrigin,
+            DoujinDataHandler.sameDomain(b, widget.originBooru),
       )
       .toList();
 

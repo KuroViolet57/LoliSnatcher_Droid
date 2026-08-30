@@ -246,6 +246,13 @@ class DoujinDataHandler {
     return false;
   }
 
+  /// Whether two sources belong to the SAME domain - both doujin, or both
+  /// booru. Cross-domain source switching (the tag preview window's picker,
+  /// the tag hub's strips, the find-elsewhere candidates) is filtered through
+  /// this: the two worlds have different tag vocabularies and are separate
+  /// systems, so offering one from the other is never useful.
+  static bool sameDomain(Booru? a, Booru? b) => isDoujinBooru(a) == isDoujinBooru(b);
+
   /// The configured doujin booru an item belongs to (by post URL host), or
   /// null when none matches.
   static Booru? doujinBooruForItem(BooruItem item) {
