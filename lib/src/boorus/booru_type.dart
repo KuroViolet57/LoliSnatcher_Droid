@@ -20,6 +20,7 @@ enum BooruType {
   Moebooru,
   AsmHentai,
   EaHentai,
+  Faccina,
   NHentai,
   NiyaNiya,
   Nozomi,
@@ -97,6 +98,9 @@ enum BooruType {
       ..remove(BooruType.AsmHentai)
       // ...and so does eahentai.
       ..remove(BooruType.EaHentai)
+      // faccina is self-hosted: the URL matters, but it is not detectable by
+      // probing, so it is only ever picked deliberately.
+      ..remove(BooruType.Faccina)
       // xxxtik has a fixed API host; only pick it deliberately.
       ..remove(BooruType.XXXTik)
       // xxxfollow has a fixed API host; only pick it deliberately.
@@ -149,6 +153,8 @@ enum BooruType {
         return 'ASMHentai';
       case EaHentai:
         return 'EAHentai';
+      case Faccina:
+        return 'Faccina (hentalk.pw)';
       case TikPorn:
         return 'Tik.Porn';
       case XXXTik:
@@ -186,6 +192,7 @@ enum BooruType {
   bool get isNiyaNiya => this == BooruType.NiyaNiya;
   bool get isAsmHentai => this == BooruType.AsmHentai;
   bool get isEaHentai => this == BooruType.EaHentai;
+  bool get isFaccina => this == BooruType.Faccina;
   bool get isTikPorn => this == BooruType.TikPorn;
   bool get isXXXTik => this == BooruType.XXXTik;
   bool get isXXXFollow => this == BooruType.XXXFollow;

@@ -234,6 +234,7 @@ class DoujinDataHandler {
     BooruType.NiyaNiya,
     BooruType.AsmHentai,
     BooruType.EaHentai,
+    BooruType.Faccina,
   };
 
   static bool isDoujinBooru(Booru? booru) => booru?.type != null && doujinTypes.contains(booru!.type);
@@ -242,7 +243,7 @@ class DoujinDataHandler {
 
   /// Hosts that are always doujin, even without a matching config — keeps
   /// item-level attribution working after a source is renamed/removed.
-  static const Set<String> knownDoujinHosts = {'nhentai.net', 'niyaniya.moe', 'asmhentai.com', 'eahentai.com'};
+  static const Set<String> knownDoujinHosts = {'nhentai.net', 'niyaniya.moe', 'asmhentai.com', 'eahentai.com', 'hentalk.pw'};
 
   /// ITEM-level doujin check, for mixed feeds (merge tabs, floating
   /// previews): a doujin item is recognized by its post URL host no matter
