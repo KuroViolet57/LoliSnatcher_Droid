@@ -30,6 +30,7 @@ import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/followed_artists_handler.dart';
+import 'package:lolisnatcher/src/handlers/search_history_store.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/tag_handler.dart';
 import 'package:lolisnatcher/src/utils/extensions.dart';
@@ -310,8 +311,10 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
                 setState(() {});
               }
 
+              // Through the HANDLER, so handlers that don't feed the shared
+              // booru tag store (doujin sources) don't re-type booru tags.
               for (final tag in suggestedTags.where((t) => !t.type.isNone)) {
-                unawaited(tagHandler.addTagsWithType([tag.tag], tag.type));
+                handler.addTagsWithType([tag.tag], tag.type);
               }
             },
           );
@@ -329,7 +332,7 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
               .toList();
 
           final historySearch =
-              (await settingsHandler.dbHandler.getSearchHistoryByInput(suggestionTextControllerCleanedInput, 10))
+              (await SearchHistoryStore.byInput(suggestionTextControllerCleanedInput, 10))
                   .map((tag) {
                     return TagSuggestion(
                       tag: tag,
@@ -1818,7 +1821,7 @@ class _HistoryBlockState extends State<HistoryBlock> {
   Future<void> init() async {
     loading = true;
     setState(() {});
-    history = await settingsHandler.dbHandler.getLatestSearchHistory();
+    history = await SearchHistoryStore.latest();
     loading = false;
     if (mounted) {
       setState(() {});
@@ -2309,7 +2312,7 @@ class _PopularTagsBlockState extends State<PopularTagsBlock> {
         if (mounted) setState(() {});
 
         for (final tag in popularTags.where((t) => !t.type.isNone)) {
-          unawaited(tagHandler.addTagsWithType([tag.tag], tag.type));
+          searchHandler.currentBooruHandler.addTagsWithType([tag.tag], tag.type);
         }
       },
     );

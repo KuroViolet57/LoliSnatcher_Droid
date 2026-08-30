@@ -15,6 +15,7 @@ import 'package:lolisnatcher/src/data/history_item.dart';
 import 'package:lolisnatcher/src/data/pinned_tag.dart';
 import 'package:lolisnatcher/src/data/saved_search.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 
@@ -324,6 +325,12 @@ class DBHandler {
     );
     String? itemID = await getItemID(item.postURL);
     String resultStr = '';
+    // Doujin favourites live in the doujin store, never in store.db — a
+    // snatched doujin must not surface in the booru Favourites feed, and its
+    // tags must not seed the booru DB autocomplete. isSnatched IS shared
+    // (downloads are one system), so the row itself still gets written.
+    final bool isDoujin = DoujinDataHandler.isDoujinItem(item);
+    final int favouriteFlag = Tools.boolToInt(!isDoujin && item.isFavourite.value == true);
     if (itemID == null || itemID.isEmpty) {
       final result = await db?.rawInsert(
         'INSERT INTO BooruItem(thumbnailURL, sampleURL, fileURL, postURL, mediaType, isSnatched, isFavourite) VALUES(?,?,?,?,?,?,?)',
@@ -334,16 +341,18 @@ class DBHandler {
           item.postURL,
           item.mediaType.toJson(),
           Tools.boolToInt(item.isSnatched.value == true),
-          Tools.boolToInt(item.isFavourite.value == true),
+          favouriteFlag,
         ],
       );
       itemID = result?.toString();
-      await updateTags(item.tagsList.map((t) => t.fullString).toList(), itemID);
+      if (!isDoujin) {
+        await updateTags(item.tagsList.map((t) => t.fullString).toList(), itemID);
+      }
       resultStr = 'Inserted';
     } else if (mode == BooruUpdateMode.local) {
       await db?.rawUpdate(
         'UPDATE BooruItem SET isSnatched = ?, isFavourite = ? WHERE id = ?',
-        [Tools.boolToInt(item.isSnatched.value == true), Tools.boolToInt(item.isFavourite.value == true), itemID],
+        [Tools.boolToInt(item.isSnatched.value == true), favouriteFlag, itemID],
       );
       resultStr = 'Updated';
     } else if (mode == BooruUpdateMode.urlUpdate) {
@@ -373,6 +382,11 @@ class DBHandler {
       final int itemIndex = items.indexWhere((element) => element.postURL == item.postURL);
       String? itemID = (itemIDs.isNotEmpty && itemIndex != -1) ? itemIDs[itemIndex] : null;
 
+      // Same domain rule as updateBooruItem: doujin favourites and tags never
+      // reach store.db.
+      final bool isDoujin = DoujinDataHandler.isDoujinItem(item);
+      final int favouriteFlag = Tools.boolToInt(!isDoujin && item.isFavourite.value == true);
+
       if (itemID == null || itemID.isEmpty) {
         final result = await db?.rawInsert(
           'INSERT INTO BooruItem(thumbnailURL, sampleURL, fileURL, postURL, mediaType, isSnatched, isFavourite) VALUES(?,?,?,?,?,?,?)',
@@ -383,16 +397,18 @@ class DBHandler {
             item.postURL,
             item.mediaType.toJson(),
             Tools.boolToInt(item.isSnatched.value == true),
-            Tools.boolToInt(item.isFavourite.value == true),
+            favouriteFlag,
           ],
         );
         itemID = result?.toString();
-        await updateTags(item.tagsList.map((t) => t.fullString).toList(), itemID);
+        if (!isDoujin) {
+          await updateTags(item.tagsList.map((t) => t.fullString).toList(), itemID);
+        }
         saved++;
       } else if (mode == BooruUpdateMode.local) {
         await db?.rawUpdate(
           'UPDATE BooruItem SET isSnatched = ?, isFavourite = ? WHERE id = ?',
-          [Tools.boolToInt(item.isSnatched.value == true), Tools.boolToInt(item.isFavourite.value == true), itemID],
+          [Tools.boolToInt(item.isSnatched.value == true), favouriteFlag, itemID],
         );
       } else if (mode == BooruUpdateMode.urlUpdate) {
         await db?.rawUpdate(

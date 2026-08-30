@@ -10,6 +10,7 @@ import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/suggestion_engine.dart';
 import 'package:lolisnatcher/src/widgets/gallery/tag_view.dart';
@@ -245,8 +246,14 @@ class _FindElsewhereSheetState extends State<_FindElsewhereSheet> {
     };
     final String? sourceHost = Uri.tryParse(widget.sourceBooru?.baseURL ?? '')?.host;
     final String? postHost = Uri.tryParse(widget.original.postURL)?.host;
+    // Candidates stay inside the source item's DOMAIN: a booru post is never
+    // looked up on a doujin source and vice versa. The two worlds have
+    // different tag vocabularies and are separate systems by design.
+    final bool sourceIsDoujin =
+        DoujinDataHandler.isDoujinBooru(widget.sourceBooru) || DoujinDataHandler.isDoujinItem(widget.original);
     return SettingsHandler.instance.booruList.where((b) {
       if (b.type == null || virtualTypes.contains(b.type)) return false;
+      if (DoujinDataHandler.isDoujinBooru(b) != sourceIsDoujin) return false;
       final String? host = Uri.tryParse(b.baseURL ?? '')?.host;
       if (host != null && host.isNotEmpty && (host == sourceHost || host == postHost)) return false;
       return true;

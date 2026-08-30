@@ -17,6 +17,7 @@ import 'package:lolisnatcher/src/data/tag_suggestion.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
+import 'package:lolisnatcher/src/handlers/search_history_store.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/tag_handler.dart';
 import 'package:lolisnatcher/src/utils/extensions.dart';
@@ -187,7 +188,7 @@ class QueryEditorController {
               onUpdate();
 
               for (final tag in suggestedTags.where((t) => !t.type.isNone)) {
-                unawaited(tagHandler.addTagsWithType([tag.tag], tag.type));
+                handler.addTagsWithType([tag.tag], tag.type);
               }
             },
           );
@@ -203,7 +204,7 @@ class QueryEditorController {
           }).toList();
 
           final historySearch =
-              (await settingsHandler.dbHandler.getSearchHistoryByInput(suggestionTextControllerRawInput, 10))
+              (await SearchHistoryStore.byInput(suggestionTextControllerRawInput, 10))
                   .map((tag) {
                     return TagSuggestion(
                       tag: tag,

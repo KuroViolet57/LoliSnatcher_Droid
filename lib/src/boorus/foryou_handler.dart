@@ -6,6 +6,7 @@ import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/meta_tag.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/interests_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -183,6 +184,9 @@ class ForYouHandler extends BooruHandler {
         final t = b.type;
         if (t == null) continue;
         if (t.isLocalDb || t.isMerge || t.isWebView || t.isForYou) continue;
+        // Doujin sources never feed the booru taste engine — For You is a
+        // booru system and must not query nhentai or blend its covers in.
+        if (DoujinDataHandler.isDoujinBooru(b)) continue;
         if ((b.baseURL ?? '').isEmpty && !t.isRedGifs && !t.isRule34Dev) continue;
         _sources.add(b);
         if (_sources.length >= _maxSources) break;

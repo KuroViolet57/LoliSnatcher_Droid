@@ -134,10 +134,21 @@ class _TagViewState extends State<TagView> {
   /// silently dropped corrections for any tag the global store had never
   /// heard of — so re-typing such a tag recoloured the chip but left it
   /// sitting in the General group until the whole view was rebuilt.
+  /// True when this info panel belongs to a DOUJIN item/source. Booru-only
+  /// discovery tools (cross-BOORU "find elsewhere", For You seeding) are not
+  /// offered there: they would send doujin data to booru APIs and pull booru
+  /// results onto a doujin surface. Doujin sources have their own
+  /// Related/Recommended sections on the detail page.
+  bool get isDoujinContext =>
+      (possibleBooruHandler ?? handler).hasReader || DoujinDataHandler.isDoujinItem(item);
+
   TagType typeOfTag(Tag tag) {
     final TagType? mine = BooruTagStore.manualType(tag.fullString, tagBooru);
     if (mine != null) return mine;
-    if (tagHandler.hasTag(tag.fullString)) {
+    // The shared TagHandler map is a BOORU store: on a doujin source the tag
+    // already carries the site's own type, and reading the booru map here
+    // recoloured doujin chips with a booru's classification of the same name.
+    if (!DoujinDataHandler.isDoujinBooru(tagBooru) && tagHandler.hasTag(tag.fullString)) {
       final TagType stored = tagHandler.getTag(tag.fullString).tagType;
       if (stored != TagType.none) return stored;
     }
@@ -2008,8 +2019,10 @@ class _TagViewState extends State<TagView> {
                   ),
                 //
                 // Cross-booru lookup: pivot on the post's artist/character
-                // tag to find related content on the other boorus.
-                ListTile(
+                // tag to find related content on the other boorus. Booru-only
+                // (see isDoujinContext).
+                if (!isDoujinContext)
+                  ListTile(
                     dense: true,
                     minVerticalPadding: 0,
                     leading: Icon(Symbols.travel_explore_rounded, size: 20, color: Theme.of(context).colorScheme.secondary),
@@ -2151,7 +2164,9 @@ class _TagViewState extends State<TagView> {
                   },
                 ),
                 notesButton(),
-                if (settingsHandler.dbEnabled)
+                // For You is the BOORU taste system — never seeded from a
+                // doujin item.
+                if (settingsHandler.dbEnabled && !isDoujinContext)
                   Builder(
                     builder: (context) {
                       final List<String> seeds = InterestsHandler.seedTagsFromItem(item, limit: 3);
@@ -2853,11 +2868,35 @@ Future<String?> pickTabGroupName(
 
 /// Bottom sheet to open [tag] as a background tab inside a tab group:
 /// pick an existing group or name a new one on the spot.
+/// Domain-correct "is this tag blacklisted / starred" for a bare tag STRING
+/// on the source that [handler] belongs to. Doujin sources read the doujin
+/// blacklist and the doujin star store; boorus read the global blacklist and
+/// markedTags. Used where only a tag name is available (no item to run
+/// parseTagsListForItem on).
+bool tagHiddenForHandler(String tag, BooruHandler handler) {
+  if (DoujinDataHandler.isDoujinBooru(handler.booru)) {
+    return SourceSettingsHandler.instance
+        .tagBlacklist(handler.booru)
+        .contains(DoujinDataHandler.normalizeTag(tag));
+  }
+  return SettingsHandler.instance.hiddenTags.contains(tag);
+}
+
+bool tagMarkedForHandler(String tag, BooruHandler handler) {
+  if (DoujinDataHandler.isDoujinBooru(handler.booru)) {
+    return DoujinDataHandler.instance.isTagStarred(tag);
+  }
+  return SettingsHandler.instance.markedTags.contains(tag);
+}
+
 Future<void> showOpenTagInGroupSheet(
   BuildContext context,
   String tag,
-  Booru booru,
-) async {
+  Booru booru, {
+  // When opening a DOUJIN ITEM (not a tag search) into a group, its identity
+  // makes the new tab a real detail-page tab.
+  BooruItem? doujinItem,
+}) async {
   final String? choice = await pickTabGroupName(
     context,
     title: 'Open "${tag.replaceAll('_', ' ')}" in group',
@@ -2882,6 +2921,9 @@ Future<void> showOpenTagInGroupSheet(
     // current group's block. New groups honour the placement setting.
     group: groupName,
     switchToNew: false,
+    doujinPostURL: doujinItem?.postURL,
+    doujinTitle: doujinItem == null ? null : DoujinDataHandler.titleOf(doujinItem),
+    doujinThumb: doujinItem?.thumbnailURL,
   );
 
   FlashElements.showSnackbar(
@@ -4173,7 +4215,6 @@ class _TagPreviewsListDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     final viewerHandler = ViewerHandler.instance;
     final searchHandler = SearchHandler.instance;
-    final settingsHandler = SettingsHandler.instance;
 
     final list = viewerHandler.tagPreviewsHistory[tabId] ?? [];
     final controllers = List.generate(list.length, (_) => ScrollController());
@@ -4266,8 +4307,8 @@ class _TagPreviewsListDialog extends StatelessWidget {
                                               context: context,
                                               tag: tag,
                                               handler: searchHandler.currentBooruHandler,
-                                              isHidden: settingsHandler.hiddenTags.contains(tag),
-                                              isMarked: settingsHandler.markedTags.contains(tag),
+                                              isHidden: tagHiddenForHandler(tag, searchHandler.currentBooruHandler),
+                                              isMarked: tagMarkedForHandler(tag, searchHandler.currentBooruHandler),
                                               isInSearch:
                                                   searchHandler.searchTextController.text
                                                       .toLowerCase()
@@ -4329,8 +4370,8 @@ class _TagPreviewsListDialog extends StatelessWidget {
                                                       context: context,
                                                       tag: tag,
                                                       handler: searchHandler.currentBooruHandler,
-                                                      isHidden: settingsHandler.hiddenTags.contains(tag),
-                                                      isMarked: settingsHandler.markedTags.contains(tag),
+                                                      isHidden: tagHiddenForHandler(tag, searchHandler.currentBooruHandler),
+                                                      isMarked: tagMarkedForHandler(tag, searchHandler.currentBooruHandler),
                                                       isInSearch:
                                                           searchHandler.searchTextController.text
                                                               .toLowerCase()

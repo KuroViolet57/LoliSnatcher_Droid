@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 
 import 'package:material_symbols_icons/symbols.dart';
 
+import 'package:lolisnatcher/src/data/booru.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -130,10 +132,12 @@ class _FlowSearchBarState extends State<FlowSearchBar> {
     final bool isExclude = tag.startsWith('-');
     final bool isOr = tag.startsWith('~');
     final String bare = tag.replaceFirst(RegExp('^[-~]'), '');
+    final Booru? currentBooru = searchHandler.tabs.isEmpty ? null : searchHandler.currentBooru;
+    // Doujin queries never take colours from the shared booru tag store.
     Color color =
-        TagHandler.instance
-            .getTagFor(bare, searchHandler.tabs.isEmpty ? null : searchHandler.currentBooru)
-            .getColour() ??
+        (DoujinDataHandler.isDoujinBooru(currentBooru)
+            ? null
+            : TagHandler.instance.getTagFor(bare, currentBooru).getColour()) ??
         const Color(0xFF8A80A0);
     if (isExclude) color = const Color(0xFFE5766B);
     final Color textColor = Color.lerp(color, Colors.white, context.isLight ? 0.0 : 0.35)!;

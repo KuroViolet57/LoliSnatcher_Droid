@@ -168,7 +168,12 @@ class _DrawerQuickAccessState extends State<DrawerQuickAccess> {
   }
 
   Widget _pinnedRow(PinnedTag pt) {
-    final Color dot = tagHandler.getTag(pt.tagName).getColour() ?? const Color(0xFF8A80A0);
+    // The shared tag store is a booru system — a doujin pin must not get a
+    // booru's colour for a coinciding tag name.
+    final bool isDoujin =
+        searchHandler.tabs.isNotEmpty && DoujinDataHandler.isDoujinBooru(searchHandler.currentBooru);
+    final Color dot =
+        (isDoujin ? null : tagHandler.getTag(pt.tagName).getColour()) ?? const Color(0xFF8A80A0);
     return InkWell(
       borderRadius: BorderRadius.circular(12),
       onTap: () => _addTagAndClose(pt.tagName),

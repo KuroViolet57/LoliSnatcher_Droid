@@ -118,6 +118,48 @@ class DoujinPin {
   };
 }
 
+/// One remembered doujin search query. The doujin counterpart of the booru
+/// `SearchHistory` table — the two never mix, in either direction.
+class DoujinSearchHistoryEntry {
+  const DoujinSearchHistoryEntry({
+    required this.id,
+    required this.query,
+    required this.booruHost,
+    required this.at,
+    this.isFavourite = false,
+  });
+
+  factory DoujinSearchHistoryEntry.fromJson(Map<String, dynamic> json) => DoujinSearchHistoryEntry(
+    id: json['id'] as int? ?? 0,
+    query: json['query'] as String? ?? '',
+    booruHost: json['booruHost'] as String? ?? '',
+    at: json['at'] as int? ?? 0,
+    isFavourite: json['isFavourite'] as bool? ?? false,
+  );
+
+  final int id;
+  final String query;
+  final String booruHost;
+  final int at;
+  final bool isFavourite;
+
+  DoujinSearchHistoryEntry copyWith({bool? isFavourite, int? at}) => DoujinSearchHistoryEntry(
+    id: id,
+    query: query,
+    booruHost: booruHost,
+    at: at ?? this.at,
+    isFavourite: isFavourite ?? this.isFavourite,
+  );
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'query': query,
+    'booruHost': booruHost,
+    'at': at,
+    'isFavourite': isFavourite,
+  };
+}
+
 class DoujinSavedSearch {
   const DoujinSavedSearch({
     required this.id,
@@ -227,6 +269,11 @@ class DoujinDataHandler {
   /// namespace stripped). A star here has zero effect on booru surfaces and
   /// booru stars have zero effect here.
   final RxSet<String> starredTags = <String>{}.obs;
+
+  /// Remembered doujin search queries (newest first).
+  final RxList<DoujinSearchHistoryEntry> searchHistory = <DoujinSearchHistoryEntry>[].obs;
+  int _searchHistoryNextId = 1;
+  static const int searchHistoryCap = 200;
   int? lastBookmarkCollectionId;
   bool migrationDone = false;
   bool legacyBookmarksMerged = false;
@@ -259,6 +306,7 @@ class DoujinDataHandler {
     'savedSearches': [for (final s in savedSearches) s.toJson()],
     'pins': [for (final p in pins) p.toJson()],
     'starredTags': starredTags.toList(),
+    'searchHistory': [for (final e in searchHistory) e.toJson()],
   };
 
   void importJson(Map<String, dynamic> data) {
@@ -288,6 +336,13 @@ class DoujinDataHandler {
     starredTags.assignAll({
       for (final t in data['starredTags'] as List? ?? []) t.toString(),
     });
+    searchHistory.assignAll([
+      for (final e in data['searchHistory'] as List? ?? [])
+        DoujinSearchHistoryEntry.fromJson(e as Map<String, dynamic>),
+    ]);
+    _searchHistoryNextId = searchHistory.isEmpty
+        ? 1
+        : (searchHistory.map((e) => e.id).reduce((a, b) => a > b ? a : b) + 1);
   }
 
   void save() {
@@ -308,6 +363,8 @@ class DoujinDataHandler {
     savedSearches.clear();
     pins.clear();
     starredTags.clear();
+    searchHistory.clear();
+    _searchHistoryNextId = 1;
     lastBookmarkCollectionId = null;
     migrationDone = false;
     legacyBookmarksMerged = false;
@@ -325,10 +382,89 @@ class DoujinDataHandler {
     savedSearches.clear();
     pins.clear();
     starredTags.clear();
+    searchHistory.clear();
+    _searchHistoryNextId = 1;
     lastBookmarkCollectionId = null;
     migrationDone = false;
     legacyBookmarksMerged = false;
     _loaded = false;
+  }
+
+  /// Display title of a doujin item — the first non-empty line of its
+  /// description (the convention every doujin surface uses).
+  static String titleOf(BooruItem item) =>
+      (item.description ?? '').split('\n').firstWhere((l) => l.trim().isNotEmpty, orElse: () => '').trim();
+
+  // ── search history ──
+
+  /// Records a doujin search query. Newest first, deduped per (query, host),
+  /// favourited entries survive the cap.
+  void addSearchHistory(String query, Booru? booru) {
+    ensureLoaded();
+    final String text = query.trim();
+    if (text.isEmpty) return;
+    final String host = hostOf(booru);
+
+    final int existing = searchHistory.indexWhere((e) => e.query == text && e.booruHost == host);
+    final bool wasFavourite = existing != -1 && searchHistory[existing].isFavourite;
+    final int id = existing != -1 ? searchHistory[existing].id : _searchHistoryNextId++;
+    if (existing != -1) searchHistory.removeAt(existing);
+
+    searchHistory.insert(
+      0,
+      DoujinSearchHistoryEntry(
+        id: id,
+        query: text,
+        booruHost: host,
+        at: DateTime.now().millisecondsSinceEpoch,
+        isFavourite: wasFavourite,
+      ),
+    );
+
+    if (searchHistory.length > searchHistoryCap) {
+      final kept = <DoujinSearchHistoryEntry>[];
+      for (final e in searchHistory) {
+        if (e.isFavourite || kept.length < searchHistoryCap) kept.add(e);
+      }
+      searchHistory.assignAll(kept);
+    }
+    save();
+  }
+
+  /// [id] null clears everything except favourited entries' explicit removal
+  /// (matching the booru history's "clear all" semantics, which deletes all).
+  void deleteSearchHistory(int? id) {
+    ensureLoaded();
+    if (id == null) {
+      searchHistory.clear();
+    } else {
+      searchHistory.removeWhere((e) => e.id == id);
+    }
+    save();
+  }
+
+  void setSearchHistoryFavourite(int id, bool isFavourite) {
+    ensureLoaded();
+    final int i = searchHistory.indexWhere((e) => e.id == id);
+    if (i == -1) return;
+    final updated = searchHistory.toList();
+    updated[i] = updated[i].copyWith(isFavourite: isFavourite);
+    searchHistory.assignAll(updated);
+    save();
+  }
+
+  /// Queries matching [input] (prefix match), newest first.
+  List<String> searchHistoryByInput(String input, int limit) {
+    ensureLoaded();
+    final String q = input.trim().toLowerCase();
+    final List<String> out = [];
+    for (final e in searchHistory) {
+      if (out.length >= limit) break;
+      if (q.isEmpty || e.query.toLowerCase().startsWith(q)) {
+        if (!out.contains(e.query)) out.add(e.query);
+      }
+    }
+    return out;
   }
 
   // ── starred (favourite) tags ──

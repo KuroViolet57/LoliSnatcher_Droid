@@ -48,7 +48,16 @@ abstract class BooruHandler {
   // booru's tag types/colors — which used to re-type tags (e.g. species ->
   // character) and, via the resulting tag-list rebuild, reset the strip's
   // selected booru back to the tab's current one.
-  bool storeTagsGlobally = true;
+  //
+  // Doujin handlers ([hasReader]) default to false: the shared tag store is a
+  // BOORU system. Writing doujin tags there re-typed booru tags whenever a
+  // name coincided, and — because doujin handlers can't type tags through a
+  // booru API — `populateTagHandler` would have shipped doujin tag names off
+  // to some unrelated booru's tag endpoint. Doujin surfaces read their types
+  // from the site's own info instead.
+  bool? _storeTagsGlobally;
+  bool get storeTagsGlobally => _storeTagsGlobally ?? !hasReader;
+  set storeTagsGlobally(bool value) => _storeTagsGlobally = value;
 
   String errorString = '';
   // List<({BooruItem item, Object e, StackTrace? s})> failedItems = [];

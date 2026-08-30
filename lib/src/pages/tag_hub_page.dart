@@ -54,9 +54,18 @@ class _TagHubPageState extends State<TagHubPage> {
   // vs each target booru). Reuses the current tab when available.
   SearchTab? get _originTab => searchHandler.tabs.isNotEmpty ? searchHandler.currentTab : null;
 
-  // Real (non-virtual) boorus to show the tag across.
+  // Real (non-virtual) boorus to show the tag across — in the ORIGIN's
+  // domain only: a hub opened from a doujin source shows doujin sources, a
+  // booru hub shows boorus. The two never mix.
   List<Booru> get _boorus => settingsHandler.booruList
-      .where((b) => b.type != null && !b.type!.isLocalDb && !b.type!.isForYou && !b.type!.isMerge)
+      .where(
+        (b) =>
+            b.type != null &&
+            !b.type!.isLocalDb &&
+            !b.type!.isForYou &&
+            !b.type!.isMerge &&
+            DoujinDataHandler.isDoujinBooru(b) == _isDoujinOrigin,
+      )
       .toList();
 
   @override
@@ -73,10 +82,15 @@ class _TagHubPageState extends State<TagHubPage> {
     final bool following = _isDoujinOrigin
         ? DoujinDataHandler.instance.isFollowed(widget.tag, widget.originBooru)
         : _isArtist && await FollowedArtistsHandler.isFollowed(widget.tag);
+    // The booru favourites DB says nothing about a doujin tag, and the doujin
+    // store keeps no tag index — so a doujin hub shows no favourites stat at
+    // all rather than a booru-derived (or invented) number.
     int fav = 0;
-    try {
-      fav = await settingsHandler.dbHandler.searchDBCount(widget.tag);
-    } catch (_) {}
+    if (!_isDoujinOrigin) {
+      try {
+        fav = await settingsHandler.dbHandler.searchDBCount(widget.tag);
+      } catch (_) {}
+    }
     if (mounted) {
       setState(() {
         _following = following;
@@ -192,13 +206,15 @@ class _TagHubPageState extends State<TagHubPage> {
                       ),
                       const SizedBox(width: 10),
                     ],
-                    // Favourites stat.
-                    _StatChip(
-                      icon: Symbols.favorite_rounded,
-                      iconColor: const Color(0xFFF0708A),
-                      label: _favCount == 1 ? '1 fav' : '$_favCount favs',
-                    ),
-                    const SizedBox(width: 8),
+                    // Favourites stat (booru hubs only — see _load).
+                    if (!_isDoujinOrigin) ...[
+                      _StatChip(
+                        icon: Symbols.favorite_rounded,
+                        iconColor: const Color(0xFFF0708A),
+                        label: _favCount == 1 ? '1 fav' : '$_favCount favs',
+                      ),
+                      const SizedBox(width: 8),
+                    ],
                     _StatChip(
                       icon: Symbols.dns_rounded,
                       iconColor: theme.colorScheme.onSurfaceVariant,

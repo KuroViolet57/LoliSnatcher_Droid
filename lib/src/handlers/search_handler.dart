@@ -27,6 +27,7 @@ import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/interests_handler.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
+import 'package:lolisnatcher/src/handlers/search_history_store.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/snatch_handler.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
@@ -177,6 +178,12 @@ class SearchHandler {
     // "posts in pool N" as a search at all.
     String? poolId,
     String? poolName,
+    // Doujin detail tabs: identity + cover of the doujin this tab IS. Set
+    // them to make the new tab a real detail-page tab instead of an id:
+    // search feed (see SearchTab.isDoujinDetail).
+    String? doujinPostURL,
+    String? doujinTitle,
+    String? doujinThumb,
   }) {
     final Booru booru = customBooru ?? currentBooru;
 
@@ -194,6 +201,9 @@ class SearchHandler {
       inheritMainTags: inheritMainTags,
       poolId: poolId,
       poolName: poolName,
+      doujinPostURL: doujinPostURL,
+      doujinTitle: doujinTitle,
+      doujinThumb: doujinThumb,
     );
     newTab.groupName = groupName;
     if (customPage != null) {
@@ -235,14 +245,11 @@ class SearchHandler {
         break;
     }
 
-    // record search query to db
-    final SettingsHandler settingsHandler = SettingsHandler.instance;
-    if (searchText != '' && settingsHandler.searchHistoryEnabled) {
-      settingsHandler.dbHandler.updateSearchHistory(
-        searchText,
-        booru.type?.name,
-        booru.name,
-      );
+    // record search query — doujin queries go to the doujin store, booru
+    // queries to store.db (SearchHistoryStore routes by source). Opening a
+    // doujin DETAIL tab isn't a search, so its `id:<n>` query is not history.
+    if (searchText != '' && doujinPostURL == null) {
+      unawaited(SearchHistoryStore.record(searchText, booru));
     }
 
     // set to last tab if requested
@@ -677,15 +684,9 @@ class SearchHandler {
     // run search
     changeTabIndex(currentIndex, ignoreSameIndexCheck: true);
 
-    // write to history
-    if (text != '' && settingsHandler.searchHistoryEnabled) {
-      unawaited(
-        settingsHandler.dbHandler.updateSearchHistory(
-          text,
-          currentBooru.type?.name,
-          currentBooru.name,
-        ),
-      );
+    // write to history (doujin searches never reach the booru history table)
+    if (text != '') {
+      unawaited(SearchHistoryStore.record(text, newBooru ?? currentBooru));
     }
   }
 
@@ -1624,6 +1625,9 @@ class SearchHandler {
             group: tab.groupName,
             poolId: tab.poolId,
             poolName: tab.poolName,
+            doujinPostURL: tab.doujinPostURL,
+            doujinTitle: tab.doujinTitle,
+            doujinThumb: tab.doujinThumb,
             secondaryBoorus: secondaryBoorusNames,
             tagOverrides: overrides,
             inheritMainTags: inherit,
@@ -1670,6 +1674,9 @@ class SearchHandler {
       // broken text search.
       poolId: (backup.poolId?.isEmpty ?? true) ? null : backup.poolId,
       poolName: (backup.poolName?.isEmpty ?? true) ? null : backup.poolName,
+      doujinPostURL: (backup.doujinPostURL?.isEmpty ?? true) ? null : backup.doujinPostURL,
+      doujinTitle: (backup.doujinTitle?.isEmpty ?? true) ? null : backup.doujinTitle,
+      doujinThumb: (backup.doujinThumb?.isEmpty ?? true) ? null : backup.doujinThumb,
     )..groupName = (backup.group?.isEmpty ?? true) ? null : backup.group;
   }
 
@@ -1835,6 +1842,12 @@ class SearchTab {
     // pool only exists as its own page there.
     String? poolId,
     String? poolName,
+    // Doujin detail tabs: the tab IS one doujin's detail page, not a feed.
+    // postURL is the identity; title/thumb let the tab manager render the
+    // cover before (or without) a fetch.
+    this.doujinPostURL,
+    this.doujinTitle,
+    this.doujinThumb,
   }) : id = (tabId != null && tabId.isNotEmpty) ? tabId : uuid.v4() {
     this.poolId = poolId;
     this.poolName = poolName;
@@ -1888,6 +1901,21 @@ class SearchTab {
   String? poolId;
   String? poolName;
   bool get isPool => poolId?.isNotEmpty ?? false;
+
+  /// Doujin detail tab state: when set, this tab renders one doujin's DETAIL
+  /// PAGE as its whole content (no feed chrome). The handler still fetches
+  /// the single item via the id: search in [tags]; these fields carry the
+  /// identity and the tab-manager cover across restarts.
+  String? doujinPostURL;
+  String? doujinTitle;
+  String? doujinThumb;
+
+  /// A REAL doujin-detail tab (created as one, or restored with the marker).
+  /// The tags heuristic keeps tabs from older backups working — they were
+  /// created as `id:` searches on a doujin source before the marker existed.
+  bool get isDoujinDetail =>
+      (doujinPostURL?.isNotEmpty ?? false) ||
+      (booruHandler.hasReader && tags.trim().toLowerCase().startsWith('id:'));
 
   // Tab group this tab belongs to (null = ungrouped). Groups are rendered as
   // bordered blocks in the tab manager; tabs opened from within a grouped tab
@@ -2101,6 +2129,9 @@ class TabBackup {
     this.group,
     this.poolId,
     this.poolName,
+    this.doujinPostURL,
+    this.doujinTitle,
+    this.doujinThumb,
     this.secondaryBoorus = const [],
     this.tagOverrides = const {},
     this.inheritMainTags = const {},
@@ -2118,6 +2149,12 @@ class TabBackup {
   // degrading into a plain — and broken — text search.
   final String? poolId;
   final String? poolName;
+  // Doujin detail tab: this tab is one doujin's detail page. Persisted so a
+  // restored tab comes back as a detail-page tab with its cover in the tab
+  // manager, not as a plain search feed.
+  final String? doujinPostURL;
+  final String? doujinTitle;
+  final String? doujinThumb;
   final List<String> secondaryBoorus;
   // Per-booru tag overrides used in merge mode. Keys are booru names; missing
   // entries (or older backups without this field) fall back to `tags`.
@@ -2135,6 +2172,9 @@ class TabBackup {
       if (group != null && group!.isNotEmpty) 'g': group,
       if (poolId != null && poolId!.isNotEmpty) 'p': poolId,
       if (poolName != null && poolName!.isNotEmpty) 'pn': poolName,
+      if (doujinPostURL != null && doujinPostURL!.isNotEmpty) 'dp': doujinPostURL,
+      if (doujinTitle != null && doujinTitle!.isNotEmpty) 'dt': doujinTitle,
+      if (doujinThumb != null && doujinThumb!.isNotEmpty) 'dth': doujinThumb,
       if (secondaryBoorus.isNotEmpty) 'sb': secondaryBoorus,
       if (tagOverrides.isNotEmpty) 'to': tagOverrides,
       if (inheritMainTags.isNotEmpty) 'in': inheritMainTags,
@@ -2151,6 +2191,9 @@ class TabBackup {
         group: json['g'] as String?,
         poolId: json['p'] as String?,
         poolName: json['pn'] as String?,
+        doujinPostURL: json['dp'] as String?,
+        doujinTitle: json['dt'] as String?,
+        doujinThumb: json['dth'] as String?,
         secondaryBoorus: (json['sb'] as List<dynamic>?)?.map((e) => e as String).toList() ?? const [],
         tagOverrides:
             (json['to'] as Map<String, dynamic>?)?.map((k, v) => MapEntry(k, v.toString())) ?? const {},

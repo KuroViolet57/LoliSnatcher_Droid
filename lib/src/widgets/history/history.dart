@@ -12,6 +12,7 @@ import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/history_item.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
+import 'package:lolisnatcher/src/handlers/search_history_store.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/utils/extensions.dart';
 import 'package:lolisnatcher/src/widgets/common/cancel_button.dart';
@@ -72,7 +73,7 @@ class _HistoryListState extends State<HistoryList> {
     setState(() {});
 
     history = (settingsHandler.dbEnabled && settingsHandler.searchHistoryEnabled)
-        ? await settingsHandler.dbHandler.getSearchHistory()
+        ? await SearchHistoryStore.all()
         : [];
 
     history.sort(compareFavourites);
@@ -84,7 +85,7 @@ class _HistoryListState extends State<HistoryList> {
   }
 
   Future<void> deleteEntry(HistoryItem entry) async {
-    await settingsHandler.dbHandler.deleteFromSearchHistory(entry.id);
+    await SearchHistoryStore.delete(entry.id);
     history = history.where((el) => el.id != entry.id).toList();
     filterHistory();
     return;
@@ -229,7 +230,7 @@ class _HistoryListState extends State<HistoryList> {
                 history.sort(compareFavourites);
                 filterHistory();
 
-                settingsHandler.dbHandler.setFavouriteSearchHistory(entry.id, newFavourite);
+                SearchHistoryStore.setFavourite(entry.id, newFavourite);
 
                 Navigator.of(context).pop();
               },
