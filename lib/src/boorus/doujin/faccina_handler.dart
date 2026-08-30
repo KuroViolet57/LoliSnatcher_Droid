@@ -262,7 +262,14 @@ class FaccinaHandler extends BooruHandler {
   ];
 
   @override
-  List<MetaTag> availableMetaTags() => [];
+  List<MetaTag> availableMetaTags() => [
+    StringMetaTag(name: 'Artist', keyName: 'artist'),
+    StringMetaTag(name: 'Circle', keyName: 'circle'),
+    StringMetaTag(name: 'Series', keyName: 'parody'),
+    StringMetaTag(name: 'Character', keyName: 'character'),
+    StringMetaTag(name: 'Magazine', keyName: 'magazine'),
+    StringMetaTag(name: 'Publisher', keyName: 'publisher'),
+  ];
 
   @override
   FutureOr<List> parseListFromResponse(dynamic response) async {

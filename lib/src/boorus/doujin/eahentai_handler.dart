@@ -357,7 +357,11 @@ class EaHentaiHandler extends BooruHandler with DoujinListingTagBackfill {
   ];
 
   @override
-  List<MetaTag> availableMetaTags() => [];
+  List<MetaTag> availableMetaTags() => [
+    StringMetaTag(name: 'Artist', keyName: 'artist'),
+    StringMetaTag(name: 'Series', keyName: 'parody'),
+    StringMetaTag(name: 'Character', keyName: 'character'),
+  ];
 
   /// Only the hero card on a listing page carries tags in the markup; the
   /// grid cards do not, so card tags come from each gallery's own page.

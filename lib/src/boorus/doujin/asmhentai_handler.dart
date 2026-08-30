@@ -313,7 +313,14 @@ class AsmHentaiHandler extends BooruHandler with DoujinListingTagBackfill {
   ];
 
   @override
-  List<MetaTag> availableMetaTags() => [];
+  List<MetaTag> availableMetaTags() => [
+    StringMetaTag(name: 'Artist', keyName: 'artist'),
+    StringMetaTag(name: 'Group', keyName: 'group'),
+    StringMetaTag(name: 'Series', keyName: 'parody'),
+    StringMetaTag(name: 'Character', keyName: 'character'),
+    StringMetaTag(name: 'Language', keyName: 'language'),
+    StringMetaTag(name: 'Category', keyName: 'category'),
+  ];
 
   /// Listing blocks carry a cover and a title but no tags, so card tags come
   /// from the gallery page.
