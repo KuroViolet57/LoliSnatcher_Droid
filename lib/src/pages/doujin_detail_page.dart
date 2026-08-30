@@ -53,10 +53,24 @@ class DoujinDetailPage extends StatefulWidget {
   final bool embedded;
 
   /// True when the page IS a doujin tab's whole content: keeps its app bar
-  /// but WITHOUT a back button (there's nowhere to go back to), and widens
-  /// the right-edge drag zone for the mini tab manager to the right third of
-  /// the screen so it doesn't fight Android gesture nav.
+  /// but WITHOUT a back button (there's nowhere to go back to). The mini tab
+  /// manager's drag strip is wide on every detail page, not just this one -
+  /// see [edgeDragWidthFor].
   final bool asTab;
+
+  /// Share of the screen width that drags open the mini tab manager, and the
+  /// bounds that share is clamped to. A quarter to a third of the width is
+  /// what is actually reachable one-handed; Flutter's ~20px default sits
+  /// under Android's gesture handle and barely triggers.
+  static const double edgeDragWidthFraction = 0.3;
+  static const double minEdgeDragWidth = 90;
+  static const double maxEdgeDragWidth = 320;
+
+  /// The drag strip's width for a given viewport. Applies to EVERY doujin
+  /// detail page - pushed from a card as well as hosted as a tab.
+  @visibleForTesting
+  static double edgeDragWidthFor(Size screen) =>
+      (screen.width * edgeDragWidthFraction).clamp(minEdgeDragWidth, maxEdgeDragWidth);
 
   /// Share of the viewport the big cover may occupy at most. A portrait cover
   /// at its natural ratio is nearly twice as tall as it is wide, which pushed
@@ -663,12 +677,32 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-      // Right-edge swipe: the mini tab manager sidebar. On a doujin tab the
-      // drag zone is the right THIRD of the screen — the ~20px default sits
-      // under Android's gesture-nav area and barely triggers.
+      // Right-edge swipe: the mini tab manager sidebar. The drag zone is a
+      // generous strip from the right edge on EVERY detail page - the pushed
+      // one (tapping a card) used to fall back to Flutter's ~20px default,
+      // which sits under Android's gesture handle and is unreachable
+      // one-handed. There is no horizontal carousel on this page to conflict
+      // with, so the strip can be this wide safely.
       endDrawer: const DoujinMiniTabManager(),
-      drawerEdgeDragWidth: widget.asTab ? MediaQuery.sizeOf(context).width / 3 : null,
-      body: ListView(
+      drawerEdgeDragWidth: DoujinDetailPage.edgeDragWidthFor(MediaQuery.sizeOf(context)),
+      body: Stack(
+        children: [
+          _pageBody(context, versionsQuery, galleryId),
+          // Visible affordance: shows where the strip starts, and opens the
+          // sidebar on tap for anyone who would rather not swipe at all.
+          const Positioned(
+            top: 0,
+            bottom: 0,
+            right: 0,
+            child: _MiniManagerEdgeHandle(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _pageBody(BuildContext context, String? versionsQuery, String? galleryId) {
+    return ListView(
         padding: const EdgeInsets.only(bottom: 40),
         children: [
           _header(context),
@@ -722,6 +756,35 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
             ),
           _pagesGrid(context),
         ],
+    );
+  }
+}
+
+/// The visible edge affordance for the mini tab manager: a slim grip pinned
+/// to the right edge marking where the (much wider) drag strip begins. Tapping
+/// it opens the sidebar outright, for when swiping is awkward.
+class _MiniManagerEdgeHandle extends StatelessWidget {
+  const _MiniManagerEdgeHandle();
+
+  @override
+  Widget build(BuildContext context) {
+    final Color accent = Theme.of(context).colorScheme.secondary;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => Scaffold.of(context).openEndDrawer(),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2),
+        child: Center(
+          child: Container(
+            key: const Key('mini-manager-edge-handle'),
+            width: 5,
+            height: 68,
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: 0.55),
+              borderRadius: const BorderRadius.horizontal(left: Radius.circular(3)),
+            ),
+          ),
+        ),
       ),
     );
   }
