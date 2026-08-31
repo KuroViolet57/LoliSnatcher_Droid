@@ -165,10 +165,15 @@ class SchaleClearanceHandler {
   /// switch to shupogaki.moe challenges on the mirror actually in use.
   Future<bool> requestClearance(String siteUrl) async {
     if (_challengeOpen) return hasToken;
-    final BuildContext context = NavigationHandler.instance.navContext;
 
     _challengeOpen = true;
     try {
+      // Resolved inside the try on purpose. There is no navigator before the
+      // first route is mounted, or while the app is being torn down, and this
+      // throws rather than returning null in that case. Outside the try it
+      // took the reader down with it instead of letting loadItem report that
+      // the check could not be shown.
+      final BuildContext context = NavigationHandler.instance.navContext;
       await Navigator.push(
         context,
         MaterialPageRoute<void>(

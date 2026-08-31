@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/boorus/doujin/schale_handler.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
+import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
 import 'package:lolisnatcher/src/handlers/schale_clearance_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
@@ -145,6 +146,48 @@ void main() {
       // Ad interstitials commonly try intent:// and market:// to leave the app.
       expect(allows('intent://scan/#Intent;scheme=zxing;end'), isFalse);
       expect(allows(''), isFalse);
+    });
+  });
+
+  group('asking for a challenge cannot take the reader down with it', () {
+    late Directory tempDir;
+
+    setUp(() {
+      SettingsHandler.register();
+      ViewerHandler.register();
+      tempDir = Directory.systemTemp.createTempSync('schale_nav');
+      SettingsHandler.instance.path = '${tempDir.path}${Platform.pathSeparator}';
+      SchaleClearanceHandler.instance.resetForTests();
+    });
+
+    tearDown(() {
+      SchaleClearanceHandler.instance.resetForTests();
+      try {
+        tempDir.deleteSync(recursive: true);
+      } catch (_) {}
+    });
+
+    test('with no navigator mounted it reports failure instead of throwing', () async {
+      // NavigationHandler.navContext is `navigatorKey.currentContext!` — before
+      // the first route is mounted, or while the app is being torn down, that
+      // is a null check on null. It used to be evaluated outside the try, so
+      // instead of "the check could not be shown" the reader got an exception.
+      NavigationHandler.register();
+
+      expect(
+        await SchaleClearanceHandler.instance.requestClearance('https://niyaniya.moe'),
+        isFalse,
+      );
+      expect(SchaleClearanceHandler.instance.hasToken, isFalse);
+    });
+
+    test('a token already held is returned without opening anything', () async {
+      NavigationHandler.register();
+      SchaleClearanceHandler.instance.store('already-have-one');
+
+      // No navigator, but no challenge is needed either.
+      expect(SchaleClearanceHandler.instance.hasToken, isTrue);
+      expect(SchaleClearanceHandler.instance.token, 'already-have-one');
     });
   });
 
