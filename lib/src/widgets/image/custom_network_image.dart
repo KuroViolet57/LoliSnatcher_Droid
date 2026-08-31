@@ -15,6 +15,31 @@ import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 import 'package:lolisnatcher/src/widgets/image/abstract_custom_network_image.dart' as custom_network_image;
 
+/// How far back from the end of a JPEG to look for its EOI marker.
+///
+/// A truncated JPEG has no EOI anywhere, so any window comfortably larger than
+/// a plausible trailer distinguishes the two cases. 8KB covers signatures,
+/// appended thumbnails and stray metadata without reading a whole file back.
+const int jpegTailWindow = 8 * 1024;
+
+/// Whether a JPEG's tail contains the EOI marker `FF D9`.
+///
+/// It looks for the LAST EOI rather than requiring the file to end on one.
+/// Trailing bytes after EOI are legal JPEG and hosts do use them: every image
+/// on erocdn ends `FF D9 53 4E` — EOI followed by a two-byte "SN" signature.
+/// The previous check read the final two bytes and demanded they be `FF D9`,
+/// which is false for every one of those files, so it rejected 2,141 perfectly
+/// decodable images as "truncated" and took the reader's first page with them.
+///
+/// This is deliberately not special-cased to one host; the bytes are valid
+/// JPEG and any CDN is free to append to them.
+bool hasJpegEndMarker(List<int> tail) {
+  for (int i = tail.length - 2; i >= 0; i--) {
+    if (tail[i] == 0xFF && tail[i + 1] == 0xD9) return true;
+  }
+  return false;
+}
+
 /// Shared logic for downloading, caching, and atomic writing of images.
 mixin _NetworkImageLoaderMixin {
   Future<void> _commitCacheFile(File tempFile, String destPath) async {
@@ -241,9 +266,10 @@ mixin _NetworkImageLoaderMixin {
         if (actualLen > 2 && (url.toLowerCase().endsWith('.jpg') || url.toLowerCase().endsWith('.jpeg'))) {
           final handle = await tempFile.open();
           try {
-            await handle.setPosition(actualLen - 2);
-            final endBytes = await handle.read(2);
-            if (endBytes.length == 2 && (endBytes[0] != 0xFF || endBytes[1] != 0xD9)) {
+            final int window = actualLen < jpegTailWindow ? actualLen : jpegTailWindow;
+            await handle.setPosition(actualLen - window);
+            final endBytes = await handle.read(window);
+            if (!hasJpegEndMarker(endBytes)) {
               throw Exception('Image file is truncated (missing JPEG EOI marker)');
             }
           } catch (e) {
