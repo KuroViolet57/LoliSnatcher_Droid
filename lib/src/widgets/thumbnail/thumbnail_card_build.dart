@@ -35,6 +35,7 @@ class ThumbnailCardBuild extends StatelessWidget {
     this.onLongPress,
     this.onSecondaryTap,
     this.stripMode = false,
+    this.coverAspect,
     super.key,
   });
 
@@ -56,6 +57,11 @@ class ThumbnailCardBuild extends StatelessWidget {
   /// doujin sources; the main feed keeps the full card.
   final bool stripMode;
 
+  /// Adapt mode: the aspect ratio the cover is to be given, so the CARD is
+  /// sized to the cover instead of the cover being letterboxed into a card of
+  /// someone else's choosing. Null everywhere else.
+  final double? coverAspect;
+
   @override
   Widget build(BuildContext context) {
     final snatchHandler = SnatchHandler.instance;
@@ -67,7 +73,15 @@ class ThumbnailCardBuild extends StatelessWidget {
     final bool isDoujinCard =
         isDoujinStripCard || (handler.hasReader && SourceSettingsHandler.instance.gridTagStrip(handler.booru));
     final String coverDisplay = SourceSettingsHandler.instance.coverDisplay(handler.booru);
-    final BoxFit? coverFit = isDoujinCard ? (coverDisplay == 'crop' ? BoxFit.cover : BoxFit.contain) : null;
+    // In adapt mode the cover box already HAS the cover's aspect ratio, so
+    // cover and contain paint the same rect — cover is used because it cannot
+    // leave a sub-pixel bar when the ratio rounds.
+    // Adapt applies to any doujin cover, tag strip or not: the waterfall gives
+    // these cells no height at all, so the cover must supply it either way.
+    final bool adaptCover = handler.hasReader && coverAspect != null;
+    final BoxFit? coverFit = isDoujinCard
+        ? ((coverDisplay == 'crop' || adaptCover) ? BoxFit.cover : BoxFit.contain)
+        : null;
 
     final bool isSelected = selectable && selectedIndex != null;
     final bool showHighlightBorder = isHighlighted || isSelected;
@@ -108,19 +122,48 @@ class ThumbnailCardBuild extends StatelessWidget {
                   borderRadius: BorderRadius.circular(14),
                   child: isDoujinCard
                       ? Column(
+                          // Adapt: the card takes its height from the cover
+                          // plus whatever the footer needs, so there is no
+                          // leftover box for the cover to be letterboxed in.
+                          mainAxisSize: adaptCover ? MainAxisSize.min : MainAxisSize.max,
                           children: [
-                            Expanded(
-                              child: ThumbnailBuild(
-                                item: item,
-                                handler: handler,
-                                selectable: selectable,
-                                selectedIndex: isSelected ? selectedIndex : null,
-                                onSelected: onSelected == null ? null : () => onSelected!(index),
-                                fit: coverFit,
+                            if (adaptCover)
+                              AspectRatio(
+                                aspectRatio: coverAspect!,
+                                child: ThumbnailBuild(
+                                  item: item,
+                                  handler: handler,
+                                  selectable: selectable,
+                                  selectedIndex: isSelected ? selectedIndex : null,
+                                  onSelected: onSelected == null ? null : () => onSelected!(index),
+                                  fit: coverFit,
+                                ),
+                              )
+                            else
+                              Expanded(
+                                child: ThumbnailBuild(
+                                  item: item,
+                                  handler: handler,
+                                  selectable: selectable,
+                                  selectedIndex: isSelected ? selectedIndex : null,
+                                  onSelected: onSelected == null ? null : () => onSelected!(index),
+                                  fit: coverFit,
+                                ),
                               ),
-                            ),
                             if (isDoujinStripCard) _stripTitle(context) else _doujinFooter(context),
                           ],
+                        )
+                      : adaptCover
+                      ? AspectRatio(
+                          aspectRatio: coverAspect!,
+                          child: ThumbnailBuild(
+                            item: item,
+                            handler: handler,
+                            selectable: selectable,
+                            selectedIndex: isSelected ? selectedIndex : null,
+                            onSelected: onSelected == null ? null : () => onSelected!(index),
+                            fit: BoxFit.cover,
+                          ),
                         )
                       : ThumbnailBuild(
                           item: item,

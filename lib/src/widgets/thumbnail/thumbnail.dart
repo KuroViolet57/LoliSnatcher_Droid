@@ -15,6 +15,7 @@ import 'package:lolisnatcher/src/boorus/idol_sankaku_handler.dart';
 import 'package:lolisnatcher/src/boorus/sankaku_handler.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/handlers/doujin_cover_aspect_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 import 'package:lolisnatcher/src/handlers/database_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -319,6 +320,16 @@ class _ThumbnailState extends State<Thumbnail> {
     mainImageListener = ImageStreamListener(
       (imageInfo, syncCall) {
         isLoaded.value = true;
+        // The cover's real aspect ratio, from the bytes the source served.
+        // Doujin listings mostly carry no dimensions, so this is the only
+        // place "adapt" can learn how tall to make the card.
+        if (!widget.item.isHidden) {
+          DoujinCoverAspects.instance.record(
+            widget.item.thumbnailURL,
+            imageInfo.image.width,
+            imageInfo.image.height,
+          );
+        }
       },
       onChunk: (event) {
         onBytesAdded(event.cumulativeBytesLoaded, event.expectedTotalBytes);

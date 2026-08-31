@@ -252,12 +252,19 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware {
 
   /// Staggered = cells sized by each item's aspect ratio. Also forced by
   /// the doujin 'adapt' cover-display mode, which IS this behaviour.
+  ///
+  /// Adapt deliberately does NOT require a handler's `hasSizeData`. Only
+  /// nhentai and niyaniya report cover dimensions in their listings; every
+  /// other doujin source reports none, and gating on that is what made adapt
+  /// silently degrade to a fixed grid with letterboxed covers. A doujin cell
+  /// learns its cover's aspect from the decoded image instead
+  /// (DoujinCoverAspects), so it needs nothing from the API.
   bool _computeIsStaggered() {
     final bool adaptCovers =
         searchHandler.currentBooruHandler.hasReader &&
         SourceSettingsHandler.instance.coverDisplay(searchHandler.currentBooru) == 'adapt';
-    return (settingsHandler.previewDisplay.isStaggered || adaptCovers) &&
-        searchHandler.currentBooruHandler.hasSizeData;
+    if (adaptCovers) return true;
+    return settingsHandler.previewDisplay.isStaggered && searchHandler.currentBooruHandler.hasSizeData;
   }
 
   Future<void> onTap(int index) async {
