@@ -316,6 +316,31 @@ class Tools {
     return deviceWebViewUserAgent ?? appUserAgent;
   }
 
+  /// The device's own user agent with every trace of "this is a WebView"
+  /// removed, so it reads as the Chrome build that is actually embedded.
+  ///
+  /// Some sites branch on this. niyaniya/Schale is the reason this exists: its
+  /// bundle runs `navigator.userAgent.includes("wv")` and, when true, skips
+  /// BOTH the Turnstile widget and the whole reader init — so the challenge
+  /// never appears and the reader sits on a spinner forever. Android's WebView
+  /// UA always carries `; wv`, so the app could never pass that test.
+  ///
+  /// Derived from the real device UA rather than hardcoded, so the model and
+  /// Chrome version stay honest — only the WebView markers go.
+  static String stripWebViewMarkers(String userAgent) {
+    return userAgent
+        // "Android 16; SM-S928B Build/BP4A...; wv)" -> "Android 16; SM-S928B)"
+        .replaceAll(RegExp(r'\s*Build/[^;)]+'), '')
+        .replaceAll(RegExp(r';\s*wv(?=[;)])', caseSensitive: false), '')
+        // WebView announces itself a second time as "Version/4.0".
+        .replaceAll(RegExp(r'\s*Version/\d+(\.\d+)*'), '')
+        .replaceAll(RegExp(r'\s{2,}'), ' ')
+        .trim();
+  }
+
+  /// [browserUserAgent] with the WebView markers removed.
+  static String get nonWebViewUserAgent => stripWebViewMarkers(browserUserAgent);
+
   static bool get isTestMode => Platform.environment.containsKey('FLUTTER_TEST');
 
   static bool get isOnPlatformWithWebviewSupport =>

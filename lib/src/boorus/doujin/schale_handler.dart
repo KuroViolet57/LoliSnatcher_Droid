@@ -61,6 +61,14 @@ class SchaleHandler extends BooruHandler with DoujinListingTagBackfill, DoujinNa
   @override
   bool get hasSizeData => true;
 
+  // The API allows 5 requests a window. One at a time, paced, leaves room for
+  // the requests the person actually made.
+  @override
+  int get tagBackfillConcurrency => 1;
+
+  @override
+  Duration get tagBackfillDelay => const Duration(milliseconds: 500);
+
   @override
   bool get hasTagSuggestions => true;
 
@@ -310,15 +318,65 @@ class SchaleHandler extends BooruHandler with DoujinListingTagBackfill, DoujinNa
 
   // ── detail ────────────────────────────────────────────────────────────
 
-  Future<Map?> _detail(String id, String key) async {
-    try {
-      final response = await DioNetwork.get('$_api/books/detail/$id/$key', headers: getHeaders());
-      if (response.statusCode != 200) return null;
-      final data = _json(response.data);
-      return data is Map ? data : null;
-    } catch (_) {
-      return null;
+  /// The API publishes a request budget (`x-ratelimit-limit: 5`) and answers
+  /// 429 once it is spent. Shared across every instance because the budget is
+  /// per-client, not per-tab: a 429 in one tab means the next tab must wait too.
+  static DateTime? _rateLimitedUntil;
+
+  /// How long to stand down after a 429 when the response does not say.
+  static const Duration rateLimitBackoff = Duration(seconds: 10);
+
+  @visibleForTesting
+  static void resetRateLimitForTests() => _rateLimitedUntil = null;
+
+  @visibleForTesting
+  static bool get isRateLimited =>
+      _rateLimitedUntil != null && DateTime.now().isBefore(_rateLimitedUntil!);
+
+  /// Reads `x-ratelimit-reset` (unix seconds) when the server sends one, so the
+  /// wait is the server's number rather than a guess.
+  @visibleForTesting
+  static Duration backoffFrom(String? resetHeader, {DateTime? now}) {
+    final DateTime at = now ?? DateTime.now();
+    final int? epoch = int.tryParse(resetHeader ?? '');
+    if (epoch != null) {
+      final DateTime reset = DateTime.fromMillisecondsSinceEpoch(epoch * 1000, isUtc: true);
+      final Duration wait = reset.difference(at.toUtc());
+      // A reset far in the future is a header we have misread; do not sit out
+      // the rest of the session over it.
+      if (wait > Duration.zero && wait <= const Duration(minutes: 2)) return wait;
     }
+    return rateLimitBackoff;
+  }
+
+  Future<void> _waitOutRateLimit() async {
+    final DateTime? until = _rateLimitedUntil;
+    if (until == null) return;
+    final Duration left = until.difference(DateTime.now());
+    if (left > Duration.zero) await Future.delayed(left);
+    _rateLimitedUntil = null;
+  }
+
+  Future<Map?> _detail(String id, String key) async {
+    for (int attempt = 0; attempt < 2; attempt++) {
+      await _waitOutRateLimit();
+      try {
+        final response = await DioNetwork.get('$_api/books/detail/$id/$key', headers: getHeaders());
+        if (response.statusCode != 200) return null;
+        final data = _json(response.data);
+        return data is Map ? data : null;
+      } on DioException catch (e) {
+        if (e.response?.statusCode != 429) return null;
+        // Spent the budget. Stand down for everyone, then try once more.
+        _rateLimitedUntil = DateTime.now().add(
+          backoffFrom(e.response?.headers.value('x-ratelimit-reset')),
+        );
+        if (attempt == 1) return null;
+      } catch (_) {
+        return null;
+      }
+    }
+    return null;
   }
 
   /// The key for [id], from this session's listings or the item's own URL.

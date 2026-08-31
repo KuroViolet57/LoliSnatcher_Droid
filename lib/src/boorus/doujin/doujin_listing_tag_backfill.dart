@@ -29,6 +29,12 @@ mixin DoujinListingTagBackfill on BooruHandler {
   /// How many gallery pages are in flight at once.
   int get tagBackfillConcurrency => 3;
 
+  /// Pause between one worker's fetches. Sources that publish a request budget
+  /// need this: niyaniya's API answers `x-ratelimit-limit: 5`, and a backfill
+  /// that ignores it spends the whole budget and then 429s every request the
+  /// person actually made.
+  Duration get tagBackfillDelay => Duration.zero;
+
   /// Tags already fetched this session, keyed by post URL, so paging back and
   /// forth does not refetch them.
   final Map<String, List<Tag>> _tagCache = {};
@@ -74,6 +80,10 @@ mixin DoujinListingTagBackfill on BooruHandler {
           final int index = next++;
           if (index >= toFetch.length) return;
           final BooruItem item = toFetch[index];
+          if (index > 0 && tagBackfillDelay > Duration.zero) {
+            await Future.delayed(tagBackfillDelay);
+            if (generation != _generation) return;
+          }
           try {
             final List<Tag> tags = await tagsForListingItem(item);
             if (generation != _generation) return;

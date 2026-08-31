@@ -9,6 +9,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
+import 'package:lolisnatcher/src/utils/tools.dart';
 import 'package:lolisnatcher/src/widgets/webview/webview_page.dart';
 
 /// The clearance token niyaniya/Schale requires before it will serve readable
@@ -25,6 +26,17 @@ import 'package:lolisnatcher/src/widgets/webview/webview_page.dart';
 /// webview, lets the person solve it exactly as they would in a browser, and
 /// then reads the token the site stored. That is deliberately manual: solving
 /// Turnstile automatically is neither reliable nor something to build.
+///
+/// Two things make that work, both learned the hard way from a device log:
+///
+///  * The site's bundle runs `navigator.userAgent.includes("wv")` and, when it
+///    matches, renders NO Turnstile and skips the reader's init entirely. Every
+///    Android WebView UA contains `wv`, so the challenge simply never appeared
+///    and the reader sat on a spinner. The webview is therefore given a UA with
+///    the WebView markers stripped.
+///  * The mirrors serve full-page interstitial ads. One of them replaced the
+///    challenge page outright. The webview refuses pop-ups and any navigation
+///    away from the site and Cloudflare.
 class SchaleClearanceHandler {
   SchaleClearanceHandler._();
 
@@ -132,6 +144,18 @@ class SchaleClearanceHandler {
     return value.isEmpty ? null : value;
   }
 
+  /// The site itself, its API, and its auth host — the challenge POSTs the
+  /// Turnstile token to auth.schale.network, so blocking that would break it.
+  static List<String> allowedChallengeHosts(String siteUrl) {
+    final String host = Uri.tryParse(siteUrl)?.host ?? '';
+    return [
+      if (host.isNotEmpty) host,
+      'schale.network',
+      'niyaniya.moe',
+      'shupogaki.moe',
+    ];
+  }
+
   bool _challengeOpen = false;
 
   /// Opens the site so the challenge can be solved by hand, then takes whatever
@@ -152,6 +176,13 @@ class SchaleClearanceHandler {
             initialUrl: siteUrl,
             title: 'Reader access',
             subtitle: 'Complete the check, then come back — pages need it, browsing does not',
+            // Without this the site detects a WebView and never shows the
+            // challenge at all. This is the whole reason the flow works.
+            userAgent: Tools.nonWebViewUserAgent,
+            // The mirrors serve interstitials that hijack the page; a hijacked
+            // page can never complete the challenge.
+            blockPopupsAndAds: true,
+            allowedHosts: allowedChallengeHosts(siteUrl),
             onLoadStop: (context, controller, url) async {
               final String? found = await _readToken(controller);
               if (found != null) {

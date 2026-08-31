@@ -16,6 +16,36 @@ import 'package:lolisnatcher/src/widgets/webview/webview_navigation_menu.dart';
 WebViewEnvironment? webViewEnvironment;
 Map<String, List<Cookie>> globalWindowsCookies = {};
 
+/// Hosts a locked-down webview may navigate to.
+///
+/// Kept as a pure top-level function so the rule can be tested against the
+/// exact ad hosts seen in the wild rather than by eye.
+bool isWebviewNavigationAllowed(
+  String url, {
+  required String initialUrl,
+  List<String> allowedHosts = const [],
+}) {
+  final Uri? uri = Uri.tryParse(url);
+  final String host = uri?.host.toLowerCase() ?? '';
+  if (host.isEmpty) {
+    // about:blank and data: are the page's own scaffolding, not a navigation.
+    return uri?.scheme == 'about' || uri?.scheme == 'data';
+  }
+  // A challenge cannot run without Cloudflare.
+  if (host == 'challenges.cloudflare.com' || host.endsWith('.cloudflare.com')) {
+    return true;
+  }
+  final List<String> allowed = [
+    ...allowedHosts,
+    if (allowedHosts.isEmpty) Uri.tryParse(initialUrl)?.host ?? '',
+  ].where((e) => e.isNotEmpty).map((e) => e.toLowerCase()).toList();
+
+  for (final String a in allowed) {
+    if (host == a || host.endsWith('.$a')) return true;
+  }
+  return false;
+}
+
 class InAppWebviewView extends StatefulWidget {
   const InAppWebviewView({
     required this.initialUrl,
@@ -24,6 +54,8 @@ class InAppWebviewView extends StatefulWidget {
     this.subtitle,
     this.onLoadStop,
     this.onResourceLoaded,
+    this.blockPopupsAndAds = false,
+    this.allowedHosts = const [],
     super.key,
   });
 
@@ -37,6 +69,18 @@ class InAppWebviewView extends StatefulWidget {
   /// tool uses this to discover that a site has an API at all — a front end
   /// calling `/api/…` is the only evidence of one from the outside.
   final void Function(String url)? onResourceLoaded;
+
+  /// Refuse pop-ups, new windows, and navigations away from [allowedHosts].
+  ///
+  /// Some sources monetise with interstitials that replace the page the moment
+  /// you touch it. When the page is there to be USED — completing a challenge,
+  /// say — letting an ad take it over means the task can never be finished.
+  final bool blockPopupsAndAds;
+
+  /// Hosts the page may navigate to when [blockPopupsAndAds] is on. Cloudflare's
+  /// challenge host is always allowed, since a challenge cannot run without it.
+  /// Empty means "the initial URL's host and its subdomains".
+  final List<String> allowedHosts;
 
   @override
   State<InAppWebviewView> createState() => _InAppWebviewViewState();
@@ -65,7 +109,9 @@ class _InAppWebviewViewState extends State<InAppWebviewView> {
       allowsInlineMediaPlayback: true,
       useShouldInterceptAjaxRequest: false,
       thirdPartyCookiesEnabled: true,
-      javaScriptCanOpenWindowsAutomatically: true,
+      javaScriptCanOpenWindowsAutomatically: !widget.blockPopupsAndAds,
+      supportMultipleWindows: !widget.blockPopupsAndAds,
+      useShouldOverrideUrlLoading: widget.blockPopupsAndAds,
     );
 
     if (Platform.isAndroid || Platform.isIOS) {
@@ -87,6 +133,12 @@ class _InAppWebviewViewState extends State<InAppWebviewView> {
       );
     }
   }
+
+  bool isNavigationAllowed(String url) => isWebviewNavigationAllowed(
+    url,
+    initialUrl: widget.initialUrl,
+    allowedHosts: widget.allowedHosts,
+  );
 
   Future<void> saveCookiesOnWidnows(
     InAppWebViewController controller,
@@ -141,6 +193,24 @@ class _InAppWebviewViewState extends State<InAppWebviewView> {
                 controller.complete(webViewController);
                 // webViewController.clearCache();
               },
+              onCreateWindow: widget.blockPopupsAndAds
+                  ? (controller, createWindowAction) async {
+                      // Refuse it outright: returning false tells the webview
+                      // not to open the window at all.
+                      return false;
+                    }
+                  : null,
+              shouldOverrideUrlLoading: widget.blockPopupsAndAds
+                  ? (controller, action) async {
+                      final String? url = action.request.url?.toString();
+                      if (url == null || url.isEmpty) {
+                        return NavigationActionPolicy.CANCEL;
+                      }
+                      return isNavigationAllowed(url)
+                          ? NavigationActionPolicy.ALLOW
+                          : NavigationActionPolicy.CANCEL;
+                    }
+                  : null,
               onLoadStart: (controller, url) {
                 setState(() {
                   loadingPercentage = 0;
