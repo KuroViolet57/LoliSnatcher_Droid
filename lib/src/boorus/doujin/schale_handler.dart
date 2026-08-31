@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:fpdart/fpdart.dart';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
 import 'package:lolisnatcher/src/boorus/doujin/doujin_listing_tag_backfill.dart';
@@ -16,6 +17,7 @@ import 'package:lolisnatcher/src/data/tag_suggestion.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/reader_handler.dart';
+import 'package:lolisnatcher/src/handlers/schale_clearance_handler.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
 
 /// niyaniya.moe — the Schale Network JSON API.
@@ -36,13 +38,16 @@ class SchaleHandler extends BooruHandler with DoujinListingTagBackfill, DoujinNa
   SchaleHandler(super.booru, super.limit);
 
   static const String _api = 'https://api.schale.network';
-  static const String _site = 'https://niyaniya.moe';
+  static const String defaultSite = 'https://niyaniya.moe';
 
-  /// Page-image size the CDN actually serves. 320 is the thumbnail; 896 is
-  /// the readable size. Anything larger is rejected by the CDN with a 400,
-  /// so those two are the whole menu.
-  static const int _readSize = 896;
-  static const int _thumbSize = 320;
+  /// The mirror actually configured, so Referer and Origin follow a switch to
+  /// shupogaki.moe rather than staying pinned to niyaniya. The API is shared
+  /// across mirrors; only the front end differs.
+  String get _site {
+    final String configured = booru.baseURL?.trim() ?? '';
+    if (configured.isEmpty) return defaultSite;
+    return configured.endsWith('/') ? configured.substring(0, configured.length - 1) : configured;
+  }
 
   @override
   bool get hasReader => true;
@@ -393,35 +398,74 @@ class SchaleHandler extends BooruHandler with DoujinListingTagBackfill, DoujinNa
 
     final thumbs = detail['thumbnails'];
     if (thumbs is! Map) return (item: null, failed: true, error: 'no page list');
-    final String base = thumbs['base']?.toString() ?? '';
-    final String fallbackBase = thumbs['fallback']?.toString() ?? base;
 
     item.tagsList = tagsFromDetail(detail);
     if (item.description?.isEmpty ?? true) item.description = detail['title']?.toString() ?? '';
 
-    // Every page is one entry; the stored path ends in the thumbnail size,
-    // which is swapped for the readable one.
+    // Readable pages are NOT in this response.
+    //
+    // `thumbnails.entries[]` is one 320px grid thumbnail per page, and the only
+    // other size the thumbnail endpoint serves is 896 — which exists solely for
+    // the cover (`thumbnails.main`). Substituting 896 into a non-cover entry's
+    // path returns 404, and any other size returns 400. That is what the reader
+    // was doing: showing 320px thumbnails as pages where they resolved at all.
+    //
+    // The real page list comes from POSTing to the same detail path with a
+    // clearance token, which yields a `data` array; each entry then addresses
+    // an image under /books/data/. Browsing needs none of this — only reading.
+    final List? data = await _pageEntries(id, key);
+    if (data == null) {
+      return (
+        item: null,
+        failed: true,
+        error: 'niyaniya needs a one-time check before it will serve pages. '
+            'Open the reader again to complete it.',
+      );
+    }
+
+    final String base = thumbs['base']?.toString() ?? '';
+    final String fallbackBase = thumbs['fallback']?.toString() ?? base;
+    final List entries = thumbs['entries'] as List? ?? const [];
+
     final List<BooruItem> pages = [];
-    for (final entry in thumbs['entries'] as List? ?? []) {
+    for (int index = 0; index < data.length; index++) {
+      final entry = data[index];
       if (entry is! Map) continue;
-      final String path = entry['path']?.toString() ?? '';
-      if (path.isEmpty) continue;
-      final String readPath = _atSize(path, _readSize);
-      final String thumbPath = _atSize(path, _thumbSize);
+      final String entryId = entry['id']?.toString() ?? '';
+      final String entryKey = entry['key']?.toString() ?? '';
+      if (entryId.isEmpty || entryKey.isEmpty) continue;
+
+      final String url = readUrlFor(
+        id: id,
+        key: key,
+        entryId: entryId,
+        entryKey: entryKey,
+        index: index,
+        clearance: SchaleClearanceHandler.instance.token ?? '',
+      );
+
+      // The matching grid thumbnail, for the filmstrip and as a placeholder.
+      // The API declares each page's dimensions, so the reader can reserve the
+      // right space before the image arrives.
+      final Map? thumb = index < entries.length && entries[index] is Map
+          ? entries[index] as Map
+          : null;
+      final String thumbPath = thumb?['path']?.toString() ?? '';
       final List<double> dims = [
-        for (final d in entry['dimensions'] as List? ?? []) (d as num).toDouble(),
+        for (final d in thumb?['dimensions'] as List? ?? const []) (d as num).toDouble(),
       ];
+
       final page = BooruItem(
-        fileURL: '$base$readPath',
-        sampleURL: '$base$readPath',
-        thumbnailURL: '$base$thumbPath',
+        fileURL: url,
+        sampleURL: url,
+        thumbnailURL: thumbPath.isEmpty ? url : '$base$thumbPath',
         tagsList: const [],
         postURL: '$_site/g/$id/$key',
         fileWidth: dims.isNotEmpty ? dims[0] : null,
         fileHeight: dims.length > 1 ? dims[1] : null,
       );
-      if (fallbackBase.isNotEmpty && fallbackBase != base) {
-        page.sources = ['$fallbackBase$readPath'];
+      if (thumbPath.isNotEmpty && fallbackBase.isNotEmpty && fallbackBase != base) {
+        page.sources = ['$fallbackBase$thumbPath'];
       }
       pages.add(page);
     }
@@ -432,9 +476,63 @@ class SchaleHandler extends BooruHandler with DoujinListingTagBackfill, DoujinNa
     return (item: item, failed: false, error: null);
   }
 
-  /// Rewrites `.../<n>.jpg` to the requested size.
-  static String _atSize(String path, int size) =>
-      path.replaceFirst(RegExp(r'/\d+\.(jpg|jpeg|png|webp)$'), '/$size.jpg');
+  /// The page list, which only exists once a clearance token is presented.
+  ///
+  /// Returns null when there is no usable clearance, so the caller can say so
+  /// rather than showing an empty reader. A rejected token is dropped, so the
+  /// next attempt asks for a fresh one instead of repeating a request that
+  /// cannot succeed.
+  Future<List?> _pageEntries(String id, String key) async {
+    final SchaleClearanceHandler clearance = SchaleClearanceHandler.instance;
+
+    for (int attempt = 0; attempt < 2; attempt++) {
+      if (!clearance.hasToken) {
+        final bool got = await clearance.requestClearance(_site);
+        if (!got) return null;
+      }
+
+      try {
+        final response = await DioNetwork.post(
+          extraUrlFor(id: id, key: key, clearance: clearance.token ?? ''),
+          headers: getHeaders(),
+          options: Options(validateStatus: (_) => true),
+        );
+        if (response.statusCode == 200) {
+          final data = _json(response.data);
+          if (data is Map && data['data'] is List) return data['data'] as List;
+          return null;
+        }
+        // 401/403 mean the token lapsed; anything else is not about clearance.
+        if (response.statusCode == 401 || response.statusCode == 403) {
+          clearance.invalidate();
+          continue;
+        }
+        return null;
+      } catch (_) {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  /// `POST /books/detail/{id}/{key}?crt=` — the page list.
+  @visibleForTesting
+  String extraUrlFor({required String id, required String key, required String clearance}) =>
+      '$_api/books/detail/$id/$key?crt=${Uri.encodeQueryComponent(clearance)}';
+
+  /// `GET /books/data/{id}/{key}/{entryId}/{entryKey}/{index}?crt=` — one page.
+  @visibleForTesting
+  String readUrlFor({
+    required String id,
+    required String key,
+    required String entryId,
+    required String entryKey,
+    required int index,
+    required String clearance,
+  }) =>
+      '$_api/books/data/$id/$key/$entryId/$entryKey/$index'
+      '?crt=${Uri.encodeQueryComponent(clearance)}';
+
 
   // ── generated Related / Recommended ───────────────────────────────────
 
