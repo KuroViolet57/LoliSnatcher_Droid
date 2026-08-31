@@ -18,6 +18,7 @@ import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
+import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/tag_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
@@ -52,6 +53,7 @@ void main() async {
     ..itemLimit = 20
     ..alice = Alice();
   ViewerHandler.register();
+  NavigationHandler.register();
   TagHandler.register();
   Logger.Inst();
 
@@ -105,7 +107,15 @@ void main() async {
 
     // Tags can arrive with the listing or be backfilled just after it.
     await check(source, 'tags', () async {
-      for (int i = 0; i < 20 && feed.where((e) => e.tagsList.isNotEmpty).isEmpty; i++) {
+      // The backfill is deliberately paced (niyaniya allows 5 requests a
+      // window), so a short wait measures the pacing rather than the feature.
+      // Wait until it stops making progress.
+      int previous = -1;
+      for (int i = 0; i < 120; i++) {
+        final int now = feed.where((e) => e.tagsList.isNotEmpty).length;
+        if (now == feed.length) break;
+        if (now == previous && i > 8 && now > 0) break;
+        previous = now;
         await Future.delayed(const Duration(milliseconds: 500));
       }
       final int tagged = feed.where((e) => e.tagsList.isNotEmpty).length;
@@ -219,10 +229,19 @@ void main() async {
 }
 
 /// The gallery id each source's query protocol expects.
+///
+/// serverId first: every doujin handler sets it to the site's own id, and the
+/// protocols match on digits only. Parsing it back out of the post URL is what
+/// this originally did, and it silently produced "123.html" for hitomi
+/// (/galleries/123.html), which its `^(id|related|recommend):(\d+)$` refuses —
+/// reporting three capabilities as broken that were never exercised.
 String _idOf(BooruItem item, BooruHandler handler) {
+  final String serverId = item.serverId ?? '';
+  if (RegExp(r'^\d+$').hasMatch(serverId)) return serverId;
   final segments = Uri.tryParse(item.postURL)?.pathSegments ?? const [];
   for (final s in segments) {
-    if (RegExp(r'^\d+$').hasMatch(s)) return s;
+    final String bare = s.split('.').first;
+    if (RegExp(r'^\d+$').hasMatch(bare)) return bare;
   }
-  return segments.isNotEmpty ? segments.last : '';
+  return serverId.isNotEmpty ? serverId : (segments.isNotEmpty ? segments.last : '');
 }
