@@ -17,6 +17,7 @@ import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
+import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -76,11 +77,21 @@ void main() async {
     }
   }
 
+  /// Each source's own first page. nhentai's is -1, and its id:/related:/
+  /// recommend: paths are explicitly gated on `pageNum <= 0` because those are
+  /// single fixed feeds with no second page. Walking them at a hardcoded page 1
+  /// reported all three as broken on the reference source while never calling
+  /// them.
+  int startingPageFor(Booru? booru) =>
+      BooruHandlerFactory().getBooruHandler([booru!], null).startingPage;
+
   Future<void> walk(String source, BooruHandler handler) async {
+    final int start = startingPageFor(handler.booru);
+
     // 1. the feed
     List<BooruItem> feed = const [];
     await check(source, 'feed', () async {
-      handler.pageNum = 1;
+      handler.pageNum = start + 1;
       feed = await handler.search('', handler.pageNum);
       if (feed.isEmpty) {
         return 'BROKEN  empty${handler.errorString.isNotEmpty ? ' (${handler.errorString})' : ''}';
@@ -140,22 +151,22 @@ void main() async {
     // 2. the detail page
     final BooruItem first = feed.first;
     await check(source, 'detail', () async {
-      handler.pageNum = 1;
-      final List<BooruItem> got = await handler.search('id:${_idOf(first, handler)}', 1);
+      handler.pageNum = start;
+      final List<BooruItem> got = await handler.search('id:${_idOf(first, handler)}', start);
       if (got.isEmpty) return 'BROKEN  id: returned nothing';
       return 'ok      ${got.first.description}';
     });
 
     // 3. the strips
     await check(source, 'related', () async {
-      handler.pageNum = 1;
-      final List<BooruItem> got = await handler.search('related:${_idOf(first, handler)}', 1);
+      handler.pageNum = start;
+      final List<BooruItem> got = await handler.search('related:${_idOf(first, handler)}', start);
       return got.isEmpty ? 'BROKEN  empty' : 'ok      ${got.length}';
     });
 
     await check(source, 'recommended', () async {
-      handler.pageNum = 1;
-      final List<BooruItem> got = await handler.search('recommend:${_idOf(first, handler)}', 1);
+      handler.pageNum = start;
+      final List<BooruItem> got = await handler.search('recommend:${_idOf(first, handler)}', start);
       return got.isEmpty ? 'BROKEN  empty' : 'ok      ${got.length}';
     });
 
