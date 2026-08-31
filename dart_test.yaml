@@ -1,0 +1,8 @@
+# The doujin parity walk talks to the real sites. It is a report run on
+# purpose, not part of the normal suite: it takes minutes, and a red row can
+# mean "this machine cannot reach the site" rather than "the handler broke".
+#
+# Run it with:  flutter test test/doujin_parity_walk_test.dart --run-skipped --tags live
+tags:
+  live:
+    skip: "live-network walk; run with --run-skipped --tags live"
