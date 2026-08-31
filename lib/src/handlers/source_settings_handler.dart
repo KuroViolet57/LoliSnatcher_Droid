@@ -304,8 +304,16 @@ class SourceSettingsHandler {
 
   bool gridTagStrip(Booru? booru) => _resolve(booru, (s) => s.gridTagStrip, true);
 
-  /// 'fit' (default — the whole cover is visible) | 'crop' | 'adapt'.
-  String coverDisplay(Booru? booru) => _resolve(booru, (s) => s.coverDisplay, 'fit');
+  /// 'crop' (default) | 'fit' | 'adapt'.
+  ///
+  /// Crop is the default because the CARD owns the geometry: it is a fixed
+  /// shape in a grid, and a cover narrower than that shape leaves side bars
+  /// rather than growing the card. Measured on a 200x300 card, a 320x454 cover
+  /// under 'fit' paints 159x226 inside a 200x226 box — 20% of the card width is
+  /// dead space, on every source, because most covers are taller than the slot.
+  /// 'fit' remains available per source for anyone who would rather see the
+  /// whole cover than fill the card.
+  String coverDisplay(Booru? booru) => _resolve(booru, (s) => s.coverDisplay, 'crop');
 
   /// 0 = endless (the Recommended strip keeps loading on scroll).
   int recommendedCount(Booru? booru) {

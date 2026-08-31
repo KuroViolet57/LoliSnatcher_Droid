@@ -41,17 +41,24 @@ class FaviconResolver {
   /// serve a usable favicon.ico of their own.
   static String duckDuckGoUrlFor(String host) => 'https://icons.duckduckgo.com/ip3/$host.ico';
 
-  /// The candidate chain for [url], best first. Empty when there's nothing to
-  /// try (no URL, or the host is already known to have none).
-  static List<String> candidatesFor(String url) {
-    final String host = hostOf(url);
-    if (url.isEmpty || host.isEmpty) return const [];
+  /// The candidate chain for [url], best first.
+  ///
+  /// [fallbackHost] is the site's own address, used when no favicon URL is
+  /// configured at all. The icon field is optional, so a source added without
+  /// one used to produce an EMPTY candidate list — the DuckDuckGo step was
+  /// never reached and every card in that feed went straight to a letter tile,
+  /// logging a favicon failure with a blank URL. The host alone is enough for
+  /// DuckDuckGo, so there is no reason to give up that early.
+  static List<String> candidatesFor(String url, {String? fallbackHost}) {
+    final String host = hostOf(url).isNotEmpty ? hostOf(url) : (fallbackHost ?? '');
+    if (host.isEmpty) return const [];
     if (_letterTile.contains(host)) return const [];
 
     final String? known = _working[host];
     if (known != null) return [known];
 
     final String ddg = duckDuckGoUrlFor(host);
+    if (url.isEmpty) return [ddg];
     return [url, if (ddg != url) ddg];
   }
 
@@ -367,9 +374,14 @@ class _BooruFaviconState extends State<BooruFavicon> {
     // Work out this host's candidate chain. A host already known to have no
     // usable icon goes straight to the letter tile, with no request at all.
     final String base = _baseUrl;
-    _candidates = FaviconResolver.candidatesFor(base);
+    // The site's own address, so a source configured without an icon URL can
+    // still reach the DuckDuckGo step instead of failing with a blank URL.
+    _candidates = FaviconResolver.candidatesFor(
+      base,
+      fallbackHost: FaviconResolver.hostOf(widget.booru?.baseURL ?? ''),
+    );
     _candidateIndex = 0;
-    _useLetterTile = !isIcon && base.isNotEmpty && _candidates.isEmpty;
+    _useLetterTile = !isIcon && _candidates.isEmpty;
 
     updateState();
 

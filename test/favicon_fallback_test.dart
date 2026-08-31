@@ -131,4 +131,42 @@ void main() {
       expect(FaviconLetterTile.letterFor('   ', '  '), '?');
     });
   });
+
+  group('a source with no icon URL still reaches DuckDuckGo', () {
+    // The device log carried 7 "Failed to load favicon:" lines with a BLANK
+    // url. The icon field is optional, and an empty one produced an empty
+    // candidate chain — so the fallback step was never reached and every card
+    // in that feed dropped to a letter tile.
+    setUp(FaviconResolver.resetForTests);
+
+    test('the site host alone is enough to build a candidate', () {
+      final candidates = FaviconResolver.candidatesFor('', fallbackHost: 'niyaniya.moe');
+
+      expect(candidates, isNotEmpty, reason: 'gave up before trying DuckDuckGo');
+      expect(candidates.single, FaviconResolver.duckDuckGoUrlFor('niyaniya.moe'));
+    });
+
+    test('a configured icon still leads, with DuckDuckGo behind it', () {
+      final candidates = FaviconResolver.candidatesFor(
+        'https://hitomi.la/favicon.ico',
+        fallbackHost: 'hitomi.la',
+      );
+
+      expect(candidates.first, 'https://hitomi.la/favicon.ico');
+      expect(candidates.last, FaviconResolver.duckDuckGoUrlFor('hitomi.la'));
+    });
+
+    test('with neither an icon nor a host there is genuinely nothing to try', () {
+      expect(FaviconResolver.candidatesFor(''), isEmpty);
+      expect(FaviconResolver.candidatesFor('', fallbackHost: ''), isEmpty);
+    });
+
+    test('a host already known to have no icon is not retried', () {
+      FaviconResolver.rememberNone('https://niyaniya.moe/favicon.ico');
+      expect(
+        FaviconResolver.candidatesFor('', fallbackHost: 'niyaniya.moe'),
+        isEmpty,
+      );
+    });
+  });
 }

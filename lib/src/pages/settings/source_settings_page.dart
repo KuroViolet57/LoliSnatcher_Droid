@@ -482,7 +482,7 @@ class _SourceSettingsPageState extends State<SourceSettingsPage> {
             subtitle: 'Fit letterboxes the whole cover; crop fills the card; adapt sizes the card to the cover.',
             options: const [('fit', 'Fit'), ('crop', 'Crop'), ('adapt', 'Adapt')],
             layerValue: layer.coverDisplay,
-            inheritedValue: globalLayer.coverDisplay ?? 'fit',
+            inheritedValue: globalLayer.coverDisplay ?? 'crop',
             onChanged: (v) => _update((s) => s.coverDisplay = v),
           ),
           _switchRow(
