@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter/foundation.dart';
 
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -25,6 +26,13 @@ enum CaptureKind {
   /// A body fetched afterwards through the app's own HTTP stack, using the
   /// cookies the webview earned. This is where an API response ends up.
   fetch,
+
+  /// A request the page made ITSELF, caught as it happened, with the response
+  /// body. This is the richest kind: a single-page app talks to its API through
+  /// fetch/XHR, and those calls carry the exact headers and query shape the
+  /// site uses. onLoadResource only ever reported the URL, and for a Next.js
+  /// app it does not report client-side calls at all.
+  xhr,
 }
 
 @immutable
@@ -112,6 +120,8 @@ class SourceCaptureHandler {
   void clear() {
     _entries.clear();
     _seenResources.clear();
+    _fetchedUrls.clear();
+    _seenXhr.clear();
     _totalChars = 0;
     _recording = false;
     _deleteJournal();
@@ -164,11 +174,226 @@ class SourceCaptureHandler {
     _add(CaptureEntry(kind: CaptureKind.resource, url: url));
   }
 
-  /// Pulls a URL through the app's own HTTP stack, which carries the cookies
-  /// the webview earned - so this reaches an API that a plain request could
-  /// not. Used to turn a bare resource URL into an actual response body.
+  /// The live recording webview, while one is open.
+  ///
+  /// Bodies are fetched THROUGH it rather than beside it. The previous version
+  /// pulled them with Dio after the webview had closed, which on a
+  /// Cloudflare-protected site failed every time: Dio has none of the
+  /// clearance the webview earned, so every request came back as an opaque
+  /// `DioException [unknown]: null`. That is what happened on hentaipaw.com -
+  /// the capture recorded the URLs and not one body.
+  InAppWebViewController? _liveController;
+
+  void attachController(InAppWebViewController controller) => _liveController = controller;
+
+  void detachController() => _liveController = null;
+
+  bool get hasLiveController => _liveController != null;
+
+  /// The script run inside the page to read a URL.
+  ///
+  /// `credentials: 'include'` is the whole point: the request goes out from the
+  /// page's own origin with the page's own cookies, so a site that only answers
+  /// cleared clients answers this too.
+  @visibleForTesting
+  static String fetchScript(String url) {
+    final String encoded = jsonEncode(url);
+    return '''
+(async () => {
+  try {
+    const r = await fetch($encoded, { credentials: 'include' });
+    const t = await r.text();
+    return JSON.stringify({
+      ok: true,
+      status: r.status,
+      contentType: r.headers.get('content-type'),
+      body: t,
+    });
+  } catch (e) {
+    return JSON.stringify({ ok: false, error: String(e) });
+  }
+})()
+''';
+  }
+
+  /// Reads what the page's own fetch returned. Separated so the shapes the
+  /// bridge hands back - a JSON string on one platform, a decoded Map on
+  /// another, null when the script threw - can be tested directly.
+  @visibleForTesting
+  static ({int? status, String? contentType, String? body, String? error})? parseFetchResult(
+    dynamic raw,
+  ) {
+    if (raw == null) return null;
+    dynamic decoded = raw;
+    if (raw is String) {
+      if (raw.trim().isEmpty) return null;
+      try {
+        decoded = jsonDecode(raw);
+      } catch (_) {
+        return null;
+      }
+    }
+    if (decoded is! Map) return null;
+    if (decoded['ok'] != true) {
+      return (status: null, contentType: null, body: null, error: decoded['error']?.toString());
+    }
+    return (
+      status: (decoded['status'] as num?)?.toInt(),
+      contentType: decoded['contentType']?.toString(),
+      body: decoded['body']?.toString() ?? '',
+      error: null,
+    );
+  }
+
+  /// Fetches a URL from inside the live page. Returns null when there is no
+  /// webview to run it in, or the page refused.
+  Future<CaptureEntry?> fetchBodyInPage(String url) async {
+    final InAppWebViewController? controller = _liveController;
+    if (controller == null || url.isEmpty) return null;
+    try {
+      final raw = await controller.evaluateJavascript(source: fetchScript(url));
+      final result = parseFetchResult(raw);
+      if (result == null || result.error != null) return null;
+      final ({String body, int? from}) capped = _cap(redact(result.body ?? ''));
+      final entry = CaptureEntry(
+        kind: CaptureKind.fetch,
+        url: url,
+        status: result.status,
+        contentType: result.contentType,
+        body: capped.body,
+        truncatedFrom: capped.from,
+      );
+      _add(entry);
+      return entry;
+    } catch (e, s) {
+      Logger.Inst().log(
+        'in-page capture fetch failed for $url: $e',
+        'SourceCaptureHandler',
+        'fetchBodyInPage',
+        LogTypes.exception,
+        s: s,
+      );
+      return null;
+    }
+  }
+
+  /// The name the page posts intercepted traffic back through.
+  static const String bridgeName = 'lsCapture';
+
+  /// Wraps fetch and XMLHttpRequest so every call the page makes is reported
+  /// with its response body.
+  ///
+  /// Injected at document start, before the app's own bundle runs, or the very
+  /// first API call - usually the one that fetches the listing - is missed.
+  /// Media and static assets are skipped: they are large, uninteresting, and
+  /// would blow the capture size limit.
+  static const String networkHookScript = r'''
+(() => {
+  if (window.__lsCaptureInstalled) return;
+  window.__lsCaptureInstalled = true;
+  const SKIP = /\.(jpe?g|png|webp|avif|gif|svg|ico|css|woff2?|ttf|otf|mp4|webm|m3u8|ts)(\?|$)/i;
+  const report = (method, url, status, contentType, body) => {
+    try {
+      if (!url || SKIP.test(url)) return;
+      window.flutter_inappwebview.callHandler(
+        'lsCapture',
+        { method, url, status, contentType, body: (body || '').slice(0, 200000) },
+      );
+    } catch (e) {}
+  };
+
+  const origFetch = window.fetch;
+  window.fetch = async function (...args) {
+    const res = await origFetch.apply(this, args);
+    try {
+      const req = args[0];
+      const url = typeof req === 'string' ? req : (req && req.url) || '';
+      const method = (args[1] && args[1].method) || (req && req.method) || 'GET';
+      const clone = res.clone();
+      clone.text().then((t) =>
+        report(method, url, res.status, res.headers.get('content-type'), t)
+      ).catch(() => {});
+    } catch (e) {}
+    return res;
+  };
+
+  const origOpen = XMLHttpRequest.prototype.open;
+  const origSend = XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.open = function (method, url) {
+    this.__lsMethod = method;
+    this.__lsUrl = url;
+    return origOpen.apply(this, arguments);
+  };
+  XMLHttpRequest.prototype.send = function () {
+    this.addEventListener('load', () => {
+      try {
+        report(
+          this.__lsMethod || 'GET',
+          this.__lsUrl || this.responseURL,
+          this.status,
+          this.getResponseHeader('content-type'),
+          typeof this.responseText === 'string' ? this.responseText : '',
+        );
+      } catch (e) {}
+    });
+    return origSend.apply(this, arguments);
+  };
+})();
+''';
+
+  /// Records one call the page made. Deduplicated by method+url, since a feed
+  /// refetches the same endpoint as it pages.
+  void recordXhr({
+    required String method,
+    required String url,
+    int? status,
+    String? contentType,
+    String? body,
+  }) {
+    if (!_recording || url.isEmpty) return;
+    if (!_seenXhr.add('$method $url')) return;
+    final ({String body, int? from}) capped = _cap(redact(body ?? ''));
+    _add(
+      CaptureEntry(
+        kind: CaptureKind.xhr,
+        url: '$method $url',
+        status: status,
+        contentType: contentType,
+        body: capped.body,
+        truncatedFrom: capped.from,
+      ),
+    );
+  }
+
+  final Set<String> _seenXhr = {};
+
+  /// Resource URLs whose bodies have not been read yet.
+  final Set<String> _fetchedUrls = {};
+
+  List<String> get pendingResources =>
+      [for (final url in interestingResources) if (!_fetchedUrls.contains(url)) url];
+
+  /// Reads every not-yet-read interesting resource from inside the live page.
+  ///
+  /// Called on each load stop, so a body is taken while its page still holds
+  /// the clearance that made it reachable.
+  Future<int> fetchPendingBodies({int limit = 40}) async {
+    if (!hasLiveController) return 0;
+    int done = 0;
+    for (final url in pendingResources.take(limit)) {
+      _fetchedUrls.add(url);
+      if (await fetchBodyInPage(url) != null) done++;
+    }
+    return done;
+  }
+
+  /// Pulls a URL through the app's own HTTP stack. Only reached when there is
+  /// no live webview to fetch from; on a protected site it will usually fail,
+  /// which is why the in-page path is tried first.
   Future<CaptureEntry?> fetchBody(String url) async {
     if (url.isEmpty) return null;
+    final CaptureEntry? inPage = await fetchBodyInPage(url);
+    if (inPage != null) return inPage;
     try {
       final response = await DioNetwork.get(
         url,
@@ -477,7 +702,11 @@ class SourceCaptureHandler {
     out.writeln('LoliSnatcher source capture');
     out.writeln('target: ${_target.isEmpty ? '(none)' : _target}');
     out.writeln('captured: ${stamp.toUtc().toIso8601String()}');
-    out.writeln('pages: $pageCount  fetched bodies: $fetchCount  resource urls: $resourceCount');
+    final int xhrCount = _entries.where((e) => e.kind == CaptureKind.xhr).length;
+    out.writeln(
+      'pages: $pageCount  api calls: $xhrCount  fetched bodies: $fetchCount  '
+      'resource urls: $resourceCount',
+    );
     out.writeln('credentials and session cookies are redacted');
     out.writeln();
 
@@ -495,6 +724,20 @@ class SourceCaptureHandler {
       final sorted = hosts.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
       for (final host in sorted) {
         out.writeln('  ${host.value.toString().padLeft(4)}  ${host.key}');
+      }
+      out.writeln();
+    }
+
+    // The page's own API calls, listed together. On a single-page app this is
+    // the handler's entire contract in one block.
+    final List<CaptureEntry> calls = [
+      for (final entry in _entries)
+        if (entry.kind == CaptureKind.xhr) entry,
+    ];
+    if (calls.isNotEmpty) {
+      out.writeln('--- api calls the page made itself ---');
+      for (final call in calls) {
+        out.writeln('  ${call.status ?? '???'}  ${call.url}');
       }
       out.writeln();
     }

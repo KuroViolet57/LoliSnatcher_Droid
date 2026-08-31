@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -56,6 +57,8 @@ class InAppWebviewView extends StatefulWidget {
     this.onResourceLoaded,
     this.blockPopupsAndAds = false,
     this.allowedHosts = const [],
+    this.onWebViewReady,
+    this.initialUserScripts = const [],
     super.key,
   });
 
@@ -76,6 +79,13 @@ class InAppWebviewView extends StatefulWidget {
   /// you touch it. When the page is there to be USED — completing a challenge,
   /// say — letting an ad take it over means the task can never be finished.
   final bool blockPopupsAndAds;
+
+  /// Called once the controller exists, before anything has loaded, so a caller
+  /// can register JavaScript handlers the injected scripts will post back to.
+  final void Function(InAppWebViewController controller)? onWebViewReady;
+
+  /// Scripts injected at document start, before the page's own bundle runs.
+  final List<UserScript> initialUserScripts;
 
   /// Hosts the page may navigate to when [blockPopupsAndAds] is on. Cloudflare's
   /// challenge host is always allowed, since a challenge cannot run without it.
@@ -189,8 +199,10 @@ class _InAppWebviewViewState extends State<InAppWebviewView> {
               initialSettings: settings,
               pullToRefreshController: pullToRefreshController,
               webViewEnvironment: webViewEnvironment,
+              initialUserScripts: UnmodifiableListView(widget.initialUserScripts),
               onWebViewCreated: (webViewController) {
                 controller.complete(webViewController);
+                widget.onWebViewReady?.call(webViewController);
                 // webViewController.clearCache();
               },
               onCreateWindow: widget.blockPopupsAndAds

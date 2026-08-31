@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
@@ -104,13 +105,48 @@ class _SourceCapturePageState extends State<SourceCapturePage> {
           title: 'Recording',
           subtitle: 'Solve any challenge, then browse: a listing, a gallery, a reader page',
           onResourceLoaded: capture.recordResource,
+          // The page's own API calls, caught as it makes them. For a Next.js
+          // app like hentaipaw.com this is the only way the API is visible at
+          // all: onLoadResource never sees a client-side fetch.
+          initialUserScripts: [
+            UserScript(
+              source: SourceCaptureHandler.networkHookScript,
+              injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+            ),
+          ],
+          onWebViewReady: (controller) {
+            controller.addJavaScriptHandler(
+              handlerName: SourceCaptureHandler.bridgeName,
+              callback: (args) {
+                final call = args.isNotEmpty ? args.first : null;
+                if (call is! Map) return null;
+                capture.recordXhr(
+                  method: call['method']?.toString() ?? 'GET',
+                  url: call['url']?.toString() ?? '',
+                  status: (call['status'] as num?)?.toInt(),
+                  contentType: call['contentType']?.toString(),
+                  body: call['body']?.toString(),
+                );
+                return null;
+              },
+            );
+          },
+          // hentaipaw.com's own page serves api.shinybirdwhispered.com
+          // interstitials that replace it; a hijacked page records nothing.
+          blockPopupsAndAds: true,
           onLoadStop: (context, controller, loadedUrl) async {
+            capture.attachController(controller);
             final String? html = await controller.getHtml();
             capture.recordPage(loadedUrl?.toString() ?? url, html);
+            // Bodies are read HERE, while the page is alive and cleared. Doing
+            // it after the webview closed is what produced a capture full of
+            // URLs and no bodies on hentaipaw.com.
+            await capture.fetchPendingBodies();
           },
         ),
       ),
     ).then((_) {
+      capture.detachController();
       capture.stop();
       if (mounted) setState(() {});
     });
