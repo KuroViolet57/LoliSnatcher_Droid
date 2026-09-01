@@ -190,16 +190,52 @@ class _SourceCapturePageState extends State<SourceCapturePage> {
       );
       return;
     }
-    await ServiceHandler.loadShareFileIntent(path, 'text/plain');
-  }
-
-  Future<void> _copy() async {
-    await Clipboard.setData(ClipboardData(text: capture.buildBundle()));
+    try {
+      await ServiceHandler.loadShareFileIntent(path, 'text/plain');
+    } catch (e) {
+      if (!mounted) return;
+      FlashElements.showSnackbar(
+        context: context,
+        title: const Text('Could not open the share sheet'),
+        content: Text('The file is saved at $path\n\n$e'),
+        leadingIcon: Symbols.error_rounded,
+      );
+      return;
+    }
     if (!mounted) return;
     FlashElements.showSnackbar(
       context: context,
-      title: const Text('Capture copied to clipboard'),
-      leadingIcon: Symbols.content_copy_rounded,
+      title: const Text('Capture shared'),
+      content: Text(path),
+      leadingIcon: Symbols.check_rounded,
+    );
+  }
+
+  Future<void> _copy() async {
+    final String full = capture.buildBundle();
+    final String clip = capture.buildClipboardBundle();
+    final bool shortened = clip.length < full.length;
+    try {
+      await Clipboard.setData(ClipboardData(text: clip));
+    } catch (e) {
+      // Android throws TransactionTooLargeException across the Binder for a
+      // large parcel, and it surfaces here rather than as a failed write.
+      if (!mounted) return;
+      FlashElements.showSnackbar(
+        context: context,
+        title: const Text('Too large to copy — use Share'),
+        content: Text('$e'),
+        leadingIcon: Symbols.error_rounded,
+      );
+      return;
+    }
+    if (!mounted) return;
+    FlashElements.showSnackbar(
+      context: context,
+      title: Text(
+        shortened ? 'Copied the API calls only — use Share for all of it' : 'Capture copied to clipboard',
+      ),
+      leadingIcon: shortened ? Symbols.info_rounded : Symbols.content_copy_rounded,
     );
   }
 

@@ -453,6 +453,45 @@ class SourceCaptureHandler {
     ];
   }
 
+  /// The most that can be put on the clipboard.
+  ///
+  /// Android moves clipboard data across a Binder transaction, which caps out
+  /// around 1MB for the whole parcel. A 5.7MB capture threw
+  /// TransactionTooLargeException and the Copy button did nothing at all — no
+  /// error, no clipboard, just silence. Anything larger has to go out as a file.
+  static const int maxClipboardChars = 256 * 1024;
+
+  /// A copyable form of the capture: the whole thing when it fits, otherwise
+  /// the parts that identify the site's API, which is what a handler is written
+  /// from. Never silently truncated — the result says what was left out.
+  String buildClipboardBundle() {
+    final String full = buildBundle();
+    if (full.length <= maxClipboardChars) return full;
+
+    final StringBuffer out = StringBuffer()
+      ..writeln('LoliSnatcher source capture (SHORTENED FOR THE CLIPBOARD)')
+      ..writeln('full capture: ${full.length} chars — too large for the clipboard,')
+      ..writeln('use Share to send the complete file instead.')
+      ..writeln();
+
+    // The API calls first: they are the capture's whole point, and they are
+    // small next to the page markup and script bodies.
+    for (final entry in _entries) {
+      if (entry.kind != CaptureKind.xhr) continue;
+      out
+        ..writeln('===== ${entry.kind.name.toUpperCase()} ${entry.status ?? ''} '
+            '${entry.contentType ?? ''}')
+        ..writeln('===== ${entry.url}')
+        ..writeln(entry.body ?? '')
+        ..writeln();
+      if (out.length > maxClipboardChars) break;
+    }
+
+    final String head = out.toString();
+    if (head.length <= maxClipboardChars) return head;
+    return '${head.substring(0, maxClipboardChars - 80)}\n\n===== CUT HERE — use Share for the rest';
+  }
+
   ({String body, int? from}) _cap(String body) {
     if (body.length <= maxBodyChars) return (body: body, from: null);
     return (body: body.substring(0, maxBodyChars), from: body.length);

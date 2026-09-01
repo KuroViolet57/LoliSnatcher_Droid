@@ -19,6 +19,7 @@ import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/reader_handler.dart';
 import 'package:lolisnatcher/src/handlers/schale_clearance_handler.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
+import 'package:lolisnatcher/src/utils/tools.dart';
 
 /// niyaniya.moe — the Schale Network JSON API.
 ///
@@ -82,9 +83,17 @@ class SchaleHandler extends BooruHandler with DoujinListingTagBackfill, DoujinNa
   List<String> get animatedPreviewFilters => const [];
 
   /// The API rejects requests that don't look like they came from the site.
+  ///
+  /// The user agent matters beyond looking right. The clearance token is minted
+  /// inside the challenge webview, which presents a plain Chrome UA because the
+  /// site refuses to render a Turnstile for anything containing `wv`. Sending a
+  /// DIFFERENT user agent when spending that token asks the API to honour a
+  /// clearance earned by what looks like another client. Both halves now use
+  /// the same string.
   @override
   Map<String, String> getHeaders() => {
     ...super.getHeaders(),
+    'User-Agent': Tools.nonWebViewUserAgent,
     'Referer': '$_site/',
     'Origin': _site,
     'Accept': 'application/json',

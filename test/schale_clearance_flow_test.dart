@@ -191,6 +191,94 @@ void main() {
     });
   });
 
+  group('a refused token cannot lock the challenge out', () {
+    late Directory tempDir;
+
+    setUp(() {
+      SettingsHandler.register();
+      ViewerHandler.register();
+      tempDir = Directory.systemTemp.createTempSync('schale_reject');
+      SettingsHandler.instance.path = '${tempDir.path}${Platform.pathSeparator}';
+      SchaleClearanceHandler.instance.resetForTests();
+    });
+
+    tearDown(() {
+      SchaleClearanceHandler.instance.resetForTests();
+      try {
+        tempDir.deleteSync(recursive: true);
+      } catch (_) {}
+    });
+
+    // The device log: a real clearance was obtained
+    // (crt=6946c74f-1b0e-47a8-a510-3873624ed15d) and every POST carrying it
+    // came back 403. The reader then reopened the webview, which read the SAME
+    // dead token back out of the page's localStorage, adopted it, and closed
+    // itself — so no challenge ever ran and restarting the app changed nothing.
+    const String dead = '6946c74f-1b0e-47a8-a510-3873624ed15d';
+
+    test('a rejected token is remembered, not merely dropped', () {
+      final c = SchaleClearanceHandler.instance..store(dead);
+      c.invalidate();
+
+      expect(c.hasToken, isFalse);
+      expect(c.rejectedToken, dead, reason: 'nothing knows which token failed');
+    });
+
+    test('the same token read back from the page is refused', () {
+      // This is the exact loop from the log.
+      final c = SchaleClearanceHandler.instance..store(dead);
+      c.invalidate();
+
+      expect(c.isUsableToken(dead), isFalse);
+    });
+
+    test('a genuinely new token is accepted', () {
+      final c = SchaleClearanceHandler.instance..store(dead);
+      c.invalidate();
+
+      expect(c.isUsableToken('a-fresh-one'), isTrue);
+    });
+
+    test('empty and null are never adopted', () {
+      final c = SchaleClearanceHandler.instance;
+      expect(c.isUsableToken(null), isFalse);
+      expect(c.isUsableToken(''), isFalse);
+    });
+
+    test('once a new token lands the old one stops being blocked', () {
+      // The rejected marker must not outlive its purpose, or a token that later
+      // becomes valid again could never be reused.
+      final c = SchaleClearanceHandler.instance..store(dead);
+      c
+        ..invalidate()
+        ..store('fresh');
+
+      expect(c.rejectedToken, isNull);
+      expect(c.isUsableToken(dead), isTrue);
+    });
+
+    test('the injected script deletes exactly the refused clearance', () {
+      final String js = SchaleClearanceHandler.clearRejectedScript(dead);
+
+      expect(js, contains(dead));
+      expect(js, contains("removeItem('clearance')"));
+      // Guarded, or a clearance earned seconds ago during this same challenge
+      // would be wiped by the next redirect.
+      expect(js, contains('held === dead'));
+    });
+
+    test('with nothing refused there is no script, so nothing is wiped', () {
+      expect(SchaleClearanceHandler.clearRejectedScript(null), isEmpty);
+      expect(SchaleClearanceHandler.clearRejectedScript(''), isEmpty);
+    });
+
+    test('a token containing quotes cannot break the injected script', () {
+      final String js = SchaleClearanceHandler.clearRejectedScript("a'\"; alert(1); //");
+      expect(js, contains(r'\"'));
+      expect(js, isNot(contains('alert(1); //;')));
+    });
+  });
+
   group('the request budget is respected', () {
     late Directory tempDir;
 

@@ -85,19 +85,64 @@ class SchaleClearanceHandler {
   void store(String value) {
     ensureLoaded();
     if (value.isEmpty) return;
+    if (value != _rejectedToken) _rejectedToken = null;
     _token = value;
     _persist();
     revision.value++;
   }
+
+  /// The token the API most recently rejected.
+  ///
+  /// The site keeps its clearance in the page's own localStorage, and
+  /// [invalidate] only ever dropped OUR copy. The webview then reopened,
+  /// read the SAME dead token straight back out of localStorage, adopted it and
+  /// closed itself — so the challenge never ran, the reader never worked, and
+  /// restarting the app changed nothing because the value was still sitting in
+  /// the webview's storage. Remembering it is what lets the challenge actually
+  /// be re-run.
+  String? _rejectedToken;
+
+  @visibleForTesting
+  String? get rejectedToken => _rejectedToken;
+
+  /// Whether [candidate] is a token worth adopting: present, and not the one
+  /// the API just refused.
+  @visibleForTesting
+  bool isUsableToken(String? candidate) =>
+      candidate != null && candidate.isNotEmpty && candidate != _rejectedToken;
 
   /// Called when the API rejects the token, so the next read asks for a new one
   /// rather than repeating a request that cannot succeed.
   void invalidate() {
     ensureLoaded();
     if (_token == null) return;
+    _rejectedToken = _token;
     _token = null;
     _persist();
     revision.value++;
+  }
+
+  /// Injected before the site's own code runs, to delete a clearance the API
+  /// has already refused. Without this the page sees a stored clearance, skips
+  /// the Turnstile entirely, and there is nothing for anyone to solve.
+  ///
+  /// Deliberately removes ONLY the rejected value: a clearance earned moments
+  /// ago during this same challenge must survive a redirect.
+  @visibleForTesting
+  static String clearRejectedScript(String? rejected) {
+    if (rejected == null || rejected.isEmpty) return '';
+    final String encoded = jsonEncode(rejected);
+    return '''
+(() => {
+  try {
+    const dead = $encoded;
+    const held = window.localStorage.getItem('$localStorageKey');
+    if (held && (held === dead || held === JSON.stringify(dead))) {
+      window.localStorage.removeItem('$localStorageKey');
+    }
+  } catch (e) {}
+})();
+''';
   }
 
   void _persist() {
@@ -123,6 +168,7 @@ class SchaleClearanceHandler {
   @visibleForTesting
   void resetForTests() {
     _token = null;
+    _rejectedToken = null;
     _loaded = true;
   }
 
@@ -167,6 +213,7 @@ class SchaleClearanceHandler {
     if (_challengeOpen) return hasToken;
 
     _challengeOpen = true;
+    Timer? poll;
     try {
       // Resolved inside the try on purpose. There is no navigator before the
       // first route is mounted, or while the app is being torn down, and this
@@ -174,6 +221,8 @@ class SchaleClearanceHandler {
       // took the reader down with it instead of letting loadItem report that
       // the check could not be shown.
       final BuildContext context = NavigationHandler.instance.navContext;
+      final String? rejected = _rejectedToken;
+
       await Navigator.push(
         context,
         MaterialPageRoute<void>(
@@ -188,14 +237,27 @@ class SchaleClearanceHandler {
             // page can never complete the challenge.
             blockPopupsAndAds: true,
             allowedHosts: allowedChallengeHosts(siteUrl),
-            onLoadStop: (context, controller, url) async {
-              final String? found = await _readToken(controller);
-              if (found != null) {
-                store(found);
-                // Closing on the caller's behalf: once the site has stored a
-                // clearance there is nothing left to do on this page.
+            // Delete the clearance the API already refused, before the site's
+            // code reads it. Otherwise the site sees a stored clearance and
+            // never runs the Turnstile at all.
+            initialUserScripts: [
+              if (clearRejectedScript(rejected).isNotEmpty)
+                UserScript(
+                  source: clearRejectedScript(rejected),
+                  injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+                ),
+            ],
+            onWebViewReady: (controller) {
+              // The token appears when the Turnstile callback finishes, which
+              // is well after the page has loaded — so this watches for it
+              // rather than looking once on load.
+              poll = Timer.periodic(const Duration(milliseconds: 700), (timer) async {
+                final String? found = await _readToken(controller);
+                if (!isUsableToken(found)) return;
+                timer.cancel();
+                store(found!);
                 if (context.mounted) unawaited(Navigator.of(context).maybePop());
-              }
+              });
             },
           ),
         ),
@@ -209,6 +271,7 @@ class SchaleClearanceHandler {
         s: s,
       );
     } finally {
+      poll?.cancel();
       _challengeOpen = false;
     }
     return hasToken;

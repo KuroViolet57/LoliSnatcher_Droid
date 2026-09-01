@@ -190,6 +190,69 @@ void main() {
     });
   });
 
+  group('a big capture can still leave the device', () {
+    // From the device log, twice:
+    //   PlatformException(error, android.os.TransactionTooLargeException:
+    //   data parcel size 5726632 bytes) ... at _SourceCapturePageState._copy
+    // Android moves clipboard data across a Binder transaction with a ~1MB
+    // ceiling for the whole parcel, so Copy silently did nothing at all.
+    String bundleOf(int bodies, int chars) {
+      final capture = SourceCaptureHandler.instance
+        ..clear()
+        ..start('https://hentaipaw.com');
+      for (int i = 0; i < bodies; i++) {
+        capture.recordXhr(
+          method: 'GET',
+          url: 'https://hentaipaw.com/api/library?page=$i',
+          status: 200,
+          contentType: 'application/json',
+          body: 'x' * chars,
+        );
+      }
+      return capture.buildClipboardBundle();
+    }
+
+    test('a small capture is copied whole', () {
+      final capture = SourceCaptureHandler.instance
+        ..clear()
+        ..start('https://hentaipaw.com');
+      capture.recordXhr(
+        method: 'GET',
+        url: 'https://hentaipaw.com/api/library?page=1',
+        status: 200,
+        body: '{"items":[]}',
+      );
+      final String clip = capture.buildClipboardBundle();
+      // Same content; the header carries a timestamp so they are not identical
+      // strings when built a microsecond apart.
+      expect(clip, isNot(contains('SHORTENED')));
+      expect(clip, contains('{"items":[]}'));
+      expect(clip, contains('api calls the page made itself'));
+    });
+
+    test('a capture the size of the real one is cut to fit the clipboard', () {
+      final String clip = bundleOf(20, 300 * 1024); // ~6MB, as on the device
+      expect(clip.length, lessThanOrEqualTo(SourceCaptureHandler.maxClipboardChars));
+    });
+
+    test('what survives the cut is the API calls, not the page markup', () {
+      // Cutting the wrong half would hand back something useless.
+      final String clip = bundleOf(3, 200 * 1024);
+      expect(clip, contains('https://hentaipaw.com/api/library?page=0'));
+    });
+
+    test('it says it was shortened rather than pretending to be complete', () {
+      final String clip = bundleOf(20, 300 * 1024);
+      expect(clip, contains('SHORTENED'));
+      expect(clip, contains('Share'));
+    });
+
+    test('the ceiling is well under the Binder limit', () {
+      // The parcel carries more than the string; leave room.
+      expect(SourceCaptureHandler.maxClipboardChars, lessThan(1024 * 1024));
+    });
+  });
+
   group('bodies are read while the page is alive', () {
     test('with no live webview nothing is attempted', () async {
       final capture = SourceCaptureHandler.instance;
