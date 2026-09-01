@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
 import 'dart:math';
@@ -192,6 +193,28 @@ abstract class BooruHandler {
   String get className => runtimeType.toString();
 
   bool get hasSizeData => false;
+
+  /// A response body as a list, or an empty list when it is not one.
+  ///
+  /// These endpoints normally answer with a JSON array, so the parsers cast
+  /// straight to List. When a site answers with something else instead - most
+  /// often a bot-check HTML page, which arrives as a String - that cast threw
+  /// `type 'String' is not a subtype of type 'List<dynamic>'` and took down
+  /// whatever was awaiting it. Seen on the device: a tag-suggestion lookup
+  /// during a For You search, where a challenge page killed the whole search
+  /// instead of costing one set of suggestions.
+  static List<dynamic> asResponseList(dynamic data) {
+    if (data is List) return data;
+    if (data is String) {
+      try {
+        final decoded = jsonDecode(data);
+        if (decoded is List) return decoded;
+      } catch (_) {
+        // Not JSON at all - a challenge page or an error body.
+      }
+    }
+    return const [];
+  }
 
   /// Whether this handler's backend can translate cross-booru OR groups
   /// (`tag1|tag2`) into a native query that actually returns combined

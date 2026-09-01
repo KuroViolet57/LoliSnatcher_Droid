@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 
 import 'package:lolisnatcher/src/widgets/common/compact_error_widget.dart';
+import 'package:lolisnatcher/src/utils/log_redaction.dart';
 import 'package:talker/talker.dart';
 import 'package:talker_dio_logger/talker_dio_logger.dart';
 // ignore: implementation_imports
@@ -94,6 +95,15 @@ class Logger {
       logStr = object.runtimeType.toString();
     }
 
+    // Credentials never belong in a log. A shared export carried this
+    // install's API keys, its login and complete session cookies in plain
+    // text, dozens of times over, because every request line is logged whole.
+    try {
+      logStr = redactSecrets(logStr);
+    } catch (_) {
+      // Redaction must never be the reason a log line is lost.
+    }
+
     if (logStr.length > 10000) {
       logStr = '${logStr.substring(0, 10000)}...';
     }
@@ -120,6 +130,9 @@ class Logger {
       ? TalkerDioLogger(
           talker: _talkerInstance,
           settings: const TalkerDioLoggerSettings(
+            // The header dumps are where whole session cookies and bearer
+            // tokens ended up.
+            hiddenHeaders: {'cookie', 'set-cookie', 'authorization', 'x-api-key'},
             printResponseData: false,
             printRequestData: true,
             printErrorData: true,

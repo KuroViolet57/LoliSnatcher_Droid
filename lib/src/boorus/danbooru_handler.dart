@@ -212,7 +212,7 @@ class DanbooruHandler extends BooruHandler {
 
   @override
   List parseTagSuggestionsList(dynamic response) {
-    final List<dynamic> parsedResponse = response.data;
+    final List<dynamic> parsedResponse = BooruHandler.asResponseList(response.data);
     return parsedResponse;
   }
 
@@ -238,7 +238,7 @@ class DanbooruHandler extends BooruHandler {
 
   @override
   List parseCommentsList(dynamic response) {
-    final List<dynamic> parsedResponse = response.data;
+    final List<dynamic> parsedResponse = BooruHandler.asResponseList(response.data);
     return parsedResponse;
   }
 
@@ -266,7 +266,7 @@ class DanbooruHandler extends BooruHandler {
 
   @override
   List parseNotesList(dynamic response) {
-    final List<dynamic> parsedResponse = response.data;
+    final List<dynamic> parsedResponse = BooruHandler.asResponseList(response.data);
     return parsedResponse;
   }
 

@@ -1,3 +1,4 @@
+import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
@@ -230,7 +231,7 @@ class R34HentaiHandlerOld extends R34HentaiHandler {
 
   @override
   Future<List> parseListFromResponse(dynamic response) async {
-    final List<dynamic> parsedResponse = response.data;
+    final List<dynamic> parsedResponse = BooruHandler.asResponseList(response.data);
     return parsedResponse; // Limit doesn't work with this api
   }
 

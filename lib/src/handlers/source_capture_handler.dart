@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
+import 'package:lolisnatcher/src/utils/log_redaction.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 
@@ -673,62 +674,10 @@ class SourceCaptureHandler {
   /// there: the clearance and session cookies the site just issued, and every
   /// credential configured in this install.
   @visibleForTesting
-  static String redact(String input, {List<String>? extraSecrets}) {
-    if (input.isEmpty) return input;
-    String out = input;
-
-    // Cookie values, wherever they are spelled out.
-    for (final name in const [
-      'cf_clearance',
-      'cf_bm',
-      '__cf_bm',
-      'session',
-      'sessionid',
-      'session_id',
-      'PHPSESSID',
-      'csrftoken',
-      'csrf_token',
-      'access_token',
-      'refresh_token',
-      'remember_web',
-      'auth_token',
-    ]) {
-      // NB: replaceAllMapped, not replaceAll — Dart does not expand `$1` in a
-      // replaceAll replacement string, so that form writes a literal `$1` over
-      // the very text being kept. The secret still goes, but the surrounding
-      // markup is mangled and the capture becomes harder to read.
-      out = out.replaceAllMapped(
-        RegExp('(${RegExp.escape(name)}\\s*[=:]\\s*"?)[^;,"\\s&]+', caseSensitive: false),
-        (match) => '${match.group(1)}<redacted>',
-      );
-    }
-
-    // Bearer / Key headers echoed into a page or a payload.
-    out = out.replaceAllMapped(
-      RegExp(r'((?:Bearer|Key|Basic|Token)\s+)[A-Za-z0-9._\-+/=]{8,}', caseSensitive: false),
-      (match) => '${match.group(1)}<redacted>',
-    );
-
-    // Every credential this install has configured, for any booru - a capture
-    // of one site should never carry another site's login.
-    final List<String> secrets = [...?extraSecrets];
-    try {
-      for (final booru in SettingsHandler.instance.booruList) {
-        for (final value in [booru.apiKey, booru.userID, booru.defTags]) {
-          if (value != null && value.trim().length >= 4) secrets.add(value.trim());
-        }
-      }
-    } catch (_) {
-      // Settings not available (tests, early startup) - the cookie rules above
-      // still apply.
-    }
-    for (final secret in secrets.toSet()) {
-      if (secret.length < 4) continue;
-      out = out.replaceAll(secret, '<redacted>');
-    }
-
-    return out;
-  }
+  /// Delegates to the shared redactor so a capture and a log strip exactly the
+  /// same things.
+  static String redact(String input, {List<String>? extraSecrets}) =>
+      redactSecrets(input, extraSecrets: extraSecrets);
 
   // ── the bundle ────────────────────────────────────────────────────────
 
