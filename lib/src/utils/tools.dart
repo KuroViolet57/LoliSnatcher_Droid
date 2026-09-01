@@ -387,13 +387,18 @@ class Tools {
             hasCaptchaContent)) {
       // delete invalid cloudflare cookie
       final webUri = WebUri('${uri.scheme}://$host');
+      // Bounded for the same reason as the read: this sits on the response
+      // path of a failed request, and a wedged channel here would stall the
+      // very error handling meant to recover from it.
       final bool res =
           await CookieManager.instance(
             webViewEnvironment: webViewEnvironment,
-          ).deleteCookie(
-            url: webUri,
-            name: 'cf_clearance',
-          );
+          )
+              .deleteCookie(
+                url: webUri,
+                name: 'cf_clearance',
+              )
+              .timeout(cookieJarTimeout, onTimeout: () => false);
       if (!res) {
         Logger.Inst().log(
           'Failed to delete cookie',
@@ -463,6 +468,21 @@ class Tools {
     return false;
   }
 
+  /// How long the WebView cookie jar gets to answer before a request goes out
+  /// without cookies.
+  ///
+  /// This call crosses a platform channel into the Android WebView's
+  /// CookieManager, and it runs on EVERY request from the Dio interceptor. It
+  /// used to have no timeout, so when the channel did not answer — which is
+  /// what happens after Android has reaped the WebView while the app sat in
+  /// the background — the await never returned and the request was never even
+  /// issued. No HTTP entry, no error, no timeout: a spinner forever, on every
+  /// new tab and every tag preview, until the app was restarted.
+  ///
+  /// A request with no cookie header may fail. A request that is never made
+  /// cannot do anything at all, so this bounds it and carries on.
+  static const Duration cookieJarTimeout = Duration(seconds: 5);
+
   static Future<String> getCookies(String uri) async {
     String cookieString = '';
     if (isOnPlatformWithWebviewSupport) {
@@ -472,7 +492,7 @@ class Tools {
         if (Platform.isWindows) {
           cookies.addAll(globalWindowsCookies[WebUri(uri).host] ?? []);
         } else {
-          cookies = await cookieManager.getCookies(url: WebUri(uri));
+          cookies = await cookieManager.getCookies(url: WebUri(uri)).timeout(cookieJarTimeout);
         }
         // Build through a map: the WebView jar can hold the SAME cookie name
         // more than once (host vs domain scope, or Cloudflare rotating
@@ -537,16 +557,20 @@ class Tools {
           if (Platform.isWindows) {
             globalWindowsCookies[WebUri(uri).host]?.add(cookie);
           }
-          await cookieManager.setCookie(
-            url: WebUri(uri),
-            name: cookie.name,
-            value: cookie.value,
-            domain: cookie.domain,
-            path: cookie.path ?? '/',
-            expiresDate: cookie.expiresDate,
-            isSecure: cookie.isSecure,
-            isHttpOnly: cookie.isHttpOnly,
-          );
+          // Same channel, same risk: writing a cookie back must not be able to
+          // wedge the response interceptor either.
+          await cookieManager
+              .setCookie(
+                url: WebUri(uri),
+                name: cookie.name,
+                value: cookie.value,
+                domain: cookie.domain,
+                path: cookie.path ?? '/',
+                expiresDate: cookie.expiresDate,
+                isSecure: cookie.isSecure,
+                isHttpOnly: cookie.isHttpOnly,
+              )
+              .timeout(cookieJarTimeout);
         }
         return true;
       } catch (e, s) {

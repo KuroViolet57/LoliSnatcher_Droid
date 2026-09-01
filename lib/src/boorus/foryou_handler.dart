@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'dart:async';
 import 'dart:math';
 
@@ -104,6 +105,43 @@ class ForYouHandler extends BooruHandler {
   @override
   List<MetaTag> availableMetaTags() => [];
 
+  /// Terms that must hold for EVERY result, as opposed to seeds, which only
+  /// steer what gets asked for.
+  ///
+  /// For You treats a plain tag as a seed — searching `girl` aims the feed at
+  /// `girl` rather than requiring it — which is right for steering and wrong
+  /// when the intent was "only show me these". Nothing here was ever applied
+  /// as a constraint, so a feed asked for animated content came back with both.
+  ///
+  /// Two forms are honoured, both of which already mean "constrain" everywhere
+  /// else in the app:
+  ///   -tag         exclude it
+  ///   filter:tag   require it   (also accepts `filter:a|b` for OR boorus)
+  String extraFilter = '';
+
+  @visibleForTesting
+  static String parseFilter(String input) {
+    final List<String> parts = [];
+    for (final term in input.split(' ').where((t) => t.trim().isNotEmpty)) {
+      final String t = term.trim();
+      if (t.startsWith('-') && t.length > 1) {
+        parts.add(t);
+      } else if (t.toLowerCase().startsWith('filter:') && t.length > 'filter:'.length) {
+        parts.add(t.substring('filter:'.length));
+      }
+    }
+    return parts.join(' ');
+  }
+
+  /// Applies [extraFilter] to one sub-query.
+  @visibleForTesting
+  String withFilter(String query) {
+    final String filter = extraFilter.trim();
+    if (filter.isEmpty) return query;
+    if (query.trim().isEmpty) return filter;
+    return '$query $filter';
+  }
+
   List<String> _parseSeeds(String input) {
     final List<String> seeds = [];
     for (final term in input.split(' ').where((t) => t.trim().isNotEmpty)) {
@@ -207,6 +245,7 @@ class ForYouHandler extends BooruHandler {
     // Seeds: explicit if given, else the strongest profile tags.
     _seeds = _parseSeeds(tags);
     _explicitSeeds = _seeds.isNotEmpty;
+    extraFilter = parseFilter(tags);
 
     // Recently viewed posts drive the facet blend in profile mode.
     if (!_explicitSeeds && !_historyLoaded) {
@@ -337,8 +376,9 @@ class ForYouHandler extends BooruHandler {
 
         handler.pageNum = _sourceStartPages[j] + 1 + _feedPage;
         handler.locked = false;
+        final String finalQuery = withFilter(resolved);
         final List<BooruItem>? got = await _bounded(
-          () async => (await handler.search(resolved, null)) as List<BooruItem>? ?? <BooruItem>[],
+          () async => (await handler.search(finalQuery, null)) as List<BooruItem>? ?? <BooruItem>[],
           _searchTimeout,
         );
         if (got == null) {
@@ -424,7 +464,7 @@ class ForYouHandler extends BooruHandler {
           handler.pageNum = _sourceStartPages[j] + 1 + _feedPage;
           handler.locked = false;
           final List<BooruItem>? got = await _bounded(
-            () async => (await handler.search(query, null)) as List<BooruItem>? ?? <BooruItem>[],
+            () async => (await handler.search(withFilter(query), null)) as List<BooruItem>? ?? <BooruItem>[],
             _searchTimeout,
           );
           if (got == null) return MapEntry(facet, <BooruItem>[]);

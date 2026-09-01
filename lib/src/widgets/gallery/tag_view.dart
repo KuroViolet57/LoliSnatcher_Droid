@@ -813,7 +813,14 @@ class _TagViewState extends State<TagView> {
   /// into the sliver child list unconditionally.
   List<Widget> _buildRelatedGrids() {
     final List<Widget> sections = [];
-    final Booru currentBooru = searchHandler.currentBooru;
+    // The post's OWN booru, not the feed's.
+    //
+    // On a virtual feed (For You, favourites, merge) searchHandler.currentBooru
+    // is the feed itself, so these strips searched For You for the artist and
+    // came back with another For You page instead of that artist's work on the
+    // site the post came from. tagBooru already resolves this — the tag-type
+    // lookup a few lines below has always used it; the strips did not.
+    final Booru currentBooru = tagBooru;
     if (currentBooru.name == null) {
       return const [];
     }
@@ -851,7 +858,11 @@ class _TagViewState extends State<TagView> {
     //    can't satisfy. Skip until the name is in.
     final String? uploader = item.uploaderName?.isNotEmpty == true ? item.uploaderName : null;
     if (uploader != null) {
-      final userMetaTag = searchHandler.currentBooruHandler.availableMetaTags().firstWhereOrNull((t) => t is UserMetaTag);
+      // Same reason: on a virtual feed the FEED's handler has no user metatag
+      // (or the wrong one), so the uploader strip silently never appeared.
+      final userMetaTag = (possibleBooruHandler ?? handler)
+          .availableMetaTags()
+          .firstWhereOrNull((t) => t is UserMetaTag);
       if (userMetaTag != null) {
         final String userQuery = userMetaTag.tagBuilder(null, null, uploader);
         if (userQuery.trim().isNotEmpty) {
@@ -3520,6 +3531,10 @@ class _TagContentPreviewState extends State<TagContentPreview> with AutomaticKee
                 30,
                 sourceItem: widget.suggestFor!,
                 targetBoorus: widget.suggestBoorus,
+                // The header's videos/GIFs toggle. Suggestions are built from
+                // the source post, not from _effectiveTag, so without this the
+                // toggle was assembled into a string nothing ever read.
+                extraFilter: _activeAnimatedFilter ?? '',
               ),
       );
       // Preview strips are throwaway mini-searches. Don't let them write the

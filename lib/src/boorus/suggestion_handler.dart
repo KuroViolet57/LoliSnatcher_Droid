@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/meta_tag.dart';
@@ -24,7 +26,27 @@ class SuggestionHandler extends BooruHandler {
     super.limit, {
     required this.sourceItem,
     List<Booru>? targetBoorus,
+    this.extraFilter = '',
   }) : targetBoorus = (targetBoorus == null || targetBoorus.isEmpty) ? [booru] : targetBoorus;
+
+  /// A constraint every facet query must also satisfy — the strip header's
+  /// videos/GIFs toggle, for instance.
+  ///
+  /// [search]'s `tags` argument is NOT this: the strip passes a placeholder
+  /// ('suggestions') as its tag, because the query is built from the source
+  /// post rather than from a tag. That is why the toggle appeared to do
+  /// nothing — the filter was assembled into a string this handler never read,
+  /// and every facet went out unconstrained.
+  final String extraFilter;
+
+  /// Applies [extraFilter] to one facet query.
+  @visibleForTesting
+  String withFilter(String query) {
+    final String filter = extraFilter.trim();
+    if (filter.isEmpty) return query;
+    if (query.trim().isEmpty) return filter;
+    return '$query $filter';
+  }
 
   /// The post the suggestions are built around.
   final BooruItem sourceItem;
@@ -112,8 +134,9 @@ class SuggestionHandler extends BooruHandler {
         final BooruHandler handler = _handlerFor(target);
         handler.pageNum = handler.pageNum + 1;
         handler.locked = false;
+        final String finalQuery = withFilter(query);
         final List<BooruItem>? got = await _bounded(
-          () async => (await handler.search(query, null)) as List<BooruItem>? ?? <BooruItem>[],
+          () async => (await handler.search(finalQuery, null)) as List<BooruItem>? ?? <BooruItem>[],
           _searchTimeout,
         );
         if (got == null) {
