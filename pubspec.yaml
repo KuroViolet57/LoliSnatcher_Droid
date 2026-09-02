@@ -25,7 +25,10 @@ dependencies:
   device_info_plus: ^12.4.0
   dio: ^5.9.2
   dio_http2_adapter: ^2.7.0
-  dynamic_color: ^1.8.1
+  # PINNED. 1.9.0's build.gradle.kts uses `kotlin { compilerOptions { jvmTarget } }`,
+  # which needs a newer Kotlin Gradle plugin than this project's Android setup
+  # provides. Revisit together with the Flutter/Gradle toolchain upgrade.
+  dynamic_color: 1.8.1
   equatable: ^2.0.8
   extended_image: ^10.0.1
   external_video_player_launcher: ^0.0.3
@@ -54,7 +57,11 @@ dependencies:
   get: ^5.0.0-release-candidate-9.3.2 # ^4.7.3
   google_fonts: ^8.0.2
   material_symbols_icons: ^4.2801.0
-  html: ^0.15.6
+  # PINNED. 0.15.7 removed the top-level matches() from src/query_selector.dart,
+  # which flutter_html 3.0.0 imports directly (a src/ import - no semver
+  # protection). flutter_html is unmaintained, so this cannot move until it is
+  # replaced.
+  html: 0.15.6
   http_proxy: # ^1.2.2
     git:
       url: https://github.com/NANI-SORE/http_proxy.git
