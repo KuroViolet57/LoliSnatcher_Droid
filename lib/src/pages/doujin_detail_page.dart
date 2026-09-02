@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -10,6 +11,8 @@ import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
+import 'package:lolisnatcher/src/handlers/schale_clearance_handler.dart';
+import 'package:lolisnatcher/src/boorus/doujin/schale_handler.dart';
 import 'package:lolisnatcher/src/handlers/reader_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -724,16 +727,35 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
                       style: const TextStyle(color: Colors.redAccent, fontSize: 12.5),
                     ),
                   ),
-                  TextButton(
-                    onPressed: () {
-                      setState(() {
-                        _loading = true;
-                        _loadError = null;
-                      });
-                      _load();
-                    },
-                    child: const Text('Retry'),
-                  ),
+                  if (_loadError == SchaleClearanceHandler.needsSolveMessage)
+                    // The clearance case gets its own action: open the visible
+                    // solver, then reload — which harvests what the site stored.
+                    TextButton(
+                      onPressed: () async {
+                        final String site = handler.booru.baseURL?.trim() ?? '';
+                        await SchaleClearanceHandler.instance.solve(
+                          site.isEmpty ? SchaleHandler.defaultSite : site,
+                        );
+                        if (!mounted) return;
+                        setState(() {
+                          _loading = true;
+                          _loadError = null;
+                        });
+                        unawaited(_load());
+                      },
+                      child: const Text('Complete the check'),
+                    )
+                  else
+                    TextButton(
+                      onPressed: () {
+                        setState(() {
+                          _loading = true;
+                          _loadError = null;
+                        });
+                        _load();
+                      },
+                      child: const Text('Retry'),
+                    ),
                 ],
               ),
             ),

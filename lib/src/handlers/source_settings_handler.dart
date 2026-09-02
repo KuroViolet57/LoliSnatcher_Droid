@@ -15,6 +15,7 @@ class SourceSettings {
   SourceSettings({
     this.readingDirection,
     this.pageTurnAnimation,
+    this.imageQuality,
     this.tapZones,
     this.doubleTapZoom,
     this.preloadPages,
@@ -38,6 +39,7 @@ class SourceSettings {
   factory SourceSettings.fromJson(Map<String, dynamic> json) => SourceSettings(
     readingDirection: json['readingDirection'] as String?,
     pageTurnAnimation: json['pageTurnAnimation'] as String?,
+    imageQuality: json['imageQuality'] as String?,
     tapZones: json['tapZones'] as bool?,
     doubleTapZoom: json['doubleTapZoom'] as bool?,
     preloadPages: json['preloadPages'] as int?,
@@ -63,6 +65,10 @@ class SourceSettings {
 
   /// 'animated' | 'instant'
   String? pageTurnAnimation;
+
+  /// Reader image width for sources that serve several: '780' | '980' |
+  /// '1280' | '1600' | '0' (original). Null inherits.
+  String? imageQuality;
 
   /// Tap left/right screen edges to turn pages.
   bool? tapZones;
@@ -127,6 +133,7 @@ class SourceSettings {
   Map<String, dynamic> toJson() => {
     if (readingDirection != null) 'readingDirection': readingDirection,
     if (pageTurnAnimation != null) 'pageTurnAnimation': pageTurnAnimation,
+    if (imageQuality != null) 'imageQuality': imageQuality,
     if (tapZones != null) 'tapZones': tapZones,
     if (doubleTapZoom != null) 'doubleTapZoom': doubleTapZoom,
     if (preloadPages != null) 'preloadPages': preloadPages,
@@ -287,6 +294,10 @@ class SourceSettingsHandler {
       pick(settingsFor(booru)) ?? pick(globalSettings) ?? fallback;
 
   String readingDirection(Booru? booru) => _resolve(booru, (s) => s.readingDirection, 'ltr');
+
+  /// Reader image width. Koharu's default and fallback order are followed by
+  /// the handlers that use it; '0' is original size.
+  String imageQuality(Booru? booru) => _resolve(booru, (s) => s.imageQuality, '1280');
 
   bool instantPageTurns(Booru? booru) => _resolve(booru, (s) => s.pageTurnAnimation, 'animated') == 'instant';
 

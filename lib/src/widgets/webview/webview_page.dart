@@ -47,6 +47,35 @@ bool isWebviewNavigationAllowed(
   return false;
 }
 
+/// Main-frame navigation policy for the solver window.
+///
+/// Everything with no host — `about:`, `blob:`, `data:`, `javascript:` — is
+/// allowed: those are the page's own scaffolding and Cloudflare's challenge
+/// frames, never an interstitial. `intent://` and other app schemes are
+/// refused because they leave the app. An off-list host is refused because it
+/// replaces the page the person is trying to complete.
+bool isMainFrameNavigationAllowed(
+  String url, {
+  required String initialUrl,
+  required List<String> allowedHosts,
+}) {
+  final Uri? uri = Uri.tryParse(url);
+  if (uri == null) return false;
+  final String scheme = uri.scheme.toLowerCase();
+  if (scheme == 'intent' || scheme == 'market') return false;
+  final String host = uri.host.toLowerCase();
+  if (host.isEmpty) return true;
+  if (host == 'challenges.cloudflare.com' || host.endsWith('.cloudflare.com')) return true;
+  final List<String> allowed = [
+    ...allowedHosts,
+    Uri.tryParse(initialUrl)?.host ?? '',
+  ].where((e) => e.isNotEmpty).map((e) => e.toLowerCase()).toList();
+  for (final String a in allowed) {
+    if (host == a || host.endsWith('.$a')) return true;
+  }
+  return false;
+}
+
 class InAppWebviewView extends StatefulWidget {
   const InAppWebviewView({
     required this.initialUrl,
@@ -59,6 +88,7 @@ class InAppWebviewView extends StatefulWidget {
     this.allowedHosts = const [],
     this.onWebViewReady,
     this.initialUserScripts = const [],
+    this.restrictMainFrameHosts,
     super.key,
   });
 
@@ -86,6 +116,14 @@ class InAppWebviewView extends StatefulWidget {
 
   /// Scripts injected at document start, before the page's own bundle runs.
   final List<UserScript> initialUserScripts;
+
+  /// When set, only MAIN-frame navigations are held to this host list; a
+  /// navigation that would replace the whole page with something off-site is
+  /// refused, and nothing else is touched. Sub-frames load freely — including
+  /// `blob:` and `about:srcdoc` frames, which Cloudflare's Turnstile needs and
+  /// which the broader [blockPopupsAndAds] filter starved. Pop-ups are left
+  /// at their defaults. This is the solver-window policy.
+  final List<String>? restrictMainFrameHosts;
 
   /// Hosts the page may navigate to when [blockPopupsAndAds] is on. Cloudflare's
   /// challenge host is always allowed, since a challenge cannot run without it.
@@ -121,7 +159,7 @@ class _InAppWebviewViewState extends State<InAppWebviewView> {
       thirdPartyCookiesEnabled: true,
       javaScriptCanOpenWindowsAutomatically: !widget.blockPopupsAndAds,
       supportMultipleWindows: !widget.blockPopupsAndAds,
-      useShouldOverrideUrlLoading: widget.blockPopupsAndAds,
+      useShouldOverrideUrlLoading: widget.blockPopupsAndAds || widget.restrictMainFrameHosts != null,
     );
 
     if (Platform.isAndroid || Platform.isIOS) {
@@ -212,9 +250,21 @@ class _InAppWebviewViewState extends State<InAppWebviewView> {
                       return false;
                     }
                   : null,
-              shouldOverrideUrlLoading: widget.blockPopupsAndAds
+              shouldOverrideUrlLoading: (widget.blockPopupsAndAds || widget.restrictMainFrameHosts != null)
                   ? (controller, action) async {
                       final String? url = action.request.url?.toString();
+                      if (widget.restrictMainFrameHosts != null) {
+                        // Solver policy: judge the main frame only.
+                        if (!action.isForMainFrame) return NavigationActionPolicy.ALLOW;
+                        if (url == null || url.isEmpty) return NavigationActionPolicy.ALLOW;
+                        return isMainFrameNavigationAllowed(
+                          url,
+                          initialUrl: widget.initialUrl,
+                          allowedHosts: widget.restrictMainFrameHosts!,
+                        )
+                            ? NavigationActionPolicy.ALLOW
+                            : NavigationActionPolicy.CANCEL;
+                      }
                       if (url == null || url.isEmpty) {
                         return NavigationActionPolicy.CANCEL;
                       }

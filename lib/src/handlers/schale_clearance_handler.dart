@@ -15,28 +15,31 @@ import 'package:lolisnatcher/src/widgets/webview/webview_page.dart';
 /// The clearance token niyaniya/Schale requires before it will serve readable
 /// pages.
 ///
-/// Grid thumbnails are anonymous, and so is everything about browsing. Only
-/// reading is gated: the page list and the page images both hang off a `crt`
-/// query parameter. The site obtains that token by solving a Cloudflare
-/// Turnstile challenge and POSTing it to `auth.schale.network/clearance`, then
-/// keeps the result in `localStorage["clearance"]` and reuses it until it is
-/// rejected.
+/// Browsing is anonymous. Reading is gated: the page list, the page dataset
+/// and Related all hang off a `crt` query parameter. The site obtains that
+/// token by solving a Cloudflare Turnstile and POSTing the result to
+/// `auth.schale.network/clearance`, then keeps the reply in
+/// `localStorage["clearance"]` and reuses it until the API refuses it.
 ///
-/// Rather than reimplement the challenge, this opens the site in the app's own
-/// webview, lets the person solve it exactly as they would in a browser, and
-/// then reads the token the site stored. That is deliberately manual: solving
-/// Turnstile automatically is neither reliable nor something to build.
+/// This is TWO windows, and it only works because there are two. The design
+/// is the one Keiyoushi's Koharu extension uses, which reads this site every
+/// day from an embedded WebView:
 ///
-/// Two things make that work, both learned the hard way from a device log:
+///  * The SOLVER — [solve] — is visible and full-size. The person completes
+///    the Turnstile in it by hand. It presents Chrome's reduced user agent,
+///    allows pop-ups, and filters navigation for the MAIN frame only, so
+///    Cloudflare's `blob:` challenge frames and workers load. It solves; it
+///    never reads.
+///  * The HARVESTER — [harvest] — is headless. It loads the site, reads
+///    `localStorage.getItem('clearance')` once the page has finished, and
+///    destroys itself. No user agent override, no navigation filter, no
+///    scripts, a ten-second latch. It reads; it never solves.
 ///
-///  * The site's bundle runs `navigator.userAgent.includes("wv")` and, when it
-///    matches, renders NO Turnstile and skips the reader's init entirely. Every
-///    Android WebView UA contains `wv`, so the challenge simply never appeared
-///    and the reader sat on a spinner. The webview is therefore given a UA with
-///    the WebView markers stripped.
-///  * The mirrors serve full-page interstitial ads. One of them replaced the
-///    challenge page outright. The webview refuses pop-ups and any navigation
-///    away from the site and Cloudflare.
+/// They share WebView storage. That sharing IS the mechanism: the site writes
+/// the clearance in the solver, the harvester reads it back. Collapsing the
+/// two into one window is what broke every previous version of this.
+///
+/// Nothing here solves a challenge automatically, and nothing should.
 class SchaleClearanceHandler {
   SchaleClearanceHandler._();
 
@@ -46,6 +49,14 @@ class SchaleClearanceHandler {
 
   /// Where the site keeps it, and therefore where it is read from.
   static const String localStorageKey = 'clearance';
+
+  /// How long the harvester waits for the page to finish before giving up.
+  static const Duration harvestTimeout = Duration(seconds: 10);
+
+  /// The message a gated call surfaces when there is no usable token. The
+  /// detail page turns it into a button that opens the solver.
+  static const String needsSolveMessage =
+      'niyaniya needs a one-time check before it will serve pages. Open the check to complete it.';
 
   String? _token;
   bool _loaded = false;
@@ -85,7 +96,7 @@ class SchaleClearanceHandler {
   void store(String value) {
     ensureLoaded();
     if (value.isEmpty) return;
-    // Whatever is being stored has just been produced or re-validated by the
+    // Whatever is being stored was just produced or re-validated by the
     // site, so nothing is "rejected" any more — including the same string.
     _rejectedToken = null;
     _token = value;
@@ -93,42 +104,21 @@ class SchaleClearanceHandler {
     revision.value++;
   }
 
-  /// The token the API most recently rejected.
+  /// The token the API most recently refused.
   ///
   /// The site keeps its clearance in the page's own localStorage, and
-  /// [invalidate] only ever dropped OUR copy. The webview then reopened,
-  /// read the SAME dead token straight back out of localStorage, adopted it and
-  /// closed itself — so the challenge never ran, the reader never worked, and
-  /// restarting the app changed nothing because the value was still sitting in
-  /// the webview's storage. Remembering it is what lets the challenge actually
-  /// be re-run.
+  /// dropping OUR copy does nothing to that. The harvester would read the
+  /// same dead token straight back out of storage, so it must know which
+  /// value not to trust, and the solver must delete it before the site's own
+  /// code can see it — otherwise the site sees a stored clearance and never
+  /// renders a Turnstile at all.
   String? _rejectedToken;
 
   @visibleForTesting
   String? get rejectedToken => _rejectedToken;
 
-  /// Whether [candidate] is a token worth adopting.
-  ///
-  /// [afterClear] is whether the challenge webview has been observed with NO
-  /// clearance in its storage during this attempt. Before that point, a value
-  /// equal to the refused one is the stale copy the page still held and must
-  /// be ignored. After it, any value present was written by the site DURING
-  /// this challenge — and is accepted even if it is the same string, because
-  /// the site has just validated it.
-  ///
-  /// The previous rule refused the rejected value unconditionally. The API
-  /// hands the same token back after a fresh challenge, so the Turnstile
-  /// passed, the page unblurred, and the app sat there refusing the token the
-  /// site had just re-issued. A single 403 had become permanent.
-  @visibleForTesting
-  bool isUsableToken(String? candidate, {required bool afterClear}) {
-    if (candidate == null || candidate.isEmpty) return false;
-    if (afterClear) return true;
-    return candidate != _rejectedToken;
-  }
-
-  /// Called when the API rejects the token, so the next read asks for a new one
-  /// rather than repeating a request that cannot succeed.
+  /// Called when the API answers 400 or 403 to a gated call. Drops the token;
+  /// the caller surfaces "open the check" and does NOT retry silently.
   void invalidate() {
     ensureLoaded();
     if (_token == null) return;
@@ -136,29 +126,6 @@ class SchaleClearanceHandler {
     _token = null;
     _persist();
     revision.value++;
-  }
-
-  /// Injected before the site's own code runs, to delete a clearance the API
-  /// has already refused. Without this the page sees a stored clearance, skips
-  /// the Turnstile entirely, and there is nothing for anyone to solve.
-  ///
-  /// Deliberately removes ONLY the rejected value: a clearance earned moments
-  /// ago during this same challenge must survive a redirect.
-  @visibleForTesting
-  static String clearRejectedScript(String? rejected) {
-    if (rejected == null || rejected.isEmpty) return '';
-    final String encoded = jsonEncode(rejected);
-    return '''
-(() => {
-  try {
-    const dead = $encoded;
-    const held = window.localStorage.getItem('$localStorageKey');
-    if (held && (held === dead || held === JSON.stringify(dead))) {
-      window.localStorage.removeItem('$localStorageKey');
-    }
-  } catch (e) {}
-})();
-''';
   }
 
   void _persist() {
@@ -190,9 +157,8 @@ class SchaleClearanceHandler {
 
   /// Reads the token the site stored after a challenge was solved.
   ///
-  /// Separated from the webview so it can be tested against the shape the page
-  /// actually returns: `evaluateJavascript` hands back the raw value, which is
-  /// a bare string, a quoted string, or null depending on platform.
+  /// `evaluateJavascript` hands back the raw value, which is a bare string, a
+  /// quoted string, or null depending on platform.
   @visibleForTesting
   static String? tokenFromLocalStorage(dynamic raw) {
     if (raw == null) return null;
@@ -206,9 +172,103 @@ class SchaleClearanceHandler {
     return value.isEmpty ? null : value;
   }
 
-  /// The site itself, its API, and its auth host — the challenge POSTs the
-  /// Turnstile token to auth.schale.network, so blocking that would break it.
-  static List<String> allowedChallengeHosts(String siteUrl) {
+  /// Whether a value read from storage is worth adopting: present, and not
+  /// the one the API just refused.
+  @visibleForTesting
+  bool isUsableToken(String? candidate) =>
+      candidate != null && candidate.isNotEmpty && candidate != _rejectedToken;
+
+  // ── the harvester ─────────────────────────────────────────────────────
+
+  bool _harvesting = false;
+
+  /// Reads the site's stored clearance from a headless webview.
+  ///
+  /// Exactly Koharu's `getClearance()`: JavaScript and DOM storage on,
+  /// network images off, load the site, read `localStorage['clearance']` on
+  /// page finished, destroy. No user agent override and no scripts — this
+  /// window never has to pass anything, it only has to share storage with the
+  /// window that did.
+  ///
+  /// Returns the token, or null when storage holds nothing usable within
+  /// [harvestTimeout].
+  Future<String?> harvest(String siteUrl) async {
+    ensureLoaded();
+    if (_token != null) return _token;
+    if (_harvesting) return null;
+    _harvesting = true;
+
+    final Completer<String?> done = Completer<String?>();
+    HeadlessInAppWebView? headless;
+    try {
+      headless = HeadlessInAppWebView(
+        initialUrlRequest: URLRequest(url: WebUri(siteUrl)),
+        initialSettings: InAppWebViewSettings(
+          javaScriptEnabled: true,
+          domStorageEnabled: true,
+          databaseEnabled: true,
+          blockNetworkImage: true,
+        ),
+        onLoadStop: (controller, url) async {
+          if (done.isCompleted) return;
+          try {
+            final raw = await controller.evaluateJavascript(
+              source: "window.localStorage.getItem('$localStorageKey')",
+            );
+            final String? found = tokenFromLocalStorage(raw);
+            _log('harvest: page finished at ${url?.host ?? '?'}, storage=${_describe(found)}');
+            if (!done.isCompleted) done.complete(isUsableToken(found) ? found : null);
+          } catch (e) {
+            _log('harvest: read failed: $e');
+            if (!done.isCompleted) done.complete(null);
+          }
+        },
+      );
+      await headless.run();
+      final String? found = await done.future.timeout(
+        harvestTimeout,
+        onTimeout: () {
+          _log('harvest: timed out after ${harvestTimeout.inSeconds}s');
+          return null;
+        },
+      );
+      if (found != null) store(found);
+      return found;
+    } catch (e, s) {
+      Logger.Inst().log('harvest failed: $e', 'SchaleClearanceHandler', 'harvest', LogTypes.exception, s: s);
+      return null;
+    } finally {
+      _harvesting = false;
+      try {
+        await headless?.dispose();
+      } catch (_) {}
+    }
+  }
+
+  // ── the solver ────────────────────────────────────────────────────────
+
+  bool _solverOpen = false;
+
+  /// Chrome's reduced user agent, the shape Mihon's WebView presents and the
+  /// one Cloudflare is known to accept from an embedded window. The major
+  /// version follows the device's own Chrome build; everything that could
+  /// identify the device is gone.
+  ///
+  /// The site's bundle refuses to render a Turnstile for any agent containing
+  /// `wv`, so the WebView's own string can never be used here.
+  static String reducedChromeUserAgent(String deviceUserAgent) {
+    final RegExp major = RegExp(r'Chrome/(\d+)');
+    final String version = major.firstMatch(deviceUserAgent)?.group(1) ?? '149';
+    return 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 '
+        '(KHTML, like Gecko) Chrome/$version.0.0.0 Mobile Safari/537.36';
+  }
+
+  /// The site, its API and its auth host. Only MAIN-frame navigation is held
+  /// to this list: an interstitial that replaces the page is refused, while
+  /// Cloudflare's challenge frames — including its `blob:` frames and workers,
+  /// which the site's own security policy grants — load untouched. Filtering
+  /// sub-frames is what starved the Turnstile before.
+  static List<String> allowedMainFrameHosts(String siteUrl) {
     final String host = Uri.tryParse(siteUrl)?.host ?? '';
     return [
       if (host.isNotEmpty) host,
@@ -218,18 +278,39 @@ class SchaleClearanceHandler {
     ];
   }
 
-  /// The bridge name the challenge page reports through.
+  /// Injected into the SOLVER before the site's own code runs, to delete a
+  /// clearance the API has already refused. Otherwise the page sees a stored
+  /// clearance and never renders the Turnstile. Removes only the refused
+  /// value, so a clearance earned during this very visit survives a redirect.
+  @visibleForTesting
+  static String clearRejectedScript(String? rejected) {
+    if (rejected == null || rejected.isEmpty) return '';
+    final String encoded = jsonEncode(rejected);
+    return '''
+(() => {
+  try {
+    const dead = $encoded;
+    const held = window.localStorage.getItem('$localStorageKey');
+    if (held && (held === dead || held === JSON.stringify(dead))) {
+      window.localStorage.removeItem('$localStorageKey');
+    }
+  } catch (e) {}
+})();
+''';
+  }
+
+  /// The bridge name the solver page reports through.
   static const String bridgeName = 'lsClearance';
 
-  /// Injected at document start into the challenge webview. Reports, into the
-  /// app log, the three things that decide whether a clearance is obtained:
-  /// the Turnstile callback firing, the POST to auth.schale.network and what
-  /// it answered, and the site writing `localStorage["clearance"]`.
+  /// Injected into the SOLVER at document start. Reports the links that
+  /// decide the outcome: the Turnstile rendering, its callback or error, the
+  /// POST to auth.schale.network and what it answered, and the site writing
+  /// `localStorage["clearance"]`. Every hook calls straight through.
   ///
-  /// Three device logs in a row show the same thing: the Turnstile appears,
-  /// then nothing, and no token is ever stored. From outside the webview that
-  /// is all that can be seen. This puts eyes inside it. It changes nothing
-  /// about the page's behaviour — every hook calls straight through.
+  /// `window.turnstile` is captured with a property setter so the wrapper is
+  /// in place the instant Cloudflare's script assigns it. The previous version
+  /// polled for it and lost the race every time, which is why no
+  /// `turnstile.render` line ever appeared in a log.
   static const String diagnosticScript = r'''
 (() => {
   if (window.__lsClearanceHook) return;
@@ -237,9 +318,8 @@ class SchaleClearanceHandler {
   const say = (event, detail) => {
     try { window.flutter_inappwebview.callHandler('lsClearance', { event, detail: String(detail || '').slice(0, 300) }); } catch (e) {}
   };
-  say('page', location.href + ' | stored=' + (localStorage.getItem('clearance') || 'null'));
+  say('page', location.href + ' | stored=' + (localStorage.getItem('clearance') ? 'present' : 'null'));
 
-  // The site writes the clearance here on success.
   const origSet = Storage.prototype.setItem;
   Storage.prototype.setItem = function (k, v) {
     if (k === 'clearance') say('setItem', 'clearance=' + String(v).slice(0, 12) + '…');
@@ -251,15 +331,13 @@ class SchaleClearanceHandler {
     return origRemove.apply(this, arguments);
   };
 
-  // The site's XHR to auth.schale.network/clearance carries the Turnstile
-  // token and answers with the clearance. Its status is the whole story.
   const origOpen = XMLHttpRequest.prototype.open;
   const origSend = XMLHttpRequest.prototype.send;
-  XMLHttpRequest.prototype.open = function (m, u) { this.__lsUrl = String(u); return origOpen.apply(this, arguments); };
+  XMLHttpRequest.prototype.open = function (m, u) { this.__lsMethod = String(m); this.__lsUrl = String(u); return origOpen.apply(this, arguments); };
   XMLHttpRequest.prototype.send = function () {
     const u = this.__lsUrl || '';
     if (/schale\.network/.test(u)) {
-      this.addEventListener('loadend', () => say('xhr', this.status + ' ' + u.replace(/crt=[^&]+/, 'crt=…') + ' | ' + String(this.responseText || '').slice(0, 120)));
+      this.addEventListener('loadend', () => say('xhr', (this.__lsMethod || '?') + ' ' + this.status + ' ' + u.replace(/crt=[^&]+/, 'crt=…') + ' | ' + String(this.responseText || '').slice(0, 120)));
     }
     return origSend.apply(this, arguments);
   };
@@ -273,10 +351,8 @@ class SchaleClearanceHandler {
     return res;
   };
 
-  // Turnstile: wrap render so the callback and any error are visible.
-  const wrapTurnstile = () => {
-    const t = window.turnstile;
-    if (!t || t.__lsWrapped) return false;
+  const wrap = (t) => {
+    if (!t || t.__lsWrapped || typeof t.render !== 'function') return t;
     t.__lsWrapped = true;
     const origRender = t.render;
     t.render = function (el, opts) {
@@ -290,46 +366,36 @@ class SchaleClearanceHandler {
       o['expired-callback'] = function () { say('turnstile.expired', ''); return xcb && xcb.apply(this, arguments); };
       return origRender.call(this, el, o);
     };
-    return true;
+    return t;
   };
-  if (!wrapTurnstile()) {
-    let tries = 0;
-    const iv = setInterval(() => { if (wrapTurnstile() || ++tries > 200) clearInterval(iv); }, 100);
-  }
+  let held = window.turnstile;
+  try {
+    Object.defineProperty(window, 'turnstile', {
+      configurable: true,
+      get() { return held; },
+      set(v) { held = wrap(v); },
+    });
+  } catch (e) {}
+  if (held) held = wrap(held);
   window.addEventListener('error', (e) => say('js.error', (e.message || '') + ' @' + (e.filename || '') + ':' + e.lineno));
 })();
 ''';
 
-  void _logFromPage(dynamic call) {
-    if (call is! Map) return;
-    Logger.Inst().log(
-      'challenge page: ${call['event']} — ${call['detail']}',
-      'SchaleClearanceHandler',
-      'challenge',
-      LogTypes.booruHandlerInfo,
-    );
-  }
-
-  bool _challengeOpen = false;
-
-  /// Opens the site so the challenge can be solved by hand, then takes whatever
-  /// clearance the site stored. Returns true when a token was obtained.
+  /// Opens the site full-size so the challenge can be solved by hand.
   ///
-  /// [siteUrl] follows the configured mirror rather than being hardcoded, so a
-  /// switch to shupogaki.moe challenges on the mirror actually in use.
-  Future<bool> requestClearance(String siteUrl) async {
-    if (_challengeOpen) return hasToken;
-
-    _challengeOpen = true;
-    Timer? poll;
+  /// Does not read anything. When the page reports that the site has written
+  /// a clearance, the window closes itself; the caller then runs [harvest].
+  /// Returns true when the site was seen to store a clearance.
+  Future<bool> solve(String siteUrl) async {
+    if (_solverOpen) return false;
+    _solverOpen = true;
+    bool stored = false;
     try {
-      // Resolved inside the try on purpose. There is no navigator before the
-      // first route is mounted, or while the app is being torn down, and this
-      // throws rather than returning null in that case. Outside the try it
-      // took the reader down with it instead of letting loadItem report that
-      // the check could not be shown.
+      // Resolved inside the try: there is no navigator before the first route
+      // mounts, and this throws rather than returning null in that case.
       final BuildContext context = NavigationHandler.instance.navContext;
       final String? rejected = _rejectedToken;
+      _log('solver opened on $siteUrl (rejected=${_describe(rejected)})');
 
       await Navigator.push(
         context,
@@ -337,17 +403,9 @@ class SchaleClearanceHandler {
           builder: (_) => InAppWebviewView(
             initialUrl: siteUrl,
             title: 'Reader access',
-            subtitle: 'Complete the check, then come back — pages need it, browsing does not',
-            // Without this the site detects a WebView and never shows the
-            // challenge at all. This is the whole reason the flow works.
-            userAgent: Tools.nonWebViewUserAgent,
-            // The mirrors serve interstitials that hijack the page; a hijacked
-            // page can never complete the challenge.
-            blockPopupsAndAds: true,
-            allowedHosts: allowedChallengeHosts(siteUrl),
-            // Delete the clearance the API already refused, before the site's
-            // code reads it. Otherwise the site sees a stored clearance and
-            // never runs the Turnstile at all.
+            subtitle: 'Complete the check. This window closes by itself once the site accepts it.',
+            userAgent: reducedChromeUserAgent(Tools.browserUserAgent),
+            restrictMainFrameHosts: allowedMainFrameHosts(siteUrl),
             initialUserScripts: [
               if (clearRejectedScript(rejected).isNotEmpty)
                 UserScript(
@@ -363,80 +421,47 @@ class SchaleClearanceHandler {
               controller.addJavaScriptHandler(
                 handlerName: bridgeName,
                 callback: (args) {
-                  _logFromPage(args.isNotEmpty ? args.first : null);
+                  final call = args.isNotEmpty ? args.first : null;
+                  if (call is! Map) return null;
+                  _log('solver page: ${call['event']} — ${call['detail']}');
+                  // The site wrote a clearance. The solver's job is done; the
+                  // harvester reads it.
+                  if (call['event'] == 'setItem' && !stored) {
+                    stored = true;
+                    if (context.mounted) unawaited(Navigator.of(context).maybePop());
+                  }
                   return null;
                 },
               );
-              Logger.Inst().log(
-                'challenge opened on $siteUrl (rejected=${rejected == null ? 'none' : '${rejected.substring(0, 8)}…'})',
-                'SchaleClearanceHandler',
-                'challenge',
-                LogTypes.booruHandlerInfo,
-              );
-              // The token appears when the Turnstile callback finishes, which
-              // is well after the page has loaded — so this watches for it
-              // rather than looking once on load.
-              //
-              // Seeing the storage EMPTY once is the proof that the injected
-              // script has run and the site is being challenged afresh. From
-              // then on whatever appears was written by the site in response
-              // to that challenge, same string or not.
-              bool sawEmpty = rejected == null;
-              int ticks = 0;
-              poll = Timer.periodic(const Duration(milliseconds: 700), (timer) async {
-                final String? found = await _readToken(controller);
-                // Every ~5s, say what the poll sees — the one fact none of the
-                // logs so far contain.
-                if (ticks++ % 7 == 0) {
-                  Logger.Inst().log(
-                    'challenge poll: ${found == null ? 'no clearance in storage' : 'clearance ${found.substring(0, found.length < 8 ? found.length : 8)}…'} (sawEmpty=$sawEmpty)',
-                    'SchaleClearanceHandler',
-                    'challenge',
-                    LogTypes.booruHandlerInfo,
-                  );
-                }
-                if (found == null) {
-                  sawEmpty = true;
-                  return;
-                }
-                if (!isUsableToken(found, afterClear: sawEmpty)) return;
-                timer.cancel();
-                store(found);
-                if (context.mounted) unawaited(Navigator.of(context).maybePop());
-              });
             },
           ),
         ),
       );
     } catch (e, s) {
-      Logger.Inst().log(
-        'clearance challenge failed: $e',
-        'SchaleClearanceHandler',
-        'requestClearance',
-        LogTypes.exception,
-        s: s,
-      );
+      Logger.Inst().log('solver failed: $e', 'SchaleClearanceHandler', 'solve', LogTypes.exception, s: s);
     } finally {
-      poll?.cancel();
-      _challengeOpen = false;
-      Logger.Inst().log(
-        'challenge closed: ${hasToken ? 'token obtained' : 'NO token'}',
-        'SchaleClearanceHandler',
-        'challenge',
-        LogTypes.booruHandlerInfo,
-      );
+      _solverOpen = false;
+      _log('solver closed: ${stored ? 'site stored a clearance' : 'no clearance was stored'}');
     }
-    return hasToken;
+    return stored;
   }
 
-  Future<String?> _readToken(InAppWebViewController controller) async {
-    try {
-      final raw = await controller.evaluateJavascript(
-        source: "window.localStorage.getItem('$localStorageKey')",
-      );
-      return tokenFromLocalStorage(raw);
-    } catch (_) {
-      return null;
-    }
+  /// The full manual flow: harvest what the site already holds; if nothing,
+  /// open the solver, then harvest again. Returns the token or null.
+  Future<String?> obtain(String siteUrl) async {
+    final String? existing = await harvest(siteUrl);
+    if (existing != null) return existing;
+    await solve(siteUrl);
+    return harvest(siteUrl);
   }
+
+  static String _describe(String? token) =>
+      token == null ? 'none' : '${token.substring(0, token.length < 8 ? token.length : 8)}…';
+
+  static void _log(String message) => Logger.Inst().log(
+    message,
+    'SchaleClearanceHandler',
+    'clearance',
+    LogTypes.booruHandlerInfo,
+  );
 }

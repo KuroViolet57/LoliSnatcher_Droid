@@ -350,6 +350,15 @@ class _SourceSettingsPageState extends State<SourceSettingsPage> {
             onChanged: (v) => _update((s) => s.keepScreenOn = v),
           ),
           //
+          _choiceRow<String>(
+            title: 'Image quality',
+            subtitle: 'Width of reader pages on sources that offer several sizes (niyaniya). '
+                'If the chosen size is missing for a gallery, the nearest available one is used.',
+            options: const [('780', '780'), ('980', '980'), ('1280', '1280'), ('1600', '1600'), ('0', 'Original')],
+            layerValue: layer.imageQuality,
+            inheritedValue: globalLayer.imageQuality ?? '1280',
+            onChanged: (v) => _update((s) => s.imageQuality = v),
+          ),
           _header('SEARCH'),
           if (sorts.isNotEmpty)
             _choiceRow<String>(
