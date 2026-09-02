@@ -14,7 +14,9 @@ import 'package:lolisnatcher/src/data/response_error.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_suggestion.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
+import 'package:lolisnatcher/src/boorus/nhentai_tag_catalog.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
+import 'package:lolisnatcher/src/handlers/tag_catalog_source.dart';
 import 'package:lolisnatcher/src/handlers/reader_handler.dart';
 import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
@@ -992,6 +994,26 @@ class NHentaiHandler extends BooruHandler {
 
   // ─────────────────────────── suggestions ───────────────────────────
 
+  /// The site's tag search, raw: `[{id, name, type, count}]` for every type
+  /// at once. Feeds the suggestion list and the tag builder's prefix walk.
+  Future<List<dynamic>> searchTagsRaw(String query, {int limit = 25, CancelToken? cancelToken}) async {
+    final response = await DioNetwork.post(
+      '$_base/api/v2/tags/search',
+      data: {'query': query, 'limit': limit},
+      headers: getHeaders(),
+      cancelToken: cancelToken,
+    );
+    final List rows = _json(response.data) as List? ?? [];
+    rows.forEach(_recordSiteInfo);
+    return rows;
+  }
+
+  static String normalizeName(String raw) => _normalizeName(raw);
+
+  /// Every type, through the search API's prefix walk (tag builder).
+  @override
+  late final TagCatalogSource tagCatalog = NHentaiTagCatalog(this);
+
   @override
   Future<Either<ResponseError, List<TagSuggestion>>> getTagSuggestions(
     String input, {
@@ -1000,14 +1022,7 @@ class NHentaiHandler extends BooruHandler {
     final String query = input.trim().replaceAll('_', ' ');
     if (query.isEmpty) return const Right([]);
     try {
-      final response = await DioNetwork.post(
-        '$_base/api/v2/tags/search',
-        data: {'query': query, 'limit': 25},
-        headers: getHeaders(),
-        cancelToken: cancelToken,
-      );
-      final List rows = _json(response.data) as List? ?? [];
-      rows.forEach(_recordSiteInfo);
+      final List rows = await searchTagsRaw(query, limit: 25, cancelToken: cancelToken);
       return Right([
         for (final row in rows)
           TagSuggestion(

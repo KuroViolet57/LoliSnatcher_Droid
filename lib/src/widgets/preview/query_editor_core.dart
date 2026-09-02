@@ -17,6 +17,7 @@ import 'package:lolisnatcher/src/data/tag_suggestion.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
+import 'package:lolisnatcher/src/handlers/tag_catalog_source.dart';
 import 'package:lolisnatcher/src/handlers/search_history_store.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/tag_handler.dart';
@@ -149,7 +150,13 @@ class QueryEditorController {
         );
 
         if (metaTag != null) {
-          if (metaTag.hasAutoComplete) {
+          final Booru? booru = currentBooru;
+          final List<TagSuggestion>? fromCatalog = booru == null
+              ? null
+              : await TagCatalogSource.suggestFromCatalog(handler, booru, suggestionTextControllerRawInput);
+          if (fromCatalog != null) {
+            suggestedTags = fromCatalog;
+          } else if (metaTag.hasAutoComplete) {
             suggestedTags = await metaTag.getAutoComplete(suggestionTextControllerRawInput);
             suggestedTags.sort((a, b) => a.tag.compareTo(b.tag));
           } else {

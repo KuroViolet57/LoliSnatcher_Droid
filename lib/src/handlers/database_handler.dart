@@ -189,15 +189,19 @@ class DBHandler {
     // which breaks down the moment two boorus disagree about the same string
     // — so per-site truth lives here instead of overloading that column.
     // `source`: 'api' (the site told us) | 'import' (a snapshot file).
+    // `namespace`: the site's own grouping (artist/circle/female/…), part of
+    // the key because a doujin site can file one name under two namespaces
+    // (hitomi: female:ahegao and male:ahegao). '' for booru snapshots.
     await db?.execute(
       'CREATE TABLE IF NOT EXISTS BooruTag ( '
       'booruKey TEXT NOT NULL, '
+      "namespace TEXT NOT NULL DEFAULT '', "
       'name TEXT NOT NULL, '
       'tagType TEXT NOT NULL, '
       'count INTEGER NOT NULL DEFAULT 0, '
       "source TEXT NOT NULL DEFAULT 'api', "
       'updatedAt INTEGER NOT NULL, '
-      'PRIMARY KEY (booruKey, name) '
+      'PRIMARY KEY (booruKey, namespace, name) '
       ')',
     );
     // Your hand-made corrections, and — by existing at all — the permanent
@@ -258,6 +262,31 @@ class DBHandler {
       if (!await columnExists('BooruItem', 'snatchedAt')) {
         await db?.execute('ALTER TABLE BooruItem ADD COLUMN snatchedAt INTEGER;');
       }
+      // BooruTag gained a namespace column IN ITS PRIMARY KEY; SQLite cannot
+      // alter a key, so the table is rebuilt once. Existing rows keep every
+      // value with an empty namespace.
+      if (await tableExists('BooruTag') && !await columnExists('BooruTag', 'namespace')) {
+        await db?.transaction((txn) async {
+          await txn.execute('ALTER TABLE BooruTag RENAME TO BooruTag_old');
+          await txn.execute(
+            'CREATE TABLE BooruTag ( '
+            'booruKey TEXT NOT NULL, '
+            "namespace TEXT NOT NULL DEFAULT '', "
+            'name TEXT NOT NULL, '
+            'tagType TEXT NOT NULL, '
+            'count INTEGER NOT NULL DEFAULT 0, '
+            "source TEXT NOT NULL DEFAULT 'api', "
+            'updatedAt INTEGER NOT NULL, '
+            'PRIMARY KEY (booruKey, namespace, name) '
+            ')',
+          );
+          await txn.execute(
+            'INSERT OR IGNORE INTO BooruTag(booruKey, namespace, name, tagType, count, source, updatedAt) '
+            "SELECT booruKey, '', name, tagType, count, source, updatedAt FROM BooruTag_old",
+          );
+          await txn.execute('DROP TABLE BooruTag_old');
+        });
+      }
     } catch (e, s) {
       Logger.Inst().log(
         'Error updating table',
@@ -268,6 +297,14 @@ class DBHandler {
       );
     }
     return true;
+  }
+
+  Future<bool> tableExists(String tableName) async {
+    final List<Map<String, Object?>>? result = await db?.rawQuery(
+      "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name = ?",
+      [tableName],
+    );
+    return result != null && result.isNotEmpty && (result[0]['count'] ?? 0) == 1;
   }
 
   Future<bool> columnExists(String tableName, String columnName) async {
@@ -306,6 +343,10 @@ class DBHandler {
     // can hold a site's entire tag database.
     await db?.execute(
       'CREATE INDEX IF NOT EXISTS BooruTag_browse_index ON BooruTag (booruKey, tagType, count DESC);',
+    );
+    // Tag builder: "this source, this namespace, most used first".
+    await db?.execute(
+      'CREATE INDEX IF NOT EXISTS BooruTag_ns_index ON BooruTag (booruKey, namespace, count DESC);',
     );
   }
 
@@ -980,8 +1021,8 @@ class DBHandler {
         final String source = e.origin == TagTypeOrigin.inferred ? 'import' : 'api';
         final int stamp = e.updatedAt == 0 ? now : e.updatedAt;
         batch.rawInsert(
-          'INSERT OR REPLACE INTO BooruTag(booruKey, name, tagType, count, source, updatedAt) VALUES(?,?,?,?,?,?)',
-          [booruKey, e.name, e.tagType.name, e.count, source, stamp],
+          'INSERT OR REPLACE INTO BooruTag(booruKey, namespace, name, tagType, count, source, updatedAt) VALUES(?,?,?,?,?,?,?)',
+          [booruKey, e.namespace, e.name, e.tagType.name, e.count, source, stamp],
         );
       }
       await batch.commit(noResult: true);
@@ -992,6 +1033,7 @@ class DBHandler {
     required String booruKey,
     String? nameLike,
     String? tagType,
+    String? namespace,
     int limit = 60,
     int offset = 0,
   }) async {
@@ -1003,6 +1045,10 @@ class DBHandler {
       where.write(' AND tagType = ?');
       args.add(tagType);
     }
+    if (namespace != null) {
+      where.write(' AND namespace = ?');
+      args.add(namespace);
+    }
     if (nameLike != null && nameLike.isNotEmpty) {
       where.write(' AND name LIKE ?');
       args.add('%$nameLike%');
@@ -1011,7 +1057,7 @@ class DBHandler {
       ..add(limit)
       ..add(offset);
     return db.rawQuery(
-      'SELECT name, tagType, count, source, updatedAt FROM BooruTag '
+      'SELECT name, namespace, tagType, count, source, updatedAt FROM BooruTag '
       'WHERE $where ORDER BY count DESC, name ASC LIMIT ? OFFSET ?',
       args,
     );
@@ -1022,13 +1068,13 @@ class DBHandler {
     if (db == null || booruKey.isEmpty || names.isEmpty) return const [];
     final String placeholders = List.filled(names.length, '?').join(',');
     return db.rawQuery(
-      'SELECT name, tagType, count, source, updatedAt FROM BooruTag '
+      'SELECT name, namespace, tagType, count, source, updatedAt FROM BooruTag '
       'WHERE booruKey = ? AND name IN ($placeholders)',
       [booruKey, ...names],
     );
   }
 
-  Future<int> countBooruTags(String booruKey, {String? tagType}) async {
+  Future<int> countBooruTags(String booruKey, {String? tagType, String? namespace}) async {
     final db = this.db;
     if (db == null || booruKey.isEmpty) return 0;
     final List<Object?> args = [booruKey];
@@ -1037,12 +1083,33 @@ class DBHandler {
       where += ' AND tagType = ?';
       args.add(tagType);
     }
+    if (namespace != null) {
+      where += ' AND namespace = ?';
+      args.add(namespace);
+    }
     final rows = await db.rawQuery('SELECT COUNT(*) AS c FROM BooruTag WHERE $where', args);
     return int.tryParse(rows.first['c']?.toString() ?? '') ?? 0;
   }
 
-  Future<void> deleteBooruTags(String booruKey) async {
-    await db?.rawDelete('DELETE FROM BooruTag WHERE booruKey = ?', [booruKey]);
+  /// Rows per namespace for one source — what the tag builder's chips show.
+  Future<Map<String, int>> countBooruTagsByNamespace(String booruKey) async {
+    final db = this.db;
+    if (db == null || booruKey.isEmpty) return const {};
+    final rows = await db.rawQuery(
+      'SELECT namespace, COUNT(*) AS c FROM BooruTag WHERE booruKey = ? GROUP BY namespace',
+      [booruKey],
+    );
+    return {
+      for (final row in rows) row['namespace']?.toString() ?? '': int.tryParse(row['c']?.toString() ?? '') ?? 0,
+    };
+  }
+
+  Future<void> deleteBooruTags(String booruKey, {String? namespace}) async {
+    if (namespace == null) {
+      await db?.rawDelete('DELETE FROM BooruTag WHERE booruKey = ?', [booruKey]);
+    } else {
+      await db?.rawDelete('DELETE FROM BooruTag WHERE booruKey = ? AND namespace = ?', [booruKey, namespace]);
+    }
   }
 
   Future<List<Map<String, Object?>>> getBooruTagOverrides({String? booruKey}) async {

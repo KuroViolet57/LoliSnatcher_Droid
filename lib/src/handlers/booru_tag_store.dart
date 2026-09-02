@@ -31,6 +31,11 @@ import 'package:lolisnatcher/src/utils/tools.dart';
 /// can additionally be exported/imported as a portable JSON file, which is
 /// what makes hosted snapshots possible.
 ///
+/// Doujin sources use the same snapshot, keyed by their host, with the site's
+/// own namespace on every row (see [BooruTagEntry.namespace]). Nothing here
+/// writes the global map either, so a doujin pull never seeds the booru
+/// For You profile or the booru tag database.
+///
 /// The app's *global* [TagHandler] tag map is untouched by all of this. It
 /// stores one type per tag string for the whole app, and overloading it with
 /// per-site truth is exactly what corrupts colouring everywhere else, so the
@@ -165,6 +170,7 @@ class BooruTagStore {
     Booru booru, {
     String query = '',
     TagType? type,
+    String? namespace,
     int limit = 60,
     int offset = 0,
   }) async {
@@ -173,19 +179,11 @@ class BooruTagStore {
         booruKey: keyFor(booru),
         nameLike: query.trim().isEmpty ? null : _clean(query).replaceAll(' ', '_'),
         tagType: type?.name,
+        namespace: namespace,
         limit: limit,
         offset: offset,
       );
-      return [
-        for (final row in rows)
-          BooruTagEntry(
-            name: row['name']?.toString() ?? '',
-            tagType: TagType.fromString(row['tagType']?.toString() ?? 'none'),
-            count: int.tryParse(row['count']?.toString() ?? '') ?? 0,
-            origin: row['source']?.toString() == 'import' ? TagTypeOrigin.inferred : TagTypeOrigin.reported,
-            updatedAt: int.tryParse(row['updatedAt']?.toString() ?? '') ?? 0,
-          ),
-      ];
+      return [for (final row in rows) entryFromRow(row)];
     } catch (e, s) {
       Logger.Inst().log('browse failed: $e', 'BooruTagStore', 'browse', LogTypes.exception, s: s);
       return const [];
@@ -202,32 +200,41 @@ class BooruTagStore {
     if (clean.isEmpty) return const {};
     try {
       final rows = await _settings.dbHandler.getBooruTagsByNames(keyFor(booru), clean);
-      return {
-        for (final row in rows)
-          row['name'].toString(): BooruTagEntry(
-            name: row['name'].toString(),
-            tagType: TagType.fromString(row['tagType']?.toString() ?? 'none'),
-            count: int.tryParse(row['count']?.toString() ?? '') ?? 0,
-            origin: row['source']?.toString() == 'import' ? TagTypeOrigin.inferred : TagTypeOrigin.reported,
-            updatedAt: int.tryParse(row['updatedAt']?.toString() ?? '') ?? 0,
-          ),
-      };
+      return {for (final row in rows) row['name'].toString(): entryFromRow(row)};
     } catch (_) {
       return const {};
     }
   }
 
-  static Future<int> snapshotSize(Booru booru) async {
+  static BooruTagEntry entryFromRow(Map<String, Object?> row) => BooruTagEntry(
+    name: row['name']?.toString() ?? '',
+    namespace: row['namespace']?.toString() ?? '',
+    tagType: TagType.fromString(row['tagType']?.toString() ?? 'none'),
+    count: int.tryParse(row['count']?.toString() ?? '') ?? 0,
+    origin: row['source']?.toString() == 'import' ? TagTypeOrigin.inferred : TagTypeOrigin.reported,
+    updatedAt: int.tryParse(row['updatedAt']?.toString() ?? '') ?? 0,
+  );
+
+  static Future<int> snapshotSize(Booru booru, {String? namespace}) async {
     try {
-      return await _settings.dbHandler.countBooruTags(keyFor(booru));
+      return await _settings.dbHandler.countBooruTags(keyFor(booru), namespace: namespace);
     } catch (_) {
       return 0;
     }
   }
 
-  static Future<void> clearSnapshot(Booru booru) async {
+  /// Rows per namespace — the badge on each tag-builder chip.
+  static Future<Map<String, int>> namespaceCounts(Booru booru) async {
     try {
-      await _settings.dbHandler.deleteBooruTags(keyFor(booru));
+      return await _settings.dbHandler.countBooruTagsByNamespace(keyFor(booru));
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  static Future<void> clearSnapshot(Booru booru, {String? namespace}) async {
+    try {
+      await _settings.dbHandler.deleteBooruTags(keyFor(booru), namespace: namespace);
     } catch (_) {}
   }
 

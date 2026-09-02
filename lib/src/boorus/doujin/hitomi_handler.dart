@@ -11,7 +11,9 @@ import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/meta_tag.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
+import 'package:lolisnatcher/src/boorus/doujin/hitomi_tag_catalog.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
+import 'package:lolisnatcher/src/handlers/tag_catalog_source.dart';
 import 'package:lolisnatcher/src/handlers/reader_handler.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
 
@@ -191,6 +193,13 @@ class HitomiHandler extends BooruHandler with DoujinNamespacedTags {
 
   static const String _site = 'https://hitomi.la';
   static const String _ltn = 'https://ltn.gold-usergeneratedcontent.net';
+
+  static String get siteBase => _site;
+  static String get ltnBase => _ltn;
+
+  /// hitomi's per-letter index pages, pulled by the tag builder.
+  @override
+  late final TagCatalogSource tagCatalog = HitomiTagCatalog(this);
   static const String _cdn = 'gold-usergeneratedcontent.net';
 
   /// hitomi's B-tree branching factor, and the fixed window its own client

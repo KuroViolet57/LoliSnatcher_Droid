@@ -28,6 +28,13 @@ import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 ///     booru type for that, and inventing one would colour them differently
 ///     from the identical tag on another source.
 ///   * `other` / `misc` / `tag` -> none, the general case.
+/// The [TagType]s the catalogs name in their const namespace lists.
+const TagType doujinArtistType = TagType.artist;
+const TagType doujinCopyrightType = TagType.copyright;
+const TagType doujinCharacterType = TagType.character;
+const TagType doujinMetaType = TagType.meta;
+const TagType doujinNoneType = TagType.none;
+
 TagType doujinTagTypeFor(String? namespace) => switch (namespace) {
   'artist' || 'circle' || 'group' => TagType.artist,
   'parody' || 'series' => TagType.copyright,

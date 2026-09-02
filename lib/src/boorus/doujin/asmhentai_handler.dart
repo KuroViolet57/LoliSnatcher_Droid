@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart';
 
+import 'package:lolisnatcher/src/boorus/doujin/asmhentai_tag_catalog.dart';
 import 'package:lolisnatcher/src/boorus/doujin/doujin_listing_tag_backfill.dart';
 import 'package:lolisnatcher/src/boorus/doujin/doujin_recommendation_engine.dart';
 import 'package:lolisnatcher/src/boorus/doujin/doujin_tag_namespaces.dart';
@@ -14,6 +15,7 @@ import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/reader_handler.dart';
+import 'package:lolisnatcher/src/handlers/tag_catalog_source.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
 
 /// asmhentai.com — server-rendered HTML, no API.
@@ -42,6 +44,12 @@ class AsmHentaiHandler extends BooruHandler with DoujinListingTagBackfill, Douji
 
 
   static const String _site = 'https://asmhentai.com';
+
+  static String get siteBase => _site;
+
+  /// The site's paged per-type indexes, pulled by the tag builder.
+  @override
+  late final TagCatalogSource tagCatalog = AsmHentaiTagCatalog(this);
 
   @override
   bool get hasReader => true;
@@ -152,8 +160,32 @@ class AsmHentaiHandler extends BooruHandler with DoujinListingTagBackfill, Douji
     }
     final String query = tags.trim();
     if (query.isEmpty) return '$_site/?page=$page';
-    return '$_site/search/?q=${Uri.encodeQueryComponent(query)}&page=$page';
+    // Exactly one namespaced term (a tag-builder chip or a tag tap) goes to
+    // the site's own taxonomy listing, which is what the term identifies;
+    // `/search/?q=artist:x` would only text-match the words.
+    final String? taxonomy = taxonomyPath(query);
+    if (taxonomy != null) return '$_site$taxonomy?page=$page';
+    return '$_site/search/?q=${Uri.encodeQueryComponent(stripNamespaces(query))}&page=$page';
   }
+
+  /// `/artist/foo-bar/` for `artist:foo_bar`; null for anything else.
+  @visibleForTesting
+  static String? taxonomyPath(String query) {
+    final match = RegExp(r'^([a-z]+):([^\s:]+)$').firstMatch(query.trim().toLowerCase());
+    if (match == null || !_namespaces.contains(match.group(1))) return null;
+    return '/${match.group(1)}/${match.group(2)!.replaceAll('_', '-')}/';
+  }
+
+  /// Mixed queries fall back to the text search, which knows no namespaces.
+  @visibleForTesting
+  static String stripNamespaces(String query) => query
+      .split(RegExp(r'\s+'))
+      .map((t) {
+        final int colon = t.indexOf(':');
+        if (colon > 0 && _namespaces.contains(t.substring(0, colon).toLowerCase())) return t.substring(colon + 1);
+        return t;
+      })
+      .join(' ');
 
   // ── parsing ───────────────────────────────────────────────────────────
 

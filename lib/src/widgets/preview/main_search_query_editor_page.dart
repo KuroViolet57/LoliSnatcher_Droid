@@ -15,7 +15,9 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:keyboard_actions/keyboard_actions.dart';
 import 'package:lolisnatcher/src/widgets/desktop/desktop_scroll.dart';
+import 'package:lolisnatcher/src/handlers/tag_catalog_source.dart';
 import 'package:lolisnatcher/src/widgets/preview/tag_search_query_editor_page.dart';
+import 'package:lolisnatcher/src/widgets/preview/tag_type_strip.dart';
 import 'package:rich_text_controller/rich_text_controller.dart';
 import 'package:scroll_to_index/scroll_to_index.dart';
 import 'package:url_launcher/url_launcher_string.dart';
@@ -154,61 +156,6 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
     }
   }
 
-  // Inserts a query-syntax character at the cursor and keeps focus.
-  void _insertHelperChar(String s) {
-    final controller = suggestionTextController;
-    final text = controller.text;
-    final sel = controller.selection;
-    final int start = sel.start >= 0 ? sel.start : text.length;
-    final int end = sel.end >= 0 ? sel.end : text.length;
-    final String newText = text.replaceRange(start, end, s);
-    controller.value = TextEditingValue(
-      text: newText,
-      selection: TextSelection.collapsed(offset: start + s.length),
-    );
-    suggestionTextFocusNode.requestFocus();
-  }
-
-  Widget _helperKeyRow(BuildContext context) {
-    const List<String> keys = ['_', '-', '~', ':', '(', ')'];
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 6, 8, 2),
-      child: Row(
-        children: [
-          for (final k in keys)
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 2),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(12),
-                  onTap: () => _insertHelperChar(k),
-                  child: Container(
-                    height: 40,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.surfaceContainerHigh,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: theme.colorScheme.outlineVariant),
-                    ),
-                    child: Text(
-                      k,
-                      style: TextStyle(
-                        fontFamily: 'monospace',
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: theme.colorScheme.onSurface,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
   String _lastSuggestionText = '';
   void onSuggestionTextChanged() {
     // focus change can trigger this too, so we run search only when text changed
@@ -268,7 +215,15 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
           (p) => p.keyParser(suggestionTextControllerCleanedInput) != null,
         );
         if (metaTag != null) {
-          if (metaTag.hasAutoComplete) {
+          // A typed `artist:asa` lists the source's own catalog first.
+          final List<TagSuggestion>? fromCatalog = await TagCatalogSource.suggestFromCatalog(
+            handler,
+            searchHandler.currentBooru,
+            suggestionTextControllerCleanedInput,
+          );
+          if (fromCatalog != null) {
+            suggestedTags = fromCatalog;
+          } else if (metaTag.hasAutoComplete) {
             suggestedTags = await metaTag.getAutoComplete(suggestionTextControllerCleanedInput);
             suggestedTags.sort((a, b) => a.tag.compareTo(b.tag));
           } else {
@@ -1112,6 +1067,8 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
           valueListenable: suggestionTextFocusNodeHasFocus,
           builder: (context, suggestionTextFocusNodeHasFocus, _) => Column(
             children: [
+              if (settingsHandler.useTopSearchbarInput)
+                TagTypeStrip(onInsert: (term) => onSuggestionTap(TagSuggestion(tag: term), raw: true)),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 child: SettingsTextInput(
@@ -1165,8 +1122,11 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
                   ),
                 ),
               ),
-              // Flow helper-key row: quick-insert common query syntax chars.
-              _helperKeyRow(context),
+              // The tag builder: one chip per namespace this source can list.
+              // Replaces the old helper-key row. Kept between the input and
+              // the suggestions whichever edge the input sits on.
+              if (!settingsHandler.useTopSearchbarInput)
+                TagTypeStrip(onInsert: (term) => onSuggestionTap(TagSuggestion(tag: term), raw: true)),
               //
               if (settingsHandler.useTopSearchbarInput)
                 const SizedBox(height: 4)

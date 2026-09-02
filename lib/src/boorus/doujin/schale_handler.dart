@@ -15,7 +15,9 @@ import 'package:lolisnatcher/src/data/response_error.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_suggestion.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
+import 'package:lolisnatcher/src/boorus/doujin/schale_tag_catalog.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
+import 'package:lolisnatcher/src/handlers/tag_catalog_source.dart';
 import 'package:lolisnatcher/src/handlers/reader_handler.dart';
 import 'package:lolisnatcher/src/handlers/schale_clearance_handler.dart';
 import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
@@ -58,6 +60,13 @@ class SchaleHandler extends BooruHandler with DoujinListingTagBackfill, DoujinNa
 
 
   static const String _api = 'https://api.schale.network';
+
+  /// The API host, for the tag catalog beside this handler.
+  static String get apiBase => _api;
+
+  /// Every namespace the site can list, pulled by the tag builder.
+  @override
+  late final TagCatalogSource tagCatalog = SchaleTagCatalog(this);
   static const String defaultSite = 'https://niyaniya.moe';
 
   /// The mirror as configured, without a trailing slash.
@@ -351,6 +360,8 @@ class SchaleHandler extends BooruHandler with DoujinListingTagBackfill, DoujinNa
   /// queries are rejected by the API, so anything unrecognised is left as a
   /// plain tag rather than guessed at - a wrong namespace would send the tag
   /// to the wrong section of the tag hub and break blacklist matching.
+  static Map<int, String> get namespaceCodes => _namespaceCodes;
+
   static const Map<int, String> _namespaceCodes = {
     1: 'artist',
     2: 'circle',

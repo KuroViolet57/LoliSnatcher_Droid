@@ -44,6 +44,7 @@ class BooruTagEntry {
     this.count = 0,
     this.origin = TagTypeOrigin.reported,
     this.updatedAt = 0,
+    this.namespace = '',
   });
 
   factory BooruTagEntry.fromJson(Map<String, dynamic> json) {
@@ -56,6 +57,7 @@ class BooruTagEntry {
         orElse: () => TagTypeOrigin.reported,
       ),
       updatedAt: int.tryParse((json['u'] ?? json['updatedAt'] ?? 0).toString()) ?? 0,
+      namespace: (json['ns'] ?? json['namespace'] ?? '').toString(),
     );
   }
 
@@ -65,6 +67,13 @@ class BooruTagEntry {
   final TagTypeOrigin origin;
   final int updatedAt;
 
+  /// The SOURCE's own grouping of the tag (`artist`, `circle`, `female`, …),
+  /// beside the app-level [tagType], which collapses several of those into
+  /// one bucket (circle and group both become [TagType.artist]). Empty for
+  /// booru snapshots, which only know a type. Part of the row's identity:
+  /// hitomi files `ahegao` under both `female` and `male`.
+  final String namespace;
+
   /// Short keys: a snapshot is tens of thousands of rows and gets shipped
   /// around as a file, so the field names are half its size otherwise.
   Map<String, dynamic> toJson() => {
@@ -72,17 +81,19 @@ class BooruTagEntry {
     't': tagType.name,
     if (count > 0) 'c': count,
     if (origin != TagTypeOrigin.reported) 'o': origin.name,
+    if (namespace.isNotEmpty) 'ns': namespace,
   };
 
   String get displayName => name.replaceAll('_', ' ');
 
-  BooruTagEntry copyWith({TagType? tagType, int? count, TagTypeOrigin? origin, int? updatedAt}) {
+  BooruTagEntry copyWith({TagType? tagType, int? count, TagTypeOrigin? origin, int? updatedAt, String? namespace}) {
     return BooruTagEntry(
       name: name,
       tagType: tagType ?? this.tagType,
       count: count ?? this.count,
       origin: origin ?? this.origin,
       updatedAt: updatedAt ?? this.updatedAt,
+      namespace: namespace ?? this.namespace,
     );
   }
 }

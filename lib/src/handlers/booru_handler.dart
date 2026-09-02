@@ -23,6 +23,7 @@ import 'package:lolisnatcher/src/data/tag_suggestion.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/handlers/tag_catalog_source.dart';
 import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/tag_handler.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
@@ -1146,6 +1147,12 @@ abstract class BooruHandler {
   /// Reader page widths the source can serve, as (value, label). Empty means
   /// the source has ONE size and the image-quality setting is not offered.
   List<(String value, String label)> get readerImageQualities => const [];
+
+  /// The tag namespaces this source can ENUMERATE (every artist, every
+  /// parody, …) for the search editor's tag builder, or null when the site
+  /// offers no way to list them. A type chip is offered only where this is
+  /// non-null and the namespace is listed — see TagCatalogSource.
+  TagCatalogSource? get tagCatalog => null;
 
   /// Whether the per-source "Only show language" setting is honoured by
   /// this handler's search, and whether "Title language" changes what it
