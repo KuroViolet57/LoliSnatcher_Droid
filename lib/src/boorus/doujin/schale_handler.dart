@@ -87,7 +87,7 @@ class SchaleHandler extends BooruHandler with DoujinListingTagBackfill, DoujinNa
     try {
       final response = await DioNetwork.get(
         base,
-        headers: {'User-Agent': SchaleClearanceHandler.reducedChromeUserAgent(Tools.browserUserAgent)},
+        headers: {'User-Agent': SchaleClearanceHandler.solverUserAgent()},
         options: Options(followRedirects: false, validateStatus: (_) => true),
       );
       final String host = Uri.tryParse(response.headers.value('location') ?? '')?.host ?? '';
@@ -147,7 +147,7 @@ class SchaleHandler extends BooruHandler with DoujinListingTagBackfill, DoujinNa
     ...super.getHeaders(),
     // The same reduced Chrome string the solver window presents, so a token
     // earned there is spent by what looks like the same client.
-    'User-Agent': SchaleClearanceHandler.reducedChromeUserAgent(Tools.browserUserAgent),
+    'User-Agent': SchaleClearanceHandler.solverUserAgent(),
     'Referer': '$_site/',
     'Origin': _site,
     'Accept': 'application/json',

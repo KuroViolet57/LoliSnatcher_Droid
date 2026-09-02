@@ -196,7 +196,7 @@ try {
             blockNetworkImage: true,
             // The agent the solver presented when the page's own request was
             // seen to succeed.
-            userAgent: reducedChromeUserAgent(Tools.browserUserAgent),
+            userAgent: solverUserAgent(),
           ),
           onLoadStop: (controller, url) {
             _pageController = controller;
@@ -298,6 +298,10 @@ try {
   }
 
   @visibleForTesting
+  /// What the solver does when it sees the site write a clearance.
+  @visibleForTesting
+  void onSiteStoredForTests() => _rejectedToken = null;
+
   void resetForTests() {
     _token = null;
     _rejectedToken = null;
@@ -360,6 +364,14 @@ try {
         ),
         onLoadStop: (controller, url) async {
           if (done.isCompleted) return;
+          // A redirect hop (niyaniya.moe → shupogaki.moe) fires its own
+          // load-stop on the wrong origin; localStorage is per origin, so
+          // that read would be empty and final. Wait for the target host.
+          final String target = Uri.tryParse(siteUrl)?.host ?? '';
+          if (target.isNotEmpty && url != null && url.host.isNotEmpty && url.host != target) {
+            _log('harvest: skipped load-stop on ${url.host} (waiting for $target)');
+            return;
+          }
           try {
             final raw = await controller.evaluateJavascript(
               source: "window.localStorage.getItem('$localStorageKey')",
@@ -405,6 +417,17 @@ try {
   ///
   /// The site's bundle refuses to render a Turnstile for any agent containing
   /// `wv`, so the WebView's own string can never be used here.
+  /// The agent every niyaniya window and request presents. The Chrome major
+  /// comes from the phone's REAL WebView engine, never from the Network
+  /// settings' custom agent: the engine announces its own version through
+  /// client-hint headers the app cannot change, so a setting that said
+  /// Chrome/146 on a Chromium 152 engine made the WebView contradict itself
+  /// while Chrome on the same phone did not.
+  static String solverUserAgent() {
+    final String engine = Tools.deviceWebViewUserAgent ?? '';
+    return reducedChromeUserAgent(engine.isNotEmpty ? engine : Tools.browserUserAgent);
+  }
+
   static String reducedChromeUserAgent(String deviceUserAgent) {
     final RegExp major = RegExp(r'Chrome/(\d+)');
     final String version = major.firstMatch(deviceUserAgent)?.group(1) ?? '149';
@@ -575,6 +598,8 @@ try {
       lastSolveAuthRefused = false;
       final String openAt = (startUrl != null && startUrl.isNotEmpty) ? startUrl : siteUrl;
       _log('solver opened on $openAt (site=$siteUrl, rejected=${_describe(rejected)})');
+      _log('agents — solver/page/api: ${solverUserAgent()} | engine: ${Tools.deviceWebViewUserAgent ?? 'unknown'} | '
+          'settings: ${SettingsHandler.instance.customUserAgent.isEmpty ? '(empty)' : SettingsHandler.instance.customUserAgent}');
 
       await Navigator.push(
         context,
@@ -583,7 +608,7 @@ try {
             initialUrl: openAt,
             title: 'Reader access',
             subtitle: 'Complete the check. This window closes by itself once the site accepts it.',
-            userAgent: reducedChromeUserAgent(Tools.browserUserAgent),
+            userAgent: solverUserAgent(),
             restrictMainFrameHosts: allowedMainFrameHosts(siteUrl),
             initialUserScripts: [
               if (clearRejectedScript(rejected).isNotEmpty)
@@ -611,6 +636,11 @@ try {
                   // harvester reads it.
                   if (call['event'] == 'setItem' && !stored) {
                     stored = true;
+                    // The site just wrote a clearance in front of us: whatever
+                    // was refused before is no longer the value on the page,
+                    // even if the site re-issued the same string (seen once,
+                    // commit 4d4c81f). The harvester may adopt it.
+                    _rejectedToken = null;
                     if (context.mounted) unawaited(Navigator.of(context).maybePop());
                   }
                   return null;

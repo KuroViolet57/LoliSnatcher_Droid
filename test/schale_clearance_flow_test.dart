@@ -55,6 +55,18 @@ void main() {
       expect(ua, isNot(contains('Build/')));
     });
 
+    test('the version comes from the real engine, never from the Network setting', () {
+      SettingsHandler.register();
+      final String? before = Tools.deviceWebViewUserAgent;
+      Tools.deviceWebViewUserAgent = deviceWebViewUA; // Chrome/152 engine
+      SettingsHandler.instance.customUserAgent =
+          'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Mobile Safari/537.36';
+      expect(SchaleClearanceHandler.solverUserAgent(), contains('Chrome/152.0.0.0'));
+      SettingsHandler.instance.customUserAgent = '';
+      expect(SchaleClearanceHandler.solverUserAgent(), contains('Chrome/152.0.0.0'));
+      Tools.deviceWebViewUserAgent = before;
+    });
+
     test('a device agent with no Chrome version gets a sane default', () {
       expect(SchaleClearanceHandler.reducedChromeUserAgent('LoliSnatcher/2.6'), contains('Chrome/149.0.0.0'));
     });
@@ -139,6 +151,16 @@ void main() {
       final c = SchaleClearanceHandler.instance;
       expect(c.isUsableToken(null), isFalse);
       expect(c.isUsableToken(''), isFalse);
+    });
+
+    test('a fresh write seen by the solver clears the refused marker too', () {
+      // The site re-issued the exact refused string once (commit 4d4c81f);
+      // the harvester must be allowed to adopt what the page just wrote.
+      final c = SchaleClearanceHandler.instance..store(dead);
+      c.invalidate();
+      expect(c.isUsableToken(dead), isFalse);
+      c.onSiteStoredForTests();
+      expect(c.isUsableToken(dead), isTrue);
     });
 
     test('storing a token clears the refused marker', () {
