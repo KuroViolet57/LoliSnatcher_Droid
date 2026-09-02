@@ -304,6 +304,46 @@ void main() {
     });
   });
 
+  group('the challenge page reports what it is doing', () {
+    // Three logs in a row show the Turnstile appear and nothing follow. The
+    // site closes its modal whether or not the auth POST returned 201, so from
+    // outside the webview a pass and a failure look identical. This script is
+    // the only way to tell them apart.
+    const String js = SchaleClearanceHandler.diagnosticScript;
+
+    test('it watches the three links that decide the outcome', () {
+      expect(js, contains("callHandler('${SchaleClearanceHandler.bridgeName}'"));
+      expect(js, contains('turnstile.callback'), reason: 'did Turnstile hand over a token');
+      expect(js, contains(r'schale\.network'), reason: 'what did auth answer');
+      expect(js, contains("k === 'clearance'"), reason: 'was the clearance written');
+    });
+
+    test('it reports Turnstile errors the site itself never listens for', () {
+      // The site passes only `callback` to turnstile.render — no error
+      // handler at all. A widget failure is invisible to it.
+      expect(js, contains("'error-callback'"));
+      expect(js, contains("'expired-callback'"));
+    });
+
+    test('every hook calls straight through, so the page is unchanged', () {
+      expect(js, contains('origSet.apply(this, arguments)'));
+      expect(js, contains('origSend.apply(this, arguments)'));
+      expect(js, contains('origFetch.apply(this, args)'));
+      expect(js, contains('origRender.call(this, el, o)'));
+      expect(js, contains('cb && cb.apply(this, arguments)'));
+    });
+
+    test('it never puts a whole token in the log', () {
+      // The clearance is a credential; a prefix is enough to correlate.
+      expect(js, contains('slice(0, 12)'));
+      expect(js, contains("replace(/crt=[^&]+/, 'crt=…')"));
+    });
+
+    test('it installs once, however many navigations happen', () {
+      expect(js, contains('__lsClearanceHook'));
+    });
+  });
+
   group('the request budget is respected', () {
     late Directory tempDir;
 

@@ -218,6 +218,98 @@ class SchaleClearanceHandler {
     ];
   }
 
+  /// The bridge name the challenge page reports through.
+  static const String bridgeName = 'lsClearance';
+
+  /// Injected at document start into the challenge webview. Reports, into the
+  /// app log, the three things that decide whether a clearance is obtained:
+  /// the Turnstile callback firing, the POST to auth.schale.network and what
+  /// it answered, and the site writing `localStorage["clearance"]`.
+  ///
+  /// Three device logs in a row show the same thing: the Turnstile appears,
+  /// then nothing, and no token is ever stored. From outside the webview that
+  /// is all that can be seen. This puts eyes inside it. It changes nothing
+  /// about the page's behaviour — every hook calls straight through.
+  static const String diagnosticScript = r'''
+(() => {
+  if (window.__lsClearanceHook) return;
+  window.__lsClearanceHook = true;
+  const say = (event, detail) => {
+    try { window.flutter_inappwebview.callHandler('lsClearance', { event, detail: String(detail || '').slice(0, 300) }); } catch (e) {}
+  };
+  say('page', location.href + ' | stored=' + (localStorage.getItem('clearance') || 'null'));
+
+  // The site writes the clearance here on success.
+  const origSet = Storage.prototype.setItem;
+  Storage.prototype.setItem = function (k, v) {
+    if (k === 'clearance') say('setItem', 'clearance=' + String(v).slice(0, 12) + '…');
+    return origSet.apply(this, arguments);
+  };
+  const origRemove = Storage.prototype.removeItem;
+  Storage.prototype.removeItem = function (k) {
+    if (k === 'clearance') say('removeItem', 'clearance');
+    return origRemove.apply(this, arguments);
+  };
+
+  // The site's XHR to auth.schale.network/clearance carries the Turnstile
+  // token and answers with the clearance. Its status is the whole story.
+  const origOpen = XMLHttpRequest.prototype.open;
+  const origSend = XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.open = function (m, u) { this.__lsUrl = String(u); return origOpen.apply(this, arguments); };
+  XMLHttpRequest.prototype.send = function () {
+    const u = this.__lsUrl || '';
+    if (/schale\.network/.test(u)) {
+      this.addEventListener('loadend', () => say('xhr', this.status + ' ' + u.replace(/crt=[^&]+/, 'crt=…') + ' | ' + String(this.responseText || '').slice(0, 120)));
+    }
+    return origSend.apply(this, arguments);
+  };
+  const origFetch = window.fetch;
+  window.fetch = async function (...args) {
+    const u = typeof args[0] === 'string' ? args[0] : (args[0] && args[0].url) || '';
+    const res = await origFetch.apply(this, args);
+    if (/schale\.network/.test(u)) {
+      try { res.clone().text().then((t) => say('fetch', res.status + ' ' + u.replace(/crt=[^&]+/, 'crt=…') + ' | ' + t.slice(0, 120))); } catch (e) {}
+    }
+    return res;
+  };
+
+  // Turnstile: wrap render so the callback and any error are visible.
+  const wrapTurnstile = () => {
+    const t = window.turnstile;
+    if (!t || t.__lsWrapped) return false;
+    t.__lsWrapped = true;
+    const origRender = t.render;
+    t.render = function (el, opts) {
+      say('turnstile.render', 'sitekey=' + (opts && opts.sitekey) + ' keys=' + Object.keys(opts || {}).join(','));
+      const o = Object.assign({}, opts);
+      const cb = o.callback;
+      o.callback = function (token) { say('turnstile.callback', 'token len=' + String(token || '').length); return cb && cb.apply(this, arguments); };
+      const ecb = o['error-callback'];
+      o['error-callback'] = function (code) { say('turnstile.error', code); return ecb && ecb.apply(this, arguments); };
+      const xcb = o['expired-callback'];
+      o['expired-callback'] = function () { say('turnstile.expired', ''); return xcb && xcb.apply(this, arguments); };
+      return origRender.call(this, el, o);
+    };
+    return true;
+  };
+  if (!wrapTurnstile()) {
+    let tries = 0;
+    const iv = setInterval(() => { if (wrapTurnstile() || ++tries > 200) clearInterval(iv); }, 100);
+  }
+  window.addEventListener('error', (e) => say('js.error', (e.message || '') + ' @' + (e.filename || '') + ':' + e.lineno));
+})();
+''';
+
+  void _logFromPage(dynamic call) {
+    if (call is! Map) return;
+    Logger.Inst().log(
+      'challenge page: ${call['event']} — ${call['detail']}',
+      'SchaleClearanceHandler',
+      'challenge',
+      LogTypes.booruHandlerInfo,
+    );
+  }
+
   bool _challengeOpen = false;
 
   /// Opens the site so the challenge can be solved by hand, then takes whatever
@@ -262,8 +354,25 @@ class SchaleClearanceHandler {
                   source: clearRejectedScript(rejected),
                   injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
                 ),
+              UserScript(
+                source: diagnosticScript,
+                injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+              ),
             ],
             onWebViewReady: (controller) {
+              controller.addJavaScriptHandler(
+                handlerName: bridgeName,
+                callback: (args) {
+                  _logFromPage(args.isNotEmpty ? args.first : null);
+                  return null;
+                },
+              );
+              Logger.Inst().log(
+                'challenge opened on $siteUrl (rejected=${rejected == null ? 'none' : '${rejected.substring(0, 8)}…'})',
+                'SchaleClearanceHandler',
+                'challenge',
+                LogTypes.booruHandlerInfo,
+              );
               // The token appears when the Turnstile callback finishes, which
               // is well after the page has loaded — so this watches for it
               // rather than looking once on load.
@@ -273,8 +382,19 @@ class SchaleClearanceHandler {
               // then on whatever appears was written by the site in response
               // to that challenge, same string or not.
               bool sawEmpty = rejected == null;
+              int ticks = 0;
               poll = Timer.periodic(const Duration(milliseconds: 700), (timer) async {
                 final String? found = await _readToken(controller);
+                // Every ~5s, say what the poll sees — the one fact none of the
+                // logs so far contain.
+                if (ticks++ % 7 == 0) {
+                  Logger.Inst().log(
+                    'challenge poll: ${found == null ? 'no clearance in storage' : 'clearance ${found.substring(0, found.length < 8 ? found.length : 8)}…'} (sawEmpty=$sawEmpty)',
+                    'SchaleClearanceHandler',
+                    'challenge',
+                    LogTypes.booruHandlerInfo,
+                  );
+                }
                 if (found == null) {
                   sawEmpty = true;
                   return;
@@ -299,6 +419,12 @@ class SchaleClearanceHandler {
     } finally {
       poll?.cancel();
       _challengeOpen = false;
+      Logger.Inst().log(
+        'challenge closed: ${hasToken ? 'token obtained' : 'NO token'}',
+        'SchaleClearanceHandler',
+        'challenge',
+        LogTypes.booruHandlerInfo,
+      );
     }
     return hasToken;
   }
