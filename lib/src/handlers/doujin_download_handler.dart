@@ -183,7 +183,7 @@ class DoujinDownloadHandler {
   static const Set<String> _imageExts = {'jpg', 'jpeg', 'png', 'webp', 'gif', 'avif', 'jxl', 'bmp'};
 
   /// Source names whose loose root files are grouped (before folders).
-  static const Set<String> legacySourceNames = {'nhentai', 'niyaniya', 'asmhentai', 'eahentai', 'faccina', 'hitomi', 'hentalk'};
+  static const Set<String> legacySourceNames = {'nhentai', 'niyaniya', 'asmhentai', 'eahentai', 'faccina', 'hitomi', 'hentalk', 'hentaipaw'};
 
   bool get isSaf => Platform.isAndroid && SettingsHandler.instance.extPathOverride.isNotEmpty;
 

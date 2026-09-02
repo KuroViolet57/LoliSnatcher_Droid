@@ -38,6 +38,7 @@ import 'package:lolisnatcher/src/boorus/civitai_handler.dart';
 import 'package:lolisnatcher/src/boorus/xxxfollow_handler.dart';
 import 'package:lolisnatcher/src/boorus/hanime1_handler.dart';
 import 'package:lolisnatcher/src/boorus/doujin/asmhentai_handler.dart';
+import 'package:lolisnatcher/src/boorus/doujin/hentaipaw_handler.dart';
 import 'package:lolisnatcher/src/boorus/doujin/eahentai_handler.dart';
 import 'package:lolisnatcher/src/boorus/doujin/faccina_handler.dart';
 import 'package:lolisnatcher/src/boorus/doujin/hitomi_handler.dart';
@@ -245,6 +246,10 @@ class BooruHandlerFactory {
         case BooruType.Hitomi:
           // 1-based pages, resolved against hitomi's packed id indexes.
           booruHandler = HitomiHandler(booru, limit);
+          break;
+        case BooruType.HentaiPaw:
+          // 1-based ?page=N on server-rendered pages.
+          booruHandler = HentaiPawHandler(booru, limit);
           break;
         case BooruType.Kusowanka:
           // 1-based ?page=N; the default pageNum of -1 makes the first

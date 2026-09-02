@@ -260,6 +260,15 @@ class _BooruEditState extends State<BooruEdit> {
                       booruFaviconController.text = 'https://niyaniya.moe/favicon.ico';
                     }
                   }
+                  if (selectedBooruType.isHentaiPaw && booruURLController.text.trim().isEmpty) {
+                    booruURLController.text = 'https://hentaipaw.com';
+                    if (booruNameController.text.trim().isEmpty) {
+                      booruNameController.text = 'HentaiPaw';
+                    }
+                    if (booruFaviconController.text.trim().isEmpty) {
+                      booruFaviconController.text = 'https://hentaipaw.com/favicon.ico';
+                    }
+                  }
                   if (selectedBooruType.isAsmHentai && booruURLController.text.trim().isEmpty) {
                     booruURLController.text = 'https://asmhentai.com';
                     if (booruNameController.text.trim().isEmpty) {

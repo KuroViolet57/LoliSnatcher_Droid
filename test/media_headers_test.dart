@@ -55,6 +55,7 @@ void main() {
         BooruType.EaHentai: 'https://eahentai.com',
         BooruType.Faccina: 'https://hentalk.pw',
         BooruType.Hitomi: 'https://hitomi.la',
+        BooruType.HentaiPaw: 'https://hentaipaw.com',
       }.entries) {
         final headers = BooruHandlerFactory.mediaHeadersFor(booru(entry.key, entry.value));
         expect(

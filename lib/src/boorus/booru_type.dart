@@ -22,6 +22,7 @@ enum BooruType {
   EaHentai,
   Faccina,
   Hitomi,
+  HentaiPaw,
   NHentai,
   NiyaNiya,
   Nozomi,
@@ -105,6 +106,8 @@ enum BooruType {
       // hitomi serves everything from its own static hosts and ignores the
       // entered URL, so it would "detect" against any address.
       ..remove(BooruType.Hitomi)
+      // hentaipaw has a fixed host; picked deliberately.
+      ..remove(BooruType.HentaiPaw)
       // xxxtik has a fixed API host; only pick it deliberately.
       ..remove(BooruType.XXXTik)
       // xxxfollow has a fixed API host; only pick it deliberately.
@@ -161,6 +164,8 @@ enum BooruType {
         return 'Faccina (hentalk.pw)';
       case Hitomi:
         return 'hitomi.la';
+      case HentaiPaw:
+        return 'HentaiPaw';
       case TikPorn:
         return 'Tik.Porn';
       case XXXTik:
@@ -200,6 +205,7 @@ enum BooruType {
   bool get isEaHentai => this == BooruType.EaHentai;
   bool get isFaccina => this == BooruType.Faccina;
   bool get isHitomi => this == BooruType.Hitomi;
+  bool get isHentaiPaw => this == BooruType.HentaiPaw;
   bool get isTikPorn => this == BooruType.TikPorn;
   bool get isXXXTik => this == BooruType.XXXTik;
   bool get isXXXFollow => this == BooruType.XXXFollow;
