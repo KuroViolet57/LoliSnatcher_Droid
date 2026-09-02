@@ -279,7 +279,7 @@ class HentaiPawHandler extends BooruHandler with DoujinListingTagBackfill, Douji
   static int pageCountFrom(String id, dom.Document doc) {
     final Set<int> pages = {};
     for (final a in doc.querySelectorAll('a[href*="/viewer?articleId=$id"]')) {
-      final m = RegExp(r'[?&]page=(\d+)').firstMatch(a.attributes['href'] ?? '');
+      final m = RegExp('[?&]page=([0-9]+)').firstMatch(a.attributes['href'] ?? '');
       if (m != null) pages.add(int.parse(m.group(1)!));
     }
     return pages.length;
@@ -290,7 +290,7 @@ class HentaiPawHandler extends BooruHandler with DoujinListingTagBackfill, Douji
   /// so they are read by pattern rather than by parsing the RSC payload.
   static List<String> pageUrlsFrom(String id, String viewerBody) {
     final RegExp pattern = RegExp(
-      'https://cdn\\.imagedeliveries\\.com/$id/[a-f0-9]+/(\\d+)\\.(webp|jpg|jpeg|png|avif)',
+      'https://cdn[.]imagedeliveries[.]com/$id/[a-f0-9]+/([0-9]+)[.](webp|jpg|jpeg|png|avif)',
     );
     final Map<int, String> byPage = {};
     for (final m in pattern.allMatches(viewerBody)) {

@@ -803,7 +803,7 @@ Future<void> openDoujinReader(
 }
 
 /// Opens the reader on pages already on this device (the doujin downloads
-/// page). Progress is keyed the same way as online reading, so a book saved
+/// screen). Progress is keyed the same way as online reading, so a book saved
 /// mid-read resumes where it was.
 Future<void> openLocalDoujinReader(
   BuildContext context, {
