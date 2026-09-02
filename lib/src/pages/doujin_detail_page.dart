@@ -746,6 +746,15 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
                           startUrl: item.postURL,
                         );
                         if (!mounted) return;
+                        if (SchaleClearanceHandler.instance.lastSolveAuthRefused) {
+                          FlashElements.showSnackbar(
+                            context: context,
+                            title: const Text('niyaniya refused the clearance'),
+                            content: const Text(SchaleClearanceHandler.authRefusedMessage),
+                            duration: const Duration(seconds: 8),
+                            sideColor: Colors.red,
+                          );
+                        }
                         setState(() {
                           _loading = true;
                           _loadError = null;

@@ -243,7 +243,10 @@ class _InAppWebviewViewState extends State<InAppWebviewView> {
                 widget.onWebViewReady?.call(webViewController);
                 // webViewController.clearCache();
               },
-              onCreateWindow: widget.blockPopupsAndAds
+              // The solver too: an ad's window.open replaced the whole solver
+              // page with hentai4fap.com in a log (2026-09-02 12:58), so the
+              // check could not be completed. Turnstile never opens a window.
+              onCreateWindow: (widget.blockPopupsAndAds || widget.restrictMainFrameHosts != null)
                   ? (controller, createWindowAction) async {
                       // Refuse it outright: returning false tells the webview
                       // not to open the window at all.

@@ -258,6 +258,11 @@ void main() {
       expect(js, contains('status: -1'));
     });
 
+    test('the page client loads a document that runs none of the site code', () {
+      expect(SchaleClearanceHandler.pageClientUrl('https://shupogaki.moe'), 'https://shupogaki.moe/robots.txt');
+      expect(SchaleClearanceHandler.pageClientUrl('https://shupogaki.moe/'), 'https://shupogaki.moe/robots.txt');
+    });
+
     test('with no WebView available the call reports null so Dio takes over', () async {
       SettingsHandler.register();
       ViewerHandler.register();

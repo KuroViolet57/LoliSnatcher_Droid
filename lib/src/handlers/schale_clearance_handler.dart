@@ -141,6 +141,27 @@ class SchaleClearanceHandler {
 
   static const Duration pageClientTimeout = Duration(seconds: 12);
 
+  /// The page client loads a document on the site's ORIGIN that runs none of
+  /// the site's code: robots.txt. Loading the real page ran the site's
+  /// invisible Turnstile a second time per solve and redeemed extra
+  /// clearances (log 2026-09-02 12:58, after which every redemption was 403).
+  /// A fetch from this document carries the origin, which is all the gated
+  /// calls need.
+  static String pageClientUrl(String siteUrl) {
+    final String base = siteUrl.endsWith('/') ? siteUrl.substring(0, siteUrl.length - 1) : siteUrl;
+    return '$base/robots.txt';
+  }
+
+  /// True when the last solver session saw the site's auth endpoint refuse
+  /// the redemption (`POST …/clearance → 403`): the check itself passed and
+  /// the token was rejected by the server. Nothing in the app changes that.
+  bool lastSolveAuthRefused = false;
+
+  static const String authRefusedMessage =
+      'The check passed but niyaniya refused to issue a clearance (auth 403). '
+      'That is a server-side refusal of this address or session, not the widget. '
+      'Wait a while before trying again; if the site also fails in Chrome on this phone, it is the address.';
+
   /// The JS run inside the page for one gated call. Same shape as the site's
   /// XHR: no credentials, no body, no custom headers. Returns status + text.
   static const String pageRequestScript = '''
@@ -167,7 +188,7 @@ try {
       _pageSite = siteUrl;
       try {
         final HeadlessInAppWebView client = HeadlessInAppWebView(
-          initialUrlRequest: URLRequest(url: WebUri(siteUrl)),
+          initialUrlRequest: URLRequest(url: WebUri(pageClientUrl(siteUrl))),
           initialSettings: InAppWebViewSettings(
             javaScriptEnabled: true,
             domStorageEnabled: true,
@@ -551,6 +572,7 @@ try {
       // mounts, and this throws rather than returning null in that case.
       final BuildContext context = NavigationHandler.instance.navContext;
       final String? rejected = _rejectedToken;
+      lastSolveAuthRefused = false;
       final String openAt = (startUrl != null && startUrl.isNotEmpty) ? startUrl : siteUrl;
       _log('solver opened on $openAt (site=$siteUrl, rejected=${_describe(rejected)})');
 
@@ -581,6 +603,10 @@ try {
                   final call = args.isNotEmpty ? args.first : null;
                   if (call is! Map) return null;
                   _log('solver page: ${call['event']} — ${call['detail']}');
+                  final String detail = call['detail']?.toString() ?? '';
+                  if (call['event'] == 'xhr' && detail.startsWith('POST 403 https://auth.schale.network/clearance')) {
+                    lastSolveAuthRefused = true;
+                  }
                   // The site wrote a clearance. The solver's job is done; the
                   // harvester reads it.
                   if (call['event'] == 'setItem' && !stored) {
