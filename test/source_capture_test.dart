@@ -338,4 +338,15 @@ void main() {
       expect(File(path!).readAsStringSync(), contains('<html>listing</html>'));
     });
   });
+
+  group('the clipboard short form keeps API calls, not scripts', () {
+    test('script, style and markup bodies are recognised by type or by path', () {
+      expect(SourceCaptureHandler.isScriptOrMarkup('https://hentaipaw.com/_next/static/chunks/223.js', 'application/javascript; charset=UTF-8'), isTrue);
+      expect(SourceCaptureHandler.isScriptOrMarkup('https://hentaipaw.com/x', 'text/css'), isTrue);
+      expect(SourceCaptureHandler.isScriptOrMarkup('https://hentaipaw.com/', 'text/html'), isTrue);
+      expect(SourceCaptureHandler.isScriptOrMarkup('https://hentaipaw.com/cleanup.js', null), isTrue);
+      expect(SourceCaptureHandler.isScriptOrMarkup('https://hentaipaw.com/api/gallery/1', 'application/json'), isFalse);
+      expect(SourceCaptureHandler.isScriptOrMarkup('https://hentaipaw.com/api/search?q=a', null), isFalse);
+    });
+  });
 }

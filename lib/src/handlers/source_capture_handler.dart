@@ -477,9 +477,13 @@ class SourceCaptureHandler {
       ..writeln();
 
     // The API calls first: they are the capture's whole point, and they are
-    // small next to the page markup and script bodies.
+    // small next to the page markup and script bodies. A Next.js site loads
+    // its chunks through fetch, so those ARE recorded as XHR — a HentaiPaw
+    // copy was 256 KB of application/javascript and not one API call.
+    // Script, style and markup bodies are left out of the short form.
     for (final entry in _entries) {
       if (entry.kind != CaptureKind.xhr) continue;
+      if (isScriptOrMarkup(entry.url, entry.contentType)) continue;
       out
         ..writeln('===== ${entry.kind.name.toUpperCase()} ${entry.status ?? ''} '
             '${entry.contentType ?? ''}')
@@ -492,6 +496,17 @@ class SourceCaptureHandler {
     final String head = out.toString();
     if (head.length <= maxClipboardChars) return head;
     return '${head.substring(0, maxClipboardChars - 80)}\n\n===== CUT HERE — use Share for the rest';
+  }
+
+  /// Bodies that are never an API answer: scripts, styles, page markup.
+  @visibleForTesting
+  static bool isScriptOrMarkup(String url, String? contentType) {
+    final String ct = (contentType ?? '').toLowerCase();
+    if (ct.contains('javascript') || ct.contains('ecmascript') || ct.contains('text/css') || ct.contains('text/html')) {
+      return true;
+    }
+    final String path = Uri.tryParse(url)?.path.toLowerCase() ?? url.toLowerCase();
+    return path.endsWith('.js') || path.endsWith('.mjs') || path.endsWith('.css') || path.endsWith('.map');
   }
 
   ({String body, int? from}) _cap(String body) {
