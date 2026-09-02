@@ -6,6 +6,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter/foundation.dart';
 
+import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/log_redaction.dart';
@@ -756,11 +757,16 @@ class SourceCaptureHandler {
     return out.toString();
   }
 
-  /// Writes the bundle beside the app's other config files and hands back the
-  /// path, so it can be shared out.
+  /// Writes the bundle into the app CACHE directory — the only tree the
+  /// FileProvider exposes (res/xml/provider_paths.xml: cache-path only). It
+  /// used to go beside the config files under /data/user/0/…, which the
+  /// provider refuses, so the share sheet never opened and the snackbar
+  /// showed a path nothing else on the phone can read.
   Future<String?> writeBundle() async {
     try {
-      final String dir = SettingsHandler.instance.path;
+      final String cache = await ServiceHandler.getCacheDir();
+      final String dir = '${cache}captures/';
+      await Directory(dir).create(recursive: true);
       final String host = (Uri.tryParse(_target)?.host ?? 'capture').replaceAll('.', '-');
       final String name =
           'source-capture-$host-${DateTime.now().millisecondsSinceEpoch}.txt';

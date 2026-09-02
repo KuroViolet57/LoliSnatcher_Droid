@@ -602,63 +602,74 @@ class SchaleHandler extends BooruHandler with DoujinListingTagBackfill, DoujinNa
   /// `similar` from the most recent gated detail per gallery, for Related.
   final Map<String, List> _similarById = {};
 
-  /// One clearance-gated call. On 400 or 403 the token is dropped and the
-  /// error is surfaced; there is no silent retry — the person opens the check.
-  Future<Response?> _gated(Future<Response> Function(String crt) send) async {
+  /// One clearance-gated call. Made from inside the site's page when the
+  /// page client can be started (see SchaleClearanceHandler.pageRequest — the
+  /// page's request is the one the server accepts), otherwise with Dio. On
+  /// 400 or 403 the token is dropped and the error is surfaced; there is no
+  /// silent retry — the person opens the check.
+  Future<Map?> _gated({required String Function(String crt) url, required String method}) async {
     final SchaleClearanceHandler clearance = SchaleClearanceHandler.instance;
     final String? token = await clearance.harvest(_site);
     if (token == null) {
       _gateError = SchaleClearanceHandler.needsSolveMessage;
       return null;
     }
+    final String target = url(token);
+    int status;
+    dynamic body;
+    String via;
     try {
-      final Response response = await send(token);
-      if (response.statusCode == 200) return response;
-      if (response.statusCode == 400 || response.statusCode == 403) {
-        clearance.invalidate();
-        _gateError = SchaleClearanceHandler.needsSolveMessage;
-        Logger.Inst().log(
-          'clearance refused (${response.statusCode}); dropped | body=${_bodySnippet(response.data)}',
-          className,
-          '_gated',
-          LogTypes.booruHandlerInfo,
-        );
-        return null;
+      final ({int status, String body})? inPage = await clearance.pageRequest(_site, url: target, method: method);
+      if (inPage != null) {
+        via = 'page';
+        status = inPage.status;
+        body = inPage.body;
+      } else {
+        via = 'dio';
+        final Response response = method == 'POST'
+            ? await DioNetwork.post(target, headers: getHeaders(), options: Options(validateStatus: (_) => true))
+            : await DioNetwork.get(target, headers: getHeaders(), options: Options(validateStatus: (_) => true));
+        status = response.statusCode ?? -1;
+        body = response.data;
       }
-      _gateError = 'niyaniya answered ${response.statusCode}';
-      return null;
     } catch (e) {
       _gateError = 'niyaniya request failed: $e';
       return null;
     }
+    if (status == 200) {
+      final data = _json(body);
+      return data is Map ? data : null;
+    }
+    if (status == 400 || status == 403) {
+      clearance.invalidate();
+      _gateError = SchaleClearanceHandler.needsSolveMessage;
+      Logger.Inst().log(
+        'clearance refused ($status via $via); dropped | body=${_bodySnippet(body)}',
+        className,
+        '_gated',
+        LogTypes.booruHandlerInfo,
+      );
+      return null;
+    }
+    _gateError = 'niyaniya answered $status';
+    return null;
   }
 
   Future<Map?> _gatedDetail(String id, String key) async {
-    final Response? response = await _gated(
-      (crt) => DioNetwork.post(
-        detailPostUrl(id: id, key: key, clearance: crt),
-        headers: getHeaders(),
-        options: Options(validateStatus: (_) => true),
-      ),
+    final Map? data = await _gated(
+      url: (crt) => detailPostUrl(id: id, key: key, clearance: crt),
+      method: 'POST',
     );
-    if (response == null) return null;
-    final data = _json(response.data);
-    if (data is! Map) return null;
+    if (data == null) return null;
     if (data['similar'] is List) _similarById[id] = data['similar'] as List;
     return data;
   }
 
   Future<Map?> _gatedImages(String id, String key, ({String id, String key, String realQuality}) dk) async {
-    final Response? response = await _gated(
-      (crt) => DioNetwork.get(
-        imagesUrl(id: id, key: key, dataId: dk.id, dataKey: dk.key, quality: dk.realQuality, clearance: crt),
-        headers: getHeaders(),
-        options: Options(validateStatus: (_) => true),
-      ),
+    return _gated(
+      url: (crt) => imagesUrl(id: id, key: key, dataId: dk.id, dataKey: dk.key, quality: dk.realQuality, clearance: crt),
+      method: 'GET',
     );
-    if (response == null) return null;
-    final data = _json(response.data);
-    return data is Map ? data : null;
   }
 
   /// Chooses the image set for [quality], with Koharu's fallback order, and

@@ -244,6 +244,37 @@ void main() {
     });
   });
 
+  group('the page client (gated calls from inside the page)', () {
+    const String js = SchaleClearanceHandler.pageRequestScript;
+
+    test("is the site's own request shape: no credentials, no body, no custom headers", () {
+      expect(js, contains("fetch(url, { method: method, credentials: 'omit' })"));
+      expect(js, isNot(contains('headers')));
+    });
+
+    test('returns status and text, and never throws into Dart', () {
+      expect(js, contains('status: r.status'));
+      expect(js, contains('body: t'));
+      expect(js, contains('status: -1'));
+    });
+
+    test('with no WebView available the call reports null so Dio takes over', () async {
+      SettingsHandler.register();
+      ViewerHandler.register();
+      final dir = Directory.systemTemp.createTempSync('schale_page');
+      SettingsHandler.instance.path = '${dir.path}${Platform.pathSeparator}';
+      SchaleClearanceHandler.instance.resetForTests();
+      final result = await SchaleClearanceHandler.instance.pageRequest(
+        'https://niyaniya.moe',
+        url: 'https://api.schale.network/books/detail/1/k?crt=t',
+        method: 'POST',
+      );
+      expect(result, isNull);
+      SchaleClearanceHandler.instance.resetForTests();
+      dir.deleteSync(recursive: true);
+    });
+  });
+
   group('the request budget is respected', () {
     late Directory tempDir;
 

@@ -102,6 +102,8 @@ class SchaleClearanceHandler {
     _token = value;
     _persist();
     revision.value++;
+    // The page client reloads on its next call, so it runs with this token.
+    unawaited(_disposePageClient());
   }
 
   /// The token the API most recently refused.
@@ -117,6 +119,131 @@ class SchaleClearanceHandler {
   @visibleForTesting
   String? get rejectedToken => _rejectedToken;
 
+  // ── the page client ───────────────────────────────────────────────────
+  //
+  // Observed 2026-09-02 (log 12:31–12:33): five fresh clearances in a row;
+  // for each, the site's OWN page spent the token with a 200 while the app's
+  // Dio request with the same token, same agent, same Referer/Origin got a
+  // 403 within the same second — no rate-limit headers, an empty body. The
+  // first token had worked for three galleries. Whatever the server keys on
+  // (TLS fingerprint, client hints, cookies the page does not send), the
+  // page's request is the one that is accepted, so the two gated calls are
+  // made FROM the page: a headless WebView kept on the site's origin runs a
+  // plain fetch, exactly the XMLHttpRequest the site itself uses (no
+  // credentials, no custom headers). Dio remains the fallback when the page
+  // cannot be started. This is a third role beside the solver and the
+  // harvester, and touches neither.
+
+  HeadlessInAppWebView? _pageClient;
+  InAppWebViewController? _pageController;
+  Future<bool>? _pageStarting;
+  String _pageSite = '';
+
+  static const Duration pageClientTimeout = Duration(seconds: 12);
+
+  /// The JS run inside the page for one gated call. Same shape as the site's
+  /// XHR: no credentials, no body, no custom headers. Returns status + text.
+  static const String pageRequestScript = '''
+try {
+  const r = await fetch(url, { method: method, credentials: 'omit' });
+  const t = await r.text();
+  return { status: r.status, body: t };
+} catch (e) {
+  return { status: -1, body: String(e) };
+}
+''';
+
+  Future<bool> _startPageClient(String siteUrl) {
+    // Only where a WebView exists; anywhere else (unit tests, desktop) the
+    // caller falls back to Dio at once instead of waiting on a dead channel.
+    if (!(Platform.isAndroid || Platform.isIOS)) return Future.value(false);
+    if (_pageController != null && _pageSite == siteUrl) return Future.value(true);
+    final Future<bool>? starting = _pageStarting;
+    if (starting != null) return starting;
+    final Completer<bool> done = Completer<bool>();
+    _pageStarting = done.future;
+    () async {
+      await _disposePageClient();
+      _pageSite = siteUrl;
+      try {
+        final HeadlessInAppWebView client = HeadlessInAppWebView(
+          initialUrlRequest: URLRequest(url: WebUri(siteUrl)),
+          initialSettings: InAppWebViewSettings(
+            javaScriptEnabled: true,
+            domStorageEnabled: true,
+            databaseEnabled: true,
+            blockNetworkImage: true,
+            // The agent the solver presented when the page's own request was
+            // seen to succeed.
+            userAgent: reducedChromeUserAgent(Tools.browserUserAgent),
+          ),
+          onLoadStop: (controller, url) {
+            _pageController = controller;
+            _log('page client: ready at ${url?.host ?? '?'}');
+            if (!done.isCompleted) done.complete(true);
+          },
+          onReceivedError: (controller, request, error) {
+            if (request.isForMainFrame == true) {
+              _log('page client: load error ${error.description}');
+              if (!done.isCompleted) done.complete(false);
+            }
+          },
+        );
+        _pageClient = client;
+        await client.run().timeout(pageClientTimeout);
+        final bool ok = await done.future.timeout(pageClientTimeout, onTimeout: () {
+          _log('page client: timed out after ${pageClientTimeout.inSeconds}s');
+          return false;
+        });
+        if (!ok) await _disposePageClient();
+      } catch (e, s) {
+        Logger.Inst().log('page client failed: $e', 'SchaleClearanceHandler', '_startPageClient', LogTypes.exception, s: s);
+        await _disposePageClient();
+        if (!done.isCompleted) done.complete(false);
+      } finally {
+        _pageStarting = null;
+      }
+    }();
+    return done.future;
+  }
+
+  Future<void> _disposePageClient() async {
+    final HeadlessInAppWebView? client = _pageClient;
+    _pageClient = null;
+    _pageController = null;
+    _pageSite = '';
+    try {
+      await client?.dispose();
+    } catch (_) {}
+  }
+
+  /// Runs one gated request from inside the site's page. Null when the page
+  /// client cannot be started (the caller then falls back to Dio).
+  Future<({int status, String body})?> pageRequest(String siteUrl, {required String url, required String method}) async {
+    if (!await _startPageClient(siteUrl)) return null;
+    final InAppWebViewController? controller = _pageController;
+    if (controller == null) return null;
+    try {
+      final CallAsyncJavaScriptResult? result = await controller
+          .callAsyncJavaScript(functionBody: pageRequestScript, arguments: {'url': url, 'method': method})
+          .timeout(pageClientTimeout);
+      final value = result?.value;
+      if (result?.error != null || value is! Map) {
+        _log('page client: call failed: ${result?.error ?? value}');
+        return null;
+      }
+      final int status = (value['status'] as num?)?.toInt() ?? -1;
+      final String body = value['body']?.toString() ?? '';
+      _log('page client: $method ${url.replaceAll(RegExp('crt=[^&]+'), 'crt=…')} → $status');
+      if (status < 0) return null;
+      return (status: status, body: body);
+    } catch (e) {
+      _log('page client: $e');
+      await _disposePageClient();
+      return null;
+    }
+  }
+
   /// Called when the API answers 400 or 403 to a gated call. Drops the token;
   /// the caller surfaces "open the check" and does NOT retry silently.
   void invalidate() {
@@ -126,6 +253,7 @@ class SchaleClearanceHandler {
     _token = null;
     _persist();
     revision.value++;
+    unawaited(_disposePageClient());
   }
 
   void _persist() {

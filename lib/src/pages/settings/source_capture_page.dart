@@ -197,7 +197,7 @@ class _SourceCapturePageState extends State<SourceCapturePage> {
       FlashElements.showSnackbar(
         context: context,
         title: const Text('Could not open the share sheet'),
-        content: Text('The file is saved at $path\n\n$e'),
+        content: Text('The file is at $path (app cache). Error: $e'),
         leadingIcon: Symbols.error_rounded,
       );
       return;
@@ -205,8 +205,8 @@ class _SourceCapturePageState extends State<SourceCapturePage> {
     if (!mounted) return;
     FlashElements.showSnackbar(
       context: context,
-      title: const Text('Capture shared'),
-      content: Text(path),
+      title: const Text('Share sheet opened'),
+      content: const Text('Pick an app to send the capture file to.'),
       leadingIcon: Symbols.check_rounded,
     );
   }
