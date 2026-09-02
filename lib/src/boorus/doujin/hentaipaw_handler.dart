@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
 import 'package:html/dom.dart' as dom;
@@ -13,6 +14,7 @@ import 'package:lolisnatcher/src/data/meta_tag.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
+import 'package:lolisnatcher/src/handlers/origin_page_client.dart';
 import 'package:lolisnatcher/src/handlers/reader_handler.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
 
@@ -40,6 +42,33 @@ class HentaiPawHandler extends BooruHandler with DoujinListingTagBackfill, Douji
 
   static const String _site = 'https://hentaipaw.com';
   static const String cdn = 'https://cdn.imagedeliveries.com';
+
+  /// One WebView on the site's origin, shared by every handler instance.
+  /// Cloudflare's WAF answers the app's plain client 403 "you have been
+  /// blocked" (device log 2026-09-02 18:11) while the WebView is served.
+  static final OriginPageClient pageClient = OriginPageClient(_site);
+
+  /// A page of the site: from the WebView when one exists, else plain HTTP.
+  Future<({int status, String body})> _page(String url) async {
+    final inPage = await pageClient.fetch(url);
+    if (inPage != null) return inPage;
+    final Response response = await DioNetwork.get(url, headers: getHeaders(), options: Options(validateStatus: (_) => true));
+    return (status: response.statusCode ?? -1, body: response.data.toString());
+  }
+
+  /// The listing request too, so the save-time test and every search go the
+  /// same way. A plain-HTTP 403 would otherwise open the captcha window on a
+  /// WAF block page that no one can solve.
+  @override
+  Future<Response<dynamic>> fetchSearch(Uri uri, String input, {bool withCaptchaCheck = true, Map<String, dynamic>? queryParams}) async {
+    final inPage = await pageClient.fetch(uri.toString());
+    if (inPage == null) return super.fetchSearch(uri, input, withCaptchaCheck: withCaptchaCheck, queryParams: queryParams);
+    return Response<dynamic>(
+      requestOptions: RequestOptions(path: uri.toString()),
+      statusCode: inPage.status,
+      data: inPage.body,
+    );
+  }
 
   // No accounts are used: nothing reads a user id or key.
   @override
@@ -325,9 +354,9 @@ class HentaiPawHandler extends BooruHandler with DoujinListingTagBackfill, Douji
   Future<List<Tag>> tagsForListingItem(BooruItem item) async {
     final String id = item.serverId ?? '';
     if (id.isEmpty) return const [];
-    final response = await DioNetwork.get(makePostURL(id), headers: getHeaders());
-    if (response.statusCode != 200) return const [];
-    return _tagsFrom(parse(response.data.toString()));
+    final page = await _page(makePostURL(id));
+    if (page.status != 200) return const [];
+    return _tagsFrom(parse(page.body));
   }
 
   // ── detail + reader ───────────────────────────────────────────────────
@@ -341,21 +370,21 @@ class HentaiPawHandler extends BooruHandler with DoujinListingTagBackfill, Douji
     final String id = item.serverId ?? '';
     if (id.isEmpty) return (item: null, failed: true, error: 'no gallery id');
     try {
-      final article = await DioNetwork.get(makePostURL(id), headers: getHeaders());
-      if (article.statusCode != 200) {
-        return (item: null, failed: true, error: 'status ${article.statusCode} on the gallery page');
+      final article = await _page(makePostURL(id));
+      if (article.status != 200) {
+        return (item: null, failed: true, error: 'status ${article.status} on the gallery page');
       }
-      final dom.Document doc = parse(article.data.toString());
+      final dom.Document doc = parse(article.body);
       final List<Tag> tags = _tagsFrom(doc);
       if (tags.isNotEmpty) item.tagsList = tags;
       final String title = doc.querySelector('h1')?.text.trim() ?? '';
       if (title.isNotEmpty) item.description = title;
 
-      final viewer = await DioNetwork.get('$_site/viewer?articleId=$id&page=1', headers: getHeaders());
-      if (viewer.statusCode != 200) {
-        return (item: null, failed: true, error: 'status ${viewer.statusCode} on the viewer');
+      final viewer = await _page('$_site/viewer?articleId=$id&page=1');
+      if (viewer.status != 200) {
+        return (item: null, failed: true, error: 'status ${viewer.status} on the viewer');
       }
-      final List<String> urls = pageUrlsFrom(id, viewer.data.toString());
+      final List<String> urls = pageUrlsFrom(id, viewer.body);
       if (urls.isEmpty) return (item: null, failed: true, error: 'the viewer lists no pages');
 
       final List<BooruItem> pages = [
@@ -380,9 +409,9 @@ class HentaiPawHandler extends BooruHandler with DoujinListingTagBackfill, Douji
 
   Future<BooruItem?> _sourceItem(String id) async {
     try {
-      final response = await DioNetwork.get(makePostURL(id), headers: getHeaders());
-      if (response.statusCode != 200) return null;
-      return _itemFromArticlePage(id, response.data.toString());
+      final page = await _page(makePostURL(id));
+      if (page.status != 200) return null;
+      return _itemFromArticlePage(id, page.body);
     } catch (_) {
       return null;
     }
@@ -400,11 +429,8 @@ class HentaiPawHandler extends BooruHandler with DoujinListingTagBackfill, Douji
     final Set<String> seen = {source.postURL};
     for (final query in queries) {
       try {
-        final response = await DioNetwork.get(
-          '$_site/articles/search?keyword=${Uri.encodeQueryComponent(query)}&page=1',
-          headers: getHeaders(),
-        );
-        for (final item in _itemsFromListing(response.data.toString())) {
+        final page = await _page('$_site/articles/search?keyword=${Uri.encodeQueryComponent(query)}&page=1');
+        for (final item in _itemsFromListing(page.body)) {
           if (seen.add(item.postURL)) out.add(item);
         }
       } catch (_) {}
@@ -416,8 +442,8 @@ class HentaiPawHandler extends BooruHandler with DoujinListingTagBackfill, Douji
     for (final item in items.take(limit)) {
       if (item.tagsList.length > 1) continue;
       try {
-        final response = await DioNetwork.get(item.postURL, headers: getHeaders());
-        item.tagsList = _tagsFrom(parse(response.data.toString()));
+        final page = await _page(item.postURL);
+        item.tagsList = _tagsFrom(parse(page.body));
       } catch (_) {}
     }
   }

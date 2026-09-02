@@ -7,6 +7,7 @@ import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/boorus/doujin/hentaipaw_handler.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
+import 'package:lolisnatcher/src/handlers/origin_page_client.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
@@ -124,6 +125,16 @@ void main() {
       expect(h.readerImageQualities, isEmpty);
       expect(h.getMediaHeaders()['Referer'], 'https://hentaipaw.com/');
       expect(DoujinDataHandler.isDoujinBooru(paw()), isTrue);
+    });
+  });
+
+  group('pages are fetched from the WebView on the site origin', () {
+    test('the in-page fetch is same-origin and never leaves the site', () async {
+      expect(OriginPageClient.fetchScript, contains("credentials: 'same-origin'"));
+      final client = OriginPageClient('https://hentaipaw.com');
+      expect(await client.fetch('https://evil.example/x'), isNull);
+      // No WebView in a unit test: null, so the handler falls back to HTTP.
+      expect(await client.fetch('https://hentaipaw.com/?page=1'), isNull);
     });
   });
 }
