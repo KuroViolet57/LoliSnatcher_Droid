@@ -206,7 +206,7 @@ class HentaiPawHandler extends BooruHandler with DoujinListingTagBackfill, Douji
 
       final List<Tag> tags = [];
       final flag = anchor.querySelector('span.fi');
-      final String code = RegExp(r'fi-([a-z]{2})').firstMatch(flag?.className ?? '')?.group(1) ?? '';
+      final String code = RegExp('fi-([a-z]{2})').firstMatch(flag?.className ?? '')?.group(1) ?? '';
       final String? language = flagLanguages[code];
       if (language != null) tags.add(namespacedTag(language, 'language'));
 
@@ -261,7 +261,7 @@ class HentaiPawHandler extends BooruHandler with DoujinListingTagBackfill, Douji
     final List<Tag> tags = [];
     final Set<String> seen = {};
     for (final a in block.querySelectorAll('a[href]')) {
-      final match = RegExp('^/([a-z]+)/([0-9]+)\$').firstMatch(a.attributes['href'] ?? '');
+      final match = RegExp(r'^/([a-z]+)/([0-9]+)$').firstMatch(a.attributes['href'] ?? '');
       if (match == null) continue;
       final String? namespace = _pathNamespaces[match.group(1)!];
       if (namespace == null) continue;
