@@ -229,20 +229,20 @@ void main() {
       final c = SchaleClearanceHandler.instance..store(dead);
       c.invalidate();
 
-      expect(c.isUsableToken(dead), isFalse);
+      expect(c.isUsableToken(dead, afterClear: false), isFalse);
     });
 
     test('a genuinely new token is accepted', () {
       final c = SchaleClearanceHandler.instance..store(dead);
       c.invalidate();
 
-      expect(c.isUsableToken('a-fresh-one'), isTrue);
+      expect(c.isUsableToken('a-fresh-one', afterClear: false), isTrue);
     });
 
     test('empty and null are never adopted', () {
       final c = SchaleClearanceHandler.instance;
-      expect(c.isUsableToken(null), isFalse);
-      expect(c.isUsableToken(''), isFalse);
+      expect(c.isUsableToken(null, afterClear: true), isFalse);
+      expect(c.isUsableToken('', afterClear: true), isFalse);
     });
 
     test('once a new token lands the old one stops being blocked', () {
@@ -254,7 +254,32 @@ void main() {
         ..store('fresh');
 
       expect(c.rejectedToken, isNull);
-      expect(c.isUsableToken(dead), isTrue);
+      expect(c.isUsableToken(dead, afterClear: false), isTrue);
+    });
+
+    test('the SAME token re-issued after a fresh challenge is accepted', () {
+      // The second device log: the Turnstile passed, the site unblurred, and
+      // the only crt value in the whole session was still the "rejected" one -
+      // which had answered 200 six times that day. The API hands the same
+      // token back after a fresh challenge. Refusing it unconditionally made
+      // one 403 permanent.
+      final c = SchaleClearanceHandler.instance..store(dead);
+      c.invalidate();
+
+      // Before the page has been seen empty, the same string is the stale copy.
+      expect(c.isUsableToken(dead, afterClear: false), isFalse);
+      // Once it has, the same string was written by the site just now.
+      expect(c.isUsableToken(dead, afterClear: true), isTrue);
+    });
+
+    test('storing the re-issued token clears the rejected marker', () {
+      final c = SchaleClearanceHandler.instance..store(dead);
+      c
+        ..invalidate()
+        ..store(dead);
+
+      expect(c.hasToken, isTrue);
+      expect(c.rejectedToken, isNull, reason: 'a token the site just handed out is not rejected');
     });
 
     test('the injected script deletes exactly the refused clearance', () {

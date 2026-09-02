@@ -85,7 +85,9 @@ class SchaleClearanceHandler {
   void store(String value) {
     ensureLoaded();
     if (value.isEmpty) return;
-    if (value != _rejectedToken) _rejectedToken = null;
+    // Whatever is being stored has just been produced or re-validated by the
+    // site, so nothing is "rejected" any more — including the same string.
+    _rejectedToken = null;
     _token = value;
     _persist();
     revision.value++;
@@ -105,11 +107,25 @@ class SchaleClearanceHandler {
   @visibleForTesting
   String? get rejectedToken => _rejectedToken;
 
-  /// Whether [candidate] is a token worth adopting: present, and not the one
-  /// the API just refused.
+  /// Whether [candidate] is a token worth adopting.
+  ///
+  /// [afterClear] is whether the challenge webview has been observed with NO
+  /// clearance in its storage during this attempt. Before that point, a value
+  /// equal to the refused one is the stale copy the page still held and must
+  /// be ignored. After it, any value present was written by the site DURING
+  /// this challenge — and is accepted even if it is the same string, because
+  /// the site has just validated it.
+  ///
+  /// The previous rule refused the rejected value unconditionally. The API
+  /// hands the same token back after a fresh challenge, so the Turnstile
+  /// passed, the page unblurred, and the app sat there refusing the token the
+  /// site had just re-issued. A single 403 had become permanent.
   @visibleForTesting
-  bool isUsableToken(String? candidate) =>
-      candidate != null && candidate.isNotEmpty && candidate != _rejectedToken;
+  bool isUsableToken(String? candidate, {required bool afterClear}) {
+    if (candidate == null || candidate.isEmpty) return false;
+    if (afterClear) return true;
+    return candidate != _rejectedToken;
+  }
 
   /// Called when the API rejects the token, so the next read asks for a new one
   /// rather than repeating a request that cannot succeed.
@@ -251,11 +267,21 @@ class SchaleClearanceHandler {
               // The token appears when the Turnstile callback finishes, which
               // is well after the page has loaded — so this watches for it
               // rather than looking once on load.
+              //
+              // Seeing the storage EMPTY once is the proof that the injected
+              // script has run and the site is being challenged afresh. From
+              // then on whatever appears was written by the site in response
+              // to that challenge, same string or not.
+              bool sawEmpty = rejected == null;
               poll = Timer.periodic(const Duration(milliseconds: 700), (timer) async {
                 final String? found = await _readToken(controller);
-                if (!isUsableToken(found)) return;
+                if (found == null) {
+                  sawEmpty = true;
+                  return;
+                }
+                if (!isUsableToken(found, afterClear: sawEmpty)) return;
                 timer.cancel();
-                store(found!);
+                store(found);
                 if (context.mounted) unawaited(Navigator.of(context).maybePop());
               });
             },
