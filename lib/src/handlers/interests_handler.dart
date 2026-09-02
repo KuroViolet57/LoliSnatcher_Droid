@@ -1,9 +1,13 @@
 import 'dart:async';
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
+
 import 'package:get_it/get_it.dart';
 
+import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/tag_handler.dart';
@@ -40,6 +44,18 @@ class InterestsHandler {
 
   final Map<String, double> _pending = {};
   Timer? _flushTimer;
+
+  /// Signals waiting to be written, for tests that check the door held.
+  @visibleForTesting
+  Map<String, double> get pendingSignals => Map.unmodifiable(_pending);
+
+  /// The guard at the door. This profile is the BOORU taste profile; doujin
+  /// activity has its own world and must never reach it, whichever caller
+  /// forgot to check. Judged per item (post URL host) so merge tabs mixing
+  /// both worlds stay separated, and per source for the string-only signals.
+  static bool _refuses(BooruItem item) => DoujinDataHandler.isDoujinItem(item);
+
+  static bool _refusesSource(Booru? booru) => DoujinDataHandler.isDoujinBooru(booru);
 
   bool get _enabled {
     final s = SettingsHandler.instance;
@@ -108,6 +124,7 @@ class InterestsHandler {
 
   /// Post was on screen in the viewer for [dwell]. Ignores flick-throughs.
   void onItemViewed(BooruItem item, Duration dwell) {
+    if (_refuses(item)) return;
     if (dwell.inMilliseconds < 1500) return;
     final double seconds = min(dwell.inMilliseconds / 1000, 30);
     final double weight = 0.2 + (seconds / 30) * 1.3;
@@ -115,27 +132,32 @@ class InterestsHandler {
   }
 
   void onItemFavourited(BooruItem item, {required bool nowFavourite}) {
+    if (_refuses(item)) return;
     _add(item.tagsList.map((t) => t.fullString), nowFavourite ? 6 : -3);
   }
 
   void onItemsSnatched(List<BooruItem> items) {
-    for (final item in items.take(20)) {
+    for (final item in items.where((i) => !_refuses(i)).take(20)) {
       _add(item.tagsList.map((t) => t.fullString), 4);
     }
   }
 
   void onItemsCollected(List<BooruItem> items) {
-    for (final item in items.take(20)) {
+    for (final item in items.where((i) => !_refuses(i)).take(20)) {
       _add(item.tagsList.map((t) => t.fullString), 5);
     }
   }
 
-  void onSearch(String query) {
+  /// [booru] is the source searched; a doujin source is refused here even
+  /// when the caller did not check.
+  void onSearch(String query, {Booru? booru}) {
+    if (_refusesSource(booru)) return;
     final tags = query.split(' ').where(isMeaningfulTag).take(5);
     _add(tags, 2);
   }
 
-  void onTagPreviewOpened(String tag) {
+  void onTagPreviewOpened(String tag, {Booru? booru}) {
+    if (_refusesSource(booru)) return;
     _add(tag.split(' '), 1.5);
   }
 

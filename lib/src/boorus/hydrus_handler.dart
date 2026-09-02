@@ -20,6 +20,13 @@ import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 class HydrusHandler extends BooruHandler {
   HydrusHandler(super.booru, super.limit);
 
+  // Hydrus authenticates with the access key alone; there is no user id.
+  @override
+  bool get usesUserId => false;
+  @override
+  String? get apiKeyLabel => 'Access key';
+
+
   dynamic _fileIDs;
 
   // Hydrus accepts nested-array OR groups, but text-substitution doesn't

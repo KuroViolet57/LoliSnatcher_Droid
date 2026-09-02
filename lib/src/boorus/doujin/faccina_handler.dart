@@ -28,6 +28,13 @@ import 'package:lolisnatcher/src/utils/dio_network.dart';
 class FaccinaHandler extends BooruHandler with DoujinNamespacedTags {
   FaccinaHandler(super.booru, super.limit);
 
+  // Site login: username + password (see signIn). Optional.
+  @override
+  String? get userIdLabel => 'Username (optional)';
+  @override
+  String? get apiKeyLabel => 'Password (optional)';
+
+
   /// The site this handler was configured for; faccina is self-hosted, so the
   /// host comes from the booru config rather than being hardcoded.
   String get _site {

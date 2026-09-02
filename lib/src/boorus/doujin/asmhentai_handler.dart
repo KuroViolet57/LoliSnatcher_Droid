@@ -33,6 +33,14 @@ import 'package:lolisnatcher/src/utils/dio_network.dart';
 class AsmHentaiHandler extends BooruHandler with DoujinListingTagBackfill, DoujinNamespacedTags {
   AsmHentaiHandler(super.booru, super.limit);
 
+  // Site login: the "user id" field is the username, the "key" field the
+  // password (see signIn). Both are read; neither is required to browse.
+  @override
+  String? get userIdLabel => 'Username (optional)';
+  @override
+  String? get apiKeyLabel => 'Password (optional)';
+
+
   static const String _site = 'https://asmhentai.com';
 
   @override

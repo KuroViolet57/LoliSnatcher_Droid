@@ -70,6 +70,13 @@ import 'package:lolisnatcher/src/utils/tools.dart';
 class KusowankaHandler extends BooruHandler {
   KusowankaHandler(super.booru, super.limit);
 
+  // Reads neither field (audited): the fields are hidden on the edit page.
+  @override
+  bool get usesUserId => false;
+  @override
+  bool get usesApiKey => false;
+
+
   static const String _site = 'https://kusowanka.com';
 
   /// Query prefix -> (browse route segment, autocomplete type, tag type).

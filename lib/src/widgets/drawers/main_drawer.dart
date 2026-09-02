@@ -12,6 +12,7 @@ import 'package:lolisnatcher/src/handlers/local_auth_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/pages/settings/source_settings_page.dart';
+import 'package:lolisnatcher/src/pages/doujin_downloads_page.dart';
 import 'package:lolisnatcher/src/pages/doujin_favourites_page.dart';
 import 'package:lolisnatcher/src/pages/doujin_favourite_tags_page.dart';
 import 'package:lolisnatcher/src/pages/doujin_library_pages.dart';
@@ -261,6 +262,12 @@ class MainDrawer extends StatelessWidget {
                           name: 'Doujin favourites & bookmarks',
                           icon: const Icon(Symbols.bookmark_heart_rounded),
                           page: () => DoujinFavouritesPage(booru: doujinBooru),
+                        ),
+                        SettingsButton(
+                          name: 'Doujin downloads',
+                          subtitle: const Text('Saved books on this device'),
+                          icon: const Icon(Symbols.menu_book_rounded),
+                          page: () => const DoujinDownloadsPage(),
                         ),
                         SettingsButton(
                           name: 'Favourite tags',

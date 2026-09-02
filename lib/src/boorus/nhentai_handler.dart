@@ -41,6 +41,17 @@ import 'package:lolisnatcher/src/utils/tools.dart';
 class NHentaiHandler extends BooruHandler {
   NHentaiHandler(super.booru, super.limit);
 
+  // Only the API key is read (Authorization: Key …); there is no user id.
+  @override
+  bool get usesUserId => false;
+  @override
+  String? get apiKeyLabel => 'API key (optional)';
+  @override
+  bool get supportsLanguageFilter => true;
+  @override
+  bool get supportsTitleLanguage => true;
+
+
   String get _base {
     String url = booru.baseURL ?? 'https://nhentai.net';
     if (url.endsWith('/')) url = url.substring(0, url.length - 1);

@@ -1129,6 +1129,30 @@ abstract class BooruHandler {
 
   bool get hasSignInSupport => false;
 
+  /// Which credential fields this source can actually USE. The edit page and
+  /// the source settings show a field only when the handler reads it — a
+  /// field nothing reads makes a person think something is configurable when
+  /// it is not. The defaults keep the upstream behaviour (both shown) for the
+  /// booru engines that accept a login or key; a source that never reads them
+  /// overrides these to false.
+  bool get usesUserId => true;
+  bool get usesApiKey => true;
+
+  /// Field labels when the generic "User ID" / "API key" would mislead
+  /// (username + password logins, optional keys). null = the type's default.
+  String? get userIdLabel => null;
+  String? get apiKeyLabel => null;
+
+  /// Reader page widths the source can serve, as (value, label). Empty means
+  /// the source has ONE size and the image-quality setting is not offered.
+  List<(String value, String label)> get readerImageQualities => const [];
+
+  /// Whether the per-source "Only show language" setting is honoured by
+  /// this handler's search, and whether "Title language" changes what it
+  /// shows. Rows for either are offered only where true.
+  bool get supportsLanguageFilter => false;
+  bool get supportsTitleLanguage => false;
+
   Future<bool> canSignIn() async {
     return booru.userID?.isNotEmpty == true && booru.apiKey?.isNotEmpty == true;
   }

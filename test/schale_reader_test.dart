@@ -187,6 +187,15 @@ void main() {
     });
   });
 
+  group('page images', () {
+    test('erocdn is sent Origin as well as Referer, like Koharu', () {
+      // curl, 2026-09-02: 400 without Origin, 200 image/jpeg with it.
+      final headers = handler('https://shupogaki.moe').getMediaHeaders();
+      expect(headers['Origin'], 'https://shupogaki.moe');
+      expect(headers['Referer'], 'https://shupogaki.moe/');
+    });
+  });
+
   group('the clearance token', () {
     test('survives a restart', () {
       SchaleClearanceHandler.instance.store('token-abc');

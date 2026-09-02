@@ -307,7 +307,8 @@ class SchaleClearanceHandler {
   /// POST to auth.schale.network and what it answered, and the site writing
   /// `localStorage["clearance"]`. Every hook calls straight through.
   ///
-  /// `window.turnstile` is captured with a property setter so the wrapper is
+  /// `window.turnstile` is NOT hooked (api.js refuses to install over an existing
+  /// property); the challenge is observed through the DOM and its own requests, so the wrapper is
   /// in place the instant Cloudflare's script assigns it. The previous version
   /// polled for it and lost the race every time, which is why no
   /// `turnstile.render` line ever appeared in a log.
@@ -319,6 +320,28 @@ class SchaleClearanceHandler {
     try { window.flutter_inappwebview.callHandler('lsClearance', { event, detail: String(detail || '').slice(0, 300) }); } catch (e) {}
   };
   say('page', location.href + ' | stored=' + (localStorage.getItem('clearance') ? 'present' : 'null'));
+
+  // The four values the site's own gates read before it will draw a
+  // Turnstile. Logged raw, BEFORE anything below touches them:
+  //   /webview|wv/i.test(navigator.userAgent) || navigator.webdriver  → no widget
+  //   await (window.outerWidth && window.outerHeight)                 → waits forever
+  const env = () => 'ua=' + navigator.userAgent + ' | webdriver=' + navigator.webdriver +
+    ' | outer=' + window.outerWidth + 'x' + window.outerHeight + ' | inner=' + window.innerWidth + 'x' + window.innerHeight +
+    ' | ready=' + document.readyState;
+  say('env', env());
+  setTimeout(() => say('env+2s', env()), 2000);
+
+  // Android's WebView is known to report 0 for outerWidth/outerHeight. The
+  // site polls requestAnimationFrame until both are truthy, so a 0 here means
+  // the widget is never rendered no matter what the agent says. Applied ONLY
+  // when they really are 0 — the log line above shows what they were.
+  try {
+    if (!window.outerWidth || !window.outerHeight) {
+      Object.defineProperty(window, 'outerWidth', { configurable: true, get: () => window.innerWidth || screen.width || 1 });
+      Object.defineProperty(window, 'outerHeight', { configurable: true, get: () => window.innerHeight || screen.height || 1 });
+      say('shim', 'outerWidth/outerHeight were 0 → now report inner size ' + window.outerWidth + 'x' + window.outerHeight);
+    }
+  } catch (e) { say('shim.error', e); }
 
   const origSet = Storage.prototype.setItem;
   Storage.prototype.setItem = function (k, v) {
@@ -351,32 +374,33 @@ class SchaleClearanceHandler {
     return res;
   };
 
-  const wrap = (t) => {
-    if (!t || t.__lsWrapped || typeof t.render !== 'function') return t;
-    t.__lsWrapped = true;
-    const origRender = t.render;
-    t.render = function (el, opts) {
-      say('turnstile.render', 'sitekey=' + (opts && opts.sitekey) + ' keys=' + Object.keys(opts || {}).join(','));
-      const o = Object.assign({}, opts);
-      const cb = o.callback;
-      o.callback = function (token) { say('turnstile.callback', 'token len=' + String(token || '').length); return cb && cb.apply(this, arguments); };
-      const ecb = o['error-callback'];
-      o['error-callback'] = function (code) { say('turnstile.error', code); return ecb && ecb.apply(this, arguments); };
-      const xcb = o['expired-callback'];
-      o['expired-callback'] = function () { say('turnstile.expired', ''); return xcb && xcb.apply(this, arguments); };
-      return origRender.call(this, el, o);
-    };
-    return t;
-  };
-  let held = window.turnstile;
+  // Turnstile is observed, never touched. Cloudflare's api.js opens with
+  // `"turnstile" in window` and treats an existing property as "imported
+  // multiple times" — the previous defineProperty hook made that true before
+  // api.js ran, and the widget was never installed. Now: the script's own
+  // load event, the challenge iframe appearing, and the API object's shape.
+  const cfIframe = (n) => n && n.tagName === 'IFRAME' && /challenges\.cloudflare\.com/.test(n.src || '');
+  const cfScript = (n) => n && n.tagName === 'SCRIPT' && /challenges\.cloudflare\.com/.test(n.src || '');
   try {
-    Object.defineProperty(window, 'turnstile', {
-      configurable: true,
-      get() { return held; },
-      set(v) { held = wrap(v); },
-    });
-  } catch (e) {}
-  if (held) held = wrap(held);
+    new MutationObserver((muts) => {
+      for (const m of muts) {
+        for (const n of m.addedNodes) {
+          if (cfScript(n)) {
+            say('turnstile.script', n.src);
+            n.addEventListener('load', () => say('turnstile.loaded', 'typeof window.turnstile=' + typeof window.turnstile +
+              ' render=' + typeof (window.turnstile && window.turnstile.render)));
+            n.addEventListener('error', () => say('turnstile.script.error', n.src));
+          }
+          if (cfIframe(n)) say('turnstile.iframe', (n.src || '').slice(0, 80));
+          if (n.querySelectorAll) {
+            for (const f of n.querySelectorAll('iframe')) if (cfIframe(f)) say('turnstile.iframe', (f.src || '').slice(0, 80));
+          }
+        }
+      }
+    }).observe(document.documentElement, { childList: true, subtree: true });
+  } catch (e) { say('observer.error', e); }
+  setTimeout(() => say('turnstile+5s', 'typeof window.turnstile=' + typeof window.turnstile +
+    ' iframes=' + Array.from(document.querySelectorAll('iframe')).filter(cfIframe).length), 5000);
   window.addEventListener('error', (e) => say('js.error', (e.message || '') + ' @' + (e.filename || '') + ':' + e.lineno));
 })();
 ''';
@@ -386,7 +410,11 @@ class SchaleClearanceHandler {
   /// Does not read anything. When the page reports that the site has written
   /// a clearance, the window closes itself; the caller then runs [harvest].
   /// Returns true when the site was seen to store a clearance.
-  Future<bool> solve(String siteUrl) async {
+  ///
+  /// [startUrl] is the page whose read was refused (the gallery), so the
+  /// window opens where the site demanded the clearance rather than on the
+  /// home feed; it falls back to [siteUrl].
+  Future<bool> solve(String siteUrl, {String? startUrl}) async {
     if (_solverOpen) return false;
     _solverOpen = true;
     bool stored = false;
@@ -395,13 +423,14 @@ class SchaleClearanceHandler {
       // mounts, and this throws rather than returning null in that case.
       final BuildContext context = NavigationHandler.instance.navContext;
       final String? rejected = _rejectedToken;
-      _log('solver opened on $siteUrl (rejected=${_describe(rejected)})');
+      final String openAt = (startUrl != null && startUrl.isNotEmpty) ? startUrl : siteUrl;
+      _log('solver opened on $openAt (site=$siteUrl, rejected=${_describe(rejected)})');
 
       await Navigator.push(
         context,
         MaterialPageRoute<void>(
           builder: (_) => InAppWebviewView(
-            initialUrl: siteUrl,
+            initialUrl: openAt,
             title: 'Reader access',
             subtitle: 'Complete the check. This window closes by itself once the site accepts it.',
             userAgent: reducedChromeUserAgent(Tools.browserUserAgent),

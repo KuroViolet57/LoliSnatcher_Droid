@@ -14,6 +14,13 @@ import 'package:lolisnatcher/src/utils/tools.dart';
 class NozomiHandler extends BooruHandler {
   NozomiHandler(super.booru, super.limit);
 
+  // Reads neither field (audited): the fields are hidden on the edit page.
+  @override
+  bool get usesUserId => false;
+  @override
+  bool get usesApiKey => false;
+
+
   static const String _jsonHost = 'https://j.gold-usergeneratedcontent.net';
   static const String _imageHost = 'https://w.gold-usergeneratedcontent.net';
   static const String _gifHost = 'https://g.gold-usergeneratedcontent.net';

@@ -11,6 +11,8 @@ import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/handlers/reader_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/handlers/doujin_download_handler.dart';
+import 'package:lolisnatcher/src/widgets/image/local_image_provider.dart';
 import 'package:lolisnatcher/src/handlers/snatch_handler.dart';
 import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
@@ -270,7 +272,22 @@ class _DoujinReaderPageState extends State<DoujinReaderPage> {
   }
 
   void _snatch(List<BooruItem> items) {
-    SnatchHandler.instance.queue(items, widget.booru, settingsHandler.snatchCooldown, false);
+    if (widget.pages.isNotEmpty && isLocalMediaUrl(widget.pages.first.fileURL)) {
+      FlashElements.showSnackbar(
+        context: context,
+        title: const Text('These pages are already saved on this device.'),
+        duration: const Duration(seconds: 2),
+        sideColor: Colors.blue,
+      );
+      return;
+    }
+    SnatchHandler.instance.queue(
+      items,
+      widget.booru,
+      settingsHandler.snatchCooldown,
+      false,
+      doujin: DoujinDownloadInfo.fromPages(widget.pages, widget.booru, galleryId: widget.galleryId, title: widget.title),
+    );
     FlashElements.showSnackbar(
       context: context,
       title: Text(items.length == 1 ? 'Saving page ${_current + 1}...' : 'Saving all ${items.length} pages...'),
@@ -401,13 +418,14 @@ class _DoujinReaderPageState extends State<DoujinReaderPage> {
     final BooruItem page = widget.pages[index];
     final ImageProvider? provider = DoujinReaderPage.testImageProviderBuilder != null
         ? DoujinReaderPage.testImageProviderBuilder!(page)
-        : (page.thumbnailURL.isEmpty
-              ? null
-              : CustomNetworkImage(
-                  page.thumbnailURL,
-                  withCache: settingsHandler.thumbnailCache,
-                  cacheFolder: 'thumbnails',
-                ));
+        : (localImageProviderFor(page.thumbnailURL) ??
+              (page.thumbnailURL.isEmpty
+                  ? null
+                  : CustomNetworkImage(
+                      page.thumbnailURL,
+                      withCache: settingsHandler.thumbnailCache,
+                      cacheFolder: 'thumbnails',
+                    )));
     return Padding(
       padding: const EdgeInsets.only(right: _stripSpacing),
       child: GestureDetector(
@@ -579,6 +597,19 @@ class _ReaderPageSlideState extends State<_ReaderPageSlide> {
   Future<void> _initProvider() async {
     _cancelToken?.cancel();
     _cancelToken = CancelToken();
+    // A page saved on this device is read straight from disk: no headers, no
+    // cache, no network.
+    final ImageProvider? local = DoujinReaderPage.testImageProviderBuilder == null
+        ? localImageProviderFor(widget.item.fileURL)
+        : null;
+    if (local != null) {
+      if (!mounted) return;
+      setState(() {
+        _error = null;
+        _provider = local;
+      });
+      return;
+    }
     final headers = await Tools.getFileCustomHeaders(
       widget.booru,
       item: widget.item,
@@ -597,8 +628,18 @@ class _ReaderPageSlideState extends State<_ReaderPageSlide> {
             cacheFolder: 'media',
             fileNameExtras: widget.item.fileNameExtras,
             onError: (e) {
+              // The status and the server's own words, so a refused page is
+              // diagnosable from the log alone (erocdn's 400s said nothing
+              // until the request headers were compared with Koharu's).
+              String detail = '';
+              if (e is DioException) {
+                final data = e.response?.data;
+                final String body = data == null ? '' : data.toString();
+                detail = ' status=${e.response?.statusCode} body=${body.length > 200 ? body.substring(0, 200) : body}'
+                    ' sent=${e.requestOptions.headers.keys.join(',')}';
+              }
               Logger.Inst().log(
-                'reader page ${widget.pageNumber} failed: $e url=${widget.item.fileURL}',
+                'reader page ${widget.pageNumber} failed: $e url=${widget.item.fileURL}$detail',
                 '_ReaderPageSlide',
                 'onError',
                 LogTypes.imageLoadingError,
@@ -755,25 +796,58 @@ Future<void> openDoujinReader(
     final String title = (item.description ?? '').split('\n').firstWhere((line) => line.trim().isNotEmpty, orElse: () => '');
 
     if (!context.mounted) return;
-    final GlobalKey viewerKey = GlobalKey(debugLabel: 'viewer-doujin-reader');
-    ViewerHandler.instance.addViewer(viewerKey);
-    try {
-      await Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => DoujinReaderPage(
-            key: viewerKey,
-            pages: pages,
-            booru: booru,
-            galleryId: galleryId,
-            title: title,
-            initialPage: initialPage,
-          ),
-        ),
-      );
-    } finally {
-      ViewerHandler.instance.removeViewer(viewerKey);
-    }
+    await _pushReader(context, pages: pages, booru: booru, galleryId: galleryId, title: title, initialPage: initialPage);
   } finally {
     _readerOpening = false;
+  }
+}
+
+/// Opens the reader on pages already on this device (the doujin downloads
+/// page). Progress is keyed the same way as online reading, so a book saved
+/// mid-read resumes where it was.
+Future<void> openLocalDoujinReader(
+  BuildContext context, {
+  required List<BooruItem> pages,
+  required Booru booru,
+  required String galleryId,
+  required String title,
+}) async {
+  if (_readerOpening || pages.isEmpty) return;
+  _readerOpening = true;
+  try {
+    final ReaderProgress? progress = await ReaderHandler.instance.loadProgress(booru, galleryId);
+    final int initialPage = (progress != null && !progress.isFinished) ? progress.page.clamp(0, pages.length - 1) : 0;
+    if (!context.mounted) return;
+    await _pushReader(context, pages: pages, booru: booru, galleryId: galleryId, title: title, initialPage: initialPage);
+  } finally {
+    _readerOpening = false;
+  }
+}
+
+Future<void> _pushReader(
+  BuildContext context, {
+  required List<BooruItem> pages,
+  required Booru booru,
+  required String galleryId,
+  required String title,
+  required int initialPage,
+}) async {
+  final GlobalKey viewerKey = GlobalKey(debugLabel: 'viewer-doujin-reader');
+  ViewerHandler.instance.addViewer(viewerKey);
+  try {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => DoujinReaderPage(
+          key: viewerKey,
+          pages: pages,
+          booru: booru,
+          galleryId: galleryId,
+          title: title,
+          initialPage: initialPage,
+        ),
+      ),
+    );
+  } finally {
+    ViewerHandler.instance.removeViewer(viewerKey);
   }
 }

@@ -8,6 +8,13 @@ import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 class GelbooruV1Handler extends BooruHandler {
   GelbooruV1Handler(super.booru, super.limit);
 
+  // Reads neither field (audited): the fields are hidden on the edit page.
+  @override
+  bool get usesUserId => false;
+  @override
+  bool get usesApiKey => false;
+
+
   @override
   String validateTags(String tags) {
     if (tags == ' ' || tags == '') {

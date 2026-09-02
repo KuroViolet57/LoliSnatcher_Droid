@@ -49,6 +49,13 @@ import 'package:lolisnatcher/src/utils/tools.dart';
 class Hanime1Handler extends BooruHandler {
   Hanime1Handler(super.booru, super.limit);
 
+  // Reads neither field (audited): the fields are hidden on the edit page.
+  @override
+  bool get usesUserId => false;
+  @override
+  bool get usesApiKey => false;
+
+
   /// hanime1.me and hanime1.com serve the IDENTICAL site, but their
   /// Cloudflare configs differ: .me hard-blocks clients whose TLS handshake
   /// is not a real browser's (a user's log showed "Sorry, you have been

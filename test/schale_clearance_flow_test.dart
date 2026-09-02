@@ -165,17 +165,20 @@ void main() {
   group('the solver page reports what it is doing', () {
     const String js = SchaleClearanceHandler.diagnosticScript;
 
-    test('turnstile is captured on assignment, not by polling', () {
-      // The previous poller lost the race to the site's render() every time;
-      // no turnstile.render line ever appeared in a log.
-      expect(js, contains("Object.defineProperty(window, 'turnstile'"));
+    test('window.turnstile is never defined or wrapped by the diagnostic', () {
+      // Cloudflare's api.js starts with `"turnstile" in window` and treats an
+      // existing property as a duplicate import: the R12 defineProperty hook
+      // made that true before api.js ran, and no widget was ever installed.
+      expect(js, isNot(contains("defineProperty(window, 'turnstile'")));
+      expect(js, isNot(contains('window.turnstile =')));
       expect(js, isNot(contains('setInterval')));
     });
 
-    test('it reports callback, error and expiry', () {
-      expect(js, contains('turnstile.callback'));
-      expect(js, contains("'error-callback'"));
-      expect(js, contains("'expired-callback'"));
+    test('the challenge is observed through the DOM and its own script', () {
+      expect(js, contains('MutationObserver'));
+      expect(js, contains("say('turnstile.iframe'"));
+      expect(js, contains("say('turnstile.loaded'"));
+      expect(js, contains("say('turnstile+5s'"));
     });
 
     test('it reports the method and status of every auth call', () {
@@ -186,8 +189,22 @@ void main() {
     test('every hook calls straight through', () {
       expect(js, contains('origSet.apply(this, arguments)'));
       expect(js, contains('origSend.apply(this, arguments)'));
-      expect(js, contains('origRender.call(this, el, o)'));
-      expect(js, contains('cb && cb.apply(this, arguments)'));
+      expect(js, contains('origFetch.apply(this, args)'));
+    });
+
+    test("it logs the four values the site's gates read, before touching them", () {
+      // navigator.userAgent, navigator.webdriver, outerWidth, outerHeight.
+      expect(js, contains("say('env'"));
+      expect(js, contains('navigator.userAgent'));
+      expect(js, contains('navigator.webdriver'));
+      expect(js, contains('window.outerWidth'));
+      expect(js, contains('window.outerHeight'));
+      expect(js.indexOf("say('env'"), lessThan(js.indexOf("Object.defineProperty(window, 'outerWidth'")));
+    });
+
+    test('the outer-size shim applies only when the values really are 0', () {
+      expect(js, contains('if (!window.outerWidth || !window.outerHeight)'));
+      expect(js, contains("say('shim'"));
     });
 
     test('it never puts a whole token in the log', () {
@@ -216,6 +233,10 @@ void main() {
 
     test('with no navigator mounted the solver reports failure instead of throwing', () async {
       expect(await SchaleClearanceHandler.instance.solve('https://niyaniya.moe'), isFalse);
+      expect(
+        await SchaleClearanceHandler.instance.solve('https://niyaniya.moe', startUrl: 'https://niyaniya.moe/g/1/k'),
+        isFalse,
+      );
     });
 
     test('a gated call with no token surfaces the message a person can act on', () {

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'package:material_symbols_icons/symbols.dart';
@@ -6,6 +8,7 @@ import 'package:dio/dio.dart';
 import 'package:get/get.dart';
 import 'package:get_it/get_it.dart';
 
+import 'package:lolisnatcher/src/handlers/doujin_download_handler.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
@@ -188,6 +191,12 @@ class SnatchHandler {
         : '0/${item.booruItems.length}';
     current.value = item;
 
+    // A doujin book gets its own folder and page-numbered files; when the
+    // folder cannot be made the pages fall back to the root, as before.
+    final DoujinDownloadTarget? target = item.doujin == null
+        ? null
+        : await DoujinDownloadHandler.instance.prepare(item.doujin!);
+
     // writeMultipleFake(item.booruItems, item.booru, item.cooldown).listen(
     ImageWriter()
         .writeMultiple(
@@ -197,6 +206,8 @@ class SnatchHandler {
           onProgress,
           item.ignoreExists,
           onCancelTokenCreate,
+          dirOverride: target?.dir,
+          fileNameFor: target == null ? null : (page, i) => DoujinDownloadHandler.pageFileName(item.doujin!, page, i),
         )
         .listen(
           (Map<String, dynamic> data) {
@@ -205,6 +216,9 @@ class SnatchHandler {
             final List<BooruItem> failed = data['failed'] ?? [];
             final List<BooruItem> cancelled = data['cancelled'] ?? [];
             final bool isLastMessage = data['exists'] != null && data['failed'] != null && data['cancelled'] != null;
+            if (isLastMessage && target != null && item.doujin != null) {
+              unawaited(DoujinDownloadHandler.instance.writeManifest(target, item.doujin!));
+            }
 
             // last yield in stream will send fetch results counters
             // but show this message only when queue is empty => snatching is complete
@@ -338,14 +352,17 @@ class SnatchHandler {
     }
   }
 
+  /// [doujin] describes the BOOK the pages belong to; with it the pages are
+  /// written into that book's own folder instead of loose in the root.
   void queue(
     List<BooruItem> booruItems,
     Booru booru,
     int cooldown,
-    bool ignoreExists,
-  ) {
+    bool ignoreExists, {
+    DoujinDownloadInfo? doujin,
+  }) {
     if (booruItems.isNotEmpty) {
-      final SnatchItem item = SnatchItem(booruItems, cooldown, booru, ignoreExists);
+      final SnatchItem item = SnatchItem(booruItems, cooldown, booru, ignoreExists, doujin: doujin);
       queuedList.add(item);
       // Doujin downloads must not feed the booru taste profile — checked per
       // item so merge tabs mixing both worlds stay separated too.
@@ -468,8 +485,12 @@ class SnatchItem {
     this.booruItems,
     this.cooldown,
     this.booru,
-    this.ignoreExists,
-  );
+    this.ignoreExists, {
+    this.doujin,
+  });
+
+  /// Set for doujin pages: the book they belong to (own folder + manifest).
+  final DoujinDownloadInfo? doujin;
 
   final List<BooruItem> booruItems;
   final int cooldown;

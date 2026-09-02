@@ -18,6 +18,13 @@ import 'package:lolisnatcher/src/utils/tools.dart';
 class ShimmieHandler extends BooruHandler {
   ShimmieHandler(super.booru, super.limit);
 
+  // Reads neither field (audited): the fields are hidden on the edit page.
+  @override
+  bool get usesUserId => false;
+  @override
+  bool get usesApiKey => false;
+
+
   @override
   bool get hasSizeData => true;
 
@@ -193,6 +200,13 @@ class ShimmieHandler extends BooruHandler {
 
 class ShimmieHtmlHandler extends BooruHandler {
   ShimmieHtmlHandler(super.booru, super.limit);
+
+  // Reads neither field (audited): the fields are hidden on the edit page.
+  @override
+  bool get usesUserId => false;
+  @override
+  bool get usesApiKey => false;
+
 
   @override
   bool get hasSizeData => true;

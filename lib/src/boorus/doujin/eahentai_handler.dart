@@ -34,6 +34,13 @@ import 'package:lolisnatcher/src/utils/dio_network.dart';
 class EaHentaiHandler extends BooruHandler with DoujinListingTagBackfill, DoujinNamespacedTags {
   EaHentaiHandler(super.booru, super.limit);
 
+  // Site login: username/email + password (see signIn). Optional.
+  @override
+  String? get userIdLabel => 'Username or email (optional)';
+  @override
+  String? get apiKeyLabel => 'Password (optional)';
+
+
   static const String _site = 'https://eahentai.com';
   static const String _cdn = 'https://i.eahentai.com/file/ea-gallery';
 

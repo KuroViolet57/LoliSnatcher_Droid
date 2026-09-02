@@ -13,6 +13,13 @@ import 'package:lolisnatcher/src/utils/dio_network.dart';
 class RainbooruHandler extends BooruHandler {
   RainbooruHandler(super.booru, super.limit);
 
+  // Reads neither field (audited): the fields are hidden on the edit page.
+  @override
+  bool get usesUserId => false;
+  @override
+  bool get usesApiKey => false;
+
+
   @override
   bool get hasTagSuggestions => true;
 

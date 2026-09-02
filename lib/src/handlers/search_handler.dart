@@ -642,7 +642,7 @@ class SearchHandler {
         actionType?.isLocalDb != true &&
         actionType?.isForYou != true &&
         !DoujinDataHandler.isDoujinBooru(actionBooru)) {
-      InterestsHandler.instance.onSearch(text);
+      InterestsHandler.instance.onSearch(text, booru: actionBooru);
     }
 
     // clear image memory cache

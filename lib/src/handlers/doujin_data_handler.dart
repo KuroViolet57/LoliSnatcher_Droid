@@ -244,7 +244,15 @@ class DoujinDataHandler {
 
   /// Hosts that are always doujin, even without a matching config — keeps
   /// item-level attribution working after a source is renamed/removed.
-  static const Set<String> knownDoujinHosts = {'nhentai.net', 'niyaniya.moe', 'asmhentai.com', 'eahentai.com', 'hentalk.pw', 'hitomi.la'};
+  static const Set<String> knownDoujinHosts = {
+    'nhentai.net',
+    'niyaniya.moe',
+    'shupogaki.moe', // niyaniya's current mirror; post URLs follow the resolved site
+    'asmhentai.com',
+    'eahentai.com',
+    'hentalk.pw',
+    'hitomi.la',
+  };
 
   /// ITEM-level doujin check, for mixed feeds (merge tabs, floating
   /// previews): a doujin item is recognized by its post URL host no matter

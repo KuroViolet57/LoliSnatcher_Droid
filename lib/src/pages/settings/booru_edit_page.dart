@@ -424,33 +424,59 @@ class _BooruEditState extends State<BooruEdit> {
             if (selectedBooruType == BooruType.RedGifs) _buildRedGifsLogin(),
             // RedGifs has no per-user ID field — it logs in via the browser
             // button above and stores a session token in the key field.
-            if (selectedBooruType != BooruType.RedGifs)
+            // Credential fields appear only where the engine READS them
+            // (BooruHandler.usesUserId / usesApiKey): a field nothing reads
+            // would make an account look configurable when it is not.
+            if (selectedBooruType != BooruType.RedGifs && (_credentialCapabilities?.usesUserId ?? true))
               SettingsTextInput(
                 controller: booruUserIDController,
                 onChanged: (_) => setState(() {}),
-                title: getUserIDTitle(),
+                title: _credentialCapabilities?.userIdLabel ?? getUserIDTitle(),
                 hintText: getUserIdPlaceholder(),
                 clearable: true,
                 pasteable: true,
                 drawTopBorder: true,
                 enableIMEPersonalizedLearning: !settingsHandler.incognitoKeyboard,
               ),
-            if (selectedBooruType != BooruType.RedGifs)
+            if (selectedBooruType != BooruType.RedGifs && (_credentialCapabilities?.usesApiKey ?? true))
               SettingsTextInput(
                 controller: booruAPIKeyController,
                 onChanged: (_) => setState(() {}),
-                title: getApiKeyTitle(),
+                title: _credentialCapabilities?.apiKeyLabel ?? getApiKeyTitle(),
                 pasteable: true,
                 hintText: getApiKeyPlaceholder(),
                 clearable: true,
                 obscureable: shouldObscureApiKey(),
                 enableIMEPersonalizedLearning: !settingsHandler.incognitoKeyboard,
               ),
+            if (selectedBooruType != BooruType.RedGifs &&
+                _credentialCapabilities != null &&
+                !_credentialCapabilities!.usesUserId &&
+                !_credentialCapabilities!.usesApiKey)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                child: Text(
+                  'This source has no account or API key — there is nothing to enter.',
+                  style: TextStyle(fontSize: 12.5, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                ),
+              ),
             SizedBox(height: MediaQuery.sizeOf(context).height * 0.2),
           ],
         ),
       ),
     );
+  }
+
+  /// The engine behind the chosen type, asked which credential fields it
+  /// reads. Autodetect has no engine yet, so both fields stay visible.
+  BooruHandler? get _credentialCapabilities {
+    if (selectedBooruType == BooruType.Autodetect) return null;
+    return BooruHandlerFactory()
+        .getBooruHandler(
+          [Booru(booruNameController.text, selectedBooruType, '', booruURLController.text.trim(), '')],
+          null,
+        )
+        .booruHandler;
   }
 
   String getApiKeyTitle() {

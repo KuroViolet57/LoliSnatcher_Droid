@@ -14,6 +14,13 @@ import 'package:lolisnatcher/src/utils/tools.dart';
 class R34USHandler extends BooruHandler {
   R34USHandler(super.booru, super.limit);
 
+  // Reads neither field (audited): the fields are hidden on the edit page.
+  @override
+  bool get usesUserId => false;
+  @override
+  bool get usesApiKey => false;
+
+
   @override
   String validateTags(String tags) {
     if (tags == ' ' || tags == '') {

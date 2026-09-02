@@ -16,6 +16,7 @@ import 'package:lolisnatcher/src/boorus/doujin/schale_handler.dart';
 import 'package:lolisnatcher/src/handlers/reader_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/handlers/doujin_download_handler.dart';
 import 'package:lolisnatcher/src/handlers/snatch_handler.dart';
 import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/pages/doujin_reader_page.dart';
@@ -201,7 +202,13 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
   void _saveAll() {
     final List<BooruItem>? pages = ReaderHandler.instance.pagesFor(item);
     if (pages == null || pages.isEmpty) return;
-    SnatchHandler.instance.queue(pages, booru, settingsHandler.snatchCooldown, false);
+    SnatchHandler.instance.queue(
+      pages,
+      booru,
+      settingsHandler.snatchCooldown,
+      false,
+      doujin: DoujinDownloadInfo.fromGallery(item, booru, pages),
+    );
     FlashElements.showSnackbar(
       context: context,
       title: Text('Saving all ${pages.length} pages...'),
@@ -735,6 +742,8 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
                         final String site = handler.booru.baseURL?.trim() ?? '';
                         await SchaleClearanceHandler.instance.solve(
                           site.isEmpty ? SchaleHandler.defaultSite : site,
+                          // The gallery whose read was refused, not the home feed.
+                          startUrl: item.postURL,
                         );
                         if (!mounted) return;
                         setState(() {

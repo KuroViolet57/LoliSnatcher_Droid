@@ -104,7 +104,7 @@ class FloatingPreviewHandler extends ChangeNotifier {
     _ensureOverlay();
     // Doujin tag previews must not feed the booru taste profile.
     if (!DoujinDataHandler.isDoujinBooru(booru)) {
-      InterestsHandler.instance.onTagPreviewOpened(tag);
+      InterestsHandler.instance.onTagPreviewOpened(tag, booru: booru);
     }
     notifyListeners();
   }

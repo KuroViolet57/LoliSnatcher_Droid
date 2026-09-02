@@ -284,6 +284,41 @@ class MainActivity: FlutterFragmentActivity() {
                             result.error("INVALID_ARGUMENT", "URI or fileName is null", null)
                         }
                     }
+                    // Doujin downloads: one folder per book under the SAF root.
+                    "listSafDirectory" -> {
+                        val uri = call.argument<String>("uri")
+                        if (uri != null) {
+                            Executors.newSingleThreadExecutor().execute {
+                                val entries = listSafDirectory(uri)
+                                runOnUiThread { result.success(entries) }
+                            }
+                        } else {
+                            result.error("INVALID_ARGUMENT", "URI is null", null)
+                        }
+                    }
+                    "getOrCreateSafDirectory" -> {
+                        val uri = call.argument<String>("uri")
+                        val name = call.argument<String>("name")
+                        if (uri != null && name != null) {
+                            Executors.newSingleThreadExecutor().execute {
+                                val created = getOrCreateSafDirectory(uri, name)
+                                runOnUiThread { result.success(created) }
+                            }
+                        } else {
+                            result.error("INVALID_ARGUMENT", "URI or name is null", null)
+                        }
+                    }
+                    "deleteSafTree" -> {
+                        val uri = call.argument<String>("uri")
+                        if (uri != null) {
+                            Executors.newSingleThreadExecutor().execute {
+                                val deleted = deleteSafTree(uri)
+                                runOnUiThread { result.success(deleted) }
+                            }
+                        } else {
+                            result.error("INVALID_ARGUMENT", "URI is null", null)
+                        }
+                    }
                     "createFileStream" -> {
                         val fileName = call.argument<String>("fileName")
                         val mediaType = call.argument<String>("mediaType")
@@ -637,6 +672,86 @@ class MainActivity: FlutterFragmentActivity() {
         } catch (e: Exception) {
             Log.e("MainActivity", "Error listing SAF files: $uriString", e)
             emptyList()
+        }
+    }
+
+    // A tree URI (the picked root) or a document-in-tree URI (a folder made by
+    // getOrCreateSafDirectory) both resolve to their OWN children here; the
+    // older listFileNames always resolves to the root's.
+    private fun childDocumentId(uri: Uri): String {
+        return if (DocumentsContract.isDocumentUri(applicationContext, uri)) {
+            DocumentsContract.getDocumentId(uri)
+        } else {
+            DocumentsContract.getTreeDocumentId(uri)
+        }
+    }
+
+    // One query per directory: name, mime, size, modified and a usable URI per child.
+    private fun listSafDirectory(uriString: String): List<Map<String, Any?>> {
+        val uri = Uri.parse(uriString)
+        if (uri == Uri.EMPTY) return emptyList()
+        return try {
+            val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(uri, childDocumentId(uri))
+            val entries = mutableListOf<Map<String, Any?>>()
+            contentResolver.query(
+                childrenUri,
+                arrayOf(
+                    DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                    DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                    DocumentsContract.Document.COLUMN_MIME_TYPE,
+                    DocumentsContract.Document.COLUMN_SIZE,
+                    DocumentsContract.Document.COLUMN_LAST_MODIFIED
+                ),
+                null, null, null
+            )?.use { cursor ->
+                while (cursor.moveToNext()) {
+                    val docId = cursor.getString(0)
+                    val mime = cursor.getString(2) ?: ""
+                    entries.add(
+                        mapOf(
+                            "name" to (cursor.getString(1) ?: ""),
+                            "uri" to DocumentsContract.buildDocumentUriUsingTree(uri, docId).toString(),
+                            "isDir" to (mime == DocumentsContract.Document.MIME_TYPE_DIR),
+                            "mime" to mime,
+                            "size" to (if (cursor.isNull(3)) 0L else cursor.getLong(3)),
+                            "modified" to (if (cursor.isNull(4)) 0L else cursor.getLong(4))
+                        )
+                    )
+                }
+            }
+            entries
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Error listing SAF directory: $uriString", e)
+            emptyList()
+        }
+    }
+
+    private fun getOrCreateSafDirectory(uriString: String, name: String): String? {
+        val uri = Uri.parse(uriString)
+        if (uri == Uri.EMPTY) return null
+        val dir = DocumentFile.fromTreeUri(applicationContext, uri) ?: return null
+        return try {
+            val existing = dir.findFile(name)
+            if (existing != null) {
+                if (existing.isDirectory) existing.uri.toString() else null
+            } else {
+                dir.createDirectory(name)?.uri?.toString()
+            }
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Error creating SAF directory: $name in $uriString", e)
+            null
+        }
+    }
+
+    private fun deleteSafTree(uriString: String): Boolean {
+        val uri = Uri.parse(uriString)
+        if (uri == Uri.EMPTY) return false
+        val doc = DocumentFile.fromTreeUri(applicationContext, uri) ?: return false
+        return try {
+            doc.delete()
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Error deleting SAF tree: $uriString", e)
+            false
         }
     }
 

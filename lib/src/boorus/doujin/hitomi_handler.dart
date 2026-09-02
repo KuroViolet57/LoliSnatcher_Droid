@@ -182,6 +182,13 @@ class HitomiIndexNode {
 class HitomiHandler extends BooruHandler with DoujinNamespacedTags {
   HitomiHandler(super.booru, super.limit);
 
+  // hitomi has no accounts and no API key; the fields would do nothing.
+  @override
+  bool get usesUserId => false;
+  @override
+  bool get usesApiKey => false;
+
+
   static const String _site = 'https://hitomi.la';
   static const String _ltn = 'https://ltn.gold-usergeneratedcontent.net';
   static const String _cdn = 'gold-usergeneratedcontent.net';

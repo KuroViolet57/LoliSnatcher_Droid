@@ -251,6 +251,13 @@ class DBHandler {
       if (!await columnExists('Tag', 'updatedAt')) {
         await db?.execute('ALTER TABLE Tag ADD COLUMN updatedAt INTEGER;');
       }
+      // When a row was snatched. Downloads list by this, newest first: the
+      // row id is NOT the download order (a post favourited or collected
+      // earlier keeps its old id), which buried fresh downloads deep in the
+      // list. Null on rows snatched before this column existed.
+      if (!await columnExists('BooruItem', 'snatchedAt')) {
+        await db?.execute('ALTER TABLE BooruItem ADD COLUMN snatchedAt INTEGER;');
+      }
     } catch (e, s) {
       Logger.Inst().log(
         'Error updating table',
@@ -331,9 +338,10 @@ class DBHandler {
     // (downloads are one system), so the row itself still gets written.
     final bool isDoujin = DoujinDataHandler.isDoujinItem(item);
     final int favouriteFlag = Tools.boolToInt(!isDoujin && item.isFavourite.value == true);
+    final int? snatchedAt = item.isSnatched.value == true ? DateTime.now().millisecondsSinceEpoch : null;
     if (itemID == null || itemID.isEmpty) {
       final result = await db?.rawInsert(
-        'INSERT INTO BooruItem(thumbnailURL, sampleURL, fileURL, postURL, mediaType, isSnatched, isFavourite) VALUES(?,?,?,?,?,?,?)',
+        'INSERT INTO BooruItem(thumbnailURL, sampleURL, fileURL, postURL, mediaType, isSnatched, isFavourite, snatchedAt) VALUES(?,?,?,?,?,?,?,?)',
         [
           item.thumbnailURL.replaceFirstMapped(RegExp('(?<!https?:)//'), (m) => '/'),
           item.sampleURL.replaceFirstMapped(RegExp('(?<!https?:)//'), (m) => '/'),
@@ -342,6 +350,7 @@ class DBHandler {
           item.mediaType.toJson(),
           Tools.boolToInt(item.isSnatched.value == true),
           favouriteFlag,
+          snatchedAt,
         ],
       );
       itemID = result?.toString();
@@ -351,8 +360,15 @@ class DBHandler {
       resultStr = 'Inserted';
     } else if (mode == BooruUpdateMode.local) {
       await db?.rawUpdate(
-        'UPDATE BooruItem SET isSnatched = ?, isFavourite = ? WHERE id = ?',
-        [Tools.boolToInt(item.isSnatched.value == true), favouriteFlag, itemID],
+        'UPDATE BooruItem SET isSnatched = ?, isFavourite = ?, '
+        'snatchedAt = CASE WHEN ? = 1 THEN COALESCE(snatchedAt, ?) ELSE NULL END WHERE id = ?',
+        [
+          Tools.boolToInt(item.isSnatched.value == true),
+          favouriteFlag,
+          Tools.boolToInt(item.isSnatched.value == true),
+          DateTime.now().millisecondsSinceEpoch,
+          itemID,
+        ],
       );
       resultStr = 'Updated';
     } else if (mode == BooruUpdateMode.urlUpdate) {
@@ -386,10 +402,11 @@ class DBHandler {
       // reach store.db.
       final bool isDoujin = DoujinDataHandler.isDoujinItem(item);
       final int favouriteFlag = Tools.boolToInt(!isDoujin && item.isFavourite.value == true);
+      final int? snatchedAt = item.isSnatched.value == true ? DateTime.now().millisecondsSinceEpoch : null;
 
       if (itemID == null || itemID.isEmpty) {
         final result = await db?.rawInsert(
-          'INSERT INTO BooruItem(thumbnailURL, sampleURL, fileURL, postURL, mediaType, isSnatched, isFavourite) VALUES(?,?,?,?,?,?,?)',
+          'INSERT INTO BooruItem(thumbnailURL, sampleURL, fileURL, postURL, mediaType, isSnatched, isFavourite, snatchedAt) VALUES(?,?,?,?,?,?,?,?)',
           [
             item.thumbnailURL.replaceFirstMapped(RegExp('(?<!https?:)//'), (m) => '/'),
             item.sampleURL.replaceFirstMapped(RegExp('(?<!https?:)//'), (m) => '/'),
@@ -398,6 +415,7 @@ class DBHandler {
             item.mediaType.toJson(),
             Tools.boolToInt(item.isSnatched.value == true),
             favouriteFlag,
+            snatchedAt,
           ],
         );
         itemID = result?.toString();
@@ -407,8 +425,15 @@ class DBHandler {
         saved++;
       } else if (mode == BooruUpdateMode.local) {
         await db?.rawUpdate(
-          'UPDATE BooruItem SET isSnatched = ?, isFavourite = ? WHERE id = ?',
-          [Tools.boolToInt(item.isSnatched.value == true), favouriteFlag, itemID],
+          'UPDATE BooruItem SET isSnatched = ?, isFavourite = ?, '
+          'snatchedAt = CASE WHEN ? = 1 THEN COALESCE(snatchedAt, ?) ELSE NULL END WHERE id = ?',
+          [
+            Tools.boolToInt(item.isSnatched.value == true),
+            favouriteFlag,
+            Tools.boolToInt(item.isSnatched.value == true),
+            DateTime.now().millisecondsSinceEpoch,
+            itemID,
+          ],
         );
       } else if (mode == BooruUpdateMode.urlUpdate) {
         await db?.rawUpdate(
@@ -636,7 +661,13 @@ class DBHandler {
     }
 
     // Ordering & Pagination
-    String orderByClause = 'bi.id ${order ?? (isReverseOrder ? 'ASC' : null) ?? 'DESC'}';
+    final String direction = order ?? (isReverseOrder ? 'ASC' : null) ?? 'DESC';
+    // Downloads: newest SNATCH first. The id is insertion order, and a row
+    // favourited or collected months ago keeps that old id when it is later
+    // snatched, which put fresh downloads hundreds of rows down the list.
+    String orderByClause = (isDownloads && collectionId == null)
+        ? 'COALESCE(bi.snatchedAt, 0) $direction, bi.id $direction'
+        : 'bi.id $direction';
     if (isRandomOrder) orderByClause = 'RANDOM()';
     sql.write('ORDER BY $orderByClause LIMIT ? OFFSET ?');
     args.add(limit);
@@ -1943,6 +1974,26 @@ class DBHandler {
   }
 
   /// Deletes booruItems which are no longer favourited or snatched
+  /// Drops the snatched flag from rows whose file is gone from disk (the
+  /// downloads reconciler's explicit "forget" action). Rows that are neither
+  /// favourited nor collected are then removed by [deleteUntracked]. Returns
+  /// how many rows were changed.
+  Future<int> clearSnatchedFlags(List<String> postURLs) async {
+    if (postURLs.isEmpty || db == null) return 0;
+    int changed = 0;
+    const int chunkSize = 500;
+    for (int i = 0; i < postURLs.length; i += chunkSize) {
+      final chunk = postURLs.sublist(i, min(postURLs.length, i + chunkSize));
+      final placeholders = List.filled(chunk.length, '?').join(',');
+      changed += await db!.rawUpdate(
+        'UPDATE BooruItem SET isSnatched = 0, snatchedAt = NULL WHERE postURL IN ($placeholders)',
+        chunk,
+      );
+    }
+    await deleteUntracked();
+    return changed;
+  }
+
   Future<bool> deleteUntracked() async {
     // Keep items that are favourited, snatched, OR held by a collection.
     final result = await db?.rawQuery(

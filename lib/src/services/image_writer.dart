@@ -28,18 +28,27 @@ class ImageWriter {
   /// return null - file already exists
   /// return String - file saved
   /// return Error - something went wrong
+  ///
+  /// [dirOverride] writes into that folder instead of the download root (a
+  /// plain path, or a SAF directory URI when SAF is in use); [fileNameOverride]
+  /// replaces the derived file name. Doujin pages use both, so a book lands in
+  /// its own folder with page-numbered files.
   Future write(
     BooruItem item,
     Booru booru,
     void Function(int, int)? onProgress,
     bool ignoreExists,
-    void Function(CancelToken)? onCancelTokenCreate,
-  ) async {
-    final String fileName = getFilename(item, booru);
+    void Function(CancelToken)? onCancelTokenCreate, {
+    String? dirOverride,
+    String? fileNameOverride,
+  }) async {
+    final String fileName = fileNameOverride ?? getFilename(item, booru);
     await setPaths();
+    final String dir = dirOverride ?? path;
+    final bool inRoot = dirOverride == null;
 
     // Don't do anything if file already exists
-    final File image = File(path + fileName);
+    final File image = File(dir + fileName);
     // print(path! + fileName);
     final bool fileExists = await image.exists();
     // if (fileExists) return null;
@@ -72,7 +81,7 @@ class ImageWriter {
       if (Platform.isAndroid && settingsHandler.extPathOverride.isNotEmpty) {
         await DioNetwork.downloadCustom(
           url,
-          '$path/',
+          '$dir/',
           fileNameWoutExt,
           item.fileExt!,
           item.mediaType.toJson(),
@@ -87,7 +96,7 @@ class ImageWriter {
       } else {
         await DioNetwork.download(
           url,
-          '$path/$fileName',
+          '$dir/$fileName',
           options: Options(
             responseType: ResponseType.bytes,
             contentType: '*/*',
@@ -107,7 +116,7 @@ class ImageWriter {
               fileNameWoutExt,
               'application/json',
               'json',
-              '$path/',
+              '$dir/',
             );
             if (safPath != null) {
               await ServiceHandler.writeStreamToFileFromSAFDirectory(
@@ -117,7 +126,7 @@ class ImageWriter {
               await ServiceHandler.closeStreamToFileFromSAFDirectory(safPath);
             }
           } else if (Platform.isAndroid && await ServiceHandler.getAndroidSDKVersion() < 31) {
-            final File jsonFile = File('$path$fileNameWoutExt.json');
+            final File jsonFile = File('$dir$fileNameWoutExt.json');
             await jsonFile.writeAsString(
               jsonEncode(item.toJson()),
               mode: FileMode.write,
@@ -135,8 +144,8 @@ class ImageWriter {
         );
       }
 
-      print('Image written: $path$fileName');
-      SAFFileCache.instance.onFileCreated(fileName);
+      print('Image written: $dir$fileName');
+      if (inRoot) SAFFileCache.instance.onFileCreated(fileName);
       item.isSnatched.value = true;
       if (settingsHandler.dbEnabled) {
         await settingsHandler.dbHandler.updateBooruItem(item, BooruUpdateMode.local);
@@ -191,10 +200,25 @@ class ImageWriter {
     } else if (booru.baseURL!.contains('yande.re') || booru.baseURL!.contains('paheal.net')) {
       fileName = '${booru.name}_${item.md5String}.${item.fileExt}';
     } else {
-      fileName = '${booru.name!}_${item.fileURL.substring(item.fileURL.lastIndexOf("/") + 1, lastIndex)}';
+      final String urlWithoutQuery = item.fileURL.substring(0, lastIndex);
+      final String tail = urlWithoutQuery.substring(urlWithoutQuery.lastIndexOf('/') + 1);
+      fileName = '${booru.name!}_${snatchTail(tail, urlWithoutQuery: urlWithoutQuery, md5: item.md5String)}';
     }
     print('filename is $fileName');
     return fileName;
+  }
+
+  /// The part of a download name that comes from the URL. A tail that carries
+  /// no identity of its own is prefixed so two posts cannot share a file:
+  /// rule34hentai names EVERY video `thumb.webm` (the real name lives in the
+  /// hash directory above it), so the second video "already existed", was
+  /// never written, and was still marked as snatched. Identifying names are
+  /// returned unchanged, so existing downloads keep matching.
+  @visibleForTesting
+  static String snatchTail(String tail, {required String urlWithoutQuery, String? md5}) {
+    if (tail.isEmpty || _nameIsIdentifying(tail)) return tail;
+    if (md5 != null && md5.isNotEmpty) return '${Tools.sanitize(md5)}_$tail';
+    return _disambiguate(urlWithoutQuery, tail);
   }
 
   Future<String> getFilePath(
@@ -212,8 +236,10 @@ class ImageWriter {
     int cooldown,
     void Function(int, int)? onProgress,
     bool ignoreExists,
-    void Function(CancelToken)? onCancelTokenCreate,
-  ) async* {
+    void Function(CancelToken)? onCancelTokenCreate, {
+    String? dirOverride,
+    String Function(BooruItem item, int index)? fileNameFor,
+  }) async* {
     int snatchedCounter = 1;
     final List<BooruItem> existsList = [], failedList = [], cancelledList = [];
     for (int i = 0; i < snatched.length; i++) {
@@ -224,6 +250,8 @@ class ImageWriter {
           onProgress,
           ignoreExists,
           onCancelTokenCreate,
+          dirOverride: dirOverride,
+          fileNameOverride: fileNameFor?.call(snatched[i], i),
         );
         if (snatchResult == null) {
           existsList.add(snatched[i]);

@@ -10,6 +10,7 @@ import 'package:lolisnatcher/src/handlers/floating_preview_handler.dart';
 import 'package:lolisnatcher/src/handlers/reader_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/handlers/doujin_download_handler.dart';
 import 'package:lolisnatcher/src/handlers/snatch_handler.dart';
 import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/pages/doujin_reader_page.dart';
@@ -189,7 +190,13 @@ Future<void> showDoujinItemMenu(
                     }
                     final pages = ReaderHandler.instance.pagesFor(item);
                     if (pages == null || pages.isEmpty) return;
-                    SnatchHandler.instance.queue(pages, booru, SettingsHandler.instance.snatchCooldown, false);
+                    SnatchHandler.instance.queue(
+                      pages,
+                      booru,
+                      SettingsHandler.instance.snatchCooldown,
+                      false,
+                      doujin: DoujinDownloadInfo.fromGallery(item, booru, pages),
+                    );
                     if (!context.mounted) return;
                     FlashElements.showSnackbar(
                       context: context,

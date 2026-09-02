@@ -4,7 +4,9 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/meta_tag.dart';
+import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/boorus/nhentai_handler.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -31,6 +33,59 @@ class _SourceSettingsPageState extends State<SourceSettingsPage> {
   final sourceSettings = SourceSettingsHandler.instance;
 
   bool get isGlobal => widget.booru == null;
+
+  /// The handler behind this layer's source (null on the global layer). Rows
+  /// are offered by CAPABILITY, the way the drawer offers its webview button:
+  /// a source that cannot use a setting does not show it.
+  late final BooruHandler? _handler = widget.booru == null
+      ? null
+      : BooruHandlerFactory().getBooruHandler([widget.booru!], null).booruHandler;
+
+  /// Every configured doujin source. The global layer offers a row only when
+  /// at least one source honours it; otherwise the row would set nothing.
+  late final List<BooruHandler> _doujinHandlers = [
+    for (final b in SettingsHandler.instance.booruList)
+      if (DoujinDataHandler.isDoujinBooru(b)) BooruHandlerFactory().getBooruHandler([b], null).booruHandler,
+  ];
+
+  bool _offered(bool Function(BooruHandler h) supports) =>
+      _handler != null ? supports(_handler!) : _doujinHandlers.any(supports);
+
+  /// Page sizes for the image-quality row: the source's own, or on the
+  /// global layer the first configured source that has any.
+  List<(String, String)> get _qualityOptions {
+    if (_handler != null) return _handler!.readerImageQualities;
+    for (final h in _doujinHandlers) {
+      if (h.readerImageQualities.isNotEmpty) return h.readerImageQualities;
+    }
+    return const [];
+  }
+
+  /// Names of the sources the image-quality row applies to (global layer).
+  String get _qualitySourceNames => [
+    for (final h in _doujinHandlers)
+      if (h.readerImageQualities.isNotEmpty) h.booru.name ?? '',
+  ].where((n) => n.isNotEmpty).join(', ');
+
+  bool get _usesLogin => _handler != null && _handler!.usesUserId && _handler!.usesApiKey;
+
+  String get _accountTitle {
+    final Booru b = widget.booru!;
+    if (_usesLogin) return (b.userID?.isNotEmpty ?? false) ? 'Signed in as ${b.userID}' : 'Not signed in';
+    return (b.apiKey?.isNotEmpty ?? false) ? 'API key configured' : 'No API key';
+  }
+
+  String get _accountSubtitle {
+    final Booru b = widget.booru!;
+    if (_usesLogin) {
+      return (b.userID?.isNotEmpty ?? false)
+          ? 'Your account favourites sync with this site. Tap to edit the login.'
+          : 'Add your site username and password to sync account favourites. Tap to edit.';
+    }
+    return (b.apiKey?.isNotEmpty ?? false)
+        ? 'Favourites sync with your account. Tap to edit the key.'
+        : "Add your key (from the site's account settings) to sync favourites. Tap to edit.";
+  }
 
   SourceSettings get layer =>
       isGlobal ? sourceSettings.globalSettings : sourceSettings.settingsFor(widget.booru);
@@ -283,20 +338,18 @@ class _SourceSettingsPageState extends State<SourceSettingsPage> {
             ),
           ),
           //
-          if (!isGlobal) ...[
+          // Only where the handler reads a credential (nhentai: key; asmhentai,
+          // eahentai, faccina: login). niyaniya and hitomi have neither.
+          if (!isGlobal && (_handler!.usesApiKey || _handler!.usesUserId)) ...[
             _header('ACCOUNT'),
             ListTile(
-              leading: const Icon(Symbols.key_rounded),
-              title: Text((booru!.apiKey?.isNotEmpty ?? false) ? 'API key configured' : 'No API key'),
-              subtitle: Text(
-                (booru.apiKey?.isNotEmpty ?? false)
-                    ? 'Favourites sync with your account. Tap to edit the key.'
-                    : "Add your key (from the site's account settings) to sync favourites. Tap to edit.",
-              ),
+              leading: Icon(_usesLogin ? Symbols.person_rounded : Symbols.key_rounded),
+              title: Text(_accountTitle),
+              subtitle: Text(_accountSubtitle),
               onTap: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => BooruEdit(booru)),
+                  MaterialPageRoute(builder: (_) => BooruEdit(booru!)),
                 );
               },
             ),
@@ -349,16 +402,19 @@ class _SourceSettingsPageState extends State<SourceSettingsPage> {
             inheritedValue: globalLayer.keepScreenOn ?? true,
             onChanged: (v) => _update((s) => s.keepScreenOn = v),
           ),
-          //
-          _choiceRow<String>(
-            title: 'Image quality',
-            subtitle: 'Width of reader pages on sources that offer several sizes (niyaniya). '
-                'If the chosen size is missing for a gallery, the nearest available one is used.',
-            options: const [('780', '780'), ('980', '980'), ('1280', '1280'), ('1600', '1600'), ('0', 'Original')],
-            layerValue: layer.imageQuality,
-            inheritedValue: globalLayer.imageQuality ?? '1280',
-            onChanged: (v) => _update((s) => s.imageQuality = v),
-          ),
+          // Only sources with several page sizes (niyaniya's five sets).
+          if (_qualityOptions.isNotEmpty)
+            _choiceRow<String>(
+              title: 'Image quality',
+              subtitle: isGlobal
+                  ? 'Width of reader pages. Applies to $_qualitySourceNames; other sources have one size. '
+                        'If a gallery lacks the chosen size, the nearest available one is used.'
+                  : 'Width of reader pages. If a gallery lacks the chosen size, the nearest available one is used.',
+              options: _qualityOptions,
+              layerValue: layer.imageQuality,
+              inheritedValue: globalLayer.imageQuality ?? '1280',
+              onChanged: (v) => _update((s) => s.imageQuality = v),
+            ),
           _header('SEARCH'),
           if (sorts.isNotEmpty)
             _choiceRow<String>(
@@ -369,6 +425,8 @@ class _SourceSettingsPageState extends State<SourceSettingsPage> {
               inheritedValue: globalLayer.defaultSort,
               onChanged: (v) => _update((s) => s.defaultSort = v),
             ),
+          // Honoured by nhentai's search only; the others ignore the setting.
+          if (_offered((h) => h.supportsLanguageFilter))
           _choiceRow<String>(
             title: 'Only show language',
             subtitle: 'Adds a language filter to every search.',
@@ -377,6 +435,7 @@ class _SourceSettingsPageState extends State<SourceSettingsPage> {
             inheritedValue: globalLayer.languageFilter,
             onChanged: (v) => _update((s) => s.languageFilter = v),
           ),
+          if (_offered((h) => h.supportsTitleLanguage))
           _choiceRow<String>(
             title: 'Title language',
             subtitle: 'Which title shows first on cards and the detail page.',

@@ -48,6 +48,13 @@ import 'package:lolisnatcher/src/utils/tools.dart';
 class TikPornHandler extends BooruHandler {
   TikPornHandler(super.booru, super.limit);
 
+  // Reads neither field (audited): the fields are hidden on the edit page.
+  @override
+  bool get usesUserId => false;
+  @override
+  bool get usesApiKey => false;
+
+
   static const String _api = 'https://apiv2.tik.porn';
   static const String _site = 'https://tik.porn';
 

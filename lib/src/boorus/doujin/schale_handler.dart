@@ -40,6 +40,23 @@ import 'package:lolisnatcher/src/utils/tools.dart';
 class SchaleHandler extends BooruHandler with DoujinListingTagBackfill, DoujinNamespacedTags {
   SchaleHandler(super.booru, super.limit);
 
+  // No accounts on this site: nothing here reads a user id or key.
+  @override
+  bool get usesUserId => false;
+  @override
+  bool get usesApiKey => false;
+
+  /// The five image sets the API can hand out (Koharu's DataKey names).
+  @override
+  List<(String, String)> get readerImageQualities => const [
+    ('780', '780'),
+    ('980', '980'),
+    ('1280', '1280'),
+    ('1600', '1600'),
+    ('0', 'Original'),
+  ];
+
+
   static const String _api = 'https://api.schale.network';
   static const String defaultSite = 'https://niyaniya.moe';
 
@@ -134,16 +151,26 @@ class SchaleHandler extends BooruHandler with DoujinListingTagBackfill, DoujinNa
     'Referer': '$_site/',
     'Origin': _site,
     'Accept': 'application/json',
-    if (booru.apiKey?.isNotEmpty == true) 'Authorization': 'Bearer ${booru.apiKey}',
+    // No Authorization header: the site has no accounts and Koharu sends none.
   };
 
   static dynamic _json(dynamic data) => data is String ? jsonDecode(data) : data;
 
+  static String _bodySnippet(dynamic data) {
+    final String text = data == null ? '' : (data is String ? data : jsonEncode(data));
+    return text.length > 200 ? '${text.substring(0, 200)}…' : text;
+  }
+
   /// niyaniya keeps its images on erocdn mirrors, which serve them without a
   /// referer today. Sending the one a browser would send anyway costs nothing
   /// and means a future hotlink rule does not silently blank every cover.
+  ///
+  /// Verified 2026-09-02 with curl against hikari.erocdn.net: the page URL
+  /// (`…/1280/<hash>/<uuid>.jpg?w=1280`) answers 400 with no headers, 400 with
+  /// Referer alone, and 200 image/jpeg once Origin is sent as well — Koharu
+  /// sends both on every image request (imageRequest uses lazyHeaders).
   @override
-  Map<String, String> getMediaHeaders() => {'Referer': '$_site/'};
+  Map<String, String> getMediaHeaders() => {'Referer': '$_site/', 'Origin': _site};
 
   @override
   String validateTags(String tags) => tags.trim();
@@ -591,7 +618,7 @@ class SchaleHandler extends BooruHandler with DoujinListingTagBackfill, DoujinNa
         clearance.invalidate();
         _gateError = SchaleClearanceHandler.needsSolveMessage;
         Logger.Inst().log(
-          'clearance refused (${response.statusCode}); dropped',
+          'clearance refused (${response.statusCode}); dropped | body=${_bodySnippet(response.data)}',
           className,
           '_gated',
           LogTypes.booruHandlerInfo,

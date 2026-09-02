@@ -12,6 +12,13 @@ import 'package:lolisnatcher/src/utils/logger.dart';
 class FurAffinityHandler extends BooruHandler {
   FurAffinityHandler(super.booru, super.limit);
 
+  // Reads neither field (audited): the fields are hidden on the edit page.
+  @override
+  bool get usesUserId => false;
+  @override
+  bool get usesApiKey => false;
+
+
   Map<String, String>? body;
 
   @override
