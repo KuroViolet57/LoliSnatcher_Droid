@@ -192,6 +192,8 @@ class DBHandler {
     // `namespace`: the site's own grouping (artist/circle/female/…), part of
     // the key because a doujin site can file one name under two namespaces
     // (hitomi: female:ahegao and male:ahegao). '' for booru snapshots.
+    // `sourceId`: the site's own id for the tag where its pages are keyed by
+    // id rather than name (hentaipaw: `/tags/14390`). Null elsewhere.
     await db?.execute(
       'CREATE TABLE IF NOT EXISTS BooruTag ( '
       'booruKey TEXT NOT NULL, '
@@ -201,6 +203,7 @@ class DBHandler {
       'count INTEGER NOT NULL DEFAULT 0, '
       "source TEXT NOT NULL DEFAULT 'api', "
       'updatedAt INTEGER NOT NULL, '
+      'sourceId TEXT, '
       'PRIMARY KEY (booruKey, namespace, name) '
       ')',
     );
@@ -286,6 +289,9 @@ class DBHandler {
           );
           await txn.execute('DROP TABLE BooruTag_old');
         });
+      }
+      if (await tableExists('BooruTag') && !await columnExists('BooruTag', 'sourceId')) {
+        await db?.execute('ALTER TABLE BooruTag ADD COLUMN sourceId TEXT;');
       }
     } catch (e, s) {
       Logger.Inst().log(
@@ -1021,8 +1027,8 @@ class DBHandler {
         final String source = e.origin == TagTypeOrigin.inferred ? 'import' : 'api';
         final int stamp = e.updatedAt == 0 ? now : e.updatedAt;
         batch.rawInsert(
-          'INSERT OR REPLACE INTO BooruTag(booruKey, namespace, name, tagType, count, source, updatedAt) VALUES(?,?,?,?,?,?,?)',
-          [booruKey, e.namespace, e.name, e.tagType.name, e.count, source, stamp],
+          'INSERT OR REPLACE INTO BooruTag(booruKey, namespace, name, tagType, count, source, updatedAt, sourceId) VALUES(?,?,?,?,?,?,?,?)',
+          [booruKey, e.namespace, e.name, e.tagType.name, e.count, source, stamp, e.sourceId],
         );
       }
       await batch.commit(noResult: true);
@@ -1057,7 +1063,7 @@ class DBHandler {
       ..add(limit)
       ..add(offset);
     return db.rawQuery(
-      'SELECT name, namespace, tagType, count, source, updatedAt FROM BooruTag '
+      'SELECT name, namespace, tagType, count, source, updatedAt, sourceId FROM BooruTag '
       'WHERE $where ORDER BY count DESC, name ASC LIMIT ? OFFSET ?',
       args,
     );
@@ -1068,10 +1074,23 @@ class DBHandler {
     if (db == null || booruKey.isEmpty || names.isEmpty) return const [];
     final String placeholders = List.filled(names.length, '?').join(',');
     return db.rawQuery(
-      'SELECT name, namespace, tagType, count, source, updatedAt FROM BooruTag '
+      'SELECT name, namespace, tagType, count, source, updatedAt, sourceId FROM BooruTag '
       'WHERE booruKey = ? AND name IN ($placeholders)',
       [booruKey, ...names],
     );
+  }
+
+  /// The site's own id for one (namespace, name), when the snapshot holds it.
+  Future<String?> getBooruTagSourceId(String booruKey, String namespace, String name) async {
+    final db = this.db;
+    if (db == null || booruKey.isEmpty || name.isEmpty) return null;
+    final rows = await db.rawQuery(
+      'SELECT sourceId FROM BooruTag WHERE booruKey = ? AND namespace = ? AND name = ? LIMIT 1',
+      [booruKey, namespace, name],
+    );
+    if (rows.isEmpty) return null;
+    final String id = rows.first['sourceId']?.toString() ?? '';
+    return id.isEmpty ? null : id;
   }
 
   Future<int> countBooruTags(String booruKey, {String? tagType, String? namespace}) async {

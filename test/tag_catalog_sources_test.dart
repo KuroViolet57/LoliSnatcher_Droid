@@ -9,6 +9,7 @@ import 'package:lolisnatcher/src/boorus/doujin/asmhentai_tag_catalog.dart';
 import 'package:lolisnatcher/src/boorus/doujin/eahentai_handler.dart';
 import 'package:lolisnatcher/src/boorus/doujin/faccina_handler.dart';
 import 'package:lolisnatcher/src/boorus/doujin/hentaipaw_handler.dart';
+import 'package:lolisnatcher/src/boorus/doujin/hentaipaw_tag_catalog.dart';
 import 'package:lolisnatcher/src/boorus/doujin/hitomi_handler.dart';
 import 'package:lolisnatcher/src/boorus/doujin/hitomi_tag_catalog.dart';
 import 'package:lolisnatcher/src/boorus/doujin/schale_handler.dart';
@@ -61,14 +62,14 @@ void main() {
       final artist = rows.firstWhere((e) => e.namespace == 'artist');
       expect(artist.tagType, TagType.artist);
       expect(artist.name, isNot(contains(' ')));
-      final catalog = SchaleHandler(b('n', BooruType.NiyaNiya, 'https://niyaniya.moe'), 20).tagCatalog! as SchaleTagCatalog;
+      final catalog = SchaleHandler(b('n', BooruType.NiyaNiya, 'https://niyaniya.moe'), 20).tagCatalog as SchaleTagCatalog;
       expect(catalog.searchTerm(artist), 'artist:${artist.name}');
       final plain = rows.firstWhere((e) => e.namespace == 'tag');
       expect(catalog.searchTerm(plain), plain.name);
     });
 
     test('only enumerable AND searchable namespaces are offered', () {
-      final catalog = SchaleHandler(b('n', BooruType.NiyaNiya, 'https://niyaniya.moe'), 20).tagCatalog!;
+      final catalog = SchaleHandler(b('n', BooruType.NiyaNiya, 'https://niyaniya.moe'), 20).tagCatalog;
       final keys = catalog.namespaces.map((n) => n.key).toList();
       expect(keys, ['artist', 'circle', 'female', 'male', 'mixed', 'tag']);
       expect(keys, isNot(contains('character')));
@@ -97,7 +98,7 @@ void main() {
     });
 
     test('every term the catalog inserts is one hitomi can route', () {
-      final catalog = HitomiHandler(b('h', BooruType.Hitomi, 'https://hitomi.la'), 20).tagCatalog!;
+      final catalog = HitomiHandler(b('h', BooruType.Hitomi, 'https://hitomi.la'), 20).tagCatalog;
       for (final e in HitomiTagCatalog.parseIndex(fixture('hitomi_alltags_a.html'))) {
         expect(HitomiHandler.nozomiTargetFor(catalog.searchTerm(e)), isNotNull, reason: catalog.searchTerm(e));
       }
@@ -108,7 +109,7 @@ void main() {
     test('languages come from language_support.js, types are fixed', () {
       final langs = HitomiTagCatalog.parseLanguages('var bitnumber_language = {"42":"korean","8":"english","21":"portuguese"};');
       expect(langs.map((e) => e.name), ['english', 'korean', 'portuguese']);
-      final catalog = HitomiHandler(b('h', BooruType.Hitomi, 'https://hitomi.la'), 20).tagCatalog!;
+      final catalog = HitomiHandler(b('h', BooruType.Hitomi, 'https://hitomi.la'), 20).tagCatalog;
       expect(catalog.namespaceFor('language')!.shards, 1);
       expect(catalog.namespaceFor('artist')!.shards, 27);
       expect(HitomiTagCatalog.shardKeys.length, 27);
@@ -146,7 +147,7 @@ void main() {
         {'id': 3, 'name': 'touhou project', 'type': 'parody', 'count': 7},
       ]);
       expect(rows.map((e) => e.namespace), ['tag', 'artist', 'parody']);
-      final catalog = NHentaiHandler(b('n', BooruType.NHentai, 'https://nhentai.net'), 20).tagCatalog!;
+      final catalog = NHentaiHandler(b('n', BooruType.NHentai, 'https://nhentai.net'), 20).tagCatalog;
       expect(catalog.searchTerm(rows[0]), 'big_breasts');
       expect(catalog.searchTerm(rows[1]), 'artist:shindol');
       expect(rows[2].tagType, TagType.copyright);
@@ -161,6 +162,37 @@ void main() {
     });
   });
 
+  group('hentaipaw', () {
+    test('an index page yields id-keyed rows with no counts', () {
+      final rows = HentaiPawTagCatalog.parseIndex(fixture('hentaipaw_tags_index.html'), plural: 'tags');
+      expect(rows.length, 30);
+      expect(rows.every((e) => e.namespace == 'tag' && e.sourceId != null && e.count == 0), isTrue);
+      final first = rows.first;
+      expect(first.sourceId, '14390');
+      expect(first.name, '🟢', reason: 'the name is the title attribute, as the site spells it');
+      expect(rows.any((e) => e.name == '요구르트썬더'), isTrue);
+      expect(HentaiPawTagCatalog.parseIndex(fixture('hentaipaw_tags_index.html'), plural: 'artists'), isEmpty);
+    });
+
+    test('the page count comes from the last-page arrow', () {
+      expect(HentaiPawTagCatalog.lastPageFrom(fixture('hentaipaw_tags_index.html')), 138);
+      expect(HentaiPawTagCatalog.lastPageFrom('<html><body><main></main></body></html>'), isNull);
+    });
+
+    test('a page with no entries ends the walk; the term is always qualified', () {
+      expect(HentaiPawTagCatalog.parseIndex('<html><body><div class="tag-container"></div></body></html>'), isEmpty);
+      final catalog = HentaiPawHandler(b('p', BooruType.HentaiPaw, 'https://hentaipaw.com'), 20).tagCatalog;
+      expect(catalog.searchTerm(const BooruTagEntry(name: 'x', namespace: 'tag', tagType: TagType.none, sourceId: '1')), 'tag:x');
+      expect(catalog.namespaceFor('tag')!.maxShards, HentaiPawTagCatalog.pagesPerPull);
+    });
+
+    test('the id survives the JSON snapshot form', () {
+      const e = BooruTagEntry(name: 'x', namespace: 'tag', tagType: TagType.none, sourceId: '14390');
+      expect(BooruTagEntry.fromJson(e.toJson()).sourceId, '14390');
+      expect(const BooruTagEntry(name: 'x', tagType: TagType.none).toJson().containsKey('i'), isFalse);
+    });
+  });
+
   group('capabilities', () {
     test('each source offers exactly what it can enumerate', () {
       List<String> keys(BooruHandler h) => h.tagCatalog?.namespaces.map((n) => n.key).toList() ?? const [];
@@ -168,9 +200,9 @@ void main() {
       expect(keys(HitomiHandler(b('h', BooruType.Hitomi, 'https://hitomi.la'), 20)), ['artist', 'circle', 'parody', 'character', 'female', 'male', 'tag', 'language', 'type']);
       expect(keys(AsmHentaiHandler(b('a', BooruType.AsmHentai, 'https://asmhentai.com'), 20)), ['artist', 'group', 'parody', 'character', 'tag']);
       expect(keys(NHentaiHandler(b('n', BooruType.NHentai, 'https://nhentai.net'), 20)), ['parody', 'character', 'artist', 'group', 'tag']);
+      expect(keys(HentaiPawHandler(b('p', BooruType.HentaiPaw, 'https://hentaipaw.com'), 20)), ['artist', 'group', 'parody', 'character', 'tag']);
       expect(FaccinaHandler(b('f', BooruType.Faccina, 'https://hentalk.pw'), 20).tagCatalog, isNull);
       expect(EaHentaiHandler(b('e', BooruType.EaHentai, 'https://eahentai.com'), 20).tagCatalog, isNull);
-      expect(HentaiPawHandler(b('p', BooruType.HentaiPaw, 'https://hentaipaw.com'), 20).tagCatalog, isNull, reason: 'phase 5, after a device capture');
     });
   });
 }

@@ -27,6 +27,8 @@ import 'package:lolisnatcher/src/handlers/interests_handler.dart';
 import 'package:lolisnatcher/src/handlers/local_auth_handler.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
 import 'package:lolisnatcher/src/handlers/notify_handler.dart';
+import 'package:lolisnatcher/src/boorus/doujin/hentaipaw_handler.dart';
+import 'package:lolisnatcher/src/handlers/schale_clearance_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/secure_storage_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
@@ -588,6 +590,12 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
       case AppLifecycleState.resumed:
         // check if app needs to be locked when user returns to the app
         localAuthHandler.onReturn();
+        // The headless pages that make requests for niyaniya and hentaipaw
+        // keep the engine's sockets and DNS from before the phone was away;
+        // a network that changed meanwhile is not something they notice.
+        // They are cheap to start again, so they go.
+        unawaited(SchaleClearanceHandler.instance.disposePageClient(reason: 'app resumed'));
+        unawaited(HentaiPawHandler.pageClient.drop('app resumed'));
         break;
     }
   }

@@ -28,7 +28,6 @@ import 'package:lolisnatcher/src/widgets/gallery/tag_view.dart';
 import 'package:lolisnatcher/src/widgets/preview/main_search_query_editor_page.dart';
 import 'package:lolisnatcher/src/widgets/preview/main_search_tag_chip.dart';
 import 'package:lolisnatcher/src/widgets/preview/query_editor_core.dart';
-import 'package:lolisnatcher/src/widgets/preview/tag_type_strip.dart';
 
 /// Generic tag search editor page
 /// A flexible tag search interface that can be used for various scenarios
@@ -444,6 +443,8 @@ class _TagSearchQueryEditorPageState extends State<TagSearchQueryEditorPage> {
                               return SuggestionsMainContent(
                                 onMetatagSelect: onMetatagSelect,
                                 onTagTap: (tag) => onSuggestionTap(TagSuggestion(tag: tag)),
+                                onInsertTerm: (term) => onSuggestionTap(TagSuggestion(tag: term), raw: true),
+                                booru: selectedBooru,
                                 hideHistory: true,
                                 hidePopular: selectedBooru?.type?.isFavouritesOrDownloads == true,
                                 hidePinned: !widget.showPinnedTags,
@@ -635,11 +636,6 @@ class _TagSearchQueryEditorPageState extends State<TagSearchQueryEditorPage> {
           valueListenable: queryController.suggestionTextFocusNodeHasFocus,
           builder: (context, suggestionTextFocusNodeHasFocus, _) => Column(
             children: [
-              if (settingsHandler.useTopSearchbarInput)
-                TagTypeStrip(
-                  booru: selectedBooru,
-                  onInsert: (term) => onSuggestionTap(TagSuggestion(tag: term), raw: true),
-                ),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 child: SettingsTextInput(
@@ -667,11 +663,6 @@ class _TagSearchQueryEditorPageState extends State<TagSearchQueryEditorPage> {
                   ),
                 ),
               ),
-              if (!settingsHandler.useTopSearchbarInput)
-                TagTypeStrip(
-                  booru: selectedBooru,
-                  onInsert: (term) => onSuggestionTap(TagSuggestion(tag: term), raw: true),
-                ),
               if (settingsHandler.useTopSearchbarInput)
                 const SizedBox(height: 4)
               else if (settingsHandler.showSearchbarQuickActions && (Platform.isAndroid || Platform.isIOS))

@@ -213,7 +213,20 @@ class BooruTagStore {
     count: int.tryParse(row['count']?.toString() ?? '') ?? 0,
     origin: row['source']?.toString() == 'import' ? TagTypeOrigin.inferred : TagTypeOrigin.reported,
     updatedAt: int.tryParse(row['updatedAt']?.toString() ?? '') ?? 0,
+    sourceId: (row['sourceId']?.toString() ?? '').isEmpty ? null : row['sourceId'].toString(),
   );
+
+  /// The site's own id for a (namespace, name) the catalog stored — for
+  /// sources whose tag pages are keyed by id (hentaipaw). Null when unknown.
+  static Future<String?> findId(Booru booru, String namespace, String name) async {
+    final String key = keyFor(booru);
+    if (key.isEmpty || name.isEmpty) return null;
+    try {
+      return await _settings.dbHandler.getBooruTagSourceId(key, namespace, name);
+    } catch (_) {
+      return null;
+    }
+  }
 
   static Future<int> snapshotSize(Booru booru, {String? namespace}) async {
     try {

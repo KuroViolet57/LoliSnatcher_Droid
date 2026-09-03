@@ -28,6 +28,9 @@ import 'package:lolisnatcher/src/data/history_item.dart';
 import 'package:lolisnatcher/src/data/meta_tag.dart';
 import 'package:lolisnatcher/src/data/pinned_tag.dart';
 import 'package:lolisnatcher/src/data/tag_suggestion.dart';
+import 'package:lolisnatcher/src/handlers/booru_handler.dart';
+import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
+import 'package:lolisnatcher/src/handlers/booru_tag_store.dart';
 import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
@@ -876,6 +879,7 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
                               return SuggestionsMainContent(
                                 onMetatagSelect: onMetatagSelect,
                                 onTagTap: (tag) => onSuggestionTap(TagSuggestion(tag: tag)),
+                                onInsertTerm: (term) => onSuggestionTap(TagSuggestion(tag: term), raw: true),
                                 hidePopular: searchHandler.currentBooru.type?.isFavouritesOrDownloads == true,
                               );
                             }
@@ -1067,8 +1071,6 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
           valueListenable: suggestionTextFocusNodeHasFocus,
           builder: (context, suggestionTextFocusNodeHasFocus, _) => Column(
             children: [
-              if (settingsHandler.useTopSearchbarInput)
-                TagTypeStrip(onInsert: (term) => onSuggestionTap(TagSuggestion(tag: term), raw: true)),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 child: SettingsTextInput(
@@ -1122,12 +1124,8 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
                   ),
                 ),
               ),
-              // The tag builder: one chip per namespace this source can list.
-              // Replaces the old helper-key row. Kept between the input and
-              // the suggestions whichever edge the input sits on.
-              if (!settingsHandler.useTopSearchbarInput)
-                TagTypeStrip(onInsert: (term) => onSuggestionTap(TagSuggestion(tag: term), raw: true)),
-              //
+              // The tag builder lives in the Metatags card of the suggestions
+              // (MetatagsBlock); the old helper-key row is gone.
               if (settingsHandler.useTopSearchbarInput)
                 const SizedBox(height: 4)
               else if (settingsHandler.showSearchbarQuickActions && (Platform.isAndroid || Platform.isIOS))
@@ -1523,6 +1521,8 @@ class SuggestionsMainContent extends StatefulWidget {
   const SuggestionsMainContent({
     required this.onMetatagSelect,
     required this.onTagTap,
+    this.onInsertTerm,
+    this.booru,
     this.hideHistory = false,
     this.hidePopular = false,
     this.hidePinned = false,
@@ -1531,6 +1531,12 @@ class SuggestionsMainContent extends StatefulWidget {
 
   final void Function(AddMetatagBottomSheetResult result) onMetatagSelect;
   final void Function(String tag) onTagTap;
+
+  /// Where a term picked in the tag builder (inside the Metatags card) goes.
+  final void Function(String term)? onInsertTerm;
+
+  /// The source the Metatags card builds for; null follows the current tab.
+  final Booru? booru;
   final bool hideHistory;
   final bool hidePopular;
   final bool hidePinned;
@@ -1574,7 +1580,11 @@ class _SuggestionsMainContentState extends State<SuggestionsMainContent> {
           delay: const Duration(milliseconds: 20),
         ),
       //
-      MetatagsBlock(onSelect: widget.onMetatagSelect),
+      MetatagsBlock(
+        onSelect: widget.onMetatagSelect,
+        booru: widget.booru,
+        onInsertTerm: widget.onInsertTerm,
+      ),
       //
       const SizedBox(height: 16),
     ];
@@ -2047,13 +2057,48 @@ class _HistoryBlockState extends State<HistoryBlock> {
   }
 }
 
+/// The Metatags card: the source's metatag chips, with the tag builder merged
+/// in. A metatag whose key the source can list in full (`artist`, `circle`,
+/// `female`…, see `BooruHandler.tagCatalog`) is shown as a [TagCatalogChip]
+/// in its place — tap it to pick from every tag of that type; the plain
+/// chips insert `key:` as before; namespaces the source lists but has no
+/// metatag for (`tag`, `mixed`) come after.
 class MetatagsBlock extends StatefulWidget {
   const MetatagsBlock({
     required this.onSelect,
+    this.booru,
+    this.onInsertTerm,
     super.key,
   });
 
   final Function(AddMetatagBottomSheetResult) onSelect;
+
+  /// The source to build for; null follows the current tab.
+  final Booru? booru;
+
+  /// Where a term picked from the tag builder goes. Null hides the builder
+  /// chips and leaves the plain metatag row.
+  final void Function(String term)? onInsertTerm;
+
+  /// The chip row, in metatag order, with builder chips in the place of the
+  /// metatags they cover and the catalog-only namespaces appended.
+  @visibleForTesting
+  static List<Object> mergedEntries(List<MetaTag> metaTags, TagCatalogSource? catalog) {
+    final List<Object> entries = [];
+    final Set<String> covered = {};
+    for (final tag in metaTags) {
+      final TagCatalogNamespace? ns = catalog?.namespaceFor(tag.keyName);
+      if (ns != null && covered.add(ns.key)) {
+        entries.add(ns);
+      } else if (ns == null) {
+        entries.add(tag);
+      }
+    }
+    for (final ns in catalog?.namespaces ?? const <TagCatalogNamespace>[]) {
+      if (covered.add(ns.key)) entries.add(ns);
+    }
+    return entries;
+  }
 
   @override
   State<MetatagsBlock> createState() => _MetatagsBlockState();
@@ -2062,6 +2107,54 @@ class MetatagsBlock extends StatefulWidget {
 class _MetatagsBlockState extends State<MetatagsBlock> {
   final searchHandler = SearchHandler.instance;
   final scrollController = ScrollController();
+
+  /// Rows stored per namespace for [_booru], the badge on each builder chip.
+  Map<String, int> _counts = const {};
+  String _countsFor = '';
+
+  BooruHandler? _cachedHandler;
+  Booru? _cachedFor;
+
+  Booru get _booru => widget.booru ?? searchHandler.currentBooru;
+
+  BooruHandler get _handler {
+    final Booru? own = widget.booru;
+    if (own == null) return searchHandler.currentBooruHandler;
+    if (_cachedHandler == null || _cachedFor != own) {
+      _cachedHandler = BooruHandlerFactory().getBooruHandler([own], null).booruHandler;
+      _cachedFor = own;
+    }
+    return _cachedHandler!;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_refreshCounts());
+  }
+
+  @override
+  void didUpdateWidget(covariant MetatagsBlock oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.booru != widget.booru) unawaited(_refreshCounts());
+  }
+
+  @override
+  void dispose() {
+    scrollController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _refreshCounts() async {
+    if (widget.onInsertTerm == null || _handler.tagCatalog == null) return;
+    final Booru booru = _booru;
+    final counts = await BooruTagStore.namespaceCounts(booru);
+    if (!mounted) return;
+    setState(() {
+      _counts = counts;
+      _countsFor = BooruTagStore.keyFor(booru);
+    });
+  }
 
   Future<void> openMetatagsDialog() async {
     final res = await SettingsPageOpen(
@@ -2093,16 +2186,34 @@ class _MetatagsBlockState extends State<MetatagsBlock> {
 
   @override
   Widget build(BuildContext context) {
-    List<MetaTag> metaTags = searchHandler.currentBooruHandler.availableMetaTags();
+    final BooruHandler handler = _handler;
+    final TagCatalogSource? catalog = widget.onInsertTerm == null ? null : handler.tagCatalog;
+    List<Object> entries = MetatagsBlock.mergedEntries(handler.availableMetaTags(), catalog);
     bool overflows = false;
-    if (metaTags.length > 15) {
-      // show only first 15 tags (only danbooru has this much right now) to motivate user to open bottom sheet dialog with full list
-      metaTags = metaTags.sublist(0, 15);
+    if (entries.length > 15) {
+      // show only first 15 (only danbooru has this much right now) to motivate
+      // user to open the bottom sheet with the full list. Builder chips are
+      // never the ones dropped: the sheet does not have them.
+      final int builders = entries.whereType<TagCatalogNamespace>().length;
+      int plainAllowed = max(0, 15 - builders);
+      entries = [
+        for (final e in entries)
+          if (e is TagCatalogNamespace)
+            e
+          else if (plainAllowed-- > 0)
+            e,
+      ];
       overflows = true;
     }
 
-    if (metaTags.isEmpty) {
+    if (entries.isEmpty) {
       return const SizedBox.shrink();
+    }
+
+    final Booru booru = _booru;
+    if (catalog != null && _countsFor != BooruTagStore.keyFor(booru)) {
+      // The tab changed under an open editor: recount for the new source.
+      WidgetsBinding.instance.addPostFrameCallback((_) => _refreshCounts());
     }
 
     return SearchSectionCard(
@@ -2131,13 +2242,13 @@ class _MetatagsBlockState extends State<MetatagsBlock> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                if (searchHandler.currentBooruHandler.metatagsCheatSheetLink != null)
+                if (handler.metatagsCheatSheetLink != null)
                   Padding(
                     padding: const EdgeInsets.only(right: 8),
                     child: IconButton(
                       onPressed: () {
                         launchUrlString(
-                          searchHandler.currentBooruHandler.metatagsCheatSheetLink!,
+                          handler.metatagsCheatSheetLink!,
                           mode: LaunchMode.externalApplication,
                         );
                       },
@@ -2163,9 +2274,9 @@ class _MetatagsBlockState extends State<MetatagsBlock> {
                 scrollDirection: Axis.horizontal,
                 physics: const BouncingScrollPhysics(),
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                itemCount: metaTags.length + (overflows ? 1 : 0),
+                itemCount: entries.length + (overflows ? 1 : 0),
                 itemBuilder: (BuildContext context, int index) {
-                  if (overflows && index == metaTags.length) {
+                  if (overflows && index == entries.length) {
                     return Padding(
                       padding: const EdgeInsets.only(right: 8),
                       child: ActionChip(
@@ -2175,7 +2286,22 @@ class _MetatagsBlockState extends State<MetatagsBlock> {
                     );
                   }
 
-                  final tag = metaTags[index];
+                  final Object entry = entries[index];
+                  if (entry is TagCatalogNamespace && catalog != null) {
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: TagCatalogChip(
+                        booru: booru,
+                        catalog: catalog,
+                        namespace: entry,
+                        count: _counts[entry.key] ?? 0,
+                        onInsert: widget.onInsertTerm!,
+                        onStoredChanged: _refreshCounts,
+                      ),
+                    );
+                  }
+
+                  final tag = entry as MetaTag;
 
                   return Padding(
                     padding: const EdgeInsets.only(right: 8),

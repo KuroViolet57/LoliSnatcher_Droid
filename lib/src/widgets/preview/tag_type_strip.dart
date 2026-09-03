@@ -2,149 +2,109 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import 'package:fading_edge_scrollview/fading_edge_scrollview.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_tag.dart';
-import 'package:lolisnatcher/src/handlers/booru_handler.dart';
-import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 import 'package:lolisnatcher/src/handlers/booru_tag_store.dart';
-import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/tag_catalog_puller.dart';
 import 'package:lolisnatcher/src/handlers/tag_catalog_source.dart';
 import 'package:lolisnatcher/src/utils/extensions.dart';
 import 'package:lolisnatcher/src/widgets/common/settings_widgets.dart';
-import 'package:lolisnatcher/src/widgets/desktop/desktop_scroll.dart';
 
-/// The tag builder: one chip per namespace the current source can list in
-/// full (see `BooruHandler.tagCatalog`). Sits above the search input, always.
-/// Tapping a chip opens [TagCatalogPickerSheet]; the term it returns goes to
-/// [onInsert]. Nothing for sources with no catalog.
-class TagTypeStrip extends StatefulWidget {
-  const TagTypeStrip({required this.onInsert, this.booru, super.key});
+/// One chip of the tag builder: a namespace the source can list in full
+/// (see `BooruHandler.tagCatalog`). Lives in the Metatags card of the query
+/// editors, in the place of the plain metatag chip for the same key.
+///
+/// Shows the colour of the app-level type, the stored count (or a download
+/// icon when nothing is stored yet) and a spinner while a pull runs. Tapping
+/// opens [TagCatalogPickerSheet]; the term it returns goes to [onInsert].
+class TagCatalogChip extends StatefulWidget {
+  const TagCatalogChip({
+    required this.booru,
+    required this.catalog,
+    required this.namespace,
+    required this.count,
+    required this.onInsert,
+    this.onStoredChanged,
+    super.key,
+  });
 
-  /// The source to build for; null follows the current tab.
-  final Booru? booru;
+  final Booru booru;
+  final TagCatalogSource catalog;
+  final TagCatalogNamespace namespace;
+
+  /// Rows stored for this namespace, as the owner last counted them.
+  final int count;
   final void Function(String term) onInsert;
 
+  /// A pull landed rows or the picker closed: the owner recounts.
+  final VoidCallback? onStoredChanged;
+
   @override
-  State<TagTypeStrip> createState() => _TagTypeStripState();
+  State<TagCatalogChip> createState() => _TagCatalogChipState();
 }
 
-class _TagTypeStripState extends State<TagTypeStrip> {
-  final ScrollController _scroll = ScrollController();
-  Map<String, int> _counts = const {};
+class _TagCatalogChipState extends State<TagCatalogChip> {
+  int _seenStored = -1;
 
-  Booru get _booru => widget.booru ?? SearchHandler.instance.currentBooru;
-
-  BooruHandler get _handler => widget.booru == null
-      ? SearchHandler.instance.currentBooruHandler
-      : BooruHandlerFactory().getBooruHandler([widget.booru!], null).booruHandler;
-
-  @override
-  void initState() {
-    super.initState();
-    unawaited(_refreshCounts());
-  }
-
-  @override
-  void didUpdateWidget(covariant TagTypeStrip oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.booru != widget.booru) unawaited(_refreshCounts());
-  }
-
-  @override
-  void dispose() {
-    _scroll.dispose();
-    super.dispose();
-  }
-
-  Future<void> _refreshCounts() async {
-    if (_handler.tagCatalog == null) return;
-    final counts = await BooruTagStore.namespaceCounts(_booru);
-    if (mounted) setState(() => _counts = counts);
-  }
-
-  Future<void> _open(TagCatalogSource catalog, TagCatalogNamespace ns) async {
-    final Booru booru = _booru;
+  Future<void> _open() async {
     final res = await SettingsPageOpen(
       context: context,
       asBottomSheet: true,
       bottomSheetExpandableByScroll: true,
-      page: (scrollController) =>
-          TagCatalogPickerSheet(booru: booru, catalog: catalog, namespace: ns, scrollController: scrollController),
+      page: (scrollController) => TagCatalogPickerSheet(
+        booru: widget.booru,
+        catalog: widget.catalog,
+        namespace: widget.namespace,
+        scrollController: scrollController,
+      ),
     ).open();
-    unawaited(_refreshCounts());
+    widget.onStoredChanged?.call();
     if (res is String && res.isNotEmpty) widget.onInsert(res);
   }
 
   @override
   Widget build(BuildContext context) {
-    final TagCatalogSource? catalog = _handler.tagCatalog;
-    if (catalog == null || catalog.namespaces.isEmpty) return const SizedBox.shrink();
     final theme = Theme.of(context);
-    final Booru booru = _booru;
-
-    return SizedBox(
-      height: 46,
-      child: Listener(
-        onPointerSignal: (event) => desktopPointerScroll(_scroll, event),
-        child: FadingEdgeScrollView.fromScrollView(
-          child: ListView.builder(
-            controller: _scroll,
-            scrollDirection: Axis.horizontal,
-            physics: const BouncingScrollPhysics(),
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            itemCount: catalog.namespaces.length,
-            itemBuilder: (context, index) {
-              final ns = catalog.namespaces[index];
-              final int count = _counts[ns.key] ?? 0;
-              return Padding(
-                padding: const EdgeInsets.only(right: 6),
-                child: ValueListenableBuilder<TagCatalogPullState>(
-                  valueListenable: TagCatalogPuller.instance.stateFor(booru, catalog, ns.key),
-                  builder: (context, state, _) {
-                    if (!state.running && state.stored > 0 && count == 0) {
-                      // A pull finished while this strip was on screen.
-                      WidgetsBinding.instance.addPostFrameCallback((_) => _refreshCounts());
-                    }
-                    return ActionChip(
-                      key: ValueKey('tag-type-${ns.key}'),
-                      visualDensity: VisualDensity.compact,
-                      avatar: state.running
-                          ? const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2))
-                          : Container(
-                              width: 10,
-                              height: 10,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: ns.type.getColour() ?? theme.colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                      label: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(ns.label),
-                          const SizedBox(width: 5),
-                          if (count > 0)
-                            Text(
-                              count.toShortString(),
-                              style: TextStyle(fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
-                            )
-                          else
-                            Icon(Symbols.download_rounded, size: 14, color: theme.colorScheme.onSurfaceVariant),
-                        ],
-                      ),
-                      onPressed: () => _open(catalog, ns),
-                    );
-                  },
+    final ns = widget.namespace;
+    return ValueListenableBuilder<TagCatalogPullState>(
+      valueListenable: TagCatalogPuller.instance.stateFor(widget.booru, widget.catalog, ns.key),
+      builder: (context, state, _) {
+        if (!state.running && state.stored > 0 && state.stored != _seenStored) {
+          // A pull finished while this chip was on screen: the badge is stale.
+          _seenStored = state.stored;
+          WidgetsBinding.instance.addPostFrameCallback((_) => widget.onStoredChanged?.call());
+        }
+        return ActionChip(
+          key: ValueKey('tag-type-${ns.key}'),
+          avatar: state.running
+              ? const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2))
+              : Container(
+                  width: 10,
+                  height: 10,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: ns.type.getColour() ?? theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
-              );
-            },
+          label: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(ns.label),
+              const SizedBox(width: 5),
+              if (widget.count > 0)
+                Text(
+                  widget.count.toShortString(),
+                  style: TextStyle(fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
+                )
+              else
+                Icon(Symbols.download_rounded, size: 14, color: theme.colorScheme.onSurfaceVariant),
+            ],
           ),
-        ),
-      ),
+          onPressed: _open,
+        );
+      },
     );
   }
 }

@@ -23,7 +23,6 @@ import 'package:lolisnatcher/src/handlers/schale_clearance_handler.dart';
 import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
-import 'package:lolisnatcher/src/utils/tools.dart';
 
 /// niyaniya.moe — the Schale Network JSON API.
 ///
@@ -652,6 +651,9 @@ class SchaleHandler extends BooruHandler with DoujinListingTagBackfill, DoujinNa
       return data is Map ? data : null;
     }
     if (status == 400 || status == 403) {
+      // Where the token was issued and where it was just refused, while the
+      // page that was refused still exists to be asked.
+      await clearance.logRefusal(status: status, via: via, apiOrigin: apiBase);
       clearance.invalidate();
       _gateError = SchaleClearanceHandler.needsSolveMessage;
       Logger.Inst().log(

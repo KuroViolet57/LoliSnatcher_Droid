@@ -9,13 +9,16 @@ import 'package:html/parser.dart';
 import 'package:lolisnatcher/src/boorus/doujin/doujin_listing_tag_backfill.dart';
 import 'package:lolisnatcher/src/boorus/doujin/doujin_recommendation_engine.dart';
 import 'package:lolisnatcher/src/boorus/doujin/doujin_tag_namespaces.dart';
+import 'package:lolisnatcher/src/boorus/doujin/hentaipaw_tag_catalog.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/meta_tag.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
+import 'package:lolisnatcher/src/handlers/booru_tag_store.dart';
 import 'package:lolisnatcher/src/handlers/origin_page_client.dart';
 import 'package:lolisnatcher/src/handlers/reader_handler.dart';
+import 'package:lolisnatcher/src/handlers/tag_catalog_source.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
 
 /// hentaipaw.com — a Next.js app-router site; everything is server-rendered
@@ -43,31 +46,63 @@ class HentaiPawHandler extends BooruHandler with DoujinListingTagBackfill, Douji
   static const String _site = 'https://hentaipaw.com';
   static const String cdn = 'https://cdn.imagedeliveries.com';
 
+  static String get siteBase => _site;
+
   /// One WebView on the site's origin, shared by every handler instance.
   /// Cloudflare's WAF answers the app's plain client 403 "you have been
   /// blocked" (device log 2026-09-02 18:11) while the WebView is served.
   static final OriginPageClient pageClient = OriginPageClient(_site);
 
+  /// The tag builder's index of this site (see [HentaiPawTagCatalog]).
+  @override
+  late final TagCatalogSource tagCatalog = HentaiPawTagCatalog(this);
+
   /// A page of the site: from the WebView when one exists, else plain HTTP.
-  Future<({int status, String body})> _page(String url) async {
+  Future<({int status, String body})> page(String url) async {
     final inPage = await pageClient.fetch(url);
     if (inPage != null) return inPage;
     final Response response = await DioNetwork.get(url, headers: getHeaders(), options: Options(validateStatus: (_) => true));
     return (status: response.statusCode ?? -1, body: response.data.toString());
   }
 
+  Future<({int status, String body})> _page(String url) => page(url);
+
   /// The listing request too, so the save-time test and every search go the
   /// same way. A plain-HTTP 403 would otherwise open the captcha window on a
   /// WAF block page that no one can solve.
+  ///
+  /// A query that is exactly one `ns:name` the tag builder stored is routed
+  /// to the site's own page for that tag (`/tags/{id}?page=N`): the text
+  /// search does not match on tags, and the id is what the site keys on.
   @override
   Future<Response<dynamic>> fetchSearch(Uri uri, String input, {bool withCaptchaCheck = true, Map<String, dynamic>? queryParams}) async {
-    final inPage = await pageClient.fetch(uri.toString());
-    if (inPage == null) return super.fetchSearch(uri, input, withCaptchaCheck: withCaptchaCheck, queryParams: queryParams);
+    final Uri target = await taxonomyUrlFor(input) ?? uri;
+    final inPage = await pageClient.fetch(target.toString());
+    if (inPage == null) return super.fetchSearch(target, input, withCaptchaCheck: withCaptchaCheck, queryParams: queryParams);
     return Response<dynamic>(
-      requestOptions: RequestOptions(path: uri.toString()),
+      requestOptions: RequestOptions(path: target.toString()),
       statusCode: inPage.status,
       data: inPage.body,
     );
+  }
+
+  /// `ns:name` (one term, a namespace with an index) → the site's page for
+  /// the tag, when the tag builder's snapshot knows the tag's id. Null
+  /// otherwise; the caller then uses the text search.
+  Future<Uri?> taxonomyUrlFor(String query) async {
+    final String q = query.trim();
+    if (q.isEmpty || q.contains(' ') || q.startsWith('-')) return null;
+    final int colon = q.indexOf(':');
+    if (colon <= 0) return null;
+    final String ns = q.substring(0, colon).toLowerCase();
+    final String? plural = HentaiPawTagCatalog.paths[ns];
+    if (plural == null) return null;
+    final String name = normalizeDoujinTagName(q.substring(colon + 1));
+    if (name.isEmpty) return null;
+    final String? id = await BooruTagStore.findId(booru, ns, name);
+    if (id == null) return null;
+    final int page = pageNum < 1 ? 1 : pageNum;
+    return Uri.parse('$_site/$plural/$id?page=$page');
   }
 
   // No accounts are used: nothing reads a user id or key.
@@ -132,8 +167,10 @@ class HentaiPawHandler extends BooruHandler with DoujinListingTagBackfill, Douji
     return (kind: match.group(1)!.toLowerCase(), id: match.group(2)!.trim());
   }
 
-  /// Namespaced chips (`artist:neromashin`) search by keyword: the site's
-  /// own tag pages are keyed by numeric id, which a bare name cannot reach.
+  /// Namespaced chips (`artist:neromashin`) search by keyword when the tag
+  /// builder's snapshot does not know the tag's id (see [taxonomyUrlFor]):
+  /// the site's own tag pages are keyed by numeric id, which a bare name
+  /// cannot reach.
   @visibleForTesting
   static String keywordFor(String query) {
     final String q = query.trim();

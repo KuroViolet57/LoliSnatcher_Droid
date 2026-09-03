@@ -45,9 +45,11 @@ class BooruTagEntry {
     this.origin = TagTypeOrigin.reported,
     this.updatedAt = 0,
     this.namespace = '',
+    this.sourceId,
   });
 
   factory BooruTagEntry.fromJson(Map<String, dynamic> json) {
+    final String id = (json['i'] ?? json['sourceId'] ?? '').toString();
     return BooruTagEntry(
       name: (json['n'] ?? json['name'] ?? '').toString(),
       tagType: TagType.fromString((json['t'] ?? json['tagType'] ?? 'none').toString()),
@@ -58,6 +60,7 @@ class BooruTagEntry {
       ),
       updatedAt: int.tryParse((json['u'] ?? json['updatedAt'] ?? 0).toString()) ?? 0,
       namespace: (json['ns'] ?? json['namespace'] ?? '').toString(),
+      sourceId: id.isEmpty ? null : id,
     );
   }
 
@@ -66,6 +69,10 @@ class BooruTagEntry {
   final int count;
   final TagTypeOrigin origin;
   final int updatedAt;
+
+  /// The site's own id for the tag, where its pages are keyed by id rather
+  /// than by name (hentaipaw: `/tags/14390`). Null everywhere else.
+  final String? sourceId;
 
   /// The SOURCE's own grouping of the tag (`artist`, `circle`, `female`, …),
   /// beside the app-level [tagType], which collapses several of those into
@@ -82,11 +89,12 @@ class BooruTagEntry {
     if (count > 0) 'c': count,
     if (origin != TagTypeOrigin.reported) 'o': origin.name,
     if (namespace.isNotEmpty) 'ns': namespace,
+    if (sourceId != null && sourceId!.isNotEmpty) 'i': sourceId,
   };
 
   String get displayName => name.replaceAll('_', ' ');
 
-  BooruTagEntry copyWith({TagType? tagType, int? count, TagTypeOrigin? origin, int? updatedAt, String? namespace}) {
+  BooruTagEntry copyWith({TagType? tagType, int? count, TagTypeOrigin? origin, int? updatedAt, String? namespace, String? sourceId}) {
     return BooruTagEntry(
       name: name,
       tagType: tagType ?? this.tagType,
@@ -94,6 +102,7 @@ class BooruTagEntry {
       origin: origin ?? this.origin,
       updatedAt: updatedAt ?? this.updatedAt,
       namespace: namespace ?? this.namespace,
+      sourceId: sourceId ?? this.sourceId,
     );
   }
 }

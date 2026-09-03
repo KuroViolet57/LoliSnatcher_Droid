@@ -5,7 +5,6 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 import 'package:lolisnatcher/src/handlers/schale_clearance_handler.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
-import 'package:lolisnatcher/src/utils/tools.dart';
 
 /// Fetches pages of ONE site from inside a WebView kept on that site's
 /// origin, for sites whose Cloudflare front refuses the app's plain HTTP
@@ -98,6 +97,14 @@ try {
     } catch (_) {}
   }
 
+  /// [dispose] with a log line, for callers outside the fetch path (the app
+  /// coming back to the foreground after a possible network change).
+  Future<void> drop(String reason) async {
+    if (_client == null) return;
+    _log('dropped ($reason)');
+    await dispose();
+  }
+
   /// Fetches [url] (must be on [origin]) from the page. Null when no WebView
   /// is available or the call failed — the caller then uses plain HTTP.
   Future<({int status, String body})?> fetch(String url, {String method = 'GET'}) async {
@@ -116,7 +123,15 @@ try {
       }
       final int status = (value['status'] as num?)?.toInt() ?? -1;
       _log('$method $url → $status');
-      if (status < 0) return null;
+      if (status < 0) {
+        // The page's fetch threw. The error text names the cause (a dead
+        // socket, a DNS miss); the page is dropped so the next call starts
+        // a fresh one instead of reusing whatever broke.
+        final String why = value['body']?.toString().replaceAll('\n', ' ') ?? '';
+        _log('fetch threw: ${why.substring(0, why.length.clamp(0, 200))}; page dropped');
+        await dispose();
+        return null;
+      }
       return (status: status, body: value['body']?.toString() ?? '');
     } catch (e) {
       _log('$e');

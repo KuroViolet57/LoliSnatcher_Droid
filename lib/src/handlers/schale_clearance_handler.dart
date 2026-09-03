@@ -4,10 +4,12 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import 'package:dio/dio.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 import 'package:lolisnatcher/src/widgets/webview/webview_page.dart';
@@ -30,7 +32,8 @@ import 'package:lolisnatcher/src/widgets/webview/webview_page.dart';
 ///    allows pop-ups, and filters navigation for the MAIN frame only, so
 ///    Cloudflare's `blob:` challenge frames and workers load. It solves; it
 ///    never reads.
-///  * The HARVESTER — [harvest] — is headless. It loads the site, reads
+///  * The HARVESTER — [harvest] — is headless. It loads a document on the
+///    site's origin that runs none of the site's code (`robots.txt`), reads
 ///    `localStorage.getItem('clearance')` once the page has finished, and
 ///    destroys itself. No user agent override, no navigation filter, no
 ///    scripts, a ten-second latch. It reads; it never solves.
@@ -61,6 +64,16 @@ class SchaleClearanceHandler {
   String? _token;
   bool _loaded = false;
 
+  /// Where the token was issued, as Cloudflare saw the harvester's window
+  /// (`ip=` and `colo=` of `/cdn-cgi/trace`), and when. Kept beside the
+  /// token so a later refusal can say whether the address moved. The device
+  /// log of 2026-09-03 showed the auth host flipping between 201 and 403 for
+  /// byte-identical solver sessions, and a Wi-Fi ⇄ mobile-data toggle
+  /// making the next one pass: the address is the one input that log could
+  /// not carry.
+  String _issuedTrace = '';
+  int _issuedAt = 0;
+
   /// Rises whenever the token changes, so a reader waiting on one can retry.
   final ValueNotifier<int> revision = ValueNotifier(0);
 
@@ -82,6 +95,8 @@ class SchaleClearanceHandler {
       if (decoded is Map && decoded['token'] is String) {
         final String stored = decoded['token'] as String;
         if (stored.isNotEmpty) _token = stored;
+        _issuedTrace = decoded['trace']?.toString() ?? '';
+        _issuedAt = int.tryParse(decoded['at']?.toString() ?? '') ?? 0;
       }
     } catch (_) {}
   }
@@ -93,17 +108,106 @@ class SchaleClearanceHandler {
 
   bool get hasToken => token?.isNotEmpty ?? false;
 
-  void store(String value) {
+  /// `ip=… colo=…` of the window that harvested the current token, or empty.
+  String get issuedTrace {
+    ensureLoaded();
+    return _issuedTrace;
+  }
+
+  void store(String value, {String trace = ''}) {
     ensureLoaded();
     if (value.isEmpty) return;
     // Whatever is being stored was just produced or re-validated by the
     // site, so nothing is "rejected" any more — including the same string.
     _rejectedToken = null;
     _token = value;
+    _issuedTrace = trace;
+    _issuedAt = DateTime.now().millisecondsSinceEpoch;
     _persist();
     revision.value++;
     // The page client reloads on its next call, so it runs with this token.
     unawaited(_disposePageClient());
+  }
+
+  // ── the address trace ─────────────────────────────────────────────────
+  //
+  // Both the site and its API sit behind Cloudflare, and every Cloudflare
+  // host answers `/cdn-cgi/trace` with the connection's own facts: `ip=` (the
+  // address Cloudflare — and so the origin behind it — sees), `colo=`, the
+  // protocol and TLS version. Read from the WebView it says what the site's
+  // JavaScript egresses as; read with Dio it says what the app's own client
+  // egresses as. The two are compared in the log at issue and at refusal.
+
+  /// Same-origin fetch of the trace, run inside a WebView page.
+  static const String traceScript = '''
+try {
+  const r = await fetch('/cdn-cgi/trace', { cache: 'no-store', credentials: 'omit' });
+  return await r.text();
+} catch (e) {
+  return 'error=' + String(e);
+}
+''';
+
+  static const Duration traceTimeout = Duration(seconds: 6);
+
+  /// `ip=… colo=… http=… tls=…` out of a trace body; `error=` bodies and
+  /// junk come back as they are, truncated.
+  @visibleForTesting
+  static String describeTrace(String body) {
+    String field(String key) => RegExp('^$key=(.*)\$', multiLine: true).firstMatch(body)?.group(1)?.trim() ?? '?';
+    if (!body.contains('ip=')) return body.trim().replaceAll('\n', ' ').substring(0, body.trim().length.clamp(0, 80));
+    return 'ip=${field('ip')} colo=${field('colo')} http=${field('http')} tls=${field('tls')}';
+  }
+
+  /// The trace as the app's own HTTP client sees it, on [origin].
+  static Future<String> dioTrace(String origin) async {
+    try {
+      final String base = origin.endsWith('/') ? origin.substring(0, origin.length - 1) : origin;
+      final Response response = await DioNetwork.get(
+        '$base/cdn-cgi/trace',
+        headers: {'User-Agent': solverUserAgent()},
+        options: Options(validateStatus: (_) => true, receiveTimeout: traceTimeout, sendTimeout: traceTimeout),
+      );
+      return describeTrace(response.data?.toString() ?? '');
+    } catch (e) {
+      return 'trace failed: $e';
+    }
+  }
+
+  static Future<String> _webViewTrace(InAppWebViewController controller) async {
+    try {
+      final CallAsyncJavaScriptResult? result = await controller
+          .callAsyncJavaScript(functionBody: traceScript)
+          .timeout(traceTimeout);
+      return describeTrace(result?.value?.toString() ?? '');
+    } catch (e) {
+      return 'trace failed: $e';
+    }
+  }
+
+  /// The trace as the page client's window sees it; empty when there is none.
+  Future<String> pageTrace() async {
+    final InAppWebViewController? controller = _pageController;
+    if (controller == null) return '';
+    return _webViewTrace(controller);
+  }
+
+  /// One line that answers the open question when the API refuses a token:
+  /// where it was issued, where it was refused, and what the app's own
+  /// client egresses as right now. Called by the gated call BEFORE
+  /// [invalidate] disposes the page client.
+  Future<void> logRefusal({required int status, required String via, required String apiOrigin}) async {
+    ensureLoaded();
+    final String fromPage = via == 'page' ? await pageTrace() : '';
+    final String fromDio = await dioTrace(apiOrigin);
+    final String age = _issuedAt == 0
+        ? 'unknown age'
+        : '${((DateTime.now().millisecondsSinceEpoch - _issuedAt) / 1000).round()}s old';
+    _log(
+      'clearance refused ($status via $via): token ${_describe(_token)} $age, '
+      'issued from [${_issuedTrace.isEmpty ? 'unknown' : _issuedTrace}] | '
+      'refused from page [${fromPage.isEmpty ? 'n/a' : fromPage}] | dio [$fromDio]',
+    );
   }
 
   /// The token the API most recently refused.
@@ -157,10 +261,39 @@ class SchaleClearanceHandler {
   /// the token was rejected by the server. Nothing in the app changes that.
   bool lastSolveAuthRefused = false;
 
+  /// True when the auth endpoint answered 429 in the last solver session:
+  /// too many redemptions from this address in its window. Every further
+  /// attempt inside the window counts against it.
+  bool lastSolveRateLimited = false;
+
+  /// `ip=… colo=…` the last solver page reported for itself, or empty.
+  String lastSolveTrace = '';
+
   static const String authRefusedMessage =
       'The check passed but niyaniya refused to issue a clearance (auth 403). '
-      'That is a server-side refusal of this address or session, not the widget. '
-      'Wait a while before trying again; if the site also fails in Chrome on this phone, it is the address.';
+      'That is a server-side refusal of this address, not the widget.';
+
+  static const String rateLimitedMessage =
+      'niyaniya is rate-limiting the check (429): too many attempts from this address. '
+      'Each attempt counts, so the button waits a minute.';
+
+  /// The workaround observed to work on the device log of 2026-09-03: a
+  /// network toggle gives the phone a fresh public address and the very next
+  /// check passes.
+  static const String addressWorkaround =
+      'What has worked: switch Wi-Fi or mobile data off and on, then tap the check again.';
+
+  /// The refusal message with what is known about the addresses involved.
+  String describeAuthRefusal() {
+    ensureLoaded();
+    final StringBuffer out = StringBuffer(authRefusedMessage);
+    if (lastSolveTrace.isNotEmpty) out.write(' This check ran from $lastSolveTrace.');
+    if (_issuedTrace.isNotEmpty) out.write(' The last accepted clearance was issued from $_issuedTrace.');
+    out
+      ..write(' ')
+      ..write(addressWorkaround);
+    return out.toString();
+  }
 
   /// The JS run inside the page for one gated call. Same shape as the site's
   /// XHR: no credentials, no body, no custom headers. Returns status + text.
@@ -238,6 +371,15 @@ try {
     } catch (_) {}
   }
 
+  /// Drops the headless page so the next gated call starts a fresh one.
+  /// Called when the app comes back to the foreground: a page that sat
+  /// through a network change keeps the engine's old sockets and DNS.
+  Future<void> disposePageClient({String reason = ''}) async {
+    if (_pageClient == null) return;
+    _log('page client: dropped${reason.isEmpty ? '' : ' ($reason)'}');
+    await _disposePageClient();
+  }
+
   /// Runs one gated request from inside the site's page. Null when the page
   /// client cannot be started (the caller then falls back to Dio).
   Future<({int status, String body})?> pageRequest(String siteUrl, {required String url, required String method}) async {
@@ -256,7 +398,14 @@ try {
       final int status = (value['status'] as num?)?.toInt() ?? -1;
       final String body = value['body']?.toString() ?? '';
       _log('page client: $method ${url.replaceAll(RegExp('crt=[^&]+'), 'crt=…')} → $status');
-      if (status < 0) return null;
+      if (status < 0) {
+        // The page's fetch threw (`TypeError: Failed to fetch` on a dead
+        // socket or DNS entry). The page is not trusted again: it goes, and
+        // the next call starts a fresh one. The caller falls back to Dio now.
+        _log('page client: fetch threw: ${body.replaceAll('\n', ' ').substring(0, body.length.clamp(0, 200))}; page dropped');
+        await _disposePageClient();
+        return null;
+      }
       return (status: status, body: body);
     } catch (e) {
       _log('page client: $e');
@@ -272,6 +421,8 @@ try {
     if (_token == null) return;
     _rejectedToken = _token;
     _token = null;
+    _issuedTrace = '';
+    _issuedAt = 0;
     _persist();
     revision.value++;
     unawaited(_disposePageClient());
@@ -285,7 +436,7 @@ try {
         if (file.existsSync()) file.deleteSync();
         return;
       }
-      file.writeAsStringSync(jsonEncode({'token': _token}));
+      file.writeAsStringSync(jsonEncode({'token': _token, 'trace': _issuedTrace, 'at': _issuedAt}));
     } catch (e, s) {
       Logger.Inst().log(
         'failed to persist schale clearance: $e',
@@ -305,6 +456,8 @@ try {
   void resetForTests() {
     _token = null;
     _rejectedToken = null;
+    _issuedTrace = '';
+    _issuedAt = 0;
     _loaded = true;
   }
 
@@ -337,11 +490,16 @@ try {
 
   /// Reads the site's stored clearance from a headless webview.
   ///
-  /// Exactly Koharu's `getClearance()`: JavaScript and DOM storage on,
-  /// network images off, load the site, read `localStorage['clearance']` on
-  /// page finished, destroy. No user agent override and no scripts — this
-  /// window never has to pass anything, it only has to share storage with the
-  /// window that did.
+  /// Koharu's `getClearance()` with one difference: JavaScript and DOM
+  /// storage on, network images off, load a document ON THE SITE'S ORIGIN,
+  /// read `localStorage['clearance']` on page finished, destroy. The document
+  /// is `robots.txt`, not the site itself: localStorage is per origin, so it
+  /// holds the same value, and it runs none of the site's code. Loading the
+  /// real page ran the site's app — and on gallery pages its invisible
+  /// Turnstile — once per harvest; the device log of 2026-09-03 shows 43
+  /// such loads in 22 minutes while the auth host was refusing redemptions.
+  /// No user agent override and no scripts — this window never has to pass
+  /// anything, it only has to share storage with the window that did.
   ///
   /// Returns the token, or null when storage holds nothing usable within
   /// [harvestTimeout].
@@ -351,11 +509,11 @@ try {
     if (_harvesting) return null;
     _harvesting = true;
 
-    final Completer<String?> done = Completer<String?>();
+    final Completer<({String? token, String trace})> done = Completer();
     HeadlessInAppWebView? headless;
     try {
       headless = HeadlessInAppWebView(
-        initialUrlRequest: URLRequest(url: WebUri(siteUrl)),
+        initialUrlRequest: URLRequest(url: WebUri(pageClientUrl(siteUrl))),
         initialSettings: InAppWebViewSettings(
           javaScriptEnabled: true,
           domStorageEnabled: true,
@@ -377,23 +535,28 @@ try {
               source: "window.localStorage.getItem('$localStorageKey')",
             );
             final String? found = tokenFromLocalStorage(raw);
-            _log('harvest: page finished at ${url?.host ?? '?'}, storage=${_describe(found)}');
-            if (!done.isCompleted) done.complete(isUsableToken(found) ? found : null);
+            final bool usable = isUsableToken(found);
+            // The address this window egresses as, recorded beside the token
+            // it is adopting so a later refusal can be compared against it.
+            final String trace = usable ? await _webViewTrace(controller) : '';
+            _log('harvest: page finished at ${url?.host ?? '?'}, storage=${_describe(found)}${usable ? ' | $trace' : ''}');
+            if (!done.isCompleted) done.complete((token: usable ? found : null, trace: trace));
           } catch (e) {
             _log('harvest: read failed: $e');
-            if (!done.isCompleted) done.complete(null);
+            if (!done.isCompleted) done.complete((token: null, trace: ''));
           }
         },
       );
       await headless.run();
-      final String? found = await done.future.timeout(
+      final ({String? token, String trace}) result = await done.future.timeout(
         harvestTimeout,
         onTimeout: () {
           _log('harvest: timed out after ${harvestTimeout.inSeconds}s');
-          return null;
+          return (token: null, trace: '');
         },
       );
-      if (found != null) store(found);
+      final String? found = result.token;
+      if (found != null) store(found, trace: result.trace);
       return found;
     } catch (e, s) {
       Logger.Inst().log('harvest failed: $e', 'SchaleClearanceHandler', 'harvest', LogTypes.exception, s: s);
@@ -526,12 +689,37 @@ try {
     return origRemove.apply(this, arguments);
   };
 
+  // The address this window egresses as, as Cloudflare sees it: at document
+  // start, and again right after the auth host has answered the redemption.
+  // A 403 from an address other than the one the challenge ran from, or one
+  // that differs between sessions, is the thing no earlier log could show.
+  const trace = (tag) => {
+    try {
+      fetch('/cdn-cgi/trace', { cache: 'no-store', credentials: 'omit' }).then((r) => r.text()).then((t) => {
+        const g = (k) => ((t.match(new RegExp('^' + k + '=(.*)$', 'm')) || [])[1] || '?').trim();
+        say(tag, 'ip=' + g('ip') + ' colo=' + g('colo') + ' http=' + g('http') + ' tls=' + g('tls'));
+      }).catch((e) => say(tag, 'error ' + e));
+    } catch (e) { say(tag, 'error ' + e); }
+  };
+  trace('trace');
+
   const origOpen = XMLHttpRequest.prototype.open;
   const origSend = XMLHttpRequest.prototype.send;
   XMLHttpRequest.prototype.open = function (m, u) { this.__lsMethod = String(m); this.__lsUrl = String(u); return origOpen.apply(this, arguments); };
-  XMLHttpRequest.prototype.send = function () {
+  XMLHttpRequest.prototype.send = function (body) {
     const u = this.__lsUrl || '';
     if (/schale\.network/.test(u)) {
+      if (/auth\.schale\.network\/clearance/.test(u)) {
+        // The shape of what is redeemed, never the value: a Turnstile token
+        // starts with "0." and runs several hundred characters.
+        let shape = 'none';
+        try {
+          if (typeof body === 'string') shape = 'string len=' + body.length + ' head=' + body.slice(0, 14);
+          else if (body) shape = Object.prototype.toString.call(body);
+        } catch (e) {}
+        say('xhr.body', 'POST /clearance body=' + shape);
+        this.addEventListener('loadend', () => trace('trace.after'));
+      }
       this.addEventListener('loadend', () => say('xhr', (this.__lsMethod || '?') + ' ' + this.status + ' ' + u.replace(/crt=[^&]+/, 'crt=…') + ' | ' + String(this.responseText || '').slice(0, 120)));
     }
     return origSend.apply(this, arguments);
@@ -596,6 +784,8 @@ try {
       final BuildContext context = NavigationHandler.instance.navContext;
       final String? rejected = _rejectedToken;
       lastSolveAuthRefused = false;
+      lastSolveRateLimited = false;
+      lastSolveTrace = '';
       final String openAt = (startUrl != null && startUrl.isNotEmpty) ? startUrl : siteUrl;
       _log('solver opened on $openAt (site=$siteUrl, rejected=${_describe(rejected)})');
       _log('agents — solver/page/api: ${solverUserAgent()} | engine: ${Tools.deviceWebViewUserAgent ?? 'unknown'} | '
@@ -629,8 +819,18 @@ try {
                   if (call is! Map) return null;
                   _log('solver page: ${call['event']} — ${call['detail']}');
                   final String detail = call['detail']?.toString() ?? '';
-                  if (call['event'] == 'xhr' && detail.startsWith('POST 403 https://auth.schale.network/clearance')) {
-                    lastSolveAuthRefused = true;
+                  if (call['event'] == 'trace' && detail.startsWith('ip=')) lastSolveTrace = detail;
+                  // The auth host answered the redemption with a refusal.
+                  // Nothing on this page will store a clearance now — the
+                  // person was left waiting 4–22 s per session on the
+                  // 2026-09-03 log — so the window closes and the caller
+                  // tells them what happened.
+                  final bool refused = call['event'] == 'xhr' && detail.startsWith('POST 403 https://auth.schale.network/clearance');
+                  final bool limited = call['event'] == 'xhr' && detail.startsWith('POST 429 https://auth.schale.network/clearance');
+                  if ((refused || limited) && !stored) {
+                    lastSolveAuthRefused = refused;
+                    lastSolveRateLimited = limited;
+                    if (context.mounted) unawaited(Navigator.of(context).maybePop());
                   }
                   // The site wrote a clearance. The solver's job is done; the
                   // harvester reads it.

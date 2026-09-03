@@ -125,6 +125,25 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
 
   bool _loading = true;
   String? _loadError;
+
+  /// Seconds left before "Complete the check" can be tapped again after the
+  /// auth host answered 429: every attempt inside its window counts against
+  /// the address (13 attempts in six minutes on the 2026-09-03 log).
+  int _checkHold = 0;
+  Timer? _checkHoldTimer;
+
+  void _holdCheck(int seconds) {
+    _checkHoldTimer?.cancel();
+    setState(() => _checkHold = seconds);
+    _checkHoldTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      setState(() => _checkHold = _checkHold - 1);
+      if (_checkHold <= 0) timer.cancel();
+    });
+  }
   // Per-strip expansion state, so the header's own chevron reflects it.
   final Map<String, bool> _stripExpanded = {};
   final TextEditingController _tagFilter = TextEditingController();
@@ -738,30 +757,44 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
                     // The clearance case gets its own action: open the visible
                     // solver, then reload — which harvests what the site stored.
                     TextButton(
-                      onPressed: () async {
-                        final String site = handler.booru.baseURL?.trim() ?? '';
-                        await SchaleClearanceHandler.instance.solve(
-                          site.isEmpty ? SchaleHandler.defaultSite : site,
-                          // The gallery whose read was refused, not the home feed.
-                          startUrl: item.postURL,
-                        );
-                        if (!mounted) return;
-                        if (SchaleClearanceHandler.instance.lastSolveAuthRefused) {
-                          FlashElements.showSnackbar(
-                            context: context,
-                            title: const Text('niyaniya refused the clearance'),
-                            content: const Text(SchaleClearanceHandler.authRefusedMessage),
-                            duration: const Duration(seconds: 8),
-                            sideColor: Colors.red,
-                          );
-                        }
-                        setState(() {
-                          _loading = true;
-                          _loadError = null;
-                        });
-                        unawaited(_load());
-                      },
-                      child: const Text('Complete the check'),
+                      onPressed: _checkHold > 0
+                          ? null
+                          : () async {
+                              final String site = handler.booru.baseURL?.trim() ?? '';
+                              final SchaleClearanceHandler clearance = SchaleClearanceHandler.instance;
+                              await clearance.solve(
+                                site.isEmpty ? SchaleHandler.defaultSite : site,
+                                // The gallery whose read was refused, not the home feed.
+                                startUrl: item.postURL,
+                              );
+                              if (!mounted) return;
+                              if (clearance.lastSolveRateLimited) {
+                                _holdCheck(60);
+                                FlashElements.showSnackbar(
+                                  context: context,
+                                  title: const Text('niyaniya is rate-limiting the check'),
+                                  content: const Text(
+                                    '${SchaleClearanceHandler.rateLimitedMessage} ${SchaleClearanceHandler.addressWorkaround}',
+                                  ),
+                                  duration: const Duration(seconds: 10),
+                                  sideColor: Colors.orange,
+                                );
+                              } else if (clearance.lastSolveAuthRefused) {
+                                FlashElements.showSnackbar(
+                                  context: context,
+                                  title: const Text('niyaniya refused the clearance'),
+                                  content: Text(clearance.describeAuthRefusal()),
+                                  duration: const Duration(seconds: 12),
+                                  sideColor: Colors.red,
+                                );
+                              }
+                              setState(() {
+                                _loading = true;
+                                _loadError = null;
+                              });
+                              unawaited(_load());
+                            },
+                      child: Text(_checkHold > 0 ? 'Wait ${_checkHold}s' : 'Complete the check'),
                     )
                   else
                     TextButton(
