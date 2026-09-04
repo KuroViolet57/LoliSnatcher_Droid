@@ -34,7 +34,11 @@ class PostFilesHandler {
   List<PostFile>? cached(BooruItem item) => loaded[_keyOf(item)];
 
   /// True when this post is known to hold more than one file.
-  bool hasMultiple(BooruItem item) => (cached(item)?.length ?? 0) > 1;
+  /// Only what the viewer can show counts: an archive beside one picture is
+  /// not a gallery.
+  static List<PostFile> displayable(List<PostFile> files) => files.where((f) => f.isDisplayable).toList();
+
+  bool hasMultiple(BooruItem item) => displayable(cached(item) ?? const []).length > 1;
 
   bool supports(Booru? booru) => SiteProfile.forBooru(booru)?.hasMultipleFilesPerPost ?? false;
 
@@ -69,7 +73,7 @@ class PostFilesHandler {
           return const <PostFile>[];
         }
         // The grid badge reads this on the way back out of the viewer.
-        item.fileCountHint.value = files.length;
+        item.fileCountHint.value = displayable(files).length;
         loaded[key] = files;
         return files;
       } catch (e) {
@@ -150,7 +154,7 @@ class PostFilesHandler {
   /// some sites have no poster frame, so they fall back to the post's cover.
   List<BooruItem> itemsFor(BooruItem post, List<PostFile> files) {
     return [
-      for (final file in files)
+      for (final file in displayable(files))
         BooruItem(
           fileURL: file.url,
           sampleURL: file.url,
@@ -163,6 +167,7 @@ class PostFilesHandler {
           // kind comes from the site, so don't let extension guessing override
           // it — a video served from a query-string URL would guess wrong.
           fileExt: file.isVideo ? Tools.getFileExt(file.url) : null,
+          downloadFileName: file.name,
         ),
     ];
   }

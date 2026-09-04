@@ -9,11 +9,15 @@ class LoliHtml extends StatelessWidget {
   const LoliHtml(
     this.content, {
     this.style,
+    this.extensions = const [],
     super.key,
   });
 
   final String content;
   final Map<String, Style>? style;
+
+  /// Extra renderers; the caller's take precedence over flutter_html's built-ins.
+  final List<HtmlExtension> extensions;
 
   static Map<String, Style> defaultHtmlStyle(BuildContext context) {
     final Map<String, Style> htmlStyle = Style.fromThemeData(Theme.of(context));
@@ -62,7 +66,7 @@ class LoliHtml extends StatelessWidget {
           await internalRouting(context, link);
         }
       },
-      extensions: const [],
+      extensions: extensions,
       style: htmlStyle,
     );
   }

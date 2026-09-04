@@ -11,10 +11,14 @@ import 'package:lolisnatcher/src/boorus/kemono_tag_catalog.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/kemono_creator.dart';
+import 'package:lolisnatcher/src/data/kemono_post.dart';
 import 'package:lolisnatcher/src/data/site_profile.dart';
 import 'package:lolisnatcher/src/data/site_profiles/kemono_profile.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/kemono_creator_store.dart';
+import 'package:lolisnatcher/src/services/image_writer.dart';
+import 'package:lolisnatcher/src/handlers/post_files_handler.dart';
+import 'package:lolisnatcher/src/handlers/kemono_file_hosts.dart';
 import 'package:lolisnatcher/src/handlers/kemono_session_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
@@ -290,6 +294,138 @@ void main() {
       expect(files.every((f) => !f.url.startsWith('https://kemono.cr/data')), isTrue);
       expect(KemonoProfile.coverPath(['/a/b/pack.zip', '/a/b/pic.png', '/a/b/clip.mp4']), '/a/b/pic.png');
       expect(KemonoProfile.coverPath(['/a/b/pack.zip', '/a/b/doc.psd']), '/a/b/pack.zip');
+    });
+  });
+
+  group('the post page', () {
+    test('a post with an archive: the rar is an attachment with its real name, the picture is the only displayable file', () {
+      final KemonoPost post = KemonoPost.fromDetail(json('kemono_post_attachments.json'))!;
+      expect(post.title, contains('Download Link'));
+      expect(post.files.length, 2, reason: 'cover + attachments, the duplicated picture once');
+      expect(post.images.map((f) => f.name), ['picture1.png']);
+      expect(post.images.single.url, 'https://n2.kemono.cr/data/89/00/8900e15531db8ab583708269fed7033a79fbd8a0eb502cc901ba31c4cf9f9093.png');
+      expect(post.images.single.thumbUrl, startsWith('https://img.kemono.cr/thumbnail/data/'));
+      final KemonoPostFile rar = post.attachments.single;
+      expect(rar.name, 'Gayle Ped (NieR Reincarnation).rar');
+      expect(rar.extension, 'rar', reason: 'stored as .bin, named .rar');
+      expect(rar.kind, KemonoFileKind.other);
+      expect(rar.url, 'https://n3.kemono.cr/data/e1/f4/e1f4aa53d4094f1d8d59655fb60e68d64fd4791b394bba3ffc53b955bc228da9.bin');
+      expect(post.displayable.length, 1);
+      expect(post.hasContent, isFalse);
+      expect(post.embed, isNull);
+      expect(post.tags, ['download', 'link']);
+      expect(post.next, isNotEmpty);
+      expect(post.prev, isNotEmpty);
+    });
+
+    test('content: links stay, the site-relative file links become file-host URLs', () {
+      final KemonoPost post = KemonoPost.fromDetail(json('kemono_post_content.json'))!;
+      expect(post.hasContent, isTrue);
+      expect(post.contentForHtml(), contains('downloads.fanbox.cc'));
+      const KemonoPost inline = KemonoPost(
+        service: 'patreon',
+        user: '1',
+        id: '2',
+        title: 't',
+        contentHtml: '<p>hi <img src="/data/ab/cd/abcd.png"> <a href="/data/ab/cd/abcd.png">dl</a> <a href="https://x.y/z">x</a></p>',
+        files: [],
+        tags: [],
+      );
+      final String html = inline.contentForHtml();
+      expect(html, contains('src="https://n'));
+      expect(html, contains('.kemono.cr/data/ab/cd/abcd.png"'));
+      expect(html, isNot(contains('"/data/')));
+      expect(html, contains('href="https://x.y/z"'));
+    });
+
+    test('the files overlay keeps only what it can show; downloads keep the site name', () {
+      final List<PostFile> files = KemonoProfile.filesFromDetail(json('kemono_post_attachments.json'))!;
+      expect(files.length, 2);
+      expect(files.map((f) => f.name), ['picture1.png', 'Gayle Ped (NieR Reincarnation).rar']);
+      expect(files.map((f) => f.isDisplayable), [true, false]);
+      expect(PostFilesHandler.displayable(files).length, 1);
+      final BooruItem post = BooruItem(fileURL: 'https://n2.kemono.cr/x.png', sampleURL: '', thumbnailURL: 't', tagsList: const [], postURL: 'p');
+      final List<BooruItem> items = PostFilesHandler.instance.itemsFor(post, files);
+      expect(items.length, 1);
+      expect(items.single.downloadFileName, 'picture1.png');
+      final BooruItem rar = BooruItem(
+        fileURL: 'https://n3.kemono.cr/data/e1/f4/e1f4.bin',
+        sampleURL: '',
+        thumbnailURL: 't',
+        tagsList: const [],
+        postURL: 'p',
+        fileExt: 'rar',
+        downloadFileName: 'Gayle Ped (NieR Reincarnation).rar',
+      );
+      expect(ImageWriter().getFilename(rar, b()), 'Gayle Ped (NieR Reincarnation).rar');
+      final BooruItem odd = BooruItem(fileURL: 'https://n3.kemono.cr/a.bin', sampleURL: '', thumbnailURL: 't', tagsList: const [], postURL: 'p', downloadFileName: 'a/b:c?.zip');
+      expect(ImageWriter().getFilename(odd, b()), 'a_b_c_.zip');
+    });
+
+    test("an image item samples from the site's image service; a video keeps its file", () async {
+      final rows = KemonoHandler.rowsOf(json('kemono_posts.json')).rows;
+      final h = handler();
+      final BooruItem? image = await h.parseItemFromResponse(
+        rows.firstWhere((r) => (r['file'] as Map)['path'].toString().endsWith('.png')),
+        0,
+      );
+      expect(image!.sampleURL, image.thumbnailURL);
+      expect(image.sampleURL, startsWith('https://img.kemono.cr/thumbnail/data/'));
+      final BooruItem? video = await h.parseItemFromResponse(
+        rows.firstWhere((r) => (r['file'] as Map)['path'].toString().endsWith('.mp4')),
+        0,
+      );
+      expect(video!.sampleURL, video.fileURL);
+      expect(video.sampleURL, matches(RegExp(r'^https://n[1-4]\.kemono\.cr/data/')));
+    });
+  });
+
+  group('the file hosts', () {
+    setUp(KemonoFileHosts.instance.resetForTests);
+    tearDown(KemonoFileHosts.instance.resetForTests);
+
+    test('a host that failed a fresh probe gets a notice; a reachable or stale one does not', () async {
+      final KemonoFileHosts hosts = KemonoFileHosts.instance;
+      expect(KemonoFileHosts.hosts, ['n1.kemono.cr', 'n2.kemono.cr', 'n3.kemono.cr', 'n4.kemono.cr']);
+      expect(hosts.noticeFor('https://n3.kemono.cr/data/x.png'), isNull, reason: 'nothing checked yet');
+      hosts.probeOverride = (host) async => KemonoHostStatus(
+        host: host,
+        ok: host != 'n3.kemono.cr',
+        error: host == 'n3.kemono.cr' ? 'connection timed out' : null,
+        checkedAt: DateTime.now(),
+      );
+      await hosts.check();
+      expect(hosts.checked, isTrue);
+      expect(hosts.noticeFor('https://n3.kemono.cr/data/x.png'), contains('n3.kemono.cr is not reachable'));
+      expect(hosts.noticeFor('https://n3.kemono.cr/data/x.png'), contains('connection timed out'));
+      expect(hosts.noticeFor('https://n2.kemono.cr/data/x.png'), isNull);
+      expect(hosts.noticeFor('https://img.kemono.cr/thumbnail/data/x.png'), isNull);
+      expect(hosts.summary(), contains('n3 ✗'));
+      expect(hosts.summary(), contains('connection timed out'));
+      // A fresh result is reused; a forced check runs again.
+      int probes = 0;
+      hosts.probeOverride = (host) async {
+        probes++;
+        return KemonoHostStatus(host: host, ok: true, checkedAt: DateTime.now());
+      };
+      await hosts.check();
+      expect(probes, 0);
+      await hosts.check(force: true);
+      expect(probes, 4);
+      expect(hosts.noticeFor('https://n3.kemono.cr/data/x.png'), isNull);
+      // Stale results say nothing.
+      hosts.state.value = {
+        'n1.kemono.cr': KemonoHostStatus(host: 'n1.kemono.cr', ok: false, error: 'x', checkedAt: DateTime.now().subtract(const Duration(hours: 1))),
+      };
+      expect(hosts.noticeFor('https://n1.kemono.cr/data/x.png'), isNull);
+      expect(hosts.isFresh, isFalse);
+    });
+
+    test('the handler speaks for its file hosts only', () {
+      final h = handler();
+      expect(h.mediaOutageNotice('https://img.kemono.cr/thumbnail/data/x.png'), isNull);
+      expect(KemonoFileHosts.isFileHost('n4.kemono.cr'), isTrue);
+      expect(KemonoFileHosts.isFileHost('kemono.cr'), isFalse);
     });
   });
 }

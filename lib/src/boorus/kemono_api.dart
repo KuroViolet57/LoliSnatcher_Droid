@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
+
 import 'package:dio/dio.dart';
 
 import 'package:lolisnatcher/src/data/booru.dart';
@@ -220,10 +222,26 @@ class KemonoApi {
     return data is Map ? Map<String, dynamic>.from(data) : null;
   }
 
+  static const Duration detailCacheFor = Duration(minutes: 10);
+  static const int detailCacheSize = 50;
+  static final Map<String, (Map<String, dynamic>, DateTime)> _detailCache = {};
+
+  /// The post detail, shared by the viewer's item refresh, the files overlay
+  /// and the post page — one fetch per post per ten minutes.
   static Future<Map<String, dynamic>?> postDetail(String service, String user, String postId, {Booru? booru}) async {
-    final data = await getJson('${creatorPath(service, user)}/post/$postId', booru: booru);
-    return data is Map ? Map<String, dynamic>.from(data) : null;
+    final String url = '${creatorPath(service, user)}/post/$postId';
+    final cached = _detailCache[url];
+    if (cached != null && DateTime.now().difference(cached.$2) < detailCacheFor) return cached.$1;
+    final data = await getJson(url, booru: booru);
+    if (data is! Map) return null;
+    final Map<String, dynamic> detail = Map<String, dynamic>.from(data);
+    if (_detailCache.length >= detailCacheSize) _detailCache.remove(_detailCache.keys.first);
+    _detailCache[url] = (detail, DateTime.now());
+    return detail;
   }
+
+  @visibleForTesting
+  static void clearDetailCache() => _detailCache.clear();
 
   static Future<List> comments(String service, String user, String postId, {Booru? booru}) async {
     final data = await getJson('${creatorPath(service, user)}/post/$postId/comments', booru: booru);

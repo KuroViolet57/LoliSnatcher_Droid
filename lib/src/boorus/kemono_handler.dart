@@ -24,6 +24,7 @@ import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_tag_store.dart';
 import 'package:lolisnatcher/src/handlers/kemono_creator_store.dart';
+import 'package:lolisnatcher/src/handlers/kemono_file_hosts.dart';
 import 'package:lolisnatcher/src/handlers/kemono_session_handler.dart';
 import 'package:lolisnatcher/src/handlers/tag_catalog_source.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
@@ -117,6 +118,34 @@ class KemonoHandler extends BooruHandler {
   /// API's.
   @override
   Map<String, String> getMediaHeaders() => const {'Referer': '${KemonoApi.site}/'};
+
+  static bool _isFileHostUrl(String url) => KemonoFileHosts.isFileHost(Uri.tryParse(url)?.host ?? '');
+
+  /// The file hosts are unreachable from some networks (the site breaks the
+  /// same way there); once a probe says so, the viewer says it at once.
+  @override
+  String? mediaOutageNotice(String url) {
+    if (!_isFileHostUrl(url)) return null;
+    final KemonoFileHosts hosts = KemonoFileHosts.instance;
+    if (!hosts.checked) unawaited(hosts.check());
+    return hosts.noticeFor(url);
+  }
+
+  @override
+  void onMediaError(String url, Object error) {
+    if (!_isFileHostUrl(url)) return;
+    if (error is DioException &&
+        (error.type == DioExceptionType.connectionTimeout ||
+            error.type == DioExceptionType.connectionError ||
+            error.type == DioExceptionType.receiveTimeout)) {
+      unawaited(KemonoFileHosts.instance.check(force: true));
+    }
+  }
+
+  @override
+  Future<void> beforeMediaRetry(String url) async {
+    if (_isFileHostUrl(url)) await KemonoFileHosts.instance.check(force: true);
+  }
 
   @override
   List<(String, String)> get tagNamespaceSections => const [
@@ -441,7 +470,9 @@ class KemonoHandler extends BooruHandler {
     // does; `kemono.cr/data` is a DDoS-Guard redirect nothing here uses.
     final item = BooruItem(
       fileURL: KemonoApi.fileUrl(cover),
-      sampleURL: KemonoApi.fileUrl(cover),
+      // The site's image service (up to 800 px) is the sample: it answers
+      // everywhere the API does, the file hosts don't.
+      sampleURL: video ? KemonoApi.fileUrl(cover) : thumb,
       thumbnailURL: thumb,
       tagsList: tags,
       postURL: KemonoApi.postUrl(service, user, id),

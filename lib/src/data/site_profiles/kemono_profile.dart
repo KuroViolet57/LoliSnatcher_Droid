@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:lolisnatcher/src/boorus/kemono_api.dart';
+import 'package:lolisnatcher/src/data/kemono_post.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/site_profile.dart';
@@ -79,38 +80,22 @@ class KemonoProfile extends SiteProfile {
   }
 
   static List<PostFile>? filesFromDetail(Map detail) {
-    final post = detail['post'];
-    if (post is! Map) return null;
-    final Map<String, String> servers = {};
-    for (final key in ['attachments', 'previews', 'videos']) {
-      final list = detail[key];
-      if (list is! List) continue;
-      for (final e in list) {
-        if (e is! Map) continue;
-        final String path = e['path']?.toString() ?? '';
-        final String server = e['server']?.toString() ?? '';
-        if (path.isNotEmpty && server.isNotEmpty) servers[path] = server;
-      }
-    }
-    final List<String> paths = [];
-    final Set<String> seen = {};
-    void add(dynamic entry) {
-      if (entry is! Map) return;
-      final String path = entry['path']?.toString() ?? '';
-      if (path.isEmpty || !seen.add(path)) return;
-      paths.add(path);
-    }
+    final KemonoPost? post = KemonoPost.fromDetail(detail);
+    if (post == null || post.files.isEmpty) return null;
+    return postFilesOf(post);
+  }
 
-    add(post['file']);
-    final attachments = post['attachments'];
-    if (attachments is List) attachments.forEach(add);
-    if (paths.isEmpty) return null;
+  /// Every file of [post] as the viewer's [PostFile]s — the displayable ones
+  /// in order for the carousel, the rest named so the post page lists them.
+  static List<PostFile> postFilesOf(KemonoPost post) {
     return [
-      for (final String path in paths)
+      for (final KemonoPostFile f in post.files)
         PostFile(
-          url: KemonoApi.fileUrl(path, server: servers[path]),
-          isVideo: isVideoPath(path),
-          thumbnailUrl: isVideoPath(path) ? null : KemonoApi.thumbUrl(path),
+          url: f.url,
+          isVideo: f.kind == KemonoFileKind.video,
+          thumbnailUrl: f.thumbUrl,
+          name: f.name,
+          isDisplayable: f.isDisplayable,
         ),
     ];
   }

@@ -16,6 +16,7 @@ import 'package:preload_page_view/preload_page_view.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
 import 'package:lolisnatcher/src/boorus/hydrus_handler.dart';
+import 'package:lolisnatcher/src/boorus/kemono_handler.dart';
 import 'package:lolisnatcher/src/data/settings/gallery_button.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
@@ -30,6 +31,7 @@ import 'package:lolisnatcher/src/handlers/post_files_handler.dart';
 import 'package:lolisnatcher/src/handlers/reader_handler.dart';
 import 'package:lolisnatcher/src/data/site_profile.dart';
 import 'package:lolisnatcher/src/pages/doujin_reader_page.dart';
+import 'package:lolisnatcher/src/pages/kemono_post_page.dart';
 import 'package:lolisnatcher/src/pages/post_files_page.dart';
 import 'package:lolisnatcher/src/handlers/snatch_handler.dart';
 import 'package:lolisnatcher/src/handlers/tag_handler.dart';
@@ -314,6 +316,26 @@ class _HideableAppBarState extends State<HideableAppBar> {
         );
       }),
     );
+
+    // kemono: the post page — content, every file with its name, comments.
+    if (widget.tab.booruHandler is KemonoHandler) {
+      actions.add(
+        Obx(() {
+          final BooruItem? item = page.value >= 0 && page.value < widget.tab.booruHandler.filteredFetched.length
+              ? widget.tab.booruHandler.filteredFetched[page.value]
+              : null;
+          if (item == null) return const SizedBox.shrink();
+          return ToolbarAction(
+            key: const ValueKey('kemono-post'),
+            icon: const Icon(Symbols.article_rounded),
+            tooltip: 'Post page',
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => KemonoPostPage(booru: widget.tab.booruHandler.booru, item: item)),
+            ),
+          );
+        }),
+      );
+    }
 
     // Debug - print current item info
     // actions.add(IconButton(

@@ -11,6 +11,7 @@ import 'package:lolisnatcher/src/boorus/kemono_tag_catalog.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/handlers/drawer_refresh.dart';
 import 'package:lolisnatcher/src/handlers/kemono_creator_store.dart';
+import 'package:lolisnatcher/src/handlers/kemono_file_hosts.dart';
 import 'package:lolisnatcher/src/handlers/kemono_session_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -46,6 +47,7 @@ class _KemonoSidebarState extends State<KemonoSidebar> {
   final SettingsHandler settingsHandler = SettingsHandler.instance;
   final KemonoCreatorStore store = KemonoCreatorStore.instance;
   final KemonoSessionHandler session = KemonoSessionHandler.instance;
+  final KemonoFileHosts hosts = KemonoFileHosts.instance;
   Worker? _tabWorker;
 
   void _tick() {
@@ -59,6 +61,8 @@ class _KemonoSidebarState extends State<KemonoSidebar> {
     DrawerRefresh.tick.addListener(_tick);
     session.revision.addListener(_tick);
     store.state.addListener(_tick);
+    hosts.state.addListener(_tick);
+    hosts.running.addListener(_tick);
     unawaited(store.ensureFresh());
   }
 
@@ -68,6 +72,8 @@ class _KemonoSidebarState extends State<KemonoSidebar> {
     DrawerRefresh.tick.removeListener(_tick);
     session.revision.removeListener(_tick);
     store.state.removeListener(_tick);
+    hosts.state.removeListener(_tick);
+    hosts.running.removeListener(_tick);
     super.dispose();
   }
 
@@ -282,6 +288,29 @@ class _KemonoSidebarState extends State<KemonoSidebar> {
             ],
           ),
           if (index.running) LinearProgressIndicator(value: index.progress, minHeight: 2),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  hosts.summary(),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: hosts.state.value.values.any((s) => !s.ok) ? Colors.orange : theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              IconButton(
+                tooltip: 'Check whether the file hosts answer from this network',
+                visualDensity: VisualDensity.compact,
+                icon: hosts.running.value
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Symbols.network_check_rounded, size: 20),
+                onPressed: hosts.running.value ? null : () => unawaited(hosts.check(force: true)),
+              ),
+            ],
+          ),
           const SizedBox(height: 4),
           DrawerRow(
             icon: Symbols.swap_horiz_rounded,

@@ -193,7 +193,11 @@ class ImageWriter {
     final int queryLastIndex = item.fileURL.lastIndexOf('?');
     final int lastIndex = queryLastIndex != -1 ? queryLastIndex : item.fileURL.length;
     String fileName = '';
-    if (booru.type?.isBooruOnRails == true || booru.type?.isPhilomena == true) {
+    final String? named = item.downloadFileName?.trim();
+    if (named != null && named.isNotEmpty) {
+      // The site named the file (a kemono attachment): keep that name.
+      fileName = Tools.sanitize(named, replacement: '_');
+    } else if (booru.type?.isBooruOnRails == true || booru.type?.isPhilomena == true) {
       fileName = '${item.fileNameExtras}.${item.fileExt!}';
     } else if (booru.type?.isHydrus == true) {
       fileName = '${item.fileNameExtras}_${item.md5String}.${item.fileExt}';

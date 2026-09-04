@@ -80,8 +80,34 @@ class BooruHandlerFactory {
     return resolved;
   }
 
+  static final Map<String, BooruHandler?> _mediaHandlerCache = {};
+
+  /// One handler per source for the media hooks the viewer consults
+  /// (outage notice, error, retry); null when the source cannot be built.
+  static BooruHandler? mediaHandlerFor(Booru booru) {
+    final String key = '${booru.type?.name ?? '?'}|${booru.baseURL ?? ''}';
+    if (_mediaHandlerCache.containsKey(key)) return _mediaHandlerCache[key];
+    BooruHandler? handler;
+    try {
+      handler = BooruHandlerFactory().getBooruHandler([booru], 1).booruHandler;
+    } catch (_) {
+      handler = null;
+    }
+    _mediaHandlerCache[key] = handler;
+    return handler;
+  }
+
+  static String? mediaOutageNoticeFor(Booru booru, String url) => mediaHandlerFor(booru)?.mediaOutageNotice(url);
+
+  static void onMediaErrorFor(Booru booru, String url, Object error) => mediaHandlerFor(booru)?.onMediaError(url, error);
+
+  static Future<void> beforeMediaRetryFor(Booru booru, String url) async => mediaHandlerFor(booru)?.beforeMediaRetry(url);
+
   @visibleForTesting
-  static void clearMediaHeaderCache() => _mediaHeaderCache.clear();
+  static void clearMediaHeaderCache() {
+    _mediaHeaderCache.clear();
+    _mediaHandlerCache.clear();
+  }
 
   ({BooruHandler booruHandler, int startingPage}) getBooruHandler(
     List<Booru> boorus,

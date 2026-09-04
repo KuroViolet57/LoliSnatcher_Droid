@@ -1070,6 +1070,18 @@ abstract class BooruHandler {
   /// genuinely confusing failure to diagnose.
   Map<String, String> getMediaHeaders() => const {};
 
+  /// Text for the viewer to show INSTEAD of loading [url], when the source
+  /// knows its media host is down from this network (kemono's file hosts).
+  /// Null = load as usual.
+  String? mediaOutageNotice(String url) => null;
+
+  /// A media request for [url] failed with [error]; a source may re-probe
+  /// its hosts so the next item explains itself at once.
+  void onMediaError(String url, Object error) {}
+
+  /// The user asked to retry [url]; a source may re-probe first.
+  Future<void> beforeMediaRetry(String url) async {}
+
   Future<String?> getCookies() async {
     String cookieString = await Tools.getCookies(booru.baseURL!);
 

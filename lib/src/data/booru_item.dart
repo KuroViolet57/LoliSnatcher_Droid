@@ -41,6 +41,7 @@ class BooruItem extends Equatable {
     this.md5String,
     this.postDate,
     this.postDateFormat,
+    this.downloadFileName,
   }) {
     // Create a unique key for every loaded item, to later use them to read the state of their viewer
     key = GlobalKey();
@@ -101,6 +102,10 @@ class BooruItem extends Equatable {
   String? postDate;
   String? postDateFormat;
   String fileNameExtras;
+
+  /// The name a download should get, when the site names the file itself
+  /// (kemono attachments); null = the app's own naming.
+  String? downloadFileName;
   List<String>? sources;
   RxList<NoteItem> notes = RxList([]);
   bool? hasNotes, hasComments;
@@ -168,6 +173,7 @@ class BooruItem extends Equatable {
       'md5String': md5String,
       'postDate': postDate,
       'postDateFormat': postDateFormat,
+      'downloadFileName': downloadFileName,
     };
   }
 

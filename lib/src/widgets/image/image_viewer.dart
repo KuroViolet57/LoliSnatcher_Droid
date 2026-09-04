@@ -15,6 +15,7 @@ import 'package:image/image.dart' as img;
 
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -157,6 +158,11 @@ class ImageViewerState extends State<ImageViewer> {
     if (error is DioException && CancelToken.isCancel(error)) {
       //
     } else {
+      BooruHandlerFactory.onMediaErrorFor(
+        widget.booru,
+        useFullImage ? widget.booruItem.fileURL : widget.booruItem.sampleURL,
+        error,
+      );
       if (error is DioException) {
         stopLoading(
           reason: .error,
@@ -238,6 +244,15 @@ class ImageViewerState extends State<ImageViewer> {
         );
         return;
       }
+    }
+
+    // A source that knows its media host is down from this network says so
+    // now, instead of the viewer spinning until the connect timeout.
+    final String plannedUrl = useFullImage ? widget.booruItem.fileURL : widget.booruItem.sampleURL;
+    final String? outage = BooruHandlerFactory.mediaOutageNoticeFor(widget.booru, plannedUrl);
+    if (outage != null) {
+      stopLoading(reason: .error, title: 'File host unreachable', details: outage);
+      return;
     }
 
     isStopped.value = false;
@@ -521,6 +536,10 @@ class ImageViewerState extends State<ImageViewer> {
     if (blockPreloadState.isTooBig) {
       blockPreloadState = .ignore;
     }
+    await BooruHandlerFactory.beforeMediaRetryFor(
+      widget.booru,
+      useFullImage ? widget.booruItem.fileURL : widget.booruItem.sampleURL,
+    );
 
     isStopped.value = false;
     WidgetsBinding.instance.addPostFrameCallback((_) {

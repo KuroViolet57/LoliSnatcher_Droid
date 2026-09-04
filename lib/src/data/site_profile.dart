@@ -124,10 +124,19 @@ class PostFile {
     required this.url,
     required this.isVideo,
     this.thumbnailUrl,
+    this.name,
+    this.isDisplayable = true,
   });
 
   final String url;
   final bool isVideo;
+
+  /// The name the site gives the file, when it has one; downloads keep it.
+  final String? name;
+
+  /// False for an archive, a psd, anything the viewer cannot show: listed on
+  /// the post page, never put in the carousel.
+  final bool isDisplayable;
 
   /// Null for videos on sites that don't render a poster frame — callers fall
   /// back to the post's own cover.

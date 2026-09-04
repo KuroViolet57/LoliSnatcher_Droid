@@ -15,6 +15,7 @@ import 'package:video_player/video_player.dart';
 
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 import 'package:lolisnatcher/src/data/settings/video_cache_mode.dart';
 import 'package:lolisnatcher/src/handlers/local_auth_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
@@ -241,6 +242,7 @@ class VideoViewerState extends State<VideoViewer> {
     if (error is DioException && CancelToken.isCancel(error)) {
       // print('Canceled by user: $imageURL | $error');
     } else {
+      BooruHandlerFactory.onMediaErrorFor(widget.booru, widget.booruItem.fileURL, error);
       if (error is DioException) {
         stopLoading(
           reason: ViewerStopReason.error,
@@ -336,6 +338,11 @@ class VideoViewerState extends State<VideoViewer> {
         details: tagsData.hiddenTags.join('\n'),
       );
     } else {
+      final String? outage = BooruHandlerFactory.mediaOutageNoticeFor(widget.booru, widget.booruItem.fileURL);
+      if (outage != null) {
+        stopLoading(reason: ViewerStopReason.videoError, title: 'File host unreachable', details: outage);
+        return;
+      }
       await downloadVideo();
     }
   }
@@ -798,6 +805,7 @@ class VideoViewerState extends State<VideoViewer> {
   Future<void> onManualRestart() async {
     resetBackendFallback();
 
+    await BooruHandlerFactory.beforeMediaRetryFor(widget.booru, widget.booruItem.fileURL);
     if (blockPreloadState.isTooBig) {
       blockPreloadState = .ignore;
     }

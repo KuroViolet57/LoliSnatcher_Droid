@@ -14,6 +14,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:fpdart/fpdart.dart' show FpdartOnIterable;
 import 'package:get/get.dart' hide ContextExt, FirstWhereOrNullExt;
 import 'package:lolisnatcher/src/boorus/danbooru_handler.dart';
+import 'package:lolisnatcher/src/boorus/kemono_handler.dart';
 import 'package:lolisnatcher/src/data/meta_tag.dart';
 import 'package:lolisnatcher/src/data/pinned_tag.dart';
 import 'package:lolisnatcher/src/widgets/common/loli_dropdown.dart';
@@ -40,6 +41,7 @@ import 'package:lolisnatcher/src/handlers/booru_tag_store.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/reader_handler.dart';
 import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
+import 'package:lolisnatcher/src/pages/kemono_post_page.dart';
 import 'package:lolisnatcher/src/pages/doujin_detail_page.dart';
 import 'package:lolisnatcher/src/pages/doujin_reader_page.dart';
 import 'package:lolisnatcher/src/widgets/gallery/doujin_item_menu.dart';
@@ -612,6 +614,20 @@ class _TagViewState extends State<TagView> {
             handler: handler,
           ),
         ).open();
+      },
+      drawBottomBorder: false,
+    );
+  }
+
+  /// kemono: the post page (content, every file with its name, comments).
+  Widget kemonoPostButton() {
+    final BooruHandler h = possibleBooruHandler ?? handler;
+    if (h is! KemonoHandler || item.serverId == null) return const SizedBox.shrink();
+    return SettingsButton(
+      name: 'Post page',
+      icon: Icon(Symbols.article_rounded, color: Theme.of(context).iconTheme.color),
+      action: () {
+        Navigator.of(context).push(MaterialPageRoute(builder: (_) => KemonoPostPage(booru: h.booru, item: item)));
       },
       drawBottomBorder: false,
     );
@@ -2068,6 +2084,7 @@ class _TagViewState extends State<TagView> {
                 // covers all of it. Comments have no other home, so they stay
                 // as a standalone row.
                 commentsButton(),
+                kemonoPostButton(),
                 // Doujin "Related": other CHAPTERS and language versions of
                 // this very work, found by a quoted phrase search on the base
                 // title (the reference apps' Related semantics). Collapsed by

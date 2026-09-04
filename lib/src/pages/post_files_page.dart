@@ -142,6 +142,7 @@ Future<void> openPostFilesOverlay(
   BuildContext context, {
   required List<BooruItem> items,
   required Booru booru,
+  int initialIndex = 0,
 }) async {
   final GlobalKey viewerKey = GlobalKey(debugLabel: 'viewer-post-files');
   ViewerHandler.instance.addViewer(viewerKey);
@@ -155,6 +156,7 @@ Future<void> openPostFilesOverlay(
           key: viewerKey,
           items: items,
           booru: booru,
+          initialIndex: initialIndex,
         ),
       ),
     );
