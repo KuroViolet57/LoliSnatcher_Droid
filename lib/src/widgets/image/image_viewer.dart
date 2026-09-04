@@ -349,6 +349,10 @@ class ImageViewerState extends State<ImageViewer> {
               checkForReferer: true,
             ),
             withCache: settingsHandler.mediaCache,
+            // Bounds the wait for headers and each gap between chunks (dio 5's
+            // receiveTimeout), not the whole download: a host that answers
+            // nothing ends in a named error with a retry instead of a spinner.
+            receiveTimeout: const Duration(seconds: 60),
             cacheFolder: imageFolder,
             fileNameExtras: widget.booruItem.fileNameExtras,
             onError: onError,
@@ -366,6 +370,10 @@ class ImageViewerState extends State<ImageViewer> {
               checkForReferer: true,
             ),
             withCache: settingsHandler.mediaCache,
+            // Bounds the wait for headers and each gap between chunks (dio 5's
+            // receiveTimeout), not the whole download: a host that answers
+            // nothing ends in a named error with a retry instead of a spinner.
+            receiveTimeout: const Duration(seconds: 60),
             cacheFolder: imageFolder,
             fileNameExtras: widget.booruItem.fileNameExtras,
             onError: onError,

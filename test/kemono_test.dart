@@ -129,12 +129,13 @@ void main() {
       expect(KemonoHandler.hasMedia({'file': {}, 'attachments': []}), isFalse);
     });
 
-    test('an item: cover thumbnail, file behind the redirect, composite id, creator tag, badge', () async {
+    test('an item: cover thumbnail, file on its hashed host, composite id, creator tag, badge', () async {
       final rows = KemonoHandler.rowsOf(json('kemono_posts.json')).rows;
       final row = rows.firstWhere((r) => (r['attachments'] as List).length >= 2);
       final BooruItem item = (await handler().parseItemFromResponse(row, 0))!;
       expect(item.thumbnailURL, startsWith('https://img.kemono.cr/thumbnail/data/'));
-      expect(item.fileURL, startsWith('https://kemono.cr/data/'));
+      expect(item.fileURL, matches(RegExp(r'^https://n[1-4]\.kemono\.cr/data/')));
+      expect(item.fileURL, isNot(contains('https://kemono.cr/data')));
       expect(item.serverId, '${row['service']}:${row['user']}:${row['id']}');
       expect(item.postURL, 'https://kemono.cr/${row['service']}/user/${row['user']}/post/${row['id']}');
       expect(item.tagsList.any((t) => t.tagType == TagType.artist), isTrue);
@@ -241,6 +242,54 @@ void main() {
       // No credentials: never a request, never a session.
       expect(await KemonoSessionHandler.instance.relogin(b()), isFalse);
       expect(KemonoApi.headers(b())['Accept'], 'text/css');
+    });
+  });
+
+  group('file servers', () {
+    // Observed 2026-09-04: the 302 target of https://kemono.cr/data{path} for
+    // eight live paths. The site's bundle picks the same host client-side, and
+    // the API names it in a post detail's `server` (checked below on the
+    // fixture) — so the app addresses that host directly, as the site does.
+    const Map<String, String> observed = {
+      '/e5/01/e50103ae3e5a110a1d0c0613e1032e24d9fcddc666027bfa2dffc24a35873e3b.mp4': 'n3',
+      '/5e/ed/5eed06421a9ec787dce18f6dd8a839c2cd63c1891435a74374d15485814ad259.png': 'n2',
+      '/97/bd/97bd8f1d7c85e34d6352907a1d69343e0e3d86b3f618ce3921253f8b2a7168ca.mp4': 'n1',
+      '/47/30/47308f1fc594f154c251fad08166bf9c6078f0a9e353964c84d9a225fe232393.png': 'n2',
+      '/1a/86/1a869637084c232b1a2110313d893176605bbdd132be0cc4c0a64c7bba70687a.gif': 'n4',
+      '/5c/3c/5c3ccbd159fb7f90f4473a6aea92abf89429b81fa5344bbd594385d1aad4065e.jpg': 'n4',
+      '/fa/e6/fae63b2f505a9c0b1ebb159271d5be02e047dc2430aa3caa12886a80f2a96d7e.jpg': 'n3',
+      '/35/93/359355058537746af301ba2b3d23e608eca865345daa87545e0639487f917b29.jpg': 'n3',
+    };
+
+    test('the murmur2 pick matches the redirect targets and the API-named servers', () {
+      for (final e in observed.entries) {
+        expect(KemonoApi.fileServer(e.key), 'https://${e.value}.kemono.cr', reason: e.key);
+      }
+      final detail = json('kemono_post.json');
+      int checked = 0;
+      for (final key in ['attachments', 'previews', 'videos']) {
+        for (final e in (detail[key] as List? ?? [])) {
+          if (e is Map && e['server'] != null && e['path'] != null) {
+            expect(KemonoApi.fileServer(e['path'] as String), e['server'], reason: e['path'].toString());
+            checked++;
+          }
+        }
+      }
+      expect(checked, greaterThan(0));
+    });
+
+    test('murmur2 known answers (murmurhash-js murmurhash2_32_gc, seed 0)', () {
+      expect(KemonoApi.murmur2(''), 0);
+      expect(KemonoApi.murmur2('/data/x'), 871033270);
+    });
+
+    test('URLs skip the redirect host; a named server wins; the cover is something the viewer can show', () {
+      expect(KemonoApi.fileUrl('/ab/cd/abcd.png'), matches(RegExp(r'^https://n[1-4]\.kemono\.cr/data/ab/cd/abcd\.png$')));
+      expect(KemonoApi.fileUrl('/ab/cd/abcd.png', server: 'https://n9.kemono.cr'), 'https://n9.kemono.cr/data/ab/cd/abcd.png');
+      final files = KemonoProfile.filesFromDetail(json('kemono_post.json'))!;
+      expect(files.every((f) => !f.url.startsWith('https://kemono.cr/data')), isTrue);
+      expect(KemonoProfile.coverPath(['/a/b/pack.zip', '/a/b/pic.png', '/a/b/clip.mp4']), '/a/b/pic.png');
+      expect(KemonoProfile.coverPath(['/a/b/pack.zip', '/a/b/doc.psd']), '/a/b/pack.zip');
     });
   });
 }

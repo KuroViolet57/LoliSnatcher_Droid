@@ -45,6 +45,19 @@ class KemonoProfile extends SiteProfile {
 
   static const Set<String> videoExtensions = {'mp4', 'webm', 'm4v', 'mov', 'mkv', 'avi'};
 
+  /// What the viewer can show (`MediaType.fromExtension`); the cover is the
+  /// first such file, so a post whose main file is a zip or a psd still opens
+  /// on its first picture.
+  static const Set<String> displayableExtensions = {'jpg', 'jpeg', 'png', 'webp', 'avif', 'gif', 'mp4', 'webm'};
+
+  static String coverPath(List<String> paths) {
+    for (final String p in paths) {
+      final int dot = p.lastIndexOf('.');
+      if (dot >= 0 && displayableExtensions.contains(p.substring(dot + 1).toLowerCase())) return p;
+    }
+    return paths.first;
+  }
+
   static bool isVideoPath(String path) {
     final int dot = path.lastIndexOf('.');
     if (dot < 0) return false;

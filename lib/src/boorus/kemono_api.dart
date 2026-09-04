@@ -129,7 +129,66 @@ class KemonoApi {
 
   static String thumbUrl(String path) => '$img/thumbnail/data$path';
 
-  static String fileUrl(String path, {String? server}) => '${server ?? site}/data$path';
+  /// The file hosts and their share of the paths, as the site's bundle
+  /// (`/assets/index-szizO2gj.js`, read 2026-09-04) lists them. The site never
+  /// asks `kemono.cr/data` for a file — that host is DDoS-Guard and answers a
+  /// redirect — it picks the host itself from a murmur2 hash of `/data{path}`,
+  /// and the API names the same host in a post detail's `server`. A share of 0
+  /// is the catch-all and must stay last.
+  static const List<({String host, int percent})> fileServers = [
+    (host: 'https://n1.kemono.cr', percent: 25),
+    (host: 'https://n2.kemono.cr', percent: 25),
+    (host: 'https://n3.kemono.cr', percent: 25),
+    (host: 'https://n4.kemono.cr', percent: 0),
+  ];
+
+  static const int _hashMax = 4294967295;
+  static const int _mask = 0xffffffff;
+
+  /// murmurhash-js `murmurhash2_32_gc`: 32-bit MurmurHash2 over the low byte
+  /// of each code unit (the paths are ASCII), everything modulo 2^32.
+  static int murmur2(String s, [int seed = 0]) {
+    const int m = 0x5bd1e995;
+    final List<int> b = s.codeUnits;
+    int l = b.length;
+    int h = (seed ^ l) & _mask;
+    int i = 0;
+    while (l >= 4) {
+      int k = (b[i] & 0xff) | ((b[i + 1] & 0xff) << 8) | ((b[i + 2] & 0xff) << 16) | ((b[i + 3] & 0xff) << 24);
+      k = (k * m) & _mask;
+      k ^= k >>> 24;
+      k = (k * m) & _mask;
+      h = ((h * m) & _mask) ^ k;
+      l -= 4;
+      i += 4;
+    }
+    if (l == 3) h ^= (b[i + 2] & 0xff) << 16;
+    if (l >= 2) h ^= (b[i + 1] & 0xff) << 8;
+    if (l >= 1) {
+      h ^= b[i] & 0xff;
+      h = (h * m) & _mask;
+    }
+    h ^= h >>> 13;
+    h = (h * m) & _mask;
+    h ^= h >>> 15;
+    return h & _mask;
+  }
+
+  /// The host the site itself would fetch `path` from.
+  static String fileServer(String path) {
+    final int h = murmur2('/data$path');
+    int acc = 0;
+    for (final s in fileServers) {
+      if (s.percent == 0) return s.host;
+      acc += (s.percent * _hashMax) ~/ 100;
+      if (h < acc) return s.host;
+    }
+    return fileServers.last.host;
+  }
+
+  /// A file's URL on its host: the one the detail names when there is one,
+  /// else the one the hash picks. Never `kemono.cr/data`.
+  static String fileUrl(String path, {String? server}) => '${server ?? fileServer(path)}/data$path';
 
   static String iconUrl(String service, String id) => '$img/icons/$service/$id';
 

@@ -87,6 +87,10 @@ class DioNetwork {
       // Keep idle connections warm long enough to be reused while scrolling a
       // grid / paging a feed, without holding sockets open forever.
       ..idleTimeout = const Duration(seconds: 20)
+      // A host that never completes the handshake used to leave the viewer on
+      // "loading" forever (no request on that path carried any timeout); with
+      // this it ends in a named connectionTimeout error with a retry.
+      ..connectionTimeout = const Duration(seconds: 30)
       // Bound per-host sockets so a burst of thumbnails can't exhaust fds;
       // dio queues beyond this and reuses as they free up.
       ..maxConnectionsPerHost = 8

@@ -414,7 +414,7 @@ class KemonoHandler extends BooruHandler {
     if (attachments is List) attachments.forEach(add);
     if (paths.isEmpty) return null;
 
-    final String cover = paths.first;
+    final String cover = KemonoProfile.coverPath(paths);
     final bool video = KemonoProfile.isVideoPath(cover);
     final String thumb = video ? KemonoApi.iconUrl(service, user) : KemonoApi.thumbUrl(cover);
     final String title = row['title']?.toString().trim() ?? '';
@@ -437,6 +437,8 @@ class KemonoHandler extends BooruHandler {
       }
     }
 
+    // Files live on the site's file hosts, addressed directly like the site
+    // does; `kemono.cr/data` is a DDoS-Guard redirect nothing here uses.
     final item = BooruItem(
       fileURL: KemonoApi.fileUrl(cover),
       sampleURL: KemonoApi.fileUrl(cover),
