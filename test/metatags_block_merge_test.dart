@@ -6,6 +6,7 @@ import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/boorus/doujin/eahentai_handler.dart';
 import 'package:lolisnatcher/src/boorus/doujin/hitomi_handler.dart';
 import 'package:lolisnatcher/src/boorus/doujin/schale_handler.dart';
+import 'package:lolisnatcher/src/boorus/kemono_handler.dart';
 import 'package:lolisnatcher/src/boorus/nhentai_handler.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/meta_tag.dart';
@@ -65,5 +66,10 @@ void main() {
   test('a source with no catalog keeps its plain metatag row', () {
     final h = EaHentaiHandler(b('e', BooruType.EaHentai, 'https://eahentai.com'), 20);
     expect(labels(h), ['Artist', 'Series', 'Character']);
+  });
+
+  test('kemono: Artists and Tags builder chips stand in for Creator and Tag; the rest stay plain', () {
+    final h = KemonoHandler(b('k', BooruType.Kemono, 'https://kemono.cr'), 50);
+    expect(labels(h), ['[Artists]', '[Tags]', 'Service (filters on the phone)', 'Popular', 'Favorites', 'Post id']);
   });
 }

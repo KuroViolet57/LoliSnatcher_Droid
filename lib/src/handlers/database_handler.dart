@@ -248,6 +248,22 @@ class DBHandler {
       'PRIMARY KEY (collectionId, booruItemID) '
       ')',
     );
+    // kemono's creator index (see KemonoCreatorStore): every creator the
+    // site lists, so names, the Artists page and suggestions come from the
+    // phone. `seenAt` marks the refresh that last listed a row; rows a later
+    // refresh no longer lists are pruned by it.
+    await db?.execute(
+      'CREATE TABLE IF NOT EXISTS KemonoCreator ( '
+      'service TEXT NOT NULL, '
+      'id TEXT NOT NULL, '
+      'name TEXT NOT NULL, '
+      'indexed INTEGER NOT NULL DEFAULT 0, '
+      'updated INTEGER NOT NULL DEFAULT 0, '
+      'favorited INTEGER NOT NULL DEFAULT 0, '
+      'seenAt INTEGER NOT NULL, '
+      'PRIMARY KEY (service, id) '
+      ')',
+    );
     try {
       if (!await columnExists('SearchHistory', 'isFavourite')) {
         await db?.execute('ALTER TABLE SearchHistory ADD COLUMN isFavourite INTEGER;');
@@ -354,6 +370,10 @@ class DBHandler {
     await db?.execute(
       'CREATE INDEX IF NOT EXISTS BooruTag_ns_index ON BooruTag (booruKey, namespace, count DESC);',
     );
+    // kemono's creator index: name search, and the Artists page's sorts.
+    await db?.execute('CREATE INDEX IF NOT EXISTS KemonoCreator_name_index ON KemonoCreator (name COLLATE NOCASE);');
+    await db?.execute('CREATE INDEX IF NOT EXISTS KemonoCreator_updated_index ON KemonoCreator (updated DESC);');
+    await db?.execute('CREATE INDEX IF NOT EXISTS KemonoCreator_favorited_index ON KemonoCreator (favorited DESC);');
   }
 
   Future<bool> dropIndexes() async {
@@ -1129,6 +1149,109 @@ class DBHandler {
     } else {
       await db?.rawDelete('DELETE FROM BooruTag WHERE booruKey = ? AND namespace = ?', [booruKey, namespace]);
     }
+  }
+
+  //
+  // kemono creator index
+  //
+
+  /// Rows are `[service, id, name, indexed, updated, favorited]`.
+  Future<void> upsertKemonoCreators(List<List<Object?>> rows, int seenAt) async {
+    final db = this.db;
+    if (db == null || rows.isEmpty) return;
+    await db.transaction((txn) async {
+      final batch = txn.batch();
+      for (final row in rows) {
+        batch.rawInsert(
+          'INSERT OR REPLACE INTO KemonoCreator(service, id, name, indexed, updated, favorited, seenAt) VALUES(?,?,?,?,?,?,?)',
+          [...row, seenAt],
+        );
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
+  Future<int> pruneKemonoCreators({required int seenBefore}) async {
+    final db = this.db;
+    if (db == null) return 0;
+    return db.rawDelete('DELETE FROM KemonoCreator WHERE seenAt < ?', [seenBefore]);
+  }
+
+  Future<int> countKemonoCreators() async {
+    final db = this.db;
+    if (db == null) return 0;
+    final rows = await db.rawQuery('SELECT COUNT(*) AS c FROM KemonoCreator');
+    return int.tryParse(rows.first['c']?.toString() ?? '') ?? 0;
+  }
+
+  static const Set<String> _kemonoSorts = {'favorited', 'updated', 'indexed', 'name'};
+
+  Future<List<Map<String, Object?>>> queryKemonoCreators({
+    String? nameLike,
+    Set<String>? services,
+    String orderBy = 'favorited',
+    Set<String>? keys,
+    int limit = 60,
+    int offset = 0,
+  }) async {
+    final db = this.db;
+    if (db == null) return const [];
+    final List<Object?> args = [];
+    final List<String> where = [];
+    if (nameLike != null && nameLike.isNotEmpty) {
+      where.add('name LIKE ? COLLATE NOCASE');
+      args.add('%$nameLike%');
+    }
+    if (services != null && services.isNotEmpty) {
+      where.add('service IN (${List.filled(services.length, '?').join(',')})');
+      args.addAll(services);
+    }
+    if (keys != null) {
+      if (keys.isEmpty) return const [];
+      where.add("(service || ':' || id) IN (${List.filled(keys.length, '?').join(',')})");
+      args.addAll(keys);
+    }
+    final String order = switch (_kemonoSorts.contains(orderBy) ? orderBy : 'favorited') {
+      'name' => 'name COLLATE NOCASE ASC',
+      'updated' => 'updated DESC',
+      'indexed' => 'indexed DESC',
+      _ => 'favorited DESC',
+    };
+    args
+      ..add(limit)
+      ..add(offset);
+    return db.rawQuery(
+      'SELECT service, id, name, indexed, updated, favorited FROM KemonoCreator '
+      '${where.isEmpty ? '' : 'WHERE ${where.join(' AND ')} '}'
+      'ORDER BY $order, name COLLATE NOCASE ASC LIMIT ? OFFSET ?',
+      args,
+    );
+  }
+
+  Future<List<Map<String, Object?>>> getKemonoCreatorsByKeys(List<({String service, String id})> pairs) async {
+    final db = this.db;
+    if (db == null || pairs.isEmpty) return const [];
+    final List<Map<String, Object?>> out = [];
+    for (int i = 0; i < pairs.length; i += 400) {
+      final slice = pairs.sublist(i, (i + 400).clamp(0, pairs.length));
+      final rows = await db.rawQuery(
+        'SELECT service, id, name, indexed, updated, favorited FROM KemonoCreator '
+        "WHERE (service || ':' || id) IN (${List.filled(slice.length, '?').join(',')})",
+        [for (final p in slice) '${p.service}:${p.id}'],
+      );
+      out.addAll(rows);
+    }
+    return out;
+  }
+
+  Future<List<Map<String, Object?>>> findKemonoCreatorsByName(String name, {int limit = 5}) async {
+    final db = this.db;
+    if (db == null || name.isEmpty) return const [];
+    return db.rawQuery(
+      'SELECT service, id, name, indexed, updated, favorited FROM KemonoCreator '
+      'WHERE name = ? COLLATE NOCASE ORDER BY favorited DESC LIMIT ?',
+      [name, limit],
+    );
   }
 
   Future<List<Map<String, Object?>>> getBooruTagOverrides({String? booruKey}) async {

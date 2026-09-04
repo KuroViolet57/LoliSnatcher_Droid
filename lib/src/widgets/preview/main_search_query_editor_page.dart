@@ -2146,9 +2146,14 @@ class _MetatagsBlockState extends State<MetatagsBlock> {
   }
 
   Future<void> _refreshCounts() async {
-    if (widget.onInsertTerm == null || _handler.tagCatalog == null) return;
+    final TagCatalogSource? catalog = _handler.tagCatalog;
+    if (widget.onInsertTerm == null || catalog == null) return;
     final Booru booru = _booru;
-    final counts = await BooruTagStore.namespaceCounts(booru);
+    final Map<String, int> counts = Map.of(await BooruTagStore.namespaceCounts(booru));
+    for (final ns in catalog.namespaces) {
+      final int? custom = await catalog.customCount(booru, ns.key);
+      if (custom != null) counts[ns.key] = custom;
+    }
     if (!mounted) return;
     setState(() {
       _counts = counts;

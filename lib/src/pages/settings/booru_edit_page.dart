@@ -269,6 +269,15 @@ class _BooruEditState extends State<BooruEdit> {
                       booruFaviconController.text = 'https://hentaipaw.com/favicon.ico';
                     }
                   }
+                  if (selectedBooruType.isKemono && booruURLController.text.trim().isEmpty) {
+                    booruURLController.text = 'https://kemono.cr';
+                    if (booruNameController.text.trim().isEmpty) {
+                      booruNameController.text = 'Kemono';
+                    }
+                    if (booruFaviconController.text.trim().isEmpty) {
+                      booruFaviconController.text = 'https://kemono.cr/favicon.ico';
+                    }
+                  }
                   if (selectedBooruType.isAsmHentai && booruURLController.text.trim().isEmpty) {
                     booruURLController.text = 'https://asmhentai.com';
                     if (booruNameController.text.trim().isEmpty) {
@@ -545,6 +554,24 @@ class _BooruEditState extends State<BooruEdit> {
             'Note: the "real videos" (xvideos) section streams tube sites '
             'through a private proxy and cannot be scraped directly — open '
             'app.rule34.dev in a WebView booru for that part.';
+      case BooruType.Kemono:
+        return '<b>Kemono</b><br>Leave the URL as https://kemono.cr. A creator '
+            'archive: every post belongs to a creator on Patreon, Fanbox, '
+            'Gumroad, Fantia, Boosty, SubscribeStar or DLsite, and one post can '
+            'hold many files (the burst badge on a card; the files action in the '
+            'viewer opens them all).<br><br>'
+            '<b>Search:</b> plain words (3+ characters) search titles and text; '
+            '<i>tag:x</i> filters by the site\'s tags; <i>creator:name</i> or a '
+            'card from the Artists page opens one creator; <i>popular:day</i> '
+            '(week, month, recent), <i>random</i>. <i>service:patreon</i> filters '
+            'on the phone — the site cannot.<br><br>'
+            '<b>The kemono sidebar</b> (left drawer on a Kemono tab) mirrors the '
+            'site: Artists, Posts, Favorites, DMs, Announcements. Its bottom '
+            'button swaps to the normal pinned-tags drawer, and Quick access '
+            'swaps back.<br><br>'
+            '<b>Username and password (optional):</b> the app signs in to your '
+            'kemono account for Favorites (posts and artists) and syncs hearts '
+            'to it. Nothing is sent anywhere else.';
       case BooruType.NHentai:
         return '<b>nhentai</b><br>Leave the URL as https://nhentai.net. A '
             'DOUJIN source: every post is a whole gallery, read page by page '

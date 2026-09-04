@@ -20,6 +20,7 @@ import 'package:lolisnatcher/src/pages/followed_artists_page.dart';
 import 'package:lolisnatcher/src/pages/settings/booru_edit_page.dart';
 import 'package:lolisnatcher/src/pages/settings/source_settings_page.dart';
 import 'package:lolisnatcher/src/pages/settings/tags_filters_page.dart';
+import 'package:lolisnatcher/src/widgets/drawers/drawer_row.dart';
 import 'package:lolisnatcher/src/widgets/saved_searches/saved_searches_page.dart';
 
 /// The left ("Pinned tags") sidebar: pinned tags at the top (tap = add to the
@@ -252,60 +253,10 @@ class _DrawerQuickAccessState extends State<DrawerQuickAccess> {
     required String label,
     required VoidCallback onTap,
     String? count,
-  }) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(12),
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 3),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surfaceContainer,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, size: 19, color: iconColor),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                label,
-                style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
-              ),
-            ),
-            if (count != null) ...[
-              Text(
-                count,
-                style: TextStyle(
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w600,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(width: 6),
-            ],
-            Icon(Symbols.chevron_right_rounded, size: 18, color: Theme.of(context).colorScheme.onSurfaceVariant),
-          ],
-        ),
-      ),
-    );
-  }
+    String? subtitle,
+  }) => DrawerRow(icon: icon, iconColor: iconColor, label: label, onTap: onTap, count: count, subtitle: subtitle);
 
-  Widget _sectionLabel(String text) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(2, 4, 2, 6),
-      child: Text(
-        text,
-        style: TextStyle(
-          fontSize: 10.5,
-          fontWeight: FontWeight.w800,
-          letterSpacing: 1,
-          color: Theme.of(context).colorScheme.onSurfaceVariant,
-        ),
-      ),
-    );
-  }
+  Widget _sectionLabel(String text) => DrawerSectionLabel(text);
 
   @override
   Widget build(BuildContext context) {
@@ -427,6 +378,19 @@ class _DrawerQuickAccessState extends State<DrawerQuickAccess> {
     }
 
     return [
+      // The way back to kemono's own sidebar, which replaced this drawer on
+      // Kemono tabs until its bottom row switched to this one.
+      if (current?.type?.isKemono ?? false)
+        _quickAccessRow(
+          icon: Symbols.swap_horiz_rounded,
+          iconColor: const Color(0xFF8FBFD4),
+          label: 'Use the kemono sidebar',
+          subtitle: 'Artists, posts, favorites, DMs',
+          onTap: () {
+            settingsHandler.kemonoSidebar.value = true;
+            settingsHandler.saveSettings(restate: false);
+          },
+        ),
       _quickAccessRow(
         icon: Symbols.block_rounded,
         iconColor: const Color(0xFFE5766B),

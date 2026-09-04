@@ -2041,6 +2041,23 @@ class SearchTab {
         BooruUpdateMode.local,
       );
 
+      // Sources with an account (kemono) mirror the heart to the site. The
+      // local state is already set; a refusal is shown, never retried.
+      if (booruHandler.hasSiteFavourites) {
+        unawaited(
+          booruHandler.setSiteFavourite(item, newValue).then((result) {
+            if (!result.$1) {
+              FlashElements.showSnackbar(
+                title: const Text('Favourite kept on the phone only'),
+                content: Text(result.$2),
+                duration: const Duration(seconds: 5),
+                sideColor: Colors.orange,
+              );
+            }
+          }),
+        );
+      }
+
       // Keep the post visible for the rest of this session: the favourites /
       // snatched filters are meant to apply on LOAD, not to make a post vanish
       // the moment you like it (which used to happen mid-video). The refilter

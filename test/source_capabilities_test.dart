@@ -11,11 +11,14 @@ import 'package:lolisnatcher/src/boorus/doujin/hitomi_handler.dart';
 import 'package:lolisnatcher/src/boorus/doujin/schale_handler.dart';
 import 'package:lolisnatcher/src/boorus/gelbooru_handler.dart';
 import 'package:lolisnatcher/src/boorus/hydrus_handler.dart';
+import 'package:lolisnatcher/src/boorus/kemono_handler.dart';
 import 'package:lolisnatcher/src/boorus/kusowanka_handler.dart';
 import 'package:lolisnatcher/src/boorus/nhentai_handler.dart';
 import 'package:lolisnatcher/src/boorus/tikporn_handler.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
+import 'package:lolisnatcher/src/handlers/kemono_session_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 
@@ -110,6 +113,25 @@ void main() {
       expect(h.usesUserId, isFalse);
       expect(h.usesApiKey, isTrue);
       expect(h.apiKeyLabel, 'Access key');
+    });
+
+    test('kemono: username + password, no size data, comments, favourites only with a session', () {
+      KemonoSessionHandler.instance.resetForTests();
+      final h = KemonoHandler(b('kemono', BooruType.Kemono, 'https://kemono.cr'), 50);
+      expect(h.usesUserId, isTrue);
+      expect(h.usesApiKey, isTrue);
+      expect(h.userIdLabel, contains('Username'));
+      expect(h.apiKeyLabel, contains('Password'));
+      expect(h.hasSizeData, isFalse);
+      expect(h.hasCommentsSupport, isTrue);
+      expect(h.hasSignInSupport, isTrue);
+      expect(h.hasSiteFavourites, isFalse, reason: 'no session yet');
+      expect(h.getHeaders()['Accept'], 'text/css');
+      expect(h.getHeaders().keys.map((k) => k.toLowerCase()), isNot(contains('cookie')));
+      expect(h.tagCatalog.namespaces.map((n) => n.key), containsAll(['tag', 'creator']));
+      expect(DoujinDataHandler.isDoujinBooru(b('kemono', BooruType.Kemono, 'https://kemono.cr')), isFalse);
+      expect(BooruType.Kemono.isDetectable, isFalse);
+      expect(BooruType.Kemono.isSaveable, isTrue);
     });
   });
 }

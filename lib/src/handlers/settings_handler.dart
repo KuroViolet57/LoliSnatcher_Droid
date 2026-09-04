@@ -119,6 +119,11 @@ class SettingsHandler {
   ShareAction shareAction = ShareAction.defaultValue;
   final Rx<AppMode> appMode = AppMode.defaultValue.obs;
   final Rx<HandSide> handSide = HandSide.defaultValue.obs;
+
+  /// On a Kemono tab, the pinned-tags drawer is replaced by the site's own
+  /// sidebar (Artists / Posts / Favorites / DMs). Off = the normal drawer.
+  /// Flipped from the bottom of either drawer.
+  final RxBool kemonoSidebar = true.obs;
   VerticalPosition galleryBarPosition = VerticalPosition.defaultValue;
   ScrollDirection galleryScrollDirection = ScrollDirection.defaultValue;
   String extPathOverride = '';
@@ -315,6 +320,7 @@ class SettingsHandler {
     'prefBooru',
     'appMode',
     'handSide',
+    'kemonoSidebar',
     'extPathOverride',
     'backupPath',
     'lastSyncIp',
@@ -907,6 +913,10 @@ class SettingsHandler {
       'default': HandSide.defaultValue,
       'options': HandSide.values,
     },
+    'kemonoSidebar': {
+      'type': 'bool',
+      'default': true,
+    },
     'theme': {
       'type': 'theme',
       'default': ThemeItem(name: 'Flow', primary: const Color(0xFFB9A0E8), accent: const Color(0xFFB9A0E8)),
@@ -1429,6 +1439,8 @@ class SettingsHandler {
         return appMode;
       case 'handSide':
         return handSide;
+      case 'kemonoSidebar':
+        return kemonoSidebar.value;
       case 'theme':
         return theme;
       case 'themeMode':
@@ -1774,6 +1786,9 @@ class SettingsHandler {
         break;
       case 'handSide':
         handSide.value = validatedValue;
+        break;
+      case 'kemonoSidebar':
+        kemonoSidebar.value = validatedValue;
         break;
       case 'theme':
         theme.value = validatedValue;

@@ -16,6 +16,7 @@ enum BooruType {
   Hanime1,
   Hydrus,
   InkBunny,
+  Kemono,
   Kusowanka,
   Moebooru,
   AsmHentai,
@@ -108,6 +109,9 @@ enum BooruType {
       ..remove(BooruType.Hitomi)
       // hentaipaw has a fixed host; picked deliberately.
       ..remove(BooruType.HentaiPaw)
+      // kemono talks to a fixed API host with a non-browser Accept header
+      // and answers any address; picked deliberately.
+      ..remove(BooruType.Kemono)
       // xxxtik has a fixed API host; only pick it deliberately.
       ..remove(BooruType.XXXTik)
       // xxxfollow has a fixed API host; only pick it deliberately.
@@ -166,6 +170,8 @@ enum BooruType {
         return 'hitomi.la';
       case HentaiPaw:
         return 'HentaiPaw';
+      case Kemono:
+        return 'Kemono';
       case TikPorn:
         return 'Tik.Porn';
       case XXXTik:
@@ -206,6 +212,7 @@ enum BooruType {
   bool get isFaccina => this == BooruType.Faccina;
   bool get isHitomi => this == BooruType.Hitomi;
   bool get isHentaiPaw => this == BooruType.HentaiPaw;
+  bool get isKemono => this == BooruType.Kemono;
   bool get isTikPorn => this == BooruType.TikPorn;
   bool get isXXXTik => this == BooruType.XXXTik;
   bool get isXXXFollow => this == BooruType.XXXFollow;

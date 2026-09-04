@@ -4,6 +4,7 @@ import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/meta_tag.dart';
 import 'package:lolisnatcher/src/data/site_profiles/bakemono_profile.dart';
+import 'package:lolisnatcher/src/data/site_profiles/kemono_profile.dart';
 
 /// Per-SITE deviations from a booru FAMILY's behaviour.
 ///
@@ -29,6 +30,7 @@ abstract class SiteProfile {
 
   static final List<SiteProfile> _registry = [
     const BakemonoProfile(),
+    const KemonoProfile(),
   ];
 
   static final Map<String, SiteProfile?> _cache = {};
@@ -107,6 +109,10 @@ abstract class SiteProfile {
   /// Page that carries the full file list for [item] (fetched lazily, only
   /// when the user opens the post), or null when unsupported.
   String? postFilesUrl(Booru booru, BooruItem item) => null;
+
+  /// Extra headers the [postFilesUrl] request needs on top of the media
+  /// headers (kemono's API refuses a browser Accept).
+  Map<String, String> postFilesHeaders(Booru booru) => const {};
 
   /// Parses [postFilesUrl]'s body into the post's files. Null = parse failed.
   List<PostFile>? parsePostFiles(String body, Booru booru) => null;

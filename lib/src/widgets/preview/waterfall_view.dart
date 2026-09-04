@@ -23,6 +23,7 @@ import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 import 'package:lolisnatcher/src/widgets/common/long_press_repeater.dart';
 import 'package:lolisnatcher/src/widgets/preview/grid_builder.dart';
+import 'package:lolisnatcher/src/widgets/preview/kemono_creator_header.dart';
 import 'package:lolisnatcher/src/widgets/preview/shimmer_builder.dart';
 import 'package:lolisnatcher/src/widgets/preview/staggered_builder.dart';
 import 'package:lolisnatcher/src/widgets/preview/discovery_strip.dart';
@@ -530,6 +531,15 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware {
                                 ),
                               ),
                             ),
+                          // A kemono creator tab carries the creator's card
+                          // (banner, counts, favourite/announcements/DMs/tags)
+                          // above the grid. Empty everywhere else.
+                          SliverPadding(
+                            padding: const EdgeInsets.fromLTRB(10, 12, 10, 0),
+                            sliver: SliverToBoxAdapter(
+                              child: KemonoCreatorHeader(tab: searchHandler.currentTab),
+                            ),
+                          ),
                           // Discovery strip: creators + similar tags above the
                           // results, for any handler that populates them
                           // (xxxfollow, redgifs). No-op for the rest.

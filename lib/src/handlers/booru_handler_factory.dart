@@ -44,6 +44,7 @@ import 'package:lolisnatcher/src/boorus/doujin/faccina_handler.dart';
 import 'package:lolisnatcher/src/boorus/doujin/hitomi_handler.dart';
 import 'package:lolisnatcher/src/boorus/doujin/schale_handler.dart';
 import 'package:lolisnatcher/src/boorus/nhentai_handler.dart';
+import 'package:lolisnatcher/src/boorus/kemono_handler.dart';
 import 'package:lolisnatcher/src/boorus/kusowanka_handler.dart';
 import 'package:lolisnatcher/src/boorus/tikporn_handler.dart';
 import 'package:lolisnatcher/src/boorus/xxxtik_handler.dart';
@@ -250,6 +251,12 @@ class BooruHandlerFactory {
         case BooruType.HentaiPaw:
           // 1-based ?page=N on server-rendered pages.
           booruHandler = HentaiPawHandler(booru, limit);
+          break;
+        case BooruType.Kemono:
+          // Offset paging in steps of 50 (o = page*50): pageNum 0 is the
+          // first fetch, so o starts at 0. The API ignores any limit.
+          pageNum = 0;
+          booruHandler = KemonoHandler(booru, KemonoHandler.pageSize);
           break;
         case BooruType.Kusowanka:
           // 1-based ?page=N; the default pageNum of -1 makes the first

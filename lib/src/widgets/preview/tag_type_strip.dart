@@ -49,6 +49,13 @@ class _TagCatalogChipState extends State<TagCatalogChip> {
   int _seenStored = -1;
 
   Future<void> _open() async {
+    final TagCatalogPicker? custom = widget.namespace.customPicker;
+    if (custom != null) {
+      final String? picked = await custom(context, widget.booru);
+      widget.onStoredChanged?.call();
+      if (picked != null && picked.isNotEmpty) widget.onInsert(picked);
+      return;
+    }
     final res = await SettingsPageOpen(
       context: context,
       asBottomSheet: true,

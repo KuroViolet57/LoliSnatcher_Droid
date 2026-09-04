@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 
 import 'package:get/get.dart' hide ContextExt, FirstWhereOrNullExt;
 
+import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/handlers/drawer_refresh.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -14,6 +15,7 @@ import 'package:lolisnatcher/src/utils/extensions.dart';
 import 'package:lolisnatcher/src/widgets/common/inner_drawer.dart';
 import 'package:lolisnatcher/src/widgets/common/settings_widgets.dart';
 import 'package:lolisnatcher/src/widgets/drawers/downloads/downloads_drawer.dart';
+import 'package:lolisnatcher/src/widgets/drawers/kemono_sidebar.dart';
 import 'package:lolisnatcher/src/widgets/drawers/main_drawer.dart';
 import 'package:lolisnatcher/src/widgets/preview/media_previews.dart';
 
@@ -104,6 +106,14 @@ class _MobileHomeState extends State<MobileHome> {
           // mini tab manager, and there are no pinned tags / booru settings to
           // slide in. Disable the InnerDrawer swipe entirely for those tabs.
           final bool isDoujinTab = searchHandler.tabs.isNotEmpty && searchHandler.currentTab.isDoujinDetail;
+          // On a Kemono tab the pinned-tags side carries the site's own
+          // sidebar instead, unless the person switched it off from its
+          // bottom row (the normal drawer's Quick access switches it back).
+          final Booru? current = searchHandler.tabs.isNotEmpty ? searchHandler.currentBooru : null;
+          final bool kemonoSide = (current?.type?.isKemono ?? false) && settingsHandler.kemonoSidebar.value;
+          Widget pinnedSide() => kemonoSide
+              ? KemonoSidebar(booru: current!, toggleDrawer: () => _toggleDrawer(null))
+              : DownloadsDrawer(toggleDrawer: () => _toggleDrawer(null));
         return InnerDrawer(
           key: searchHandler.mainDrawerKey,
           onTapClose: true,
@@ -140,14 +150,10 @@ class _MobileHomeState extends State<MobileHome> {
           }, // return  true (open) or false (close)
 
           leftChild: RepaintBoundary(
-            child: settingsHandler.handSide.value.isLeft
-                ? const MainDrawer()
-                : DownloadsDrawer(toggleDrawer: () => _toggleDrawer(null)),
+            child: settingsHandler.handSide.value.isLeft ? const MainDrawer() : pinnedSide(),
           ),
           rightChild: RepaintBoundary(
-            child: settingsHandler.handSide.value.isRight
-                ? const MainDrawer()
-                : DownloadsDrawer(toggleDrawer: () => _toggleDrawer(null)),
+            child: settingsHandler.handSide.value.isRight ? const MainDrawer() : pinnedSide(),
           ),
 
           // Note: use "automaticallyImplyLeading: false" if you do not personalize "leading" of Bar

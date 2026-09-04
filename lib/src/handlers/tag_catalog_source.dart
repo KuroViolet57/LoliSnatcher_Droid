@@ -1,9 +1,15 @@
+import 'package:flutter/widgets.dart';
+
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_tag.dart';
 import 'package:lolisnatcher/src/data/tag_suggestion.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_tag_store.dart';
+
+/// A source-specific picker for one namespace: opened in place of the
+/// generic list sheet, returns the term to insert (null = nothing picked).
+typedef TagCatalogPicker = Future<String?> Function(BuildContext context, Booru booru);
 
 /// One namespace a source can list in full: the chip in the tag builder.
 class TagCatalogNamespace {
@@ -13,7 +19,12 @@ class TagCatalogNamespace {
     required this.type,
     this.shards,
     this.maxShards,
+    this.customPicker,
   });
+
+  /// When set, the chip opens this instead of the generic picker (kemono's
+  /// Artists page: 108,000 names want banners and a service filter).
+  final TagCatalogPicker? customPicker;
 
   /// The source's own key: `artist`, `circle`, `female`, `tag`, …
   final String key;
@@ -53,6 +64,10 @@ abstract class TagCatalogSource {
 
   /// Shard count of a shared walk; null = until [shardAt] returns null.
   int? get sharedShardCount => null;
+
+  /// The badge for a namespace whose rows live somewhere other than the tag
+  /// snapshot (kemono's creator index). Null = count the snapshot.
+  Future<int?> customCount(Booru booru, String namespace) async => null;
 
   /// The entries of one shard, each carrying its namespace. Null when the
   /// shard does not exist (past the last page) — an EMPTY list is a real,

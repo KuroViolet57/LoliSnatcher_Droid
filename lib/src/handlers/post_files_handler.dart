@@ -58,7 +58,10 @@ class PostFilesHandler {
 
     return _inFlight[key] ??= () async {
       try {
-        final headers = await Tools.getFileCustomHeaders(booru, item: item, checkForReferer: true);
+        final headers = {
+          ...await Tools.getFileCustomHeaders(booru, item: item, checkForReferer: true),
+          ...profile.postFilesHeaders(booru),
+        };
         final response = await DioNetwork.get(url, headers: headers).timeout(const Duration(seconds: 20));
         final List<PostFile>? files = profile.parsePostFiles(response.data?.toString() ?? '', booru);
         if (files == null || files.isEmpty) {
