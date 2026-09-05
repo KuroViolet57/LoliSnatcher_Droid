@@ -280,9 +280,10 @@ class BooruHandlerFactory {
           break;
         case BooruType.Kemono:
         case BooruType.Pawchive:
-          // Offset paging in steps of 50 (o = page*50): pageNum 0 is the
-          // first fetch, so o starts at 0. The API ignores any limit.
-          pageNum = 0;
+          // Offset paging in steps of 50 (o = page*50). runSearch increments
+          // BEFORE the first fetch, so the default -1 becomes 0 and the first
+          // request is o=0 (a start of 0 skipped the newest 50 posts). The
+          // API ignores any limit.
           booruHandler = KemonoHandler(booru, KemonoHandler.pageSize);
           break;
         case BooruType.Kusowanka:

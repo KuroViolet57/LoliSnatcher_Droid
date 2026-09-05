@@ -177,6 +177,7 @@ void main() {
       expect(post.next, isNotNull);
       expect(post.postUrl, 'https://pawchive.pw/fanbox/user/5679193/post/12549384');
       final List<PostFile> files = KemonoProfile.filesFromDetail(detail, site: KemonoSite.pawchive)!;
+      expect(const KemonoProfile().parsePostFiles(fixture('pawchive_post.json'), b())!.length, 2, reason: 'the profile path pawchive posts take');
       expect(files.every((f) => f.url.startsWith('https://file.pawchive.pw/data/')), isTrue);
       expect(files.map((f) => f.name), ['cover.jpeg', 'cOwQHn7v1d8emHXdFwmX5DWW.png']);
     });

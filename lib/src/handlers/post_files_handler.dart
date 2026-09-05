@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:dio/dio.dart';
 import 'package:get/get.dart' hide ContextExt, FirstWhereOrNullExt;
 
 import 'package:lolisnatcher/src/data/booru.dart';
@@ -29,6 +32,18 @@ class PostFilesHandler {
   final Set<String> _failed = {};
 
   static String _keyOf(BooruItem item) => item.postURL.isNotEmpty ? item.postURL : item.fileURL;
+
+  /// The response body as text, whatever dio made of it.
+  static String bodyText(dynamic data) {
+    if (data == null) return '';
+    if (data is String) return data;
+    if (data is Map || data is List) {
+      try {
+        return jsonEncode(data);
+      } catch (_) {}
+    }
+    return data.toString();
+  }
 
   /// Files already known for [item], or null when not fetched (yet).
   List<PostFile>? cached(BooruItem item) => loaded[_keyOf(item)];
@@ -66,9 +81,21 @@ class PostFilesHandler {
           ...await Tools.getFileCustomHeaders(booru, item: item, checkForReferer: true),
           ...profile.postFilesHeaders(booru),
         };
-        final response = await DioNetwork.get(url, headers: headers).timeout(const Duration(seconds: 20));
-        final List<PostFile>? files = profile.parsePostFiles(response.data?.toString() ?? '', booru);
+        // Plain text: a JSON site (pawchive) would otherwise be decoded by dio
+        // and reach the parser as a Dart map's toString().
+        final response = await DioNetwork.get(
+          url,
+          headers: headers,
+          options: Options(responseType: ResponseType.plain),
+        ).timeout(const Duration(seconds: 20));
+        final List<PostFile>? files = profile.parsePostFiles(bodyText(response.data), booru);
         if (files == null || files.isEmpty) {
+          Logger.Inst().log(
+            'post files: nothing parsed from $url (${response.statusCode})',
+            'PostFilesHandler',
+            'ensureLoaded',
+            LogTypes.booruItemLoad,
+          );
           _failed.add(key);
           return const <PostFile>[];
         }

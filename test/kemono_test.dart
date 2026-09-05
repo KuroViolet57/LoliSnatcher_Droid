@@ -16,6 +16,7 @@ import 'package:lolisnatcher/src/data/site_profile.dart';
 import 'package:lolisnatcher/src/data/site_profiles/kemono_profile.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/kemono_creator_store.dart';
+import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 import 'package:lolisnatcher/src/services/image_writer.dart';
 import 'package:lolisnatcher/src/handlers/post_files_handler.dart';
 import 'package:lolisnatcher/src/handlers/kemono_file_hosts.dart';
@@ -23,6 +24,7 @@ import 'package:lolisnatcher/src/handlers/kemono_session_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/pages/kemono_messages_pages.dart';
+import 'package:lolisnatcher/src/widgets/image/custom_network_image.dart';
 
 /// kemono.cr, against responses captured from the live API on 2026-09-04
 /// (test/fixtures/kemono_*.json).
@@ -426,6 +428,35 @@ void main() {
       expect(h.mediaOutageNotice('https://img.kemono.cr/thumbnail/data/x.png'), isNull);
       expect(KemonoFileHosts.isFileHost('n4.kemono.cr'), isTrue);
       expect(KemonoFileHosts.isFileHost('kemono.cr'), isFalse);
+    });
+  });
+
+  group('paging and loading', () {
+    test('the first fetch is o=0: runSearch increments before it, so the factory leaves pageNum at -1', () {
+      final built = BooruHandlerFactory().getBooruHandler([b()], null);
+      expect(built.startingPage, -1);
+      final KemonoHandler h = built.booruHandler as KemonoHandler;
+      h.pageNum = built.startingPage + 1;
+      expect(h.makeURL('kemono'), 'https://kemono.cr/api/v1/posts?q=kemono&o=0');
+      h.pageNum++;
+      expect(h.makeURL('kemono'), 'https://kemono.cr/api/v1/posts?q=kemono&o=50');
+    });
+
+    test('the JPEG end-marker check only applies to JPEG bytes', () {
+      expect(looksLikeJpeg([0xFF, 0xD8, 0xFF, 0xE0]), isTrue);
+      expect(looksLikeJpeg('RIFF'.codeUnits), isFalse, reason: 'WebP under a .jpeg URL');
+      expect(looksLikeJpeg([0x89, 0x50]), isFalse);
+      expect(looksLikeJpeg([0xFF]), isFalse);
+      expect(hasJpegEndMarker([0xFF, 0xD9, 0x53, 0x4E]), isTrue);
+    });
+
+    test('post files read a plain body, and a decoded one is re-encoded', () {
+      expect(PostFilesHandler.bodyText('{"a":1}'), '{"a":1}');
+      expect(PostFilesHandler.bodyText({'a': 1}), '{"a":1}');
+      expect(PostFilesHandler.bodyText([1, 2]), '[1,2]');
+      expect(PostFilesHandler.bodyText(null), '');
+      final files = const KemonoProfile().parsePostFiles(fixture('kemono_post_attachments.json'), b());
+      expect(files!.length, 2);
     });
   });
 }

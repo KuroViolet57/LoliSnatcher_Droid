@@ -33,6 +33,12 @@ const int jpegTailWindow = 8 * 1024;
 ///
 /// This is deliberately not special-cased to one host; the bytes are valid
 /// JPEG and any CDN is free to append to them.
+/// Whether the bytes start with the JPEG SOI marker `FF D8`. The end-marker
+/// check is only meaningful for a real JPEG: pawchive's thumbnail service
+/// serves WebP under `.jpeg` URLs and `image/jpeg`, which has no EOI at all
+/// and decodes fine.
+bool looksLikeJpeg(List<int> head) => head.length >= 2 && head[0] == 0xFF && head[1] == 0xD8;
+
 bool hasJpegEndMarker(List<int> tail) {
   for (int i = tail.length - 2; i >= 0; i--) {
     if (tail[i] == 0xFF && tail[i + 1] == 0xD9) return true;
@@ -266,10 +272,11 @@ mixin _NetworkImageLoaderMixin {
         if (actualLen > 2 && (url.toLowerCase().endsWith('.jpg') || url.toLowerCase().endsWith('.jpeg'))) {
           final handle = await tempFile.open();
           try {
+            final headBytes = await handle.read(2);
             final int window = actualLen < jpegTailWindow ? actualLen : jpegTailWindow;
             await handle.setPosition(actualLen - window);
             final endBytes = await handle.read(window);
-            if (!hasJpegEndMarker(endBytes)) {
+            if (looksLikeJpeg(headBytes) && !hasJpegEndMarker(endBytes)) {
               throw Exception('Image file is truncated (missing JPEG EOI marker)');
             }
           } catch (e) {
