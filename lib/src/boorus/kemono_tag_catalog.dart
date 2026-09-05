@@ -6,7 +6,6 @@ import 'package:lolisnatcher/src/boorus/kemono_handler.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_tag.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
-import 'package:lolisnatcher/src/handlers/kemono_creator_store.dart';
 import 'package:lolisnatcher/src/handlers/tag_catalog_source.dart';
 import 'package:lolisnatcher/src/pages/kemono_artists_page.dart';
 
@@ -27,7 +26,7 @@ class KemonoTagCatalog extends TagCatalogSource {
 
   @override
   List<TagCatalogNamespace> get namespaces => [
-    const TagCatalogNamespace(key: tagKey, label: 'Tags', type: TagType.none, shards: 1),
+    if (handler.site.hasTagList) const TagCatalogNamespace(key: tagKey, label: 'Tags', type: TagType.none, shards: 1),
     const TagCatalogNamespace(
       key: creatorKey,
       label: 'Artists',
@@ -47,7 +46,7 @@ class KemonoTagCatalog extends TagCatalogSource {
 
   @override
   Future<int?> customCount(Booru booru, String namespace) async =>
-      namespace == creatorKey ? KemonoCreatorStore.instance.count() : null;
+      namespace == creatorKey ? handler.store.count() : null;
 
   /// Tags are always inserted qualified: a bare word is a text search on
   /// this site.
@@ -56,8 +55,8 @@ class KemonoTagCatalog extends TagCatalogSource {
 
   @override
   Future<List<BooruTagEntry>?> shardAt(String namespace, int shard) async {
-    if (namespace != tagKey || shard != 0) return null;
-    final data = await KemonoApi.getJson('${KemonoApi.api}/posts/tags', booru: handler.booru);
+    if (namespace != tagKey || shard != 0 || !handler.site.hasTagList) return null;
+    final data = await KemonoApi.getJson('${handler.site.api}/posts/tags', booru: handler.booru);
     return parseTags(data);
   }
 

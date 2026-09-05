@@ -72,4 +72,9 @@ void main() {
     final h = KemonoHandler(b('k', BooruType.Kemono, 'https://kemono.cr'), 50);
     expect(labels(h), ['[Artists]', '[Tags]', 'Service (filters on the phone)', 'Popular', 'Favorites', 'Post id']);
   });
+
+  test('pawchive: no tag list and no popular feed, so Tag stays plain and Popular is gone', () {
+    final h = KemonoHandler(b('p', BooruType.Pawchive, 'https://pawchive.pw'), 50);
+    expect(labels(h), ['[Artists]', 'Tag', 'Service (filters on the phone)', 'Favorites', 'Post id']);
+  });
 }

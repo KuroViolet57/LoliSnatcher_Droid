@@ -133,5 +133,20 @@ void main() {
       expect(BooruType.Kemono.isDetectable, isFalse);
       expect(BooruType.Kemono.isSaveable, isTrue);
     });
+
+    test('pawchive: the same handler on the archive; plain JSON, no file referer, no popular', () {
+      KemonoSessionHandler.instance.resetForTests();
+      final h = KemonoHandler(b('pawchive', BooruType.Pawchive, 'https://pawchive.pw'), 50);
+      expect(h.usesUserId, isTrue);
+      expect(h.usesApiKey, isTrue);
+      expect(h.hasCommentsSupport, isTrue);
+      expect(h.hasSignInSupport, isTrue);
+      expect(h.getHeaders()['Accept'], 'application/json');
+      expect(h.getMediaHeaders(), isEmpty);
+      expect(h.availableMetaTags().map((m) => m.name), isNot(contains('Popular')));
+      expect(DoujinDataHandler.isDoujinBooru(b('pawchive', BooruType.Pawchive, 'https://pawchive.pw')), isFalse);
+      expect(BooruType.Pawchive.isDetectable, isFalse);
+      expect(BooruType.Pawchive.isKemono, isTrue);
+    });
   });
 }

@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'package:get/get.dart' hide ContextExt, FirstWhereOrNullExt;
+
 // ignore: implementation_imports
 import 'package:flutter_html/src/builtins/image_builtin.dart';
 import 'package:intl/intl.dart';
@@ -11,6 +13,7 @@ import 'package:url_launcher/url_launcher_string.dart';
 
 import 'package:lolisnatcher/src/boorus/kemono_api.dart';
 import 'package:lolisnatcher/src/boorus/kemono_handler.dart';
+import 'package:lolisnatcher/src/boorus/kemono_site.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/comment_item.dart';
@@ -31,6 +34,7 @@ import 'package:lolisnatcher/src/widgets/common/html.dart';
 import 'package:lolisnatcher/src/widgets/common/parsed_text.dart';
 import 'package:lolisnatcher/src/widgets/common/settings_widgets.dart';
 import 'package:lolisnatcher/src/widgets/dialogs/comments_dialog.dart';
+import 'package:lolisnatcher/src/widgets/image/custom_network_image.dart';
 
 /// A kemono post the way the site's post page shows it: creator, title,
 /// dates, the content (text, links, inline images), every file — pictures and
@@ -49,7 +53,7 @@ class KemonoPostPage extends StatefulWidget {
         sampleURL: '',
         thumbnailURL: '',
         tagsList: const [],
-        postURL: KemonoApi.postUrl(service, user, post),
+        postURL: KemonoSite.of(booru).postUrl(service, user, post),
         serverId: '$service:$user:$post',
       ),
     );
@@ -65,8 +69,9 @@ class KemonoPostPage extends StatefulWidget {
 class _KemonoPostPageState extends State<KemonoPostPage> {
   final SearchHandler searchHandler = SearchHandler.instance;
   final SettingsHandler settingsHandler = SettingsHandler.instance;
-  final KemonoCreatorStore store = KemonoCreatorStore.instance;
-  final KemonoFileHosts hosts = KemonoFileHosts.instance;
+  late final KemonoSite site = KemonoSite.of(widget.booru);
+  late final KemonoCreatorStore store = KemonoCreatorStore.forSite(site);
+  late final KemonoFileHosts hosts = KemonoFileHosts.forSite(site);
   late final KemonoHandler handler = KemonoArtistsPage.handlerFor(widget.booru);
 
   KemonoPost? post;
@@ -97,7 +102,7 @@ class _KemonoPostPageState extends State<KemonoPostPage> {
     if (ref == null) {
       setState(() {
         loading = false;
-        error = 'not a kemono post';
+        error = 'not a ${site.name} post';
       });
       return;
     }
@@ -107,7 +112,7 @@ class _KemonoPostPageState extends State<KemonoPostPage> {
     });
     try {
       final detail = await KemonoApi.postDetail(ref.service, ref.user, ref.post, booru: widget.booru);
-      final KemonoPost? parsed = detail == null ? null : KemonoPost.fromDetail(detail);
+      final KemonoPost? parsed = detail == null ? null : KemonoPost.fromDetail(detail, site: site);
       if (parsed == null) throw Exception('the post is gone');
       unawaited(store.warmNames([(service: parsed.service, id: parsed.user)]).then((_) => _tick()));
       if (!mounted) return;
@@ -246,6 +251,9 @@ class _KemonoPostPageState extends State<KemonoPostPage> {
     final theme = Theme.of(context);
     final KemonoPost? p = post;
     return Scaffold(
+      // The app's convention: a keyboard overlays instead of shrinking the
+      // page (a bottom inset once left a third of the screen black here).
+      resizeToAvoidBottomInset: false,
       appBar: AppBar(
         title: Text(p?.title.isNotEmpty == true ? p!.title : 'Post', maxLines: 1, overflow: TextOverflow.ellipsis),
         actions: [
@@ -308,6 +316,10 @@ class _KemonoPostPageState extends State<KemonoPostPage> {
           const SizedBox(height: 12),
           _notice(theme, outage),
         ],
+        if (p.isPreviewOnly) ...[
+          const SizedBox(height: 12),
+          _notice(theme, '${site.name} holds only a preview of this post so far; the full post may follow on a later import.'),
+        ],
         if (p.hasContent) ...[
           const SizedBox(height: 16),
           _section(theme, 'Content'),
@@ -335,8 +347,45 @@ class _KemonoPostPageState extends State<KemonoPostPage> {
         ],
         if (p.images.isNotEmpty) ...[
           const SizedBox(height: 16),
-          _section(theme, '${p.images.length} ${p.images.length == 1 ? 'picture' : 'pictures'}', trailing: _downloadAll(p.images)),
-          _imagesGrid(theme, p),
+          _section(
+            theme,
+            '${p.images.length} ${p.images.length == 1 ? 'picture' : 'pictures'}',
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Obx(
+                  () => FilterChip(
+                    label: const Text('Full'),
+                    tooltip: "Load the real files instead of the site's 800 px pictures",
+                    visualDensity: VisualDensity.compact,
+                    selected: settingsHandler.kemonoPostFullImages.value,
+                    onSelected: (on) {
+                      settingsHandler.kemonoPostFullImages.value = on;
+                      unawaited(settingsHandler.saveSettings(restate: false));
+                    },
+                  ),
+                ),
+                _downloadAll(p.images),
+              ],
+            ),
+          ),
+          Obx(() {
+            final bool full = settingsHandler.kemonoPostFullImages.value;
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (full && !site.isKemono)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Text(
+                      'Full loads every file as you scroll; ${site.name} rate-limits heavy downloading.',
+                      style: TextStyle(fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
+                    ),
+                  ),
+                for (final f in p.images) _pictureTile(theme, p, f, full: full),
+              ],
+            );
+          }),
         ],
         if (p.videos.isNotEmpty) ...[
           const SizedBox(height: 16),
@@ -421,7 +470,7 @@ class _KemonoPostPageState extends State<KemonoPostPage> {
             CircleAvatar(
               radius: 20,
               backgroundColor: theme.colorScheme.surfaceContainerHighest,
-              foregroundImage: NetworkImage(KemonoApi.iconUrl(p.service, p.user)),
+              foregroundImage: NetworkImage(site.iconUrl(p.service, p.user)),
               onForegroundImageError: (_, _) {},
               child: Text(name.isEmpty ? '?' : name[0].toUpperCase()),
             ),
@@ -535,33 +584,48 @@ class _KemonoPostPageState extends State<KemonoPostPage> {
     );
   }
 
-  Widget _imagesGrid(ThemeData theme, KemonoPost p) {
-    final List<KemonoPostFile> images = p.images;
-    final List<KemonoPostFile> order = p.displayable;
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, mainAxisSpacing: 4, crossAxisSpacing: 4),
-      itemCount: images.length,
-      itemBuilder: (context, i) {
-        final KemonoPostFile f = images[i];
-        return InkWell(
-          onTap: () => unawaited(_openMedia(order.indexOf(f))),
-          onLongPress: () => unawaited(_fileMenu(f)),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: ColoredBox(
-              color: theme.colorScheme.surfaceContainerHighest,
-              child: Image.network(
-                f.thumbUrl!,
-                fit: BoxFit.cover,
-                headers: handler.getMediaHeaders(),
-                errorBuilder: (_, _, _) => Center(child: Icon(Symbols.broken_image_rounded, color: theme.colorScheme.onSurfaceVariant)),
-              ),
-            ),
-          ),
-        );
-      },
+  /// One picture at the page's width, in the post's order — the site's 800 px
+  /// picture at once (it answers wherever the API does), the real file on top
+  /// of it when Full is on and the file host is not known to be down.
+  Widget _pictureTile(ThemeData theme, KemonoPost p, KemonoPostFile f, {required bool full}) {
+    final Map<String, String> headers = {...handler.getMediaHeaders(), 'User-Agent': Tools.browserUserAgent};
+    final Widget thumb = Image.network(
+      f.thumbUrl!,
+      fit: BoxFit.fitWidth,
+      width: double.infinity,
+      headers: headers,
+      errorBuilder: (_, _, _) => AspectRatio(
+        aspectRatio: 16 / 9,
+        child: ColoredBox(
+          color: theme.colorScheme.surfaceContainerHighest,
+          child: Center(child: Icon(Symbols.broken_image_rounded, color: theme.colorScheme.onSurfaceVariant)),
+        ),
+      ),
+    );
+    Widget picture = thumb;
+    if (full && hosts.noticeFor(f.url) == null) {
+      picture = Image(
+        image: CustomNetworkImage(
+          f.url,
+          headers: headers,
+          withCache: settingsHandler.mediaCache,
+          cacheFolder: 'media',
+          receiveTimeout: const Duration(seconds: 60),
+        ),
+        fit: BoxFit.fitWidth,
+        width: double.infinity,
+        gaplessPlayback: true,
+        frameBuilder: (context, child, frame, wasSync) => frame == null ? thumb : child,
+        errorBuilder: (_, _, _) => thumb,
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: InkWell(
+        onTap: () => unawaited(_openMedia(p.displayable.indexOf(f))),
+        onLongPress: () => unawaited(_fileMenu(f)),
+        child: ClipRRect(borderRadius: BorderRadius.circular(10), child: picture),
+      ),
     );
   }
 

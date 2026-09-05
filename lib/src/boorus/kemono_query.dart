@@ -92,7 +92,7 @@ class KemonoQuery {
   static final RegExp _serviceId = RegExp(r'^([a-z]+):([A-Za-z0-9_.-]+)$');
   static final RegExp _isoDate = RegExp(r'^\d{4}-\d{2}-\d{2}$');
 
-  static KemonoQuery parse(String input) {
+  static KemonoQuery parse(String input, {int minQueryLength = 3, String siteName = 'kemono'}) {
     final List<String> words = [];
     final List<String> tags = [];
     String? service;
@@ -197,8 +197,8 @@ class KemonoQuery {
     } else if (creatorId != null || creatorName != null) {
       kind = KemonoQueryKind.creatorPosts;
     }
-    if ((kind == KemonoQueryKind.posts || kind == KemonoQueryKind.creatorPosts) && q.isNotEmpty && q.length < 3) {
-      error ??= tooShortMessage;
+    if ((kind == KemonoQueryKind.posts || kind == KemonoQueryKind.creatorPosts) && q.isNotEmpty && q.length < minQueryLength) {
+      error ??= '$siteName needs at least $minQueryLength characters to search';
     }
     return KemonoQuery(
       kind: kind,

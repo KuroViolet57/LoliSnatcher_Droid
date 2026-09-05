@@ -264,6 +264,19 @@ class DBHandler {
       'PRIMARY KEY (service, id) '
       ')',
     );
+    // pawchive's index: same shape, its own table (same creator ids, another site).
+    await db?.execute(
+      'CREATE TABLE IF NOT EXISTS PawchiveCreator ( '
+      'service TEXT NOT NULL, '
+      'id TEXT NOT NULL, '
+      'name TEXT NOT NULL, '
+      'indexed INTEGER NOT NULL DEFAULT 0, '
+      'updated INTEGER NOT NULL DEFAULT 0, '
+      'favorited INTEGER NOT NULL DEFAULT 0, '
+      'seenAt INTEGER NOT NULL, '
+      'PRIMARY KEY (service, id) '
+      ')',
+    );
     try {
       if (!await columnExists('SearchHistory', 'isFavourite')) {
         await db?.execute('ALTER TABLE SearchHistory ADD COLUMN isFavourite INTEGER;');
@@ -374,6 +387,9 @@ class DBHandler {
     await db?.execute('CREATE INDEX IF NOT EXISTS KemonoCreator_name_index ON KemonoCreator (name COLLATE NOCASE);');
     await db?.execute('CREATE INDEX IF NOT EXISTS KemonoCreator_updated_index ON KemonoCreator (updated DESC);');
     await db?.execute('CREATE INDEX IF NOT EXISTS KemonoCreator_favorited_index ON KemonoCreator (favorited DESC);');
+    await db?.execute('CREATE INDEX IF NOT EXISTS PawchiveCreator_name_index ON PawchiveCreator (name COLLATE NOCASE);');
+    await db?.execute('CREATE INDEX IF NOT EXISTS PawchiveCreator_updated_index ON PawchiveCreator (updated DESC);');
+    await db?.execute('CREATE INDEX IF NOT EXISTS PawchiveCreator_favorited_index ON PawchiveCreator (favorited DESC);');
   }
 
   Future<bool> dropIndexes() async {
@@ -1156,14 +1172,20 @@ class DBHandler {
   //
 
   /// Rows are `[service, id, name, indexed, updated, favorited]`.
-  Future<void> upsertKemonoCreators(List<List<Object?>> rows, int seenAt) async {
+  static const Set<String> _creatorTables = {'KemonoCreator', 'PawchiveCreator'};
+
+  /// Only the two known creator tables: the name lands in SQL.
+  static String creatorTable(String table) => _creatorTables.contains(table) ? table : 'KemonoCreator';
+
+  Future<void> upsertKemonoCreators(List<List<Object?>> rows, int seenAt, {String table = 'KemonoCreator'}) async {
     final db = this.db;
     if (db == null || rows.isEmpty) return;
+    final String t = creatorTable(table);
     await db.transaction((txn) async {
       final batch = txn.batch();
       for (final row in rows) {
         batch.rawInsert(
-          'INSERT OR REPLACE INTO KemonoCreator(service, id, name, indexed, updated, favorited, seenAt) VALUES(?,?,?,?,?,?,?)',
+          'INSERT OR REPLACE INTO $t(service, id, name, indexed, updated, favorited, seenAt) VALUES(?,?,?,?,?,?,?)',
           [...row, seenAt],
         );
       }
@@ -1171,16 +1193,16 @@ class DBHandler {
     });
   }
 
-  Future<int> pruneKemonoCreators({required int seenBefore}) async {
+  Future<int> pruneKemonoCreators({required int seenBefore, String table = 'KemonoCreator'}) async {
     final db = this.db;
     if (db == null) return 0;
-    return db.rawDelete('DELETE FROM KemonoCreator WHERE seenAt < ?', [seenBefore]);
+    return db.rawDelete('DELETE FROM ${creatorTable(table)} WHERE seenAt < ?', [seenBefore]);
   }
 
-  Future<int> countKemonoCreators() async {
+  Future<int> countKemonoCreators({String table = 'KemonoCreator'}) async {
     final db = this.db;
     if (db == null) return 0;
-    final rows = await db.rawQuery('SELECT COUNT(*) AS c FROM KemonoCreator');
+    final rows = await db.rawQuery('SELECT COUNT(*) AS c FROM ${creatorTable(table)}');
     return int.tryParse(rows.first['c']?.toString() ?? '') ?? 0;
   }
 
@@ -1193,6 +1215,7 @@ class DBHandler {
     Set<String>? keys,
     int limit = 60,
     int offset = 0,
+    String table = 'KemonoCreator',
   }) async {
     final db = this.db;
     if (db == null) return const [];
@@ -1221,21 +1244,21 @@ class DBHandler {
       ..add(limit)
       ..add(offset);
     return db.rawQuery(
-      'SELECT service, id, name, indexed, updated, favorited FROM KemonoCreator '
+      'SELECT service, id, name, indexed, updated, favorited FROM ${creatorTable(table)} '
       '${where.isEmpty ? '' : 'WHERE ${where.join(' AND ')} '}'
       'ORDER BY $order, name COLLATE NOCASE ASC LIMIT ? OFFSET ?',
       args,
     );
   }
 
-  Future<List<Map<String, Object?>>> getKemonoCreatorsByKeys(List<({String service, String id})> pairs) async {
+  Future<List<Map<String, Object?>>> getKemonoCreatorsByKeys(List<({String service, String id})> pairs, {String table = 'KemonoCreator'}) async {
     final db = this.db;
     if (db == null || pairs.isEmpty) return const [];
     final List<Map<String, Object?>> out = [];
     for (int i = 0; i < pairs.length; i += 400) {
       final slice = pairs.sublist(i, (i + 400).clamp(0, pairs.length));
       final rows = await db.rawQuery(
-        'SELECT service, id, name, indexed, updated, favorited FROM KemonoCreator '
+        'SELECT service, id, name, indexed, updated, favorited FROM ${creatorTable(table)} '
         "WHERE (service || ':' || id) IN (${List.filled(slice.length, '?').join(',')})",
         [for (final p in slice) '${p.service}:${p.id}'],
       );
@@ -1244,11 +1267,11 @@ class DBHandler {
     return out;
   }
 
-  Future<List<Map<String, Object?>>> findKemonoCreatorsByName(String name, {int limit = 5}) async {
+  Future<List<Map<String, Object?>>> findKemonoCreatorsByName(String name, {int limit = 5, String table = 'KemonoCreator'}) async {
     final db = this.db;
     if (db == null || name.isEmpty) return const [];
     return db.rawQuery(
-      'SELECT service, id, name, indexed, updated, favorited FROM KemonoCreator '
+      'SELECT service, id, name, indexed, updated, favorited FROM ${creatorTable(table)} '
       'WHERE name = ? COLLATE NOCASE ORDER BY favorited DESC LIMIT ?',
       [name, limit],
     );

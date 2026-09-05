@@ -10,6 +10,7 @@ import 'package:intl/intl.dart';
 
 import 'package:lolisnatcher/src/boorus/kemono_api.dart';
 import 'package:lolisnatcher/src/boorus/kemono_query.dart';
+import 'package:lolisnatcher/src/boorus/kemono_site.dart';
 import 'package:lolisnatcher/src/boorus/kemono_tag_catalog.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/comment_item.dart';
@@ -49,6 +50,14 @@ class KemonoHandler extends BooruHandler {
   KemonoHandler(super.booru, super.limit);
 
   static const int pageSize = 50;
+
+  /// kemono.cr or pawchive.pw — the hosts, the endpoints, the shapes.
+  late final KemonoSite site = KemonoSite.of(booru);
+
+  /// This site's creator index.
+  KemonoCreatorStore get store => KemonoCreatorStore.forSite(site);
+
+  KemonoFileHosts get fileHosts => KemonoFileHosts.forSite(site);
 
   /// The parsed form of the tab's query, set by [makeURL].
   KemonoQuery current = KemonoQuery.parse('');
@@ -117,7 +126,7 @@ class KemonoHandler extends BooruHandler {
   /// Only the referer: the media hosts want a browser's Accept, not the
   /// API's.
   @override
-  Map<String, String> getMediaHeaders() => const {'Referer': '${KemonoApi.site}/'};
+  Map<String, String> getMediaHeaders() => site.mediaHeaders;
 
   static bool _isFileHostUrl(String url) => KemonoFileHosts.isFileHost(Uri.tryParse(url)?.host ?? '');
 
@@ -126,7 +135,7 @@ class KemonoHandler extends BooruHandler {
   @override
   String? mediaOutageNotice(String url) {
     if (!_isFileHostUrl(url)) return null;
-    final KemonoFileHosts hosts = KemonoFileHosts.instance;
+    final KemonoFileHosts hosts = fileHosts;
     if (!hosts.checked) unawaited(hosts.check());
     return hosts.noticeFor(url);
   }
@@ -138,13 +147,13 @@ class KemonoHandler extends BooruHandler {
         (error.type == DioExceptionType.connectionTimeout ||
             error.type == DioExceptionType.connectionError ||
             error.type == DioExceptionType.receiveTimeout)) {
-      unawaited(KemonoFileHosts.instance.check(force: true));
+      unawaited(fileHosts.check(force: true));
     }
   }
 
   @override
   Future<void> beforeMediaRetry(String url) async {
-    if (_isFileHostUrl(url)) await KemonoFileHosts.instance.check(force: true);
+    if (_isFileHostUrl(url)) await fileHosts.check(force: true);
   }
 
   @override
@@ -171,13 +180,14 @@ class KemonoHandler extends BooruHandler {
     MetaTagWithValues(
       name: 'Service (filters on the phone)',
       keyName: 'service',
-      values: [for (final s in KemonoQuery.services) MetaTagValue(name: s, value: s)],
+      values: [for (final s in site.services) MetaTagValue(name: s, value: s)],
     ),
-    MetaTagWithValues(
-      name: 'Popular',
-      keyName: 'popular',
-      values: [for (final p in KemonoQuery.periods) MetaTagValue(name: p, value: p)],
-    ),
+    if (site.hasPopular)
+      MetaTagWithValues(
+        name: 'Popular',
+        keyName: 'popular',
+        values: [for (final p in KemonoQuery.periods) MetaTagValue(name: p, value: p)],
+      ),
     MetaTagWithValues(name: 'Favorites', keyName: 'favorites', values: [MetaTagValue(name: 'posts', value: 'posts')]),
     StringMetaTag(name: 'Post id', keyName: 'id'),
   ];
@@ -189,26 +199,21 @@ class KemonoHandler extends BooruHandler {
   String urlFor(KemonoQuery query) {
     switch (query.kind) {
       case KemonoQueryKind.posts:
-        return KemonoApi.postsUrl(q: query.q, offset: offset, tags: query.tags);
+        return site.postsUrl(q: query.q, offset: offset, tags: query.tags);
       case KemonoQueryKind.creatorPosts:
         if (query.creatorId == null) {
           // Resolved by name in fetchSearch; this address is never fetched.
-          return '${KemonoApi.api}/creator-by-name?name=${Uri.encodeQueryComponent(query.creatorName ?? '')}';
+          return '${site.api}/creator-by-name?name=${Uri.encodeQueryComponent(query.creatorName ?? '')}';
         }
-        return KemonoApi.postsUrl(
-          base: '${KemonoApi.creatorPath(query.service!, query.creatorId!)}/posts',
-          q: query.q,
-          offset: offset,
-          tags: query.tags,
-        );
+        return site.creatorPostsUrl(query.service!, query.creatorId!, q: query.q, offset: offset, tags: query.tags);
       case KemonoQueryKind.popular:
-        return KemonoApi.popularUrl(period: query.period, date: query.date ?? today(), offset: offset);
+        return site.popularUrl(period: query.period, date: query.date ?? today(), offset: offset);
       case KemonoQueryKind.randomPost:
-        return '${KemonoApi.api}/posts/random';
+        return '${site.api}/posts/random';
       case KemonoQueryKind.favouritePosts:
-        return '${KemonoApi.api}/account/favorites?type=post';
+        return '${site.api}/account/favorites?type=post';
       case KemonoQueryKind.post:
-        return '${KemonoApi.creatorPath(query.service!, query.creatorId!)}/post/${query.postId}';
+        return '${site.creatorPath(query.service!, query.creatorId!)}/post/${query.postId}';
     }
   }
 
@@ -217,11 +222,19 @@ class KemonoHandler extends BooruHandler {
       current.kind == KemonoQueryKind.favouritePosts ||
       current.kind == KemonoQueryKind.post;
 
+  /// Why this site cannot serve [query], or null when it can.
+  String? unsupportedReason(KemonoQuery query) => switch (query.kind) {
+    KemonoQueryKind.popular when !site.hasPopular => '${site.name} has no popular feed',
+    KemonoQueryKind.randomPost when !site.hasRandom => '${site.name} has no random post',
+    _ => null,
+  };
+
   @override
   String makeURL(String tags) {
-    current = KemonoQuery.parse(tags);
-    if (current.error != null) {
-      errorString = current.error!;
+    current = KemonoQuery.parse(tags, minQueryLength: site.minQueryLength, siteName: site.name);
+    final String? unsupported = current.error ?? unsupportedReason(current);
+    if (unsupported != null) {
+      errorString = unsupported;
       locked = true;
       return '';
     }
@@ -230,7 +243,7 @@ class KemonoHandler extends BooruHandler {
       return '';
     }
     if (current.kind == KemonoQueryKind.favouritePosts && !KemonoSessionHandler.instance.hasSession(booru)) {
-      errorString = 'Favorites need your kemono username and password in the booru settings';
+      errorString = 'Favorites need your ${site.name} username and password in the booru settings';
       locked = true;
       return '';
     }
@@ -238,6 +251,15 @@ class KemonoHandler extends BooruHandler {
   }
 
   // ── fetching ───────────────────────────────────────────────────────
+
+  /// The post out of a detail: kemono wraps it as `{post, …}`, pawchive
+  /// returns it bare.
+  static Map? postOf(Map? detail) {
+    if (detail == null) return null;
+    final post = detail['post'];
+    if (post is Map) return post;
+    return detail['id'] != null ? detail : null;
+  }
 
   /// Rows that can be shown: a post with no media at all is text only, and
   /// the grid has nothing to draw for it.
@@ -295,9 +317,9 @@ class KemonoHandler extends BooruHandler {
   Future<Response<dynamic>> fetchSearch(Uri uri, String input, {bool withCaptchaCheck = true, Map<String, dynamic>? queryParams}) async {
     KemonoQuery query = current;
     if (query.needsCreatorLookup) {
-      final KemonoCreator? found = await KemonoCreatorStore.instance.findByName(query.creatorName!);
+      final KemonoCreator? found = await store.findByName(query.creatorName!);
       if (found == null) {
-        errorString = 'No creator called "${query.creatorName}" in the kemono index (open Artists to refresh it)';
+        errorString = 'No creator called "${query.creatorName}" in the ${site.name} index (open Artists to refresh it)';
         locked = true;
         return _synthetic(uri, rows: const [], count: 0);
       }
@@ -306,14 +328,14 @@ class KemonoHandler extends BooruHandler {
       uri = Uri.parse(urlFor(query));
     }
     // The first search kicks the creator index off; names fill in as it lands.
-    unawaited(KemonoCreatorStore.instance.ensureFresh());
+    unawaited(store.ensureFresh());
 
     if (query.kind == KemonoQueryKind.randomPost) {
-      final ref = await KemonoApi.randomPost();
+      final ref = await KemonoApi.randomPost(booru: booru);
       if (ref == null) return _synthetic(uri, rows: const [], count: 0);
       final Map<String, dynamic>? detail = await KemonoApi.postDetail(ref.service, ref.id, ref.postId, booru: booru);
-      final post = detail?['post'];
-      return _synthetic(uri, rows: post is Map ? [post] : const [], count: 1);
+      final post = postOf(detail);
+      return _synthetic(uri, rows: post == null ? const [] : [post], count: 1);
     }
 
     final bool pageable =
@@ -347,7 +369,6 @@ class KemonoHandler extends BooruHandler {
     final int count = int.tryParse(data['count']?.toString() ?? '') ?? rows.length;
     if (count > 0) totalCount.value = count;
 
-    final store = KemonoCreatorStore.instance;
     await store.warmNames([
       for (final row in rows) (service: row['service']?.toString() ?? '', id: row['user']?.toString() ?? ''),
     ]);
@@ -378,9 +399,9 @@ class KemonoHandler extends BooruHandler {
       out.add(
         CreatorInfo(
           searchQuery: 'creator:$service:$user',
-          displayName: KemonoCreatorStore.instance.nameOf(service, user) ?? '$service:$user',
-          avatarUrl: KemonoApi.iconUrl(service, user),
-          coverUrl: KemonoApi.bannerUrl(service, user),
+          displayName: store.nameOf(service, user) ?? '$service:$user',
+          avatarUrl: site.iconUrl(service, user),
+          coverUrl: site.bannerUrl(service, user),
           subtitle: service,
         ),
       );
@@ -415,8 +436,8 @@ class KemonoHandler extends BooruHandler {
 
   /// The tag string for a creator: their name where the index knows it,
   /// else `service:id` — both forms route back to the creator's posts.
-  static String creatorTag(String service, String user) {
-    final String? name = KemonoCreatorStore.instance.nameOf(service, user);
+  String creatorTag(String service, String user) {
+    final String? name = store.nameOf(service, user);
     if (name == null) return '$service:$user';
     return name.trim().replaceAll(RegExp(r'\s+'), '_');
   }
@@ -445,7 +466,7 @@ class KemonoHandler extends BooruHandler {
 
     final String cover = KemonoProfile.coverPath(paths);
     final bool video = KemonoProfile.isVideoPath(cover);
-    final String thumb = video ? KemonoApi.iconUrl(service, user) : KemonoApi.thumbUrl(cover);
+    final String thumb = video ? site.iconUrl(service, user) : site.thumbUrl(cover);
     final String title = row['title']?.toString().trim() ?? '';
     final String body = textOf(row['content']?.toString()) ;
     final String substring = row['substring']?.toString().trim() ?? '';
@@ -469,19 +490,19 @@ class KemonoHandler extends BooruHandler {
     // Files live on the site's file hosts, addressed directly like the site
     // does; `kemono.cr/data` is a DDoS-Guard redirect nothing here uses.
     final item = BooruItem(
-      fileURL: KemonoApi.fileUrl(cover),
+      fileURL: site.fileUrl(cover),
       // The site's image service (up to 800 px) is the sample: it answers
       // everywhere the API does, the file hosts don't.
-      sampleURL: video ? KemonoApi.fileUrl(cover) : thumb,
+      sampleURL: video ? site.fileUrl(cover) : thumb,
       thumbnailURL: thumb,
       tagsList: tags,
-      postURL: KemonoApi.postUrl(service, user, id),
+      postURL: site.postUrl(service, user, id),
       fileExt: extensionOf(cover),
       serverId: '$service:$user:$id',
       uploaderId: '$service:$user',
-      uploaderName: KemonoCreatorStore.instance.nameOf(service, user),
+      uploaderName: store.nameOf(service, user),
       description: description,
-      sources: [KemonoApi.postUrl(service, user, id)],
+      sources: [site.postUrl(service, user, id)],
       postDate: row['published']?.toString(),
       postDateFormat: 'iso',
     );
@@ -499,13 +520,13 @@ class KemonoHandler extends BooruHandler {
     if (ref == null) return (item: item, failed: false, error: null);
     try {
       final detail = await KemonoApi.postDetail(ref.service, ref.user, ref.post, booru: booru);
-      final post = detail?['post'];
-      if (post is! Map) return (item: item, failed: true, error: 'the post is gone');
+      final Map? post = postOf(detail);
+      if (post == null) return (item: item, failed: true, error: 'the post is gone');
       final BooruItem? fresh = await parseItemFromResponse(post, 0);
       if (fresh == null) return (item: item, failed: false, error: null);
       item.tagsList = fresh.tagsList;
       item.description = fresh.description;
-      final files = KemonoProfile.filesFromDetail(detail!);
+      final files = KemonoProfile.filesFromDetail(detail!, site: site);
       if (files != null && files.length > 1) item.fileCountHint.value = files.length;
       return (item: item, failed: false, error: null);
     } catch (e) {
@@ -525,7 +546,7 @@ class KemonoHandler extends BooruHandler {
     final String term = creatorsOnly ? text.substring(8) : (tagsOnly ? text.substring(4) : text);
     final List<TagSuggestion> out = [];
     if (!tagsOnly && term.trim().length >= 2) {
-      final creators = await KemonoCreatorStore.instance.search(term, limit: 12);
+      final creators = await store.search(term, limit: 12);
       for (final c in creators) {
         out.add(
           TagSuggestion(
@@ -552,7 +573,7 @@ class KemonoHandler extends BooruHandler {
   String makeCommentsURL(String postID, int pageNum) {
     final ref = KemonoProfile.splitId(postID);
     if (ref == null) return '';
-    return '${KemonoApi.creatorPath(ref.service, ref.user)}/post/${ref.post}/comments';
+    return '${site.creatorPath(ref.service, ref.user)}/post/${ref.post}/comments';
   }
 
   @override
@@ -607,12 +628,12 @@ class KemonoHandler extends BooruHandler {
   Future<(bool, String)> setSiteFavourite(BooruItem item, bool value) async {
     final ref = KemonoProfile.splitId(item.serverId);
     if (ref == null) return (false, 'No post id');
-    if (!hasSiteFavourites) return (false, 'Local only — sign in to kemono in the booru settings to sync');
+    if (!hasSiteFavourites) return (false, 'Local only — sign in to ${site.name} in the booru settings to sync');
     return KemonoApi.setPostFavourite(booru, ref.service, ref.user, ref.post, value);
   }
 
   Future<(bool, String)> setCreatorFavourite(String service, String id, bool value) async {
-    if (!hasSiteFavourites) return (false, 'Sign in to kemono in the booru settings to favourite artists');
+    if (!hasSiteFavourites) return (false, 'Sign in to ${site.name} in the booru settings to favourite artists');
     final result = await KemonoApi.setCreatorFavourite(booru, service, id, value);
     if (result.$1) {
       if (value) {

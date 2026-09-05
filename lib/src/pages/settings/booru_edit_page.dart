@@ -269,13 +269,22 @@ class _BooruEditState extends State<BooruEdit> {
                       booruFaviconController.text = 'https://hentaipaw.com/favicon.ico';
                     }
                   }
-                  if (selectedBooruType.isKemono && booruURLController.text.trim().isEmpty) {
+                  if (selectedBooruType == BooruType.Kemono && booruURLController.text.trim().isEmpty) {
                     booruURLController.text = 'https://kemono.cr';
                     if (booruNameController.text.trim().isEmpty) {
                       booruNameController.text = 'Kemono';
                     }
                     if (booruFaviconController.text.trim().isEmpty) {
                       booruFaviconController.text = 'https://kemono.cr/favicon.ico';
+                    }
+                  }
+                  if (selectedBooruType == BooruType.Pawchive && booruURLController.text.trim().isEmpty) {
+                    booruURLController.text = 'https://pawchive.pw';
+                    if (booruNameController.text.trim().isEmpty) {
+                      booruNameController.text = 'Pawchive';
+                    }
+                    if (booruFaviconController.text.trim().isEmpty) {
+                      booruFaviconController.text = 'https://pawchive.pw/static/favicon.png';
                     }
                   }
                   if (selectedBooruType.isAsmHentai && booruURLController.text.trim().isEmpty) {
@@ -572,6 +581,18 @@ class _BooruEditState extends State<BooruEdit> {
             '<b>Username and password (optional):</b> the app signs in to your '
             'kemono account for Favorites (posts and artists) and syncs hearts '
             'to it. Nothing is sent anywhere else.';
+      case BooruType.Pawchive:
+        return '<b>Pawchive</b><br>Leave the URL as https://pawchive.pw. An archive '
+            'of kemono (Patreon and Fanbox creators) on the older kemono API, '
+            'with its own file host that actually answers. Same tabs, sidebar, '
+            'Artists page and post page as Kemono.<br><br> '
+            '<b>Search:</b> plain words (2+ characters), <i>tag:x</i>, '
+            '<i>creator:name</i>, <i>service:patreon</i> (filtered on the phone). '
+            'No popular feed, random post, tag list or DMs — the site has none.<br><br> '
+            '<b>Username and password (optional):</b> the app signs in through '
+            "the site's login form for Favorites (posts and artists) and syncs "
+            'hearts. The file host blocks IPs that download unreasonably, so '
+            'nothing here prefetches files.';
       case BooruType.NHentai:
         return '<b>nhentai</b><br>Leave the URL as https://nhentai.net. A '
             'DOUJIN source: every post is a whole gallery, read page by page '

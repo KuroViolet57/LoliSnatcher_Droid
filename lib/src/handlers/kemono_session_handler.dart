@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 
 import 'package:dio/dio.dart';
 
+import 'package:lolisnatcher/src/boorus/kemono_site.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
@@ -43,7 +44,12 @@ class KemonoSessionHandler {
     }
   }
 
-  static String keyFor(Booru booru) => (booru.userID ?? '').trim().toLowerCase();
+  /// One session per site per username.
+  static String keyFor(Booru booru) {
+    final String user = (booru.userID ?? '').trim().toLowerCase();
+    if (user.isEmpty) return '';
+    return '${KemonoSite.of(booru).id.name}|$user';
+  }
 
   void ensureLoaded() {
     if (_loaded) return;
@@ -106,13 +112,22 @@ class KemonoSessionHandler {
     return null;
   }
 
-  static Map<String, String> _headers() => {
-    'Accept': 'text/css',
-    'Content-Type': 'application/json',
+  static Map<String, String> _headers(KemonoSite s, {bool form = false}) => {
+    'Accept': form ? 'text/html,application/xhtml+xml,*/*;q=0.8' : s.acceptHeader,
+    'Content-Type': form ? 'application/x-www-form-urlencoded' : 'application/json',
     'User-Agent': Tools.browserUserAgent,
-    'Referer': '$site/',
-    'Origin': site,
+    'Referer': form ? s.loginUrl : '${s.site}/',
+    'Origin': s.site,
   };
+
+  /// A session cookie out of the site's answer to a login: for the API login
+  /// a 200/201, for the login form the redirect that follows a success.
+  @visibleForTesting
+  static String? sessionFromLoginResponse(int status, List<String> setCookie, {required bool form}) {
+    final bool ok = form ? (status == 200 || status == 302 || status == 303) : (status == 200 || status == 201);
+    if (!ok) return null;
+    return sessionCookieFrom(setCookie);
+  }
 
   /// Signs in with the booru's username and password. The message is meant
   /// for the person.
@@ -121,54 +136,61 @@ class KemonoSessionHandler {
     final String key = keyFor(booru);
     if (!hasCredentials(booru)) return (false, 'Enter a username and password in the booru settings first');
     _lastAttempt[key] = DateTime.now().millisecondsSinceEpoch;
+    final KemonoSite s = KemonoSite.of(booru);
+    final bool form = !s.hasApiLogin;
     try {
+      // kemono: the JSON API login. pawchive: the site's own login form,
+      // whose success is a redirect carrying the session cookie.
       final Response response = await DioNetwork.post(
-        '$api/authentication/login',
-        data: jsonEncode({'username': booru.userID!.trim(), 'password': booru.apiKey}),
-        headers: _headers(),
-        options: Options(validateStatus: (_) => true, responseType: ResponseType.plain),
+        s.loginUrl,
+        data: form
+            ? 'username=${Uri.encodeQueryComponent(booru.userID!.trim())}&password=${Uri.encodeQueryComponent(booru.apiKey ?? '')}&location=%2F'
+            : jsonEncode({'username': booru.userID!.trim(), 'password': booru.apiKey}),
+        headers: _headers(s, form: form),
+        options: Options(validateStatus: (_) => true, responseType: ResponseType.plain, followRedirects: false),
       );
       final int status = response.statusCode ?? -1;
-      if (status == 200 || status == 201) {
+      final bool accepted = form ? (status == 200 || status == 302 || status == 303) : (status == 200 || status == 201);
+      if (accepted) {
         final String? cookie = sessionCookieFrom(response.headers.map['set-cookie'] ?? const []);
         if (cookie == null) {
           _log('login answered $status without a session cookie');
-          return (false, 'kemono signed in but sent no session cookie');
+          return (false, form ? '${s.name} did not accept the username or password' : '${s.name} signed in but sent no session cookie');
         }
         _sessions[key] = (cookie: cookie, at: DateTime.now().millisecondsSinceEpoch);
         _persist();
         revision.value++;
-        _log('signed in as ${booru.userID}');
-        return (true, 'Signed in to kemono');
+        _log('signed in as ${booru.userID} on ${s.name}');
+        return (true, 'Signed in to ${s.name}');
       }
-      if (status == 409) {
+      if (status == 409 && !form) {
         // Already logged in on the site's side (a session the shared cookie
         // jar still holds). Adopt it if it works, otherwise sign out and try
         // once more.
-        final String? jar = await _sessionFromJar();
+        final String? jar = await _sessionFromJar(s);
         if (jar != null) {
           _sessions[key] = (cookie: jar, at: DateTime.now().millisecondsSinceEpoch);
           _persist();
           revision.value++;
           _log('adopted the existing session for ${booru.userID}');
-          return (true, 'Signed in to kemono');
+          return (true, 'Signed in to ${s.name}');
         }
-        await _remoteLogout(null);
+        await _remoteLogout(s, null);
         _lastAttempt.remove(key);
         return login(booru);
       }
-      if (status == 400 || status == 401) return (false, 'kemono rejected the username or password');
-      if (status == 429) return (false, 'kemono is rate-limiting sign-ins; wait a minute');
-      return (false, 'kemono answered $status to the sign-in');
+      if (status == 400 || status == 401) return (false, '${s.name} rejected the username or password');
+      if (status == 429) return (false, '${s.name} is rate-limiting sign-ins; wait a minute');
+      return (false, '${s.name} answered $status to the sign-in');
     } catch (e) {
       _log('login failed: $e');
       return (false, 'Sign-in failed: $e');
     }
   }
 
-  Future<String?> _sessionFromJar() async {
+  Future<String?> _sessionFromJar(KemonoSite s) async {
     try {
-      final String jar = await Tools.getCookies(site);
+      final String jar = await Tools.getCookies(s.site);
       for (final String pair in jar.split(';')) {
         final String p = pair.trim();
         if (p.toLowerCase().startsWith('session=') && p.length > 'session='.length) return p;
@@ -194,13 +216,21 @@ class KemonoSessionHandler {
     return ok;
   }
 
-  Future<void> _remoteLogout(String? cookie) async {
+  Future<void> _remoteLogout(KemonoSite s, String? cookie) async {
     try {
-      await DioNetwork.post(
-        '$api/authentication/logout',
-        headers: {..._headers(), 'Cookie': ?cookie},
-        options: Options(validateStatus: (_) => true, responseType: ResponseType.plain),
-      );
+      if (s.hasApiLogin) {
+        await DioNetwork.post(
+          s.logoutUrl,
+          headers: {..._headers(s), 'Cookie': ?cookie},
+          options: Options(validateStatus: (_) => true, responseType: ResponseType.plain),
+        );
+      } else {
+        await DioNetwork.get(
+          s.logoutUrl,
+          headers: {..._headers(s, form: true), 'Cookie': ?cookie},
+          options: Options(validateStatus: (_) => true, responseType: ResponseType.plain, followRedirects: false),
+        );
+      }
     } catch (_) {}
   }
 
@@ -212,7 +242,7 @@ class KemonoSessionHandler {
     if (cookie == null) return;
     _persist();
     revision.value++;
-    if (remote) await _remoteLogout(cookie);
+    if (remote) await _remoteLogout(KemonoSite.of(booru), cookie);
     _log('signed out ${booru.userID}');
   }
 

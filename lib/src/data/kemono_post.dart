@@ -1,4 +1,4 @@
-import 'package:lolisnatcher/src/boorus/kemono_api.dart';
+import 'package:lolisnatcher/src/boorus/kemono_site.dart';
 import 'package:lolisnatcher/src/data/site_profiles/kemono_profile.dart';
 
 enum KemonoFileKind { image, video, other }
@@ -11,6 +11,7 @@ class KemonoPostFile {
     required this.kind,
     required this.extension,
     this.server,
+    this.site = KemonoSite.kemono,
   });
 
   /// The name the creator gave the file (`picture1.png`, `Pack.rar`).
@@ -24,10 +25,11 @@ class KemonoPostFile {
 
   /// The host the detail names for this file, when it does.
   final String? server;
+  final KemonoSite site;
 
-  String get url => KemonoApi.fileUrl(path, server: server);
+  String get url => site.fileUrl(path, server: server);
 
-  String? get thumbUrl => kind == KemonoFileKind.image ? KemonoApi.thumbUrl(path) : null;
+  String? get thumbUrl => kind == KemonoFileKind.image ? site.thumbUrl(path) : null;
 
   bool get isDisplayable => kind != KemonoFileKind.other;
 
@@ -73,6 +75,8 @@ class KemonoPost {
     this.added,
     this.next,
     this.prev,
+    this.hasFull,
+    this.site = KemonoSite.kemono,
   });
 
   final String service;
@@ -94,7 +98,14 @@ class KemonoPost {
   final String? next;
   final String? prev;
 
-  String get postUrl => KemonoApi.postUrl(service, user, id);
+  /// pawchive says whether it holds the full post; null where the site
+  /// does not say (kemono).
+  final bool? hasFull;
+  final KemonoSite site;
+
+  String get postUrl => site.postUrl(service, user, id);
+
+  bool get isPreviewOnly => hasFull == false;
 
   String get serverId => '$service:$user:$id';
 
@@ -114,13 +125,16 @@ class KemonoPost {
   String contentForHtml() {
     return contentHtml.replaceAllMapped(
       RegExp('(src|href)=(["\'])/data(/[^"\']+)'),
-      (m) => '${m[1]}=${m[2]}${KemonoApi.fileUrl(m[3]!)}',
+      (m) => '${m[1]}=${m[2]}${site.fileUrl(m[3]!)}',
     );
   }
 
-  static KemonoPost? fromDetail(Map detail) {
-    final post = detail['post'];
-    if (post is! Map) return null;
+  /// kemono's envelope `{post, attachments, previews, videos}` or pawchive's
+  /// bare post.
+  static KemonoPost? fromDetail(Map detail, {KemonoSite site = KemonoSite.kemono}) {
+    final dynamic wrapped = detail['post'];
+    final Map? post = wrapped is Map ? wrapped : (detail['id'] != null ? detail : null);
+    if (post == null) return null;
     final String service = post['service']?.toString() ?? '';
     final String user = post['user']?.toString() ?? '';
     final String id = post['id']?.toString() ?? '';
@@ -159,6 +173,7 @@ class KemonoPost {
           kind: KemonoPostFile.kindOf(ext),
           extension: ext,
           server: servers[path],
+          site: site,
         ),
       );
     }
@@ -195,6 +210,8 @@ class KemonoPost {
       added: post['added']?.toString(),
       next: post['next']?.toString(),
       prev: post['prev']?.toString(),
+      hasFull: post['has_full'] is bool ? post['has_full'] as bool : null,
+      site: site,
     );
   }
 }

@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:lolisnatcher/src/boorus/kemono_api.dart';
+import 'package:lolisnatcher/src/boorus/kemono_site.dart';
 import 'package:lolisnatcher/src/boorus/kemono_handler.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/handlers/kemono_creator_store.dart';
@@ -107,7 +108,7 @@ class _KemonoDmsPageState extends State<KemonoDmsPage> {
         for (final r in raw)
           if (r is Map) ?KemonoMessage.fromJson(r),
       ];
-      await KemonoCreatorStore.instance.warmNames([for (final m in got) (service: m.service, id: m.user)]);
+      await KemonoCreatorStore.forSite(KemonoSite.of(widget.booru)).warmNames([for (final m in got) (service: m.service, id: m.user)]);
       _rows.addAll(got);
     } catch (e) {
       _error = e.toString();
@@ -127,8 +128,9 @@ class _KemonoDmsPageState extends State<KemonoDmsPage> {
   Widget build(BuildContext context) {
     final String? name = widget.creator == null
         ? null
-        : KemonoCreatorStore.instance.nameOf(widget.creator!.service, widget.creator!.id);
+        : KemonoCreatorStore.forSite(KemonoSite.of(widget.booru)).nameOf(widget.creator!.service, widget.creator!.id);
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       appBar: AppBar(title: Text(widget.creator == null ? 'DMs' : 'DMs from ${name ?? widget.creator!.id}')),
       body: Column(
         children: [
@@ -217,8 +219,9 @@ class _KemonoAnnouncementsPageState extends State<KemonoAnnouncementsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final String name = KemonoCreatorStore.instance.nameOf(widget.service, widget.id) ?? widget.id;
+    final String name = KemonoCreatorStore.forSite(KemonoSite.of(widget.booru)).nameOf(widget.service, widget.id) ?? widget.id;
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       appBar: AppBar(title: Text('Announcements from $name')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -244,7 +247,7 @@ class KemonoMessageTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final String name = KemonoCreatorStore.instance.nameOf(message.service, message.user) ?? '${message.service}:${message.user}';
+    final String name = KemonoCreatorStore.forSite(KemonoSite.of(booru)).nameOf(message.service, message.user) ?? '${message.service}:${message.user}';
     final String when = message.date == null ? '' : DateFormat.yMMMd().add_Hm().format(message.date!.toLocal());
     return InkWell(
       onTap: () {
@@ -272,7 +275,7 @@ class KemonoMessageTile extends StatelessWidget {
                   CircleAvatar(
                     radius: 14,
                     backgroundColor: theme.colorScheme.surfaceContainerHighest,
-                    foregroundImage: NetworkImage(KemonoApi.iconUrl(message.service, message.user)),
+                    foregroundImage: NetworkImage(KemonoSite.of(booru).iconUrl(message.service, message.user)),
                     onForegroundImageError: (_, _) {},
                     child: Text(name.isNotEmpty ? name.substring(0, 1).toUpperCase() : '?', style: const TextStyle(fontSize: 12)),
                   ),

@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 
 import 'package:lolisnatcher/src/boorus/kemono_api.dart';
+import 'package:lolisnatcher/src/boorus/kemono_site.dart';
 import 'package:lolisnatcher/src/data/kemono_creator.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
@@ -57,11 +58,19 @@ class KemonoIndexState {
 /// the table stays usable while a refresh runs. Refreshed on demand and when
 /// older than [staleAfter].
 class KemonoCreatorStore {
-  KemonoCreatorStore._();
+  KemonoCreatorStore._(this.site);
 
-  static final KemonoCreatorStore instance = KemonoCreatorStore._();
+  final KemonoSite site;
 
-  static const String metaFile = 'kemono_creators.json';
+  static final Map<KemonoSiteId, KemonoCreatorStore> _bySite = {};
+
+  /// The store of one site's index — its own table and meta file.
+  static KemonoCreatorStore forSite(KemonoSite site) => _bySite[site.id] ??= KemonoCreatorStore._(site);
+
+  /// kemono's, for the code that only ever meant kemono.
+  static KemonoCreatorStore get instance => forSite(KemonoSite.kemono);
+
+  String get metaFile => site.indexMetaFile;
   static const Duration staleAfter = Duration(hours: 24);
   static const int batch = 2000;
   static const int nameCacheSize = 5000;
@@ -145,8 +154,8 @@ class KemonoCreatorStore {
     _log('index refresh started');
     try {
       final Response response = await DioNetwork.get(
-        '${KemonoApi.api}/creators',
-        headers: KemonoApi.headers(null),
+        '${site.api}/creators',
+        headers: KemonoApi.headersFor(site),
         options: Options(
           responseType: ResponseType.plain,
           receiveTimeout: const Duration(seconds: 180),
@@ -154,7 +163,7 @@ class KemonoCreatorStore {
         ),
       );
       if (response.statusCode != 200) {
-        throw KemonoApiException(response.statusCode ?? -1, KemonoApi.describeStatus(response.statusCode ?? -1, ''));
+        throw KemonoApiException(response.statusCode ?? -1, KemonoApi.describeStatus(response.statusCode ?? -1, '', site: site));
       }
       final String body = response.data?.toString() ?? '';
       final List<List<Object?>> rows = await compute(parseRows, body);
@@ -164,13 +173,13 @@ class KemonoCreatorStore {
       int inserted = 0;
       for (int i = 0; i < rows.length; i += batch) {
         final List<List<Object?>> slice = rows.sublist(i, (i + batch).clamp(0, rows.length));
-        await db.upsertKemonoCreators(slice, startedAt);
+        await db.upsertKemonoCreators(slice, startedAt, table: site.creatorTable);
         inserted += slice.length;
         state.value = state.value.copyWith(inserted: inserted);
         // Let the UI breathe between batches.
         await Future.delayed(Duration.zero);
       }
-      final int pruned = await db.pruneKemonoCreators(seenBefore: startedAt);
+      final int pruned = await db.pruneKemonoCreators(seenBefore: startedAt, table: site.creatorTable);
       final int total = await count();
       final int finishedAt = DateTime.now().millisecondsSinceEpoch;
       _saveMeta(finishedAt, total);
@@ -185,7 +194,7 @@ class KemonoCreatorStore {
 
   Future<int> count() async {
     try {
-      return await SettingsHandler.instance.dbHandler.countKemonoCreators();
+      return await SettingsHandler.instance.dbHandler.countKemonoCreators(table: site.creatorTable);
     } catch (_) {
       return 0;
     }
@@ -199,9 +208,9 @@ class KemonoCreatorStore {
     ];
     if (missing.isEmpty) return;
     try {
-      final rows = await SettingsHandler.instance.dbHandler.getKemonoCreatorsByKeys(missing);
+      final rows = await SettingsHandler.instance.dbHandler.getKemonoCreatorsByKeys(missing, table: site.creatorTable);
       for (final row in rows) {
-        final c = KemonoCreator.fromRow(row);
+        final c = KemonoCreator.fromRow(row, site: site);
         _remember(c.key, c.name);
       }
     } catch (_) {}
@@ -220,9 +229,9 @@ class KemonoCreatorStore {
 
   Future<KemonoCreator?> get(String service, String id) async {
     try {
-      final rows = await SettingsHandler.instance.dbHandler.getKemonoCreatorsByKeys([(service: service, id: id)]);
+      final rows = await SettingsHandler.instance.dbHandler.getKemonoCreatorsByKeys([(service: service, id: id)], table: site.creatorTable);
       if (rows.isEmpty) return null;
-      final c = KemonoCreator.fromRow(rows.first);
+      final c = KemonoCreator.fromRow(rows.first, site: site);
       _remember(c.key, c.name);
       return c;
     } catch (_) {
@@ -233,9 +242,9 @@ class KemonoCreatorStore {
   /// The most-favourited creator called exactly [name] (case-insensitive).
   Future<KemonoCreator?> findByName(String name) async {
     try {
-      final rows = await SettingsHandler.instance.dbHandler.findKemonoCreatorsByName(name.trim(), limit: 1);
+      final rows = await SettingsHandler.instance.dbHandler.findKemonoCreatorsByName(name.trim(), limit: 1, table: site.creatorTable);
       if (rows.isEmpty) return null;
-      return KemonoCreator.fromRow(rows.first);
+      return KemonoCreator.fromRow(rows.first, site: site);
     } catch (_) {
       return null;
     }
@@ -257,8 +266,9 @@ class KemonoCreatorStore {
         keys: onlyKeys,
         limit: limit,
         offset: offset,
+        table: site.creatorTable,
       );
-      final List<KemonoCreator> out = [for (final row in rows) KemonoCreator.fromRow(row)];
+      final List<KemonoCreator> out = [for (final row in rows) KemonoCreator.fromRow(row, site: site)];
       for (final c in out) {
         _remember(c.key, c.name);
       }
@@ -275,6 +285,6 @@ class KemonoCreatorStore {
     state.value = const KemonoIndexState();
   }
 
-  static void _log(String message) =>
-      Logger.Inst().log('kemono creators: $message', 'KemonoCreatorStore', 'index', LogTypes.booruHandlerInfo);
+  void _log(String message) =>
+      Logger.Inst().log('${site.name} creators: $message', 'KemonoCreatorStore', 'index', LogTypes.booruHandlerInfo);
 }

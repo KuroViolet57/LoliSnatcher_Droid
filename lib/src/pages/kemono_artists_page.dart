@@ -7,7 +7,7 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:lolisnatcher/src/boorus/kemono_api.dart';
 import 'package:lolisnatcher/src/boorus/kemono_handler.dart';
-import 'package:lolisnatcher/src/boorus/kemono_query.dart';
+import 'package:lolisnatcher/src/boorus/kemono_site.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/kemono_creator.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
@@ -71,7 +71,8 @@ class _KemonoArtistsPageState extends State<KemonoArtistsPage> {
   };
 
   late final KemonoHandler _handler = KemonoArtistsPage.handlerFor(widget.booru);
-  final KemonoCreatorStore _store = KemonoCreatorStore.instance;
+  late final KemonoSite _site = KemonoSite.of(widget.booru);
+  late final KemonoCreatorStore _store = KemonoCreatorStore.forSite(_site);
   final TextEditingController _query = TextEditingController();
   final ScrollController _scroll = ScrollController();
   late KemonoArtistsMode _mode = widget.mode;
@@ -144,7 +145,7 @@ class _KemonoArtistsPageState extends State<KemonoArtistsPage> {
           : await KemonoApi.favourites(widget.booru, type: 'artist');
       final List<KemonoCreator> live = [
         for (final r in rows)
-          if (r is Map) ?KemonoCreator.fromJson(r),
+          if (r is Map) ?KemonoCreator.fromJson(r, site: _site),
       ];
       final Map<String, KemonoCreator> indexed = {
         for (final c in await _store.search('', limit: live.length + 1, onlyKeys: {for (final c in live) c.key})) c.key: c,
@@ -152,6 +153,7 @@ class _KemonoArtistsPageState extends State<KemonoArtistsPage> {
       _live = [
         for (final c in live)
           KemonoCreator(
+            site: _site,
             service: c.service,
             id: c.id,
             name: c.name.isNotEmpty ? c.name : (indexed[c.key]?.name ?? ''),
@@ -269,6 +271,9 @@ class _KemonoArtistsPageState extends State<KemonoArtistsPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
+      // The app's convention: the keyboard overlays instead of shrinking the
+      // page (a bottom inset once left a third of the screen black here).
+      resizeToAvoidBottomInset: false,
       appBar: AppBar(
         title: Text(
           widget.asPicker
@@ -356,6 +361,7 @@ class _KemonoArtistsPageState extends State<KemonoArtistsPage> {
                   children: [
                     if (!widget.asPicker) ...[
                       for (final m in KemonoArtistsMode.values)
+                        if (m != KemonoArtistsMode.recent || _site.hasUpdatedArtists)
                         Padding(
                           padding: const EdgeInsets.only(right: 6),
                           child: ChoiceChip(
@@ -375,7 +381,7 @@ class _KemonoArtistsPageState extends State<KemonoArtistsPage> {
                         ),
                       const VerticalDivider(width: 12, indent: 10, endIndent: 10),
                     ],
-                    for (final s in KemonoQuery.services)
+                    for (final s in _site.services)
                       Padding(
                         padding: const EdgeInsets.only(right: 6),
                         child: FilterChip(

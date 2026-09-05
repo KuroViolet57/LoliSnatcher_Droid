@@ -124,6 +124,10 @@ class SettingsHandler {
   /// sidebar (Artists / Posts / Favorites / DMs). Off = the normal drawer.
   /// Flipped from the bottom of either drawer.
   final RxBool kemonoSidebar = true.obs;
+
+  /// The kemono post page loads the real files instead of the site's 800 px
+  /// pictures. Off by default: pawchive rate-limits heavy downloading.
+  final RxBool kemonoPostFullImages = false.obs;
   VerticalPosition galleryBarPosition = VerticalPosition.defaultValue;
   ScrollDirection galleryScrollDirection = ScrollDirection.defaultValue;
   String extPathOverride = '';
@@ -321,6 +325,7 @@ class SettingsHandler {
     'appMode',
     'handSide',
     'kemonoSidebar',
+    'kemonoPostFullImages',
     'extPathOverride',
     'backupPath',
     'lastSyncIp',
@@ -917,6 +922,10 @@ class SettingsHandler {
       'type': 'bool',
       'default': true,
     },
+    'kemonoPostFullImages': {
+      'type': 'bool',
+      'default': false,
+    },
     'theme': {
       'type': 'theme',
       'default': ThemeItem(name: 'Flow', primary: const Color(0xFFB9A0E8), accent: const Color(0xFFB9A0E8)),
@@ -1441,6 +1450,8 @@ class SettingsHandler {
         return handSide;
       case 'kemonoSidebar':
         return kemonoSidebar.value;
+      case 'kemonoPostFullImages':
+        return kemonoPostFullImages.value;
       case 'theme':
         return theme;
       case 'themeMode':
@@ -1789,6 +1800,9 @@ class SettingsHandler {
         break;
       case 'kemonoSidebar':
         kemonoSidebar.value = validatedValue;
+        break;
+      case 'kemonoPostFullImages':
+        kemonoPostFullImages.value = validatedValue;
         break;
       case 'theme':
         theme.value = validatedValue;

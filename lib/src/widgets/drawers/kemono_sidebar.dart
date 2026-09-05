@@ -7,6 +7,7 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:lolisnatcher/src/boorus/kemono_api.dart';
 import 'package:lolisnatcher/src/boorus/kemono_handler.dart';
+import 'package:lolisnatcher/src/boorus/kemono_site.dart';
 import 'package:lolisnatcher/src/boorus/kemono_tag_catalog.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/handlers/drawer_refresh.dart';
@@ -45,9 +46,10 @@ class KemonoSidebar extends StatefulWidget {
 class _KemonoSidebarState extends State<KemonoSidebar> {
   final SearchHandler searchHandler = SearchHandler.instance;
   final SettingsHandler settingsHandler = SettingsHandler.instance;
-  final KemonoCreatorStore store = KemonoCreatorStore.instance;
+  late final KemonoSite site = KemonoSite.of(widget.booru);
+  late final KemonoCreatorStore store = KemonoCreatorStore.forSite(site);
   final KemonoSessionHandler session = KemonoSessionHandler.instance;
-  final KemonoFileHosts hosts = KemonoFileHosts.instance;
+  late final KemonoFileHosts hosts = KemonoFileHosts.forSite(site);
   Worker? _tabWorker;
 
   void _tick() {
@@ -96,7 +98,7 @@ class _KemonoSidebarState extends State<KemonoSidebar> {
 
   Future<void> _randomArtist() async {
     try {
-      final ref = await KemonoApi.randomArtist();
+      final ref = await KemonoApi.randomArtist(booru: widget.booru);
       if (ref == null) throw Exception('no artist came back');
       _openTab('creator:${ref.service}:${ref.id}');
     } catch (e) {
@@ -108,7 +110,8 @@ class _KemonoSidebarState extends State<KemonoSidebar> {
   Future<void> _pickTag() async {
     final KemonoHandler handler = _handler ?? KemonoArtistsPage.handlerFor(widget.booru);
     final TagCatalogSource catalog = handler.tagCatalog;
-    final TagCatalogNamespace ns = catalog.namespaceFor(KemonoTagCatalog.tagKey)!;
+    final TagCatalogNamespace? ns = catalog.namespaceFor(KemonoTagCatalog.tagKey);
+    if (ns == null) return;
     final res = await SettingsPageOpen(
       context: context,
       asBottomSheet: true,
@@ -176,18 +179,20 @@ class _KemonoSidebarState extends State<KemonoSidebar> {
                   label: 'Search',
                   onTap: () => _openPage(KemonoArtistsPage(booru: widget.booru)),
                 ),
-                DrawerRow(
-                  icon: Symbols.update_rounded,
-                  iconColor: const Color(0xFFB9A0E8),
-                  label: 'Recent',
-                  onTap: () => _openPage(KemonoArtistsPage(booru: widget.booru, mode: KemonoArtistsMode.recent)),
-                ),
-                DrawerRow(
-                  icon: Symbols.shuffle_rounded,
-                  iconColor: const Color(0xFFB9A0E8),
-                  label: 'Random',
-                  onTap: () => unawaited(_randomArtist()),
-                ),
+                if (site.hasUpdatedArtists)
+                  DrawerRow(
+                    icon: Symbols.update_rounded,
+                    iconColor: const Color(0xFFB9A0E8),
+                    label: 'Recent',
+                    onTap: () => _openPage(KemonoArtistsPage(booru: widget.booru, mode: KemonoArtistsMode.recent)),
+                  ),
+                if (site.hasRandom)
+                  DrawerRow(
+                    icon: Symbols.shuffle_rounded,
+                    iconColor: const Color(0xFFB9A0E8),
+                    label: 'Random',
+                    onTap: () => unawaited(_randomArtist()),
+                  ),
                 const SizedBox(height: 8),
                 const DrawerSectionLabel('POSTS'),
                 DrawerRow(
@@ -201,25 +206,28 @@ class _KemonoSidebarState extends State<KemonoSidebar> {
                     );
                   },
                 ),
-                DrawerRow(
-                  icon: Symbols.trending_up_rounded,
-                  iconColor: const Color(0xFF8FBFD4),
-                  label: 'Popular',
-                  subtitle: 'today · popular:week / month for more',
-                  onTap: () => _openTab('popular:day'),
-                ),
-                DrawerRow(
-                  icon: Symbols.sell_rounded,
-                  iconColor: const Color(0xFF8FBFD4),
-                  label: 'Tags',
-                  onTap: () => unawaited(_pickTag()),
-                ),
-                DrawerRow(
-                  icon: Symbols.shuffle_rounded,
-                  iconColor: const Color(0xFF8FBFD4),
-                  label: 'Random',
-                  onTap: () => _openTab('random'),
-                ),
+                if (site.hasPopular)
+                  DrawerRow(
+                    icon: Symbols.trending_up_rounded,
+                    iconColor: const Color(0xFF8FBFD4),
+                    label: 'Popular',
+                    subtitle: 'today · popular:week / month for more',
+                    onTap: () => _openTab('popular:day'),
+                  ),
+                if (site.hasTagList)
+                  DrawerRow(
+                    icon: Symbols.sell_rounded,
+                    iconColor: const Color(0xFF8FBFD4),
+                    label: 'Tags',
+                    onTap: () => unawaited(_pickTag()),
+                  ),
+                if (site.hasRandom)
+                  DrawerRow(
+                    icon: Symbols.shuffle_rounded,
+                    iconColor: const Color(0xFF8FBFD4),
+                    label: 'Random',
+                    onTap: () => _openTab('random'),
+                  ),
                 const SizedBox(height: 8),
                 const DrawerSectionLabel('FAVORITES'),
                 if (signedIn) ...[
@@ -245,12 +253,13 @@ class _KemonoSidebarState extends State<KemonoSidebar> {
                   ),
                 const SizedBox(height: 8),
                 const DrawerSectionLabel('MESSAGES'),
-                DrawerRow(
-                  icon: Symbols.mail_rounded,
-                  iconColor: const Color(0xFFE8C46B),
-                  label: 'DMs',
-                  onTap: () => _openPage(KemonoDmsPage(booru: widget.booru)),
-                ),
+                if (site.hasDms)
+                  DrawerRow(
+                    icon: Symbols.mail_rounded,
+                    iconColor: const Color(0xFFE8C46B),
+                    label: 'DMs',
+                    onTap: () => _openPage(KemonoDmsPage(booru: widget.booru)),
+                  ),
                 DrawerRow(
                   icon: Symbols.campaign_rounded,
                   iconColor: const Color(0xFFE8C46B),

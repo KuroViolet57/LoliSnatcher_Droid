@@ -6,8 +6,8 @@ import 'package:get/get.dart' hide ContextExt, FirstWhereOrNullExt;
 import 'package:intl/intl.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
-import 'package:lolisnatcher/src/boorus/kemono_api.dart';
 import 'package:lolisnatcher/src/boorus/kemono_handler.dart';
+import 'package:lolisnatcher/src/boorus/kemono_site.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/kemono_creator.dart';
 import 'package:lolisnatcher/src/handlers/kemono_creator_store.dart';
@@ -65,7 +65,7 @@ class _KemonoCreatorHeaderBodyState extends State<_KemonoCreatorHeaderBody> {
   }
 
   Future<void> _load() async {
-    _indexed = await KemonoCreatorStore.instance.get(widget.creator.service, widget.creator.id);
+    _indexed = await KemonoCreatorStore.forSite(KemonoSite.of(widget.booru)).get(widget.creator.service, widget.creator.id);
     if (_signedIn) await widget.handler.loadFavouriteCreatorKeys();
     if (mounted) setState(() {});
   }
@@ -121,7 +121,7 @@ class _KemonoCreatorHeaderBodyState extends State<_KemonoCreatorHeaderBody> {
                 height: 110,
                 width: double.infinity,
                 child: Image.network(
-                  KemonoApi.bannerUrl(c.service, c.id),
+                  KemonoSite.of(widget.booru).bannerUrl(c.service, c.id),
                   fit: BoxFit.cover,
                   errorBuilder: (_, _, _) => DecoratedBox(
                     decoration: BoxDecoration(color: theme.colorScheme.primaryContainer),
@@ -138,7 +138,7 @@ class _KemonoCreatorHeaderBodyState extends State<_KemonoCreatorHeaderBody> {
                         CircleAvatar(
                           radius: 22,
                           backgroundColor: theme.colorScheme.surfaceContainerHighest,
-                          foregroundImage: NetworkImage(KemonoApi.iconUrl(c.service, c.id)),
+                          foregroundImage: NetworkImage(KemonoSite.of(widget.booru).iconUrl(c.service, c.id)),
                           onForegroundImageError: (_, _) {},
                           child: Text(name.isNotEmpty ? name.substring(0, 1).toUpperCase() : '?'),
                         ),
@@ -181,12 +181,13 @@ class _KemonoCreatorHeaderBodyState extends State<_KemonoCreatorHeaderBody> {
                             MaterialPageRoute(builder: (_) => KemonoAnnouncementsPage(booru: widget.booru, service: c.service, id: c.id)),
                           ),
                         ),
-                        ActionChip(
-                          avatar: const Icon(Symbols.mail_rounded, size: 18),
-                          label: const Text('DMs'),
-                          onPressed: () => Navigator.of(context).push(
-                            MaterialPageRoute(builder: (_) => KemonoDmsPage(booru: widget.booru, creator: c)),
-                          ),
+                        if (KemonoSite.of(widget.booru).hasDms)
+                          ActionChip(
+                            avatar: const Icon(Symbols.mail_rounded, size: 18),
+                            label: const Text('DMs'),
+                            onPressed: () => Navigator.of(context).push(
+                              MaterialPageRoute(builder: (_) => KemonoDmsPage(booru: widget.booru, creator: c)),
+                            ),
                         ),
                         ActionChip(
                           avatar: const Icon(Symbols.sell_rounded, size: 18),

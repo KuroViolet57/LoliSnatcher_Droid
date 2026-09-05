@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import 'package:dio/dio.dart';
 
-import 'package:lolisnatcher/src/boorus/kemono_api.dart';
+import 'package:lolisnatcher/src/boorus/kemono_site.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 
@@ -35,9 +35,16 @@ class KemonoHostStatus {
 /// HEAD per host, in parallel, with a short timeout; the result feeds the
 /// viewer's error screen and the sidebar's footer.
 class KemonoFileHosts {
-  KemonoFileHosts._();
+  KemonoFileHosts._(this.site);
 
-  static final KemonoFileHosts instance = KemonoFileHosts._();
+  final KemonoSite site;
+
+  static final Map<KemonoSiteId, KemonoFileHosts> _bySite = {};
+
+  static KemonoFileHosts forSite(KemonoSite site) => _bySite[site.id] ??= KemonoFileHosts._(site);
+
+  /// kemono's, for the code that only ever meant kemono.
+  static KemonoFileHosts get instance => forSite(KemonoSite.kemono);
 
   /// A result older than this says nothing about the network any more.
   static const Duration freshFor = Duration(minutes: 10);
@@ -51,9 +58,10 @@ class KemonoFileHosts {
   @visibleForTesting
   Future<KemonoHostStatus> Function(String host)? probeOverride;
 
-  static List<String> get hosts => [for (final s in KemonoApi.fileServers) Uri.parse(s.host).host];
+  List<String> get hosts => site.fileHosts;
 
-  static bool isFileHost(String host) => hosts.contains(host.toLowerCase());
+  /// Any kemono-style site's file host.
+  static bool isFileHost(String host) => KemonoSite.ofFileHost(host) != null;
 
   bool get checked => state.value.isNotEmpty;
 
@@ -84,7 +92,7 @@ class KemonoFileHosts {
       final bool anyDown = results.any((r) => !r.ok);
       Logger.Inst().log(
         'file hosts: ${results.map((r) => '${r.shortName} ${r.ok ? 'ok' : r.error}').join(', ')}',
-        'KemonoFileHosts',
+        'KemonoFileHosts(${site.name})',
         'check',
         anyDown ? LogTypes.networkError : LogTypes.booruHandlerInfo,
       );
@@ -100,7 +108,7 @@ class KemonoFileHosts {
         receiveTimeout: probeTimeout,
         sendTimeout: probeTimeout,
         validateStatus: (_) => true,
-        headers: {'User-Agent': Tools.browserUserAgent, 'Referer': '${KemonoApi.site}/'},
+        headers: {'User-Agent': Tools.browserUserAgent, ...site.mediaHeaders},
       ),
     );
     try {
@@ -138,7 +146,7 @@ class KemonoFileHosts {
     final KemonoHostStatus? s = state.value[host];
     if (s == null || s.ok) return null;
     if (DateTime.now().difference(s.checkedAt) > freshFor) return null;
-    return "kemono's file host $host is not reachable from this network (${s.error}, ${ago(s.checkedAt)}). "
+    return "${site.name}'s file host $host is not reachable from this network (${s.error}, ${ago(s.checkedAt)}). "
         "The site's own images fail here too. Try Private DNS (dns.google) or another network, then restart.";
   }
 

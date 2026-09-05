@@ -74,6 +74,11 @@ void main() {
         BooruHandlerFactory.mediaHeadersFor(booru(BooruType.Gelbooru, 'https://gelbooru.com')),
         isEmpty,
       );
+      // pawchive's file host wants nothing, and its guard is rate-based.
+      expect(
+        BooruHandlerFactory.mediaHeadersFor(booru(BooruType.Pawchive, 'https://pawchive.pw')),
+        isEmpty,
+      );
     });
 
     test('the answer is cached, since a grid asks once per thumbnail', () {

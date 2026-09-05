@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:lolisnatcher/src/boorus/kemono_api.dart';
+import 'package:lolisnatcher/src/boorus/kemono_site.dart';
 import 'package:lolisnatcher/src/data/kemono_post.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
@@ -15,7 +16,7 @@ class KemonoProfile extends SiteProfile {
   const KemonoProfile();
 
   @override
-  Set<String> get hosts => const {'kemono.cr', 'kemono.su', 'kemono.party'};
+  Set<String> get hosts => const {'kemono.cr', 'kemono.su', 'kemono.party', 'pawchive.pw'};
 
   @override
   String get id => 'kemono';
@@ -41,7 +42,7 @@ class KemonoProfile extends SiteProfile {
   String? postFilesUrl(Booru booru, BooruItem item) {
     final ref = splitId(item.serverId);
     if (ref == null) return null;
-    return '${KemonoApi.creatorPath(ref.service, ref.user)}/post/${ref.post}';
+    return '${KemonoSite.of(booru).creatorPath(ref.service, ref.user)}/post/${ref.post}';
   }
 
   static const Set<String> videoExtensions = {'mp4', 'webm', 'm4v', 'mov', 'mkv', 'avi'};
@@ -73,14 +74,14 @@ class KemonoProfile extends SiteProfile {
     try {
       final decoded = jsonDecode(body);
       if (decoded is! Map) return null;
-      return filesFromDetail(decoded);
+      return filesFromDetail(decoded, site: KemonoSite.of(booru));
     } catch (_) {
       return null;
     }
   }
 
-  static List<PostFile>? filesFromDetail(Map detail) {
-    final KemonoPost? post = KemonoPost.fromDetail(detail);
+  static List<PostFile>? filesFromDetail(Map detail, {KemonoSite site = KemonoSite.kemono}) {
+    final KemonoPost? post = KemonoPost.fromDetail(detail, site: site);
     if (post == null || post.files.isEmpty) return null;
     return postFilesOf(post);
   }

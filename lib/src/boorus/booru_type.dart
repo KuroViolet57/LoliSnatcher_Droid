@@ -17,6 +17,7 @@ enum BooruType {
   Hydrus,
   InkBunny,
   Kemono,
+  Pawchive,
   Kusowanka,
   Moebooru,
   AsmHentai,
@@ -112,6 +113,7 @@ enum BooruType {
       // kemono talks to a fixed API host with a non-browser Accept header
       // and answers any address; picked deliberately.
       ..remove(BooruType.Kemono)
+      ..remove(BooruType.Pawchive)
       // xxxtik has a fixed API host; only pick it deliberately.
       ..remove(BooruType.XXXTik)
       // xxxfollow has a fixed API host; only pick it deliberately.
@@ -172,6 +174,8 @@ enum BooruType {
         return 'HentaiPaw';
       case Kemono:
         return 'Kemono';
+      case Pawchive:
+        return 'Pawchive';
       case TikPorn:
         return 'Tik.Porn';
       case XXXTik:
@@ -212,7 +216,11 @@ enum BooruType {
   bool get isFaccina => this == BooruType.Faccina;
   bool get isHitomi => this == BooruType.Hitomi;
   bool get isHentaiPaw => this == BooruType.HentaiPaw;
-  bool get isKemono => this == BooruType.Kemono;
+  /// kemono-style: kemono.cr and its archive pawchive.pw share one handler,
+  /// one sidebar and one set of pages.
+  bool get isKemono => this == BooruType.Kemono || this == BooruType.Pawchive;
+
+  bool get isPawchive => this == BooruType.Pawchive;
   bool get isTikPorn => this == BooruType.TikPorn;
   bool get isXXXTik => this == BooruType.XXXTik;
   bool get isXXXFollow => this == BooruType.XXXFollow;

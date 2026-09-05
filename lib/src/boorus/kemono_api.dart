@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import 'package:dio/dio.dart';
 
+import 'package:lolisnatcher/src/boorus/kemono_site.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/handlers/kemono_session_handler.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
@@ -35,12 +36,14 @@ class KemonoApi {
 
   static const Duration timeout = Duration(seconds: 25);
 
-  static Map<String, String> headers(Booru? booru) {
+  static Map<String, String> headers(Booru? booru) => headersFor(KemonoSite.of(booru), booru: booru);
+
+  static Map<String, String> headersFor(KemonoSite s, {Booru? booru}) {
     final String? cookie = KemonoSessionHandler.instance.cookieFor(booru);
     return {
-      'Accept': 'text/css',
+      'Accept': s.acceptHeader,
       'User-Agent': Tools.browserUserAgent,
-      'Referer': '$site/',
+      'Referer': '${s.site}/',
       'Cookie': ?cookie,
     };
   }
@@ -98,38 +101,37 @@ class KemonoApi {
   static Future<dynamic> getJson(String url, {Booru? booru}) async {
     final r = await request('GET', url, booru: booru);
     if (r.status >= 200 && r.status < 300) return r.data;
-    throw KemonoApiException(r.status, describeStatus(r.status, r.raw));
+    throw KemonoApiException(r.status, describeStatus(r.status, r.raw, site: KemonoSite.of(booru)));
   }
 
-  static String describeStatus(int status, String raw) => switch (status) {
-    401 => 'kemono rejected the session — check the username and password in the booru settings',
-    403 => 'kemono refused the request (DDoS-Guard); try again in a moment',
-    404 => 'kemono has nothing at that address',
-    429 => 'kemono is rate-limiting; wait a minute',
-    _ => 'kemono answered $status${raw.isEmpty ? '' : ': ${raw.substring(0, raw.length.clamp(0, 120))}'}',
-  };
-
-  // ── URLs ─────────────────────────────────────────────────────────────
-
-  static String creatorPath(String service, String id) => '$api/$service/user/$id';
-
-  /// `/posts?q=&o=&tag=&tag=` — `tag` repeats, so the query is built by hand.
-  static String postsUrl({String base = '$api/posts', String q = '', int offset = 0, List<String> tags = const []}) {
-    final List<String> parts = [];
-    if (q.isNotEmpty) parts.add('q=${Uri.encodeQueryComponent(q)}');
-    parts.add('o=$offset');
-    for (final String t in tags) {
-      parts.add('tag=${Uri.encodeQueryComponent(t)}');
-    }
-    return '$base?${parts.join('&')}';
+  static String describeStatus(int status, String raw, {KemonoSite site = KemonoSite.kemono}) {
+    final String n = site.name;
+    return switch (status) {
+      401 => '$n rejected the session — check the username and password in the booru settings',
+      403 => site.isKemono ? '$n refused the request (DDoS-Guard); try again in a moment' : '$n refused the request; try again in a moment',
+      404 => '$n has nothing at that address',
+      429 => '$n is rate-limiting; wait a minute',
+      _ => '$n answered $status${raw.isEmpty ? '' : ': ${raw.substring(0, raw.length.clamp(0, 120))}'}',
+    };
   }
+
+  // ── URLs (kemono's; a handler asks its [KemonoSite] instead) ─────────
+
+  static String creatorPath(String service, String id) => KemonoSite.kemono.creatorPath(service, id);
+
+  static String postsUrl({String base = '$api/posts', String q = '', int offset = 0, List<String> tags = const []}) =>
+      KemonoSite.kemono.postsUrl(base: base, q: q, offset: offset, tags: tags);
 
   static String popularUrl({required String period, required String date, int offset = 0}) =>
-      '$api/posts/popular?date=$date&period=$period&o=$offset';
+      KemonoSite.kemono.popularUrl(period: period, date: date, offset: offset);
 
-  static String postUrl(String service, String user, String postId) => '$site/$service/user/$user/post/$postId';
+  static String postUrl(String service, String user, String postId) => KemonoSite.kemono.postUrl(service, user, postId);
 
-  static String thumbUrl(String path) => '$img/thumbnail/data$path';
+  static String thumbUrl(String path) => KemonoSite.kemono.thumbUrl(path);
+
+  static String iconUrl(String service, String id) => KemonoSite.kemono.iconUrl(service, id);
+
+  static String bannerUrl(String service, String id) => KemonoSite.kemono.bannerUrl(service, id);
 
   /// The file hosts and their share of the paths, as the site's bundle
   /// (`/assets/index-szizO2gj.js`, read 2026-09-04) lists them. The site never
@@ -188,18 +190,14 @@ class KemonoApi {
     return fileServers.last.host;
   }
 
-  /// A file's URL on its host: the one the detail names when there is one,
-  /// else the one the hash picks. Never `kemono.cr/data`.
-  static String fileUrl(String path, {String? server}) => '${server ?? fileServer(path)}/data$path';
-
-  static String iconUrl(String service, String id) => '$img/icons/$service/$id';
-
-  static String bannerUrl(String service, String id) => '$img/banners/$service/$id';
+  /// A file's URL on kemono's hosts: the one the detail names when there is
+  /// one, else the one the hash picks. Never `kemono.cr/data`.
+  static String fileUrl(String path, {String? server}) => KemonoSite.kemono.fileUrl(path, server: server);
 
   // ── typed helpers ────────────────────────────────────────────────────
 
-  static Future<({String service, String id, String postId})?> randomPost() async {
-    final data = await getJson('$api/posts/random');
+  static Future<({String service, String id, String postId})?> randomPost({Booru? booru}) async {
+    final data = await getJson('${KemonoSite.of(booru).api}/posts/random', booru: booru);
     if (data is! Map) return null;
     final String service = data['service']?.toString() ?? '';
     final String id = data['artist_id']?.toString() ?? '';
@@ -208,8 +206,8 @@ class KemonoApi {
     return (service: service, id: id, postId: post);
   }
 
-  static Future<({String service, String id})?> randomArtist() async {
-    final data = await getJson('$api/artists/random');
+  static Future<({String service, String id})?> randomArtist({Booru? booru}) async {
+    final data = await getJson('${KemonoSite.of(booru).api}/artists/random', booru: booru);
     if (data is! Map) return null;
     final String service = data['service']?.toString() ?? '';
     final String id = data['artist_id']?.toString() ?? '';
@@ -218,7 +216,7 @@ class KemonoApi {
   }
 
   static Future<Map<String, dynamic>?> profile(String service, String id, {Booru? booru}) async {
-    final data = await getJson('${creatorPath(service, id)}/profile', booru: booru);
+    final data = await getJson('${KemonoSite.of(booru).creatorPath(service, id)}/profile', booru: booru);
     return data is Map ? Map<String, dynamic>.from(data) : null;
   }
 
@@ -229,7 +227,7 @@ class KemonoApi {
   /// The post detail, shared by the viewer's item refresh, the files overlay
   /// and the post page — one fetch per post per ten minutes.
   static Future<Map<String, dynamic>?> postDetail(String service, String user, String postId, {Booru? booru}) async {
-    final String url = '${creatorPath(service, user)}/post/$postId';
+    final String url = '${KemonoSite.of(booru).creatorPath(service, user)}/post/$postId';
     final cached = _detailCache[url];
     if (cached != null && DateTime.now().difference(cached.$2) < detailCacheFor) return cached.$1;
     final data = await getJson(url, booru: booru);
@@ -243,28 +241,34 @@ class KemonoApi {
   @visibleForTesting
   static void clearDetailCache() => _detailCache.clear();
 
+  /// pawchive answers 404 `{"error":"Not found"}` for a post with no comments.
   static Future<List> comments(String service, String user, String postId, {Booru? booru}) async {
-    final data = await getJson('${creatorPath(service, user)}/post/$postId/comments', booru: booru);
-    return data is List ? data : const [];
+    try {
+      final data = await getJson('${KemonoSite.of(booru).creatorPath(service, user)}/post/$postId/comments', booru: booru);
+      return data is List ? data : const [];
+    } on KemonoApiException catch (e) {
+      if (e.status == 404) return const [];
+      rethrow;
+    }
   }
 
   static Future<List> creatorTags(String service, String id, {Booru? booru}) async {
-    final data = await getJson('${creatorPath(service, id)}/tags', booru: booru);
+    final data = await getJson('${KemonoSite.of(booru).creatorPath(service, id)}/tags', booru: booru);
     return data is List ? data : const [];
   }
 
   static Future<List> announcements(String service, String id, {Booru? booru}) async {
-    final data = await getJson('${creatorPath(service, id)}/announcements', booru: booru);
+    final data = await getJson('${KemonoSite.of(booru).creatorPath(service, id)}/announcements', booru: booru);
     return data is List ? data : const [];
   }
 
   static Future<List> creatorDms(String service, String id, {Booru? booru}) async {
-    final data = await getJson('${creatorPath(service, id)}/dms', booru: booru);
+    final data = await getJson('${KemonoSite.of(booru).creatorPath(service, id)}/dms', booru: booru);
     return data is List ? data : const [];
   }
 
   static Future<({List rows, int count})> dms({int offset = 0, String q = '', Booru? booru}) async {
-    final String url = '$api/dms?o=$offset${q.isEmpty ? '' : '&q=${Uri.encodeQueryComponent(q)}'}';
+    final String url = '${KemonoSite.of(booru).api}/dms?o=$offset${q.isEmpty ? '' : '&q=${Uri.encodeQueryComponent(q)}'}';
     final data = await getJson(url, booru: booru);
     if (data is Map) {
       final props = data['props'];
@@ -277,7 +281,7 @@ class KemonoApi {
   }
 
   static Future<List> updatedArtists({Booru? booru}) async {
-    final data = await getJson('$api/artists/updated', booru: booru);
+    final data = await getJson('${KemonoSite.of(booru).api}/artists/updated', booru: booru);
     if (data is Map && data['results'] is List) return data['results'] as List;
     if (data is List) return data;
     return const [];
@@ -285,17 +289,18 @@ class KemonoApi {
 
   /// The signed-in account's favourites; [type] is `post` or `artist`.
   static Future<List> favourites(Booru booru, {required String type}) async {
-    final data = await getJson('$api/account/favorites?type=$type', booru: booru);
+    final data = await getJson('${KemonoSite.of(booru).api}/account/favorites?type=$type', booru: booru);
     return data is List ? data : const [];
   }
 
   static Future<(bool, String)> setCreatorFavourite(Booru booru, String service, String id, bool value) async {
     try {
-      final r = await request(value ? 'POST' : 'DELETE', '$api/favorites/creator/$service/$id', booru: booru);
+      final KemonoSite s = KemonoSite.of(booru);
+      final r = await request(value ? 'POST' : 'DELETE', '${s.api}/favorites/creator/$service/$id', booru: booru);
       if (r.status >= 200 && r.status < 300) {
-        return (true, value ? 'Added to your kemono favourites' : 'Removed from your kemono favourites');
+        return (true, value ? 'Added to your ${s.name} favourites' : 'Removed from your ${s.name} favourites');
       }
-      return (false, describeStatus(r.status, r.raw));
+      return (false, describeStatus(r.status, r.raw, site: s));
     } catch (e) {
       return (false, 'Sync failed: $e');
     }
@@ -303,17 +308,18 @@ class KemonoApi {
 
   static Future<(bool, String)> setPostFavourite(Booru booru, String service, String user, String postId, bool value) async {
     try {
-      final r = await request(value ? 'POST' : 'DELETE', '$api/favorites/post/$service/$user/$postId', booru: booru);
+      final KemonoSite s = KemonoSite.of(booru);
+      final r = await request(value ? 'POST' : 'DELETE', '${s.api}/favorites/post/$service/$user/$postId', booru: booru);
       if (r.status >= 200 && r.status < 300) {
-        return (true, value ? 'Synced to your kemono account' : 'Removed from your kemono account');
+        return (true, value ? 'Synced to your ${s.name} account' : 'Removed from your ${s.name} account');
       }
-      return (false, describeStatus(r.status, r.raw));
+      return (false, describeStatus(r.status, r.raw, site: s));
     } catch (e) {
       return (false, 'Sync failed: $e');
     }
   }
 
-  static String _short(String url) => url.replaceFirst(api, '');
+  static String _short(String url) => url.replaceFirst(RegExp('^https://[^/]+/api/v1'), '');
 
   static void _log(String message) => Logger.Inst().log(message, 'KemonoApi', 'request', LogTypes.booruHandlerInfo);
 }

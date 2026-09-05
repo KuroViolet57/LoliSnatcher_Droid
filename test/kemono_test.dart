@@ -386,7 +386,7 @@ void main() {
 
     test('a host that failed a fresh probe gets a notice; a reachable or stale one does not', () async {
       final KemonoFileHosts hosts = KemonoFileHosts.instance;
-      expect(KemonoFileHosts.hosts, ['n1.kemono.cr', 'n2.kemono.cr', 'n3.kemono.cr', 'n4.kemono.cr']);
+      expect(KemonoFileHosts.instance.hosts, ['n1.kemono.cr', 'n2.kemono.cr', 'n3.kemono.cr', 'n4.kemono.cr']);
       expect(hosts.noticeFor('https://n3.kemono.cr/data/x.png'), isNull, reason: 'nothing checked yet');
       hosts.probeOverride = (host) async => KemonoHostStatus(
         host: host,

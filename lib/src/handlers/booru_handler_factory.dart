@@ -279,6 +279,7 @@ class BooruHandlerFactory {
           booruHandler = HentaiPawHandler(booru, limit);
           break;
         case BooruType.Kemono:
+        case BooruType.Pawchive:
           // Offset paging in steps of 50 (o = page*50): pageNum 0 is the
           // first fetch, so o starts at 0. The API ignores any limit.
           pageNum = 0;
