@@ -1,3 +1,677 @@
+# LoliSnatcher_Droid — Handover
+
+Written 2026-09-06 at build **r26-handover** (branch `claude/experimental-doujin`,
+HEAD `e15d17e` + this document). This file is the complete brief for a fresh
+Claude session: read Part A top to bottom before touching code. Part B is the
+older chronological build log, kept verbatim as history.
+
+---
+
+# PART A — the current state of the project
+
+## 0. Read this first
+
+- **What this is.** A Flutter Android gallery app for boorus (Gelbooru,
+  Danbooru, e621, …) that this branch extended with: video/tube sources,
+  a full **doujin** (comic/book) reading system with its own data space,
+  a **kemono-style** creator-archive source family (kemono.cr, pawchive.pw),
+  a per-booru tag database and tag builder, pools, recommendations,
+  Google Drive backups, and a source-capture tool for sites this machine
+  cannot reach.
+- **Branch:** `claude/experimental-doujin`. Everything lives there. Older
+  history is on `claude/experimental-megabuild` (merged into this branch).
+  Never push elsewhere; force-push is blocked.
+- **Version:** `2.6.0+5211` in `pubspec.yaml`, mirrored in
+  `lib/src/data/constants.dart` (`updateInfo`). Builds are told apart by
+  `Constants.buildCodename` (`'r26-handover'` now), shown in About. Bump the
+  codename every build: `rNN-<two words>`.
+- **Build counter:** builds are numbered r21, r22, … r26. The Drive upload
+  script needs a fresh **token** per build: r26 used **45**; the next build
+  uses **46**.
+- **The user** talks in voice notes and logs; expects one build per request
+  round, checked on a Samsung phone. They cannot see tool output — only the
+  final message.
+
+### The user's standing rules (verbatim intent, all still in force)
+
+1. **Never say "fixed".** Report per item: what *changed*, what was
+   *observed* (in a test, a log, a live probe), what is *not verified*.
+   Give numbered device-check steps. Always include the Drive folder link.
+2. **Check prior art before saying something is impossible.** (Keiyoushi /
+   Tachiyomi extensions, the site's own frontend, other apps.)
+3. **Do the failure analysis before the build, not after.** Read the
+   user's log first; find the request that is missing or the exception;
+   only then change code.
+4. **niyaniya (Schale) clearance:** manual solving only, two windows
+   (visible solver + headless harvester), never a silent retry, keep the
+   diagnostic lines in the log.
+5. **Doujin and booru personal spaces stay separate** — favourites,
+   history, blacklist, pins, saved searches, collections. A leak either
+   way is a bug. `test/doujin_separation_test.dart` is the guard.
+6. **nhentai is the tag API source** for the doujin tag builder's canonical
+   list; other doujin sources bring their own catalogs.
+7. **Update the parity artifact every build** (see §2.6).
+8. Sub-agents are allowed, but the account's rate limit has killed every
+   spawned agent lately (resets 06:00 UTC). Prefer doing the work inline.
+9. **Credentials:** never in commits, changelogs, logs or uploads. The
+   user's booru API keys leaked in an early log export and they were told
+   to rotate them; `LogRedaction` now scrubs logs and captures.
+
+## 1. Environment and toolchain
+
+- **Container resets happen.** After a reset the toolchain is gone: Flutter
+  `3.42.0-0.4.pre` (beta channel) must be at `/opt/flutter`, the Android SDK
+  + NDK `28.2.13676358` at `/opt/android-sdk` (cmdline-tools), and the Drive
+  OAuth file at `~/.config/lolisnatcher-drive/oauth.json` (client id, secret,
+  refresh token — ask the user to re-paste; never commit it; Drive root folder
+  name `booruApk`). Run
+  `git config --global --add safe.directory /opt/flutter` once.
+- **Exports for every flutter command:**
+  `export PATH=/opt/flutter/bin:$PATH ANDROID_HOME=/opt/android-sdk ANDROID_SDK_ROOT=/opt/android-sdk`
+- **Signing:** a TEST keystore is committed on purpose:
+  `android/app/lolisnatcher-test.jks` + `android/key.properties`
+  (passwords `lolisnatcher-test`). Builds signed before 2026-07-31 used a
+  lost key — a user on one of those must uninstall once.
+- **sqlite3 native asset workaround (sandbox only):** the `sqlite3` package
+  downloads a prebuilt `.so` from GitHub releases; the sandbox proxy only
+  allows the app repo, so the download is a 195-byte error and the hash check
+  fails. Fix (ephemeral, redo after a reset): put valid `.so` files in
+  `/root/.pub-cache/sqlite3_prebuilt_seed/` named
+  `libsqlite3.{arm,arm64,x64}.android.so` (they may survive under
+  `.dart_tool/hooks_runner/shared/sqlite3/build/download-*/`), and patch
+  `~/.pub-cache/hosted/pub.dev/sqlite3-*/lib/src/hook/description.dart` so
+  `_fetchFromSource` serves the seed file before trying HTTP. Details in
+  Part B "Project / workflow". Do not commit any of this.
+- **Scratchpad** for temp files:
+  `/tmp/claude-0/-home-user-LoliSnatcher-Droid/<session>/scratchpad` (build
+  logs, changelogs, the parity HTML, fixtures in progress).
+- **Two checkouts.** `/home/user/LoliSnatcher_Droid` is the working repo;
+  `/home/user/LoliSnatcher_Droid-build` is a `git worktree` used only for
+  release builds, so a build never sees uncommitted edits and the working
+  tree stays usable while gradle runs (~5 min).
+- **Network:** outbound HTTPS goes through the agent proxy. GitHub API is
+  only reachable for this repo. Sites can be probed with `curl` (many have
+  Cloudflare; kemono's file hosts are unreachable from here and from the
+  user's network — see §7).
+
+## 2. The per-build workflow (every build, in this order)
+
+1. Failure analysis from the user's log/recording; write the plan.
+2. Implement; add tests and fixtures (§10).
+3. `dart analyze` → **0 errors**; the baseline is **61 infos** (lint style
+   noise in old files). New code should add none.
+4. `flutter test $(ls test/*_test.dart | grep -v booru_test)` → all green.
+   Baseline **555** tests. `booru_test.dart` is excluded because its 11
+   cases hit live sites.
+5. Bump `Constants.buildCodename`; write the changelog to the scratchpad
+   (`changelog_rNN.md`) with **changed / observed / not verified** per item;
+   `grep -iE 'password=|token|secret|cookie=' changelog_rNN.md` must be empty.
+6. Commit with a descriptive body and BOTH trailers:
+   ```
+   Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+   Claude-Session: https://claude.ai/code/session_01HufKGFEvfxtATMVePKNXJu
+   ```
+   No model identifiers anywhere else. `git push -u origin claude/experimental-doujin`
+   (retry with backoff on network errors).
+7. Build in the worktree:
+   ```
+   cd /home/user/LoliSnatcher_Droid-build
+   git fetch -q origin claude/experimental-doujin && git checkout -q --detach <sha>
+   flutter build apk --release > <scratch>/buildNN.log 2>&1
+   ```
+   Output: `build/app/outputs/flutter-apk/app-release.apk` (universal,
+   ~95 MB). The log's last line names the APK and size.
+8. Upload:
+   ```
+   python3 scripts/drive_upload_build.py --token <N> --descriptor "<label>" \
+     --apk /home/user/LoliSnatcher_Droid-build/build/app/outputs/flutter-apk/app-release.apk \
+     --apk-name "<codename>-2.6.0.apk" --changelog-file <scratch>/changelog_rNN.md
+   ```
+   `--token` is a per-build folder key (increment it), `--descriptor` a short
+   label in the folder name, `--extra` drops more files beside the APK,
+   `--changelog-text` is the inline alternative. The script prints the folder
+   link — put it in the report.
+9. Republish the **parity artifact** (§2.6) with a footer "build rNN".
+10. Report: per item changed/observed/not verified, numbered device steps,
+    the Drive link, what to send back (a log with the app's logger enabled,
+    Settings → Debug → Logger; the source-capture file when a site fails).
+
+### 2.6 The parity artifact
+A single HTML page (`<scratch>/doujin_source_parity.html`, published at
+`https://claude.ai/code/artifact/3283b8b2-e5b8-42c3-b8aa-63390a4eaf97`) with a
+row per source and a column per capability (listing, search, detail, reader,
+tags, favourites, login, downloads, related, recommended, tag catalog, media
+headers, …) marked verified / unverified / n.a., plus per-build notes. Read it
+with the Artifact tool (`action: read`) before republishing; scratch files do
+not survive a container reset, so rebuild it from the read if missing.
+
+## 3. Layout of the app
+
+```
+lib/main.dart                     runApp → MainApp → (init) InitHomePage → MobileHomePage / DesktopHomePage
+lib/src/boorus/                   one handler per source family (50 files) + boorus/doujin/ (13)
+lib/src/data/                     models: Booru, BooruItem, Tag/TagType, MetaTag, KemonoPost, SiteProfile, constants
+lib/src/data/site_profiles/       per-host deviations (bakemono, kemono)
+lib/src/handlers/                 singletons and services (43): settings, search, DB, doujin store, reader, tag store, …
+lib/src/pages/                    full screens (26) + pages/settings/ (24)
+lib/src/widgets/                  preview/ (feed), gallery/ (viewer chrome), drawers/, tabs/, image/, video/, webview/, root/, common/
+lib/src/services/                 image_writer (downloads), dio_downloader, drive_backup, saf_file_cache
+lib/src/utils/                    dio_network, logger + log_redaction, tools (UA, sanitize), html_parse, extensions
+test/                             50 offline test files + test/fixtures/ (43 captured bodies)
+scripts/drive_upload_build.py     Drive uploader (see §2)
+```
+
+### 3.1 Screens and navigation
+- `MobileHomePage` hosts a vendored **`InnerDrawer`**: left = main drawer
+  (booru/tab selector, settings entry), right = `DownloadsDrawer` whose top is
+  `drawer_quick_access.dart` (favourites, history, pins, collections, doujin
+  library entries when on a doujin tab, the "Use the <site> sidebar" swap row
+  on kemono-style tabs). `pinnedSide()` swaps the right side for
+  `KemonoSidebar` when the current tab is kemono-style and
+  `settingsHandler.kemonoSidebar` is true.
+- The feed is `waterfall_view.dart` (grid/staggered via `grid_builder` /
+  `staggered_builder`, thumbnails in `widgets/thumbnail/`), the search bar is
+  `main_search_bar.dart` + the query editor pages, the tab strip is
+  `flow_tab_carousel.dart`, filter chips `media_filter_chips.dart`.
+  Doujin tabs render `doujin_tab_view.dart` instead of the waterfall
+  (grid of book cards; a detail tab shows the book's page).
+- The viewer is `gallery_view_page.dart` → `image_viewer.dart` /
+  `video_viewer.dart` (media_kit and the older players), chrome in
+  `hideable_appbar.dart` (toolbar actions: files overlay, kemono post page,
+  find elsewhere, …), the info panel `tag_view.dart` (tags, metatags card
+  with the tag builder chips, related/recommended strips, comments, notes,
+  kemono post button), `post_files_page.dart` for carousel posts,
+  `doujin_detail_page.dart` + `doujin_reader_page.dart` for books.
+- Settings: `settings_page.dart` hub → `pages/settings/*` (boorus,
+  `booru_edit_page.dart` with per-type defaults and instructions, doujin
+  settings, source settings, tags & filters, gallery, video, network, theme,
+  backup/restore, database, debug with logger and source capture, …).
+- Routing helpers: `widgets/root/routing.dart`, `NavigationHandler`
+  (`navContext`), predictive back.
+
+### 3.2 State conventions
+- **GetX** singletons: `SettingsHandler.instance`, `SearchHandler.instance`,
+  `DoujinDataHandler.instance`, etc. Reactive fields are `Rx*`; widgets
+  rebuild with `Obx`. Settings are `RxBool`/`RxString` fields in
+  `settings_handler.dart`, persisted to `settings.json` by
+  `saveSettings(restate:)`; add a field there + its json key + a settings row.
+- **Networking:** `DioNetwork` (`utils/dio_network.dart`) hands out Dio
+  instances sharing one pooled `HttpClient`. **Never call `.close()` on a Dio
+  from `getClient()`** — it kills the shared pool.
+- **One User-Agent invariant:** every request, WebView and media fetch uses
+  `Tools.browserUserAgent` (`utils/tools.dart`). Cloudflare ties cookies to
+  the UA; mismatches were the cause of several "works in browser, 403 in app"
+  rounds. Do not introduce another UA string.
+- **Headers:** `BooruHandler.getHeaders()` for API calls,
+  `getMediaHeaders()` for image/video fetches (viewer, thumbnails, downloads
+  all ask `BooruHandlerFactory.mediaHeadersFor(booru)`; `media_headers_test`
+  guards the per-source table).
+- **Images:** `CustomNetworkImage` (`widgets/image/custom_network_image.dart`)
+  fetches through Dio into the cache folder; it validates JPEGs
+  (`looksLikeJpeg` before `hasJpegEndMarker`, because some hosts serve WebP
+  under `.jpeg`). Its `==` compares the `headers` map **by identity** — pass
+  the same map instance across rebuilds or every rebuild refetches.
+- **Logging:** `Logger.Inst().log(msg, className, method, LogTypes.x)`;
+  everything passes `LogRedaction` (api keys, cookies, passwords, the
+  kemono session). The user exports logs from Settings → Debug → Logger.
+- **Paging rule:** `SearchHandler.runSearch` increments `pageNum` *before*
+  the first fetch. A handler's first page number is `startingPage` from
+  `BooruHandlerFactory` (default `-1` → first request page 0). Sites that
+  count from 1 return `0`. Getting this wrong skips the first page (r25 bug).
+
+## 4. Handlers and the capability surface
+
+`BooruHandler` (`handlers/booru_handler.dart`) is the base every source
+extends. The factory (`booru_handler_factory.dart`) maps `BooruType` →
+handler and caches per-booru helpers (`mediaHandlerFor`, `mediaHeadersFor`,
+`mediaOutageNoticeFor`, `onMediaErrorFor`, `beforeMediaRetryFor`).
+
+Override points, grouped:
+
+| Area | Members |
+|---|---|
+| Search | `makeURL(tags)`, `parseListFromResponse`, `parseItemFromResponse(item, i)`, `afterParseResponse`, `validateTags`, `translateOrSyntax`, `searchCount`, `countIsQuestionable`, `hasSizeData` |
+| Post | `makePostURL(id)`, `loadItem({item, withCapctha})` + `hasLoadItemSupport`, `shouldUpdateIteminTagView`, `shouldPopulateTags` / `populateTagHandler` |
+| Tags | `hasTagSuggestions`, `makeTagURL`, `parseTagSuggestionsList/parseTagSuggestion`, `tagTypeMap`, `tagNamespace(tag)`, `tagNamespaceSections`, `tagCatalog` (§4.3), `availableMetaTags()`, `metatagsCheatSheetLink`, `getTagDisplayString` |
+| Comments / notes | `hasCommentsSupport`, `makeCommentsURL`, `parseCommentsList/parseComment`; `hasNotesSupport`, `makeNotesURL`, `parseNotesList/parseNote` |
+| Account | `hasSignInSupport`, `canSignIn/signIn/isSignedIn/signOut`, `usesUserId/usesApiKey`, `userIdLabel/apiKeyLabel`, `hasSiteFavourites` + `setSiteFavourite(item, value)`, `getCookies` |
+| Requests | `getHeaders()`, `getMediaHeaders()`, `mediaOutageNotice(url)`, `onMediaError(url, e)`, `beforeMediaRetry(url)` |
+| Doujin | `hasReader` (posts are books → `ReaderHandler`), `readerImageQualities`, `supportsLanguageFilter/TitleLanguage`, `relatedVersionsQuery` |
+| Misc | `searchModifiers()`, `animatedPreviewFilters`, `storeTagsGlobally`, `hasNativeOrSupport`, `liveFilter` exemptions |
+
+Per-source knowledge that is *not* a handler override lives in these layers:
+
+- **`SiteProfile`** (`data/site_profile.dart`, instances in
+  `data/site_profiles/`): per-HOST deviations from a handler family (bakemono
+  is gelbooru-compatible but has its own autocomplete route and multi-file
+  posts; kemono's profile tells `PostFilesHandler` how to read a post's
+  files). Every hook defaults to "no opinion". Resolved by host.
+- **`PostFilesHandler`**: sites where one post holds several files
+  (carousel). Fetches the post page as **plain text**
+  (`ResponseType.plain`, `bodyText()` re-encodes if Dio decoded it),
+  `parsePostFiles` via the profile, caches, sets `downloadFileName` per file
+  (honoured by `ImageWriter.getFilename`). The viewer shows a burst badge and
+  a toolbar action when `displayable(files)` has more than one.
+- **`PoolSource`** (`handlers/pool_source.dart`): per-site pool routes
+  (e621, Danbooru family, gelbooru HTML); `forBooru()` null = no pools entry.
+- **`TagIndexSource`** / **`BooruTagStore`** (§4.3).
+- **`ReaderHandler`**: per-post ordered page lists + `ReaderProgress` table.
+- **`SuggestionEngine`** + **`InterestsHandler`** + `foryou_handler`: the
+  For You feed and post-page suggestions (facet blend modelled on
+  rule34.xyz; interest signals with a 30-day half-life, local only).
+- **`TagAliasResolver`**: cross-booru tag translation via the target's
+  autocomplete (find-elsewhere, tag preview).
+- **`DownloadsReconciler`**: the Downloads list is the DB, not a directory
+  scan; this finds rows whose file vanished.
+- **`DrawerRefresh.tick`**: bump it after anything that changes drawer
+  content; sections listen and reload.
+- **`SourceCaptureHandler`** (Settings → Debug → Source capture): records
+  a site's pages, in-page fetches, headers and refusals from the phone's
+  WebView into a journal file the user shares; this is how sites behind
+  Cloudflare (hentaipaw, niyaniya) were written without reaching them from
+  here. Redaction shared with the logger.
+
+### 4.3 Tag database and the tag builder
+- `BooruTag` (snapshot of a site's tags: type, count, `sourceId`) and
+  `BooruTagOverride` (user corrections) tables, managed by `BooruTagStore`.
+  Filled by `TagIndexSource` walks (`pageAt` / `search` / `exact`, verified
+  per family), opportunistic lookups, or snapshot import.
+- Doujin sources expose a `TagCatalogSource` (`handlers/tag_catalog_source.dart`,
+  implementations beside their handlers: `schale_tag_catalog`,
+  `hitomi_tag_catalog`, `asmhentai_tag_catalog`, `hentaipaw_tag_catalog`,
+  `nhentai_tag_catalog`, `kemono_tag_catalog`). A namespace is offered
+  only if the site enumerates it AND the handler's search accepts the term
+  `searchTerm` produces. `TagCatalogPuller` walks shards in the background
+  (one job per host, resumable). The chips live **inside the Metatags card**
+  of the query editor (`MetatagsBlock.mergedEntries`); tapping one opens the
+  picker sheet (`tag_browser_page.dart` / the source's own picker).
+- `test/tag_catalog_sources_test.dart` asserts "each source offers exactly
+  what it can enumerate".
+
+## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
+
+Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
+`booru_edit_page.dart` carries per-type default URL, favicon and the
+instruction text shown when adding one. `test/source_capabilities_test.dart`
+has a row per source stating which capabilities it claims.
+
+**Classic boorus** (unchanged upstream families): AGNPH, BooruOnRails,
+Danbooru, e621, Gelbooru, GelbooruV1, GelbooruAlike, Hydrus, InkBunny,
+Moebooru, Nozomi, NyanPals, Philomena, Rainbooru, Realbooru, Rule34Dev,
+R34Hentai, R34US, Sankaku, IdolSankaku, Shimmie, Szurubooru, WildCritters,
+World, Civitai (official API), WebView (browser tab), Autodetect.
+Bakemono.app rides on Gelbooru + `BakemonoProfile`.
+
+**Video / tube sources:** Hanime1 (`hanime1.me`, Chinese→English tag
+dictionary in `data/hanime_dictionary.dart`, domain fallback), Kusowanka,
+TikPorn, XXXTik, XXXFollow (login), RedGifs (`redgifs_login_page`).
+
+**Doujin sources** (`DoujinDataHandler.doujinTypes`): NHentai (official v2
+API; API key optional; account favourites sync), NiyaNiya (Schale Network
+JSON API + Turnstile clearance, §8.3), AsmHentai (HTML; login form),
+EaHentai (Next.js; one reader page lists every page; login), Faccina =
+hentalk.pw (REST API; query translation), Hitomi (`gg.js` hosts + packed
+binary indexes; throws a visible "hitomi changed" error rather than
+guessing), HentaiPaw (Next.js server-rendered; fetched through
+`OriginPageClient`, §8.4). Quirks and endpoints are in each handler's doc
+header — read them before changing a handler.
+
+**Kemono-style:** Kemono (kemono.cr), Pawchive (pawchive.pw) — §7.
+
+**Virtual boorus** (local, no network): Merge (several boorus in one tab),
+Downloads, Favourites, Collections, ForYou, History. `isLocalDb` groups
+the DB-backed ones.
+
+## 6. The doujin system
+
+### 6.1 What "doujin" means in the code
+A doujin source is one where a post is a **book** (ordered pages, read
+front to back), not one file. `BooruHandler.hasReader` is true for it, its
+`loadItem` pushes the page list into `ReaderHandler`, and its `BooruType`
+is in `DoujinDataHandler.doujinTypes` (nhentai, niyaniya, asmhentai,
+eahentai, faccina, hitomi, hentaipaw). `DoujinDataHandler.knownDoujinHosts`
+identifies items by post-URL host when no booru is at hand
+(`isDoujinItem(item)`); `isDoujinBooru(booru)`; `sameDomain(a, b)` says
+whether switching a tab between two boorus stays inside one domain.
+
+### 6.2 Separation: the rule and where it is enforced
+Doujin and booru personal data never mix. Concretely:
+
+| Data | Booru side | Doujin side |
+|---|---|---|
+| favourites | `BooruItem.isFavourite` in store.db | `doujinData.json` (`DoujinDataHandler`), synced to the account when the site supports it (`toggleFavouriteSynced` — the ONLY path UI may use) |
+| history | `ViewedPost` table | doujin history list in doujinData.json |
+| search history | `SearchHistory` table | doujin saved queries; routed by `SearchHistoryStore` (the one place that decides) |
+| blacklist / hidden tags | `settingsHandler.hiddenTags` | `SourceSettingsHandler` global + per-source blacklist (`hiddenTokensOverride` in `parseTagsList`) |
+| starred / marked tags | `Tag` table + marked list | doujin starred tags (`markedTokensOverride`) |
+| pinned tags / saved searches | `PinnedTag` / `SavedSearch` tables | doujin pins / saved searches in doujinData.json |
+| collections | `Collection`/`CollectionItem` | doujin collections in doujinData.json (bookmarks became collection entries; `BookmarkHandler` + `bookmarks.json` remain as the local bookmark layer) |
+| settings | settings.json | `sourceSettings.json` — global `_global` layer + per-source overrides (reading direction, quality, blacklist, card display…) |
+| downloads | flat files in the download root | `<root>/Doujin/<host>_<id>/001.ext…` + `doujin.json` manifest (`DoujinDownloadHandler`), listed in `DoujinDownloadsPage` |
+
+- `DoujinMigration` moved pre-split entries out of the booru stores once
+  (pure planner + DB applier; re-armed by a backup restore in
+  `backup_restore_page.dart`).
+- Drawer surfaces branch on the current tab's domain
+  (`drawer_quick_access.dart`: doujin library rows vs booru rows).
+- Tag preview, tag hub, "More from artist", Related/Recommended all take the
+  item's domain into account (`ab74c7d` "one shared predicate for
+  cross-domain source switching").
+- **Tests that guard it:** `doujin_separation_test`, `doujin_domain_scoping_test`,
+  `doujin_favourite_tags_test`, `doujin_drawer_refresh_test`,
+  `booru_switcher_domain_test`, `interests_guard_test` (For You never learns
+  from doujin views). Three adversarial "leak" audits found 8 + 5 + 12 leaks
+  after the first split (commits `28c7942`, `cb67e4a`, `dfb5178`, `0883d0c`);
+  assume a new surface leaks until a test says otherwise.
+
+### 6.3 The doujin surfaces
+- **Cards** (`widgets/preview/doujin_tab_view.dart`, card widgets):
+  per-surface rendering (feed / strip / library), cover display modes
+  fit / crop / **adapt** (adapt sizes the card to the decoded cover through
+  `DoujinCoverAspectHandler`, because most sources send no dimensions),
+  tag strip below the cover, tag chips with popup + tap/long-press setting
+  (`doujin_tag_chip.dart`), item menu (`doujin_item_menu.dart`), big-cover
+  height capped at ~45–55 % of the viewport.
+- **Tabs:** a doujin tab is a real tab type — `SearchTab.doujinPostURL /
+  doujinTitle / doujinThumb`, `isDoujinDetail`; backed up as `dp/dt/dth` in
+  `TabBackup`. The **mini tab manager** (`widgets/tabs/doujin_mini_tab_manager.dart`)
+  is a swipe-in sidebar with the tab manager's full working set (drag zone
+  widened twice on request; `doujin_edge_drag_test`).
+- **Detail page** (`pages/doujin_detail_page.dart`): cover + titles, meta
+  row, Read / save / bookmark / favourite, tags grouped by the site's own
+  namespaces (`doujin_tag_namespaces.dart` — tags are stored as bare names
+  with `tagNamespace()` on the side; storing `artist:x` as the name broke
+  chips, language badge, blacklist and favourites at once), Related
+  (chapters & versions via `relatedVersionsQuery`), Recommended
+  (`DoujinRecommendationEngine`, title + tags, works on BooruItem so one
+  engine serves all sources; diversity + endless-count setting), pages grid.
+- **Reader** (`pages/doujin_reader_page.dart`): follows the **layout
+  contract** in its header — opaque MaterialPageRoute, no Scaffold slots, a
+  Stack with Positioned bars, `ClipRect` around the page view, tap zones on
+  their own layer, stock `InteractiveViewer`, filmstrip scrubber, per-source
+  reading direction and quality from `SourceSettingsHandler`, progress in
+  `ReaderProgress` ("Continue reading"). It shipped broken twice before the
+  contract; do not restructure it without re-reading that header and
+  `doujin_reader_test` / `doujin_strip_geometry_test`.
+- **Library pages** (`doujin_library_pages.dart`, `doujin_favourites_page`,
+  `doujin_favourite_tags_page`, `doujin_downloads_page`): favourites,
+  collections, history, saved searches, starred tags, downloads.
+- **Listing tag backfill** (`doujin_listing_tag_backfill.dart` mixin): for
+  sources whose listing has no tags (niyaniya, asmhentai, eahentai) the grid
+  paints first, then each gallery's page fills tags in — needed because
+  blacklist, starred tags and hidden/marked checks all read `tagsList`.
+- **Favicons:** fallback chain site `/favicon.ico` → DuckDuckGo ip3 →
+  letter tile, cached per host (`favicon_fallback_test`).
+
+### 6.4 How the doujin source got fixed — the history in one place
+Read the commit bodies (`git log --format=%B <sha>`) for detail; this is
+the map.
+
+1. `4aceff7` **doujin** — reading system + nhentai (v2 API) : ReaderHandler,
+   reader page, detail sheet, per-source settings.
+2. `9748d2e` doujin-ux, `b2389dc` doujin-fix — native namespaces, book
+   header, pages grid; the first reader rebuild.
+3. `c79b705`…`e38c725` **the 7-item batch** — reader rebuilt with the layout
+   contract + tests; detail page replaces the viewer; card tags below cover
+   with fit/crop/adapt; Related self-heals + real Recommended; favourite
+   syncs to the nhentai account while bookmark stays local; top-level Doujin
+   settings (global + per-source); drawer quick access + `id:` queries.
+4. `f8fb939`…`c8e469a` **R2** — Item 1 separated the data systems (then two
+   leak audits); per-surface cards; recommendation diversity; card
+   interactions; tag chip popup; doujin tabs + mini tab manager +
+   three-view tab manager; big-cover toggle; filmstrip scrubber; drawer
+   cleanup + account blacklist import; bookmarks as collection entries.
+5. `29ac01b`…`0883d0c` **R3** — booru blacklist can no longer touch doujin
+   items; doujin tag stars in their own store; doujin tabs as a real tab
+   type; mini tab manager parity; reactive drawers (`DrawerRefresh`); strip
+   header button; cover cap; favicon fallback; gate round 5 (12 leaks).
+6. `59707d1`…`abea0ac` **R4** — drag strip, strip cards, one domain
+   predicate; then six sources: niyaniya (Schale), asmhentai (login),
+   eahentai (login), hentalk (faccina API), hitomi (gg.js + binary indexes;
+   four cross-source fixes), meta tags for the HTML sources.
+7. `9077da6`…`5762f5b` **source capture** — the tool that let hentaipaw and
+   niyaniya be written from the phone's view of the site.
+8. `a15067f`…`0f3b93b` **fixes 1–3** — thumbnails on new sources (two
+   causes), tag parsing on every source, card styling.
+9. `712c8c2`…`3f07e4c` — erocdn JPEGs wrongly rejected as truncated (the
+   JPEG integrity check, `jpeg_integrity_test`); niyaniya reader showed
+   thumbnails not pages; covers fill the card; **adapt** finally wired up.
+10. `9efc2d9`…`4f126b8` niyaniya rounds: the site detects WebViews (UA), a
+    refused clearance locked the challenge out, asking for a clearance must
+    not take the reader down.
+11. `e48d07e`…`04dc4ad` **parity walk** (`doujin_parity_walk_test`): every
+    source queried at its own starting page through the same checks.
+12. `25f14ed` r9 — Suggested/Recommended filters, "More from artist" booru,
+    background hang. `1714e27` r10 — dependency upgrade (html pinned 0.15.6,
+    dynamic_color 1.8.1, run `dart run slang` after locale changes).
+13. `4d4c81f`…`8326484` r10b–r17 niyaniya: accept the re-issued clearance,
+    instrument the challenge window, **Koharu-parity reader**, r13 split
+    downloads + capability-gated settings + observe Turnstile instead of
+    hooking it, gated calls made from inside the site's page, lean page
+    client, agent version from the real engine.
+14. `1a539ae`…`e73b15e` **hentaipaw** from the capture, then pages fetched
+    from a WebView on the site's origin (`OriginPageClient`).
+15. `6e2fee8`, `f2ee2ed` r19–r20 **tag builder**: catalog store, puller,
+    picker; chips moved inside the Metatags card; niyaniya address trace;
+    hentaipaw tag index (5 namespaces, `BooruTag.sourceId`).
+16. `772b88a`…`e15d17e` r21–r26 **kemono / pawchive** (§7).
+
+Lesson that repeats through all of it: the phone sees the site, this
+container does not. Every round that guessed at markup or at Cloudflare's
+behaviour failed; every round that started from a capture or a log worked.
+
+## 7. Kemono-style sources (kemono.cr, pawchive.pw)
+
+- **`KemonoSite`** (`boorus/kemono_site.dart`) is the single description of
+  each site: hosts, Accept header, media headers, services, whether the
+  detail is an envelope, which endpoints exist (`hasRandom/Popular/TagList/
+  Dms/UpdatedArtists/ApiLogin/SearchCount`), min query length, creator DB
+  table, and every URL builder (`postsUrl`, `creatorPostsUrl`, `popularUrl`,
+  `postUrl`, `thumbUrl`, `fileUrl(path, {server})`, `iconUrl`, `bannerUrl`,
+  `loginUrl`, `logoutUrl`, `favicon`, `sidebarSummary`). `KemonoSite.of(booru)`.
+  Add a third site by adding a `BooruType`, a `KemonoSite` constant and a DB
+  creator table; the handler, pages and sidebar are shared.
+- **kemono.cr facts (2026-09-04):** API base `/api/v1`; needs
+  `Accept: text/css` (DDoS-Guard 403s a browser Accept); `/posts?q=&o=&tag=`
+  50 a page; detail is `{post, attachments[{server,name,extension,
+  name_extension,path}], previews, videos, props}`; files live on
+  `n1..n4.kemono.cr` picked by murmur2 of `/data{path}`
+  (`KemonoApi.fileServer`, verified 13/13 against the site's JS); thumbnails
+  `img.kemono.cr/thumbnail/data{path}` (800 px). **The file hosts are
+  unreachable from the user's network and from this container** (Chrome on
+  the phone hangs too) — so the viewer shows `mediaOutageNotice`, the
+  `KemonoFileHosts` probe (HEAD per host, 10-min freshness) reports status
+  in the sidebar, and `sampleURL` falls back to the thumbnail.
+- **pawchive.pw facts (2026-09-05):** the older kemono API, plain JSON;
+  `/creators` is one 93k-row array (patreon + fanbox); post detail is flat
+  (no envelope; `has_full`, `preview_state`); no random / popular / tag list /
+  DMs / updated (404); comments 404 when none; login is a form POST
+  `/account/login` (username, password, location) answering 302 + session
+  cookie; one file host `file.pawchive.pw` behind DDoS-Guard that answers
+  heavy fetching with a 403 "stop… I will block your IPs" — **never prefetch
+  files there**; thumbnails `img.pawchive.pw/thumbnail/data{path}.jpeg` are
+  **WebP bytes** under a `.jpeg` URL.
+- **Handler** (`kemono_handler.dart`): `KemonoQuery.parse` (site-aware min
+  length; `creator:`, `service:`, `tag:` terms; `unsupportedReason`),
+  `makeURL`, `postOf(detail)`, `parseItemFromResponse` (cover via
+  `KemonoProfile.coverPath`), `availableMetaTags` gated by `site.has*`,
+  media hooks, `getMediaHeaders => site.mediaHeaders`.
+- **API** (`kemono_api.dart`): `headersFor(site)`, `request` (401 → one
+  re-login), `getJson`, `describeStatus`, `postDetail` cache (10 min / 50),
+  `comments` (404 → empty).
+- **Session** (`handlers/kemono_session_handler.dart`): password stays in
+  the booru config `apiKey` like every source; the session cookie lives in
+  `kemono_session.json` beside settings, keyed `'<site>|<username>'`
+  (r24). `ensureLoaded` migrates pre-r24 bare-username keys to
+  `kemono|<user>` (r26). One login attempt per user per minute. Say this
+  in reports when the user asks where credentials go.
+- **Creator index** (`KemonoCreatorStore.forSite`, tables `KemonoCreator` /
+  `PawchiveCreator`, meta files `kemono_creators.json` /
+  `pawchive_creators.json`): the full creators list pulled once, searched
+  locally; Artists page (`kemono_artists_page.dart`) with service chips,
+  favourites, updated list; `kemono_creator_header.dart` above a creator's
+  feed.
+- **Post page** (`pages/kemono_post_page.dart`, toolbar action
+  `Symbols.article_rounded` in `hideable_appbar.dart`, button in
+  `tag_view.dart`): title, meta, content HTML (`LoliHtml`, `/data` links
+  made absolute), embed, poll, pictures as full-width tiles (thumbnail
+  first, real file on top when the **Full** chip / `kemonoPostFullImages`
+  is on and the host is not known down), videos, attachments, comments,
+  prev/next. Pushed pages use `resizeToAvoidBottomInset: false` (the
+  Samsung recorder hides the keyboard, so a "dead area" at the bottom was
+  the inset). Holds ONE media-headers map (`_mediaHeaders`) — see §3.2.
+- **Sidebar** (`widgets/drawers/kemono_sidebar.dart`): replaces the
+  downloads drawer on kemono-style tabs when `kemonoSidebar` is on;
+  `Material` + `SafeArea` (without a Material ancestor text gets yellow
+  underlines and InkWell throws), coloured stadium pills grouped ARTISTS /
+  POSTS / FAVORITES / MESSAGES, rows gated by `site.has*`, a status card
+  (index + file hosts), tag picker with error snackbar, "Use the app
+  sidebar" → the quick-access drawer has the reverse row.
+- **DMs / announcements** (`kemono_messages_pages.dart`), kemono only.
+- Tests: `kemono_test.dart` (33), `pawchive_test.dart` (15); fixtures
+  `kemono_*.json`, `pawchive_*.json`.
+- **Unverified on device:** everything from r22 on (media outage flow, post
+  page, pawchive feed/thumbnails/post files, sidebar pills, popular and tags
+  on kemono — the last two need a log with the request visible). Pawchive
+  login is untested (no account).
+
+## 8. Sessions and logins, per pattern
+
+- **Config fields:** `Booru.userID` / `Booru.apiKey` (labels via
+  `userIdLabel/apiKeyLabel`; `usesUserId/usesApiKey` hide them). Cookies
+  from WebView logins are merged through the shared cookie jar
+  (`cookie_jar_timeout_test`; header merge, not concatenation — `5db59b1`).
+- **API-key sources:** Danbooru family, Gelbooru, e621, nhentai (key
+  optional; needed for favourites/blacklist sync), Civitai.
+- **WebView / cookie logins:** Sankaku, rule34.xyz, RedGifs
+  (`redgifs_login_page`), XXXFollow, Cloudflare-fronted boorus (a 403 on
+  media triggers the captcha page; `44bd311`).
+- **Form logins done by the app:** asmhentai (`/login/`), eahentai
+  (`/login`), hentalk/faccina, pawchive (`/account/login`) — result
+  visibility for the first three is an open item (the user could not tell
+  whether login succeeded).
+- **API login:** kemono (`POST /api/v1/authentication/login` → `session`
+  cookie).
+- **niyaniya / Schale clearance** (`handlers/schale_clearance_handler.dart`,
+  `schale_clearance.json`): reading needs a `crt` token the site gets by
+  solving a Turnstile and POSTing to `auth.schale.network/clearance`, kept
+  in `localStorage['clearance']`. The app uses **two windows** (the design
+  Keiyoushi's Koharu extension uses): a visible **solver** (Chrome's
+  reduced UA, pop-ups allowed, main-frame-only navigation filter; the
+  person solves by hand) and a headless **harvester** (loads `robots.txt`
+  on the site origin, reads localStorage once, destroys itself). They share
+  WebView storage; that sharing is the mechanism. Gated API calls are made
+  from inside the site's page (page client on the robots.txt origin),
+  `/cdn-cgi/trace` ip/colo is logged at issue and refusal, `x-ratelimit`
+  headers pace requests, a refused token is dropped (not retried silently).
+  **Still unverified end to end on the user's phone** — next log should show
+  the trace lines. Tests: `schale_clearance_flow_test`, `schale_reader_test`,
+  `doujin_niyaniya_test`.
+- **hentaipaw** (`handlers/origin_page_client.dart`): the plain client gets
+  a WAF 403, so pages are fetched by a headless WebView parked on
+  `robots.txt` of the site origin doing same-origin fetches with the
+  engine's own headers/cookies. Sibling routes (artists/groups/parodies)
+  still need a capture.
+- **Log redaction** (`utils/log_redaction.dart`) strips keys, cookies,
+  passwords and session values from logs and captures; `log_redaction_test`.
+
+## 9. Persistence
+
+**store.db** (`handlers/database_handler.dart`; DDL in `updateTable()` runs
+on every open, so adding a table/index there is enough):
+
+| Table | Owner / purpose |
+|---|---|
+| BooruItem, ImageTag, Tag | posts, their tags, tag types (favourites = `isFavourite`, downloads = `isSnatched`) |
+| SearchHistory, TabRestore, TabVisitHistory, SeenPost, ViewedPost | booru search history, tab backup, visit order, seen/viewed |
+| PinnedTag, SavedSearch | pins (follows are pins carrying `followLabel`), saved searches |
+| Collection, CollectionItem | booru collections |
+| BooruTag, BooruTagOverride | tag snapshot + corrections (§4.3) |
+| TagAliasCache, TagSignal | cross-booru alias cache; For You interest scores |
+| ReaderProgress | doujin reading position |
+| KemonoCreator, PawchiveCreator | creator indexes (whitelisted in `creatorTable()`) |
+
+**Files beside settings.json** (`SettingsHandler.instance.path`):
+`doujinData.json`, `sourceSettings.json`, `bookmarks.json`,
+`kemono_session.json`, `schale_clearance.json`, `kemono_creators.json` /
+`pawchive_creators.json` (index meta), `update.json`; the source-capture
+journal `source-capture-session.jsonl` in the cache dir. Backup/restore
+(`backup_restore_page.dart`) and the Drive backup (`services/drive_backup.dart`)
+cover settings, boorus, the DB and the doujin files; restore re-arms the
+doujin migration.
+
+## 10. Tests and fixtures
+
+Run: `flutter test $(ls test/*_test.dart | grep -v booru_test)` (offline).
+`booru_test.dart` = live-network smoke cases, run by hand only.
+
+| Area | Files |
+|---|---|
+| doujin sources | `doujin_asmhentai_test`, `doujin_eahentai_test`, `doujin_hentalk_test`, `doujin_hitomi_test`, `doujin_hentaipaw_test`, `doujin_niyaniya_test`, `doujin_parity_walk_test`, `schale_clearance_flow_test`, `schale_reader_test` |
+| doujin UI/data | `doujin_card_*`, `doujin_cover_height_test`, `doujin_detail_*`, `doujin_download_layout_test`, `doujin_reader_test`, `doujin_strip_geometry_test`, `doujin_tabs_test`, `doujin_menu_test`, `doujin_tag_*`, `doujin_recommend*`, `doujin_bookmark_test`, `doujin_listing_tag_backfill_test`, `doujin_edge_drag_test` |
+| separation | `doujin_separation_test`, `doujin_domain_scoping_test`, `doujin_favourite_tags_test`, `doujin_drawer_refresh_test`, `booru_switcher_domain_test`, `interests_guard_test` |
+| kemono | `kemono_test`, `pawchive_test` |
+| cross-cutting | `source_capabilities_test`, `media_headers_test`, `metatags_block_merge_test`, `tag_catalog_sources_test`, `tag_catalog_puller_test`, `source_capture_test`, `source_capture_inpage_test`, `log_redaction_test`, `jpeg_integrity_test`, `favicon_fallback_test`, `suggestion_filter_test`, `downloads_reconcile_test`, `cookie_jar_timeout_test` |
+
+Conventions: a source test constructs the handler with a `Booru` and feeds
+it a fixture from `test/fixtures/` (a body captured with curl or from the
+source-capture journal, trimmed, never containing credentials); it asserts
+parsed items, URLs for page 1 and 2, tag namespaces, and the capability
+rows. `setUp` usually seeds `SettingsHandler` for the DB-less path. When a
+handler changes an endpoint, capture a new fixture rather than editing the
+old one by hand.
+
+## 11. How to add a source or a feature
+
+1. Failure analysis / probe first: `curl -sS -A "$UA"` the site, or ask for
+   a source capture. Record what you verified and when in the handler's doc
+   header (every handler here starts with one).
+2. `BooruType` value + `isX` getter; factory case (`startingPage` if the
+   site counts from 1); `booru_edit_page.dart` defaults + instructions;
+   `Autodetect` detection if the host is fixed (`isDetectable`).
+3. Handler: `makeURL`, parse list/item, `makePostURL`, tags/namespaces,
+   `getMediaHeaders` if the CDN needs a Referer, `availableMetaTags`,
+   comments/notes/login if the site has them. Doujin: `hasReader`, push
+   pages into `ReaderHandler` from `loadItem`, add the type to
+   `doujinTypes` and the host to `knownDoujinHosts`, mix in the listing tag
+   backfill if the listing carries no tags, a `TagCatalogSource` if the site
+   enumerates tags.
+4. Tests + fixture; rows in `source_capabilities_test`, `media_headers_test`
+   (and `tag_catalog_sources_test` for a catalog).
+5. Parity artifact row; changelog; build; report (§2).
+
+For a UI feature: find the existing widget (the feed, viewer chrome and
+drawers all have one owner file, §3.1), keep the Flow look (rounded
+`surfaceContainer` cards, Material Symbols Rounded icons, pill buttons,
+the theme's `colorScheme`), add a setting only if the user asked for a
+choice, and add a widget test where geometry matters (the reader and the
+cards have had regressions).
+
+## 12. Open items (as of r26)
+
+- niyaniya clearance: unverified end to end on the phone; the next log
+  should carry the `/cdn-cgi/trace` lines and the harvest result.
+- hentaipaw: artists/groups/parodies/characters routes need a capture.
+- asmhentai / eahentai / hentalk: login success is not shown to the user.
+- kemono.cr: file hosts unreachable for the user (network side); popular
+  and the tag picker on a kemono tab need a retest with a log.
+- pawchive: login untested (no account); post files, thumbnails, sidebar
+  pills untested on device.
+- r26 itself: single-fetch of post pictures, pre-r24 session migration,
+  the pawchive swap-row label — all unverified on device.
+- Device verification of r19–r25 as a whole was never confirmed by the user
+  item by item; the parity artifact marks what is verified.
+- Task #14 in the session's task list ("6 new doujin sources with full
+  parity") is effectively done except the open items above.
+
+---
+
+# PART B — chronological build log (history, verbatim)
+
+Everything below was written build by build from 2026-07 to 2026-08-29 and
+is kept as it was. Where it contradicts Part A (branch name, build command,
+version), Part A is current.
+
 # LoliSnatcher_Droid — Session Handover
 
 Paste this back to resume with full context. Last updated: 2026-07-15 (build 5210, Flow rounded-icon sweep + sqlite3 sandbox build fix).
