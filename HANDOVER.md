@@ -682,8 +682,9 @@ cards have had regressions).
 
 - r27 (tag builder on classic boorus) is unverified on the device: the Tag
   builder card, one pull per family, the opaque picker sheet, the Tag
-  browser on the shared puller. Danbooru's `search[category]` could not be
-  probed from the PC (Cloudflare); if the log shows "ignored the …
+  browser on the shared puller. Every family, danbooru included, answered
+  the first builder page from the PC through the app's own client
+  (`tag_index_live_test`); if a phone log ever shows "ignored the …
   category filter", flip `DanbooruTagIndex.walksByCategory` to false.
 - niyaniya clearance: unverified end to end on the phone; the next log
   should carry the `/cdn-cgi/trace` lines and the harvest result.
