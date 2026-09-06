@@ -74,6 +74,11 @@ class _KemonoPostPageState extends State<KemonoPostPage> {
   late final KemonoFileHosts hosts = KemonoFileHosts.forSite(site);
   late final KemonoHandler handler = KemonoArtistsPage.handlerFor(widget.booru);
 
+  /// One map for the page's lifetime: `CustomNetworkImage` compares its
+  /// headers by identity, so a map built per build would make every rebuild
+  /// (Full chip, scroll, keyboard) a cache miss and refetch every picture.
+  late final Map<String, String> _mediaHeaders = {...handler.getMediaHeaders(), 'User-Agent': Tools.browserUserAgent};
+
   KemonoPost? post;
   List<CommentItem> comments = const [];
   bool commentsLoaded = false;
@@ -327,10 +332,7 @@ class _KemonoPostPageState extends State<KemonoPostPage> {
             p.contentForHtml(),
             extensions: [
               ImageBuiltIn(
-                networkHeaders: {
-                  ...handler.getMediaHeaders(),
-                  'User-Agent': Tools.browserUserAgent,
-                },
+                networkHeaders: _mediaHeaders,
               ),
             ],
           ),
@@ -588,7 +590,7 @@ class _KemonoPostPageState extends State<KemonoPostPage> {
   /// picture at once (it answers wherever the API does), the real file on top
   /// of it when Full is on and the file host is not known to be down.
   Widget _pictureTile(ThemeData theme, KemonoPost p, KemonoPostFile f, {required bool full}) {
-    final Map<String, String> headers = {...handler.getMediaHeaders(), 'User-Agent': Tools.browserUserAgent};
+    final Map<String, String> headers = _mediaHeaders;
     final Widget thumb = Image.network(
       f.thumbUrl!,
       fit: BoxFit.fitWidth,

@@ -198,4 +198,7 @@ class KemonoSite {
   String get logoutUrl => hasApiLogin ? '$api/authentication/logout' : '$site/account/logout';
 
   String get favicon => isKemono ? '$site/favicon.ico' : '$site/static/favicon.png';
+
+  /// What the site's sidebar offers, for the row that switches back to it.
+  String get sidebarSummary => ['Artists', 'posts', 'favorites', if (hasDms) 'DMs'].join(', ');
 }

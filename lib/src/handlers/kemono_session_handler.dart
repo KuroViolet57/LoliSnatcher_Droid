@@ -59,6 +59,7 @@ class KemonoSessionHandler {
       if (file == null || !file.existsSync()) return;
       final decoded = jsonDecode(file.readAsStringSync());
       if (decoded is! Map) return;
+      final bool migrated = migrateKeys(decoded);
       for (final entry in decoded.entries) {
         final value = entry.value;
         if (value is Map && value['cookie'] is String && (value['cookie'] as String).isNotEmpty) {
@@ -68,7 +69,27 @@ class KemonoSessionHandler {
           );
         }
       }
+      // Rewrite the file in the keyed shape once, so the bare keys are gone.
+      if (migrated) _persist();
     } catch (_) {}
+  }
+
+  /// Sessions written before the keys carried a site were stored under the
+  /// bare username; kemono was the only site then. Moves each such entry to
+  /// `kemono|<name>` unless that key already exists. Returns whether
+  /// anything moved. Pure — works on the decoded map in place.
+  @visibleForTesting
+  static bool migrateKeys(Map decoded) {
+    bool moved = false;
+    for (final key in decoded.keys.toList()) {
+      final String k = key.toString();
+      if (k.contains('|')) continue;
+      final String keyed = '${KemonoSiteId.kemono.name}|${k.trim().toLowerCase()}';
+      final value = decoded.remove(key);
+      if (!decoded.containsKey(keyed)) decoded[keyed] = value;
+      moved = true;
+    }
+    return moved;
   }
 
   void _persist() {

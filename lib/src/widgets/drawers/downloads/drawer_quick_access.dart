@@ -4,6 +4,7 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:get/get.dart' hide ContextExt, FirstWhereOrNullExt;
 
+import 'package:lolisnatcher/src/boorus/kemono_site.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/pinned_tag.dart';
 import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
@@ -384,8 +385,8 @@ class _DrawerQuickAccessState extends State<DrawerQuickAccess> {
         _quickAccessRow(
           icon: Symbols.swap_horiz_rounded,
           iconColor: const Color(0xFF8FBFD4),
-          label: 'Use the kemono sidebar',
-          subtitle: 'Artists, posts, favorites, DMs',
+          label: 'Use the ${KemonoSite.of(current).name} sidebar',
+          subtitle: KemonoSite.of(current).sidebarSummary,
           onTap: () {
             settingsHandler.kemonoSidebar.value = true;
             settingsHandler.saveSettings(restate: false);

@@ -254,5 +254,11 @@ void main() {
       expect(KemonoSessionHandler.sessionFromLoginResponse(302, ['session=abc'], form: false), isNull, reason: 'the API login answers 200');
       expect(KemonoSessionHandler.instance.hasSession(pw), isFalse);
     });
+
+    test('the quick-access swap row names the site and skips DMs where there are none', () {
+      expect(KemonoSite.pawchive.sidebarSummary, 'Artists, posts, favorites');
+      expect(KemonoSite.kemono.sidebarSummary, 'Artists, posts, favorites, DMs');
+      expect('Use the ${KemonoSite.of(b()).name} sidebar', 'Use the pawchive sidebar');
+    });
   });
 }

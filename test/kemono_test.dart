@@ -458,5 +458,29 @@ void main() {
       final files = const KemonoProfile().parsePostFiles(fixture('kemono_post_attachments.json'), b());
       expect(files!.length, 2);
     });
+
+    test('the image provider compares headers by identity, so the post page keeps one map', () {
+      // A map built per build would make every rebuild a cache miss and
+      // refetch the full picture — the post page memoises its headers.
+      final Map<String, String> shared = {'Referer': 'https://kemono.cr/'};
+      const String url = 'https://n1.kemono.cr/data/ab/cd/x.png';
+      expect(CustomNetworkImage(url, headers: shared), equals(CustomNetworkImage(url, headers: shared)));
+      final Map<String, String> copy = Map<String, String>.of(shared);
+      expect(CustomNetworkImage(url, headers: shared), isNot(equals(CustomNetworkImage(url, headers: copy))));
+    });
+
+    test('sessions saved under a bare username move to the kemono key', () {
+      final Map decoded = {
+        'Alice': {'cookie': 'session=a', 'at': 1},
+        'kemono|bob': {'cookie': 'session=b', 'at': 2},
+        'carol': {'cookie': 'session=old', 'at': 1},
+        'kemono|carol': {'cookie': 'session=new', 'at': 3},
+      };
+      expect(KemonoSessionHandler.migrateKeys(decoded), isTrue);
+      expect(decoded.keys, unorderedEquals(['kemono|alice', 'kemono|bob', 'kemono|carol']));
+      expect(decoded['kemono|alice']['cookie'], 'session=a');
+      expect(decoded['kemono|carol']['cookie'], 'session=new', reason: 'a keyed entry wins over the bare one');
+      expect(KemonoSessionHandler.migrateKeys(decoded), isFalse, reason: 'nothing left to move');
+    });
   });
 }
