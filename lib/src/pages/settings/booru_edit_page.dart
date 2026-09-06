@@ -242,6 +242,16 @@ class _BooruEditState extends State<BooruEdit> {
                       booruFaviconController.text = 'https://kusowanka.com/favicon.ico';
                     }
                   }
+                  if (selectedBooruType.isRule34Video && booruURLController.text.trim().isEmpty) {
+                    booruURLController.text = 'https://rule34video.com';
+                    if (booruNameController.text.trim().isEmpty) {
+                      booruNameController.text = 'Rule34Video';
+                    }
+                    if (booruFaviconController.text.trim().isEmpty) {
+                      // The page head declares apple-touch-icon.png; /favicon.ico is not there.
+                      booruFaviconController.text = 'https://rule34video.com/apple-touch-icon.png';
+                    }
+                  }
                   if (selectedBooruType.isNHentai && booruURLController.text.trim().isEmpty) {
                     booruURLController.text = 'https://nhentai.net';
                     if (booruNameController.text.trim().isEmpty) {
@@ -645,6 +655,28 @@ class _BooruEditState extends State<BooruEdit> {
             'numeric tag IDs, not names, so tags appear once you open a post. '
             'That also means the tag blacklist cannot hide anything on this '
             'booru until a post has been opened.';
+      case BooruType.Rule34Video:
+        return '<b>Rule34Video</b><br>Leave the URL as https://rule34video.com. '
+            'A video site — no account or API key needed.<br><br> '
+            'Leave the search empty to browse the newest uploads. Type words to '
+            "use the site's own text search (spaces or underscores both work). "
+            'A single tag name the app already knows (from a video you opened, '
+            "or a pulled Tags list) opens that tag's own page instead. "
+            '<i>artist:name</i>, <i>category:name</i> and <i>uploader:id</i> '
+            'open one page each; the site cannot combine them with each other '
+            'or with words, so such a query is refused rather than answered '
+            'wrongly.<br><br> '
+            '<b>Content type.</b> The <i>type:</i> chip (straight / gay / futa / '
+            'music / iwara, several allowed) is applied by the site on every '
+            'page except text search — there the phone drops cards itself, and '
+            'it can only tell Gay and Futa apart (Straight, Music and Iwara '
+            'cards look alike). A default for this source lives in Source '
+            'settings.<br><br> '
+            "The <i>sort:</i> chip offers the site's orders (text search adds "
+            "its own relevance order). The site's autocomplete is switched "
+            'off; suggestions come from the Tag builder lists once pulled. '
+            'Videos are resolved when opened and their links expire — Retry '
+            're-resolves them.';
       case BooruType.TikPorn:
         return '<b>Tik.Porn</b><br>Leave the URL as https://tik.porn. A '
             'short-form vertical video site — video only, no images. No '
@@ -838,6 +870,7 @@ class _BooruEditState extends State<BooruEdit> {
         selectedBooruType.isRule34Dev ||
         selectedBooruType.isHanime1 ||
         selectedBooruType.isKusowanka ||
+        selectedBooruType.isRule34Video ||
         selectedBooruType.isNHentai ||
         selectedBooruType.isTikPorn ||
         selectedBooruType.isXXXTik ||
@@ -851,6 +884,8 @@ class _BooruEditState extends State<BooruEdit> {
             ? 'Hanime1'
             : selectedBooruType.isKusowanka
             ? 'Kusowanka'
+            : selectedBooruType.isRule34Video
+            ? 'Rule34Video'
             : selectedBooruType.isNHentai
             ? 'nhentai'
             : selectedBooruType.isTikPorn
@@ -872,6 +907,9 @@ class _BooruEditState extends State<BooruEdit> {
       }
       if (booruURLController.text.trim().isEmpty && selectedBooruType.isKusowanka) {
         booruURLController.text = 'https://kusowanka.com';
+      }
+      if (booruURLController.text.trim().isEmpty && selectedBooruType.isRule34Video) {
+        booruURLController.text = 'https://rule34video.com';
       }
       if (booruURLController.text.trim().isEmpty && selectedBooruType.isNHentai) {
         booruURLController.text = 'https://nhentai.net';

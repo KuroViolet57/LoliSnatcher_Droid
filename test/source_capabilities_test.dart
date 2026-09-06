@@ -15,6 +15,7 @@ import 'package:lolisnatcher/src/boorus/idol_sankaku_handler.dart';
 import 'package:lolisnatcher/src/boorus/kemono_handler.dart';
 import 'package:lolisnatcher/src/boorus/kusowanka_handler.dart';
 import 'package:lolisnatcher/src/boorus/nhentai_handler.dart';
+import 'package:lolisnatcher/src/boorus/rule34video_handler.dart';
 import 'package:lolisnatcher/src/boorus/tikporn_handler.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
@@ -102,11 +103,20 @@ void main() {
         KusowankaHandler(b('kusowanka', BooruType.Kusowanka, 'https://kusowanka.com'), 20),
         TikPornHandler(b('tikporn', BooruType.TikPorn, 'https://tik.porn'), 20),
         AGNPHHandler(b('agnph', BooruType.AGNPH, 'https://agn.ph'), 20),
+        Rule34VideoHandler(b('rule34video', BooruType.Rule34Video, 'https://rule34video.com'), 24),
       ];
       for (final h in none) {
         expect(h.usesUserId, isFalse, reason: h.className);
         expect(h.usesApiKey, isFalse, reason: h.className);
       }
+    });
+
+    test('a site-wide content filter is a capability only rule34video declares', () {
+      expect(KusowankaHandler(b('kusowanka', BooruType.Kusowanka, 'https://kusowanka.com'), 20).contentTypeOptions, isEmpty);
+      expect(GelbooruHandler(b('gelbooru', BooruType.Gelbooru, 'https://gelbooru.com'), 20).contentTypeOptions, isEmpty);
+      final r34v = Rule34VideoHandler(b('rule34video', BooruType.Rule34Video, 'https://rule34video.com'), 24);
+      expect(r34v.contentTypeOptions.map((v) => v.value), ['straight', 'gay', 'futa', 'music', 'iwara']);
+      expect(BooruType.Rule34Video.isDetectable, isFalse, reason: 'one fixed host; would match any URL');
     });
 
     test('the tag builder lists categories on the booru families, not on idol sankaku or bakemono', () {

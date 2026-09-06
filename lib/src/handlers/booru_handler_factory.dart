@@ -28,6 +28,7 @@ import 'package:lolisnatcher/src/boorus/rainbooru_handler.dart';
 import 'package:lolisnatcher/src/boorus/realbooru_handler.dart';
 import 'package:lolisnatcher/src/boorus/redgifs_handler.dart';
 import 'package:lolisnatcher/src/boorus/rule34dev_handler.dart';
+import 'package:lolisnatcher/src/boorus/rule34video_handler.dart';
 import 'package:lolisnatcher/src/boorus/sankaku_handler.dart';
 import 'package:lolisnatcher/src/boorus/shimmie_handler.dart';
 import 'package:lolisnatcher/src/boorus/szurubooru_handler.dart';
@@ -295,6 +296,11 @@ class BooruHandlerFactory {
           // limit/offset paging; the default pageNum of -1 makes the first
           // fetch page 0 -> offset 0.
           booruHandler = TikPornHandler(booru, limit);
+          break;
+        case BooruType.Rule34Video:
+          // 1-based pages (/latest-updates/N/, /search/q/?from_videos=N);
+          // the default pageNum of -1 makes the first fetch page 1.
+          booruHandler = Rule34VideoHandler(booru, Rule34VideoHandler.pageSize);
           break;
         case BooruType.XXXTik:
           // keyset cursor pagination handled inside the handler.

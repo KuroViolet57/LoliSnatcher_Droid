@@ -1166,6 +1166,12 @@ abstract class BooruHandler {
   /// non-null and the namespace is listed — see TagCatalogSource.
   TagCatalogSource? get tagCatalog => null;
 
+  /// A site-wide content filter the source offers (rule34video's Straight /
+  /// Gay / Futa / Music / Iwara toggles), as the values its `type:` metatag
+  /// takes. Non-empty makes the Source settings page offer a per-source
+  /// default for it; empty (the default) offers nothing.
+  List<MetaTagValue> get contentTypeOptions => const [];
+
   /// Whether the per-source "Only show language" setting is honoured by
   /// this handler's search, and whether "Title language" changes what it
   /// shows. Rows for either are offered only where true.

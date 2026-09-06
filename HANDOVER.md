@@ -2,7 +2,8 @@
 
 Written 2026-09-06 at build **r26-handover** (branch `claude/experimental-doujin`,
 HEAD `e15d17e` + this document; §1, §2, §4.3, §10 and §12 updated for r27 the
-same day, when the project moved to the user's Windows PC). This file is the complete brief for a fresh
+same day, when the project moved to the user's Windows PC; §0, §2, §5, §10 and
+§12 updated for r28, rule34video). This file is the complete brief for a fresh
 Claude session: read Part A top to bottom before touching code. Part B is the
 older chronological build log, kept verbatim as history.
 
@@ -24,11 +25,11 @@ older chronological build log, kept verbatim as history.
   Never push elsewhere; force-push is blocked.
 - **Version:** `2.6.0+5211` in `pubspec.yaml`, mirrored in
   `lib/src/data/constants.dart` (`updateInfo`). Builds are told apart by
-  `Constants.buildCodename` (`'r27-tag-builder'` now), shown in About. Bump the
+  `Constants.buildCodename` (`'r28-rule34video'` now), shown in About. Bump the
   codename every build: `rNN-<two words>`.
-- **Build counter:** builds are numbered r21, r22, … r27. Each build gets a
-  numbered folder on the K: drive (§2): r27 used **46**; the next build
-  uses **47**.
+- **Build counter:** builds are numbered r21, r22, … r28. Each build gets a
+  numbered folder on the K: drive (§2): r28 used **47**; the next build
+  uses **48**.
 - **The user** talks in voice notes and logs; expects one build per request
   round, checked on a Samsung phone. They cannot see tool output — only the
   final message.
@@ -104,9 +105,10 @@ older chronological build log, kept verbatim as history.
    (55 infos + 6 warnings, lint style noise in old files). New code should
    add none.
 4. `flutter test $(ls test/*_test.dart | grep -v booru_test)` → all green.
-   Baseline **577** (r27). `booru_test.dart` is excluded because its cases
-   hit live sites; `tag_index_live_test.dart` and the doujin parity walk are
-   tagged `live` and skipped unless run with `--run-skipped --tags live`.
+   Baseline **616** (r28). `booru_test.dart` is excluded because its cases
+   hit live sites; `tag_index_live_test.dart`, `rule34video_live_test.dart`
+   and the doujin parity walk are tagged `live` and skipped unless run with
+   `--run-skipped --tags live`.
 5. Bump `Constants.buildCodename`; write the changelog to the scratchpad
    (`changelog_rNN.md`) with **changed / observed / not verified** per item;
    `grep -iE 'password=|token|secret|cookie=' changelog_rNN.md` must be empty.
@@ -125,9 +127,9 @@ older chronological build log, kept verbatim as history.
    Output: `build/app/outputs/flutter-apk/app-arm64-v8a-release.apk`.
 8. Deliver by copying into the Google Drive folder synced on the PC:
    `K:\My Drive\booruApk\<token>.apk (<descriptor>)\` — e.g.
-   `46.apk (r27 tag builder)` — holding `changes.txt` (the changelog) and the
-   APK renamed `<codename>-2.6.0.apk`. Tokens are integers: r27 used 46, the
-   next build uses 47. The report gives that folder path (a file copy has no
+   `47.apk (r28 rule34video)` — holding `changes.txt` (the changelog) and the
+   APK renamed `<codename>-2.6.0.apk`. Tokens are integers: r28 used 47, the
+   next build uses 48. The report gives that folder path (a file copy has no
    web link). `scripts/drive_upload_build.py` is retired.
 9. Republish the **parity artifact** (§2.6) with a footer "build rNN".
 10. Report: per item changed/observed/not verified, numbered device steps,
@@ -334,7 +336,23 @@ Bakemono.app rides on Gelbooru + `BakemonoProfile`.
 
 **Video / tube sources:** Hanime1 (`hanime1.me`, Chinese→English tag
 dictionary in `data/hanime_dictionary.dart`, domain fallback), Kusowanka,
-TikPorn, XXXTik, XXXFollow (login), RedGifs (`redgifs_login_page`).
+TikPorn, XXXTik, XXXFollow (login), RedGifs (`redgifs_login_page`),
+Rule34Video (r28; `rule34video.com`, a KVS tube behind DDoS-Guard, no
+account). rule34video serves ONE list per query — newest, the site's text
+search, one tag by id (`/tags/{id}/`), one artist (`/models/{slug}/`), one
+category, one uploader — so `rule34video_query.dart` parses the query into a
+route and refuses combinations; a bare word the tag snapshot knows opens the
+tag page, anything else is a text search. The `type:` chip is the site's
+Straight / Gay / Futa / Music / Iwara filter (tag ids on `?flag1=a,b`), which
+the text-search block ignores — there the phone drops cards, and only Gay and
+Futa carry a badge. A per-source default lives in Source settings
+(`SourceSettings.contentTypes`, offered where `contentTypeOptions` is
+non-empty). Videos are `needToLoadItem`: the mp4 links (`get_file/…
+?v-acctoken=`) are IP-bound and expire, so the page is read on open and Retry
+re-resolves. The tag builder (`rule34video_tag_catalog.dart`, namespace-keyed
+like hentaipaw) walks the site's tag / model / category async blocks; the
+site's own autocomplete is switched off, so suggestions come from the snapshot.
+`Tools.hasCaptchaStrings` knows `ddos-guard` for this host.
 
 **Doujin sources** (`DoujinDataHandler.doujinTypes`): NHentai (official v2
 API; API key optional; account favourites sync), NiyaNiya (Schale Network
@@ -641,6 +659,7 @@ Run: `flutter test $(ls test/*_test.dart | grep -v booru_test)` (offline).
 | doujin UI/data | `doujin_card_*`, `doujin_cover_height_test`, `doujin_detail_*`, `doujin_download_layout_test`, `doujin_reader_test`, `doujin_strip_geometry_test`, `doujin_tabs_test`, `doujin_menu_test`, `doujin_tag_*`, `doujin_recommend*`, `doujin_bookmark_test`, `doujin_listing_tag_backfill_test`, `doujin_edge_drag_test` |
 | separation | `doujin_separation_test`, `doujin_domain_scoping_test`, `doujin_favourite_tags_test`, `doujin_drawer_refresh_test`, `booru_switcher_domain_test`, `interests_guard_test` |
 | kemono | `kemono_test`, `pawchive_test` |
+| video sources | `rule34video_test` (grammar, URLs, listing, badges, video page, catalog, store-backed routing; fixtures `rule34video_*.html`); live: `rule34video_live_test` |
 | tag builder | `tag_index_sources_test`, `booru_tag_catalog_test`, `booru_tag_store_test`, `tag_builder_block_test`, `tag_catalog_sources_test`, `tag_catalog_puller_test`; live: `tag_index_live_test` |
 | cross-cutting | `source_capabilities_test`, `media_headers_test`, `metatags_block_merge_test`, `tag_catalog_sources_test`, `tag_catalog_puller_test`, `source_capture_test`, `source_capture_inpage_test`, `log_redaction_test`, `jpeg_integrity_test`, `favicon_fallback_test`, `suggestion_filter_test`, `downloads_reconcile_test`, `cookie_jar_timeout_test` |
 
@@ -678,8 +697,16 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r27)
+## 12. Open items (as of r28)
 
+- r28 (rule34video) is unverified on the device. From the PC, through the
+  app's own client (`rule34video_live_test`): the newest list, `type:futa`
+  via `flag1`, text search page 2, a video page to its 720p mp4 and the
+  CDN redirect without cookies, and the first fragment of each index all
+  answered. Not verified anywhere: playback on the phone (media_kit with the
+  302 to boomio-cdn), the DDoS-Guard WebView path on mobile data, the
+  members' video list past page 1, the Source-settings content-types row,
+  and the Tag builder pull on the phone.
 - r27 (tag builder on classic boorus) is unverified on the device: the Tag
   builder card, one pull per family, the opaque picker sheet, the Tag
   browser on the shared puller. Every family, danbooru included, answered

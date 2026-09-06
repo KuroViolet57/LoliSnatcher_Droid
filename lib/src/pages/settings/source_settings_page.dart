@@ -251,6 +251,46 @@ class _SourceSettingsPageState extends State<SourceSettingsPage> {
     );
   }
 
+  /// Several values at once (a union), per source only: the marker resets
+  /// the whole selection.
+  Widget _multiChoiceRow({
+    required String title,
+    required String subtitle,
+    required List<(String, String)> options,
+    required List<String> layerValues,
+    required void Function(List<String>) onChanged,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: const TextStyle(fontSize: 15)),
+          const SizedBox(height: 2),
+          Text(
+            subtitle,
+            style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 6,
+            children: [
+              for (final option in options)
+                FilterChip(
+                  label: Text(option.$2),
+                  selected: layerValues.contains(option.$1),
+                  onSelected: (on) => onChanged(
+                    on ? [...layerValues, option.$1] : [for (final v in layerValues) if (v != option.$1) v],
+                  ),
+                ),
+            ],
+          ),
+          _overrideMarker(layerValues.isNotEmpty, () => onChanged(const [])),
+        ],
+      ),
+    );
+  }
+
   Widget _switchRow({
     required String title,
     String? subtitle,
@@ -424,6 +464,18 @@ class _SourceSettingsPageState extends State<SourceSettingsPage> {
               layerValue: layer.defaultSort,
               inheritedValue: globalLayer.defaultSort,
               onChanged: (v) => _update((s) => s.defaultSort = v),
+            ),
+          // A site-wide content filter (rule34video's Straight / Gay / Futa /
+          // Music / Iwara). Per source only: the keys mean nothing elsewhere.
+          if (_handler != null && _handler.contentTypeOptions.isNotEmpty)
+            _multiChoiceRow(
+              title: 'Content types',
+              subtitle:
+                  'Applied when a search has no type: term of its own. The site filters its own pages; '
+                  'on a text search the phone drops what it can tell apart.',
+              options: [for (final v in _handler.contentTypeOptions) (v.value, v.name)],
+              layerValues: sourceSettings.contentTypes(widget.booru),
+              onChanged: (v) => _update((s) => s.contentTypes = v.isEmpty ? null : v.join(',')),
             ),
           // Honoured by nhentai's search only; the others ignore the setting.
           if (_offered((h) => h.supportsLanguageFilter))

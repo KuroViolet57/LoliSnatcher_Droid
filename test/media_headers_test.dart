@@ -74,6 +74,11 @@ void main() {
         BooruHandlerFactory.mediaHeadersFor(booru(BooruType.Gelbooru, 'https://gelbooru.com')),
         isEmpty,
       );
+      // rule34video's signed CDN redirect wants no cookies or referer (r28, verified from the PC).
+      expect(
+        BooruHandlerFactory.mediaHeadersFor(booru(BooruType.Rule34Video, 'https://rule34video.com')),
+        isEmpty,
+      );
       // pawchive's file host wants nothing, and its guard is rate-based.
       expect(
         BooruHandlerFactory.mediaHeadersFor(booru(BooruType.Pawchive, 'https://pawchive.pw')),

@@ -21,6 +21,7 @@ class SourceSettings {
     this.preloadPages,
     this.keepScreenOn,
     this.defaultSort,
+    this.contentTypes,
     this.gridTagStrip,
     this.coverDisplay,
     this.recommendedCount,
@@ -45,6 +46,7 @@ class SourceSettings {
     preloadPages: json['preloadPages'] as int?,
     keepScreenOn: json['keepScreenOn'] as bool?,
     defaultSort: json['defaultSort'] as String?,
+    contentTypes: json['contentTypes'] as String?,
     gridTagStrip: json['gridTagStrip'] as bool?,
     coverDisplay: json['coverDisplay'] as String?,
     recommendedCount: json['recommendedCount'] as int?,
@@ -86,6 +88,11 @@ class SourceSettings {
 
   /// Sort value applied when a search has no sort: term (e.g. 'popular').
   String? defaultSort;
+
+  /// Comma list of the source's content-type keys (rule34video: 'gay,futa')
+  /// applied when a search has no type: term of its own. Per source only —
+  /// the keys mean nothing on another site, so the global layer never sets it.
+  String? contentTypes;
 
   /// Show the tag strip + language badge on grid cards.
   bool? gridTagStrip;
@@ -139,6 +146,7 @@ class SourceSettings {
     if (preloadPages != null) 'preloadPages': preloadPages,
     if (keepScreenOn != null) 'keepScreenOn': keepScreenOn,
     if (defaultSort != null) 'defaultSort': defaultSort,
+    if (contentTypes != null) 'contentTypes': contentTypes,
     if (gridTagStrip != null) 'gridTagStrip': gridTagStrip,
     if (coverDisplay != null) 'coverDisplay': coverDisplay,
     if (recommendedCount != null) 'recommendedCount': recommendedCount,
@@ -312,6 +320,13 @@ class SourceSettingsHandler {
 
   String? defaultSort(Booru? booru) =>
       settingsFor(booru).defaultSort ?? globalSettings.defaultSort;
+
+  /// The source's default content types (see [SourceSettings.contentTypes]);
+  /// empty when none are set. Read from the source layer only.
+  List<String> contentTypes(Booru? booru) => [
+    for (final t in (settingsFor(booru).contentTypes ?? '').split(','))
+      if (t.trim().isNotEmpty) t.trim(),
+  ];
 
   bool gridTagStrip(Booru? booru) => _resolve(booru, (s) => s.gridTagStrip, true);
 

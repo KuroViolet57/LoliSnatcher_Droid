@@ -353,6 +353,9 @@ class Tools {
       // TODO add multiple strings for each, then try to find as much as possible and decide if it's a captcha based on the ratio of found/total
       'booru.allthefallen.moe': ['processChallenge'],
       'derpibooru.org': ['derpi-challenge'],
+      // DDoS-Guard's JS challenge page references /.well-known/ddos-guard/;
+      // the site's own pages never mention it (checked 2026-09-06).
+      'rule34video.com': ['ddos-guard'],
     };
 
     final List<String>? stringsToFind = knownCaptchaStrings.entries

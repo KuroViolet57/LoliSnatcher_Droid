@@ -34,6 +34,7 @@ enum BooruType {
   Realbooru,
   RedGifs,
   Rule34Dev,
+  Rule34Video,
   TikPorn,
   XXXTik,
   XXXFollow,
@@ -120,6 +121,9 @@ enum BooruType {
       ..remove(BooruType.XXXFollow)
       // civitai has a fixed API host; only pick it deliberately.
       ..remove(BooruType.Civitai)
+      // rule34video.com is one fixed site whose handler ignores the entered
+      // URL, so it would "succeed" against any address; only pick it deliberately.
+      ..remove(BooruType.Rule34Video)
       // Nozomi and RedGifs hardcode their own hosts and ignore the entered
       // URL entirely, so they "succeed" against ANY address — which made
       // them a silent catch-all: a site that failed every other probe was
@@ -154,6 +158,8 @@ enum BooruType {
         return 'WebView (browser)';
       case Rule34Dev:
         return 'Rule34.dev (aggregator)';
+      case Rule34Video:
+        return 'Rule34Video';
       case Hanime1:
         return 'Hanime1';
       case Kusowanka:
@@ -221,6 +227,7 @@ enum BooruType {
   bool get isKemono => this == BooruType.Kemono || this == BooruType.Pawchive;
 
   bool get isPawchive => this == BooruType.Pawchive;
+  bool get isRule34Video => this == BooruType.Rule34Video;
   bool get isTikPorn => this == BooruType.TikPorn;
   bool get isXXXTik => this == BooruType.XXXTik;
   bool get isXXXFollow => this == BooruType.XXXFollow;

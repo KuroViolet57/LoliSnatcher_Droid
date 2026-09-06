@@ -16,6 +16,7 @@ import 'package:lolisnatcher/src/boorus/doujin/schale_handler.dart';
 import 'package:lolisnatcher/src/boorus/doujin/schale_tag_catalog.dart';
 import 'package:lolisnatcher/src/boorus/nhentai_handler.dart';
 import 'package:lolisnatcher/src/boorus/nhentai_tag_catalog.dart';
+import 'package:lolisnatcher/src/boorus/rule34video_handler.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_tag.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
@@ -42,6 +43,18 @@ void main() {
     try {
       tempDir.deleteSync(recursive: true);
     } catch (_) {}
+  });
+
+  group('rule34video', () {
+    test('tags, artists and categories are offered; tags insert bare, the rest prefixed', () {
+      final catalog = Rule34VideoHandler(b('r34v', BooruType.Rule34Video, 'https://rule34video.com'), 24).tagCatalog!;
+      expect(catalog.namespaces.map((n) => n.key), ['tag', 'artist', 'category']);
+      expect(catalog.namespaces.map((n) => n.maxShards), [40, 50, 35], reason: 'pull caps: 74 / 299 / 68 fragments');
+      expect(catalog.sharedShards, isFalse);
+      expect(catalog.shardDelay, greaterThanOrEqualTo(const Duration(milliseconds: 500)));
+      expect(catalog.searchTerm(const BooruTagEntry(name: 'x', tagType: TagType.none, namespace: 'tag')), 'x');
+      expect(catalog.searchTerm(const BooruTagEntry(name: 'x', tagType: TagType.artist, namespace: 'artist')), 'artist:x');
+    });
   });
 
   group('the entry carries its namespace', () {
