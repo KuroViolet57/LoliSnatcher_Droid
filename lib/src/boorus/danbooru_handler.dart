@@ -13,6 +13,8 @@ import 'package:lolisnatcher/src/data/tag_suggestion.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_utils.dart';
+import 'package:lolisnatcher/src/handlers/booru_tag_catalog.dart';
+import 'package:lolisnatcher/src/handlers/tag_catalog_source.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/extensions.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
@@ -20,6 +22,11 @@ import 'package:lolisnatcher/src/utils/tools.dart';
 
 class DanbooruHandler extends BooruHandler {
   DanbooruHandler(super.booru, super.limit);
+
+  /// Artists, characters, copyrights, meta and general tags, one category at
+  /// a time from tags.json (see DanbooruTagIndex).
+  @override
+  late final TagCatalogSource? tagCatalog = BooruTagCatalog.forHandler(this);
 
   @override
   Map<String, TagType> get tagTypeMap => {

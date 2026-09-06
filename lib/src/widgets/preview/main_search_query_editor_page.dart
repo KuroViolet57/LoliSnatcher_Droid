@@ -1556,7 +1556,7 @@ class _SuggestionsMainContentState extends State<SuggestionsMainContent> {
 
     // Ordered by how often each section is actually reached for:
     // recent searches first, then the user's own pinned tags, then
-    // site-wide popular tags, then the metatag builder.
+    // site-wide popular tags, then the metatags, then the tag builder.
     List<Widget> blocks = [
       if (!widget.hideHistory)
         HistoryBlock(
@@ -1583,8 +1583,13 @@ class _SuggestionsMainContentState extends State<SuggestionsMainContent> {
       MetatagsBlock(
         onSelect: widget.onMetatagSelect,
         booru: widget.booru,
-        onInsertTerm: widget.onInsertTerm,
       ),
+      //
+      if (widget.onInsertTerm != null)
+        TagBuilderBlock(
+          booru: widget.booru,
+          onInsertTerm: widget.onInsertTerm!,
+        ),
       //
       const SizedBox(height: 16),
     ];
@@ -2057,17 +2062,14 @@ class _HistoryBlockState extends State<HistoryBlock> {
   }
 }
 
-/// The Metatags card: the source's metatag chips, with the tag builder merged
-/// in. A metatag whose key the source can list in full (`artist`, `circle`,
-/// `female`…, see `BooruHandler.tagCatalog`) is shown as a [TagCatalogChip]
-/// in its place — tap it to pick from every tag of that type; the plain
-/// chips insert `key:` as before; namespaces the source lists but has no
-/// metatag for (`tag`, `mixed`) come after.
+/// The Metatags card: the source's metatag chips. Tap one to insert `key:`
+/// (or pick a date); the full list is a chevron away. The tag builder —
+/// every artist, character… the source can list — is the card under this
+/// one, [TagBuilderBlock].
 class MetatagsBlock extends StatefulWidget {
   const MetatagsBlock({
     required this.onSelect,
     this.booru,
-    this.onInsertTerm,
     super.key,
   });
 
@@ -2076,89 +2078,41 @@ class MetatagsBlock extends StatefulWidget {
   /// The source to build for; null follows the current tab.
   final Booru? booru;
 
-  /// Where a term picked from the tag builder goes. Null hides the builder
-  /// chips and leaves the plain metatag row.
-  final void Function(String term)? onInsertTerm;
-
-  /// The chip row, in metatag order, with builder chips in the place of the
-  /// metatags they cover and the catalog-only namespaces appended.
-  @visibleForTesting
-  static List<Object> mergedEntries(List<MetaTag> metaTags, TagCatalogSource? catalog) {
-    final List<Object> entries = [];
-    final Set<String> covered = {};
-    for (final tag in metaTags) {
-      final TagCatalogNamespace? ns = catalog?.namespaceFor(tag.keyName);
-      if (ns != null && covered.add(ns.key)) {
-        entries.add(ns);
-      } else if (ns == null) {
-        entries.add(tag);
-      }
-    }
-    for (final ns in catalog?.namespaces ?? const <TagCatalogNamespace>[]) {
-      if (covered.add(ns.key)) entries.add(ns);
-    }
-    return entries;
-  }
-
   @override
   State<MetatagsBlock> createState() => _MetatagsBlockState();
 }
 
-class _MetatagsBlockState extends State<MetatagsBlock> {
-  final searchHandler = SearchHandler.instance;
-  final scrollController = ScrollController();
-
-  /// Rows stored per namespace for [_booru], the badge on each builder chip.
-  Map<String, int> _counts = const {};
-  String _countsFor = '';
+/// The source a query-editor block builds for: the current tab's handler, or
+/// a throwaway handler for an explicit booru, cached across rebuilds.
+mixin _EditorSourceMixin<T extends StatefulWidget> on State<T> {
+  Booru? get ownBooru;
 
   BooruHandler? _cachedHandler;
   Booru? _cachedFor;
 
-  Booru get _booru => widget.booru ?? searchHandler.currentBooru;
+  Booru get sourceBooru => ownBooru ?? SearchHandler.instance.currentBooru;
 
-  BooruHandler get _handler {
-    final Booru? own = widget.booru;
-    if (own == null) return searchHandler.currentBooruHandler;
+  BooruHandler get sourceHandler {
+    final Booru? own = ownBooru;
+    if (own == null) return SearchHandler.instance.currentBooruHandler;
     if (_cachedHandler == null || _cachedFor != own) {
       _cachedHandler = BooruHandlerFactory().getBooruHandler([own], null).booruHandler;
       _cachedFor = own;
     }
     return _cachedHandler!;
   }
+}
+
+class _MetatagsBlockState extends State<MetatagsBlock> with _EditorSourceMixin {
+  final scrollController = ScrollController();
 
   @override
-  void initState() {
-    super.initState();
-    unawaited(_refreshCounts());
-  }
-
-  @override
-  void didUpdateWidget(covariant MetatagsBlock oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.booru != widget.booru) unawaited(_refreshCounts());
-  }
+  Booru? get ownBooru => widget.booru;
 
   @override
   void dispose() {
     scrollController.dispose();
     super.dispose();
-  }
-
-  Future<void> _refreshCounts() async {
-    final TagCatalogSource? catalog = _handler.tagCatalog;
-    if (widget.onInsertTerm == null || catalog == null) return;
-    final Booru booru = _booru;
-    final Map<String, int> counts = Map.of(await BooruTagStore.namespaceCounts(booru));
-    for (final ns in catalog.namespaces) {
-      final int? custom = await catalog.customCount(booru, ns.key);
-      if (custom != null) counts[ns.key] = custom;
-    }
-    if (!mounted) return;
-    setState(() {
-      _counts = counts;
-      _countsFor = BooruTagStore.keyFor(booru);
-    });
   }
 
   Future<void> openMetatagsDialog() async {
@@ -2191,23 +2145,13 @@ class _MetatagsBlockState extends State<MetatagsBlock> {
 
   @override
   Widget build(BuildContext context) {
-    final BooruHandler handler = _handler;
-    final TagCatalogSource? catalog = widget.onInsertTerm == null ? null : handler.tagCatalog;
-    List<Object> entries = MetatagsBlock.mergedEntries(handler.availableMetaTags(), catalog);
+    final BooruHandler handler = sourceHandler;
+    List<MetaTag> entries = handler.availableMetaTags();
     bool overflows = false;
     if (entries.length > 15) {
       // show only first 15 (only danbooru has this much right now) to motivate
-      // user to open the bottom sheet with the full list. Builder chips are
-      // never the ones dropped: the sheet does not have them.
-      final int builders = entries.whereType<TagCatalogNamespace>().length;
-      int plainAllowed = max(0, 15 - builders);
-      entries = [
-        for (final e in entries)
-          if (e is TagCatalogNamespace)
-            e
-          else if (plainAllowed-- > 0)
-            e,
-      ];
+      // user to open the bottom sheet with the full list
+      entries = entries.sublist(0, 15);
       overflows = true;
     }
 
@@ -2215,149 +2159,263 @@ class _MetatagsBlockState extends State<MetatagsBlock> {
       return const SizedBox.shrink();
     }
 
-    final Booru booru = _booru;
-    if (catalog != null && _countsFor != BooruTagStore.keyFor(booru)) {
+    return SearchSectionCard(
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: GestureDetector(
+              onTap: () => scrollController.animateTo(
+                0,
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeInOut,
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Icon(
+                    Symbols.filter_list_rounded,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      context.loc.searchBar.metatags,
+                      style: context.theme.textTheme.bodyLarge,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  if (handler.metatagsCheatSheetLink != null)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: IconButton(
+                        onPressed: () {
+                          launchUrlString(
+                            handler.metatagsCheatSheetLink!,
+                            mode: LaunchMode.externalApplication,
+                          );
+                        },
+                        icon: const Icon(Symbols.help_outline_rounded),
+                      ),
+                    ),
+                  IconButton(
+                    onPressed: openMetatagsDialog,
+                    icon: const Icon(Symbols.chevron_right_rounded),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 50,
+            child: Listener(
+              onPointerSignal: (event) => desktopPointerScroll(scrollController, event),
+              child: FadingEdgeScrollView.fromScrollView(
+                child: ListView.builder(
+                  controller: scrollController,
+                  scrollDirection: Axis.horizontal,
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: entries.length + (overflows ? 1 : 0),
+                  itemBuilder: (BuildContext context, int index) {
+                    if (overflows && index == entries.length) {
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: ActionChip(
+                          label: Text(context.loc.searchBar.more),
+                          onPressed: openMetatagsDialog,
+                        ),
+                      );
+                    }
+
+                    final MetaTag tag = entries[index];
+
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: ActionChip(
+                        label: Text(tag.name),
+                        avatar: switch (tag.type) {
+                          .date => Icon(
+                            Symbols.calendar_month_rounded,
+                            color: context.theme.colorScheme.onSurface,
+                          ),
+                          .sort => Icon(
+                            Symbols.sort_rounded,
+                            color: context.theme.colorScheme.onSurface,
+                          ),
+                          .user => Icon(
+                            Symbols.person_outline_rounded,
+                            color: context.theme.colorScheme.onSurface,
+                          ),
+                          _ => null,
+                        },
+                        onPressed: () async {
+                          switch (tag.type) {
+                            case .date:
+                              final metaTag = tag as DateMetaTag;
+                              final res = await showSingleDatePicker(
+                                context,
+                                dateFormat: metaTag.dateFormat,
+                              );
+
+                              if (res is DateTime) {
+                                onOptionSelect(
+                                  context,
+                                  tag,
+                                  compareMode: null,
+                                  value: DateFormat(metaTag.dateFormat).format(res),
+                                );
+                              }
+                              break;
+                            default:
+                              onOptionSelect(context, tag);
+                              break;
+                          }
+                        },
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The Tag builder card: one chip per namespace the current source can list
+/// in full (`BooruHandler.tagCatalog`) — every artist, character, … the site
+/// knows, most-used first, picked from a sheet instead of typed. Sits under
+/// the Metatags card; absent when the source has no catalog. The lists live
+/// in the database, so with it off the card says so instead of offering
+/// pulls that would store nothing.
+class TagBuilderBlock extends StatefulWidget {
+  const TagBuilderBlock({
+    required this.onInsertTerm,
+    this.booru,
+    super.key,
+  });
+
+  /// Where a picked term goes.
+  final void Function(String term) onInsertTerm;
+
+  /// The source to build for; null follows the current tab.
+  final Booru? booru;
+
+  @override
+  State<TagBuilderBlock> createState() => _TagBuilderBlockState();
+}
+
+class _TagBuilderBlockState extends State<TagBuilderBlock> with _EditorSourceMixin {
+  final scrollController = ScrollController();
+
+  /// Rows stored per namespace for the source, the badge on each chip.
+  Map<String, int> _counts = const {};
+  String _countsFor = '';
+
+  @override
+  Booru? get ownBooru => widget.booru;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_refreshCounts());
+  }
+
+  @override
+  void didUpdateWidget(covariant TagBuilderBlock oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.booru != widget.booru) unawaited(_refreshCounts());
+  }
+
+  @override
+  void dispose() {
+    scrollController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _refreshCounts() async {
+    final TagCatalogSource? catalog = sourceHandler.tagCatalog;
+    final Booru booru = sourceBooru;
+    final String key = BooruTagStore.keyFor(booru);
+    final Map<String, int> counts = catalog == null ? const {} : await BooruTagStore.catalogCounts(booru, catalog);
+    if (!mounted) return;
+    setState(() {
+      _counts = counts;
+      _countsFor = key;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final TagCatalogSource? catalog = sourceHandler.tagCatalog;
+    if (catalog == null || catalog.namespaces.isEmpty) return const SizedBox.shrink();
+
+    final Booru booru = sourceBooru;
+    if (_countsFor != BooruTagStore.keyFor(booru)) {
       // The tab changed under an open editor: recount for the new source.
       WidgetsBinding.instance.addPostFrameCallback((_) => _refreshCounts());
     }
+    final List<TagCatalogNamespace> namespaces = catalog.namespaces;
 
     return SearchSectionCard(
       child: Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: GestureDetector(
-            onTap: () => scrollController.animateTo(
-              0,
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeInOut,
-            ),
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Icon(
-                  Symbols.filter_list_rounded,
-                  size: 20,
-                ),
+                const Icon(Symbols.category_rounded, size: 20),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text(
-                    context.loc.searchBar.metatags,
-                    style: context.theme.textTheme.bodyLarge,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                if (handler.metatagsCheatSheetLink != null)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: IconButton(
-                      onPressed: () {
-                        launchUrlString(
-                          handler.metatagsCheatSheetLink!,
-                          mode: LaunchMode.externalApplication,
-                        );
-                      },
-                      icon: const Icon(Symbols.help_outline_rounded),
-                    ),
-                  ),
-                IconButton(
-                  onPressed: openMetatagsDialog,
-                  icon: const Icon(Symbols.chevron_right_rounded),
+                  child: Text('Tag builder', style: context.theme.textTheme.bodyLarge),
                 ),
               ],
             ),
           ),
-        ),
-        const SizedBox(height: 8),
-        SizedBox(
-          height: 50,
-          child: Listener(
-            onPointerSignal: (event) => desktopPointerScroll(scrollController, event),
-            child: FadingEdgeScrollView.fromScrollView(
-              child: ListView.builder(
-                controller: scrollController,
-                scrollDirection: Axis.horizontal,
-                physics: const BouncingScrollPhysics(),
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                itemCount: entries.length + (overflows ? 1 : 0),
-                itemBuilder: (BuildContext context, int index) {
-                  if (overflows && index == entries.length) {
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: ActionChip(
-                        label: Text(context.loc.searchBar.more),
-                        onPressed: openMetatagsDialog,
-                      ),
-                    );
-                  }
-
-                  final Object entry = entries[index];
-                  if (entry is TagCatalogNamespace && catalog != null) {
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: TagCatalogChip(
-                        booru: booru,
-                        catalog: catalog,
-                        namespace: entry,
-                        count: _counts[entry.key] ?? 0,
-                        onInsert: widget.onInsertTerm!,
-                        onStoredChanged: _refreshCounts,
-                      ),
-                    );
-                  }
-
-                  final tag = entry as MetaTag;
-
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: ActionChip(
-                      label: Text(tag.name),
-                      avatar: switch (tag.type) {
-                        .date => Icon(
-                          Symbols.calendar_month_rounded,
-                          color: context.theme.colorScheme.onSurface,
+          const SizedBox(height: 8),
+          if (!SettingsHandler.instance.dbEnabled)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+              child: Text(
+                'Turn on the database (Settings → Database) to use the tag builder: the lists it pulls are kept there.',
+                style: context.theme.textTheme.bodySmall,
+              ),
+            )
+          else
+            SizedBox(
+              height: 50,
+              child: Listener(
+                onPointerSignal: (event) => desktopPointerScroll(scrollController, event),
+                child: FadingEdgeScrollView.fromScrollView(
+                  child: ListView.builder(
+                    controller: scrollController,
+                    scrollDirection: Axis.horizontal,
+                    physics: const BouncingScrollPhysics(),
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    itemCount: namespaces.length,
+                    itemBuilder: (BuildContext context, int index) {
+                      final TagCatalogNamespace ns = namespaces[index];
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: TagCatalogChip(
+                          booru: booru,
+                          catalog: catalog,
+                          namespace: ns,
+                          count: _counts[ns.key] ?? 0,
+                          onInsert: widget.onInsertTerm,
+                          onStoredChanged: _refreshCounts,
                         ),
-                        .sort => Icon(
-                          Symbols.sort_rounded,
-                          color: context.theme.colorScheme.onSurface,
-                        ),
-                        .user => Icon(
-                          Symbols.person_outline_rounded,
-                          color: context.theme.colorScheme.onSurface,
-                        ),
-                        _ => null,
-                      },
-                      onPressed: () async {
-                        switch (tag.type) {
-                          case .date:
-                            final metaTag = tag as DateMetaTag;
-                            final res = await showSingleDatePicker(
-                              context,
-                              dateFormat: metaTag.dateFormat,
-                            );
-
-                            if (res is DateTime) {
-                              onOptionSelect(
-                                context,
-                                tag,
-                                compareMode: null,
-                                value: DateFormat(metaTag.dateFormat).format(res),
-                              );
-                            }
-                            break;
-                          default:
-                            onOptionSelect(context, tag);
-                            break;
-                        }
-                      },
-                    ),
-                  );
-                },
+                      );
+                    },
+                  ),
+                ),
               ),
             ),
-          ),
-        ),
-      ],
+        ],
       ),
     );
   }

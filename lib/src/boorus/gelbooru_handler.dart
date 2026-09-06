@@ -17,14 +17,21 @@ import 'package:lolisnatcher/src/data/tag_suggestion.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_utils.dart';
+import 'package:lolisnatcher/src/handlers/booru_tag_catalog.dart';
 import 'package:lolisnatcher/src/handlers/booru_tag_store.dart';
 import 'package:lolisnatcher/src/handlers/post_files_handler.dart';
+import 'package:lolisnatcher/src/handlers/tag_catalog_source.dart';
 import 'package:lolisnatcher/src/handlers/tag_index_source.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 
 class GelbooruHandler extends BooruHandler {
   GelbooruHandler(super.booru, super.limit);
+
+  /// Artists, characters, copyrights, meta and general tags from the site's
+  /// own count-ordered tag list (see GelbooruTagIndex).
+  @override
+  late final TagCatalogSource? tagCatalog = BooruTagCatalog.forHandler(this);
 
   @override
   bool get hasSizeData => true;

@@ -8,10 +8,17 @@ import 'package:lolisnatcher/src/data/tag_suggestion.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_utils.dart';
+import 'package:lolisnatcher/src/handlers/booru_tag_catalog.dart';
+import 'package:lolisnatcher/src/handlers/tag_catalog_source.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 
 class MoebooruHandler extends BooruHandler {
   MoebooruHandler(super.booru, super.limit);
+
+  /// Artists, characters, copyrights and general tags from tag.json, one type
+  /// at a time (see MoebooruTagIndex).
+  @override
+  late final TagCatalogSource? tagCatalog = BooruTagCatalog.forHandler(this);
 
   @override
   bool get hasSizeData => true;

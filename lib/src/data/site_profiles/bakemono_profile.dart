@@ -49,6 +49,11 @@ class BakemonoProfile extends SiteProfile {
     return int.tryParse(match.group(1)!.replaceAll(RegExp(r'[,\s]'), ''));
   }
 
+  /// The site's tags are creator names, and its tag list page has never been
+  /// checked â€” no tag builder here.
+  @override
+  bool get hasTagCatalog => false;
+
   //
   // Meta tags — only what the site can actually do
   //

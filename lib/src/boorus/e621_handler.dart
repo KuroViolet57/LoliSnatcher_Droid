@@ -6,11 +6,18 @@ import 'package:lolisnatcher/src/data/tag_suggestion.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_utils.dart';
+import 'package:lolisnatcher/src/handlers/booru_tag_catalog.dart';
+import 'package:lolisnatcher/src/handlers/tag_catalog_source.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 
 // ignore: camel_case_types
 class e621Handler extends BooruHandler {
   e621Handler(super.booru, super.limit);
+
+  /// Artists, characters, copyrights, species, meta and general tags, one
+  /// category at a time from tags.json (see E621TagIndex).
+  @override
+  late final TagCatalogSource? tagCatalog = BooruTagCatalog.forHandler(this);
 
   // e621 supports parenthesised OR groups, so multiple OR groups AND
   // together correctly (`( ~a ~b ) ( ~c ~d )`). Verified against the live API.

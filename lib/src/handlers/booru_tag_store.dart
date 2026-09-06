@@ -1,9 +1,12 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
+
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_tag.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/handlers/tag_catalog_source.dart';
 import 'package:lolisnatcher/src/handlers/tag_handler.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
@@ -228,9 +231,9 @@ class BooruTagStore {
     }
   }
 
-  static Future<int> snapshotSize(Booru booru, {String? namespace}) async {
+  static Future<int> snapshotSize(Booru booru, {String? namespace, TagType? type}) async {
     try {
-      return await _settings.dbHandler.countBooruTags(keyFor(booru), namespace: namespace);
+      return await _settings.dbHandler.countBooruTags(keyFor(booru), namespace: namespace, tagType: type?.name);
     } catch (_) {
       return 0;
     }
@@ -245,10 +248,76 @@ class BooruTagStore {
     }
   }
 
-  static Future<void> clearSnapshot(Booru booru, {String? namespace}) async {
+  static Future<void> clearSnapshot(Booru booru, {String? namespace, TagType? type}) async {
     try {
-      await _settings.dbHandler.deleteBooruTags(keyFor(booru), namespace: namespace);
+      await _settings.dbHandler.deleteBooruTags(keyFor(booru), namespace: namespace, tagType: type?.name);
     } catch (_) {}
+  }
+
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ tag builder namespaces â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+  /// Where a namespace's rows live. Doujin and kemono sources file rows under
+  /// the site's own namespace; a classic booru stores the site's category as
+  /// the type on rows with no namespace ([TagCatalogNamespace.byType]). One
+  /// mapping, so the picker, the chip badges, the clear action and the typed
+  /// autocomplete cannot disagree.
+  @visibleForTesting
+  static ({String namespace, TagType? type}) filterFor(TagCatalogNamespace ns) =>
+      ns.byType ? (namespace: '', type: ns.type) : (namespace: ns.key, type: null);
+
+  /// One page of a namespace's rows, most-used first.
+  static Future<List<BooruTagEntry>> browseNamespace(
+    Booru booru,
+    TagCatalogNamespace ns, {
+    String query = '',
+    int limit = 60,
+    int offset = 0,
+  }) {
+    final f = filterFor(ns);
+    return browse(booru, query: query, type: f.type, namespace: f.namespace, limit: limit, offset: offset);
+  }
+
+  static Future<int> countNamespace(Booru booru, TagCatalogNamespace ns) {
+    final f = filterFor(ns);
+    return snapshotSize(booru, namespace: f.namespace, type: f.type);
+  }
+
+  static Future<void> clearNamespace(Booru booru, TagCatalogNamespace ns) {
+    final f = filterFor(ns);
+    return clearSnapshot(booru, namespace: f.namespace, type: f.type);
+  }
+
+  /// Rows stored per namespace of [catalog] â€” the badge on each tag-builder
+  /// chip. One GROUP BY per storage shape, then the source's own count where
+  /// it keeps rows elsewhere (kemono's creator index).
+  static Future<Map<String, int>> catalogCounts(Booru booru, TagCatalogSource catalog) async {
+    final String key = keyFor(booru);
+    final Map<String, int> counts = {};
+    Map<String, int>? byNamespace;
+    Map<String, int>? byType;
+    for (final ns in catalog.namespaces) {
+      final int? custom = await catalog.customCount(booru, ns.key);
+      if (custom != null) {
+        counts[ns.key] = custom;
+        continue;
+      }
+      if (ns.byType) {
+        byType ??= await _countsOrEmpty(() => _settings.dbHandler.countBooruTagsByType(key));
+        counts[ns.key] = byType[ns.type.name] ?? 0;
+      } else {
+        byNamespace ??= await _countsOrEmpty(() => _settings.dbHandler.countBooruTagsByNamespace(key));
+        counts[ns.key] = byNamespace[ns.key] ?? 0;
+      }
+    }
+    return counts;
+  }
+
+  static Future<Map<String, int>> _countsOrEmpty(Future<Map<String, int>> Function() query) async {
+    try {
+      return await query();
+    } catch (_) {
+      return const {};
+    }
   }
 
   // ──────────────────────────── resolution ────────────────────────────

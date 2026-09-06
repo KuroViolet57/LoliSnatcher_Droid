@@ -12,16 +12,13 @@ import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/kemono_creator.dart';
 import 'package:lolisnatcher/src/data/kemono_post.dart';
-import 'package:lolisnatcher/src/data/meta_tag.dart';
 import 'package:lolisnatcher/src/data/site_profile.dart';
 import 'package:lolisnatcher/src/data/site_profiles/kemono_profile.dart';
 import 'package:lolisnatcher/src/handlers/kemono_creator_store.dart';
 import 'package:lolisnatcher/src/handlers/kemono_file_hosts.dart';
 import 'package:lolisnatcher/src/handlers/kemono_session_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/handlers/tag_catalog_source.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
-import 'package:lolisnatcher/src/widgets/preview/main_search_query_editor_page.dart';
 
 /// pawchive.pw — kemono's archive on the older API — through the same
 /// handler as kemono, with what the site lacks written down in [KemonoSite].
@@ -119,12 +116,8 @@ void main() {
       expect(names, contains('Favorites'));
       expect(h.tagCatalog.namespaces.map((n) => n.key), ['creator']);
       expect(KemonoHandler(k(), 50).tagCatalog.namespaces.map((n) => n.key), containsAll(['tag', 'creator']));
-      final labels = [
-        for (final e in MetatagsBlock.mergedEntries(h.availableMetaTags(), h.tagCatalog))
-          e is TagCatalogNamespace ? '[${e.label}]' : (e as MetaTag).name,
-      ];
-      expect(labels.first, '[Artists]');
-      expect(labels, contains('Tag'));
+      expect(h.tagCatalog.namespaces.map((n) => n.label), ['Artists']);
+      expect(names, contains('Tag'), reason: 'the plain metatag stays in the Metatags card');
     });
   });
 

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 
+import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/comment_item.dart';
 import 'package:lolisnatcher/src/data/constants.dart';
@@ -12,6 +13,8 @@ import 'package:lolisnatcher/src/data/tag_suggestion.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_utils.dart';
+import 'package:lolisnatcher/src/handlers/booru_tag_catalog.dart';
+import 'package:lolisnatcher/src/handlers/tag_catalog_source.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/extensions.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
@@ -19,6 +22,12 @@ import 'package:lolisnatcher/src/utils/tools.dart';
 
 class SankakuHandler extends BooruHandler {
   SankakuHandler(super.booru, super.limit);
+
+  /// Artists, characters, copyrights, media and general tags from the API's
+  /// tag index (see SankakuTagIndex). IdolSankaku inherits this and gets
+  /// null: iapi.sankakucomplex.com has no index source.
+  @override
+  late final TagCatalogSource? tagCatalog = BooruTagCatalog.forHandler(this);
 
   String authToken = '';
 
@@ -236,7 +245,13 @@ class SankakuHandler extends BooruHandler {
     'beta.sankakucomplex.com',
   ];
 
-  String get baseUrl => knownUrls.any(booru.baseURL!.contains) ? 'https://sankakuapi.com' : booru.baseURL!;
+  /// The API host for a configured sankaku URL: the public API for any of the
+  /// known site hosts, the URL itself for a self-hosted mirror. Static so the
+  /// tag index can address the same host without a handler.
+  static String apiBaseFor(Booru booru) =>
+      knownUrls.any(booru.baseURL!.contains) ? 'https://sankakuapi.com' : booru.baseURL!;
+
+  String get baseUrl => apiBaseFor(booru);
 
   @override
   String makeURL(String tags) {

@@ -3,9 +3,16 @@ import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_suggestion.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_utils.dart';
+import 'package:lolisnatcher/src/handlers/booru_tag_catalog.dart';
+import 'package:lolisnatcher/src/handlers/tag_catalog_source.dart';
 
 class PhilomenaHandler extends BooruHandler {
   PhilomenaHandler(super.booru, super.limit);
+
+  /// Artists, characters, species, franchises and general tags from the tag
+  /// search API (see PhilomenaTagIndex).
+  @override
+  late final TagCatalogSource? tagCatalog = BooruTagCatalog.forHandler(this);
 
   @override
   bool get hasTagSuggestions => true;

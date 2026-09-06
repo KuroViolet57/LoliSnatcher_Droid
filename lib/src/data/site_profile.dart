@@ -57,6 +57,15 @@ abstract class SiteProfile {
   int? tagSuggestionCount(dynamic responseItem) => null;
 
   //
+  // Tag builder
+  //
+
+  /// Whether the search editor's tag builder may list this site's tag
+  /// database through its family's index. False for a site whose "tags" are
+  /// not a tag database.
+  bool get hasTagCatalog => true;
+
+  //
   // Meta tags
   //
 

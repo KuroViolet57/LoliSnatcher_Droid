@@ -13,8 +13,8 @@ import 'package:lolisnatcher/src/utils/extensions.dart';
 import 'package:lolisnatcher/src/widgets/common/settings_widgets.dart';
 
 /// One chip of the tag builder: a namespace the source can list in full
-/// (see `BooruHandler.tagCatalog`). Lives in the Metatags card of the query
-/// editors, in the place of the plain metatag chip for the same key.
+/// (see `BooruHandler.tagCatalog`). Lives in the Tag builder card of the
+/// query editors, under the Metatags card.
 ///
 /// Shows the colour of the app-level type, the stored count (or a download
 /// icon when nothing is stored yet) and a spinner while a pull runs. Tapping
@@ -177,7 +177,7 @@ class _TagCatalogPickerSheetState extends State<TagCatalogPickerSheet> {
   }
 
   Future<void> _start() async {
-    _total = await BooruTagStore.snapshotSize(widget.booru, namespace: widget.namespace.key);
+    _total = await BooruTagStore.countNamespace(widget.booru, widget.namespace);
     if (!mounted) return;
     if (_total == 0 && !_pull.value.running) {
       unawaited(TagCatalogPuller.instance.pull(widget.booru, widget.catalog, widget.namespace.key));
@@ -201,16 +201,16 @@ class _TagCatalogPickerSheetState extends State<TagCatalogPickerSheet> {
     _offset = 0;
     _lastPage = false;
     _rows.clear();
-    _total = await BooruTagStore.snapshotSize(widget.booru, namespace: widget.namespace.key);
+    _total = await BooruTagStore.countNamespace(widget.booru, widget.namespace);
     await _loadMore();
   }
 
   Future<void> _loadMore() async {
     if (_loading || _lastPage) return;
     setState(() => _loading = true);
-    final got = await BooruTagStore.browse(
+    final got = await BooruTagStore.browseNamespace(
       widget.booru,
-      namespace: widget.namespace.key,
+      widget.namespace,
       query: _query.text,
       limit: _pageSize,
       offset: _offset,
@@ -233,7 +233,7 @@ class _TagCatalogPickerSheetState extends State<TagCatalogPickerSheet> {
 
   Future<void> _repull() async {
     TagCatalogPuller.instance.resetResume(widget.booru, widget.catalog, widget.namespace.key);
-    await BooruTagStore.clearSnapshot(widget.booru, namespace: widget.namespace.key);
+    await BooruTagStore.clearNamespace(widget.booru, widget.namespace);
     unawaited(TagCatalogPuller.instance.pull(widget.booru, widget.catalog, widget.namespace.key));
     await _reset();
   }
@@ -244,7 +244,13 @@ class _TagCatalogPickerSheetState extends State<TagCatalogPickerSheet> {
     final state = _pull.value;
     final String host = BooruTagStore.keyFor(widget.booru);
 
-    return Column(
+    // Opened over a transparent modal sheet, so this paints its own surface;
+    // without it the editor showed through the list.
+    return Material(
+      color: theme.colorScheme.surfaceContainer,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         ListTile(
@@ -285,7 +291,9 @@ class _TagCatalogPickerSheetState extends State<TagCatalogPickerSheet> {
           padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
           child: TextField(
             controller: _query,
-            autofocus: true,
+            // No autofocus: the keyboard would cover a list that has nothing in
+            // it yet; the field is one tap away.
+            autofocus: false,
             onChanged: _onQueryChanged,
             decoration: InputDecoration(
               isDense: true,
@@ -335,6 +343,7 @@ class _TagCatalogPickerSheetState extends State<TagCatalogPickerSheet> {
                 ),
         ),
       ],
+      ),
     );
   }
 }

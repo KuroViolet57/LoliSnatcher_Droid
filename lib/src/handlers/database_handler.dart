@@ -1159,12 +1159,32 @@ class DBHandler {
     };
   }
 
-  Future<void> deleteBooruTags(String booruKey, {String? namespace}) async {
-    if (namespace == null) {
-      await db?.rawDelete('DELETE FROM BooruTag WHERE booruKey = ?', [booruKey]);
-    } else {
-      await db?.rawDelete('DELETE FROM BooruTag WHERE booruKey = ? AND namespace = ?', [booruKey, namespace]);
+  /// Rows per type among the namespace-less rows â€” the tag builder's badges
+  /// on a classic booru, whose snapshot keeps the site's category in tagType.
+  Future<Map<String, int>> countBooruTagsByType(String booruKey) async {
+    final db = this.db;
+    if (db == null || booruKey.isEmpty) return const {};
+    final rows = await db.rawQuery(
+      "SELECT tagType, COUNT(*) AS c FROM BooruTag WHERE booruKey = ? AND namespace = '' GROUP BY tagType",
+      [booruKey],
+    );
+    return {
+      for (final row in rows) row['tagType']?.toString() ?? '': int.tryParse(row['c']?.toString() ?? '') ?? 0,
+    };
+  }
+
+  Future<void> deleteBooruTags(String booruKey, {String? namespace, String? tagType}) async {
+    final List<Object?> args = [booruKey];
+    String where = 'booruKey = ?';
+    if (namespace != null) {
+      where += ' AND namespace = ?';
+      args.add(namespace);
     }
+    if (tagType != null) {
+      where += ' AND tagType = ?';
+      args.add(tagType);
+    }
+    await db?.rawDelete('DELETE FROM BooruTag WHERE $where', args);
   }
 
   //

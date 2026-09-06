@@ -20,6 +20,7 @@ class TagCatalogNamespace {
     this.shards,
     this.maxShards,
     this.customPicker,
+    this.byType = false,
   });
 
   /// When set, the chip opens this instead of the generic picker (kemono's
@@ -41,6 +42,14 @@ class TagCatalogNamespace {
   /// Cap for an open-ended walk, so a site with 258 pages of artists cannot
   /// swallow the phone; the walk resumes from here on the next pull.
   final int? maxShards;
+
+  /// True when the rows of this namespace are the snapshot rows whose
+  /// `tagType` is [type] and whose namespace column is EMPTY â€” how classic
+  /// boorus store their tag database (the tag browser, `genTagObjects` and
+  /// snapshot import all write that shape), so the chips light up on any
+  /// list already pulled. Doujin and kemono sources file rows under the
+  /// site's own namespace instead and leave this false.
+  final bool byType;
 }
 
 /// A source's tag INDEX: every tag of a namespace, fetched a shard at a time
@@ -64,6 +73,12 @@ abstract class TagCatalogSource {
 
   /// Shard count of a shared walk; null = until [shardAt] returns null.
   int? get sharedShardCount => null;
+
+  /// Cap for ONE pull of a namespace that declares no
+  /// [TagCatalogNamespace.maxShards] â€” a shared walk, or the plain '' index
+  /// walk the tag browser runs. The next pull continues from the resume
+  /// point. Null = no cap.
+  int? get maxShardsPerPull => null;
 
   /// The badge for a namespace whose rows live somewhere other than the tag
   /// snapshot (kemono's creator index). Null = count the snapshot.
@@ -98,9 +113,9 @@ abstract class TagCatalogSource {
     if (catalog == null) return null;
     final match = _typed.firstMatch(input.trim().toLowerCase());
     if (match == null) return null;
-    final String key = match.group(1)!;
-    if (catalog.namespaceFor(key) == null) return null;
-    final rows = await BooruTagStore.browse(booru, namespace: key, query: match.group(2)!, limit: 25);
+    final TagCatalogNamespace? ns = catalog.namespaceFor(match.group(1)!);
+    if (ns == null) return null;
+    final rows = await BooruTagStore.browseNamespace(booru, ns, query: match.group(2)!, limit: 25);
     return [
       for (final e in rows)
         TagSuggestion(tag: catalog.searchTerm(e), count: e.count, type: e.tagType),

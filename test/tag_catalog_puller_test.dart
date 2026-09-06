@@ -9,13 +9,14 @@ import 'package:lolisnatcher/src/handlers/tag_catalog_source.dart';
 
 /// A source with in-memory shards; one shard can be made to throw.
 class _Fake extends TagCatalogSource {
-  _Fake({this.shared = false, this.total, this.failAt, this.perShard = 3, this.open = false});
+  _Fake({this.shared = false, this.total, this.failAt, this.perShard = 3, this.open = false, this.perPull});
 
   final bool shared;
   final int? total;
   final int? failAt;
   final int perShard;
   final bool open;
+  final int? perPull;
   final List<(String, int)> asked = [];
 
   @override
@@ -23,6 +24,9 @@ class _Fake extends TagCatalogSource {
 
   @override
   int? get sharedShardCount => total;
+
+  @override
+  int? get maxShardsPerPull => perPull;
 
   @override
   Duration get shardDelay => Duration.zero;
@@ -121,5 +125,16 @@ void main() {
     expect(fake.asked.length, 1);
     expect(state.running, isFalse);
     expect(state.done, isFalse);
+  });
+
+  test('a shared walk with no shard count stops at the per-pull cap and resumes from there', () async {
+    final fake = _Fake(shared: true, perPull: 2);
+    puller.resetResume(booru, fake, 'artist');
+    await puller.pull(booru, fake, 'artist');
+    expect(fake.asked, [('', 0), ('', 1)]);
+    expect(puller.stateFor(booru, fake, 'artist').value.done, isFalse);
+    final more = _Fake(shared: true, perPull: 2);
+    await puller.pull(booru, more, 'tag');
+    expect(more.asked, [('', 2), ('', 3)], reason: 'one job for every chip, resumed');
   });
 }

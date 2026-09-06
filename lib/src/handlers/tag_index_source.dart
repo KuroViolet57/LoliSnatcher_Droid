@@ -1,12 +1,17 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
+
 import 'package:html/parser.dart' show parseFragment;
 
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
+import 'package:lolisnatcher/src/boorus/sankaku_handler.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_tag.dart';
+import 'package:lolisnatcher/src/data/constants.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
+import 'package:lolisnatcher/src/handlers/tag_catalog_source.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 
@@ -19,13 +24,25 @@ import 'package:lolisnatcher/src/utils/tools.dart';
 ///   * [exact]   — one authoritative row for one tag name, which is how a
 ///                 tag's type gets *corrected* rather than guessed.
 ///
+/// A fourth, for the search editor's tag builder: the site's tag categories
+/// as namespaces ([catalogNamespaces]), walked one category at a time where
+/// the site can ([categoryPageAt]) or as one count-ordered list otherwise
+/// ([catalogPageAt]). Rows always land in the snapshot with no namespace and
+/// the category as their type, which is how the chips read them back
+/// ([TagCatalogNamespace.byType]).
+///
 /// Everything here was verified against the live APIs. Notable results:
 ///   * Gelbooru-0.2 (`page=dapi&s=tag&q=index`) honours `name=` (exact, one
 ///     row) and `name_pattern=%x%` (SQL LIKE), ignores `names=` entirely, and
 ///     ignores `json=1` on rule34.xxx — it always answers XML. It also
-///     ignores `orderby=count`, so its index comes out in id order.
-///   * Danbooru/e621 (`/tags.json`) *do* honour `search[order]=count`, so
-///     their snapshots arrive most-used-first, which is the useful end.
+///     ignores `orderby=count`, so its index comes out in id order, and it
+///     cannot filter by type at all.
+///   * Danbooru/e621 (`/tags.json`) *do* honour `search[order]=count` and
+///     `search[category]`, so their snapshots arrive most-used-first, one
+///     category at a time. Moebooru (`/tag.json?order=count&type=`) and
+///     sankaku (`/tags?order=count&type=`) do the same (2026-09-06).
+///   * Philomena has no artist category: artists are `origin` tags named
+///     `artist:…`, and general tags have no category at all.
 abstract class TagIndexSource {
   const TagIndexSource();
 
@@ -51,25 +68,120 @@ abstract class TagIndexSource {
   /// from a miss on purpose — callers only ever use it to fill in a blank.
   Future<BooruTagEntry?> exact(Booru booru, String name);
 
-  /// Maps a site's raw type value onto the app's [TagType] using the booru's
-  /// own handler, so there is exactly one copy of each family's numbering.
-  static TagType typeFor(Booru booru, String raw) {
-    if (raw.isEmpty) return TagType.none;
-    try {
-      final map = BooruHandlerFactory().getBooruHandler([booru], null).booruHandler.tagTypeMap;
-      return map[raw] ?? TagType.none;
-    } catch (_) {
-      return TagType.none;
-    }
+  //
+  // The tag builder's view of the family
+  //
+
+  /// The namespaces the search editor's tag builder offers for this family:
+  /// the site's tag categories, each read by type from the snapshot
+  /// ([TagCatalogNamespace.byType]). Empty = no builder for this family.
+  List<TagCatalogNamespace> catalogNamespaces(Booru booru) => const [];
+
+  /// True when the site lists ONE category at a time ([categoryPageAt]);
+  /// false when the whole index is walked once, most-used first, and every
+  /// chip reads its own type out of it ([catalogPageAt]).
+  bool get walksByCategory => false;
+
+  /// One page of the whole index, most-used first — the shared walk, and the
+  /// tag browser's pull. Defaults to [pageAt].
+  Future<List<BooruTagEntry>> catalogPageAt(Booru booru, int page, {Map<String, String>? headers}) =>
+      pageAt(booru, page);
+
+  /// One page of ONE category, most-used first; empty past the end.
+  Future<List<BooruTagEntry>> categoryPageAt(
+    Booru booru,
+    TagType type,
+    int page, {
+    Map<String, String>? headers,
+  }) async => const [];
+
+  /// Pages one pull of the builder fetches before it stops and waits for
+  /// "Pull more" — a tap should finish well under a minute at [catalogDelay].
+  int get catalogPagesPerPull => maxIndexPages;
+
+  /// Pause between the builder's pages. Sites rate-limit sustained walks.
+  Duration get catalogDelay => const Duration(milliseconds: 350);
+
+  /// Rows one builder page holds for [booru] — some families take a bigger
+  /// page than [pageAt] uses, and some sites render more than others.
+  int pageSizeFor(Booru booru) => pageSize;
+
+  /// Whether [rows] was the last page of a walk, so the next one need not be
+  /// asked for. A page short of [pageSizeFor] is the end on every API.
+  bool lastPage(Booru booru, List<BooruTagEntry> rows) => rows.length < pageSizeFor(booru);
+
+  /// The order chips are offered in.
+  static const List<TagType> catalogOrder = [
+    TagType.artist,
+    TagType.character,
+    TagType.copyright,
+    TagType.species,
+    TagType.meta,
+    TagType.none,
+  ];
+
+  /// The builder chip for a type. Key and label follow the doujin catalogs'
+  /// convention (`artist`, `character`, …, `tag` for the general ones), so a
+  /// typed `artist:x` reaches the same autocomplete.
+  static TagCatalogNamespace typeNamespace(TagType type, {int? maxShards}) {
+    final (String key, String label) = switch (type) {
+      TagType.artist => ('artist', 'Artists'),
+      TagType.character => ('character', 'Characters'),
+      TagType.copyright => ('copyright', 'Copyrights'),
+      TagType.species => ('species', 'Species'),
+      TagType.meta => ('meta', 'Meta'),
+      TagType.none => ('tag', 'Tags'),
+    };
+    return TagCatalogNamespace(key: key, label: label, type: type, maxShards: maxShards, byType: true);
+  }
+
+  /// The chips for [types], in [catalogOrder].
+  static List<TagCatalogNamespace> namespacesFor(Iterable<TagType> types, {int? maxShards}) => [
+    for (final type in catalogOrder)
+      if (types.contains(type)) typeNamespace(type, maxShards: maxShards),
+  ];
+
+  static final Map<String, Map<String, TagType>> _typeMaps = {};
+
+  /// The family's raw-type → [TagType] numbering, read off the booru's own
+  /// handler so there is exactly one copy of it — built once per booru, not
+  /// once per row (a page carries up to a thousand).
+  static Map<String, TagType> typeMapFor(Booru booru) {
+    final String key = '${booru.type?.name}|${hostOf(booru)}';
+    return _typeMaps.putIfAbsent(key, () {
+      try {
+        return Map<String, TagType>.unmodifiable(
+          BooruHandlerFactory().getBooruHandler([booru], null).booruHandler.tagTypeMap,
+        );
+      } catch (_) {
+        return const {};
+      }
+    });
+  }
+
+  /// Maps a site's raw type value onto the app's [TagType].
+  static TagType typeFor(Booru booru, String raw) =>
+      raw.isEmpty ? TagType.none : (typeMapFor(booru)[raw] ?? TagType.none);
+
+  /// Host without `www.`: the key of anything remembered per site.
+  static String hostOf(Booru booru) =>
+      (Uri.tryParse(booru.baseURL ?? '')?.host ?? '').replaceFirst('www.', '').toLowerCase();
+
+  @visibleForTesting
+  static void resetForTests() {
+    _typeMaps.clear();
+    GelbooruTagIndex.resetForTests();
   }
 
   static TagIndexSource? forBooru(Booru? booru) {
     if (booru?.type == null || (booru!.baseURL?.isEmpty ?? true)) return null;
     return switch (booru.type!) {
-      BooruType.Gelbooru || BooruType.GelbooruAlike => const GelbooruTagIndex(),
+      BooruType.Gelbooru || BooruType.GelbooruAlike || BooruType.Realbooru => const GelbooruTagIndex(),
       BooruType.Danbooru => const DanbooruTagIndex(),
       BooruType.e621 => const E621TagIndex(),
       BooruType.Philomena => const PhilomenaTagIndex(),
+      BooruType.Moebooru => const MoebooruTagIndex(),
+      BooruType.Sankaku => const SankakuTagIndex(),
       _ => null,
     };
   }
@@ -77,7 +189,7 @@ abstract class TagIndexSource {
   static bool supports(Booru? booru) => forBooru(booru) != null;
 }
 
-/// Gelbooru 0.2 family — rule34.xxx, xbooru, gelbooru.com, bakemono…
+/// Gelbooru 0.2 family — rule34.xxx, xbooru, gelbooru.com, tbib, realbooru…
 class GelbooruTagIndex extends TagIndexSource {
   const GelbooruTagIndex();
 
@@ -94,6 +206,47 @@ class GelbooruTagIndex extends TagIndexSource {
 
   @override
   bool get orderedByCount => true;
+
+  /// Rows the list page renders per request, by host. Most forks render 20;
+  /// these render 50 (verified 2026-09-06) — and `pid` counts ROWS, so a walk
+  /// stepping by 20 there would re-read most of every page. Page 0 teaches
+  /// any other host's count.
+  static const Map<String, int> _knownRowsPerPage = {'tbib.org': 50, 'realbooru.com': 50, 'gelbooru.com': 50};
+  static final Map<String, int> _rowsPerPage = Map.of(_knownRowsPerPage);
+
+  @visibleForTesting
+  static void resetForTests() {
+    _rowsPerPage
+      ..clear()
+      ..addAll(_knownRowsPerPage);
+  }
+
+  @override
+  int pageSizeFor(Booru booru) => _rowsPerPage[TagIndexSource.hostOf(booru)] ?? pageSize;
+
+  /// The scrape drops junk rows, so a short page tells nothing; the walk runs
+  /// until a page has no rows at all.
+  @override
+  bool lastPage(Booru booru, List<BooruTagEntry> rows) => false;
+
+  /// No type filter exists on the list, so the builder walks it once and
+  /// every chip reads its own type out of the shared snapshot. 100 pages a
+  /// pull: the site answers 429 to ~190 back-to-back pages, and a tap should
+  /// not take a minute.
+  @override
+  List<TagCatalogNamespace> catalogNamespaces(Booru booru) => TagIndexSource.namespacesFor(
+    const [TagType.artist, TagType.character, TagType.copyright, TagType.meta, TagType.none],
+  );
+
+  @override
+  int get catalogPagesPerPull => 100;
+
+  /// The list page ONLY. The dapi fallback in [pageAt] needs credentials on
+  /// rule34.xxx, answers nothing anonymously on gelbooru.com and comes out in
+  /// id order everywhere — none of which makes a usable list.
+  @override
+  Future<List<BooruTagEntry>> catalogPageAt(Booru booru, int page, {Map<String, String>? headers}) =>
+      scrapeListPage(booru, page, headers: headers);
 
   String _creds(Booru booru) {
     final String key = booru.apiKey ?? '';
@@ -174,17 +327,13 @@ class GelbooruTagIndex extends TagIndexSource {
   ///
   /// The site's own tag list page *does* sort: `page=tags&s=list` with
   /// `sort=desc&order_by=index_count` starts at `female` (10.3M posts) and
-  /// descends properly, 20 rows a page, `pid` counting rows rather than
-  /// pages. So the index pull scrapes what the site shows its own users, and
-  /// falls back to the API walk if a fork doesn't render that page.
+  /// descends properly, `pid` counting rows rather than pages. So the index
+  /// pull scrapes what the site shows its own users, and falls back to the
+  /// API walk if a fork doesn't render that page.
   @override
   Future<List<BooruTagEntry>> pageAt(Booru booru, int page) async {
     try {
-      final response = await DioNetwork.get(
-        '${booru.baseURL}/index.php?page=tags&s=list&sort=desc&order_by=index_count&pid=${page * pageSize}',
-        headers: {'User-Agent': Tools.browserUserAgent},
-      );
-      final List<BooruTagEntry> scraped = _parseHtmlList(response.data?.toString() ?? '');
+      final List<BooruTagEntry> scraped = await scrapeListPage(booru, page);
       if (scraped.isNotEmpty) return scraped;
     } catch (_) {
       // fall through to the API
@@ -192,41 +341,91 @@ class GelbooruTagIndex extends TagIndexSource {
     return _fetch('${_base(booru)}&limit=100&pid=$page');
   }
 
-  /// Row shape (verified on rule34.xxx and xbooru):
+  /// One page of `page=tags&s=list`, sorted by count. `pid` counts rows, so
+  /// the offset is page × this host's rows per page; page 0 teaches it.
+  Future<List<BooruTagEntry>> scrapeListPage(Booru booru, int page, {Map<String, String>? headers}) async {
+    final response = await DioNetwork.get(
+      listPageUrl(booru, page),
+      headers: headers ?? {'User-Agent': Tools.browserUserAgent},
+    );
+    final String body = response.data?.toString() ?? '';
+    if (page == 0) {
+      final int rows = rowsOnPage(body);
+      if (rows >= pageSize) _rowsPerPage[TagIndexSource.hostOf(booru)] = rows;
+    }
+    return parseHtmlList(body);
+  }
+
+  @visibleForTesting
+  String listPageUrl(Booru booru, int page) =>
+      '${booru.baseURL}/index.php?page=tags&s=list&sort=desc&order_by=index_count&pid=${page * pageSizeFor(booru)}';
+
+  /// Rendered rows on a list page, junk rows included — what `pid` counts.
+  @visibleForTesting
+  static int rowsOnPage(String body) => RegExp('class="tag-type-[a-z]+"').allMatches(body).length;
+
+  /// Row shape on most forks (verified on rule34.xxx and xbooru):
   /// `<td>10325626</td><td><span class="tag-type-general"><a href="…tags=female">`
   static final RegExp _htmlRow = RegExp(
     r'<td>(\d+)</td>\s*<td>\s*<span class="tag-type-([a-z]+)">\s*<a href="[^"]*tags=([^"]*)"',
     dotAll: true,
   );
 
+  /// gelbooru.com's own shape (verified 2026-09-06): the count FOLLOWS the
+  /// link — `<span class="tag-type-general"><a href="…tags=1girl">1girl</a>
+  /// </span> <span class="tag-count">9660397</span>`.
+  static final RegExp _htmlRowCountAfter = RegExp(
+    r'<span class="tag-type-([a-z]+)">\s*<a href="[^"]*tags=([^"&]*)"[^>]*>[^<]*</a>\s*</span>\s*<span class="tag-count">(\d+)</span>',
+    dotAll: true,
+  );
+
   static const Map<String, TagType> _htmlTypes = {
     'artist': TagType.artist,
+    'model': TagType.artist, // realbooru's performers
     'copyright': TagType.copyright,
     'character': TagType.character,
     'metadata': TagType.meta,
     'general': TagType.none,
   };
 
-  List<BooruTagEntry> _parseHtmlList(String body) {
+  /// gelbooru.com lists its deprecated aliases (`1firl`, `1_girl`…) with the
+  /// post counts of the tags they point at; searching one finds nothing.
+  static const Set<String> _skipTypes = {'deprecated'};
+
+  @visibleForTesting
+  static List<BooruTagEntry> parseHtmlList(String body) {
     final List<BooruTagEntry> out = [];
-    for (final m in _htmlRow.allMatches(body)) {
+    void add(String rawType, String rawName, String rawCount) {
+      if (_skipTypes.contains(rawType)) return;
       String name;
       try {
-        name = Uri.decodeComponent(m.group(3) ?? '');
+        name = Uri.decodeComponent(rawName);
       } catch (_) {
-        name = m.group(3) ?? '';
+        name = rawName;
       }
       // Sites carry junk rows (a tag literally named "\tbreasts" exists on
-      // xbooru); anything with whitespace in it can never be searched.
-      name = name.trim().toLowerCase();
-      if (name.isEmpty || name.contains(RegExp(r'\s'))) continue;
+      // xbooru; gelbooru.com's first row has no name at all): anything empty
+      // or with whitespace in it can never be searched.
+      name = (parseFragment(name).text ?? name).trim().toLowerCase();
+      if (name.isEmpty || name.contains(RegExp(r'\s'))) return;
       out.add(
         BooruTagEntry(
           name: name,
-          tagType: _htmlTypes[m.group(2)] ?? TagType.none,
-          count: int.tryParse(m.group(1) ?? '') ?? 0,
+          tagType: _htmlTypes[rawType] ?? TagType.none,
+          count: int.tryParse(rawCount) ?? 0,
         ),
       );
+    }
+
+    int matched = 0;
+    for (final m in _htmlRow.allMatches(body)) {
+      matched++;
+      add(m.group(2) ?? '', m.group(3) ?? '', m.group(1) ?? '');
+    }
+    if (matched == 0) {
+      for (final m in _htmlRowCountAfter.allMatches(body)) {
+        add(m.group(1) ?? '', m.group(2) ?? '', m.group(3) ?? '');
+      }
     }
     return out;
   }
@@ -263,6 +462,35 @@ class DanbooruTagIndex extends TagIndexSource {
   @override
   bool get orderedByCount => true;
 
+  /// `tags.json` filters by `search[category]`, so each chip walks its own
+  /// category most-used first, a thousand rows a page, five pages a pull.
+  static const Map<TagType, String> categoryCodes = {
+    TagType.artist: '1',
+    TagType.character: '4',
+    TagType.copyright: '3',
+    TagType.meta: '5',
+    TagType.none: '0',
+  };
+
+  /// Rows per builder page: the API's maximum.
+  static const int catalogPageSize = 1000;
+
+  @override
+  bool get walksByCategory => true;
+
+  @override
+  int get catalogPagesPerPull => 5;
+
+  @override
+  Duration get catalogDelay => const Duration(milliseconds: 500);
+
+  @override
+  int pageSizeFor(Booru booru) => catalogPageSize;
+
+  @override
+  List<TagCatalogNamespace> catalogNamespaces(Booru booru) =>
+      TagIndexSource.namespacesFor(categoryCodes.keys, maxShards: catalogPagesPerPull);
+
   String _creds(Booru booru) {
     final String key = booru.apiKey ?? '';
     final String user = booru.userID ?? '';
@@ -270,27 +498,51 @@ class DanbooruTagIndex extends TagIndexSource {
     return '&login=$user&api_key=$key';
   }
 
-  Future<List<BooruTagEntry>> _fetch(Booru booru, String query) async {
+  Future<List<BooruTagEntry>> _fetch(Booru booru, String query, {Map<String, String>? headers}) async {
     final response = await DioNetwork.get(
       '${booru.baseURL}/tags.json?$query${_creds(booru)}',
-      headers: {'User-Agent': Tools.browserUserAgent},
+      headers: {'User-Agent': Tools.browserUserAgent, ...?headers},
     );
-    final decoded = response.data is String ? jsonDecode(response.data as String) : response.data;
+    return parseRows(booru, response.data);
+  }
+
+  /// `[{name, category, post_count}, …]`; the numbering comes from the
+  /// handler, resolved once for the page.
+  @visibleForTesting
+  static List<BooruTagEntry> parseRows(Booru booru, dynamic data) {
+    final decoded = data is String ? jsonDecode(data) : data;
     if (decoded is! List) return const [];
+    final Map<String, TagType> types = TagIndexSource.typeMapFor(booru);
     return [
       for (final e in decoded)
         if (e is Map && (e['name']?.toString().isNotEmpty ?? false))
           BooruTagEntry(
             name: e['name'].toString().toLowerCase(),
-            tagType: TagIndexSource.typeFor(booru, e['category']?.toString() ?? ''),
+            tagType: types[e['category']?.toString() ?? ''] ?? TagType.none,
             count: int.tryParse(e['post_count']?.toString() ?? '') ?? 0,
           ),
     ];
   }
 
+  String _pageQuery(int page, int limit, {TagType? type}) =>
+      'limit=$limit&page=${page + 1}'
+      '${type == null ? '' : '&search[category]=${categoryCodes[type] ?? '0'}'}'
+      '&search[order]=count&search[hide_empty]=yes';
+
   @override
-  Future<List<BooruTagEntry>> pageAt(Booru booru, int page) =>
-      _fetch(booru, 'limit=$pageSize&page=${page + 1}&search[order]=count&search[hide_empty]=yes');
+  Future<List<BooruTagEntry>> pageAt(Booru booru, int page) => _fetch(booru, _pageQuery(page, pageSize));
+
+  @override
+  Future<List<BooruTagEntry>> catalogPageAt(Booru booru, int page, {Map<String, String>? headers}) =>
+      _fetch(booru, _pageQuery(page, catalogPageSize), headers: headers);
+
+  /// The query one category page sends.
+  @visibleForTesting
+  String categoryQuery(TagType type, int page) => _pageQuery(page, catalogPageSize, type: type);
+
+  @override
+  Future<List<BooruTagEntry>> categoryPageAt(Booru booru, TagType type, int page, {Map<String, String>? headers}) =>
+      _fetch(booru, categoryQuery(type, page), headers: headers);
 
   @override
   Future<List<BooruTagEntry>> search(Booru booru, String query) {
@@ -311,7 +563,8 @@ class DanbooruTagIndex extends TagIndexSource {
 }
 
 /// e621 / e6ai — same shape as danbooru, but wants HTTP basic auth and a
-/// descriptive user agent, and wraps the payload when it is empty.
+/// descriptive user agent, wraps the payload when it is empty, and caps a
+/// page at 320 rows (verified 2026-09-06: 1000 is refused).
 class E621TagIndex extends TagIndexSource {
   const E621TagIndex();
 
@@ -320,6 +573,34 @@ class E621TagIndex extends TagIndexSource {
 
   @override
   bool get orderedByCount => true;
+
+  static const Map<TagType, String> categoryCodes = {
+    TagType.artist: '1',
+    TagType.character: '4',
+    TagType.copyright: '3',
+    TagType.species: '5',
+    TagType.meta: '7',
+    TagType.none: '0',
+  };
+
+  static const int catalogPageSize = 320;
+
+  @override
+  bool get walksByCategory => true;
+
+  @override
+  int get catalogPagesPerPull => 10;
+
+  /// The site's API policy: no more than one request a second, sustained.
+  @override
+  Duration get catalogDelay => const Duration(seconds: 1);
+
+  @override
+  int pageSizeFor(Booru booru) => catalogPageSize;
+
+  @override
+  List<TagCatalogNamespace> catalogNamespaces(Booru booru) =>
+      TagIndexSource.namespacesFor(categoryCodes.keys, maxShards: catalogPagesPerPull);
 
   Map<String, String> _headers(Booru booru) {
     final String key = booru.apiKey ?? '';
@@ -331,25 +612,50 @@ class E621TagIndex extends TagIndexSource {
     };
   }
 
-  Future<List<BooruTagEntry>> _fetch(Booru booru, String query) async {
-    final response = await DioNetwork.get('${booru.baseURL}/tags.json?$query', headers: _headers(booru));
-    final decoded = response.data is String ? jsonDecode(response.data as String) : response.data;
-    // e621 answers `{"tags":[]}` for an empty result and a bare list otherwise.
+  Future<List<BooruTagEntry>> _fetch(Booru booru, String query, {Map<String, String>? headers}) async {
+    final response = await DioNetwork.get(
+      '${booru.baseURL}/tags.json?$query',
+      headers: {..._headers(booru), ...?headers},
+    );
+    return parseRows(booru, response.data);
+  }
+
+  /// e621 answers `{"tags":[]}` for an empty result and a bare list otherwise.
+  @visibleForTesting
+  static List<BooruTagEntry> parseRows(Booru booru, dynamic data) {
+    final decoded = data is String ? jsonDecode(data) : data;
     final List raw = decoded is List ? decoded : ((decoded is Map ? decoded['tags'] : null) as List? ?? const []);
+    final Map<String, TagType> types = TagIndexSource.typeMapFor(booru);
     return [
       for (final e in raw)
         if (e is Map && (e['name']?.toString().isNotEmpty ?? false))
           BooruTagEntry(
             name: e['name'].toString().toLowerCase(),
-            tagType: TagIndexSource.typeFor(booru, e['category']?.toString() ?? ''),
+            tagType: types[e['category']?.toString() ?? ''] ?? TagType.none,
             count: int.tryParse(e['post_count']?.toString() ?? '') ?? 0,
           ),
     ];
   }
 
+  String _pageQuery(int page, int limit, {TagType? type}) =>
+      'limit=$limit&page=${page + 1}'
+      '${type == null ? '' : '&search[category]=${categoryCodes[type] ?? '0'}'}'
+      '&search[order]=count&search[hide_empty]=true';
+
   @override
-  Future<List<BooruTagEntry>> pageAt(Booru booru, int page) =>
-      _fetch(booru, 'limit=$pageSize&page=${page + 1}&search[order]=count&search[hide_empty]=true');
+  Future<List<BooruTagEntry>> pageAt(Booru booru, int page) => _fetch(booru, _pageQuery(page, pageSize));
+
+  @override
+  Future<List<BooruTagEntry>> catalogPageAt(Booru booru, int page, {Map<String, String>? headers}) =>
+      _fetch(booru, _pageQuery(page, catalogPageSize), headers: headers);
+
+  /// The query one category page sends.
+  @visibleForTesting
+  String categoryQuery(TagType type, int page) => _pageQuery(page, catalogPageSize, type: type);
+
+  @override
+  Future<List<BooruTagEntry>> categoryPageAt(Booru booru, TagType type, int page, {Map<String, String>? headers}) =>
+      _fetch(booru, categoryQuery(type, page), headers: headers);
 
   @override
   Future<List<BooruTagEntry>> search(Booru booru, String query) {
@@ -370,20 +676,56 @@ class E621TagIndex extends TagIndexSource {
 }
 
 /// Philomena (derpibooru and friends).
+///
+/// Names are stored UNDERSCORED (`twilight_sparkle`), the way the app writes
+/// every Philomena tag it meets on a post: the site spells them with spaces,
+/// the query editor cannot hold a space inside a token, and the handler's
+/// `formatTagsWithUnderscoresPhilomena` turns the underscores back into
+/// spaces for the site. Rows stored with spaces could never be matched by
+/// the store's lookups.
 class PhilomenaTagIndex extends TagIndexSource {
   const PhilomenaTagIndex();
 
+  /// The API caps `per_page` at 50 (verified 2026-09-06).
   @override
   int get pageSize => 50;
 
   @override
   bool get orderedByCount => true;
 
+  @override
+  bool get walksByCategory => true;
+
+  @override
+  int get catalogPagesPerPull => 40;
+
+  @override
+  Duration get catalogDelay => const Duration(milliseconds: 500);
+
+  /// The query behind each chip (verified on derpibooru 2026-09-06).
+  /// Artists are not a category: they are `origin` tags named `artist:…`,
+  /// and `q=artist:*` lists them most-used first. General tags have no
+  /// category at all, so that chip walks everything and keeps the untyped;
+  /// the typed rows it meets on the way are stored too.
+  static const Map<TagType, String> categoryQueries = {
+    TagType.artist: 'artist:*',
+    TagType.character: 'category:character',
+    TagType.species: 'category:species',
+    TagType.copyright: 'category:content-official',
+    TagType.none: '*',
+  };
+
+  @override
+  List<TagCatalogNamespace> catalogNamespaces(Booru booru) =>
+      TagIndexSource.namespacesFor(categoryQueries.keys, maxShards: catalogPagesPerPull);
+
   static const Map<String, TagType> _categories = {
     'artist': TagType.artist,
     'character': TagType.character,
     'oc': TagType.character,
-    'origin': TagType.copyright,
+    // screencap, edit, alternate version… — the artists filed here are typed
+    // by their name in [typeOf].
+    'origin': TagType.meta,
     'species': TagType.species,
     'content-official': TagType.copyright,
     'content-fanmade': TagType.copyright,
@@ -392,39 +734,296 @@ class PhilomenaTagIndex extends TagIndexSource {
     'error': TagType.meta,
   };
 
-  Future<List<BooruTagEntry>> _fetch(Booru booru, String query) async {
+  /// The app's spelling of a site tag: lower case, underscores for spaces.
+  @visibleForTesting
+  static String normalizeName(String raw) => raw.trim().toLowerCase().replaceAll(RegExp(r'\s+'), '_');
+
+  @visibleForTesting
+  static TagType typeOf(String name, String? category) =>
+      name.startsWith('artist:') ? TagType.artist : (_categories[category] ?? TagType.none);
+
+  Future<List<BooruTagEntry>> _fetch(Booru booru, String query, {Map<String, String>? headers}) async {
     final response = await DioNetwork.get(
       '${booru.baseURL}/api/v1/json/search/tags?$query',
-      headers: {'User-Agent': Tools.browserUserAgent},
+      headers: {'User-Agent': Tools.browserUserAgent, ...?headers},
     );
-    final decoded = response.data is String ? jsonDecode(response.data as String) : response.data;
+    return parseRows(response.data);
+  }
+
+  /// `{"tags":[{name, category, images}, …]}`.
+  @visibleForTesting
+  static List<BooruTagEntry> parseRows(dynamic data) {
+    final decoded = data is String ? jsonDecode(data) : data;
     final List raw = (decoded is Map ? decoded['tags'] : null) as List? ?? const [];
+    final List<BooruTagEntry> out = [];
+    for (final e in raw) {
+      if (e is! Map) continue;
+      final String name = normalizeName(e['name']?.toString() ?? '');
+      if (name.isEmpty) continue;
+      out.add(
+        BooruTagEntry(
+          name: name,
+          tagType: typeOf(name, e['category']?.toString()),
+          count: int.tryParse(e['images']?.toString() ?? '') ?? 0,
+        ),
+      );
+    }
+    return out;
+  }
+
+  /// The wildcard stays a bare `*`, the way the site was verified.
+  static String _encodeQ(String q) => Uri.encodeQueryComponent(q).replaceAll('%2A', '*');
+
+  String _pageQuery(String q, int page) => 'q=${_encodeQ(q)}&per_page=$pageSize&page=${page + 1}&sf=images&sd=desc';
+
+  @override
+  Future<List<BooruTagEntry>> pageAt(Booru booru, int page) => _fetch(booru, _pageQuery('*', page));
+
+  @override
+  Future<List<BooruTagEntry>> catalogPageAt(Booru booru, int page, {Map<String, String>? headers}) =>
+      _fetch(booru, _pageQuery('*', page), headers: headers);
+
+  /// The query one category page sends.
+  @visibleForTesting
+  String categoryQuery(TagType type, int page) => _pageQuery(categoryQueries[type] ?? '*', page);
+
+  @override
+  Future<List<BooruTagEntry>> categoryPageAt(Booru booru, TagType type, int page, {Map<String, String>? headers}) =>
+      _fetch(booru, categoryQuery(type, page), headers: headers);
+
+  /// The site spells tags with spaces; an underscored query goes back with
+  /// them.
+  static String _siteSpelling(String query) => query.trim().toLowerCase().replaceAll('_', ' ');
+
+  @override
+  Future<List<BooruTagEntry>> search(Booru booru, String query) {
+    final String q = _encodeQ('*${_siteSpelling(query)}*');
+    return _fetch(booru, 'q=$q&per_page=$pageSize&sf=images&sd=desc');
+  }
+
+  @override
+  Future<BooruTagEntry?> exact(Booru booru, String name) async {
+    final String clean = normalizeName(name);
+    if (clean.isEmpty) return null;
+    final got = await _fetch(booru, 'q=${_encodeQ(_siteSpelling(clean))}&per_page=5');
+    for (final e in got) {
+      if (e.name == clean) return e;
+    }
+    return null;
+  }
+}
+
+/// Moebooru (yande.re, konachan). `/tag.json` lists by type most-used first
+/// (verified 2026-09-06: `order=count&type=N&page=N`; yande.re takes
+/// `limit=1000`, konachan answers 1000 with a Cloudflare page and 500 is
+/// fine, so 500 it is).
+class MoebooruTagIndex extends TagIndexSource {
+  const MoebooruTagIndex();
+
+  @override
+  int get pageSize => 100;
+
+  @override
+  bool get orderedByCount => true;
+
+  /// Types 5 and 6 mean different things per site (yande.re: circles and
+  /// faults; konachan: style and series) and are left out.
+  static const Map<TagType, String> categoryCodes = {
+    TagType.artist: '1',
+    TagType.character: '4',
+    TagType.copyright: '3',
+    TagType.none: '0',
+  };
+
+  static const int catalogPageSize = 500;
+
+  @override
+  bool get walksByCategory => true;
+
+  @override
+  int get catalogPagesPerPull => 4;
+
+  @override
+  Duration get catalogDelay => const Duration(milliseconds: 500);
+
+  @override
+  int pageSizeFor(Booru booru) => catalogPageSize;
+
+  @override
+  List<TagCatalogNamespace> catalogNamespaces(Booru booru) =>
+      TagIndexSource.namespacesFor(categoryCodes.keys, maxShards: catalogPagesPerPull);
+
+  Future<List<BooruTagEntry>> _fetch(Booru booru, String query, {Map<String, String>? headers}) async {
+    final response = await DioNetwork.get(
+      '${booru.baseURL}/tag.json?$query',
+      headers: {'User-Agent': Tools.browserUserAgent, ...?headers},
+    );
+    return parseRows(booru, response.data);
+  }
+
+  /// `[{name, type, count}, …]`.
+  @visibleForTesting
+  static List<BooruTagEntry> parseRows(Booru booru, dynamic data) {
+    final decoded = data is String ? jsonDecode(data) : data;
+    if (decoded is! List) return const [];
+    final Map<String, TagType> types = TagIndexSource.typeMapFor(booru);
     return [
-      for (final e in raw)
+      for (final e in decoded)
         if (e is Map && (e['name']?.toString().isNotEmpty ?? false))
           BooruTagEntry(
             name: e['name'].toString().toLowerCase(),
-            tagType: _categories[e['category']?.toString()] ?? TagType.none,
-            count: int.tryParse(e['images']?.toString() ?? '') ?? 0,
+            tagType: types[e['type']?.toString() ?? ''] ?? TagType.none,
+            count: int.tryParse(e['count']?.toString() ?? '') ?? 0,
           ),
     ];
   }
 
-  @override
-  Future<List<BooruTagEntry>> pageAt(Booru booru, int page) =>
-      _fetch(booru, 'q=*&per_page=$pageSize&page=${page + 1}&sf=images&sd=desc');
+  String _pageQuery(int page, int limit, {TagType? type}) =>
+      'limit=$limit&order=count${type == null ? '' : '&type=${categoryCodes[type] ?? '0'}'}&page=${page + 1}';
 
   @override
+  Future<List<BooruTagEntry>> pageAt(Booru booru, int page) => _fetch(booru, _pageQuery(page, pageSize));
+
+  @override
+  Future<List<BooruTagEntry>> catalogPageAt(Booru booru, int page, {Map<String, String>? headers}) =>
+      _fetch(booru, _pageQuery(page, catalogPageSize), headers: headers);
+
+  /// The query one category page sends.
+  @visibleForTesting
+  String categoryQuery(TagType type, int page) => _pageQuery(page, catalogPageSize, type: type);
+
+  @override
+  Future<List<BooruTagEntry>> categoryPageAt(Booru booru, TagType type, int page, {Map<String, String>? headers}) =>
+      _fetch(booru, categoryQuery(type, page), headers: headers);
+
+  /// `name=` is a LIKE pattern with `*` wildcards (the handler's autocomplete
+  /// relies on it), so a substring search wraps the query in them.
+  @override
   Future<List<BooruTagEntry>> search(Booru booru, String query) {
-    final String q = Uri.encodeComponent('*${query.trim().toLowerCase()}*');
-    return _fetch(booru, 'q=$q&per_page=$pageSize&sf=images&sd=desc');
+    final String q = Uri.encodeComponent('*${query.trim().toLowerCase().replaceAll(' ', '_')}*');
+    return _fetch(booru, 'limit=$pageSize&order=count&name=$q');
   }
 
   @override
   Future<BooruTagEntry?> exact(Booru booru, String name) async {
     final String clean = name.trim().toLowerCase();
     if (clean.isEmpty) return null;
-    final got = await _fetch(booru, 'q=${Uri.encodeComponent(clean)}&per_page=2');
+    final got = await _fetch(booru, 'limit=5&name=${Uri.encodeComponent(clean)}');
+    for (final e in got) {
+      if (e.name == clean) return e;
+    }
+    return null;
+  }
+}
+
+/// Sankaku chan through `sankakuapi.com`: `/tags` lists by type most-used
+/// first (verified 2026-09-06: `order=count&type=N&limit=1000&page=N`, no
+/// account needed). Rows carry the canonical `tagName` beside a translated
+/// display `name`.
+class SankakuTagIndex extends TagIndexSource {
+  const SankakuTagIndex();
+
+  @override
+  int get pageSize => 100;
+
+  @override
+  bool get orderedByCount => true;
+
+  /// 8 is "medium" (comic, portrait, doujinshi…), which the handler already
+  /// files as meta; 9 holds the site's own visibility flags and is skipped.
+  static const Map<TagType, String> categoryCodes = {
+    TagType.artist: '1',
+    TagType.character: '4',
+    TagType.copyright: '3',
+    TagType.meta: '8',
+    TagType.none: '0',
+  };
+
+  static const int catalogPageSize = 1000;
+
+  @override
+  bool get walksByCategory => true;
+
+  @override
+  int get catalogPagesPerPull => 3;
+
+  @override
+  Duration get catalogDelay => const Duration(milliseconds: 700);
+
+  @override
+  int pageSizeFor(Booru booru) => catalogPageSize;
+
+  @override
+  List<TagCatalogNamespace> catalogNamespaces(Booru booru) =>
+      TagIndexSource.namespacesFor(categoryCodes.keys, maxShards: catalogPagesPerPull);
+
+  /// What the handler sends, minus the session token.
+  static Map<String, String> defaultHeaders() => {
+    'Accept': 'application/json, text/plain, */*',
+    'User-Agent': Constants.sankakuAppUserAgent,
+    'Referer': 'https://sankaku.app/',
+    'Origin': 'https://sankaku.app',
+    'api-version': '2',
+  };
+
+  Future<List<BooruTagEntry>> _fetch(Booru booru, String query, {Map<String, String>? headers}) async {
+    final response = await DioNetwork.get(
+      '${SankakuHandler.apiBaseFor(booru)}/tags?lang=en&$query',
+      headers: {...defaultHeaders(), ...?headers},
+    );
+    return parseRows(booru, response.data);
+  }
+
+  static String _nameOf(Map e) => (e['tagName'] ?? e['name'] ?? '').toString().toLowerCase();
+
+  /// `[{tagName, name, type, post_count}, …]` — `tagName` is the tag, `name`
+  /// its translation.
+  @visibleForTesting
+  static List<BooruTagEntry> parseRows(Booru booru, dynamic data) {
+    final decoded = data is String ? jsonDecode(data) : data;
+    if (decoded is! List) return const [];
+    final Map<String, TagType> types = TagIndexSource.typeMapFor(booru);
+    return [
+      for (final e in decoded)
+        if (e is Map && _nameOf(e).isNotEmpty)
+          BooruTagEntry(
+            name: _nameOf(e),
+            tagType: types[e['type']?.toString() ?? ''] ?? TagType.none,
+            count: int.tryParse((e['post_count'] ?? e['count'])?.toString() ?? '') ?? 0,
+          ),
+    ];
+  }
+
+  String _pageQuery(int page, int limit, {TagType? type}) =>
+      'limit=$limit&order=count${type == null ? '' : '&type=${categoryCodes[type] ?? '0'}'}&page=${page + 1}';
+
+  @override
+  Future<List<BooruTagEntry>> pageAt(Booru booru, int page) => _fetch(booru, _pageQuery(page, pageSize));
+
+  @override
+  Future<List<BooruTagEntry>> catalogPageAt(Booru booru, int page, {Map<String, String>? headers}) =>
+      _fetch(booru, _pageQuery(page, catalogPageSize), headers: headers);
+
+  /// The query one category page sends.
+  @visibleForTesting
+  String categoryQuery(TagType type, int page) => _pageQuery(page, catalogPageSize, type: type);
+
+  @override
+  Future<List<BooruTagEntry>> categoryPageAt(Booru booru, TagType type, int page, {Map<String, String>? headers}) =>
+      _fetch(booru, categoryQuery(type, page), headers: headers);
+
+  /// `name=` matches by prefix on this API — the handler's autocomplete.
+  @override
+  Future<List<BooruTagEntry>> search(Booru booru, String query) {
+    final String q = Uri.encodeComponent(query.trim().toLowerCase().replaceAll(' ', '_'));
+    return _fetch(booru, 'limit=$pageSize&order=count&name=$q');
+  }
+
+  @override
+  Future<BooruTagEntry?> exact(Booru booru, String name) async {
+    final String clean = name.trim().toLowerCase();
+    if (clean.isEmpty) return null;
+    final got = await _fetch(booru, 'limit=5&name=${Uri.encodeComponent(clean)}');
     for (final e in got) {
       if (e.name == clean) return e;
     }

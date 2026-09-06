@@ -6,6 +6,8 @@ import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
+import 'package:lolisnatcher/src/handlers/booru_tag_catalog.dart';
+import 'package:lolisnatcher/src/handlers/tag_catalog_source.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/extensions.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
@@ -13,6 +15,11 @@ import 'package:lolisnatcher/src/utils/tools.dart';
 
 class RealbooruHandler extends BooruHandler {
   RealbooruHandler(super.booru, super.limit);
+
+  /// The site's count-ordered tag list, models filed as artists (see
+  /// GelbooruTagIndex).
+  @override
+  late final TagCatalogSource? tagCatalog = BooruTagCatalog.forHandler(this);
 
   // Reads neither field (audited): the fields are hidden on the edit page.
   @override

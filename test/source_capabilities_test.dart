@@ -11,6 +11,7 @@ import 'package:lolisnatcher/src/boorus/doujin/hitomi_handler.dart';
 import 'package:lolisnatcher/src/boorus/doujin/schale_handler.dart';
 import 'package:lolisnatcher/src/boorus/gelbooru_handler.dart';
 import 'package:lolisnatcher/src/boorus/hydrus_handler.dart';
+import 'package:lolisnatcher/src/boorus/idol_sankaku_handler.dart';
 import 'package:lolisnatcher/src/boorus/kemono_handler.dart';
 import 'package:lolisnatcher/src/boorus/kusowanka_handler.dart';
 import 'package:lolisnatcher/src/boorus/nhentai_handler.dart';
@@ -106,6 +107,12 @@ void main() {
         expect(h.usesUserId, isFalse, reason: h.className);
         expect(h.usesApiKey, isFalse, reason: h.className);
       }
+    });
+
+    test('the tag builder lists categories on the booru families, not on idol sankaku or bakemono', () {
+      expect(GelbooruHandler(b('gelbooru', BooruType.Gelbooru, 'https://gelbooru.com'), 20).tagCatalog, isNotNull);
+      expect(GelbooruHandler(b('bakemono', BooruType.Gelbooru, 'https://bakemono.app'), 20).tagCatalog, isNull);
+      expect(IdolSankakuHandler(b('idol', BooruType.IdolSankaku, 'https://idol.sankakucomplex.com'), 20).tagCatalog, isNull);
     });
 
     test('hydrus is an access key alone', () {

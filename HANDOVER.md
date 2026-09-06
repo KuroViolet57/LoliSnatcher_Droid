@@ -1,7 +1,8 @@
 # LoliSnatcher_Droid — Handover
 
 Written 2026-09-06 at build **r26-handover** (branch `claude/experimental-doujin`,
-HEAD `e15d17e` + this document). This file is the complete brief for a fresh
+HEAD `e15d17e` + this document; §1, §2, §4.3, §10 and §12 updated for r27 the
+same day, when the project moved to the user's Windows PC). This file is the complete brief for a fresh
 Claude session: read Part A top to bottom before touching code. Part B is the
 older chronological build log, kept verbatim as history.
 
@@ -23,11 +24,11 @@ older chronological build log, kept verbatim as history.
   Never push elsewhere; force-push is blocked.
 - **Version:** `2.6.0+5211` in `pubspec.yaml`, mirrored in
   `lib/src/data/constants.dart` (`updateInfo`). Builds are told apart by
-  `Constants.buildCodename` (`'r26-handover'` now), shown in About. Bump the
+  `Constants.buildCodename` (`'r27-tag-builder'` now), shown in About. Bump the
   codename every build: `rNN-<two words>`.
-- **Build counter:** builds are numbered r21, r22, … r26. The Drive upload
-  script needs a fresh **token** per build: r26 used **45**; the next build
-  uses **46**.
+- **Build counter:** builds are numbered r21, r22, … r27. Each build gets a
+  numbered folder on the K: drive (§2): r27 used **46**; the next build
+  uses **47**.
 - **The user** talks in voice notes and logs; expects one build per request
   round, checked on a Samsung phone. They cannot see tool output — only the
   final message.
@@ -59,81 +60,78 @@ older chronological build log, kept verbatim as history.
 
 ## 1. Environment and toolchain
 
-- **Container resets happen.** After a reset the toolchain is gone: Flutter
-  `3.42.0-0.4.pre` (beta channel) must be at `/opt/flutter`, the Android SDK
-  + NDK `28.2.13676358` at `/opt/android-sdk` (cmdline-tools), and the Drive
-  OAuth file at `~/.config/lolisnatcher-drive/oauth.json` (client id, secret,
-  refresh token — ask the user to re-paste; never commit it; Drive root folder
-  name `booruApk`). Run
-  `git config --global --add safe.directory /opt/flutter` once.
-- **Exports for every flutter command:**
-  `export PATH=/opt/flutter/bin:$PATH ANDROID_HOME=/opt/android-sdk ANDROID_SDK_ROOT=/opt/android-sdk`
+- **The project lives on the user's Windows PC** since r27 (2026-09-06); the
+  Linux container of r1–r26 is gone. Working checkout: `C:\bodu-apk` (branch
+  `claude/experimental-doujin`). The Claude session's persistent memory keeps
+  these facts too.
+- **Flutter:** the pubspec pins beta `3.42.0-0.4.pre` exactly, so the stable
+  install on the machine (3.41.9 at `C:\Users\alexb\Documents\flutter\flutter`)
+  cannot run it. A git worktree of that checkout at the tag lives at
+  `C:\Users\alexb\Documents\flutter\flutter-3.42-beta`; prefix every flutter
+  command with
+  `export PATH="/c/Users/alexb/Documents/flutter/flutter-3.42-beta/bin:$PATH"`
+  (Git Bash). Never switch the main install's channel: a newer beta breaks
+  the exact pin.
+- **Android SDK** at `C:\Users\alexb\AppData\Local\Android\Sdk` (platform 36,
+  NDK present); flutter uses Android Studio's JDK 21. `adb` is at
+  `C:\Users\alexb\Desktop\platform-tools` (no device attached by default).
+- **Analyzer:** use `flutter analyze --no-pub`. `dart analyze` completes but
+  its analysis server crashes on shutdown on this machine (perf_witness
+  cannot delete its socket files under `%LOCALAPPDATA%\Dart\perf`) and prints
+  nothing.
+- **Network:** a normal residential connection — probe sites with `curl`
+  directly. Cloudflare still challenges danbooru/aibooru/konachan for curl
+  and the sandboxed browsers refuse those hosts; the phone gets through with
+  the app's own cookie jar.
 - **Signing:** a TEST keystore is committed on purpose:
   `android/app/lolisnatcher-test.jks` + `android/key.properties`
   (passwords `lolisnatcher-test`). Builds signed before 2026-07-31 used a
   lost key — a user on one of those must uninstall once.
-- **sqlite3 native asset workaround (sandbox only):** the `sqlite3` package
-  downloads a prebuilt `.so` from GitHub releases; the sandbox proxy only
-  allows the app repo, so the download is a 195-byte error and the hash check
-  fails. Fix (ephemeral, redo after a reset): put valid `.so` files in
-  `/root/.pub-cache/sqlite3_prebuilt_seed/` named
-  `libsqlite3.{arm,arm64,x64}.android.so` (they may survive under
-  `.dart_tool/hooks_runner/shared/sqlite3/build/download-*/`), and patch
-  `~/.pub-cache/hosted/pub.dev/sqlite3-*/lib/src/hook/description.dart` so
-  `_fetchFromSource` serves the seed file before trying HTTP. Details in
-  Part B "Project / workflow". Do not commit any of this.
-- **Scratchpad** for temp files:
-  `/tmp/claude-0/-home-user-LoliSnatcher-Droid/<session>/scratchpad` (build
-  logs, changelogs, the parity HTML, fixtures in progress).
-- **Two checkouts.** `/home/user/LoliSnatcher_Droid` is the working repo;
-  `/home/user/LoliSnatcher_Droid-build` is a `git worktree` used only for
-  release builds, so a build never sees uncommitted edits and the working
-  tree stays usable while gradle runs (~5 min).
-- **Network:** outbound HTTPS goes through the agent proxy. GitHub API is
-  only reachable for this repo. Sites can be probed with `curl` (many have
-  Cloudflare; kemono's file hosts are unreachable from here and from the
-  user's network — see §7).
+- The sqlite3 native-asset workaround and the Drive OAuth file of the
+  container days are no longer needed: normal network, and delivery is a
+  file copy (§2).
+- **Scratchpad** for temp files: the session's scratchpad directory
+  (`C:\Users\alexb\AppData\Local\Temp\claude\C--bodu-apk\<session>\scratchpad`)
+  — build logs, changelogs and the parity HTML go there.
+- **Git:** `core.autocrlf=true` (working files CRLF, index LF); the repo-local
+  identity is `Claude <noreply@anthropic.com>`.
 
 ## 2. The per-build workflow (every build, in this order)
 
 1. Failure analysis from the user's log/recording; write the plan.
 2. Implement; add tests and fixtures (§10).
-3. `dart analyze` → **0 errors**; the baseline is **61 infos** (lint style
-   noise in old files). New code should add none.
+3. `flutter analyze --no-pub` → **0 errors**; the baseline is **61 issues**
+   (55 infos + 6 warnings, lint style noise in old files). New code should
+   add none.
 4. `flutter test $(ls test/*_test.dart | grep -v booru_test)` → all green.
-   Baseline **555** tests. `booru_test.dart` is excluded because its 11
-   cases hit live sites.
+   Baseline **577** (r27). `booru_test.dart` is excluded because its cases
+   hit live sites; `tag_index_live_test.dart` and the doujin parity walk are
+   tagged `live` and skipped unless run with `--run-skipped --tags live`.
 5. Bump `Constants.buildCodename`; write the changelog to the scratchpad
    (`changelog_rNN.md`) with **changed / observed / not verified** per item;
    `grep -iE 'password=|token|secret|cookie=' changelog_rNN.md` must be empty.
 6. Commit with a descriptive body and BOTH trailers:
    ```
    Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
-   Claude-Session: https://claude.ai/code/session_01HufKGFEvfxtATMVePKNXJu
+   Claude-Session: https://claude.ai/code/session_<id>
    ```
    No model identifiers anywhere else. `git push -u origin claude/experimental-doujin`
    (retry with backoff on network errors).
-7. Build in the worktree:
+7. Build in place (the tree is clean after the commit), **arm64 only** — the
+   user asked for no universal APK:
    ```
-   cd /home/user/LoliSnatcher_Droid-build
-   git fetch -q origin claude/experimental-doujin && git checkout -q --detach <sha>
-   flutter build apk --release > <scratch>/buildNN.log 2>&1
+   flutter build apk --release --split-per-abi --target-platform android-arm64 > <scratch>/buildNN.log 2>&1
    ```
-   Output: `build/app/outputs/flutter-apk/app-release.apk` (universal,
-   ~95 MB). The log's last line names the APK and size.
-8. Upload:
-   ```
-   python3 scripts/drive_upload_build.py --token <N> --descriptor "<label>" \
-     --apk /home/user/LoliSnatcher_Droid-build/build/app/outputs/flutter-apk/app-release.apk \
-     --apk-name "<codename>-2.6.0.apk" --changelog-file <scratch>/changelog_rNN.md
-   ```
-   `--token` is a per-build folder key (increment it), `--descriptor` a short
-   label in the folder name, `--extra` drops more files beside the APK,
-   `--changelog-text` is the inline alternative. The script prints the folder
-   link — put it in the report.
+   Output: `build/app/outputs/flutter-apk/app-arm64-v8a-release.apk`.
+8. Deliver by copying into the Google Drive folder synced on the PC:
+   `K:\My Drive\booruApk\<token>.apk (<descriptor>)\` — e.g.
+   `46.apk (r27 tag builder)` — holding `changes.txt` (the changelog) and the
+   APK renamed `<codename>-2.6.0.apk`. Tokens are integers: r27 used 46, the
+   next build uses 47. The report gives that folder path (a file copy has no
+   web link). `scripts/drive_upload_build.py` is retired.
 9. Republish the **parity artifact** (§2.6) with a footer "build rNN".
 10. Report: per item changed/observed/not verified, numbered device steps,
-    the Drive link, what to send back (a log with the app's logger enabled,
+    the K: folder, what to send back (a log with the app's logger enabled,
     Settings → Debug → Logger; the source-capture file when a site fails).
 
 ### 2.6 The parity artifact
@@ -272,21 +270,53 @@ Per-source knowledge that is *not* a handler override lives in these layers:
   here. Redaction shared with the logger.
 
 ### 4.3 Tag database and the tag builder
-- `BooruTag` (snapshot of a site's tags: type, count, `sourceId`) and
-  `BooruTagOverride` (user corrections) tables, managed by `BooruTagStore`.
-  Filled by `TagIndexSource` walks (`pageAt` / `search` / `exact`, verified
-  per family), opportunistic lookups, or snapshot import.
-- Doujin sources expose a `TagCatalogSource` (`handlers/tag_catalog_source.dart`,
-  implementations beside their handlers: `schale_tag_catalog`,
-  `hitomi_tag_catalog`, `asmhentai_tag_catalog`, `hentaipaw_tag_catalog`,
-  `nhentai_tag_catalog`, `kemono_tag_catalog`). A namespace is offered
-  only if the site enumerates it AND the handler's search accepts the term
-  `searchTerm` produces. `TagCatalogPuller` walks shards in the background
-  (one job per host, resumable). The chips live **inside the Metatags card**
-  of the query editor (`MetatagsBlock.mergedEntries`); tapping one opens the
-  picker sheet (`tag_browser_page.dart` / the source's own picker).
-- `test/tag_catalog_sources_test.dart` asserts "each source offers exactly
-  what it can enumerate".
+- `BooruTag` (snapshot of a site's tags: type, count, `sourceId`, and the
+  site's own `namespace` on doujin/kemono rows) and `BooruTagOverride` (user
+  corrections) tables, managed by `BooruTagStore`. Filled by `TagIndexSource`
+  walks, opportunistic lookups, snapshot import, or the tag builder's pulls.
+- **The tag builder** is the "Tag builder" card under the Metatags card of
+  both query editors (`TagBuilderBlock` in `main_search_query_editor_page.dart`;
+  since r27 — before that the chips sat inside the Metatags card). One
+  `TagCatalogChip` per namespace of `BooruHandler.tagCatalog`; tapping opens
+  `TagCatalogPickerSheet` (`widgets/preview/tag_type_strip.dart`), which lists
+  the local snapshot most-used first, filter-as-you-type, and starts a paced,
+  resumable pull through `TagCatalogPuller` when the namespace holds nothing.
+  A picked row inserts `catalog.searchTerm(row)`. With the database off the
+  card says so (pulls store nothing without it).
+- **Doujin/kemono catalogs** (`TagCatalogSource` implementations beside their
+  handlers: `schale_tag_catalog`, `hitomi_tag_catalog`, `asmhentai_tag_catalog`,
+  `hentaipaw_tag_catalog`, `nhentai_tag_catalog`, `kemono_tag_catalog`) file
+  rows under the site's own namespace. A namespace is offered only if the
+  site enumerates it AND the handler's search accepts the term `searchTerm`
+  produces.
+- **Booru catalogs** (r27): `BooruTagCatalog` (`handlers/booru_tag_catalog.dart`)
+  adapts the family's `TagIndexSource`. Namespaces are the site's tag
+  categories (Artists, Characters, Copyrights, Species, Meta, Tags), each
+  `byType` — read from the snapshot rows with an EMPTY namespace and that
+  `tagType` (`BooruTagStore.filterFor / browseNamespace / countNamespace /
+  clearNamespace / catalogCounts`), so a list pulled through the Tag browser
+  feeds the chips and the other way round. Families: gelbooru 0.2 (one
+  shared walk of the count-ordered HTML list, 20 or 50 rows a page with
+  `pid` counting rows, 100 pages a pull; gelbooru.com has its own row markup
+  and alias rows to skip; realbooru's `model` = artist), danbooru
+  (`search[category]`, 1000/page), e621 (`search[category]`, 320/page,
+  1 req/s), philomena (`q=artist:*` and `category:…`; names underscored,
+  artists typed by their `artist:` name, `origin` = meta), moebooru
+  (`tag.json?type=`, 500/page), sankaku (`sankakuapi.com/tags?type=`,
+  1000/page, `tagName`). Overrides live on the eight handlers
+  (`late final TagCatalogSource? tagCatalog = BooruTagCatalog.forHandler(this)`);
+  `SiteProfile.hasTagCatalog` vetoes a host (bakemono). IdolSankaku, Shimmie,
+  Hydrus and rule34.xyz have none. A category page whose rows are mostly
+  another type logs "ignored the … category filter" once.
+- The **Tag browser** (drawer) reads the same snapshot; its "Pull tag index"
+  runs through `TagCatalogPuller` under the `''` namespace (one loop, one
+  resume point, progress shared with the chips on shared families).
+- Tests: `tag_catalog_sources_test` ("each source offers exactly what it can
+  enumerate"), `tag_index_sources_test` (family parsers and exact page URLs
+  against fixtures), `booru_tag_catalog_test` (which handlers, the walk),
+  `booru_tag_store_test` (byType rows against an in-memory sqlite),
+  `tag_builder_block_test` (the card), `tag_catalog_puller_test`,
+  `tag_index_live_test` (tagged `live`: one real page per family).
 
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
@@ -611,6 +641,7 @@ Run: `flutter test $(ls test/*_test.dart | grep -v booru_test)` (offline).
 | doujin UI/data | `doujin_card_*`, `doujin_cover_height_test`, `doujin_detail_*`, `doujin_download_layout_test`, `doujin_reader_test`, `doujin_strip_geometry_test`, `doujin_tabs_test`, `doujin_menu_test`, `doujin_tag_*`, `doujin_recommend*`, `doujin_bookmark_test`, `doujin_listing_tag_backfill_test`, `doujin_edge_drag_test` |
 | separation | `doujin_separation_test`, `doujin_domain_scoping_test`, `doujin_favourite_tags_test`, `doujin_drawer_refresh_test`, `booru_switcher_domain_test`, `interests_guard_test` |
 | kemono | `kemono_test`, `pawchive_test` |
+| tag builder | `tag_index_sources_test`, `booru_tag_catalog_test`, `booru_tag_store_test`, `tag_builder_block_test`, `tag_catalog_sources_test`, `tag_catalog_puller_test`; live: `tag_index_live_test` |
 | cross-cutting | `source_capabilities_test`, `media_headers_test`, `metatags_block_merge_test`, `tag_catalog_sources_test`, `tag_catalog_puller_test`, `source_capture_test`, `source_capture_inpage_test`, `log_redaction_test`, `jpeg_integrity_test`, `favicon_fallback_test`, `suggestion_filter_test`, `downloads_reconcile_test`, `cookie_jar_timeout_test` |
 
 Conventions: a source test constructs the handler with a `Booru` and feeds
@@ -647,8 +678,13 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r26)
+## 12. Open items (as of r27)
 
+- r27 (tag builder on classic boorus) is unverified on the device: the Tag
+  builder card, one pull per family, the opaque picker sheet, the Tag
+  browser on the shared puller. Danbooru's `search[category]` could not be
+  probed from the PC (Cloudflare); if the log shows "ignored the …
+  category filter", flip `DanbooruTagIndex.walksByCategory` to false.
 - niyaniya clearance: unverified end to end on the phone; the next log
   should carry the `/cdn-cgi/trace` lines and the harvest result.
 - hentaipaw: artists/groups/parodies/characters routes need a capture.

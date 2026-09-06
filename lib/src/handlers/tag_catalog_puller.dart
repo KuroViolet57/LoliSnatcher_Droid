@@ -98,8 +98,11 @@ class TagCatalogPuller {
     final String shardNamespace = catalog.sharedShards ? '' : namespace;
     final int? total = catalog.sharedShards ? catalog.sharedShardCount : catalog.namespaceFor(namespace)?.shards;
     int shard = _resume[key] ?? 0;
-    // maxShards bounds ONE pull; the next pull continues from the resume point.
-    final int? perPull = catalog.sharedShards ? null : catalog.namespaceFor(namespace)?.maxShards;
+    // maxShards bounds ONE pull; the next pull continues from the resume
+    // point. A walk with no maxShards (shared, or the plain '' index walk)
+    // takes the source's maxShardsPerPull.
+    final int? perPull =
+        (catalog.sharedShards ? null : catalog.namespaceFor(namespace)?.maxShards) ?? catalog.maxShardsPerPull;
     final int? cap = perPull == null ? null : shard + perPull;
     int stored = 0;
     bool finished = false;

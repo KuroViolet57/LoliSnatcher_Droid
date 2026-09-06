@@ -8,10 +8,14 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_tag.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
+import 'package:lolisnatcher/src/handlers/booru_handler.dart';
+import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 import 'package:lolisnatcher/src/handlers/booru_tag_store.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/handlers/tag_catalog_puller.dart';
+import 'package:lolisnatcher/src/handlers/tag_catalog_source.dart';
 import 'package:lolisnatcher/src/handlers/tag_index_source.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 import 'package:lolisnatcher/src/widgets/common/settings_widgets.dart';
@@ -75,14 +79,16 @@ class _TagBrowserPageState extends State<TagBrowserPage> {
 
   int _snapshotSize = 0;
 
-  // Index pull state.
-  bool _pulling = false;
-  bool _cancelPull = false;
-  int _pulled = 0;
+  /// The index pull runs through the tag builder's puller, so the chips in
+  /// the search editor and this page show one walk, one progress and one
+  /// resume point; this is that job's state for [_booru], when the family
+  /// has a catalog at all.
+  ValueNotifier<TagCatalogPullState>? _pullState;
+  bool _wasRunning = false;
+  int _seenStored = -1;
 
-  /// Deepest index page reached per booru, so a pull that got cut short can
-  /// pick up instead of re-walking what it already has.
-  static final Map<String, int> _resumePage = {};
+  BooruHandler? _cachedHandler;
+  Booru? _cachedFor;
 
   static const int _pageSize = 60;
 
@@ -91,6 +97,60 @@ class _TagBrowserPageState extends State<TagBrowserPage> {
       .toList();
 
   TagIndexSource? get _source => TagIndexSource.forBooru(_booru);
+
+  BooruHandler get _handler {
+    if (_cachedHandler == null || _cachedFor != _booru) {
+      _cachedHandler = BooruHandlerFactory().getBooruHandler([_booru], null).booruHandler;
+      _cachedFor = _booru;
+    }
+    return _cachedHandler!;
+  }
+
+  TagCatalogSource? get _catalog => _handler.tagCatalog;
+
+  /// Follows the puller's job for [_booru]: rows reload as pages land, and a
+  /// stopped walk reports how far it got.
+  void _bindPull() {
+    _pullState?.removeListener(_onPullTick);
+    final TagCatalogSource? catalog = _catalog;
+    _pullState = catalog == null ? null : TagCatalogPuller.instance.stateFor(_booru, catalog, '');
+    _wasRunning = _pullState?.value.running ?? false;
+    _seenStored = _pullState?.value.stored ?? -1;
+    _pullState?.addListener(_onPullTick);
+  }
+
+  void _onPullTick() {
+    final TagCatalogPullState? state = _pullState?.value;
+    if (state == null || !mounted) return;
+    if (state.stored != _seenStored) {
+      _seenStored = state.stored;
+      unawaited(_refreshSnapshotSize());
+    }
+    if (_wasRunning && !state.running) {
+      if (state.error != null) {
+        // Whatever was stored before the failure is already saved and
+        // useful, so this is a "stopped early", not a "failed".
+        FlashElements.showSnackbar(
+          context: context,
+          title: Text(state.stored > 0 ? 'Stopped after ${state.stored} tags' : 'Tag index pull failed'),
+          content: Text(
+            state.stored > 0
+                ? 'The site stopped answering (usually rate limiting). What was fetched is saved — '
+                      'run it again later to go deeper.\n${state.error}'
+                : state.error!,
+            maxLines: 4,
+            overflow: TextOverflow.ellipsis,
+          ),
+          leadingIcon: Symbols.error_rounded,
+          sideColor: state.stored > 0 ? Colors.orange : Colors.red,
+        );
+      }
+      _reset();
+    } else {
+      setState(() {});
+    }
+    _wasRunning = state.running;
+  }
 
   @override
   void initState() {
@@ -101,11 +161,13 @@ class _TagBrowserPageState extends State<TagBrowserPage> {
         _loadMore();
       }
     });
+    _bindPull();
     _reset();
   }
 
   @override
   void dispose() {
+    _pullState?.removeListener(_onPullTick);
     _searchDebounce?.cancel();
     _scrollController.dispose();
     _searchController.dispose();
@@ -218,63 +280,12 @@ class _TagBrowserPageState extends State<TagBrowserPage> {
 
   // ───────────────────────────── actions ─────────────────────────────
 
+  /// Hands the walk to the puller: paced, resumable, and shared with the tag
+  /// builder's chips (a gelbooru-family site has one list for both).
   Future<void> _pullIndex() async {
-    final TagIndexSource? source = _source;
-    if (source == null || _pulling) return;
-    setState(() {
-      _pulling = true;
-      _cancelPull = false;
-      _pulled = 0;
-    });
-
-    // Resume where the last attempt stopped: a rate-limited pull is expected
-    // to be run more than once, and starting over from `female` every time
-    // would never get any deeper.
-    int page = _resumePage[BooruTagStore.keyFor(_booru)] ?? 0;
-    try {
-      // Bounded: a full booru tag database is millions of rows and nobody
-      // wants that on a phone. Each source sets its own depth from how big
-      // its pages are and how well ordered they arrive.
-      final int maxPages = source.maxIndexPages;
-      while (page < maxPages && !_cancelPull) {
-        final List<BooruTagEntry> got = await source.pageAt(_booru, page);
-        if (got.isEmpty) break;
-        final int written = await BooruTagStore.record(_booru, got);
-        if (!mounted) return;
-        setState(() => _pulled += written);
-        if (got.length < source.pageSize) break;
-        page++;
-        _resumePage[BooruTagStore.keyFor(_booru)] = page;
-        // Sites rate-limit sustained walks: scraping rule34.xxx's tag list
-        // back to back started returning 429 at around page 190. Pacing it
-        // costs a couple of minutes and keeps the pull from being cut off.
-        await Future.delayed(const Duration(milliseconds: 350));
-      }
-    } catch (e) {
-      // Whatever was stored before the failure is already saved and useful,
-      // so this is a "stopped early", not a "failed".
-      if (mounted) {
-        FlashElements.showSnackbar(
-          context: context,
-          title: Text(_pulled > 0 ? 'Stopped after $_pulled tags' : 'Tag index pull failed'),
-          content: Text(
-            _pulled > 0
-                ? 'The site stopped answering (usually rate limiting). What was fetched is saved — '
-                      'run it again later to go deeper.\n$e'
-                : e.toString(),
-            maxLines: 4,
-            overflow: TextOverflow.ellipsis,
-          ),
-          leadingIcon: Symbols.error_rounded,
-          sideColor: _pulled > 0 ? Colors.orange : Colors.red,
-        );
-      }
-    }
-
-    if (!mounted) return;
-    setState(() => _pulling = false);
-    await _refreshSnapshotSize();
-    _reset();
+    final TagCatalogSource? catalog = _catalog;
+    if (catalog == null || (_pullState?.value.running ?? false)) return;
+    unawaited(TagCatalogPuller.instance.pull(_booru, catalog, ''));
   }
 
   Future<void> _setType(BooruTagEntry row) async {
@@ -550,7 +561,7 @@ class _TagBrowserPageState extends State<TagBrowserPage> {
               }
             },
             itemBuilder: (context) => [
-              if (_source != null)
+              if (_catalog != null)
                 const PopupMenuItem(
                   value: 'pull',
                   child: ListTile(
@@ -623,6 +634,7 @@ class _TagBrowserPageState extends State<TagBrowserPage> {
                   onChanged: (Booru? value) {
                     if (value == null) return;
                     setState(() => _booru = value);
+                    _bindPull();
                     _reset();
                   },
                   title: 'Booru',
@@ -715,7 +727,9 @@ class _TagBrowserPageState extends State<TagBrowserPage> {
   }
 
   Widget _buildStatusLine(ThemeData theme) {
-    final TagIndexSource? source = _source;
+    final TagCatalogSource? catalog = _catalog;
+    final TagCatalogPullState? pull = _pullState?.value;
+    final bool pulling = pull?.running ?? false;
     final String stored = _snapshotSize == 1 ? '1 tag stored' : '$_snapshotSize tags stored';
     final int mine = BooruTagStore.manualFor(_booru).length;
 
@@ -727,20 +741,20 @@ class _TagBrowserPageState extends State<TagBrowserPage> {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              _pulling
-                  ? 'Pulling tag index… $_pulled stored'
+              pulling
+                  ? 'Pulling tag index… page ${pull!.shard} · ${pull.stored} stored'
                   : '$stored${mine > 0 ? ' · $mine corrected' : ''}'
-                        '${source == null ? ' · no tag index on this site' : ''}',
+                        '${catalog == null ? ' · no tag index on this site' : ''}',
               style: TextStyle(fontSize: 11.5, color: theme.colorScheme.onSurfaceVariant),
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          if (_pulling)
+          if (pulling)
             TextButton(
-              onPressed: () => setState(() => _cancelPull = true),
+              onPressed: () => TagCatalogPuller.instance.cancel(_booru, catalog!, ''),
               child: const Text('Stop'),
             )
-          else if (source != null && _snapshotSize == 0)
+          else if (catalog != null && _snapshotSize == 0)
             TextButton.icon(
               onPressed: _pullIndex,
               icon: const Icon(Symbols.cloud_download_rounded, size: 16),
