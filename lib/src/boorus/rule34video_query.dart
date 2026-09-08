@@ -13,6 +13,7 @@ class Rule34VideoQuery {
     this.key,
     this.sort,
     this.groups = const [],
+    this.words = const [],
     this.error,
   });
 
@@ -37,6 +38,10 @@ class Rule34VideoQuery {
   /// Content group ids, in the order typed; a union. Empty = everything.
   final List<String> groups;
 
+  /// The bare words as typed (facets, type: and sort: removed) — what a
+  /// single underscored tag looks like before the snapshot is asked for it.
+  final List<String> words;
+
   /// Refusal text; non-null means the handler locks with this message.
   final String? error;
 
@@ -54,6 +59,7 @@ class Rule34VideoQuery {
     String? key,
     String? sort,
     List<String>? groups,
+    List<String>? words,
     String? error,
   }) => Rule34VideoQuery(
     source: source,
@@ -63,6 +69,7 @@ class Rule34VideoQuery {
     key: key ?? this.key,
     sort: sort ?? this.sort,
     groups: groups ?? this.groups,
+    words: words ?? this.words,
     error: error ?? this.error,
   );
 
@@ -157,14 +164,18 @@ class Rule34VideoQuery {
           } else if (!groups.contains(id)) {
             groups.add(id);
           }
+        // A facet with nothing after the colon (a chip left unfilled, or a
+        // space typed after it) must not fall through to "everything".
+        case 'tag' || 'artist' || 'model' || 'category' || 'uploader' || 'user' when value.isEmpty:
+          error ??= 'rule34video: "$key:" needs a name right after the colon.';
         case 'tag':
-          if (value.isNotEmpty) facets.add((Rule34VideoRoute.tag, value));
+          facets.add((Rule34VideoRoute.tag, value));
         case 'artist' || 'model':
-          if (value.isNotEmpty) facets.add((Rule34VideoRoute.artist, value));
+          facets.add((Rule34VideoRoute.artist, value));
         case 'category':
-          if (value.isNotEmpty) facets.add((Rule34VideoRoute.category, value));
+          facets.add((Rule34VideoRoute.category, value));
         case 'uploader' || 'user':
-          if (value.isNotEmpty) facets.add((Rule34VideoRoute.uploader, value));
+          facets.add((Rule34VideoRoute.uploader, value));
         default:
           words.add(token);
       }
@@ -217,6 +228,7 @@ class Rule34VideoQuery {
     if (words.isEmpty) {
       return Rule34VideoQuery(source: source, route: Rule34VideoRoute.latest, sort: sort, groups: effectiveGroups);
     }
+    final List<String> bare = List<String>.unmodifiable(words);
 
     // One bare word the session already knows as a tag is better served by
     // the tag page: exhaustive, and the content filter works there.
@@ -231,6 +243,7 @@ class Rule34VideoQuery {
           key: id,
           sort: sort,
           groups: effectiveGroups,
+          words: bare,
         );
       }
     }
@@ -238,6 +251,13 @@ class Rule34VideoQuery {
     // The site's search is natural language: every cross-booru feature hands
     // over underscored tags, so underscores become spaces here.
     final String text = words.map((w) => w.replaceAll('_', ' ')).join(' ').trim();
-    return Rule34VideoQuery(source: source, route: Rule34VideoRoute.search, text: text, sort: sort, groups: effectiveGroups);
+    return Rule34VideoQuery(
+      source: source,
+      route: Rule34VideoRoute.search,
+      text: text,
+      sort: sort,
+      groups: effectiveGroups,
+      words: bare,
+    );
   }
 }

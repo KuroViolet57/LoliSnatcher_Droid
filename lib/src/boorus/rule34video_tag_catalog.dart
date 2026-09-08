@@ -84,6 +84,11 @@ class Rule34VideoTagCatalog extends TagCatalogSource {
     if (response.status != 200) {
       throw Exception('rule34video answered ${response.status} for the $namespace list, fragment ${shard + 1}');
     }
+    // A challenge page is a 200 too; it must stop the walk as an error the
+    // user sees (and can resume), not pass as the end of the list.
+    if (Rule34VideoHandler.looksBlocked(response.body)) {
+      throw Exception('rule34video answered a DDoS-Guard challenge page for the $namespace list; open the site in the app browser, then pull again');
+    }
     final int? reported = lastShardOf(response.body);
     if (reported != null) _lastShard[namespace] = reported;
     final List<BooruTagEntry> got = switch (namespace) {
@@ -91,7 +96,14 @@ class Rule34VideoTagCatalog extends TagCatalogSource {
       'artist' => parseModels(response.body),
       _ => parseCategories(response.body),
     };
-    return got.isEmpty ? null : got;
+    // An empty fragment is a real, empty shard (the walk goes on and stops
+    // at the last page the pagination named); only 404 or past-the-end is
+    // null. But no rows AND no pagination while no page has been seen yet
+    // is a changed page — say so rather than walk the pull cap in blanks.
+    if (got.isEmpty && !_lastShard.containsKey(namespace)) {
+      throw Exception('the $namespace list answered a fragment with neither rows nor pagination — the page changed');
+    }
+    return got;
   }
 
   static final RegExp _fromParam = RegExp(r'from[a-z_+]*:(\d+)');

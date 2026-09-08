@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html;
@@ -17,6 +18,7 @@ import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/booru_tag_store.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/tag_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 
@@ -212,7 +214,7 @@ void main() {
       expect(item.thumbnailURL, 'https://rule34video.com/contents/videos_screenshots/4593000/4593515/320x180/1.jpg');
       expect(item.sampleURL, 'https://rule34video.com/contents/videos_screenshots/4593000/4593515/336x189/1.jpg');
       expect(item.fileURL, item.thumbnailURL, reason: 'placeholder until the video page is read');
-      expect(item.fileExt, 'mp4');
+      expect(item.fileExt, 'jpg', reason: 'the placeholder is honest about its bytes; loadItem sets mp4');
       expect(item.mediaType.value, MediaType.needToLoadItem);
       expect(item.possibleMediaType.value, MediaType.video);
       expect(item.tagsList.map((t) => t.fullString), containsAll(['type:futa', 'hd']));
@@ -541,5 +543,203 @@ void main() {
       final resolved = await handler().resolveQuery('artist:paranoiddroid');
       expect(handler().urlFor(resolved, 1), 'https://rule34video.com/models/paranoiddroid/');
     });
+
+    test('a multi-word snapshot tag routes to its tag page too, not only a one-word one (r28 review)', () async {
+      if (!dbReady) return;
+      await BooruTagStore.record(booru, const [
+        BooruTagEntry(name: 'makima_(chainsaw_man)', tagType: TagType.none, count: 500, namespace: 'tag', sourceId: '33605'),
+      ]);
+      final h = handler();
+      final q = await h.resolveQuery('makima_(chainsaw_man)');
+      expect(q.route, Rule34VideoRoute.tag);
+      expect(q.key, '33605');
+      expect(h.urlFor(q, 1), 'https://rule34video.com/tags/33605/');
+      final typed = await h.resolveQuery('makima_(chainsaw_man) type:futa');
+      expect(typed.route, Rule34VideoRoute.tag);
+      expect(h.urlFor(typed, 1), 'https://rule34video.com/tags/33605/?flag1=15');
+      final two = await h.resolveQuery('makima_(chainsaw_man) power');
+      expect(two.route, Rule34VideoRoute.search, reason: 'two words are a text search');
+    });
   });
+
+  group('r28 review fixes', () {
+    tearDown(SourceSettingsHandler.instance.resetForTests);
+
+    test('an empty search honours the per-source content-type and sort defaults', () async {
+      SourceSettingsHandler.instance.update(booru, (s) {
+        s.contentTypes = 'gay';
+        s.defaultSort = 'newest';
+      });
+      final h = handler();
+      expect(h.makeURL(''), 'https://rule34video.com/latest-updates/?sort_by=post_date&flag1=192');
+      final q = await h.resolveQuery('');
+      expect(q.groups, ['192']);
+      expect(q.sort, 'post_date');
+      expect(h.urlFor(q, 2), 'https://rule34video.com/latest-updates/2/?sort_by=post_date&flag1=192');
+      expect(h.makeURL('type:futa'), 'https://rule34video.com/latest-updates/?sort_by=post_date&flag1=15');
+    });
+
+    test('a changed default applies to the next list, never to the one on screen (review)', () {
+      SourceSettingsHandler.instance.update(booru, (s) => s.contentTypes = 'gay');
+      final h = handler();
+      expect(h.makeURL(''), 'https://rule34video.com/latest-updates/?flag1=192');
+      h.fetched.add(BooruItem(fileURL: 't', sampleURL: 't', thumbnailURL: 't', tagsList: const [], postURL: 'p'));
+      SourceSettingsHandler.instance.update(booru, (s) => s.contentTypes = 'futa');
+      h.pageNum = 1;
+      expect(h.makeURL(''), 'https://rule34video.com/latest-updates/2/?flag1=192', reason: 'page 2 of the list on screen keeps its filter');
+      h.fetched.clear();
+      h.pageNum = -1;
+      expect(h.makeURL(''), 'https://rule34video.com/latest-updates/?flag1=15', reason: 'a fresh list picks up the new default');
+    });
+
+    test('a facet with no value is refused, not answered with everything', () {
+      expect(parse('artist:').error, isNotNull);
+      expect(parse('tag:').error, isNotNull);
+      expect(parse('category: chainsaw').error, isNotNull, reason: 'a space after the colon leaves the facet empty');
+      expect(parse('uploader:').error, isNotNull);
+    });
+
+    test('the grammar keeps the bare words so a single underscored tag can be looked up', () {
+      expect(parse('makima_(chainsaw_man) type:gay').words, ['makima_(chainsaw_man)']);
+      expect(parse('makima_(chainsaw_man) power').words, ['makima_(chainsaw_man)', 'power']);
+      expect(parse('type:gay').words, isEmpty);
+    });
+
+    test('an unopened card does not claim an extension its bytes do not have', () {
+      final h = handler()..current = parse('');
+      final List cards = h.parseListFromResponse(_Resp(fixture('latest')));
+      final BooruItem item = h.parseItemFromResponse(cards.first, 0)!;
+      expect(item.fileExt, 'jpg', reason: 'the placeholder is the thumbnail; a download before opening saves what it is');
+      expect(item.mediaType.value, MediaType.needToLoadItem);
+      expect(item.possibleMediaType.value, MediaType.video);
+    });
+
+    test('the info line labels the middle value as views only when it is a number', () {
+      expect(Rule34VideoHandler.infoLine(['1 hour ago', '619', '0:44']), '1 hour ago · 619 views · 0:44');
+      expect(Rule34VideoHandler.infoLine(['1 hour ago', '2.1K', '0:44']), '1 hour ago · 2.1K views · 0:44');
+      // The live site writes the exact count after the rounded one.
+      expect(Rule34VideoHandler.infoLine(['1 hour ago', '2.5K (2,511)', '2:59']), '1 hour ago · 2.5K (2,511) views · 2:59');
+      expect(Rule34VideoHandler.infoLine(['1 hour ago', 'Uploaded by x', '2:59']), '1 hour ago · Uploaded by x · 2:59');
+      expect(Rule34VideoHandler.infoLine(['1 hour ago', '0:44']), '1 hour ago · 0:44');
+      expect(Rule34VideoHandler.infoLine([]), '');
+    });
+
+    String page({required bool futa, required bool next, String id = '1'}) =>
+        '<html><body><div id="custom_list_videos_x_items"><div class="item thumb" data-video-card-id="$id"> '
+        '<a class="th" href="https://rule34video.com/video/$id/a/"><img class="thumb" data-original="https://x/$id.jpg"/> '
+        '${futa ? '<div class="futa">Futa</div>' : ''}</a></div></div> '
+        // The pagination names a far last page, so hops are limited by the budget, not by the site.
+        '${next ? '<a data-parameters="from:99"></a>' : ''}</body></html>';
+    Response<dynamic> resp(String body) => Response(requestOptions: RequestOptions(path: '/'), statusCode: 200, data: body);
+
+    test('the phone-side walk keeps paging when it ran out of hops with pages left, and stops at the end', () async {
+      final h = handler()..current = parse('genshin', groups: ['15']);
+      final List<Uri> asked = [];
+      Future<Response<dynamic>> fetchEmpty(Uri uri) async {
+        asked.add(uri);
+        return resp(page(futa: false, next: true, id: '${asked.length + 1}'));
+      }
+
+      final Response<dynamic> last = await h.walkFiltered(resp(page(futa: false, next: true)), fetchEmpty);
+      expect(asked, hasLength(Rule34VideoHandler.maxFilterHops));
+      expect(asked.first.toString(), 'https://rule34video.com/search/genshin/?from_videos=2');
+      expect(
+        Rule34VideoHandler.cardsOf(html.parse(last.data as String)).where((c) => Rule34VideoHandler.cardPasses(c, ['15'])),
+        isEmpty,
+      );
+      expect(h.moreAfterWalk, isTrue, reason: 'the site had more pages; the grid must not be told it is the end');
+      expect(h.pageNum, Rule34VideoHandler.maxFilterHops, reason: 'the next grid fetch asks the page after the last one walked');
+      expect(asked.last.toString(), 'https://rule34video.com/search/genshin/?from_videos=${Rule34VideoHandler.maxFilterHops + 1}');
+      h.locked = true;
+      h.unlockAfterWalk();
+      expect(h.locked, isFalse);
+
+      // A page with a passing card ends the walk and leaves the lock alone.
+      final h2 = handler()..current = parse('genshin', groups: ['15']);
+      int calls = 0;
+      final Response<dynamic> hit = await h2.walkFiltered(resp(page(futa: false, next: true)), (uri) async {
+        calls++;
+        return resp(page(futa: true, next: true, id: '9'));
+      });
+      expect(calls, 1);
+      expect(hit.data, contains('data-video-card-id="9"'));
+      expect(h2.moreAfterWalk, isFalse);
+      h2.locked = true;
+      h2.unlockAfterWalk();
+      expect(h2.locked, isTrue);
+
+      // No next page: stop, and let the base lock.
+      final h3 = handler()..current = parse('genshin', groups: ['15']);
+      final Response<dynamic> end = await h3.walkFiltered(
+        resp(page(futa: false, next: false)),
+        (uri) async => throw StateError('must not fetch'),
+      );
+      expect(end.data, contains('data-video-card-id="1"'));
+      expect(h3.moreAfterWalk, isFalse);
+    });
+
+    test('a search whose walk finds nothing keeps looking a few rounds, then says so instead of "no results" (review)', () async {
+      final List<String> asked = [];
+      Future<Response<dynamic>> serve(Uri uri) async {
+        asked.add(uri.toString());
+        final int p = int.tryParse(uri.queryParameters['from_videos'] ?? '1') ?? 1;
+        return resp(page(futa: p == 40, next: true, id: '$p'));
+      }
+
+      final h = handler()..listingFetch = serve;
+      final List<BooruItem> got = List<BooruItem>.from(await h.search('genshin type:futa', null));
+      expect(got, isEmpty);
+      expect(asked.toSet().length, asked.length, reason: 'no page fetched twice');
+      expect(asked.length, (Rule34VideoHandler.maxFilterHops + 1) * (Rule34VideoHandler.maxEmptyRounds + 1));
+      expect(h.locked, isFalse, reason: 'the site has more; Retry must be possible');
+      expect(h.errorString, contains('first ${asked.length} pages'));
+      expect(h.errorString, contains('futa'));
+
+      // From further down the list the walk reaches the matching page and says nothing.
+      final h2 = handler()..listingFetch = serve;
+      h2.pageNum = 33;
+      final List<BooruItem> found = List<BooruItem>.from(await h2.search('genshin type:futa', null));
+      expect(found.map((i) => i.serverId), ['40']);
+      expect(h2.errorString, isEmpty);
+      expect(h2.locked, isFalse);
+    });
+
+    test('the catalog: an empty fragment is an empty shard, a challenge page is an error, 404 is the end', () async {
+      final _FakeFetch h = _FakeFetch(booru);
+      final catalog = h.tagCatalog! as Rule34VideoTagCatalog;
+      h.answers[Rule34VideoTagCatalog.blockUrl(h.site, 'tag', 0)!] = (status: 200, body: fixture('tags_fragment'));
+      h.answers[Rule34VideoTagCatalog.blockUrl(h.site, 'tag', 1)!] =
+          (status: 200, body: '<div class="list_items" id="list_tags_tags_list_items"></div>');
+      h.answers[Rule34VideoTagCatalog.blockUrl(h.site, 'tag', 2)!] =
+          (status: 200, body: '<html><script src="/.well-known/ddos-guard/check.js"></script></html>');
+      h.answers[Rule34VideoTagCatalog.blockUrl(h.site, 'artist', 0)!] = (status: 404, body: '');
+      expect(await catalog.shardAt('tag', 0), hasLength(119));
+      expect(await catalog.shardAt('tag', 1), isEmpty, reason: 'a real, empty shard keeps the walk resumable');
+      await expectLater(catalog.shardAt('tag', 2), throwsA(isA<Exception>()));
+      expect(await catalog.shardAt('artist', 0), isNull);
+      final int before = h.fetches;
+      expect(await catalog.shardAt('tag', 74), isNull, reason: 'past the last fragment the first page reported');
+      expect(h.fetches, before, reason: 'no request past the end');
+
+      // No rows AND no pagination before any page was seen: the markup changed,
+      // which must not be walked to the pull cap as forty empty requests.
+      final _FakeFetch fresh = _FakeFetch(booru);
+      fresh.answers[Rule34VideoTagCatalog.blockUrl(fresh.site, 'category', 0)!] =
+          (status: 200, body: '<div class="list_items" id="x_items"></div>');
+      await expectLater((fresh.tagCatalog! as Rule34VideoTagCatalog).shardAt('category', 0), throwsA(isA<Exception>()));
+    });
+  });
+}
+
+/// A handler whose page fetches are answered from a map.
+class _FakeFetch extends Rule34VideoHandler {
+  _FakeFetch(Booru booru) : super(booru, Rule34VideoHandler.pageSize);
+  final Map<String, ({int status, String body})> answers = {};
+  int fetches = 0;
+
+  @override
+  Future<({int status, String body})> fetchPage(String url, {CancelToken? cancelToken}) async {
+    fetches++;
+    return answers[url] ?? (status: 500, body: '');
+  }
 }

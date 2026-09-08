@@ -44,7 +44,7 @@ class Constants {
   // Short 1-2 word codename describing this build's changes. Shown in the
   // settings version row and used for the uploaded APK name, following the
   // '{codename}-{version}' scheme.
-  static const String buildCodename = 'r28-rule34video';
+  static const String buildCodename = 'r29-hanime1-builder';
 
   // TODO don't forget to update on every new release
   static const UpdateInfo updateInfo = UpdateInfo(

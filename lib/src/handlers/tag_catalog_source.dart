@@ -116,6 +116,10 @@ abstract class TagCatalogSource {
     final TagCatalogNamespace? ns = catalog.namespaceFor(match.group(1)!);
     if (ns == null) return null;
     final rows = await BooruTagStore.browseNamespace(booru, ns, query: match.group(2)!, limit: 25);
+    // Nothing stored yet (never pulled, or the database is off): step
+    // aside so a metatag with its own autocomplete (hanime1's genre:) is
+    // still answered instead of showing an empty list.
+    if (rows.isEmpty) return null;
     return [
       for (final e in rows)
         TagSuggestion(tag: catalog.searchTerm(e), count: e.count, type: e.tagType),

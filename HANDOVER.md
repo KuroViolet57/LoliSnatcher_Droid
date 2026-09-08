@@ -3,7 +3,7 @@
 Written 2026-09-06 at build **r26-handover** (branch `claude/experimental-doujin`,
 HEAD `e15d17e` + this document; §1, §2, §4.3, §10 and §12 updated for r27 the
 same day, when the project moved to the user's Windows PC; §0, §2, §5, §10 and
-§12 updated for r28, rule34video). This file is the complete brief for a fresh
+§12 updated for r28, rule34video, and again for r29 on 2026-09-08). This file is the complete brief for a fresh
 Claude session: read Part A top to bottom before touching code. Part B is the
 older chronological build log, kept verbatim as history.
 
@@ -25,14 +25,20 @@ older chronological build log, kept verbatim as history.
   Never push elsewhere; force-push is blocked.
 - **Version:** `2.6.0+5211` in `pubspec.yaml`, mirrored in
   `lib/src/data/constants.dart` (`updateInfo`). Builds are told apart by
-  `Constants.buildCodename` (`'r28-rule34video'` now), shown in About. Bump the
+  `Constants.buildCodename` (`'r29-hanime1-builder'` now), shown in About. Bump the
   codename every build: `rNN-<two words>`.
-- **Build counter:** builds are numbered r21, r22, … r28. Each build gets a
-  numbered folder on the K: drive (§2): r28 used **47**; the next build
-  uses **48**.
+- **Build counter:** builds are numbered r21, r22, … r29. Each build gets a
+  numbered folder on the K: drive (§2): r29 used **48**; the next build
+  uses **49**.
 - **The user** talks in voice notes and logs; expects one build per request
   round, checked on a Samsung phone. They cannot see tool output — only the
   final message.
+- **Tests first, then an adversarial review (user rule, 2026-09-08).** Write
+  the failing tests before the code; after the code is green, launch an
+  Agent whose only job is to find why the diff is wrong (scoped to the
+  change, with the fixtures at hand), fix what it finds, and only then
+  build. The user noticed tests written after the code pass trivially. r29
+  was the first round under it: the r28 review found five real bugs (§12).
 
 ### The user's standing rules (verbatim intent, all still in force)
 
@@ -100,12 +106,13 @@ older chronological build log, kept verbatim as history.
 ## 2. The per-build workflow (every build, in this order)
 
 1. Failure analysis from the user's log/recording; write the plan.
-2. Implement; add tests and fixtures (§10).
+2. Write the tests red first, then implement (§0); run an adversarial
+   review Agent over the diff and fix its findings before going on.
 3. `flutter analyze --no-pub` → **0 errors**; the baseline is **61 issues**
    (55 infos + 6 warnings, lint style noise in old files). New code should
    add none.
 4. `flutter test $(ls test/*_test.dart | grep -v booru_test)` → all green.
-   Baseline **616** (r28). `booru_test.dart` is excluded because its cases
+   Baseline **637** (r29). `booru_test.dart` is excluded because its cases
    hit live sites; `tag_index_live_test.dart`, `rule34video_live_test.dart`
    and the doujin parity walk are tagged `live` and skipped unless run with
    `--run-skipped --tags live`.
@@ -127,9 +134,9 @@ older chronological build log, kept verbatim as history.
    Output: `build/app/outputs/flutter-apk/app-arm64-v8a-release.apk`.
 8. Deliver by copying into the Google Drive folder synced on the PC:
    `K:\My Drive\booruApk\<token>.apk (<descriptor>)\` — e.g.
-   `47.apk (r28 rule34video)` — holding `changes.txt` (the changelog) and the
-   APK renamed `<codename>-2.6.0.apk`. Tokens are integers: r28 used 47, the
-   next build uses 48. The report gives that folder path (a file copy has no
+   `48.apk (r29 hanime1 builder)` — holding `changes.txt` (the changelog) and the
+   APK renamed `<codename>-2.6.0.apk`. Tokens are integers: r29 used 48, the
+   next build uses 49. The report gives that folder path (a file copy has no
    web link). `scripts/drive_upload_build.py` is retired.
 9. Republish the **parity artifact** (§2.6) with a footer "build rNN".
 10. Report: per item changed/observed/not verified, numbered device steps,
@@ -310,6 +317,14 @@ Per-source knowledge that is *not* a handler override lives in these layers:
   `SiteProfile.hasTagCatalog` vetoes a host (bakemono). IdolSankaku, Shimmie,
   Hydrus and rule34.xyz have none. A category page whose rows are mostly
   another type logs "ignored the … category filter" once.
+- **Tube catalogs:** `rule34video_tag_catalog` (r28, namespace-keyed like
+  hentaipaw: the site's tag / model / category async blocks, id or slug as
+  `sourceId`) and `hanime1_tag_catalog` (r29): hanime1's whole vocabulary is
+  the built-in `HanimeDictionary` (240 tags, each now carrying its
+  `HanimeGroup` — the seven search-form groups — plus nine genres), so the
+  chips are one instant shard per group (`shards: 1`, no request; the "pull"
+  writes the dictionary into the snapshot under the host). Tags insert bare
+  (the grammar maps `creampie` back to `tags[]=內射`), genres `genre:mmd`.
 - The **Tag browser** (drawer) reads the same snapshot; its "Pull tag index"
   runs through `TagCatalogPuller` under the `''` namespace (one loop, one
   resume point, progress shared with the chips on shared families).
@@ -335,7 +350,8 @@ World, Civitai (official API), WebView (browser tab), Autodetect.
 Bakemono.app rides on Gelbooru + `BakemonoProfile`.
 
 **Video / tube sources:** Hanime1 (`hanime1.me`, Chinese→English tag
-dictionary in `data/hanime_dictionary.dart`, domain fallback), Kusowanka,
+dictionary in `data/hanime_dictionary.dart`, domain fallback; since r29 the
+Tag builder lists the dictionary by group, §4.3), Kusowanka,
 TikPorn, XXXTik, XXXFollow (login), RedGifs (`redgifs_login_page`),
 Rule34Video (r28; `rule34video.com`, a KVS tube behind DDoS-Guard, no
 account). rule34video serves ONE list per query — newest, the site's text
@@ -659,7 +675,7 @@ Run: `flutter test $(ls test/*_test.dart | grep -v booru_test)` (offline).
 | doujin UI/data | `doujin_card_*`, `doujin_cover_height_test`, `doujin_detail_*`, `doujin_download_layout_test`, `doujin_reader_test`, `doujin_strip_geometry_test`, `doujin_tabs_test`, `doujin_menu_test`, `doujin_tag_*`, `doujin_recommend*`, `doujin_bookmark_test`, `doujin_listing_tag_backfill_test`, `doujin_edge_drag_test` |
 | separation | `doujin_separation_test`, `doujin_domain_scoping_test`, `doujin_favourite_tags_test`, `doujin_drawer_refresh_test`, `booru_switcher_domain_test`, `interests_guard_test` |
 | kemono | `kemono_test`, `pawchive_test` |
-| video sources | `rule34video_test` (grammar, URLs, listing, badges, video page, catalog, store-backed routing; fixtures `rule34video_*.html`); live: `rule34video_live_test` |
+| video sources | `rule34video_test` (grammar, URLs, listing, badges, video page, catalog, store-backed routing; fixtures `rule34video_*.html`), `hanime1_tag_catalog_test` (dictionary groups, the instant catalog, every chip term round-trips through makeURL); live: `rule34video_live_test` |
 | tag builder | `tag_index_sources_test`, `booru_tag_catalog_test`, `booru_tag_store_test`, `tag_builder_block_test`, `tag_catalog_sources_test`, `tag_catalog_puller_test`; live: `tag_index_live_test` |
 | cross-cutting | `source_capabilities_test`, `media_headers_test`, `metatags_block_merge_test`, `tag_catalog_sources_test`, `tag_catalog_puller_test`, `source_capture_test`, `source_capture_inpage_test`, `log_redaction_test`, `jpeg_integrity_test`, `favicon_fallback_test`, `suggestion_filter_test`, `downloads_reconcile_test`, `cookie_jar_timeout_test` |
 
@@ -697,8 +713,31 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r28)
+## 12. Open items (as of r29)
 
+- r29 (hanime1 Tag builder from the dictionary; the r28 review fixes) is
+  unverified on the device. A second review, of the r29 fixes themselves,
+  found that the unlocked-but-empty grid after a filter walk was a dead end
+  ("no results — tap to retry"), so `search()` now runs up to
+  `maxEmptyRounds` further walks itself and then sets an `errorString` that
+  names the pages searched (Retry looks further); a changed per-source
+  default now applies to the next list, not the one on screen; an index
+  fragment with neither rows nor pagination is an error, not a 40-request
+  walk of blanks. Review findings NOT fixed, by choice: after a
+  phone-side filter walk on rule34video the page number the app shows lags
+  the handler's (`SearchHandler.pageNum` is separate); two artists whose
+  names collapse to one underscored name keep one slug; `loadItem` ignores
+  `withCapcthaCheck` (a challenge shows a message, not the WebView); a
+  manually retyped tag is excluded from its chip's list on every source
+  (`BooruTagStore.record` skips overridden names). A grid download of an
+  unopened rule34video card saves the thumbnail (as .jpg now); resolving
+  `needToLoadItem` items in `SnatchHandler.queue` would fix that for every
+  such source (hanime1, kusowanka, r34us too) and is the natural next step.
+- Tag builder candidates among the other tube sources (the user asked about
+  hanime1 "for example"): TikPorn has `GET /gettaglist` (84 tags, trivial);
+  Kusowanka has five browse routes (tags / parodies / artists / characters /
+  metadatas) that likely paginate; XXXTik, XXXFollow and RedGifs document
+  no index (live suggestions only).
 - r28 (rule34video) is unverified on the device. From the PC, through the
   app's own client (`rule34video_live_test`): the newest list, `type:futa`
   via `flag1`, text search page 2, a video page to its 720p mp4 and the

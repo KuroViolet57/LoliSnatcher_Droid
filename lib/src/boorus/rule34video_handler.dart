@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+
 import 'package:dio/dio.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:html/dom.dart' as dom;
@@ -65,8 +67,18 @@ class Rule34VideoHandler extends BooruHandler {
   static const int pageSize = 24;
 
   /// Extra pages one fetch may walk when the phone filters a text search
-  /// and a page had nothing passing.
-  static const int maxFilterHops = 3;
+  /// and a page had nothing passing. Past that the fetch answers empty, and
+  /// [unlockAfterWalk] keeps the grid paging when the site had more.
+  static const int maxFilterHops = 5;
+
+  /// Extra walks one `search()` call runs while it has still found nothing
+  /// — a grid with no card cannot scroll for more, so the first answer has
+  /// to look further by itself before it gives up with a message.
+  static const int maxEmptyRounds = 2;
+
+  /// Test seam: answers listing requests in place of the network.
+  @visibleForTesting
+  Future<Response<dynamic>> Function(Uri uri)? listingFetch;
 
   /// Ids the site taught this session (video pages, index pulls), shared by
   /// every handler instance so a throwaway handler routes the same way.
@@ -74,8 +86,33 @@ class Rule34VideoHandler extends BooruHandler {
   static final Map<String, String> knownUploaderIds = {};
 
   /// The query the last `search()` resolved; `makeURL` re-parses when asked
-  /// about something else.
-  Rule34VideoQuery current = const Rule34VideoQuery(source: '', route: Rule34VideoRoute.latest);
+  /// about something else, or when the per-source defaults changed since
+  /// (an empty search carries them — see [defaultGroupIds]).
+  Rule34VideoQuery? _current;
+  String _currentDefaults = '';
+
+  Rule34VideoQuery get current => _current ??= _remember(parseQuery(''));
+  set current(Rule34VideoQuery q) => _remember(q);
+
+  String get _defaultsKey => '${defaultGroupIds.join(',')}|${_defaultSort ?? ''}';
+
+  Rule34VideoQuery _remember(Rule34VideoQuery q) {
+    _current = q;
+    _currentDefaults = _defaultsKey;
+    return q;
+  }
+
+  /// True when [current] answers [source]. A changed per-source default
+  /// applies to the NEXT list, never to the one on screen — re-parsing
+  /// mid-pagination would splice two filters into one grid.
+  bool _isCurrent(String source) {
+    if (_current == null || _current!.source != source) return false;
+    return _currentDefaults == _defaultsKey || fetched.isNotEmpty;
+  }
+
+  /// Set by the last filtered walk: the hop budget ran out while the site
+  /// still had pages, so an empty answer is not the end of the results.
+  bool moreAfterWalk = false;
 
   @override
   late final TagCatalogSource? tagCatalog = Rule34VideoTagCatalog(this);
@@ -228,10 +265,11 @@ class Rule34VideoHandler extends BooruHandler {
         }
       case Rule34VideoRoute.uploader when q.key == null:
         q = q.copyWith(route: Rule34VideoRoute.search, text: q.name!.replaceAll('_', ' '));
-      case Rule34VideoRoute.search when q.key == null && !q.text.contains(' '):
-        // One word the snapshot knows as a tag: its own page is exhaustive
-        // and the content filter works there.
-        final String name = Rule34VideoQuery.normalizeName(q.text);
+      case Rule34VideoRoute.search when q.key == null && q.words.length == 1:
+        // One word the snapshot knows as a tag (`makima_(chainsaw_man)` is
+        // one word): its own page is exhaustive and the content filter
+        // works there.
+        final String name = Rule34VideoQuery.normalizeName(q.words.single);
         final String? id = name.isEmpty ? null : await BooruTagStore.findId(booru, 'tag', name);
         if (id != null) {
           knownTagIds[name] = id;
@@ -251,11 +289,44 @@ class Rule34VideoHandler extends BooruHandler {
   /// synchronous.
   @override
   Future search(String tags, int? pageNumCustom, {bool withCaptchaCheck = true}) async {
+    moreAfterWalk = false;
     final String source = validateTags(translateOrSyntax(tags.trim()).trim());
-    if (current.source != source || current.needsResolution) {
+    if (!_isCurrent(source) || current.needsResolution) {
       current = await resolveQuery(source);
     }
-    return super.search(tags, pageNumCustom, withCaptchaCheck: withCaptchaCheck);
+    final int before = fetched.length;
+    await super.search(tags, pageNumCustom, withCaptchaCheck: withCaptchaCheck);
+    unlockAfterWalk();
+    // Nothing added and the site has more: look further now, because an
+    // empty grid has nothing to scroll and would read as "no results".
+    int rounds = 0;
+    while (moreAfterWalk && fetched.length == before && rounds < maxEmptyRounds) {
+      rounds++;
+      pageNum++;
+      await super.search(tags, null, withCaptchaCheck: withCaptchaCheck);
+      unlockAfterWalk();
+    }
+    if (moreAfterWalk && fetched.length == before && errorString.isEmpty) {
+      final String types = current.groups.map(_groupName).join('/');
+      final int walked = (maxFilterHops + 1) * (rounds + 1);
+      errorString = before == 0
+          ? 'No $types videos in the first $page pages of this search. The site has more pages; Retry looks further.'
+          : 'No more $types videos in pages ${page - walked + 1}–$page. The site has more pages; Retry looks further.';
+    }
+    return fetched;
+  }
+
+  static String _groupName(String id) {
+    for (final MapEntry<String, String> e in Rule34VideoQuery.groupIds.entries) {
+      if (e.value == id) return e.key;
+    }
+    return id;
+  }
+
+  /// The base locks the handler when a fetch added nothing; after a
+  /// filtered walk that merely ran out of hops that is wrong, so undo it.
+  void unlockAfterWalk() {
+    if (moreAfterWalk) locked = false;
   }
 
   /// 1-based site page for the handler's page counter (first fetch -1 or 0).
@@ -264,7 +335,7 @@ class Rule34VideoHandler extends BooruHandler {
   @override
   String makeURL(String tags) {
     final String source = tags.trim();
-    if (current.source != source) {
+    if (!_isCurrent(source)) {
       // A throwaway handler, or a caller that skipped search(): no database
       // walk here, so an unknown tag name becomes a text search.
       current = parseQuery(source);
@@ -317,18 +388,35 @@ class Rule34VideoHandler extends BooruHandler {
     bool withCaptchaCheck = true,
     Map<String, dynamic>? queryParams,
   }) async {
-    Response<dynamic> response = await super.fetchSearch(
-      uri,
-      input,
-      withCaptchaCheck: withCaptchaCheck,
-      queryParams: queryParams,
-    );
-    if (!current.filtersOnPhone) return response;
+    final Response<dynamic> response = await _fetchListing(uri, input, withCaptchaCheck, queryParams);
+    return walkFiltered(response, (next) => _fetchListing(next, input, withCaptchaCheck, null));
+  }
+
+  Future<Response<dynamic>> _fetchListing(Uri uri, String input, bool withCaptchaCheck, Map<String, dynamic>? queryParams) =>
+      listingFetch != null
+      ? listingFetch!(uri)
+      : super.fetchSearch(uri, input, withCaptchaCheck: withCaptchaCheck, queryParams: queryParams);
+
+  /// The walk itself, with the fetch injected so it can be tested: hop to
+  /// the next page while the current one has cards but none of the wanted
+  /// type, at most [maxFilterHops] times. Stops early at the last page.
+  /// Sets [moreAfterWalk] when the budget ran out with pages left.
+  Future<Response<dynamic>> walkFiltered(
+    Response<dynamic> first,
+    Future<Response<dynamic>> Function(Uri next) fetch,
+  ) async {
+    moreAfterWalk = false;
+    if (!current.filtersOnPhone) return first;
+    Response<dynamic> response = first;
+    bool blank(dom.Document doc) {
+      final List<dom.Element> cards = cardsOf(doc);
+      return cards.isNotEmpty && !cards.any((c) => cardPasses(c, current.groups));
+    }
+
     for (int hop = 0; hop < maxFilterHops; hop++) {
       if (response.statusCode != 200) return response;
       final dom.Document doc = parse(response.data?.toString() ?? '');
-      final List<dom.Element> cards = cardsOf(doc);
-      if (cards.isEmpty || cards.any((c) => cardPasses(c, current.groups))) return response;
+      if (!blank(doc)) return response;
       final int here = page;
       if (!hasNextPage(doc, here)) return response;
       pageNum = here; // page is pageNum + 1: the next fetch continues after the hop
@@ -339,7 +427,11 @@ class Rule34VideoHandler extends BooruHandler {
         'fetchSearch',
         LogTypes.booruHandlerInfo,
       );
-      response = await super.fetchSearch(Uri.parse(next), input, withCaptchaCheck: withCaptchaCheck);
+      response = await fetch(Uri.parse(next));
+    }
+    if (response.statusCode == 200) {
+      final dom.Document doc = parse(response.data?.toString() ?? '');
+      moreAfterWalk = blank(doc) && hasNextPage(doc, page);
     }
     return response;
   }
@@ -443,6 +535,9 @@ class Rule34VideoHandler extends BooruHandler {
       added,
     ].where((s) => s.isNotEmpty).join(' · ');
 
+    // No fileExt: the placeholder IS the thumbnail, and a download queued
+    // before the card was opened must save it as what it is, not as .mp4.
+
     final BooruItem item = BooruItem(
       // Placeholder until the video page is read: the mp4 link is signed
       // per client and expires.
@@ -451,7 +546,6 @@ class Rule34VideoHandler extends BooruHandler {
       thumbnailURL: thumb,
       tagsList: tags,
       postURL: href,
-      fileExt: 'mp4',
       serverId: id,
       score: rating.isEmpty ? null : rating,
       description: info.isEmpty ? title : '$title\n$info',
@@ -662,19 +756,17 @@ class Rule34VideoHandler extends BooruHandler {
     final String title = (vars['video_title'] ?? '').trim().isNotEmpty
         ? vars['video_title']!.trim()
         : (doc.querySelector('h1')?.text ?? item.description?.split('\n').first ?? '').trim();
-    final List<String> info = [
+    final String info = infoLine([
       for (final dom.Element span in doc.querySelectorAll('#tab_video_info .item_info span'))
         if (span.text.trim().isNotEmpty) span.text.replaceAll(RegExp(r'\s+'), ' ').trim(),
-    ];
-    // The row reads: date, views, duration.
-    if (info.length >= 2) info[1] = '${info[1]} views';
+    ]);
     final String voters = _text(doc.documentElement!, '.voters');
 
     item
       ..fileURL = best.url
       ..fileExt = 'mp4'
       ..sampleURL = (vars['preview_url'] ?? '').isNotEmpty ? vars['preview_url']! : item.sampleURL
-      ..description = info.isEmpty ? title : '$title\n${info.join(' · ')}'
+      ..description = info.isEmpty ? title : '$title\n$info'
       ..score = voters.isNotEmpty ? voters : item.score
       ..tagsList = tags
       ..isUpdated = true;
@@ -694,6 +786,18 @@ class Rule34VideoHandler extends BooruHandler {
       if (fresh.isNotEmpty) await BooruTagStore.record(booru, fresh);
     }
     return null;
+  }
+
+  /// `619`, `2.1K`, or the live site's `2.5K (2,511)`.
+  static final RegExp _countLike = RegExp(r'^[0-9][0-9.,]*[KkMm]?(\s*\([0-9,]+\))?$');
+
+  /// The video page's info row reads date · views · duration; the views
+  /// are labelled only when the middle value looks like a count, so a page
+  /// that hides them does not call the duration "views".
+  static String infoLine(List<String> spans) {
+    final List<String> parts = List<String>.of(spans);
+    if (parts.length >= 3 && _countLike.hasMatch(parts[1])) parts[1] = '${parts[1]} views';
+    return parts.join(' · ');
   }
 
   @override

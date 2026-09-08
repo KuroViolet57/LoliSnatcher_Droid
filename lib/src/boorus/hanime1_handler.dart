@@ -6,6 +6,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:html/dom.dart';
 import 'package:html/parser.dart';
 
+import 'package:lolisnatcher/src/boorus/hanime1_tag_catalog.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/hanime_dictionary.dart';
 import 'package:lolisnatcher/src/data/meta_tag.dart';
@@ -14,6 +15,7 @@ import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_suggestion.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
+import 'package:lolisnatcher/src/handlers/tag_catalog_source.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
@@ -116,6 +118,11 @@ class Hanime1Handler extends BooruHandler {
   @override
   bool get hasTagSuggestions => true;
 
+  /// The Tag builder lists the dictionary — the site's whole vocabulary,
+  /// already on the phone — one chip per search-form group plus genres.
+  @override
+  late final TagCatalogSource? tagCatalog = Hanime1TagCatalog();
+
   /// AND is the site's native combination; the app's OR groups would need
   /// `broad=on`, which ORs EVERY tag, not one group — close enough to be
   /// wrong, so it is not pretended. `mode:any` exposes broad matching
@@ -175,7 +182,14 @@ class Hanime1Handler extends BooruHandler {
     String? sort;
     bool broad = false;
 
+    final List<String> negated = [];
     for (final term in input.split(' ').where((t) => t.trim().isNotEmpty)) {
+      // The site has no exclusion. A long-pressed chip or a typed `-tag`
+      // would otherwise reach the free-text search as a literal word.
+      if (term.startsWith('-') || term.startsWith('~')) {
+        negated.add(term);
+        continue;
+      }
       final int colon = term.indexOf(':');
       final String key = colon > 0 ? term.substring(0, colon).toLowerCase() : '';
       final String value = colon > 0 ? term.substring(colon + 1).trim() : '';
@@ -218,6 +232,14 @@ class Hanime1Handler extends BooruHandler {
       freeText.add(term.replaceAll('_', ' '));
     }
 
+    if (negated.isNotEmpty) {
+      Logger.Inst().log(
+        'hanime1 cannot exclude tags; dropped ${negated.join(' ')}',
+        className,
+        '_parse',
+        LogTypes.booruHandlerInfo,
+      );
+    }
     return (zhTags: zhTags, query: freeText.join(' '), genre: genre, sort: sort, broad: broad);
   }
 
@@ -506,10 +528,16 @@ class Hanime1Handler extends BooruHandler {
     final String query = input.trim();
     if (query.length < 2) return const Right([]);
 
-    final List<TagSuggestion> out = [
-      for (final tag in HanimeDictionary.search(query)) TagSuggestion(tag: tag.en, type: tag.type),
-    ];
+    // Prefix matches first, then the rest, each in dictionary order (the
+    // list sort is not stable, so two passes instead).
     final String lower = query.toLowerCase();
+    final List<HanimeTag> found = HanimeDictionary.search(query);
+    final List<TagSuggestion> out = [
+      for (final tag in found)
+        if (tag.en.startsWith(lower)) TagSuggestion(tag: tag.en, type: tag.type),
+      for (final tag in found)
+        if (!tag.en.startsWith(lower)) TagSuggestion(tag: tag.en, type: tag.type),
+    ];
     for (final entry in HanimeDictionary.genres.keys) {
       if (out.length >= 25) break;
       if (entry.contains(lower)) out.add(TagSuggestion(tag: 'genre:$entry', type: TagType.meta));
