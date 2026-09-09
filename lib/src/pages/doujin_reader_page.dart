@@ -20,6 +20,7 @@ import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 import 'package:lolisnatcher/src/widgets/image/custom_network_image.dart';
+import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 
 /// The doujin reader: ordered pages of one gallery, read like a book.
 ///
@@ -63,6 +64,9 @@ class DoujinReaderPage extends StatefulWidget {
   /// otherwise every slide settles into its error state under test and the
   /// clipping/zoom layers guard nothing.
   static ImageProvider Function(BooruItem item)? testImageProviderBuilder;
+
+  /// Test seam: resolves a `needToLoadItem` page in place of the handler.
+  static Future<({BooruItem? item, bool failed, String? error})> Function(BooruItem page, Booru booru)? testPageResolver;
 
   @override
   State<DoujinReaderPage> createState() => _DoujinReaderPageState();
@@ -574,6 +578,11 @@ class _ReaderPageSlideState extends State<_ReaderPageSlide> {
   CancelToken? _cancelToken;
   Object? _error;
 
+  /// This slide asked the source for its page (e-hentai serves them one at
+  /// a time). Those links are address-bound and expire, so an image error
+  /// must put the page back in the queue instead of retrying a dead link.
+  bool _resolvedHere = false;
+
   final TransformationController _transform = TransformationController();
   bool _zoomed = false;
   TapDownDetails? _lastDoubleTapDown;
@@ -610,6 +619,32 @@ class _ReaderPageSlideState extends State<_ReaderPageSlide> {
       });
       return;
     }
+    // A source that serves pages one at a time (e-hentai) hands the reader
+    // placeholders; ask the handler for this page before loading it. The
+    // handler rewrites the item in place, so the URL below is the real one.
+    if (widget.item.mediaType.value == MediaType.needToLoadItem) {
+      final result = await (DoujinReaderPage.testPageResolver?.call(widget.item, widget.booru) ??
+          BooruHandlerFactory().getBooruHandler([widget.booru], null).booruHandler.loadItem(
+            item: widget.item,
+            cancelToken: _cancelToken,
+            withCapcthaCheck: true,
+          ));
+      if (!mounted) return;
+      _resolvedHere = true;
+      if (result.failed || result.item == null) {
+        Logger.Inst().log(
+          'reader page ${widget.pageNumber} not resolved: ${result.error}',
+          '_ReaderPageSlide',
+          '_initProvider',
+          LogTypes.imageLoadingError,
+        );
+        setState(() {
+          _provider = null;
+          _error = result.error ?? 'page not resolved';
+        });
+        return;
+      }
+    }
     final headers = await Tools.getFileCustomHeaders(
       widget.booru,
       item: widget.item,
@@ -644,10 +679,18 @@ class _ReaderPageSlideState extends State<_ReaderPageSlide> {
                 'onError',
                 LogTypes.imageLoadingError,
               );
-              if (mounted) setState(() => _error = e);
+              _onImageError(e);
             },
           );
     });
+  }
+
+  /// The image did not load. When this slide resolved the page itself, the
+  /// link may simply have expired: mark it unresolved so Retry asks the
+  /// source again rather than reloading the same dead URL.
+  void _onImageError(Object error) {
+    if (_resolvedHere) widget.item.mediaType.value = MediaType.needToLoadItem;
+    if (mounted) setState(() => _error = error);
   }
 
   Future<void> _retry() async {
@@ -678,9 +721,8 @@ class _ReaderPageSlideState extends State<_ReaderPageSlide> {
 
   @override
   Widget build(BuildContext context) {
-    if (_provider == null) {
-      return const Center(child: CircularProgressIndicator());
-    }
+    // The error first: a page the source refused to resolve has no provider
+    // and an error, and must show its message and Retry, not a spinner.
     if (_error != null) {
       return Center(
         child: Padding(
@@ -710,6 +752,10 @@ class _ReaderPageSlideState extends State<_ReaderPageSlide> {
           ),
         ),
       );
+    }
+
+    if (_provider == null) {
+      return const Center(child: CircularProgressIndicator());
     }
 
     Widget viewer = InteractiveViewer(
@@ -744,7 +790,7 @@ class _ReaderPageSlideState extends State<_ReaderPageSlide> {
           },
           errorBuilder: (context, error, stackTrace) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted && _error == null) setState(() => _error = error);
+              if (mounted && _error == null) _onImageError(error);
             });
             return const SizedBox.shrink();
           },

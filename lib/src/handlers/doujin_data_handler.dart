@@ -237,6 +237,8 @@ class DoujinDataHandler {
     BooruType.Faccina,
     BooruType.Hitomi,
     BooruType.HentaiPaw,
+    BooruType.EHentai,
+    BooruType.HDoujin,
   };
 
   static bool isDoujinBooru(Booru? booru) => booru?.type != null && doujinTypes.contains(booru!.type);
@@ -254,6 +256,9 @@ class DoujinDataHandler {
     'hentalk.pw',
     'hitomi.la',
     'hentaipaw.com',
+    'e-hentai.org',
+    'exhentai.org', // the same source, read from its other host
+    'hdoujin.org',
   };
 
   /// ITEM-level doujin check, for mixed feeds (merge tabs, floating

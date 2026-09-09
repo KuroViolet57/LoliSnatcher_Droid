@@ -21,6 +21,8 @@ import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/services/image_writer.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 import 'package:lolisnatcher/src/widgets/thumbnail/thumbnail_build.dart';
+import 'package:lolisnatcher/src/utils/logger.dart';
+import 'package:lolisnatcher/src/boorus/doujin/ehentai_handler.dart';
 
 class SnatchHandler {
   SnatchHandler() {
@@ -354,6 +356,46 @@ class SnatchHandler {
 
   /// [doujin] describes the BOOK the pages belong to; with it the pages are
   /// written into that book's own folder instead of loose in the root.
+  /// Pages a source serves one at a time (e-hentai) are placeholders until
+  /// opened; a download of the book fetches each page's real file first,
+  /// paced, then queues as usual. Pages the site refuses are left out and
+  /// logged rather than saved as their cover.
+  Future<void> _resolveThenQueue(
+    List<BooruItem> booruItems,
+    Booru booru,
+    int cooldown,
+    bool ignoreExists,
+    DoujinDownloadInfo doujin,
+  ) async {
+    final BooruHandler handler = BooruHandlerFactory().getBooruHandler([booru], null).booruHandler;
+    final List<BooruItem> ready = [];
+    for (final BooruItem item in booruItems) {
+      if (item.mediaType.value != MediaType.needToLoadItem) {
+        ready.add(item);
+        continue;
+      }
+      try {
+        final result = handler is EHentaiHandler
+            ? await handler.loadItem(item: item, withCapcthaCheck: true, bulk: true)
+            : await handler.loadItem(item: item, withCapcthaCheck: true);
+        if (!result.failed) {
+          ready.add(item);
+        } else {
+          Logger.Inst().log('page not resolved for download: ${item.postURL} — ${result.error}', 'SnatchHandler', '_resolveThenQueue', LogTypes.booruHandlerInfo);
+        }
+      } catch (e) {
+        Logger.Inst().log('page not resolved for download: ${item.postURL} — $e', 'SnatchHandler', '_resolveThenQueue', LogTypes.exception);
+      }
+      await Future.delayed(const Duration(milliseconds: 300));
+    }
+    if (ready.isEmpty) {
+      Logger.Inst().log('no page of this book could be resolved; nothing queued', 'SnatchHandler', '_resolveThenQueue', LogTypes.booruHandlerInfo);
+      return;
+    }
+    // The manifest must describe what is actually being saved.
+    queue(ready, booru, cooldown, ignoreExists, doujin: doujin.withMissing(ready));
+  }
+
   void queue(
     List<BooruItem> booruItems,
     Booru booru,
@@ -361,6 +403,10 @@ class SnatchHandler {
     bool ignoreExists, {
     DoujinDownloadInfo? doujin,
   }) {
+    if (doujin != null && booruItems.any((i) => i.mediaType.value == MediaType.needToLoadItem)) {
+      unawaited(_resolveThenQueue(booruItems, booru, cooldown, ignoreExists, doujin));
+      return;
+    }
     if (booruItems.isNotEmpty) {
       final SnatchItem item = SnatchItem(booruItems, cooldown, booru, ignoreExists, doujin: doujin);
       queuedList.add(item);

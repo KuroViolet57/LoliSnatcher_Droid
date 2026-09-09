@@ -270,6 +270,24 @@ class _BooruEditState extends State<BooruEdit> {
                       booruFaviconController.text = 'https://niyaniya.moe/favicon.ico';
                     }
                   }
+                  if (selectedBooruType.isHDoujin && booruURLController.text.trim().isEmpty) {
+                    booruURLController.text = 'https://hdoujin.org';
+                    if (booruNameController.text.trim().isEmpty) {
+                      booruNameController.text = 'HDoujin';
+                    }
+                    if (booruFaviconController.text.trim().isEmpty) {
+                      booruFaviconController.text = 'https://hdoujin.org/favicon.ico';
+                    }
+                  }
+                  if (selectedBooruType.isEHentai && booruURLController.text.trim().isEmpty) {
+                    booruURLController.text = 'https://e-hentai.org';
+                    if (booruNameController.text.trim().isEmpty) {
+                      booruNameController.text = 'E-Hentai';
+                    }
+                    if (booruFaviconController.text.trim().isEmpty) {
+                      booruFaviconController.text = 'https://e-hentai.org/favicon.ico';
+                    }
+                  }
                   if (selectedBooruType.isHentaiPaw && booruURLController.text.trim().isEmpty) {
                     booruURLController.text = 'https://hentaipaw.com';
                     if (booruNameController.text.trim().isEmpty) {
@@ -603,6 +621,24 @@ class _BooruEditState extends State<BooruEdit> {
             "the site's login form for Favorites (posts and artists) and syncs "
             'hearts. The file host blocks IPs that download unreasonably, so '
             'nothing here prefetches files.';
+      case BooruType.HDoujin:
+        return '<b>HDoujin</b><br>Leave the URL as https://hdoujin.org. The same software as niyaniya '
+            'on its own network: browsing and the gallery page work at once; reading a book needs '
+            "the site's one-time check, which opens by itself the first time and is kept apart from "
+            "niyaniya's. Search like niyaniya: words, artist:name, parody:name, tag names.";
+      case BooruType.EHentai:
+        return '<b>E-Hentai / ExHentai</b><br>Leave the URL as https://e-hentai.org. A DOUJIN source: every '
+            'post is a whole gallery, read in the reader. No account is needed for e-hentai.org. '
+            'exhentai.org (the full catalogue) needs a forum login: Source settings → Log in opens '
+            'the forum in a browser page; the app keeps the two session cookies in its own file and '
+            'never sends them to image servers. Then pick the site under Source settings → Site.<br><br> '
+            'Search: tags as female:big_breasts, artist:name, parody:name, language:english (the app '
+            "turns them into the site's exact-match terms); -tag excludes; bare words search titles; "
+            'category:doujinshi limits the categories; rating:4 and pages:10-50 use the advanced search. '
+            "Lists are read forward with the site's own cursor, newest first.<br><br> "
+            'Pages are fetched as you read them (the site serves one at a time); a long gallery opens at '
+            "once. Source settings also opens the site's settings, My Tags and Watched pages, and can "
+            "import the tags you hide on My Tags into this source's blacklist.";
       case BooruType.NHentai:
         return '<b>nhentai</b><br>Leave the URL as https://nhentai.net. A '
             'DOUJIN source: every post is a whole gallery, read page by page '

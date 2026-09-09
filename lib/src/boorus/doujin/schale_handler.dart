@@ -23,6 +23,8 @@ import 'package:lolisnatcher/src/handlers/schale_clearance_handler.dart';
 import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
+import 'package:lolisnatcher/src/boorus/doujin/schale_network.dart';
+import 'package:lolisnatcher/src/boorus/booru_type.dart';
 
 /// niyaniya.moe — the Schale Network JSON API.
 ///
@@ -58,20 +60,25 @@ class SchaleHandler extends BooruHandler with DoujinListingTagBackfill, DoujinNa
   ];
 
 
-  static const String _api = 'https://api.schale.network';
+  /// The network the configured base belongs to: its API and auth hosts.
+  SchaleNetwork get network => SchaleNetwork.forSite(_configuredSite);
 
-  /// The API host, for the tag catalog beside this handler.
-  static String get apiBase => _api;
+  /// The API origin, for this handler and the tag catalog beside it.
+  String get apiBase => network.api;
 
   /// Every namespace the site can list, pulled by the tag builder.
   @override
   late final TagCatalogSource tagCatalog = SchaleTagCatalog(this);
   static const String defaultSite = 'https://niyaniya.moe';
 
+  /// A fresh config's site, per type: hdoujin.org for HDoujin, niyaniya otherwise.
+  static String defaultSiteFor(BooruType type) =>
+      type == BooruType.HDoujin ? SchaleNetwork.hdoujin.defaultSite : SchaleNetwork.schale.defaultSite;
+
   /// The mirror as configured, without a trailing slash.
   String get _configuredSite {
     final String configured = booru.baseURL?.trim() ?? '';
-    if (configured.isEmpty) return defaultSite;
+    if (configured.isEmpty) return defaultSiteFor(booru.type ?? BooruType.NiyaNiya);
     return configured.endsWith('/') ? configured.substring(0, configured.length - 1) : configured;
   }
 
@@ -206,16 +213,16 @@ class SchaleHandler extends BooruHandler with DoujinListingTagBackfill, DoujinNa
     if (protocol != null) {
       // Handled in parseListFromResponse; this URL is just a cheap, valid
       // request so the base handler's fetch machinery stays happy.
-      return '$_api/books?page=1';
+      return '$apiBase/books?page=1';
     }
     // Chips display bare; schale matches on the namespaced form, so put the
     // namespace back before translating.
     final String query = translateQuery(qualifyQuery(tags));
     final int page = pageNum < 1 ? 1 : pageNum;
-    if (query.isEmpty) return '$_api/books/popular?page=$page';
+    if (query.isEmpty) return '$apiBase/books/popular?page=$page';
     // NB: the parameter is `s`. `q`, `search` and `tags` are all accepted and
     // silently ignored, which returns the whole unfiltered library.
-    return '$_api/books?s=${Uri.encodeQueryComponent(query)}&page=$page';
+    return '$apiBase/books?s=${Uri.encodeQueryComponent(query)}&page=$page';
   }
 
   /// Puts each bare tag back into its `namespace:name` form, leaving anything
@@ -444,7 +451,7 @@ class SchaleHandler extends BooruHandler with DoujinListingTagBackfill, DoujinNa
     for (int attempt = 0; attempt < 2; attempt++) {
       await _waitOutRateLimit();
       try {
-        final response = await DioNetwork.get('$_api/books/detail/$id/$key', headers: getHeaders());
+        final response = await DioNetwork.get('$apiBase/books/detail/$id/$key', headers: getHeaders());
         if (response.statusCode != 200) return null;
         final data = _json(response.data);
         return data is Map ? data : null;
@@ -643,7 +650,7 @@ class SchaleHandler extends BooruHandler with DoujinListingTagBackfill, DoujinNa
         body = response.data;
       }
     } catch (e) {
-      _gateError = 'niyaniya request failed: $e';
+      _gateError = '${network.name} request failed: $e';
       return null;
     }
     if (status == 200) {
@@ -654,7 +661,7 @@ class SchaleHandler extends BooruHandler with DoujinListingTagBackfill, DoujinNa
       // Where the token was issued and where it was just refused, while the
       // page that was refused still exists to be asked.
       await clearance.logRefusal(status: status, via: via, apiOrigin: apiBase);
-      clearance.invalidate();
+      clearance.invalidate(siteUrl: _site);
       _gateError = SchaleClearanceHandler.needsSolveMessage;
       Logger.Inst().log(
         'clearance refused ($status via $via); dropped | body=${_bodySnippet(body)}',
@@ -664,7 +671,7 @@ class SchaleHandler extends BooruHandler with DoujinListingTagBackfill, DoujinNa
       );
       return null;
     }
-    _gateError = 'niyaniya answered $status';
+    _gateError = '${network.name} answered $status';
     return null;
   }
 
@@ -714,7 +721,7 @@ class SchaleHandler extends BooruHandler with DoujinListingTagBackfill, DoujinNa
   /// `POST /books/detail/{id}/{key}?crt=` — the dataset and `similar`.
   @visibleForTesting
   String detailPostUrl({required String id, required String key, required String clearance}) =>
-      '$_api/books/detail/$id/$key?crt=${Uri.encodeQueryComponent(clearance)}';
+      '$apiBase/books/detail/$id/$key?crt=${Uri.encodeQueryComponent(clearance)}';
 
   /// `GET /books/data/{id}/{key}/{dataId}/{dataKey}/{quality}?crt=` — the
   /// whole page list for one image set.
@@ -727,7 +734,7 @@ class SchaleHandler extends BooruHandler with DoujinListingTagBackfill, DoujinNa
     required String quality,
     required String clearance,
   }) =>
-      '$_api/books/data/$id/$key/$dataId/$dataKey/$quality'
+      '$apiBase/books/data/$id/$key/$dataId/$dataKey/$quality'
       '?crt=${Uri.encodeQueryComponent(clearance)}';
 
   /// A page image: `{base}/{path}?w={quality}`, joined without a doubled slash.
@@ -755,7 +762,7 @@ class SchaleHandler extends BooruHandler with DoujinListingTagBackfill, DoujinNa
     for (final query in queries.take(pages + 1)) {
       try {
         final response = await DioNetwork.get(
-          '$_api/books?s=${Uri.encodeQueryComponent(query)}&page=1',
+          '$apiBase/books?s=${Uri.encodeQueryComponent(query)}&page=1',
           headers: getHeaders(),
         );
         final data = _json(response.data);
@@ -786,7 +793,7 @@ class SchaleHandler extends BooruHandler with DoujinListingTagBackfill, DoujinNa
   /// empty strip.
   Future<List<BooruItem>> _fetchRelated(String id) async {
     final String? key = _keyFor(id);
-    if (key != null && SchaleClearanceHandler.instance.hasToken) {
+    if (key != null && SchaleClearanceHandler.instance.hasTokenFor(_site)) {
       await resolveDomain();
       List? similar = _similarById[id];
       if (similar == null) {
@@ -864,7 +871,7 @@ class SchaleHandler extends BooruHandler with DoujinListingTagBackfill, DoujinNa
     if (query.isEmpty) return const Right([]);
     try {
       final response = await DioNetwork.get(
-        '$_api/books?s=${Uri.encodeQueryComponent(query)}&page=1',
+        '$apiBase/books?s=${Uri.encodeQueryComponent(query)}&page=1',
         headers: getHeaders(),
       );
       final data = _json(response.data);

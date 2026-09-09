@@ -40,6 +40,7 @@ class DoujinDownloadInfo {
     required this.coverURL,
     required this.sourceName,
     required this.pages,
+    this.missingPages = const [],
   });
 
   /// The gallery a detail page or card is about to save.
@@ -88,6 +89,32 @@ class DoujinDownloadInfo {
   /// Every page of the book, in order — a single saved page is numbered by
   /// its place in the book, not its place in the download queue.
   final List<BooruItem> pages;
+
+  /// 1-based numbers of the pages that could not be fetched. The page list
+  /// itself stays whole: it is what numbers the files, so dropping entries
+  /// would renumber every page after a gap and the book would read back
+  /// silently shifted.
+  final List<int> missingPages;
+
+  /// The same book, recording which pages a source that resolves one page
+  /// at a time (e-hentai) could not deliver.
+  DoujinDownloadInfo withMissing(List<BooruItem> saved) {
+    if (saved.length == pages.length) return this;
+    final Set<BooruItem> kept = saved.toSet();
+    return DoujinDownloadInfo(
+      host: host,
+      serverId: serverId,
+      postURL: postURL,
+      title: title,
+      coverURL: coverURL,
+      sourceName: sourceName,
+      pages: pages,
+      missingPages: [
+        for (int i = 0; i < pages.length; i++)
+          if (!kept.contains(pages[i])) i + 1,
+      ],
+    );
+  }
 
   /// `<host>_<id>`, made safe for a file system.
   String get folderName => Tools.sanitize('${host}_$serverId', replacement: '_');
@@ -249,6 +276,7 @@ class DoujinDownloadHandler {
     'sourceName': info.sourceName,
     'coverURL': info.coverURL,
     'pageCount': info.pages.length,
+    if (info.missingPages.isNotEmpty) 'missingPages': info.missingPages,
     'pages': [for (int i = 0; i < info.pages.length; i++) pageFileName(info, info.pages[i], i)],
     'savedAt': DateTime.now().millisecondsSinceEpoch,
   };

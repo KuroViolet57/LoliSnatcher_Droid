@@ -22,6 +22,7 @@ class SourceSettings {
     this.keepScreenOn,
     this.defaultSort,
     this.contentTypes,
+    this.siteVariant,
     this.gridTagStrip,
     this.coverDisplay,
     this.recommendedCount,
@@ -47,6 +48,7 @@ class SourceSettings {
     keepScreenOn: json['keepScreenOn'] as bool?,
     defaultSort: json['defaultSort'] as String?,
     contentTypes: json['contentTypes'] as String?,
+    siteVariant: json['siteVariant'] as String?,
     gridTagStrip: json['gridTagStrip'] as bool?,
     coverDisplay: json['coverDisplay'] as String?,
     recommendedCount: json['recommendedCount'] as int?,
@@ -93,6 +95,10 @@ class SourceSettings {
   /// applied when a search has no type: term of its own. Per source only —
   /// the keys mean nothing on another site, so the global layer never sets it.
   String? contentTypes;
+
+  /// Which of the source's hosts to read from (one of `BooruHandler.siteVariants`;
+  /// e-hentai: 'e-hentai' | 'exhentai'). Per source only.
+  String? siteVariant;
 
   /// Show the tag strip + language badge on grid cards.
   bool? gridTagStrip;
@@ -147,6 +153,7 @@ class SourceSettings {
     if (keepScreenOn != null) 'keepScreenOn': keepScreenOn,
     if (defaultSort != null) 'defaultSort': defaultSort,
     if (contentTypes != null) 'contentTypes': contentTypes,
+    if (siteVariant != null) 'siteVariant': siteVariant,
     if (gridTagStrip != null) 'gridTagStrip': gridTagStrip,
     if (coverDisplay != null) 'coverDisplay': coverDisplay,
     if (recommendedCount != null) 'recommendedCount': recommendedCount,
@@ -327,6 +334,10 @@ class SourceSettingsHandler {
     for (final t in (settingsFor(booru).contentTypes ?? '').split(','))
       if (t.trim().isNotEmpty) t.trim(),
   ];
+
+  /// The source's host choice (see [SourceSettings.siteVariant]); null = the
+  /// handler's default. Source layer only.
+  String? siteVariant(Booru? booru) => settingsFor(booru).siteVariant;
 
   bool gridTagStrip(Booru? booru) => _resolve(booru, (s) => s.gridTagStrip, true);
 

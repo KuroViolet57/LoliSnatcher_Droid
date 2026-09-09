@@ -25,6 +25,7 @@ import 'package:lolisnatcher/src/handlers/tag_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
+import 'package:lolisnatcher/src/boorus/doujin/ehentai_handler.dart';
 
 /// The per-source parity walk, against the live sites.
 ///
@@ -213,6 +214,14 @@ void main() async {
     test('hitomi', () async {
       await walk('hitomi', HitomiHandler(Booru('hitomi', BooruType.Hitomi, '', 'https://hitomi.la', ''), 20));
     }, timeout: const Timeout(Duration(minutes: 5)));
+
+    test('hdoujin', () async {
+      await walk('hdoujin', SchaleHandler(Booru('hdoujin', BooruType.HDoujin, '', 'https://hdoujin.org', ''), 20));
+    }, timeout: const Timeout(Duration(minutes: 3)));
+
+    test('e-hentai', () async {
+      await walk('e-hentai', EHentaiHandler(Booru('eh', BooruType.EHentai, '', 'https://e-hentai.org', ''), 25));
+    }, timeout: const Timeout(Duration(minutes: 3)));
 
     tearDownAll(() {
       // The report. Printed as one block so it can be read and pasted whole.

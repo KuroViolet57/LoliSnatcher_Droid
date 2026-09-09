@@ -7,11 +7,14 @@ import 'package:lolisnatcher/src/data/meta_tag.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
-import 'package:lolisnatcher/src/boorus/nhentai_handler.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/pages/settings/booru_edit_page.dart';
+import 'package:lolisnatcher/src/boorus/doujin/ehentai_handler.dart';
+import 'package:lolisnatcher/src/handlers/ehentai_session_handler.dart';
+import 'package:lolisnatcher/src/pages/settings/ehentai_login_page.dart';
+import 'package:lolisnatcher/src/widgets/webview/webview_page.dart';
 
 /// One layer of the doujin settings, reference-app style.
 ///
@@ -97,12 +100,81 @@ class _SourceSettingsPageState extends State<SourceSettingsPage> {
 
   bool _importingBlacklist = false;
 
-  /// The source handler when it can serve the ACCOUNT's blacklist (nhentai).
-  NHentaiHandler? get _accountBlacklistHandler {
+  /// The source handler when it can serve the ACCOUNT's blacklist (nhentai's
+  /// API blacklist, e-hentai's My Tags).
+  BooruHandler? get _accountBlacklistHandler {
     final Booru? booru = widget.booru;
     if (booru == null) return null;
     final handler = BooruHandlerFactory().getBooruHandler([booru], null).booruHandler;
-    return handler is NHentaiHandler ? handler : null;
+    return handler.hasAccountBlacklist ? handler : null;
+  }
+
+  // ── e-hentai: login, site, the account pages ───────────────────────
+
+  Future<void> _ehLogin() async {
+    final result = await Navigator.push<(bool, String)>(context, MaterialPageRoute(builder: (_) => const EHentaiLoginPage()));
+    if (!mounted || result == null) return;
+    setState(() {});
+    FlashElements.showSnackbar(context: context, title: Text(result.$2), duration: const Duration(seconds: 4), sideColor: result.$1 ? Colors.green : Colors.orange);
+  }
+
+  /// Opens one of the account's pages in the in-app browser with the session
+  /// cookies set for that visit only; they are removed again afterwards so
+  /// they never ride on image requests.
+  Future<void> _openEhPage(EHentaiHandler handler, String path, String title) async {
+    final EHentaiSessionHandler session = EHentaiSessionHandler.instance;
+    final String host = handler.site;
+    try {
+      if (session.isLoggedIn) await session.seedJar(host, session.cookiePairs(exhentai: handler.usingExHentai));
+      if (!mounted) return;
+      await Navigator.push(context, MaterialPageRoute(builder: (_) => InAppWebviewView(initialUrl: '$host$path', title: title)));
+    } finally {
+      // Whatever happened — an early return, a thrown route, a back press —
+      // the session must not stay in the jar.
+      await session.scrubJar();
+    }
+  }
+
+  List<Widget> _ehentaiRows(EHentaiHandler handler) {
+    final EHentaiSessionHandler session = EHentaiSessionHandler.instance;
+    return [
+      _header('ACCOUNT'),
+      ValueListenableBuilder<int>(
+        valueListenable: session.revision,
+        builder: (context, _, child) => ListTile(
+          leading: Icon(session.isLoggedIn ? Symbols.person_check_rounded : Symbols.person_rounded),
+          title: Text(session.isLoggedIn ? 'Logged in as member ${session.memberId}' : 'Not logged in'),
+          subtitle: Text(
+            session.isLoggedIn
+                ? (session.hasExHentai ? 'exhentai access confirmed' : 'No exhentai access on this account (the site answered "mystery"), e-hentai is used')
+                : 'The forum login opens in a browser page; the app keeps only the two session cookies, in its own file.',
+          ),
+          trailing: session.isLoggedIn
+              ? TextButton(onPressed: () { session.logout(); setState(() {}); }, child: const Text('Log out'))
+              : FilledButton.tonal(onPressed: _ehLogin, child: const Text('Log in')),
+        ),
+      ),
+      _choiceRow<String>(
+        title: 'Site',
+        subtitle: 'exhentai.org has the full catalogue and needs the login above; without it e-hentai.org is read.',
+        options: handler.siteVariants,
+        layerValue: layer.siteVariant,
+        inheritedValue: EHentaiHandler.variantEHentai,
+        onChanged: (v) => _update((s) => s.siteVariant = v),
+      ),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          children: [
+            OutlinedButton.icon(icon: const Icon(Symbols.settings_rounded, size: 18), label: const Text('Site settings'), onPressed: () => _openEhPage(handler, '/uconfig.php', 'e-hentai settings')),
+            OutlinedButton.icon(icon: const Icon(Symbols.label_rounded, size: 18), label: const Text('My Tags'), onPressed: () => _openEhPage(handler, '/mytags', 'My Tags')),
+            OutlinedButton.icon(icon: const Icon(Symbols.visibility_rounded, size: 18), label: const Text('Watched'), onPressed: () => _openEhPage(handler, '/watched', 'Watched')),
+          ],
+        ),
+      ),
+    ];
   }
 
   /// Pulls the account's blacklisted tags and MERGES them into this source's
@@ -394,6 +466,8 @@ class _SourceSettingsPageState extends State<SourceSettingsPage> {
               },
             ),
           ],
+          // e-hentai: the WebView login, the host choice and the account pages.
+          if (!isGlobal && _handler is EHentaiHandler) ..._ehentaiRows(_handler),
           //
           _header('READING'),
           _choiceRow<String>(

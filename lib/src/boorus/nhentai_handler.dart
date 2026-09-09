@@ -158,8 +158,12 @@ class NHentaiHandler extends BooruHandler {
     }
   }
 
+  @override
+  bool get hasAccountBlacklist => true;
+
   /// The account's tag blacklist (GET /api/v2/blacklist, needs the API key).
   /// Returns (ok, message, tag names).
+  @override
   Future<(bool, String, List<String>)> fetchAccountBlacklist() async {
     if (!hasSiteFavourites) {
       return (false, 'Add your nhentai API key in the booru settings first', const <String>[]);

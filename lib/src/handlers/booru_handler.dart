@@ -1172,6 +1172,26 @@ abstract class BooruHandler {
   /// default for it; empty (the default) offers nothing.
   List<MetaTagValue> get contentTypeOptions => const [];
 
+  /// False when the shared cookie jar's cookies for this source's host must
+  /// NOT be attached to media requests. e-hentai's images come from
+  /// volunteer hath.network nodes, so a session cookie left in the jar (by
+  /// the in-app browser, say) would be handed to a stranger; that source
+  /// keeps its session in its own file and sends it only to the site.
+  bool get sendsJarCookiesToMedia => true;
+
+  /// The hosts a source can be read from, as (value, label) — e-hentai.org
+  /// against exhentai.org. Non-empty makes the Source settings page offer the
+  /// choice, kept in `SourceSettings.siteVariant`; empty offers nothing.
+  List<(String value, String label)> get siteVariants => const [];
+
+  /// True when [fetchAccountBlacklist] can read the signed-in account's
+  /// hidden tags, so Source settings offers the import button.
+  bool get hasAccountBlacklist => false;
+
+  /// The account's blacklisted tags as (ok, message, names).
+  Future<(bool, String, List<String>)> fetchAccountBlacklist() async =>
+      (false, 'This source cannot read an account blacklist.', const <String>[]);
+
   /// Whether the per-source "Only show language" setting is honoured by
   /// this handler's search, and whether "Title language" changes what it
   /// shows. Rows for either are offered only where true.

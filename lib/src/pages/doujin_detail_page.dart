@@ -27,6 +27,7 @@ import 'package:lolisnatcher/src/widgets/tabs/doujin_mini_tab_manager.dart';
 import 'package:lolisnatcher/src/widgets/gallery/tag_view.dart';
 import 'package:lolisnatcher/src/widgets/thumbnail/thumbnail.dart';
 import 'package:lolisnatcher/src/widgets/thumbnail/thumbnail_build.dart';
+import 'package:lolisnatcher/src/boorus/booru_type.dart';
 
 /// The doujin DETAIL page — what tapping a doujin card opens instead of the
 /// image viewer. Modeled on the reference reader apps:
@@ -763,7 +764,7 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
                               final String site = handler.booru.baseURL?.trim() ?? '';
                               final SchaleClearanceHandler clearance = SchaleClearanceHandler.instance;
                               await clearance.solve(
-                                site.isEmpty ? SchaleHandler.defaultSite : site,
+                                site.isEmpty ? SchaleHandler.defaultSiteFor(handler.booru.type ?? BooruType.NiyaNiya) : site,
                                 // The gallery whose read was refused, not the home feed.
                                 startUrl: item.postURL,
                               );
@@ -772,9 +773,10 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
                                 _holdCheck(60);
                                 FlashElements.showSnackbar(
                                   context: context,
-                                  title: const Text('niyaniya is rate-limiting the check'),
-                                  content: const Text(
-                                    '${SchaleClearanceHandler.rateLimitedMessage} ${SchaleClearanceHandler.addressWorkaround}',
+                                  title: Text('${SchaleClearanceHandler.siteNameFor(site)} is rate-limiting the check'),
+                                  content: Text(
+                                    '${SchaleClearanceHandler.rateLimitedMessage} ${SchaleClearanceHandler.addressWorkaround}'
+                                        .replaceAll('niyaniya', SchaleClearanceHandler.siteNameFor(site)),
                                   ),
                                   duration: const Duration(seconds: 10),
                                   sideColor: Colors.orange,
@@ -782,8 +784,12 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
                               } else if (clearance.lastSolveAuthRefused) {
                                 FlashElements.showSnackbar(
                                   context: context,
-                                  title: const Text('niyaniya refused the clearance'),
-                                  content: Text(clearance.describeAuthRefusal()),
+                                  title: const Text('The site refused the clearance'),
+                                  content: Text(
+                                    clearance
+                                        .describeAuthRefusal(siteUrl: site)
+                                        .replaceAll('niyaniya', SchaleClearanceHandler.siteNameFor(site)),
+                                  ),
                                   duration: const Duration(seconds: 12),
                                   sideColor: Colors.red,
                                 );

@@ -23,6 +23,7 @@ import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/kemono_session_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
+import 'package:lolisnatcher/src/boorus/doujin/ehentai_handler.dart';
 
 /// Settings are offered by CAPABILITY. Each fact below was read off the
 /// handler: which credential it sends, whether it has several page sizes,
@@ -73,6 +74,34 @@ void main() {
       expect(h.supportsLanguageFilter, isTrue);
       expect(h.supportsTitleLanguage, isTrue);
       expect(h.readerImageQualities, isEmpty);
+    });
+
+    test('e-hentai: a WebView session instead of credential fields; two hosts; My Tags as a blacklist', () {
+      final h = EHentaiHandler(b('eh', BooruType.EHentai, 'https://e-hentai.org'), 25);
+      expect(h.usesUserId, isFalse);
+      expect(h.usesApiKey, isFalse);
+      expect(h.hasSignInSupport, isFalse);
+      expect(h.siteVariants.map((v) => v.$1), ['e-hentai', 'exhentai']);
+      expect(h.hasAccountBlacklist, isTrue);
+      expect(h.readerImageQualities, isEmpty);
+      expect(h.supportsLanguageFilter, isFalse);
+      expect(h.getHeaders()['Cookie'], 'nw=1; sl=dm_2', reason: 'anonymous: no session, only the content-warning skip and the display mode');
+      expect(h.getMediaHeaders().containsKey('Cookie'), isFalse);
+    });
+
+    test("hdoujin: niyaniya's surface on its own network", () {
+      final h = SchaleHandler(b('hdoujin', BooruType.HDoujin, 'https://hdoujin.org'), 20);
+      expect(h.usesUserId, isFalse);
+      expect(h.usesApiKey, isFalse);
+      expect(h.readerImageQualities.map((q) => q.$1), ['780', '980', '1280', '1600', '0']);
+      expect(h.apiBase, 'https://api.hdoujin.org');
+      expect(h.siteVariants, isEmpty);
+      expect(h.hasAccountBlacklist, isFalse);
+    });
+
+    test('the account-blacklist import is a capability: nhentai and e-hentai only', () {
+      expect(NHentaiHandler(b('nhentai', BooruType.NHentai, 'https://nhentai.net'), 20).hasAccountBlacklist, isTrue);
+      expect(HitomiHandler(b('hitomi', BooruType.Hitomi, 'https://hitomi.la'), 20).hasAccountBlacklist, isFalse);
     });
 
     test('asmhentai, eahentai, faccina: username + password logins, one page size', () {

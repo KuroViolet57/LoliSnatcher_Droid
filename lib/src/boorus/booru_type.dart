@@ -22,8 +22,10 @@ enum BooruType {
   Moebooru,
   AsmHentai,
   EaHentai,
+  EHentai,
   Faccina,
   Hitomi,
+  HDoujin,
   HentaiPaw,
   NHentai,
   NiyaNiya,
@@ -99,6 +101,10 @@ enum BooruType {
       ..remove(BooruType.NHentai)
       // niyaniya talks to a fixed API host and ignores the entered URL.
       ..remove(BooruType.NiyaNiya)
+      // hdoujin: the same software on its own hosts; the URL names the network.
+      ..remove(BooruType.HDoujin)
+      // e-hentai: two fixed hosts, chosen in Source settings.
+      ..remove(BooruType.EHentai)
       // asmhentai has a fixed host as well.
       ..remove(BooruType.AsmHentai)
       // ...and so does eahentai.
@@ -168,6 +174,10 @@ enum BooruType {
         return 'nhentai';
       case NiyaNiya:
         return 'niyaniya (Schale)';
+      case HDoujin:
+        return 'HDoujin (Schale)';
+      case EHentai:
+        return 'E-Hentai / ExHentai';
       case AsmHentai:
         return 'ASMHentai';
       case EaHentai:
@@ -217,6 +227,8 @@ enum BooruType {
   bool get isKusowanka => this == BooruType.Kusowanka;
   bool get isNHentai => this == BooruType.NHentai;
   bool get isNiyaNiya => this == BooruType.NiyaNiya;
+  bool get isHDoujin => this == BooruType.HDoujin;
+  bool get isEHentai => this == BooruType.EHentai;
   bool get isAsmHentai => this == BooruType.AsmHentai;
   bool get isEaHentai => this == BooruType.EaHentai;
   bool get isFaccina => this == BooruType.Faccina;

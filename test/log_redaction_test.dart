@@ -12,6 +12,20 @@ import 'package:lolisnatcher/src/utils/log_redaction.dart';
 /// FALSIFIER: any assertion here that still finds the secret substring in the
 /// output means a shared log still carries it.
 void main() {
+  group('e-hentai session cookies (r30)', () {
+    test('the forum session is redacted wherever it is spelled out', () {
+      // BooruHandler logs '<base>: <cookie string>' on every search, with no
+      // `Cookie:` prefix for the header rule to catch.
+      const String line = 'https://e-hentai.org: nw=1; ipb_member_id=1913944; ipb_pass_hash=deadbeefcafe1234; igneous=abc123def; sl=dm_2';
+      final String out = redactSecrets(line);
+      expect(out, isNot(contains('deadbeefcafe1234')));
+      expect(out, isNot(contains('1913944')));
+      expect(out, isNot(contains('abc123def')));
+      expect(out, contains('ipb_pass_hash=<redacted>'));
+      expect(out, contains('sl=dm_2'), reason: 'the display mode is not a secret and helps diagnosis');
+    });
+  });
+
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('credentials never reach the log', () {

@@ -157,6 +157,20 @@ class Tools {
   }
 
   // unified http headers list generator for dio in thumb/media/video loaders
+  /// Whether the shared jar's cookies for a source's host may ride along on
+  /// its media requests. False where the files are served by third parties
+  /// (e-hentai's volunteer hath nodes) — see
+  /// `BooruHandler.sendsJarCookiesToMedia`. Pure, so it can be tested
+  /// without a cookie jar.
+  static bool attachesJarCookies(Booru? booru) {
+    if (booru == null) return true;
+    try {
+      return BooruHandlerFactory.mediaHandlerFor(booru)?.sendsJarCookiesToMedia ?? true;
+    } catch (_) {
+      return true;
+    }
+  }
+
   static Future<Map<String, String>> getFileCustomHeaders(
     Booru? booru, {
     BooruItem? item,
@@ -182,7 +196,11 @@ class Tools {
       headers['LS-IGNORE-REDIRECT'] = '1';
     }
 
-    if (!isTestMode) {
+    // The jar's cookies for this host ride along on every media request —
+    // which is wrong where the files are served by third parties (e-hentai's
+    // volunteer hath nodes). A source can refuse it; see
+    // BooruHandler.sendsJarCookiesToMedia.
+    if (!isTestMode && attachesJarCookies(booru)) {
       try {
         final cookiesStr = await getCookies(uri.toString());
         if (cookiesStr.isNotEmpty) {

@@ -13,6 +13,7 @@ import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 import 'package:lolisnatcher/src/widgets/webview/webview_page.dart';
+import 'package:lolisnatcher/src/boorus/doujin/schale_network.dart';
 
 /// The clearance token niyaniya/Schale requires before it will serve readable
 /// pages.
@@ -59,9 +60,16 @@ class SchaleClearanceHandler {
   /// The message a gated call surfaces when there is no usable token. The
   /// detail page turns it into a button that opens the solver.
   static const String needsSolveMessage =
-      'niyaniya needs a one-time check before it will serve pages. Open the check to complete it.';
+      'This site needs a one-time check before it will serve pages. Open the check to complete it.';
 
-  String? _token;
+  /// One clearance per network (`SchaleNetwork.key`): niyaniya's token is
+  /// no good on hdoujin and the other way round.
+  final Map<String, _Clearance> _records = {};
+  final Map<String, String> _rejected = {};
+
+  /// The storage key for a site (or API origin); empty = the Schale network.
+  static String keyFor(String? siteUrl) =>
+      (siteUrl == null || siteUrl.isEmpty) ? SchaleNetwork.schale.key : SchaleNetwork.forSite(siteUrl).key;
   bool _loaded = false;
 
   /// Where the token was issued, as Cloudflare saw the harvester's window
@@ -71,8 +79,6 @@ class SchaleClearanceHandler {
   /// byte-identical solver sessions, and a Wi-Fi ⇄ mobile-data toggle
   /// making the next one pass: the address is the one input that log could
   /// not carry.
-  String _issuedTrace = '';
-  int _issuedAt = 0;
 
   /// Rises whenever the token changes, so a reader waiting on one can retry.
   final ValueNotifier<int> revision = ValueNotifier(0);
@@ -92,37 +98,61 @@ class SchaleClearanceHandler {
       final File? file = _file;
       if (file == null || !file.existsSync()) return;
       final decoded = jsonDecode(file.readAsStringSync());
-      if (decoded is Map && decoded['token'] is String) {
+      if (decoded is Map && decoded['sites'] is Map) {
+        for (final entry in (decoded['sites'] as Map).entries) {
+          final v = entry.value;
+          if (v is Map && (v['token']?.toString() ?? '').isNotEmpty) {
+            _records[entry.key.toString()] = _Clearance(
+              v['token'].toString(),
+              v['trace']?.toString() ?? '',
+              int.tryParse(v['at']?.toString() ?? '') ?? 0,
+            );
+          }
+        }
+      } else if (decoded is Map && decoded['token'] is String) {
+        // A pre-r30 file: one token, the Schale network's.
         final String stored = decoded['token'] as String;
-        if (stored.isNotEmpty) _token = stored;
-        _issuedTrace = decoded['trace']?.toString() ?? '';
-        _issuedAt = int.tryParse(decoded['at']?.toString() ?? '') ?? 0;
+        if (stored.isNotEmpty) {
+          _records[SchaleNetwork.schale.key] = _Clearance(
+            stored,
+            decoded['trace']?.toString() ?? '',
+            int.tryParse(decoded['at']?.toString() ?? '') ?? 0,
+          );
+        }
       }
     } catch (_) {}
   }
 
-  String? get token {
+  /// The token for a site's network, or null.
+  String? tokenFor(String siteUrl) {
     ensureLoaded();
-    return _token;
+    return _records[keyFor(siteUrl)]?.token;
   }
 
-  bool get hasToken => token?.isNotEmpty ?? false;
+  /// The Schale network's token (niyaniya); [tokenFor] for any site.
+  String? get token => tokenFor('');
+
+  bool hasTokenFor(String siteUrl) => (tokenFor(siteUrl) ?? '').isNotEmpty;
+
+  bool get hasToken => hasTokenFor('');
 
   /// `ip=… colo=…` of the window that harvested the current token, or empty.
-  String get issuedTrace {
+  String issuedTraceFor(String siteUrl) {
     ensureLoaded();
-    return _issuedTrace;
+    return _records[keyFor(siteUrl)]?.trace ?? '';
   }
 
-  void store(String value, {String trace = ''}) {
+  String get issuedTrace => issuedTraceFor('');
+
+  /// Keeps a token for the network of [siteUrl] (the Schale network when null).
+  void store(String value, {String trace = '', String? siteUrl}) {
     ensureLoaded();
     if (value.isEmpty) return;
+    final String key = keyFor(siteUrl);
     // Whatever is being stored was just produced or re-validated by the
     // site, so nothing is "rejected" any more — including the same string.
-    _rejectedToken = null;
-    _token = value;
-    _issuedTrace = trace;
-    _issuedAt = DateTime.now().millisecondsSinceEpoch;
+    _rejected.remove(key);
+    _records[key] = _Clearance(value, trace, DateTime.now().millisecondsSinceEpoch);
     _persist();
     revision.value++;
     // The page client reloads on its next call, so it runs with this token.
@@ -200,12 +230,13 @@ try {
     ensureLoaded();
     final String fromPage = via == 'page' ? await pageTrace() : '';
     final String fromDio = await dioTrace(apiOrigin);
-    final String age = _issuedAt == 0
+    final _Clearance? rec = _records[keyFor(apiOrigin)];
+    final String age = (rec == null || rec.at == 0)
         ? 'unknown age'
-        : '${((DateTime.now().millisecondsSinceEpoch - _issuedAt) / 1000).round()}s old';
+        : '${((DateTime.now().millisecondsSinceEpoch - rec.at) / 1000).round()}s old';
     _log(
-      'clearance refused ($status via $via): token ${_describe(_token)} $age, '
-      'issued from [${_issuedTrace.isEmpty ? 'unknown' : _issuedTrace}] | '
+      'clearance refused ($status via $via): token ${_describe(rec?.token)} $age, '
+      'issued from [${(rec?.trace ?? '').isEmpty ? 'unknown' : rec!.trace}] | '
       'refused from page [${fromPage.isEmpty ? 'n/a' : fromPage}] | dio [$fromDio]',
     );
   }
@@ -218,10 +249,12 @@ try {
   /// value not to trust, and the solver must delete it before the site's own
   /// code can see it — otherwise the site sees a stored clearance and never
   /// renders a Turnstile at all.
-  String? _rejectedToken;
+  /// The token the network of [siteUrl] refused last, so the same value is
+  /// not adopted again out of the site's storage.
+  String? rejectedTokenFor(String siteUrl) => _rejected[keyFor(siteUrl)];
 
   @visibleForTesting
-  String? get rejectedToken => _rejectedToken;
+  String? get rejectedToken => rejectedTokenFor('');
 
   // ── the page client ───────────────────────────────────────────────────
   //
@@ -269,6 +302,8 @@ try {
   /// `ip=… colo=…` the last solver page reported for itself, or empty.
   String lastSolveTrace = '';
 
+  static String siteNameFor(String siteUrl) => SchaleNetwork.forSite(siteUrl).name;
+
   static const String authRefusedMessage =
       'The check passed but niyaniya refused to issue a clearance (auth 403). '
       'That is a server-side refusal of this address, not the widget.';
@@ -284,11 +319,12 @@ try {
       'What has worked: switch Wi-Fi or mobile data off and on, then tap the check again.';
 
   /// The refusal message with what is known about the addresses involved.
-  String describeAuthRefusal() {
+  String describeAuthRefusal({String siteUrl = ''}) {
     ensureLoaded();
     final StringBuffer out = StringBuffer(authRefusedMessage);
     if (lastSolveTrace.isNotEmpty) out.write(' This check ran from $lastSolveTrace.');
-    if (_issuedTrace.isNotEmpty) out.write(' The last accepted clearance was issued from $_issuedTrace.');
+    final String issued = issuedTraceFor(siteUrl);
+    if (issued.isNotEmpty) out.write(' The last accepted clearance was issued from $issued.');
     out
       ..write(' ')
       ..write(addressWorkaround);
@@ -313,7 +349,10 @@ try {
     if (!(Platform.isAndroid || Platform.isIOS)) return Future.value(false);
     if (_pageController != null && _pageSite == siteUrl) return Future.value(true);
     final Future<bool>? starting = _pageStarting;
-    if (starting != null) return starting;
+    // A start for ANOTHER network must not be waited on and then used: its
+    // page sits on the other site's origin, and a same-origin fetch from
+    // there would fail and be read as a refused clearance.
+    if (starting != null) return _pageStarting != null && _pageSite == siteUrl ? starting : Future.value(false);
     final Completer<bool> done = Completer<bool>();
     _pageStarting = done.future;
     () async {
@@ -416,13 +455,12 @@ try {
 
   /// Called when the API answers 400 or 403 to a gated call. Drops the token;
   /// the caller surfaces "open the check" and does NOT retry silently.
-  void invalidate() {
+  void invalidate({String? siteUrl}) {
     ensureLoaded();
-    if (_token == null) return;
-    _rejectedToken = _token;
-    _token = null;
-    _issuedTrace = '';
-    _issuedAt = 0;
+    final String key = keyFor(siteUrl);
+    final _Clearance? dropped = _records.remove(key);
+    if (dropped == null) return;
+    _rejected[key] = dropped.token;
     _persist();
     revision.value++;
     unawaited(_disposePageClient());
@@ -432,11 +470,17 @@ try {
     try {
       final File? file = _file;
       if (file == null) return;
-      if (_token == null) {
+      if (_records.isEmpty) {
         if (file.existsSync()) file.deleteSync();
         return;
       }
-      file.writeAsStringSync(jsonEncode({'token': _token, 'trace': _issuedTrace, 'at': _issuedAt}));
+      file.writeAsStringSync(
+        jsonEncode({
+          'sites': {
+            for (final e in _records.entries) e.key: {'token': e.value.token, 'trace': e.value.trace, 'at': e.value.at},
+          },
+        }),
+      );
     } catch (e, s) {
       Logger.Inst().log(
         'failed to persist schale clearance: $e',
@@ -451,14 +495,20 @@ try {
   @visibleForTesting
   /// What the solver does when it sees the site write a clearance.
   @visibleForTesting
-  void onSiteStoredForTests() => _rejectedToken = null;
+  void onSiteStoredForTests() => _rejected.clear();
 
   void resetForTests() {
-    _token = null;
-    _rejectedToken = null;
-    _issuedTrace = '';
-    _issuedAt = 0;
+    _records.clear();
+    _rejected.clear();
     _loaded = true;
+  }
+
+  @visibleForTesting
+  void reloadForTests() {
+    _records.clear();
+    _rejected.clear();
+    _loaded = false;
+    ensureLoaded();
   }
 
   /// Reads the token the site stored after a challenge was solved.
@@ -481,8 +531,8 @@ try {
   /// Whether a value read from storage is worth adopting: present, and not
   /// the one the API just refused.
   @visibleForTesting
-  bool isUsableToken(String? candidate) =>
-      candidate != null && candidate.isNotEmpty && candidate != _rejectedToken;
+  bool isUsableToken(String? candidate, {String siteUrl = ''}) =>
+      candidate != null && candidate.isNotEmpty && candidate != _rejected[keyFor(siteUrl)];
 
   // ── the harvester ─────────────────────────────────────────────────────
 
@@ -505,7 +555,8 @@ try {
   /// [harvestTimeout].
   Future<String?> harvest(String siteUrl) async {
     ensureLoaded();
-    if (_token != null) return _token;
+    final String? have = tokenFor(siteUrl);
+    if (have != null) return have;
     if (_harvesting) return null;
     _harvesting = true;
 
@@ -535,7 +586,7 @@ try {
               source: "window.localStorage.getItem('$localStorageKey')",
             );
             final String? found = tokenFromLocalStorage(raw);
-            final bool usable = isUsableToken(found);
+            final bool usable = isUsableToken(found, siteUrl: siteUrl);
             // The address this window egresses as, recorded beside the token
             // it is adopting so a later refusal can be compared against it.
             final String trace = usable ? await _webViewTrace(controller) : '';
@@ -556,7 +607,7 @@ try {
         },
       );
       final String? found = result.token;
-      if (found != null) store(found, trace: result.trace);
+      if (found != null) store(found, trace: result.trace, siteUrl: siteUrl);
       return found;
     } catch (e, s) {
       Logger.Inst().log('harvest failed: $e', 'SchaleClearanceHandler', 'harvest', LogTypes.exception, s: s);
@@ -782,7 +833,7 @@ try {
       // Resolved inside the try: there is no navigator before the first route
       // mounts, and this throws rather than returning null in that case.
       final BuildContext context = NavigationHandler.instance.navContext;
-      final String? rejected = _rejectedToken;
+      final String? rejected = rejectedTokenFor(siteUrl);
       lastSolveAuthRefused = false;
       lastSolveRateLimited = false;
       lastSolveTrace = '';
@@ -825,8 +876,9 @@ try {
                   // person was left waiting 4–22 s per session on the
                   // 2026-09-03 log — so the window closes and the caller
                   // tells them what happened.
-                  final bool refused = call['event'] == 'xhr' && detail.startsWith('POST 403 https://auth.schale.network/clearance');
-                  final bool limited = call['event'] == 'xhr' && detail.startsWith('POST 429 https://auth.schale.network/clearance');
+                  // The network's auth host (auth.schale.network, auth.hdoujin.org) answered the redemption.
+                  final bool refused = call['event'] == 'xhr' && detail.startsWith('POST 403 ') && detail.contains('/clearance');
+                  final bool limited = call['event'] == 'xhr' && detail.startsWith('POST 429 ') && detail.contains('/clearance');
                   if ((refused || limited) && !stored) {
                     lastSolveAuthRefused = refused;
                     lastSolveRateLimited = limited;
@@ -840,7 +892,7 @@ try {
                     // was refused before is no longer the value on the page,
                     // even if the site re-issued the same string (seen once,
                     // commit 4d4c81f). The harvester may adopt it.
-                    _rejectedToken = null;
+                    _rejected.remove(keyFor(siteUrl));
                     if (context.mounted) unawaited(Navigator.of(context).maybePop());
                   }
                   return null;
@@ -877,4 +929,13 @@ try {
     'clearance',
     LogTypes.booruHandlerInfo,
   );
+}
+
+/// One network's clearance: the token, the address it was issued from, when.
+class _Clearance {
+  _Clearance(this.token, this.trace, this.at);
+
+  final String token;
+  final String trace;
+  final int at;
 }

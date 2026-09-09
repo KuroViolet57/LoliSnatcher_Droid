@@ -79,6 +79,7 @@ void main() {
     WidgetTester tester, {
     int pageCount = 3,
     EdgeInsets viewInsets = EdgeInsets.zero,
+    List<BooruItem>? pages,
   }) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -97,7 +98,7 @@ void main() {
                   Navigator.of(context).push(
                     MaterialPageRoute(
                       builder: (_) => DoujinReaderPage(
-                        pages: testPages(pageCount),
+                        pages: pages ?? testPages(pageCount),
                         booru: testBooru(),
                         galleryId: '123',
                         title: 'Test book',
@@ -353,6 +354,91 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('reader-menu-button')));
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.text('Save all pages'), findsOneWidget);
+    });
+  });
+
+  group('pages resolved on open', () {
+    // A 1x1 transparent PNG whose IDAT length is right (kTinyPng above
+    // declares 13 bytes over 10 and fails to decode a moment after the
+    // viewer mounts; these tests assert after the decode).
+    final Uint8List validPng = Uint8List.fromList(const [
+      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, //
+      0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, //
+      0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00, //
+      0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, //
+      0x42, 0x60, 0x82,
+    ]);
+
+    testWidgets('a needToLoadItem page asks the resolver first, then shows the image', (tester) async {
+      DoujinReaderPage.testImageProviderBuilder = (item) => MemoryImage(validPng);
+      int resolved = 0;
+      DoujinReaderPage.testPageResolver = (page, booru) async {
+        resolved++;
+        page.fileURL = 'https://images.invalid/resolved/${page.serverId}.png';
+        page.mediaType.value = MediaType.image;
+        return (item: page, failed: false, error: null);
+      };
+      addTearDown(() {
+        DoujinReaderPage.testImageProviderBuilder = null;
+        DoujinReaderPage.testPageResolver = null;
+      });
+      final List<BooruItem> pages = testPages(3);
+      for (final p in pages) {
+        p.mediaType.value = MediaType.needToLoadItem;
+      }
+      await pumpReader(tester, pages: pages);
+      for (int i = 0; i < 4; i++) {
+        await tester.pump(const Duration(milliseconds: 300));
+      }
+      expect(resolved, greaterThanOrEqualTo(1), reason: 'the first slide asked for its page');
+      expect(pages.first.mediaType.value, MediaType.image);
+      expect(pages.first.fileURL, contains('/resolved/'));
+      expect(find.byType(InteractiveViewer), findsWidgets);
+    });
+
+    testWidgets('a page whose link expired can be resolved again: the image error puts it back in the queue', (tester) async {
+      // e-hentai's image links are address-bound and expire; a slide left
+      // open must not retry the same dead URL forever.
+      DoujinReaderPage.testImageProviderBuilder = (item) => MemoryImage(Uint8List.fromList(const [1, 2, 3, 4]));
+      DoujinReaderPage.testPageResolver = (page, booru) async {
+        page.fileURL = 'https://images.invalid/expired/${page.serverId}.png';
+        page.mediaType.value = MediaType.image;
+        return (item: page, failed: false, error: null);
+      };
+      addTearDown(() {
+        DoujinReaderPage.testImageProviderBuilder = null;
+        DoujinReaderPage.testPageResolver = null;
+      });
+      final List<BooruItem> pages = testPages(2);
+      for (final p in pages) {
+        p.mediaType.value = MediaType.needToLoadItem;
+      }
+      await pumpReader(tester, pages: pages);
+      for (int i = 0; i < 5; i++) {
+        await tester.pump(const Duration(milliseconds: 300));
+      }
+      expect(find.textContaining('failed to load'), findsWidgets);
+      expect(pages.first.mediaType.value, MediaType.needToLoadItem, reason: 'Retry must ask the source again, not reload a dead link');
+    });
+
+    testWidgets('a page the source refuses shows no viewer and keeps its placeholder state for a retry', (tester) async {
+      DoujinReaderPage.testImageProviderBuilder = (item) => MemoryImage(validPng);
+      DoujinReaderPage.testPageResolver = (page, booru) async => (item: null, failed: true, error: 'image quota exceeded (509)');
+      addTearDown(() {
+        DoujinReaderPage.testImageProviderBuilder = null;
+        DoujinReaderPage.testPageResolver = null;
+      });
+      final List<BooruItem> pages = testPages(2);
+      for (final p in pages) {
+        p.mediaType.value = MediaType.needToLoadItem;
+      }
+      await pumpReader(tester, pages: pages);
+      for (int i = 0; i < 4; i++) {
+        await tester.pump(const Duration(milliseconds: 300));
+      }
+      expect(find.byType(InteractiveViewer), findsNothing);
+      expect(pages.first.mediaType.value, MediaType.needToLoadItem, reason: 'a retry asks again');
+      expect(find.textContaining('509'), findsWidgets);
     });
   });
 }

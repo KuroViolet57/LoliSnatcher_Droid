@@ -57,6 +57,8 @@ void main() {
         BooruType.Hitomi: 'https://hitomi.la',
         BooruType.HentaiPaw: 'https://hentaipaw.com',
         BooruType.Kemono: 'https://kemono.cr',
+        BooruType.EHentai: 'https://e-hentai.org',
+        BooruType.HDoujin: 'https://hdoujin.org',
       }.entries) {
         final headers = BooruHandlerFactory.mediaHeadersFor(booru(entry.key, entry.value));
         expect(
@@ -65,6 +67,25 @@ void main() {
           reason: '${entry.key.name} declares no media referer',
         );
       }
+    });
+
+    test('a source whose images are served by strangers never sends the jar cookies (r30)', () async {
+      // e-hentai images come from volunteer hath.network nodes: whatever a
+      // browser session left in the jar for e-hentai.org must not ride along.
+      final Booru eh = booru(BooruType.EHentai, 'https://e-hentai.org');
+      expect(BooruHandlerFactory.mediaHandlerFor(eh)?.sendsJarCookiesToMedia, isFalse);
+      expect(BooruHandlerFactory.mediaHeadersFor(eh).containsKey('Cookie'), isFalse);
+      // NOT `getFileCustomHeaders` on its own: it skips the jar under
+      // FLUTTER_TEST anyway, so that assertion would pass either way. The
+      // decision itself is what must hold.
+      expect(Tools.attachesJarCookies(eh), isFalse);
+      expect(Tools.attachesJarCookies(booru(BooruType.Gelbooru, 'https://gelbooru.com')), isTrue);
+      final headers = await Tools.getFileCustomHeaders(eh, checkForReferer: true);
+      expect(headers.containsKey('Cookie'), isFalse);
+      expect(headers['Referer'], 'https://e-hentai.org/');
+      // Every other source keeps the old behaviour.
+      expect(BooruHandlerFactory.mediaHandlerFor(booru(BooruType.Gelbooru, 'https://gelbooru.com'))?.sendsJarCookiesToMedia, isTrue);
+      expect(BooruHandlerFactory.mediaHandlerFor(booru(BooruType.NiyaNiya, 'https://niyaniya.moe'))?.sendsJarCookiesToMedia, isTrue);
     });
 
     test('a source with no CDN requirements declares nothing', () {

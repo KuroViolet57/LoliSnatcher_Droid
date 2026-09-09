@@ -52,6 +52,7 @@ import 'package:lolisnatcher/src/boorus/xxxtik_handler.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/boorus/doujin/ehentai_handler.dart';
 
 class BooruHandlerFactory {
   late BooruHandler booruHandler;
@@ -258,6 +259,14 @@ class BooruHandlerFactory {
         case BooruType.NiyaNiya:
           // 1-based ?page=N, same as the other doujin sources.
           booruHandler = SchaleHandler(booru, limit);
+          break;
+        case BooruType.HDoujin:
+          // The Schale software on its own hosts: same handler, same paging.
+          booruHandler = SchaleHandler(booru, limit);
+          break;
+        case BooruType.EHentai:
+          // Cursor paging; the default pageNum of -1 makes the first fetch page 1.
+          booruHandler = EHentaiHandler(booru, limit);
           break;
         case BooruType.AsmHentai:
           // 1-based ?page=N.

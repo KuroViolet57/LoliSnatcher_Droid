@@ -52,6 +52,12 @@ String redactSecrets(String input, {List<String>? extraSecrets}) {
     'refresh_token',
     'remember_web',
     'auth_token',
+    // e-hentai's forum session: ipb_pass_hash is a bearer credential, and
+    // the handler logs its whole cookie string on every search.
+    'ipb_member_id',
+    'ipb_pass_hash',
+    'ipb_session_id',
+    'igneous',
   ]) {
     out = out.replaceAllMapped(
       RegExp('(${RegExp.escape(name)}\\s*[=:]\\s*"?)[^;,"\\s&]+', caseSensitive: false),

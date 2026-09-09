@@ -62,16 +62,19 @@ class SchaleTagCatalog extends TagCatalogSource {
     TagCatalogNamespace(key: 'tag', label: 'Tags', type: doujinNoneType),
   ];
 
+  /// The tag list request of one shard, on the handler's network.
+  String shardUrl(int shard) => '${handler.apiBase}/books/tags${shardQueries[shard]}';
+
   @override
   Future<List<BooruTagEntry>?> shardAt(String namespace, int shard) async {
     if (shard < 0 || shard >= shardQueries.length) return null;
     final Response response = await DioNetwork.get(
-      '${SchaleHandler.apiBase}/books/tags${shardQueries[shard]}',
+      shardUrl(shard),
       headers: handler.getHeaders(),
       options: Options(validateStatus: (_) => true),
     );
     if (response.statusCode != 200) {
-      throw Exception('niyaniya answered ${response.statusCode} for the tag list');
+      throw Exception('${handler.network.name} answered ${response.statusCode} for the tag list');
     }
     return parseTags(response.data);
   }
