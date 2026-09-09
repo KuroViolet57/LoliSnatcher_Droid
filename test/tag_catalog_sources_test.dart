@@ -23,6 +23,14 @@ import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
+import 'package:lolisnatcher/src/boorus/doujin/ehentai_handler.dart';
+import 'package:lolisnatcher/src/boorus/tikporn_handler.dart';
+import 'package:lolisnatcher/src/boorus/tikporn_tag_catalog.dart';
+import 'package:lolisnatcher/src/boorus/kusowanka_handler.dart';
+import 'package:lolisnatcher/src/boorus/kusowanka_tag_catalog.dart';
+import 'package:lolisnatcher/src/boorus/civitai_handler.dart';
+import 'package:lolisnatcher/src/boorus/civitai_tag_catalog.dart';
+import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 
 /// The tag builder's catalogs, parsed against pages and dumps captured from
 /// the live sites on 2026-09-02, and the capability each handler declares.
@@ -31,6 +39,36 @@ void main() {
   late Directory tempDir;
   String fixture(String name) => File('test/fixtures/$name').readAsStringSync();
   Booru b(String name, BooruType type, String url) => Booru(name, type, '', url, '');
+
+  /// A plausible base URL per type, so the factory builds a real handler.
+  String defaultUrlFor(BooruType type) => switch (type) {
+    BooruType.EHentai => 'https://e-hentai.org',
+    BooruType.HDoujin => 'https://hdoujin.org',
+    BooruType.NiyaNiya => 'https://niyaniya.moe',
+    BooruType.TikPorn => 'https://tik.porn',
+    BooruType.Kusowanka => 'https://kusowanka.com',
+    BooruType.Civitai => 'https://civitai.com',
+    BooruType.Hitomi => 'https://hitomi.la',
+    BooruType.NHentai => 'https://nhentai.net',
+    BooruType.AsmHentai => 'https://asmhentai.com',
+    BooruType.HentaiPaw => 'https://hentaipaw.com',
+    BooruType.EaHentai => 'https://eahentai.com',
+    BooruType.Faccina => 'https://hentalk.pw',
+    BooruType.Kemono => 'https://kemono.cr',
+    BooruType.Pawchive => 'https://pawchive.pw',
+    BooruType.Hanime1 => 'https://hanime1.me',
+    BooruType.Rule34Video => 'https://rule34video.com',
+    BooruType.Gelbooru => 'https://gelbooru.com',
+    BooruType.GelbooruAlike => 'https://rule34.xxx',
+    BooruType.Realbooru => 'https://realbooru.com',
+    BooruType.Danbooru => 'https://danbooru.donmai.us',
+    BooruType.e621 => 'https://e621.net',
+    BooruType.Philomena => 'https://derpibooru.org',
+    BooruType.Moebooru => 'https://yande.re',
+    BooruType.Sankaku => 'https://chan.sankakucomplex.com',
+    BooruType.IdolSankaku => 'https://idol.sankakucomplex.com',
+    _ => 'https://example.com',
+  };
 
   setUp(() {
     SettingsHandler.register();
@@ -206,6 +244,145 @@ void main() {
     });
   });
 
+  group('the sweep (r31): sources that turned out to enumerate after all', () {
+    test('tikporn: the two fixed lists the handler already loads', () async {
+      final h = TikPornHandler(b('t', BooruType.TikPorn, 'https://tik.porn'), 20);
+      final catalog = h.tagCatalog! as TikPornTagCatalog;
+      expect(catalog.namespaces.map((n) => n.key), ['tag', 'action']);
+      expect(catalog.namespaces.every((n) => n.shards == 1), isTrue);
+      // A tag is inserted bare — the handler recognises a known tag word and
+      // opens its feed, which is better than a free-text search; an act must
+      // say so or it would be read as a tag first.
+      expect(catalog.searchTerm(const BooruTagEntry(name: 'teen', tagType: TagType.none, namespace: 'tag')), 'teen');
+      expect(catalog.searchTerm(const BooruTagEntry(name: '69', tagType: TagType.none, namespace: 'action')), 'action:69');
+    });
+
+    test('kusowanka: five browse indexes, slugs, a capped walk that knows its last page', () {
+      final h = KusowankaHandler(b('k', BooruType.Kusowanka, 'https://kusowanka.com'), 20);
+      final catalog = h.tagCatalog! as KusowankaTagCatalog;
+      expect(catalog.namespaces.map((n) => n.key), ['tag', 'artist', 'character', 'parody', 'metadata']);
+      expect(catalog.namespaces.every((n) => n.maxShards == KusowankaTagCatalog.pagesPerPull), isTrue, reason: 'the lists run to thousands of pages');
+      expect(catalog.indexUrl('artist', 0), 'https://kusowanka.com/artists/');
+      expect(catalog.indexUrl('artist', 3), 'https://kusowanka.com/artists/?page=4');
+      expect(catalog.indexUrl('metadata', 0), 'https://kusowanka.com/metadatas/');
+      expect(
+        catalog.searchTerm(const BooruTagEntry(name: "'o'ne", tagType: TagType.artist, namespace: 'artist', sourceId: 'o-ne')),
+        'artist:o-ne',
+        reason: 'the slug routes, even when the name it shows is punctuated',
+      );
+
+      final String page = fixture('kusowanka_artists.html');
+      final rows = KusowankaTagCatalog.parseIndex(page, 'artist');
+      expect(rows, isNotEmpty);
+      expect(rows.every((e) => e.namespace == 'artist' && e.tagType == TagType.artist), isTrue);
+      expect(rows.map((e) => e.name), isNot(contains('popular')), reason: 'the Popular link is not a tag');
+      expect(rows.map((e) => e.sourceId).toSet().length, rows.length, reason: 'each entry links several times');
+      // The list must read like a tag list, not like URL slugs: the site
+      // shows `'o'ne` where the link says `o-ne`.
+      expect(rows.map((e) => e.name), contains("'o'ne"));
+      expect(rows.firstWhere((e) => e.name == "'o'ne").sourceId, 'o-ne');
+      expect(KusowankaTagCatalog.lastPageOf(page, 'artists'), greaterThan(100));
+      expect(KusowankaTagCatalog.lastPageOf('<html></html>', 'artists'), isNull);
+      // Every row round-trips: the handler routes `artist:<slug>` to that page.
+      expect(h.makeURL(catalog.searchTerm(rows.first)), 'https://kusowanka.com/artist/${rows.first.sourceId}/');
+      // Every row, not just the first: a name the slug cannot be derived from
+      // would route to the wrong page.
+      for (final row in rows) {
+        expect(h.makeURL(catalog.searchTerm(row)), 'https://kusowanka.com/artist/${row.sourceId}/', reason: row.name);
+      }
+    });
+
+    test('civitai: the public tag list, walked until a page comes back empty', () {
+      final h = CivitaiHandler(b('c', BooruType.Civitai, 'https://civitai.com'), 20);
+      final catalog = h.tagCatalog! as CivitaiTagCatalog;
+      expect(catalog.namespaces.map((n) => n.key), ['tag']);
+      expect(catalog.pageUrl(0), 'https://civitai.com/api/v1/tags?limit=100&page=1');
+      expect(catalog.pageUrl(4), 'https://civitai.com/api/v1/tags?limit=100&page=5');
+      final rows = CivitaiTagCatalog.parseTags(jsonDecode(fixture('civitai_tags.json')));
+      expect(rows, hasLength(greaterThan(50)));
+      expect(rows.every((e) => e.namespace == 'tag'), isTrue);
+      expect(rows.map((e) => e.name), contains('game_character'), reason: 'names are underscored like everywhere else');
+      expect(rows.every((e) => !e.name.contains(' ')), isTrue);
+      // The empty page is the end marker, since the site's own metadata lies.
+      expect(CivitaiTagCatalog.parseTags(const {'items': []}), isEmpty);
+      expect(catalog.searchTerm(rows.first), rows.first.name, reason: 'the site has no namespaces');
+      // The API answers most-used first and the picker sorts by count, so the
+      // order has to survive as a rank or page 10 interleaves with page 1.
+      expect(rows.first.count, greaterThan(rows.last.count));
+      final later = CivitaiTagCatalog.parseTags(jsonDecode(fixture('civitai_tags.json')), rankFrom: 500);
+      expect(later.first.count, lessThan(rows.last.count), reason: 'a later page ranks below an earlier one');
+    });
+
+    test("hdoujin reads its own network, not niyaniya's own", () {
+      final catalog = SchaleHandler(b('hd', BooruType.HDoujin, 'https://hdoujin.org'), 20).tagCatalog as SchaleTagCatalog;
+      expect(catalog.shardUrl(0), 'https://api.hdoujin.org/books/tags');
+      expect(catalog.shardUrl(1), 'https://api.hdoujin.org/books/tags?namespace=1');
+      final niya = SchaleHandler(b('n', BooruType.NiyaNiya, 'https://niyaniya.moe'), 20).tagCatalog as SchaleTagCatalog;
+      expect(niya.shardUrl(0), 'https://api.schale.network/books/tags');
+    });
+  });
+
+  group('every source has a decided answer', () {
+    // A source with no tag builder must say why, here. Adding a BooruType
+    // without deciding fails this test; a source silently LOSING its catalog
+    // fails it too, which is how r30 shipped e-hentai without one.
+    const Map<BooruType, String> noCatalog = {
+      BooruType.EaHentai: 'no taxonomy route in the documented API (tags come per gallery)',
+      BooruType.Faccina: 'the API lists no tags; the site ships a fixed 15-entry glossary',
+      BooruType.RedGifs: 'suggestions only, no index endpoint',
+      BooruType.XXXTik: 'search answers prefixes; there is no full list',
+      BooruType.XXXFollow: 'search answers prefixes; there is no full list',
+      BooruType.Nozomi: 'static per-tag index files; the site lists no tags',
+      BooruType.Hydrus: "the user's own local instance; its tag search needs a query",
+      BooruType.InkBunny: 'the keyword endpoint answers prefixes, not a list',
+      BooruType.IdolSankaku: 'not probed yet: iapi.sankakucomplex.com/tag/index.json (r32)',
+      BooruType.Shimmie: 'not probed yet: instance-specific; paheal has an autocomplete route (r32)',
+      BooruType.Szurubooru: "not probed yet: /api/tags is paged, but the instance is the user's (r32)",
+      BooruType.GelbooruV1: 'not probed yet: gelbooru 0.1 has no dapi (r32)',
+      BooruType.R34Hentai: 'not probed yet: Cloudflare-fronted from here (r32)',
+      BooruType.R34US: 'not probed yet: the alphabetic page looks script-driven (r32)',
+      BooruType.AGNPH: 'not probed yet: /gallery/tags/ answers but carries no tag table (r32)',
+      BooruType.BooruOnRails: 'not probed yet: /api/v3/search/tags (r32)',
+      BooruType.Rainbooru: "its tag endpoint points at another site's vocabulary",
+      BooruType.NyanPals: 'no tag endpoint',
+      BooruType.WildCritters: 'no tag endpoint',
+      BooruType.World: 'the tag route answers prefixes only',
+      BooruType.Rule34Dev: 'an aggregator: its suggestions come from four other sites',
+      BooruType.WebView: 'a browser tab, not a source',
+    };
+
+    test('a source either offers a tag builder or says why not', () {
+      final List<String> undecided = [];
+      final List<String> lost = [];
+      // Some types map onto SEVERAL handler classes by URL (gelbooru's three,
+      // shimmie's two), so the walk carries extra hosts — otherwise the branch
+      // an excuse is written for is never the branch the test builds.
+      const List<(BooruType, String)> extraHosts = [
+        (BooruType.Shimmie, 'https://rule34.paheal.net'),
+        (BooruType.Gelbooru, 'https://rule34.xxx'),
+        (BooruType.Gelbooru, 'https://bakemono.app'),
+      ];
+      final List<(BooruType, String)> walk = [
+        for (final BooruType type in BooruType.saveable)
+          if (!type.isLocalDb && type != BooruType.Merge) (type, defaultUrlFor(type)),
+        ...extraHosts,
+      ];
+      for (final (BooruType type, String url) in walk) {
+        final Booru booru = b(type.name, type, url);
+        final BooruHandler handler = BooruHandlerFactory().getBooruHandler([booru], null).booruHandler;
+        final bool hasCatalog = handler.tagCatalog?.namespaces.isNotEmpty ?? false;
+        final bool excused = noCatalog.containsKey(type);
+        // bakemono is a gelbooru host whose profile switches the catalog off
+        // deliberately; it is the one host-level exception.
+        if (url.contains('bakemono.app')) continue;
+        if (!hasCatalog && !excused) undecided.add('${type.name} ($url)');
+        if (hasCatalog && excused) lost.add('${type.name} ($url)');
+      }
+      expect(undecided, isEmpty, reason: 'these sources have no tag builder and no reason on record');
+      expect(lost, isEmpty, reason: 'these have a tag builder now — take them out of the list');
+    });
+  });
+
   group('capabilities', () {
     test('each source offers exactly what it can enumerate', () {
       List<String> keys(BooruHandler h) => h.tagCatalog?.namespaces.map((n) => n.key).toList() ?? const [];
@@ -216,6 +393,13 @@ void main() {
       expect(keys(HentaiPawHandler(b('p', BooruType.HentaiPaw, 'https://hentaipaw.com'), 20)), ['artist', 'group', 'parody', 'character', 'tag']);
       expect(FaccinaHandler(b('f', BooruType.Faccina, 'https://hentalk.pw'), 20).tagCatalog, isNull);
       expect(EaHentaiHandler(b('e', BooruType.EaHentai, 'https://eahentai.com'), 20).tagCatalog, isNull);
+      expect(
+        keys(EHentaiHandler(b('eh', BooruType.EHentai, 'https://e-hentai.org'), 25)),
+        ['artist', 'character', 'parody', 'group', 'female', 'male', 'mixed', 'cosplayer', 'language', 'other'],
+      );
+      expect(keys(TikPornHandler(b('t', BooruType.TikPorn, 'https://tik.porn'), 20)), ['tag', 'action']);
+      expect(keys(KusowankaHandler(b('k', BooruType.Kusowanka, 'https://kusowanka.com'), 20)), ['tag', 'artist', 'character', 'parody', 'metadata']);
+      expect(keys(CivitaiHandler(b('c', BooruType.Civitai, 'https://civitai.com'), 20)), ['tag']);
     });
   });
 }

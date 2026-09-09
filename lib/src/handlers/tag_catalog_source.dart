@@ -63,6 +63,11 @@ class TagCatalogNamespace {
 abstract class TagCatalogSource {
   List<TagCatalogNamespace> get namespaces;
 
+  /// A line for the picker, when a pull does not go to the source's own
+  /// site — e-hentai's lists come from a community database on GitHub, and
+  /// a person opening a chip should not have to read the code to know that.
+  String? get pullNote => null;
+
   /// Pause between shards. Sites rate-limit sustained walks.
   Duration get shardDelay => const Duration(milliseconds: 350);
 

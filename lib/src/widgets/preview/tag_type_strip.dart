@@ -265,7 +265,9 @@ class _TagCatalogPickerSheetState extends State<TagCatalogPickerSheet> {
                 ? 'Pulling… ${state.shards == null ? '${state.shard} done' : '${state.shard} / ${state.shards}'} · ${state.stored.toShortString()} stored'
                 : state.error != null
                     ? 'Stopped after ${state.stored.toShortString()} — ${state.error}'
-                    : '${_total.toShortString()} in the local list${(state.done || widget.namespace.shards == 1) ? '' : (_total > 0 ? ' (partial — pull again to go deeper)' : '')}',
+                    : '${_total.toShortString()} in the local list'
+                          '${(state.done || widget.namespace.shards == 1) ? '' : (_total > 0 ? ' (partial — pull again to go deeper)' : '')}'
+                          '${widget.catalog.pullNote == null ? '' : ' · ${widget.catalog.pullNote}'}',
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(fontSize: 11.5, color: state.error != null ? Colors.orange : theme.colorScheme.onSurfaceVariant),

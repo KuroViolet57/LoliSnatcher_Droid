@@ -17,6 +17,8 @@ import 'package:lolisnatcher/src/handlers/reader_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
+import 'package:lolisnatcher/src/boorus/doujin/ehentai_tag_catalog.dart';
+import 'package:lolisnatcher/src/data/booru_tag.dart';
 
 /// e-hentai.org / exhentai.org, against pages captured anonymously from the
 /// live site on 2026-09-09 (test/fixtures/ehentai_*): the extended listing,
@@ -159,6 +161,45 @@ void main() {
       expect(h.makeURL('genshin'), 'https://e-hentai.org/?f_search=genshin&inline_set=dm_e&next=4177729');
       h.pageNum = -1;
       expect(h.makeURL('category:blorp'), '');
+      expect(h.locked, isTrue);
+    });
+
+    test('page 2 of a TAG search finds its cursor — the query the app qualifies is still one query (r31)', () async {
+      // The reported bug: a tag search loaded 25 galleries and stopped. The
+      // cursor was filed under the raw query and looked up under the
+      // qualified one, and the map is cleared whenever the key changes.
+      final h = handler();
+      // Page 1 teaches the source that `english` is a `language:` tag, which
+      // is exactly what makes the two spellings drift apart.
+      h.currentTags = 'english';
+      final List page1 = await h.parseListFromResponse(_Resp(fixture('ehentai_search.html')));
+      expect(page1, hasLength(25));
+      expect(h.qualifyQuery('english'), 'language:english', reason: 'the listing taught the namespace');
+      h.pageNum = 1;
+      final String page2 = h.makeURL('english');
+      expect(page2, contains('next=3718414'), reason: 'the cursor page 1 handed over must survive');
+      expect(page2, contains(Uri.encodeQueryComponent(r'language:"english"$')));
+      expect(h.locked, isFalse);
+      expect(h.errorString, isEmpty);
+    });
+
+    test('the same holds for a two-word query and for one that was already qualified', () async {
+      for (final String query in ['big breasts', 'language:english', 'english  spaced']) {
+        final h = handler();
+        h.currentTags = query;
+        await h.parseListFromResponse(_Resp(fixture('ehentai_search.html')));
+        h.pageNum = 1;
+        expect(h.makeURL(query), contains('next=3718414'), reason: query);
+        expect(h.locked, isFalse, reason: query);
+      }
+    });
+
+    test('a different query starts its own cursor list', () async {
+      final h = handler();
+      h.currentTags = 'english';
+      await h.parseListFromResponse(_Resp(fixture('ehentai_search.html')));
+      h.pageNum = 1;
+      expect(h.makeURL('something else'), '', reason: 'no cursor was ever stored for this query');
       expect(h.locked, isTrue);
     });
 
@@ -453,6 +494,99 @@ void main() {
     });
   });
 
+  group('tag builder', () {
+    test('one chip per site namespace, none of them a reserved query key', () {
+      final catalog = handler().tagCatalog! as EHentaiTagCatalog;
+      expect(catalog.namespaces.map((n) => n.key), [
+        'artist',
+        'character',
+        'parody',
+        'group',
+        'female',
+        'male',
+        'mixed',
+        'cosplayer',
+        'language',
+        'other',
+      ]);
+      // `reclass:` is the namespace for reclassification VOTES: its rows are
+      // the gallery categories, and searching `reclass:manga` answers almost
+      // nothing. Those categories are already the `category:` metatag, which
+      // becomes the site's own category mask.
+      expect(catalog.namespaceFor('reclass'), isNull);
+      expect(catalog.namespaces.every((n) => n.shards == 1), isTrue, reason: 'one file per namespace');
+      expect(catalog.namespaces.every((n) => !EHentaiQuery.reservedKeys.contains(n.key)), isTrue);
+      expect(catalog.namespaceFor('artist')!.type, TagType.artist);
+      expect(catalog.namespaceFor('parody')!.type, TagType.copyright);
+      expect(catalog.namespaceFor('character')!.type, TagType.character);
+      expect(catalog.namespaceFor('language')!.type, TagType.meta);
+      expect(catalog.namespaceFor('cosplayer')!.type, TagType.artist, reason: 'the chip colour must match the rows');
+      expect(catalog.pullNote, contains('GitHub'), reason: 'the picker says where a pull goes');
+      expect(
+        EHentaiTagCatalog.fileUrl('female'),
+        'https://raw.githubusercontent.com/EhTagTranslation/Database/master/database/female.md',
+      );
+    });
+
+    test('a namespace file parses to bare names, skipping the front matter, the header and the section rows', () {
+      final rows = EHentaiTagCatalog.parseNamespaceFile(fixture('ehtag_reclass.md'), 'reclass');
+      expect(rows.map((e) => e.name), containsAll(['doujinshi', 'manga', 'artistcg', 'gamecg', 'western']));
+      expect(rows.every((e) => e.namespace == 'reclass'), isTrue);
+      expect(rows.every((e) => !e.name.contains(':') && e.name == e.name.toLowerCase()), isTrue);
+      expect(rows.map((e) => e.name), isNot(contains('')));
+      expect(rows.map((e) => e.name), isNot(contains('原始标签')), reason: 'the table header is not a tag');
+
+      // The artist file's row shape differs from female's (its first data row
+      // has an empty first cell), so it gets its own fixture.
+      final artists = EHentaiTagCatalog.parseNamespaceFile(fixture('ehtag_artist_slice.md'), 'artist');
+      expect(artists.map((e) => e.name), containsAll(['pop', 'oouso', 'peko']));
+      expect(artists.every((e) => e.tagType == TagType.artist && e.name.isNotEmpty), isTrue);
+      expect(artists.map((e) => e.name), isNot(contains('')), reason: 'the empty leading row is not a tag');
+
+      final women = EHentaiTagCatalog.parseNamespaceFile(fixture('ehtag_female_slice.md'), 'female');
+      expect(women, isNotEmpty);
+      expect(women.every((e) => e.namespace == 'female' && e.name.isNotEmpty), isTrue);
+      // `| | == Age == | … |` divides the table into sections; it is not a tag.
+      expect(women.map((e) => e.name).where((n) => n.startsWith('==')), isEmpty);
+      expect(women.every((e) => !e.name.contains(' ')), isTrue, reason: 'names are underscored like every other source');
+    });
+
+    test('every term a chip inserts reaches the site as a tag search, not a title keyword', () {
+      final h = handler();
+      final catalog = h.tagCatalog! as EHentaiTagCatalog;
+      const BooruTagEntry entry = BooruTagEntry(name: 'big_breasts', tagType: TagType.none, namespace: 'female');
+      final String term = catalog.searchTerm(entry);
+      expect(term, 'female:big_breasts', reason: 'always qualified: a bare word would search titles');
+      expect(h.makeURL(term), contains('f_search=${Uri.encodeQueryComponent(r'female:"big breasts"$')}'));
+      // Even before any listing taught the namespace.
+      expect(EHentaiHandler(booru, 25).makeURL(catalog.searchTerm(entry)), contains(Uri.encodeQueryComponent(r'female:"big breasts"$')));
+    });
+
+    test('one request per chip; a refusal from GitHub is said out loud', () async {
+      final h = handler();
+      final catalog = h.tagCatalog! as EHentaiTagCatalog;
+      final List<String> asked = [];
+      catalog.fetcher = (url) async {
+        asked.add(url);
+        return (status: 200, body: fixture('ehtag_language.md'));
+      };
+      final rows = await catalog.shardAt('language', 0);
+      expect(rows, hasLength(greaterThan(80)), reason: 'the real language file has ~90 rows');
+      expect(rows!.map((e) => e.name), containsAll(['english', 'japanese', 'chinese']));
+      expect(rows.every((e) => e.namespace == 'language' && e.tagType == TagType.meta), isTrue);
+      expect(asked, [EHentaiTagCatalog.fileUrl('language')]);
+      expect(await catalog.shardAt('language', 1), isNull, reason: 'one shard only');
+      expect(await catalog.shardAt('reclass', 0), isNull, reason: 'not offered as a chip');
+      expect(await catalog.shardAt('nonsense', 0), isNull);
+
+      catalog.fetcher = (url) async => (status: 404, body: '');
+      await expectLater(
+        catalog.shardAt('artist', 0),
+        throwsA(predicate((e) => e.toString().contains('404') && e.toString().toLowerCase().contains('github'))),
+      );
+    });
+  });
+
   group('wiring', () {
     test('a doujin source on both hosts, built by the factory, with a reader and no credential fields', () {
       expect(DoujinDataHandler.doujinTypes, contains(BooruType.EHentai));
@@ -470,6 +604,8 @@ void main() {
       expect(h.hasAccountBlacklist, isTrue);
       expect(h.readerImageQualities, isEmpty);
       expect(h.tagNamespaceSections.map((s) => s.$1), containsAll(['language', 'parody', 'character', 'artist', 'female', 'male', 'uploader', 'category']));
+      expect(h.tagCatalog, isNotNull, reason: 'the Tag builder card is gated on this');
+      expect(h.tagCatalog!.namespaces, isNotEmpty);
       expect(h.relatedVersionsQuery(BooruItem(fileURL: 'a', sampleURL: 'a', thumbnailURL: 'a', tagsList: const [], postURL: 'p', serverId: '4149118')), 'related:4149118');
       expect(h.availableMetaTags().map((m) => m.keyName), containsAll(['category', 'rating', 'pages', 'uploader']));
     });

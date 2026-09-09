@@ -4,7 +4,7 @@ Written 2026-09-06 at build **r26-handover** (branch `claude/experimental-doujin
 HEAD `e15d17e` + this document; §1, §2, §4.3, §10 and §12 updated for r27 the
 same day, when the project moved to the user's Windows PC; §0, §2, §5, §10 and
 §12 updated for r28, rule34video; r29 on 2026-09-08; r30 on 2026-09-09, e-hentai and
-hdoujin). This file is the complete brief for a fresh
+hdoujin; r31 the same day, the tag-builder sweep). This file is the complete brief for a fresh
 Claude session: read Part A top to bottom before touching code. Part B is the
 older chronological build log, kept verbatim as history.
 
@@ -26,11 +26,11 @@ older chronological build log, kept verbatim as history.
   Never push elsewhere; force-push is blocked.
 - **Version:** `2.6.0+5211` in `pubspec.yaml`, mirrored in
   `lib/src/data/constants.dart` (`updateInfo`). Builds are told apart by
-  `Constants.buildCodename` (`'r30-ehentai-hdoujin'` now), shown in About. Bump the
+  `Constants.buildCodename` (`'r31-tag-builder-sweep'` now), shown in About. Bump the
   codename every build: `rNN-<two words>`.
-- **Build counter:** builds are numbered r21, r22, … r30. Each build gets a
-  numbered folder on the K: drive (§2): r30 used **49**; the next build
-  uses **50**.
+- **Build counter:** builds are numbered r21, r22, … r31. Each build gets a
+  numbered folder on the K: drive (§2): r31 used **50**; the next build
+  uses **51**.
 - **The user** talks in voice notes and logs; expects one build per request
   round, checked on a Samsung phone. They cannot see tool output — only the
   final message.
@@ -113,7 +113,7 @@ older chronological build log, kept verbatim as history.
    (55 infos + 6 warnings, lint style noise in old files). New code should
    add none.
 4. `flutter test $(ls test/*_test.dart | grep -v booru_test)` → all green.
-   Baseline **678** (r30). `booru_test.dart` is excluded because its cases
+   Baseline **690** (r31). `booru_test.dart` is excluded because its cases
    hit live sites; `tag_index_live_test.dart`, `rule34video_live_test.dart`
    and the doujin parity walk are tagged `live` and skipped unless run with
    `--run-skipped --tags live`.
@@ -135,9 +135,9 @@ older chronological build log, kept verbatim as history.
    Output: `build/app/outputs/flutter-apk/app-arm64-v8a-release.apk`.
 8. Deliver by copying into the Google Drive folder synced on the PC:
    `K:\My Drive\booruApk\<token>.apk (<descriptor>)\` — e.g.
-   `49.apk (r30 ehentai hdoujin)` — holding `changes.txt` (the changelog) and the
-   APK renamed `<codename>-2.6.0.apk`. Tokens are integers: r30 used 49, the
-   next build uses 50. The report gives that folder path (a file copy has no
+   `50.apk (r31 tag builder sweep)` — holding `changes.txt` (the changelog) and the
+   APK renamed `<codename>-2.6.0.apk`. Tokens are integers: r31 used 50, the
+   next build uses 51. The report gives that folder path (a file copy has no
    web link). `scripts/drive_upload_build.py` is retired.
 9. Republish the **parity artifact** (§2.6) with a footer "build rNN".
 10. Report: per item changed/observed/not verified, numbered device steps,
@@ -326,6 +326,23 @@ Per-source knowledge that is *not* a handler override lives in these layers:
   chips are one instant shard per group (`shards: 1`, no request; the "pull"
   writes the dictionary into the snapshot under the host). Tags insert bare
   (the grammar maps `creampie` back to `tags[]=內射`), genres `genre:mmd`.
+- **Tube and gallery catalogs (r31):** `ehentai_tag_catalog` (the site has no
+  tag index, so one markdown file per namespace from the EhTagTranslation
+  database on raw.githubusercontent.com — `shards: 1` per chip, always
+  qualified `ns:name` terms, NO `reclass` chip because those rows are the
+  gallery categories and the `category:` metatag already covers them; the
+  request carries no site headers and no session), `tikporn_tag_catalog`
+  (the 84 tags and 131 acts the handler already loads for every search),
+  `kusowanka_tag_catalog` (five paged HTML indexes, 42 entries a page,
+  capped per pull because the lists run to thousands of pages) and
+  `civitai_tag_catalog` (`/api/v1/tags?limit=200&page=N`, walked until an
+  empty page because the site's own paging metadata is wrong).
+- **The guard** (`tag_catalog_sources_test`, 'every source has a decided
+  answer'): every `BooruType.saveable` either offers a catalog or is in the
+  `noCatalog` map with a reason. r30 shipped e-hentai with no chips because
+  nothing failed; now it would. The map also records what is still to be
+  probed (idol sankaku, Shimmie/Szurubooru instances, gelbooru v1,
+  rule34hentai, rule34.us, AGNPH, twibooru).
 - The **Tag browser** (drawer) reads the same snapshot; its "Pull tag index"
   runs through `TagCatalogPuller` under the `''` namespace (one loop, one
   resume point, progress shared with the chips on shared families).
@@ -745,8 +762,37 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r30)
+## 12. Open items (as of r31)
 
+- r31 is unverified on the device: the e-hentai paging fix, the four new
+  Tag builder catalogs (e-hentai, tik.porn, kusowanka, civitai) and the
+  chips on hdoujin. All were verified live from the PC
+  (`ehentai_live_test`): a tag search paging 25 + 25 with no overlap;
+  e-hentai's Language (87) and Cosplayers (165) lists and a picked term
+  searching; tik.porn 84 tags + 131 acts; kusowanka 42 artists a page;
+  civitai 100 tags a page; hdoujin's three shards (1,189 / 18,086 / 10,425
+  rows).
+- r31 review findings FIXED, with tests: kusowanka rows stored the URL slug
+  as the display name (rows now carry the site's name and route by
+  `sourceId`); civitai was asked for 200 rows a page and the API caps at 100
+  (now `pageSize = 100`, 10 pages a pull); `lastPageOf` read any pager on
+  the page, so a sidebar link to another index could truncate the walk (now
+  anchored to `/<index>/?page=`); the EhTagTranslation files were parsed on
+  the UI isolate and `character.md` is 718 KB (now `compute`); the chip
+  tests all shared one fixture though namespaces differ in row shape (each
+  has its own slice now).
+- r31 review findings NOT fixed, by choice: kusowanka's indexes are far
+  deeper than a pull (Artists alone reports 8,802 pages; a pull is 20 pages
+  = 840 names, resumable through `TagCatalogPuller._resume`), so the chip is
+  a filterable head of the list, not a full mirror. And a merge tab fetches
+  e-hentai's page 1 three times — pre-existing merge-path behaviour for
+  every source, not introduced here; fixing it belongs in `SearchHandler`,
+  not the handler.
+- Sources still to probe for a tag builder, listed in the guard test's
+  `noCatalog` map so they cannot be forgotten: IdolSankaku
+  (`iapi.sankakucomplex.com/tag/index.json`), Shimmie and Szurubooru (the
+  instance is the user's), GelbooruV1, R34Hentai (Cloudflare blocks this
+  machine), R34US, AGNPH, BooruOnRails.
 - r30 (e-hentai/exhentai, hdoujin) is unverified on the device, and **the
   login was never run**: no e-hentai account was available here, so the
   WebView capture, `igneous`, the exhentai variant, the My Tags import and

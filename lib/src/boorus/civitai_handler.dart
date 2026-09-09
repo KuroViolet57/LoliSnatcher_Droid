@@ -8,6 +8,8 @@ import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
+import 'package:lolisnatcher/src/boorus/civitai_tag_catalog.dart';
+import 'package:lolisnatcher/src/handlers/tag_catalog_source.dart';
 
 /// civitai.com — the AI-generation gallery, via its public REST API
 /// (https://developer.civitai.com, /api/v1/images).
@@ -50,6 +52,10 @@ class CivitaiHandler extends BooruHandler {
   // scraped once from the tag's public page (its embedded JSON carries
   // {"id":N,"name":"..."}). Both live in a static cache.
   static final Map<String, int> _tagIdCache = {};
+
+  /// The site's public tag list — see [CivitaiTagCatalog].
+  @override
+  late final TagCatalogSource? tagCatalog = CivitaiTagCatalog(this);
 
   Future<int?> _resolveTagId(String name) async {
     final String key = name.toLowerCase().replaceAll('_', ' ');

@@ -15,6 +15,8 @@ import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
+import 'package:lolisnatcher/src/boorus/tikporn_tag_catalog.dart';
+import 'package:lolisnatcher/src/handlers/tag_catalog_source.dart';
 
 /// tik.porn handler.
 ///
@@ -81,6 +83,11 @@ class TikPornHandler extends BooruHandler {
 
   @override
   bool get hasTagSuggestions => true;
+
+  /// The site's whole vocabulary is two small fixed lists, so the tag
+  /// builder can offer both without a walk.
+  @override
+  late final TagCatalogSource? tagCatalog = TikPornTagCatalog(this);
 
   /// One feed at a time — the API has no boolean tag logic.
   @override
@@ -215,6 +222,14 @@ class TikPornHandler extends BooruHandler {
     return super.search(tags, pageNumCustom, withCaptchaCheck: withCaptchaCheck);
   }
 
+  /// The two fixed lists, for the tag builder beside this handler: it must
+  /// not fetch them again when a search has already filled them.
+  Future<void> loadVocabularyForCatalog() => _loadVocabulary();
+
+  /// slug -> id, as loaded. Read-only views for the catalog.
+  static Map<String, int> get tagIdsForCatalog => Map.unmodifiable(_tagIds);
+  static Map<String, int> get actionIdsForCatalog => Map.unmodifiable(_actionIds);
+
   Future<void> _loadVocabulary() {
     if (_vocabularyLoaded) return Future.value();
     return _vocabularyLoad ??= _fetchVocabulary();
@@ -228,7 +243,9 @@ class TikPornHandler extends BooruHandler {
       ]);
       _collectVocabulary(responses[0].data, 'tags', 'tag_id', _tagIds);
       _collectVocabulary(responses[1].data, 'actions', 'action_id', _actionIds);
-      _vocabularyLoaded = _tagIds.isNotEmpty || _actionIds.isNotEmpty;
+      // BOTH lists, not either: with `||` a half-answer stuck for the life
+      // of the process and the tag builder's Acts chip could never load.
+      _vocabularyLoaded = _tagIds.isNotEmpty && _actionIds.isNotEmpty;
     } catch (e, s) {
       Logger.Inst().log(
         'failed to load tik.porn tag/action list: $e',

@@ -20,6 +20,10 @@ import 'package:lolisnatcher/src/handlers/tag_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
+import 'package:lolisnatcher/src/boorus/doujin/ehentai_tag_catalog.dart';
+import 'package:lolisnatcher/src/boorus/tikporn_handler.dart';
+import 'package:lolisnatcher/src/boorus/kusowanka_handler.dart';
+import 'package:lolisnatcher/src/boorus/civitai_handler.dart';
 
 /// e-hentai.org (anonymous) and hdoujin.org from the LIVE sites through the
 /// app's own client — a report run, not part of the offline suite. No
@@ -102,6 +106,65 @@ void main() async {
     final List<BooruItem> related = List<BooruItem>.from(await h3.search('related:${gallery.serverId}', null));
     debugPrint('related: ${related.length} items, error "${h3.errorString}"');
     expect(h3.errorString, isEmpty);
+  });
+
+  test('e-hentai: a tag search pages forward — the bug this round fixes', () async {
+    final h = ehHandler();
+    final List<BooruItem> p1 = List<BooruItem>.from(await h.search('language:english', null));
+    debugPrint('tag search p1: ${p1.length} items, error "${h.errorString}"');
+    expect(p1.length, greaterThanOrEqualTo(20));
+    h.pageNum = 1;
+    final List<BooruItem> all = List<BooruItem>.from(await h.search('language:english', null));
+    final List<BooruItem> p2 = all.skip(p1.length).toList();
+    debugPrint('tag search p2: ${p2.length} more items, locked=${h.locked}, error "${h.errorString}"');
+    expect(p2.length, greaterThanOrEqualTo(20), reason: 'this is what stopped at 25 before');
+    expect(p1.map((i) => i.serverId).toSet().intersection(p2.map((i) => i.serverId).toSet()), isEmpty);
+  });
+
+  test('e-hentai tag builder: a namespace file parses, and a picked term searches', () async {
+    final h = ehHandler();
+    final catalog = h.tagCatalog! as EHentaiTagCatalog;
+    final rows = await catalog.shardAt('language', 0) ?? const [];
+    debugPrint('language rows: ${rows.length}, first ${rows.take(4).map((e) => e.name).join(' ')}');
+    expect(rows.length, greaterThan(10));
+    final small = await catalog.shardAt('cosplayer', 0) ?? const [];
+    debugPrint('cosplayer rows: ${small.length}');
+    expect(small, isNotEmpty);
+    final h2 = ehHandler();
+    final List<BooruItem> found = List<BooruItem>.from(await h2.search(catalog.searchTerm(rows.first), null));
+    debugPrint('picked "${catalog.searchTerm(rows.first)}": ${found.length} items, error "${h2.errorString}"');
+    expect(found, isNotEmpty);
+  });
+
+  test('the sweep: tikporn, kusowanka and civitai answer their tag lists', () async {
+    final tik = TikPornHandler(Booru('t', BooruType.TikPorn, '', 'https://tik.porn', ''), 20);
+    final tikRows = await tik.tagCatalog!.shardAt('tag', 0) ?? const [];
+    final tikActs = await tik.tagCatalog!.shardAt('action', 0) ?? const [];
+    debugPrint('tikporn: ${tikRows.length} tags, ${tikActs.length} acts, first ${tikRows.take(3).map((e) => e.name).join(' ')}');
+    expect(tikRows.length, greaterThan(50));
+    expect(tikActs.length, greaterThan(50));
+
+    final kus = KusowankaHandler(Booru('k', BooruType.Kusowanka, '', 'https://kusowanka.com', ''), 20);
+    final kusRows = await kus.tagCatalog!.shardAt('artist', 0) ?? const [];
+    debugPrint('kusowanka artists page 1: ${kusRows.length} rows, first ${kusRows.take(3).map((e) => e.name).join(' ')}');
+    // 126 links a page, but each entry is linked three times (thumbnails,
+    // Latest/Popular, the title), so a page is 42 distinct artists.
+    expect(kusRows.length, greaterThanOrEqualTo(40));
+
+    final civ = CivitaiHandler(Booru('c', BooruType.Civitai, '', 'https://civitai.com', ''), 20);
+    final civRows = await civ.tagCatalog!.shardAt('tag', 0) ?? const [];
+    debugPrint('civitai page 1: ${civRows.length} rows, first ${civRows.take(3).map((e) => e.name).join(' ')}');
+    expect(civRows.length, greaterThan(50));
+  });
+
+  test('hdoujin tag builder: the three shards answer on its own network', () async {
+    final hd = SchaleHandler(Booru('hd', BooruType.HDoujin, '', 'https://hdoujin.org', ''), 20);
+    final catalog = hd.tagCatalog;
+    for (int shard = 0; shard < 3; shard++) {
+      final rows = await catalog.shardAt('', shard) ?? const [];
+      debugPrint('hdoujin shard $shard: ${rows.length} rows, namespaces ${rows.map((e) => e.namespace).toSet().take(4)}');
+      expect(rows, isNotEmpty, reason: 'shard $shard');
+    }
   });
 
   test('hdoujin: the popular shelf and a search answer on the hdoujin network', () async {

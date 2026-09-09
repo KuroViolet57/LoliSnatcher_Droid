@@ -21,6 +21,8 @@ import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
+import 'package:lolisnatcher/src/boorus/doujin/ehentai_tag_catalog.dart';
+import 'package:lolisnatcher/src/handlers/tag_catalog_source.dart';
 
 /// What a gallery page says about a gallery.
 class EHentaiGallery {
@@ -208,6 +210,11 @@ class EHentaiHandler extends BooruHandler with DoujinNamespacedTags {
   /// in two when the site choice changes. Fetches use [site].
   static String galleryUrl(String gid, String token) => '$defaultSite/g/$gid/$token/';
 
+  /// The Tag builder's chips. The site publishes no tag index, so the lists
+  /// come from the community tag database — see [EHentaiTagCatalog].
+  @override
+  late final TagCatalogSource? tagCatalog = EHentaiTagCatalog(this);
+
   @override
   List<(String value, String label)> get siteVariants => const [
     (variantEHentai, 'e-hentai.org'),
@@ -329,6 +336,13 @@ class EHentaiHandler extends BooruHandler with DoujinNamespacedTags {
   int get page => pageNum < 0 ? 1 : pageNum + 1;
 
   /// The cursors of one query; a different query starts over.
+  ///
+  /// Keyed by the query AS TYPED, never by the parsed or qualified form:
+  /// `makeURL` qualifies bare tags before parsing, and parsing page 1 is
+  /// what teaches those namespaces — so the qualified spelling can change
+  /// between the two calls of a single fetch. Keying on it made the two
+  /// sides clear each other's map, and every tag search stopped after one
+  /// page (r30, reported).
   Map<int, String> _cursorsFor(String source) {
     if (_cursorQuery != source) {
       _cursors.clear();
@@ -363,7 +377,7 @@ class EHentaiHandler extends BooruHandler with DoujinNamespacedTags {
       locked = true;
       return '';
     }
-    final Map<int, String> cursors = _cursorsFor(search.source);
+    final Map<int, String> cursors = _cursorsFor(tags.trim());
     final int p = page;
     if (p == 1) return EHentaiQuery.listingUrl(site, search);
     final String? cursor = cursors[p];
@@ -523,7 +537,7 @@ class EHentaiHandler extends BooruHandler with DoujinNamespacedTags {
       );
     }
     final String? cursor = nextCursor(body);
-    if (cursor != null) _cursorsFor(EHentaiQuery.parse(currentTags).source)[page + 1] = cursor;
+    if (cursor != null) _cursorsFor(currentTags.trim())[page + 1] = cursor;
     final int? total = resultCount(body);
     if (total != null) totalCount.value = total;
     return items;

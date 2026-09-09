@@ -36,7 +36,7 @@ const TagType doujinMetaType = TagType.meta;
 const TagType doujinNoneType = TagType.none;
 
 TagType doujinTagTypeFor(String? namespace) => switch (namespace) {
-  'artist' || 'circle' || 'group' => TagType.artist,
+  'artist' || 'circle' || 'group' || 'cosplayer' => TagType.artist,
   'parody' || 'series' => TagType.copyright,
   'character' => TagType.character,
   'language' || 'type' || 'category' || 'magazine' || 'publisher' => TagType.meta,

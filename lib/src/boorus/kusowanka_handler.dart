@@ -15,6 +15,8 @@ import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
+import 'package:lolisnatcher/src/boorus/kusowanka_tag_catalog.dart';
+import 'package:lolisnatcher/src/handlers/tag_catalog_source.dart';
 
 /// kusowanka.com handler.
 ///
@@ -79,6 +81,9 @@ class KusowankaHandler extends BooruHandler {
 
   static const String _site = 'https://kusowanka.com';
 
+  /// The site, for the tag builder beside this handler.
+  static const String site = _site;
+
   /// Query prefix -> (browse route segment, autocomplete type, tag type).
   static const Map<String, (String route, String type, TagType tagType)> _facets = {
     'tag': ('tag', 'tags', TagType.none),
@@ -93,6 +98,10 @@ class KusowankaHandler extends BooruHandler {
 
   @override
   bool get hasTagSuggestions => true;
+
+  /// The five browse indexes, one per namespace — see [KusowankaTagCatalog].
+  @override
+  late final TagCatalogSource? tagCatalog = KusowankaTagCatalog(this);
 
   /// One facet per query — the site has no boolean tag logic at all.
   @override
