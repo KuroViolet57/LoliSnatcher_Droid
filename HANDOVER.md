@@ -328,15 +328,20 @@ Per-source knowledge that is *not* a handler override lives in these layers:
   (the grammar maps `creampie` back to `tags[]=內射`), genres `genre:mmd`.
 - **Tube and gallery catalogs (r31):** `ehentai_tag_catalog` (the site has no
   tag index, so one markdown file per namespace from the EhTagTranslation
-  database on raw.githubusercontent.com — `shards: 1` per chip, always
+  database on raw.githubusercontent.com, parsed in `compute` because
+  `character.md` is 718 KB — `shards: 1` per chip, always
   qualified `ns:name` terms, NO `reclass` chip because those rows are the
   gallery categories and the `category:` metatag already covers them; the
   request carries no site headers and no session), `tikporn_tag_catalog`
   (the 84 tags and 131 acts the handler already loads for every search),
   `kusowanka_tag_catalog` (five paged HTML indexes, 42 entries a page,
-  capped per pull because the lists run to thousands of pages) and
-  `civitai_tag_catalog` (`/api/v1/tags?limit=200&page=N`, walked until an
-  empty page because the site's own paging metadata is wrong).
+  20 pages a pull because the lists run to thousands — Artists reports
+  8,802 pages; a row keeps the site's display name and routes by the slug
+  in `sourceId`, and `lastPageOf` is anchored to the index being walked so
+  a sidebar pager cannot truncate it) and `civitai_tag_catalog`
+  (`/api/v1/tags?limit=100&page=N` — the API caps a page at 100 whatever
+  `limit` asks — 10 pages a pull, walked until an empty page because the
+  site's own paging metadata is wrong).
 - **The guard** (`tag_catalog_sources_test`, 'every source has a decided
   answer'): every `BooruType.saveable` either offers a catalog or is in the
   `noCatalog` map with a reason. r30 shipped e-hentai with no chips because
