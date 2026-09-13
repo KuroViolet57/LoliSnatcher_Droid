@@ -25,6 +25,7 @@ import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 import 'package:lolisnatcher/src/widgets/gallery/doujin_tag_chip.dart';
 import 'package:lolisnatcher/src/widgets/tabs/doujin_mini_tab_manager.dart';
 import 'package:lolisnatcher/src/widgets/gallery/tag_view.dart';
+import 'package:lolisnatcher/src/widgets/thumbnail/page_thumbnail_loader.dart';
 import 'package:lolisnatcher/src/widgets/thumbnail/thumbnail.dart';
 import 'package:lolisnatcher/src/widgets/thumbnail/thumbnail_build.dart';
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
@@ -216,7 +217,7 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
   // ─────────────────────────── actions ───────────────────────────
 
   void _read({int? startAt}) {
-    openDoujinReader(context, item: item, booru: booru, startAt: startAt);
+    openDoujinReader(context, item: item, booru: booru, startAt: startAt, handler: handler);
   }
 
   void _saveAll() {
@@ -632,59 +633,64 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
     );
   }
 
-  Widget _pagesGrid(BuildContext context) {
-    final List<BooruItem>? pages = ReaderHandler.instance.pagesFor(item);
-    if (pages == null || pages.isEmpty) return const SizedBox.shrink();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
+  /// The pages grid's slivers: a title and a REAL grid sliver, so only the
+  /// tiles in view (and a little past it) are built — a shrink-wrapped grid
+  /// inside the list laid out every one of a 2,000-page gallery's tiles at
+  /// once. Each tile asks its source for the page's own thumbnail as it
+  /// appears (e-hentai reads a block's sprite strip on demand).
+  List<Widget> _pagesSlivers(List<BooruItem> pages) {
+    return [
+      SliverToBoxAdapter(
+        child: Padding(
           padding: const EdgeInsets.fromLTRB(14, 16, 14, 6),
           child: Text('Pages · ${pages.length}', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
         ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: SourceSettingsHandler.instance.pagePreviewColumns(booru),
-              mainAxisSpacing: 6,
-              crossAxisSpacing: 6,
-              childAspectRatio: 0.7,
-            ),
-            itemCount: pages.length,
-            itemBuilder: (context, index) {
-              final BooruItem page = pages[index];
-              return GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => _read(startAt: index),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    ThumbnailBuild(item: page, handler: handler, selectable: false, simple: true),
-                    Positioned(
-                      right: 4,
-                      bottom: 4,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.55),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          '${index + 1}',
-                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
+      ),
+      SliverPadding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        sliver: SliverGrid.builder(
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: SourceSettingsHandler.instance.pagePreviewColumns(booru),
+            mainAxisSpacing: 6,
+            crossAxisSpacing: 6,
+            childAspectRatio: 0.7,
           ),
+          itemCount: pages.length,
+          itemBuilder: (context, index) => _pageTile(pages[index], index),
         ),
-      ],
+      ),
+    ];
+  }
+
+  Widget _pageTile(BooruItem page, int index) {
+    return PageThumbnailLoader(
+      page: page,
+      handler: handler,
+      builder: (context) => GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _read(startAt: index),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            ThumbnailBuild(item: page, handler: handler, selectable: false, simple: true),
+            Positioned(
+              right: 4,
+              bottom: 4,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.55),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  '${index + 1}',
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -732,8 +738,10 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
   }
 
   Widget _pageBody(BuildContext context, String? versionsQuery, String? galleryId) {
-    return ListView(
-        padding: const EdgeInsets.only(bottom: 40),
+    final List<BooruItem>? pages = ReaderHandler.instance.pagesFor(item);
+    return CustomScrollView(
+      slivers: [
+        SliverList.list(
         children: [
           _header(context),
           _actionRow(context),
@@ -833,8 +841,11 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
               expanded: true,
               compactTitle: "The site's related list, extended by this gallery's tags and artist",
             ),
-          _pagesGrid(context),
         ],
+        ),
+        if (pages != null && pages.isNotEmpty) ..._pagesSlivers(pages),
+        const SliverPadding(padding: EdgeInsets.only(bottom: 40)),
+      ],
     );
   }
 }

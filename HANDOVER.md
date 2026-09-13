@@ -4,7 +4,8 @@ Written 2026-09-06 at build **r26-handover** (branch `claude/experimental-doujin
 HEAD `e15d17e` + this document; §1, §2, §4.3, §10 and §12 updated for r27 the
 same day, when the project moved to the user's Windows PC; §0, §2, §5, §10 and
 §12 updated for r28, rule34video; r29 on 2026-09-08; r30 on 2026-09-09, e-hentai and
-hdoujin; r31 the same day, the tag-builder sweep). This file is the complete brief for a fresh
+hdoujin; r31 the same day, the tag-builder sweep; r32 on 2026-09-13, the e-hentai
+page previews). This file is the complete brief for a fresh
 Claude session: read Part A top to bottom before touching code. Part B is the
 older chronological build log, kept verbatim as history.
 
@@ -26,11 +27,11 @@ older chronological build log, kept verbatim as history.
   Never push elsewhere; force-push is blocked.
 - **Version:** `2.6.0+5211` in `pubspec.yaml`, mirrored in
   `lib/src/data/constants.dart` (`updateInfo`). Builds are told apart by
-  `Constants.buildCodename` (`'r31-tag-builder-sweep'` now), shown in About. Bump the
+  `Constants.buildCodename` (`'r32-ehentai-page-thumbs'` now), shown in About. Bump the
   codename every build: `rNN-<two words>`.
-- **Build counter:** builds are numbered r21, r22, … r31. Each build gets a
-  numbered folder on the K: drive (§2): r31 used **50**; the next build
-  uses **51**.
+- **Build counter:** builds are numbered r21, r22, … r32. Each build gets a
+  numbered folder on the K: drive (§2): r32 used **51**; the next build
+  uses **52**.
 - **The user** talks in voice notes and logs; expects one build per request
   round, checked on a Samsung phone. They cannot see tool output — only the
   final message.
@@ -109,11 +110,11 @@ older chronological build log, kept verbatim as history.
 1. Failure analysis from the user's log/recording; write the plan.
 2. Write the tests red first, then implement (§0); run an adversarial
    review Agent over the diff and fix its findings before going on.
-3. `flutter analyze --no-pub` → **0 errors**; the baseline is **61 issues**
-   (55 infos + 6 warnings, lint style noise in old files). New code should
-   add none.
+3. `flutter analyze --no-pub` → **0 errors**; the baseline is **60 issues**
+   (r32: 54 infos + 6 warnings, lint style noise in old files). New code
+   should add none.
 4. `flutter test $(ls test/*_test.dart | grep -v booru_test)` → all green.
-   Baseline **690** (r31). `booru_test.dart` is excluded because its cases
+   Baseline **717** (r32). `booru_test.dart` is excluded because its cases
    hit live sites; `tag_index_live_test.dart`, `rule34video_live_test.dart`
    and the doujin parity walk are tagged `live` and skipped unless run with
    `--run-skipped --tags live`.
@@ -135,9 +136,9 @@ older chronological build log, kept verbatim as history.
    Output: `build/app/outputs/flutter-apk/app-arm64-v8a-release.apk`.
 8. Deliver by copying into the Google Drive folder synced on the PC:
    `K:\My Drive\booruApk\<token>.apk (<descriptor>)\` — e.g.
-   `50.apk (r31 tag builder sweep)` — holding `changes.txt` (the changelog) and the
-   APK renamed `<codename>-2.6.0.apk`. Tokens are integers: r31 used 50, the
-   next build uses 51. The report gives that folder path (a file copy has no
+   `51.apk (r32 ehentai page thumbs)` — holding `changes.txt` (the changelog) and the
+   APK renamed `<codename>-2.6.0.apk`. Tokens are integers: r32 used 51, the
+   next build uses 52. The report gives that folder path (a file copy has no
    web link). `scripts/drive_upload_build.py` is retired.
 9. Republish the **parity artifact** (§2.6) with a footer "build rNN".
 10. Report: per item changed/observed/not verified, numbered device steps,
@@ -403,8 +404,24 @@ parameter only SETS that cookie, which a client sending its own Cookie
 header never keeps). Pages are resolved ONE AT A TIME — the only source
 that does: `loadItem(gallery)` registers N `needToLoadItem` page items and
 the reader/snatcher resolve each through `/s/<key>/<gid>-<n>` or the
-`showpage` API, paced 300 ms. Login: §8. My Tags can be imported as the
-source blacklist through the new `hasAccountBlacklist` capability),
+`showpage` API, paced 300 ms. Page PREVIEWS (r32) are tiles of the site's
+sprite strips, one strip per block of 20 pages: `pageEntriesFromHtml`
+reads key + tile (`strip.webp#xywh=x,y,w,h`, a `SpriteTile`) from the same
+`#gdt a` anchors; `_fetchBlock` reads a block once for every tile asking
+(static in-flight map, waiters' cancel tokens as interest only, bulk lane,
+30 s backoff per refused block, `_blocksRead` for tile-less blocks) and is
+also what `_resolvePage` uses for keys; the `BooruHandler.ensurePageThumbnail`
+hook (default no-op) is called by `PageThumbnailLoader` around every grid
+tile and filmstrip cell. Tiles go to the SESSION-ONLY
+`BooruItem.transientThumbnailURL` (`displayThumbnailURL` is what `Thumbnail`
+and the filmstrip load; `thumbnailURL` stays the cover and is what the DB
+keeps) because strip links expire within days — a 4-day-old one answered
+404 on 2026-09-13. `SpriteTileImage` (`widgets/image/sprite_tile_image.dart`)
+resolves the strip through the ordinary image cache once (one headers map
+per source, fixed timeouts, `fileNameExtras: ''`, so `CustomNetworkImage.==`
+holds across tiles) and cuts its rectangle in a completer that survives
+being disposed before the strip lands. Login: §8. My Tags can be imported
+as the source blacklist through the new `hasAccountBlacklist` capability),
 HDoujin (r30; `hdoujin.org`, the Schale software on its own network — see
 NiyaNiya below and `SchaleNetwork`), NHentai (official v2
 API; API key optional; account favourites sync), NiyaNiya (Schale Network
@@ -767,8 +784,33 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r31)
+## 12. Open items (as of r32)
 
+- r32 is unverified on the device: e-hentai page previews (the detail
+  page's Pages grid and the reader's filmstrip) cut from the sprite strips,
+  blocks read as the grid scrolls, and the Pages grid made a real lazy
+  sliver for EVERY doujin source. Verified live from the PC
+  (`ehentai_live_test`, 'page previews'): the 17-page fixture gallery gave
+  17 distinct tiles, its strip served 200 `image/webp` with no cookie and
+  decoded to 3400×300; the 2026-09-09 strip answered 404 (the expiry the
+  session-only design rests on). Unverified: logged-in layouts (40 per
+  block, `gt100`/`gt400` tile sizes, the `#gdt img` mode — parsed, never
+  seen) and exhentai's strip hosts.
+- r32 review findings FIXED, with tests: a failed strip (they expire) made
+  error tiles and a retry storm — `Thumbnail._fellBackFromTile` shows the
+  cover and `forgetPageThumbnail` drops the block (held for the backoff);
+  a failed tile was sticky in the image cache — `SpriteTileCompleter.onFailed`
+  evicts; a page being read waited behind queued bulk block reads —
+  `_fetchBlock` overtakes on the priority lane and `_readBlock` rides an
+  in-flight request or stands down; a null waiter counted as no interest —
+  pinned with a fresh token; a thrown request skipped the backoff; tiles
+  polluted `DoujinCoverAspects`; a view-form page guessed the block size.
+- r32 review findings NOT fixed, by choice: `ResizeImage`/pixelation are
+  no-ops for tiles (the crop ignores the decode callback; a 200 px tile is
+  smaller than any cell); the strip Referer is frozen to the host of first
+  use; expired strips leave cache files under `thumbnails/` (the name
+  carries the rotating node segment) until cleanup; a dead tile blinks the
+  shimmer once while the cover loads.
 - r31 is unverified on the device: the e-hentai paging fix, the four new
   Tag builder catalogs (e-hentai, tik.porn, kusowanka, civitai) and the
   chips on hdoujin. All were verified live from the PC

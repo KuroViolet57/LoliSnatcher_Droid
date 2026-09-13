@@ -8,6 +8,7 @@ import 'package:preload_page_view/preload_page_view.dart';
 
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/reader_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -20,6 +21,8 @@ import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 import 'package:lolisnatcher/src/widgets/image/custom_network_image.dart';
+import 'package:lolisnatcher/src/widgets/image/sprite_tile_image.dart';
+import 'package:lolisnatcher/src/widgets/thumbnail/page_thumbnail_loader.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 
 /// The doujin reader: ordered pages of one gallery, read like a book.
@@ -50,6 +53,7 @@ class DoujinReaderPage extends StatefulWidget {
     required this.galleryId,
     this.title = '',
     this.initialPage = 0,
+    this.handler,
     super.key,
   });
 
@@ -58,6 +62,11 @@ class DoujinReaderPage extends StatefulWidget {
   final String galleryId;
   final String title;
   final int initialPage;
+
+  /// The source's handler, for pages whose thumbnails arrive a block at a
+  /// time (e-hentai); the tab's own when the detail page opened the reader,
+  /// else the shared media handler for the source.
+  final BooruHandler? handler;
 
   /// Test hook: lets widget tests substitute a working in-memory image so a
   /// LIVE zoomable page is on screen while chrome/input is exercised —
@@ -116,6 +125,11 @@ class _DoujinReaderPageState extends State<DoujinReaderPage> {
 
   bool get _rtl => _direction == 'rtl';
   bool get _vertical => _direction == 'vertical';
+
+  /// Who a filmstrip cell asks for its page's thumbnail. The e-hentai memory
+  /// behind it is shared by every instance, so the shared media handler
+  /// serves when no handler came with the pages.
+  BooruHandler? get _handler => widget.handler ?? BooruHandlerFactory.mediaHandlerFor(widget.booru);
 
   @override
   void initState() {
@@ -417,19 +431,33 @@ class _DoujinReaderPageState extends State<DoujinReaderPage> {
   /// One numbered filmstrip cell: page thumbnail, page number chip, and a
   /// highlight border on the current page. Tap jumps straight there.
   Widget _stripThumb(BuildContext context, int index) {
+    final BooruItem page = widget.pages[index];
+    // A page saved on this device has its thumbnail on disk: nothing to ask.
+    final bool local = localImageProviderFor(page.thumbnailURL) != null;
+    return PageThumbnailLoader(
+      page: page,
+      handler: local ? null : _handler,
+      builder: (context) => _stripCell(context, index, page),
+    );
+  }
+
+  ImageProvider? _stripProvider(BooruItem page) {
+    if (DoujinReaderPage.testImageProviderBuilder != null) return DoujinReaderPage.testImageProviderBuilder!(page);
+    final ImageProvider? local = localImageProviderFor(page.thumbnailURL);
+    if (local != null) return local;
+    final String url = page.displayThumbnailURL;
+    if (url.isEmpty) return null;
+    // A page's tile of its gallery's sprite strip (e-hentai): cut from the
+    // strip the pages grid fetched, same headers, same cache entry.
+    final SpriteTile? tile = SpriteTile.parse(url);
+    if (tile != null) return SpriteTileImage.network(tile, booru: widget.booru, withCache: settingsHandler.thumbnailCache);
+    return CustomNetworkImage(url, withCache: settingsHandler.thumbnailCache, cacheFolder: 'thumbnails');
+  }
+
+  Widget _stripCell(BuildContext context, int index, BooruItem page) {
     final bool isCurrent = index == _effectivePage;
     final Color highlight = Theme.of(context).colorScheme.secondary;
-    final BooruItem page = widget.pages[index];
-    final ImageProvider? provider = DoujinReaderPage.testImageProviderBuilder != null
-        ? DoujinReaderPage.testImageProviderBuilder!(page)
-        : (localImageProviderFor(page.thumbnailURL) ??
-              (page.thumbnailURL.isEmpty
-                  ? null
-                  : CustomNetworkImage(
-                      page.thumbnailURL,
-                      withCache: settingsHandler.thumbnailCache,
-                      cacheFolder: 'thumbnails',
-                    )));
+    final ImageProvider? provider = _stripProvider(page);
     return Padding(
       padding: const EdgeInsets.only(right: _stripSpacing),
       child: GestureDetector(
@@ -454,7 +482,15 @@ class _DoujinReaderPageState extends State<DoujinReaderPage> {
                   Image(
                     image: provider,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) => const ColoredBox(color: Colors.white10),
+                    // A tile whose strip is gone (strip links expire within
+                    // days) shows the page's stored cover, as before r32.
+                    errorBuilder: (_, _, _) => page.transientThumbnailURL != null && page.thumbnailURL.isNotEmpty
+                        ? Image(
+                            image: CustomNetworkImage(page.thumbnailURL, withCache: settingsHandler.thumbnailCache, cacheFolder: 'thumbnails'),
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, _, _) => const ColoredBox(color: Colors.white10),
+                          )
+                        : const ColoredBox(color: Colors.white10),
                   )
                 else
                   const ColoredBox(color: Colors.white10),
@@ -827,6 +863,9 @@ Future<void> openDoujinReader(
   required Booru booru,
   // Jump straight to this page (Pages grid), ignoring saved progress.
   int? startAt,
+  // The tab's handler, so filmstrip cells share the pages grid's memory of
+  // which thumbnail blocks were read.
+  BooruHandler? handler,
 }) async {
   if (_readerOpening) return;
   _readerOpening = true;
@@ -842,7 +881,7 @@ Future<void> openDoujinReader(
     final String title = (item.description ?? '').split('\n').firstWhere((line) => line.trim().isNotEmpty, orElse: () => '');
 
     if (!context.mounted) return;
-    await _pushReader(context, pages: pages, booru: booru, galleryId: galleryId, title: title, initialPage: initialPage);
+    await _pushReader(context, pages: pages, booru: booru, galleryId: galleryId, title: title, initialPage: initialPage, handler: handler);
   } finally {
     _readerOpening = false;
   }
@@ -877,6 +916,7 @@ Future<void> _pushReader(
   required String galleryId,
   required String title,
   required int initialPage,
+  BooruHandler? handler,
 }) async {
   final GlobalKey viewerKey = GlobalKey(debugLabel: 'viewer-doujin-reader');
   ViewerHandler.instance.addViewer(viewerKey);
@@ -890,6 +930,7 @@ Future<void> _pushReader(
           galleryId: galleryId,
           title: title,
           initialPage: initialPage,
+          handler: handler,
         ),
       ),
     );

@@ -93,6 +93,15 @@ class BooruItem extends Equatable {
   /// Reactive because it can arrive AFTER the grid cell is built — counts are
   /// backfilled in the background for sites whose API omits them.
   final Rxn<int> fileCountHint = Rxn<int>();
+
+  /// A thumbnail for this session only, never persisted: a doujin page's
+  /// tile of its gallery's sprite strip (e-hentai), whose strip links expire
+  /// within days. Widgets that show thumbnails read [displayThumbnailURL];
+  /// the database, backups and sync keep [thumbnailURL], the stable cover.
+  String? transientThumbnailURL;
+
+  /// What a thumbnail widget loads for this item.
+  String get displayThumbnailURL => transientThumbnailURL ?? thumbnailURL;
   String? rating;
   String? score;
   String? uploaderId;

@@ -2,12 +2,15 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/data/settings/preview_quality.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
+import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
 import 'package:lolisnatcher/src/handlers/reader_handler.dart';
@@ -18,6 +21,24 @@ import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/tag_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/pages/doujin_detail_page.dart';
+import 'package:lolisnatcher/src/widgets/image/sprite_tile_image.dart';
+import 'package:lolisnatcher/src/widgets/thumbnail/thumbnail_build.dart';
+
+/// A source whose pages learn their thumbnail late, the way e-hentai's do
+/// (one strip per block of pages, read when a page of the block is shown).
+class _LateThumbHandler extends BooruHandler {
+  _LateThumbHandler(super.booru, super.limit);
+
+  /// Page numbers asked for, in the order the tiles appeared.
+  final List<int> asked = [];
+
+  @override
+  Future<void> ensurePageThumbnail(BooruItem page, {CancelToken? cancelToken}) async {
+    asked.add(int.parse(page.serverId!.split('_p').last));
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    page.transientThumbnailURL = 'https://strips.invalid/${page.serverId}.webp#xywh=0,0,200,277';
+  }
+}
 
 /// Round 3, items 6 + 7: the detail page's strip sections put their
 /// open-in-new-tab action in the section header instead of spending a whole
@@ -151,6 +172,99 @@ void main() {
     expect(size.height, lessThanOrEqualTo(viewportHeight * 0.55 + 1));
     expect(size.height, greaterThan(viewportHeight * 0.2));
 
+    await closeDetail(tester);
+  });
+
+  // ── r32: the pages grid ──
+
+  /// A book of [count] pages, tags present, so the page never reaches for
+  /// the network; [handler] stands in for the source when given.
+  SearchTab bookTab(int count, {BooruHandler? handler}) {
+    final booru = nhentaiBooru();
+    final tab = SearchTab(booru, null, 'id:1002', customHandler: handler);
+    final item = BooruItem(
+      fileURL: 'https://images.invalid/1002.png',
+      sampleURL: 'https://images.invalid/1002.png',
+      thumbnailURL: 'https://thumbs.invalid/1002.png',
+      tagsList: [Tag('vanilla')],
+      postURL: 'https://nhentai.net/g/1002/',
+      serverId: '1002',
+    )..description = 'Long Book';
+    tab.booruHandler.fetched.add(item);
+    tab.booruHandler.filterFetched();
+    ReaderHandler.instance.registerBook(item, [
+      for (int i = 1; i <= count; i++)
+        BooruItem(
+          fileURL: 'https://images.invalid/1002-p$i.png',
+          sampleURL: 'https://images.invalid/1002-p$i.png',
+          thumbnailURL: 'https://thumbs.invalid/1002-p$i.png',
+          tagsList: const [],
+          postURL: 'https://nhentai.net/g/1002/$i/',
+          serverId: '1002_p$i',
+        ),
+    ]);
+    return tab;
+  }
+
+  /// Drags the page body down to its pages grid.
+  Future<void> scrollToPages(WidgetTester tester) async {
+    for (int i = 0; i < 12; i++) {
+      await tester.drag(find.byType(Scrollable).first, const Offset(0, -600));
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await tester.pump(const Duration(milliseconds: 400));
+  }
+
+  testWidgets('the pages grid is lazy: a 60-page book builds only the tiles in view', (tester) async {
+    tester.view.physicalSize = const Size(1080, 1800);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    await pumpDetail(tester, bookTab(60));
+    await scrollToPages(tester);
+    expect(find.textContaining('Pages · 60', skipOffstage: false), findsOneWidget);
+    final int built = find.byType(ThumbnailBuild, skipOffstage: false).evaluate().length;
+    expect(built, greaterThan(0));
+    expect(built, lessThan(60), reason: 'a shrink-wrapped grid built every tile at once; it has to be a real sliver');
+    await closeDetail(tester);
+  });
+
+  testWidgets('a tile asks its source for a late thumbnail and repaints with the sprite tile when it arrives', (tester) async {
+    tester.view.physicalSize = const Size(1080, 1800);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    final _LateThumbHandler handler = _LateThumbHandler(nhentaiBooru(), 20);
+    await pumpDetail(tester, bookTab(6, handler: handler));
+    await scrollToPages(tester);
+    expect(handler.asked, contains(1));
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pump(const Duration(milliseconds: 400));
+    ImageProvider unwrap(ImageProvider p) => p is ResizeImage ? p.imageProvider : p;
+    final Iterable<ImageProvider> painted = tester.widgetList<Image>(find.byType(Image, skipOffstage: false)).map((i) => unwrap(i.image));
+    expect(painted.whereType<SpriteTileImage>(), isNotEmpty, reason: 'the grid repainted page 1 with its tile');
+    await closeDetail(tester);
+  });
+
+  testWidgets('a tile whose strip cannot be fetched falls back to the cover instead of an error tile', (tester) async {
+    tester.view.physicalSize = const Size(1080, 1800);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    // Thumbnail-quality previews, as an e-hentai page (a `needToLoadItem`
+    // shell) always gets: the tile is the MAIN image, not the underlay.
+    SettingsHandler.instance.previewMode = PreviewQuality.thumbnail;
+    addTearDown(() => SettingsHandler.instance.previewMode = PreviewQuality.defaultValue);
+    final SearchTab tab = bookTab(3);
+    final BooruItem first = ReaderHandler.instance.pagesFor(tab.booruHandler.fetched.first)!.first;
+    first.transientThumbnailURL = 'https://strips.invalid/s.webp#xywh=0,0,200,277';
+    await pumpDetail(tester, tab);
+    await scrollToPages(tester);
+    // The strip request and the cache-file I/O are real asynchronous work,
+    // which only completes while real time passes (runAsync), not fake time.
+    for (int i = 0; i < 10 && first.transientThumbnailURL != null; i++) {
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 200)));
+      await tester.pump(const Duration(milliseconds: 300));
+    }
+    expect(first.transientThumbnailURL, isNull, reason: 'a dead strip link (they expire within days) drops the tile');
+    expect(first.displayThumbnailURL, first.thumbnailURL);
     await closeDetail(tester);
   });
 }

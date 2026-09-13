@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ui' show Rect;
 
 import 'package:flutter/foundation.dart';
 
@@ -21,6 +22,7 @@ import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
+import 'package:lolisnatcher/src/widgets/image/sprite_tile_image.dart';
 import 'package:lolisnatcher/src/boorus/doujin/ehentai_tag_catalog.dart';
 import 'package:lolisnatcher/src/handlers/tag_catalog_source.dart';
 
@@ -40,6 +42,7 @@ class EHentaiGallery {
     required this.rating,
     required this.tags,
     required this.pageKeys,
+    required this.pageThumbs,
     required this.blockSize,
     required this.newerVersions,
     required this.parentGid,
@@ -62,6 +65,12 @@ class EHentaiGallery {
 
   /// Page number -> image key, for the pages the fetched block showed.
   final Map<int, String> pageKeys;
+
+  /// Page number -> thumbnail for the same pages: a tile of the block's
+  /// sprite strip (`strip.webp#xywh=x,y,w,h`), or an image URL in an
+  /// account's individual-image mode. Strip links expire within days, so
+  /// these are session data (`BooruItem.transientThumbnailURL`).
+  final Map<int, String> pageThumbs;
 
   /// Pages per gallery page (20, or 40 with the account setting).
   final int blockSize;
@@ -141,6 +150,31 @@ class EHentaiHandler extends BooruHandler with DoujinNamespacedTags {
   static final Map<String, int> _blockSizes = {};
   static final Map<String, String> _showkeys = {};
   static final Map<String, EHentaiGallery> _galleries = {};
+
+  /// Page number -> thumbnail per gallery, learned a block at a time (r32).
+  static final Map<String, Map<int, String>> _pageThumbs = {};
+
+  /// `gid|block` of every block read, so a block that carried keys but no
+  /// tiles (an account's image mode, a changed page) is not read again for
+  /// every tile that scrolls by.
+  static final Set<String> _blocksRead = {};
+
+  /// Block reads queued or in flight, so twenty tiles of one block share one
+  /// request; the lane each was queued on, and the HTTP request itself once
+  /// it has gone out (a read that starts while another is on the wire rides
+  /// along instead of asking twice).
+  static final Map<String, Future<String?>> _blockFetches = {};
+  static final Map<String, bool> _blockLane = {};
+  static final Map<String, Future<String?>> _blockRequest = {};
+
+  /// Who is waiting for a block: a request is skipped once every waiter has
+  /// scrolled away before its turn.
+  static final Map<String, List<CancelToken>> _blockWaiters = {};
+
+  /// When a block last failed to read, so tiles do not hammer a refusal.
+  static final Map<String, int> _blockFailedAt = {};
+  static const Duration blockRetryAfter = Duration(seconds: 30);
+
   /// The tail of the paced queue: every request chains onto it, so pages
   /// opened at once (the reader preloads two or three slides) go out one
   /// after another instead of all seeing the same old timestamp.
@@ -172,10 +206,21 @@ class EHentaiHandler extends BooruHandler with DoujinNamespacedTags {
     _blockSizes.clear();
     _showkeys.clear();
     _galleries.clear();
+    _pageThumbs.clear();
+    _blocksRead.clear();
+    _blockFetches.clear();
+    _blockLane.clear();
+    _blockRequest.clear();
+    _blockWaiters.clear();
+    _blockFailedAt.clear();
     _paceChain = Future.value();
     _bulkPaceChain = Future.value();
     _warnedFor = '';
   }
+
+  /// Lets a test retry a block without waiting out [blockRetryAfter].
+  @visibleForTesting
+  static void forgetBlockFailuresForTests() => _blockFailedAt.clear();
 
   // ── site and session ─────────────────────────────────────────────────
 
@@ -555,16 +600,54 @@ class EHentaiHandler extends BooruHandler with DoujinNamespacedTags {
 
   static int _int(String s) => int.tryParse(s.replaceAll(',', '')) ?? 0;
 
-  /// Page number -> image key from one gallery block.
-  static Map<int, String> pageKeysFromHtml(String html) {
+  static final RegExp _tileSize = RegExp(r'width:\s*(\d+)px;\s*height:\s*(\d+)px');
+  static final RegExp _tileBackground = RegExp(r'''url\(['"]?([^'")]+)['"]?\)\s+(-?\d+)(?:px)?\s+(-?\d+)(?:px)?''');
+
+  /// Page number -> image key and thumbnail from one gallery block.
+  ///
+  /// The default layout draws each thumbnail as one tile of a sprite strip,
+  /// a div styled `width:200px;height:277px;background:transparent
+  /// url(https://NODE.hath.network/c2/SEGMENT/GID-BLOCK.webp) -200px 0
+  /// no-repeat` — the tile is `#xywh=200,0,200,277` of that strip, its
+  /// height the div's own (the strip is as tall as the block's tallest
+  /// tile; the y offset is written `0`, without `px`). An account's
+  /// individual-image mode puts an `img` in the anchor instead; an anchor
+  /// with neither gives a key alone.
+  static Map<int, ({String key, String? thumb})> pageEntriesFromHtml(String html) {
     final dom.Document doc = parse(html);
-    final Map<int, String> keys = {};
+    final Map<int, ({String key, String? thumb})> entries = {};
     for (final dom.Element a in doc.querySelectorAll('#gdt a[href]')) {
       final RegExpMatch? m = _pageHref.firstMatch(a.attributes['href'] ?? '');
-      if (m != null) keys[int.parse(m.group(3)!)] = m.group(1)!;
+      if (m == null) continue;
+      entries[int.parse(m.group(3)!)] = (key: m.group(1)!, thumb: _thumbOf(a));
     }
-    return keys;
+    return entries;
   }
+
+  static String? _thumbOf(dom.Element a) {
+    final String? style = a.querySelector('div[style]')?.attributes['style'];
+    if (style != null) {
+      final RegExpMatch? size = _tileSize.firstMatch(style);
+      final RegExpMatch? background = _tileBackground.firstMatch(style);
+      if (size != null && background != null) {
+        return SpriteTile(
+          thumbUrl(background.group(1)!.trim()),
+          Rect.fromLTWH(
+            -int.parse(background.group(2)!).toDouble(),
+            -int.parse(background.group(3)!).toDouble(),
+            int.parse(size.group(1)!).toDouble(),
+            int.parse(size.group(2)!).toDouble(),
+          ),
+        ).encode();
+      }
+    }
+    final String? img = a.querySelector('img[src]')?.attributes['src']?.trim();
+    return (img == null || img.isEmpty) ? null : thumbUrl(img);
+  }
+
+  /// Page number -> image key from one gallery block.
+  static Map<int, String> pageKeysFromHtml(String html) =>
+      pageEntriesFromHtml(html).map((int page, ({String key, String? thumb}) e) => MapEntry(page, e.key));
 
   /// `Showing 1 - 20 of 1,997 images` -> (first, last, total).
   static ({int first, int last, int total})? showingRange(String html) {
@@ -625,7 +708,12 @@ class EHentaiHandler extends BooruHandler with DoujinNamespacedTags {
       }
     }
 
-    final Map<int, String> keys = pageKeysFromHtml(html);
+    final Map<int, ({String key, String? thumb})> entries = pageEntriesFromHtml(html);
+    final Map<int, String> keys = entries.map((int page, ({String key, String? thumb}) e) => MapEntry(page, e.key));
+    final Map<int, String> thumbs = {
+      for (final MapEntry<int, ({String key, String? thumb})> e in entries.entries)
+        if (e.value.thumb != null) e.key: e.value.thumb!,
+    };
     final ({int first, int last, int total})? range = showingRange(html);
     if (pages == 0 && range != null) pages = range.total;
     if (pages == 0) pages = keys.length;
@@ -654,6 +742,7 @@ class EHentaiHandler extends BooruHandler with DoujinNamespacedTags {
       rating: rating,
       tags: tags,
       pageKeys: keys,
+      pageThumbs: thumbs,
       blockSize: blockSize,
       newerVersions: newer,
       parentGid: parentGid,
@@ -662,6 +751,8 @@ class EHentaiHandler extends BooruHandler with DoujinNamespacedTags {
     );
     _galleries[gid] = gallery;
     (_pageKeys[gid] ??= {}).addAll(keys);
+    (_pageThumbs[gid] ??= {}).addAll(thumbs);
+    _blocksRead.add('$gid|0');
     _blockSizes[gid] = blockSize;
     return gallery;
   }
@@ -706,7 +797,10 @@ class EHentaiHandler extends BooruHandler with DoujinNamespacedTags {
     return (key: m.group(1)!, gid: m.group(2)!, page: int.parse(m.group(3)!));
   }
 
-  BooruItem _pageShell({required String gid, required int page, required String cover, required String postURL}) {
+  /// A page before it is resolved. The persisted thumbnail is the gallery
+  /// cover (stable); the page's own tile, when its block has been read, is
+  /// the session-only [BooruItem.transientThumbnailURL].
+  BooruItem _pageShell({required String gid, required int page, required String cover, required String postURL, String? thumb}) {
     final BooruItem item = BooruItem(
       fileURL: cover,
       sampleURL: cover,
@@ -716,15 +810,23 @@ class EHentaiHandler extends BooruHandler with DoujinNamespacedTags {
       serverId: '${gid}_$page',
       fileNameExtras: '${gid}_${page.toString().padLeft(4, '0')}',
     );
+    item.transientThumbnailURL = thumb ?? _pageThumbs[gid]?[page];
     item.possibleMediaType.value = MediaType.image;
     item.mediaType.value = MediaType.needToLoadItem;
     return item;
   }
 
-  BooruItem pageItem({required String gid, required String token, required int page, required String key, required String cover}) {
+  BooruItem pageItem({
+    required String gid,
+    required String token,
+    required int page,
+    required String key,
+    required String cover,
+    String? thumb,
+  }) {
     _tokens[gid] = token;
     (_pageKeys[gid] ??= {})[page] = key;
-    return _pageShell(gid: gid, page: page, cover: cover, postURL: '$site/s/$key/$gid-$page');
+    return _pageShell(gid: gid, page: page, cover: cover, postURL: '$site/s/$key/$gid-$page', thumb: thumb);
   }
 
   BooruItem placeholderItem({required String gid, required String token, required int page, required String cover}) {
@@ -840,6 +942,24 @@ class EHentaiHandler extends BooruHandler with DoujinNamespacedTags {
     return mine;
   }
 
+  /// Runs [body] in its lane's next slot. Unlike [_pace] the wait comes
+  /// AFTER the body, so a body that decides not to fetch costs the lane
+  /// nothing, and the next slot waits for the request to be answered.
+  Future<T> _paced<T>(bool bulk, Future<T> Function() body) {
+    final Future<void> before = bulk ? _bulkPaceChain : _paceChain;
+    final Future<T> mine = before.then((_) => body());
+    final Future<void> after = mine.then<void>(
+      (_) => Future<void>.delayed(pagePace),
+      onError: (Object _) => Future<void>.delayed(pagePace),
+    );
+    if (bulk) {
+      _bulkPaceChain = after;
+    } else {
+      _paceChain = after;
+    }
+    return mine;
+  }
+
   // ── loadItem: a gallery, or one page ─────────────────────────────────
 
   @override
@@ -869,7 +989,7 @@ class EHentaiHandler extends BooruHandler with DoujinNamespacedTags {
       final List<BooruItem> pages = [
         for (int n = 1; n <= gallery.pages; n++)
           gallery.pageKeys.containsKey(n)
-              ? pageItem(gid: gid, token: token, page: n, key: gallery.pageKeys[n]!, cover: cover)
+              ? pageItem(gid: gid, token: token, page: n, key: gallery.pageKeys[n]!, cover: cover, thumb: gallery.pageThumbs[n])
               : placeholderItem(gid: gid, token: token, page: n, cover: cover),
       ];
       item
@@ -910,13 +1030,9 @@ class EHentaiHandler extends BooruHandler with DoujinNamespacedTags {
       token = ph.token;
       key = _pageKeys[gid]?[page];
       if (key == null) {
-        await _pace(bulk: bulk);
-        final ({String? body, String? error}) block = await _sitePage(blockUrl('$site/g/$gid/$token/', ph.block), cancelToken: cancelToken);
-        if (block.body == null) return block.error;
-        final Map<int, String> keys = pageKeysFromHtml(block.body!);
-        if (keys.isEmpty) return 'the gallery block listed no pages (the page changed?)';
-        (_pageKeys[gid] ??= {}).addAll(keys);
-        key = keys[page];
+        final String? error = await _fetchBlock(gid, token, ph.block, bulk: bulk, waiter: cancelToken);
+        if (error != null) return error;
+        key = _pageKeys[gid]?[page];
         if (key == null) return 'page $page is not in its block (the gallery was edited?)';
       }
       item.postURL = '$site/s/$key/$gid-$page';
@@ -971,6 +1087,168 @@ class EHentaiHandler extends BooruHandler with DoujinNamespacedTags {
     item.possibleMediaType.value = null;
     item.mediaType.value = MediaType.image;
     return null;
+  }
+
+  // ── page thumbnails: one strip per block, read as its pages come into view ──
+
+  /// A page's tile of its block's sprite strip: known already when its
+  /// block was read, else read now — on the bulk lane, once for every tile
+  /// of the block that is asking, skipped when they have all scrolled away.
+  /// Never throws: a page that cannot learn its tile keeps showing the cover.
+  @override
+  Future<void> ensurePageThumbnail(BooruItem page, {CancelToken? cancelToken}) async {
+    try {
+      final ({String gid, String token, int block, int page})? placeholder = parsePagePlaceholder(page.postURL);
+      final ({String key, String gid, int page})? view = placeholder == null ? parsePageViewUrl(page.postURL) : null;
+      if (placeholder == null && view == null) return;
+      final String gid = placeholder?.gid ?? view!.gid;
+      final int n = placeholder?.page ?? view!.page;
+      final String? token = placeholder?.token ?? _tokens[gid];
+      if (token == null) return;
+      // A page in view form names no block; the block size is only known
+      // once its gallery page was read this session (20, or 40 with an
+      // account setting) — a guess would read, and mark read, the wrong block.
+      if (placeholder == null && !_blockSizes.containsKey(gid)) return;
+      final int block = placeholder?.block ?? (n - 1) ~/ _blockSizes[gid]!;
+      String? thumb = _pageThumbs[gid]?[n];
+      if (thumb == null) {
+        final String id = '$gid|$block';
+        if (_blocksRead.contains(id)) return;
+        final int? failedAt = _blockFailedAt[id];
+        if (failedAt != null && DateTime.now().millisecondsSinceEpoch - failedAt < blockRetryAfter.inMilliseconds) return;
+        final String? error = await _fetchBlock(gid, token, block, bulk: true, waiter: cancelToken);
+        if (error != null) {
+          Logger.Inst().log('block $block of $gid not read for its thumbnails: $error', className, 'ensurePageThumbnail', LogTypes.booruHandlerInfo);
+          return;
+        }
+        thumb = _pageThumbs[gid]?[n];
+      }
+      if (thumb != null) page.transientThumbnailURL = thumb;
+    } catch (e, s) {
+      Logger.Inst().log('ensurePageThumbnail failed: $e', className, 'ensurePageThumbnail', LogTypes.exception, s: s);
+    }
+  }
+
+  /// Reads gallery block [block] once — the keys and thumbnails of its pages
+  /// — for however many callers ask at the same time; the registered book's
+  /// pages of that block learn their tiles on the way. Null on success, else
+  /// the message.
+  ///
+  /// [waiter] is the caller's interest, not the request's cancel token: a
+  /// shared request must not be killed because one tile scrolled away. When
+  /// every waiter has cancelled before the block's turn, the request is
+  /// skipped and the slot costs nothing.
+  Future<String?> _fetchBlock(String gid, String token, int block, {bool bulk = false, CancelToken? waiter}) {
+    final String id = '$gid|$block';
+    // A caller without a token (Save all, a detail page resolving a page) is
+    // an interest that never leaves.
+    (_blockWaiters[id] ??= []).add(waiter ?? CancelToken());
+    final Future<String?>? queued = _blockFetches[id];
+    // A page being read must not wait behind tiles: when the block is only
+    // QUEUED on the bulk lane, read it on the priority lane now; the queued
+    // read stands down when its turn comes (or rides along if the request
+    // has already gone out).
+    final bool overtake = queued != null && !bulk && _blockLane[id] == true && !_blockRequest.containsKey(id);
+    if (queued != null && !overtake) return queued;
+    final Future<String?> mine = _paced<String?>(bulk, () => _readBlock(gid, token, block, id));
+    if (overtake) return mine;
+    _blockLane[id] = bulk;
+    return _blockFetches[id] = mine.whenComplete(() {
+      _blockFetches.remove(id);
+      _blockLane.remove(id);
+      _blockWaiters.remove(id);
+    });
+  }
+
+  /// One lane slot's worth of work for block [id]: nothing when the block was
+  /// read meanwhile or nobody waits any more, the request in flight when
+  /// another read already sent it, else the request.
+  Future<String?> _readBlock(String gid, String token, int block, String id) async {
+    if (_blocksRead.contains(id)) return null;
+    final Future<String?>? onTheWire = _blockRequest[id];
+    if (onTheWire != null) return onTheWire;
+    final List<CancelToken> waiters = _blockWaiters[id] ?? const [];
+    if (waiters.isNotEmpty && waiters.every((CancelToken t) => t.isCancelled)) return 'cancelled before block $block was read';
+    final Future<String?> request = _requestBlock(gid, token, block, id);
+    _blockRequest[id] = request;
+    try {
+      return await request;
+    } finally {
+      _blockRequest.removeWhere((String key, _) => key == id);
+    }
+  }
+
+  Future<String?> _requestBlock(String gid, String token, int block, String id) async {
+    try {
+      final ({String? body, String? error}) r = await _sitePage(blockUrl('$site/g/$gid/$token/', block));
+      if (r.body == null) {
+        _blockFailedAt[id] = DateTime.now().millisecondsSinceEpoch;
+        return r.error;
+      }
+      final Map<int, ({String key, String? thumb})> entries = pageEntriesFromHtml(r.body!);
+      if (entries.isEmpty) {
+        _blockFailedAt[id] = DateTime.now().millisecondsSinceEpoch;
+        return 'the gallery block listed no pages (the page changed?)';
+      }
+      final Map<int, String> keys = _pageKeys[gid] ??= {};
+      final Map<int, String> thumbs = _pageThumbs[gid] ??= {};
+      for (final MapEntry<int, ({String key, String? thumb})> e in entries.entries) {
+        keys[e.key] = e.value.key;
+        if (e.value.thumb != null) thumbs[e.key] = e.value.thumb!;
+      }
+      _blocksRead.add(id);
+      _blockFailedAt.remove(id);
+      _applyThumbs(gid, token, entries.keys);
+      return null;
+    } catch (e) {
+      // Offline, a timeout: as much a refusal as a 4xx for the backoff's sake.
+      _blockFailedAt[id] = DateTime.now().millisecondsSinceEpoch;
+      return 'block $block of $gid could not be read: $e';
+    }
+  }
+
+  /// The tile [ensurePageThumbnail] gave [page] could not be loaded: its
+  /// strip link expired (they last days), or the strip changed under it.
+  /// The whole block shares that strip, so the block's tiles go, the block is
+  /// no longer "read", and — held for [blockRetryAfter] so twenty failing
+  /// tiles do not each trigger a re-read — the next visit reads a fresh one.
+  @override
+  void forgetPageThumbnail(BooruItem page) {
+    final ({String gid, String token, int block, int page})? placeholder = parsePagePlaceholder(page.postURL);
+    final ({String key, String gid, int page})? view = placeholder == null ? parsePageViewUrl(page.postURL) : null;
+    if (placeholder == null && view == null) return;
+    final String gid = placeholder?.gid ?? view!.gid;
+    final int n = placeholder?.page ?? view!.page;
+    final int size = _blockSizes[gid] ?? 20;
+    final int block = placeholder?.block ?? (n - 1) ~/ size;
+    final int first = block * size + 1;
+    final int last = first + size - 1;
+    final String id = '$gid|$block';
+    _pageThumbs[gid]?.removeWhere((int p, _) => p >= first && p <= last);
+    _blocksRead.remove(id);
+    _blockFailedAt[id] = DateTime.now().millisecondsSinceEpoch;
+    page.transientThumbnailURL = null;
+    final String? token = placeholder?.token ?? _tokens[gid];
+    if (token == null) return;
+    final List<BooruItem>? book = ReaderHandler.instance.books[galleryUrl(gid, token)] ?? ReaderHandler.instance.books['$site/g/$gid/$token/'];
+    if (book == null) return;
+    for (int p = first; p <= last && p <= book.length; p++) {
+      book[p - 1].transientThumbnailURL = null;
+    }
+  }
+
+  /// Hands the registered book's pages [pageNumbers] their tiles.
+  void _applyThumbs(String gid, String token, Iterable<int> pageNumbers) {
+    final Map<int, String>? thumbs = _pageThumbs[gid];
+    // Books are keyed by the gallery item's postURL: the default host from a
+    // listing, or the session's host.
+    final List<BooruItem>? book = ReaderHandler.instance.books[galleryUrl(gid, token)] ?? ReaderHandler.instance.books['$site/g/$gid/$token/'];
+    if (thumbs == null || book == null) return;
+    for (final int n in pageNumbers) {
+      final String? thumb = thumbs[n];
+      if (thumb == null || n < 1 || n > book.length) continue;
+      book[n - 1].transientThumbnailURL = thumb;
+    }
   }
 
   // ── gdata, related, recommended ──────────────────────────────────────

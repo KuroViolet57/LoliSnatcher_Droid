@@ -921,6 +921,20 @@ abstract class BooruHandler {
     return (item: item, failed: false, error: null);
   }
 
+  /// Gives [page] its own thumbnail when the source serves page thumbnails
+  /// apart from the page list (e-hentai: one sprite strip per block of
+  /// pages, read when a page of that block comes into view). Writes
+  /// `page.transientThumbnailURL`; [cancelToken] is the caller's interest,
+  /// withdrawn when the tile leaves the screen. The default has nothing to
+  /// add.
+  Future<void> ensurePageThumbnail(BooruItem page, {CancelToken? cancelToken}) async {}
+
+  /// The thumbnail [ensurePageThumbnail] gave [page] could not be loaded (a
+  /// strip link that expired): drop it — and its block's, since they share
+  /// the strip — so the page shows its stored cover and a later visit reads
+  /// a fresh one. The default has nothing to forget.
+  void forgetPageThumbnail(BooruItem page) {}
+
   ////////////////////////////////////////////////////////////////////////
 
   bool get hasNotesSupport => false;

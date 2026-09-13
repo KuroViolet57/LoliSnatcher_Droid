@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
@@ -285,7 +286,16 @@ void main() {
       expect(pages.first.mediaType.value, MediaType.needToLoadItem);
       expect(pages[20].postURL, 'https://e-hentai.org/g/4178032/49d94b3d3c/?p=1#page-21', reason: 'block 1 not fetched yet');
       expect(pages.last.postURL, 'https://e-hentai.org/g/4178032/49d94b3d3c/?p=99#page-1997');
-      expect(pages.every((p) => p.thumbnailURL == item.thumbnailURL), isTrue, reason: 'the site has no per-page thumbnails, only sprites');
+      expect(pages.every((p) => p.thumbnailURL == item.thumbnailURL), isTrue, reason: 'the persisted thumbnail stays the cover: strip links expire within days');
+      for (int n = 1; n <= 20; n++) {
+        expect(
+          pages[n - 1].transientThumbnailURL,
+          'https://sunvxqrqcj.hath.network/c2/tvkojkn8k8vt8f18s3/4178032-0.webp#xywh=${(n - 1) * 200},0,200,137',
+          reason: 'page $n has its own tile of the block-0 strip, read from the gallery page',
+        );
+      }
+      expect(pages[20].transientThumbnailURL, isNull, reason: 'block 1 not fetched yet');
+      expect(pages[20].displayThumbnailURL, item.thumbnailURL, reason: 'shown as the cover until its block arrives');
       expect(item.tagsList, isNotEmpty);
       expect(item.description, startsWith('[patreon] NewtypeWaifu'), reason: 'this gallery has no japanese title');
     });
@@ -402,6 +412,269 @@ void main() {
       expect(p21.postURL, endsWith('/4178032-21'));
       expect((await h.loadItem(item: p22)).failed, isFalse);
       expect(asked.where((u) => u.contains('?p=1')), hasLength(1), reason: 'the block is cached');
+    });
+  });
+
+  group('page thumbnails (r32)', () {
+    // The strips the fixtures name. A strip serves a whole block; its path
+    // segment is keyed and expires, so tiles are session-only.
+    const String strip17 = 'https://puzaqhxrbn.hath.network/c2/gazjmhtopsdhax18s3/4149118-0.webp';
+    const String strip1 = 'https://sunvxqrqcj.hath.network/c2/02qsqmoa45nojv18s3/4178032-1.webp';
+
+    BooruItem galleryItem() => BooruItem(
+      fileURL: 'https://ehgt.org/c.webp',
+      sampleURL: 'https://ehgt.org/c.webp',
+      thumbnailURL: 'https://ehgt.org/c.webp',
+      tagsList: const [],
+      postURL: 'https://e-hentai.org/g/4178032/49d94b3d3c/',
+      serverId: '4178032',
+    );
+
+    /// The 1,997-page gallery page, its block 1 and any page view from the
+    /// fixtures; every other block is a 404.
+    Future<({int status, String body, String finalUrl})> Function(String url, {String? postJson}) blocks(
+      List<String> asked, {
+      int block1Status = 200,
+    }) => (url, {postJson}) async {
+      asked.add(url);
+      if (url.endsWith('49d94b3d3c/')) return (status: 200, body: fixture('ehentai_gallery_multi.html'), finalUrl: url);
+      if (url.contains('?p=1')) {
+        return (status: block1Status, body: block1Status == 200 ? fixture('ehentai_gallery_multi_p1.html') : '', finalUrl: url);
+      }
+      if (url.contains('/s/')) return (status: 200, body: fixture('ehentai_page.html'), finalUrl: url);
+      return (status: 404, body: '', finalUrl: url);
+    };
+
+    test('every entry of a gallery block carries its tile: the strip, the x offset, the declared height', () {
+      final entries = EHentaiHandler.pageEntriesFromHtml(fixture('ehentai_gallery.html'));
+      expect(entries.keys, [for (int i = 1; i <= 17; i++) i]);
+      expect(entries[1]!.key, 'f5cad5dda2');
+      expect(entries[1]!.thumb, '$strip17#xywh=0,0,200,273');
+      expect(entries[2]!.thumb, '$strip17#xywh=200,0,200,277');
+      expect(entries[17]!.thumb, '$strip17#xywh=3200,0,200,278');
+      expect(entries.values.map((e) => e.thumb).toSet(), hasLength(17), reason: 'no two pages share a tile');
+      final block1 = EHentaiHandler.pageEntriesFromHtml(fixture('ehentai_gallery_multi_p1.html'));
+      expect(block1[21]!.thumb, '$strip1#xywh=0,0,200,137');
+      expect(block1[40]!.thumb, '$strip1#xywh=3800,0,200,137');
+      expect(EHentaiHandler.pageKeysFromHtml(fixture('ehentai_gallery.html')).keys, entries.keys, reason: 'the key map reads the same anchors');
+      expect(handler().galleryFromHtml(fixture('ehentai_gallery.html'), gid: '4149118', token: '17c2f87e13').pageThumbs, hasLength(17));
+    });
+
+    test("an account's individual-image mode is a plain URL; an anchor with nothing in it is a key alone", () {
+      const String html = '''
+<div id="gdt" class="gt200">
+<a href="https://e-hentai.org/s/aaaaaaaaaa/1-1"><img src="https://s.exhentai.org/t/x_l.jpg" alt=""></a>
+<a href="https://e-hentai.org/s/bbbbbbbbbb/1-2"></a>
+<a href="https://e-hentai.org/s/cccccccccc/1-3"><div title="Page 3: c.jpg" style="width:100px;height:141px;background:transparent url(https://x.hath.network/c2/k/1-0.webp) -200px 0 no-repeat"></div></a>
+</div>''';
+      final entries = EHentaiHandler.pageEntriesFromHtml(html);
+      expect(entries[1]!.thumb, 'https://ehgt.org/t/x_l.jpg', reason: 'the exhentai thumb host is rewritten, as for covers');
+      expect(entries[2]!.key, 'bbbbbbbbbb');
+      expect(entries[2]!.thumb, isNull);
+      expect(entries[3]!.thumb, 'https://x.hath.network/c2/k/1-0.webp#xywh=200,0,100,141', reason: 'a 100px layout');
+    });
+
+    test('twenty tiles asking at once fetch their block once; every page of the block learns its tile and its key', () async {
+      final h = handler();
+      final List<String> asked = [];
+      h.fetcher = blocks(asked);
+      final BooruItem item = galleryItem();
+      expect((await h.loadItem(item: item)).failed, isFalse);
+      final List<BooruItem> pages = ReaderHandler.instance.pagesFor(item)!;
+      await Future.wait([for (int n = 21; n <= 40; n++) h.ensurePageThumbnail(pages[n - 1])]);
+      expect(asked.where((u) => u.contains('?p=1')), hasLength(1));
+      for (int n = 21; n <= 40; n++) {
+        expect(pages[n - 1].transientThumbnailURL, '$strip1#xywh=${(n - 21) * 200},0,200,137', reason: 'page $n');
+        expect(pages[n - 1].thumbnailURL, item.thumbnailURL, reason: 'the persisted field stays the cover');
+        expect(pages[n - 1].postURL, 'https://e-hentai.org/g/4178032/49d94b3d3c/?p=1#page-$n', reason: 'a placeholder keeps its URL until it is resolved');
+      }
+      expect(pages[40].transientThumbnailURL, isNull, reason: 'block 2 was not asked for');
+      // Known tiles make no request, block 0 included (it came with the gallery page).
+      await h.ensurePageThumbnail(pages[25]);
+      await h.ensurePageThumbnail(pages[0]);
+      expect(asked.where((u) => u.contains('?p=')), hasLength(1));
+      expect(asked.where((u) => u.endsWith('49d94b3d3c/')), hasLength(1));
+      // The keys came with the tiles: resolving page 22 goes straight to its page view.
+      final r = await h.loadItem(item: pages[21]);
+      expect(r.failed, isFalse, reason: r.error);
+      expect(asked.where((u) => u.contains('?p=1')), hasLength(1));
+      expect(asked.last, endsWith('/4178032-22'));
+    });
+
+    test('a page in view form finds its block through the gallery token it learned', () async {
+      final h = handler();
+      final List<String> asked = [];
+      h.fetcher = blocks(asked);
+      final BooruItem item = galleryItem();
+      expect((await h.loadItem(item: item)).failed, isFalse);
+      final BooruItem p21 = h.pageItem(gid: '4178032', token: '49d94b3d3c', page: 21, key: 'dc60315ea3', cover: 'c');
+      await h.ensurePageThumbnail(p21);
+      expect(asked.where((u) => u.contains('?p=1')), hasLength(1));
+      expect(p21.transientThumbnailURL, '$strip1#xywh=0,0,200,137');
+      expect(
+        ReaderHandler.instance.pagesFor(item)![20].transientThumbnailURL,
+        '$strip1#xywh=0,0,200,137',
+        reason: 'the registered book learns the block too',
+      );
+    });
+
+    test('a refused block leaves its pages alone and is not asked again until the backoff passes; cancelled tiles ask for nothing', () async {
+      final h = handler();
+      final List<String> asked = [];
+      h.fetcher = blocks(asked, block1Status: 500);
+      final BooruItem item = galleryItem();
+      expect((await h.loadItem(item: item)).failed, isFalse);
+      final List<BooruItem> pages = ReaderHandler.instance.pagesFor(item)!;
+      await h.ensurePageThumbnail(pages[20]);
+      expect(asked.where((u) => u.contains('?p=1')), hasLength(1));
+      expect(pages[20].transientThumbnailURL, isNull);
+      expect(pages[20].displayThumbnailURL, item.thumbnailURL);
+      await h.ensurePageThumbnail(pages[21]);
+      expect(asked.where((u) => u.contains('?p=1')), hasLength(1), reason: 'a block that just failed is not hammered by every tile that scrolls by');
+      EHentaiHandler.forgetBlockFailuresForTests();
+      h.fetcher = blocks(asked);
+      await h.ensurePageThumbnail(pages[21]);
+      expect(asked.where((u) => u.contains('?p=1')), hasLength(2));
+      expect(pages[21].transientThumbnailURL, '$strip1#xywh=200,0,200,137');
+      // Tiles that left the screen before their turn: no request at all.
+      final CancelToken gone = CancelToken()..cancel();
+      await h.ensurePageThumbnail(pages[40], cancelToken: gone);
+      expect(asked.where((u) => u.contains('?p=2')), isEmpty);
+      await h.ensurePageThumbnail(pages[40]);
+      expect(asked.where((u) => u.contains('?p=2')), hasLength(1), reason: 'a live tile still gets its block');
+    });
+
+    test('tile fetches ride the bulk lane: a page being read is not queued behind them', () async {
+      final h = handler();
+      final Map<String, DateTime> at = {};
+      h.fetcher = (url, {postJson}) async {
+        at[url] = DateTime.now();
+        if (url.endsWith('49d94b3d3c/')) return (status: 200, body: fixture('ehentai_gallery_multi.html'), finalUrl: url);
+        if (url.contains('?p=')) return (status: 200, body: fixture('ehentai_gallery_multi_p1.html'), finalUrl: url);
+        return (status: 200, body: fixture('ehentai_page.html'), finalUrl: url);
+      };
+      final BooruItem item = galleryItem();
+      expect((await h.loadItem(item: item)).failed, isFalse);
+      final List<BooruItem> pages = ReaderHandler.instance.pagesFor(item)!;
+      final DateTime start = DateTime.now();
+      await Future.wait([
+        h.ensurePageThumbnail(pages[20]),
+        h.ensurePageThumbnail(pages[40]),
+        h.ensurePageThumbnail(pages[60]),
+        h.loadItem(item: pages[0]),
+      ]);
+      final DateTime pageView = at.entries.firstWhere((e) => e.key.contains('/s/')).value;
+      final DateTime block3 = at.entries.firstWhere((e) => e.key.contains('?p=3')).value;
+      expect(pageView.difference(start), lessThan(EHentaiHandler.pagePace * 2), reason: 'the page went out on its own lane');
+      expect(
+        block3.difference(start),
+        greaterThanOrEqualTo(EHentaiHandler.pagePace * 2 - const Duration(milliseconds: 40)),
+        reason: 'three blocks, spaced',
+      );
+    });
+
+    test('a caller without a token (Save all, a detail page) is an interest that never leaves, even when every tile has', () async {
+      final h = handler();
+      final List<String> asked = [];
+      h.fetcher = blocks(asked);
+      final BooruItem item = galleryItem();
+      expect((await h.loadItem(item: item)).failed, isFalse);
+      final List<BooruItem> pages = ReaderHandler.instance.pagesFor(item)!;
+      final CancelToken gone = CancelToken()..cancel();
+      final Future<void> tile = h.ensurePageThumbnail(pages[20], cancelToken: gone);
+      final r = await h.loadItem(item: pages[20]);
+      await tile;
+      expect(asked.where((u) => u.contains('?p=1')), hasLength(1), reason: 'the block was read once, for the caller that stayed');
+      expect(r.failed, isFalse, reason: r.error);
+      expect(pages[20].postURL, endsWith('/4178032-21'));
+    });
+
+    test('a page being read is not queued behind the tiles: its block goes out on the priority lane', () async {
+      final h = handler();
+      final Map<String, List<DateTime>> at = {};
+      h.fetcher = (url, {postJson}) async {
+        (at[url] ??= []).add(DateTime.now());
+        if (url.endsWith('49d94b3d3c/')) return (status: 200, body: fixture('ehentai_gallery_multi.html'), finalUrl: url);
+        if (url.contains('?p=')) return (status: 200, body: fixture('ehentai_gallery_multi_p1.html'), finalUrl: url);
+        return (status: 200, body: fixture('ehentai_page.html'), finalUrl: url);
+      };
+      final BooruItem item = galleryItem();
+      expect((await h.loadItem(item: item)).failed, isFalse);
+      final List<BooruItem> pages = ReaderHandler.instance.pagesFor(item)!;
+      final DateTime start = DateTime.now();
+      // Three blocks queue on the bulk lane; block 3 would be ~600 ms out.
+      final Future<void> tiles = Future.wait([
+        h.ensurePageThumbnail(pages[20]),
+        h.ensurePageThumbnail(pages[40]),
+        h.ensurePageThumbnail(pages[60]),
+      ]);
+      // The reader opens page 61 (block 3) right away.
+      await h.loadItem(item: pages[60]);
+      await tiles;
+      final List<DateTime> block3 = at.entries.firstWhere((e) => e.key.contains('?p=3')).value;
+      expect(block3, hasLength(1), reason: 'the queued bulk read of block 3 stood down once the priority read had it');
+      expect(block3.first.difference(start), lessThan(EHentaiHandler.pagePace * 2), reason: 'not behind two other blocks');
+    });
+
+    test('a request that throws (offline, a timeout) backs the block off like a refusal', () async {
+      final h = handler();
+      final List<String> asked = [];
+      h.fetcher = (url, {postJson}) async {
+        asked.add(url);
+        if (url.endsWith('49d94b3d3c/')) return (status: 200, body: fixture('ehentai_gallery_multi.html'), finalUrl: url);
+        throw Exception('connection refused');
+      };
+      final BooruItem item = galleryItem();
+      expect((await h.loadItem(item: item)).failed, isFalse);
+      final List<BooruItem> pages = ReaderHandler.instance.pagesFor(item)!;
+      await h.ensurePageThumbnail(pages[20]);
+      await h.ensurePageThumbnail(pages[21]);
+      expect(asked.where((u) => u.contains('?p=1')), hasLength(1), reason: 'one attempt, then the backoff');
+      expect(pages[20].transientThumbnailURL, isNull);
+    });
+
+    test('a page in view form whose gallery was never loaded this session asks nothing: the block size is a guess', () async {
+      final h = handler();
+      final List<String> asked = [];
+      h.fetcher = blocks(asked);
+      final BooruItem p21 = h.pageItem(gid: '4178032', token: '49d94b3d3c', page: 21, key: 'dc60315ea3', cover: 'c');
+      await h.ensurePageThumbnail(p21);
+      expect(asked, isEmpty);
+      expect(p21.transientThumbnailURL, isNull);
+    });
+
+    test('forgetPageThumbnail: a block whose strip died reverts to the cover and is re-read after the backoff', () async {
+      final h = handler();
+      final List<String> asked = [];
+      h.fetcher = blocks(asked);
+      final BooruItem item = galleryItem();
+      expect((await h.loadItem(item: item)).failed, isFalse);
+      final List<BooruItem> pages = ReaderHandler.instance.pagesFor(item)!;
+      await h.ensurePageThumbnail(pages[21]);
+      expect(pages[25].transientThumbnailURL, isNotNull);
+      h.forgetPageThumbnail(pages[21]);
+      for (int n = 21; n <= 40; n++) {
+        expect(pages[n - 1].transientThumbnailURL, isNull, reason: 'page $n shows the cover again');
+      }
+      expect(pages[0].transientThumbnailURL, isNotNull, reason: 'block 0 is untouched');
+      await h.ensurePageThumbnail(pages[22]);
+      expect(asked.where((u) => u.contains('?p=1')), hasLength(1), reason: 'held for the backoff: a dead strip is not re-read at once');
+      EHentaiHandler.forgetBlockFailuresForTests();
+      await h.ensurePageThumbnail(pages[22]);
+      expect(asked.where((u) => u.contains('?p=1')), hasLength(2));
+      expect(pages[22].transientThumbnailURL, isNotNull);
+    });
+
+    test('resetForTests forgets tiles, blocks and failures', () async {
+      final h = handler();
+      final List<String> asked = [];
+      h.fetcher = blocks(asked);
+      final BooruItem item = galleryItem();
+      expect((await h.loadItem(item: item)).failed, isFalse);
+      await h.ensurePageThumbnail(ReaderHandler.instance.pagesFor(item)![20]);
+      EHentaiHandler.resetForTests();
+      await h.ensurePageThumbnail(h.placeholderItem(gid: '4178032', token: '49d94b3d3c', page: 22, cover: 'c'));
+      expect(asked.where((u) => u.contains('?p=1')), hasLength(2));
     });
   });
 

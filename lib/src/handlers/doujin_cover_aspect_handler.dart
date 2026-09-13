@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import 'package:lolisnatcher/src/widgets/image/sprite_tile_image.dart';
+
 /// Cover aspect ratios, learned from the image the source actually served.
 ///
 /// The "adapt" cover-display mode is supposed to size the card to the cover.
@@ -46,9 +48,13 @@ class DoujinCoverAspects {
 
   double? aspectFor(String key) => _byKey[key]?.value;
 
-  /// Records what actually decoded. Ignores sizes that cannot be a cover.
+  /// Records what actually decoded. Ignores sizes that cannot be a cover, and
+  /// page tiles cut from a sprite strip (`#xywh=`): those are not covers, and
+  /// a 2,000-page gallery's tiles would push every card's notifier out of the
+  /// bounded map.
   void record(String key, int width, int height) {
     if (key.isEmpty || width <= 0 || height <= 0) return;
+    if (SpriteTile.parse(key) != null) return;
     final double aspect = width / height;
     if (aspect < minAspect || aspect > maxAspect) return;
     final ValueNotifier<double?> notifier = notifierFor(key);

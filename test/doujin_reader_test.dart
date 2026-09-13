@@ -3,18 +3,36 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'dart:typed_data';
 
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
+import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/reader_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/pages/doujin_reader_page.dart';
+import 'package:lolisnatcher/src/widgets/image/custom_network_image.dart';
+import 'package:lolisnatcher/src/widgets/image/sprite_tile_image.dart';
+
+/// A source whose pages learn their thumbnail late, the way e-hentai's do
+/// (one strip per block of pages, read when a page of the block is shown).
+class _LateThumbHandler extends BooruHandler {
+  _LateThumbHandler() : super(Booru('nhentai', BooruType.NHentai, '', 'https://nhentai.net', ''), 20);
+
+  /// Page numbers asked for, in the order the cells appeared.
+  final List<int> asked = [];
+
+  @override
+  Future<void> ensurePageThumbnail(BooruItem page, {CancelToken? cancelToken}) async {
+    asked.add(int.parse(page.serverId!.split('_p').last));
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    page.transientThumbnailURL = 'https://strips.invalid/${page.serverId}.webp#xywh=0,0,200,277';
+  }
+}
 
 /// Smallest valid 1x1 transparent PNG — for tests that need a page image
 /// that actually LOADS, so a live zoom viewer is on screen.
@@ -80,6 +98,7 @@ void main() {
     int pageCount = 3,
     EdgeInsets viewInsets = EdgeInsets.zero,
     List<BooruItem>? pages,
+    BooruHandler? handler,
   }) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -102,6 +121,7 @@ void main() {
                         booru: testBooru(),
                         galleryId: '123',
                         title: 'Test book',
+                        handler: handler,
                       ),
                     ),
                   );
@@ -274,6 +294,32 @@ void main() {
       }
       expect(find.text('8 / 30'), findsOneWidget);
       expect(strip.position.pixels, greaterThan(before));
+    });
+
+    testWidgets('filmstrip: a page whose thumbnail is a sprite tile is painted through SpriteTileImage', (tester) async {
+      final List<BooruItem> pages = testPages(3);
+      pages[0].transientThumbnailURL = 'https://strips.invalid/s.webp#xywh=200,0,200,277';
+      await pumpReader(tester, pages: pages);
+      Image cellImage(int i) => tester.widget<Image>(
+        find.descendant(of: find.byKey(ValueKey('reader-strip-thumb-$i')), matching: find.byType(Image)),
+      );
+      expect(cellImage(0).image, isA<SpriteTileImage>());
+      expect((cellImage(0).image as SpriteTileImage).rect, const Rect.fromLTWH(200, 0, 200, 277));
+      expect(cellImage(1).image, isA<CustomNetworkImage>(), reason: 'a plain thumbnail loads as before');
+    });
+
+    testWidgets('filmstrip: cells ask the handler for their thumbnail as they appear, and repaint when it arrives', (tester) async {
+      final _LateThumbHandler handler = _LateThumbHandler();
+      await pumpReader(tester, pageCount: 40, handler: handler);
+      expect(handler.asked, isNotEmpty);
+      expect(handler.asked.length, lessThan(40), reason: 'only the cells in (or near) view ask: the strip is lazy');
+      expect(handler.asked.first, 1);
+      await tester.pump(const Duration(milliseconds: 150));
+      await tester.pump(const Duration(milliseconds: 150));
+      final Image cell = tester.widget<Image>(
+        find.descendant(of: find.byKey(const ValueKey('reader-strip-thumb-0')), matching: find.byType(Image)),
+      );
+      expect(cell.image, isA<SpriteTileImage>(), reason: 'the late tile replaced the cover');
     });
 
     testWidgets('openDoujinReader pushes an OPAQUE MaterialPageRoute and never stacks two readers', (tester) async {

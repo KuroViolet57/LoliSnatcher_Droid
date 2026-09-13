@@ -2,11 +2,16 @@
 library;
 
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 
 import 'package:alice_lightweight/alice.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'package:lolisnatcher/src/utils/dio_network.dart';
+import 'package:lolisnatcher/src/widgets/image/sprite_tile_image.dart';
 
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/boorus/doujin/ehentai_handler.dart';
@@ -119,6 +124,54 @@ void main() async {
     debugPrint('tag search p2: ${p2.length} more items, locked=${h.locked}, error "${h.errorString}"');
     expect(p2.length, greaterThanOrEqualTo(20), reason: 'this is what stopped at 25 before');
     expect(p1.map((i) => i.serverId).toSet().intersection(p2.map((i) => i.serverId).toSet()), isEmpty);
+  });
+
+  test('e-hentai page previews (r32): every page gets its own tile of a strip that serves without cookies; strips expire', () async {
+    final h = ehHandler();
+    final BooruItem gallery = BooruItem(
+      fileURL: '',
+      sampleURL: '',
+      thumbnailURL: '',
+      tagsList: const [],
+      postURL: 'https://e-hentai.org/g/4149118/17c2f87e13/',
+      serverId: '4149118',
+    );
+    final res = await h.loadItem(item: gallery);
+    expect(res.failed, isFalse, reason: res.error);
+    final List<BooruItem> pages = ReaderHandler.instance.pagesFor(gallery)!;
+    final List<String?> tiles = pages.map((p) => p.transientThumbnailURL).toList();
+    debugPrint('tiles: ${tiles.length}, first ${tiles.first}');
+    expect(tiles.toSet(), hasLength(pages.length), reason: 'every page its own tile');
+    expect(tiles.every((t) => t != null && SpriteTile.parse(t) != null), isTrue);
+    // The persisted thumbnail is the gallery's cover on every page (the item
+    // above came with none, so loadItem took the page's), never a tile.
+    expect(pages.map((p) => p.thumbnailURL).toSet(), hasLength(1), reason: 'one cover for every page');
+    expect(pages.first.thumbnailURL, startsWith('https://ehgt.org/'));
+    expect(pages.first.thumbnailURL, isNot(contains('#xywh=')));
+    final SpriteTile tile = SpriteTile.parse(tiles.first!)!;
+    final Response strip = await DioNetwork.get(
+      tile.sheetUrl,
+      headers: SpriteTileImage.sheetHeadersFor(eh),
+      options: Options(responseType: ResponseType.bytes, validateStatus: (_) => true),
+    );
+    final Uint8List bytes = Uint8List.fromList(strip.data as List<int>);
+    debugPrint('strip: ${strip.statusCode} ${strip.headers.value('content-type')} ${bytes.length} bytes');
+    expect(strip.statusCode, 200);
+    expect(strip.headers.value('content-type'), 'image/webp');
+    final ui.Codec codec = await ui.instantiateImageCodec(bytes);
+    final ui.FrameInfo frame = await codec.getNextFrame();
+    debugPrint('strip decodes ${frame.image.width}x${frame.image.height}');
+    expect(frame.image.width, pages.length * tile.rect.width.round(), reason: 'one tile per page, side by side');
+    expect(frame.image.height, greaterThanOrEqualTo(tile.rect.height.round()));
+    // Strip links are keyed and expire: the one captured 2026-09-09 is gone,
+    // which is why tiles live in the session-only field and never in the DB.
+    final Response old = await DioNetwork.get(
+      'https://puzaqhxrbn.hath.network/c2/gazjmhtopsdhax18s3/4149118-0.webp',
+      headers: SpriteTileImage.sheetHeadersFor(eh),
+      options: Options(validateStatus: (_) => true),
+    );
+    debugPrint('the 2026-09-09 strip: ${old.statusCode}');
+    expect(old.statusCode, isNot(200), reason: 'if an old strip ever answers again, tiles could be persisted after all');
   });
 
   test('e-hentai tag builder: a namespace file parses, and a picked term searches', () async {

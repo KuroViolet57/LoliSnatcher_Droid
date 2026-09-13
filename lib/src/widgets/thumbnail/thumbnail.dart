@@ -27,6 +27,7 @@ import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 import 'package:lolisnatcher/src/widgets/common/thumbnail_loading.dart';
 import 'package:lolisnatcher/src/widgets/image/custom_network_image.dart';
+import 'package:lolisnatcher/src/widgets/image/sprite_tile_image.dart';
 import 'package:lolisnatcher/src/widgets/preview/shimmer_builder.dart';
 
 class Thumbnail extends StatefulWidget {
@@ -89,7 +90,7 @@ class _ThumbnailState extends State<Thumbnail> {
   void initState() {
     super.initState();
 
-    currentUrl = widget.item.thumbnailURL;
+    currentUrl = widget.item.displayThumbnailURL;
 
     // Soft refresh / post-captcha retry: when the media refresh epoch bumps,
     // failed thumbnails reload themselves with the current session.
@@ -122,9 +123,15 @@ class _ThumbnailState extends State<Thumbnail> {
     } else {
       extraCancelToken ??= CancelToken();
     }
-    final String url = isMain ? thumbURL : widget.item.thumbnailURL;
+    final String url = isMain ? thumbURL : widget.item.displayThumbnailURL;
+    final SpriteTile? tile = SpriteTile.parse(url);
     final bool isAvif = url.contains('.avif');
-    final ImageProvider provider = isAvif
+    final ImageProvider provider = tile != null
+        // A page's tile of its gallery's sprite strip (e-hentai): the strip
+        // is fetched once with the source's media headers, this tile cut
+        // from it.
+        ? SpriteTileImage.network(tile, booru: widget.booru, withCache: settingsHandler.thumbnailCache)
+        : isAvif
         ? CustomNetworkAvifImage(
             url,
             cancelToken: isMain ? mainCancelToken : extraCancelToken,
@@ -242,9 +249,25 @@ class _ThumbnailState extends State<Thumbnail> {
     total.value = totalNew ?? 0;
   }
 
+  /// A page tile whose strip could not be fetched or cut (strip links expire
+  /// within days) shows the item's stored cover instead of an error, and
+  /// never retries the dead link; the source forgets the block, so a later
+  /// visit reads a fresh strip. True when that is what happened.
+  bool _fellBackFromTile() {
+    if (widget.item.transientThumbnailURL == null || SpriteTile.parse(thumbURL) == null) return false;
+    widget.item.transientThumbnailURL = null;
+    BooruHandlerFactory.mediaHandlerFor(widget.booru)?.forgetPageThumbnail(widget.item);
+    currentUrl = widget.item.displayThumbnailURL;
+    restartedCount = 0;
+    restartLoading();
+    return true;
+  }
+
   void onError(Object error) {
     if (error is DioException && CancelToken.isCancel(error)) {
       //
+    } else if (_fellBackFromTile()) {
+      // The cover is loading in the tile's place.
     } else {
       final int retryLimit = (kDebugMode || settingsHandler.shitDevice) ? 4 : 8;
 
@@ -294,9 +317,9 @@ class _ThumbnailState extends State<Thumbnail> {
             widget.item.mediaType.value.isNeedToLoadItem) ||
         (!widget.isStandalone && widget.item.fileURL == widget.item.sampleURL);
     thumbURL = isThumbQuality == true
-        ? widget.item.thumbnailURL
-        : (!isSampleGif || isGifSampleNotAllowed ? widget.item.sampleURL : widget.item.thumbnailURL);
-    thumbFolder = (isThumbQuality == true || thumbURL == widget.item.thumbnailURL) ? 'thumbnails' : 'samples';
+        ? widget.item.displayThumbnailURL
+        : (!isSampleGif || isGifSampleNotAllowed ? widget.item.sampleURL : widget.item.displayThumbnailURL);
+    thumbFolder = (isThumbQuality == true || thumbURL == widget.item.displayThumbnailURL) ? 'thumbnails' : 'samples';
 
     // delay loading a little to improve performance when scrolling fast, ignore delay if it's a standalone widget (i.e. not in a list)
     debounceLoading = Timer(
@@ -325,7 +348,7 @@ class _ThumbnailState extends State<Thumbnail> {
         // place "adapt" can learn how tall to make the card.
         if (!widget.item.isHidden) {
           DoujinCoverAspects.instance.record(
-            widget.item.thumbnailURL,
+            widget.item.displayThumbnailURL,
             imageInfo.image.width,
             imageInfo.image.height,
           );
@@ -335,11 +358,13 @@ class _ThumbnailState extends State<Thumbnail> {
         onBytesAdded(event.cumulativeBytesLoaded, event.expectedTotalBytes);
       },
       onError: (e, s) {
-        if (e is! DioException) {
+        // A tile that will not cut is a dead strip, not a corrupt file of
+        // this item's: it falls back to the cover in onError instead.
+        if (e is! DioException && SpriteTile.parse(thumbURL) == null) {
           failedRendering.value = true;
         }
         Logger.Inst().log(
-          'Error loading thumbnail: ${widget.item.sampleURL} ${widget.item.thumbnailURL}',
+          'Error loading thumbnail: ${widget.item.sampleURL} ${widget.item.displayThumbnailURL}',
           'Thumbnail',
           'build',
           LogTypes.imageLoadingError,
@@ -465,6 +490,10 @@ class _ThumbnailState extends State<Thumbnail> {
         case CustomNetworkAvifImage _:
           await provider.deleteCacheFile();
           break;
+        case SpriteTileImage _:
+          // A strip that will not decode is dropped whole; its tiles refetch it.
+          await provider.deleteCacheFile();
+          break;
       }
     }
   }
@@ -522,8 +551,8 @@ class _ThumbnailState extends State<Thumbnail> {
             selectThumbProvider();
           }
 
-          if (currentUrl != widget.item.thumbnailURL) {
-            currentUrl = widget.item.thumbnailURL;
+          if (currentUrl != widget.item.displayThumbnailURL) {
+            currentUrl = widget.item.displayThumbnailURL;
             restartLoading();
           }
         });
