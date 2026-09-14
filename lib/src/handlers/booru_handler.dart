@@ -15,6 +15,7 @@ import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/site_profile.dart';
 import 'package:lolisnatcher/src/data/comment_item.dart';
 import 'package:lolisnatcher/src/data/creator_info.dart';
+import 'package:lolisnatcher/src/boorus/doujin/doujin_filters.dart';
 import 'package:lolisnatcher/src/data/meta_tag.dart';
 import 'package:lolisnatcher/src/data/note_item.dart';
 import 'package:lolisnatcher/src/data/response_error.dart';
@@ -900,6 +901,10 @@ abstract class BooruHandler {
   /// page thumbnails.
   // ignore: avoid_returning_this -- the item is this handler's own, by default
   BooruHandler handlerForItem(BooruItem item) => this;
+
+  /// The browse filters this source can take (r37): sort, category,
+  /// language as the search window's checkmarks. Null = none.
+  DoujinFilterSpec? get doujinFilters => null;
 
   /// Site-native namespace for a tag, when the source's own grouping is
   /// richer than TagType (nhentai: parody / character / artist / group /

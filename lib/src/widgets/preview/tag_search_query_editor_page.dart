@@ -448,6 +448,13 @@ class _TagSearchQueryEditorPageState extends State<TagSearchQueryEditorPage> {
                                 hideHistory: true,
                                 hidePopular: selectedBooru?.type?.isFavouritesOrDownloads == true,
                                 hidePinned: !widget.showPinnedTags,
+                                queryText: widget.allowMultipleTags ? () => tags.join(' ') : null,
+                                onQueryReplaced: widget.allowMultipleTags
+                                    ? (String q) {
+                                        tags = q.split(' ').where((t) => t.isNotEmpty).toList();
+                                        setState(() {});
+                                      }
+                                    : null,
                               );
                             }
 

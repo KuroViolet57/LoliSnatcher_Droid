@@ -10,6 +10,7 @@ import 'package:lolisnatcher/src/boorus/doujin/doujin_listing_tag_backfill.dart'
 import 'package:lolisnatcher/src/boorus/doujin/doujin_recommendation_engine.dart';
 import 'package:lolisnatcher/src/boorus/doujin/doujin_tag_namespaces.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/boorus/doujin/doujin_filters.dart';
 import 'package:lolisnatcher/src/data/meta_tag.dart';
 import 'package:lolisnatcher/src/data/response_error.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
@@ -232,9 +233,17 @@ class SchaleHandler extends BooruHandler with DoujinListingTagBackfill, DoujinNa
     }
     // Chips display bare; schale matches on the namespaced form, so put the
     // namespace back before translating.
-    final String query = translateQuery(qualifyQuery(tags));
+    // r37: `sort:latest` / `sort:popular` pick the shelf; the API has
+    // exactly those two (named sort parameters answer 400, probed
+    // 2026-09-14). The term is the app's, never sent. With a search the
+    // search wins: the popular shelf cannot be searched.
+    final String sort = DoujinFilters.selected(tags, 'sort').lastOrNull ?? '';
+    final String query = translateQuery(qualifyQuery(DoujinFilters.strip(tags, 'sort')));
     final int page = pageNum < 1 ? 1 : pageNum;
-    if (query.isEmpty) return '$apiBase/books/popular?page=$page';
+    if (query.isEmpty) {
+      final bool popular = sort.isEmpty ? defaultShelfIsPopular : sort == 'popular';
+      return popular ? '$apiBase/books/popular?page=$page' : '$apiBase/books?page=$page';
+    }
     // NB: the parameter is `s`. `q`, `search` and `tags` are all accepted and
     // silently ignored, which returns the whole unfiltered library.
     return '$apiBase/books?s=${Uri.encodeQueryComponent(query)}&page=$page';
@@ -885,6 +894,21 @@ class SchaleHandler extends BooruHandler with DoujinListingTagBackfill, DoujinNa
     ('language', 'Language'),
   ];
 
+
+  /// What an empty query shows: the site's own default is the popular
+  /// shelf; a per-source default sort of `latest` picks the plain listing.
+  bool get defaultShelfIsPopular => SourceSettingsHandler.instance.defaultSort(booru) != 'latest';
+
+  @override
+  DoujinFilterSpec get doujinFilters => DoujinFilterSpec([
+    DoujinFilterGroup(
+      key: 'sort',
+      label: 'Sort',
+      defaultValue: defaultShelfIsPopular ? 'popular' : 'latest',
+      options: const [DoujinFilterOption('latest', 'Latest'), DoujinFilterOption('popular', 'Popular')],
+    ),
+    const DoujinFilterGroup(key: 'language', label: 'Language', options: DoujinFilters.commonLanguages),
+  ]);
 
   @override
   List<MetaTag> availableMetaTags() => [

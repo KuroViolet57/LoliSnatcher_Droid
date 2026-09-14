@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:lolisnatcher/src/boorus/doujin/doujin_recommendation_engine.dart';
 import 'package:lolisnatcher/src/boorus/doujin/doujin_tag_namespaces.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/boorus/doujin/doujin_filters.dart';
 import 'package:lolisnatcher/src/data/meta_tag.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
@@ -1105,6 +1106,34 @@ class HitomiHandler extends BooruHandler with DoujinNamespacedTags {
     ('type', 'Type'),
     ('language', 'Language'),
   ];
+
+  @override
+  DoujinFilterSpec get doujinFilters => const DoujinFilterSpec([
+    DoujinFilterGroup(
+      key: 'popular',
+      label: 'Sort',
+      options: [
+        DoujinFilterOption('', 'Latest'),
+        DoujinFilterOption('today', 'Popular today'),
+        DoujinFilterOption('week', 'Popular this week'),
+        DoujinFilterOption('month', 'Popular this month'),
+        DoujinFilterOption('year', 'Popular this year'),
+      ],
+    ),
+    DoujinFilterGroup(
+      key: 'type',
+      label: 'Type',
+      options: [
+        DoujinFilterOption('doujinshi', 'Doujinshi'),
+        DoujinFilterOption('manga', 'Manga'),
+        DoujinFilterOption('artistcg', 'Artist CG'),
+        DoujinFilterOption('gamecg', 'Game CG'),
+        DoujinFilterOption('imageset', 'Image set'),
+        DoujinFilterOption('anime', 'Anime'),
+      ],
+    ),
+    DoujinFilterGroup(key: 'language', label: 'Language', options: DoujinFilters.commonLanguages),
+  ]);
 
   @override
   List<MetaTag> availableMetaTags() => [

@@ -10,6 +10,7 @@ import 'package:lolisnatcher/src/boorus/doujin/doujin_listing_tag_backfill.dart'
 import 'package:lolisnatcher/src/boorus/doujin/doujin_recommendation_engine.dart';
 import 'package:lolisnatcher/src/boorus/doujin/doujin_tag_namespaces.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/boorus/doujin/doujin_filters.dart';
 import 'package:lolisnatcher/src/data/meta_tag.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
@@ -342,6 +343,11 @@ class AsmHentaiHandler extends BooruHandler with DoujinListingTagBackfill, Douji
     ('language', 'Languages'),
     ('category', 'Categories'),
   ];
+
+  @override
+  DoujinFilterSpec get doujinFilters => const DoujinFilterSpec([
+    DoujinFilterGroup(key: 'language', label: 'Language', options: DoujinFilters.commonLanguages),
+  ]);
 
   @override
   List<MetaTag> availableMetaTags() => [

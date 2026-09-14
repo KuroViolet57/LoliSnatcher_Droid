@@ -7,7 +7,8 @@ same day, when the project moved to the user's Windows PC; §0, §2, §5, §10 a
 hdoujin; r31 the same day, the tag-builder sweep; r32 on 2026-09-13, the e-hentai
 page previews; r33 on 2026-09-14, the recommender; r34 on 2026-09-14, stuck
 doujin-tab retry, by Grok; r35 on 2026-09-14, the encoder; r36 the same evening, the exhentai
-re-check). This file is the complete brief for a fresh
+re-check; r37 the same night, doujin browse filters). This file is the
+complete brief for a fresh
 session: read Part A top to bottom before touching code. Part B is the
 older chronological build log, kept verbatim as history.
 
@@ -29,11 +30,11 @@ older chronological build log, kept verbatim as history.
   Never push elsewhere; force-push is blocked.
 - **Version:** `2.6.0+5211` in `pubspec.yaml`, mirrored in
   `lib/src/data/constants.dart` (`updateInfo`). Builds are told apart by
-  `Constants.buildCodename` (`'r36-exhentai-recheck'` now), shown in About. Bump the
+  `Constants.buildCodename` (`'r37-doujin-filters'` now), shown in About. Bump the
   codename every build: `rNN-<two words>`.
-- **Build counter:** builds are numbered r21, r22, … r36. Each build gets a
-  numbered folder on the K: drive (§2): r36 used **55**; the next build
-  uses **56**.
+- **Build counter:** builds are numbered r21, r22, … r37. Each build gets a
+  numbered folder on the K: drive (§2): r37 used **56**; the next build
+  uses **57**.
 - **The user** talks in voice notes and logs; expects one build per request
   round, checked on a Samsung phone. They cannot see tool output — only the
   final message.
@@ -116,7 +117,7 @@ older chronological build log, kept verbatim as history.
    (r32: 54 infos + 6 warnings, lint style noise in old files). New code
    should add none.
 4. `flutter test $(ls test/*_test.dart | grep -v booru_test)` → all green.
-   Baseline **818** (r35). `booru_test.dart` is excluded because its cases
+   Baseline **825** (r37). `booru_test.dart` is excluded because its cases
    hit live sites; `tag_index_live_test.dart`, `rule34video_live_test.dart`
    and the doujin parity walk are tagged `live` and skipped unless run with
    `--run-skipped --tags live`.
@@ -138,9 +139,9 @@ older chronological build log, kept verbatim as history.
    Output: `build/app/outputs/flutter-apk/app-arm64-v8a-release.apk`.
 8. Deliver by copying into the Google Drive folder synced on the PC:
    `K:\My Drive\booruApk\<token>.apk (<descriptor>)\` — e.g.
-   `55.apk (r36 exhentai recheck - tested)` — holding `changes.txt` (the
+   `56.apk (r37 doujin filters - tested)` — holding `changes.txt` (the
    changelog) and the APK renamed `<codename>-2.6.0.apk`. Tokens are
-   integers: r36 used 55, the next build uses 56.
+   integers: r37 used 56, the next build uses 57.
    **The order since 2026-09-14 evening (user rule): build FIRST, test
    second.** Write the changelog, then run
    `python tool/deliver_build.py <token> "<descriptor>" <changelog.md>` —
@@ -568,6 +569,41 @@ the adversarial reviewer over a diff is the one agent that is always run.
   user's standing rule since r35: no agents without asking, no test runs
   beyond the touched files plus one full suite before a build.
 
+
+### 4.6 Doujin browse filters and the doujin search window (r37)
+
+- **The model** (`boorus/doujin/doujin_filters.dart`): `DoujinFilterSpec`
+  = groups (`DoujinFilterGroup(key, label, options, multi, defaultValue)`),
+  declared per source through `BooruHandler.doujinFilters` (null = none).
+  A choice travels IN THE QUERY as the source's term (`sort:popular`,
+  `category:manga`, `language:english`, hitomi's `popular:week` and
+  `type:manga`); `DoujinFilters.selected/apply/strip` read and rewrite
+  those terms; an option value of '' means "no term" (a Latest that is the
+  plain listing). `defaultValue` = what the source does when the query
+  names nothing (read from the per-source `defaultSort` where one exists).
+- **Per source:** hdoujin/niyaniya (`SchaleHandler`): `sort:latest` →
+  `/books?page=`, `sort:popular` → `/books/popular` (the API's only two
+  shelves — named `sort=` parameters answer 400, numeric ones are silently
+  accepted with unknown meaning; probed 2026-09-14 with the app's headers
+  against `api.hdoujin.org`, 429 after ~8 requests); an empty query still
+  opens Popular unless `defaultSort` is `latest` (`defaultShelfIsPopular`);
+  language. e-hentai: `sort:popular` → `$site/popular` when the query is
+  otherwise empty (one list of 50, same `itg glte` table, page 2 locks),
+  categories multi (`EHentaiQuery.categoryBits`), language. hitomi: key
+  `popular` (today/week/month/year, '' = latest index), `type`, language.
+  nhentai: its existing sort/category/language grammar, default from
+  `defaultSort`. asmhentai, hentaipaw: language. eahentai, faccina: none.
+- **The window** (`main_search_query_editor_page.dart`):
+  `SuggestionsMainContent` takes `queryText`/`onQueryReplaced` (both
+  editors pass them; the tag editor only with `allowMultipleTags`); on a
+  doujin source it shows `DoujinFiltersBlock` (FilterChips with checkmarks,
+  keys `doujin-filter-<key>-<value|none>`) first and hides History, Pinned
+  and Popular; booru tabs unchanged.
+- **Tests:** `doujin_filters_test` (grammar, each source's spec and URL
+  mapping, the card's tapping rules).
+- **Next:** hdoujin's numeric sort codes (title/pages/views/favourites) and
+  its category filter once known; filters as a saved per-source preference.
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
@@ -993,8 +1029,12 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r36)
+## 12. Open items (as of r37)
 
+- r37 is unverified on the device: the Filters card on doujin tabs, the
+  hdoujin Latest/Popular switch, e-hentai's popular page and multi-category
+  choice, hitomi's periods and types. Verified from the PC: hdoujin's two
+  shelves and e-hentai's popular markup, live.
 - r36 is unverified on the device: Check again from the home network
   should confirm access when exhentai.org itself is reachable there; the
   automatic re-check is a day away by design. The log of 2026-09-14 22:02

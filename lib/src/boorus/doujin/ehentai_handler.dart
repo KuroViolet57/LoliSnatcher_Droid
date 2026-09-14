@@ -12,6 +12,7 @@ import 'package:lolisnatcher/src/boorus/doujin/doujin_recommendation_engine.dart
 import 'package:lolisnatcher/src/boorus/doujin/doujin_tag_namespaces.dart';
 import 'package:lolisnatcher/src/boorus/doujin/ehentai_query.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/boorus/doujin/doujin_filters.dart';
 import 'package:lolisnatcher/src/data/meta_tag.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
@@ -354,6 +355,23 @@ class EHentaiHandler extends BooruHandler with DoujinNamespacedTags {
   ];
 
   @override
+  DoujinFilterSpec get doujinFilters => DoujinFilterSpec([
+    const DoujinFilterGroup(
+      key: 'sort',
+      label: 'Sort',
+      defaultValue: 'latest',
+      options: [DoujinFilterOption('latest', 'Latest'), DoujinFilterOption('popular', 'Popular')],
+    ),
+    DoujinFilterGroup(
+      key: 'category',
+      label: 'Categories',
+      multi: true,
+      options: [for (final String k in EHentaiQuery.categoryBits.keys) DoujinFilterOption(k, k)],
+    ),
+    const DoujinFilterGroup(key: 'language', label: 'Language', options: DoujinFilters.commonLanguages),
+  ]);
+
+  @override
   List<MetaTag> availableMetaTags() => [
     MetaTagWithValues(
       name: 'Category',
@@ -448,7 +466,22 @@ class EHentaiHandler extends BooruHandler with DoujinNamespacedTags {
       // site bans for excessive page loads).
       return '$site/robots.txt';
     }
-    final EHentaiSearch search = EHentaiQuery.parse(qualifyQuery(tags));
+    // r37: `sort:popular` is the site's own popular page — one list, no
+    // search, no pages. With a search the search wins. The term is the
+    // app's and is never sent (the site would read it as a title word).
+    // The cursor map is keyed by the query AS TYPED (see _cursorsFor); the
+    // sort term is taken out only of what is parsed, and only when there
+    // is one, so a query without it keeps its exact spelling.
+    final String sort = DoujinFilters.selected(tags, 'sort').lastOrNull ?? '';
+    final String searchTags = sort.isEmpty ? tags : DoujinFilters.strip(tags, 'sort');
+    if (sort == 'popular' && searchTags.trim().isEmpty) {
+      if (page > 1) {
+        locked = true;
+        return '';
+      }
+      return '$site/popular';
+    }
+    final EHentaiSearch search = EHentaiQuery.parse(qualifyQuery(searchTags));
     if (search.error != null) {
       errorString = search.error!;
       locked = true;

@@ -9,6 +9,7 @@ import 'package:fpdart/fpdart.dart';
 
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/comment_item.dart';
+import 'package:lolisnatcher/src/boorus/doujin/doujin_filters.dart';
 import 'package:lolisnatcher/src/data/meta_tag.dart';
 import 'package:lolisnatcher/src/data/response_error.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
@@ -242,6 +243,49 @@ class NHentaiHandler extends BooruHandler {
   // ─────────────────────────── query building ───────────────────────────
 
   static const List<String> _sorts = ['date', 'popular', 'popular-today', 'popular-week', 'popular-month'];
+
+  @override
+  DoujinFilterSpec get doujinFilters {
+    final String? def = SourceSettingsHandler.instance.defaultSort(booru);
+    return DoujinFilterSpec([
+      DoujinFilterGroup(
+        key: 'sort',
+        label: 'Sort',
+        defaultValue: def != null && _sorts.contains(def) ? def : 'date',
+        options: const [
+          DoujinFilterOption('date', 'Newest'),
+          DoujinFilterOption('popular', 'Popular'),
+          DoujinFilterOption('popular-today', 'Popular today'),
+          DoujinFilterOption('popular-week', 'Popular this week'),
+          DoujinFilterOption('popular-month', 'Popular this month'),
+        ],
+      ),
+      const DoujinFilterGroup(
+        key: 'category',
+        label: 'Category',
+        options: [
+          DoujinFilterOption('doujinshi', 'Doujinshi'),
+          DoujinFilterOption('manga', 'Manga'),
+          DoujinFilterOption('artistcg', 'Artist CG'),
+          DoujinFilterOption('gamecg', 'Game CG'),
+          DoujinFilterOption('western', 'Western'),
+          DoujinFilterOption('non-h', 'Non-H'),
+          DoujinFilterOption('imageset', 'Image set'),
+          DoujinFilterOption('cosplay', 'Cosplay'),
+        ],
+      ),
+      const DoujinFilterGroup(
+        key: 'language',
+        label: 'Language',
+        options: [
+          DoujinFilterOption('english', 'English'),
+          DoujinFilterOption('japanese', 'Japanese'),
+          DoujinFilterOption('chinese', 'Chinese'),
+          DoujinFilterOption('translated', 'Translated'),
+        ],
+      ),
+    ]);
+  }
 
   static const Set<String> _namespaces = {'tag', 'artist', 'parody', 'character', 'group', 'language', 'category'};
 

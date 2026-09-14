@@ -31,6 +31,7 @@ import 'package:lolisnatcher/src/data/tag_suggestion.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 import 'package:lolisnatcher/src/handlers/booru_tag_store.dart';
+import 'package:lolisnatcher/src/boorus/doujin/doujin_filters.dart';
 import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
@@ -881,6 +882,11 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
                                 onTagTap: (tag) => onSuggestionTap(TagSuggestion(tag: tag)),
                                 onInsertTerm: (term) => onSuggestionTap(TagSuggestion(tag: term), raw: true),
                                 hidePopular: searchHandler.currentBooru.type?.isFavouritesOrDownloads == true,
+                                queryText: () => searchHandler.searchTextController.text,
+                                onQueryReplaced: (String q) {
+                                  searchHandler.searchTextController.text = q;
+                                  setState(() {});
+                                },
                               );
                             }
 
@@ -1526,6 +1532,8 @@ class SuggestionsMainContent extends StatefulWidget {
     this.hideHistory = false,
     this.hidePopular = false,
     this.hidePinned = false,
+    this.queryText,
+    this.onQueryReplaced,
     super.key,
   });
 
@@ -1541,12 +1549,20 @@ class SuggestionsMainContent extends StatefulWidget {
   final bool hidePopular;
   final bool hidePinned;
 
+  /// The whole query as it stands, and where a rewritten one goes: the
+  /// doujin Filters card (r37) reads and replaces terms in it.
+  final String Function()? queryText;
+  final void Function(String query)? onQueryReplaced;
+
   @override
   State<SuggestionsMainContent> createState() => _SuggestionsMainContentState();
 }
 
-class _SuggestionsMainContentState extends State<SuggestionsMainContent> {
+class _SuggestionsMainContentState extends State<SuggestionsMainContent> with _EditorSourceMixin {
   final ScrollController scrollController = ScrollController();
+
+  @override
+  Booru? get ownBooru => widget.booru;
 
   final GlobalKey<_PinnedTagsBlockState> _pinnedTagsKey = GlobalKey();
 
@@ -1557,14 +1573,28 @@ class _SuggestionsMainContentState extends State<SuggestionsMainContent> {
     // Ordered by how often each section is actually reached for:
     // recent searches first, then the user's own pinned tags, then
     // site-wide popular tags, then the metatags, then the tag builder.
+    // r37: a doujin source's window is its filters, its tag builder and
+    // its metatags — no recent searches, pinned tags or site-wide popular
+    // tags there (the user asked for the room).
+    final bool isDoujin = DoujinDataHandler.isDoujinBooru(sourceBooru);
+    final DoujinFilterSpec? filters = isDoujin && widget.queryText != null && widget.onQueryReplaced != null ? sourceHandler.doujinFilters : null;
     List<Widget> blocks = [
-      if (!widget.hideHistory)
+      if (filters != null)
+        DoujinFiltersBlock(
+          spec: filters,
+          query: widget.queryText!(),
+          onQueryChanged: (String q) {
+            widget.onQueryReplaced!(q);
+            setState(() {});
+          },
+        ),
+      if (!widget.hideHistory && !isDoujin)
         HistoryBlock(
           delay: const Duration(milliseconds: 10),
           onTagApply: widget.onTagTap,
         ),
       //
-      if (!widget.hidePinned)
+      if (!widget.hidePinned && !isDoujin)
         PinnedTagsBlock(
           key: _pinnedTagsKey,
           onTagTap: widget.onTagTap,
@@ -1574,7 +1604,7 @@ class _SuggestionsMainContentState extends State<SuggestionsMainContent> {
           },
         ),
       //
-      if (!widget.hidePopular)
+      if (!widget.hidePopular && !isDoujin)
         PopularTagsBlock(
           onTagTap: widget.onTagTap,
           delay: const Duration(milliseconds: 20),
@@ -4437,6 +4467,82 @@ class _ManualPinTagDialogState extends State<ManualPinTagDialog> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// r37: a doujin source's browse filters as checkmarks. A single-choice
+/// group replaces its term (tapping the chosen one clears it); a
+/// multiple-choice group toggles; the source's default reads as checked
+/// when the query names nothing.
+class DoujinFiltersBlock extends StatelessWidget {
+  const DoujinFiltersBlock({
+    required this.spec,
+    required this.query,
+    required this.onQueryChanged,
+    super.key,
+  });
+
+  final DoujinFilterSpec spec;
+  final String query;
+  final void Function(String query) onQueryChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return SearchSectionCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                const Icon(Symbols.tune_rounded, size: 20),
+                const SizedBox(width: 8),
+                Text('Filters', style: context.theme.textTheme.bodyLarge),
+              ],
+            ),
+          ),
+          for (final DoujinFilterGroup g in spec.groups) ...[
+            const SizedBox(height: 10),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(g.label, style: context.theme.textTheme.labelLarge),
+            ),
+            const SizedBox(height: 6),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [for (final DoujinFilterOption o in g.options) _chip(context, g, o)],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _chip(BuildContext context, DoujinFilterGroup g, DoujinFilterOption o) {
+    final List<String> chosen = DoujinFilters.selected(query, g.key);
+    final bool selected = chosen.isEmpty ? o.value == g.defaultValue : chosen.contains(o.value);
+    return FilterChip(
+      key: ValueKey('doujin-filter-${g.key}-${o.value.isEmpty ? 'none' : o.value}'),
+      label: Text(o.label),
+      selected: selected,
+      showCheckmark: true,
+      visualDensity: VisualDensity.compact,
+      onSelected: (_) {
+        final List<String> next;
+        if (g.multi) {
+          next = [...chosen];
+          if (!next.remove(o.value)) next.add(o.value);
+        } else {
+          next = chosen.contains(o.value) ? const [] : [o.value];
+        }
+        onQueryChanged(DoujinFilters.apply(query, g.key, next));
+      },
     );
   }
 }
