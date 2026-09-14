@@ -146,11 +146,37 @@ class _SourceSettingsPageState extends State<SourceSettingsPage> {
           title: Text(session.isLoggedIn ? 'Logged in as member ${session.memberId}' : 'Not logged in'),
           subtitle: Text(
             session.isLoggedIn
-                ? (session.hasExHentai ? 'exhentai access confirmed' : 'No exhentai access on this account (the site answered "mystery"), e-hentai is used')
+                ? (session.hasExHentai
+                      ? 'exhentai access confirmed'
+                      : 'exhentai refused this account from this address ("mystery"): the account is too new, or the address '
+                            '(a VPN exit, often) is one the site distrusts. e-hentai is read meanwhile; the site is asked again '
+                            'once a day by itself, or now with Check again — from your home network if that is where it worked.')
                 : 'The forum login opens in a browser page; the app keeps only the two session cookies, in its own file.',
           ),
           trailing: session.isLoggedIn
-              ? TextButton(onPressed: () { session.logout(); setState(() {}); }, child: const Text('Log out'))
+              ? Wrap(
+                  spacing: 4,
+                  children: [
+                    if (!session.hasExHentai)
+                      TextButton(
+                        key: const ValueKey('ehentai-check-again'),
+                        onPressed: () async {
+                          final (bool ok, String message) = await session.fetchIgneous();
+                          if (!mounted) return;
+                          FlashElements.showSnackbar(
+                            context: context,
+                            title: Text(ok ? 'exhentai access confirmed' : 'Still no exhentai access', style: const TextStyle(fontSize: 18)),
+                            content: Text(message, style: const TextStyle(fontSize: 14)),
+                            duration: const Duration(seconds: 6),
+                            sideColor: ok ? Colors.green : Colors.orange,
+                          );
+                          setState(() {});
+                        },
+                        child: const Text('Check again'),
+                      ),
+                    TextButton(onPressed: () { session.logout(); setState(() {}); }, child: const Text('Log out')),
+                  ],
+                )
               : FilledButton.tonal(onPressed: _ehLogin, child: const Text('Log in')),
         ),
       ),

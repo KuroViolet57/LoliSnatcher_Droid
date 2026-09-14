@@ -189,6 +189,12 @@ class EHentaiHandler extends BooruHandler with DoujinNamespacedTags {
   /// once — and again after a login or logout changes the state.
   static String _warnedFor = '';
 
+  /// The access re-check running behind a page, if any (see [usingExHentai]).
+  static Future<void>? _recheck;
+
+  @visibleForTesting
+  Future<void>? get pendingRecheck => _recheck;
+
   /// Forward-only paging: the cursor each page starts at, per query.
   /// Next-page cursors per query, in the order the queries were last used.
   final Map<String, Map<int, String>> _cursorsByQuery = {};
@@ -236,6 +242,22 @@ class EHentaiHandler extends BooruHandler with DoujinNamespacedTags {
     if (variant != variantExHentai) return false;
     if (EHentaiSessionHandler.instance.hasExHentai) return true;
     final EHentaiSessionHandler session = EHentaiSessionHandler.instance;
+    // r36: a refusal is not for ever — the account matures, the address
+    // changes. Asked again behind this page, once a day at most; the page
+    // after a real answer reads exhentai.
+    if (session.needsRecheck && _recheck == null) {
+      _recheck = session
+          .fetchIgneous()
+          .then((r) {
+            Logger.Inst().log('exhentai access re-checked: ${r.$2}', className, 'usingExHentai', LogTypes.booruHandlerInfo);
+          })
+          .catchError((Object e) {
+            Logger.Inst().log('exhentai access re-check failed: $e', className, 'usingExHentai', LogTypes.booruHandlerInfo);
+          })
+          .whenComplete(() {
+            _recheck = null;
+          });
+    }
     final String state = '${session.memberId ?? '-'}|${session.igneous ?? '-'}';
     if (_warnedFor == state) return false;
     _warnedFor = state;

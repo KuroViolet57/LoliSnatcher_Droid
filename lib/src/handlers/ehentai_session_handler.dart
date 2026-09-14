@@ -53,7 +53,14 @@ class EHentaiSessionHandler {
   String? _passHash;
   String? _igneous;
   int _savedAt = 0;
+
+  /// When exhentai.org last answered the access probe (r36): a refusal is
+  /// asked again by itself after [recheckInterval], a failed probe after an
+  /// hour, never on every page.
+  int _igneousAt = 0;
   bool _loaded = false;
+
+  static const Duration recheckInterval = Duration(hours: 24);
 
   /// Test seam: answers the exhentai probe with its `set-cookie` headers.
   @visibleForTesting
@@ -79,6 +86,7 @@ class EHentaiSessionHandler {
         _passHash = decoded['passHash']?.toString();
         _igneous = decoded['igneous']?.toString();
         _savedAt = int.tryParse(decoded['at']?.toString() ?? '') ?? 0;
+        _igneousAt = int.tryParse(decoded['igneousAt']?.toString() ?? '') ?? 0;
         if ((_memberId ?? '').isEmpty || (_passHash ?? '').isEmpty) {
           _memberId = null;
           _passHash = null;
@@ -112,6 +120,21 @@ class EHentaiSessionHandler {
 
   /// A usable exhentai cookie: present and not the site's "no access" value.
   bool get hasExHentai => isLoggedIn && (igneous ?? '').isNotEmpty && igneous != 'mystery';
+
+  /// Logged in without access, and the site has not been asked for a day:
+  /// the account may have been admitted since, or the address changed.
+  bool get needsRecheck {
+    ensureLoaded();
+    if (!isLoggedIn || hasExHentai) return false;
+    return DateTime.now().millisecondsSinceEpoch - _igneousAt > recheckInterval.inMilliseconds;
+  }
+
+  @visibleForTesting
+  void setIgneousCheckedAt(DateTime at) {
+    ensureLoaded();
+    _igneousAt = at.millisecondsSinceEpoch;
+    _persist();
+  }
 
   /// The `Cookie` header for a request to the site itself. `nw=1` skips the
   /// content-warning interstitial some galleries show.
@@ -161,6 +184,7 @@ class EHentaiSessionHandler {
     _passHash = null;
     _igneous = null;
     _savedAt = 0;
+    _igneousAt = 0;
     try {
       final File? file = _file;
       if (file != null && file.existsSync()) file.deleteSync();
@@ -176,7 +200,7 @@ class EHentaiSessionHandler {
         if (file.existsSync()) file.deleteSync();
         return;
       }
-      file.writeAsStringSync(jsonEncode({'memberId': _memberId, 'passHash': _passHash, 'igneous': _igneous, 'at': _savedAt}));
+      file.writeAsStringSync(jsonEncode({'memberId': _memberId, 'passHash': _passHash, 'igneous': _igneous, 'at': _savedAt, 'igneousAt': _igneousAt}));
     } catch (e) {
       Logger.Inst().log('could not write $fileName: $e', 'EHentaiSessionHandler', '_persist', LogTypes.exception);
     }
@@ -281,17 +305,28 @@ class EHentaiSessionHandler {
         setCookies = response.headers['set-cookie'] ?? const [];
       }
     } catch (e) {
+      // A site that did not answer is asked again in an hour, not a day.
+      _igneousAt = DateTime.now().subtract(recheckInterval - const Duration(hours: 1)).millisecondsSinceEpoch;
+      _persist();
       return (false, 'exhentai.org did not answer: $e');
     }
+    _igneousAt = DateTime.now().millisecondsSinceEpoch;
     final String? value = igneousFromSetCookie(setCookies);
     if (value == null) {
       // A session that already had one keeps it; the site only sets the
       // cookie when it is missing.
+      _persist();
       if (hasExHentai) return (true, 'exhentai access kept.');
       return (false, 'exhentai.org set no access cookie for this account.');
     }
     setIgneous(value);
-    if (value == 'mystery') return (false, 'This account has no exhentai access yet (the site answered "mystery").');
+    if (value == 'mystery') {
+      return (
+        false,
+        'exhentai answered "mystery": it refuses this account from this address. The account is too new, or the address '
+        '(a VPN exit, often) is one the site distrusts. It is asked again after a day, or now with Check again.',
+      );
+    }
     return (true, 'exhentai access confirmed.');
   }
 
@@ -302,6 +337,7 @@ class EHentaiSessionHandler {
     _passHash = null;
     _igneous = null;
     _savedAt = 0;
+    _igneousAt = 0;
     ensureLoaded();
   }
 
@@ -312,6 +348,7 @@ class EHentaiSessionHandler {
     _passHash = null;
     _igneous = null;
     _savedAt = 0;
+    _igneousAt = 0;
     setCookieFetcher = null;
   }
 }

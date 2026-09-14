@@ -6,8 +6,8 @@ same day, when the project moved to the user's Windows PC; §0, §2, §5, §10 a
 §12 updated for r28, rule34video; r29 on 2026-09-08; r30 on 2026-09-09, e-hentai and
 hdoujin; r31 the same day, the tag-builder sweep; r32 on 2026-09-13, the e-hentai
 page previews; r33 on 2026-09-14, the recommender; r34 on 2026-09-14, stuck
-doujin-tab retry, by Grok; r35 on 2026-09-14, the encoder). This file is the
-complete brief for a fresh
+doujin-tab retry, by Grok; r35 on 2026-09-14, the encoder; r36 the same evening, the exhentai
+re-check). This file is the complete brief for a fresh
 session: read Part A top to bottom before touching code. Part B is the
 older chronological build log, kept verbatim as history.
 
@@ -29,11 +29,11 @@ older chronological build log, kept verbatim as history.
   Never push elsewhere; force-push is blocked.
 - **Version:** `2.6.0+5211` in `pubspec.yaml`, mirrored in
   `lib/src/data/constants.dart` (`updateInfo`). Builds are told apart by
-  `Constants.buildCodename` (`'r35-encoder'` now), shown in About. Bump the
+  `Constants.buildCodename` (`'r36-exhentai-recheck'` now), shown in About. Bump the
   codename every build: `rNN-<two words>`.
-- **Build counter:** builds are numbered r21, r22, … r35. Each build gets a
-  numbered folder on the K: drive (§2): r35 used **54**; the next build
-  uses **55**.
+- **Build counter:** builds are numbered r21, r22, … r36. Each build gets a
+  numbered folder on the K: drive (§2): r36 used **55**; the next build
+  uses **56**.
 - **The user** talks in voice notes and logs; expects one build per request
   round, checked on a Samsung phone. They cannot see tool output — only the
   final message.
@@ -138,9 +138,20 @@ older chronological build log, kept verbatim as history.
    Output: `build/app/outputs/flutter-apk/app-arm64-v8a-release.apk`.
 8. Deliver by copying into the Google Drive folder synced on the PC:
    `K:\My Drive\booruApk\<token>.apk (<descriptor>)\` — e.g.
-   `54.apk (r35 encoder)` — holding `changes.txt` (the changelog) and the
-   APK renamed `<codename>-2.6.0.apk`. Tokens are integers: r35 used 54, the
-   next build uses 55. The report gives that folder path (a file copy has no)
+   `55.apk (r36 exhentai recheck - tested)` — holding `changes.txt` (the
+   changelog) and the APK renamed `<codename>-2.6.0.apk`. Tokens are
+   integers: r36 used 55, the next build uses 56.
+   **The order since 2026-09-14 evening (user rule): build FIRST, test
+   second.** Write the changelog, then run
+   `python tool/deliver_build.py <token> "<descriptor>" <changelog.md>` —
+   it builds the arm64 APK, waits, and copies APK + `changes.txt` into the
+   folder labelled `- not tested`. Only then run the tests (the touched
+   files, then the full suite once); when they pass,
+   `python tool/deliver_build.py <token> "<descriptor>" --mark-tested`
+   renames the folder to `- tested`. The user has run out of usage between
+   a green suite and a delivered build more than once; this way the APK is
+   there either way and its label says what it is. No agents without asking
+   (the adversarial reviewer included), since the same evening. The report gives that folder path (a file copy has no)
    web link). `scripts/drive_upload_build.py` is retired.
 9. Republish the **parity artifact** (§2.6) with a footer "build rNN".
 10. Report: per item changed/observed/not verified, numbered device steps,
@@ -546,6 +557,16 @@ the adversarial reviewer over a diff is the one agent that is always run.
 - **Next:** run the encoder on a phone (the first real evidence); if the
   UI-isolate conversion of the output list is felt, move pooling to an
   isolate; a "why this" line on cards from the taste cosine.
+- **r36, exhentai access re-check** (`ehentai_session_handler.dart`,
+  `ehentai_handler.dart`, `source_settings_page.dart`): exhentai's
+  `igneous=mystery` is the site's refusal of an account from an address
+  (too new, or a distrusted address such as a VPN exit). The session file
+  keeps `igneousAt`; `needsRecheck` (logged in, no access, > 24 h — 1 h
+  after a probe that got no answer); `EHentaiHandler.usingExHentai`
+  starts one `fetchIgneous()` behind the page when due (`_recheck`,
+  `pendingRecheck` for tests); the settings row has "Check again". The
+  user's standing rule since r35: no agents without asking, no test runs
+  beyond the touched files plus one full suite before a build.
 
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
@@ -972,8 +993,14 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r35)
+## 12. Open items (as of r36)
 
+- r36 is unverified on the device: Check again from the home network
+  should confirm access when exhentai.org itself is reachable there; the
+  automatic re-check is a day away by design. The log of 2026-09-14 22:02
+  also showed the user's network dropping exhentai's addresses and some
+  Cloudflare ranges (Hentai Haven) — the VPN is the workaround, not an
+  app matter.
 - r35 is unverified on the device, and one part has no evidence at all:
   the ONNX inference (the runner is a native plugin the PC suite cannot
   run). Device steps in the r35 changelog: download the English preset,

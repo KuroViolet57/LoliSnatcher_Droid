@@ -744,6 +744,40 @@ void main() {
       expect(EHentaiSessionHandler.igneousFromSetCookie(['yay=louder']), isNull);
     });
 
+    test('a "mystery" answer is asked again by itself after a day — not on every page — and a real cookie ends it (r36)', () async {
+      final s = EHentaiSessionHandler.instance;
+      s.store(memberId: '1', passHash: 'h');
+      int asked = 0;
+      String answer = 'mystery';
+      s.setCookieFetcher = (Map<String, String> headers) async {
+        asked++;
+        expect(headers['Cookie'], isNot(contains('igneous')), reason: 'the site is asked afresh, never shown its own refusal');
+        return ['igneous=$answer; path=/; domain=.exhentai.org'];
+      };
+      expect((await s.fetchIgneous()).$1, isFalse);
+      expect(asked, 1);
+      expect(s.igneous, 'mystery');
+      expect(s.needsRecheck, isFalse, reason: 'just asked');
+      final h = handler();
+      SourceSettingsHandler.instance.update(booru, (st) => st.siteVariant = 'exhentai');
+      expect(h.usingExHentai, isFalse);
+      expect(h.pendingRecheck, isNull);
+      expect(asked, 1, reason: 'a fresh refusal is not asked again on every page');
+      s.setIgneousCheckedAt(DateTime.now().subtract(const Duration(hours: 25)));
+      expect(s.needsRecheck, isTrue);
+      answer = 'deadbeef';
+      expect(h.usingExHentai, isFalse, reason: 'this page still reads e-hentai; the check runs behind it');
+      expect(h.pendingRecheck, isNotNull);
+      await h.pendingRecheck;
+      expect(asked, 2);
+      expect(s.hasExHentai, isTrue);
+      expect(h.usingExHentai, isTrue, reason: 'the next page reads exhentai');
+      expect(h.pendingRecheck, isNull);
+      // A restart keeps the time of the last answer.
+      s.reloadForTests();
+      expect(s.needsRecheck, isFalse);
+    });
+
     test('the site follows the per-source choice, but exhentai only with a usable session', () {
       final h = handler();
       expect(h.site, 'https://e-hentai.org');
