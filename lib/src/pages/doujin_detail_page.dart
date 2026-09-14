@@ -76,7 +76,6 @@ class DoujinDetailPage extends StatefulWidget {
 
   /// The drag strip's width for a given viewport. Applies to EVERY doujin
   /// detail page - pushed from a card as well as hosted as a tab.
-  @visibleForTesting
   static double edgeDragWidthFor(Size screen) =>
       (screen.width * edgeDragWidthFraction).clamp(minEdgeDragWidth, maxEdgeDragWidth);
 
@@ -740,7 +739,7 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
             top: 0,
             bottom: 0,
             right: 0,
-            child: _MiniManagerEdgeHandle(),
+            child: DoujinMiniTabEdgeHandle(),
           ),
         ],
       ),
@@ -856,36 +855,6 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
         if (pages != null && pages.isNotEmpty) ..._pagesSlivers(pages),
         const SliverPadding(padding: EdgeInsets.only(bottom: 40)),
       ],
-    );
-  }
-}
-
-/// The visible edge affordance for the mini tab manager: a slim grip pinned
-/// to the right edge marking where the (much wider) drag strip begins. Tapping
-/// it opens the sidebar outright, for when swiping is awkward.
-class _MiniManagerEdgeHandle extends StatelessWidget {
-  const _MiniManagerEdgeHandle();
-
-  @override
-  Widget build(BuildContext context) {
-    final Color accent = Theme.of(context).colorScheme.secondary;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () => Scaffold.of(context).openEndDrawer(),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 2),
-        child: Center(
-          child: Container(
-            key: const Key('mini-manager-edge-handle'),
-            width: 5,
-            height: 68,
-            decoration: BoxDecoration(
-              color: accent.withValues(alpha: 0.55),
-              borderRadius: const BorderRadius.horizontal(left: Radius.circular(3)),
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

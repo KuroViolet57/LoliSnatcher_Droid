@@ -31,7 +31,7 @@ void _openEntry(BuildContext context, DoujinEntry entry, {Booru? fallback}) {
   final Booru? booru = _booruForHost(entry.booruHost, fallback: fallback);
   if (booru == null) return;
   SearchHandler.instance.addTabByString(
-    'id:${entry.serverId}',
+    SearchTab.doujinIdQueryFrom(serverId: entry.serverId, postURL: entry.postURL),
     customBooru: booru,
     switchToNew: true,
     doujinPostURL: entry.postURL,

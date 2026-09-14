@@ -5,8 +5,9 @@ HEAD `e15d17e` + this document; §1, §2, §4.3, §10 and §12 updated for r27 t
 same day, when the project moved to the user's Windows PC; §0, §2, §5, §10 and
 §12 updated for r28, rule34video; r29 on 2026-09-08; r30 on 2026-09-09, e-hentai and
 hdoujin; r31 the same day, the tag-builder sweep; r32 on 2026-09-13, the e-hentai
-page previews; r33 on 2026-09-14, the recommender). This file is the complete brief for a fresh
-Claude session: read Part A top to bottom before touching code. Part B is the
+page previews; r33 on 2026-09-14, the recommender; r34 on 2026-09-14, stuck
+doujin-tab retry). This file is the complete brief for a fresh
+session: read Part A top to bottom before touching code. Part B is the
 older chronological build log, kept verbatim as history.
 
 ---
@@ -27,11 +28,11 @@ older chronological build log, kept verbatim as history.
   Never push elsewhere; force-push is blocked.
 - **Version:** `2.6.0+5211` in `pubspec.yaml`, mirrored in
   `lib/src/data/constants.dart` (`updateInfo`). Builds are told apart by
-  `Constants.buildCodename` (`'r33-recommender'` now), shown in About. Bump the
+  `Constants.buildCodename` (`'r34-tab-retry'` now), shown in About. Bump the
   codename every build: `rNN-<two words>`.
-- **Build counter:** builds are numbered r21, r22, … r33. Each build gets a
-  numbered folder on the K: drive (§2): r33 used **52**; the next build
-  uses **53**.
+- **Build counter:** builds are numbered r21, r22, … r34. Each build gets a
+  numbered folder on the K: drive (§2): r34 used **53**; the next build
+  uses **54**.
 - **The user** talks in voice notes and logs; expects one build per request
   round, checked on a Samsung phone. They cannot see tool output — only the
   final message.
@@ -114,7 +115,7 @@ older chronological build log, kept verbatim as history.
    (r32: 54 infos + 6 warnings, lint style noise in old files). New code
    should add none.
 4. `flutter test $(ls test/*_test.dart | grep -v booru_test)` → all green.
-   Baseline **779** (r33). `booru_test.dart` is excluded because its cases
+   Baseline **785** (r34). `booru_test.dart` is excluded because its cases
    hit live sites; `tag_index_live_test.dart`, `rule34video_live_test.dart`
    and the doujin parity walk are tagged `live` and skipped unless run with
    `--run-skipped --tags live`.
@@ -136,9 +137,9 @@ older chronological build log, kept verbatim as history.
    Output: `build/app/outputs/flutter-apk/app-arm64-v8a-release.apk`.
 8. Deliver by copying into the Google Drive folder synced on the PC:
    `K:\My Drive\booruApk\<token>.apk (<descriptor>)\` — e.g.
-   `52.apk (r33 recommender)` — holding `changes.txt` (the changelog) and the
-   APK renamed `<codename>-2.6.0.apk`. Tokens are integers: r33 used 52, the
-   next build uses 53. The report gives that folder path (a file copy has no
+   `53.apk (r34 tab retry)` — holding `changes.txt` (the changelog) and the
+   APK renamed `<codename>-2.6.0.apk`. Tokens are integers: r34 used 53, the
+   next build uses 54. The report gives that folder path (a file copy has no)
    web link). `scripts/drive_upload_build.py` is retired.
 9. Republish the **parity artifact** (§2.6) with a footer "build rNN".
 10. Report: per item changed/observed/not verified, numbered device steps,
@@ -455,7 +456,7 @@ the adversarial reviewer over a diff is the one agent that is always run.
   `doujin_foryou_test` (fake sources), `doujin_history_tags_test`,
   `recommendation_surfaces_test`, `recommendations_page_test`, the reader
   milestones in `doujin_reader_test`; live: `doujin_foryou_live_test`.
-- **Next (r34):** the downloadable encoder — `flutter_onnxruntime`, presets
+- **Later:** the downloadable encoder — `flutter_onnxruntime`, presets
   all-MiniLM-L6-v2 int8 (~23 MB) / multilingual MiniLM-L12 int8 (~118 MB) or
   a custom Hugging Face repo, WordPiece tokenizer in Dart, mean-pooled
   384-d vectors as dense features plus a per-world taste centroid;
@@ -886,8 +887,19 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r33)
+## 12. Open items (as of r34)
 
+- r34 (stuck doujin-tab retry) is unverified on the device: restored HDoujin
+  detail tabs should open the detail page from the persisted `doujinPostURL`
+  (the gallery key lives in that URL, not in an auth token); the empty
+  "Could not load this doujin" screen now has Close tab, the mini-tab
+  handle, and Retry that does not drop `dp`. Observed offline: 785 tests
+  including the new restore/seed, searchAction-preserve, escape-hatch and
+  Schale missing-key cases. Not verified: a real phone force-stop with
+  several HDoujin background tabs, or the clearance dialog if `loadItem`
+  then needs a fresh check.
+- The ONNX encoder that was sketched as r34 in the r33 notes did **not**
+  ship; it is still later.
 - r33 is unverified on the device: the doujin For You (drawer → For You on
   a doujin tab), the learner behind the four surfaces, the two switches,
   Settings → Recommendations, the reader's read/finish milestones. Verified
@@ -900,7 +912,7 @@ cards have had regressions).
 - r33 not done, by choice: booru-side hidden-tag edits and a download
   started from the reader are not signals yet; the classic profile and the
   model coexist (the profile is the fallback); no "Not interested" action;
-  video completion is not a signal (dwell is). The encoder is r34.
+  video completion is not a signal (dwell is). The encoder is still later.
 - r32 is unverified on the device: e-hentai page previews (the detail
   page's Pages grid and the reader's filmstrip) cut from the sprite strips,
   blocks read as the grid scrolls, and the Pages grid made a real lazy

@@ -93,7 +93,7 @@ Future<void> showDoujinItemMenu(
                     Navigator.of(dialogContext).pop();
                     final String placement = SourceSettingsHandler.instance.tabPlacement(booru);
                     SearchHandler.instance.addTabByString(
-                      'id:${item.serverId}',
+                      SearchTab.doujinIdQuery(item),
                       customBooru: booru,
                       addMode: placement == 'next' ? TabAddMode.next : TabAddMode.end,
                       switchToNew: false,

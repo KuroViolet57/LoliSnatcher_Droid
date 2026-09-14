@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 
 import 'package:get/get.dart';
+import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/pages/doujin_detail_page.dart';
+import 'package:lolisnatcher/src/widgets/tabs/doujin_mini_tab_manager.dart';
 
 /// The whole content of a doujin-detail TAB: the detail page itself, with no
 /// feed chrome around it — no main app bar, no tab carousel, no pagination or
@@ -42,6 +44,7 @@ class _DoujinTabViewState extends State<DoujinTabView> {
       final bool isLoading = searchHandler.isLoading.value;
 
       if (items.isEmpty) {
+        final String error = searchHandler.errorString.value;
         return Scaffold(
           appBar: AppBar(
             automaticallyImplyLeading: false,
@@ -52,21 +55,55 @@ class _DoujinTabViewState extends State<DoujinTabView> {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
+            actions: [
+              IconButton(
+                key: const Key('doujin-tab-close'),
+                tooltip: 'Close tab',
+                icon: const Icon(Symbols.close_rounded),
+                onPressed: () {
+                  final int i = searchHandler.tabs.indexOf(widget.tab);
+                  if (i >= 0) searchHandler.removeTabAt(tabIndex: i);
+                },
+              ),
+            ],
           ),
-          body: Center(
-            child: isLoading
-                ? const CircularProgressIndicator()
-                : Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Text('Could not load this doujin'),
-                      const SizedBox(height: 10),
-                      ElevatedButton(
-                        onPressed: () => searchHandler.searchAction(widget.tab.tags, null),
-                        child: const Text('Retry'),
+          endDrawer: const DoujinMiniTabManager(),
+          drawerEdgeDragWidth: DoujinDetailPage.edgeDragWidthFor(MediaQuery.sizeOf(context)),
+          body: Stack(
+            children: [
+              Center(
+                child: isLoading
+                    ? const CircularProgressIndicator()
+                    : Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text('Could not load this doujin'),
+                          if (error.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 24),
+                              child: Text(
+                                error,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(fontSize: 12.5),
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 10),
+                          ElevatedButton(
+                            onPressed: searchHandler.retrySearch,
+                            child: const Text('Retry'),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+              ),
+              const Positioned(
+                top: 0,
+                bottom: 0,
+                right: 0,
+                child: DoujinMiniTabEdgeHandle(),
+              ),
+            ],
           ),
         );
       }

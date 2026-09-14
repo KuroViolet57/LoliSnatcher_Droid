@@ -117,6 +117,21 @@ class SchaleHandler extends BooruHandler with DoujinListingTagBackfill, DoujinNa
   @visibleForTesting
   static void resetDomainsForTests() => _resolvedDomains.clear();
 
+  @visibleForTesting
+  static void resetKeysForTests() => _keys.clear();
+
+  /// `id:<id>` or `id:<id>/<key>`.
+  @visibleForTesting
+  static ({String id, String? key}) splitIdKey(String spec) {
+    final String trimmed = spec.trim();
+    final int slash = trimmed.indexOf('/');
+    if (slash <= 0) return (id: trimmed, key: null);
+    final String id = trimmed.substring(0, slash);
+    final String key = trimmed.substring(slash + 1).trim();
+    if (id.isEmpty) return (id: trimmed, key: null);
+    return (id: id, key: key.isEmpty ? null : key);
+  }
+
   @override
   bool get hasReader => true;
 
@@ -474,18 +489,34 @@ class SchaleHandler extends BooruHandler with DoujinListingTagBackfill, DoujinNa
     final String? known = _keys[id];
     if (known != null && known.isNotEmpty) return known;
     if (postURL != null) {
-      final parts = Uri.tryParse(postURL)?.pathSegments ?? const [];
-      if (parts.length >= 3) return parts.last;
+      final parts = [for (final p in Uri.tryParse(postURL)?.pathSegments ?? const []) if (p.isNotEmpty) p];
+      final int idAt = parts.indexOf(id);
+      if (idAt >= 0 && idAt + 1 < parts.length) {
+        final String key = parts[idAt + 1];
+        if (key.isNotEmpty) {
+          _keys[id] = key;
+          return key;
+        }
+      }
     }
     return null;
   }
 
-  Future<List<BooruItem>> _fetchOne(String id) async {
-    final String? key = _keyFor(id);
-    if (key == null) return [];
-    final detail = await _detail(id, key);
+  @visibleForTesting
+  String? keyFor(String id, {String? postURL}) => _keyFor(id, postURL: postURL);
+
+  Future<List<BooruItem>> _fetchOne(String idSpec) async {
+    final split = splitIdKey(idSpec);
+    if (split.key != null) _keys[split.id] = split.key!;
+    final String? key = split.key ?? _keyFor(split.id);
+    if (key == null) {
+      errorString =
+          '${network.name} needs the gallery key as well: open the gallery from a list once, or use id:<id>/<key>.';
+      return [];
+    }
+    final detail = await _detail(split.id, key);
     if (detail == null) return [];
-    final item = _itemFromDetail(id, key, detail);
+    final item = _itemFromDetail(split.id, key, detail);
     return item == null ? [] : [item];
   }
 
@@ -779,9 +810,12 @@ class SchaleHandler extends BooruHandler with DoujinListingTagBackfill, DoujinNa
     return out;
   }
 
-  Future<BooruItem?> _sourceItem(String id) async {
-    final String? key = _keyFor(id);
+  Future<BooruItem?> _sourceItem(String idSpec) async {
+    final split = splitIdKey(idSpec);
+    if (split.key != null) _keys[split.id] = split.key!;
+    final String? key = split.key ?? _keyFor(split.id);
     if (key == null) return null;
+    final String id = split.id;
     final detail = await _detail(id, key);
     if (detail == null) return null;
     return _itemFromDetail(id, key, detail);
@@ -791,8 +825,11 @@ class SchaleHandler extends BooruHandler with DoujinListingTagBackfill, DoujinNa
   /// clearance-gated detail POST. With a token that is what is shown; without
   /// one the generated list stands in, and says so in the log, rather than an
   /// empty strip.
-  Future<List<BooruItem>> _fetchRelated(String id) async {
-    final String? key = _keyFor(id);
+  Future<List<BooruItem>> _fetchRelated(String idSpec) async {
+    final split = splitIdKey(idSpec);
+    if (split.key != null) _keys[split.id] = split.key!;
+    final String id = split.id;
+    final String? key = split.key ?? _keyFor(id);
     if (key != null && SchaleClearanceHandler.instance.hasTokenFor(_site)) {
       await resolveDomain();
       List? similar = _similarById[id];

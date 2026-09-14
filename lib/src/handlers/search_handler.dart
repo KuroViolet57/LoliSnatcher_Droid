@@ -663,6 +663,11 @@ class SearchHandler {
       // so the user's search-bar tap doesn't wipe edits they made.
       final Map<String, String> carriedOverrides = Map<String, String>.from(currentTab.tagOverrides);
       final Map<String, bool> carriedInherit = Map<String, bool>.from(currentTab.inheritMainTags);
+      // Retry on a doujin detail tab re-runs the same `id:` query. Dropping
+      // doujinPostURL here used to throw away the gallery key that survives
+      // a restart. A genuinely new query is no longer that tab.
+      final bool keepDoujin =
+          currentTab.isDoujinDetail && text.trim().toLowerCase() == currentTab.tags.trim().toLowerCase();
       final SearchTab newTab = SearchTab(
         newBooru ?? currentBooru,
         currentSecondaryBoorus.value,
@@ -670,6 +675,9 @@ class SearchHandler {
         tabId: currentTab.id, // keep the same tab identity across the search change
         tagOverrides: carriedOverrides,
         inheritMainTags: carriedInherit,
+        doujinPostURL: keepDoujin ? currentTab.doujinPostURL : null,
+        doujinTitle: keepDoujin ? currentTab.doujinTitle : null,
+        doujinThumb: keepDoujin ? currentTab.doujinThumb : null,
       );
       // In-place search change keeps the tab in its group.
       newTab.groupName = currentTab.groupName;
@@ -1868,6 +1876,7 @@ class SearchTab {
     if (customHandler != null) {
       booruHandler = customHandler;
       booruHandler.pageNum = 0;
+      seedPersistedDoujinItem();
       return;
     }
     // Rebuilt from persisted state on restore too, so a pool tab keeps
@@ -1880,6 +1889,7 @@ class SearchTab {
         poolName: poolName,
       );
       booruHandler.pageNum = 0;
+      seedPersistedDoujinItem();
       return;
     }
     final temp = BooruHandlerFactory().getBooruHandler(tempBooruList, null);
@@ -1890,6 +1900,7 @@ class SearchTab {
       handler.tagOverrides = Map<String, String>.from(this.tagOverrides);
       handler.inheritMainTags = Map<String, bool>.from(this.inheritMainTags);
     }
+    seedPersistedDoujinItem();
   }
   // unique id to use for booru controller. Preserved across in-place search
   // changes and app restarts (see SearchTab tabId param + TabBackup.id) so the
@@ -1916,6 +1927,70 @@ class SearchTab {
   bool get isDoujinDetail =>
       (doujinPostURL?.isNotEmpty ?? false) ||
       (booruHandler.hasReader && tags.trim().toLowerCase().startsWith('id:'));
+
+  /// `id:<serverId>` or `id:<serverId>/<key>` when the post URL is `/g/{id}/{key}`
+  /// (HDoujin, niyaniya, e-hentai). Sources that only need the numeric id
+  /// (nhentai) stay `id:<n>`.
+  static String doujinIdQuery(BooruItem item) =>
+      doujinIdQueryFrom(serverId: item.serverId ?? '', postURL: item.postURL);
+
+  static String doujinIdQueryFrom({required String serverId, required String postURL}) {
+    final String id = serverId.trim();
+    if (id.isEmpty) return '';
+    final String? key = galleryKeyFromPostURL(postURL, id);
+    return key == null ? 'id:$id' : 'id:$id/$key';
+  }
+
+  static String? galleryKeyFromPostURL(String postURL, String id) {
+    if (id.isEmpty) return null;
+    final List<String> parts = [
+      for (final p in Uri.tryParse(postURL)?.pathSegments ?? const [])
+        if (p.isNotEmpty) p,
+    ];
+    final int idAt = parts.indexOf(id);
+    if (idAt >= 0 && idAt + 1 < parts.length) {
+      final String key = parts[idAt + 1];
+      if (key.isNotEmpty && key != id) return key;
+    }
+    return null;
+  }
+
+  /// After a restart the listing-key map is gone, but the tab backup still
+  /// has the gallery URL (and the key in its path). Plant a stub item so the
+  /// detail page can `loadItem` without an `id:` search that would miss.
+  bool seedPersistedDoujinItem() {
+    final String? url = doujinPostURL;
+    if (url == null || url.isEmpty) return false;
+    if (booruHandler.fetched.isNotEmpty) return false;
+    final String id = _serverIdFromDoujinTab();
+    if (id.isEmpty) return false;
+    final String thumb = doujinThumb ?? '';
+    final item = BooruItem(
+      fileURL: thumb,
+      sampleURL: thumb,
+      thumbnailURL: thumb,
+      tagsList: const [],
+      postURL: url,
+      serverId: id,
+    );
+    if (doujinTitle != null && doujinTitle!.isNotEmpty) {
+      item.description = doujinTitle;
+    }
+    booruHandler.fetched.add(item);
+    booruHandler.filterFetched();
+    return booruHandler.filteredFetched.isNotEmpty;
+  }
+
+  String _serverIdFromDoujinTab() {
+    final match = RegExp(r'^id:([^/\s]+)', caseSensitive: false).firstMatch(tags.trim());
+    if (match != null) return match.group(1)!;
+    final List<String> parts = [
+      for (final p in Uri.tryParse(doujinPostURL ?? '')?.pathSegments ?? const [])
+        if (p.isNotEmpty) p,
+    ];
+    if (parts.length >= 2 && (parts[0] == 'g' || parts[0] == 'gallery')) return parts[1];
+    return '';
+  }
 
   // Tab group this tab belongs to (null = ungrouped). Groups are rendered as
   // bordered blocks in the tab manager; tabs opened from within a grouped tab
@@ -1961,8 +2036,10 @@ class SearchTab {
       handler.inheritMainTags = Map<String, bool>.from(inheritMainTags);
     }
     // The previous handler's results came from a different site/API, so they
-    // can't be kept. The tab reloads on its next search.
+    // can't be kept. Re-seed a doujin stub from the persisted URL so an
+    // HDoujin tab does not fall back to an id: search with no gallery key.
     selected.clear();
+    seedPersistedDoujinItem();
   }
 
   late final Rx<Booru> selectedBooru;

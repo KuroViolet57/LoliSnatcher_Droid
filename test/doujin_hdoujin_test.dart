@@ -40,12 +40,14 @@ void main() {
     DoujinDataHandler.instance.resetForTests();
     SchaleClearanceHandler.instance.resetForTests();
     SchaleHandler.resetDomainsForTests();
+    SchaleHandler.resetKeysForTests();
   });
 
   tearDown(() {
     SourceSettingsHandler.instance.resetForTests();
     DoujinDataHandler.instance.resetForTests();
     SchaleClearanceHandler.instance.resetForTests();
+    SchaleHandler.resetKeysForTests();
     try {
       tempDir.deleteSync(recursive: true);
     } catch (_) {}
@@ -152,6 +154,27 @@ void main() {
     test('the solve message names no site', () {
       expect(SchaleClearanceHandler.needsSolveMessage, isNot(contains('niyaniya')));
       expect(SchaleClearanceHandler.needsSolveMessage, contains('Open the check'));
+    });
+  });
+
+  group('gallery key after a restart', () {
+    test('id: without a remembered key is an error, not a silent empty page', () async {
+      final SchaleHandler h = SchaleHandler(hd, 20);
+      h.currentTags = 'id:225373';
+      final List items = await h.parseListFromResponse(resp('{}'));
+      expect(items, isEmpty);
+      expect(h.errorString.toLowerCase(), contains('key'));
+    });
+
+    test('id:id/key remembers the key; a postURL on /g/{id}/{key} does too', () {
+      expect(SchaleHandler.splitIdKey('225373/ada0292991b8'), (id: '225373', key: 'ada0292991b8'));
+      expect(SchaleHandler.splitIdKey('225373'), (id: '225373', key: null));
+      final SchaleHandler h = SchaleHandler(hd, 20);
+      expect(h.keyFor('225373'), isNull);
+      expect(
+        h.keyFor('225373', postURL: 'https://hdoujin.org/g/225373/ada0292991b8'),
+        'ada0292991b8',
+      );
     });
   });
 
