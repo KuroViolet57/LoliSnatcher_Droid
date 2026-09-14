@@ -1,7 +1,11 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
+import 'package:lolisnatcher/src/handlers/booru_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/item_features.dart';
+import 'package:lolisnatcher/src/handlers/recommender/recommender_handler.dart';
 import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 
 /// Generated Related / Recommended for doujin sources.
@@ -124,14 +128,40 @@ class DoujinRecommendationEngine {
   /// How many same-artist results one page may carry: a small minority.
   static int artistCap(int count) => math.max(2, (count * 0.15).round());
 
+  /// How much the user's own taste (the `personal` scorer, 0..1) moves a candidate:
+  /// half a point across the whole range, so a liked-but-unrelated gallery
+  /// cannot outrank a closely related one, and a related one the user
+  /// dislikes still drops.
+  static const double personalWeight = 0.5;
+
+  /// The name the recommender logs this strip's exposures under.
+  static const String surface = 'doujin-recommend';
+
+  /// [rank] with the user's taste folded in (r33): the recommender's scorer
+  /// for the doujin world when it has one, and the page reported as shown.
+  static Future<List<BooruItem>> rankPersonal(
+    BooruItem source,
+    List<BooruItem> candidates, {
+    required int count,
+    String? sourceArtist,
+    BooruHandler? handler,
+  }) async {
+    final double Function(BooruItem)? personal = await RecommenderHandler.maybe?.scorer(RecommenderWorld.doujin, handler: handler);
+    final List<BooruItem> out = rank(source, candidates, count: count, sourceArtist: sourceArtist, personal: personal);
+    unawaited(RecommenderHandler.maybe?.onExposed(out, surface, handler: handler) ?? Future<void>.value());
+    return out;
+  }
+
   /// Ranks [candidates] for [source], dropping the source itself, duplicates
   /// and other versions of the same work (those belong in Related, not
-  /// Recommended), and keeping same-artist entries a minority.
+  /// Recommended), and keeping same-artist entries a minority. [personal]
+  /// (see [personalWeight]) tilts the order toward the user's taste.
   static List<BooruItem> rank(
     BooruItem source,
     List<BooruItem> candidates, {
     required int count,
     String? sourceArtist,
+    double Function(BooruItem)? personal,
   }) {
     if (count <= 0) return const [];
     final String base = baseTitle(_titleOf(source));
@@ -143,7 +173,8 @@ class DoujinRecommendationEngine {
       if (base.isNotEmpty && isSameWork(base, _titleOf(c))) continue;
       final bool sameArtist =
           sourceArtist != null && sourceArtist.isNotEmpty && tagsOf(c).contains(sourceArtist);
-      scored.add((score: score(source, c), sameArtist: sameArtist, item: c));
+      final double taste = personal == null ? 0 : personalWeight * (personal(c) - 0.5);
+      scored.add((score: score(source, c) + taste, sameArtist: sameArtist, item: c));
     }
 
     scored.sort((a, b) => b.score.compareTo(a.score));

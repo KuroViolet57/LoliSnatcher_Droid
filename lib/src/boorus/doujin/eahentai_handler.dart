@@ -513,7 +513,7 @@ class EaHentaiHandler extends BooruHandler with DoujinListingTagBackfill, Doujin
       }
 
     }
-    return DoujinRecommendationEngine.rank(
+    return DoujinRecommendationEngine.rankPersonal(handler: this, 
       source,
       candidates,
       count: limit,

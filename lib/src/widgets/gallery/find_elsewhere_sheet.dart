@@ -240,6 +240,7 @@ class _FindElsewhereSheetState extends State<_FindElsewhereSheet> {
       BooruType.Downloads,
       BooruType.Collections,
       BooruType.ForYou,
+      BooruType.ForYouDoujin,
       BooruType.History,
       BooruType.Merge,
       BooruType.WebView,

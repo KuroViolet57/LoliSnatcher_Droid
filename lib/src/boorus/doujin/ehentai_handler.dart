@@ -190,7 +190,8 @@ class EHentaiHandler extends BooruHandler with DoujinNamespacedTags {
   static String _warnedFor = '';
 
   /// Forward-only paging: the cursor each page starts at, per query.
-  final Map<int, String> _cursors = {};
+  /// Next-page cursors per query, in the order the queries were last used.
+  final Map<String, Map<int, String>> _cursorsByQuery = {};
   String _cursorQuery = '';
 
   /// Test seam: answers requests in place of the network.
@@ -388,16 +389,25 @@ class EHentaiHandler extends BooruHandler with DoujinNamespacedTags {
   /// between the two calls of a single fetch. Keying on it made the two
   /// sides clear each other's map, and every tag search stopped after one
   /// page (r30, reported).
+  ///
+  /// One map per query, kept for the last few queries: the doujin For You
+  /// feed asks one handler several facets in turn, and a map cleared on
+  /// every change of query could never serve page 2 of any of them (r33).
   Map<int, String> _cursorsFor(String source) {
-    if (_cursorQuery != source) {
-      _cursors.clear();
-      _cursorQuery = source;
+    _cursorQuery = source;
+    final Map<int, String>? known = _cursorsByQuery.remove(source);
+    final Map<int, String> cursors = known ?? {};
+    _cursorsByQuery[source] = cursors;
+    while (_cursorsByQuery.length > _cursorQueriesKept) {
+      _cursorsByQuery.remove(_cursorsByQuery.keys.first);
     }
-    return _cursors;
+    return cursors;
   }
 
+  static const int _cursorQueriesKept = 32;
+
   @visibleForTesting
-  void rememberCursor({required int page, required String cursor}) => _cursors[page] = cursor;
+  void rememberCursor({required int page, required String cursor}) => _cursorsFor(_cursorQuery)[page] = cursor;
 
   @override
   String makeURL(String tags) {
@@ -1367,7 +1377,7 @@ class EHentaiHandler extends BooruHandler with DoujinNamespacedTags {
         break;
       }
     }
-    return DoujinRecommendationEngine.rank(source, candidates, count: limit, sourceArtist: artist);
+    return DoujinRecommendationEngine.rankPersonal(handler: this, source, candidates, count: limit, sourceArtist: artist);
   }
 
   // ── My Tags → blacklist ──────────────────────────────────────────────

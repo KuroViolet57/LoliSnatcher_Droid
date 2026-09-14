@@ -57,6 +57,8 @@ enum BooruType {
   Favourites,
   Collections,
   ForYou,
+  // r33: the For You feed of the doujin world — a virtual doujin source.
+  ForYouDoujin,
   History,
   ;
 
@@ -69,6 +71,7 @@ enum BooruType {
       ..remove(BooruType.Favourites)
       ..remove(BooruType.Collections)
       ..remove(BooruType.ForYou)
+      ..remove(BooruType.ForYouDoujin)
       ..remove(BooruType.History)
       ..remove(BooruType.Merge)
       ..remove(BooruType.GelbooruAlike)
@@ -85,6 +88,7 @@ enum BooruType {
       ..remove(BooruType.Favourites)
       ..remove(BooruType.Collections)
       ..remove(BooruType.ForYou)
+      ..remove(BooruType.ForYouDoujin)
       ..remove(BooruType.History)
       ..remove(BooruType.Hydrus)
       ..remove(BooruType.Merge)
@@ -148,6 +152,7 @@ enum BooruType {
       ..remove(BooruType.Favourites)
       ..remove(BooruType.Collections)
       ..remove(BooruType.ForYou)
+      ..remove(BooruType.ForYouDoujin)
       ..remove(BooruType.History)
       ..remove(BooruType.Merge);
   }
@@ -260,6 +265,10 @@ enum BooruType {
   bool get isFavourites => this == BooruType.Favourites;
   bool get isCollections => this == BooruType.Collections;
   bool get isForYou => this == BooruType.ForYou;
+  bool get isForYouDoujin => this == BooruType.ForYouDoujin;
+
+  /// Either For You feed: virtual, DB-backed, never a real site.
+  bool get isRecommendationFeed => isForYou || isForYouDoujin;
   bool get isHistory => this == BooruType.History;
   bool get isFavouritesOrDownloads => isFavourites || isDownloads;
 

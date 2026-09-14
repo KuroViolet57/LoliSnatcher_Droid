@@ -117,12 +117,15 @@ abstract class BooruHandler {
     // NEVER touched by the booru hidden/marked filters — the two systems are
     // fully separate, even when tag names coincide. The check is per ITEM
     // (post URL host) so merge tabs mixing both worlds stay separated too.
-    final Set<String> ownDoujinBlacklist = hasReader
+    // A doujin feed over several sources (the doujin For You) has no
+    // blacklist of its own: each card is judged by its source's.
+    final bool ownBlacklist = hasReader && booru.type?.isForYouDoujin != true;
+    final Set<String> ownDoujinBlacklist = ownBlacklist
         ? SourceSettingsHandler.instance.tagBlacklist(booru).toSet()
         : const {};
     final Map<String, Set<String>> doujinBlacklistByHost = {};
     Set<String> doujinBlacklistFor(BooruItem item) {
-      if (hasReader) return ownDoujinBlacklist;
+      if (ownBlacklist) return ownDoujinBlacklist;
       final String host = Uri.tryParse(item.postURL)?.host ?? '';
       return doujinBlacklistByHost.putIfAbsent(
         host,
@@ -890,6 +893,13 @@ abstract class BooruHandler {
   /// True for doujin sources: a post is an ordered BOOK of pages, opened in
   /// the reader (see ReaderHandler) instead of the multi-file carousel.
   bool get hasReader => false;
+
+  /// The handler that owns [item]: itself, except for a virtual feed that
+  /// mixes several sources (the doujin For You), which hands each card to
+  /// the source it came from — for loading, the reader, the strips, the
+  /// page thumbnails.
+  // ignore: avoid_returning_this -- the item is this handler's own, by default
+  BooruHandler handlerForItem(BooruItem item) => this;
 
   /// Site-native namespace for a tag, when the source's own grouping is
   /// richer than TagType (nhentai: parody / character / artist / group /

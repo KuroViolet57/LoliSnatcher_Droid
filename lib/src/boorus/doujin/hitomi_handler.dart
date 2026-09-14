@@ -1041,7 +1041,7 @@ class HitomiHandler extends BooruHandler with DoujinNamespacedTags {
 
     }
 
-    return DoujinRecommendationEngine.rank(
+    return DoujinRecommendationEngine.rankPersonal(handler: this, 
       source,
       await _candidatesFor(source, gg),
       count: limit,

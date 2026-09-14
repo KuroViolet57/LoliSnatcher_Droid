@@ -23,7 +23,7 @@ class SearchHistoryStore {
   /// out of the booru history reads.
   static Set<String> get _doujinBooruNames => {
     for (final b in _settings.booruList)
-      if (DoujinDataHandler.isDoujinBooru(b) && (b.name?.isNotEmpty ?? false)) b.name!,
+      if (DoujinDataHandler.isDoujinSource(b) && (b.name?.isNotEmpty ?? false)) b.name!,
   };
 
   /// The domain of the tab the user is looking at.

@@ -18,6 +18,7 @@ import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/handlers/doujin_cover_aspect_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 import 'package:lolisnatcher/src/handlers/database_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/recommender_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/utils/debouncer.dart';
@@ -91,6 +92,9 @@ class _ThumbnailState extends State<Thumbnail> {
     super.initState();
 
     currentUrl = widget.item.displayThumbnailURL;
+    // Built means on screen or at its edge: only such an item can be judged
+    // "shown and passed over" by a recommendation surface.
+    RecommenderHandler.maybe?.onRendered(widget.item);
 
     // Soft refresh / post-captcha retry: when the media refresh epoch bumps,
     // failed thumbnails reload themselves with the current session.
@@ -107,6 +111,7 @@ class _ThumbnailState extends State<Thumbnail> {
   void didUpdateWidget(Thumbnail oldWidget) {
     // force redraw on tab change
     if (oldWidget.item != widget.item) {
+      RecommenderHandler.maybe?.onRendered(widget.item);
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         await restartLoading();
       });

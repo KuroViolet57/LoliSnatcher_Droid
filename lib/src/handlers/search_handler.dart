@@ -640,7 +640,7 @@ class SearchHandler {
     final BooruType? actionType = actionBooru.type;
     if (text.isNotEmpty &&
         actionType?.isLocalDb != true &&
-        actionType?.isForYou != true &&
+        actionType?.isRecommendationFeed != true &&
         !DoujinDataHandler.isDoujinBooru(actionBooru)) {
       InterestsHandler.instance.onSearch(text, booru: actionBooru);
     }

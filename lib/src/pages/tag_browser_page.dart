@@ -93,7 +93,7 @@ class _TagBrowserPageState extends State<TagBrowserPage> {
   static const int _pageSize = 60;
 
   List<Booru> get _boorus => settingsHandler.booruList
-      .where((b) => b.type != null && !b.type!.isLocalDb && !b.type!.isForYou && !b.type!.isMerge)
+      .where((b) => b.type != null && !b.type!.isLocalDb && !b.type!.isRecommendationFeed && !b.type!.isMerge)
       .toList();
 
   TagIndexSource? get _source => TagIndexSource.forBooru(_booru);

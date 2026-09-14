@@ -85,7 +85,7 @@ class _TagHubPageState extends State<TagHubPage> {
         (b) =>
             b.type != null &&
             !b.type!.isLocalDb &&
-            !b.type!.isForYou &&
+            !b.type!.isRecommendationFeed &&
             !b.type!.isMerge &&
             DoujinDataHandler.sameDomain(b, widget.originBooru),
       )

@@ -84,7 +84,7 @@ class ThumbnailBuild extends StatelessWidget {
                             booruHost?.isNotEmpty == true &&
                             itemFileHost! == booruHost!);
                   });
-                  if (possibleBooru?.type?.isLocalDb == true || possibleBooru?.type?.isForYou == true) {
+                  if (possibleBooru?.type?.isLocalDb == true || possibleBooru?.type?.isRecommendationFeed == true) {
                     possibleBooru = null;
                   }
                 }

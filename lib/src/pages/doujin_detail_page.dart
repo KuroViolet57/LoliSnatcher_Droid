@@ -14,6 +14,8 @@ import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/schale_clearance_handler.dart';
 import 'package:lolisnatcher/src/boorus/doujin/schale_handler.dart';
 import 'package:lolisnatcher/src/handlers/reader_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/recommender_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/rewards.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/doujin_download_handler.dart';
@@ -121,9 +123,12 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
   final settingsHandler = SettingsHandler.instance;
   final searchHandler = SearchHandler.instance;
 
-  late final BooruHandler handler = widget.tab.booruHandler;
+  // The card's OWN source: a virtual feed (the doujin For You) hands each
+  // card to the handler it came from, so loading, the strips, the reader and
+  // the page thumbnails all run against the real site.
+  late final BooruItem item = widget.tab.booruHandler.filteredFetched[widget.index];
+  late final BooruHandler handler = widget.tab.booruHandler.handlerForItem(item);
   late final Booru booru = handler.booru;
-  late final BooruItem item = handler.filteredFetched[widget.index];
 
   bool _loading = true;
   String? _loadError;
@@ -155,7 +160,7 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
     super.initState();
     // Opening the detail page IS the doujin "viewed" event; doujin history
     // lives in its own store, never in the booru ViewedPost table.
-    DoujinDataHandler.instance.addHistory(item, booru);
+    DoujinDataHandler.instance.addHistory(item, booru, handler: handler);
     // Reflect the doujin store's favourite state on the item so the heart
     // renders correctly regardless of which feed the card came from.
     item.isFavourite.value = DoujinDataHandler.instance.isFavourite(item);
@@ -171,6 +176,7 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
   Future<void> _load() async {
     if (ReaderHandler.instance.hasBook(item) && item.tagsList.isNotEmpty) {
       setState(() => _loading = false);
+      DoujinDataHandler.instance.updateHistoryTags(item, booru, handler: handler);
       return;
     }
     final res = await handler.loadItem(item: item, withCapcthaCheck: true);
@@ -179,6 +185,9 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
       _loading = false;
       _loadError = res.failed ? (res.error ?? 'failed to load') : null;
     });
+    // Listings often carry no tags; the loaded gallery does. The history
+    // entry learns them now, which is what the doujin For You reads.
+    if (!res.failed) DoujinDataHandler.instance.updateHistoryTags(item, booru, handler: handler);
   }
 
   // ─────────────────────── header data helpers ───────────────────────
@@ -230,6 +239,7 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
       false,
       doujin: DoujinDownloadInfo.fromGallery(item, booru, pages),
     );
+    RecommenderHandler.maybe?.onEvent(item, InteractionKind.snatch, handler: handler);
     FlashElements.showSnackbar(
       context: context,
       title: Text('Saving all ${pages.length} pages...'),

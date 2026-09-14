@@ -48,7 +48,7 @@ class _SourceSettingsPageState extends State<SourceSettingsPage> {
   /// at least one source honours it; otherwise the row would set nothing.
   late final List<BooruHandler> _doujinHandlers = [
     for (final b in SettingsHandler.instance.booruList)
-      if (DoujinDataHandler.isDoujinBooru(b)) BooruHandlerFactory().getBooruHandler([b], null).booruHandler,
+      if (DoujinDataHandler.isDoujinSource(b)) BooruHandlerFactory().getBooruHandler([b], null).booruHandler,
   ];
 
   bool _offered(bool Function(BooruHandler h) supports) =>

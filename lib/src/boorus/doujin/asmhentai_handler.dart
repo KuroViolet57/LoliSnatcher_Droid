@@ -505,7 +505,7 @@ class AsmHentaiHandler extends BooruHandler with DoujinListingTagBackfill, Douji
       }
 
     }
-    return DoujinRecommendationEngine.rank(
+    return DoujinRecommendationEngine.rankPersonal(handler: this, 
       source,
       candidates,
       count: limit,

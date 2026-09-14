@@ -9,6 +9,8 @@ import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/interests_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/item_features.dart';
+import 'package:lolisnatcher/src/handlers/recommender/recommender_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
@@ -34,6 +36,9 @@ import 'package:lolisnatcher/src/handlers/tag_alias_resolver.dart' as query_reso
 ///   'tagA tagB'              -> plain tags work as seeds too
 class ForYouHandler extends BooruHandler {
   ForYouHandler(super.booru, super.limit);
+
+  /// The name the recommender logs this feed's exposures under.
+  static const String surface = 'foryou';
 
   bool _inited = false;
   // The query the seed set was built for — a changed query re-derives seeds
@@ -259,6 +264,15 @@ class ForYouHandler extends BooruHandler {
       }
       // Only posts with enough tags to build facets from are useful sources.
       _recentPosts = _recentPosts.where((p) => SuggestionEngine.facetsForItem(p).isNotEmpty).toList();
+      // r33: the posts the learner rates highest contribute their facets first.
+      final RecommenderHandler? recommender = RecommenderHandler.maybe;
+      if (recommender != null && recommender.recommendationsEnabled && _recentPosts.length > 1) {
+        final List<double> scores = await Future.wait([
+          for (final BooruItem p in _recentPosts) recommender.score(p, world: RecommenderWorld.booru),
+        ]);
+        final List<int> order = List.generate(_recentPosts.length, (i) => i)..sort((a, b) => scores[b].compareTo(scores[a]));
+        _recentPosts = [for (final int i in order) _recentPosts[i]];
+      }
     }
     _profile = {
       for (final e in await InterestsHandler.instance.topTags(limit: 60)) e.key: e.value,
@@ -269,6 +283,12 @@ class ForYouHandler extends BooruHandler {
       // results, so leading with them keeps first pages fast (a full shuffle
       // made openings crawl: weak seeds -> empty rounds -> retries).
       final List<String> pool = [];
+      // r33: what the learner likes leads; the classic profile fills in.
+      final List<String> learned = await (RecommenderHandler.maybe?.seedTerms(RecommenderWorld.booru, limit: 24) ?? Future.value(const <String>[]));
+      for (final String term in learned) {
+        final String s = _sanitizeSeed(term);
+        if (s.isNotEmpty && !pool.contains(s)) pool.add(s);
+      }
       for (final e in _profile.entries) {
         if (e.value <= 0) continue;
         final String s = _sanitizeSeed(e.key);
@@ -410,6 +430,8 @@ class ForYouHandler extends BooruHandler {
       for (final item in pageItems) item: _scoreItem(item),
     };
     pageItems.sort((a, b) => scores[b]!.compareTo(scores[a]!));
+    // r33: the learner has the last word on the order, and is told what was shown.
+    final List<BooruItem> ordered = await (RecommenderHandler.maybe?.rerank(pageItems, world: RecommenderWorld.booru) ?? Future.value(pageItems));
 
     _feedPage++;
 
@@ -427,7 +449,8 @@ class ForYouHandler extends BooruHandler {
     }
     _emptyStreak = 0;
 
-    await afterParseResponse(pageItems);
+    unawaited(RecommenderHandler.maybe?.onExposed(ordered, surface) ?? Future<void>.value());
+    await afterParseResponse(ordered);
 
     if (fetched.length == before) {
       locked = true;
@@ -483,12 +506,14 @@ class ForYouHandler extends BooruHandler {
       byFacet.putIfAbsent(entry.key, () => []).addAll(entry.value);
     }
 
-    final List<BooruItem> pageItems = SuggestionEngine.blend(
+    final List<BooruItem> blended = SuggestionEngine.blend(
       byFacet,
       source: null,
       exclude: _servedKeys,
       limit: limit,
     );
+    // r33: the learner has the last word on the order, and is told what was shown.
+    final List<BooruItem> pageItems = await (RecommenderHandler.maybe?.rerank(blended, world: RecommenderWorld.booru) ?? Future.value(blended));
     for (final item in pageItems) {
       _servedKeys.add(item.postURL.isNotEmpty ? item.postURL : item.fileURL);
     }
@@ -506,6 +531,7 @@ class ForYouHandler extends BooruHandler {
     }
     _emptyStreak = 0;
 
+    unawaited(RecommenderHandler.maybe?.onExposed(pageItems, surface) ?? Future<void>.value());
     await afterParseResponse(pageItems);
     if (fetched.length == before) {
       locked = true;

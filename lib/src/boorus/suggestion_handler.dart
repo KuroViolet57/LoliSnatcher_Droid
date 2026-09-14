@@ -7,6 +7,8 @@ import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/meta_tag.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
+import 'package:lolisnatcher/src/handlers/recommender/item_features.dart';
+import 'package:lolisnatcher/src/handlers/recommender/recommender_handler.dart';
 import 'package:lolisnatcher/src/handlers/suggestion_engine.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 // The handlers/ resolver translates a whole space-separated query term by
@@ -50,6 +52,9 @@ class SuggestionHandler extends BooruHandler {
 
   /// The post the suggestions are built around.
   final BooruItem sourceItem;
+
+  /// The name the recommender logs this strip's exposures under.
+  static const String surface = 'suggested';
 
   /// Boorus to query. One entry = the post's own booru (post view); several =
   /// cross-booru discovery ("find elsewhere"), where each facet tag is first
@@ -159,12 +164,16 @@ class SuggestionHandler extends BooruHandler {
       byFacet.putIfAbsent(entry.key, () => []).addAll(entry.value);
     }
 
-    final List<BooruItem> blended = SuggestionEngine.blend(
+    final List<BooruItem> raw = SuggestionEngine.blend(
       byFacet,
       source: sourceItem,
       exclude: _servedKeys,
       limit: limit,
     );
+    // r33: the user's taste orders the strip within the blend's own caps —
+    // half taste, half the facet order, so the mix stays varied.
+    final List<BooruItem> blended = await (RecommenderHandler.maybe?.rerank(raw, world: ItemFeatures.worldOfBooru(booru), mix: 0.5) ?? Future.value(raw));
+    unawaited(RecommenderHandler.maybe?.onExposed(blended, surface) ?? Future<void>.value());
     for (final item in blended) {
       _servedKeys.add(item.postURL.isNotEmpty ? item.postURL : item.fileURL);
     }

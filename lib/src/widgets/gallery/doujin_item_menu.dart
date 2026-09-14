@@ -5,6 +5,7 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/floating_preview_handler.dart';
 import 'package:lolisnatcher/src/handlers/reader_handler.dart';
@@ -31,7 +32,10 @@ Future<void> showDoujinItemMenu(
 }) async {
   if (index < 0 || index >= tab.booruHandler.filteredFetched.length) return;
   final BooruItem item = tab.booruHandler.filteredFetched[index];
-  final Booru booru = tab.booruHandler.booru;
+  // A card of the doujin For You belongs to its own site: tabs, previews,
+  // the reader's progress, bookmarks and downloads are all keyed by source.
+  final BooruHandler handler = tab.booruHandler.handlerForItem(item);
+  final Booru booru = handler.booru;
   final String title =
       (item.description ?? '').split('\n').firstWhere((l) => l.trim().isNotEmpty, orElse: () => item.postURL);
   // The heart label must reflect the DOUJIN store, never a stale flag.
@@ -146,7 +150,7 @@ Future<void> showDoujinItemMenu(
                   onTap: () async {
                     Navigator.of(dialogContext).pop();
                     // The ONE doujin favourite path: doujin store + account sync.
-                    final result = await DoujinDataHandler.instance.toggleFavouriteSynced(item, tab.booruHandler);
+                    final result = await DoujinDataHandler.instance.toggleFavouriteSynced(item, handler);
                     if (result.syncAttempted && context.mounted) {
                       FlashElements.showSnackbar(
                         context: context,

@@ -18,6 +18,7 @@ import 'package:lolisnatcher/src/pages/doujin_favourite_tags_page.dart';
 import 'package:lolisnatcher/src/pages/doujin_library_pages.dart';
 import 'package:lolisnatcher/src/pages/collections_page.dart';
 import 'package:lolisnatcher/src/pages/foryou_page.dart';
+import 'package:lolisnatcher/src/handlers/recommender/item_features.dart';
 import 'package:lolisnatcher/src/handlers/pool_source.dart';
 import 'package:lolisnatcher/src/pages/pools_page.dart';
 import 'package:lolisnatcher/src/pages/settings_page.dart';
@@ -288,16 +289,16 @@ class MainDrawer extends StatelessWidget {
                     icon: const Icon(Symbols.settings_rounded),
                     page: () => const SettingsPage(),
                   ),
-                  // For You is the BOORU taste engine — doujin activity
-                  // doesn't feed it (by design), so it hides on doujin tabs.
+                  // For You: the booru taste engine on booru tabs, the doujin
+                  // one (r33) on doujin tabs. Two worlds, two feeds.
                   Obx(() {
                     final bool isDoujinTab =
                         searchHandler.tabs.isNotEmpty && searchHandler.currentBooruHandler.hasReader;
-                    if (!settingsHandler.dbEnabled || isDoujinTab) return const SizedBox.shrink();
+                    if (!isDoujinTab && !settingsHandler.dbEnabled) return const SizedBox.shrink();
                     return SettingsButton(
                       name: 'For You',
                       icon: const Icon(Symbols.auto_awesome_rounded),
-                      page: () => const ForYouPage(),
+                      page: () => ForYouPage(world: isDoujinTab ? RecommenderWorld.doujin : RecommenderWorld.booru),
                     );
                   }),
                   // Collections route to the store matching the tab's world.

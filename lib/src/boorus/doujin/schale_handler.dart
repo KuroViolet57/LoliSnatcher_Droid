@@ -823,7 +823,7 @@ class SchaleHandler extends BooruHandler with DoujinListingTagBackfill, DoujinNa
     final source = await _sourceItem(id);
     if (source == null) return [];
     final candidates = await _candidatesFor(source);
-    return DoujinRecommendationEngine.rank(source, candidates, count: limit);
+    return DoujinRecommendationEngine.rankPersonal(handler: this, source, candidates, count: limit);
   }
 
   @override

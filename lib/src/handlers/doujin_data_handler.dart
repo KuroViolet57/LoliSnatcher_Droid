@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -6,10 +7,16 @@ import 'package:flutter/foundation.dart';
 import 'package:get/get.dart' hide ContextExt, FirstWhereOrNullExt;
 
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
+import 'package:lolisnatcher/src/boorus/doujin/doujin_tag_namespaces.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/data/tag.dart';
+import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/drawer_refresh.dart';
+import 'package:lolisnatcher/src/handlers/recommender/item_features.dart';
+import 'package:lolisnatcher/src/handlers/recommender/recommender_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/rewards.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 
@@ -24,6 +31,8 @@ class DoujinEntry {
     required this.title,
     required this.booruHost,
     required this.addedAt,
+    this.tags = const [],
+    this.pages,
   });
 
   factory DoujinEntry.fromJson(Map<String, dynamic> json) => DoujinEntry(
@@ -33,9 +42,14 @@ class DoujinEntry {
     title: json['title'] as String? ?? '',
     booruHost: json['booruHost'] as String? ?? '',
     addedAt: json['addedAt'] as int? ?? 0,
+    tags: [for (final t in json['tags'] as List? ?? const []) t.toString()],
+    pages: json['pages'] as int?,
   );
 
-  factory DoujinEntry.fromItem(BooruItem item, Booru? booru) {
+  /// [tags] are the gallery's namespaced tags (`parody:genshin_impact`);
+  /// see [DoujinDataHandler.namespacedTagsOf]. Without them, the item's own
+  /// tag list is read through the tag types.
+  factory DoujinEntry.fromItem(BooruItem item, Booru? booru, {List<String>? tags}) {
     // Host from the booru config when it has one; otherwise from the item's
     // own post URL (merge tabs pass the Merge placeholder, which has none).
     String host = Uri.tryParse(booru?.baseURL ?? '')?.host ?? '';
@@ -47,6 +61,8 @@ class DoujinEntry {
       title: (item.description ?? '').split('\n').firstWhere((l) => l.trim().isNotEmpty, orElse: () => ''),
       booruHost: host,
       addedAt: DateTime.now().millisecondsSinceEpoch,
+      tags: tags ?? DoujinDataHandler.namespacedTagsOf(item),
+      pages: item.fileCountHint.value,
     );
   }
 
@@ -57,6 +73,25 @@ class DoujinEntry {
   final String booruHost;
   final int addedAt;
 
+  /// The gallery's tags with their namespace (`artist:x`, `female:y`), bare
+  /// when the source filed them under none. Empty for entries saved before
+  /// r33. What the doujin For You and the recommender read a history from.
+  final List<String> tags;
+
+  /// The gallery's page count, when known.
+  final int? pages;
+
+  DoujinEntry withTags(List<String> tags, {int? pages}) => DoujinEntry(
+    postURL: postURL,
+    serverId: serverId,
+    thumbnailURL: thumbnailURL,
+    title: title,
+    booruHost: booruHost,
+    addedAt: addedAt,
+    tags: tags,
+    pages: pages ?? this.pages,
+  );
+
   Map<String, dynamic> toJson() => {
     'postURL': postURL,
     'serverId': serverId,
@@ -64,6 +99,8 @@ class DoujinEntry {
     'title': title,
     'booruHost': booruHost,
     'addedAt': addedAt,
+    if (tags.isNotEmpty) 'tags': tags,
+    if (pages != null) 'pages': pages,
   };
 }
 
@@ -239,9 +276,50 @@ class DoujinDataHandler {
     BooruType.HentaiPaw,
     BooruType.EHentai,
     BooruType.HDoujin,
+    // r33: the doujin For You feed lives in this world too.
+    BooruType.ForYouDoujin,
   };
 
   static bool isDoujinBooru(Booru? booru) => booru?.type != null && doujinTypes.contains(booru!.type);
+
+  /// A doujin booru that is a site of its own — the doujin For You is a
+  /// doujin booru (its tab is a doujin tab) but not a source anything should
+  /// list, fan out over, or attribute a gallery to.
+  static bool isDoujinSource(Booru? booru) => isDoujinBooru(booru) && !booru!.type!.isForYouDoujin;
+
+  /// The configured doujin sources, in the settings' order.
+  static List<Booru> doujinSources() => [
+    for (final Booru b in SettingsHandler.instance.booruList)
+      if (isDoujinSource(b)) b,
+  ];
+
+  /// An item's tags with their namespace back on (`parody:genshin_impact`,
+  /// `female:big_breasts`), bare when none is known. [namespaces] (bare name
+  /// -> namespace) or the source [handler] name them; otherwise the tag type
+  /// stands in for artist, parody and character, and the rest stay bare.
+  static List<String> namespacedTagsOf(BooruItem item, {Map<String, String>? namespaces, BooruHandler? handler}) {
+    final List<String> out = [];
+    final Set<String> seen = {};
+    for (final Tag tag in item.tagsList) {
+      final String name = normalizeDoujinTagName(tag.fullString);
+      if (name.isEmpty) continue;
+      String? ns = namespaces?[name];
+      if (ns == null && handler != null) {
+        try {
+          ns = handler.tagNamespace(name);
+        } catch (_) {}
+      }
+      ns ??= switch (tag.tagType) {
+        TagType.artist => 'artist',
+        TagType.copyright => 'parody',
+        TagType.character => 'character',
+        _ => null,
+      };
+      final String full = (ns == null || ns == 'tag') ? name : '$ns:$name';
+      if (seen.add(full)) out.add(full);
+    }
+    return out;
+  }
 
   static String hostOf(Booru? booru) => Uri.tryParse(booru?.baseURL ?? '')?.host ?? (booru?.name ?? '');
 
@@ -382,6 +460,8 @@ class DoujinDataHandler {
   }
 
   void save() {
+    _saveTimer?.cancel();
+    _saveTimer = null;
     // Every doujin mutation lands here, so it is also the one place that can
     // tell the drawers their counts just changed.
     DrawerRefresh.request();
@@ -390,6 +470,28 @@ class DoujinDataHandler {
     } catch (e, s) {
       Logger.Inst().log('failed to save doujin data: $e', 'DoujinDataHandler', 'save', LogTypes.exception, s: s);
     }
+  }
+
+  /// How long history writes are gathered before the file is written.
+  static const Duration historySaveDelay = Duration(milliseconds: 800);
+  Timer? _saveTimer;
+
+  /// Whether a gathered write is still waiting.
+  bool get pendingSave => _saveTimer != null;
+
+  /// [save], soon: a gallery open rewrites the whole file (a thousand
+  /// history entries with their tags) twice — on open and when its tags
+  /// arrive — on the UI thread; the two are gathered into one write.
+  void saveSoon() {
+    _saveTimer ??= Timer(historySaveDelay, () {
+      _saveTimer = null;
+      save();
+    });
+  }
+
+  /// Writes a gathered save now (the app going to the background).
+  void flushPendingSave() {
+    if (_saveTimer != null) save();
   }
 
   /// Forgets the in-memory state and reloads from the file on next access —
@@ -414,6 +516,8 @@ class DoujinDataHandler {
   /// Tests only.
   @visibleForTesting
   void resetForTests() {
+    _saveTimer?.cancel();
+    _saveTimer = null;
     favourites.clear();
     collections.clear();
     followed.clear();
@@ -443,6 +547,7 @@ class DoujinDataHandler {
     final String text = query.trim();
     if (text.isEmpty) return;
     final String host = hostOf(booru);
+    RecommenderHandler.maybe?.onQueryInWorld(text, RecommenderWorld.doujin, InteractionKind.search);
 
     final int existing = searchHistory.indexWhere((e) => e.query == text && e.booruHost == host);
     final bool wasFavourite = existing != -1 && searchHistory[existing].isFavourite;
@@ -528,6 +633,7 @@ class DoujinDataHandler {
     if (tag.isEmpty || starredTags.contains(tag)) return;
     starredTags.add(tag);
     save();
+    RecommenderHandler.maybe?.onQueryInWorld(raw, RecommenderWorld.doujin, InteractionKind.star);
   }
 
   void unstarTag(String raw) {
@@ -565,6 +671,7 @@ class DoujinDataHandler {
     }
     item.isFavourite.value = nowFavourite;
     save();
+    RecommenderHandler.maybe?.onEvent(item, nowFavourite ? InteractionKind.favourite : InteractionKind.unfavourite);
     return nowFavourite;
   }
 
@@ -623,6 +730,7 @@ class DoujinDataHandler {
     ensureLoaded();
     if (!collectionContains(collection, item)) {
       collection.items.add(DoujinEntry.fromItem(item, booru));
+      RecommenderHandler.maybe?.onEvent(item, InteractionKind.collect);
     }
     lastBookmarkCollectionId = collection.id;
     // Nested mutation (collection.items) doesn't notify the RxList; reassign so
@@ -712,6 +820,7 @@ class DoujinDataHandler {
     final bool nowFollowed = followed.length == before;
     if (nowFollowed) {
       followed.add(DoujinFollow(tag: tag, booruHost: host, addedAt: DateTime.now().millisecondsSinceEpoch));
+      RecommenderHandler.maybe?.onQueryInWorld(tag, RecommenderWorld.doujin, InteractionKind.follow);
     }
     save();
     return nowFollowed;
@@ -719,13 +828,33 @@ class DoujinDataHandler {
 
   // ── history ──
 
-  void addHistory(BooruItem item, Booru? booru) {
+  /// Opening a gallery. [handler] names the tags' namespaces when it knows
+  /// them (a source handler remembers what it parsed).
+  void addHistory(BooruItem item, Booru? booru, {BooruHandler? handler}) {
     ensureLoaded();
     if (item.postURL.isEmpty) return;
     history.removeWhere((e) => e.postURL == item.postURL);
-    history.insert(0, DoujinEntry.fromItem(item, booru));
+    history.insert(0, DoujinEntry.fromItem(item, booru, tags: namespacedTagsOf(item, handler: handler)));
     if (history.length > historyCap) history.removeRange(historyCap, history.length);
-    save();
+    saveSoon();
+    RecommenderHandler.maybe?.onEvent(item, InteractionKind.open, handler: handler);
+  }
+
+  /// A gallery already in the history learned its tags (listings often carry
+  /// none; the detail page loads them): the entry keeps its place and gains
+  /// them. Nothing happens for a gallery the history does not hold.
+  void updateHistoryTags(BooruItem item, Booru? booru, {BooruHandler? handler}) {
+    ensureLoaded();
+    if (item.tagsList.isEmpty) return;
+    final int index = history.indexWhere((e) => e.postURL == item.postURL);
+    if (index < 0) return;
+    final List<String> tags = namespacedTagsOf(item, handler: handler);
+    if (tags.isEmpty) return;
+    final DoujinEntry current = history[index];
+    final int? pages = item.fileCountHint.value;
+    if (listEquals(current.tags, tags) && (pages == null || current.pages == pages)) return;
+    history[index] = current.withTags(tags, pages: pages);
+    saveSoon();
   }
 
   void clearHistory() {

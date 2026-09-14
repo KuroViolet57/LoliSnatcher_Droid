@@ -24,6 +24,7 @@ import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/doujin_migration.dart';
 import 'package:lolisnatcher/src/handlers/floating_preview_handler.dart';
 import 'package:lolisnatcher/src/handlers/interests_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/recommender_handler.dart';
 import 'package:lolisnatcher/src/handlers/local_auth_handler.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
 import 'package:lolisnatcher/src/handlers/notify_handler.dart';
@@ -91,6 +92,7 @@ void main() async {
   ViewerHandler.register();
   FloatingPreviewHandler.register();
   InterestsHandler.register();
+  RecommenderHandler.register();
   SearchHandler.register();
   SnatchHandler.register();
   TagHandler.register();
@@ -586,6 +588,10 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
       case AppLifecycleState.paused:
         // record time when user left the app
         localAuthHandler.onLeave();
+        // What the recommender learned since its last timed save, and a
+        // gathered doujin history write, go to disk before the app may die.
+        unawaited(RecommenderHandler.maybe?.flush() ?? Future<void>.value());
+        DoujinDataHandler.instance.flushPendingSave();
         break;
       case AppLifecycleState.resumed:
         // check if app needs to be locked when user returns to the app

@@ -10,6 +10,8 @@ import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
+import 'package:lolisnatcher/src/handlers/recommender/recommender_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/rewards.dart';
 import 'package:lolisnatcher/src/handlers/tag_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
@@ -123,7 +125,13 @@ class InterestsHandler {
   //
 
   /// Post was on screen in the viewer for [dwell]. Ignores flick-throughs.
+  ///
+  /// r33: every entry point here also feeds the recommender, which keeps its
+  /// own wall between the worlds; doujin favourites, collections and
+  /// downloads report from the doujin side, so only views and searches are
+  /// forwarded for both worlds.
   void onItemViewed(BooruItem item, Duration dwell) {
+    RecommenderHandler.maybe?.onEvent(item, InteractionKind.view, value: dwell.inMilliseconds / 1000);
     if (_refuses(item)) return;
     if (dwell.inMilliseconds < 1500) return;
     final double seconds = min(dwell.inMilliseconds / 1000, 30);
@@ -133,17 +141,20 @@ class InterestsHandler {
 
   void onItemFavourited(BooruItem item, {required bool nowFavourite}) {
     if (_refuses(item)) return;
+    RecommenderHandler.maybe?.onEvent(item, nowFavourite ? InteractionKind.favourite : InteractionKind.unfavourite);
     _add(item.tagsList.map((t) => t.fullString), nowFavourite ? 6 : -3);
   }
 
   void onItemsSnatched(List<BooruItem> items) {
     for (final item in items.where((i) => !_refuses(i)).take(20)) {
+      RecommenderHandler.maybe?.onEvent(item, InteractionKind.snatch);
       _add(item.tagsList.map((t) => t.fullString), 4);
     }
   }
 
   void onItemsCollected(List<BooruItem> items) {
     for (final item in items.where((i) => !_refuses(i)).take(20)) {
+      RecommenderHandler.maybe?.onEvent(item, InteractionKind.collect);
       _add(item.tagsList.map((t) => t.fullString), 5);
     }
   }
@@ -151,12 +162,14 @@ class InterestsHandler {
   /// [booru] is the source searched; a doujin source is refused here even
   /// when the caller did not check.
   void onSearch(String query, {Booru? booru}) {
+    RecommenderHandler.maybe?.onQuery(query, booru, InteractionKind.search);
     if (_refusesSource(booru)) return;
     final tags = query.split(' ').where(isMeaningfulTag).take(5);
     _add(tags, 2);
   }
 
   void onTagPreviewOpened(String tag, {Booru? booru}) {
+    RecommenderHandler.maybe?.onQuery(tag, booru, InteractionKind.tagPreview);
     if (_refusesSource(booru)) return;
     _add(tag.split(' '), 1.5);
   }

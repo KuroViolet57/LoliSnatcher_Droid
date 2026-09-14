@@ -371,7 +371,8 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware {
       // Doujin cards: doujin store + account sync — the SAME path as the
       // detail page heart, so a double-tap favourite reaches the site too.
       final BooruItem item = searchHandler.currentFetched[index];
-      final result = await DoujinDataHandler.instance.toggleFavouriteSynced(item, tab.booruHandler);
+      // A doujin For You card syncs with its own site's account, not the feed's.
+      final result = await DoujinDataHandler.instance.toggleFavouriteSynced(item, tab.booruHandler.handlerForItem(item));
       if (result.syncAttempted && !result.syncOk && mounted) {
         FlashElements.showSnackbar(
           duration: const Duration(seconds: 3),

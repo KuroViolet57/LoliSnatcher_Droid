@@ -508,7 +508,7 @@ class DoujinDownloadHandler {
     try {
       return [
         for (final b in SettingsHandler.instance.booruList)
-          if (DoujinDataHandler.isDoujinBooru(b) && (b.name?.isNotEmpty ?? false)) b.name!.toLowerCase(),
+          if (DoujinDataHandler.isDoujinSource(b) && (b.name?.isNotEmpty ?? false)) b.name!.toLowerCase(),
       ];
     } catch (_) {
       return const [];

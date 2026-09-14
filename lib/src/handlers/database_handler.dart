@@ -16,6 +16,7 @@ import 'package:lolisnatcher/src/data/pinned_tag.dart';
 import 'package:lolisnatcher/src/data/saved_search.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/rewards.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 
@@ -169,6 +170,32 @@ class DBHandler {
       'name TEXT PRIMARY KEY, '
       'score REAL NOT NULL, '
       'updatedAt INTEGER NOT NULL '
+      ')',
+    );
+    // r33: the recommender's training log — one row per interaction that
+    // teaches the model (RecommenderHandler), with the item's feature hashes
+    // at the time, so the model can be rebuilt from the log alone. Never
+    // leaves the device.
+    await db?.execute(
+      'CREATE TABLE IF NOT EXISTS Interaction ( '
+      'id INTEGER PRIMARY KEY AUTOINCREMENT, '
+      'world TEXT NOT NULL, '
+      'itemKey TEXT NOT NULL, '
+      'host TEXT NOT NULL, '
+      'kind TEXT NOT NULL, '
+      'value REAL NOT NULL, '
+      'at INTEGER NOT NULL, '
+      'features TEXT NOT NULL '
+      ')',
+    );
+    // The names behind the feature hashes, so "what was learned" reads back
+    // as tags and artists rather than numbers.
+    await db?.execute(
+      'CREATE TABLE IF NOT EXISTS RecommenderFeature ( '
+      'world TEXT NOT NULL, '
+      'hash INTEGER NOT NULL, '
+      'name TEXT NOT NULL, '
+      'PRIMARY KEY (world, hash) '
       ')',
     );
     // Cross-booru tag alias cache: how <sourceTag> is spelled on <booruKey>
@@ -373,6 +400,8 @@ class DBHandler {
     // Recency ordering for the History feed and the seen/viewed trims.
     await db?.execute('CREATE INDEX IF NOT EXISTS ViewedPost_viewedAt_index ON ViewedPost (viewedAt);');
     await db?.execute('CREATE INDEX IF NOT EXISTS SeenPost_viewedAt_index ON SeenPost (viewedAt);');
+    // The recommender replays and prunes its log per world, newest first.
+    await db?.execute('CREATE INDEX IF NOT EXISTS Interaction_world_at_index ON Interaction (world, at);');
     // Tag browser: every query is "this booru, optionally this type, ordered
     // by count" — without this it degrades into a full scan of a table that
     // can hold a site's entire tag database.
@@ -1000,6 +1029,104 @@ class DBHandler {
 
   Future<void> clearTagSignals() async {
     await db?.rawDelete('DELETE FROM TagSignal');
+  }
+
+  // ── recommender log (r33) ──
+
+  /// One interaction that teaches the recommender; [features] are the item's
+  /// feature hashes at the time.
+  Future<void> addInteraction({
+    required String world,
+    required String itemKey,
+    required String host,
+    required String kind,
+    required double value,
+    required List<int> features,
+  }) async {
+    await db?.rawInsert(
+      'INSERT INTO Interaction(world, itemKey, host, kind, value, at, features) VALUES(?,?,?,?,?,?,?)',
+      [world, itemKey, host, kind, value, DateTime.now().millisecondsSinceEpoch, features.join(',')],
+    );
+  }
+
+  Future<int> countInteractions(String world) async {
+    final List? rows = await db?.rawQuery('SELECT COUNT(*) AS n FROM Interaction WHERE world = ?', [world]);
+    if (rows == null || rows.isEmpty) return 0;
+    return (rows.first['n'] as int?) ?? 0;
+  }
+
+  /// The newest [limit] interactions of [world], newest first.
+  Future<List<InteractionRow>> recentInteractions(String world, {int limit = 20000}) async {
+    final List? rows = await db?.rawQuery(
+      'SELECT id, world, itemKey, host, kind, value, at, features FROM Interaction WHERE world = ? ORDER BY at DESC, id DESC LIMIT ?',
+      [world, limit],
+    );
+    if (rows == null) return const [];
+    return [
+      for (final r in rows)
+        InteractionRow(
+          id: (r['id'] as int?) ?? 0,
+          world: r['world'].toString(),
+          itemKey: r['itemKey'].toString(),
+          host: r['host'].toString(),
+          kind: InteractionKind.fromName(r['kind'].toString()),
+          value: (r['value'] as num?)?.toDouble() ?? 0,
+          at: (r['at'] as int?) ?? 0,
+          features: [
+            for (final part in r['features'].toString().split(','))
+              if (int.tryParse(part) case final int h) h,
+          ],
+        ),
+    ];
+  }
+
+  /// Keeps the newest [keep] interactions of every world.
+  Future<void> pruneInteractions({int keep = 20000}) async {
+    final List? worlds = await db?.rawQuery('SELECT DISTINCT world FROM Interaction');
+    if (worlds == null) return;
+    for (final w in worlds) {
+      final String world = w['world'].toString();
+      await db?.rawDelete(
+        'DELETE FROM Interaction WHERE world = ? AND id NOT IN '
+        '(SELECT id FROM Interaction WHERE world = ? ORDER BY at DESC, id DESC LIMIT ?)',
+        [world, world, keep],
+      );
+    }
+  }
+
+  Future<void> clearInteractions(String world) async {
+    await db?.rawDelete('DELETE FROM Interaction WHERE world = ?', [world]);
+  }
+
+  Future<void> addFeatureNames(String world, Map<int, String> names) async {
+    final db = this.db;
+    if (db == null || names.isEmpty) return;
+    final batch = db.batch();
+    for (final entry in names.entries) {
+      batch.rawInsert('INSERT OR IGNORE INTO RecommenderFeature(world, hash, name) VALUES(?,?,?)', [world, entry.key, entry.value]);
+    }
+    await batch.commit(noResult: true);
+  }
+
+  Future<Map<int, String>> featureNames(String world, List<int> hashes) async {
+    if (hashes.isEmpty) return const {};
+    final Map<int, String> out = {};
+    // Chunked: SQLite caps the number of bound variables.
+    for (int start = 0; start < hashes.length; start += 500) {
+      final List<int> chunk = hashes.sublist(start, (start + 500).clamp(0, hashes.length));
+      final List? rows = await db?.rawQuery(
+        'SELECT hash, name FROM RecommenderFeature WHERE world = ? AND hash IN (${List.filled(chunk.length, '?').join(',')})',
+        [world, ...chunk],
+      );
+      for (final r in rows ?? const []) {
+        out[(r['hash'] as int?) ?? -1] = r['name'].toString();
+      }
+    }
+    return out;
+  }
+
+  Future<void> clearFeatureNames(String world) async {
+    await db?.rawDelete('DELETE FROM RecommenderFeature WHERE world = ?', [world]);
   }
 
   //

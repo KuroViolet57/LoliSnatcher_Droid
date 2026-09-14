@@ -218,6 +218,13 @@ class SettingsHandler {
   // Local behaviour tracking that powers the "For You" recommendation tab.
   // Fully on-device (TagSignal table); can be disabled and wiped at any time.
   bool enableInterestTracking = true;
+  // r33: the on-device recommender (RecommenderHandler). `aiRecommendations`
+  // = the learned model orders and seeds every recommendation surface;
+  // `aiLearning` = it keeps learning from what is viewed, read, favourited
+  // and skipped. Independent by design: learning may run while the classic
+  // ordering is shown, and the learned model may serve while frozen.
+  bool aiRecommendations = true;
+  bool aiLearning = true;
   // Render the post-info panel (tags, metadata) as a Boorusama-style bottom
   // sheet dragged up from the bottom edge instead of the classic right-side
   // drawer. On by default; turn off to restore the side drawer.
@@ -681,6 +688,14 @@ class SettingsHandler {
       'default': '',
     },
     'enableInterestTracking': {
+      'type': 'bool',
+      'default': true,
+    },
+    'aiRecommendations': {
+      'type': 'bool',
+      'default': true,
+    },
+    'aiLearning': {
       'type': 'bool',
       'default': true,
     },
@@ -1294,6 +1309,10 @@ class SettingsHandler {
         return previewWindowRect;
       case 'enableInterestTracking':
         return enableInterestTracking;
+      case 'aiRecommendations':
+        return aiRecommendations;
+      case 'aiLearning':
+        return aiLearning;
       case 'useBottomInfoSheet':
         return useBottomInfoSheet;
       case 'bottomSheetSizeMultiplier':
@@ -1572,6 +1591,12 @@ class SettingsHandler {
         break;
       case 'enableInterestTracking':
         enableInterestTracking = validatedValue;
+        break;
+      case 'aiRecommendations':
+        aiRecommendations = validatedValue;
+        break;
+      case 'aiLearning':
+        aiLearning = validatedValue;
         break;
       case 'useBottomInfoSheet':
         useBottomInfoSheet = validatedValue;
@@ -2181,6 +2206,7 @@ class SettingsHandler {
         tempList.add(Booru(loc.favourites, BooruType.Favourites, '', '', ''));
         tempList.add(Booru(loc.downloads, BooruType.Downloads, '', '', ''));
         tempList.add(Booru('For You', BooruType.ForYou, '', '', ''));
+        tempList.add(Booru('For You (doujin)', BooruType.ForYouDoujin, '', '', ''));
         tempList.add(Booru('Collections', BooruType.Collections, '', '', ''));
         tempList.add(Booru('History', BooruType.History, '', '', ''));
       }
@@ -2222,6 +2248,17 @@ class SettingsHandler {
       if (b.type?.isForYou == true) return b;
     }
     final Booru b = Booru('For You', BooruType.ForYou, '', '', '');
+    booruList.add(b);
+    return b;
+  }
+
+  /// Returns the virtual doujin For You booru (r33), adding it to the list
+  /// on first use.
+  Booru ensureForYouDoujinBooru() {
+    for (final b in booruList) {
+      if (b.type?.isForYouDoujin == true) return b;
+    }
+    final Booru b = Booru('For You (doujin)', BooruType.ForYouDoujin, '', '', '');
     booruList.add(b);
     return b;
   }
@@ -2282,6 +2319,7 @@ class SettingsHandler {
     // Keep the other virtual boorus grouped after Favourites / Downloads.
     for (final isType in [
       (Booru b) => b.type?.isForYou == true,
+      (Booru b) => b.type?.isForYouDoujin == true,
       (Booru b) => b.type?.isCollections == true,
       (Booru b) => b.type?.isHistory == true,
     ]) {

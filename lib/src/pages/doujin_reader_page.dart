@@ -10,6 +10,8 @@ import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/reader_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/recommender_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/rewards.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/doujin_download_handler.dart';
@@ -54,6 +56,7 @@ class DoujinReaderPage extends StatefulWidget {
     this.title = '',
     this.initialPage = 0,
     this.handler,
+    this.gallery,
     super.key,
   });
 
@@ -67,6 +70,11 @@ class DoujinReaderPage extends StatefulWidget {
   /// time (e-hentai); the tab's own when the detail page opened the reader,
   /// else the shared media handler for the source.
   final BooruHandler? handler;
+
+  /// The gallery being read, when the reader was opened from one (not for a
+  /// book saved on this device): what reaching half of it, and its end, is
+  /// reported about to the recommender.
+  final BooruItem? gallery;
 
   /// Test hook: lets widget tests substitute a working in-memory image so a
   /// LIVE zoomable page is on screen while chrome/input is exercised —
@@ -173,11 +181,32 @@ class _DoujinReaderPageState extends State<DoujinReaderPage> {
   /// swallows every second tap — turns chain off this instead.
   int? _turnTarget;
 
+  /// Reading milestones already reported this session: half way, the end.
+  bool _reportedHalf = false;
+  bool _reportedEnd = false;
+
   void _onPageChanged(int page) {
     setState(() => _current = page);
     if (_turnTarget == page) _turnTarget = null;
     _trackStrip();
     ReaderHandler.instance.saveProgress(widget.booru, widget.galleryId, page, widget.pages.length);
+    _reportReading(page);
+  }
+
+  /// Half a book read, and a book finished, each reported once: turning
+  /// back and forth is not reading it twice.
+  void _reportReading(int page) {
+    final BooruItem? gallery = widget.gallery;
+    if (gallery == null || widget.pages.isEmpty) return;
+    final double fraction = (page + 1) / widget.pages.length;
+    if (!_reportedHalf && fraction >= 0.5) {
+      _reportedHalf = true;
+      RecommenderHandler.maybe?.onEvent(gallery, InteractionKind.read, value: fraction, handler: widget.handler);
+    }
+    if (!_reportedEnd && page >= widget.pages.length - 1) {
+      _reportedEnd = true;
+      RecommenderHandler.maybe?.onEvent(gallery, InteractionKind.finish, handler: widget.handler);
+    }
   }
 
   int get _effectivePage => _turnTarget ?? _current;
@@ -881,7 +910,7 @@ Future<void> openDoujinReader(
     final String title = (item.description ?? '').split('\n').firstWhere((line) => line.trim().isNotEmpty, orElse: () => '');
 
     if (!context.mounted) return;
-    await _pushReader(context, pages: pages, booru: booru, galleryId: galleryId, title: title, initialPage: initialPage, handler: handler);
+    await _pushReader(context, pages: pages, booru: booru, galleryId: galleryId, title: title, initialPage: initialPage, handler: handler, gallery: item);
   } finally {
     _readerOpening = false;
   }
@@ -917,6 +946,7 @@ Future<void> _pushReader(
   required String title,
   required int initialPage,
   BooruHandler? handler,
+  BooruItem? gallery,
 }) async {
   final GlobalKey viewerKey = GlobalKey(debugLabel: 'viewer-doujin-reader');
   ViewerHandler.instance.addViewer(viewerKey);
@@ -931,6 +961,7 @@ Future<void> _pushReader(
           title: title,
           initialPage: initialPage,
           handler: handler,
+          gallery: gallery,
         ),
       ),
     );

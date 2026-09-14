@@ -5,18 +5,31 @@ import 'package:flutter/services.dart';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:get_it/get_it.dart';
 
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/reader_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/recommender_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/rewards.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/pages/doujin_reader_page.dart';
 import 'package:lolisnatcher/src/widgets/image/custom_network_image.dart';
 import 'package:lolisnatcher/src/widgets/image/sprite_tile_image.dart';
+
+/// Records what the reader reports about a book being read.
+class _CountingRecommender extends RecommenderHandler {
+  final List<({InteractionKind kind, double value})> events = [];
+
+  @override
+  Future<void> onEvent(BooruItem item, InteractionKind kind, {double value = 0, BooruHandler? handler, Map<String, String>? namespaces}) async {
+    events.add((kind: kind, value: value));
+  }
+}
 
 /// A source whose pages learn their thumbnail late, the way e-hentai's do
 /// (one strip per block of pages, read when a page of the block is shown).
@@ -99,6 +112,7 @@ void main() {
     EdgeInsets viewInsets = EdgeInsets.zero,
     List<BooruItem>? pages,
     BooruHandler? handler,
+    BooruItem? gallery,
   }) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -122,6 +136,7 @@ void main() {
                         galleryId: '123',
                         title: 'Test book',
                         handler: handler,
+                        gallery: gallery,
                       ),
                     ),
                   );
@@ -294,6 +309,47 @@ void main() {
       }
       expect(find.text('8 / 30'), findsOneWidget);
       expect(strip.position.pixels, greaterThan(before));
+    });
+
+    testWidgets('reading half a book and finishing it are each reported once, turning back and forth included', (tester) async {
+      RecommenderHandler.unregister();
+      final _CountingRecommender counting = _CountingRecommender();
+      GetIt.instance.registerSingleton<RecommenderHandler>(counting);
+      addTearDown(RecommenderHandler.unregister);
+      final BooruItem gallery = BooruItem(
+        fileURL: 'https://nhentai.net/g/123/',
+        sampleURL: '',
+        thumbnailURL: '',
+        tagsList: const [],
+        postURL: 'https://nhentai.net/g/123/',
+        serverId: '123',
+      );
+      await pumpReader(tester, pageCount: 4, gallery: gallery);
+      final Size screen = screenSize(tester);
+      Future<void> forward() async {
+        await tester.tapAt(Offset(screen.width * 0.9, screen.height * 0.5));
+        await tester.pump(const Duration(milliseconds: 300));
+        await tester.pump(const Duration(milliseconds: 300));
+      }
+
+      Future<void> back() async {
+        await tester.tapAt(Offset(screen.width * 0.1, screen.height * 0.5));
+        await tester.pump(const Duration(milliseconds: 300));
+        await tester.pump(const Duration(milliseconds: 300));
+      }
+
+      expect(counting.events, isEmpty, reason: 'opening is the detail page\'s event, not the reader\'s');
+      await forward(); // page 2 of 4: half way
+      expect(counting.events.where((e) => e.kind == InteractionKind.read).map((e) => e.value), [0.5]);
+      await back();
+      await forward();
+      expect(counting.events.where((e) => e.kind == InteractionKind.read), hasLength(1), reason: 'half way is reported once');
+      await forward(); // 3
+      await forward(); // 4: the end
+      expect(counting.events.where((e) => e.kind == InteractionKind.finish), hasLength(1));
+      await back();
+      await forward();
+      expect(counting.events.where((e) => e.kind == InteractionKind.finish), hasLength(1), reason: 'finishing is reported once');
     });
 
     testWidgets('filmstrip: a page whose thumbnail is a sprite tile is painted through SpriteTileImage', (tester) async {

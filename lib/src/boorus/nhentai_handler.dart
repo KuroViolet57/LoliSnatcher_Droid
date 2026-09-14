@@ -14,8 +14,11 @@ import 'package:lolisnatcher/src/data/response_error.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_suggestion.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
+import 'package:lolisnatcher/src/boorus/doujin/doujin_recommendation_engine.dart';
 import 'package:lolisnatcher/src/boorus/nhentai_tag_catalog.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/item_features.dart';
+import 'package:lolisnatcher/src/handlers/recommender/recommender_handler.dart';
 import 'package:lolisnatcher/src/handlers/tag_catalog_source.dart';
 import 'package:lolisnatcher/src/handlers/reader_handler.dart';
 import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
@@ -667,7 +670,36 @@ class NHentaiHandler extends BooruHandler {
         ? 1
         : math.sqrt(tagIds.length * _recSourceTagIds.length);
     final double titleSim = _titleSimTo(row['english_title'].toString());
-    return (overlap / denominator + 0.25 * titleSim, isArtistBucket, row);
+    final double score = overlap / denominator + 0.25 * titleSim;
+    _recScores[rowId] = score;
+    return (score, isArtistBucket, row);
+  }
+
+  /// Similarity per served row, kept so the page can be tilted by taste once
+  /// the rows are items with their tags resolved.
+  final Map<int, double> _recScores = {};
+
+  /// r33: a served recommendation page is tilted by the user's taste — the
+  /// same half-point term the engine applies for the other sources — and
+  /// reported to the recommender as shown.
+  @override
+  Future<void> afterParseResponse(List<BooruItem> items) async {
+    if (_pendingRecommendId != null && items.isNotEmpty) {
+      final double Function(BooruItem)? personal = await RecommenderHandler.maybe?.scorer(RecommenderWorld.doujin, handler: this);
+      if (personal != null) {
+        final Map<BooruItem, double> combined = {
+          for (final BooruItem item in items)
+            item: (_recScores[int.tryParse(item.serverId ?? '') ?? -1] ?? 0) +
+                DoujinRecommendationEngine.personalWeight * (personal(item) - 0.5),
+        };
+        final List<BooruItem> ordered = [...items]..sort((a, b) => combined[b]!.compareTo(combined[a]!));
+        items
+          ..clear()
+          ..addAll(ordered);
+      }
+      unawaited(RecommenderHandler.maybe?.onExposed(items, DoujinRecommendationEngine.surface, handler: this) ?? Future<void>.value());
+    }
+    await super.afterParseResponse(items);
   }
 
   /// Serves up to [count] best-scored rows from the leftover pool, keeping
@@ -739,6 +771,7 @@ class NHentaiHandler extends BooruHandler {
     _recSeen
       ..clear()
       ..add(int.parse(id));
+    _recScores.clear();
     _recLeftover = [];
     _recSourceTagIds = {
       for (final t in detail['tags'] as List? ?? []) t['id'] as int,

@@ -503,7 +503,7 @@ class HentaiPawHandler extends BooruHandler with DoujinListingTagBackfill, Douji
         break;
       }
     }
-    return DoujinRecommendationEngine.rank(
+    return DoujinRecommendationEngine.rankPersonal(handler: this, 
       source,
       candidates,
       count: limit,

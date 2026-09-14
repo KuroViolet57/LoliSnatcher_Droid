@@ -10,6 +10,7 @@ import 'package:lolisnatcher/src/boorus/e621_handler.dart';
 import 'package:lolisnatcher/src/boorus/empty_handler.dart';
 import 'package:lolisnatcher/src/boorus/favourites_handler.dart';
 import 'package:lolisnatcher/src/boorus/foryou_handler.dart';
+import 'package:lolisnatcher/src/boorus/doujin_foryou_handler.dart';
 import 'package:lolisnatcher/src/boorus/history_handler.dart';
 import 'package:lolisnatcher/src/boorus/gelbooru_alikes_handler.dart';
 import 'package:lolisnatcher/src/boorus/gelbooru_handler.dart';
@@ -202,6 +203,9 @@ class BooruHandlerFactory {
           break;
         case BooruType.ForYou:
           booruHandler = ForYouHandler(booru, limit);
+          break;
+        case BooruType.ForYouDoujin:
+          booruHandler = DoujinForYouHandler(booru, limit);
           break;
         case BooruType.History:
           booruHandler = HistoryHandler(booru, limit);

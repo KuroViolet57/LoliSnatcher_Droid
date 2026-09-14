@@ -6,6 +6,9 @@ import 'package:flutter/foundation.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/item_features.dart';
+import 'package:lolisnatcher/src/handlers/recommender/recommender_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/rewards.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 
@@ -265,6 +268,13 @@ class SourceSettingsHandler {
   void addBlacklistTag(Booru? booru, String tag) {
     final String normalized = tag.trim();
     if (normalized.isEmpty) return;
+    // r33: a blacklisted tag is a strong no for the recommender of that world.
+    RecommenderHandler.maybe?.onQueryInWorld(
+      normalized,
+      booru == null ? RecommenderWorld.doujin : ItemFeatures.worldOfBooru(booru),
+      InteractionKind.blacklist,
+      host: DoujinDataHandler.hostOf(booru),
+    );
     void change(SourceSettings s) {
       final existing = [
         for (final part in (s.tagBlacklist ?? '').split(','))

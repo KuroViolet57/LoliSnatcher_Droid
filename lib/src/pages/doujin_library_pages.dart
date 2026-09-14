@@ -359,7 +359,7 @@ class _DoujinSavedSearchesPageState extends State<DoujinSavedSearchesPage> {
     final store = DoujinDataHandler.instance..ensureLoaded();
     final List<Booru> sources = [
       for (final b in SettingsHandler.instance.booruList)
-        if (DoujinDataHandler.isDoujinBooru(b)) b,
+        if (DoujinDataHandler.isDoujinSource(b)) b,
     ];
     return Scaffold(
       appBar: AppBar(title: const Text('Doujin saved searches')),

@@ -204,6 +204,18 @@ void main() {
       expect(h.locked, isTrue);
     });
 
+    test("a query's cursors survive another query being asked in between (r33 review: the For You feed interleaves facets on one handler)", () async {
+      final h = handler();
+      h.currentTags = 'english';
+      await h.parseListFromResponse(_Resp(fixture('ehentai_search.html')));
+      h.pageNum = 1;
+      h.locked = false;
+      expect(h.makeURL('something else'), '', reason: 'the other query has no page 2 yet');
+      h.locked = false;
+      expect(h.makeURL('english'), contains('next=3718414'), reason: 'page 2 of the first query is still reachable');
+      expect(h.locked, isFalse);
+    });
+
     test('a listing the app cannot read is named, not shown as an empty grid (r30 live)', () async {
       final h = handler();
       h.currentTags = '';

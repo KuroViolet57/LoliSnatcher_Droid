@@ -13,6 +13,7 @@ import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/pages/about_page.dart';
 import 'package:lolisnatcher/src/pages/loli_sync_page.dart';
 import 'package:lolisnatcher/src/pages/settings/doujin_settings_page.dart';
+import 'package:lolisnatcher/src/pages/settings/recommendations_page.dart';
 import 'package:lolisnatcher/src/pages/settings/backup_restore_page.dart';
 import 'package:lolisnatcher/src/pages/settings/booru_page.dart';
 import 'package:lolisnatcher/src/pages/settings/database_page.dart';
@@ -87,6 +88,11 @@ class SettingsPage extends StatelessWidget {
                 name: 'Doujin',
                 icon: const Icon(Symbols.menu_book_rounded),
                 page: () => const DoujinSettingsPage(),
+              ),
+              SettingsButton(
+                name: 'Recommendations',
+                icon: const Icon(Symbols.auto_awesome_rounded),
+                page: () => const RecommendationsPage(),
               ),
               _sectionLabel(context, 'LOOK & FEEL'),
               SettingsButton(
