@@ -2434,7 +2434,8 @@ class TabManagerItem extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      TabRow(tab: tab, filterText: filterText),
+                      // r38: a doujin row is its cover — big enough to tell apart.
+                      TabRow(tab: tab, filterText: filterText, doujinCoverHeight: 88),
                       const SizedBox(height: 2),
                       Obx(() {
                         final int totalCount = tab.booruHandler.totalCount.value;

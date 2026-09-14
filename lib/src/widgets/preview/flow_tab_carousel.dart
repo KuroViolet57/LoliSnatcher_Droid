@@ -7,11 +7,13 @@ import 'package:get/get.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
+import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/theme_handler.dart';
 import 'package:lolisnatcher/src/widgets/common/settings_widgets.dart';
 import 'package:lolisnatcher/src/widgets/dialogs/add_new_tab_dialog.dart';
 import 'package:lolisnatcher/src/widgets/dialogs/page_number_dialog.dart';
 import 'package:lolisnatcher/src/widgets/image/booru_favicon.dart';
+import 'package:lolisnatcher/src/widgets/image/custom_network_image.dart';
 import 'package:lolisnatcher/src/widgets/preview/main_search_query_editor_page.dart';
 import 'package:lolisnatcher/src/widgets/tabs/tab_selector.dart';
 
@@ -154,7 +156,24 @@ class PageIndicatorPill extends StatelessWidget {
 /// others peek as compact cards; a dashed card at the end adds a new tab. Dots
 /// below indicate position. Reads [SearchHandler] reactively.
 class FlowTabCarousel extends StatefulWidget {
-  const FlowTabCarousel({super.key});
+  const FlowTabCarousel({this.large = false, this.onPicked, super.key});
+
+  /// Taller cards with bigger covers (the tab pill's sheet).
+  final bool large;
+
+  /// Called after a card was picked (a sheet closes itself).
+  final VoidCallback? onPicked;
+
+  /// What a card shows for a tab: a doujin tab's saved cover, else the
+  /// first loaded item's thumbnail; null when there is nothing yet.
+  static String? coverUrlOf(SearchTab tab) {
+    final String? persisted = tab.doujinThumb;
+    if (persisted != null && persisted.isNotEmpty) return persisted;
+    for (final item in tab.booruHandler.filteredFetched) {
+      if (item.thumbnailURL.isNotEmpty) return item.thumbnailURL;
+    }
+    return null;
+  }
 
   @override
   State<FlowTabCarousel> createState() => _FlowTabCarouselState();
@@ -165,9 +184,32 @@ class _FlowTabCarouselState extends State<FlowTabCarousel> {
   final ScrollController _scroll = ScrollController();
   int _lastActive = -1;
 
-  static const double _cardHeight = 92;
-  static const double _activeWidth = 264;
-  static const double _peekWidth = 150;
+  double get cardHeight => widget.large ? 132 : 92;
+  double get activeWidth => widget.large ? 300 : 264;
+  double get peekWidth => widget.large ? 190 : 150;
+  double get activeCover => widget.large ? 62 : 30;
+  double get peekCover => widget.large ? 48 : 26;
+  static const double _gap = 10;
+
+  Widget _cover(SearchTab tab, double height) {
+    final String? url = FlowTabCarousel.coverUrlOf(tab);
+    if (url == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: SizedBox(
+          width: height * 0.75,
+          height: height,
+          child: Image(
+            image: CustomNetworkImage(url, withCache: SettingsHandler.instance.thumbnailCache, cacheFolder: 'thumbnails'),
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) => const ColoredBox(color: Colors.black26),
+          ),
+        ),
+      ),
+    );
+  }
 
   @override
   void dispose() {
@@ -193,7 +235,7 @@ class _FlowTabCarouselState extends State<FlowTabCarousel> {
     return GestureDetector(
       onTap: _openEditor,
       child: Container(
-        width: _activeWidth,
+        width: activeWidth,
         padding: const EdgeInsets.fromLTRB(16, 13, 12, 11),
         decoration: BoxDecoration(
           gradient: const LinearGradient(
@@ -241,6 +283,7 @@ class _FlowTabCarouselState extends State<FlowTabCarousel> {
             ),
             Row(
               children: [
+                _cover(tab, activeCover),
                 Expanded(
                   child: Text(
                     query,
@@ -288,9 +331,12 @@ class _FlowTabCarouselState extends State<FlowTabCarousel> {
     final booru = tab.selectedBooru.value;
     final String query = tab.tags.trim().isEmpty ? 'everything' : tab.tags.trim();
     return GestureDetector(
-      onTap: () => searchHandler.changeTabIndex(index, byUser: true),
+      onTap: () {
+        searchHandler.changeTabIndex(index, byUser: true);
+        widget.onPicked?.call();
+      },
       child: Container(
-        width: _peekWidth,
+        width: peekWidth,
         padding: const EdgeInsets.fromLTRB(14, 13, 14, 11),
         decoration: BoxDecoration(
           color: ThemeHandler.flowSurface,
@@ -319,15 +365,22 @@ class _FlowTabCarouselState extends State<FlowTabCarousel> {
                 ),
               ],
             ),
-            Text(
-              query,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Color(0xFFC9BFE0),
-                fontSize: 14.5,
-                fontWeight: FontWeight.w700,
-              ),
+            Row(
+              children: [
+                _cover(tab, peekCover),
+                Expanded(
+                  child: Text(
+                    query,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFFC9BFE0),
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
             ),
             Obx(() {
               final int count = tab.booruHandler.totalCount.value;
@@ -416,34 +469,34 @@ class _FlowTabCarouselState extends State<FlowTabCarousel> {
       final int active = searchHandler.currentIndex;
       if (tabs.isEmpty) return const SizedBox.shrink();
 
-      // When the active tab changes (e.g. jumped via the tab list), snap the
-      // carousel back to the start so the active card leads and the peeks are
-      // the *real* neighbours of the new tab.
+      // Every tab has a card (r38): the active one is wide and leads the
+      // view when it changes; the earlier tabs are a scroll to the right
+      // away, the later ones follow, then the "add" card.
       if (active != _lastActive) {
         _lastActive = active;
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (_scroll.hasClients) _scroll.jumpTo(0);
+          if (!_scroll.hasClients) return;
+          final double target = active * (peekWidth + _gap);
+          _scroll.jumpTo(target.clamp(0, _scroll.position.maxScrollExtent));
         });
       }
-
-      // Cards run from the active tab forward: active (wide) + the tabs that
-      // follow it (peeks) + a trailing "add" card.
-      final int remaining = tabs.length - active; // active..end
       return Column(
         children: [
           SizedBox(
-            height: _cardHeight,
+            height: cardHeight,
             child: ListView.separated(
               controller: _scroll,
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: remaining + 1,
-              separatorBuilder: (_, _) => const SizedBox(width: 10),
+              itemCount: tabs.length + 1,
+              separatorBuilder: (_, _) => const SizedBox(width: _gap),
               itemBuilder: (context, i) {
-                if (i == remaining) return _addCard();
-                final int tabIndex = active + i;
-                final tab = tabs[tabIndex];
-                return i == 0 ? _activeCard(tab) : _peekCard(tab, tabIndex);
+                if (i == tabs.length) return _addCard();
+                final tab = tabs[i];
+                return KeyedSubtree(
+                  key: ValueKey('flow-card-$i'),
+                  child: i == active ? _activeCard(tab) : _peekCard(tab, i),
+                );
               },
             ),
           ),

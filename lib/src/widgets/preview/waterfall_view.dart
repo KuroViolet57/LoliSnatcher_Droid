@@ -28,6 +28,7 @@ import 'package:lolisnatcher/src/widgets/preview/shimmer_builder.dart';
 import 'package:lolisnatcher/src/widgets/preview/staggered_builder.dart';
 import 'package:lolisnatcher/src/widgets/preview/discovery_strip.dart';
 import 'package:lolisnatcher/src/widgets/preview/doujin_tab_view.dart';
+import 'package:lolisnatcher/src/widgets/preview/tab_pill.dart';
 import 'package:lolisnatcher/src/widgets/preview/flow_tab_carousel.dart';
 import 'package:lolisnatcher/src/widgets/preview/media_filter_chips.dart';
 import 'package:lolisnatcher/src/widgets/preview/waterfall_bottom_bar.dart';
@@ -600,6 +601,15 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware {
                       );
                     }),
                   ),
+                  // r38, experimental: the tab pill, on the side the scroll
+                  // buttons leave free.
+                  if (settingsHandler.tabPill)
+                    Positioned(
+                      bottom: MediaQuery.viewPaddingOf(context).bottom + 120,
+                      left: settingsHandler.scrollGridButtonsPosition.isLeft ? null : 12,
+                      right: settingsHandler.scrollGridButtonsPosition.isLeft ? 12 : null,
+                      child: const TabPill(),
+                    ),
                   Positioned(
                     bottom: MediaQuery.viewPaddingOf(context).bottom + 120,
                     right: settingsHandler.scrollGridButtonsPosition.isRight

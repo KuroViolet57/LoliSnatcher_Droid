@@ -7,8 +7,8 @@ same day, when the project moved to the user's Windows PC; §0, §2, §5, §10 a
 hdoujin; r31 the same day, the tag-builder sweep; r32 on 2026-09-13, the e-hentai
 page previews; r33 on 2026-09-14, the recommender; r34 on 2026-09-14, stuck
 doujin-tab retry, by Grok; r35 on 2026-09-14, the encoder; r36 the same evening, the exhentai
-re-check; r37 the same night, doujin browse filters). This file is the
-complete brief for a fresh
+re-check; r37 the same night, doujin browse filters; r38 on 2026-09-15, the tab
+cards and the tab pill). This file is the complete brief for a fresh
 session: read Part A top to bottom before touching code. Part B is the
 older chronological build log, kept verbatim as history.
 
@@ -30,11 +30,11 @@ older chronological build log, kept verbatim as history.
   Never push elsewhere; force-push is blocked.
 - **Version:** `2.6.0+5211` in `pubspec.yaml`, mirrored in
   `lib/src/data/constants.dart` (`updateInfo`). Builds are told apart by
-  `Constants.buildCodename` (`'r37-doujin-filters'` now), shown in About. Bump the
+  `Constants.buildCodename` (`'r38-tab-cards'` now), shown in About. Bump the
   codename every build: `rNN-<two words>`.
-- **Build counter:** builds are numbered r21, r22, … r37. Each build gets a
-  numbered folder on the K: drive (§2): r37 used **56**; the next build
-  uses **57**.
+- **Build counter:** builds are numbered r21, r22, … r38. Each build gets a
+  numbered folder on the K: drive (§2): r38 used **57**; the next build
+  uses **58**.
 - **The user** talks in voice notes and logs; expects one build per request
   round, checked on a Samsung phone. They cannot see tool output — only the
   final message.
@@ -117,7 +117,7 @@ older chronological build log, kept verbatim as history.
    (r32: 54 infos + 6 warnings, lint style noise in old files). New code
    should add none.
 4. `flutter test $(ls test/*_test.dart | grep -v booru_test)` → all green.
-   Baseline **825** (r37). `booru_test.dart` is excluded because its cases
+   Baseline **829** (r38). `booru_test.dart` is excluded because its cases
    hit live sites; `tag_index_live_test.dart`, `rule34video_live_test.dart`
    and the doujin parity walk are tagged `live` and skipped unless run with
    `--run-skipped --tags live`.
@@ -139,9 +139,9 @@ older chronological build log, kept verbatim as history.
    Output: `build/app/outputs/flutter-apk/app-arm64-v8a-release.apk`.
 8. Deliver by copying into the Google Drive folder synced on the PC:
    `K:\My Drive\booruApk\<token>.apk (<descriptor>)\` — e.g.
-   `56.apk (r37 doujin filters - tested)` — holding `changes.txt` (the
+   `57.apk (r38 tab cards - tested)` — holding `changes.txt` (the
    changelog) and the APK renamed `<codename>-2.6.0.apk`. Tokens are
-   integers: r37 used 56, the next build uses 57.
+   integers: r38 used 57, the next build uses 58.
    **The order since 2026-09-14 evening (user rule): build FIRST, test
    second.** Write the changelog, then run
    `python tool/deliver_build.py <token> "<descriptor>" <changelog.md>` —
@@ -604,6 +604,30 @@ the adversarial reviewer over a diff is the one agent that is always run.
 - **Next:** hdoujin's numeric sort codes (title/pages/views/favourites) and
   its category filter once known; filters as a saved per-source preference.
 
+
+### 4.7 The tab cards, the tab pill, the tab manager's doujin rows (r38)
+
+- **`FlowTabCarousel`** (`widgets/preview/flow_tab_carousel.dart`): every
+  tab has a card (`KeyedSubtree` key `flow-card-<index>`); the active one
+  is wide and the list jumps to `active × (peekWidth + gap)` (clamped to
+  the scroll extent) when the active tab changes, so the earlier tabs are a
+  scroll to the right away. Each card shows `coverUrlOf(tab)` — the doujin
+  tab's saved `doujinThumb`, else the first loaded item's thumbnail.
+  `large: true` (taller cards, bigger covers) and `onPicked` are for the
+  pill's sheet.
+- **`TabPill`** (`widgets/preview/tab_pill.dart`, setting `tabPill`, default
+  off, Settings → User interface "Tab pill (experimental)"): a floating pill
+  in the feed (`waterfall_view.dart`, at the scroll buttons' height on the
+  other side) showing the tab's cover and "n/total"; tap →
+  `TabPill.openStrip` (a modal sheet with the large carousel; a pick closes
+  it), horizontal fling → previous/next tab (`changeTabIndex(byUser)`),
+  long-press → `TabManagerPage`. The idea is the phone browsers' tab-count
+  button plus swipe-the-address-bar switching.
+- **`TabRow.doujinCoverHeight`** (default 32): `TabManagerItem` passes 88 so
+  a doujin row in the tab manager is its cover; the tab bar keeps 32.
+- **Tests:** `tab_cards_test` (both directions on a phone-wide surface,
+  covers, the pill's tap/pick/fling, the big cover).
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
@@ -1029,8 +1053,11 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r37)
+## 12. Open items (as of r38)
 
+- r38 is unverified on the device: the two-way tab strip with covers, the
+  big doujin rows in the tab manager, and the tab pill (its placement
+  beside the scroll buttons, its sheet, the swipe). The pill is opt-in.
 - r37 is unverified on the device: the Filters card on doujin tabs, the
   hdoujin Latest/Popular switch, e-hentai's popular page and multi-category
   choice, hitomi's periods and types. Verified from the PC: hdoujin's two

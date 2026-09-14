@@ -22,8 +22,13 @@ class TabRow extends StatelessWidget {
     this.withColoredTags = true,
     this.filterText,
     this.isExpanded = true,
+    this.doujinCoverHeight = 32,
     super.key,
   });
+
+  /// The doujin cover's height (three-quarters as wide); the tab manager
+  /// asks for a big one (r38), the tab bar keeps the small one.
+  final double doujinCoverHeight;
 
   final SearchTab tab;
   final Color? color;
@@ -240,8 +245,8 @@ class TabRow extends StatelessWidget {
               ClipRRect(
                 borderRadius: BorderRadius.circular(4),
                 child: SizedBox(
-                  width: 24,
-                  height: 32,
+                  width: doujinCoverHeight * 0.75,
+                  height: doujinCoverHeight,
                   child: (doujinThumbUrl == null || doujinThumbUrl.isEmpty)
                       ? const ColoredBox(color: Colors.black26)
                       : Image(

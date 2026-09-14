@@ -280,6 +280,9 @@ class SettingsHandler {
   bool desktopListsDrag = false;
   bool showBottomSearchbar = true;
   bool useTopSearchbarInput = false;
+  // r38, experimental: the floating tab pill in the feed (tap = tab strip,
+  // swipe = next/previous tab, long-press = tab manager).
+  bool tabPill = false;
   bool dimSeenPosts = false;
   // Render .gif files with the extended_image engine (the same one Boorusama
   // uses) instead of Flutter's built-in Image widget. extended_image decodes
@@ -378,6 +381,7 @@ class SettingsHandler {
     'appAlias',
     'showBottomSearchbar',
     'useTopSearchbarInput',
+    'tabPill',
     'showSearchbarQuickActions',
     'autofocusSearchbar',
     'expandDetails',
@@ -869,6 +873,10 @@ class SettingsHandler {
       'default': true,
     },
     'useTopSearchbarInput': {
+      'type': 'bool',
+      'default': false,
+    },
+    'tabPill': {
       'type': 'bool',
       'default': false,
     },
@@ -1404,6 +1412,8 @@ class SettingsHandler {
         return showBottomSearchbar;
       case 'useTopSearchbarInput':
         return useTopSearchbarInput;
+      case 'tabPill':
+        return tabPill;
       case 'dimSeenPosts':
         return dimSeenPosts;
       case 'fastGifPlayback':
@@ -1813,6 +1823,9 @@ class SettingsHandler {
         break;
       case 'useTopSearchbarInput':
         useTopSearchbarInput = validatedValue;
+        break;
+      case 'tabPill':
+        tabPill = validatedValue;
         break;
       case 'dimSeenPosts':
         dimSeenPosts = validatedValue;

@@ -39,6 +39,7 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
   late ButtonPosition scrollGridButtonsPosition;
   late bool showBottomSearchbar,
       useTopSearchbarInput,
+      tabPill,
       showSearchbarQuickActions,
       autofocusSearchbar,
       disableVibration,
@@ -61,6 +62,7 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
     handSide = settingsHandler.handSide.value;
     showBottomSearchbar = settingsHandler.showBottomSearchbar;
     useTopSearchbarInput = settingsHandler.useTopSearchbarInput;
+    tabPill = settingsHandler.tabPill;
     showSearchbarQuickActions = settingsHandler.showSearchbarQuickActions;
     autofocusSearchbar = settingsHandler.autofocusSearchbar;
     disableVibration = settingsHandler.disableVibration;
@@ -91,6 +93,7 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
     settingsHandler.handSide.value = handSide;
     settingsHandler.showBottomSearchbar = showBottomSearchbar;
     settingsHandler.useTopSearchbarInput = useTopSearchbarInput;
+    settingsHandler.tabPill = tabPill;
     settingsHandler.showSearchbarQuickActions = showSearchbarQuickActions;
     settingsHandler.autofocusSearchbar = autofocusSearchbar;
     settingsHandler.disableVibration = disableVibration;
@@ -242,6 +245,19 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
                   });
                 },
                 title: context.loc.settings.interface.moveInputToTopInSearchView,
+              ),
+              SettingsToggle(
+                value: tabPill,
+                onChanged: (newValue) {
+                  setState(() {
+                    tabPill = newValue;
+                  });
+                },
+                title: 'Tab pill (experimental)',
+                subtitle: const Text(
+                  'A small floating pill in the feed that says which tab you are on. Tap it for the tab cards wherever you '
+                  'are scrolled, swipe it left or right to move one tab over, hold it for the tab manager.',
+                ),
               ),
               SettingsToggle(
                 value: showSearchbarQuickActions,
