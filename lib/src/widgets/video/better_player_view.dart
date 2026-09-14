@@ -10,7 +10,9 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/handlers/interests_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/handlers/video_completion_tracker.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
@@ -385,8 +387,21 @@ class _BetterPlayerViewState extends State<BetterPlayerView> {
     }
   }
 
+  /// r34: a video watched through is a signal, once per item.
+  final VideoCompletionTracker _completion = VideoCompletionTracker();
+
   void _onPlayerEvent(BetterPlayerEvent event) {
     final type = event.betterPlayerEventType;
+
+    if (widget.isViewed && (type == BetterPlayerEventType.progress || type == BetterPlayerEventType.finished)) {
+      final Duration? duration = event.parameters?['duration'] as Duration? ?? _controller?.videoPlayerController?.value.duration;
+      final Duration? position = type == BetterPlayerEventType.finished ? duration : event.parameters?['progress'] as Duration?;
+      if (position != null &&
+          duration != null &&
+          _completion.update(key: widget.booruItem.fileURL, position: position, duration: duration)) {
+        InterestsHandler.instance.onVideoCompleted(widget.booruItem);
+      }
+    }
 
     // Surface noteworthy events into the in-app talker log so users can
     // share a full event trail when reporting a playback hang/crash via
@@ -414,6 +429,8 @@ class _BetterPlayerViewState extends State<BetterPlayerView> {
     }
 
     if (type == BetterPlayerEventType.initialized) {
+      // A re-created controller starts over: not a loop having wrapped.
+      _completion.markResumed();
       final Duration? resume = _pendingResumePosition;
       _pendingResumePosition = null;
       if (resume != null && resume > Duration.zero) {

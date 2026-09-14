@@ -563,6 +563,7 @@ class _GalleryPageState extends State<GalleryPage> {
                                           .toggleQuality => Symbols.high_quality_rounded,
                                           .externalPlayer => Symbols.exit_to_app_rounded,
                                           .imageSearch => Symbols.image_search_rounded,
+                                          .notInterested => Symbols.thumb_down_rounded,
                                         },
                                       ),
                                       ReorderableDragStartListener(

@@ -225,6 +225,11 @@ class SettingsHandler {
   // ordering is shown, and the learned model may serve while frozen.
   bool aiRecommendations = true;
   bool aiLearning = true;
+  // r34: the downloaded sentence encoder (EncoderHandler). `encoderModel` is
+  // a preset id ('english', 'multilingual') or a Hugging Face repo id; ''
+  // = none downloaded. `aiEncoder` = its vectors join the learner's features.
+  bool aiEncoder = true;
+  String encoderModel = '';
   // Render the post-info panel (tags, metadata) as a Boorusama-style bottom
   // sheet dragged up from the bottom edge instead of the classic right-side
   // drawer. On by default; turn off to restore the side drawer.
@@ -698,6 +703,14 @@ class SettingsHandler {
     'aiLearning': {
       'type': 'bool',
       'default': true,
+    },
+    'aiEncoder': {
+      'type': 'bool',
+      'default': true,
+    },
+    'encoderModel': {
+      'type': 'string',
+      'default': '',
     },
     'useBottomInfoSheet': {
       'type': 'bool',
@@ -1313,6 +1326,10 @@ class SettingsHandler {
         return aiRecommendations;
       case 'aiLearning':
         return aiLearning;
+      case 'aiEncoder':
+        return aiEncoder;
+      case 'encoderModel':
+        return encoderModel;
       case 'useBottomInfoSheet':
         return useBottomInfoSheet;
       case 'bottomSheetSizeMultiplier':
@@ -1597,6 +1614,12 @@ class SettingsHandler {
         break;
       case 'aiLearning':
         aiLearning = validatedValue;
+        break;
+      case 'aiEncoder':
+        aiEncoder = validatedValue;
+        break;
+      case 'encoderModel':
+        encoderModel = validatedValue;
         break;
       case 'useBottomInfoSheet':
         useBottomInfoSheet = validatedValue;

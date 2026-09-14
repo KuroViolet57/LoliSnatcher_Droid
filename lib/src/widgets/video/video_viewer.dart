@@ -17,9 +17,11 @@ import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 import 'package:lolisnatcher/src/data/settings/video_cache_mode.dart';
+import 'package:lolisnatcher/src/handlers/interests_handler.dart';
 import 'package:lolisnatcher/src/handlers/local_auth_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/handlers/video_completion_tracker.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/services/dio_downloader.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
@@ -301,6 +303,9 @@ class VideoViewerState extends State<VideoViewer> {
     if (oldWidget.isViewed != widget.isViewed) {
       videoController.value?.seekTo(Duration.zero);
       isViewed.value = widget.isViewed;
+      // Sought to the start on every flip: the next low position is a
+      // restart, not a loop having wrapped.
+      _completion.markResumed();
 
       if (isViewed.value) {
         // Deferred-load case: this page just became visible without ever
@@ -536,10 +541,21 @@ class VideoViewerState extends State<VideoViewer> {
     scaleController.scaleState = PhotoViewScaleState.covering;
   }
 
+  /// r34: a video watched through is a signal, once per item.
+  final VideoCompletionTracker _completion = VideoCompletionTracker();
+
   void updateVideoState() {
     // print(videoController?.value);
 
     if (chewieController.value == null) return;
+
+    final vp = videoController.value?.value;
+    if (vp != null &&
+        isViewed.value &&
+        vp.isInitialized &&
+        _completion.update(key: widget.booruItem.fileURL, position: vp.position, duration: vp.duration)) {
+      InterestsHandler.instance.onVideoCompleted(widget.booruItem);
+    }
 
     if (isVideoInited) {
       bufferingTimer?.cancel();

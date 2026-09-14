@@ -1,5 +1,7 @@
 import 'dart:io';
+import 'dart:typed_data';
 
+import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -9,6 +11,7 @@ import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/interests_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/encoder_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/ftrl_model.dart';
 import 'package:lolisnatcher/src/handlers/recommender/item_features.dart';
 import 'package:lolisnatcher/src/handlers/recommender/recommender_handler.dart';
@@ -278,6 +281,79 @@ void main() {
     expect(interests.pendingSignals.keys, isNot(contains('wakahi')), reason: 'the classic profile still refuses doujins');
   });
 
+  test('r34: "Not interested" is a loud no, the item never comes back, and it survives a restart through the log', () async {
+    if (!dbReady) return;
+    final r = RecommenderHandler.instance;
+    final BooruItem gone = booruPost('bob', id: 'gone');
+    await r.dismiss(gone);
+    expect(r.isDismissed(gone), isTrue);
+    expect((await r.withoutDismissed([booruPost('alice'), gone])).map((i) => i.postURL), [booruPost('alice').postURL]);
+    expect(await r.score(booruPost('bob', tag: 'glasses')), lessThan(0.5));
+    final rows = await SettingsHandler.instance.dbHandler.recentInteractions('booru', limit: 5);
+    expect(rows.single.kind, InteractionKind.notInterested);
+    r.resetForTests();
+    expect(r.isDismissed(gone), isFalse, reason: 'forgotten with the session');
+    // The first page after a restart asks before any model was loaded
+    // (review): the filter loads what it needs.
+    expect((await r.withoutDismissed([booruPost('alice'), gone])).map((i) => i.postURL), [booruPost('alice').postURL]);
+    expect(r.isDismissed(gone), isTrue, reason: 'read back from the log with the world');
+  });
+
+  test('r34: "Not interested" is kept even while learning is off — it is an order, not a signal (review)', () async {
+    if (!dbReady) return;
+    final r = RecommenderHandler.instance;
+    final FtrlModel model = await r.modelFor(RecommenderWorld.booru);
+    SettingsHandler.instance.aiLearning = false;
+    final BooruItem gone = booruPost('bob', id: 'gone2');
+    await r.dismiss(gone);
+    expect(await SettingsHandler.instance.dbHandler.countInteractions('booru'), 1, reason: 'logged so it survives a restart');
+    expect(model.updates, 0, reason: 'but nothing was learned while learning is off');
+    r.resetForTests();
+    expect(await r.withoutDismissed([gone]), isEmpty);
+  });
+
+  test('r34: with an encoder, what an item says counts — an unseen artist whose name reads like a liked one scores above one that reads like a skipped one', () async {
+    if (!dbReady) return;
+    final r = RecommenderHandler.instance;
+    // Without an encoder the two are indistinguishable: every hashed feature is new.
+    await teach(r);
+    final BooruItem likeAlice = booruPost('alice_liddell', tag: 'blue_hair');
+    final BooruItem likeBob = booruPost('bob_ross', tag: 'blue_hair');
+    final double plainAlice = await r.score(likeAlice);
+    final double plainBob = await r.score(likeBob);
+    expect((plainAlice - plainBob).abs(), lessThan(0.02), reason: 'nothing links alice_liddell to alice without reading the words');
+    // With one: the encoder's vectors join the features, and the taste
+    // centroid of what was liked adds a similarity feature.
+    EncoderHandler.unregister();
+    final EncoderHandler encoder = EncoderHandler.register();
+    encoder.runnerFactory = (String p, {required bool wantsTokenTypeIds}) => _WordRunner();
+    encoder.fetcher = (String url, File to, {void Function(int received, int total)? onProgress, CancelToken? cancelToken}) async {
+        to.parent.createSync(recursive: true);
+        to.writeAsStringSync(
+          url.endsWith('vocab.txt')
+              ? '[PAD]\n[UNK]\n[CLS]\n[SEP]\nalice\nbob\nred\nhair\nblue\nliddell\nross\n'
+              : url.endsWith('config.json')
+              ? '{"hidden_size": 16}'
+              : url.endsWith('tokenizer_config.json')
+              ? '{"do_lower_case": true}'
+              : 'model',
+        );
+      };
+    addTearDown(EncoderHandler.unregister);
+    expect(await encoder.download('english'), isTrue);
+    r.resetForTests();
+    await r.reset(RecommenderWorld.booru);
+    await teach(r);
+    final double readAlice = await r.score(likeAlice);
+    final double readBob = await r.score(likeBob);
+    expect(readAlice, greaterThan(readBob + 0.1), reason: 'the word alice in the name carries the liking over');
+    expect(readAlice, greaterThan(0.5));
+    expect(readBob, lessThan(0.5));
+    // The report names the encoder's part in what was learned.
+    final RecommenderReport report = await r.report(RecommenderWorld.booru);
+    expect(report.encoderFeatures, greaterThan(0));
+  });
+
   test('the log is bounded', () async {
     if (!dbReady) return;
     final db = SettingsHandler.instance.dbHandler;
@@ -289,4 +365,33 @@ void main() {
     final rows = await db.recentInteractions('booru', limit: 100);
     expect(rows.first.itemKey, 'k29', reason: 'the newest are kept, newest first');
   });
+}
+
+/// A stand-in encoder: every token id has its own fixed direction (a
+/// seeded pseudo-random vector), so texts sharing a word share a direction.
+class _WordRunner implements EmbeddingRunner {
+  @override
+  int get dim => 16;
+
+  @override
+  bool get wantsTokenTypeIds => true;
+
+  @override
+  Future<Float32List> run(List<List<int>> ids, List<List<int>> mask) async {
+    final int length = ids.first.length;
+    final Float32List out = Float32List(ids.length * length * dim);
+    for (int b = 0; b < ids.length; b++) {
+      for (int t = 0; t < length; t++) {
+        int seed = ids[b][t] * 2654435761 + 12345;
+        for (int d = 0; d < dim; d++) {
+          seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+          out[(b * length + t) * dim + d] = (seed % 2000) / 1000 - 1;
+        }
+      }
+    }
+    return out;
+  }
+
+  @override
+  Future<void> close() async {}
 }

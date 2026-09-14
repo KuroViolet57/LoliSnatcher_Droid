@@ -38,6 +38,9 @@ dependencies:
       url: https://github.com/NANI-SORE/fast_marquee.git
       ref: 828e79014ed5fd73062d6a24db14b6c114ac175b # master - forked to add richtext
   flash: ^3.1.1
+  # r34: the downloadable sentence encoder (ONNX Runtime 1.23 under a
+  # verified-publisher plugin; Android, iOS, desktop).
+  flutter_onnxruntime: ^1.8.5
   flex_color_picker: ^3.8.0
   flutter_avif: ^3.1.0
   flutter_displaymode: ^0.7.0

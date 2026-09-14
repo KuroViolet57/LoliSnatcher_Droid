@@ -1,9 +1,11 @@
 import 'dart:io';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:lolisnatcher/src/handlers/recommender/encoder_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/item_features.dart';
 import 'package:lolisnatcher/src/handlers/recommender/recommender_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
@@ -80,6 +82,56 @@ void main() {
     await tester.pump();
     expect(SettingsHandler.instance.aiRecommendations, isTrue);
     expect(SettingsHandler.instance.aiLearning, isFalse, reason: 'a frozen model can still serve');
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('r34: the Encoder section — pick a preset, download it, see it ready, turn it off, delete it', (tester) async {
+    tester.view.physicalSize = const Size(1080, 5000);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.reset);
+    final List<String> fetched = [];
+    EncoderHandler.unregister();
+    final EncoderHandler encoder = EncoderHandler.register();
+    encoder.runnerFactory = (String p, {required bool wantsTokenTypeIds}) => throw StateError('no inference in this test');
+    encoder.fetcher = (String url, File to, {void Function(int received, int total)? onProgress, CancelToken? cancelToken}) async {
+        fetched.add(url);
+        to.parent.createSync(recursive: true);
+        to.writeAsStringSync(url.endsWith('config.json') ? '{"hidden_size": 384}' : 'x');
+      };
+    addTearDown(EncoderHandler.unregister);
+    await warm(tester);
+    await tester.pumpWidget(const MaterialApp(home: RecommendationsPage()));
+    await settle(tester);
+    expect(find.byKey(const ValueKey('encoder-status')), findsOneWidget);
+    expect(find.textContaining('No encoder'), findsOneWidget);
+    expect(find.byKey(const ValueKey('encoder-preset-english')), findsOneWidget);
+    expect(find.byKey(const ValueKey('encoder-preset-multilingual')), findsOneWidget);
+    expect(find.byKey(const ValueKey('encoder-preset-custom')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('encoder-preset-english')));
+    await settle(tester);
+    expect(find.textContaining('23 MB'), findsWidgets);
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const ValueKey('encoder-download')));
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    });
+    await settle(tester);
+    expect(fetched, hasLength(4));
+    expect(fetched.first, contains('Xenova/all-MiniLM-L6-v2'));
+    expect(find.textContaining('Ready'), findsOneWidget);
+    expect(SettingsHandler.instance.encoderModel, 'english');
+    final Finder toggle = find.byKey(const ValueKey('ai-encoder-toggle'));
+    expect(toggle, findsOneWidget);
+    await tester.tap(find.descendant(of: toggle, matching: find.byType(Switch)));
+    await tester.pump();
+    expect(SettingsHandler.instance.aiEncoder, isFalse);
+    expect(SettingsHandler.instance.encoderModel, 'english', reason: 'off is not deleted');
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const ValueKey('encoder-delete')));
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    });
+    await settle(tester);
+    expect(SettingsHandler.instance.encoderModel, '');
+    expect(find.textContaining('No encoder'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 

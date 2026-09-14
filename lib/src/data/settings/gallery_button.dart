@@ -13,6 +13,10 @@ enum GalleryButton {
   toggleQuality,
   externalPlayer,
   imageSearch,
+
+  /// r34: "Not interested" on a recommendation feed — a loud no the learner
+  /// keeps, and the item leaves the feed.
+  notInterested,
   ;
 
   /// Returns the string value used for JSON serialization.
@@ -25,6 +29,8 @@ enum GalleryButton {
         return 'external_player';
       case GalleryButton.imageSearch:
         return 'image_search';
+      case GalleryButton.notInterested:
+        return 'not_interested';
       default:
         return name;
     }
@@ -55,6 +61,8 @@ enum GalleryButton {
         return GalleryButton.externalPlayer;
       case 'image_search':
         return GalleryButton.imageSearch;
+      case 'not_interested':
+        return GalleryButton.notInterested;
       default:
         return null;
     }
@@ -77,6 +85,7 @@ enum GalleryButton {
   bool get isToggleQuality => this == GalleryButton.toggleQuality;
   bool get isExternalPlayer => this == GalleryButton.externalPlayer;
   bool get isImageSearch => this == GalleryButton.imageSearch;
+  bool get isNotInterested => this == GalleryButton.notInterested;
 
   /// Returns the localized display name for this button.
   String get locName {
@@ -103,6 +112,8 @@ enum GalleryButton {
         return loc.galleryButtons.externalPlayer;
       case GalleryButton.imageSearch:
         return loc.galleryButtons.imageSearch;
+      case GalleryButton.notInterested:
+        return 'Not interested';
     }
   }
 }

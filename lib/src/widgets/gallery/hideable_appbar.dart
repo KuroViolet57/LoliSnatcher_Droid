@@ -33,6 +33,7 @@ import 'package:lolisnatcher/src/data/site_profile.dart';
 import 'package:lolisnatcher/src/pages/doujin_reader_page.dart';
 import 'package:lolisnatcher/src/pages/kemono_post_page.dart';
 import 'package:lolisnatcher/src/pages/post_files_page.dart';
+import 'package:lolisnatcher/src/handlers/recommender/recommender_handler.dart';
 import 'package:lolisnatcher/src/handlers/snatch_handler.dart';
 import 'package:lolisnatcher/src/handlers/tag_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
@@ -197,7 +198,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
   List<Widget> getActions() {
     final disabled = [...settingsHandler.disabledButtons];
     final filteredButtonOrder = settingsHandler.buttonOrder.where((button) {
-      if (page.value == -1 || widget.tab.booruHandler.filteredFetched.isEmpty) {
+      if (page.value == -1 || page.value >= widget.tab.booruHandler.filteredFetched.length) {
         return false;
       }
 
@@ -229,6 +230,9 @@ class _HideableAppBarState extends State<HideableAppBar> {
           return isVideo && Platform.isAndroid;
         case .imageSearch:
           return isImage;
+        case .notInterested:
+          // r34: only where the item was recommended.
+          return widget.tab.booruHandler.booru.type?.isRecommendationFeed == true && !widget.readOnly;
 
         //
 
@@ -430,6 +434,9 @@ class _HideableAppBarState extends State<HideableAppBar> {
       case .snatch:
         icon = Symbols.save_rounded;
         break;
+      case .notInterested:
+        icon = Symbols.thumb_down_rounded;
+        break;
       case .favourite:
         // icon = isFav == true ? Symbols.favorite_rounded : Symbols.favorite_border_rounded;
         // early return to override with animated icon
@@ -616,6 +623,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
       case .toggleQuality:
       case .externalPlayer:
       case .imageSearch:
+      case .notInterested:
         break;
     }
     return null;
@@ -743,6 +751,36 @@ class _HideableAppBarState extends State<HideableAppBar> {
           context,
           item.fileURL,
         );
+      case .notInterested:
+        // r34: a loud no the learner keeps; the item leaves the feed and the
+        // viewer moves on to the next one.
+        return () async {
+          await RecommenderHandler.maybe?.dismiss(item);
+          widget.tab.booruHandler.fetched.remove(item);
+          widget.tab.booruHandler.filterFetched();
+          FlashElements.showSnackbar(
+            context: context,
+            title: const Text('Not interested', style: TextStyle(fontSize: 18)),
+            content: const Text('Gone from your recommendations; the model learned from it.', style: TextStyle(fontSize: 14)),
+            duration: const Duration(seconds: 2),
+            sideColor: Colors.orange,
+          );
+          if (!mounted) return;
+          // The list shrank under the viewer: nothing left closes it, a
+          // removed last item moves to the new last, otherwise the next
+          // item is now at this index and becomes the current one.
+          final List<BooruItem> left = widget.tab.booruHandler.filteredFetched;
+          if (left.isEmpty) {
+            Navigator.of(context).pop();
+            return;
+          }
+          if (page.value >= left.length) {
+            page.value = left.length - 1;
+            widget.pageController.jumpToPage(page.value);
+          }
+          viewerHandler.setCurrent(left[page.value]);
+          setState(() {});
+        };
     }
   }
 
@@ -833,6 +871,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
       case .toggleQuality:
       case .externalPlayer:
       case .imageSearch:
+      case .notInterested:
         return null;
     }
   }

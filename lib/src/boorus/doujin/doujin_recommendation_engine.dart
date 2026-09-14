@@ -146,8 +146,14 @@ class DoujinRecommendationEngine {
     String? sourceArtist,
     BooruHandler? handler,
   }) async {
-    final double Function(BooruItem)? personal = await RecommenderHandler.maybe?.scorer(RecommenderWorld.doujin, handler: handler);
-    final List<BooruItem> out = rank(source, candidates, count: count, sourceArtist: sourceArtist, personal: personal);
+    // r35: what the user marked "Not interested" is left out. The scorer
+    // embeds a shortlist first — the closest few by similarity, not every
+    // candidate a site handed over (e-hentai gives up to 125) — so the
+    // encoder's vectors are at hand where they can change the order.
+    final List<BooruItem> wanted = await (RecommenderHandler.maybe?.withoutDismissed(candidates) ?? Future.value(candidates));
+    final List<BooruItem> shortlist = rank(source, wanted, count: count * 3, sourceArtist: sourceArtist);
+    final double Function(BooruItem)? personal = await RecommenderHandler.maybe?.scorer(RecommenderWorld.doujin, handler: handler, items: shortlist);
+    final List<BooruItem> out = rank(source, wanted, count: count, sourceArtist: sourceArtist, personal: personal);
     unawaited(RecommenderHandler.maybe?.onExposed(out, surface, handler: handler) ?? Future<void>.value());
     return out;
   }

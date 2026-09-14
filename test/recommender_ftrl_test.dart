@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 
@@ -87,6 +88,103 @@ void main() {
       expect(m.novelty(feats(['tag:brand_new', 'tag:also_new'])), 1);
       expect(m.novelty(feats(['type:artist:alice', 'tag:brand_new'])), 0.5);
       expect(m.novelty(const []), 1);
+    });
+
+    test('real-valued features (r34, the encoder): the value scales both the step and the prediction; absent values are ones', () {
+      final FtrlModel m = FtrlModel();
+      final List<int> f = feats(['emb:0']);
+      m.update(f, values: const [2], positive: true);
+      final double strong = m.predict(f, values: const [2]);
+      final double weak = m.predict(f, values: const [1]);
+      final double none = m.predict(f);
+      expect(strong, greaterThan(weak));
+      expect(weak, closeTo(none, 1e-9), reason: 'no values = every feature present with value 1');
+      expect(m.predict(f, values: const [0]), 0.5, reason: 'a zero value is not there');
+      expect(m.predict(f, values: const [-2]), lessThan(0.5), reason: 'a negative value pulls the other way');
+      // A component that saw the same direction in training moves the prediction; a fresh one does not.
+      final FtrlModel d = FtrlModel();
+      final List<int> emb = feats(['emb:0', 'emb:1']);
+      for (int i = 0; i < 20; i++) {
+        d.update(emb, values: const [1, -1], positive: true);
+        d.update(emb, values: const [-1, 1], positive: false);
+      }
+      expect(d.predict(emb, values: const [1, -1]), greaterThan(0.8));
+      expect(d.predict(emb, values: const [-1, 1]), lessThan(0.2));
+      expect(d.predict(feats(['emb:2']), values: const [1]), 0.5);
+    });
+
+    test("the encoder's block is graded, not a switch (review): one favourite lifts a lookalike a little, leaves a stranger alone, and fifteen likes do not saturate", () {
+      final Random r = Random(11);
+      Float32List unit() {
+        final Float32List v = Float32List(384);
+        double n = 0;
+        for (int i = 0; i < v.length; i++) {
+          v[i] = r.nextDouble() * 2 - 1;
+          n += v[i] * v[i];
+        }
+        n = sqrt(n);
+        for (int i = 0; i < v.length; i++) {
+          v[i] /= n;
+        }
+        return v;
+      }
+
+      Float32List blend(Float32List a, Float32List b, double wa) {
+        final Float32List v = Float32List(a.length);
+        double n = 0;
+        for (int i = 0; i < v.length; i++) {
+          v[i] = wa * a[i] + (1 - wa) * b[i];
+          n += v[i] * v[i];
+        }
+        n = sqrt(n);
+        for (int i = 0; i < v.length; i++) {
+          v[i] /= n;
+        }
+        return v;
+      }
+
+      FeatureVector item(int tagSet, Float32List vector) => ItemFeatures.withEmbedding(
+        FeatureVector([for (int i = 0; i < 40; i++) ItemFeatures.hash('tag:set${tagSet}_$i')], [for (int i = 0; i < 40; i++) 'tag:set${tagSet}_$i']),
+        vector,
+        model: 'm',
+      );
+      double p(FtrlModel m, FeatureVector f) => m.predict(f.hashes, values: f.values);
+
+      final Float32List liked = unit();
+      final Float32List stranger = unit();
+      final Float32List halfway = blend(liked, stranger, 0.5);
+      final FtrlModel m = FtrlModel();
+      final FeatureVector first = item(0, liked);
+      m.update(first.hashes, values: first.values, positive: true, weight: 3);
+      final double lookalike = p(m, item(1, liked));
+      final double unrelated = p(m, item(2, stranger));
+      // ignore: avoid_print
+      print('after one favourite: lookalike $lookalike, unrelated $unrelated');
+      expect(lookalike, greaterThan(0.55), reason: 'reading alike counts');
+      expect(lookalike, lessThan(0.9), reason: 'one favourite is not certainty');
+      expect((unrelated - 0.5).abs(), lessThan(0.1), reason: 'a stranger is untouched');
+      for (int k = 1; k <= 15; k++) {
+        final FeatureVector f = item(10 + k, liked);
+        m.update(f.hashes, values: f.values, positive: true, weight: 3);
+      }
+      final double sure = p(m, item(30, liked));
+      final double half = p(m, item(31, halfway));
+      final double still = p(m, item(32, stranger));
+      // ignore: avoid_print
+      print('after fifteen more: lookalike $sure, halfway $half, unrelated $still');
+      expect(sure, greaterThan(0.75));
+      expect(sure, lessThan(0.995), reason: 'fifteen likes are strong, not absolute');
+      expect(half, greaterThan(0.55));
+      expect(half, lessThan(sure), reason: 'graded by similarity');
+      expect((still - 0.5).abs(), lessThan(0.15));
+      // One "Not interested" near the liked direction dents it, it does not flip the whole neighbourhood.
+      final FeatureVector no = item(40, halfway);
+      m.update(no.hashes, values: no.values, positive: false, weight: 3);
+      final double afterNo = p(m, item(41, liked));
+      // ignore: avoid_print
+      print('after one Not interested nearby: lookalike $afterNo');
+      expect(afterNo, greaterThan(0.4), reason: 'sixteen likes outweigh one no');
+      expect(afterNo, lessThan(sure));
     });
   });
 }

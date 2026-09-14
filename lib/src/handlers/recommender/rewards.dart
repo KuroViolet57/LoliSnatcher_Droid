@@ -45,7 +45,14 @@ enum InteractionKind {
 
   /// Shown and passed over: the surface moved on and the item was never
   /// opened.
-  exposeLapsed;
+  exposeLapsed,
+
+  /// "Not interested" on a recommended item (r34): a loud no, and the item
+  /// is never recommended again.
+  notInterested,
+
+  /// A video watched through — nine tenths reached, or looped (r34).
+  videoComplete;
 
   static InteractionKind? fromName(String name) {
     for (final InteractionKind kind in values) {
@@ -110,7 +117,10 @@ Reward? rewardFor(InteractionKind kind, {double value = 0}) {
       return const Reward(positive: true, weight: 2);
     case InteractionKind.unfavourite:
     case InteractionKind.blacklist:
+    case InteractionKind.notInterested:
       return const Reward(positive: false, weight: 3);
+    case InteractionKind.videoComplete:
+      return const Reward(positive: true, weight: 2);
     case InteractionKind.forget:
       return const Reward(positive: false, weight: 2);
     case InteractionKind.view:

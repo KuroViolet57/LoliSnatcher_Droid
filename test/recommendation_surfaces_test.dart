@@ -18,6 +18,7 @@ import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 /// Recommended strip is exercised for real.
 class _CountingRecommender extends RecommenderHandler {
   final List<({int count, String surface})> exposures = [];
+  final Set<String> dismissed = {};
   double Function(BooruItem)? scorerToGive;
 
   @override
@@ -26,7 +27,10 @@ class _CountingRecommender extends RecommenderHandler {
   }
 
   @override
-  Future<double Function(BooruItem)?> scorer(RecommenderWorld world, {BooruHandler? handler}) async => scorerToGive;
+  Future<double Function(BooruItem)?> scorer(RecommenderWorld world, {BooruHandler? handler, List<BooruItem>? items}) async => scorerToGive;
+
+  @override
+  bool isDismissed(BooruItem item) => dismissed.contains(item.postURL);
 }
 
 void main() {
@@ -44,11 +48,13 @@ void main() {
   tearDown(RecommenderHandler.unregister);
 
   test('every surface that produces recommendations reranks through the recommender and reports what it showed', () {
+    // r34: a surface also leaves out what the user said they are not
+    // interested in (`withoutDismissed`).
     const Map<String, List<String>> surfaces = {
-      'lib/src/boorus/foryou_handler.dart': ['RecommenderHandler.maybe?.rerank(', 'onExposed(', "'foryou'"],
-      'lib/src/boorus/suggestion_handler.dart': ['RecommenderHandler.maybe?.rerank(', 'onExposed(', "'suggested'"],
-      'lib/src/boorus/doujin_foryou_handler.dart': ['RecommenderHandler.maybe?.rerank(', 'onExposed(', "'foryou-doujin'"],
-      'lib/src/boorus/doujin/doujin_recommendation_engine.dart': ['RecommenderHandler.maybe?.scorer(', 'onExposed(', "'doujin-recommend'"],
+      'lib/src/boorus/foryou_handler.dart': ['RecommenderHandler.maybe?.rerank(', 'onExposed(', "'foryou'", 'withoutDismissed('],
+      'lib/src/boorus/suggestion_handler.dart': ['RecommenderHandler.maybe?.rerank(', 'onExposed(', "'suggested'", 'withoutDismissed('],
+      'lib/src/boorus/doujin_foryou_handler.dart': ['RecommenderHandler.maybe?.rerank(', 'onExposed(', "'foryou-doujin'", 'withoutDismissed('],
+      'lib/src/boorus/doujin/doujin_recommendation_engine.dart': ['RecommenderHandler.maybe?.scorer(', 'onExposed(', "'doujin-recommend'", 'withoutDismissed('],
       // nhentai ranks its own raw rows rather than through the engine.
       'lib/src/boorus/nhentai_handler.dart': ['RecommenderHandler.maybe?.scorer(', 'onExposed(', 'DoujinRecommendationEngine.surface'],
     };
@@ -87,6 +93,19 @@ void main() {
       );
       expect(out.map((i) => i.serverId ?? i.postURL), ['https://nhentai.net/g/near/', 'https://nhentai.net/g/mid/', 'https://nhentai.net/g/far/']);
       expect(counting.exposures, [(count: 3, surface: 'doujin-recommend')]);
+    });
+
+    test('what the user is not interested in never comes back (r34)', () async {
+      final BooruItem source = book('s', ['x', 'y', 'z']);
+      final BooruItem gone = book('near', ['x', 'y']);
+      counting.dismissed.add(gone.postURL);
+      final List<BooruItem> out = await DoujinRecommendationEngine.rankPersonal(
+        source,
+        [book('far', ['q']), gone, book('mid', ['x'])],
+        count: 3,
+      );
+      expect(out.map((i) => i.postURL), isNot(contains(gone.postURL)));
+      expect(out, hasLength(2));
     });
 
     test('with a scorer, taste moves the order without drowning similarity', () async {

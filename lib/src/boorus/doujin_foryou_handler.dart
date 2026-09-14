@@ -297,9 +297,9 @@ class DoujinForYouHandler extends BooruHandler {
     // contribute their facets first.
     final RecommenderHandler? recommender = RecommenderHandler.maybe;
     if (recommender != null && recommender.recommendationsEnabled && _history.length > 1) {
-      final List<double> scores = await Future.wait([
-        for (final DoujinEntry e in _history)
-          recommender.scoreDoujinParts(namespacedTags: e.tags, title: e.title, host: e.booruHost, pages: e.pages),
+      // One call for the whole history: the encoder reads them in batches.
+      final List<double> scores = await recommender.scoreDoujinPartsMany([
+        for (final DoujinEntry e in _history) (namespacedTags: e.tags, title: e.title, host: e.booruHost, pages: e.pages),
       ]);
       final List<int> order = List.generate(_history.length, (i) => i)
         ..sort((a, b) => scores[b].compareTo(scores[a]));
@@ -427,7 +427,8 @@ class DoujinForYouHandler extends BooruHandler {
     }
     _emptyStreak = 0;
     final RecommenderHandler? recommender = RecommenderHandler.maybe;
-    final List<BooruItem> ordered = await (RecommenderHandler.maybe?.rerank(pageItems, world: RecommenderWorld.doujin) ?? Future.value(pageItems));
+    final List<BooruItem> wanted = await (recommender?.withoutDismissed(pageItems) ?? Future.value(pageItems));
+    final List<BooruItem> ordered = await (RecommenderHandler.maybe?.rerank(wanted, world: RecommenderWorld.doujin) ?? Future.value(wanted));
     unawaited(recommender?.onExposed(ordered, surface) ?? Future<void>.value());
     await afterParseResponse(ordered);
     if (fetched.length == before) locked = true;

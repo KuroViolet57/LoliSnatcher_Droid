@@ -48,6 +48,11 @@ void main() {
       expect(rewardFor(InteractionKind.exposeLapsed), const Reward(positive: false, weight: 0.3));
     });
 
+    test('r34: "Not interested" is as loud a no as a blacklist; a video watched through is as loud a yes as a download', () {
+      expect(rewardFor(InteractionKind.notInterested), const Reward(positive: false, weight: 3));
+      expect(rewardFor(InteractionKind.videoComplete), const Reward(positive: true, weight: 2));
+    });
+
     test('kinds round-trip through their stored names', () {
       for (final InteractionKind kind in InteractionKind.values) {
         expect(InteractionKind.fromName(kind.name), kind);

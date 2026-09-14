@@ -431,7 +431,9 @@ class ForYouHandler extends BooruHandler {
     };
     pageItems.sort((a, b) => scores[b]!.compareTo(scores[a]!));
     // r33: the learner has the last word on the order, and is told what was shown.
-    final List<BooruItem> ordered = await (RecommenderHandler.maybe?.rerank(pageItems, world: RecommenderWorld.booru) ?? Future.value(pageItems));
+    // r34: what the user marked "Not interested" is left out first.
+    final List<BooruItem> wanted = await (RecommenderHandler.maybe?.withoutDismissed(pageItems) ?? Future.value(pageItems));
+    final List<BooruItem> ordered = await (RecommenderHandler.maybe?.rerank(wanted, world: RecommenderWorld.booru) ?? Future.value(wanted));
 
     _feedPage++;
 

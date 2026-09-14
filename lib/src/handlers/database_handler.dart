@@ -198,6 +198,18 @@ class DBHandler {
       'PRIMARY KEY (world, hash) '
       ')',
     );
+    // r34: an item's vector from the downloaded encoder, per model, so an
+    // item is read once. Never leaves the device.
+    await db?.execute(
+      'CREATE TABLE IF NOT EXISTS ItemEmbedding ( '
+      'itemKey TEXT NOT NULL, '
+      'model TEXT NOT NULL, '
+      'dim INTEGER NOT NULL, '
+      'vector BLOB NOT NULL, '
+      'at INTEGER NOT NULL, '
+      'PRIMARY KEY (itemKey, model) '
+      ')',
+    );
     // Cross-booru tag alias cache: how <sourceTag> is spelled on <booruKey>
     // (e.g. burnice_white -> burnice_white_(zenless_zone_zero) on gelbooru).
     // Resolved on demand against each booru's tag-autocomplete API. An empty
@@ -1127,6 +1139,71 @@ class DBHandler {
 
   Future<void> clearFeatureNames(String world) async {
     await db?.rawDelete('DELETE FROM RecommenderFeature WHERE world = ?', [world]);
+  }
+
+  /// The item keys of every logged interaction of [kind] in [world]
+  /// (r34: what was marked "Not interested").
+  Future<List<String>> interactionKeys(String world, String kind) async {
+    final List? rows = await db?.rawQuery('SELECT DISTINCT itemKey FROM Interaction WHERE world = ? AND kind = ?', [world, kind]);
+    return [for (final r in rows ?? const []) r['itemKey'].toString()];
+  }
+
+  //
+  // r34: item embeddings
+  //
+
+  Future<void> putEmbeddings(String model, Map<String, Float32List> vectors) async {
+    final db = this.db;
+    if (db == null || vectors.isEmpty) return;
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    final batch = db.batch();
+    for (final entry in vectors.entries) {
+      final Float32List v = entry.value;
+      batch.rawInsert(
+        'INSERT OR REPLACE INTO ItemEmbedding(itemKey, model, dim, vector, at) VALUES(?,?,?,?,?)',
+        [entry.key, model, v.length, Uint8List.fromList(v.buffer.asUint8List(v.offsetInBytes, v.lengthInBytes)), now],
+      );
+    }
+    await batch.commit(noResult: true);
+  }
+
+  Future<Map<String, Float32List>> getEmbeddings(String model, List<String> keys) async {
+    if (keys.isEmpty) return const {};
+    final Map<String, Float32List> out = {};
+    for (int start = 0; start < keys.length; start += 400) {
+      final List<String> chunk = keys.sublist(start, (start + 400).clamp(0, keys.length));
+      final List? rows = await db?.rawQuery(
+        'SELECT itemKey, dim, vector FROM ItemEmbedding WHERE model = ? AND itemKey IN (${List.filled(chunk.length, '?').join(',')})',
+        [model, ...chunk],
+      );
+      for (final r in rows ?? const []) {
+        final dynamic blob = r['vector'];
+        final int dim = (r['dim'] as int?) ?? 0;
+        if (blob is! List<int> || dim <= 0 || blob.length != dim * 4) continue;
+        // A copy of its own: the driver's bytes need not be 4-byte aligned.
+        final Uint8List bytes = Uint8List.fromList(blob);
+        out[r['itemKey'].toString()] = Float32List.view(bytes.buffer, 0, dim);
+      }
+    }
+    return out;
+  }
+
+  Future<void> clearEmbeddings(String model) async {
+    if (model.isEmpty) return;
+    await db?.rawDelete('DELETE FROM ItemEmbedding WHERE model = ?', [model]);
+  }
+
+  Future<int> countEmbeddings(String model) async {
+    final List? rows = await db?.rawQuery('SELECT COUNT(*) AS n FROM ItemEmbedding WHERE model = ?', [model]);
+    return (rows?.firstOrNull?['n'] as int?) ?? 0;
+  }
+
+  /// Keeps the newest [keep] vectors.
+  Future<void> pruneEmbeddings({int keep = 6000}) async {
+    await db?.rawDelete(
+      'DELETE FROM ItemEmbedding WHERE rowid NOT IN (SELECT rowid FROM ItemEmbedding ORDER BY at DESC LIMIT ?)',
+      [keep],
+    );
   }
 
   //

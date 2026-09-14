@@ -10,6 +10,7 @@
 #include <dynamic_color/dynamic_color_plugin_c_api.h>
 #include <flutter_avif_windows/flutter_avif_windows_plugin.h>
 #include <flutter_inappwebview_windows/flutter_inappwebview_windows_plugin_c_api.h>
+#include <flutter_onnxruntime/flutter_onnxruntime_plugin.h>
 #include <flutter_secure_storage_windows/flutter_secure_storage_windows_plugin.h>
 #include <fvp/fvp_plugin_c_api.h>
 #include <local_auth_windows/local_auth_plugin.h>
@@ -28,6 +29,8 @@ void RegisterPlugins(flutter::PluginRegistry* registry) {
       registry->GetRegistrarForPlugin("FlutterAvifWindowsPlugin"));
   FlutterInappwebviewWindowsPluginCApiRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("FlutterInappwebviewWindowsPluginCApi"));
+  FlutterOnnxruntimePluginRegisterWithRegistrar(
+      registry->GetRegistrarForPlugin("FlutterOnnxruntimePlugin"));
   FlutterSecureStorageWindowsPluginRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("FlutterSecureStorageWindowsPlugin"));
   FvpPluginCApiRegisterWithRegistrar(

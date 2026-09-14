@@ -45,28 +45,41 @@ class FtrlModel {
   }
 
   /// Probability that the user likes an item with [features]; 0.5 when the
-  /// model knows nothing about it.
-  double predict(List<int> features) {
+  /// model knows nothing about it. [values] (r34, the encoder's vector
+  /// components) give features a magnitude; absent, every feature is 1.
+  double predict(List<int> features, {List<double>? values}) {
     if (features.isEmpty) return 0.5;
     double logit = 0;
-    for (final int i in _unique(features)) {
-      logit += weight(i);
+    if (values == null) {
+      for (final int i in _unique(features)) {
+        logit += weight(i);
+      }
+    } else {
+      for (int k = 0; k < features.length; k++) {
+        final double x = values[k];
+        if (x == 0) continue;
+        logit += weight(features[k]) * x;
+      }
     }
     return 1 / (1 + math.exp(-logit));
   }
 
   /// One online step: [positive] is the label, [weight] how much to trust it.
-  void update(List<int> features, {required bool positive, double weight = 1}) {
+  void update(List<int> features, {required bool positive, double weight = 1, List<double>? values}) {
     if (weight <= 0 || features.isEmpty) return;
-    final List<int> unique = _unique(features);
-    final double p = predict(unique);
+    final List<int> unique = values == null ? _unique(features) : features;
+    final double p = predict(unique, values: values);
     final double g = (p - (positive ? 1 : 0)) * weight;
-    final double g2 = g * g;
-    for (final int i in unique) {
+    for (int k = 0; k < unique.length; k++) {
+      final double x = values == null ? 1 : values[k];
+      if (x == 0) continue;
+      final int i = unique[k];
+      final double gi = g * x;
+      final double gi2 = gi * gi;
       final double w = this.weight(i);
-      final double sigma = (math.sqrt(_n[i] + g2) - math.sqrt(_n[i])) / alpha;
-      _z[i] += g - sigma * w;
-      _n[i] += g2;
+      final double sigma = (math.sqrt(_n[i] + gi2) - math.sqrt(_n[i])) / alpha;
+      _z[i] += gi - sigma * w;
+      _n[i] += gi2;
     }
     updates++;
     final DateTime now = DateTime.now();

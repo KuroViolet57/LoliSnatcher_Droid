@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -10,6 +11,7 @@ import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/database_handler.dart';
 import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/encoder_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/ftrl_model.dart';
 import 'package:lolisnatcher/src/handlers/recommender/item_features.dart';
 import 'package:lolisnatcher/src/handlers/recommender/rewards.dart';
@@ -25,6 +27,8 @@ class RecommenderReport {
     required this.lastUpdate,
     required this.liked,
     required this.disliked,
+    this.encoderFeatures = 0,
+    this.tasteCount = 0,
   });
 
   final RecommenderWorld world;
@@ -37,6 +41,11 @@ class RecommenderReport {
   final DateTime? lastUpdate;
   final List<({String name, double weight})> liked;
   final List<({String name, double weight})> disliked;
+
+  /// r34: how many of the encoder's vector components carry a weight (0
+  /// without an encoder), and how many liked items shaped the taste centroid.
+  final int encoderFeatures;
+  final int tasteCount;
 }
 
 /// The on-device recommender behind every recommendation surface.
@@ -109,6 +118,21 @@ class RecommenderHandler {
   /// can have been passed over.
   final Set<String> _rendered = {};
 
+  /// r34: what the user marked "Not interested", per world — never
+  /// recommended again; read back from the log with the world's model.
+  final Map<RecommenderWorld, Set<String>> _dismissed = {};
+
+  /// r34: per world, the running mean of the encoder vectors of what was
+  /// liked (favourites, finishes, downloads…): "reads like what you liked"
+  /// becomes a feature. Tied to the encoder model that produced it.
+  final Map<RecommenderWorld, _Taste> _taste = {};
+  static const double tasteRate = 0.1;
+
+  EncoderHandler? get _encoder {
+    final EncoderHandler? e = EncoderHandler.maybe;
+    return e != null && e.enabled ? e : null;
+  }
+
   SettingsHandler get _settings => SettingsHandler.instance;
   DBHandler get _db => _settings.dbHandler;
 
@@ -158,7 +182,22 @@ class RecommenderHandler {
       model = FtrlModel();
       await _replay(world, model);
     }
+    await _loadDismissed(world);
+    _taste[world] ??= _Taste.read(File(tasteFileFor(world)));
     return _models[world] = model;
+  }
+
+  String tasteFileFor(RecommenderWorld world) =>
+      '${_settings.path}recommender${Platform.pathSeparator}${world.name}.taste.json';
+
+  Future<void> _loadDismissed(RecommenderWorld world) async {
+    if (!_settings.dbEnabled) return;
+    try {
+      final Set<String> keys = _dismissed[world] ??= {};
+      keys.addAll(await _db.interactionKeys(world.name, InteractionKind.notInterested.name));
+    } catch (e, s) {
+      Logger.Inst().log('reading dismissals failed: $e', className, '_loadDismissed', LogTypes.exception, s: s);
+    }
   }
 
   Future<void> _replay(RecommenderWorld world, FtrlModel model) async {
@@ -199,10 +238,41 @@ class RecommenderHandler {
         final File file = File(fileFor(world));
         await file.parent.create(recursive: true);
         await file.writeAsBytes(model.toBytes(), flush: true);
+        final _Taste? taste = _taste[world];
+        if (taste != null && taste.count > 0) await File(tasteFileFor(world)).writeAsString(taste.toJson());
       } catch (e, s) {
         Logger.Inst().log('saving the ${world.name} model failed: $e', className, 'flush', LogTypes.exception, s: s);
         _dirty.add(world);
       }
+    }
+  }
+
+  /// [item]'s features for [world], with the encoder's vector when there is
+  /// one ([embedding] already fetched, or looked up in the encoder's memory).
+  FeatureVector _featuresFor(
+    BooruItem item,
+    RecommenderWorld world, {
+    BooruHandler? handler,
+    Map<String, String>? namespaces,
+    Float32List? embedding,
+    bool fromMemory = false,
+  }) {
+    final FeatureVector base = ItemFeatures.of(item, world, handler: handler, namespaces: namespaces);
+    final EncoderHandler? encoder = _encoder;
+    if (encoder == null) return base;
+    final Float32List? vector = embedding ?? (fromMemory ? encoder.cached(item) : null);
+    if (vector == null) return base;
+    return ItemFeatures.withEmbedding(base, vector, model: encoder.modelId, taste: _taste[world]?.vectorFor(encoder.modelId));
+  }
+
+  Future<List<Float32List?>> _embeddings(List<BooruItem> items, {BooruHandler? handler}) async {
+    final EncoderHandler? encoder = _encoder;
+    if (encoder == null) return List.filled(items.length, null);
+    try {
+      return await encoder.embedItems(items, handler: handler);
+    } catch (e, s) {
+      Logger.Inst().log('embedding for the recommender failed: $e', className, '_embeddings', LogTypes.exception, s: s);
+      return List.filled(items.length, null);
     }
   }
 
@@ -223,9 +293,79 @@ class RecommenderHandler {
     final Reward? reward = rewardFor(kind, value: value);
     if (reward == null) return;
     final RecommenderWorld world = ItemFeatures.worldOf(item);
-    final FeatureVector features = ItemFeatures.of(item, world, handler: handler, namespaces: namespaces);
+    await modelFor(world);
+    final Float32List? embedding = (await _embeddings([item], handler: handler)).first;
+    final FeatureVector features = _featuresFor(item, world, handler: handler, namespaces: namespaces, embedding: embedding);
     if (features.isEmpty) return;
     await _learn(world, key, _hostOf(item), kind, value, features, reward);
+    if (embedding != null && reward.positive && reward.weight >= 2) {
+      final EncoderHandler? encoder = _encoder;
+      if (encoder != null) {
+        (_taste[world] ??= _Taste.empty()).learn(embedding, model: encoder.modelId, rate: tasteRate);
+        _markDirty(world);
+      }
+    }
+  }
+
+  /// "Not interested" (r35): a loud no, and [item] is never recommended
+  /// again (see [withoutDismissed]). It is an order, not a passive signal:
+  /// it is written to the log even while learning is off, so it survives a
+  /// restart either way; the model learns from it only when learning is on.
+  Future<void> dismiss(BooruItem item, {BooruHandler? handler}) async {
+    final String key = keyOf(item);
+    final RecommenderWorld world = ItemFeatures.worldOf(item);
+    if (key.isNotEmpty) (_dismissed[world] ??= {}).add(key);
+    if (learningEnabled) {
+      await onEvent(item, InteractionKind.notInterested, handler: handler);
+      return;
+    }
+    if (!_settings.dbEnabled || key.isEmpty) return;
+    try {
+      final FeatureVector features = ItemFeatures.of(item, world, handler: handler);
+      await _db.addInteraction(world: world.name, itemKey: key, host: _hostOf(item), kind: InteractionKind.notInterested.name, value: 0, features: features.hashes);
+    } catch (e, s) {
+      Logger.Inst().log('recording a dismissal failed: $e', className, 'dismiss', LogTypes.exception, s: s);
+    }
+  }
+
+  bool isDismissed(BooruItem item) => _dismissed[ItemFeatures.worldOf(item)]?.contains(keyOf(item)) ?? false;
+
+  /// [items] without what the user marked "Not interested". Loads the
+  /// worlds' dismissals first: the first page after a start asks before any
+  /// model was loaded (review).
+  Future<List<BooruItem>> withoutDismissed(List<BooruItem> items) async {
+    if (items.isEmpty) return items;
+    for (final RecommenderWorld world in {for (final BooruItem i in items) ItemFeatures.worldOf(i)}) {
+      if (!_models.containsKey(world)) await modelFor(world);
+    }
+    return [for (final BooruItem i in items) if (!isDismissed(i)) i];
+  }
+
+  /// [scoreDoujinParts] for many remembered galleries at once: their texts
+  /// go to the encoder in one batched call instead of one call each.
+  Future<List<double>> scoreDoujinPartsMany(List<({List<String> namespacedTags, String title, String host, int? pages})> entries) async {
+    if (entries.isEmpty) return const [];
+    if (!recommendationsEnabled) return List.filled(entries.length, 0.5);
+    final FtrlModel model = await modelFor(RecommenderWorld.doujin);
+    if (model.updates == 0) return List.filled(entries.length, 0.5);
+    final EncoderHandler? encoder = _encoder;
+    List<Float32List?> vectors = List.filled(entries.length, null);
+    if (encoder != null) {
+      try {
+        vectors = await encoder.embedTexts([for (final e in entries) EncoderHandler.textOfDoujinParts(namespacedTags: e.namespacedTags, title: e.title)]);
+      } catch (_) {}
+    }
+    final List<double> out = [];
+    for (int i = 0; i < entries.length; i++) {
+      final e = entries[i];
+      FeatureVector f = ItemFeatures.ofDoujinParts(namespacedTags: e.namespacedTags, title: e.title, host: e.host, pages: e.pages);
+      final Float32List? v = vectors[i];
+      if (encoder != null && v != null) {
+        f = ItemFeatures.withEmbedding(f, v, model: encoder.modelId, taste: _taste[RecommenderWorld.doujin]?.vectorFor(encoder.modelId));
+      }
+      out.add(model.predict(f.hashes, values: f.values));
+    }
+    return out;
   }
 
   /// A search or a tag preview on [booru]: learned as its terms.
@@ -252,11 +392,13 @@ class RecommenderHandler {
     if (!learningEnabled) return;
     final Map<String, ({RecommenderWorld world, String host, FeatureVector features})>? previous = _exposed[surface];
     final Map<String, ({RecommenderWorld world, String host, FeatureVector features})> current = {};
-    for (final BooruItem item in items) {
+    final List<Float32List?> embeddings = await _embeddings(items, handler: handler);
+    for (int i = 0; i < items.length; i++) {
+      final BooruItem item = items[i];
       final String key = keyOf(item);
       if (key.isEmpty) continue;
       final RecommenderWorld world = ItemFeatures.worldOf(item);
-      current[key] = (world: world, host: _hostOf(item), features: ItemFeatures.of(item, world, handler: handler));
+      current[key] = (world: world, host: _hostOf(item), features: _featuresFor(item, world, handler: handler, embedding: embeddings[i]));
     }
     _exposed[surface] = current;
     if (previous == null) return;
@@ -305,17 +447,22 @@ class RecommenderHandler {
     final FtrlModel model = await modelFor(world);
     if (log) {
       try {
-        await _db.addInteraction(world: world.name, itemKey: key, host: host, kind: kind.name, value: value, features: features.hashes);
-        await _db.addFeatureNames(world.name, {for (int i = 0; i < features.hashes.length; i++) features.hashes[i]: features.names[i]});
+        // The encoder's components are not logged: they belong to one model
+        // and a replay learns them again from the item text if it wants to.
+        final List<int> hashes = features.loggedHashes;
+        final List<String> names = features.loggedNames;
+        await _db.addInteraction(world: world.name, itemKey: key, host: host, kind: kind.name, value: value, features: hashes);
+        await _db.addFeatureNames(world.name, {for (int i = 0; i < hashes.length; i++) hashes[i]: names[i]});
         if (++_sincePrune >= 200) {
           _sincePrune = 0;
           await _db.pruneInteractions(keep: logCap);
+          await _db.pruneEmbeddings();
         }
       } catch (e, s) {
         Logger.Inst().log('logging an interaction failed: $e', className, '_learn', LogTypes.exception, s: s);
       }
     }
-    model.update(features.hashes, positive: reward.positive, weight: reward.weight);
+    model.update(features.hashes, positive: reward.positive, weight: reward.weight, values: features.values);
     _markDirty(world);
   }
 
@@ -328,17 +475,24 @@ class RecommenderHandler {
     final RecommenderWorld w = world ?? ItemFeatures.worldOf(item);
     final FtrlModel model = await modelFor(w);
     if (model.updates == 0) return 0.5;
-    return model.predict(ItemFeatures.of(item, w, handler: handler, namespaces: namespaces).hashes);
+    final Float32List? embedding = (await _embeddings([item], handler: handler)).first;
+    final FeatureVector f = _featuresFor(item, w, handler: handler, namespaces: namespaces, embedding: embedding);
+    return model.predict(f.hashes, values: f.values);
   }
 
   /// A synchronous scorer over the world's model for callers that rank in
   /// a loop (the doujin Recommended strip); null when recommendations are
-  /// off or nothing was learned.
-  Future<double Function(BooruItem)?> scorer(RecommenderWorld world, {BooruHandler? handler}) async {
+  /// off or nothing was learned. [items] are embedded first when given, so
+  /// the encoder's vectors are at hand inside the loop.
+  Future<double Function(BooruItem)?> scorer(RecommenderWorld world, {BooruHandler? handler, List<BooruItem>? items}) async {
     if (!recommendationsEnabled) return null;
     final FtrlModel model = await modelFor(world);
     if (model.updates == 0) return null;
-    return (BooruItem item) => model.predict(ItemFeatures.of(item, world, handler: handler).hashes);
+    if (items != null) await _embeddings(items, handler: handler);
+    return (BooruItem item) {
+      final FeatureVector f = _featuresFor(item, world, handler: handler, fromMemory: true);
+      return model.predict(f.hashes, values: f.values);
+    };
   }
 
   /// [scorer] for a source that ranks raw rows before they are items
@@ -356,7 +510,15 @@ class RecommenderHandler {
     if (!recommendationsEnabled) return 0.5;
     final FtrlModel model = await modelFor(RecommenderWorld.doujin);
     if (model.updates == 0) return 0.5;
-    return model.predict(ItemFeatures.ofDoujinParts(namespacedTags: namespacedTags, title: title, host: host, pages: pages).hashes);
+    FeatureVector f = ItemFeatures.ofDoujinParts(namespacedTags: namespacedTags, title: title, host: host, pages: pages);
+    final EncoderHandler? encoder = _encoder;
+    if (encoder != null) {
+      try {
+        final Float32List? v = await encoder.embedText(EncoderHandler.textOfDoujinParts(namespacedTags: namespacedTags, title: title));
+        if (v != null) f = ItemFeatures.withEmbedding(f, v, model: encoder.modelId, taste: _taste[RecommenderWorld.doujin]?.vectorFor(encoder.modelId));
+      } catch (_) {}
+    }
+    return model.predict(f.hashes, values: f.values);
   }
 
   /// [items] ordered for the user: [mix] of the model's score against the
@@ -375,12 +537,14 @@ class RecommenderHandler {
     final FtrlModel model = await modelFor(w);
     if (model.updates == 0) return items;
     final int n = items.length;
+    final List<Float32List?> embeddings = await _embeddings(items, handler: handler);
     final List<({BooruItem item, double combined, double novelty, int index})> scored = [];
     for (int i = 0; i < n; i++) {
-      final List<int> features = ItemFeatures.of(items[i], w, handler: handler).hashes;
-      final double p = model.predict(features);
+      final FeatureVector f = _featuresFor(items[i], w, handler: handler, embedding: embeddings[i]);
+      final double p = model.predict(f.hashes, values: f.values);
       final double position = 1 - i / (n - 1);
-      scored.add((item: items[i], combined: mix * p + (1 - mix) * position, novelty: model.novelty(features), index: i));
+      // Novelty is judged on what the item is, not on the encoder's components.
+      scored.add((item: items[i], combined: mix * p + (1 - mix) * position, novelty: model.novelty(f.loggedHashes), index: i));
     }
     scored.sort((a, b) {
       final int byScore = b.combined.compareTo(a.combined);
@@ -437,6 +601,13 @@ class RecommenderHandler {
       for (final r in rows)
         if (names[r.hash] case final String name) (name: name, weight: r.weight),
     ];
+    int encoderFeatures = 0;
+    final EncoderHandler? encoder = EncoderHandler.maybe;
+    if (encoder != null && encoder.modelId.isNotEmpty && encoder.dim > 0) {
+      for (final int h in ItemFeatures.embeddingHashes(encoder.modelId, encoder.dim)) {
+        if (model.weight(h) != 0) encoderFeatures++;
+      }
+    }
     return RecommenderReport(
       world: world,
       events: events,
@@ -444,6 +615,8 @@ class RecommenderHandler {
       lastUpdate: model.lastUpdate,
       liked: named(liked),
       disliked: named(disliked),
+      encoderFeatures: encoderFeatures,
+      tasteCount: _taste[world]?.count ?? 0,
     );
   }
 
@@ -471,16 +644,20 @@ class RecommenderHandler {
     _dirty.remove(world);
     _models[world] = FtrlModel();
     _exposed.clear();
+    _dismissed[world]?.clear();
+    _taste[world] = _Taste.empty();
     try {
       await _db.clearInteractions(world.name);
       await _db.clearFeatureNames(world.name);
     } catch (e, s) {
       Logger.Inst().log('clearing the ${world.name} log failed: $e', className, 'reset', LogTypes.exception, s: s);
     }
-    try {
-      final File file = File(fileFor(world));
-      if (await file.exists()) await file.delete();
-    } catch (_) {}
+    for (final String path in [fileFor(world), tasteFileFor(world)]) {
+      try {
+        final File file = File(path);
+        if (await file.exists()) await file.delete();
+      } catch (_) {}
+    }
   }
 
   @visibleForTesting
@@ -493,5 +670,47 @@ class RecommenderHandler {
     _exposed.clear();
     _interacted.clear();
     _rendered.clear();
+    _dismissed.clear();
+    _taste.clear();
   }
+}
+
+/// The running mean of the encoder vectors of what a world's user liked.
+class _Taste {
+  _Taste({required this.model, required this.count, required this.vector});
+
+  factory _Taste.empty() => _Taste(model: '', count: 0, vector: Float32List(0));
+
+  static _Taste read(File file) {
+    try {
+      if (!file.existsSync()) return _Taste.empty();
+      final Map<String, dynamic> m = jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;
+      final List<double> v = [for (final x in m['vector'] as List) (x as num).toDouble()];
+      return _Taste(model: m['model'] as String? ?? '', count: (m['count'] as num?)?.toInt() ?? 0, vector: Float32List.fromList(v));
+    } catch (_) {
+      return _Taste.empty();
+    }
+  }
+
+  String model;
+  int count;
+  Float32List vector;
+
+  /// The centroid when it came from [forModel]; another model's is no use.
+  Float32List? vectorFor(String forModel) => count > 0 && model == forModel ? vector : null;
+
+  void learn(Float32List embedding, {required String model, required double rate}) {
+    if (this.model != model || vector.length != embedding.length) {
+      this.model = model;
+      count = 0;
+      vector = Float32List(embedding.length);
+    }
+    count++;
+    final double r = count == 1 ? 1 : rate;
+    for (int i = 0; i < vector.length; i++) {
+      vector[i] += (embedding[i] - vector[i]) * r;
+    }
+  }
+
+  String toJson() => jsonEncode({'model': model, 'count': count, 'vector': [for (final double x in vector) double.parse(x.toStringAsFixed(6))]});
 }

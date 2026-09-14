@@ -24,6 +24,7 @@ import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/doujin_migration.dart';
 import 'package:lolisnatcher/src/handlers/floating_preview_handler.dart';
 import 'package:lolisnatcher/src/handlers/interests_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/encoder_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/recommender_handler.dart';
 import 'package:lolisnatcher/src/handlers/local_auth_handler.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
@@ -100,6 +101,10 @@ void main() async {
   SecureStorageHandler.register();
   initSettingsEnumRegistry();
   await SettingsHandler.register().initialize();
+  // r34: the downloaded encoder, if any, is found from its manifest once the
+  // settings (its model id) and the app path are known.
+  EncoderHandler.register();
+  unawaited(EncoderHandler.instance.refresh());
   LocalAuthHandler.register();
 
   await ServiceHandler.setSystemUiVisibility(true);

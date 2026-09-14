@@ -164,6 +164,14 @@ class SuggestionHandler extends BooruHandler {
       byFacet.putIfAbsent(entry.key, () => []).addAll(entry.value);
     }
 
+    // r35: what the user marked "Not interested" leaves the candidates
+    // before the blend, so it is neither re-proposed nor a hole in the page.
+    final RecommenderHandler? recommender = RecommenderHandler.maybe;
+    if (recommender != null) {
+      for (final SuggestionFacet facet in byFacet.keys.toList()) {
+        byFacet[facet] = await recommender.withoutDismissed(byFacet[facet]!);
+      }
+    }
     final List<BooruItem> raw = SuggestionEngine.blend(
       byFacet,
       source: sourceItem,

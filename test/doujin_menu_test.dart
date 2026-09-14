@@ -3,12 +3,15 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:get_it/get_it.dart';
 
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
+import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/recommender_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/snatch_handler.dart';
@@ -146,4 +149,52 @@ void main() {
     expect(DoujinDataHandler.instance.isFavourite(item), isTrue);
     expect(item.isFavourite.value, isTrue);
   });
+
+  testWidgets('r34: on a recommendation feed the menu offers "Not interested", which teaches the recommender and drops the card', (tester) async {
+    expect(find.byKey(const Key('doujin-menu-not-interested')), findsNothing, reason: 'not yet open');
+    await pumpMenu(tester);
+    expect(find.byKey(const Key('doujin-menu-not-interested')), findsNothing, reason: 'a plain nhentai tab is not a recommendation feed');
+    await tester.tapAt(const Offset(5, 5));
+    await tester.pump(const Duration(milliseconds: 400));
+
+    final _RecordingRecommender recommender = _RecordingRecommender();
+    GetIt.instance.registerSingleton<RecommenderHandler>(recommender);
+    addTearDown(RecommenderHandler.unregister);
+    SettingsHandler.instance.booruList.add(nhentaiBooru());
+    final Booru feed = SettingsHandler.instance.ensureForYouDoujinBooru();
+    final tab = SearchTab(feed, null, 'seed:parody:x');
+    final item = doujinItem('2002');
+    tab.booruHandler.fetched.addAll([item, doujinItem('2003')]);
+    tab.booruHandler.filterFetched();
+    SearchHandler.instance.tabs.add(tab);
+    SearchHandler.instance.changeTabIndex(SearchHandler.instance.tabs.length - 1);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => Center(
+              child: ElevatedButton(
+                onPressed: () => showDoujinItemMenu(context, tab: tab, index: 0),
+                child: const Text('open feed menu'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open feed menu'));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byKey(const Key('doujin-menu-not-interested')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('doujin-menu-not-interested')));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(recommender.dismissed.map((i) => i.postURL), [item.postURL]);
+    expect(tab.booruHandler.filteredFetched.map((i) => i.postURL), ['https://nhentai.net/g/2003/']);
+  });
+}
+
+class _RecordingRecommender extends RecommenderHandler {
+  final List<BooruItem> dismissed = [];
+
+  @override
+  Future<void> dismiss(BooruItem item, {BooruHandler? handler}) async => dismissed.add(item);
 }

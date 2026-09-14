@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:lolisnatcher/src/boorus/doujin/doujin_recommendation_engine.dart';
 import 'package:lolisnatcher/src/boorus/doujin/doujin_tag_namespaces.dart';
@@ -16,15 +17,27 @@ import 'package:lolisnatcher/src/handlers/suggestion_engine.dart';
 /// profile keeps.
 enum RecommenderWorld { booru, doujin }
 
-/// An item as the learner sees it: hashed binary features, with the names
-/// kept beside them so "what was learned" can be read back.
+/// An item as the learner sees it: hashed features, with the names kept
+/// beside them so "what was learned" can be read back. Binary features have
+/// no [values]; the encoder's vector components (r34) carry theirs, and only
+/// the first [logged] features — the binary ones — go into the log.
 class FeatureVector {
-  const FeatureVector(this.hashes, this.names);
+  const FeatureVector(this.hashes, this.names, {this.values, int? logged}) : _logged = logged;
 
   static const FeatureVector empty = FeatureVector([], []);
 
   final List<int> hashes;
   final List<String> names;
+
+  /// One per hash when present; a feature's magnitude (1 when absent).
+  final List<double>? values;
+  final int? _logged;
+
+  /// How many leading features the log records.
+  int get logged => _logged ?? hashes.length;
+
+  List<int> get loggedHashes => logged >= hashes.length ? hashes : hashes.sublist(0, logged);
+  List<String> get loggedNames => logged >= names.length ? names : names.sublist(0, logged);
 
   bool get isEmpty => hashes.isEmpty;
 }
@@ -144,6 +157,58 @@ class ItemFeatures {
     return b.build();
   }
 
+  /// [base] with the encoder's vector (r34): one real-valued feature per
+  /// component, `emb:<model>:<i>`, scaled so a component has unit spread
+  /// (a unit vector's components are ~1/√dim), and — when the world has a
+  /// taste centroid — one binary feature for how close the item is to what
+  /// was liked, `taste:<model>:<bucket>`. Only the base features are logged.
+  static FeatureVector withEmbedding(FeatureVector base, List<double> embedding, {required String model, List<double>? taste}) {
+    if (embedding.isEmpty || model.isEmpty) return base;
+    final List<int> embHashes = embeddingHashes(model, embedding.length);
+    final List<int> hashes = [...base.hashes, ...embHashes];
+    final List<String> names = [...base.names, for (int i = 0; i < embedding.length; i++) 'emb:$model:$i'];
+    final List<double> values = [
+      ...List<double>.filled(base.hashes.length, 1),
+      for (final double e in embedding) e * embeddingScale,
+    ];
+    if (taste != null && taste.length == embedding.length) {
+      final String name = 'taste:$model:${tasteBucket(cosine(embedding, taste))}';
+      hashes.add(hash(name));
+      names.add(name);
+      values.add(1);
+    }
+    return FeatureVector(hashes, names, values: values, logged: base.hashes.length);
+  }
+
+  /// How much a unit vector's components weigh as features. The whole block
+  /// moves together (every component points along the item), so its pull on
+  /// the logit grows with the SQUARE of this: at √dim (unit spread per
+  /// component) one favourite drove the logit past 60 and every loosely
+  /// related item to p = 1.000 — the tags stopped counting and one "Not
+  /// interested" flipped a whole neighbourhood (review). At 1.5, one
+  /// favourite lifts a lookalike to about 0.7 and fifteen to about 0.95,
+  /// with a half-related item well below: graded.
+  static const double embeddingScale = 1.5;
+
+  static final Map<String, List<int>> _embeddingHashes = {};
+
+  /// The hashes of `emb:<model>:0..dim-1`, computed once per model.
+  static List<int> embeddingHashes(String model, int dim) => _embeddingHashes['$model:$dim'] ??= List<int>.unmodifiable([for (int i = 0; i < dim; i++) hash('emb:$model:$i')]);
+
+  static double cosine(List<double> a, List<double> b) {
+    double dot = 0, na = 0, nb = 0;
+    for (int i = 0; i < a.length && i < b.length; i++) {
+      dot += a[i] * b[i];
+      na += a[i] * a[i];
+      nb += b[i] * b[i];
+    }
+    if (na == 0 || nb == 0) return 0;
+    return dot / (math.sqrt(na) * math.sqrt(nb));
+  }
+
+  /// A cosine in tenths, -10..10.
+  static int tasteBucket(double cos) => (cos * 10).floor().clamp(-10, 10);
+
   static String scoreBucket(int score) {
     if (score <= 0) return '0';
     if (score < 10) return '1-9';
@@ -190,6 +255,8 @@ class ItemFeatures {
     if (name.startsWith('media:')) return name.substring(6);
     if (name.startsWith('score:')) return 'score ${name.substring(6)}';
     if (name.startsWith('pages:')) return '${name.substring(6).replaceAll('-', '–')} pages';
+    if (name.startsWith('emb:')) return 'encoder component ${name.substring(name.lastIndexOf(':') + 1)}';
+    if (name.startsWith('taste:')) return 'reads like what you liked (${name.substring(name.lastIndexOf(':') + 1)}/10)';
     return words(name);
   }
 

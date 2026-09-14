@@ -174,6 +174,13 @@ class InterestsHandler {
     _add(tag.split(' '), 1.5);
   }
 
+  /// A video watched through (r34): as loud a yes as a download.
+  void onVideoCompleted(BooruItem item) {
+    RecommenderHandler.maybe?.onEvent(item, InteractionKind.videoComplete);
+    if (_refuses(item)) return;
+    _add(item.tagsList.map((t) => t.fullString), 4);
+  }
+
   //
   // Profile access
   //

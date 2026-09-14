@@ -6,7 +6,8 @@ same day, when the project moved to the user's Windows PC; §0, §2, §5, §10 a
 §12 updated for r28, rule34video; r29 on 2026-09-08; r30 on 2026-09-09, e-hentai and
 hdoujin; r31 the same day, the tag-builder sweep; r32 on 2026-09-13, the e-hentai
 page previews; r33 on 2026-09-14, the recommender; r34 on 2026-09-14, stuck
-doujin-tab retry). This file is the complete brief for a fresh
+doujin-tab retry, by Grok; r35 on 2026-09-14, the encoder). This file is the
+complete brief for a fresh
 session: read Part A top to bottom before touching code. Part B is the
 older chronological build log, kept verbatim as history.
 
@@ -28,11 +29,11 @@ older chronological build log, kept verbatim as history.
   Never push elsewhere; force-push is blocked.
 - **Version:** `2.6.0+5211` in `pubspec.yaml`, mirrored in
   `lib/src/data/constants.dart` (`updateInfo`). Builds are told apart by
-  `Constants.buildCodename` (`'r34-tab-retry'` now), shown in About. Bump the
+  `Constants.buildCodename` (`'r35-encoder'` now), shown in About. Bump the
   codename every build: `rNN-<two words>`.
-- **Build counter:** builds are numbered r21, r22, … r34. Each build gets a
-  numbered folder on the K: drive (§2): r34 used **53**; the next build
-  uses **54**.
+- **Build counter:** builds are numbered r21, r22, … r35. Each build gets a
+  numbered folder on the K: drive (§2): r35 used **54**; the next build
+  uses **55**.
 - **The user** talks in voice notes and logs; expects one build per request
   round, checked on a Samsung phone. They cannot see tool output — only the
   final message.
@@ -115,7 +116,7 @@ older chronological build log, kept verbatim as history.
    (r32: 54 infos + 6 warnings, lint style noise in old files). New code
    should add none.
 4. `flutter test $(ls test/*_test.dart | grep -v booru_test)` → all green.
-   Baseline **785** (r34). `booru_test.dart` is excluded because its cases
+   Baseline **818** (r35). `booru_test.dart` is excluded because its cases
    hit live sites; `tag_index_live_test.dart`, `rule34video_live_test.dart`
    and the doujin parity walk are tagged `live` and skipped unless run with
    `--run-skipped --tags live`.
@@ -137,9 +138,9 @@ older chronological build log, kept verbatim as history.
    Output: `build/app/outputs/flutter-apk/app-arm64-v8a-release.apk`.
 8. Deliver by copying into the Google Drive folder synced on the PC:
    `K:\My Drive\booruApk\<token>.apk (<descriptor>)\` — e.g.
-   `53.apk (r34 tab retry)` — holding `changes.txt` (the changelog) and the
-   APK renamed `<codename>-2.6.0.apk`. Tokens are integers: r34 used 53, the
-   next build uses 54. The report gives that folder path (a file copy has no)
+   `54.apk (r35 encoder)` — holding `changes.txt` (the changelog) and the
+   APK renamed `<codename>-2.6.0.apk`. Tokens are integers: r35 used 54, the
+   next build uses 55. The report gives that folder path (a file copy has no)
    web link). `scripts/drive_upload_build.py` is retired.
 9. Republish the **parity artifact** (§2.6) with a footer "build rNN".
 10. Report: per item changed/observed/not verified, numbered device steps,
@@ -456,11 +457,95 @@ the adversarial reviewer over a diff is the one agent that is always run.
   `doujin_foryou_test` (fake sources), `doujin_history_tags_test`,
   `recommendation_surfaces_test`, `recommendations_page_test`, the reader
   milestones in `doujin_reader_test`; live: `doujin_foryou_live_test`.
-- **Later:** the downloadable encoder — `flutter_onnxruntime`, presets
-  all-MiniLM-L6-v2 int8 (~23 MB) / multilingual MiniLM-L12 int8 (~118 MB) or
-  a custom Hugging Face repo, WordPiece tokenizer in Dart, mean-pooled
-  384-d vectors as dense features plus a per-world taste centroid;
-  "Not interested" on cards; video completion as a signal.
+- **r35 adds** the downloadable encoder (§4.5), "Not interested" and video
+  completion as a signal.
+
+
+### 4.5 The encoder, "Not interested", video completion (r35)
+
+- **The encoder** (`recommender/encoder_handler.dart`, GetIt singleton
+  `EncoderHandler`, `maybe` when unregistered; registered in `main.dart`
+  after the settings, then `refresh()`): a Hugging Face ONNX sentence model
+  the user downloads from Settings → Recommendations → Downloaded encoder.
+  Presets `EncoderPreset.english` (`Xenova/all-MiniLM-L6-v2`,
+  `onnx/model_quantized.onnx` 22,972,370 bytes, dim 384, uncased, BERT with
+  `token_type_ids`) and `multilingual`
+  (`Xenova/distiluse-base-multilingual-cased-v2`, 135,317,281 bytes, dim
+  768, cased, DistilBERT), or any repo with the same layout (`vocab.txt`
+  WordPiece, `tokenizer_config.json`, `config.json`). Files live at
+  `<path>encoder/<slug>/` (`model.onnx`, the three side files,
+  `manifest.json`); a download goes to `.download-<slug>/` first and is
+  renamed into place. Settings: `encoderModel` ('' | preset id | repo id),
+  `aiEncoder` (default true). `enabled` = switch on and status ready.
+  `status` is a `ValueNotifier<EncoderStatus>` (none / downloading with
+  progress / ready with dim, bytes, date / error). Test seams: `fetcher`
+  (Dio download) and `runnerFactory` (the ONNX runner).
+- **Tokenizer** (`wordpiece_tokenizer.dart`): HuggingFace's BertTokenizer
+  in Dart — clean, CJK ideographs one per token, lowercase + NFD-style
+  accent stripping (uncased), punctuation split, greedy `##` pieces,
+  `[UNK]`, `encode` → `[CLS] … [SEP]` at most 96 ids. `fromVocabText`: line
+  index = id. Verified against the real English vocabulary live
+  (`encoder_live_test`).
+- **Runner** (`onnx_embedding_runner.dart`, `flutter_onnxruntime` 1.8.5):
+  `OnnxRuntime().createSession(path)`, `Int64List` inputs (`OrtValue.fromList`
+  infers int64 from `Int64List` — a plain `List<int>` would become int32),
+  `input_ids` / `attention_mask` / `token_type_ids` by the session's own
+  input names, first output flattened; the handler mean-pools under the mask
+  and L2-normalises (`_pool`), batches of 8 padded to the longest.
+  **Inference has never run off a phone** — the plugin is native; the PC
+  suite uses fake runners. R8 keeps `ai.onnxruntime.**`
+  (`android/app/proguard-rules.pro`, wired in `build.gradle.kts`).
+- **Cache**: memory LRU (`_memory`, 4000 entries, keys `k:<item key>` /
+  `t:<text>`) and the `ItemEmbedding` table (`putEmbeddings`,
+  `getEmbeddings`, `clearEmbeddings(model)`, `pruneEmbeddings(keep 6000)` on
+  the learner's prune tick). `embedItems` = memory → DB → model;
+  `cached(item)` is the sync lookup a scorer loop uses. Text:
+  `EncoderHandler.textOf(item, world)` (title for doujins, then names, then
+  tags as words, ≤ 32) and `textOfDoujinParts`.
+- **In the learner**: `FeatureVector` gained `values` (real-valued
+  features) and `logged` (how many leading binary features go to the log —
+  the encoder's components are never logged); `FtrlModel.predict/update`
+  take `values`. `ItemFeatures.withEmbedding(base, vector, model, taste)`
+  appends `emb:<model>:<i>` (value `e_i·√dim`) and one binary
+  `taste:<model>:<tenth>` (cosine with the world's centroid).
+  `RecommenderHandler._featuresFor` builds that for `onEvent`, `onExposed`,
+  `score`, `rerank`, `scoreDoujinParts`; `scorer(world, items:)` pre-embeds
+  the candidates so the sync closure reads `cached()`. The taste centroid
+  (`_Taste`, EMA rate 0.1, first vector as is) learns from positive rewards
+  of weight ≥ 2 and is saved as `recommender/<world>.taste.json` with the
+  model slug it belongs to; `report` exposes `encoderFeatures` (emb hashes
+  with weight) and `tasteCount`. nhentai's raw-row ranking has no vectors.
+- **Not interested**: `InteractionKind.notInterested` (−, weight 3);
+  `RecommenderHandler.dismiss(item)` → the event + `_dismissed[world]`;
+  `isDismissed`, `withoutDismissed(items)` — applied by every surface
+  (guarded by `recommendation_surfaces_test`); `_load(world)` reads the
+  dismissed keys back from the log (`DBHandler.interactionKeys`), so they
+  survive restarts as long as the log rows do (20,000 per world). UI: the
+  doujin card menu row `doujin-menu-not-interested` on recommendation-feed
+  tabs; the booru viewer's `GalleryButton.notInterested` (`'not_interested'`,
+  shown only on recommendation-feed tabs, in the button-order settings
+  too). Both remove the item from the tab's `fetched` and re-filter.
+- **Video completion**: `VideoCompletionTracker` (`handlers/`), once per
+  item at ≥ 0.9 or on a wrap from ≥ 0.5 to < 0.1; hooked in
+  `video_viewer.dart` (`updateVideoState`, only while `isViewed`) and
+  `better_player_view.dart` (`progress`/`finished` events, `widget.isViewed`)
+  → `InterestsHandler.onVideoCompleted` → `videoComplete` (+, weight 2) and
+  the classic profile +4.
+- **The doujin tab's error screen** (`doujin_tab_view.dart`): Grok's r34
+  (Close tab, `DoujinMiniTabEdgeHandle` shared from the mini tab manager,
+  Retry through `retrySearch`) plus a Tabs button, Open in browser, Copy
+  link and the tab handler's `errorString` as the reason.
+- **Tests:** `wordpiece_tokenizer_test`, `encoder_handler_test` (fake
+  runner: presets, download/manifest/delete, text, pooling, caches),
+  `video_completion_test`, `doujin_tab_view_test`, additions in
+  `recommender_handler_test` (dismissals through the log; an encoder makes
+  "alice_liddell" read like "alice"), `recommender_ftrl_test` (values),
+  `recommender_rewards_test`, `recommendation_surfaces_test`
+  (`withoutDismissed`), `doujin_menu_test`, `recommendations_page_test`
+  (the Encoder section); live: `encoder_live_test` (vocabulary, file sizes).
+- **Next:** run the encoder on a phone (the first real evidence); if the
+  UI-isolate conversion of the output list is felt, move pooling to an
+  isolate; a "why this" line on cards from the taste cosine.
 
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
@@ -887,8 +972,16 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r34)
+## 12. Open items (as of r35)
 
+- r35 is unverified on the device, and one part has no evidence at all:
+  the ONNX inference (the runner is a native plugin the PC suite cannot
+  run). Device steps in the r35 changelog: download the English preset,
+  open a For You, favourite a few galleries, check the settings card's
+  "encoder: N vector components carry weight". Also unverified: Not
+  interested on both worlds, video completion on both players. If the
+  runner fails, the learner keeps working from tags alone and the logger
+  has the error.
 - r34 (stuck doujin-tab retry) is unverified on the device: restored HDoujin
   detail tabs should open the detail page from the persisted `doujinPostURL`
   (the gallery key lives in that URL, not in an auth token); the empty
@@ -898,8 +991,7 @@ cards have had regressions).
   Schale missing-key cases. Not verified: a real phone force-stop with
   several HDoujin background tabs, or the clearance dialog if `loadItem`
   then needs a fresh check.
-- The ONNX encoder that was sketched as r34 in the r33 notes did **not**
-  ship; it is still later.
+- The ONNX encoder shipped in r35 (§4.5).
 - r33 is unverified on the device: the doujin For You (drawer → For You on
   a doujin tab), the learner behind the four surfaces, the two switches,
   Settings → Recommendations, the reader's read/finish milestones. Verified
@@ -912,7 +1004,7 @@ cards have had regressions).
 - r33 not done, by choice: booru-side hidden-tag edits and a download
   started from the reader are not signals yet; the classic profile and the
   model coexist (the profile is the fallback); no "Not interested" action;
-  video completion is not a signal (dwell is). The encoder is still later.
+  video completion became a signal in r35, and the encoder shipped in r35.
 - r32 is unverified on the device: e-hentai page previews (the detail
   page's Pages grid and the reader's filmstrip) cut from the sprite strips,
   blocks read as the grid scrolls, and the Pages grid made a real lazy

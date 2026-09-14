@@ -9,6 +9,7 @@ import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/floating_preview_handler.dart';
 import 'package:lolisnatcher/src/handlers/reader_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/recommender_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/doujin_download_handler.dart';
@@ -161,6 +162,26 @@ Future<void> showDoujinItemMenu(
                     }
                   },
                 ),
+                // r34: on a recommendation feed, a loud no the learner keeps.
+                if (tab.booruHandler.booru.type?.isRecommendationFeed == true)
+                  row(
+                    key: const Key('doujin-menu-not-interested'),
+                    icon: Symbols.thumb_down_rounded,
+                    label: 'Not interested',
+                    onTap: () async {
+                      Navigator.of(dialogContext).pop();
+                      await RecommenderHandler.maybe?.dismiss(item, handler: handler);
+                      tab.booruHandler.fetched.remove(item);
+                      tab.booruHandler.filterFetched();
+                      FlashElements.showSnackbar(
+                        context: context,
+                        title: const Text('Not interested', style: TextStyle(fontSize: 18)),
+                        content: const Text('Gone from your recommendations; the model learned from it.', style: TextStyle(fontSize: 14)),
+                        duration: const Duration(seconds: 2),
+                        sideColor: Colors.orange,
+                      );
+                    },
+                  ),
                 row(
                   key: const Key('doujin-menu-bookmark'),
                   icon: DoujinDataHandler.instance.isInAnyCollection(item)
