@@ -11,6 +11,8 @@ import 'package:flutter/services.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:preload_page_view/preload_page_view.dart';
 
+import 'package:lolisnatcher/src/data/modular_ui.dart';
+import 'package:lolisnatcher/src/widgets/gallery/instant_page_swipe.dart';
 import 'package:lolisnatcher/src/widgets/video/flash_play_viewer.dart';
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/boorus/idol_sankaku_handler.dart';
@@ -82,6 +84,17 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
   final GlobalKey<ScaffoldState> viewerScaffoldKey = GlobalKey<ScaffoldState>();
 
   bool isOpeningAnimation = true;
+
+  /// r53: a swipe jumps one page; a zoomed image keeps its pan.
+  late final InstantPageSwipe instantPageSwipe = InstantPageSwipe(
+    isBlocked: () => viewerHandler.isZoomed.value,
+    onStep: (int step) {
+      final int count = widget.tab.booruHandler.filteredFetched.length;
+      if (count == 0) return;
+      final int target = (page.value + step).clamp(0, count - 1);
+      if (target != page.value) controller.jumpToPage(target);
+    },
+  );
   final ValueNotifier<double> dismissProgress = ValueNotifier(1);
   final ValueNotifier<bool> drawerOpen = ValueNotifier(false);
 
@@ -490,6 +503,9 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
                           }
 
                           final int preloadCount = settingsHandler.preloadCount;
+                          final bool isVerticalPaging = settingsHandler.galleryScrollDirection.isVertical;
+                          // r53: pages jump instead of sliding (Modular UI).
+                          final bool instantSwipe = ModularUi.isOn(ModularUi.viewerInstantPageSwipe);
                           final bool isSankaku = [
                             BooruType.Sankaku,
                             BooruType.IdolSankaku,
@@ -502,9 +518,13 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
                             scrollDirection: settingsHandler.galleryScrollDirection.isVertical
                                 ? Axis.vertical
                                 : Axis.horizontal,
-                            physics: const AlwaysScrollableScrollPhysics(
-                              parent: _SnappyPageSpringPhysics(parent: ClampingScrollPhysics()),
-                            ),
+                            // Instant swipes: the page never follows the finger; the
+                            // swipe detector on each page jumps to the next one.
+                            physics: instantSwipe
+                                ? const NeverScrollableScrollPhysics()
+                                : const AlwaysScrollableScrollPhysics(
+                                    parent: _SnappyPageSpringPhysics(parent: ClampingScrollPhysics()),
+                                  ),
                             itemCount: filteredFetched.length,
                             itemBuilder: (context, index) {
                               final BooruItem item = widget.tab.booruHandler.filteredFetched[index];
@@ -692,7 +712,7 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
                                               (isVideo ? (isSankaku ? 0 : min(preloadCount, 1)) : preloadCount));
 
                                       return AnimatedSwitcher(
-                                        duration: const Duration(milliseconds: 100),
+                                        duration: instantSwipe ? Duration.zero : const Duration(milliseconds: 100),
                                         child: (isViewerTooDeep || (!isViewedVal && !isNear))
                                             ? Center(child: Container(color: Colors.black))
                                             : child,
@@ -703,15 +723,30 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
                                       child: GestureDetector(
                                         onTap: () => viewerHandler.toggleToolbar(false),
                                         onLongPress: () => viewerHandler.toggleToolbar(true),
+                                        // r53: only in instant mode, so the drags stay the pager's otherwise.
+                                        onHorizontalDragStart: instantSwipe && !isVerticalPaging ? (_) => instantPageSwipe.start() : null,
+                                        onHorizontalDragUpdate: instantSwipe && !isVerticalPaging
+                                            ? (d) => instantPageSwipe.update(d.primaryDelta ?? 0)
+                                            : null,
+                                        onHorizontalDragEnd: instantSwipe && !isVerticalPaging
+                                            ? (d) => instantPageSwipe.end(d.primaryVelocity ?? 0)
+                                            : null,
+                                        onVerticalDragStart: instantSwipe && isVerticalPaging ? (_) => instantPageSwipe.start() : null,
+                                        onVerticalDragUpdate: instantSwipe && isVerticalPaging
+                                            ? (d) => instantPageSwipe.update(d.primaryDelta ?? 0)
+                                            : null,
+                                        onVerticalDragEnd: instantSwipe && isVerticalPaging
+                                            ? (d) => instantPageSwipe.end(d.primaryVelocity ?? 0)
+                                            : null,
                                         child: AnimatedSwitcher(
-                                          duration: const Duration(milliseconds: 100),
+                                          duration: instantSwipe ? Duration.zero : const Duration(milliseconds: 100),
                                           child: itemWidget,
                                         ),
                                       ),
                                     ),
                                   );
 
-                                  if (settingsHandler.disableCustomPageTransitions) {
+                                  if (settingsHandler.disableCustomPageTransitions || instantSwipe) {
                                     return child;
                                   }
 

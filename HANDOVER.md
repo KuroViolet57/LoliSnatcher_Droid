@@ -1083,6 +1083,24 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   `controller.waitUntilFirstFrameRendered` (`showCover`, reset in `_release`);
   Modular UI `viewer.videoCoverWhileLoading` (on).
 
+### 4.22 Instant page swipe (r53)
+
+- **Why:** the user wants page changes with no animation. The viewer slid
+  pages three ways, none new: `slidePageTransition` (since 2024, the page
+  shifted by half the drag; Settings > Viewer > "Viewer page change
+  animation"), `_SnappyPageSpringPhysics` (June 2026, the settle after
+  release) and two 100 ms `AnimatedSwitcher` cross-fades per page. Black pages
+  hid the motion; the r52 thumbnail cover made it visible.
+- **Now:** `InstantPageSwipe` (`widgets/gallery/instant_page_swipe.dart`):
+  the pager gets `NeverScrollableScrollPhysics`, and each page's existing
+  tap/long-press `GestureDetector` also takes the drags of the paging axis;
+  a swipe past 48 px (or a 700 px/s flick) jumps one page during the drag
+  (`controller.jumpToPage`), once per gesture; blocked while
+  `viewerHandler.isZoomed`. The slide transform is skipped and the
+  cross-fades are zero-length. Deeper drag recognizers (a zoomed photo_view
+  pan, the video seek bar) still win their gestures.
+- Modular UI `viewer.instantPageSwipe` (on); off restores the sliding pager.
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
@@ -1508,8 +1526,12 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r52)
+## 12. Open items (as of r53)
 
+- r53 is unverified on the device: instant swipes on pictures and videos,
+  zoomed pan, the seek bar, vertical paging.
+- Next: USB profiling session on the phone (the user agreed): profile build,
+  DevTools frame timings on the grid, viewer, tab carousel and sheets.
 - r52 is unverified on the device: the link button in the share slot (FA GIF
   posts too), e621 post 2197695 opening in the app with the user's filters,
   the media-only list, hidden pins, pin autocomplete, the keyboard above sheets
