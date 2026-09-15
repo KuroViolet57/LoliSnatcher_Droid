@@ -164,6 +164,11 @@ class FlowTabCarousel extends StatefulWidget {
   /// Called after a card was picked (a sheet closes itself).
   final VoidCallback? onPicked;
 
+  /// Cards built since the counter was reset — the test's guard against a
+  /// strip that builds every card to reach a far tab.
+  @visibleForTesting
+  static int cardsBuilt = 0;
+
   /// What a card shows for a tab: a doujin tab's saved cover, else the
   /// first loaded item's thumbnail; null when there is nothing yet.
   static String? coverUrlOf(SearchTab tab) {
@@ -185,29 +190,38 @@ class _FlowTabCarouselState extends State<FlowTabCarousel> {
   int _lastActive = -1;
 
   double get cardHeight => widget.large ? 132 : 92;
-  double get activeWidth => widget.large ? 300 : 264;
-  double get peekWidth => widget.large ? 190 : 150;
-  double get activeCover => widget.large ? 62 : 30;
-  double get peekCover => widget.large ? 48 : 26;
+  double get activeWidth => widget.large ? 320 : 280;
+  double get peekWidth => widget.large ? 220 : 180;
+  static const double _addWidth = 54;
   static const double _gap = 10;
+  static const double _vPad = 11;
 
-  Widget _cover(SearchTab tab, double height) {
+  /// The cover's width: the card's inner height at a book's proportions.
+  double get coverWidth => (cardHeight - _vPad * 2) * 0.72;
+
+  /// [child] with the tab's cover at its left, full height; [child] alone
+  /// when the tab has none yet. (r38 put the cover in the query line, which
+  /// overflowed the card on a phone.)
+  Widget _withCover(SearchTab tab, Widget child) {
     final String? url = FlowTabCarousel.coverUrlOf(tab);
-    if (url == null) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(6),
-        child: SizedBox(
-          width: height * 0.75,
-          height: height,
-          child: Image(
-            image: CustomNetworkImage(url, withCache: SettingsHandler.instance.thumbnailCache, cacheFolder: 'thumbnails'),
-            fit: BoxFit.cover,
-            errorBuilder: (_, _, _) => const ColoredBox(color: Colors.black26),
+    if (url == null) return child;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: SizedBox(
+            width: coverWidth,
+            child: Image(
+              image: CustomNetworkImage(url, withCache: SettingsHandler.instance.thumbnailCache, cacheFolder: 'thumbnails'),
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => const ColoredBox(color: Colors.black26),
+            ),
           ),
         ),
-      ),
+        const SizedBox(width: 10),
+        Expanded(child: child),
+      ],
     );
   }
 
@@ -232,11 +246,12 @@ class _FlowTabCarouselState extends State<FlowTabCarousel> {
     final theme = Theme.of(context);
     final booru = tab.selectedBooru.value;
     final String query = tab.tags.trim().isEmpty ? 'everything' : tab.tags.trim();
+    final bool hasCover = FlowTabCarousel.coverUrlOf(tab) != null;
     return GestureDetector(
       onTap: _openEditor,
       child: Container(
         width: activeWidth,
-        padding: const EdgeInsets.fromLTRB(16, 13, 12, 11),
+        padding: EdgeInsets.fromLTRB(hasCover ? _vPad : 16, _vPad, 12, _vPad),
         decoration: BoxDecoration(
           gradient: const LinearGradient(
             begin: Alignment.topLeft,
@@ -246,82 +261,67 @@ class _FlowTabCarouselState extends State<FlowTabCarousel> {
           borderRadius: BorderRadius.circular(20),
           border: Border.all(color: const Color(0xFF3A3050)),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Row(
-              children: [
-                _avatar(booru, 18),
-                const SizedBox(width: 7),
-                Expanded(
-                  child: Text(
-                    booru.name ?? '',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Color(0xFF9C93AE),
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w700,
+        child: _withCover(
+          tab,
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  _avatar(booru, 18),
+                  const SizedBox(width: 7),
+                  Expanded(
+                    child: Text(
+                      booru.name ?? '',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Color(0xFF9C93AE), fontSize: 11.5, fontWeight: FontWeight.w700),
                     ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Obx(() {
-                  final int count = tab.booruHandler.totalCount.value;
-                  final int loaded = tab.booruHandler.filteredFetched.length;
-                  return Text(
-                    count > 0 ? _fmt(count) : (loaded > 0 ? _fmt(loaded) : ''),
-                    style: const TextStyle(
-                      color: Color(0xFF9C93AE),
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  );
-                }),
-              ],
-            ),
-            Row(
-              children: [
-                _cover(tab, activeCover),
-                Expanded(
-                  child: Text(
-                    query,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Color(0xFFF2EDFA),
-                      fontSize: 16.5,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.2,
+                  const SizedBox(width: 8),
+                  Obx(() {
+                    final int count = tab.booruHandler.totalCount.value;
+                    final int loaded = tab.booruHandler.filteredFetched.length;
+                    return Text(
+                      count > 0 ? _fmt(count) : (loaded > 0 ? _fmt(loaded) : ''),
+                      style: const TextStyle(color: Color(0xFF9C93AE), fontSize: 11.5, fontWeight: FontWeight.w600),
+                    );
+                  }),
+                ],
+              ),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      query,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Color(0xFFF2EDFA), fontSize: 16.5, fontWeight: FontWeight.w800, letterSpacing: -0.2),
                     ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.all(5),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.secondary.withValues(alpha: 0.16),
-                    borderRadius: BorderRadius.circular(9),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.all(5),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.secondary.withValues(alpha: 0.16),
+                      borderRadius: BorderRadius.circular(9),
+                    ),
+                    child: Icon(Symbols.edit_rounded, size: 16, color: theme.colorScheme.secondary),
                   ),
-                  child: Icon(Symbols.edit_rounded, size: 16, color: theme.colorScheme.secondary),
-                ),
-              ],
-            ),
-            Obx(() {
-              final bool loading = searchHandler.isLoading.value && searchHandler.currentTab.id == tab.id;
-              return Text(
-                loading ? 'loading · tap query to edit' : 'tap query to edit',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Color(0xFF736A85),
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w600,
-                ),
-              );
-            }),
-          ],
+                ],
+              ),
+              Obx(() {
+                final bool loading = searchHandler.isLoading.value && searchHandler.currentTab.id == tab.id;
+                return Text(
+                  loading ? 'loading · tap query to edit' : 'tap query to edit',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Color(0xFF736A85), fontSize: 10.5, fontWeight: FontWeight.w600),
+                );
+              }),
+            ],
+          ),
         ),
       ),
     );
@@ -330,6 +330,7 @@ class _FlowTabCarouselState extends State<FlowTabCarousel> {
   Widget _peekCard(SearchTab tab, int index) {
     final booru = tab.selectedBooru.value;
     final String query = tab.tags.trim().isEmpty ? 'everything' : tab.tags.trim();
+    final bool hasCover = FlowTabCarousel.coverUrlOf(tab) != null;
     return GestureDetector(
       onTap: () {
         searchHandler.changeTabIndex(index, byUser: true);
@@ -337,65 +338,51 @@ class _FlowTabCarouselState extends State<FlowTabCarousel> {
       },
       child: Container(
         width: peekWidth,
-        padding: const EdgeInsets.fromLTRB(14, 13, 14, 11),
+        padding: EdgeInsets.fromLTRB(hasCover ? _vPad : 14, _vPad, 12, _vPad),
         decoration: BoxDecoration(
           color: ThemeHandler.flowSurface,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(color: ThemeHandler.flowBorderSoft),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Row(
-              children: [
-                _avatar(booru, 16),
-                const SizedBox(width: 6),
-                Flexible(
-                  child: Text(
-                    booru.name ?? '',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Color(0xFF736A85),
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w700,
+        child: _withCover(
+          tab,
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  _avatar(booru, 16),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      booru.name ?? '',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Color(0xFF736A85), fontSize: 10.5, fontWeight: FontWeight.w700),
                     ),
                   ),
-                ),
-              ],
-            ),
-            Row(
-              children: [
-                _cover(tab, peekCover),
-                Expanded(
-                  child: Text(
-                    query,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Color(0xFFC9BFE0),
-                      fontSize: 14.5,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            Obx(() {
-              final int count = tab.booruHandler.totalCount.value;
-              final int loaded = tab.booruHandler.filteredFetched.length;
-              final String label = count > 0 ? '${_fmt(count)} results' : (loaded > 0 ? '${_fmt(loaded)} loaded' : 'not loaded');
-              return Text(
-                label,
-                style: const TextStyle(
-                  color: Color(0xFF736A85),
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w600,
-                ),
-              );
-            }),
-          ],
+                ],
+              ),
+              Text(
+                query,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Color(0xFFC9BFE0), fontSize: 14.5, fontWeight: FontWeight.w700),
+              ),
+              Obx(() {
+                final int count = tab.booruHandler.totalCount.value;
+                final int loaded = tab.booruHandler.filteredFetched.length;
+                final String label = count > 0 ? '${_fmt(count)} results' : (loaded > 0 ? '${_fmt(loaded)} loaded' : 'not loaded');
+                return Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Color(0xFF736A85), fontSize: 10.5, fontWeight: FontWeight.w600),
+                );
+              }),
+            ],
+          ),
         ),
       ),
     );
@@ -484,18 +471,29 @@ class _FlowTabCarouselState extends State<FlowTabCarousel> {
         children: [
           SizedBox(
             height: cardHeight,
-            child: ListView.separated(
+            child: ListView.builder(
               controller: _scroll,
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 16),
               itemCount: tabs.length + 1,
-              separatorBuilder: (_, _) => const SizedBox(width: _gap),
+              // Fixed widths (r39). With varying widths the list had to build
+              // every card before a far tab to find where it was: thousands of
+              // cards on each tab switch, each starting a favicon request.
+              itemExtentBuilder: (int i, _) {
+                if (i > tabs.length) return null;
+                if (i == tabs.length) return _addWidth + _gap;
+                return (i == active ? activeWidth : peekWidth) + _gap;
+              },
               itemBuilder: (context, i) {
-                if (i == tabs.length) return _addCard();
+                FlowTabCarousel.cardsBuilt++;
+                if (i == tabs.length) return Padding(padding: const EdgeInsets.only(right: _gap), child: _addCard());
                 final tab = tabs[i];
                 return KeyedSubtree(
                   key: ValueKey('flow-card-$i'),
-                  child: i == active ? _activeCard(tab) : _peekCard(tab, i),
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: _gap),
+                    child: i == active ? _activeCard(tab) : _peekCard(tab, i),
+                  ),
                 );
               },
             ),

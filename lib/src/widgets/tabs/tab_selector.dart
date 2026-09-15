@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'package:auto_size_text_plus/auto_size_text_plus.dart';
 import 'package:get/get.dart';
 
+import 'package:lolisnatcher/src/widgets/image/custom_network_image.dart';
 import 'package:lolisnatcher/src/boorus/mergebooru_handler.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
@@ -522,13 +523,14 @@ class _TabManagerPageState extends State<TabManagerPage> {
     String? prevGroup;
     for (int i = 0; i < out.length; i++) {
       final String? g = (out[i].groupName?.isNotEmpty ?? false) ? out[i].groupName : null;
+      final double rowH = TabRow.isDoujinTab(out[i]) ? TabManagerItem.doujinRowHeight : tabHeight;
       final double extent;
       if (g != null && _collapsedGroups.contains(g)) {
         extent = groupHeaderHeight;
       } else if (g != null && g != prevGroup) {
-        extent = tabHeight + groupHeaderHeight;
+        extent = rowH + groupHeaderHeight;
       } else {
-        extent = tabHeight;
+        extent = rowH;
       }
       extents[i] = extent;
       offsets[i + 1] = offsets[i] + extent;
@@ -2390,10 +2392,22 @@ class TabManagerItem extends StatelessWidget {
   final VoidCallback? onCloseTap;
   final String? filterText;
 
+  /// A doujin row is its cover (r39): taller than a search row, and the
+  /// manager's list gives it that height (see [extentFor]).
+  static const double rowHeight = 72 + 8;
+  static const double doujinRowHeight = 104;
+  static const double doujinCoverHeight = 76;
+
+  static double extentFor(SearchTab tab) => TabRow.isDoujinTab(tab) ? doujinRowHeight : rowHeight;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final BorderRadius radius = BorderRadius.circular(13);
+    final bool isDoujin = TabRow.isDoujinTab(tab);
+    final String? cover = !isDoujin
+        ? null
+        : ((tab.doujinThumb?.isNotEmpty ?? false) ? tab.doujinThumb : tab.booruHandler.filteredFetched.firstOrNull?.thumbnailURL);
     final Color meta = theme.colorScheme.onSurfaceVariant;
 
     final Booru avatarBooru = tab.booruHandler is MergebooruHandler
@@ -2424,18 +2438,34 @@ class TabManagerItem extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
             child: Row(
               children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: SizedBox(width: 26, height: 26, child: BooruFavicon(avatarBooru, size: 26)),
-                ),
+                if (isDoujin)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: SizedBox(
+                      width: doujinCoverHeight * 0.75,
+                      height: doujinCoverHeight,
+                      child: (cover == null || cover.isEmpty)
+                          ? const ColoredBox(color: Colors.black26)
+                          : Image(
+                              image: CustomNetworkImage(cover, withCache: SettingsHandler.instance.thumbnailCache, cacheFolder: 'thumbnails'),
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, _, _) => const ColoredBox(color: Colors.black26),
+                            ),
+                    ),
+                  )
+                else
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: SizedBox(width: 26, height: 26, child: BooruFavicon(avatarBooru, size: 26)),
+                  ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // r38: a doujin row is its cover — big enough to tell apart.
-                      TabRow(tab: tab, filterText: filterText, doujinCoverHeight: 88),
+                      // The cover is drawn at the row's left instead (r39).
+                      TabRow(tab: tab, filterText: filterText, doujinCoverHeight: 0),
                       const SizedBox(height: 2),
                       Obx(() {
                         final int totalCount = tab.booruHandler.totalCount.value;

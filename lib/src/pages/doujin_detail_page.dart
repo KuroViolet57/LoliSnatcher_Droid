@@ -66,6 +66,20 @@ class DoujinDetailPage extends StatefulWidget {
   /// see [edgeDragWidthFor].
   final bool asTab;
 
+  static final Set<String> _openedTabs = {};
+
+  /// Whether this page's appearance is a new open (history, the
+  /// recommender's `open`). A page pushed from a card always is; a doujin
+  /// TAB is rebuilt every time it is switched back to, and that is not
+  /// (r39: it used to count as reading the gallery again).
+  static bool claimOpen(String tabId, String postURL, {required bool asTab}) {
+    if (!asTab) return true;
+    return _openedTabs.add('$tabId|$postURL');
+  }
+
+  @visibleForTesting
+  static void resetOpensForTests() => _openedTabs.clear();
+
   /// Share of the screen width that drags open the mini tab manager, and the
   /// bounds that share is clamped to. A quarter to a third of the width is
   /// what is actually reachable one-handed; Flutter's ~20px default sits
@@ -159,7 +173,9 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
     super.initState();
     // Opening the detail page IS the doujin "viewed" event; doujin history
     // lives in its own store, never in the booru ViewedPost table.
-    DoujinDataHandler.instance.addHistory(item, booru, handler: handler);
+    if (DoujinDetailPage.claimOpen(widget.tab.id, item.postURL, asTab: widget.asTab)) {
+      DoujinDataHandler.instance.addHistory(item, booru, handler: handler);
+    }
     // Reflect the doujin store's favourite state on the item so the heart
     // renders correctly regardless of which feed the card came from.
     item.isFavourite.value = DoujinDataHandler.instance.isFavourite(item);

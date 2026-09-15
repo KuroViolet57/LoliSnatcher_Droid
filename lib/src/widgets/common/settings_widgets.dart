@@ -61,6 +61,11 @@ class SettingsButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // An empty, disabled button is the pages' spacer: since the settings
+    // became cards it drew a blank card (r39).
+    if (name.isEmpty && !enabled && icon == null && subtitle == null && page == null && action == null) {
+      return const SizedBox(height: 10);
+    }
     if (iconOnly) {
       // One InkResponse for both gestures — an IconButton inside a
       // GestureDetector swallows the ancestor's long press (its own ink tap

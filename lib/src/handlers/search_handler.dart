@@ -475,7 +475,7 @@ class SearchHandler {
     if (!ignoreSameIndexCheck && newIndex != currentIndex) {
       index.value = newIndex;
       tabId.value = tabs[newIndex].id;
-      Tools.forceClearMemoryCache(withLive: true);
+      Tools.trimMemoryCacheIfFull();
     }
 
     // set search text (even if index didn't change)

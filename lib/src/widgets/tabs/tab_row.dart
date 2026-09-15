@@ -26,8 +26,8 @@ class TabRow extends StatelessWidget {
     super.key,
   });
 
-  /// The doujin cover's height (three-quarters as wide); the tab manager
-  /// asks for a big one (r38), the tab bar keeps the small one.
+  /// The doujin cover's height (three-quarters as wide); 0 = none inline
+  /// (the tab manager draws its own at the row's left, r39).
   final double doujinCoverHeight;
 
   final SearchTab tab;
@@ -240,7 +240,7 @@ class TabRow extends StatelessWidget {
 
         return Row(
           children: [
-            if (isDoujin) ...[
+            if (isDoujin && doujinCoverHeight > 0) ...[
               // Cover thumbnail marks the tab as a doujin at a glance.
               ClipRRect(
                 borderRadius: BorderRadius.circular(4),

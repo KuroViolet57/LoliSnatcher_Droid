@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 
@@ -262,6 +263,17 @@ class Tools {
     }
   }
 
+  /// On a tab switch (r39): decoded images are dropped only when the cache
+  /// is nearly full, and never the ones on screen. Clearing everything on
+  /// every switch made each return to a tab decode — and, with a slow
+  /// network, fetch — every thumbnail again.
+  static void trimMemoryCacheIfFull() {
+    final ImageCache cache = PaintingBinding.instance.imageCache;
+    if (cache.currentSizeBytes > cache.maximumSizeBytes * 0.8 || cache.currentSize > cache.maximumSize * 0.8) {
+      cache.clear();
+    }
+  }
+
   static void forceClearMemoryCache({bool withLive = false}) {
     // clears memory image cache on timer or when changing tabs
     PaintingBinding.instance.imageCache.clear();
@@ -504,42 +516,105 @@ class Tools {
   /// cannot do anything at all, so this bounds it and carries on.
   static const Duration cookieJarTimeout = Duration(seconds: 5);
 
-  static Future<String> getCookies(String uri) async {
-    String cookieString = '';
-    if (isOnPlatformWithWebviewSupport) {
-      try {
-        final CookieManager cookieManager = CookieManager.instance(webViewEnvironment: webViewEnvironment);
-        List<Cookie> cookies = [];
-        if (Platform.isWindows) {
-          cookies.addAll(globalWindowsCookies[WebUri(uri).host] ?? []);
-        } else {
-          cookies = await cookieManager.getCookies(url: WebUri(uri)).timeout(cookieJarTimeout);
-        }
-        // Build through a map: the WebView jar can hold the SAME cookie name
-        // more than once (host vs domain scope, or Cloudflare rotating
-        // cf_clearance), and emitting both makes the header look like cookie
-        // replay to a bot filter.
-        final Map<String, String> jar = {};
-        for (final Cookie cookie in cookies) {
-          jar[cookie.name] = cookie.value;
-        }
-        cookieString = buildCookieString(jar);
-      } catch (e, s) {
-        Logger.Inst().log(
-          e.toString(),
-          'Tools',
-          'getCookies',
-          LogTypes.exception,
-          s: s,
-        );
-      }
-    }
+  /// How long the jar is left alone after it did not answer (r39). The log of
+  /// 2026-09-15 03:10 had 6,848 requests wait out the timeout in 38 seconds —
+  /// thumbnails, favicons, pages — because every one asked a jar that had
+  /// stopped answering. One unanswered read now pauses it: requests go without
+  /// jar cookies until the pause ends, then the jar is asked again.
+  static const Duration cookieJarPause = Duration(seconds: 30);
 
-    return cookieString.trim();
+  @visibleForTesting
+  static Duration? cookieJarTimeoutOverride;
+  @visibleForTesting
+  static Duration? cookieJarPauseOverride;
+
+  /// Test seam: reads the jar for a URL (name -> value).
+  @visibleForTesting
+  static Future<Map<String, String>> Function(String uri)? cookieJarReaderOverride;
+
+  static DateTime? _cookieJarPausedUntil;
+
+  /// One read per host at a time: twenty thumbnails of one site share it.
+  static final Map<String, Future<Map<String, String>>> _cookieReads = {};
+
+  static bool get cookieJarPaused {
+    final DateTime? until = _cookieJarPausedUntil;
+    return until != null && DateTime.now().isBefore(until);
+  }
+
+  static void _pauseCookieJar() {
+    if (cookieJarPaused) return;
+    final Duration pause = cookieJarPauseOverride ?? cookieJarPause;
+    _cookieJarPausedUntil = DateTime.now().add(pause);
+    Logger.Inst().log(
+      'the cookie jar did not answer; requests go without its cookies for ${pause.inSeconds} s',
+      'Tools',
+      'getCookies',
+      LogTypes.booruHandlerInfo,
+    );
+  }
+
+  @visibleForTesting
+  static void resetCookieJarForTests() {
+    _cookieJarPausedUntil = null;
+    _cookieReads.clear();
+    cookieJarReaderOverride = null;
+    cookieJarTimeoutOverride = null;
+    cookieJarPauseOverride = null;
+  }
+
+  static Future<Map<String, String>> _readJar(String uri) async {
+    final CookieManager cookieManager = CookieManager.instance(webViewEnvironment: webViewEnvironment);
+    List<Cookie> cookies = [];
+    if (Platform.isWindows) {
+      cookies.addAll(globalWindowsCookies[WebUri(uri).host] ?? []);
+    } else {
+      cookies = await cookieManager.getCookies(url: WebUri(uri));
+    }
+    // Build through a map: the WebView jar can hold the SAME cookie name
+    // more than once (host vs domain scope, or Cloudflare rotating
+    // cf_clearance), and emitting both makes the header look like cookie
+    // replay to a bot filter.
+    final Map<String, String> jar = {};
+    for (final Cookie cookie in cookies) {
+      jar[cookie.name] = cookie.value;
+    }
+    return jar;
+  }
+
+  static Future<String> getCookies(String uri) async {
+    final Future<Map<String, String>> Function(String uri)? reader =
+        cookieJarReaderOverride ?? (isOnPlatformWithWebviewSupport ? _readJar : null);
+    if (reader == null || cookieJarPaused) return '';
+    final String host = Uri.tryParse(uri)?.host ?? uri;
+    try {
+      // A block body on purpose: an arrow returning remove()'s value would
+      // hand whenComplete the future being awaited — it would wait on itself.
+      final Map<String, String> jar = await (_cookieReads[host] ??= reader(uri)
+          .timeout(cookieJarTimeoutOverride ?? cookieJarTimeout)
+          .whenComplete(() {
+            _cookieReads.remove(host);
+          }));
+      return buildCookieString(jar).trim();
+    } on TimeoutException {
+      _pauseCookieJar();
+      return '';
+    } catch (e, s) {
+      Logger.Inst().log(
+        e.toString(),
+        'Tools',
+        'getCookies',
+        LogTypes.exception,
+        s: s,
+      );
+      return '';
+    }
   }
 
   static Future<bool> saveCookies(String uri, List<String> cookies) async {
     if (cookies.isEmpty) return true;
+    // A jar that stopped answering is not written to either (r39).
+    if (cookieJarPaused) return true;
 
     if (isOnPlatformWithWebviewSupport) {
       try {
@@ -593,6 +668,9 @@ class Tools {
               )
               .timeout(cookieJarTimeout);
         }
+        return true;
+      } on TimeoutException {
+        _pauseCookieJar();
         return true;
       } catch (e, s) {
         Logger.Inst().log(

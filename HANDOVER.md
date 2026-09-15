@@ -8,7 +8,8 @@ hdoujin; r31 the same day, the tag-builder sweep; r32 on 2026-09-13, the e-henta
 page previews; r33 on 2026-09-14, the recommender; r34 on 2026-09-14, stuck
 doujin-tab retry, by Grok; r35 on 2026-09-14, the encoder; r36 the same evening, the exhentai
 re-check; r37 the same night, doujin browse filters; r38 on 2026-09-15, the tab
-cards and the tab pill). This file is the complete brief for a fresh
+cards and the tab pill; r39 the same day, the request storm and the
+slowness). This file is the complete brief for a fresh
 session: read Part A top to bottom before touching code. Part B is the
 older chronological build log, kept verbatim as history.
 
@@ -30,11 +31,11 @@ older chronological build log, kept verbatim as history.
   Never push elsewhere; force-push is blocked.
 - **Version:** `2.6.0+5211` in `pubspec.yaml`, mirrored in
   `lib/src/data/constants.dart` (`updateInfo`). Builds are told apart by
-  `Constants.buildCodename` (`'r38-tab-cards'` now), shown in About. Bump the
+  `Constants.buildCodename` (`'r39-speed-fixes'` now), shown in About. Bump the
   codename every build: `rNN-<two words>`.
-- **Build counter:** builds are numbered r21, r22, … r38. Each build gets a
-  numbered folder on the K: drive (§2): r38 used **57**; the next build
-  uses **58**.
+- **Build counter:** builds are numbered r21, r22, … r39. Each build gets a
+  numbered folder on the K: drive (§2): r39 used **58**; the next build
+  uses **59**.
 - **The user** talks in voice notes and logs; expects one build per request
   round, checked on a Samsung phone. They cannot see tool output — only the
   final message.
@@ -117,7 +118,7 @@ older chronological build log, kept verbatim as history.
    (r32: 54 infos + 6 warnings, lint style noise in old files). New code
    should add none.
 4. `flutter test $(ls test/*_test.dart | grep -v booru_test)` → all green.
-   Baseline **829** (r38). `booru_test.dart` is excluded because its cases
+   Baseline **833** (r39). `booru_test.dart` is excluded because its cases
    hit live sites; `tag_index_live_test.dart`, `rule34video_live_test.dart`
    and the doujin parity walk are tagged `live` and skipped unless run with
    `--run-skipped --tags live`.
@@ -139,9 +140,9 @@ older chronological build log, kept verbatim as history.
    Output: `build/app/outputs/flutter-apk/app-arm64-v8a-release.apk`.
 8. Deliver by copying into the Google Drive folder synced on the PC:
    `K:\My Drive\booruApk\<token>.apk (<descriptor>)\` — e.g.
-   `57.apk (r38 tab cards - tested)` — holding `changes.txt` (the
+   `58.apk (r39 speed fixes - tested)` — holding `changes.txt` (the
    changelog) and the APK renamed `<codename>-2.6.0.apk`. Tokens are
-   integers: r38 used 57, the next build uses 58.
+   integers: r39 used 58, the next build uses 59.
    **The order since 2026-09-14 evening (user rule): build FIRST, test
    second.** Write the changelog, then run
    `python tool/deliver_build.py <token> "<descriptor>" <changelog.md>` —
@@ -623,10 +624,54 @@ the adversarial reviewer over a diff is the one agent that is always run.
   it), horizontal fling → previous/next tab (`changeTabIndex(byUser)`),
   long-press → `TabManagerPage`. The idea is the phone browsers' tab-count
   button plus swipe-the-address-bar switching.
-- **`TabRow.doujinCoverHeight`** (default 32): `TabManagerItem` passes 88 so
-  a doujin row in the tab manager is its cover; the tab bar keeps 32.
+- **`TabRow.doujinCoverHeight`** (default 32; 0 = no inline cover): the tab
+  bar keeps 32; `TabManagerItem` passes 0 and draws a 76-pixel cover at the
+  row's left, in a 104-pixel row (r39, see §4.8).
 - **Tests:** `tab_cards_test` (both directions on a phone-wide surface,
   covers, the pill's tap/pick/fling, the big cover).
+
+
+### 4.8 The request storm and the slowness (r39)
+
+From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
+
+- **The tab strip built every card.** r38's `FlowTabCarousel` had cards of
+  different widths in a `ListView.separated`, and jumped to the active card:
+  a list without fixed extents lays out every child before the target, so
+  with 4,529 tabs each tab switch built thousands of cards, each starting a
+  `BooruFavicon` load. Now `ListView.builder` with `itemExtentBuilder`
+  (active 280 / others 180 / add 54, each + 10 gap; large 320/220), the
+  jump is `active × (peekWidth + gap)`, and `FlowTabCarousel.cardsBuilt`
+  lets `tab_cards_test` assert a far tab builds under 40 cards. The cover
+  sits at the card's left, full height (`_withCover`); in the query line
+  it overflowed the card on a phone. **Rule: any horizontal or vertical list
+  that jumps to an index must have fixed or builder-given extents.**
+- **The WebView cookie jar stops answering after the app was in the
+  background** (Android reaps the WebView). `Tools.getCookies` runs from the
+  Dio interceptor on every request and waited out `cookieJarTimeout` (5 s)
+  each time: 6,848 requests in 38 s. Now: one read per host at a time
+  (`_cookieReads`), and a timeout pauses the jar for `cookieJarPause` (30 s,
+  `cookieJarPaused`) — requests go without jar cookies, `saveCookies`
+  skips — then it is asked again. Seams: `cookieJarReaderOverride`,
+  `cookieJarTimeoutOverride`, `cookieJarPauseOverride`,
+  `resetCookieJarForTests` (`cookie_jar_timeout_test`). A site that needs a
+  jar cookie (clearance, login) can fail for up to 30 s after a resume.
+- **A tab switch cleared every decoded image** (`forceClearMemoryCache
+  (withLive: true)` in `changeTabIndex`): returning to a tab redrew every
+  thumbnail. Now `Tools.trimMemoryCacheIfFull()` (only above 80 % of the
+  cache's size or count, never live images).
+- **Switching back to a doujin tab counted as a new open** (history + the
+  recommender's `open`): `DoujinTabView` rebuilds `DoujinDetailPage` on every
+  switch. `DoujinDetailPage.claimOpen(tabId, postURL, asTab:)` records a
+  tab's open once per session.
+- **The tab manager's doujin rows** overflowed their fixed extent with r38's
+  88-pixel inline cover: `TabManagerItem.extentFor(tab)` (104 for doujin, 80
+  otherwise) feeds `_ensureDisplayCache`; the cover is drawn at the left.
+- **Empty spacers** (`SettingsButton(name: '', enabled: false)`) drew blank
+  cards since the settings became cards; they are 10-pixel gaps again.
+- The favicon chain itself is bounded (url → DuckDuckGo → letter tile, per
+  host via `FaviconResolver`); what multiplied it was the number of widgets
+  starting it at once.
 
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
@@ -1053,8 +1098,13 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r38)
+## 12. Open items (as of r39)
 
+- r39 is unverified on the device: thumbnails after a resume from the
+  background, tab switches keeping their thumbnails, the doujin rows in
+  the tab manager, the Debug page's spacers. The detail page cut off below
+  its buttons in the user's screenshot of 2026-09-15 had no error in the
+  log; assumed to be a frame the storm never finished — check it on r39.
 - r38 is unverified on the device: the two-way tab strip with covers, the
   big doujin rows in the tab manager, and the tab pill (its placement
   beside the scroll buttons, its sheet, the swipe). The pill is opt-in.
