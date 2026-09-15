@@ -887,6 +887,29 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   `-(default)`. `test/filter_chip_keys_test.dart` renders every declared
   spec and checks unique keys; add each new source's spec to it.
 
+### 4.15 The long tail: every handler choice list as a filter; Derpibooru ranges (r46)
+
+- **Derivation widened:** `BooruSiteFilters.fromMetaTags` turns every
+  `MetaTagWithValues` with a key and a `:` divider into a single choice, not
+  only sort/order and rating. Only sort and order lists drop ascending twins
+  and technical values (md5, custom, none, modqueue); a list keeps a real
+  `none` (Sankaku parent:). Duplicate values are dropped. This gives filters
+  to Civitai (sort, period, nsfw, type, basemodel), Rule34.dev (source), r34
+  World (sort, feed), Sankaku (order, rating, parent), Hanime1 (sort, genre),
+  Kemono/Pawchive (service, popular, favorites), and sort to RedGifs, nozomi,
+  Tik.Porn, xxxtik and xxxfollow.
+- **Derpibooru:** `score.gte`, `faves.gte`, `width.gte`, `animated`,
+  `duration.gte` groups stay inside `q` (Philomena only swaps `_` for `+`,
+  then spaces for commas). Checked live 2026-09-15, comma-joined. No date
+  group: relative dates need spaces (`7 days ago`), and the underscore form is
+  rejected by the site.
+- **Nothing to filter yet:** Idol Sankaku, rule34.paheal, R34US, R34Hentai,
+  Kusowanka declare no metatags; they need per-site research.
+- **Backup tags buttons:** "Backup tags" and "Restore tags" on the backup
+  page are shown only in Debug mode (`if (settingsHandler.isDebug.value)`,
+  upstream commit 525e3f8b7, 2026-03-14). Debug mode turns on after six taps
+  on the version row at the bottom of Settings and off with a long press.
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
@@ -1312,8 +1335,12 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r45)
+## 12. Open items (as of r46)
 
+- r46 is unverified on the device: the Filters cards of Civitai,
+  Rule34.dev, Sankaku, r34 World, Hanime1, Kemono, and Derpibooru's ranges.
+- Next (user plan): Idol Sankaku, paheal, R34US, R34HENTAI and Kusowanka
+  have nothing to filter yet; pools in the tag builder (danbooru, e621).
 - r45 is unverified on the device: the danbooru and gelbooru-engine Filters
   cards, their defaults in the source settings.
 - Next (user plan): the other sources, source by source: Sankaku and Idol,

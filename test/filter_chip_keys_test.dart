@@ -4,6 +4,11 @@ import 'package:flutter/material.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:lolisnatcher/src/boorus/worldxyz_handler.dart';
+import 'package:lolisnatcher/src/boorus/sankaku_handler.dart';
+import 'package:lolisnatcher/src/boorus/rule34dev_handler.dart';
+import 'package:lolisnatcher/src/boorus/hanime1_handler.dart';
+import 'package:lolisnatcher/src/boorus/civitai_handler.dart';
 import 'package:lolisnatcher/src/boorus/booru_site_filters.dart';
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/boorus/doujin/doujin_filters.dart';
@@ -44,6 +49,12 @@ void main() {
     'rule34.xxx': () => BooruEngineFilters.gelbooru(booruOrgRatings: true, aspectRatio: true),
     'derpibooru': () => PhilomenaHandler(b('derpi', BooruType.Philomena, 'https://derpibooru.org'), 20).doujinFilters,
     'furaffinity': () => FurAffinityHandler(b('FurAffinity', BooruType.FurAffinity, 'https://www.furaffinity.net'), 48).doujinFilters,
+    // r46: cards made from the handlers' own choice lists.
+    'civitai': () => CivitaiHandler(b('Civitai', BooruType.Civitai, 'https://civitai.com'), 20).siteFilters!,
+    'rule34.dev': () => Rule34DevHandler(b('Rule34.dev', BooruType.Rule34Dev, 'https://app.rule34.dev'), 20).siteFilters!,
+    'sankaku': () => SankakuHandler(b('Sankaku', BooruType.Sankaku, 'https://chan.sankakucomplex.com'), 20).siteFilters!,
+    'r34 world': () => WorldXyzHandler(b('r34', BooruType.World, 'https://rule34.xyz'), 20).siteFilters!,
+    'hanime1': () => Hanime1Handler(b('Hanime1', BooruType.Hanime1, 'https://hanime1.me'), 20).siteFilters!,
   };
 
   for (final MapEntry<String, DoujinFilterSpec Function()> entry in specs.entries) {

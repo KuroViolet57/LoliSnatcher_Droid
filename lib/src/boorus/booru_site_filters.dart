@@ -27,13 +27,16 @@ class BooruSiteFilters {
     for (final MetaTag tag in metaTags) {
       if (tag is! MetaTagWithValues || tag.divider != ':') continue;
       final bool isSort = tag is SortMetaTag || tag is OrderMetaTag || tag.type.isSort;
-      final bool isRating = tag.keyName == 'rating';
-      if (!isSort && !isRating) continue;
-      if (groups.any((g) => g.key == tag.keyName)) continue;
+      // r46: every fixed list, not only sort/order and rating (Civitai's NSFW
+      // level, Rule34.dev's source, Sankaku's parent:): the handler parses
+      // them. Only sort and order lists drop ascending twins and technical
+      // values; a list keeps a real `none`.
+      if (tag.keyName.isEmpty || groups.any((g) => g.key == tag.keyName)) continue;
+      final Set<String> seen = {''};
       final List<DoujinFilterOption> options = [
         const DoujinFilterOption('', 'Site default'),
         for (final MetaTagValue v in tag.values)
-          if (_keep(v)) DoujinFilterOption(v.value, v.name),
+          if ((!isSort || _keep(v)) && seen.add(v.value)) DoujinFilterOption(v.value, v.name),
       ];
       if (options.length < 2) continue;
       groups.add(DoujinFilterGroup(key: tag.keyName, label: tag.name, options: options));

@@ -178,6 +178,62 @@ class PhilomenaHandler extends BooruHandler {
       defaultValue: '',
       options: [DoujinFilterOption('', 'Descending (default)'), DoujinFilterOption('asc', 'Ascending')],
     ),
+    // r46: range fields from the site's search syntax, sent inside q (checked
+    // live 2026-09-15). Relative dates need spaces, which q turns into commas,
+    // so there is no date filter.
+    const DoujinFilterGroup(
+      key: 'score.gte',
+      label: 'Score',
+      defaultValue: '',
+      options: [
+        DoujinFilterOption('', 'Any'),
+        DoujinFilterOption('50', '50+'),
+        DoujinFilterOption('100', '100+'),
+        DoujinFilterOption('500', '500+'),
+        DoujinFilterOption('1000', '1000+'),
+      ],
+    ),
+    const DoujinFilterGroup(
+      key: 'faves.gte',
+      label: 'Favorites',
+      defaultValue: '',
+      options: [
+        DoujinFilterOption('', 'Any'),
+        DoujinFilterOption('50', '50+'),
+        DoujinFilterOption('100', '100+'),
+        DoujinFilterOption('500', '500+'),
+        DoujinFilterOption('1000', '1000+'),
+      ],
+    ),
+    const DoujinFilterGroup(
+      key: 'width.gte',
+      label: 'Width',
+      defaultValue: '',
+      options: [
+        DoujinFilterOption('', 'Any'),
+        DoujinFilterOption('1280', '1280+'),
+        DoujinFilterOption('1920', 'Full HD+'),
+        DoujinFilterOption('3840', '4K+'),
+      ],
+    ),
+    const DoujinFilterGroup(
+      key: 'animated',
+      label: 'Animated',
+      defaultValue: '',
+      options: [DoujinFilterOption('', 'Any'), DoujinFilterOption('true', 'Animated'), DoujinFilterOption('false', 'Still images')],
+    ),
+    const DoujinFilterGroup(
+      key: 'duration.gte',
+      label: 'Length',
+      defaultValue: '',
+      options: [
+        DoujinFilterOption('', 'Any'),
+        DoujinFilterOption('10', '10 s+'),
+        DoujinFilterOption('30', '30 s+'),
+        DoujinFilterOption('60', '1 min+'),
+        DoujinFilterOption('300', '5 min+'),
+      ],
+    ),
   ]);
 
   @override
