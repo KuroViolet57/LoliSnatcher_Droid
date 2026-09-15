@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart' show IconData;
 
 import 'package:dio/dio.dart';
 import 'package:fpdart/fpdart.dart';
@@ -901,6 +902,10 @@ abstract class BooruHandler {
   /// page thumbnails.
   // ignore: avoid_returning_this -- the item is this handler's own, by default
   BooruHandler handlerForItem(BooruItem item) => this;
+
+  /// The icon at a thumbnail's bottom right for [item] (r40); null = the
+  /// app's usual one by media type (see Tools.getFileIcon).
+  IconData? mediaIconFor(BooruItem item) => null;
 
   /// The browse filters this source can take (r37): sort, category,
   /// language as the search window's checkmarks. Null = none.

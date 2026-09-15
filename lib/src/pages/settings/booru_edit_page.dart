@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 
+import 'package:lolisnatcher/src/pages/settings/furaffinity_login_page.dart';
+import 'package:lolisnatcher/src/handlers/furaffinity_session_handler.dart';
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/boorus/gelbooru_alikes_handler.dart';
 import 'package:lolisnatcher/src/boorus/gelbooru_handler.dart';
@@ -206,6 +208,13 @@ class _BooruEditState extends State<BooruEdit> {
                 setState(() {
                   selectedBooruType = newValue ?? BooruType.values.first;
                   // Prefill sensible defaults for the special engines.
+                  if (selectedBooruType == BooruType.FurAffinity && booruURLController.text.trim().isEmpty) {
+                    booruURLController.text = 'https://www.furaffinity.net';
+                    if (booruNameController.text.trim().isEmpty) booruNameController.text = 'FurAffinity';
+                    if (booruFaviconController.text.trim().isEmpty) {
+                      booruFaviconController.text = 'https://www.furaffinity.net/favicon.ico';
+                    }
+                  }
                   if (selectedBooruType.isRedGifs && booruURLController.text.trim().isEmpty) {
                     booruURLController.text = 'https://www.redgifs.com';
                     if (booruNameController.text.trim().isEmpty) {
@@ -477,6 +486,7 @@ class _BooruEditState extends State<BooruEdit> {
               ),
             //
             if (selectedBooruType == BooruType.RedGifs) _buildRedGifsLogin(),
+            if (selectedBooruType == BooruType.FurAffinity) _buildFurAffinityLogin(),
             // RedGifs has no per-user ID field — it logs in via the browser
             // button above and stores a session token in the key field.
             // Credential fields appear only where the engine READS them
@@ -567,6 +577,11 @@ class _BooruEditState extends State<BooruEdit> {
         break;
       case BooruType.Hydrus:
         return '';
+      case BooruType.FurAffinity:
+        return '<b>FurAffinity</b><br>Leave the URL as https://www.furaffinity.net. Browse the newest submissions with an '
+            'empty search, search with the site\'s own operators (<i>fox | wolf -dragon "red panda"</i>), or open an '
+            'artist with <i>user:name</i> (also <i>scraps:name</i>, <i>favorites:name</i>). Types, ratings, sort and '
+            'range are checkmarks in the search window. Log in below for mature and adult submissions.';
       case BooruType.RedGifs:
         return '<b>RedGifs</b><br>No setup needed — leave the URL as '
             'https://www.redgifs.com. Browse trending content or search tags '
@@ -861,6 +876,100 @@ class _BooruEditState extends State<BooruEdit> {
         ],
       ),
     );
+  }
+
+  /// FurAffinity's account row (r40): the login is a web page (Cloudflare's
+  /// check included); the session is kept in its own file, not in the key field.
+  Widget _buildFurAffinityLogin() {
+    final FurAffinitySessionHandler session = FurAffinitySessionHandler.instance;
+    return ValueListenableBuilder<int>(
+      valueListenable: session.revision,
+      builder: (context, _, _) {
+        final bool signedIn = session.isLoggedIn;
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    signedIn ? Symbols.check_circle_rounded : Symbols.account_circle_rounded,
+                    color: signedIn ? Colors.green : Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      signedIn ? 'Logged in to FurAffinity' : 'Not logged in (general submissions only)',
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                signedIn
+                    ? 'Mature and adult submissions come through as far as your account settings allow. '
+                          'Content filter opens those settings on the site.'
+                    : 'Log in with your FurAffinity account for mature and adult submissions, music and stories.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: [
+                  FilledButton.tonalIcon(
+                    key: const ValueKey('fa-login'),
+                    icon: const Icon(Symbols.login_rounded),
+                    label: Text(signedIn ? 'Log in again' : 'Log in with browser'),
+                    onPressed: _openFurAffinityLogin,
+                  ),
+                  if (signedIn)
+                    OutlinedButton.icon(
+                      key: const ValueKey('fa-content-filter'),
+                      icon: const Icon(Symbols.tune_rounded),
+                      label: const Text('Content filter'),
+                      onPressed: _openFurAffinitySettings,
+                    ),
+                  if (signedIn)
+                    TextButton.icon(
+                      icon: const Icon(Symbols.logout_rounded),
+                      label: const Text('Log out'),
+                      onPressed: session.logout,
+                    ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _openFurAffinityLogin() async {
+    if (!Tools.isOnPlatformWithWebviewSupport) return;
+    final (bool, String)? result = await Navigator.of(context).push<(bool, String)>(
+      MaterialPageRoute(builder: (_) => const FurAffinityLoginPage()),
+    );
+    if (result != null && mounted) {
+      FlashElements.showSnackbar(context: context, title: Text(result.$2), leadingIcon: result.$1 ? Symbols.check_circle_rounded : Symbols.error_rounded, leadingIconColor: result.$1 ? Colors.green : Colors.red);
+    }
+  }
+
+  /// The account's settings page on the site, with the session in the jar
+  /// for the visit only.
+  Future<void> _openFurAffinitySettings() async {
+    final FurAffinitySessionHandler session = FurAffinitySessionHandler.instance;
+    try {
+      await session.seedJar();
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const InAppWebviewView(initialUrl: 'https://www.furaffinity.net/controls/settings/', title: 'FurAffinity settings')),
+      );
+    } finally {
+      await session.scrubJar();
+    }
   }
 
   Future<void> _openRedGifsLogin() async {

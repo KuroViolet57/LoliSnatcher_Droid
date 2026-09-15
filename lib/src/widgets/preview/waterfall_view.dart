@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:scroll_to_index/scroll_to_index.dart';
 
+import 'package:lolisnatcher/src/widgets/preview/furaffinity_artist_header.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
 import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
@@ -542,6 +543,8 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware {
                               child: KemonoCreatorHeader(tab: searchHandler.currentTab),
                             ),
                           ),
+                          // A FurAffinity artist tab: the artist's card (r40).
+                          SliverToBoxAdapter(child: FurAffinityArtistHeader(tab: searchHandler.currentTab)),
                           // Discovery strip: creators + similar tags above the
                           // results, for any handler that populates them
                           // (xxxfollow, redgifs). No-op for the rest.
@@ -602,13 +605,13 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware {
                     }),
                   ),
                   // r38, experimental: the tab pill, on the side the scroll
-                  // buttons leave free.
+                  // buttons leave free until it is moved (r40: hold and drag).
                   if (settingsHandler.tabPill)
-                    Positioned(
-                      bottom: MediaQuery.viewPaddingOf(context).bottom + 120,
-                      left: settingsHandler.scrollGridButtonsPosition.isLeft ? null : 12,
-                      right: settingsHandler.scrollGridButtonsPosition.isLeft ? 12 : null,
-                      child: const TabPill(),
+                    Positioned.fill(
+                      child: TabPillHost(
+                        bottomInset: MediaQuery.viewPaddingOf(context).bottom + 120,
+                        alignLeft: !settingsHandler.scrollGridButtonsPosition.isLeft,
+                      ),
                     ),
                   Positioned(
                     bottom: MediaQuery.viewPaddingOf(context).bottom + 120,

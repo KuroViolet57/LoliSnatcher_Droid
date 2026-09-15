@@ -10,7 +10,7 @@ enum BooruType {
   Civitai,
   Danbooru,
   e621,
-  //FurAffinity,
+  FurAffinity,
   Gelbooru,
   GelbooruV1,
   Hanime1,
@@ -125,6 +125,8 @@ enum BooruType {
       // and answers any address; picked deliberately.
       ..remove(BooruType.Kemono)
       ..remove(BooruType.Pawchive)
+      // FurAffinity is one fixed site read from its pages; picked deliberately.
+      ..remove(BooruType.FurAffinity)
       // xxxtik has a fixed API host; only pick it deliberately.
       ..remove(BooruType.XXXTik)
       // xxxfollow has a fixed API host; only pick it deliberately.
@@ -197,6 +199,8 @@ enum BooruType {
         return 'Kemono';
       case Pawchive:
         return 'Pawchive';
+      case FurAffinity:
+        return 'FurAffinity';
       case TikPorn:
         return 'Tik.Porn';
       case XXXTik:
@@ -215,7 +219,7 @@ enum BooruType {
   bool get isBooruOnRails => this == BooruType.BooruOnRails;
   bool get isDanbooru => this == BooruType.Danbooru;
   bool get isE621 => this == BooruType.e621;
-  //bool get isFurAffinity => this == BooruType.FurAffinity;
+  bool get isFurAffinity => this == BooruType.FurAffinity;
   bool get isGelbooru => this == BooruType.Gelbooru;
   bool get isGelbooruV1 => this == BooruType.GelbooruV1;
   bool get isHydrus => this == BooruType.Hydrus;

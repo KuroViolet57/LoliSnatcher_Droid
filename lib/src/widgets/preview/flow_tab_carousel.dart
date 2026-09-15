@@ -180,6 +180,18 @@ class FlowTabCarousel extends StatefulWidget {
     return null;
   }
 
+  /// The tabs of the current tab's section (r40), as indexes into [tabs]:
+  /// the doujin tabs from a doujin tab, the others from the rest — the
+  /// tab manager's own split. The cards and the tab pill show only these.
+  static List<int> sectionIndexes(List<SearchTab> tabs, int active) {
+    if (tabs.isEmpty) return const [];
+    final bool doujin = tabs[active.clamp(0, tabs.length - 1)].booruHandler.hasReader;
+    return [
+      for (int i = 0; i < tabs.length; i++)
+        if (tabs[i].booruHandler.hasReader == doujin) i,
+    ];
+  }
+
   @override
   State<FlowTabCarousel> createState() => _FlowTabCarouselState();
 }
@@ -452,9 +464,15 @@ class _FlowTabCarouselState extends State<FlowTabCarousel> {
     return Obx(() {
       searchHandler.index.value;
       searchHandler.tabId.value;
-      final tabs = searchHandler.tabs;
-      final int active = searchHandler.currentIndex;
-      if (tabs.isEmpty) return const SizedBox.shrink();
+      final List<SearchTab> allTabs = searchHandler.tabs;
+      if (allTabs.isEmpty) return const SizedBox.shrink();
+      final int current = searchHandler.currentIndex.clamp(0, allTabs.length - 1);
+      // Only the current tab's section (r40): from a doujin tab, the doujin
+      // tabs. Positions below are within the section; keys and taps use
+      // the tab's own index.
+      final List<int> section = FlowTabCarousel.sectionIndexes(allTabs, current);
+      final List<SearchTab> tabs = [for (final int i in section) allTabs[i]];
+      final int active = section.indexOf(current);
 
       // Every tab has a card (r38): the active one is wide and leads the
       // view when it changes; the earlier tabs are a scroll to the right
@@ -489,10 +507,10 @@ class _FlowTabCarouselState extends State<FlowTabCarousel> {
                 if (i == tabs.length) return Padding(padding: const EdgeInsets.only(right: _gap), child: _addCard());
                 final tab = tabs[i];
                 return KeyedSubtree(
-                  key: ValueKey('flow-card-$i'),
+                  key: ValueKey('flow-card-${section[i]}'),
                   child: Padding(
                     padding: const EdgeInsets.only(right: _gap),
-                    child: i == active ? _activeCard(tab) : _peekCard(tab, i),
+                    child: i == active ? _activeCard(tab) : _peekCard(tab, section[i]),
                   ),
                 );
               },

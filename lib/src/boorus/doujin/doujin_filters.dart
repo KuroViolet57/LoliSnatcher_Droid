@@ -21,6 +21,7 @@ class DoujinFilterGroup {
     required this.options,
     this.multi = false,
     this.defaultValue = '',
+    this.defaultValues = const [],
   });
 
   /// The term's namespace (`sort`, `category`, `language`, `popular`, `type`).
@@ -33,6 +34,9 @@ class DoujinFilterGroup {
 
   /// What the source does when the query names nothing: shown as checked.
   final String defaultValue;
+
+  /// A multiple choice's defaults (r40: FurAffinity checks Art and Photo).
+  final List<String> defaultValues;
 }
 
 class DoujinFilterSpec {

@@ -673,6 +673,46 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   host via `FaviconResolver`); what multiplied it was the number of widgets
   starting it at once.
 
+### 4.9 FurAffinity, and the tab pill kept to its section (r40)
+
+- **No content API.** `status.furaffinity.net/api/v1/` is site status only.
+  Every page is read from HTML behind Cloudflare with the browser
+  User-Agent. Fixtures in `test/fixtures/furaffinity_*.html`, captured
+  2026-09-15.
+- **Routes** (`lib/src/boorus/furaffinity_query.dart`): `''` browse,
+  words go to `/search/` by GET with `mode=extended`, `user:`/`gallery:`/`artist:`,
+  `scraps:`, `favorites:` (paged by the cursor in the "next" form, kept per
+  query and page in the handler), `id:N`. Filter terms: `sort:`, `order:`,
+  `type:` (default art+photo), `rating:`, `range:`, `category:`/`theme:`/`species:`
+  by the site's ids.
+- **Handler** (`furaffinity_handler.dart`, parser in `furaffinity_parser.dart`):
+  a card is its listing thumbnail (`@600` sample) until opened;
+  `loadItem` reads `/view/N/` for the full file. GIF becomes animation,
+  audio plays through the video player, anything else is unknown.
+  The tag builder reads the `/search/` selects (`furaffinity_tag_catalog.dart`).
+- **Login** (`furaffinity_session_handler.dart`, `furaffinity_login_page.dart`):
+  a WebView on `/login/` (Turnstile), cookies `a` and `b` copied to
+  `furaffinity_session.json` and scrubbed from the jar. The Cookie header
+  goes only on the handler's page requests; `sendsJarCookiesToMedia` is
+  false. "Content filter" seeds the jar for a visit to `/controls/settings/`.
+- **Artist card** (`widgets/preview/furaffinity_artist_header.dart`), in the
+  waterfall after the kemono header: avatar and counts from `/user/name/`,
+  Gallery/Scraps/Favorites chips, and Strips (three `TagContentPreview` rows).
+- **Generic hooks added:** `BooruHandler.mediaIconFor(item)` for the
+  thumbnail's bottom-right icon (null keeps `Tools.getFileIcon`);
+  `DoujinFilterGroup.defaultValues` (a multi group's defaults show checked
+  and a tap starts from them); the Filters card shows for any source that
+  declares `doujinFilters`, while History/Pinned/Popular stay hidden only
+  for doujin sources.
+- **Tab pill** (user request 2026-09-15): `FlowTabCarousel.sectionIndexes`
+  splits tabs by `hasReader`, the same split as the tab manager's source
+  view. The pill's count and swipe and the carousel's cards use it; card
+  keys keep the tab's own index. `TabPillHost` places the pill in the feed:
+  hold and drag moves it, the place is saved as fractions in
+  `tab_pill.json`, a hold without a move opens the tab manager.
+- **r41, planned:** Watch/Unwatch, an `inbox:` feed, the watched artists
+  sidebar, favourite sync.
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
@@ -1098,8 +1138,13 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r39)
+## 12. Open items (as of r40)
 
+- r40 is unverified on the device: FurAffinity browse, search and artist
+  tabs with their icons, the WebView login (cookie names `a` and `b` are
+  the site's known ones; confirm after a login), mature results with the
+  account filter, music through the video player, the artist Strips, and
+  the tab pill's drag and section scope.
 - r39 is unverified on the device: thumbnails after a resume from the
   background, tab switches keeping their thumbnails, the doujin rows in
   the tab manager, the Debug page's spacers. The detail page cut off below

@@ -123,6 +123,11 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     bool showsCover(String url) => find.byWidgetPredicate((w) => w is Image && w.image is CustomNetworkImage && (w.image as CustomNetworkImage).url == url).evaluate().isNotEmpty;
     expect(showsCover('https://thumbs.invalid/1001.png'), isTrue);
+    // The cards keep to the current tab's section (r40): the search tab's card is with the booru tabs.
+    expect(showsCover('https://thumbs.invalid/q1.png'), isFalse);
+    select(1);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
     expect(showsCover('https://thumbs.invalid/q1.png'), isTrue);
   });
 
@@ -195,4 +200,82 @@ void main() {
     await tester.pumpWidget(const MaterialApp(home: Scaffold(body: Column(children: [SettingsButton(name: '', enabled: false)]))));
     expect(tester.getSize(find.byType(SettingsButton)).height, lessThanOrEqualTo(12));
   });
+
+  group('r40: the tab pill and the tab cards keep to the section you are in', () {
+    SearchTab doujinSearch(String query) => SearchTab(nhentai, null, query);
+
+    Widget pillApp(Widget child) => TranslationProvider(
+      child: MaterialApp(home: Scaffold(body: Stack(children: [child]))),
+    );
+
+    testWidgets('from a doujin tab, the pill counts and swipes through the doujin tabs only', (tester) async {
+      SettingsHandler.instance.booruList.add(nhentai);
+      SearchHandler.instance.tabs.addAll([searchTab('q0'), doujinSearch('d0'), searchTab('q1'), doujinSearch('d1'), searchTab('q2')]);
+      select(1);
+      await tester.pumpWidget(pillApp(const Positioned(bottom: 20, left: 12, child: TabPill())));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('1/2'), findsOneWidget, reason: 'two doujin tabs, not all five tabs');
+      await tester.fling(find.byKey(const ValueKey('tab-pill')), const Offset(-180, 0), 1200);
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(SearchHandler.instance.currentIndex, 3, reason: 'the next doujin tab, past the booru tab between them');
+      expect(find.text('2/2'), findsOneWidget);
+      await tester.fling(find.byKey(const ValueKey('tab-pill')), const Offset(-180, 0), 1200);
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(SearchHandler.instance.currentIndex, 3, reason: 'the last doujin tab stays: the booru tab after it is another section');
+      select(2);
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('2/3'), findsOneWidget, reason: 'a booru tab counts the booru tabs');
+    });
+
+    testWidgets('the tab cards of a doujin tab are the doujin tabs, and a card still opens its own tab', (tester) async {
+      tester.view.physicalSize = const Size(1400, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      SettingsHandler.instance.booruList.add(nhentai);
+      SearchHandler.instance.tabs.addAll([searchTab('q0'), doujinSearch('d0'), searchTab('q1'), doujinSearch('d1')]);
+      select(3);
+      await tester.pumpWidget(TranslationProvider(child: const MaterialApp(home: Scaffold(body: FlowTabCarousel()))));
+      await tester.pump(const Duration(milliseconds: 300));
+      final ListView list = tester.widget<ListView>(find.byType(ListView));
+      expect((list.childrenDelegate as SliverChildBuilderDelegate).childCount, 3, reason: 'two doujin tabs and the add card');
+      expect(find.byKey(const ValueKey('flow-card-1')), findsOneWidget);
+      expect(find.byKey(const ValueKey('flow-card-3')), findsOneWidget);
+      expect(find.byKey(const ValueKey('flow-card-0')), findsNothing);
+      expect(find.byKey(const ValueKey('flow-card-2')), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('flow-card-1')));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(SearchHandler.instance.currentIndex, 1);
+    });
+
+    testWidgets('the pill moves: hold, drag, and it stays where it was left', (tester) async {
+      tester.view.physicalSize = const Size(400, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      SearchHandler.instance.tabs.addAll([searchTab('q0'), searchTab('q1')]);
+      select(0);
+      Widget app() => pillApp(const Positioned.fill(child: TabPillHost(bottomInset: 120, alignLeft: true)));
+      await tester.pumpWidget(app());
+      await tester.pump(const Duration(milliseconds: 300));
+      final Offset before = tester.getTopLeft(find.byKey(const ValueKey('tab-pill')));
+      expect(before.dx, 12, reason: 'the default place');
+      final TestGesture gesture = await tester.startGesture(tester.getCenter(find.byKey(const ValueKey('tab-pill'))));
+      await tester.pump(const Duration(milliseconds: 700));
+      await gesture.moveBy(const Offset(150, -300));
+      await tester.pump();
+      await gesture.up();
+      await tester.pump(const Duration(milliseconds: 300));
+      final Offset after = tester.getTopLeft(find.byKey(const ValueKey('tab-pill')));
+      expect(after.dx, closeTo(before.dx + 150, 1));
+      expect(after.dy, closeTo(before.dy - 300, 1));
+      expect(find.byType(TabManagerPage), findsNothing, reason: 'a drag moves the pill; only a hold without one opens the tab manager');
+      expect(find.text('1/2'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpWidget(app());
+      await tester.pump(const Duration(milliseconds: 300));
+      final Offset again = tester.getTopLeft(find.byKey(const ValueKey('tab-pill')));
+      expect(again.dx, closeTo(after.dx, 1), reason: 'a new feed puts it back where it was left');
+      expect(again.dy, closeTo(after.dy, 1));
+    });
+  });
+
 }

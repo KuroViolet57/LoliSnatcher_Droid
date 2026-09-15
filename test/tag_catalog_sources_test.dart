@@ -56,6 +56,7 @@ void main() {
     BooruType.Faccina => 'https://hentalk.pw',
     BooruType.Kemono => 'https://kemono.cr',
     BooruType.Pawchive => 'https://pawchive.pw',
+    BooruType.FurAffinity => 'https://www.furaffinity.net',
     BooruType.Hanime1 => 'https://hanime1.me',
     BooruType.Rule34Video => 'https://rule34video.com',
     BooruType.Gelbooru => 'https://gelbooru.com',

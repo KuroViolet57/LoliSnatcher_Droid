@@ -371,7 +371,7 @@ class ThumbnailBuild extends StatelessWidget {
                   ),
                   //
                   Flexible(
-                    child: _ThumbnailBottomRightIcons(item),
+                    child: _ThumbnailBottomRightIcons(item, handler),
                   ),
                 ],
               ),
@@ -385,9 +385,11 @@ class ThumbnailBuild extends StatelessWidget {
 class _ThumbnailBottomRightIcons extends StatelessWidget {
   const _ThumbnailBottomRightIcons(
     this.item,
+    this.handler,
   );
 
   final BooruItem item;
+  final BooruHandler handler;
 
   @override
   Widget build(BuildContext context) {
@@ -404,7 +406,7 @@ class _ThumbnailBottomRightIcons extends StatelessWidget {
     final bool hasComments = item.hasComments == true;
 
     return Obx(() {
-      final IconData? itemIcon = Tools.getFileIcon(item.possibleMediaType.value ?? item.mediaType.value);
+      final IconData? itemIcon = handler.mediaIconFor(item) ?? Tools.getFileIcon(item.possibleMediaType.value ?? item.mediaType.value);
 
       final bool? isFav = item.isFavourite.value;
       final bool isFavOrMarked = isFav == true || tagsData.markedTags.isNotEmpty;

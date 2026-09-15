@@ -1577,7 +1577,8 @@ class _SuggestionsMainContentState extends State<SuggestionsMainContent> with _E
     // its metatags — no recent searches, pinned tags or site-wide popular
     // tags there (the user asked for the room).
     final bool isDoujin = DoujinDataHandler.isDoujinBooru(sourceBooru);
-    final DoujinFilterSpec? filters = isDoujin && widget.queryText != null && widget.onQueryReplaced != null ? sourceHandler.doujinFilters : null;
+    // Any source that declares filters shows them (r40: FurAffinity too).
+    final DoujinFilterSpec? filters = widget.queryText != null && widget.onQueryReplaced != null ? sourceHandler.doujinFilters : null;
     List<Widget> blocks = [
       if (filters != null)
         DoujinFiltersBlock(
@@ -4526,7 +4527,9 @@ class DoujinFiltersBlock extends StatelessWidget {
 
   Widget _chip(BuildContext context, DoujinFilterGroup g, DoujinFilterOption o) {
     final List<String> chosen = DoujinFilters.selected(query, g.key);
-    final bool selected = chosen.isEmpty ? o.value == g.defaultValue : chosen.contains(o.value);
+    final bool selected = chosen.isEmpty
+        ? (g.multi && g.defaultValues.isNotEmpty ? g.defaultValues.contains(o.value) : o.value == g.defaultValue)
+        : chosen.contains(o.value);
     return FilterChip(
       key: ValueKey('doujin-filter-${g.key}-${o.value.isEmpty ? 'none' : o.value}'),
       label: Text(o.label),
@@ -4536,7 +4539,8 @@ class DoujinFiltersBlock extends StatelessWidget {
       onSelected: (_) {
         final List<String> next;
         if (g.multi) {
-          next = [...chosen];
+          // Nothing chosen means the defaults: a tap starts from them.
+          next = [...(chosen.isEmpty ? g.defaultValues : chosen)];
           if (!next.remove(o.value)) next.add(o.value);
         } else {
           next = chosen.contains(o.value) ? const [] : [o.value];

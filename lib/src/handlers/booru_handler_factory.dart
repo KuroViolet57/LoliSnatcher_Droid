@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import 'package:lolisnatcher/src/boorus/furaffinity_handler.dart';
 import 'package:lolisnatcher/src/boorus/agnph_handler.dart';
 import 'package:lolisnatcher/src/boorus/booru_on_rails_handler.dart';
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
@@ -339,10 +340,10 @@ class BooruHandlerFactory {
           pageNum = 0;
           booruHandler = WildCrittersHandler(booru, limit);
           break;
-        /*   case (BooruType.FurAffinity):
-          pageNum = 0;
-          booruHandler = FurAffinityHandler(booru, limit);
-          break;*/
+        case BooruType.FurAffinity:
+          // Read from the site's pages: 48 cards a page, 1-based, favorites by cursor.
+          booruHandler = FurAffinityHandler(booru, FurAffinityHandler.pageSize);
+          break;
         default:
           booruHandler = EmptyHandler(Booru.unknown(), limit);
           break;
