@@ -15,6 +15,7 @@ import 'package:lolisnatcher/src/boorus/idol_sankaku_handler.dart';
 import 'package:lolisnatcher/src/boorus/sankaku_handler.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/data/modular_ui.dart';
 import 'package:lolisnatcher/src/handlers/doujin_cover_aspect_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 import 'package:lolisnatcher/src/handlers/database_handler.dart';
@@ -30,6 +31,7 @@ import 'package:lolisnatcher/src/widgets/common/thumbnail_loading.dart';
 import 'package:lolisnatcher/src/widgets/image/custom_network_image.dart';
 import 'package:lolisnatcher/src/widgets/image/sprite_tile_image.dart';
 import 'package:lolisnatcher/src/widgets/preview/shimmer_builder.dart';
+import 'package:lolisnatcher/src/widgets/thumbnail/thumbnail_reveal.dart';
 
 class Thumbnail extends StatefulWidget {
   const Thumbnail({
@@ -66,6 +68,11 @@ class _ThumbnailState extends State<Thumbnail> {
   final ValueNotifier<bool> isFailed = ValueNotifier(false);
   final ValueNotifier<bool> isLoaded = ValueNotifier(false);
   final ValueNotifier<bool> isLoadedExtra = ValueNotifier(false);
+
+  /// r56: how long the pictures fade in; zero for one already shown this
+  /// session or answered from the memory cache (see [ThumbnailReveal]).
+  Duration mainFade = const Duration(milliseconds: 300);
+  Duration extraFade = const Duration(milliseconds: 200);
   final ValueNotifier<bool> failedRendering = ValueNotifier(false);
   final ValueNotifier<String?> errorCode = ValueNotifier(null);
   CancelToken? mainCancelToken, extraCancelToken, loadItemCancelToken;
@@ -328,7 +335,11 @@ class _ThumbnailState extends State<Thumbnail> {
 
     // delay loading a little to improve performance when scrolling fast, ignore delay if it's a standalone widget (i.e. not in a list)
     debounceLoading = Timer(
-      Duration(milliseconds: widget.isStandalone ? 200 : 0),
+      ThumbnailReveal.delayFor(
+        isStandalone: widget.isStandalone,
+        instant: ModularUi.isOn(ModularUi.gridSeenThumbnailsAtOnce),
+        url: thumbURL,
+      ),
       () => startDownloading(withCaptchaCheck: withCaptchaCheck),
     );
     return;
@@ -347,6 +358,13 @@ class _ThumbnailState extends State<Thumbnail> {
     mainImageStream = mainProvider.value!.resolve(ImageConfiguration.empty);
     mainImageListener = ImageStreamListener(
       (imageInfo, syncCall) {
+        mainFade = ThumbnailReveal.fadeFor(
+          normal: const Duration(milliseconds: 300),
+          instant: ModularUi.isOn(ModularUi.gridSeenThumbnailsAtOnce),
+          seenBefore: ThumbnailReveal.seen(thumbURL),
+          syncCall: syncCall,
+        );
+        ThumbnailReveal.remember(thumbURL);
         isLoaded.value = true;
         // The cover's real aspect ratio, from the bytes the source served.
         // Doujin listings mostly carry no dimensions, so this is the only
@@ -386,6 +404,13 @@ class _ThumbnailState extends State<Thumbnail> {
       extraImageStream = extraProvider.value!.resolve(ImageConfiguration.empty);
       extraImageListener = ImageStreamListener(
         (imageInfo, syncCall) {
+          extraFade = ThumbnailReveal.fadeFor(
+            normal: const Duration(milliseconds: 200),
+            instant: ModularUi.isOn(ModularUi.gridSeenThumbnailsAtOnce),
+            seenBefore: ThumbnailReveal.seen(widget.item.displayThumbnailURL),
+            syncCall: syncCall,
+          );
+          ThumbnailReveal.remember(widget.item.displayThumbnailURL);
           isLoadedExtra.value = true;
         },
         onError: (e, s) {
@@ -593,7 +618,7 @@ class _ThumbnailState extends State<Thumbnail> {
                   return AnimatedOpacity(
                     // fade in image
                     opacity: (!widget.isStandalone || isLoadedExtra) ? 1 : 0,
-                    duration: const Duration(milliseconds: 200),
+                    duration: extraFade,
                     child: child,
                   );
                 },
@@ -646,7 +671,7 @@ class _ThumbnailState extends State<Thumbnail> {
                 return AnimatedOpacity(
                   // fade in image
                   opacity: (settingsHandler.shitDevice || !widget.isStandalone || isLoaded) ? 1 : 0,
-                  duration: const Duration(milliseconds: 300),
+                  duration: mainFade,
                   child: child,
                 );
               },

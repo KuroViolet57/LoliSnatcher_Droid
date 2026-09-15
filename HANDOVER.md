@@ -1162,6 +1162,27 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   `android/app/build.gradle.kts` (`findByName("profile")`), or the install
   fails.
 
+### 4.25 Seen thumbnails at once; details built on open (r56)
+
+- From the profiling (§4.23, §4.24), app code only, each behind a Modular UI
+  switch that brings the old behaviour back.
+- **Seen thumbnails** (`widgets/thumbnail/thumbnail_reveal.dart`, switch
+  `grid.seenThumbnailsAtOnce`): a grid thumbnail waited 200 ms before loading
+  and faded in over 300 ms (200 ms for the low-quality one under a sample)
+  even when the picture was in memory. `ThumbnailReveal` remembers the last
+  4000 thumbnail URLs shown this session: a remembered URL skips the wait,
+  and a remembered one or a memory-cache answer (`syncCall`) skips the fade.
+- **Details on open** (`widgets/gallery/item_info_bottom_sheet.dart`, switch
+  `viewer.detailsWhenInfoSheetOpens`): the bottom info sheet built a TagView
+  for every post the viewer landed on while closed; TagView loads the post
+  (`loadItem`) for sources with `shouldUpdateIteminTagView` (danbooru,
+  gelbooru, rule34.xxx, kemono, ...). Closed, the sheet now holds an empty
+  `ListView` on its scroll controller (the controller must stay attached or
+  `animateTo` does nothing); the TagView is built once the extent is above
+  zero and kept for that post while the sheet closes. FurAffinity's linked
+  media does not depend on it (its handler does not load in TagView). The
+  right-side endDrawer was already built only when opened.
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
@@ -1587,8 +1608,12 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r55)
+## 12. Open items (as of r56)
 
+- r56 is unverified on the device: scrolling back through the grid shows seen
+  thumbnails at once; the info sheet opens (button and swipe up) with the
+  post's details loading as it opens; both switches bring the old behaviour
+  back.
 - r55 is unverified on the device: the r50 swipe, video playback with the warm
   pool and big videos on the released media_kit, linked media, hidden pins,
   pin suggestions and the keyboard above sheets still working.

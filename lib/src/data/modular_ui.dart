@@ -79,6 +79,16 @@ class ModularUi {
     defaultValue: true,
   );
 
+  static const String gridArea = 'Preview grid';
+
+  static const ModularUiToggle gridSeenThumbnailsAtOnce = ModularUiToggle(
+    key: 'grid.seenThumbnailsAtOnce',
+    area: gridArea,
+    title: 'Seen thumbnails appear at once',
+    description: 'A thumbnail already shown this session, or still in memory, appears without the short wait and fade-in when you scroll back to it. Off brings the wait and the fade back.',
+    defaultValue: true,
+  );
+
   static const String viewerArea = 'Viewer';
 
   static const ModularUiToggle viewerLinkedMedia = ModularUiToggle(
@@ -105,6 +115,14 @@ class ModularUi {
     defaultValue: true,
   );
 
+  static const ModularUiToggle viewerDetailsOnOpen = ModularUiToggle(
+    key: 'viewer.detailsWhenInfoSheetOpens',
+    area: viewerArea,
+    title: 'Post details load when the info sheet opens',
+    description: "The bottom info sheet builds a post's details, and loads them from the site, only once you open it instead of for every post you land on. Off builds them for every post again.",
+    defaultValue: true,
+  );
+
   static const String wholeAppArea = 'Whole app';
 
   static const ModularUiToggle appDrawUnderHiddenStatusBar = ModularUiToggle(
@@ -121,8 +139,10 @@ class ModularUi {
     searchSiteFilters,
     sidebarSourceSettings,
     sidebarPinnedTags,
+    gridSeenThumbnailsAtOnce,
     viewerLinkedMedia,
     viewerLinkedMediaReplacesShare,
+    viewerDetailsOnOpen,
     appDrawUnderHiddenStatusBar,
   ];
 

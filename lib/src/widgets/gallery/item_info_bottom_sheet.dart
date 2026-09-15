@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import 'package:lolisnatcher/gen/strings.g.dart';
+import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/data/modular_ui.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/widgets/gallery/tag_view.dart';
 
@@ -19,6 +21,7 @@ class ItemInfoBottomSheet extends StatefulWidget {
     required this.sheetController,
     required this.extentNotifier,
     required this.openSize,
+    this.detailsBuilder,
     super.key,
   });
 
@@ -36,11 +39,60 @@ class ItemInfoBottomSheet extends StatefulWidget {
   /// to be over-dragged bigger.
   final double openSize;
 
+  /// Builds a post's details; [TagView] when null (tests pass a stand-in).
+  @visibleForTesting
+  final Widget Function(BuildContext context, BooruItem item, ScrollController scrollController)? detailsBuilder;
+
+  /// r56: whether the sheet builds the details of the post on screen: always
+  /// with the switch off, otherwise while it is open, or for the post whose
+  /// details were built while it was open.
+  static bool showDetails({
+    required bool onOpenOnly,
+    required bool isOpen,
+    required String current,
+    required String? detailsFor,
+  }) => !onOpenOnly || isOpen || detailsFor == current;
+
   @override
   State<ItemInfoBottomSheet> createState() => _ItemInfoBottomSheetState();
 }
 
 class _ItemInfoBottomSheetState extends State<ItemInfoBottomSheet> {
+  /// r56: the sheet is open at all (extent above zero). It changes only when
+  /// the sheet opens or closes, so the content is not rebuilt on every frame
+  /// of a drag.
+  final ValueNotifier<bool> isOpen = ValueNotifier(false);
+
+  /// The post whose details were built while the sheet was open: they stay
+  /// while it closes, so reopening on the same post does not load it again.
+  String? detailsFor;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.extentNotifier.addListener(onExtent);
+    onExtent();
+  }
+
+  @override
+  void didUpdateWidget(covariant ItemInfoBottomSheet oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.extentNotifier != widget.extentNotifier) {
+      oldWidget.extentNotifier.removeListener(onExtent);
+      widget.extentNotifier.addListener(onExtent);
+      onExtent();
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.extentNotifier.removeListener(onExtent);
+    isOpen.dispose();
+    super.dispose();
+  }
+
+  void onExtent() => isOpen.value = widget.extentNotifier.value > 0;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -74,13 +126,15 @@ class _ItemInfoBottomSheetState extends State<ItemInfoBottomSheet> {
                         shape: const RoundedRectangleBorder(
                           borderRadius: BorderRadius.zero,
                         ),
-                        // Always render the TagView so the sheet's scroll
-                        // controller has clients. Without this the
+                        // Always render a scrollable on the sheet's scroll
+                        // controller so it has clients. Without this the
                         // DraggableScrollableController reports isAttached=false
-                        // and animateTo() silently does nothing.
-                        child: ValueListenableBuilder<int>(
-                          valueListenable: widget.currentPage,
-                          builder: (context, page, _) {
+                        // and animateTo() silently does nothing. The TagView
+                        // itself is built once the sheet opens (r56).
+                        child: ListenableBuilder(
+                          listenable: Listenable.merge([widget.currentPage, isOpen]),
+                          builder: (context, _) {
+                            final int page = widget.currentPage.value;
                             final items = widget.tab.booruHandler.filteredFetched;
                             if (items.isEmpty || page >= items.length) {
                               return ListView(
@@ -91,14 +145,33 @@ class _ItemInfoBottomSheetState extends State<ItemInfoBottomSheet> {
                                 ],
                               );
                             }
-                            return TagView(
-                              // Key on the item so a swipe to a new post forces
-                              // a fresh TagView (belt-and-suspenders alongside
-                              // TagView's own didUpdateWidget).
-                              key: ValueKey(items[page].fileURL),
-                              item: items[page],
-                              handler: widget.tab.booruHandler,
-                              scrollController: scrollController,
+                            final BooruItem item = items[page];
+                            if (isOpen.value) detailsFor = item.fileURL;
+                            if (!ItemInfoBottomSheet.showDetails(
+                              onOpenOnly: ModularUi.isOn(ModularUi.viewerDetailsOnOpen),
+                              isOpen: isOpen.value,
+                              current: item.fileURL,
+                              detailsFor: detailsFor,
+                            )) {
+                              // Closed: nothing heavy, and no request to the
+                              // site, but still a scrollable on the controller.
+                              return ListView(
+                                controller: scrollController,
+                                children: const [SizedBox(height: 1)],
+                              );
+                            }
+                            // Key on the item so a swipe to a new post forces
+                            // a fresh TagView (belt-and-suspenders alongside
+                            // TagView's own didUpdateWidget).
+                            return KeyedSubtree(
+                              key: ValueKey(item.fileURL),
+                              child:
+                                  widget.detailsBuilder?.call(context, item, scrollController) ??
+                                  TagView(
+                                    item: item,
+                                    handler: widget.tab.booruHandler,
+                                    scrollController: scrollController,
+                                  ),
                             );
                           },
                         ),
