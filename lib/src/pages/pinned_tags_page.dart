@@ -1,14 +1,27 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:lolisnatcher/src/data/booru.dart';
+import 'package:lolisnatcher/src/data/booru_tag.dart';
 import 'package:lolisnatcher/src/data/pinned_tag.dart';
+import 'package:lolisnatcher/src/data/pinned_tag_visibility.dart';
+import 'package:lolisnatcher/src/data/tag_suggestion.dart';
+import 'package:lolisnatcher/src/data/tag_type.dart';
+import 'package:lolisnatcher/src/handlers/booru_handler.dart';
+import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
+import 'package:lolisnatcher/src/handlers/booru_tag_store.dart';
 import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/followed_artists_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/handlers/tag_handler.dart';
 import 'package:lolisnatcher/src/widgets/preview/main_search_query_editor_page.dart' show doujinPinsAsPinnedTags;
+
+/// Tag suggestions for the pin builder.
+typedef PinTagSuggester = Future<List<TagSuggestion>> Function(String input);
 
 /// Where a source's pins are kept: the database for boorus, the doujin store
 /// (which keeps no names or order) for doujin sources.
@@ -110,11 +123,55 @@ class _DoujinPinnedTagsStore extends PinnedTagsStore {
   Future<void> reorder(List<PinnedTag> ordered) async {}
 }
 
+/// Tag suggestions for a source's pin builder (r52): the tag index pulled for
+/// it first, then the tags the app has seen, then the site's own autocomplete.
+class PinTagSuggestions {
+  const PinTagSuggestions._();
+
+  static PinTagSuggester forBooru(Booru booru) {
+    BooruHandler? handler;
+    return (String input) async {
+      final String query = input.trim().replaceFirst(RegExp('^[-~]'), '');
+      if (query.isEmpty) return const [];
+      final List<TagSuggestion> out = [];
+      final Set<String> seen = {};
+      void add(String tag, TagType type) {
+        if (tag.isNotEmpty && seen.add(tag.toLowerCase())) out.add(TagSuggestion(tag: tag, type: type));
+      }
+
+      for (final BooruTagEntry e in await BooruTagStore.browse(booru, query: query, limit: 10)) {
+        add(e.name, e.tagType);
+      }
+      if (out.length < 8) {
+        try {
+          for (final String tag in await SettingsHandler.instance.dbHandler.getTags(query, 10)) {
+            add(tag, TagHandler.instance.getTag(tag).tagType);
+          }
+        } catch (_) {}
+      }
+      if (out.length < 5) {
+        try {
+          handler ??= BooruHandlerFactory().getBooruHandler([booru], null).booruHandler;
+          if (handler!.hasTagSuggestions) {
+            final res = await handler!.getTagSuggestions(query);
+            res.fold((_) {}, (data) {
+              for (final TagSuggestion s in data) {
+                add(s.tag, s.type);
+              }
+            });
+          }
+        } catch (_) {}
+      }
+      return out.take(10).toList();
+    };
+  }
+}
+
 /// A source's pinned tags (r50, Quick access in the left sidebar): pins of
-/// one or several tags, named, reordered, edited and deleted. A tap searches
-/// the pin in a new tab on that source.
+/// one or several tags, named, reordered, edited, hidden on this source (r52)
+/// and deleted. A tap searches the pin in a new tab on that source.
 class PinnedTagsPage extends StatefulWidget {
-  const PinnedTagsPage({required this.booru, this.store, this.onOpen, super.key});
+  const PinnedTagsPage({required this.booru, this.store, this.onOpen, this.suggest, super.key});
 
   final Booru booru;
 
@@ -124,15 +181,21 @@ class PinnedTagsPage extends StatefulWidget {
   /// Replaces the default (a new tab on [booru]).
   final ValueChanged<String>? onOpen;
 
+  /// Replaces the default [PinTagSuggestions.forBooru].
+  final PinTagSuggester? suggest;
+
   @override
   State<PinnedTagsPage> createState() => _PinnedTagsPageState();
 }
 
 class _PinnedTagsPageState extends State<PinnedTagsPage> {
   late final PinnedTagsStore store = widget.store ?? PinnedTagsStore.forBooru(widget.booru);
+  late final PinTagSuggester suggest = widget.suggest ?? PinTagSuggestions.forBooru(widget.booru);
 
   List<PinnedTag> pins = [];
   bool loading = true;
+
+  String get sourceName => widget.booru.name ?? 'this source';
 
   @override
   void initState() {
@@ -171,7 +234,8 @@ class _PinnedTagsPageState extends State<PinnedTagsPage> {
       builder: (_) => PinBuilderSheet(
         initial: pin,
         supportsTitles: store.supportsTitles,
-        sourceName: widget.booru.name ?? 'this source',
+        sourceName: sourceName,
+        suggest: suggest,
       ),
     );
     if (result == null) return;
@@ -181,6 +245,11 @@ class _PinnedTagsPageState extends State<PinnedTagsPage> {
       await store.update(pin, result.tags, title: result.title, global: result.global);
     }
     await _load();
+  }
+
+  void _toggleHidden(PinnedTag pin) {
+    PinnedTagVisibility.setHidden(pin, widget.booru, !PinnedTagVisibility.isHidden(pin, widget.booru));
+    setState(() {});
   }
 
   Future<void> _delete(PinnedTag pin) async {
@@ -211,18 +280,34 @@ class _PinnedTagsPageState extends State<PinnedTagsPage> {
   Widget _tile(ThemeData theme, int index) {
     final PinnedTag pin = pins[index];
     final bool named = (pin.title ?? '').trim().isNotEmpty;
-    final String subtitle = [if (named) pin.tagName, if (pin.isGlobal) 'All sources'].join(' · ');
+    final bool hidden = PinnedTagVisibility.isHidden(pin, widget.booru);
+    final String subtitle = [
+      if (named) pin.tagName,
+      if (pin.isGlobal) 'All sources',
+      if (hidden) 'Hidden on $sourceName',
+    ].join(' · ');
     return ListTile(
       key: ValueKey('pinned-${pin.id}'),
       leading: store.supportsTitles
           ? ReorderableDragStartListener(index: index, child: const Icon(Symbols.drag_indicator_rounded))
           : const Icon(Symbols.push_pin_rounded),
-      title: Text(pin.displayName, maxLines: 2, overflow: TextOverflow.ellipsis),
+      title: Text(
+        pin.displayName,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: hidden ? TextStyle(color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6)) : null,
+      ),
       subtitle: subtitle.isEmpty ? null : Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis),
       onTap: () => _open(pin),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          IconButton(
+            key: ValueKey('pinned-hide-${pin.id}'),
+            tooltip: hidden ? 'Show on $sourceName' : 'Hide on $sourceName',
+            icon: Icon(hidden ? Symbols.visibility_off_rounded : Symbols.visibility_rounded),
+            onPressed: () => _toggleHidden(pin),
+          ),
           IconButton(
             key: ValueKey('pinned-edit-${pin.id}'),
             tooltip: 'Edit pin',
@@ -280,14 +365,22 @@ class PinBuilderResult {
   final bool global;
 }
 
-/// Builds or edits one pin: tags as chips (several can be typed at once),
-/// an optional name, and whether it shows on every source.
+/// Builds or edits one pin: tags as chips (several can be typed at once, with
+/// suggestions as you type), an optional name, and whether it shows on every
+/// source.
 class PinBuilderSheet extends StatefulWidget {
-  const PinBuilderSheet({required this.supportsTitles, required this.sourceName, this.initial, super.key});
+  const PinBuilderSheet({
+    required this.supportsTitles,
+    required this.sourceName,
+    this.initial,
+    this.suggest,
+    super.key,
+  });
 
   final PinnedTag? initial;
   final bool supportsTitles;
   final String sourceName;
+  final PinTagSuggester? suggest;
 
   @override
   State<PinBuilderSheet> createState() => _PinBuilderSheetState();
@@ -299,11 +392,46 @@ class _PinBuilderSheetState extends State<PinBuilderSheet> {
   late final TextEditingController titleController = TextEditingController(text: widget.initial?.title ?? '');
   late bool global = widget.initial?.isGlobal ?? false;
 
+  List<TagSuggestion> suggestions = [];
+  Timer? _debounce;
+  int _asked = 0;
+  String _lastWord = '';
+
+  @override
+  void initState() {
+    super.initState();
+    tagController.addListener(_onTyped);
+  }
+
   @override
   void dispose() {
+    _debounce?.cancel();
+    tagController.removeListener(_onTyped);
     tagController.dispose();
     titleController.dispose();
     super.dispose();
+  }
+
+  String get _typedWord => tagController.text.split(RegExp(r'\s+')).last;
+
+  void _onTyped() {
+    final String word = _typedWord;
+    if (word == _lastWord) return;
+    _lastWord = word;
+    _debounce?.cancel();
+    if (word.replaceFirst(RegExp('^[-~]'), '').isEmpty || widget.suggest == null) {
+      if (suggestions.isNotEmpty) setState(() => suggestions = []);
+      return;
+    }
+    _debounce = Timer(const Duration(milliseconds: 250), () async {
+      final int ask = ++_asked;
+      List<TagSuggestion> found = const [];
+      try {
+        found = await widget.suggest!(word);
+      } catch (_) {}
+      if (!mounted || ask != _asked) return;
+      setState(() => suggestions = found.take(8).toList());
+    });
   }
 
   void _addTyped() {
@@ -311,7 +439,17 @@ class _PinBuilderSheetState extends State<PinBuilderSheet> {
       if (t.isNotEmpty && !tags.contains(t)) tags.add(t);
     }
     tagController.clear();
+    suggestions = [];
     setState(() {});
+  }
+
+  /// The suggestion replaces the word being typed; a leading `-` or `~` stays.
+  void _take(TagSuggestion s) {
+    final List<String> words = tagController.text.split(RegExp(r'\s+'));
+    final String prefix = RegExp('^[-~]').firstMatch(words.last)?.group(0) ?? '';
+    words[words.length - 1] = '$prefix${s.tag}';
+    tagController.text = words.join(' ');
+    _addTyped();
   }
 
   void _save() {
@@ -356,6 +494,15 @@ class _PinBuilderSheetState extends State<PinBuilderSheet> {
                 ),
               ],
             ),
+            for (final TagSuggestion s in suggestions)
+              ListTile(
+                key: ValueKey('pin-builder-suggestion-${s.tag}'),
+                dense: true,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                leading: const Icon(Symbols.sell_rounded, size: 18),
+                title: Text(s.tag, maxLines: 1, overflow: TextOverflow.ellipsis),
+                onTap: () => _take(s),
+              ),
             const SizedBox(height: 10),
             if (tags.isEmpty)
               Text('A pin searches all of its tags together.', style: theme.textTheme.bodySmall)

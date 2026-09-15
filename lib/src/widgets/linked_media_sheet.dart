@@ -8,10 +8,11 @@ import 'package:lolisnatcher/src/boorus/furaffinity_query.dart';
 import 'package:lolisnatcher/src/boorus/linked_media.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/data/modular_ui.dart';
+import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
-import 'package:lolisnatcher/src/pages/flash_player_page.dart';
 import 'package:lolisnatcher/src/pages/gallery_view_page.dart';
 import 'package:lolisnatcher/src/pages/linked_media_page.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
@@ -19,6 +20,25 @@ import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 /// Opens a link a post's description gives for its animation (r49).
 class LinkedMediaOpener {
   const LinkedMediaOpener._();
+
+  /// The one-off tab that finds a linked post by id (r52): its first page, as
+  /// a new tab searches it, without the source's default filters ("Not found
+  /// on e621" for a post that exists: the id lookup carried them).
+  static SearchTab prepareTab(LinkedMedia media) {
+    final SearchTab tab = SearchTab(media.booru!, null, media.searchTerm);
+    tab.booruHandler
+      ..applySourceSettings = false
+      ..pageNum += 1;
+    return tab;
+  }
+
+  /// A linked post the source hides (the "filter hated" setting) still opens;
+  /// it stays blurred where the source blurs it.
+  static void showFetched(BooruHandler handler) {
+    if (handler.filteredFetched.isEmpty && handler.fetched.isNotEmpty) {
+      handler.filteredFetched.addAll(handler.fetched);
+    }
+  }
 
   /// A post on an installed source opens in the app's viewer, on top of the
   /// current page (searched by id, the way the floating tag preview opens
@@ -30,11 +50,11 @@ class LinkedMediaOpener {
       return;
     }
     final Booru booru = media.booru!;
-    final SearchTab tab = SearchTab(booru, null, media.searchTerm);
-    tab.booruHandler.pageNum++;
+    final SearchTab tab = prepareTab(media);
     try {
       await tab.booruHandler.search(media.searchTerm, null);
     } catch (_) {}
+    showFetched(tab.booruHandler);
     if (!context.mounted) return;
     if (tab.booruHandler.filteredFetched.isEmpty) {
       FlashElements.showSnackbar(
@@ -118,7 +138,7 @@ class LinkedMediaSheet {
                 child: Text('Linked media', style: Theme.of(sheet).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
               ),
               if (items.isEmpty)
-                const Padding(padding: EdgeInsets.fromLTRB(16, 0, 16, 24), child: Text('The description has no links.'))
+                const Padding(padding: EdgeInsets.fromLTRB(16, 0, 16, 24), child: Text('The description has no media links.'))
               else
                 LinkedMediaList(
                   items: items,
@@ -136,32 +156,35 @@ class LinkedMediaSheet {
   }
 }
 
-/// The viewer's link button for FurAffinity (r49).
+/// The viewer's link button (r49; r52: for any post with media links, in the
+/// share button's place).
 class LinkedMediaButton {
   const LinkedMediaButton._();
 
-  /// A post tagged as animated whose file is a still picture: its animation
-  /// is usually behind a link in the description. A GIF, a video or a Flash
-  /// post already is the animation.
-  static bool offerFor(BooruItem item) {
-    final MediaType type = item.mediaType.value;
-    if (type.isVideo || type.isAnimation) return false;
-    if (FlashPlayerPage.isFlash(item)) return false;
-    return item.tagsList.any((t) => t.fullString.toLowerCase().contains('animat'));
-  }
+  /// The post's description has been read and links to media: a GIF or a
+  /// video can link its full or sound version too.
+  static bool offerFor(BooruItem item) => ModularUi.isOn(ModularUi.viewerLinkedMedia) && LinkedMediaStore.hasLinks(item.postURL);
 
-  static final Map<String, List<LinkedMedia>> _cache = {};
+  /// The toolbar's share button becomes the link button (Modular UI).
+  static bool get replacesShare =>
+      ModularUi.isOn(ModularUi.viewerLinkedMedia) && ModularUi.isOn(ModularUi.viewerLinkedMediaReplacesShare);
 
-  /// The resolved links of [item]'s description, read once per session.
+  /// The media links of [item]'s description, read once per session.
   static Future<List<LinkedMedia>> linksFor(FurAffinityHandler handler, BooruItem item) async {
-    final List<LinkedMedia>? known = _cache[item.postURL];
+    final List<LinkedMedia>? known = LinkedMediaStore.linksFor(item.postURL);
     if (known != null) return known;
     try {
       final FurAffinitySubmission? s = FurAffinityParser.submission(await handler.fetchPage(item.postURL));
-      return _cache[item.postURL] = [
-        for (final LinkedAnchor a in LinkedMediaResolver.anchorsIn(s?.descriptionHtml ?? '', base: FurAffinityQuery.site))
-          LinkedMediaResolver.resolve(a.url, SettingsHandler.instance.booruList, text: a.text),
-      ];
+      final List<LinkedMedia> links = s == null
+          ? const []
+          : LinkedMediaResolver.mediaLinksIn(
+              s.descriptionHtml,
+              SettingsHandler.instance.booruList,
+              base: FurAffinityQuery.site,
+              self: item.postURL,
+            );
+      LinkedMediaStore.remember(item.postURL, links);
+      return links;
     } catch (_) {
       return const [];
     }

@@ -85,7 +85,7 @@ class ModularUi {
     key: 'viewer.linkedMedia',
     area: viewerArea,
     title: 'Linked media button (FurAffinity)',
-    description: "A link button in the viewer's top bar on animated posts whose file is a still picture: it lists the links the description gives for the animation or video.",
+    description: "A link button in the viewer's top bar on posts whose description links to media (another source's post, a video file, a video page): it lists those links.",
     defaultValue: true,
   );
 
@@ -94,6 +94,22 @@ class ModularUi {
     area: leftSidebarArea,
     title: 'Pinned tags button',
     description: 'A "<source> pinned tags" button in Quick access: build pins of one or several tags, edit, rename and delete them.',
+    defaultValue: true,
+  );
+
+  static const ModularUiToggle viewerLinkedMediaReplacesShare = ModularUiToggle(
+    key: 'viewer.linkedMediaReplacesShare',
+    area: viewerArea,
+    title: "Linked media in the share button's place",
+    description: 'The share button leaves the top bar; the linked media button takes its place on posts whose description links to media. Off brings the share button back.',
+    defaultValue: true,
+  );
+
+  static const ModularUiToggle viewerVideoCover = ModularUiToggle(
+    key: 'viewer.videoCoverWhileLoading',
+    area: viewerArea,
+    title: 'Thumbnail until the video shows (media_kit)',
+    description: 'While a video loads, and while you swipe to it, the page shows the post thumbnail instead of a black panel.',
     defaultValue: true,
   );
 
@@ -114,6 +130,8 @@ class ModularUi {
     sidebarSourceSettings,
     sidebarPinnedTags,
     viewerLinkedMedia,
+    viewerLinkedMediaReplacesShare,
+    viewerVideoCover,
     appDrawUnderHiddenStatusBar,
   ];
 

@@ -5,6 +5,8 @@ import 'package:flutter/cupertino.dart';
 import 'package:dio/dio.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/boorus/linked_media.dart';
 import 'package:lolisnatcher/src/boorus/doujin/doujin_filters.dart';
 import 'package:lolisnatcher/src/boorus/furaffinity_parser.dart';
 import 'package:lolisnatcher/src/boorus/furaffinity_query.dart';
@@ -227,6 +229,16 @@ class FurAffinityHandler extends BooruHandler {
       ..postDate = s.postedAt?.toString()
       ..postDateFormat = s.postedAt == null ? item.postDateFormat : 'unix'
       ..isUpdated = true;
+    // r52: the description's media links, for the viewer's link button.
+    LinkedMediaStore.remember(
+      item.postURL,
+      LinkedMediaResolver.mediaLinksIn(
+        s.descriptionHtml,
+        SettingsHandler.instance.booruList,
+        base: FurAffinityQuery.site,
+        self: item.postURL,
+      ),
+    );
     if (s.previewUrl.isNotEmpty && (ext == 'gif' || _images.contains(ext))) item.sampleURL = s.previewUrl;
     final Set<String> names = item.tagsList.map((t) => t.fullString).toSet();
     void add(String name, TagType type) {

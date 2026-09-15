@@ -1045,6 +1045,44 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
 - The media_kit viewer has no disk cache (only the warm in-memory pool);
   better_player has one, and VideoViewer has `VideoCacheMode`.
 
+### 4.21 Media links everywhere, hidden pins, the keyboard, video swipes (r52)
+
+- **Media links:** `LinkedMediaResolver.mediaLinksIn(html, boorus, base:,
+  self:)` keeps posts on installed sources, files, and media pages
+  (`isMediaPage`: site + path table); drops profiles, personal sites and the
+  post itself. Plain-text addresses are found by blanking anchors and tags to
+  spaces (offsets kept); a link without words of its own is named by the text
+  before it on its line (`LinkedAnchor.label`). Post URLs are rebuilt from the
+  id (`…/posts/2197699Character(s)` → `/posts/2197699`).
+- `LinkedMediaStore` (per post URL, `revision` notifier): filled by
+  `FurAffinityHandler.applySubmission` (every viewed FA post passes loadItem),
+  read by `LinkedMediaButton.offerFor` (any file type now).
+- **Toolbar:** Modular UI `viewer.linkedMediaReplacesShare` (on): the share
+  `GalleryButton` shows only when the post has links, as the link button
+  (icon, label, tap/long-press open the sheet); the r49 separate FA action
+  only when that switch is off. `HideableAppbar` listens to the store.
+- **"Not found on e621":** paging was right (SearchTab sets the handler's
+  `startingPage`, the opener adds one). The id lookup carried the source's
+  default filters (`BooruHandler.applySourceSettings` false for it), and
+  `LinkedMediaOpener.showFetched` shows `fetched` when the filters emptied
+  `filteredFetched`. Live check: `test/linked_media_live_test.dart`.
+- **Hidden pins:** `PinnedTagVisibility` (`data/pinned_tag_visibility.dart`),
+  keys `id:N` / `tag:x` in `SourceSettings.hiddenPins`; the pinned tags page's
+  eye button; `PinnedTagsBlock` filters with `visible()`.
+- **Pin autocomplete:** `PinTagSuggestions.forBooru` (BooruTagStore.browse,
+  then `dbHandler.getTags`, then the handler's `getTagSuggestions`),
+  injectable as `PinnedTagsPage.suggest`.
+- **Keyboard:** `main.dart`'s page tree sits in an Overlay entry built once,
+  so the hidden-status-bar MediaQuery made in the app builder froze the first
+  frame's insets (no keyboard insets anywhere while the status bar is hidden).
+  `HiddenStatusBarInsets` (`utils/status_bar_inset.dart`) reads them where it
+  is built.
+- **Video swipes:** `MediaKitPlayerView` was a black box until its player
+  attached (a neighbour page attaches only once viewed unless preloadVideos).
+  It now shows the post `Thumbnail` above the video until
+  `controller.waitUntilFirstFrameRendered` (`showCover`, reset in `_release`);
+  Modular UI `viewer.videoCoverWhileLoading` (on).
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
@@ -1470,8 +1508,14 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r51)
+## 12. Open items (as of r52)
 
+- r52 is unverified on the device: the link button in the share slot (FA GIF
+  posts too), e621 post 2197695 opening in the app with the user's filters,
+  the media-only list, hidden pins, pin autocomplete, the keyboard above sheets
+  with the status bar hidden, the thumbnail cover on video swipes.
+- User asked about UI performance (120 Hz dipping to 70-90 fps): needs a
+  profile build and DevTools on the phone (USB) to find the real cost.
 - r51 is unverified on the device: media_kit from the leak-fix commit (a long
   video session, the warm pool, fullscreen, 2x, mute), image 4.10.1 decodes.
 - r50 is unverified on the device: types in preview tabs, the Artist hub

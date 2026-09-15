@@ -17,7 +17,6 @@ import 'package:lemberfpsmonitor/lemberfpsmonitor.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:talker_flutter/talker_flutter.dart';
 
-import 'package:lolisnatcher/src/data/modular_ui.dart';
 import 'package:lolisnatcher/src/utils/status_bar_inset.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/theme_item.dart';
@@ -272,28 +271,13 @@ class _MainAppState extends State<MainApp> {
                     supportedLocales: AppLocaleUtils.supportedLocales,
                     localizationsDelegates: GlobalMaterialLocalizations.delegates,
                     builder: (builderContext, child) {
-                      // When the status bar is hidden, Android can still
-                      // report the top inset (display cutout) — strip it so
-                      // layouts actually reclaim the space instead of leaving
-                      // an empty gap at the top.
-                      Widget content = child ?? const SizedBox.shrink();
-                      if (settingsHandler.hideStatusBar) {
-                        // r50: the top inset is kept by default, so back arrows
-                        // stay clear of the edge Android watches for the swipe
-                        // that shows the status bar (taps there were lost).
-                        final Widget page = content;
-                        content = ValueListenableBuilder<int>(
-                          valueListenable: ModularUi.revision,
-                          builder: (context, _, _) => MediaQuery(
-                            data: StatusBarInset.apply(
-                              MediaQuery.of(builderContext),
-                              hideStatusBar: true,
-                              drawUnder: ModularUi.isOn(ModularUi.appDrawUnderHiddenStatusBar),
-                            ),
-                            child: page,
-                          ),
-                        );
-                      }
+                      // r50/r52: with the status bar hidden its space is kept (back
+                      // arrows clear of the swipe edge; Modular UI brings back the
+                      // full-height layout). The widget reads the insets where it is
+                      // built: this tree sits in an Overlay entry built once, so a
+                      // MediaQuery made here kept the first frame's insets and the
+                      // keyboard never reached the pages.
+                      final Widget content = HiddenStatusBarInsets(child: child ?? const SizedBox.shrink());
                       final Widget wrappedChild = content;
                       return Stack(
                         children: [

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
+import 'package:lolisnatcher/src/boorus/furaffinity_handler.dart';
 import 'package:lolisnatcher/src/boorus/furaffinity_parser.dart';
 import 'package:lolisnatcher/src/boorus/linked_media.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
@@ -63,15 +64,42 @@ void main() {
     return item;
   }
 
-  test('the link button: animated posts whose file is a still picture; not GIFs, videos or Flash; a Modular UI switch', () {
-    expect(LinkedMediaButton.offerFor(post(['artist:x', 'animated'])), isTrue);
-    expect(LinkedMediaButton.offerFor(post(['category:3d_animation'])), isTrue);
-    expect(LinkedMediaButton.offerFor(post(['animated'], type: MediaType.video)), isFalse);
-    expect(LinkedMediaButton.offerFor(post(['animated'], type: MediaType.animation)), isFalse);
-    expect(LinkedMediaButton.offerFor(post(['animated', FurAffinityParser.typeTag('flash').fullString])), isFalse);
-    expect(LinkedMediaButton.offerFor(post(['fox'])), isFalse);
-    expect(ModularUi.all, contains(ModularUi.viewerLinkedMedia));
-    expect(ModularUi.isOn(ModularUi.viewerLinkedMedia), isTrue);
+  test("r52: the link button is offered once the post's links are known, for any file, in the share button's place", () {
+    LinkedMediaStore.resetForTests();
+    final BooruItem gif = post(['animated', FurAffinityParser.typeTag('image').fullString], type: MediaType.animation);
+    expect(LinkedMediaButton.offerFor(gif), isFalse, reason: 'nothing known yet');
+    LinkedMediaStore.remember(gif.postURL, [
+      LinkedMedia(url: 'https://e621.net/posts/2197695', kind: LinkedMediaKind.sourcePost, booru: e621, postId: '2197695'),
+    ]);
+    expect(LinkedMediaButton.offerFor(gif), isTrue, reason: 'a GIF can link its full video too');
+    expect(LinkedMediaButton.replacesShare, isTrue);
+    SettingsHandler.instance.modularUi[ModularUi.viewerLinkedMediaReplacesShare.key] = false;
+    expect(LinkedMediaButton.replacesShare, isFalse);
+    SettingsHandler.instance.modularUi[ModularUi.viewerLinkedMedia.key] = false;
+    expect(LinkedMediaButton.offerFor(gif), isFalse, reason: 'the button switched off');
+    SettingsHandler.instance.modularUi.clear();
+    LinkedMediaStore.remember(gif.postURL, const []);
+    expect(LinkedMediaButton.offerFor(gif), isFalse);
+    expect(ModularUi.all, containsAll([ModularUi.viewerLinkedMedia, ModularUi.viewerLinkedMediaReplacesShare]));
+  });
+
+  test("r52: loading a FurAffinity post remembers the media links of its description", () {
+    LinkedMediaStore.resetForTests();
+    SettingsHandler.instance.booruList.add(e621);
+    const String marker = 'submission-description-text user-submitted-links">';
+    final String html = fixture('furaffinity_view_folders.html').replaceFirst(
+      marker,
+      '${marker}WEBM version with sound only: https://e621.net/posts/2197699Character(s): Mal0<br />'
+          'Voice: <a class="auto_link" href="http://dshooves.live/">http://dshooves.live/</a> ',
+    );
+    final BooruItem item = post(['animated']);
+    FurAffinityHandler(fa, 20).applySubmission(item, FurAffinityParser.submission(html)!);
+    final List<LinkedMedia> links = LinkedMediaStore.linksFor(item.postURL)!;
+    expect(links.map((l) => (l.url, l.title)).toList(), [
+      ('https://e621.net/posts/2197699', 'WEBM version with sound only'),
+      // The fixture's own description links another submission: media, named by its line.
+      ('https://www.furaffinity.net/view/61869875/', 'full colours made this pic last year from my wip sketch'),
+    ], reason: 'the voice actor site is left out');
   });
 
   testWidgets('each row: what the link is, where it goes, and a badge; a file opens the linked media player', (tester) async {

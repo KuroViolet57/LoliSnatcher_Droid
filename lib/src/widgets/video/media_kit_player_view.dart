@@ -10,6 +10,8 @@ import 'package:get/get.dart' hide ContextExt, FirstWhereOrNullExt;
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
+import 'package:lolisnatcher/src/data/modular_ui.dart';
+import 'package:lolisnatcher/src/widgets/thumbnail/thumbnail.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -37,6 +39,13 @@ class MediaKitPlayerView extends StatefulWidget {
   final BooruItem booruItem;
   final Booru booru;
   final bool isViewed;
+
+  /// r52: the post's thumbnail covers the page until the video's first frame
+  /// is on screen, so a swipe slides a picture in instead of a black panel
+  /// (a neighbouring page gets its player only once it is the viewed one).
+  @visibleForTesting
+  static bool showCover({required bool enabled, required bool hasPlayer, required bool firstFrame}) =>
+      enabled && !(hasPlayer && firstFrame);
 
   /// Soft-refresh hook: drops idle pooled players and flags live ones so
   /// every video reloads with freshly-read cookies (e.g. after re-solving a
@@ -66,6 +75,9 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> {
   static const Duration _probeCooldown = Duration(minutes: 2);
 
   bool get _wantsPlayer => widget.isViewed || SettingsHandler.instance.preloadVideos;
+
+  /// The attached player has drawn its first frame (see [MediaKitPlayerView.showCover]).
+  bool _firstFrame = false;
 
   @override
   void initState() {
@@ -163,6 +175,12 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> {
         _entry = entry;
         _acquiredUrl = url;
       });
+      // A pooled player that already drew a frame answers at once.
+      unawaited(
+        entry.controller.waitUntilFirstFrameRendered.then((_) {
+          if (mounted && _entry == entry && !_firstFrame) setState(() => _firstFrame = true);
+        }),
+      );
 
       await _errorProbeSub?.cancel();
       _errorProbeSub = entry.player.stream.error.listen(_onPlayerError);
@@ -259,6 +277,7 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> {
     }
     _entry = null;
     _acquiredUrl = null;
+    _firstFrame = false;
     if (url != null) {
       _MediaKitPlayerPool.instance.release(url);
     }
@@ -273,8 +292,20 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> {
   @override
   Widget build(BuildContext context) {
     final entry = _entry;
+    final bool cover = MediaKitPlayerView.showCover(
+      enabled: ModularUi.isOn(ModularUi.viewerVideoCover),
+      hasPlayer: entry != null,
+      firstFrame: _firstFrame,
+    );
+    // Above the video, not under it: the video surface can paint black
+    // before its first frame.
+    final Widget coverImage = IgnorePointer(
+      child: Center(
+        child: Thumbnail(item: widget.booruItem, booru: widget.booru, isStandalone: false, useHero: false),
+      ),
+    );
     if (entry == null) {
-      return const Material(color: Colors.black, child: SizedBox.expand());
+      return Material(color: Colors.black, child: SizedBox.expand(child: cover ? coverImage : null));
     }
     return Material(
       color: Colors.black,
@@ -287,6 +318,7 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> {
               fit: BoxFit.contain,
               controls: NoVideoControls,
             ),
+            if (cover) coverImage,
             _MediaKitControls(
               player: entry.player,
               controller: entry.controller,

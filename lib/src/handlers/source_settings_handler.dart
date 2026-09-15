@@ -34,6 +34,7 @@ class SourceSettings {
     this.titleLanguage,
     this.languageFilter,
     this.tagBlacklist,
+    this.hiddenPins,
     this.blacklistMode,
     this.tabPlacement,
     this.tagChipTap,
@@ -62,6 +63,7 @@ class SourceSettings {
     titleLanguage: json['titleLanguage'] as String?,
     languageFilter: json['languageFilter'] as String?,
     tagBlacklist: json['tagBlacklist'] as String?,
+    hiddenPins: json['hiddenPins'] as String?,
     blacklistMode: json['blacklistMode'] as String?,
     tabPlacement: json['tabPlacement'] as String?,
     tagChipTap: json['tagChipTap'] as String?,
@@ -132,6 +134,9 @@ class SourceSettings {
   /// Comma-separated tags excluded from every search on this source.
   String? tagBlacklist;
 
+  /// Pins hidden on this source (r52), one key a line: see PinnedTagVisibility.
+  String? hiddenPins;
+
   /// How the per-source blacklist combines with the doujin-global one:
   /// 'extend' (default; both apply) | 'override' (only this source's list).
   String? blacklistMode;
@@ -176,6 +181,7 @@ class SourceSettings {
     if (titleLanguage != null) 'titleLanguage': titleLanguage,
     if (languageFilter != null) 'languageFilter': languageFilter,
     if (tagBlacklist != null) 'tagBlacklist': tagBlacklist,
+    if (hiddenPins != null) 'hiddenPins': hiddenPins,
     if (blacklistMode != null) 'blacklistMode': blacklistMode,
     if (tabPlacement != null) 'tabPlacement': tabPlacement,
     if (tagChipTap != null) 'tagChipTap': tagChipTap,

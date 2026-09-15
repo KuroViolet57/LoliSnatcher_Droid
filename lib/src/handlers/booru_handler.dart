@@ -74,6 +74,10 @@ abstract class BooruHandler {
   bool get storeTagsGlobally => _storeTagsGlobally ?? !hasReader;
   set storeTagsGlobally(bool value) => _storeTagsGlobally = value;
 
+  /// Off for a lookup by id (a linked post, r52): the source's default filters
+  /// and always-added terms would hide the very post asked for.
+  bool applySourceSettings = true;
+
   /// The types this source parsed for its own items (r50), kept even when
   /// [storeTagsGlobally] is off: a strip's preview tab or the floating preview
   /// showed e621's modelers and artists under General without them.
@@ -950,7 +954,7 @@ abstract class BooruHandler {
   /// sources, local views and feeds search the query as it is.
   String sourceQuery(String tags) {
     final BooruType? t = booru.type;
-    if (hasReader || t == null || t.isLocalDb || t.isRecommendationFeed || t.isMerge) return tags;
+    if (!applySourceSettings || hasReader || t == null || t.isLocalDb || t.isRecommendationFeed || t.isMerge) return tags;
     final SourceSettings s = SourceSettingsHandler.instance.settingsFor(booru);
     if ((s.alwaysAdd ?? '').isEmpty && (s.defaultFilters ?? '').isEmpty) return tags;
     return SourceSettingsHandler.composeQuery(

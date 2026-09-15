@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 
@@ -13,12 +15,17 @@ enum LinkedMediaKind {
   page,
 }
 
-/// A link as the description writes it: where it goes and its words (r50).
+/// A link as the description writes it: where it goes, its words, and the
+/// words before it on its line (r50, r52).
 class LinkedAnchor {
-  const LinkedAnchor(this.url, this.text);
+  const LinkedAnchor(this.url, this.text, [this.label = '']);
 
   final String url;
   final String text;
+
+  /// "WEBM version with sound only" for `WEBM version with sound only: <link>`:
+  /// names a link whose own words are its address, or a link in plain text.
+  final String label;
 }
 
 /// One link from a post's description, resolved.
@@ -57,6 +64,8 @@ class LinkedMedia {
     return t;
   }
 
+  bool get hasOwnWords => _words.isNotEmpty;
+
   String get _fileName => (Uri.tryParse(url)?.pathSegments ?? const []).lastWhere((s) => s.isNotEmpty, orElse: () => '');
 
   /// What the link is: its words, else the post, the file or the site.
@@ -84,6 +93,30 @@ class LinkedMedia {
   };
 }
 
+/// The media links of the posts seen this session (r52): the viewer's link
+/// button shows once a post's description has been read, for any file.
+class LinkedMediaStore {
+  const LinkedMediaStore._();
+
+  static final Map<String, List<LinkedMedia>> _byPost = {};
+
+  /// Bumped whenever a post's links become known.
+  static final ValueNotifier<int> revision = ValueNotifier(0);
+
+  static void remember(String postUrl, List<LinkedMedia> links) {
+    _byPost[postUrl] = List.unmodifiable(links);
+    revision.value++;
+  }
+
+  /// Null until the post's description has been read.
+  static List<LinkedMedia>? linksFor(String postUrl) => _byPost[postUrl];
+
+  static bool hasLinks(String postUrl) => _byPost[postUrl]?.isNotEmpty ?? false;
+
+  @visibleForTesting
+  static void resetForTests() => _byPost.clear();
+}
+
 /// Reads the links a post's description gives for its animation or video
 /// (r49): many FurAffinity "animated" posts are a still picture whose
 /// description links to the real thing — a post on e621 or another booru, a
@@ -96,6 +129,59 @@ class LinkedMediaResolver {
 
   static final RegExp _anchor = RegExp(r'<a\b([^>]*)>(.*?)</a\s*>', caseSensitive: false, dotAll: true);
   static final RegExp _href = RegExp('href\\s*=\\s*["\']([^"\']+)["\']', caseSensitive: false);
+  static final RegExp _bare = RegExp('https?://[^\\s<>"\']+', caseSensitive: false);
+  static final RegExp _lineBreak = RegExp(r'<br\s*/?>|</p>|</div>|\n', caseSensitive: false);
+
+  /// Pages that are media (a video, a post, a file host), by site and path.
+  /// A profile, a shop or a personal site is not: the voice actor's site sat
+  /// among the media links of the user's example (r52).
+  static final List<(String, RegExp)> _mediaPages = [
+    ('youtube.com', RegExp(r'^/(watch|shorts/|live/|embed/)')),
+    ('youtu.be', RegExp(r'^/.+')),
+    ('vimeo.com', RegExp(r'^/(\d+|video/\d+)')),
+    for (final String site in ['x.com', 'twitter.com', 'fxtwitter.com', 'vxtwitter.com', 'fixupx.com'])
+      (site, RegExp(r'^/[^/]+/status/\d+')),
+    ('bsky.app', RegExp(r'^/profile/[^/]+/post/')),
+    ('newgrounds.com', RegExp(r'^/(portal/view|art/view|audio/listen)/')),
+    ('redgifs.com', RegExp(r'^/(watch|ifr)/')),
+    ('gfycat.com', RegExp(r'^/.+')),
+    ('imgur.com', RegExp(r'^/(a/|gallery/|[A-Za-z0-9]{5,8}$)')),
+    ('streamable.com', RegExp(r'^/[a-z0-9]+$')),
+    ('iwara.tv', RegExp(r'^/videos?/')),
+    ('rule34video.com', RegExp(r'^/videos?/')),
+    ('pornhub.com', RegExp(r'^/view_video')),
+    ('xvideos.com', RegExp(r'^/video')),
+    ('spankbang.com', RegExp(r'/video/')),
+    ('mega.nz', RegExp(r'^/(file|folder)/')),
+    ('drive.google.com', RegExp(r'^/(file/d/|open)')),
+    ('dropbox.com', RegExp(r'^/(s|scl)/')),
+    ('tiktok.com', RegExp(r'/video/\d+')),
+    ('instagram.com', RegExp(r'^/(p|reel|reels|tv)/')),
+    ('tumblr.com', RegExp(r'/post/')),
+    ('deviantart.com', RegExp(r'/art/')),
+    ('inkbunny.net', RegExp(r'^/s/\d+')),
+    ('weasyl.com', RegExp(r'/submissions?/\d+')),
+    ('sofurry.com', RegExp(r'^/view/\d+')),
+    ('itaku.ee', RegExp(r'^/(images|posts)/\d+')),
+    ('pixiv.net', RegExp(r'^/(en/)?artworks/\d+')),
+    ('patreon.com', RegExp(r'^/posts/')),
+    ('twitch.tv', RegExp(r'^/(videos/\d+|[^/]+/clip/)')),
+    ('clips.twitch.tv', RegExp(r'^/.+')),
+    ('reddit.com', RegExp(r'/comments/')),
+    ('v.redd.it', RegExp(r'^/.+')),
+    ('catbox.moe', RegExp(r'^/.+')),
+    ('e621.net', RegExp(r'^/(posts|pools)/\d+')),
+    ('e926.net', RegExp(r'^/(posts|pools)/\d+')),
+    ('furaffinity.net', RegExp(r'^/(view|full)/\d+')),
+  ];
+
+  static bool isMediaPage(Uri uri) {
+    final String host = uri.host.toLowerCase();
+    for (final (String site, RegExp path) in _mediaPages) {
+      if ((host == site || host.endsWith('.$site')) && path.hasMatch(uri.path)) return true;
+    }
+    return false;
+  }
 
   /// The lower-case extension of [url]'s path, or ''.
   static String extensionOf(String url) {
@@ -117,19 +203,79 @@ class LinkedMediaResolver {
   /// Every web link in [html] with its words, once each, in order; relative
   /// links against [base], redirect pages unwrapped. Profile links (an
   /// artist's name) and script links are left out.
-  static List<LinkedAnchor> anchorsIn(String html, {String? base}) {
-    final List<LinkedAnchor> out = [];
+  static List<LinkedAnchor> anchorsIn(String html, {String? base}) => [
+    for (final (_, LinkedAnchor a) in _anchorsAt(html, base)) a,
+  ];
+
+  /// The addresses of [anchorsIn].
+  static List<String> linksIn(String html, {String? base}) => [for (final LinkedAnchor a in anchorsIn(html, base: base)) a.url];
+
+  /// The post's media among the links of its description (r52): posts on
+  /// installed sources, files and media pages, with links written as plain
+  /// text too; not profiles, personal sites or the post itself ([self]).
+  static List<LinkedMedia> mediaLinksIn(String html, Iterable<Booru> boorus, {String? base, String? self}) {
+    final List<(int, LinkedAnchor)> found = [..._anchorsAt(html, base), ..._bareAt(html, base)]
+      ..sort((a, b) => a.$1.compareTo(b.$1));
+    final LinkedMedia? own = self == null ? null : resolve(self, boorus);
     final Set<String> seen = {};
-    for (final RegExpMatch m in _anchor.allMatches(html)) {
-      final String? raw = _href.firstMatch(m.group(1)!)?.group(1);
-      final String? url = raw == null ? null : _clean(raw, base);
-      if (url != null && seen.add(url)) out.add(LinkedAnchor(url, _text(m.group(2)!)));
+    final List<LinkedMedia> out = [];
+    for (final (_, LinkedAnchor a) in found) {
+      final LinkedMedia byWords = resolve(a.url, boorus, text: a.text);
+      final LinkedMedia media = byWords.hasOwnWords ? byWords : resolve(a.url, boorus, text: a.label);
+      if (!seen.add(media.url)) continue;
+      if (own != null &&
+          (media.url == own.url ||
+              (media.kind == LinkedMediaKind.sourcePost && own.kind == LinkedMediaKind.sourcePost && media.booru == own.booru && media.postId == own.postId))) {
+        continue;
+      }
+      final bool keep = switch (media.kind) {
+        LinkedMediaKind.sourcePost || LinkedMediaKind.media => true,
+        LinkedMediaKind.page => isMediaPage(Uri.parse(media.url)),
+      };
+      if (keep) out.add(media);
     }
     return out;
   }
 
-  /// The addresses of [anchorsIn].
-  static List<String> linksIn(String html, {String? base}) => [for (final LinkedAnchor a in anchorsIn(html, base: base)) a.url];
+  static List<(int, LinkedAnchor)> _anchorsAt(String html, String? base) {
+    final List<(int, LinkedAnchor)> out = [];
+    final Set<String> seen = {};
+    for (final RegExpMatch m in _anchor.allMatches(html)) {
+      final String? raw = _href.firstMatch(m.group(1)!)?.group(1);
+      final String? url = raw == null ? null : _clean(raw, base);
+      if (url != null && seen.add(url)) out.add((m.start, LinkedAnchor(url, _text(m.group(2)!), _labelBefore(html, m.start))));
+    }
+    return out;
+  }
+
+  /// Addresses written as plain text: anchors and tags are blanked to spaces
+  /// first, so what is left keeps its offsets.
+  static List<(int, LinkedAnchor)> _bareAt(String html, String? base) {
+    final String masked = html
+        .replaceAllMapped(_anchor, (m) => ' ' * m.group(0)!.length)
+        .replaceAllMapped(RegExp('<[^>]+>'), (m) => ' ' * m.group(0)!.length);
+    final List<(int, LinkedAnchor)> out = [];
+    for (final RegExpMatch m in _bare.allMatches(masked)) {
+      final String raw = m.group(0)!.split(RegExp(r'&(lt|gt|quot|#\d+);')).first;
+      final String? url = _clean(raw, base);
+      if (url != null) out.add((m.start, LinkedAnchor(url, '', _labelBefore(html, m.start))));
+    }
+    return out;
+  }
+
+  static String _labelBefore(String html, int offset) {
+    final String before = html.substring(0, offset);
+    final Iterable<RegExpMatch> breaks = _lineBreak.allMatches(before);
+    final String line = breaks.isEmpty ? before : before.substring(breaks.last.end);
+    String t = _text(line).replaceAll(RegExp(r'https?://\S+'), ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+    t = t.replaceAll(RegExp(r'[\s:\-–—•|·>»]+$'), '').trim();
+    if (t.length > 60) {
+      t = t.substring(t.length - 60);
+      final int space = t.indexOf(' ');
+      if (space > 0) t = t.substring(space + 1);
+    }
+    return t;
+  }
 
   static String? _clean(String raw, String? base) {
     String href = raw.replaceAll('&amp;', '&').trim();
@@ -138,7 +284,7 @@ class LinkedMediaResolver {
     Uri? uri = Uri.tryParse(unwrap(href));
     if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https') || uri.host.isEmpty) return null;
     if (RegExp(r'^/users?/').hasMatch(uri.path)) return null;
-    uri = Uri.tryParse(uri.toString().replaceAll(RegExp(r'[).,;!]+$'), ''));
+    uri = Uri.tryParse(uri.toString().replaceAll(RegExp(r'[).,;:!]+$'), ''));
     return uri?.toString();
   }
 
@@ -183,6 +329,14 @@ class LinkedMediaResolver {
     }
   }
 
+  /// The post's own address, without what a description glued to it
+  /// ("…/posts/2197699Character(s)").
+  static String _postUrl(Booru booru, Uri uri, String id) => switch (booru.type) {
+    BooruType.e621 || BooruType.Danbooru => '${uri.scheme}://${uri.host}/posts/$id',
+    BooruType.FurAffinity => '${uri.scheme}://${uri.host}/view/$id/',
+    _ => uri.toString(),
+  };
+
   /// A file first (even on a source's own file host), then a post on an
   /// installed source, else a page. [text] is the link's words.
   static LinkedMedia resolve(String url, Iterable<Booru> boorus, {String text = ''}) {
@@ -196,7 +350,7 @@ class LinkedMediaResolver {
         if (!sameSite(booru, uri)) continue;
         final String? id = postIdFor(booru, uri);
         if (id != null) {
-          return LinkedMedia(url: url, kind: LinkedMediaKind.sourcePost, booru: booru, postId: id, text: text);
+          return LinkedMedia(url: _postUrl(booru, uri, id), kind: LinkedMediaKind.sourcePost, booru: booru, postId: id, text: text);
         }
       }
     }

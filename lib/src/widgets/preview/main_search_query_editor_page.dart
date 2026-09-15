@@ -14,6 +14,7 @@ import 'package:flutter_keyboard_visibility/flutter_keyboard_visibility.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:keyboard_actions/keyboard_actions.dart';
+import 'package:lolisnatcher/src/data/pinned_tag_visibility.dart';
 import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/data/modular_ui.dart';
 import 'package:lolisnatcher/src/widgets/desktop/desktop_scroll.dart';
@@ -2878,6 +2879,9 @@ class _PinnedTagsBlockState extends State<PinnedTagsBlock> {
       // Follows are stored as labelled pins but have their own screen.
       allPinnedTags.removeWhere(FollowedArtistsHandler.isFollowPin);
     }
+
+    // r52: pins hidden on this source (the pinned tags page) are left out here.
+    allPinnedTags = PinnedTagVisibility.visible(allPinnedTags, booru);
 
     // Get unique labels from all tags
     final labelsSet = <String>{};
