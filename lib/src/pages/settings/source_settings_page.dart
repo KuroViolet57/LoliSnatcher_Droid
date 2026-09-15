@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:material_symbols_icons/symbols.dart';
 
+import 'package:lolisnatcher/src/pages/settings/booru_source_settings_view.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/meta_tag.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
@@ -456,6 +457,9 @@ class _SourceSettingsPageState extends State<SourceSettingsPage> {
 
   @override
   Widget build(BuildContext context) {
+    // r43: a booru source has its own layout (search defaults, hidden tags,
+    // the site); the rows below are the doujin reader's.
+    if (!isGlobal && !_handler!.hasReader) return BooruSourceSettingsView(booru: widget.booru!, handler: _handler);
     final sorts = _sortValues;
     final Booru? booru = widget.booru;
 

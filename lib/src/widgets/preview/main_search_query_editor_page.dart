@@ -14,6 +14,7 @@ import 'package:flutter_keyboard_visibility/flutter_keyboard_visibility.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:keyboard_actions/keyboard_actions.dart';
+import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/data/modular_ui.dart';
 import 'package:lolisnatcher/src/widgets/desktop/desktop_scroll.dart';
 import 'package:lolisnatcher/src/handlers/tag_catalog_source.dart';
@@ -1578,7 +1579,12 @@ class _SuggestionsMainContentState extends State<SuggestionsMainContent> with _E
     // (off by default) for every source, boorus and doujins alike; r37 hid
     // them on doujin sources only. A switched-off block is never built.
     // Any source that declares filters shows them (r40: FurAffinity too).
-    final DoujinFilterSpec? filters = widget.queryText != null && widget.onQueryReplaced != null ? sourceHandler.doujinFilters : null;
+    // r43: booru sources show their site's own sort/order and rating choices
+    // (a Modular UI switch), with the source's saved defaults checked.
+    final DoujinFilterSpec? siteFilters = sourceHandler.hasReader || ModularUi.isOn(ModularUi.searchSiteFilters) ? sourceHandler.siteFilters : null;
+    final DoujinFilterSpec? filters = widget.queryText != null && widget.onQueryReplaced != null && siteFilters != null
+        ? SourceSettingsHandler.withDefaults(siteFilters, SourceSettingsHandler.instance.settingsFor(sourceBooru).defaultFilters ?? '')
+        : null;
     List<Widget> blocks = [
       if (filters != null)
         DoujinFiltersBlock(

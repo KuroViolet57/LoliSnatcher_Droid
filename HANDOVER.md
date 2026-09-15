@@ -790,6 +790,43 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   pages): the inbox Next link, the watch/fav links with a key, the header
   avatar's class, the gender boxes' names.
 
+### 4.12 Source settings for booru sources (r43)
+
+- **Page:** `SourceSettingsPage(booru:)` returns `BooruSourceSettingsView`
+  (`pages/settings/booru_source_settings_view.dart`) for any source without a
+  reader: account (edit page, or FurAffinity's login), "Always add to
+  searches", "Default filters" (a `DoujinFiltersBlock` bound to the stored
+  terms), hidden tags (count, `TagsFiltersPage`), About this site. The left
+  drawer shows "<source> settings" for booru tabs (Modular UI
+  `sidebar.sourceSettings`).
+- **Site filters** (`boorus/booru_site_filters.dart`):
+  `BooruHandler.siteFilters` is the handler's own `doujinFilters`, else
+  `BooruSiteFilters.fromMetaTags(availableMetaTags())`: every
+  `SortMetaTag`/`OrderMetaTag`/`rating` metatag with values becomes a single
+  choice with "Site default" (`''`) first; values ending in `asc` and
+  md5/custom/none/modqueue are dropped. Local DB views, recommendation feeds,
+  merge and webview sources get none. The search window shows them (Modular
+  UI `search.siteFilters`) through `SourceSettingsHandler.withDefaults`.
+- **Search:** `BooruHandler.search` calls `sourceQuery(tags)` before
+  `translateOrSyntax`: `SourceSettingsHandler.composeQuery` appends the
+  stored default of every filter group the query leaves unset (only values
+  the site offers), then the always-add terms not already present. Doujin
+  sources are untouched. Stored as `SourceSettings.alwaysAdd` /
+  `defaultFilters` in `sourceSettings.json`.
+- **Derpibooru:** `filter:`/`sf:`/`sd:` terms are stripped from `q` and sent
+  as `filter_id`/`sf`/`sd`. System filters (checked 2026-09-15): Everything
+  56027 (the app's default), Default 100073 and Legacy default 37431 hide
+  explicit, 18+ R34 37432, 18+ Dark 37429, Maximum spoilers 37430. Those ids
+  are derpibooru's only; other Philomena sites get sort/direction.
+- **Rundown, live checks 2026-09-15** (`BooruSiteNotes`): danbooru/AiBooru
+  `rating:g,s` and `order:` work; AllTheFallen's API answered a Cloudflare
+  page; e621/e6ai `rating:`/`order:` work; gelbooru.com returns nothing
+  without API key + user ID, rule34.xxx says "Missing authentication";
+  tbib/xbooru accept both rating vocabularies (xbooru Cloudflare on
+  `sort:score:desc`); realbooru's API is off. Sankaku, Idol, Civitai, RedGifs,
+  r34 World, Tik.Porn, xxxtik, xxxfollow, nozomi and Rule34.dev already had
+  their own sort/order metatags, which now feed their Filters.
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
@@ -1215,14 +1252,18 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r42)
+## 12. Open items (as of r43)
 
+- r43 is unverified on the device: the booru source settings page from the
+  left sidebar, default filters and always-add terms changing results, the
+  Filters card on booru search windows, Derpibooru's site filter.
+- Later: per-site options beyond sort/order/rating (Sankaku content
+  thresholds, Civitai NSFW level as a source default, e621 blacklist import
+  from the account), and a media-type default per source.
 - r42 is unverified on the device: the FurAffinity sidebar and its switch,
   the post page, Animated only, the blocklist leaving submissions out, the
   inbox paging, watch and favourite sync, Flash through Ruffle, and the
   Google Drive link finishing after the return from the browser.
-- r43 planned: booru source settings for every source the user has (a
-  sidebar button per source, engine- and site-specific options).
 - r41 is unverified on the device: a FurAffinity webview logged in and the
   feed still logged in after it; filters on an empty FurAffinity search;
   the gender filter's parameter names (guessed, see 4.10); the Modular UI

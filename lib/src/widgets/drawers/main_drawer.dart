@@ -6,6 +6,7 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:get/get.dart' hide FirstWhereOrNullExt;
 
+import 'package:lolisnatcher/src/data/modular_ui.dart';
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/handlers/local_auth_handler.dart';
@@ -284,6 +285,22 @@ class MainDrawer extends StatelessWidget {
                       ],
                     );
                   }),
+                  // r43: a booru source's own settings, one tap away (Modular UI).
+                  if (ModularUi.isOn(ModularUi.sidebarSourceSettings))
+                    Obx(() {
+                      if (settingsHandler.booruList.isEmpty || searchHandler.tabs.isEmpty) return const SizedBox.shrink();
+                      final handler = searchHandler.currentBooruHandler;
+                      final Booru current = searchHandler.currentBooru;
+                      final BooruType? type = current.type;
+                      if (handler.hasReader || type == null || type.isLocalDb || type.isRecommendationFeed || type.isMerge) {
+                        return const SizedBox.shrink();
+                      }
+                      return SettingsButton(
+                        name: '${current.name ?? 'Source'} settings',
+                        icon: const Icon(Symbols.tune_rounded),
+                        page: () => SourceSettingsPage(booru: current),
+                      );
+                    }),
                   SettingsButton(
                     name: context.loc.settings.title,
                     icon: const Icon(Symbols.settings_rounded),

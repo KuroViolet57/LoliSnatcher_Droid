@@ -1,3 +1,4 @@
+import 'package:lolisnatcher/src/boorus/doujin/doujin_filters.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_suggestion.dart';
@@ -67,10 +68,7 @@ class PhilomenaHandler extends BooruHandler {
         fileURL = booru.baseURL! + fileURL;
       }
 
-      final List<String> currentTags = current['tags']
-          .toString()
-          .substring(1, current['tags'].toString().length - 1)
-          .split(', ');
+      final List<String> currentTags = current['tags'].toString().substring(1, current['tags'].toString().length - 1).split(', ');
       for (int x = 0; x < currentTags.length; x++) {
         currentTags[x] = currentTags[x].replaceAll(' ', '_');
       }
@@ -107,18 +105,80 @@ class PhilomenaHandler extends BooruHandler {
   @override
   String makeURL(String tags) {
     // EXAMPLE: https://derpibooru.org/api/v1/json/search/images?q=solo&per_page=20&page=1
-    String filter = '2';
-    if (booru.baseURL!.contains('derpibooru')) {
-      filter = '56027';
+    // r43: the site filter (derpibooru), sort field and direction come as
+    // filter:/sf:/sd: terms from the Filters card and go to the URL.
+    String first(String key) {
+      final List<String> v = DoujinFilters.selected(tags, key);
+      return v.isEmpty ? '' : v.first;
     }
 
-    final formattedTags = formatTagsWithUnderscores(tags).replaceAll(' ', ',');
+    final String chosen = first('filter');
+    final String sf = first('sf');
+    final String sd = first('sd');
+    final String words = DoujinFilters.strip(DoujinFilters.strip(DoujinFilters.strip(tags, 'filter'), 'sf'), 'sd');
+    final String? picked = _isDerpibooru ? derpibooruFilters[chosen] : null;
+    final String filter = picked ?? (_isDerpibooru ? '56027' : '2');
+    final String sort = '${sf.isEmpty ? '' : '&sf=$sf'}${sd.isEmpty ? '' : '&sd=$sd'}';
+
+    final formattedTags = formatTagsWithUnderscores(words).replaceAll(' ', ',');
     if (booru.apiKey?.isEmpty ?? true) {
-      return '${booru.baseURL}/api/v1/json/search/images?filter_id=$filter&q=$formattedTags&per_page=$limit&page=$pageNum';
+      return '${booru.baseURL}/api/v1/json/search/images?filter_id=$filter&q=$formattedTags&per_page=$limit&page=$pageNum$sort';
     } else {
-      return '${booru.baseURL}/api/v1/json/search/images?key=${booru.apiKey}&q=$formattedTags&per_page=$limit&page=$pageNum';
+      final String filterParam = picked == null ? '' : '&filter_id=$picked';
+      return '${booru.baseURL}/api/v1/json/search/images?key=${booru.apiKey}&q=$formattedTags&per_page=$limit&page=$pageNum$filterParam$sort';
     }
   }
+
+  /// Derpibooru's system filters (the site's /api/v1/json/filters/system,
+  /// 2026-09-15): Everything shows all; Default and Legacy default hide explicit.
+  static const Map<String, String> derpibooruFilters = {
+    'everything': '56027',
+    'default': '100073',
+    'legacy': '37431',
+    'r34': '37432',
+    'dark': '37429',
+    'spoilers': '37430',
+  };
+
+  bool get _isDerpibooru => booru.baseURL?.contains('derpibooru') ?? false;
+
+  @override
+  DoujinFilterSpec get doujinFilters => DoujinFilterSpec([
+    if (_isDerpibooru)
+      const DoujinFilterGroup(
+        key: 'filter',
+        label: 'Site filter',
+        defaultValue: 'everything',
+        options: [
+          DoujinFilterOption('everything', 'Everything'),
+          DoujinFilterOption('default', 'Default (hides explicit)'),
+          DoujinFilterOption('legacy', 'Legacy default'),
+          DoujinFilterOption('r34', '18+ R34'),
+          DoujinFilterOption('dark', '18+ Dark'),
+          DoujinFilterOption('spoilers', 'Maximum spoilers'),
+        ],
+      ),
+    const DoujinFilterGroup(
+      key: 'sf',
+      label: 'Sort',
+      defaultValue: '',
+      options: [
+        DoujinFilterOption('', 'Newest (site default)'),
+        DoujinFilterOption('score', 'Score'),
+        DoujinFilterOption('wilson_score', 'Best (Wilson score)'),
+        DoujinFilterOption('faves', 'Favorites'),
+        DoujinFilterOption('upvotes', 'Upvotes'),
+        DoujinFilterOption('first_seen_at', 'First seen'),
+        DoujinFilterOption('random', 'Random'),
+      ],
+    ),
+    const DoujinFilterGroup(
+      key: 'sd',
+      label: 'Direction',
+      defaultValue: '',
+      options: [DoujinFilterOption('', 'Descending (default)'), DoujinFilterOption('asc', 'Ascending')],
+    ),
+  ]);
 
   @override
   String makeTagURL(String input) {

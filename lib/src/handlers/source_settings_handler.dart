@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
+import 'package:lolisnatcher/src/boorus/doujin/doujin_filters.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
@@ -39,6 +40,8 @@ class SourceSettings {
     this.detailLayout,
     this.columnsPortrait,
     this.columnsLandscape,
+    this.alwaysAdd,
+    this.defaultFilters,
   });
 
   factory SourceSettings.fromJson(Map<String, dynamic> json) => SourceSettings(
@@ -65,6 +68,8 @@ class SourceSettings {
     detailLayout: json['detailLayout'] as String?,
     columnsPortrait: json['columnsPortrait'] as int?,
     columnsLandscape: json['columnsLandscape'] as int?,
+    alwaysAdd: json['alwaysAdd'] as String?,
+    defaultFilters: json['defaultFilters'] as String?,
   );
 
   /// 'ltr' | 'rtl' | 'vertical'
@@ -146,6 +151,13 @@ class SourceSettings {
   int? columnsPortrait;
   int? columnsLandscape;
 
+  /// Booru sources (r43): terms added to every search on the source.
+  String? alwaysAdd;
+
+  /// Booru sources (r43): the source's default Filters, as filter terms
+  /// (`order:score rating:general`), used where a search sets none.
+  String? defaultFilters;
+
   Map<String, dynamic> toJson() => {
     if (readingDirection != null) 'readingDirection': readingDirection,
     if (pageTurnAnimation != null) 'pageTurnAnimation': pageTurnAnimation,
@@ -170,6 +182,8 @@ class SourceSettings {
     if (detailLayout != null) 'detailLayout': detailLayout,
     if (columnsPortrait != null) 'columnsPortrait': columnsPortrait,
     if (columnsLandscape != null) 'columnsLandscape': columnsLandscape,
+    if (alwaysAdd != null) 'alwaysAdd': alwaysAdd,
+    if (defaultFilters != null) 'defaultFilters': defaultFilters,
   };
 
   bool get isEmpty => toJson().isEmpty;
@@ -192,8 +206,7 @@ class SourceSettingsHandler {
   final Map<String, SourceSettings> _byHost = {};
   bool _loaded = false;
 
-  static String keyFor(Booru? booru) =>
-      Uri.tryParse(booru?.baseURL ?? '')?.host ?? (booru?.name ?? '');
+  static String keyFor(Booru? booru) => Uri.tryParse(booru?.baseURL ?? '')?.host ?? (booru?.name ?? '');
 
   File get _file => File('${SettingsHandler.instance.path}sourceSettings.json');
 
@@ -315,8 +328,7 @@ class SourceSettingsHandler {
 
   // ── effective values: source override ?? global ?? default ──
 
-  T _resolve<T>(Booru? booru, T? Function(SourceSettings) pick, T fallback) =>
-      pick(settingsFor(booru)) ?? pick(globalSettings) ?? fallback;
+  T _resolve<T>(Booru? booru, T? Function(SourceSettings) pick, T fallback) => pick(settingsFor(booru)) ?? pick(globalSettings) ?? fallback;
 
   String readingDirection(Booru? booru) => _resolve(booru, (s) => s.readingDirection, 'ltr');
 
@@ -330,13 +342,11 @@ class SourceSettingsHandler {
 
   bool doubleTapZoom(Booru? booru) => _resolve(booru, (s) => s.doubleTapZoom, false);
 
-  int preloadPages(Booru? booru) =>
-      _resolve(booru, (s) => s.preloadPages, SettingsHandler.instance.preloadCount);
+  int preloadPages(Booru? booru) => _resolve(booru, (s) => s.preloadPages, SettingsHandler.instance.preloadCount);
 
   bool keepScreenOn(Booru? booru) => _resolve(booru, (s) => s.keepScreenOn, true);
 
-  String? defaultSort(Booru? booru) =>
-      settingsFor(booru).defaultSort ?? globalSettings.defaultSort;
+  String? defaultSort(Booru? booru) => settingsFor(booru).defaultSort ?? globalSettings.defaultSort;
 
   /// The source's default content types (see [SourceSettings.contentTypes]);
   /// empty when none are set. Read from the source layer only.
@@ -373,8 +383,7 @@ class SourceSettingsHandler {
   /// 'english' | 'japanese'
   String titleLanguage(Booru? booru) => _resolve(booru, (s) => s.titleLanguage, 'english');
 
-  String? languageFilter(Booru? booru) =>
-      settingsFor(booru).languageFilter ?? globalSettings.languageFilter;
+  String? languageFilter(Booru? booru) => settingsFor(booru).languageFilter ?? globalSettings.languageFilter;
 
   /// 'extend' | 'override' — how [tagBlacklist] combines the two layers.
   String blacklistMode(Booru? booru) => settingsFor(booru).blacklistMode ?? 'extend';
@@ -401,16 +410,13 @@ class SourceSettingsHandler {
     ];
   }
 
-  int? columnsPortrait(Booru? booru) =>
-      settingsFor(booru).columnsPortrait ?? globalSettings.columnsPortrait;
+  int? columnsPortrait(Booru? booru) => settingsFor(booru).columnsPortrait ?? globalSettings.columnsPortrait;
 
-  int? columnsLandscape(Booru? booru) =>
-      settingsFor(booru).columnsLandscape ?? globalSettings.columnsLandscape;
+  int? columnsLandscape(Booru? booru) => settingsFor(booru).columnsLandscape ?? globalSettings.columnsLandscape;
 
   /// The resolved doujin blacklist for the source an ITEM belongs to (post
   /// URL host attribution — works in merge feeds too).
-  Set<String> tagBlacklistForItem(BooruItem item) =>
-      tagBlacklist(DoujinDataHandler.doujinBooruForItem(item)).toSet();
+  Set<String> tagBlacklistForItem(BooruItem item) => tagBlacklist(DoujinDataHandler.doujinBooruForItem(item)).toSet();
 
   /// Doujin counterpart of [SettingsHandler.isItemHiddenGlobally] — the ONLY
   /// hidden-check doujin items may use. Booru blacklists never apply to
@@ -423,6 +429,42 @@ class SourceSettingsHandler {
   /// Client-side doujin blacklist check (server-side -tag filters can't cover
   /// related/recommend/id feeds). Blacklist entries are already normalized to
   /// lowercase_underscores; item tags may carry a namespace prefix.
+  /// What a booru source searches (r43): [query], then the default filter of
+  /// every group [query] leaves unset (values the site offers only), then
+  /// the always-add terms it does not already have.
+  static String composeQuery({required String query, DoujinFilterSpec? spec, String defaultFilters = '', String alwaysAdd = ''}) {
+    final List<String> parts = [if (query.trim().isNotEmpty) query.trim()];
+    if (spec != null && defaultFilters.trim().isNotEmpty) {
+      for (final DoujinFilterGroup g in spec.groups) {
+        if (DoujinFilters.selected(parts.join(' '), g.key).isNotEmpty) continue;
+        for (final String v in DoujinFilters.selected(defaultFilters, g.key)) {
+          if (v.isNotEmpty && g.options.any((o) => o.value.toLowerCase() == v)) parts.add('${g.key}:$v');
+        }
+      }
+    }
+    final Set<String> have = parts.join(' ').toLowerCase().split(RegExp(r'\s+')).toSet();
+    for (final String w in alwaysAdd.trim().split(RegExp(r'\s+'))) {
+      if (w.isNotEmpty && have.add(w.toLowerCase())) parts.add(w);
+    }
+    return parts.join(' ');
+  }
+
+  /// [spec] with a source's saved defaults as its checked choices (r43).
+  static DoujinFilterSpec withDefaults(DoujinFilterSpec spec, String defaultFilters) {
+    if (defaultFilters.trim().isEmpty) return spec;
+    return DoujinFilterSpec([
+      for (final DoujinFilterGroup g in spec.groups)
+        DoujinFilterGroup(
+          key: g.key,
+          label: g.label,
+          options: g.options,
+          multi: g.multi,
+          defaultValue: (!g.multi ? DoujinFilters.selected(defaultFilters, g.key).firstOrNull : null) ?? g.defaultValue,
+          defaultValues: g.multi && DoujinFilters.selected(defaultFilters, g.key).isNotEmpty ? DoujinFilters.selected(defaultFilters, g.key) : g.defaultValues,
+        ),
+    ]);
+  }
+
   static bool matchesBlacklist(BooruItem item, Set<String> blacklist) {
     for (final tag in item.tagsList) {
       if (blacklist.contains(normalizeTagName(tag.fullString))) return true;

@@ -61,7 +61,25 @@ class ModularUi {
     description: "The source's most used tags, as a row of chips in the search window.",
   );
 
-  static const List<ModularUiToggle> all = [searchHistory, searchPinned, searchPopular];
+  static const ModularUiToggle searchSiteFilters = ModularUiToggle(
+    key: 'search.siteFilters',
+    area: searchWindowArea,
+    title: 'Site filters (booru sources)',
+    description: "The Filters card with the site's own sort/order and rating choices, on booru and art sources. Doujin sources always show theirs.",
+    defaultValue: true,
+  );
+
+  static const String leftSidebarArea = 'Left sidebar';
+
+  static const ModularUiToggle sidebarSourceSettings = ModularUiToggle(
+    key: 'sidebar.sourceSettings',
+    area: leftSidebarArea,
+    title: 'Source settings button',
+    description: "The \"<source> settings\" button for the current booru source, above Settings.",
+    defaultValue: true,
+  );
+
+  static const List<ModularUiToggle> all = [searchHistory, searchPinned, searchPopular, searchSiteFilters, sidebarSourceSettings];
 
   /// Bumped on every change, for pages that show the switches.
   static final ValueNotifier<int> revision = ValueNotifier(0);

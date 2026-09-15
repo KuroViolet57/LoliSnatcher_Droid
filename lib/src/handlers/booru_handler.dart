@@ -11,6 +11,8 @@ import 'package:fpdart/fpdart.dart';
 import 'package:get/get.dart' hide Response;
 import 'package:html/parser.dart';
 
+import 'package:lolisnatcher/src/boorus/booru_type.dart';
+import 'package:lolisnatcher/src/boorus/booru_site_filters.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/site_profile.dart';
@@ -289,7 +291,7 @@ abstract class BooruHandler {
     }
 
     // translate cross-booru OR syntax (tag1|tag2) into the handler's native form
-    tags = translateOrSyntax(tags.trim());
+    tags = translateOrSyntax(sourceQuery(tags.trim()));
     // validate tags (usually just convert empty string to current booru "search all" query)
     tags = validateTags(tags.trim());
     currentTags = tags;
@@ -910,6 +912,40 @@ abstract class BooruHandler {
   /// The browse filters this source can take (r37): sort, category,
   /// language as the search window's checkmarks. Null = none.
   DoujinFilterSpec? get doujinFilters => null;
+
+  DoujinFilterSpec? _siteFilters;
+  bool _siteFiltersRead = false;
+
+  /// The Filters a source offers (r43): its own [doujinFilters], else, on a
+  /// booru source, its sort/order and rating metatags as choices. Local
+  /// views and recommendation feeds offer none.
+  DoujinFilterSpec? get siteFilters {
+    final DoujinFilterSpec? own = doujinFilters;
+    if (own != null) return own;
+    final BooruType? t = booru.type;
+    if (hasReader || t == null || t.isLocalDb || t.isRecommendationFeed || t.isMerge || t.isWebView) return null;
+    if (!_siteFiltersRead) {
+      _siteFiltersRead = true;
+      _siteFilters = BooruSiteFilters.fromMetaTags(availableMetaTags());
+    }
+    return _siteFilters;
+  }
+
+  /// What a search on this source actually asks for (r43): the query with
+  /// the source settings' default filters and always-add terms. Doujin
+  /// sources, local views and feeds search the query as it is.
+  String sourceQuery(String tags) {
+    final BooruType? t = booru.type;
+    if (hasReader || t == null || t.isLocalDb || t.isRecommendationFeed || t.isMerge) return tags;
+    final SourceSettings s = SourceSettingsHandler.instance.settingsFor(booru);
+    if ((s.alwaysAdd ?? '').isEmpty && (s.defaultFilters ?? '').isEmpty) return tags;
+    return SourceSettingsHandler.composeQuery(
+      query: tags,
+      spec: siteFilters,
+      defaultFilters: s.defaultFilters ?? '',
+      alwaysAdd: s.alwaysAdd ?? '',
+    );
+  }
 
   /// Site-native namespace for a tag, when the source's own grouping is
   /// richer than TagType (nhentai: parody / character / artist / group /
