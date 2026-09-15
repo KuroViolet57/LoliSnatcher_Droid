@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:html/dom.dart';
 import 'package:html/parser.dart';
 
+import 'package:lolisnatcher/src/boorus/doujin/doujin_filters.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
@@ -14,12 +15,32 @@ import 'package:lolisnatcher/src/utils/tools.dart';
 class R34USHandler extends BooruHandler {
   R34USHandler(super.booru, super.limit);
 
+  /// r47: checked live 2026-09-15: sort:score and score:>10 change the
+  /// results; rating: does not, so there is no rating filter.
+  @override
+  DoujinFilterSpec? get doujinFilters => const DoujinFilterSpec([
+    DoujinFilterGroup(
+      key: 'sort',
+      label: 'Sort',
+      options: [DoujinFilterOption('', 'Newest (site default)'), DoujinFilterOption('score', 'Score')],
+    ),
+    DoujinFilterGroup(
+      key: 'score',
+      label: 'Score',
+      options: [
+        DoujinFilterOption('', 'Any'),
+        DoujinFilterOption('>10', 'Above 10'),
+        DoujinFilterOption('>50', 'Above 50'),
+        DoujinFilterOption('>100', 'Above 100'),
+      ],
+    ),
+  ]);
+
   // Reads neither field (audited): the fields are hidden on the edit page.
   @override
   bool get usesUserId => false;
   @override
   bool get usesApiKey => false;
-
 
   @override
   String validateTags(String tags) {
@@ -87,9 +108,7 @@ class R34USHandler extends BooruHandler {
     // getHeaders above. Kept as a fallback so a layout switch degrades into
     // "still works" rather than "silently finds nothing".
     final String rawSrc = image.attributes['src'] ?? '';
-    final String thumbURL = (rawSrc.isEmpty || rawSrc.startsWith('data:'))
-        ? (image.attributes['data-src'] ?? '')
-        : rawSrc;
+    final String thumbURL = (rawSrc.isEmpty || rawSrc.startsWith('data:')) ? (image.attributes['data-src'] ?? '') : rawSrc;
 
     if (id.isNotEmpty && thumbURL.isNotEmpty) {
       final List<String> tags = [];
@@ -103,10 +122,7 @@ class R34USHandler extends BooruHandler {
           ? MediaType.video
           : null;
 
-      String fullURL = thumbURL
-          .replaceFirst('thumbnail', 'image')
-          .replaceFirst('thumbnail_', '')
-          .replaceFirst('.jpg', '.jpeg');
+      String fullURL = thumbURL.replaceFirst('thumbnail', 'image').replaceFirst('thumbnail_', '').replaceFirst('.jpg', '.jpeg');
       if (mediaType == MediaType.video) fullURL = fullURL.replaceFirst(RegExp(r'img\d+'), 'video');
 
       final BooruItem item = BooruItem(
@@ -153,9 +169,7 @@ class R34USHandler extends BooruHandler {
         // wrapper, so select it by where it POINTS rather than where it sits.
         if (imageEl == null && videoEl == null) {
           videoEl = html.querySelector('video');
-          imageEl = html
-              .querySelectorAll('img')
-              .firstWhereOrNull((e) => _isMediaUrl(e.attributes['src'] ?? ''));
+          imageEl = html.querySelectorAll('img').firstWhereOrNull((e) => _isMediaUrl(e.attributes['src'] ?? ''));
         }
 
         // link to full res has the same html as a tag, but is the only/first(?) element inside .tag-list-left which is wrapped into <a>
@@ -171,7 +185,7 @@ class R34USHandler extends BooruHandler {
               : '<non-string response>';
           Logger.Inst().log(
             'r34us: no img/video in .content_push for ${item.postURL}. '
-            'origEl=${origEl?.outerHtml.length ?? 0}b. html head: $snippet',
+                'origEl=${origEl?.outerHtml.length ?? 0}b. html head: $snippet',
             className,
             'loadItem',
             LogTypes.booruHandlerInfo,
@@ -187,19 +201,14 @@ class R34USHandler extends BooruHandler {
             sources.firstOrNull?.attributes['src'] ??
             videoEl?.attributes['src'];
 
-        item.fileURL =
-            imageEl?.attributes['src'] ??
-            (videoEl != null ? origEl?.attributes['href'] ?? videoSrc : null) ??
-            item.fileURL;
+        item.fileURL = imageEl?.attributes['src'] ?? (videoEl != null ? origEl?.attributes['href'] ?? videoSrc : null) ?? item.fileURL;
         item.sampleURL = imageEl?.attributes['src'] ?? videoEl?.attributes['poster'] ?? item.sampleURL;
         if (videoEl != null && (item.fileURL.isEmpty || !_isMediaUrl(item.fileURL))) {
           item.fileURL = videoSrc ?? item.fileURL;
         }
         item.fileHeight = double.tryParse((imageEl ?? videoEl)?.attributes['height'] ?? '');
         item.fileWidth = double.tryParse((imageEl ?? videoEl)?.attributes['width'] ?? '');
-        item.fileAspectRatio = (item.fileWidth != null && item.fileHeight != null)
-            ? item.fileWidth! / item.fileHeight!
-            : null;
+        item.fileAspectRatio = (item.fileWidth != null && item.fileHeight != null) ? item.fileWidth! / item.fileHeight! : null;
         item.fileExt = Tools.getFileExt(item.fileURL);
         item.possibleMediaType.value = null;
         item.mediaType.value = MediaType.fromExtension(item.fileExt);
@@ -210,8 +219,8 @@ class R34USHandler extends BooruHandler {
         if (item.mediaType.value == MediaType.unknown) {
           Logger.Inst().log(
             'r34us: unresolved mediaType after loadItem. '
-            'imageEl=${imageEl != null} videoEl=${videoEl != null} origElHref=${origEl?.attributes['href']} '
-            'fileURL=${item.fileURL} fileExt=${item.fileExt}',
+                'imageEl=${imageEl != null} videoEl=${videoEl != null} origElHref=${origEl?.attributes['href']} '
+                'fileURL=${item.fileURL} fileExt=${item.fileExt}',
             className,
             'loadItem',
             LogTypes.booruHandlerInfo,
@@ -223,10 +232,7 @@ class R34USHandler extends BooruHandler {
         // return null and silently cost every post its tag types. Match the
         // class instead, and keep the id lookup as a fallback in case they
         // ever fix it.
-        final Element? sidebar =
-            html.querySelector('.tag-list-left') ??
-            html.querySelector('[id^="tag-list"]') ??
-            html.getElementById('tag-list');
+        final Element? sidebar = html.querySelector('.tag-list-left') ?? html.querySelector('[id^="tag-list"]') ?? html.getElementById('tag-list');
         if (sidebar != null) {
           addTagsWithType(_tagsFromHtml(sidebar.getElementsByClassName('copyright-tag')), TagType.copyright);
           addTagsWithType(_tagsFromHtml(sidebar.getElementsByClassName('character-tag')), TagType.character);
@@ -275,8 +281,7 @@ class R34USHandler extends BooruHandler {
 
   /// Whether a URL points at rule34.us post media rather than site chrome
   /// (the mobile layout's header is full of `/v1/icons/*.svg`).
-  static bool _isMediaUrl(String url) =>
-      RegExp(r'rule34\.us/(?:images|videos)/').hasMatch(url) && !url.contains('/v1/');
+  static bool _isMediaUrl(String url) => RegExp(r'rule34\.us/(?:images|videos)/').hasMatch(url) && !url.contains('/v1/');
 
   String getHashFromURL(String url) {
     final String hash = url.substring(url.lastIndexOf('_') + 1, url.lastIndexOf('.'));

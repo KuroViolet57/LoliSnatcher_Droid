@@ -910,6 +910,27 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   upstream commit 525e3f8b7, 2026-03-14). Debug mode turns on after six taps
   on the version row at the bottom of Settings and off with a long press.
 
+### 4.16 paheal and rule34.us filters; the filter divider (r47)
+
+- **Divider:** `DoujinFilterGroup.divider` (default `:`) is used by
+  `DoujinFilters.selected/apply/strip` (optional named `divider`), the
+  Filters card chips, `SourceSettingsHandler.composeQuery` and
+  `withDefaults`. Shimmie writes some terms with `=` or `>`.
+- **rule34.paheal** (`ShimmieHtmlHandler`): content (`:` video/audio), ext
+  (`=`), score (`>`). Checked live 2026-09-15 on "cat": 81 posts;
+  content:video 14; ext=webm 1; score>10 16. `order:score_desc` changed
+  nothing, so no sort.
+- **rule34.us** (`R34USHandler`): sort (score), score (`>10`, `>50`,
+  `>100`). Live: `sort:score` and `score:>10` change the first posts;
+  `rating:explicit` does not.
+- **Left, with reasons (in `BooruSiteNotes`):** Kusowanka browses one tag at
+  a time; rule34hentai.net answered the PC with a Cloudflare check; Idol
+  Sankaku inherits Sankaku's filters, but its API (`iapi.sankakucomplex.com`)
+  returned an empty body to plain requests, so its values are unverified.
+- **Backup tags buttons:** "Backup tags" and "Restore tags" show only in
+  Debug mode (upstream, 2026-03-14); six taps on the version row at the
+  bottom of Settings turn it on, a long press turns it off.
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
@@ -1335,12 +1356,13 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r46)
+## 12. Open items (as of r47)
 
+- r47 is unverified on the device: the paheal and rule34.us Filters cards.
+- Left of the user plan: pools in the tag builder (danbooru, e621); Idol
+  Sankaku and rule34hentai.net filters need checks from the phone.
 - r46 is unverified on the device: the Filters cards of Civitai,
   Rule34.dev, Sankaku, r34 World, Hanime1, Kemono, and Derpibooru's ranges.
-- Next (user plan): Idol Sankaku, paheal, R34US, R34HENTAI and Kusowanka
-  have nothing to filter yet; pools in the tag builder (danbooru, e621).
 - r45 is unverified on the device: the danbooru and gelbooru-engine Filters
   cards, their defaults in the source settings.
 - Next (user plan): the other sources, source by source: Sankaku and Idol,

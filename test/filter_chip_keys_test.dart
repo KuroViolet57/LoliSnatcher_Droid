@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:lolisnatcher/src/boorus/shimmie_handler.dart';
+import 'package:lolisnatcher/src/boorus/r34us_handler.dart';
 import 'package:lolisnatcher/src/boorus/worldxyz_handler.dart';
 import 'package:lolisnatcher/src/boorus/sankaku_handler.dart';
 import 'package:lolisnatcher/src/boorus/rule34dev_handler.dart';
@@ -55,6 +57,9 @@ void main() {
     'sankaku': () => SankakuHandler(b('Sankaku', BooruType.Sankaku, 'https://chan.sankakucomplex.com'), 20).siteFilters!,
     'r34 world': () => WorldXyzHandler(b('r34', BooruType.World, 'https://rule34.xyz'), 20).siteFilters!,
     'hanime1': () => Hanime1Handler(b('Hanime1', BooruType.Hanime1, 'https://hanime1.me'), 20).siteFilters!,
+    // r47: terms with = and > dividers.
+    'rule34.paheal': () => ShimmieHtmlHandler(b('rule34paheal', BooruType.Shimmie, 'https://rule34.paheal.net'), 20).doujinFilters!,
+    'rule34.us': () => R34USHandler(b('Rule34Us', BooruType.R34US, 'https://rule34.us'), 20).doujinFilters!,
   };
 
   for (final MapEntry<String, DoujinFilterSpec Function()> entry in specs.entries) {

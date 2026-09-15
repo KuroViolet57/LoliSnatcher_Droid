@@ -4532,7 +4532,7 @@ class DoujinFiltersBlock extends StatelessWidget {
   }
 
   Widget _chip(BuildContext context, DoujinFilterGroup g, DoujinFilterOption o) {
-    final List<String> chosen = DoujinFilters.selected(query, g.key);
+    final List<String> chosen = DoujinFilters.selected(query, g.key, divider: g.divider);
     final bool selected = chosen.isEmpty
         ? (g.multi && g.defaultValues.isNotEmpty ? g.defaultValues.contains(o.value) : o.value == g.defaultValue)
         : chosen.contains(o.value);
@@ -4554,7 +4554,7 @@ class DoujinFiltersBlock extends StatelessWidget {
         } else {
           next = chosen.contains(o.value) ? const [] : [o.value];
         }
-        onQueryChanged(DoujinFilters.apply(query, g.key, next));
+        onQueryChanged(DoujinFilters.apply(query, g.key, next, divider: g.divider));
       },
     );
   }

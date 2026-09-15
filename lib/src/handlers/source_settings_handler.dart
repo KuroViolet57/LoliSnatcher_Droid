@@ -436,9 +436,9 @@ class SourceSettingsHandler {
     final List<String> parts = [if (query.trim().isNotEmpty) query.trim()];
     if (spec != null && defaultFilters.trim().isNotEmpty) {
       for (final DoujinFilterGroup g in spec.groups) {
-        if (DoujinFilters.selected(parts.join(' '), g.key).isNotEmpty) continue;
-        for (final String v in DoujinFilters.selected(defaultFilters, g.key)) {
-          if (v.isNotEmpty && g.options.any((o) => o.value.toLowerCase() == v)) parts.add('${g.key}:$v');
+        if (DoujinFilters.selected(parts.join(' '), g.key, divider: g.divider).isNotEmpty) continue;
+        for (final String v in DoujinFilters.selected(defaultFilters, g.key, divider: g.divider)) {
+          if (v.isNotEmpty && g.options.any((o) => o.value.toLowerCase() == v)) parts.add('${g.key}${g.divider}$v');
         }
       }
     }
@@ -459,8 +459,11 @@ class SourceSettingsHandler {
           label: g.label,
           options: g.options,
           multi: g.multi,
-          defaultValue: (!g.multi ? DoujinFilters.selected(defaultFilters, g.key).firstOrNull : null) ?? g.defaultValue,
-          defaultValues: g.multi && DoujinFilters.selected(defaultFilters, g.key).isNotEmpty ? DoujinFilters.selected(defaultFilters, g.key) : g.defaultValues,
+          divider: g.divider,
+          defaultValue: (!g.multi ? DoujinFilters.selected(defaultFilters, g.key, divider: g.divider).firstOrNull : null) ?? g.defaultValue,
+          defaultValues: g.multi && DoujinFilters.selected(defaultFilters, g.key, divider: g.divider).isNotEmpty
+              ? DoujinFilters.selected(defaultFilters, g.key, divider: g.divider)
+              : g.defaultValues,
         ),
     ]);
   }

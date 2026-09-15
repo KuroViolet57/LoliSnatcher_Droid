@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import 'package:html/dom.dart';
 import 'package:html/parser.dart';
+import 'package:lolisnatcher/src/boorus/doujin/doujin_filters.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:xml/xml.dart';
 
@@ -23,7 +24,6 @@ class ShimmieHandler extends BooruHandler {
   bool get usesUserId => false;
   @override
   bool get usesApiKey => false;
-
 
   @override
   bool get hasSizeData => true;
@@ -103,9 +103,7 @@ class ShimmieHandler extends BooruHandler {
         previewHeight: double.tryParse(current.getAttribute('preview_height') ?? ''),
         serverId: current.getAttribute('id'),
         score: current.getAttribute('score'),
-        sources: (current.getAttribute('source') != null && current.getAttribute('source') is String)
-            ? [current.getAttribute('source')!]
-            : null,
+        sources: (current.getAttribute('source') != null && current.getAttribute('source') is String) ? [current.getAttribute('source')!] : null,
         md5String: current.getAttribute('md5'),
         postDate: dateString, // 2021-06-18 04:37:31
         postDateFormat: 'yyyy-MM-dd HH:mm:ss',
@@ -182,17 +180,10 @@ class ShimmieHandler extends BooruHandler {
     return CommentItem(
       id: current.attributes['id'],
       // title: postID,
-      content: current.nodes[current.nodes.length - 1].text
-          .toString()
-          .replaceFirst(': ', '')
-          .replaceFirst('\n\t\t\t\t', ''),
+      content: current.nodes[current.nodes.length - 1].text.toString().replaceFirst(': ', '').replaceFirst('\n\t\t\t\t', ''),
       authorName: current.querySelector('.username')?.text.toString(),
       // postID: postID,
-      createDate: current
-          .querySelector('time')
-          ?.attributes['datetime']
-          ?.split('+')[0]
-          .toString(), // 2021-12-25t10:02:28+00:00
+      createDate: current.querySelector('time')?.attributes['datetime']?.split('+')[0].toString(), // 2021-12-25t10:02:28+00:00
       createDateFormat: 'iso',
     );
   }
@@ -201,12 +192,49 @@ class ShimmieHandler extends BooruHandler {
 class ShimmieHtmlHandler extends BooruHandler {
   ShimmieHtmlHandler(super.booru, super.limit);
 
+  /// r47: rule34.paheal's search help as Filters. Checked live 2026-09-15 on
+  /// "cat": 81 posts; content:video 14; ext=webm 1; score>10 16. Its
+  /// order:score_desc changed nothing, so there is no sort.
+  @override
+  DoujinFilterSpec? get doujinFilters => const DoujinFilterSpec([
+    DoujinFilterGroup(
+      key: 'content',
+      label: 'Content',
+      options: [DoujinFilterOption('', 'Any'), DoujinFilterOption('video', 'Videos'), DoujinFilterOption('audio', 'With audio')],
+    ),
+    DoujinFilterGroup(
+      key: 'ext',
+      label: 'File type',
+      divider: '=',
+      options: [
+        DoujinFilterOption('', 'Any'),
+        DoujinFilterOption('webm', 'WebM'),
+        DoujinFilterOption('mp4', 'MP4'),
+        DoujinFilterOption('gif', 'GIF'),
+        DoujinFilterOption('png', 'PNG'),
+        DoujinFilterOption('jpg', 'JPG'),
+        DoujinFilterOption('webp', 'WebP'),
+      ],
+    ),
+    DoujinFilterGroup(
+      key: 'score',
+      label: 'Score',
+      divider: '>',
+      options: [
+        DoujinFilterOption('', 'Any'),
+        DoujinFilterOption('0', 'Above 0'),
+        DoujinFilterOption('10', 'Above 10'),
+        DoujinFilterOption('50', 'Above 50'),
+        DoujinFilterOption('100', 'Above 100'),
+      ],
+    ),
+  ]);
+
   // Reads neither field (audited): the fields are hidden on the edit page.
   @override
   bool get usesUserId => false;
   @override
   bool get usesApiKey => false;
-
 
   @override
   bool get hasSizeData => true;

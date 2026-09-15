@@ -79,7 +79,17 @@ class BooruSiteNotes {
           notes.add('Site filter: Everything shows all; Default and Legacy default hide explicit content (0 explicit results under them).');
         }
       case BooruType.Shimmie:
-        notes.add('rule34.paheal has no sort or rating options in its API.');
+        notes.add('rule34.paheal: content, file type and score filters were checked live; its sort term changed nothing, so there is no sort.');
+      case BooruType.R34US:
+        notes.add('sort:score and score:>10 change the results; rating: does not.');
+      case BooruType.R34Hentai:
+        notes.add(
+          'rule34hentai.net answered the PC with a Cloudflare check, so its search terms could not be checked; if searches fail, open the site once in the webview.',
+        );
+      case BooruType.Kusowanka:
+        notes.add('Kusowanka browses one tag at a time, so there is nothing to combine filters with.');
+      case BooruType.IdolSankaku:
+        notes.add("Idol has Sankaku's order, rating and parent filters (the same engine); its API could not be checked from the PC.");
       case BooruType.FurAffinity:
         notes.add("FurAffinity's own sidebar has the account, the blocklist and the content filter.");
       case BooruType.Kemono || BooruType.Pawchive:

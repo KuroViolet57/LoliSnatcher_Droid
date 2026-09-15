@@ -22,6 +22,7 @@ class DoujinFilterGroup {
     this.multi = false,
     this.defaultValue = '',
     this.defaultValues = const [],
+    this.divider = ':',
   });
 
   /// The term's namespace (`sort`, `category`, `language`, `popular`, `type`).
@@ -37,6 +38,10 @@ class DoujinFilterGroup {
 
   /// A multiple choice's defaults (r40: FurAffinity checks Art and Photo).
   final List<String> defaultValues;
+
+  /// Between the key and the value (r47): `:` almost everywhere; Shimmie
+  /// writes some terms with `=` or `>` (`ext=webm`, `score>10`).
+  final String divider;
 }
 
 class DoujinFilterSpec {
@@ -59,8 +64,8 @@ class DoujinFilters {
 
   /// The values the query names for [key] (`key:value` terms; an excluded
   /// `-key:value` is not a choice).
-  static List<String> selected(String query, String key) {
-    final String prefix = '${key.toLowerCase()}:';
+  static List<String> selected(String query, String key, {String divider = ':'}) {
+    final String prefix = '${key.toLowerCase()}$divider';
     final List<String> out = [];
     for (final RegExpMatch m in _term.allMatches(query)) {
       final String token = m.group(0)!;
@@ -72,18 +77,22 @@ class DoujinFilters {
 
   /// [query] with every `key:*` term replaced by [values] (appended, in
   /// order); everything else stays where it was.
-  static String apply(String query, String key, List<String> values) {
-    final String prefix = '${key.toLowerCase()}:';
+  static String apply(String query, String key, List<String> values, {String divider = ':'}) {
+    final String prefix = '${key.toLowerCase()}$divider';
     final List<String> kept = [
       for (final RegExpMatch m in _term.allMatches(query))
         if (!m.group(0)!.toLowerCase().startsWith(prefix)) m.group(0)!,
     ];
-    return [...kept, for (final String v in values) if (v.isNotEmpty) '$key:$v'].join(' ');
+    return [
+      ...kept,
+      for (final String v in values)
+        if (v.isNotEmpty) '$key$divider$v',
+    ].join(' ');
   }
 
   /// [query] without any `key:*` term — what a source sends when a term is
   /// the app's own and not the site's.
-  static String strip(String query, String key) => apply(query, key, const []);
+  static String strip(String query, String key, {String divider = ':'}) => apply(query, key, const [], divider: divider);
 
   static const List<DoujinFilterOption> commonLanguages = [
     DoujinFilterOption('english', 'English'),
