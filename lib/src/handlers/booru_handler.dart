@@ -145,9 +145,12 @@ abstract class BooruHandler {
         if (doujinBlacklist.isNotEmpty && SourceSettingsHandler.matchesBlacklist(item, doujinBlacklist)) {
           continue;
         }
-      } else if (settingsHandler.filterHated &&
-          settingsHandler.isItemHiddenForBooru(item, booru)) {
-        continue;
+      } else {
+        // r44: the blur of an item left in the feed follows the same source
+        // rules as the removal.
+        final bool hiddenHere = settingsHandler.isItemHiddenForBooru(item, booru);
+        item.hiddenInSource = hiddenHere;
+        if (settingsHandler.filterHated && hiddenHere) continue;
       }
 
       // isMarked reads the booru marked-tags list — a booru system, so it

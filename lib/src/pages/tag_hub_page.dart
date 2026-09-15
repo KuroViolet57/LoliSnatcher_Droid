@@ -143,6 +143,10 @@ class _TagHubPageState extends State<TagHubPage> {
         return Symbols.pets_rounded;
       case TagType.meta:
         return Symbols.info_rounded;
+      case TagType.contributor:
+        return Symbols.view_in_ar_rounded;
+      case TagType.lore:
+        return Symbols.auto_stories_rounded;
       case TagType.none:
         return Symbols.sell_rounded;
     }

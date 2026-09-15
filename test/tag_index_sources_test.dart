@@ -131,7 +131,7 @@ void main() {
       );
       expect(
         index.catalogNamespaces(booru).map((n) => n.key),
-        ['artist', 'character', 'copyright', 'species', 'meta', 'tag'],
+        ['artist', 'contributor', 'character', 'copyright', 'species', 'meta', 'lore', 'tag'],
       );
       expect(index.catalogDelay, greaterThanOrEqualTo(const Duration(seconds: 1)));
     });

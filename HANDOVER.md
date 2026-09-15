@@ -827,6 +827,39 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   r34 World, Tik.Porn, xxxtik, xxxfollow, nozomi and Rule34.dev already had
   their own sort/order metatags, which now feed their Filters.
 
+### 4.13 e621 first: contributors, the cheatsheet as filters; the source-aware blur (r44)
+
+- **User plan (2026-09-15):** give every source the tag builder and
+  interactive filters for all its search options, source by source; e621
+  first (build), then the rest.
+- **Tag types:** `TagType.contributor` (after artist) and `TagType.lore`
+  (after species) are new enum values; names are stored as strings, so old
+  rows stay valid. Their `locName` is English only ("Contributor", "Lore")
+  until the translation files get the keys. Colours in `getColour`, icons in
+  `tag_hub_page`, similarity weight 5 for contributors, chips in
+  `TagIndexSource.catalogOrder`/`typeNamespace`.
+- **e621 tags:** posts carry nine groups (general, artist, contributor,
+  copyright, character, species, invalid, meta, lore); r43 and before read
+  six and dropped the rest. `tagTypeMap` gains '2' contributor, '8' lore,
+  '6' invalid→none; `E621TagIndex.categoryCodes` lists contributor '2' and
+  lore '8' (live: `warfaremachine_(modeler)`, `incest_(lore)`).
+- **Filters:** `e621Handler.doujinFilters` is the cheatsheet's choosable
+  options, one choice per group (e621 ANDs repeated metatags): order (15),
+  rating s/q/e, type, date, score/favcount `>=N`, duration, status, ischild,
+  isparent, inpool, hassource, hasdescription, artverified. Text and number
+  metatags (user, fav, commenter, approver, pool, set, source, description,
+  note, parent, md5, id, score, favcount, comment_count, tagcount, conttags,
+  width, height, mpixels, duration, randseed) are `availableMetaTags`.
+- **Blur:** `BooruItem.isHidden` returned `isItemHiddenGlobally`, which never
+  honoured `Booru.ignoreGlobalBlacklist` or the per-source list, so a source
+  set to ignore the global blacklist still blurred what only the global list
+  hid. `filterFetched` now stores `item.hiddenInSource` from
+  `isItemHiddenForBooru` (removal and blur share one answer); `isHidden`
+  prefers it.
+- **Tag types are written asynchronously** (`TagHandler.addTagsWithType` is
+  async): a test reads them after `pumpEventQueue()`; `typeOfTag` belongs to
+  the tag view, not the handler.
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
@@ -1252,8 +1285,13 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r43)
+## 12. Open items (as of r44)
 
+- r44 is unverified on the device: e621 Contributors/Lore sections and
+  chips, the e621 Filters card and metatags, the blur with "ignore global
+  blacklist" on.
+- Next (user plan): the tag builder and filters for every other source,
+  source by source, from each site's own search help.
 - r43 is unverified on the device: the booru source settings page from the
   left sidebar, default filters and always-add terms changing results, the
   Filters card on booru search windows, Derpibooru's site filter.

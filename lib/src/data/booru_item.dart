@@ -84,6 +84,11 @@ class BooruItem extends Equatable {
   RxBool isNoScale = false.obs, toggleQuality = false.obs;
   bool isUpdated = false;
 
+  /// Whether the source's blacklist rules hide this item (its own list, and
+  /// the global one unless the source ignores it), as the feed filter last
+  /// found (r44). Null until a feed filtered it.
+  bool? hiddenInSource;
+
   String? fileExt;
   String? serverId;
 
@@ -145,7 +150,9 @@ class BooruItem extends Equatable {
     if (DoujinDataHandler.isDoujinItem(this)) {
       return SourceSettingsHandler.instance.isItemHiddenForDoujin(this);
     }
-    return SettingsHandler.instance.isItemHiddenGlobally(this);
+    // r44: a source ignoring the global blacklist used to still blur what
+    // only the global list hides; the feed's source-aware answer wins.
+    return hiddenInSource ?? SettingsHandler.instance.isItemHiddenGlobally(this);
   }
 
   /// Domain-scoped like [isHidden]: doujin items check the doujin starred-tag

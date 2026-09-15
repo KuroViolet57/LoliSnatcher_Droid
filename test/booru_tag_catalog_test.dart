@@ -112,7 +112,7 @@ void main() {
       expect(keys(DanbooruHandler(b('d', BooruType.Danbooru, 'https://danbooru.donmai.us'), 20)), five);
       expect(
         keys(e621Handler(b('e', BooruType.e621, 'https://e621.net'), 20)),
-        ['artist', 'character', 'copyright', 'species', 'meta', 'tag'],
+        ['artist', 'contributor', 'character', 'copyright', 'species', 'meta', 'lore', 'tag'],
       );
       expect(
         keys(PhilomenaHandler(b('p', BooruType.Philomena, 'https://derpibooru.org'), 20)),

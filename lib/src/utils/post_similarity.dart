@@ -41,6 +41,7 @@ double tagRelevanceWeight(String name, TagType type, int count) {
     TagType.character => 5,
     TagType.copyright => 3,
     TagType.species => 2,
+    TagType.contributor => 5,
     TagType.meta => 0.3,
     _ => 1,
   };

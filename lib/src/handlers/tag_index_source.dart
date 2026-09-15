@@ -113,10 +113,12 @@ abstract class TagIndexSource {
   /// The order chips are offered in.
   static const List<TagType> catalogOrder = [
     TagType.artist,
+    TagType.contributor,
     TagType.character,
     TagType.copyright,
     TagType.species,
     TagType.meta,
+    TagType.lore,
     TagType.none,
   ];
 
@@ -130,6 +132,8 @@ abstract class TagIndexSource {
       TagType.copyright => ('copyright', 'Copyrights'),
       TagType.species => ('species', 'Species'),
       TagType.meta => ('meta', 'Meta'),
+      TagType.contributor => ('contributor', 'Contributors'),
+      TagType.lore => ('lore', 'Lore'),
       TagType.none => ('tag', 'Tags'),
     };
     return TagCatalogNamespace(key: key, label: label, type: type, maxShards: maxShards, byType: true);
@@ -580,6 +584,9 @@ class E621TagIndex extends TagIndexSource {
     TagType.copyright: '3',
     TagType.species: '5',
     TagType.meta: '7',
+    // r44: the modelers of an animation, and lore tags.
+    TagType.contributor: '2',
+    TagType.lore: '8',
     TagType.none: '0',
   };
 
