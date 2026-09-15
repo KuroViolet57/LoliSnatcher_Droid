@@ -968,7 +968,7 @@ class _BooruEditState extends State<BooruEdit> {
         MaterialPageRoute(builder: (_) => const InAppWebviewView(initialUrl: 'https://www.furaffinity.net/controls/settings/', title: 'FurAffinity settings')),
       );
     } finally {
-      await session.scrubJar();
+      await session.syncAfterWebView();
     }
   }
 

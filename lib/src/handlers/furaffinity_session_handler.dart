@@ -10,20 +10,31 @@ import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 import 'package:lolisnatcher/src/widgets/webview/webview_page.dart' show webViewEnvironment;
 
+/// What to do with the shared cookie jar after a FurAffinity webview closed.
+enum FurAffinityJarAction { none, reseed }
+
 /// The FurAffinity account (r40). The site's login sits behind a Cloudflare
 /// Turnstile check, so the person logs in inside a WebView; the site then
-/// sets its two session cookies, `a` and `b`. They are copied here, into the
-/// app's own file, and removed from the shared jar — the app's HTTP client
-/// adds jar cookies to every request, and the site's images come from other
-/// hosts that have no business seeing an account. The handler sends them to
-/// www.furaffinity.net only ([sendsTo]).
+/// sets its two session cookies, `a` and `b`, which are kept in the app's own
+/// file and sent on the handler's page requests.
+///
+/// r41: the session also stays in the shared cookie jar. r40 removed it from
+/// there, so a FurAffinity page opened in a webview was a guest visit, and the
+/// guest `b` the site handed that visit then won over the account's `b` when
+/// the app merged the jar into its requests: the feed fell back to guest
+/// content. Now a FurAffinity webview gets the session before it loads
+/// ([prepareWebView]) and, when it closes, newer account cookies are taken
+/// and a guest jar gets the account back ([syncAfterWebView]). The image
+/// hosts still never see it: the handler does not send jar cookies to media.
 class FurAffinitySessionHandler {
   FurAffinitySessionHandler._();
 
   static final FurAffinitySessionHandler instance = FurAffinitySessionHandler._();
 
   static const String fileName = 'furaffinity_session.json';
+  static const String site = 'https://www.furaffinity.net';
   static const List<String> jarOrigins = ['https://www.furaffinity.net/', 'https://furaffinity.net/'];
+  static const Duration jarTimeout = Duration(seconds: 3);
 
   /// Bumped on every change so settings rows can rebuild.
   final ValueNotifier<int> revision = ValueNotifier(0);
@@ -74,9 +85,16 @@ class FurAffinitySessionHandler {
   /// Only the site's own pages get the session.
   static bool sendsTo(Uri uri) => uri.host == 'www.furaffinity.net' || uri.host == 'furaffinity.net';
 
+  /// [url] is one of the site's own pages.
+  static bool isSiteUrl(String url) {
+    final Uri? uri = Uri.tryParse(url.trim());
+    return uri != null && uri.hasScheme && sendsTo(uri);
+  }
+
   void store({required String a, required String b}) {
     ensureLoaded();
     if (a.isEmpty || b.isEmpty) return;
+    if (a == _a && b == _b) return;
     _a = a;
     _b = b;
     _persist();
@@ -92,6 +110,7 @@ class FurAffinitySessionHandler {
       if (file != null && file.existsSync()) file.deleteSync();
     } catch (_) {}
     revision.value++;
+    scrubJar().ignore();
   }
 
   void _persist() {
@@ -108,6 +127,40 @@ class FurAffinitySessionHandler {
   static ({String? a, String? b}) fromCookiePairs(Map<String, String> pairs) {
     String? clean(String? v) => (v == null || v.isEmpty || v == 'deleted') ? null : v;
     return (a: clean(pairs['a']), b: clean(pairs['b']));
+  }
+
+  /// A webview on [url] should carry the account.
+  bool webViewNeedsSession(String url) => isLoggedIn && isSiteUrl(url);
+
+  /// What the jar says after a webview closed: both account cookies there
+  /// are the newest (the site rotated them, or the person logged in inside
+  /// the webview) and are kept; a jar without them while logged in lost the
+  /// account to a guest visit and gets it back.
+  FurAffinityJarAction afterWebView(Map<String, String> jar) {
+    final parsed = fromCookiePairs(jar);
+    if (parsed.a != null && parsed.b != null) {
+      store(a: parsed.a!, b: parsed.b!);
+      return FurAffinityJarAction.none;
+    }
+    return isLoggedIn ? FurAffinityJarAction.reseed : FurAffinityJarAction.none;
+  }
+
+  /// Before a webview on [url] loads: the account goes into the jar.
+  Future<void> prepareWebView(String url) async {
+    if (!webViewNeedsSession(url)) return;
+    try {
+      await seedJar().timeout(jarTimeout);
+    } catch (_) {}
+  }
+
+  /// After a FurAffinity webview closed.
+  Future<void> syncAfterWebView() async {
+    try {
+      final Map<String, String> jar = await readJar().timeout(jarTimeout);
+      if (afterWebView(jar) == FurAffinityJarAction.reseed) {
+        await seedJar().timeout(jarTimeout);
+      }
+    } catch (_) {}
   }
 
   /// The site's cookies in the shared jar (the login WebView writes them there).
@@ -127,18 +180,40 @@ class FurAffinitySessionHandler {
     return pairs;
   }
 
-  /// Puts the session into the jar for as long as an in-app browser tab is
-  /// open on the site (the account's settings page). [scrubJar] undoes it.
+  /// Puts the account into the jar, replacing any `a`/`b` there (a guest
+  /// `b` set on the host alone would otherwise be sent next to it).
   Future<void> seedJar() async {
     if (!isLoggedIn || Tools.isTestMode || !Tools.isOnPlatformWithWebviewSupport) return;
-    await Tools.saveCookies(FurAffinityQueryHost.site, [
-      // No spaces: saveCookies splits on ';' and '=' without trimming.
-      'a=$_a;domain=.furaffinity.net;path=/;secure',
-      'b=$_b;domain=.furaffinity.net;path=/;secure',
-    ]);
+    final String a = _a!;
+    final String b = _b!;
+    try {
+      final CookieManager manager = CookieManager.instance(webViewEnvironment: webViewEnvironment);
+      for (final String origin in jarOrigins) {
+        for (final String name in const ['a', 'b']) {
+          try {
+            await manager.deleteCookie(url: WebUri(origin), name: name);
+            await manager.deleteCookie(url: WebUri(origin), name: name, domain: '.furaffinity.net');
+          } catch (_) {}
+        }
+      }
+      final int expires = DateTime.now().add(const Duration(days: 365)).millisecondsSinceEpoch;
+      for (final (String name, String value) in [('a', a), ('b', b)]) {
+        await manager.setCookie(
+          url: WebUri(site),
+          name: name,
+          value: value,
+          domain: '.furaffinity.net',
+          expiresDate: expires,
+          isSecure: true,
+          isHttpOnly: true,
+        );
+      }
+    } catch (e) {
+      Logger.Inst().log('could not put the session into the jar: $e', 'FurAffinitySessionHandler', 'seedJar', LogTypes.exception);
+    }
   }
 
-  /// Empties the jar for the site's origins.
+  /// Empties the jar for the site's origins (on log out).
   Future<void> scrubJar() async {
     if (Tools.isTestMode || !Tools.isOnPlatformWithWebviewSupport) return;
     try {
@@ -166,10 +241,4 @@ class FurAffinitySessionHandler {
     _a = null;
     _b = null;
   }
-}
-
-/// The site's address without importing the query library here.
-class FurAffinityQueryHost {
-  const FurAffinityQueryHost._();
-  static const String site = 'https://www.furaffinity.net';
 }

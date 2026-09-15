@@ -109,4 +109,46 @@ void main() {
       expect(hasOption('species', '6017'), isTrue);
     });
   });
+
+  group('r41: the feed follows the filters, and the rest of the search form', () {
+    Map<String, String> params(String query, {int page = 1}) => Uri.parse(FurAffinityQuery.parse(query).url(page: page)).queryParameters;
+
+    test('an empty query with filter terms is a search with no words, so the main feed follows the filters', () {
+      final FurAffinityQuery q = FurAffinityQuery.parse('rating:adult sort:popularity');
+      expect(q.kind, FurAffinityRoute.search);
+      expect(Uri.parse(q.url(page: 1)).path, '/search/');
+      final Map<String, String> p = params('rating:adult sort:popularity');
+      expect(p['q'], '');
+      expect(p['rating-adult'], '1');
+      expect(p.containsKey('rating-general'), isFalse);
+      expect(p['order-by'], 'popularity');
+      expect(params('range:7days', page: 2)['page'], '2');
+      expect(FurAffinityQuery.parse('').kind, FurAffinityRoute.browse, reason: 'no filters: still the browse page');
+      expect(FurAffinityQuery.parse('   ').kind, FurAffinityRoute.browse);
+    });
+
+    test('gender, match and results per page', () {
+      final Map<String, String> p = params('fox gender:male gender:trans_female gender:robot mode:any perpage:72');
+      expect(p['q'], 'fox', reason: 'a filter term with an unknown value is dropped, not searched for');
+      expect(p['gender-male'], '1');
+      expect(p['gender-trans_female'], '1');
+      expect(p.keys.where((k) => k.startsWith('gender-')), hasLength(2));
+      expect(p['mode'], 'any');
+      expect(p['perpage'], '72');
+      expect(params('fox')['mode'], 'extended');
+      expect(params('fox').containsKey('perpage'), isFalse, reason: "the site's own default");
+      expect(params('fox perpage:50').containsKey('perpage'), isFalse);
+    });
+
+    test('a manual date range', () {
+      final Map<String, String> p = params('fox from:2024-01-01 to:2024-06-30');
+      expect(p['range'], 'manual');
+      expect(p['range_from'], '2024-01-01');
+      expect(p['range_to'], '2024-06-30');
+      expect(p['q'], 'fox');
+      expect(params('fox from:yesterday')['range'], 'all', reason: 'not a date: ignored');
+      expect(FurAffinityQuery.parse('from:2024-01-01').kind, FurAffinityRoute.search);
+    });
+  });
+
 }

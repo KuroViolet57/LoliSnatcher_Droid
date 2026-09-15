@@ -14,6 +14,7 @@ import 'package:flutter_keyboard_visibility/flutter_keyboard_visibility.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:keyboard_actions/keyboard_actions.dart';
+import 'package:lolisnatcher/src/data/modular_ui.dart';
 import 'package:lolisnatcher/src/widgets/desktop/desktop_scroll.dart';
 import 'package:lolisnatcher/src/handlers/tag_catalog_source.dart';
 import 'package:lolisnatcher/src/widgets/preview/tag_search_query_editor_page.dart';
@@ -1573,10 +1574,9 @@ class _SuggestionsMainContentState extends State<SuggestionsMainContent> with _E
     // Ordered by how often each section is actually reached for:
     // recent searches first, then the user's own pinned tags, then
     // site-wide popular tags, then the metatags, then the tag builder.
-    // r37: a doujin source's window is its filters, its tag builder and
-    // its metatags — no recent searches, pinned tags or site-wide popular
-    // tags there (the user asked for the room).
-    final bool isDoujin = DoujinDataHandler.isDoujinBooru(sourceBooru);
+    // r41: History, Pinned tags and Popular tags are Modular UI switches
+    // (off by default) for every source, boorus and doujins alike; r37 hid
+    // them on doujin sources only. A switched-off block is never built.
     // Any source that declares filters shows them (r40: FurAffinity too).
     final DoujinFilterSpec? filters = widget.queryText != null && widget.onQueryReplaced != null ? sourceHandler.doujinFilters : null;
     List<Widget> blocks = [
@@ -1589,13 +1589,13 @@ class _SuggestionsMainContentState extends State<SuggestionsMainContent> with _E
             setState(() {});
           },
         ),
-      if (!widget.hideHistory && !isDoujin)
+      if (!widget.hideHistory && ModularUi.isOn(ModularUi.searchHistory))
         HistoryBlock(
           delay: const Duration(milliseconds: 10),
           onTagApply: widget.onTagTap,
         ),
       //
-      if (!widget.hidePinned && !isDoujin)
+      if (!widget.hidePinned && ModularUi.isOn(ModularUi.searchPinned))
         PinnedTagsBlock(
           key: _pinnedTagsKey,
           onTagTap: widget.onTagTap,
@@ -1605,7 +1605,7 @@ class _SuggestionsMainContentState extends State<SuggestionsMainContent> with _E
           },
         ),
       //
-      if (!widget.hidePopular && !isDoujin)
+      if (!widget.hidePopular && ModularUi.isOn(ModularUi.searchPopular))
         PopularTagsBlock(
           onTagTap: widget.onTagTap,
           delay: const Duration(milliseconds: 20),

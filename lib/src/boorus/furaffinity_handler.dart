@@ -281,6 +281,19 @@ class FurAffinityHandler extends BooruHandler {
       options: [DoujinFilterOption('general', 'General'), DoujinFilterOption('mature', 'Mature'), DoujinFilterOption('adult', 'Adult')],
     ),
     DoujinFilterGroup(
+      key: 'gender',
+      label: 'Gender',
+      multi: true,
+      options: [
+        DoujinFilterOption('male', 'Male'),
+        DoujinFilterOption('female', 'Female'),
+        DoujinFilterOption('trans_male', 'Trans (male)'),
+        DoujinFilterOption('trans_female', 'Trans (female)'),
+        DoujinFilterOption('intersex', 'Intersex'),
+        DoujinFilterOption('non_binary', 'Non-binary'),
+      ],
+    ),
+    DoujinFilterGroup(
       key: 'range',
       label: 'Posted within',
       defaultValue: 'all',
@@ -296,6 +309,18 @@ class FurAffinityHandler extends BooruHandler {
         DoujinFilterOption('all', 'All time'),
       ],
     ),
+    DoujinFilterGroup(
+      key: 'mode',
+      label: 'Match',
+      defaultValue: 'extended',
+      options: [DoujinFilterOption('extended', 'Extended'), DoujinFilterOption('all', 'All words'), DoujinFilterOption('any', 'Any word')],
+    ),
+    DoujinFilterGroup(
+      key: 'perpage',
+      label: 'Results per page',
+      defaultValue: '48',
+      options: [DoujinFilterOption('24', '24'), DoujinFilterOption('48', '48'), DoujinFilterOption('72', '72')],
+    ),
   ]);
 
   /// An artist's profile, read once per session.
@@ -308,6 +333,8 @@ class FurAffinityHandler extends BooruHandler {
       final response = await DioNetwork.get('${FurAffinityQuery.site}/user/$name/', headers: getHeaders());
       return _users[name] = FurAffinityParser.user(response.data?.toString() ?? '');
     } catch (e) {
+      // The site answers some profiles with an error page (400) every time: not asked again this session.
+      if (e is DioException && (e.response?.statusCode ?? 0) >= 400 && (e.response?.statusCode ?? 0) < 500) _users[name] = null;
       Logger.Inst().log('reading the profile of $name failed: $e', className, 'fetchUser', LogTypes.booruHandlerInfo);
       return null;
     }

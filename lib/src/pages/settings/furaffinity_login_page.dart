@@ -10,8 +10,8 @@ import 'package:lolisnatcher/src/utils/tools.dart';
 
 /// The FurAffinity login in a WebView (r40): the person logs in, Cloudflare's
 /// check included; when the site has set its `a` and `b` session cookies they
-/// are copied into [FurAffinitySessionHandler] and removed from the shared
-/// jar. Pops with `(ok, message)`.
+/// are copied into [FurAffinitySessionHandler] and stay in the shared jar
+/// (r41), so the site's pages in any webview are logged in. Pops with `(ok, message)`.
 class FurAffinityLoginPage extends StatefulWidget {
   const FurAffinityLoginPage({super.key});
 
@@ -55,7 +55,6 @@ class _FurAffinityLoginPageState extends State<FurAffinityLoginPage> {
     _done = true;
     _poll?.cancel();
     session.store(a: parsed.a!, b: parsed.b!);
-    await session.scrubJar();
     if (!mounted) return;
     Navigator.of(context).pop((true, 'Logged in to FurAffinity.'));
   }

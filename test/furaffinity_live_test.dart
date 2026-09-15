@@ -56,7 +56,9 @@ void main() {
     final List g = await gallery.search('user:ryan-the-fox', null) as List;
     expect(g, isNotEmpty);
 
-    final BooruItem first = items.first as BooruItem;
+    // The newest image: a story, music or mature submission has no file for a
+    // logged-out visitor, and the newest submission may be one.
+    final BooruItem first = items.cast<BooruItem>().firstWhere((i) => i.tagsList.any((t) => t.fullString == 'type:image'));
     final res = await browse.loadItem(item: first);
     // ignore: avoid_print
     print('opened ${first.postURL}: failed=${res.failed} ${res.error} file=${first.fileURL} type=${first.mediaType.value}');

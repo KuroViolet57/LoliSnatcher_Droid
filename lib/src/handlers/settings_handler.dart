@@ -13,6 +13,7 @@ import 'package:alice_lightweight/helper/alice_save_helper.dart';
 import 'package:fvp/fvp.dart' as fvp;
 import 'package:get/get.dart';
 import 'package:get_it/get_it.dart';
+import 'package:lolisnatcher/src/data/modular_ui.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/pages/settings/language_page.dart';
 import 'package:url_launcher/url_launcher_string.dart';
@@ -152,6 +153,10 @@ class SettingsHandler {
   // Per-booru hidden tags. Keyed by booru.name. A tag in this map's value-set
   // hides matching items only on that booru, regardless of the global list.
   Map<String, Set<String>> hiddenTagsPerBooru = {};
+
+  // Modular UI switches (r41): toggle key -> on/off, only those changed
+  // from their default. See ModularUi.
+  Map<String, bool> modularUi = {};
   Set<String> markedTags = {};
 
   int itemLimit = Constants.defaultItemLimit;
@@ -1920,6 +1925,9 @@ class SettingsHandler {
           if (tags.isNotEmpty) out[boorus] = tags.toList();
         });
         json[key] = out;
+        // Modular UI (r41) is written next to it: not a declared setting, so
+        // the generic loop never validates it as one.
+        json['modularUi'] = Map<String, bool>.from(modularUi);
       } else if (key == 'markedTags') {
         json[key] = cleanTagsList(markedTags.map(Tag.new).toList());
       } else {
@@ -2042,6 +2050,10 @@ class SettingsHandler {
         s: s,
       );
     }
+
+    modularUi
+      ..clear()
+      ..addAll(ModularUi.parse(json['modularUi']));
 
     try {
       final dynamic raw = json['hiddenTagsPerBooru'];

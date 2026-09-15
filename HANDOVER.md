@@ -713,6 +713,39 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
 - **r41, planned:** Watch/Unwatch, an `inbox:` feed, the watched artists
   sidebar, favourite sync.
 
+### 4.10 FurAffinity's session in webviews, filter feeds, and Modular UI (r41)
+
+- **The session lost to a webview.** r40 scrubbed `a`/`b` from the shared
+  jar after login. A FurAffinity page opened in any webview was then a guest
+  visit, the site gave it a guest `b`, and `DioNetwork.cookieInterceptor`
+  merges the jar over the handler's `Cookie` header (last value wins), so
+  every later request went out as guest (device log 2026-09-15 09:22).
+  Now the session stays in the jar. `InAppWebviewView` waits for
+  `FurAffinitySessionHandler.prepareWebView` on a FurAffinity URL (it deletes
+  host-only and domain `a`/`b`, then sets the account's on
+  `.furaffinity.net`), and on dispose calls `syncAfterWebView`: both
+  cookies in the jar are taken as newest, a jar without them gets the
+  account back (`afterWebView`, pure and tested). Logout scrubs the jar.
+  Media still never gets jar cookies (`sendsJarCookiesToMedia` false).
+- **Filters on the main feed.** `/browse/` cannot sort or filter by type, so
+  filter terms without words route to `/search/` with `q=` empty (checked
+  live: 48 results). New terms: `gender:` (sent as `gender-<value>=1`, named
+  after the logged-in form's rating/type boxes; not visible logged out, so
+  unverified), `mode:`, `perpage:` (24/48/72), `from:`/`to:` (yyyy-mm-dd,
+  `range=manual`). A filter key with an unknown value is dropped.
+- **Profiles answered with 400** (the site does this for some artists even
+  logged out) are cached as null for the session.
+- **Modular UI** (user rule 2026-09-15, see Part A): every UI part the user
+  asks to remove becomes a switch in Settings → Modular UI
+  (`lib/src/data/modular_ui.dart`, `pages/settings/modular_ui_page.dart`).
+  Values live in `SettingsHandler.modularUi`, written by `toJson` next to
+  `hiddenTagsPerBooru` and read in `loadFromJSON`, so they load before the
+  first screen and ride along in settings backups; only values differing
+  from the default are stored. Widgets check `ModularUi.isOn(...)` in an
+  `if` where they build, never build-then-hide. First switches: the search
+  window's History, Pinned tags and Popular tags, all off by default for
+  every source (replacing r37's doujin-only hiding).
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
@@ -1138,8 +1171,14 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r40)
+## 12. Open items (as of r41)
 
+- r41 is unverified on the device: a FurAffinity webview logged in and the
+  feed still logged in after it; filters on an empty FurAffinity search;
+  the gender filter's parameter names (guessed, see 4.10); the Modular UI
+  page and the search window without History/Pinned/Popular.
+- r42 planned: FurAffinity Watch/Unwatch, an `inbox:` feed, the watched
+  artists sidebar, favourite sync.
 - r40 is unverified on the device: FurAffinity browse, search and artist
   tabs with their icons, the WebView login (cookie names `a` and `b` are
   the site's known ones; confirm after a login), mature results with the

@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:lolisnatcher/src/handlers/furaffinity_session_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 
 import 'package:lolisnatcher/src/utils/tools.dart';
@@ -144,9 +145,21 @@ class _InAppWebviewViewState extends State<InAppWebviewView> {
   int loadingPercentage = 0;
   bool hideSubtitle = false;
 
+  /// False while a FurAffinity page waits for the account to be put in
+  /// the jar (r41: without it the page was a guest visit).
+  bool sessionReady = true;
+
   @override
   void initState() {
     super.initState();
+
+    final FurAffinitySessionHandler furAffinity = FurAffinitySessionHandler.instance;
+    if (furAffinity.webViewNeedsSession(widget.initialUrl)) {
+      sessionReady = false;
+      furAffinity.prepareWebView(widget.initialUrl).whenComplete(() {
+        if (mounted) setState(() => sessionReady = true);
+      });
+    }
 
     settings = InAppWebViewSettings(
       userAgent: widget.userAgent ?? Tools.browserUserAgent,
@@ -214,6 +227,9 @@ class _InAppWebviewViewState extends State<InAppWebviewView> {
 
   @override
   void dispose() {
+    if (FurAffinitySessionHandler.isSiteUrl(widget.initialUrl)) {
+      FurAffinitySessionHandler.instance.syncAfterWebView().ignore();
+    }
     pullToRefreshController?.dispose();
     controller.future.then((controller) => controller.dispose());
     super.dispose();
@@ -231,7 +247,7 @@ class _InAppWebviewViewState extends State<InAppWebviewView> {
       ),
       body: Stack(
         children: [
-          if (Tools.isOnPlatformWithWebviewSupport)
+          if (Tools.isOnPlatformWithWebviewSupport && sessionReady)
             InAppWebView(
               initialUrlRequest: URLRequest(url: WebUri(widget.initialUrl)),
               initialSettings: settings,

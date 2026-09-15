@@ -226,4 +226,42 @@ void main() {
       expect(catalog.searchTerm(themes.firstWhere((e) => e.sourceId == '4')), 'theme:4');
     });
   });
+
+  group('r41: the account survives a webview, and the filters are all the site has', () {
+    test('after a webview: newer account cookies are taken, a guest visit never replaces the account', () {
+      final FurAffinitySessionHandler s = FurAffinitySessionHandler.instance;
+      s.store(a: 'AAA', b: 'BBB');
+      expect(s.afterWebView({'a': 'A2', 'b': 'B2', 'sz': '1'}), FurAffinityJarAction.none);
+      expect(s.cookieHeader(), 'a=A2; b=B2', reason: 'the site rotated the session inside the webview');
+      expect(s.afterWebView({'b': 'guest', 'sz': '1'}), FurAffinityJarAction.reseed, reason: 'the jar lost the account: it goes back');
+      expect(s.cookieHeader(), 'a=A2; b=B2', reason: 'a guest cookie never replaces the account');
+      s.logout();
+      expect(s.afterWebView(const {}), FurAffinityJarAction.none);
+      expect(s.afterWebView({'a': 'A3', 'b': 'B3'}), FurAffinityJarAction.none);
+      expect(s.isLoggedIn, isTrue, reason: 'logging in inside any FurAffinity webview counts');
+    });
+
+    test('a FurAffinity webview gets the session before it loads; other sites do not', () {
+      final FurAffinitySessionHandler s = FurAffinitySessionHandler.instance;
+      expect(s.webViewNeedsSession('https://www.furaffinity.net/view/1/'), isFalse, reason: 'logged out');
+      s.store(a: 'AAA', b: 'BBB');
+      expect(s.webViewNeedsSession('https://www.furaffinity.net/view/1/'), isTrue);
+      expect(s.webViewNeedsSession('https://furaffinity.net/'), isTrue);
+      expect(s.webViewNeedsSession('https://gelbooru.com/'), isFalse);
+      expect(s.webViewNeedsSession('gelbooru.com'), isFalse);
+    });
+
+    test('the filters add gender, match and results per page', () {
+      final DoujinFilterSpec spec = FurAffinityHandler(fa, 48).doujinFilters;
+      final DoujinFilterGroup gender = spec.group('gender')!;
+      expect(gender.multi, isTrue);
+      expect(gender.defaultValues, isEmpty);
+      expect(gender.options.map((o) => o.value), ['male', 'female', 'trans_male', 'trans_female', 'intersex', 'non_binary']);
+      expect(spec.group('mode')!.defaultValue, 'extended');
+      expect(spec.group('mode')!.options.map((o) => o.value), containsAll(['extended', 'all', 'any']));
+      expect(spec.group('perpage')!.options.map((o) => o.value), ['24', '48', '72']);
+      expect(spec.group('perpage')!.defaultValue, '48');
+    });
+  });
+
 }

@@ -13,6 +13,7 @@ import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/pages/about_page.dart';
 import 'package:lolisnatcher/src/pages/loli_sync_page.dart';
 import 'package:lolisnatcher/src/pages/settings/doujin_settings_page.dart';
+import 'package:lolisnatcher/src/pages/settings/modular_ui_page.dart';
 import 'package:lolisnatcher/src/pages/settings/recommendations_page.dart';
 import 'package:lolisnatcher/src/pages/settings/backup_restore_page.dart';
 import 'package:lolisnatcher/src/pages/settings/booru_page.dart';
@@ -93,6 +94,13 @@ class SettingsPage extends StatelessWidget {
                 name: 'Recommendations',
                 icon: const Icon(Symbols.auto_awesome_rounded),
                 page: () => const RecommendationsPage(),
+              ),
+              _sectionLabel(context, 'MODULAR UI'),
+              SettingsButton(
+                name: 'Modular UI',
+                subtitle: const Text('Show or hide parts of the interface'),
+                icon: const Icon(Symbols.toggle_on_rounded),
+                page: () => const ModularUiPage(),
               ),
               _sectionLabel(context, 'LOOK & FEEL'),
               SettingsButton(
