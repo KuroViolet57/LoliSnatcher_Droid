@@ -952,6 +952,38 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   `FlashPlayerPage`'s `InAppWebView` asserts; `flash_play_viewer_test`
   accepts only that assertion after checking the page opened.
 
+### 4.18 Linked media: the links in a FurAffinity description (r49)
+
+- **Why:** many FurAffinity "animated" posts are a still picture; the
+  animation is behind a link in the description (often an e621 post, or a
+  file such as an `.mp4`).
+- **Resolver** (`boorus/linked_media.dart`, pure): `LinkedMediaResolver.linksIn`
+  reads the description's `href`s (http(s), relative ones made absolute,
+  `/user/` links dropped, each once, in order); `resolve` makes each one a
+  `LinkedMedia` of kind `media` (a video/animation file extension, even on a
+  source's file host), `sourcePost` (a post URL of an installed booru:
+  e621/Danbooru `/posts/N`, Gelbooru family `page=post&id=N`, FurAffinity
+  `/view|full/N`, Philomena, Shimmie `/post/view/N`, Moebooru/Sankaku
+  `/post/show/N`) or `page`. The search term is `id:N` (`id=N` on Shimmie).
+- **Opening** (`widgets/linked_media_sheet.dart`, `LinkedMediaOpener.open`):
+  a source post is searched by id in a standalone `SearchTab` and shown in
+  `GalleryViewPage` pushed on top (the floating tag preview's pattern); not
+  found → a snackbar and the link as a page. A file or a page opens in
+  `LinkedMediaPage` (`pages/linked_media_page.dart`): black full screen,
+  Reload and Open in browser; a file is played from `mediaHtml` (a
+  `<video controls autoplay loop>` or an `<img>`, the address escaped).
+- **Where:** the FurAffinity post page's "Linked media" section under the
+  description (`LinkedMediaList`, keys `linked-media-<i>`); the viewer's
+  link button (`furaffinity-linked-media`) on posts with a tag containing
+  "animat" whose file is not a video/GIF/Flash (`LinkedMediaButton.offerFor`),
+  reading the post page once per session and listing the links in a sheet.
+  The button is Modular UI `viewer.linkedMedia` (area Viewer, on).
+- **Tests:** `linked_media_test` (links, resolution, player markup),
+  `linked_media_ui_test` (button condition, list labels, a file opening the
+  player, the post page section). The description markup is FurAffinity's
+  `auto_link` form; a live sample of 24 popular animation posts had no
+  external links (those are likely on mature posts, which need the login).
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
@@ -1377,8 +1409,11 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r48)
+## 12. Open items (as of r49)
 
+- r49 is unverified on the device: the linked media button and sheet on
+  FurAffinity animated posts, an e621 link opening in the viewer on top, an
+  `.mp4` link playing in the linked media player, the post page section.
 - r48 is unverified on the device: the Flash Play screen (FurAffinity and
   e621 .swf posts), the background load filling the details.
 - r47 is unverified on the device: the paheal and rule34.us Filters cards.

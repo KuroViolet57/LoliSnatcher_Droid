@@ -5,6 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+import 'package:lolisnatcher/src/widgets/linked_media_sheet.dart';
+import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/boorus/linked_media.dart';
 import 'package:lolisnatcher/src/pages/flash_player_page.dart';
 import 'package:lolisnatcher/src/boorus/furaffinity_handler.dart';
 import 'package:lolisnatcher/src/boorus/furaffinity_parser.dart';
@@ -142,6 +145,11 @@ class _FurAffinityPostPageState extends State<FurAffinityPostPage> {
   }
 
   Widget _body(ThemeData theme, FurAffinitySubmission p) {
+    // r49: the links the description gives for the animation or video.
+    final List<LinkedMedia> linked = [
+      for (final String url in LinkedMediaResolver.linksIn(p.descriptionHtml, base: FurAffinityQuery.site))
+        LinkedMediaResolver.resolve(url, SettingsHandler.instance.booruList),
+    ];
     final NumberFormat count = NumberFormat.decimalPattern();
     final String gif = p.fileUrl.toLowerCase().endsWith('.gif') ? p.fileUrl : '';
     final String picture = gif.isNotEmpty
@@ -240,6 +248,10 @@ class _FurAffinityPostPageState extends State<FurAffinityPostPage> {
         if (p.descriptionHtml.isNotEmpty) ...[
           _section(theme, 'Description'),
           Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: LoliHtml(p.descriptionHtml)),
+        ],
+        if (linked.isNotEmpty) ...[
+          _section(theme, 'Linked media'),
+          LinkedMediaList(items: linked, title: p.title),
         ],
         if (p.gallery.isNotEmpty || p.olderId != null || p.newerId != null) ...[
           _section(theme, 'Gallery'),

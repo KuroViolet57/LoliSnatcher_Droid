@@ -79,7 +79,17 @@ class ModularUi {
     defaultValue: true,
   );
 
-  static const List<ModularUiToggle> all = [searchHistory, searchPinned, searchPopular, searchSiteFilters, sidebarSourceSettings];
+  static const String viewerArea = 'Viewer';
+
+  static const ModularUiToggle viewerLinkedMedia = ModularUiToggle(
+    key: 'viewer.linkedMedia',
+    area: viewerArea,
+    title: 'Linked media button (FurAffinity)',
+    description: "A link button in the viewer's top bar on animated posts whose file is a still picture: it lists the links the description gives for the animation or video.",
+    defaultValue: true,
+  );
+
+  static const List<ModularUiToggle> all = [searchHistory, searchPinned, searchPopular, searchSiteFilters, sidebarSourceSettings, viewerLinkedMedia];
 
   /// Bumped on every change, for pages that show the switches.
   static final ValueNotifier<int> revision = ValueNotifier(0);

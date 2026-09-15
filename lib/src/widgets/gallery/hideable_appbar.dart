@@ -15,6 +15,8 @@ import 'package:get/get.dart';
 import 'package:preload_page_view/preload_page_view.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
+import 'package:lolisnatcher/src/data/modular_ui.dart';
+import 'package:lolisnatcher/src/widgets/linked_media_sheet.dart';
 import 'package:lolisnatcher/src/pages/flash_player_page.dart';
 import 'package:lolisnatcher/src/pages/furaffinity_post_page.dart';
 import 'package:lolisnatcher/src/boorus/furaffinity_handler.dart';
@@ -323,6 +325,29 @@ class _HideableAppBarState extends State<HideableAppBar> {
         );
       }),
     );
+
+    // FurAffinity (r49): an animated post whose file is a still picture lists
+    // the links its description gives for the animation (Modular UI).
+    if (widget.tab.booruHandler is FurAffinityHandler && ModularUi.isOn(ModularUi.viewerLinkedMedia)) {
+      actions.add(
+        Obx(() {
+          final BooruItem? item = page.value >= 0 && page.value < widget.tab.booruHandler.filteredFetched.length
+              ? widget.tab.booruHandler.filteredFetched[page.value]
+              : null;
+          if (item == null || !LinkedMediaButton.offerFor(item)) return const SizedBox.shrink();
+          return ToolbarAction(
+            key: const ValueKey('furaffinity-linked-media'),
+            icon: const Icon(Symbols.link_rounded),
+            tooltip: 'Linked media',
+            onTap: () async {
+              final links = await LinkedMediaButton.linksFor(widget.tab.booruHandler as FurAffinityHandler, item);
+              if (!context.mounted) return;
+              await LinkedMediaSheet.show(context, links, title: item.description);
+            },
+          );
+        }),
+      );
+    }
 
     // FurAffinity (r42b): a Flash submission plays through Ruffle.
     if (widget.tab.booruHandler is FurAffinityHandler) {
