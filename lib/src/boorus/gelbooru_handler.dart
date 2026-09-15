@@ -6,6 +6,8 @@ import 'package:html/dom.dart';
 import 'package:html/parser.dart';
 import 'package:xml/xml.dart';
 
+import 'package:lolisnatcher/src/boorus/doujin/doujin_filters.dart';
+import 'package:lolisnatcher/src/boorus/booru_site_filters.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/booru_tag.dart';
 import 'package:lolisnatcher/src/data/comment_item.dart';
@@ -27,6 +29,13 @@ import 'package:lolisnatcher/src/utils/logger.dart';
 
 class GelbooruHandler extends BooruHandler {
   GelbooruHandler(super.booru, super.limit);
+
+  /// r45: the gelbooru engine's cheat sheet as Filters, in the site's rating words.
+  @override
+  DoujinFilterSpec? get doujinFilters => BooruEngineFilters.gelbooru(
+    booruOrgRatings: !(booru.baseURL ?? '').contains('gelbooru.com'),
+    aspectRatio: (booru.baseURL ?? '').contains('rule34.xxx'),
+  );
 
   /// Artists, characters, copyrights, meta and general tags from the site's
   /// own count-ordered tag list (see GelbooruTagIndex).
@@ -82,10 +91,7 @@ class GelbooruHandler extends BooruHandler {
       // gelbooru returns xml response if request was denied for some reason
       // i.e. user hit a rate limit because he didn't include api key
       parsedResponse = XmlDocument.parse(response.data);
-      final String? errorMessage = (parsedResponse as XmlDocument)
-          .getElement('response')
-          ?.getAttribute('reason')
-          ?.toString();
+      final String? errorMessage = (parsedResponse as XmlDocument).getElement('response')?.getAttribute('reason')?.toString();
       if (errorMessage != null) {
         throw Exception(errorMessage);
       }
@@ -160,12 +166,8 @@ class GelbooruHandler extends BooruHandler {
   }
 
   String buildApiStr() {
-    final String apiKeyStr = booru.apiKey?.isNotEmpty == true
-        ? (booru.apiKey?.contains('api_key') == true ? booru.apiKey! : '&api_key=${booru.apiKey}')
-        : '';
-    final String userIdStr = booru.userID?.isNotEmpty == true
-        ? (apiKeyStr.contains('user_id') ? '' : '&user_id=${booru.userID}')
-        : '';
+    final String apiKeyStr = booru.apiKey?.isNotEmpty == true ? (booru.apiKey?.contains('api_key') == true ? booru.apiKey! : '&api_key=${booru.apiKey}') : '';
+    final String userIdStr = booru.userID?.isNotEmpty == true ? (apiKeyStr.contains('user_id') ? '' : '&user_id=${booru.userID}') : '';
 
     return '$apiKeyStr$userIdStr';
   }
@@ -289,8 +291,7 @@ class GelbooruHandler extends BooruHandler {
     // record tag data for future use
     final String rawTagType = (responseItem['category'] ?? responseItem['type'])?.toString() ?? '';
     TagType tagType = TagType.none;
-    if (rawTagType.isNotEmpty &&
-        (tagTypeMap.containsKey(rawTagType) || tagSuggestionsTypeMap.containsKey(rawTagType))) {
+    if (rawTagType.isNotEmpty && (tagTypeMap.containsKey(rawTagType) || tagSuggestionsTypeMap.containsKey(rawTagType))) {
       tagType = tagTypeMap[rawTagType] ?? tagSuggestionsTypeMap[rawTagType] ?? TagType.none;
     }
     addTagsWithType([tagStr], tagType);
@@ -298,9 +299,7 @@ class GelbooruHandler extends BooruHandler {
       tag: tagStr,
       type: tagType,
       // Some sites only expose the count inside a display label.
-      count: siteProfile?.tagSuggestionCount(responseItem) ??
-          int.tryParse((responseItem['count'] ?? responseItem['post_count'])?.toString() ?? '0') ??
-          0,
+      count: siteProfile?.tagSuggestionCount(responseItem) ?? int.tryParse((responseItem['count'] ?? responseItem['post_count'])?.toString() ?? '0') ?? 0,
     );
   }
 
@@ -433,15 +432,11 @@ class GelbooruHandler extends BooruHandler {
     try {
       final Element avatarNode = responseItem[0];
       final List<String> avatarParts = avatarNode.outerHtml.split("url('");
-      final String? avatarUrl = avatarParts.length > 1
-          ? 'https://gelbooru.com/${avatarParts[1].split("')")[0]}'
-          : null;
+      final String? avatarUrl = avatarParts.length > 1 ? 'https://gelbooru.com/${avatarParts[1].split("')")[0]}' : null;
       final Element bodyNode = responseItem[1];
 
       final List<String>? dateParts = bodyNode.nodes.elementAtOrNull(2)?.text?.split('at ');
-      final String? createDate = (dateParts != null && dateParts.length > 1)
-          ? dateParts[1].split(' »')[0]
-          : null;
+      final String? createDate = (dateParts != null && dateParts.length > 1) ? dateParts[1].split(' »')[0] : null;
 
       return CommentItem(
         content: bodyNode.nodes.elementAtOrNull(5)?.text,

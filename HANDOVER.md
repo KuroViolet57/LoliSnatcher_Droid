@@ -860,6 +860,33 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   async): a test reads them after `pumpEventQueue()`; `typeOfTag` belongs to
   the tag view, not the handler.
 
+### 4.14 The Danbooru and Gelbooru engines' search help as filters (r45)
+
+- **Where:** `BooruEngineFilters` in `boorus/booru_site_filters.dart`;
+  `DanbooruHandler`, `GelbooruHandler` and `GelbooruAlikesHandler` return
+  them as `doujinFilters`, so they replace r43's metatag-derived groups.
+- **Danbooru engine** (danbooru, AiBooru, AllTheFallen), from
+  help:cheatsheet: order, rating (full words kept from r43 so saved
+  defaults still apply, plus `g,s`/`q,e`), filetype, age (`<1d` to `<1y`),
+  score and favcount `>=N`, status, parent and child (`any`/`none`),
+  commentary, duration. Checked live 2026-09-15: age:<1w, filetype:mp4,
+  is:parent, has:children, score:>=100, rating:q,e, is:sfw, status:deleted,
+  commentary:true.
+- **Gelbooru engine:** sort (score, updated, random, id:asc, width,
+  height), rating in the site's words (gelbooru.com general/sensitive, the
+  booru.org sites safe/questionable/explicit), score, width, height;
+  rule34.xxx adds aspectratio. Checked live on tbib and xbooru: score:>=10,
+  width:>=1920, sort:random, sort:updated:desc.
+- **Order of checks:** `BooruHandler.siteFilters` now rejects local views,
+  feeds, merges and the webview before returning a handler's own spec,
+  because `DanbooruHandler` also serves the Favourites view.
+- **Chip keys:** `DoujinFiltersBlock` keyed the site-default chip
+  `doujin-filter-<group>-none`, which collided with danbooru's real `none`
+  value in parent:/child: and crashed the whole card (caught by the source
+  settings widget test before delivery). The default chip is now
+  `-(default)`. `test/filter_chip_keys_test.dart` renders every declared
+  spec and checks unique keys; add each new source's spec to it.
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
@@ -1285,8 +1312,14 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r44)
+## 12. Open items (as of r45)
 
+- r45 is unverified on the device: the danbooru and gelbooru-engine Filters
+  cards, their defaults in the source settings.
+- Next (user plan): the other sources, source by source: Sankaku and Idol,
+  Derpibooru beyond sort/filter, Rule34.dev, R34US, r34 World, R34Hentai,
+  paheal, the video sites and Civitai; pools in the tag builder where a site
+  has them (danbooru, e621).
 - r44 is unverified on the device: e621 Contributors/Lore sections and
   chips, the e621 Filters card and metatags, the blur with "ignore global
   blacklist" on.

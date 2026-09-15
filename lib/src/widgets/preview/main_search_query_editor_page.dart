@@ -4537,7 +4537,10 @@ class DoujinFiltersBlock extends StatelessWidget {
         ? (g.multi && g.defaultValues.isNotEmpty ? g.defaultValues.contains(o.value) : o.value == g.defaultValue)
         : chosen.contains(o.value);
     return FilterChip(
-      key: ValueKey('doujin-filter-${g.key}-${o.value.isEmpty ? 'none' : o.value}'),
+      // r45: the site default is '(default)', not 'none': danbooru's parent: and
+      // child: groups also have a real `none` value, and the duplicate key
+      // crashed the whole Filters card.
+      key: ValueKey('doujin-filter-${g.key}-${o.value.isEmpty ? '(default)' : o.value}'),
       label: Text(o.label),
       selected: selected,
       showCheckmark: true,

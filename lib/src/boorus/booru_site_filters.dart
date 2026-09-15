@@ -93,3 +93,221 @@ class BooruSiteNotes {
     return notes;
   }
 }
+
+/// Whole engines' search options as Filters (r45), from their own help pages
+/// and checked against the live sites on 2026-09-15. Every group is one
+/// choice: these engines do not combine a repeated metatag.
+class BooruEngineFilters {
+  const BooruEngineFilters._();
+
+  /// danbooru's help:cheatsheet (danbooru, AiBooru, AllTheFallen). Live:
+  /// age:<1w, filetype:mp4, is:parent/has:children, score:>=100, rating:q,e,
+  /// status:deleted, commentary:true.
+  static const DoujinFilterSpec danbooru = DoujinFilterSpec([
+    DoujinFilterGroup(
+      key: 'order',
+      label: 'Order',
+      options: [
+        DoujinFilterOption('', 'Newest (site default)'),
+        DoujinFilterOption('rank', 'Hot'),
+        DoujinFilterOption('score', 'Score'),
+        DoujinFilterOption('favcount', 'Favorites'),
+        DoujinFilterOption('upvotes', 'Upvotes'),
+        DoujinFilterOption('comment_bumped', 'Recently commented'),
+        DoujinFilterOption('change', 'Recently updated'),
+        DoujinFilterOption('mpixels', 'Largest resolution'),
+        DoujinFilterOption('filesize', 'Largest files'),
+        DoujinFilterOption('landscape', 'Landscape'),
+        DoujinFilterOption('portrait', 'Portrait'),
+        DoujinFilterOption('random', 'Random'),
+      ],
+    ),
+    DoujinFilterGroup(
+      key: 'rating',
+      label: 'Rating',
+      options: [
+        DoujinFilterOption('', 'All'),
+        DoujinFilterOption('general', 'General'),
+        DoujinFilterOption('sensitive', 'Sensitive'),
+        DoujinFilterOption('questionable', 'Questionable'),
+        DoujinFilterOption('explicit', 'Explicit'),
+        DoujinFilterOption('g,s', 'Safe for work'),
+        DoujinFilterOption('q,e', 'Not safe for work'),
+      ],
+    ),
+    DoujinFilterGroup(
+      key: 'filetype',
+      label: 'File type',
+      options: [
+        DoujinFilterOption('', 'Any'),
+        DoujinFilterOption('jpg', 'JPG'),
+        DoujinFilterOption('png', 'PNG'),
+        DoujinFilterOption('gif', 'GIF'),
+        DoujinFilterOption('mp4', 'MP4 video'),
+        DoujinFilterOption('webm', 'WebM video'),
+        DoujinFilterOption('zip', 'Ugoira (zip)'),
+        DoujinFilterOption('swf', 'Flash'),
+      ],
+    ),
+    DoujinFilterGroup(
+      key: 'age',
+      label: 'Posted within',
+      options: [
+        DoujinFilterOption('', 'Any time'),
+        DoujinFilterOption('<1d', 'A day'),
+        DoujinFilterOption('<1w', 'A week'),
+        DoujinFilterOption('<1mo', 'A month'),
+        DoujinFilterOption('<1y', 'A year'),
+      ],
+    ),
+    DoujinFilterGroup(
+      key: 'score',
+      label: 'Score',
+      options: [
+        DoujinFilterOption('', 'Any'),
+        DoujinFilterOption('>=10', '10+'),
+        DoujinFilterOption('>=50', '50+'),
+        DoujinFilterOption('>=100', '100+'),
+        DoujinFilterOption('>=500', '500+'),
+      ],
+    ),
+    DoujinFilterGroup(
+      key: 'favcount',
+      label: 'Favorites',
+      options: [
+        DoujinFilterOption('', 'Any'),
+        DoujinFilterOption('>=10', '10+'),
+        DoujinFilterOption('>=50', '50+'),
+        DoujinFilterOption('>=100', '100+'),
+        DoujinFilterOption('>=500', '500+'),
+      ],
+    ),
+    DoujinFilterGroup(
+      key: 'status',
+      label: 'Status',
+      options: [
+        DoujinFilterOption('', 'Active (site default)'),
+        DoujinFilterOption('pending', 'Pending'),
+        DoujinFilterOption('flagged', 'Flagged'),
+        DoujinFilterOption('appealed', 'Appealed'),
+        DoujinFilterOption('modqueue', 'Mod queue'),
+        DoujinFilterOption('deleted', 'Deleted'),
+        DoujinFilterOption('any', 'Everything, deleted too'),
+      ],
+    ),
+    DoujinFilterGroup(
+      key: 'parent',
+      label: 'Child post',
+      options: [DoujinFilterOption('', 'Any'), DoujinFilterOption('any', 'Is a child'), DoujinFilterOption('none', 'Not a child')],
+    ),
+    DoujinFilterGroup(
+      key: 'child',
+      label: 'Parent post',
+      options: [DoujinFilterOption('', 'Any'), DoujinFilterOption('any', 'Has children'), DoujinFilterOption('none', 'No children')],
+    ),
+    DoujinFilterGroup(
+      key: 'commentary',
+      label: 'Artist commentary',
+      options: [
+        DoujinFilterOption('', 'Any'),
+        DoujinFilterOption('true', 'Has commentary'),
+        DoujinFilterOption('translated', 'Translated'),
+        DoujinFilterOption('untranslated', 'Untranslated'),
+        DoujinFilterOption('false', 'No commentary'),
+      ],
+    ),
+    DoujinFilterGroup(
+      key: 'duration',
+      label: 'Animation length',
+      options: [
+        DoujinFilterOption('', 'Any'),
+        DoujinFilterOption('<10', 'Under 10 s'),
+        DoujinFilterOption('>10', '10 s+'),
+        DoujinFilterOption('>30', '30 s+'),
+        DoujinFilterOption('>60', '1 min+'),
+      ],
+    ),
+  ]);
+
+  /// The gelbooru engine's cheat sheet. gelbooru.com rates general,
+  /// sensitive, questionable, explicit; the booru.org sites (rule34.xxx, tbib,
+  /// xbooru) safe, questionable, explicit. rule34.xxx adds aspectratio:.
+  /// Live on tbib and xbooru: score:>=10, width:>=1920, sort:random,
+  /// sort:updated:desc.
+  static DoujinFilterSpec gelbooru({required bool booruOrgRatings, bool aspectRatio = false}) => DoujinFilterSpec([
+    const DoujinFilterGroup(
+      key: 'sort',
+      label: 'Sort',
+      options: [
+        DoujinFilterOption('', 'Newest (site default)'),
+        DoujinFilterOption('score', 'Score'),
+        DoujinFilterOption('updated', 'Recently updated'),
+        DoujinFilterOption('random', 'Random'),
+        DoujinFilterOption('id:asc', 'Oldest first'),
+        DoujinFilterOption('width', 'Widest'),
+        DoujinFilterOption('height', 'Tallest'),
+      ],
+    ),
+    DoujinFilterGroup(
+      key: 'rating',
+      label: 'Rating',
+      options: booruOrgRatings
+          ? const [
+              DoujinFilterOption('', 'All'),
+              DoujinFilterOption('safe', 'Safe'),
+              DoujinFilterOption('questionable', 'Questionable'),
+              DoujinFilterOption('explicit', 'Explicit'),
+            ]
+          : const [
+              DoujinFilterOption('', 'All'),
+              DoujinFilterOption('general', 'General'),
+              DoujinFilterOption('sensitive', 'Sensitive'),
+              DoujinFilterOption('questionable', 'Questionable'),
+              DoujinFilterOption('explicit', 'Explicit'),
+            ],
+    ),
+    const DoujinFilterGroup(
+      key: 'score',
+      label: 'Score',
+      options: [
+        DoujinFilterOption('', 'Any'),
+        DoujinFilterOption('>=10', '10+'),
+        DoujinFilterOption('>=50', '50+'),
+        DoujinFilterOption('>=100', '100+'),
+        DoujinFilterOption('>=500', '500+'),
+      ],
+    ),
+    const DoujinFilterGroup(
+      key: 'width',
+      label: 'Width',
+      options: [
+        DoujinFilterOption('', 'Any'),
+        DoujinFilterOption('>=1280', '1280+'),
+        DoujinFilterOption('>=1920', 'Full HD+'),
+        DoujinFilterOption('>=3840', '4K+'),
+      ],
+    ),
+    const DoujinFilterGroup(
+      key: 'height',
+      label: 'Height',
+      options: [
+        DoujinFilterOption('', 'Any'),
+        DoujinFilterOption('>=720', '720+'),
+        DoujinFilterOption('>=1080', '1080+'),
+        DoujinFilterOption('>=2160', '2160+'),
+      ],
+    ),
+    if (aspectRatio)
+      const DoujinFilterGroup(
+        key: 'aspectratio',
+        label: 'Aspect ratio',
+        options: [
+          DoujinFilterOption('', 'Any'),
+          DoujinFilterOption('16:9', '16:9'),
+          DoujinFilterOption('4:3', '4:3'),
+          DoujinFilterOption('1:1', 'Square'),
+          DoujinFilterOption('9:16', '9:16 (phone)'),
+        ],
+      ),
+  ]);
+}

@@ -923,10 +923,14 @@ abstract class BooruHandler {
   /// booru source, its sort/order and rating metatags as choices. Local
   /// views and recommendation feeds offer none.
   DoujinFilterSpec? get siteFilters {
+    // Local views, feeds, merges and the webview get none, even on a handler
+    // that declares its site's own filters (r45: danbooru's handler serves
+    // the Favourites view too).
+    final BooruType? t = booru.type;
+    if (t != null && (t.isLocalDb || t.isRecommendationFeed || t.isMerge || t.isWebView)) return null;
     final DoujinFilterSpec? own = doujinFilters;
     if (own != null) return own;
-    final BooruType? t = booru.type;
-    if (hasReader || t == null || t.isLocalDb || t.isRecommendationFeed || t.isMerge || t.isWebView) return null;
+    if (hasReader || t == null) return null;
     if (!_siteFiltersRead) {
       _siteFiltersRead = true;
       _siteFilters = BooruSiteFilters.fromMetaTags(availableMetaTags());

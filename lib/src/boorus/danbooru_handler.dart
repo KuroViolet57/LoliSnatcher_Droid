@@ -4,6 +4,8 @@ import 'package:dio/dio.dart';
 import 'package:html/dom.dart';
 import 'package:html/parser.dart';
 
+import 'package:lolisnatcher/src/boorus/doujin/doujin_filters.dart';
+import 'package:lolisnatcher/src/boorus/booru_site_filters.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/comment_item.dart';
 import 'package:lolisnatcher/src/data/meta_tag.dart';
@@ -22,6 +24,10 @@ import 'package:lolisnatcher/src/utils/tools.dart';
 
 class DanbooruHandler extends BooruHandler {
   DanbooruHandler(super.booru, super.limit);
+
+  /// r45: danbooru's cheatsheet as Filters (danbooru, AiBooru, AllTheFallen).
+  @override
+  DoujinFilterSpec? get doujinFilters => BooruEngineFilters.danbooru;
 
   /// Artists, characters, copyrights, meta and general tags, one category at
   /// a time from tags.json (see DanbooruTagIndex).
@@ -94,9 +100,7 @@ class DanbooruHandler extends BooruHandler {
       headers: headers,
       queryParameters: queryParams,
       options: fetchSearchOptions(),
-      customInterceptor: withCaptchaCheck
-          ? (dio) => DioNetwork.captchaInterceptor(dio, customUserAgent: Tools.appUserAgent)
-          : null,
+      customInterceptor: withCaptchaCheck ? (dio) => DioNetwork.captchaInterceptor(dio, customUserAgent: Tools.appUserAgent) : null,
     );
   }
 
@@ -617,10 +621,7 @@ List<({String tag, int count})> _tagsFromHtml(List<Element>? elements) {
 
   final List<({String tag, int count})> tagsWithCount = [];
   for (final element in elements) {
-    final String? tag = element
-        .getElementsByTagName('a')
-        .firstWhereOrNull((e) => e.text.isNotEmpty && e.text != '?')
-        ?.text;
+    final String? tag = element.getElementsByTagName('a').firstWhereOrNull((e) => e.text.isNotEmpty && e.text != '?')?.text;
     final String? countRawText = element.getElementsByTagName('span').lastWhereOrNull((e) => e.text.isNotEmpty)?.text;
     final int count = int.tryParse(countRawText ?? '') ?? _parseFormattedNumber(countRawText);
     if (tag != null) {
