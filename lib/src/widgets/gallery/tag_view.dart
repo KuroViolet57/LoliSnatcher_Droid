@@ -13,6 +13,7 @@ import 'package:fading_edge_scrollview/fading_edge_scrollview.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:fpdart/fpdart.dart' show FpdartOnIterable;
 import 'package:get/get.dart' hide ContextExt, FirstWhereOrNullExt;
+import 'package:lolisnatcher/src/utils/settled_call.dart';
 import 'package:lolisnatcher/src/handlers/tag_type_lookup.dart';
 import 'package:lolisnatcher/src/pages/furaffinity_post_page.dart';
 import 'package:lolisnatcher/src/boorus/furaffinity_handler.dart';
@@ -173,6 +174,10 @@ class _TagViewState extends State<TagView> {
 
   Timer? sortTimer;
 
+  /// r54: the first item data load waits until the post has stayed on screen
+  /// (a post swiped straight past fetched its page and tripped rate limits).
+  final SettledCall initialLoad = SettledCall(SettledCall.itemDataDelay);
+
   @override
   void initState() {
     super.initState();
@@ -188,15 +193,18 @@ class _TagViewState extends State<TagView> {
     searchHandler.searchTextController.addListener(parseSortGroupTagsWithoutCache);
     searchFocusNode.addListener(searchFocusListener);
 
-    reloadItemData(initial: true).then((_) async {
-      await Future.delayed(const Duration(seconds: 3));
-      if (mounted) {
-        parseSortGroupTagsWithoutCache();
-        sortTimer = Timer.periodic(
-          const Duration(seconds: 5),
-          (_) => parseSortGroupTagsWithoutCache(),
-        );
-      }
+    initialLoad.schedule(() {
+      if (!mounted) return;
+      reloadItemData(initial: true).then((_) async {
+        await Future.delayed(const Duration(seconds: 3));
+        if (mounted) {
+          parseSortGroupTagsWithoutCache();
+          sortTimer = Timer.periodic(
+            const Duration(seconds: 5),
+            (_) => parseSortGroupTagsWithoutCache(),
+          );
+        }
+      });
     });
   }
 
@@ -298,6 +306,7 @@ class _TagViewState extends State<TagView> {
   void dispose() {
     cancelToken?.cancel();
     sortTimer?.cancel();
+    initialLoad.cancel();
     searchHandler.searchTextController.removeListener(parseSortGroupTagsWithoutCache);
     searchController.dispose();
     searchFocusNode.removeListener(searchFocusListener);
@@ -333,12 +342,15 @@ class _TagViewState extends State<TagView> {
           );
         }
 
-        if (!res.failed) {
+        if (!res.failed && mounted) {
           await getUploaderName();
         }
       } catch (e) {
         failedUpdate = true;
       }
+      // r54: the panel may be gone by the time the answer arrives (a post swiped
+      // past): a setState then threw "Null check operator used on a null value".
+      if (!mounted) return;
       loadingUpdate = false;
       setState(() {});
       WidgetsBinding.instance.addPostFrameCallback(

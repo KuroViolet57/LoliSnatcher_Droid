@@ -109,6 +109,9 @@ android {
                 signingConfigs.getByName("debug")
             }
         }
+        // Profile builds (on-device profiling) install over the release app, so they use its key:
+        // Flutter creates "profile" from "debug" before the block above sets the release key.
+        findByName("profile")?.let { it.signingConfig = signingConfigs.getByName("release") }
     }
 
     packagingOptions {

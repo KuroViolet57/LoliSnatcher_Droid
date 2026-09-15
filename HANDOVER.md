@@ -1101,6 +1101,38 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   pan, the video seek bar) still win their gestures.
 - Modular UI `viewer.instantPageSwipe` (on); off restores the sliding pager.
 
+### 4.23 On-device profiling; settled post data (r54)
+
+- **Profiling (2026-09-15, S24 Ultra, r53 profile builds over USB):** frame
+  timings via the Dart VM service (`getVMTimeline` returns `traceEvents`; the
+  ring recorder holds about 2 s, so fetch and clear every 1.2 s and pair
+  begin/end per chunk). Profile builds are signed with the release key
+  (`android/app/build.gradle.kts`: `findByName("profile")` gets the release
+  signing config, because Flutter creates "profile" from "debug" before the
+  app's block runs), so `adb install -r` updates the installed app and keeps
+  its data; check `apksigner verify --print-certs` first.
+- **Impeller A/B** (manifest `EnableImpeller` flipped for a test build only;
+  a launch flag cannot win: FlutterLoader appends the manifest flag after the
+  intent's, and fml keeps the last value): grid Dart-side long stalls gone,
+  but the viewer gets repeated 150-200 ms `SurfaceFrame::Submit` stalls and
+  tabs/sheets miss 30% of draws. Impeller stays off.
+- **App-side costs seen on both renderers:** the viewer page change builds
+  and lays out the page in one frame (50-80 ms, ~55-60 builds, ~10 ms
+  scavenges); every grid thumbnail fades in (AnimatedOpacity) even when
+  cached, each fade a saveLayer; the semantics tree is rebuilt every frame
+  while an accessibility service runs (the user's Dictate app). Not fixed yet.
+- **r54 fix:** after the reinstall the user swiped fast through rule34.xxx
+  videos: each post's hidden details panel (`TagView`, built for every page)
+  called `reloadItemData(initial: true)` in `initState`, fetching the post
+  page; rule34.xxx answered 429 and its CAPTCHA page, and answers arriving
+  after the panel was disposed threw at the `setState` in `reloadItemData`.
+  The first load now waits `SettledCall.itemDataDelay` (800 ms,
+  `utils/settled_call.dart`, cancelled in `dispose`), and `reloadItemData`
+  returns when `!mounted` after the await.
+- Proposed, not done: a longer media_kit `_initDelay` (200 ms) so flicked-past
+  video posts create no player; cached thumbnails without a fade; a lighter
+  page change; semantics exclusion; a renderer switch.
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
@@ -1526,8 +1558,13 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r53)
+## 12. Open items (as of r54)
 
+- r54 is unverified on the device: fast swipes through rule34.xxx without 429s,
+  no "Null check operator" errors from TagView, post data still loading when
+  the user stays on a post.
+- Waiting for the user: the media_kit start delay, and the performance fixes
+  from the profiling (§4.23).
 - r53 is unverified on the device: instant swipes on pictures and videos,
   zoomed pan, the seek bar, vertical paging.
 - Next: USB profiling session on the phone (the user agreed): profile build,
