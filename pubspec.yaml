@@ -116,16 +116,6 @@ dependencies:
 
 
 dependency_overrides:
-  # r51: media_kit from its GitHub main at the merge of #1446 (2026-08-30),
-  # native memory leak fixes in the mpv bindings (property strings, setProperty
-  # name pointers and async requests on errors, the Media reference map) that
-  # are not on pub yet. Same version (1.2.6) and API as the pub release; drop
-  # this override when a newer media_kit is published.
-  media_kit:
-    git:
-      url: https://github.com/media-kit/media-kit.git
-      ref: c533e446755f51cf53c7e57aea873f2aa5355f81
-      path: media_kit
   android_intent_plus: ^6.0.0
   material_color_utilities: ^0.13.0 # flutter_test conflict
   share_plus: ^12.0.2 # alice conflict

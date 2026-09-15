@@ -1133,6 +1133,35 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   video posts create no player; cached thumbnails without a fade; a lighter
   page change; semantics exclusion; a renderer switch.
 
+### 4.24 Back to r50's engine, packages and swipes (r55)
+
+- **The user (2026-09-15):** the app worked until r51; revert every package,
+  media engine and swipe change since then and keep only the functional
+  features. No dependency, media_kit pin or Flutter upgrades without an
+  explicit request.
+- **Reverted:** r51 entirely (`pubspec.yaml` and `pubspec.lock` equal r50's:
+  no media_kit git pin, image and dio back); r52's video thumbnail cover
+  (`MediaKitPlayerView.showCover`, `_firstFrame`, Modular UI
+  `viewer.videoCoverWhileLoading`, `test/media_kit_cover_test.dart`); r53
+  entirely (`InstantPageSwipe`, Modular UI `viewer.instantPageSwipe`, the
+  gallery drag handlers and zero-duration switchers); r54's code
+  (`SettledCall` and the TagView `mounted` guards, the profile build's release
+  signing config). Values stored for the two removed Modular UI keys stay in
+  settings.json and are ignored.
+- **Kept from r52:** linked media on every post and the share-slot button,
+  hidden pins and pin suggestions, `HiddenStatusBarInsets`.
+- **Evening profiling (S24U, r54 on Flutter 3.42 beta):** with the Dictate
+  accessibility service off the grid, viewer and tabs miss far fewer frames;
+  Skia beats Impeller on the grid and tabs; an 8K (4320x7680) video froze Skia
+  drawing (media_kit sizes the Android surface to the video). A Flutter 3.47.4
+  trial (Impeller and Skia) grew the app to 2.9 GB PSS with big videos in the
+  warm pool and lmkd killed it; no memory kill on any 3.42 build that evening.
+  Not applied.
+- Profile builds are debug-signed again: before installing one over the
+  user's app, give "profile" the release signing config in
+  `android/app/build.gradle.kts` (`findByName("profile")`), or the install
+  fails.
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
@@ -1558,25 +1587,20 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r54)
+## 12. Open items (as of r55)
 
-- r54 is unverified on the device: fast swipes through rule34.xxx without 429s,
-  no "Null check operator" errors from TagView, post data still loading when
-  the user stays on a post.
-- Waiting for the user: the media_kit start delay, and the performance fixes
-  from the profiling (§4.23).
-- r53 is unverified on the device: instant swipes on pictures and videos,
-  zoomed pan, the seek bar, vertical paging.
-- Next: USB profiling session on the phone (the user agreed): profile build,
-  DevTools frame timings on the grid, viewer, tab carousel and sheets.
+- r55 is unverified on the device: the r50 swipe, video playback with the warm
+  pool and big videos on the released media_kit, linked media, hidden pins,
+  pin suggestions and the keyboard above sheets still working.
+- Asked, not decided: the recommender weights (`config/recommender/`) and the
+  downloaded encoder model (`config/encoder/`) are in neither backup.
+- Proposed after the profiling, not approved: cached thumbnails without a
+  fade, a lighter page change, a video surface capped to the screen (would
+  patch media_kit_video; needs the user's explicit OK, §4.24).
 - r52 is unverified on the device: the link button in the share slot (FA GIF
   posts too), e621 post 2197695 opening in the app with the user's filters,
   the media-only list, hidden pins, pin autocomplete, the keyboard above sheets
-  with the status bar hidden, the thumbnail cover on video swipes.
-- User asked about UI performance (120 Hz dipping to 70-90 fps): needs a
-  profile build and DevTools on the phone (USB) to find the real cost.
-- r51 is unverified on the device: media_kit from the leak-fix commit (a long
-  video session, the warm pool, fullscreen, 2x, mute), image 4.10.1 decodes.
+  with the status bar hidden.
 - r50 is unverified on the device: types in preview tabs, the Artist hub
   from FurAffinity, the full index pull, the pinned tags page, the back arrow
   with the status bar hidden (the inset kept is the likely cause, not proven),

@@ -105,22 +105,6 @@ class ModularUi {
     defaultValue: true,
   );
 
-  static const ModularUiToggle viewerVideoCover = ModularUiToggle(
-    key: 'viewer.videoCoverWhileLoading',
-    area: viewerArea,
-    title: 'Thumbnail until the video shows (media_kit)',
-    description: 'While a video loads, and while you swipe to it, the page shows the post thumbnail instead of a black panel.',
-    defaultValue: true,
-  );
-
-  static const ModularUiToggle viewerInstantPageSwipe = ModularUiToggle(
-    key: 'viewer.instantPageSwipe',
-    area: viewerArea,
-    title: 'Instant page swipe',
-    description: 'A swipe jumps straight to the next or previous post: the page does not slide with the finger, no page change animation. Off brings back the sliding pages.',
-    defaultValue: true,
-  );
-
   static const String wholeAppArea = 'Whole app';
 
   static const ModularUiToggle appDrawUnderHiddenStatusBar = ModularUiToggle(
@@ -139,8 +123,6 @@ class ModularUi {
     sidebarPinnedTags,
     viewerLinkedMedia,
     viewerLinkedMediaReplacesShare,
-    viewerVideoCover,
-    viewerInstantPageSwipe,
     appDrawUnderHiddenStatusBar,
   ];
 
