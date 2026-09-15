@@ -931,6 +931,27 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   Debug mode (upstream, 2026-03-14); six taps on the version row at the
   bottom of Settings turn it on, a long press turns it off.
 
+### 4.17 A Flash post in the viewer is a Play button (r48)
+
+- **Before:** a FurAffinity Flash card is `needToLoadItem`; the gallery page
+  showed `LoadItemViewer`, `loadItem` set the type to `unknown`, and the last
+  `else` branch opened `GuessExtensionViewer`, which ended on "Failed to
+  guess the file extension" while the top bar already offered Play.
+- **Now:** `gallery_view_page.dart` checks `FlashPlayViewer.shouldShow(item)`
+  first (Flash by the listing's `type:flash` or a `.swf` file, and not
+  already an image/animation/video). `FlashPlayViewer`
+  (`widgets/video/flash_play_viewer.dart`) shows the thumbnail, a Play
+  button (`FlashPlayerPage.openFor`) and "Open post in browser", and reads
+  the post page in the background (`loadItem`, cancelled on dispose) so the
+  details and a download get the real `.swf`.
+- **Origin:** `FlashPlayerPage.baseUrlFor(item)` makes the player page's
+  origin the post's site. e621 serves its `.swf` with
+  `Access-Control-Allow-Origin: https://e621.net` (checked 2026-09-15), so a
+  FurAffinity origin would have been refused; FurAffinity answers `*`.
+- **Tests:** unit tests have no webview platform, so building
+  `FlashPlayerPage`'s `InAppWebView` asserts; `flash_play_viewer_test`
+  accepts only that assertion after checking the page opened.
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
@@ -1356,8 +1377,10 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r47)
+## 12. Open items (as of r48)
 
+- r48 is unverified on the device: the Flash Play screen (FurAffinity and
+  e621 .swf posts), the background load filling the details.
 - r47 is unverified on the device: the paheal and rule34.us Filters cards.
 - Left of the user plan: pools in the tag builder (danbooru, e621); Idol
   Sankaku and rule34hentai.net filters need checks from the phone.

@@ -11,6 +11,7 @@ import 'package:flutter/services.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:preload_page_view/preload_page_view.dart';
 
+import 'package:lolisnatcher/src/widgets/video/flash_play_viewer.dart';
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/boorus/idol_sankaku_handler.dart';
 import 'package:lolisnatcher/src/boorus/sankaku_handler.dart';
@@ -554,7 +555,16 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
                                   final bool useGifViewer = mediaType.isAnimation && settingsHandler.fastGifPlayback;
 
                                   late Widget itemWidget;
-                                  if (useGifViewer) {
+                                  // r48: a Flash post is its thumbnail and a Play button, never
+                                  // the loading card and the type guessing that end on
+                                  // "Failed to guess the file extension".
+                                  if (FlashPlayViewer.shouldShow(item)) {
+                                    itemWidget = FlashPlayViewer(
+                                      item: item,
+                                      handler: widget.tab.booruHandler,
+                                      key: item.key,
+                                    );
+                                  } else if (useGifViewer) {
                                     itemWidget = ValueListenableBuilder(
                                       valueListenable: page,
                                       builder: (_, pageVal, _) {

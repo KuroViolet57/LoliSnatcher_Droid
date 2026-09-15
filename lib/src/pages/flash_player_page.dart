@@ -16,7 +16,7 @@ import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 /// with `access-control-allow-origin: *`, so the page can fetch them; the
 /// page's base is the site so the movie is asked for as the site asks for it.
 class FlashPlayerPage extends StatefulWidget {
-  const FlashPlayerPage({required this.swfUrl, this.title, this.ruffleUrl = defaultRuffle, super.key});
+  const FlashPlayerPage({required this.swfUrl, this.title, this.ruffleUrl = defaultRuffle, this.pageBaseUrl = baseUrl, super.key});
 
   /// The Ruffle FurAffinity's Flash pages load (checked 2026-09-15).
   static const String defaultRuffle = 'https://d.furaffinity.net/media/ruffle-0.2.0/ruffle.js';
@@ -25,6 +25,18 @@ class FlashPlayerPage extends StatefulWidget {
   final String swfUrl;
   final String? title;
   final String ruffleUrl;
+
+  /// The player page's origin: the post's own site (see [baseUrlFor]).
+  final String pageBaseUrl;
+
+  /// The post's site as the page origin (r48), so a movie its site serves only
+  /// to that origin loads: e621 answers `Access-Control-Allow-Origin:
+  /// https://e621.net`, FurAffinity answers `*`.
+  static String baseUrlFor(BooruItem item) {
+    final Uri? uri = Uri.tryParse(item.postURL);
+    if (uri == null || !uri.hasScheme || uri.host.isEmpty) return baseUrl;
+    return '${uri.scheme}://${uri.host}/';
+  }
 
   static bool isFlashUrl(String url) => (Uri.tryParse(url)?.path ?? url).toLowerCase().endsWith('.swf');
 
@@ -79,7 +91,7 @@ window.addEventListener("load", function () {
     }
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => FlashPlayerPage(swfUrl: item.fileURL, title: item.description),
+        builder: (_) => FlashPlayerPage(swfUrl: item.fileURL, title: item.description, pageBaseUrl: baseUrlFor(item)),
       ),
     );
   }
@@ -121,7 +133,7 @@ class _FlashPlayerPageState extends State<FlashPlayerPage> {
                   child: InAppWebView(
                     initialData: InAppWebViewInitialData(
                       data: FlashPlayerPage.html(swfUrl: widget.swfUrl, ruffleUrl: widget.ruffleUrl),
-                      baseUrl: WebUri(FlashPlayerPage.baseUrl),
+                      baseUrl: WebUri(widget.pageBaseUrl),
                       mimeType: 'text/html',
                       encoding: 'utf-8',
                     ),
