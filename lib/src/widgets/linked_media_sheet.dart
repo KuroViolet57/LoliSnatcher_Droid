@@ -82,9 +82,15 @@ class LinkedMediaList extends StatelessWidget {
           ListTile(
             key: ValueKey('linked-media-$i'),
             leading: Icon(iconFor(items[i])),
-            title: Text(items[i].label),
-            subtitle: Text(items[i].url, maxLines: 1, overflow: TextOverflow.ellipsis),
-            trailing: const Icon(Symbols.chevron_right_rounded),
+            title: Text(items[i].title, maxLines: 2, overflow: TextOverflow.ellipsis),
+            subtitle: Text(items[i].destination, maxLines: 1, overflow: TextOverflow.ellipsis),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _Badge(items[i].badge),
+                const Icon(Symbols.chevron_right_rounded),
+              ],
+            ),
             onTap: () => onOpen != null ? onOpen!(items[i]) : LinkedMediaOpener.open(context, items[i], title: title),
           ),
       ],
@@ -153,11 +159,29 @@ class LinkedMediaButton {
     try {
       final FurAffinitySubmission? s = FurAffinityParser.submission(await handler.fetchPage(item.postURL));
       return _cache[item.postURL] = [
-        for (final String url in LinkedMediaResolver.linksIn(s?.descriptionHtml ?? '', base: FurAffinityQuery.site))
-          LinkedMediaResolver.resolve(url, SettingsHandler.instance.booruList),
+        for (final LinkedAnchor a in LinkedMediaResolver.anchorsIn(s?.descriptionHtml ?? '', base: FurAffinityQuery.site))
+          LinkedMediaResolver.resolve(a.url, SettingsHandler.instance.booruList, text: a.text),
       ];
     } catch (_) {
       return const [];
     }
+  }
+}
+
+/// What a link is, at a glance: In app, Video, Animation or Web (r50).
+class _Badge extends StatelessWidget {
+  const _Badge(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return Container(
+      margin: const EdgeInsets.only(right: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(color: scheme.secondaryContainer, borderRadius: BorderRadius.circular(999)),
+      child: Text(text, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: scheme.onSecondaryContainer)),
+    );
   }
 }

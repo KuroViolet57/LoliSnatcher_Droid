@@ -984,6 +984,40 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   `auto_link` form; a live sample of 24 popular animation posts had no
   external links (those are likely on mature posts, which need the login).
 
+### 4.19 Tag types, hubs, the whole tag index, pinned tags, the top inset (r50)
+
+- **Types in preview tabs:** `BooruHandler.addTagsWithType` also fills
+  `ownTagTypes` (kept when `storeTagsGlobally` is off: strips, the floating
+  preview, hub tabs). `TagTypeLookup.resolve` (`handlers/tag_type_lookup.dart`)
+  is the one answer: your correction → the handler's own parse → the shared
+  store (not on doujin) → the tag's own type. `TagView.typeOfTag` delegates;
+  "More from" also checks it.
+- **Hubs:** `showTagDialog(knownType:)` receives the row's type and passes it
+  to `TagHubPage(knownType:)`, so an artist the shared store never stored
+  opens the Artist hub. `HubTagQuery.forBooru` (`utils/hub_tag_query.dart`)
+  strips tag-type namespaces (`artist:` …) for other sources, except sites
+  whose tags carry them (FurAffinity, Philomena, Civitai, Hanime1, InkBunny,
+  Rule34Video, XXXTik).
+- **Tag index:** `BooruTagCatalog.maxShardsPerPull` is null and booru
+  category namespaces have no `maxShards`: a pull runs to `maxIndexPages`.
+  `TagCatalogPuller.pullEverything` walks every category (or the one shared
+  walk) in turn; `overallState` adds the jobs up (shard = lists finished);
+  `cancelEverything` stops the run. The tag browser's Pull tag index uses them,
+  so it fills the same lists as the tag builder's chips. Doujin catalogs keep
+  their per-pull caps.
+- **Pinned tags:** `pages/pinned_tags_page.dart` (`PinnedTagsStore`: database
+  for boorus, the doujin store for doujin sources; `PinBuilderSheet`: chips,
+  name, scope). `PinnedTag.title` (DB column `title`, added by migration),
+  `displayName`, `tags`; `DBHandler.updatePinnedTag`. Follow pins are hidden.
+  Quick access row behind Modular UI `sidebar.pinnedTags` (on).
+- **Top inset:** `main.dart` used to strip the top inset while the status
+  bar is hidden, putting back arrows in Android's swipe-to-reveal edge.
+  `StatusBarInset.apply` (`utils/status_bar_inset.dart`) keeps it; Modular UI
+  `app.drawUnderHiddenStatusBar` (off) restores the old layout.
+- **Linked media:** `LinkedMediaResolver.unwrap` follows FurAffinity's
+  `/externalurl/?q=`; `anchorsIn` keeps each link's words; rows show
+  `title`, `destination` and `badge`.
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
@@ -1409,8 +1443,12 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r49)
+## 12. Open items (as of r50)
 
+- r50 is unverified on the device: types in preview tabs, the Artist hub
+  from FurAffinity, the full index pull, the pinned tags page, the back arrow
+  with the status bar hidden (the inset kept is the likely cause, not proven),
+  the unwrapped linked media rows.
 - r49 is unverified on the device: the linked media button and sheet on
   FurAffinity animated posts, an e621 link opening in the viewer on top, an
   `.mp4` link playing in the linked media player, the post page section.

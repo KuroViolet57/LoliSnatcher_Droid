@@ -147,8 +147,8 @@ class _FurAffinityPostPageState extends State<FurAffinityPostPage> {
   Widget _body(ThemeData theme, FurAffinitySubmission p) {
     // r49: the links the description gives for the animation or video.
     final List<LinkedMedia> linked = [
-      for (final String url in LinkedMediaResolver.linksIn(p.descriptionHtml, base: FurAffinityQuery.site))
-        LinkedMediaResolver.resolve(url, SettingsHandler.instance.booruList),
+      for (final LinkedAnchor a in LinkedMediaResolver.anchorsIn(p.descriptionHtml, base: FurAffinityQuery.site))
+        LinkedMediaResolver.resolve(a.url, SettingsHandler.instance.booruList, text: a.text),
     ];
     final NumberFormat count = NumberFormat.decimalPattern();
     final String gif = p.fileUrl.toLowerCase().endsWith('.gif') ? p.fileUrl : '';

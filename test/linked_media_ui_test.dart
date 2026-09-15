@@ -23,6 +23,7 @@ import 'package:lolisnatcher/src/widgets/linked_media_sheet.dart';
 /// r49: where the linked media shows — the post page's "Linked media"
 /// section and the viewer's link button on animated posts whose file is a
 /// still picture (a Modular UI switch) — and what a tap opens.
+/// r50: each row says what the link is and where it goes.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -73,20 +74,21 @@ void main() {
     expect(ModularUi.isOn(ModularUi.viewerLinkedMedia), isTrue);
   });
 
-  testWidgets('the list says what each link is; a file opens the linked media player', (tester) async {
+  testWidgets('each row: what the link is, where it goes, and a badge; a file opens the linked media player', (tester) async {
     final List<LinkedMedia> items = [
       LinkedMedia(url: 'https://e621.net/posts/4011234', kind: LinkedMediaKind.sourcePost, booru: e621, postId: '4011234'),
       const LinkedMedia(url: 'https://files.example.com/final.mp4', kind: LinkedMediaKind.media),
-      const LinkedMedia(url: 'https://x.com/artist/status/1', kind: LinkedMediaKind.page),
+      const LinkedMedia(url: 'https://x.com/artist/status/1', kind: LinkedMediaKind.page, text: 'My X'),
     ];
-    await tester.pumpWidget(
-      TranslationProvider(
-        child: MaterialApp(home: Scaffold(body: LinkedMediaList(items: items, title: 'A post'))),
-      ),
-    );
-    expect(find.text('Open on e621'), findsOneWidget);
-    expect(find.text('Play the video'), findsOneWidget);
-    expect(find.text('Open x.com'), findsOneWidget);
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: LinkedMediaList(items: items, title: 'A post'))));
+    expect(find.text('e621 post #4011234'), findsOneWidget);
+    expect(find.text('Opens in the app · e621'), findsOneWidget);
+    expect(find.text('In app'), findsOneWidget);
+    expect(find.text('final.mp4'), findsOneWidget);
+    expect(find.text('Video'), findsOneWidget);
+    expect(find.text('My X'), findsOneWidget);
+    expect(find.text('Opens the web page · x.com'), findsOneWidget);
+    expect(find.text('Web'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('linked-media-1')));
     await tester.pump();
     final Object? first = tester.takeException();
@@ -99,7 +101,7 @@ void main() {
     }
   });
 
-  testWidgets("the post page lists the description's links, an installed source's post first-class", (tester) async {
+  testWidgets("the post page lists the description's links, unwrapped, an installed source's post first-class", (tester) async {
     SettingsHandler.instance.booruList.add(e621);
     tester.view.physicalSize = const Size(420, 7000);
     tester.view.devicePixelRatio = 1;
@@ -107,22 +109,18 @@ void main() {
     const String marker = 'submission-description-text user-submitted-links">';
     final String html = fixture('furaffinity_view_folders.html').replaceFirst(
       marker,
-      '${marker}Full video: <a class="auto_link " href="https://e621.net/posts/4011234">https://e621.net/posts/4011234</a> ',
+      '${marker}Full video: <a class="auto_link_shortened" '
+          'href="https://www.furaffinity.net/externalurl/?q=https%3A%2F%2Fe621.net%2Fposts%2F4011234">Full animation</a> ',
     );
     await tester.pumpWidget(
-      TranslationProvider(
-        child: MaterialApp(
-          home: FurAffinityPostPage(
-            booru: fa,
-            item: post(['animated']),
-            fetchPage: (String url) async => html,
-          ),
-        ),
+      MaterialApp(
+        home: FurAffinityPostPage(booru: fa, item: post(['animated']), fetchPage: (String url) async => html),
       ),
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
     expect(find.text('Linked media'), findsOneWidget);
-    expect(find.text('Open on e621'), findsOneWidget);
+    expect(find.text('Full animation'), findsWidgets);
+    expect(find.text('Opens in the app · e621'), findsOneWidget);
   });
 }

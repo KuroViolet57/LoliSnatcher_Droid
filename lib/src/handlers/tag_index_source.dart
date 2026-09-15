@@ -493,7 +493,7 @@ class DanbooruTagIndex extends TagIndexSource {
 
   @override
   List<TagCatalogNamespace> catalogNamespaces(Booru booru) =>
-      TagIndexSource.namespacesFor(categoryCodes.keys, maxShards: catalogPagesPerPull);
+      TagIndexSource.namespacesFor(categoryCodes.keys);
 
   String _creds(Booru booru) {
     final String key = booru.apiKey ?? '';
@@ -607,7 +607,7 @@ class E621TagIndex extends TagIndexSource {
 
   @override
   List<TagCatalogNamespace> catalogNamespaces(Booru booru) =>
-      TagIndexSource.namespacesFor(categoryCodes.keys, maxShards: catalogPagesPerPull);
+      TagIndexSource.namespacesFor(categoryCodes.keys);
 
   Map<String, String> _headers(Booru booru) {
     final String key = booru.apiKey ?? '';
@@ -724,7 +724,7 @@ class PhilomenaTagIndex extends TagIndexSource {
 
   @override
   List<TagCatalogNamespace> catalogNamespaces(Booru booru) =>
-      TagIndexSource.namespacesFor(categoryQueries.keys, maxShards: catalogPagesPerPull);
+      TagIndexSource.namespacesFor(categoryQueries.keys);
 
   static const Map<String, TagType> _categories = {
     'artist': TagType.artist,
@@ -858,7 +858,7 @@ class MoebooruTagIndex extends TagIndexSource {
 
   @override
   List<TagCatalogNamespace> catalogNamespaces(Booru booru) =>
-      TagIndexSource.namespacesFor(categoryCodes.keys, maxShards: catalogPagesPerPull);
+      TagIndexSource.namespacesFor(categoryCodes.keys);
 
   Future<List<BooruTagEntry>> _fetch(Booru booru, String query, {Map<String, String>? headers}) async {
     final response = await DioNetwork.get(
@@ -962,7 +962,7 @@ class SankakuTagIndex extends TagIndexSource {
 
   @override
   List<TagCatalogNamespace> catalogNamespaces(Booru booru) =>
-      TagIndexSource.namespacesFor(categoryCodes.keys, maxShards: catalogPagesPerPull);
+      TagIndexSource.namespacesFor(categoryCodes.keys);
 
   /// What the handler sends, minus the session token.
   static Map<String, String> defaultHeaders() => {

@@ -125,7 +125,8 @@ class DBHandler {
       'booruName TEXT, '
       'pinnedAt INTEGER NOT NULL, '
       'sortOrder INTEGER DEFAULT 0, '
-      'label TEXT '
+      'label TEXT, '
+      'title TEXT '
       ')',
     );
     await db?.execute(
@@ -316,6 +317,12 @@ class DBHandler {
       'PRIMARY KEY (service, id) '
       ')',
     );
+    // r50: a pin's own name.
+    try {
+      if (!await columnExists('PinnedTag', 'title')) {
+        await db?.execute('ALTER TABLE PinnedTag ADD COLUMN title TEXT;');
+      }
+    } catch (_) {}
     try {
       if (!await columnExists('SearchHistory', 'isFavourite')) {
         await db?.execute('ALTER TABLE SearchHistory ADD COLUMN isFavourite INTEGER;');
@@ -2237,6 +2244,7 @@ class DBHandler {
     String? booruType,
     String? booruName,
     List<String> labels = const [],
+    String? title,
   }) async {
     // Check if already pinned with same scope
     final existing = await db?.rawQuery(
@@ -2250,8 +2258,8 @@ class DBHandler {
     final pinnedAt = DateTime.now().millisecondsSinceEpoch;
     final labelsString = labels.isNotEmpty ? labels.join(',') : null;
     final result = await db?.rawInsert(
-      'INSERT INTO PinnedTag(tagName, booruType, booruName, pinnedAt, sortOrder, label) VALUES(?, ?, ?, ?, ?, ?)',
-      [tagName, booruType, booruName, pinnedAt, 0, labelsString],
+      'INSERT INTO PinnedTag(tagName, booruType, booruName, pinnedAt, sortOrder, label, title) VALUES(?, ?, ?, ?, ?, ?, ?)',
+      [tagName, booruType, booruName, pinnedAt, 0, labelsString, title],
     );
     return result;
   }
@@ -2343,6 +2351,14 @@ class DBHandler {
   Future<void> updatePinnedTagLabels(int id, List<String> labels) async {
     final labelsString = labels.join(',');
     await db?.rawUpdate('UPDATE PinnedTag SET label = ? WHERE id = ?', [labelsString, id]);
+  }
+
+  /// Edit a pin: its tags, its name and where it shows (r50).
+  Future<void> updatePinnedTag(int id, {required String tagName, String? title, String? booruType, String? booruName}) async {
+    await db?.rawUpdate(
+      'UPDATE PinnedTag SET tagName = ?, title = ?, booruType = ?, booruName = ? WHERE id = ?',
+      [tagName, title, booruType, booruName, id],
+    );
   }
 
   /// Get all unique labels from pinned tags (parses comma-separated labels)

@@ -4,6 +4,8 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:get/get.dart' hide ContextExt, FirstWhereOrNullExt;
 
+import 'package:lolisnatcher/src/data/modular_ui.dart';
+import 'package:lolisnatcher/src/pages/pinned_tags_page.dart';
 import 'package:lolisnatcher/src/boorus/kemono_site.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/pinned_tag.dart';
@@ -446,6 +448,16 @@ class _DrawerQuickAccessState extends State<DrawerQuickAccess> {
         count: '${searchHandler.savedSearches.length} kept',
         onTap: () => _openPage(const SavedSearchesPage()),
       ),
+      // r50: the search window's pinned row is off by default (Modular UI),
+      // so the current source's pins are built and edited here.
+      if (current != null && ModularUi.isOn(ModularUi.sidebarPinnedTags))
+        _quickAccessRow(
+          icon: Symbols.push_pin_rounded,
+          iconColor: const Color(0xFFE8A06B),
+          label: '${current.name} pinned tags',
+          subtitle: 'Pins of one or several tags: add, edit, rename, delete',
+          onTap: () => _openPage(PinnedTagsPage(booru: current)),
+        ),
       _quickAccessRow(
         icon: Symbols.folder_rounded,
         iconColor: const Color(0xFF93AECC),

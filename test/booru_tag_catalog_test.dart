@@ -133,12 +133,12 @@ void main() {
       final gel = GelbooruHandler(b('g', BooruType.Gelbooru, 'https://gelbooru.com'), 20).tagCatalog!;
       expect(gel.namespaces.every((n) => n.byType), isTrue);
       expect(gel.sharedShards, isTrue);
-      expect(gel.maxShardsPerPull, 100);
+      expect(gel.maxShardsPerPull, isNull, reason: 'r50: a booru pull runs to the end of the index in one go');
       expect(gel.searchTerm(const BooruTagEntry(name: 'hatsune_miku', tagType: TagType.character)), 'hatsune_miku');
 
       final dan = DanbooruHandler(b('d', BooruType.Danbooru, 'https://danbooru.donmai.us'), 20).tagCatalog!;
       expect(dan.sharedShards, isFalse);
-      expect(dan.namespaces.every((n) => n.maxShards == 5), isTrue);
+      expect(dan.namespaces.every((n) => n.maxShards == null), isTrue);
 
       expect(
         e621Handler(b('e', BooruType.e621, 'https://e621.net'), 20).tagCatalog!.shardDelay,
@@ -165,11 +165,11 @@ void main() {
       expect((await catalog.shardAt('tag', 0))!.every((e) => e.tagType == TagType.none), isTrue);
     });
 
-    test('the plain index walk is the shared one, capped by the family', () async {
+    test("the plain index walk is the shared one, bounded only by the family's page limit", () async {
       final fake = _FakeIndex(byCategory: false, pages: 5, rowsPerPage: 4, maxPages: 2);
       final catalog = BooruTagCatalog(handler(), fake);
       expect(catalog.sharedShards, isTrue);
-      expect(catalog.maxShardsPerPull, 2);
+      expect(catalog.maxShardsPerPull, isNull);
       expect(await catalog.shardAt('', 0), isNotNull);
       expect(await catalog.shardAt('', 2), isNull, reason: 'past maxIndexPages');
       expect(fake.asked, [('', 0)]);

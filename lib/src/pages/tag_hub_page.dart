@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:material_symbols_icons/symbols.dart';
 
+import 'package:lolisnatcher/src/utils/hub_tag_query.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/followed_artists_handler.dart';
@@ -27,6 +28,7 @@ class TagHubPage extends StatefulWidget {
   const TagHubPage({
     required this.tag,
     this.originBooru,
+    this.knownType,
     super.key,
   });
 
@@ -35,6 +37,32 @@ class TagHubPage extends StatefulWidget {
 
   /// The booru the tag came from — used as the translation origin.
   final Booru? originBooru;
+
+  /// The type the tag sheet resolved (the source's own parse, the tag's own
+  /// type); the shared tag map alone missed artists it never stored (r50).
+  final TagType? knownType;
+
+  /// The tag's type for the hub's domain: a doujin hub reads the site's own
+  /// namespace; a booru hub takes [knownType] when the tag sheet resolved one
+  /// (r50), else the shared booru tag map.
+  static TagType typeFor(String tag, {Booru? originBooru, TagType? knownType}) => TagHandler.instance.typeForDisplay(
+    tag,
+    originBooru,
+    ownType: DoujinDataHandler.isDoujinBooru(originBooru) ? _doujinOwnType(tag) : knownType,
+  );
+
+  /// nhentai-style namespaces carried in the tag string itself.
+  static TagType? _doujinOwnType(String tag) {
+    final int colon = tag.indexOf(':');
+    if (colon <= 0) return null;
+    return switch (tag.substring(0, colon).toLowerCase()) {
+      'artist' => TagType.artist,
+      'group' => TagType.artist,
+      'character' => TagType.character,
+      'parody' => TagType.copyright,
+      _ => null,
+    };
+  }
 
   @override
   State<TagHubPage> createState() => _TagHubPageState();
@@ -52,24 +80,7 @@ class _TagHubPageState extends State<TagHubPage> {
   /// namespace (nhentai prefixes artist/group tags) and never the shared
   /// booru tag map, which otherwise decided — from unrelated booru browsing —
   /// whether this page called itself an "Artist hub".
-  TagType get _tagType => TagHandler.instance.typeForDisplay(
-    widget.tag,
-    widget.originBooru,
-    ownType: _isDoujinOrigin ? _doujinOwnType : null,
-  );
-
-  /// nhentai-style namespaces carried in the tag string itself.
-  TagType? get _doujinOwnType {
-    final int colon = widget.tag.indexOf(':');
-    if (colon <= 0) return null;
-    return switch (widget.tag.substring(0, colon).toLowerCase()) {
-      'artist' => TagType.artist,
-      'group' => TagType.artist,
-      'character' => TagType.character,
-      'parody' => TagType.copyright,
-      _ => null,
-    };
-  }
+  TagType get _tagType => TagHubPage.typeFor(widget.tag, originBooru: widget.originBooru, knownType: widget.knownType);
 
   bool get _isArtist => _tagType.isArtist;
 
@@ -279,7 +290,8 @@ class _TagHubPageState extends State<TagHubPage> {
             for (final booru in boorus)
               TagContentPreview(
                 key: ValueKey('taghub-${booru.name}-${booru.type}-${widget.tag}'),
-                tag: widget.tag,
+                // r50: the bare name elsewhere; e621 found nothing for artist:name.
+                tag: HubTagQuery.forBooru(widget.tag, origin: widget.originBooru, target: booru),
                 boorus: [booru],
                 parentTab: _originTab,
                 compact: true,

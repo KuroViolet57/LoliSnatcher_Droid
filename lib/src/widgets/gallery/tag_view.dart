@@ -13,6 +13,7 @@ import 'package:fading_edge_scrollview/fading_edge_scrollview.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:fpdart/fpdart.dart' show FpdartOnIterable;
 import 'package:get/get.dart' hide ContextExt, FirstWhereOrNullExt;
+import 'package:lolisnatcher/src/handlers/tag_type_lookup.dart';
 import 'package:lolisnatcher/src/pages/furaffinity_post_page.dart';
 import 'package:lolisnatcher/src/boorus/furaffinity_handler.dart';
 import 'package:lolisnatcher/src/boorus/danbooru_handler.dart';
@@ -146,18 +147,7 @@ class _TagViewState extends State<TagView> {
   bool get isDoujinContext =>
       (possibleBooruHandler ?? handler).hasReader || DoujinDataHandler.isDoujinItem(item);
 
-  TagType typeOfTag(Tag tag) {
-    final TagType? mine = BooruTagStore.manualType(tag.fullString, tagBooru);
-    if (mine != null) return mine;
-    // The shared TagHandler map is a BOORU store: on a doujin source the tag
-    // already carries the site's own type, and reading the booru map here
-    // recoloured doujin chips with a booru's classification of the same name.
-    if (!DoujinDataHandler.isDoujinBooru(tagBooru) && tagHandler.hasTag(tag.fullString)) {
-      final TagType stored = tagHandler.getTag(tag.fullString).tagType;
-      if (stored != TagType.none) return stored;
-    }
-    return tag.tagType;
-  }
+  TagType typeOfTag(Tag tag) => TagTypeLookup.resolve(tag, booru: tagBooru, handler: handler);
   bool hasLoadItemSupport = false;
   bool canLoadItemOnStart = false;
   List<Tag> tags = [];
@@ -864,7 +854,7 @@ class _TagViewState extends State<TagView> {
     //    object on the item (see groupTagsList above for the same pattern).
     //    Check both so this works regardless of how the handler tagged it.
     final artists = item.tagsList.where((t) {
-      if (t.tagType.isArtist) return true;
+      if (t.tagType.isArtist || typeOfTag(t).isArtist) return true;
       return tagHandler.getTagFor(t.fullString, tagBooru).tagType.isArtist;
     }).take(3).toList();
     for (final artist in artists) {
@@ -1842,6 +1832,7 @@ class _TagViewState extends State<TagView> {
                   isInSearch: isInSearch,
                   hasTabWithTag: hasTabWithTag,
                   onUpdate: parseSortGroupTagsWithoutCache,
+                  knownType: resolvedType,
                 );
               },
         onDoubleTap: tagSelectionMode
@@ -2369,6 +2360,9 @@ Future<void> showTagDialog({
   required bool isInSearch,
   required HasTabWithTagResult hasTabWithTag,
   required VoidCallback onUpdate,
+  // The type the tag list shows (the source's own parse, the tag's own
+  // type); the shared tag map alone missed artists it never stored (r50).
+  TagType? knownType,
 }) async {
   final settingsHandler = SettingsHandler.instance;
   final searchHandler = SearchHandler.instance;
@@ -2378,7 +2372,8 @@ Future<void> showTagDialog({
   // consulted, so the dialog's header can't contradict the chip the user
   // just tapped (or offer an "Artist hub" for a tag the site doesn't call an
   // artist).
-  final TagType resolvedType = tagHandler.typeForDisplay(tag, handler.booru);
+  final TagType resolvedType =
+      knownType != null && knownType != TagType.none ? knownType : tagHandler.typeForDisplay(tag, handler.booru);
   final Color typeColor = resolvedType.getColour() ?? const Color(0xFF8A80A0);
   final String typeName = resolvedType.locName;
   final bool isDoujin = handler.hasReader;
@@ -2496,6 +2491,7 @@ Future<void> showTagDialog({
                   builder: (_) => TagHubPage(
                     tag: tag,
                     originBooru: handler.booru,
+                    knownType: resolvedType,
                   ),
                 ),
               );
@@ -2699,6 +2695,7 @@ Future<void> showTagDialog({
                   isInSearch: isInSearch,
                   hasTabWithTag: hasTabWithTag,
                   onUpdate: onUpdate,
+                  knownType: knownType,
                 );
               }
 

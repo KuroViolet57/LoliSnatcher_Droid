@@ -137,4 +137,46 @@ void main() {
     await puller.pull(booru, more, 'tag');
     expect(more.asked, [('', 2), ('', 3)], reason: 'one job for every chip, resumed');
   });
+
+  test("r50: pulling everything walks each category to its end, and the overall state adds them up", () async {
+    final Booru other = Booru('e', BooruType.e621, '', 'https://e621.example', '');
+    final two = _Categories();
+    for (final ns in two.namespaces) {
+      puller.resetResume(other, two, ns.key);
+    }
+    await puller.pullEverything(other, two);
+    expect(two.asked, [('artist', 0), ('artist', 1), ('tag', 0), ('tag', 1), ('tag', 2)]);
+    final overall = puller.overallState(other, two);
+    expect((overall.done, overall.running, overall.stored, overall.shard, overall.shards), (true, false, 10, 2, 2));
+  });
+
+  test('r50: pulling everything on a shared source is the one shared walk', () async {
+    final Booru other = Booru('g', BooruType.Gelbooru, '', 'https://gel.example', '');
+    final fake = _Fake(shared: true, total: 2);
+    puller.resetResume(other, fake, '');
+    await puller.pullEverything(other, fake);
+    expect(fake.asked, [('', 0), ('', 1)]);
+    expect(puller.overallState(other, fake).done, isTrue);
+  });
+}
+
+/// Two categories that end on their own: artists after 2 pages, tags after 3.
+class _Categories extends TagCatalogSource {
+  final List<(String, int)> asked = [];
+
+  @override
+  Duration get shardDelay => Duration.zero;
+
+  @override
+  List<TagCatalogNamespace> get namespaces => const [
+    TagCatalogNamespace(key: 'artist', label: 'Artists', type: TagType.artist),
+    TagCatalogNamespace(key: 'tag', label: 'Tags', type: TagType.none),
+  ];
+
+  @override
+  Future<List<BooruTagEntry>?> shardAt(String namespace, int shard) async {
+    if (shard >= (namespace == 'artist' ? 2 : 3)) return null;
+    asked.add((namespace, shard));
+    return [BooruTagEntry(name: '${namespace}_$shard', namespace: namespace, tagType: TagType.none), BooruTagEntry(name: '${namespace}_${shard}b', namespace: namespace, tagType: TagType.none)];
+  }
 }

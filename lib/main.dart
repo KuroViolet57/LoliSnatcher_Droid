@@ -17,6 +17,8 @@ import 'package:lemberfpsmonitor/lemberfpsmonitor.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:talker_flutter/talker_flutter.dart';
 
+import 'package:lolisnatcher/src/data/modular_ui.dart';
+import 'package:lolisnatcher/src/utils/status_bar_inset.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/theme_item.dart';
 import 'package:lolisnatcher/src/handlers/bookmark_handler.dart';
@@ -276,13 +278,20 @@ class _MainAppState extends State<MainApp> {
                       // an empty gap at the top.
                       Widget content = child ?? const SizedBox.shrink();
                       if (settingsHandler.hideStatusBar) {
-                        final mq = MediaQuery.of(builderContext);
-                        content = MediaQuery(
-                          data: mq.copyWith(
-                            padding: mq.padding.copyWith(top: 0),
-                            viewPadding: mq.viewPadding.copyWith(top: 0),
+                        // r50: the top inset is kept by default, so back arrows
+                        // stay clear of the edge Android watches for the swipe
+                        // that shows the status bar (taps there were lost).
+                        final Widget page = content;
+                        content = ValueListenableBuilder<int>(
+                          valueListenable: ModularUi.revision,
+                          builder: (context, _, _) => MediaQuery(
+                            data: StatusBarInset.apply(
+                              MediaQuery.of(builderContext),
+                              hideStatusBar: true,
+                              drawUnder: ModularUi.isOn(ModularUi.appDrawUnderHiddenStatusBar),
+                            ),
+                            child: page,
                           ),
-                          child: content,
                         );
                       }
                       final Widget wrappedChild = content;

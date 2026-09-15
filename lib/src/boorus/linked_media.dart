@@ -13,9 +13,17 @@ enum LinkedMediaKind {
   page,
 }
 
+/// A link as the description writes it: where it goes and its words (r50).
+class LinkedAnchor {
+  const LinkedAnchor(this.url, this.text);
+
+  final String url;
+  final String text;
+}
+
 /// One link from a post's description, resolved.
 class LinkedMedia {
-  const LinkedMedia({required this.url, required this.kind, this.booru, this.postId});
+  const LinkedMedia({required this.url, required this.kind, this.booru, this.postId, this.text = ''});
 
   final String url;
   final LinkedMediaKind kind;
@@ -23,6 +31,9 @@ class LinkedMedia {
   /// The installed source a [LinkedMediaKind.sourcePost] belongs to, and its post id.
   final Booru? booru;
   final String? postId;
+
+  /// The words of the link in the description.
+  final String text;
 
   String get host => (Uri.tryParse(url)?.host ?? '').replaceFirst(RegExp('^www\\.'), '');
 
@@ -32,10 +43,44 @@ class LinkedMedia {
   /// The search that finds a [LinkedMediaKind.sourcePost] on its source.
   String get searchTerm => LinkedMediaResolver.searchTermFor(booru!, postId!);
 
-  String get label => switch (kind) {
-    LinkedMediaKind.sourcePost => 'Open on ${booru?.name ?? host}',
-    LinkedMediaKind.media => isImage ? 'Show the animation' : 'Play the video',
-    LinkedMediaKind.page => 'Open $host',
+  static const Set<String> _vague = {'link', 'here', 'click here', 'this', 'url'};
+
+  /// [text] when it says something: not empty, not "link", not the address.
+  String get _words {
+    final String t = text.replaceAll(RegExp(r'^[\s<>«»|:\-–—•*]+|[\s<>«»|:\-–—•*]+$'), '');
+    if (t.isEmpty || _vague.contains(t.toLowerCase()) || t.toLowerCase().startsWith('http')) return '';
+    if (t.contains('/')) {
+      final String bare = url.replaceFirst(RegExp('^https?://'), '');
+      final String shown = t.replaceAll(RegExp(r'(\.\.\.|…)$'), '');
+      if (bare.startsWith(shown)) return '';
+    }
+    return t;
+  }
+
+  String get _fileName => (Uri.tryParse(url)?.pathSegments ?? const []).lastWhere((s) => s.isNotEmpty, orElse: () => '');
+
+  /// What the link is: its words, else the post, the file or the site.
+  String get title {
+    final String words = _words;
+    if (words.isNotEmpty) return words;
+    return switch (kind) {
+      LinkedMediaKind.sourcePost => '${booru?.name ?? host} post #$postId',
+      LinkedMediaKind.media => _fileName.isEmpty ? host : _fileName,
+      LinkedMediaKind.page => host,
+    };
+  }
+
+  /// Where a tap takes it.
+  String get destination => switch (kind) {
+    LinkedMediaKind.sourcePost => 'Opens in the app · ${booru?.name ?? host}',
+    LinkedMediaKind.media => 'Plays here · $host',
+    LinkedMediaKind.page => 'Opens the web page · $host',
+  };
+
+  String get badge => switch (kind) {
+    LinkedMediaKind.sourcePost => 'In app',
+    LinkedMediaKind.media => isImage ? 'Animation' : 'Video',
+    LinkedMediaKind.page => 'Web',
   };
 }
 
@@ -49,6 +94,7 @@ class LinkedMediaResolver {
   static const Set<String> videoExtensions = {'mp4', 'webm', 'mov', 'm4v', 'mkv'};
   static const Set<String> imageExtensions = {'gif', 'apng'};
 
+  static final RegExp _anchor = RegExp(r'<a\b([^>]*)>(.*?)</a\s*>', caseSensitive: false, dotAll: true);
   static final RegExp _href = RegExp('href\\s*=\\s*["\']([^"\']+)["\']', caseSensitive: false);
 
   /// The lower-case extension of [url]'s path, or ''.
@@ -59,23 +105,53 @@ class LinkedMediaResolver {
     return dot < 0 ? '' : last.substring(dot + 1);
   }
 
-  /// Every web link in [html], once each, in order; relative links against
-  /// [base]. Profile links (an artist's name) and script links are left out.
-  static List<String> linksIn(String html, {String? base}) {
-    final List<String> out = [];
+  /// FurAffinity sends outside links through its `/externalurl/?q=` page;
+  /// the link is where that page leads.
+  static String unwrap(String url) {
+    final Uri? uri = Uri.tryParse(url);
+    if (uri == null || !uri.host.toLowerCase().endsWith('furaffinity.net') || !uri.path.startsWith('/externalurl')) return url;
+    final String target = (uri.queryParameters['q'] ?? '').trim();
+    return target.toLowerCase().startsWith('http') ? target : url;
+  }
+
+  /// Every web link in [html] with its words, once each, in order; relative
+  /// links against [base], redirect pages unwrapped. Profile links (an
+  /// artist's name) and script links are left out.
+  static List<LinkedAnchor> anchorsIn(String html, {String? base}) {
+    final List<LinkedAnchor> out = [];
     final Set<String> seen = {};
-    for (final RegExpMatch m in _href.allMatches(html)) {
-      String href = m.group(1)!.replaceAll('&amp;', '&').trim();
-      if (href.startsWith('//')) href = 'https:$href';
-      if (href.startsWith('/') && base != null) href = '${base.replaceAll(RegExp(r'/+$'), '')}$href';
-      final Uri? uri = Uri.tryParse(href);
-      if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https') || uri.host.isEmpty) continue;
-      if (RegExp(r'^/users?/').hasMatch(uri.path)) continue;
-      final String clean = uri.toString().replaceAll(RegExp(r'[).,;!]+$'), '');
-      if (seen.add(clean)) out.add(clean);
+    for (final RegExpMatch m in _anchor.allMatches(html)) {
+      final String? raw = _href.firstMatch(m.group(1)!)?.group(1);
+      final String? url = raw == null ? null : _clean(raw, base);
+      if (url != null && seen.add(url)) out.add(LinkedAnchor(url, _text(m.group(2)!)));
     }
     return out;
   }
+
+  /// The addresses of [anchorsIn].
+  static List<String> linksIn(String html, {String? base}) => [for (final LinkedAnchor a in anchorsIn(html, base: base)) a.url];
+
+  static String? _clean(String raw, String? base) {
+    String href = raw.replaceAll('&amp;', '&').trim();
+    if (href.startsWith('//')) href = 'https:$href';
+    if (href.startsWith('/') && base != null) href = '${base.replaceAll(RegExp(r'/+$'), '')}$href';
+    Uri? uri = Uri.tryParse(unwrap(href));
+    if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https') || uri.host.isEmpty) return null;
+    if (RegExp(r'^/users?/').hasMatch(uri.path)) return null;
+    uri = Uri.tryParse(uri.toString().replaceAll(RegExp(r'[).,;!]+$'), ''));
+    return uri?.toString();
+  }
+
+  static String _text(String inner) => inner
+      .replaceAll(RegExp('<[^>]+>'), ' ')
+      .replaceAll('&nbsp;', ' ')
+      .replaceAll('&lt;', '<')
+      .replaceAll('&gt;', '>')
+      .replaceAll('&quot;', '"')
+      .replaceAll('&#39;', "'")
+      .replaceAll('&amp;', '&')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
 
   static String _site(String host) => host.toLowerCase().replaceFirst(RegExp(r'^www\.'), '');
 
@@ -108,21 +184,23 @@ class LinkedMediaResolver {
   }
 
   /// A file first (even on a source's own file host), then a post on an
-  /// installed source, else a page.
-  static LinkedMedia resolve(String url, Iterable<Booru> boorus) {
+  /// installed source, else a page. [text] is the link's words.
+  static LinkedMedia resolve(String url, Iterable<Booru> boorus, {String text = ''}) {
     final String ext = extensionOf(url);
     if (videoExtensions.contains(ext) || imageExtensions.contains(ext)) {
-      return LinkedMedia(url: url, kind: LinkedMediaKind.media);
+      return LinkedMedia(url: url, kind: LinkedMediaKind.media, text: text);
     }
     final Uri? uri = Uri.tryParse(url);
     if (uri != null) {
       for (final Booru booru in boorus) {
         if (!sameSite(booru, uri)) continue;
         final String? id = postIdFor(booru, uri);
-        if (id != null) return LinkedMedia(url: url, kind: LinkedMediaKind.sourcePost, booru: booru, postId: id);
+        if (id != null) {
+          return LinkedMedia(url: url, kind: LinkedMediaKind.sourcePost, booru: booru, postId: id, text: text);
+        }
       }
     }
-    return LinkedMedia(url: url, kind: LinkedMediaKind.page);
+    return LinkedMedia(url: url, kind: LinkedMediaKind.page, text: text);
   }
 
   /// The search for one post by id: `id=N` on Shimmie, `id:N` elsewhere.

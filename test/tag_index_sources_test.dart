@@ -98,7 +98,7 @@ void main() {
         'limit=1000&page=5&search[category]=0&search[order]=count&search[hide_empty]=yes',
       );
       expect(index.catalogNamespaces(booru).map((n) => n.key), ['artist', 'character', 'copyright', 'meta', 'tag']);
-      expect(index.catalogNamespaces(booru).map((n) => n.maxShards).toSet(), {5});
+      expect(index.catalogNamespaces(booru).map((n) => n.maxShards).toSet(), {null}, reason: 'r50: a booru pull runs to the end of the index');
       expect(index.walksByCategory, isTrue);
       expect(index.pageSizeFor(booru), 1000);
     });

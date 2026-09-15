@@ -140,5 +140,52 @@ class TagCatalogPuller {
     }
   }
 
+  /// The jobs of a whole index pull: the one shared walk, or one per category.
+  List<String> everythingKeys(TagCatalogSource catalog) =>
+      catalog.sharedShards ? const [''] : [for (final TagCatalogNamespace ns in catalog.namespaces) ns.key];
+
+  List<ValueNotifier<TagCatalogPullState>> statesFor(Booru booru, TagCatalogSource catalog) => [
+    for (final String key in everythingKeys(catalog)) stateFor(booru, catalog, key),
+  ];
+
+  final Set<String> _stopEverything = {};
+
+  /// The tag browser's "Pull tag index" (r50): every category walked to its
+  /// end, one after another, so the browser and the tag builder's chips hold
+  /// the same lists. It used to walk one mixed list that stopped after a few
+  /// pages (a couple of hundred characters on e621).
+  Future<void> pullEverything(Booru booru, TagCatalogSource catalog) async {
+    final String host = hostOf(booru);
+    _stopEverything.remove(host);
+    for (final String key in everythingKeys(catalog)) {
+      if (_stopEverything.contains(host)) break;
+      await pull(booru, catalog, key);
+      // A throttled site stops the run; the next pull resumes where it stopped.
+      if (stateFor(booru, catalog, key).value.error != null) break;
+    }
+    _stopEverything.remove(host);
+  }
+
+  void cancelEverything(Booru booru, TagCatalogSource catalog) {
+    _stopEverything.add(hostOf(booru));
+    for (final String key in everythingKeys(catalog)) {
+      cancel(booru, catalog, key);
+    }
+  }
+
+  /// [pullEverything]'s jobs added up: shard is the lists finished, shards the lists.
+  TagCatalogPullState overallState(Booru booru, TagCatalogSource catalog) {
+    final List<TagCatalogPullState> states = [for (final s in statesFor(booru, catalog)) s.value];
+    final int finished = states.where((s) => s.done).length;
+    return TagCatalogPullState(
+      running: states.any((s) => s.running),
+      shard: finished,
+      shards: states.length,
+      stored: states.fold(0, (int sum, s) => sum + s.stored),
+      error: states.map((s) => s.error).firstWhere((e) => e != null, orElse: () => null),
+      done: states.isNotEmpty && finished == states.length,
+    );
+  }
+
   void _log(String message) => Logger.Inst().log('tag catalog: $message', 'TagCatalogPuller', 'pull', LogTypes.booruHandlerInfo);
 }

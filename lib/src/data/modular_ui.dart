@@ -89,7 +89,33 @@ class ModularUi {
     defaultValue: true,
   );
 
-  static const List<ModularUiToggle> all = [searchHistory, searchPinned, searchPopular, searchSiteFilters, sidebarSourceSettings, viewerLinkedMedia];
+  static const ModularUiToggle sidebarPinnedTags = ModularUiToggle(
+    key: 'sidebar.pinnedTags',
+    area: leftSidebarArea,
+    title: 'Pinned tags button',
+    description: 'A "<source> pinned tags" button in Quick access: build pins of one or several tags, edit, rename and delete them.',
+    defaultValue: true,
+  );
+
+  static const String wholeAppArea = 'Whole app';
+
+  static const ModularUiToggle appDrawUnderHiddenStatusBar = ModularUiToggle(
+    key: 'app.drawUnderHiddenStatusBar',
+    area: wholeAppArea,
+    title: 'Draw under the hidden status bar',
+    description: 'With the status bar hidden, pages start at the very top edge. Off keeps that edge free: Android catches taps there (a back arrow) for the swipe that shows the status bar.',
+  );
+
+  static const List<ModularUiToggle> all = [
+    searchHistory,
+    searchPinned,
+    searchPopular,
+    searchSiteFilters,
+    sidebarSourceSettings,
+    sidebarPinnedTags,
+    viewerLinkedMedia,
+    appDrawUnderHiddenStatusBar,
+  ];
 
   /// Bumped on every change, for pages that show the switches.
   static final ValueNotifier<int> revision = ValueNotifier(0);

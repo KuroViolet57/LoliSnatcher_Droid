@@ -111,12 +111,27 @@ class _TagBrowserPageState extends State<TagBrowserPage> {
   /// Follows the puller's job for [_booru]: rows reload as pages land, and a
   /// stopped walk reports how far it got.
   void _bindPull() {
+    for (final ValueNotifier<TagCatalogPullState> job in _jobStates) {
+      job.removeListener(_mirrorPull);
+    }
     _pullState?.removeListener(_onPullTick);
     final TagCatalogSource? catalog = _catalog;
-    _pullState = catalog == null ? null : TagCatalogPuller.instance.stateFor(_booru, catalog, '');
+    // r50: every category's job, added up (see TagCatalogPuller.pullEverything).
+    _jobStates = catalog == null ? [] : TagCatalogPuller.instance.statesFor(_booru, catalog);
+    _pullState = catalog == null ? null : ValueNotifier(TagCatalogPuller.instance.overallState(_booru, catalog));
+    for (final ValueNotifier<TagCatalogPullState> job in _jobStates) {
+      job.addListener(_mirrorPull);
+    }
     _wasRunning = _pullState?.value.running ?? false;
     _seenStored = _pullState?.value.stored ?? -1;
     _pullState?.addListener(_onPullTick);
+  }
+
+  List<ValueNotifier<TagCatalogPullState>> _jobStates = [];
+
+  void _mirrorPull() {
+    final TagCatalogSource? catalog = _catalog;
+    if (catalog != null) _pullState?.value = TagCatalogPuller.instance.overallState(_booru, catalog);
   }
 
   void _onPullTick() {
@@ -167,6 +182,9 @@ class _TagBrowserPageState extends State<TagBrowserPage> {
 
   @override
   void dispose() {
+    for (final ValueNotifier<TagCatalogPullState> job in _jobStates) {
+      job.removeListener(_mirrorPull);
+    }
     _pullState?.removeListener(_onPullTick);
     _searchDebounce?.cancel();
     _scrollController.dispose();
@@ -285,7 +303,7 @@ class _TagBrowserPageState extends State<TagBrowserPage> {
   Future<void> _pullIndex() async {
     final TagCatalogSource? catalog = _catalog;
     if (catalog == null || (_pullState?.value.running ?? false)) return;
-    unawaited(TagCatalogPuller.instance.pull(_booru, catalog, ''));
+    unawaited(TagCatalogPuller.instance.pullEverything(_booru, catalog));
   }
 
   Future<void> _setType(BooruTagEntry row) async {
@@ -742,7 +760,7 @@ class _TagBrowserPageState extends State<TagBrowserPage> {
           Expanded(
             child: Text(
               pulling
-                  ? 'Pulling tag index… page ${pull!.shard} · ${pull.stored} stored'
+                  ? 'Pulling tag index… ${(pull!.shards ?? 1) > 1 ? 'list ${pull.shard + 1} of ${pull.shards} · ' : ''}${pull.stored} stored'
                   : '$stored${mine > 0 ? ' · $mine corrected' : ''}'
                         '${catalog == null ? ' · no tag index on this site' : ''}',
               style: TextStyle(fontSize: 11.5, color: theme.colorScheme.onSurfaceVariant),
@@ -751,7 +769,7 @@ class _TagBrowserPageState extends State<TagBrowserPage> {
           ),
           if (pulling)
             TextButton(
-              onPressed: () => TagCatalogPuller.instance.cancel(_booru, catalog!, ''),
+              onPressed: () => TagCatalogPuller.instance.cancelEverything(_booru, catalog!),
               child: const Text('Stop'),
             )
           else if (catalog != null && _snapshotSize == 0)

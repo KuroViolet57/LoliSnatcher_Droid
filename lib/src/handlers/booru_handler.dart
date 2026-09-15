@@ -74,6 +74,13 @@ abstract class BooruHandler {
   bool get storeTagsGlobally => _storeTagsGlobally ?? !hasReader;
   set storeTagsGlobally(bool value) => _storeTagsGlobally = value;
 
+  /// The types this source parsed for its own items (r50), kept even when
+  /// [storeTagsGlobally] is off: a strip's preview tab or the floating preview
+  /// showed e621's modelers and artists under General without them.
+  final Map<String, TagType> ownTagTypes = {};
+
+  TagType? ownTagType(String tag) => ownTagTypes[tag.trim().toLowerCase()];
+
   String errorString = '';
   // List<({BooruItem item, Object e, StackTrace? s})> failedItems = [];
 
@@ -1173,6 +1180,12 @@ abstract class BooruHandler {
   }
 
   void addTagsWithType(List<String> tags, TagType type) {
+    if (type != TagType.none) {
+      if (ownTagTypes.length > 50000) ownTagTypes.clear();
+      for (final String tag in tags) {
+        ownTagTypes[tag.trim().toLowerCase()] = type;
+      }
+    }
     if (!storeTagsGlobally) return;
     TagHandler.instance.addTagsWithType(tags, type);
   }

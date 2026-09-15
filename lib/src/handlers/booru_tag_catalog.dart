@@ -45,7 +45,9 @@ class BooruTagCatalog extends TagCatalogSource {
   bool get sharedShards => !source.walksByCategory;
 
   @override
-  int? get maxShardsPerPull => source.catalogPagesPerPull;
+  // r50: a booru pull runs to the end of the index (bounded by the
+  // family's maxIndexPages) instead of stopping every few pages for another tap.
+  int? get maxShardsPerPull => null;
 
   @override
   Duration get shardDelay => source.catalogDelay;
