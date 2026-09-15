@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 
 import 'package:get/get.dart' hide ContextExt, FirstWhereOrNullExt;
 
+import 'package:lolisnatcher/src/widgets/drawers/furaffinity_sidebar.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/handlers/drawer_refresh.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
@@ -111,8 +112,12 @@ class _MobileHomeState extends State<MobileHome> {
           // bottom row (the normal drawer's Quick access switches it back).
           final Booru? current = searchHandler.tabs.isNotEmpty ? searchHandler.currentBooru : null;
           final bool kemonoSide = (current?.type?.isKemono ?? false) && settingsHandler.kemonoSidebar.value;
+          // r42: FurAffinity's own sidebar the same way.
+          final bool furAffinitySide = (current?.type?.isFurAffinity ?? false) && settingsHandler.furAffinitySidebar.value;
           Widget pinnedSide() => kemonoSide
               ? KemonoSidebar(booru: current!, toggleDrawer: () => _toggleDrawer(null))
+              : furAffinitySide
+              ? FurAffinitySidebar(booru: current!, toggleDrawer: () => _toggleDrawer(null))
               : DownloadsDrawer(toggleDrawer: () => _toggleDrawer(null));
         return InnerDrawer(
           key: searchHandler.mainDrawerKey,

@@ -126,6 +126,10 @@ class SettingsHandler {
   /// Flipped from the bottom of either drawer.
   final RxBool kemonoSidebar = true.obs;
 
+  /// On a FurAffinity tab the pinned-tags side carries the site's own
+  /// sidebar (r42). Off = the normal drawer. Flipped from either drawer.
+  final RxBool furAffinitySidebar = true.obs;
+
   /// The kemono post page loads the real files instead of the site's 800 px
   /// pictures. Off by default: pawchive rate-limits heavy downloading.
   final RxBool kemonoPostFullImages = false.obs;
@@ -345,6 +349,7 @@ class SettingsHandler {
     'appMode',
     'handSide',
     'kemonoSidebar',
+    'furAffinitySidebar',
     'kemonoPostFullImages',
     'extPathOverride',
     'backupPath',
@@ -963,6 +968,10 @@ class SettingsHandler {
       'type': 'bool',
       'default': true,
     },
+    'furAffinitySidebar': {
+      'type': 'bool',
+      'default': true,
+    },
     'kemonoPostFullImages': {
       'type': 'bool',
       'default': false,
@@ -1501,6 +1510,8 @@ class SettingsHandler {
         return handSide;
       case 'kemonoSidebar':
         return kemonoSidebar.value;
+      case 'furAffinitySidebar':
+        return furAffinitySidebar.value;
       case 'kemonoPostFullImages':
         return kemonoPostFullImages.value;
       case 'theme':
@@ -1866,6 +1877,9 @@ class SettingsHandler {
         break;
       case 'kemonoSidebar':
         kemonoSidebar.value = validatedValue;
+        break;
+      case 'furAffinitySidebar':
+        furAffinitySidebar.value = validatedValue;
         break;
       case 'kemonoPostFullImages':
         kemonoPostFullImages.value = validatedValue;

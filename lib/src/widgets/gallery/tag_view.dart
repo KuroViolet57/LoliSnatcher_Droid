@@ -13,6 +13,8 @@ import 'package:fading_edge_scrollview/fading_edge_scrollview.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:fpdart/fpdart.dart' show FpdartOnIterable;
 import 'package:get/get.dart' hide ContextExt, FirstWhereOrNullExt;
+import 'package:lolisnatcher/src/pages/furaffinity_post_page.dart';
+import 'package:lolisnatcher/src/boorus/furaffinity_handler.dart';
 import 'package:lolisnatcher/src/boorus/danbooru_handler.dart';
 import 'package:lolisnatcher/src/boorus/kemono_handler.dart';
 import 'package:lolisnatcher/src/data/meta_tag.dart';
@@ -614,6 +616,20 @@ class _TagViewState extends State<TagView> {
             handler: handler,
           ),
         ).open();
+      },
+      drawBottomBorder: false,
+    );
+  }
+
+  /// FurAffinity (r42): the submission page.
+  Widget furAffinityPostButton() {
+    final BooruHandler h = possibleBooruHandler ?? handler;
+    if (h is! FurAffinityHandler || item.serverId == null) return const SizedBox.shrink();
+    return SettingsButton(
+      name: 'Post page',
+      icon: Icon(Symbols.article_rounded, color: Theme.of(context).iconTheme.color),
+      action: () {
+        Navigator.of(context).push(MaterialPageRoute(builder: (_) => FurAffinityPostPage(booru: h.booru, item: item)));
       },
       drawBottomBorder: false,
     );
@@ -2085,6 +2101,7 @@ class _TagViewState extends State<TagView> {
                 // as a standalone row.
                 commentsButton(),
                 kemonoPostButton(),
+                furAffinityPostButton(),
                 // Doujin "Related": other CHAPTERS and language versions of
                 // this very work, found by a quoted phrase search on the base
                 // title (the reference apps' Related semantics). Collapsed by

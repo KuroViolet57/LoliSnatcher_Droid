@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+import 'package:lolisnatcher/src/pages/flash_player_page.dart';
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/boorus/doujin/doujin_filters.dart';
 import 'package:lolisnatcher/src/boorus/furaffinity_handler.dart';
@@ -100,7 +101,7 @@ void main() {
       expect(s.species, 'Unspecified / Any');
       expect(s.resolution, '1000 x 1000');
       expect(s.views, 31);
-      expect(s.comments, 0);
+      expect(s.commentCount, 0);
       expect(s.favorites, 1);
       expect(s.rating, 'general');
       expect(s.postedAt, 1789436510);
@@ -264,4 +265,151 @@ void main() {
     });
   });
 
+
+  group('r42: the blocklist hides, the post page has everything, the account works', () {
+    const String avatar = '<img class="loggedin_user_avatar avatar" src="//a.furaffinity.net/1/kuroviolet.gif" alt="KuroViolet">';
+
+    String loggedInBrowse({required String tags, String users = '', String hideTagless = '0'}) => fixture('furaffinity_browse.html').replaceFirst(
+      RegExp(r'<body[^>]*>'),
+      '<body class="c-bodyColor" data-user-logged-in="1" data-tag-blocklist="$tags" data-user-blocklist="$users" data-tag-blocklist-hide-tagless="$hideTagless" data-tag-blocklist-nonce="n1">$avatar',
+    );
+
+    test('submissions with a tag or an artist on your FurAffinity blocklist are not there at all', () {
+      final String html = fixture('furaffinity_browse.html');
+      final List<BooruItem> all = FurAffinityParser.listing(html);
+      final String keyword = all[0].tagsList.map((t) => t.fullString).firstWhere((t) => !t.contains(':'));
+      final String artist = all[1].tagsList.map((t) => t.fullString).firstWhere((t) => t.startsWith('artist:')).substring(7);
+      final FurAffinityBlocklist none = FurAffinityParser.blocklist(html);
+      expect(none.isEmpty, isTrue, reason: 'logged out: no blocklist');
+      final String blocked = loggedInBrowse(tags: keyword, users: 'u_$artist');
+      final FurAffinityBlocklist list = FurAffinityParser.blocklist(blocked);
+      expect(list.tags, contains(keyword));
+      expect(list.users, contains('u_$artist'));
+      final List<String> kept = FurAffinityParser.listing(blocked).map((i) => i.serverId!).toList();
+      expect(kept, isNot(contains(all[0].serverId)));
+      expect(kept, isNot(contains(all[1].serverId)));
+      expect(kept.length, lessThan(all.length));
+      for (final BooruItem i in FurAffinityParser.listing(blocked)) {
+        expect(i.tagsList.map((t) => t.fullString), isNot(contains(keyword)));
+      }
+    });
+
+    test('hide untagged content: a submission without tags goes too', () {
+      String html = loggedInBrowse(tags: 'zzzznothing', hideTagless: '1');
+      final RegExpMatch first = RegExp(r'data-tags="([^"]*)"').firstMatch(html)!;
+      html = html.replaceFirst(first.group(0)!, 'data-tags=""');
+      expect(FurAffinityParser.listing(html).length, FurAffinityParser.listing(fixture('furaffinity_browse.html')).length - 1);
+    });
+
+    test('a submission page: folders, description, comments, the neighbour in the gallery, the mini gallery', () {
+      final FurAffinitySubmission s = FurAffinityParser.submission(fixture('furaffinity_view_folders.html'))!;
+      expect(s.title, 'Happy 8/8!');
+      expect(s.folders, hasLength(3));
+      final FurAffinityFolder f = s.folders.first;
+      expect((f.user, f.id, f.slug, f.name, f.group, f.count), ('ryan-the-fox', '464222', 'Ryan-McCloud', 'Ryan McCloud', "My fursona's", 116));
+      expect(f.term, 'folder:ryan-the-fox/464222/Ryan-McCloud');
+      expect(s.descriptionHtml, contains('Happy 8/8!'));
+      expect(s.descriptionHtml, contains('https://www.furaffinity.net/view/61869875/'));
+      expect(s.comments, hasLength(5));
+      final FurAffinityComment c = s.comments.first;
+      expect((c.id, c.username, c.displayName, c.text, c.postedAt), ('193012193', 'jonhankercheif', 'JonHankercheif', 'Happy late vore day fluffer', 1786278268));
+      expect(c.avatarUrl, 'https://a.furaffinity.net/1775616396/jonhankercheif.gif');
+      expect(s.olderId, '62753223');
+      expect(s.newerId, isNull);
+      expect(s.gallery.map((i) => i.serverId), contains('62753223'), reason: 'mini gallery figures use sid_');
+      expect(FurAffinityParser.submission(fixture('furaffinity_view_image.html'))!.olderId, '66348089');
+    });
+
+    test("an artist's folders, grouped as the gallery page groups them", () {
+      final List<FurAffinityFolder> folders = FurAffinityParser.userFolders(fixture('furaffinity_gallery.html'));
+      expect(folders, hasLength(50));
+      final FurAffinityFolder f = folders.first;
+      expect((f.user, f.id, f.slug, f.name, f.group, f.count), ('ryan-the-fox', '464222', 'Ryan-McCloud', 'Ryan McCloud', "My fursona's", 116));
+    });
+
+    test('watch, favourite, who is logged in, the watch list, the inbox cursor', () {
+      final String user = fixture('furaffinity_user.html');
+      expect(FurAffinityParser.watchLink(user), isNull, reason: 'logged out: the link has no key');
+      final watch = FurAffinityParser.watchLink(user.replaceFirst('/watch/ryan-the-fox/?key=', '/watch/ryan-the-fox/?key=abc'))!;
+      expect((watch.path, watch.watching), ('/watch/ryan-the-fox/?key=abc', false));
+      final unwatch = FurAffinityParser.watchLink('<a class="button" id="watch-button" href="/unwatch/ryan-the-fox/?key=abc">Unwatch</a>')!;
+      expect(unwatch.watching, isTrue);
+      expect(FurAffinityParser.favLink('<a class="button" href="/fav/66369202/?key=k1">+Fav</a>'), (path: '/fav/66369202/?key=k1', faved: false));
+      expect(FurAffinityParser.favLink('<a class="button" href="/unfav/66369202/?key=k1">-Fav</a>')!.faved, isTrue);
+      expect(FurAffinityParser.favLink(fixture('furaffinity_view_image.html')), isNull);
+      expect(FurAffinityParser.loggedInUser(avatar), 'kuroviolet');
+      expect(FurAffinityParser.loggedInUser(fixture('furaffinity_browse.html')), isNull);
+      final watched = FurAffinityParser.watchlist(fixture('furaffinity_watchlist.html'));
+      expect(watched.users, hasLength(200));
+      expect((watched.users.first.username, watched.users.first.displayName), ('-fluffy-', '-Fluffy-'));
+      expect(watched.hasNext, isTrue);
+      expect(FurAffinityParser.inboxCursor('<a class="button standard more" href="/msg/submissions/new~66370000@72/">Next 72</a>'), 'new~66370000@72');
+      expect(FurAffinityParser.inboxCursor(fixture('furaffinity_browse.html')), isNull);
+    });
+
+    test('the handler learns the account name and blocklist from pages, and pages the inbox by its cursor', () {
+      final FurAffinitySessionHandler session = FurAffinitySessionHandler.instance;
+      final FurAffinityHandler h = FurAffinityHandler(fa, 48);
+      expect(h.hasSiteFavourites, isFalse);
+      session.store(a: 'AAA', b: 'BBB');
+      expect(h.hasSiteFavourites, isTrue);
+      final String keyword = FurAffinityParser.listing(fixture('furaffinity_browse.html'))[0].tagsList.map((t) => t.fullString).firstWhere((t) => !t.contains(':'));
+      h.currentTags = 'inbox:';
+      final List parsed = h.parseListFromResponse(_Response(loggedInBrowse(tags: keyword) + '<a class="button standard more" href="/msg/submissions/new~66370000@72/">Next 72</a>')) as List;
+      expect(parsed, isNotEmpty);
+      expect(session.username, 'kuroviolet');
+      expect(session.siteBlocklist!.tags, contains(keyword));
+      h.pageNum = 1;
+      expect(h.makeURL('inbox:'), 'https://www.furaffinity.net/msg/submissions/new~66370000@72/');
+      session.reloadForTests();
+      expect(session.username, 'kuroviolet', reason: 'kept with the session');
+      session.logout();
+      expect(session.username, isNull);
+    });
+
+    test('the Animated filter: all, or real GIF files only', () {
+      final DoujinFilterGroup g = FurAffinityHandler(fa, 48).doujinFilters.group('animated')!;
+      expect(g.defaultValue, 'all');
+      expect(g.options.map((o) => o.value), ['all', 'gif']);
+    });
+  });
+
+
+  group('r42b: Flash plays through Ruffle, the emulator the site itself uses', () {
+    test('a Flash submission page gives its SWF and the Ruffle the site loads; the item is Flash', () {
+      final String html = fixture('furaffinity_view_flash.html');
+      final FurAffinitySubmission s = FurAffinityParser.submission(html)!;
+      expect(s.fileUrl, 'https://d.furaffinity.net/art/alsnapz/1590186628/1439336748.alsnapz_panftr_v1_2015_08_11z_release.swf');
+      expect(s.title, 'Panftr Player! -Vore Game-');
+      expect(FurAffinityParser.ruffleScript(html), 'https://d.furaffinity.net/media/ruffle-0.2.0/ruffle.js');
+      final BooruItem item = BooruItem(
+        fileURL: '',
+        sampleURL: '',
+        thumbnailURL: '',
+        tagsList: [FurAffinityParser.typeTag('flash')],
+        postURL: 'https://www.furaffinity.net/view/17371095/',
+        serverId: '17371095',
+      );
+      expect(FlashPlayerPage.isFlash(item), isTrue, reason: 'the listing already says flash');
+      FurAffinityHandler(fa, 48).applySubmission(item, s);
+      expect(item.fileExt, 'swf');
+      expect(FlashPlayerPage.isFlashUrl(item.fileURL), isTrue);
+      expect(FlashPlayerPage.isFlash(FurAffinityParser.listing(fixture('furaffinity_browse.html')).first), isFalse);
+    });
+
+    test('the player page loads Ruffle, then the movie, filling the screen; the address is escaped', () {
+      final String page = FlashPlayerPage.html(swfUrl: 'https://d.furaffinity.net/art/x/1/y.swf', ruffleUrl: FlashPlayerPage.defaultRuffle);
+      expect(page, contains('<script src="https://d.furaffinity.net/media/ruffle-0.2.0/ruffle.js"></script>'));
+      expect(page, contains('"https://d.furaffinity.net/art/x/1/y.swf"'));
+      expect(page, contains('RufflePlayer.newest()'));
+      expect(FlashPlayerPage.html(swfUrl: 'https://x/"</script>.swf', ruffleUrl: FlashPlayerPage.defaultRuffle), isNot(contains('"</script>')));
+    });
+  });
+
+}
+
+class _Response {
+  _Response(this.data);
+
+  final String data;
 }

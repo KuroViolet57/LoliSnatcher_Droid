@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/foundation.dart';
 
 import 'package:dio/dio.dart';
 import 'package:material_symbols_icons/symbols.dart';
@@ -28,6 +27,10 @@ import 'package:lolisnatcher/src/utils/logger.dart';
 /// submission page when the card is opened ([loadItem]). Logged in
 /// ([FurAffinitySessionHandler]), mature and adult submissions come through
 /// as far as the account's own content filter allows.
+///
+/// r42: the account's blocklist leaves blocked submissions out (the site only
+/// blurs them); the submissions inbox pages by its cursor; favourites sync
+/// with the site; artists can be watched; folders and watch lists are read.
 class FurAffinityHandler extends BooruHandler {
   FurAffinityHandler(super.booru, super.limit);
 
@@ -38,8 +41,8 @@ class FurAffinityHandler extends BooruHandler {
   /// 1-based: the search handler increments pageNum before the first fetch.
   int get page => pageNum < 0 ? 1 : pageNum + 1;
 
-  /// Favorites page by cursor: query -> page -> the cursor that reaches it.
-  final Map<String, Map<int, String>> _favoritesCursors = {};
+  /// Pages reached by a cursor (favorites, the inbox): query -> page -> cursor.
+  final Map<String, Map<int, String>> _cursors = {};
 
   TagCatalogSource? _catalog;
 
@@ -85,7 +88,7 @@ class FurAffinityHandler extends BooruHandler {
   @override
   String makePostURL(String id) => '${FurAffinityQuery.site}/view/$id/';
 
-  static const Set<String> _namespaces = {'artist', 'rating', 'type', 'category', 'theme', 'species'};
+  static const Set<String> _namespaces = {'artist', 'rating', 'type', 'category', 'theme', 'species', 'folder'};
 
   @override
   String? tagNamespace(String tag) {
@@ -99,16 +102,27 @@ class FurAffinityHandler extends BooruHandler {
   String makeURL(String tags) {
     final FurAffinityQuery query = FurAffinityQuery.parse(tags);
     String? cursor;
-    if (query.kind == FurAffinityRoute.favorites) cursor = _favoritesCursors[tags.trim()]?[page];
+    if (query.kind == FurAffinityRoute.favorites || query.kind == FurAffinityRoute.inbox) {
+      cursor = _cursors[tags.trim()]?[page];
+    }
     final String url = query.url(page: page, cursor: cursor);
     if (url.isEmpty) locked = true;
     return url;
+  }
+
+  /// What a logged-in page says about the account: its name and blocklist.
+  void _noteAccount(String body) {
+    if (!session.isLoggedIn) return;
+    final String? me = FurAffinityParser.loggedInUser(body);
+    if (me != null) session.noteUsername(me);
+    if (body.contains('data-user-logged-in="1"')) session.noteBlocklist(FurAffinityParser.blocklist(body));
   }
 
   @override
   FutureOr<List> parseListFromResponse(dynamic response) {
     final String body = response.data?.toString() ?? '';
     final FurAffinityQuery query = FurAffinityQuery.parse(currentTags);
+    _noteAccount(body);
     if (query.kind == FurAffinityRoute.view) {
       final BooruItem? item = _single(body, query.id);
       if (item == null) errorString = 'This submission could not be read (it may need you to log in, or be removed).';
@@ -116,22 +130,26 @@ class FurAffinityHandler extends BooruHandler {
       return item == null ? const [] : [item];
     }
     final List<BooruItem> items = FurAffinityParser.listing(body);
-    if (items.isEmpty) {
+    // A page whose every submission the blocklist took is not the last page.
+    final bool hadFigures = body.contains('id="sid-');
+    if (items.isEmpty && !hadFigures) {
       locked = true;
-      if (body.contains('System Message')) {
+      if (query.kind == FurAffinityRoute.inbox && !session.isLoggedIn) {
+        errorString = 'The submissions inbox needs you to log in to FurAffinity.';
+      } else if (body.contains('System Message')) {
         errorString = 'FurAffinity answered with a system message: the page needs a login, or the account does not exist.';
       }
       return items;
     }
     switch (query.kind) {
-      case FurAffinityRoute.gallery || FurAffinityRoute.scraps:
+      case FurAffinityRoute.gallery || FurAffinityRoute.scraps || FurAffinityRoute.folder:
         if (!FurAffinityParser.galleryHasNext(body)) locked = true;
-      case FurAffinityRoute.favorites:
-        final String? cursor = FurAffinityParser.favoritesCursor(body);
+      case FurAffinityRoute.favorites || FurAffinityRoute.inbox:
+        final String? cursor = query.kind == FurAffinityRoute.favorites ? FurAffinityParser.favoritesCursor(body) : FurAffinityParser.inboxCursor(body);
         if (cursor == null) {
           locked = true;
         } else {
-          (_favoritesCursors[currentTags.trim()] ??= {})[page + 1] = cursor;
+          (_cursors[currentTags.trim()] ??= {})[page + 1] = cursor;
         }
       default:
         break;
@@ -157,6 +175,14 @@ class FurAffinityHandler extends BooruHandler {
     return item;
   }
 
+  /// One of the site's pages, with the account's session.
+  Future<String> fetchPage(String url, {CancelToken? cancelToken}) async {
+    final response = await DioNetwork.get(url, headers: getHeaders(), cancelToken: cancelToken);
+    final String body = response.data?.toString() ?? '';
+    _noteAccount(body);
+    return body;
+  }
+
   @override
   Future<({BooruItem? item, bool failed, String? error})> loadItem({
     required BooruItem item,
@@ -164,8 +190,7 @@ class FurAffinityHandler extends BooruHandler {
     bool withCapcthaCheck = false,
   }) async {
     try {
-      final response = await DioNetwork.get(item.postURL, headers: getHeaders(), cancelToken: cancelToken);
-      final FurAffinitySubmission? s = FurAffinityParser.submission(response.data?.toString() ?? '');
+      final FurAffinitySubmission? s = FurAffinityParser.submission(await fetchPage(item.postURL, cancelToken: cancelToken));
       if (s == null) {
         return (
           item: null,
@@ -245,6 +270,70 @@ class FurAffinityHandler extends BooruHandler {
     return Symbols.image_rounded;
   }
 
+  // ---- the account (r42) ----
+
+  /// Favourites go to the site too while logged in.
+  @override
+  bool get hasSiteFavourites => session.isLoggedIn;
+
+  @override
+  Future<(bool, String)> setSiteFavourite(BooruItem item, bool value) async {
+    if (!session.isLoggedIn) return (false, 'Local only: log in to FurAffinity to favourite on the site');
+    try {
+      final ({String path, bool faved})? link = FurAffinityParser.favLink(await fetchPage(item.postURL));
+      if (link == null) return (false, 'FurAffinity offered no favourite button (log in again?)');
+      if (link.faved == value) return (true, value ? 'Already in your FurAffinity favorites' : 'Not in your FurAffinity favorites');
+      await fetchPage('${FurAffinityQuery.site}${link.path}');
+      return (true, value ? 'Added to your FurAffinity favorites' : 'Removed from your FurAffinity favorites');
+    } catch (e) {
+      return (false, 'FurAffinity favourite failed: $e');
+    }
+  }
+
+  /// The watch button of an artist's profile, when logged in.
+  Future<({String path, bool watching})?> fetchWatchLink(String username) async {
+    if (!session.isLoggedIn) return null;
+    try {
+      return FurAffinityParser.watchLink(await fetchPage('${FurAffinityQuery.site}/user/${username.toLowerCase()}/'));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Watches or unwatches an artist; the state after it, and what to say.
+  Future<({bool ok, bool watching, String message})> toggleWatch(String username) async {
+    final ({String path, bool watching})? link = await fetchWatchLink(username);
+    if (link == null) return (ok: false, watching: false, message: 'FurAffinity offered no watch button (log in again?)');
+    try {
+      await fetchPage('${FurAffinityQuery.site}${link.path}');
+      final bool now = !link.watching;
+      return (ok: true, watching: now, message: now ? 'Watching $username' : 'No longer watching $username');
+    } catch (e) {
+      return (ok: false, watching: link.watching, message: 'Watch failed: $e');
+    }
+  }
+
+  static final Map<String, List<FurAffinityFolder>> _folders = {};
+
+  /// An artist's gallery folders, read once per session.
+  Future<List<FurAffinityFolder>> fetchFolders(String username) async {
+    final String name = username.toLowerCase();
+    final List<FurAffinityFolder>? known = _folders[name];
+    if (known != null) return known;
+    try {
+      return _folders[name] = FurAffinityParser.userFolders(await fetchPage('${FurAffinityQuery.site}/gallery/$name/'));
+    } catch (e) {
+      Logger.Inst().log('reading the folders of $name failed: $e', className, 'fetchFolders', LogTypes.booruHandlerInfo);
+      return const [];
+    }
+  }
+
+  /// A page of the artists [username] watches.
+  Future<({List<FurAffinityWatchEntry> users, bool hasNext})> fetchWatchlist(String username, int page) async {
+    final String html = await fetchPage('${FurAffinityQuery.site}/watchlist/by/${username.toLowerCase()}/?page=$page');
+    return FurAffinityParser.watchlist(html);
+  }
+
   @override
   DoujinFilterSpec get doujinFilters => const DoujinFilterSpec([
     DoujinFilterGroup(
@@ -272,6 +361,14 @@ class FurAffinityHandler extends BooruHandler {
         DoujinFilterOption('poetry', 'Poetry'),
         DoujinFilterOption('flash', 'Flash'),
       ],
+    ),
+    // r42: many "animation" submissions are a still with the animation linked
+    // in the description; a GIF file is the only real animation on the site.
+    DoujinFilterGroup(
+      key: 'animated',
+      label: 'Animated',
+      defaultValue: 'all',
+      options: [DoujinFilterOption('all', 'Everything'), DoujinFilterOption('gif', 'Real animations (GIF files)')],
     ),
     DoujinFilterGroup(
       key: 'rating',
@@ -330,8 +427,7 @@ class FurAffinityHandler extends BooruHandler {
     final String name = username.toLowerCase();
     if (_users.containsKey(name)) return _users[name];
     try {
-      final response = await DioNetwork.get('${FurAffinityQuery.site}/user/$name/', headers: getHeaders());
-      return _users[name] = FurAffinityParser.user(response.data?.toString() ?? '');
+      return _users[name] = FurAffinityParser.user(await fetchPage('${FurAffinityQuery.site}/user/$name/'));
     } catch (e) {
       // The site answers some profiles with an error page (400) every time: not asked again this session.
       if (e is DioException && (e.response?.statusCode ?? 0) >= 400 && (e.response?.statusCode ?? 0) < 500) _users[name] = null;

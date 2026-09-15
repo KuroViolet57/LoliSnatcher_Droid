@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'package:intl/intl.dart';
@@ -6,13 +8,17 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:lolisnatcher/src/boorus/furaffinity_handler.dart';
 import 'package:lolisnatcher/src/boorus/furaffinity_parser.dart';
 import 'package:lolisnatcher/src/boorus/furaffinity_query.dart';
+import 'package:lolisnatcher/src/handlers/furaffinity_session_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
+import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
+import 'package:lolisnatcher/src/widgets/drawers/furaffinity_sidebar.dart';
 import 'package:lolisnatcher/src/widgets/gallery/tag_view.dart';
 import 'package:lolisnatcher/src/widgets/image/custom_network_image.dart';
 
-/// The artist's card above a FurAffinity gallery, scraps or favorites tab
-/// (r40): avatar, name, counts; Gallery / Scraps / Favorites switch the tab;
-/// Strips shows all three as horizontal rows instead of scrolling the feed.
+/// The artist's card above a FurAffinity gallery, scraps, favorites or folder
+/// tab (r40): avatar, name, counts; Gallery / Scraps / Favorites switch the
+/// tab; Strips shows all three as horizontal rows instead of scrolling the
+/// feed. r42: Folders (the artist's gallery folders) and, logged in, Watch.
 class FurAffinityArtistHeader extends StatefulWidget {
   const FurAffinityArtistHeader({required this.tab, super.key});
 
@@ -28,6 +34,19 @@ class FurAffinityArtistHeader extends StatefulWidget {
 class _FurAffinityArtistHeaderState extends State<FurAffinityArtistHeader> {
   Future<FurAffinityUser?>? _user;
   String _for = '';
+  bool? _watching;
+
+  Future<void> _checkWatch(FurAffinityHandler handler, String user) async {
+    final link = await handler.fetchWatchLink(user);
+    if (mounted && _for == user) setState(() => _watching = link?.watching);
+  }
+
+  Future<void> _toggleWatch(FurAffinityHandler handler, String user) async {
+    final result = await handler.toggleWatch(user);
+    if (!mounted) return;
+    setState(() => _watching = result.watching);
+    FlashElements.showSnackbar(context: context, title: Text(result.message));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -38,6 +57,8 @@ class _FurAffinityArtistHeaderState extends State<FurAffinityArtistHeader> {
     if (_for != query.user) {
       _for = query.user;
       _user = handler.fetchUser(query.user);
+      _watching = null;
+      if (FurAffinitySessionHandler.instance.isLoggedIn) unawaited(_checkWatch(handler, query.user));
     }
     final theme = Theme.of(context);
     final NumberFormat count = NumberFormat.decimalPattern();
@@ -99,6 +120,12 @@ class _FurAffinityArtistHeaderState extends State<FurAffinityArtistHeader> {
                         ],
                       ),
                     ),
+                    if (_watching != null)
+                      FilledButton.tonal(
+                        key: const ValueKey('fa-artist-watch'),
+                        onPressed: () => _toggleWatch(handler, query.user),
+                        child: Text(_watching! ? 'Unwatch' : 'Watch'),
+                      ),
                   ],
                 ),
                 const SizedBox(height: 10),
@@ -126,6 +153,21 @@ class _FurAffinityArtistHeaderState extends State<FurAffinityArtistHeader> {
                                 if (query.kind != route) open(key);
                               },
                             ),
+                          ChoiceChip(
+                            key: const ValueKey('fa-artist-folders'),
+                            avatar: const Icon(Symbols.folder_rounded, size: 18),
+                            label: const Text('Folders'),
+                            selected: !strips && query.kind == FurAffinityRoute.folder,
+                            onSelected: (_) => FurAffinityFolderList.show(
+                              context,
+                              handler: handler,
+                              username: query.user,
+                              onOpen: (String term) {
+                                FurAffinityArtistHeader.strips.value = false;
+                                SearchHandler.instance.searchAction(term, null);
+                              },
+                            ),
+                          ),
                           FilterChip(
                             key: const ValueKey('fa-artist-strips'),
                             avatar: const Icon(Symbols.view_carousel_rounded, size: 18),

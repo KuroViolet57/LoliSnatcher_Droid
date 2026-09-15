@@ -746,6 +746,50 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   window's History, Pinned tags and Popular tags, all off by default for
   every source (replacing r37's doujin-only hiding).
 
+### 4.11 FurAffinity's sidebar, post page, blocklist, account, Flash; the Drive link (r42)
+
+- **Sidebar** (`widgets/drawers/furaffinity_sidebar.dart`): the kemono look
+  (`FaSection`/`FaPill`), chosen in `mobile_home_page.dart` like
+  `KemonoSidebar`, switched by `SettingsHandler.furAffinitySidebar` (the
+  normal drawer's Quick access switches back). Browse / You (inbox, watched,
+  favorites, gallery) / the tab's artist (gallery, scraps, favorites, folders,
+  watch) / account (log in, blocklist import, content filter, log out).
+- **Post page** (`pages/furaffinity_post_page.dart`, opened from the viewer
+  app bar and the tag view): picture, stats, description (`LoliHtml`), the
+  submission page's mini gallery with Older/Newer, folders, keywords,
+  comments, the site favourite. `fetchPage` is injectable for tests.
+- **Parser additions** (`furaffinity_parser.dart`): figure ids are `sid-N`
+  on listings and `sid_N` in the mini gallery; `.submission-folder`,
+  `.comment_container`, `.minigallery-navigation`; `userFolders` from the
+  gallery page's `.user-folders` (h4 = group); `watchLink`/`favLink` need a
+  non-empty `?key=`; `loggedInUser` reads the header's
+  `.loggedin_user_avatar`; `watchlist` pages 200 at a time (`?page=N`);
+  `inboxCursor` reads `/msg/submissions/new~ID@N/`. Dart RegExp has no inline
+  `(?s)`: use `dotAll: true`.
+- **Blocklist:** logged in, every page's `<body>` carries
+  `data-tag-blocklist`, `data-user-blocklist` (`u_name`),
+  `data-tag-blocklist-hide-tagless` and `data-tag-blocklist-nonce` for the
+  site's `censor.js`, which only blurs. `FurAffinityParser.listing` leaves
+  blocked figures out; the session keeps the last blocklist and name.
+- **Routes:** `folder:user/id/slug`, `inbox:`, `animated:gif` (adds
+  `@filename gif`, forces extended mode; verified live that results are .gif
+  files while "animation" also returns stills). Favourites sync through
+  `hasSiteFavourites`/`setSiteFavourite`.
+- **Flash** (`pages/flash_player_page.dart`): a WebView page with the Ruffle
+  script FurAffinity itself serves (`d.furaffinity.net/media/ruffle-0.2.0/`)
+  and `player.load({url})`; the SWF host answers
+  `access-control-allow-origin: *`. Flash pages have no `#submissionImg`:
+  the file is `object#flash_embed[data]`, else the `/download/` link.
+- **Drive link** (`services/drive_backup.dart`): the device log showed the
+  token exchange failing with "Failed host lookup: oauth2.googleapis.com"
+  while the browser was in front. The browser page now says "go back to the
+  app"; the exchange waits for `AppLifecycleState.resumed`, tries three token
+  addresses twice (`exchange`, tested), and failures open a dialog
+  (`friendlyError`).
+- **Unverified logged in** (built from the site's script and logged-out
+  pages): the inbox Next link, the watch/fav links with a key, the header
+  avatar's class, the gender boxes' names.
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
@@ -1171,14 +1215,18 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r41)
+## 12. Open items (as of r42)
 
+- r42 is unverified on the device: the FurAffinity sidebar and its switch,
+  the post page, Animated only, the blocklist leaving submissions out, the
+  inbox paging, watch and favourite sync, Flash through Ruffle, and the
+  Google Drive link finishing after the return from the browser.
+- r43 planned: booru source settings for every source the user has (a
+  sidebar button per source, engine- and site-specific options).
 - r41 is unverified on the device: a FurAffinity webview logged in and the
   feed still logged in after it; filters on an empty FurAffinity search;
   the gender filter's parameter names (guessed, see 4.10); the Modular UI
   page and the search window without History/Pinned/Popular.
-- r42 planned: FurAffinity Watch/Unwatch, an `inbox:` feed, the watched
-  artists sidebar, favourite sync.
 - r40 is unverified on the device: FurAffinity browse, search and artist
   tabs with their icons, the WebView login (cookie names `a` and `b` are
   the site's known ones; confirm after a login), mature results with the

@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/widgets.dart';
+
 import 'package:url_launcher/url_launcher_string.dart';
 
 import 'package:lolisnatcher/src/handlers/secure_storage_handler.dart';
@@ -65,8 +67,7 @@ class DriveBackup {
 
   static Future<bool> get hasCredentials async => (await clientId)?.isNotEmpty == true;
 
-  static Future<bool> get isLinked async =>
-      (await SecureStorageHandler.instance.read(SecureStorageKey.driveRefreshToken))?.isNotEmpty == true;
+  static Future<bool> get isLinked async => (await SecureStorageHandler.instance.read(SecureStorageKey.driveRefreshToken))?.isNotEmpty == true;
 
   static Future<void> unlink() async {
     _accessToken = null;
@@ -79,7 +80,10 @@ class DriveBackup {
 
   /// Runs the loopback consent flow. Returns null on success, otherwise a
   /// message describing what went wrong.
-  static Future<String?> link({Duration timeout = const Duration(minutes: 3)}) async {
+  static Future<String?> link({
+    Duration timeout = const Duration(minutes: 3),
+    void Function(String status)? onProgress,
+  }) async {
     final String id = (await clientId) ?? '';
     final String secret = (await clientSecret) ?? '';
     if (id.isEmpty || secret.isEmpty) {
@@ -123,11 +127,20 @@ class DriveBackup {
         ..write(_landingPage(linked: code != null));
       await request.response.close();
 
+      if (code != null) {
+        onProgress?.call('Finishing the link with Google…');
+        // r42: finish once the app is in front again. With the browser in
+        // front this is a background app, and Android can cut a background
+        // app's network (data saver, battery limits): the exchange failed
+        // with "Failed host lookup: oauth2.googleapis.com" on the device.
+        await waitForForeground(timeout);
+      }
+
       if (code == null) {
         return error == null ? 'No authorisation code was returned.' : 'Google returned: $error';
       }
 
-      final Map<String, dynamic>? tokens = await _postForm(_tokenEndpoint, {
+      final Map<String, dynamic>? tokens = await exchange({
         'client_id': id,
         'client_secret': secret,
         'code': code,
@@ -150,7 +163,7 @@ class DriveBackup {
       return 'Timed out waiting for Google to redirect back.';
     } catch (e, s) {
       Logger.Inst().log('drive link failed: $e', 'DriveBackup', 'link', LogTypes.exception, s: s);
-      return 'Sign-in failed: $e';
+      return friendlyError(e);
     } finally {
       await server?.close(force: true);
     }
@@ -158,23 +171,100 @@ class DriveBackup {
 
   /// What the browser shows after the redirect, before the user comes back.
   static String _landingPage({required bool linked}) {
-    final String heading = linked ? 'LoliSnatcher is linked' : 'Sign-in cancelled';
+    // r42: not "linked" yet: the app still has to trade the code for tokens.
+    final String heading = linked ? 'Almost done' : 'Sign-in cancelled';
+    final String line = linked ? 'Go back to LoliSnatcher: it finishes linking your Google Drive there.' : 'You can close this tab and go back to the app.';
     return '''
 <!doctype html>
 <meta name="viewport" content="width=device-width">
 <body style="font-family:sans-serif;background:#141018;color:#eeeeee;display:flex;align-items:center;justify-content:center;height:90vh">
   <div style="text-align:center">
     <h2>$heading</h2>
-    <p>You can close this tab and go back to the app.</p>
+    <p>$line</p>
   </div>
 </body>
 ''';
   }
 
+  @visibleForTesting
+  static String landingPageForTests({required bool linked}) => _landingPage(linked: linked);
+
+  /// Google's token address, then the two older ones that still answer
+  /// (r42): a phone that cannot look one of them up may reach another.
+  static const List<String> tokenEndpoints = [
+    _tokenEndpoint,
+    'https://www.googleapis.com/oauth2/v4/token',
+    'https://accounts.google.com/o/oauth2/token',
+  ];
+
+  /// Posts [body] to Google's token addresses in turn, twice round, until
+  /// one answers. An answer (tokens, or null for a refusal) ends it; only
+  /// a network failure moves on. Throws the last network failure.
+  @visibleForTesting
+  static Future<Map<String, dynamic>?> exchange(
+    Map<String, String> body, {
+    Future<Map<String, dynamic>?> Function(String url, Map<String, String> body)? post,
+    Duration retryDelay = const Duration(seconds: 2),
+  }) async {
+    final Future<Map<String, dynamic>?> Function(String url, Map<String, String> body) poster = post ?? _postForm;
+    Object? lastError;
+    for (int round = 0; round < 2; round++) {
+      if (round > 0) await Future<void>.delayed(retryDelay);
+      for (final String url in tokenEndpoints) {
+        try {
+          return await poster(url, body);
+        } on SocketException catch (e) {
+          lastError = e;
+        } on HandshakeException catch (e) {
+          lastError = e;
+        } on TimeoutException catch (e) {
+          lastError = e;
+        } on HttpException catch (e) {
+          lastError = e;
+        }
+        Logger.Inst().log('token address $url unreachable: $lastError', 'DriveBackup', 'exchange', LogTypes.exception);
+      }
+    }
+    throw lastError ?? const SocketException('Google could not be reached');
+  }
+
+  /// What a failed link says to the person.
+  static String friendlyError(Object e) {
+    final String text = e.toString();
+    if (e is SocketException || e is HandshakeException || e is TimeoutException) {
+      final String host = RegExp(r"lookup: '([^']+)'").firstMatch(text)?.group(1) ?? 'Google';
+      return 'Could not reach $host. The browser can, so something on the phone blocks this app: '
+          'data saver or battery limits for LoliSnatcher, a VPN, Private DNS or an ad blocker. '
+          'Allow the app, then link again. ($text)';
+    }
+    return 'Sign-in failed: $text';
+  }
+
+  /// Waits until the app is in front again (or [timeout] passes).
+  static Future<void> waitForForeground(Duration timeout) async {
+    final AppLifecycleState? state = WidgetsBinding.instance.lifecycleState;
+    if (state == null || state == AppLifecycleState.resumed) return;
+    final Completer<void> back = Completer<void>();
+    final AppLifecycleListener listener = AppLifecycleListener(
+      onResume: () {
+        if (!back.isCompleted) back.complete();
+      },
+    );
+    try {
+      await back.future.timeout(timeout);
+    } on TimeoutException {
+      // Try anyway.
+    } finally {
+      listener.dispose();
+    }
+    // A moment for the network to come back with the app.
+    await Future<void>.delayed(const Duration(milliseconds: 600));
+  }
+
   // ──────────────────────────── plumbing ────────────────────────────
 
   static Future<Map<String, dynamic>?> _postForm(String url, Map<String, String> body) async {
-    final HttpClient client = HttpClient();
+    final HttpClient client = HttpClient()..connectionTimeout = const Duration(seconds: 15);
     try {
       final HttpClientRequest req = await client.postUrl(Uri.parse(url));
       req.headers.contentType = ContentType('application', 'x-www-form-urlencoded', charset: 'utf-8');
@@ -202,7 +292,7 @@ class DriveBackup {
     final String secret = (await clientSecret) ?? '';
     if (refresh == null || refresh.isEmpty || id.isEmpty) return null;
 
-    final Map<String, dynamic>? tokens = await _postForm(_tokenEndpoint, {
+    final Map<String, dynamic>? tokens = await exchange({
       'client_id': id,
       'client_secret': secret,
       'refresh_token': refresh,
@@ -313,12 +403,13 @@ class DriveBackup {
     try {
       final DriveFile? existing = await _find(token, folderId, name);
       final Uri start = Uri.parse(
-        existing == null
-            ? '$_uploadApi/files?uploadType=resumable'
-            : '$_uploadApi/files/${existing.id}?uploadType=resumable',
+        existing == null ? '$_uploadApi/files?uploadType=resumable' : '$_uploadApi/files/${existing.id}?uploadType=resumable',
       );
       final Map<String, dynamic> metadata = existing == null
-          ? {'name': name, 'parents': [folderId]}
+          ? {
+              'name': name,
+              'parents': [folderId],
+            }
           : {'name': name};
 
       final HttpClientResponse init = await _send(

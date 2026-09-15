@@ -392,6 +392,18 @@ class _DrawerQuickAccessState extends State<DrawerQuickAccess> {
             settingsHandler.saveSettings(restate: false);
           },
         ),
+      // r42: the way back to FurAffinity's own sidebar.
+      if (current?.type?.isFurAffinity ?? false)
+        _quickAccessRow(
+          icon: Symbols.swap_horiz_rounded,
+          iconColor: const Color(0xFF8FBFD4),
+          label: 'Use the FurAffinity sidebar',
+          subtitle: 'Browse, your inbox and watched artists, the artist, the account',
+          onTap: () {
+            settingsHandler.furAffinitySidebar.value = true;
+            settingsHandler.saveSettings(restate: false);
+          },
+        ),
       _quickAccessRow(
         icon: Symbols.block_rounded,
         iconColor: const Color(0xFFE5766B),

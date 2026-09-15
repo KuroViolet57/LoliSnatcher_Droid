@@ -500,13 +500,31 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
       driveBusy = true;
       driveStatus = 'Waiting for Google sign-in in your browser…';
     });
-    final String? error = await DriveBackup.link();
+    final String? error = await DriveBackup.link(
+      onProgress: (String status) {
+        if (mounted) setState(() => driveStatus = status);
+      },
+    );
     if (!mounted) return;
     setState(() {
       driveBusy = false;
       driveStatus = '';
     });
-    showSnackbar(error ?? 'Google Drive linked.', isError: error != null);
+    if (error == null) {
+      showSnackbar('Google Drive linked.', isError: false);
+    } else {
+      // r42: a dialog, not a snackbar: the person is often still coming back
+      // from the browser when this lands.
+      await showDialog<void>(
+        context: context,
+        builder: (BuildContext ctx) => AlertDialog(
+          title: const Text('Google Drive was not linked'),
+          content: SelectableText(error),
+          actions: [TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('OK'))],
+        ),
+      );
+      if (!mounted) return;
+    }
     await _refreshDriveState();
   }
 

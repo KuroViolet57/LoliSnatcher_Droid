@@ -5,15 +5,24 @@
 ///   words and the site's operators       /search/ (| OR, -/! NOT, ( ), "phrase", <<, ~N, /N)
 ///   user:name / gallery:name / artist:name   the artist's gallery
 ///   scraps:name, favorites:name          their scraps and favorites
+///   folder:name/id/slug                  one of their gallery folders (r42)
+///   inbox:                               your submissions inbox (r42, logged in)
 ///   id:N                                 one submission
 ///   category:N theme:N species:N         search filters by the site's ids
 ///   sort: order: type: rating: range:    the search form's own options
 ///   gender: mode: perpage: from: to:     the rest of it (r41)
+///   animated:gif                         only submissions whose file is a GIF (r42)
 ///
 /// r41: filter terms without words are a search with no words, so the main
 /// feed follows the Filters card (the browse page cannot sort or filter by
 /// type). A filter term with a value the site does not have is dropped.
-enum FurAffinityRoute { browse, search, gallery, scraps, favorites, view }
+///
+/// r42: FurAffinity hosts no video, so a real animation is a GIF file; many
+/// "animation" submissions are a still picture with the animation linked in
+/// the description. `animated:gif` searches the file name field for "gif"
+/// (`@filename gif`, checked live on 2026-09-15: every result a .gif file),
+/// which needs the extended syntax.
+enum FurAffinityRoute { browse, search, gallery, scraps, favorites, folder, inbox, view }
 
 class FurAffinityQuery {
   const FurAffinityQuery({
@@ -34,6 +43,9 @@ class FurAffinityQuery {
     this.perpage,
     this.rangeFrom,
     this.rangeTo,
+    this.folderId = '',
+    this.folderSlug = '',
+    this.animatedOnly = false,
   });
 
   static const String host = 'www.furaffinity.net';
@@ -49,9 +61,13 @@ class FurAffinityQuery {
   static const List<String> allGenders = ['male', 'female', 'trans_male', 'trans_female', 'intersex', 'non_binary'];
   static const List<String> modes = ['extended', 'all', 'any'];
   static const List<String> perpages = ['24', '48', '72'];
+  static const List<String> animatedValues = ['all', 'gif'];
+
+  /// The search words that keep only GIF files.
+  static const String gifOnly = '@filename gif';
 
   /// The terms that set the search form rather than route or search words.
-  static const Set<String> filterKeys = {'sort', 'order', 'range', 'type', 'rating', 'gender', 'mode', 'perpage', 'from', 'to'};
+  static const Set<String> filterKeys = {'sort', 'order', 'range', 'type', 'rating', 'gender', 'mode', 'perpage', 'from', 'to', 'animated'};
 
   final FurAffinityRoute kind;
   final String user;
@@ -70,9 +86,15 @@ class FurAffinityQuery {
   final String? perpage;
   final String? rangeFrom;
   final String? rangeTo;
+  final String folderId;
+  final String folderSlug;
+  final bool animatedOnly;
 
   static final RegExp _token = RegExp(r'"[^"]*"(?:~\d+|/\d+)?|\S+');
   static final RegExp _date = RegExp(r'^\d{4}-\d{2}-\d{2}$');
+
+  /// The query term for one of an artist's folders.
+  static String folderTerm(String user, String id, String slug) => 'folder:${user.toLowerCase()}/$id/$slug';
 
   static FurAffinityQuery parse(String tags) {
     FurAffinityRoute? route;
@@ -85,6 +107,9 @@ class FurAffinityQuery {
     String? perpage;
     String? rangeFrom;
     String? rangeTo;
+    String folderId = '';
+    String folderSlug = '';
+    bool animatedOnly = false;
     final List<String> types = [];
     final List<String> ratings = [];
     final List<String> genders = [];
@@ -114,9 +139,17 @@ class FurAffinityQuery {
           'gender' => allGenders.contains(v),
           'mode' => modes.contains(v),
           'perpage' => perpages.contains(v),
+          'animated' => animatedValues.contains(v),
           _ => _date.hasMatch(v),
         };
         if (!ok) continue;
+        if (key == 'animated') {
+          if (v == 'gif') {
+            animatedOnly = true;
+            filtered = true;
+          }
+          continue;
+        }
         filtered = true;
         switch (key) {
           case 'sort':
@@ -152,6 +185,14 @@ class FurAffinityQuery {
         case 'favorites' || 'favourites' when value.isNotEmpty:
           route = FurAffinityRoute.favorites;
           user = v;
+        case 'folder' when value.split('/').length >= 2 && value.split('/')[1].isNotEmpty:
+          final List<String> parts = value.split('/');
+          route = FurAffinityRoute.folder;
+          user = parts[0].toLowerCase();
+          folderId = parts[1];
+          folderSlug = parts.length > 2 ? parts.sublist(2).where((p) => p.isNotEmpty).join('/') : '';
+        case 'inbox':
+          route = FurAffinityRoute.inbox;
         case 'id' when value.isNotEmpty:
           route = FurAffinityRoute.view;
           id = value;
@@ -186,11 +227,14 @@ class FurAffinityQuery {
       perpage: perpage,
       rangeFrom: rangeFrom,
       rangeTo: rangeTo,
+      folderId: folderId,
+      folderSlug: folderSlug,
+      animatedOnly: animatedOnly,
     );
   }
 
-  /// The page for [page] (1-based); favorites page by the [cursor] the
-  /// previous page handed over. '' when there is no such page.
+  /// The page for [page] (1-based); favorites and the inbox page by the
+  /// [cursor] the previous page handed over. '' when there is no such page.
   String url({required int page, String? cursor}) {
     final int p = page < 1 ? 1 : page;
     switch (kind) {
@@ -200,17 +244,24 @@ class FurAffinityQuery {
         return p == 1 ? '$site/gallery/$user/' : '$site/gallery/$user/$p/';
       case FurAffinityRoute.scraps:
         return p == 1 ? '$site/scraps/$user/' : '$site/scraps/$user/$p/';
+      case FurAffinityRoute.folder:
+        final String base = '$site/gallery/$user/folder/$folderId/${folderSlug.isEmpty ? '' : '$folderSlug/'}';
+        return p == 1 ? base : '$base$p/';
       case FurAffinityRoute.favorites:
         if (p == 1) return '$site/favorites/$user/';
         return (cursor == null || cursor.isEmpty) ? '' : '$site/favorites/$user/$cursor/next';
+      case FurAffinityRoute.inbox:
+        if (p == 1) return '$site/msg/submissions/';
+        return (cursor == null || cursor.isEmpty) ? '' : '$site/msg/submissions/$cursor/';
       case FurAffinityRoute.view:
         return '$site/view/$id/';
       case FurAffinityRoute.search:
         final bool manual = rangeFrom != null || rangeTo != null;
+        final String q = animatedOnly ? (text.isEmpty ? gifOnly : '$text $gifOnly') : text;
         final Map<String, String> params = {
-          'q': text,
+          'q': q,
           'page': '$p',
-          'mode': mode,
+          'mode': animatedOnly ? 'extended' : mode,
           'order-by': sort,
           'order-direction': order,
           'range': manual ? 'manual' : range,

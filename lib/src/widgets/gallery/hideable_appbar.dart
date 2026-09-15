@@ -15,6 +15,9 @@ import 'package:get/get.dart';
 import 'package:preload_page_view/preload_page_view.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
+import 'package:lolisnatcher/src/pages/flash_player_page.dart';
+import 'package:lolisnatcher/src/pages/furaffinity_post_page.dart';
+import 'package:lolisnatcher/src/boorus/furaffinity_handler.dart';
 import 'package:lolisnatcher/src/boorus/hydrus_handler.dart';
 import 'package:lolisnatcher/src/boorus/kemono_handler.dart';
 import 'package:lolisnatcher/src/data/settings/gallery_button.dart';
@@ -320,6 +323,45 @@ class _HideableAppBarState extends State<HideableAppBar> {
         );
       }),
     );
+
+    // FurAffinity (r42b): a Flash submission plays through Ruffle.
+    if (widget.tab.booruHandler is FurAffinityHandler) {
+      actions.add(
+        Obx(() {
+          final BooruItem? item = page.value >= 0 && page.value < widget.tab.booruHandler.filteredFetched.length
+              ? widget.tab.booruHandler.filteredFetched[page.value]
+              : null;
+          if (item == null || !FlashPlayerPage.isFlash(item)) return const SizedBox.shrink();
+          return ToolbarAction(
+            key: const ValueKey('furaffinity-flash'),
+            icon: const Icon(Symbols.play_circle_rounded),
+            tooltip: 'Play Flash',
+            onTap: () => FlashPlayerPage.openFor(context, widget.tab.booruHandler, item),
+          );
+        }),
+      );
+    }
+
+    // FurAffinity (r42): the submission page — description, gallery around
+    // it, folders, keywords, comments.
+    if (widget.tab.booruHandler is FurAffinityHandler) {
+      actions.add(
+        Obx(() {
+          final BooruItem? item = page.value >= 0 && page.value < widget.tab.booruHandler.filteredFetched.length
+              ? widget.tab.booruHandler.filteredFetched[page.value]
+              : null;
+          if (item == null) return const SizedBox.shrink();
+          return ToolbarAction(
+            key: const ValueKey('furaffinity-post'),
+            icon: const Icon(Symbols.article_rounded),
+            tooltip: 'Post page',
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => FurAffinityPostPage(booru: widget.tab.booruHandler.booru, item: item)),
+            ),
+          );
+        }),
+      );
+    }
 
     // kemono: the post page — content, every file with its name, comments.
     if (widget.tab.booruHandler is KemonoHandler) {

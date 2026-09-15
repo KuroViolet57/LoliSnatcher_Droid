@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
+import 'package:lolisnatcher/src/boorus/furaffinity_parser.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
@@ -26,6 +27,9 @@ enum FurAffinityJarAction { none, reseed }
 /// ([prepareWebView]) and, when it closes, newer account cookies are taken
 /// and a guest jar gets the account back ([syncAfterWebView]). The image
 /// hosts still never see it: the handler does not send jar cookies to media.
+///
+/// r42: the account's name and blocklist, as the site's own pages show them
+/// ([noteUsername], [noteBlocklist]).
 class FurAffinitySessionHandler {
   FurAffinitySessionHandler._();
 
@@ -36,11 +40,13 @@ class FurAffinitySessionHandler {
   static const List<String> jarOrigins = ['https://www.furaffinity.net/', 'https://furaffinity.net/'];
   static const Duration jarTimeout = Duration(seconds: 3);
 
-  /// Bumped on every change so settings rows can rebuild.
+  /// Bumped on every change so settings rows and the sidebar can rebuild.
   final ValueNotifier<int> revision = ValueNotifier(0);
 
   String? _a;
   String? _b;
+  String? _username;
+  FurAffinityBlocklist? _blocklist;
   bool _loaded = false;
 
   File? get _file {
@@ -64,6 +70,8 @@ class FurAffinitySessionHandler {
         if (a.isNotEmpty && b.isNotEmpty) {
           _a = a;
           _b = b;
+          final String user = decoded['user']?.toString() ?? '';
+          _username = user.isEmpty ? null : user;
         }
       }
     } catch (e) {
@@ -75,6 +83,15 @@ class FurAffinitySessionHandler {
     ensureLoaded();
     return (_a ?? '').isNotEmpty && (_b ?? '').isNotEmpty;
   }
+
+  /// The account's name, once a logged-in page showed it.
+  String? get username {
+    ensureLoaded();
+    return isLoggedIn ? _username : null;
+  }
+
+  /// The account's blocklist as the last logged-in page carried it.
+  FurAffinityBlocklist? get siteBlocklist => isLoggedIn ? _blocklist : null;
 
   /// The `Cookie` value for a request to the site itself.
   String cookieHeader() {
@@ -101,10 +118,29 @@ class FurAffinitySessionHandler {
     revision.value++;
   }
 
+  void noteUsername(String name) {
+    ensureLoaded();
+    final String clean = name.trim().toLowerCase();
+    if (!isLoggedIn || clean.isEmpty || clean == _username) return;
+    _username = clean;
+    _persist();
+    revision.value++;
+  }
+
+  void noteBlocklist(FurAffinityBlocklist blocklist) {
+    if (!isLoggedIn) return;
+    final FurAffinityBlocklist? old = _blocklist;
+    _blocklist = blocklist;
+    final bool same = old != null && old.hideTagless == blocklist.hideTagless && setEquals(old.tags, blocklist.tags) && setEquals(old.users, blocklist.users);
+    if (!same) revision.value++;
+  }
+
   void logout() {
     ensureLoaded();
     _a = null;
     _b = null;
+    _username = null;
+    _blocklist = null;
     try {
       final File? file = _file;
       if (file != null && file.existsSync()) file.deleteSync();
@@ -117,7 +153,7 @@ class FurAffinitySessionHandler {
     try {
       final File? file = _file;
       if (file == null) return;
-      file.writeAsStringSync(jsonEncode({'a': _a, 'b': _b, 'at': DateTime.now().millisecondsSinceEpoch}));
+      file.writeAsStringSync(jsonEncode({'a': _a, 'b': _b, 'user': _username, 'at': DateTime.now().millisecondsSinceEpoch}));
     } catch (e) {
       Logger.Inst().log('could not write $fileName: $e', 'FurAffinitySessionHandler', '_persist', LogTypes.exception);
     }
@@ -232,6 +268,7 @@ class FurAffinitySessionHandler {
     _loaded = false;
     _a = null;
     _b = null;
+    _username = null;
     ensureLoaded();
   }
 
@@ -240,5 +277,7 @@ class FurAffinitySessionHandler {
     _loaded = true;
     _a = null;
     _b = null;
+    _username = null;
+    _blocklist = null;
   }
 }

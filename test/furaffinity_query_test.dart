@@ -151,4 +151,35 @@ void main() {
     });
   });
 
+
+  group('r42: folders, the inbox, and real animations only', () {
+    Map<String, String> params(String query) => Uri.parse(FurAffinityQuery.parse(query).url(page: 1)).queryParameters;
+
+    test('a folder of an artist is its own feed, paged like the gallery', () {
+      final FurAffinityQuery q = FurAffinityQuery.parse('folder:Ryan-The-Fox/464222/Ryan-McCloud');
+      expect(q.kind, FurAffinityRoute.folder);
+      expect(q.user, 'ryan-the-fox');
+      expect(q.url(page: 1), '$site/gallery/ryan-the-fox/folder/464222/Ryan-McCloud/');
+      expect(q.url(page: 2), '$site/gallery/ryan-the-fox/folder/464222/Ryan-McCloud/2/');
+      expect(FurAffinityQuery.folderTerm('ryan-the-fox', '464222', 'Ryan-McCloud'), 'folder:ryan-the-fox/464222/Ryan-McCloud');
+    });
+
+    test('inbox: is the submissions inbox, paged by the cursor its Next link hands over', () {
+      final FurAffinityQuery q = FurAffinityQuery.parse('inbox:');
+      expect(q.kind, FurAffinityRoute.inbox);
+      expect(q.url(page: 1), '$site/msg/submissions/');
+      expect(q.url(page: 2, cursor: 'new~66370000@72'), '$site/msg/submissions/new~66370000@72/');
+      expect(q.url(page: 2), '', reason: 'no cursor, no page');
+    });
+
+    test('animated:gif keeps only submissions whose file is a GIF (the file name), in extended mode', () {
+      expect(params('fox animated:gif mode:any')['q'], 'fox @filename gif');
+      expect(params('fox animated:gif mode:any')['mode'], 'extended', reason: 'the @filename field needs the extended syntax');
+      expect(FurAffinityQuery.parse('animated:gif').kind, FurAffinityRoute.search);
+      expect(params('animated:gif')['q'], '@filename gif');
+      expect(params('fox animated:all')['q'], 'fox');
+      expect(FurAffinityQuery.parse('animated:all').kind, FurAffinityRoute.browse, reason: 'the default is not a filter');
+    });
+  });
+
 }
