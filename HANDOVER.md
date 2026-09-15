@@ -1018,6 +1018,33 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   `/externalurl/?q=`; `anchorsIn` keeps each link's words; rows show
   `title`, `destination` and `badge`.
 
+### 4.20 Dependencies: the media_kit leak fix, image, dio (r51)
+
+- **media_kit** is a `dependency_overrides` git pin to media-kit/media-kit
+  `c533e446` (path `media_kit`), the merge of #1446 (2026-08-30): native leaks
+  in the mpv bindings (`getProperty` strings, `setProperty` name pointers and
+  async request entries on error paths, the `Media` reference map). Checked
+  before pinning: every `media_kit/lib` commit since the 1.2.6 release is
+  internal or additive; `Media(...)` became a factory with the same named
+  parameters (both our calls use `resource` + `httpHeaders`). media_kit_video
+  and the native libs stay on pub (libmpv build v1.1.7; v1.1.8-v1.1.11 only
+  changed the encoder bundles). Drop the override when pub has a newer release.
+- `flutter pub upgrade image dio`: image 4.10.1, dio 5.11.1. Lockfile changed
+  only for these three.
+- Still pinned on purpose (commit 1714e278): html 0.15.6 (0.15.7 breaks
+  flutter_html 3.0.0's `src/` import) and dynamic_color 1.8.1 (1.9.0's Kotlin
+  DSL needs the toolchain upgrade).
+- Survey notes for later: the newest video_player(_android), chewie, sqflite
+  and app_links need Flutter 3.44+ (flex_color_picker 4 needs 3.47 and
+  material_ui); fvp 0.38.1 and better_player_plus 1.4.1 resolve today but the
+  user asked to leave the engines alone. `dio_http2_adapter` and
+  `native_dio_adapter` are declared but not imported (the HTTP/2 adapter was
+  tried upstream in 72a3963e and reverted in 54ee82fe); the app uses
+  `IOHttpClientAdapter` on the shared pooled `HttpClient` (dio_network.dart),
+  whose self-signed setting a native adapter would not honour.
+- The media_kit viewer has no disk cache (only the warm in-memory pool);
+  better_player has one, and VideoViewer has `VideoCacheMode`.
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
@@ -1443,8 +1470,10 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r50)
+## 12. Open items (as of r51)
 
+- r51 is unverified on the device: media_kit from the leak-fix commit (a long
+  video session, the warm pool, fullscreen, 2x, mute), image 4.10.1 decodes.
 - r50 is unverified on the device: types in preview tabs, the Artist hub
   from FurAffinity, the full index pull, the pinned tags page, the back arrow
   with the status bar hidden (the inset kept is the likely cause, not proven),
