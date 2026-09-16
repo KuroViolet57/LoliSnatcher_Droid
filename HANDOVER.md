@@ -1434,6 +1434,19 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   its screen is a leak; builds far above the number of cards on screen are
   needless rebuilds.
 
+### 4.37 Trace names that cannot be misread (r68)
+
+- The user's 15-minute trace showed `viewer.page × 6` and was read (by Claude)
+  as "six posts opened". It counted swipes to a neighbouring post; the 13
+  posts opened from the feed were only visible as `route.push
+  PageRouteBuilder<dynamic>` among 43 pushes. The user browses by opening a
+  post, watching, closing and scrolling on - so swipes undercount badly.
+- Now: `viewer.open <index>` from `_GalleryViewPageState.initState`,
+  `viewer.swipe <index>` from `onPageChanged`; the viewer route is named
+  `viewer` and the post-files route `post files` (`RouteSettings`), which the
+  route observer prefers over the type name; the report's WHAT HAPPENED block
+  starts with `posts opened N · swipes between posts M`.
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
@@ -1859,8 +1872,10 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r67)
+## 12. Open items (as of r68)
 
+- r68 is unverified on the device: a trace after opening a few posts from the
+  feed shows `viewer.open` lines, `route.push viewer`, and the summary line.
 - r67 is unverified on the device: Settings → Debug → Record a trace, then open
   a drawer, tap around, swipe, scroll a feed and a list card's tags, open the
   viewer; the report should show ui.* lines in order, widgets alive per type,

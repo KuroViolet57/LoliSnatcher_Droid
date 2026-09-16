@@ -136,6 +136,9 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware, Trac
   @override
   void initState() {
     super.initState();
+    // r68: a post opened from the feed. 'viewer.swipe' is a swipe to the next
+    // post inside the viewer - the two used to be one and got misread.
+    PerfTrace.instance.event('viewer.open', '${widget.initialIndex}');
 
     // Mirror the sheet extent into ViewerHandler so video-control overlays
     // know whether the peek bar is actually visible.
@@ -735,7 +738,7 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware, Trac
                               );
                             },
                             onPageChanged: (int index) {
-                              PerfTrace.instance.event('viewer.page', '$index');
+                              PerfTrace.instance.event('viewer.swipe', '$index');
                               page.value = index;
                               widget.onPageChanged?.call(index);
                               ServiceHandler.disableSleep();

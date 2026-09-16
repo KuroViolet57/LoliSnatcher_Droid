@@ -122,4 +122,27 @@ void main() {
     expect(t.report(), contains('FRAMES'));
     expect(t.report(), contains('0 frames'));
   });
+
+  /// r68: "viewer.page x 6" was read as six posts opened; it counted swipes
+  /// to a neighbouring post, while posts opened from the feed were only
+  /// visible as route pushes. The two are now named apart and summed up.
+  test('the report says how many posts were opened and how many swipes went between them', () {
+    final PerfTrace t = PerfTrace.instance..start();
+    t.event('viewer.open', '12');
+    t.event('viewer.open', '30');
+    t.event('viewer.open', '31');
+    t.event('viewer.swipe', '32');
+    t.stop();
+
+    final String report = t.report();
+    expect(report, contains('posts opened 3'));
+    expect(report, contains('swipes between posts 1'));
+  });
+
+  test('without a viewer the summary line is left out', () {
+    final PerfTrace t = PerfTrace.instance..start();
+    t.event('route.push', 'settings');
+    t.stop();
+    expect(t.report(), isNot(contains('posts opened')));
+  });
 }

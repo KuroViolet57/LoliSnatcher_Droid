@@ -149,6 +149,7 @@ Future<void> openPostFilesOverlay(
   try {
     await Navigator.of(context).push(
       PageRouteBuilder(
+        settings: const RouteSettings(name: 'post files'),
         opaque: false,
         barrierColor: Colors.black,
         transitionDuration: const Duration(milliseconds: 250),

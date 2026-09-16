@@ -307,6 +307,12 @@ class PerfTrace {
     if (_counts.isEmpty) {
       b.writeln('  nothing the app reports was recorded');
     } else {
+      final int opened = _counts['viewer.open'] ?? 0;
+      final int swipes = _counts['viewer.swipe'] ?? 0;
+      if (opened > 0 || swipes > 0) {
+        // Spelled out: "viewer.page x 6" was once read as six posts opened.
+        b.writeln('  posts opened $opened · swipes between posts $swipes');
+      }
       final List<String> kinds = _counts.keys.toList()..sort();
       for (final String k in kinds) {
         b.writeln('  $k × ${_counts[k]}');

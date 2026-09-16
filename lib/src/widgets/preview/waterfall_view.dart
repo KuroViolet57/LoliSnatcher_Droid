@@ -318,6 +318,7 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware, TraceLif
       ViewerHandler.instance.addViewer(viewerKey);
       await Navigator.of(context).push(
         PageRouteBuilder(
+          settings: const RouteSettings(name: 'viewer'),
           pageBuilder: (_, _, _) => GalleryViewPage(
             key: viewerKey,
             tab: searchHandler.currentTab,
