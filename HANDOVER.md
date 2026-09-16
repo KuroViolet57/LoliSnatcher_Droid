@@ -1340,6 +1340,29 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   source asks for it, and `waterfall_view._computeIsStaggered` returns false
   in that case (the staggered grid gives cells no height).
 
+### 4.33 The player pool juggles its players instead of rebuilding them (r64)
+
+- **Idea from the user (via Grok):** treat players as a scarce resource and
+  re-point them rather than destroy them. Measured before: 42
+  `VideoOutputManager` creates and 38 disposes in 25 s of swiping.
+- **`widgets/video/player_pool_planner.dart`** (pure, tested) decides per
+  acquire: **reuse** the slot already holding the URL, **create** while under
+  `mediaKitMaxPlayers`, or **rebind** the oldest idle slot - `player.open()`
+  on the same `Player`, so its decoder, Android surface and Flutter texture
+  survive. A slot that errored on its current file is re-opened rather than
+  handed back; when every slot is on screen an extra player is built instead
+  of stealing one, and `PlayerPoolPlanner.disposable` names slots above
+  capacity for disposal once they are free.
+- **`_MediaKitPlayerPool`** now holds a `List<_PooledPlayer>` (the slot's
+  `url` is mutable) instead of a URL-keyed map; `_evictIfNeeded` became
+  `_disposeOverflow`. The playlist mode and mpv cache properties are set when
+  a slot is built and survive rebinding.
+- Together with r62's start delay, swiping past a video should create nothing
+  and destroy nothing; landing on one re-points a slot.
+- Unverified on the device: count `VideoOutputManager.create` / `dispose` in
+  logcat over a fixed swipe run (was 42 / 38), and check that a rebound player
+  plays, seeks, loops and goes fullscreen normally.
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
@@ -1765,8 +1788,12 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r63)
+## 12. Open items (as of r64)
 
+- r64 is unverified on the device: swiping through videos should show almost
+  no `VideoOutputManager.create` / `dispose` in logcat (was 42 / 38 in 25 s),
+  and videos must still play, seek, loop and go fullscreen after their slot
+  has been re-pointed a few times.
 - r63 is unverified on the device: Source settings → GRID → Feed cards → List
   on a doujin source, then the feed shows a row per gallery with a scrollable
   title and scrollable tag rows, the kind/language/pages read right, and Grid

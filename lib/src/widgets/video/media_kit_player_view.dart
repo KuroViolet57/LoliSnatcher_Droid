@@ -10,6 +10,7 @@ import 'package:get/get.dart' hide ContextExt, FirstWhereOrNullExt;
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
+import 'package:lolisnatcher/src/widgets/video/player_pool_planner.dart';
 import 'package:lolisnatcher/src/widgets/video/media_kit_engine_options.dart';
 import 'package:lolisnatcher/src/widgets/video/video_surface_cap.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
@@ -300,8 +301,12 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> {
   }
 }
 
-/// Per-URL pooled player. Refcounted: many widgets *could* share the same URL,
+/// A pooled player slot. Refcounted: many widgets *could* share the same URL,
 /// though in practice the PageView gives each item a unique URL.
+///
+/// r64: the slot outlives the video it holds - [url] changes when a free slot
+/// is re-pointed at another file - so a swipe no longer destroys a decoder,
+/// a surface and a texture just to build them again.
 class _PooledPlayer {
   _PooledPlayer({
     required this.url,
@@ -309,7 +314,10 @@ class _PooledPlayer {
     required this.controller,
   });
 
-  final String url;
+  String url;
+
+  /// The engine settings this player was built with (see [PoolSlot.options]).
+  String options = '';
   final Player player;
   final VideoController controller;
   int refCount = 0;
@@ -325,15 +333,18 @@ class _PooledPlayer {
   StreamSubscription<String>? errorSub;
 }
 
-/// Global URL-keyed LRU pool. Survives widget disposal so scrolling back to a
-/// neighbour video resumes with its buffer intact instead of restarting the
-/// download. Capacity = [SettingsHandler.mediaKitMaxPlayers]. Idle (refCount==0)
-/// entries are evicted oldest-first when capacity is exceeded.
+/// Global pool of player slots. Survives widget disposal so scrolling back to
+/// a neighbour video resumes with its buffer intact instead of restarting the
+/// download. Capacity = [SettingsHandler.mediaKitMaxPlayers].
+///
+/// r64: at capacity the oldest idle slot is re-pointed at the new video
+/// ([PlayerPoolPlanner]) instead of being destroyed and rebuilt; only slots
+/// ABOVE the capacity are disposed, and only once nobody is watching them.
 class _MediaKitPlayerPool {
   _MediaKitPlayerPool._();
   static final _MediaKitPlayerPool instance = _MediaKitPlayerPool._();
 
-  final Map<String, _PooledPlayer> _entries = {};
+  final List<_PooledPlayer> _slots = [];
   int _tick = 0;
   bool _initialized = false;
 
@@ -348,29 +359,53 @@ class _MediaKitPlayerPool {
       _initialized = true;
     }
 
-    final existing = _entries[url];
-    if (existing != null) {
-      // A pooled player that errored (e.g. its baked-in session cookie
-      // expired) must NOT be reused — drop it and build a fresh one with the
-      // headers we were just given.
-      if (existing.hasError && existing.refCount <= 0) {
-        _entries.remove(url);
-        try {
-          await existing.errorSub?.cancel();
-          await existing.player.dispose();
-        } catch (_) {}
-      } else {
-        existing.refCount++;
-        existing.lastUsedTick = ++_tick;
-        existing.wasReused = true;
-        return existing;
-      }
+    final settings = SettingsHandler.instance;
+    final String options = _optionsSignature(settings);
+    _disposeStaleOptions(options);
+    final PoolPlan plan = PlayerPoolPlanner.plan(
+      slots: _slotStates(),
+      url: url,
+      capacity: settings.mediaKitMaxPlayers,
+    );
+
+    if (plan.action == PoolAction.reuse) {
+      final _PooledPlayer entry = _slots[plan.slot!];
+      entry.refCount++;
+      entry.lastUsedTick = ++_tick;
+      entry.wasReused = true;
+      return entry;
     }
 
-    // Make room for the new entry up-front.
-    _evictIfNeeded(needSlot: true);
+    if (plan.action == PoolAction.rebind) {
+      // r64: the same player opens another file. Its decoder, surface and
+      // texture stay; nothing is torn down mid-swipe. The playlist mode and
+      // the mpv cache properties were set when the slot was built and hold.
+      final _PooledPlayer entry = _slots[plan.slot!];
+      entry.url = url;
+      entry.hasError = false;
+      entry.wasReused = false;
+      entry.refCount = 1;
+      entry.lastUsedTick = ++_tick;
+      try {
+        // A re-pointed player must start like a fresh one: the long-press
+        // speed boost and the volume the last video was left at belong to
+        // that video, not this one.
+        await entry.player.setRate(1);
+        await entry.player.setVolume(100);
+        await entry.player.open(Media(url, httpHeaders: headers), play: false);
+      } catch (e, s) {
+        entry.hasError = true;
+        Logger.Inst().log(
+          'media_kit player rebind failed for $url: $e',
+          '_MediaKitPlayerPool',
+          'acquire',
+          LogTypes.exception,
+          s: s,
+        );
+      }
+      return entry;
+    }
 
-    final settings = SettingsHandler.instance;
     final player = Player(
       configuration: const PlayerConfiguration(
         bufferSize: 64 * 1024 * 1024,
@@ -414,7 +449,8 @@ class _MediaKitPlayerPool {
     final entry = _PooledPlayer(url: url, player: player, controller: controller)
       ..refCount = 1
       ..lastUsedTick = ++_tick
-      ..wasReused = false;
+      ..wasReused = false
+      ..options = options;
     // Cancelled on evict/reset/dispose — the pool owns the lifecycle.
     // ignore: cancel_subscriptions
     entry.errorSub = player.stream.error.listen((message) {
@@ -430,63 +466,92 @@ class _MediaKitPlayerPool {
         LogTypes.booruItemLoad,
       );
     });
-    _entries[url] = entry;
+    _slots.add(entry);
+    _disposeOverflow();
     return entry;
   }
 
+  List<PoolSlot> _slotStates() => [
+    for (final _PooledPlayer e in _slots)
+      PoolSlot(
+        url: e.url,
+        refCount: e.refCount,
+        lastUsedTick: e.lastUsedTick,
+        hasError: e.hasError,
+        options: e.options,
+      ),
+  ];
+
+  /// vo | hwdec | hardware acceleration, as the slot was built with.
+  static String _optionsSignature(SettingsHandler settings) =>
+      '${settings.altVideoPlayerVO.toJson()}|${settings.altVideoPlayerHWDEC.toJson()}|${settings.altVideoPlayerHwAccel}';
+
+  /// Drops idle players built before the engine settings changed, so the new
+  /// ones take effect on the next video instead of living on in a slot.
+  void _disposeStaleOptions(String options) {
+    final List<int> stale = PlayerPoolPlanner.staleOptions(slots: _slotStates(), options: options);
+    for (final int i in stale.reversed) {
+      final _PooledPlayer e = _slots.removeAt(i);
+      try {
+        e.errorSub?.cancel();
+        e.player.dispose();
+      } catch (_) {}
+    }
+  }
+
   void markErrored(String url) {
-    _entries[url]?.hasError = true;
+    for (final _PooledPlayer e in _slots) {
+      if (e.url == url) e.hasError = true;
+    }
   }
 
   /// Drops every idle player and flags the in-use ones as errored, so all
   /// videos rebuild with freshly-read cookies on their next acquire. Used by
   /// the soft-refresh button after e.g. re-solving a Cloudflare challenge.
   void reset() {
-    final idle = _entries.values.where((e) => e.refCount <= 0).toList();
-    for (final e in idle) {
-      _entries.remove(e.url);
+    final List<_PooledPlayer> idle = _slots.where((e) => e.refCount <= 0).toList();
+    for (final _PooledPlayer e in idle) {
+      _slots.remove(e);
       try {
         e.errorSub?.cancel();
         e.player.dispose();
       } catch (_) {}
     }
-    for (final e in _entries.values) {
+    for (final _PooledPlayer e in _slots) {
       e.hasError = true;
     }
   }
 
   void release(String url) {
-    final entry = _entries[url];
-    if (entry == null) return;
+    final int i = _slots.indexWhere((e) => e.url == url);
+    if (i == -1) return;
+    final _PooledPlayer entry = _slots[i];
     if (entry.refCount > 0) entry.refCount--;
     entry.lastUsedTick = ++_tick;
     if (entry.refCount == 0) {
       // Idle but kept warm in the pool. Pause to free decode CPU; the buffer
-      // is preserved by libmpv until we evict.
+      // is preserved by libmpv until the slot is re-pointed.
       try {
         entry.player.pause();
       } catch (_) {}
     }
-    _evictIfNeeded();
+    _disposeOverflow();
   }
 
-  void _evictIfNeeded({bool needSlot = false}) {
-    final int max = SettingsHandler.instance.mediaKitMaxPlayers;
-    // When making room for a new entry, target capacity is `max - 1`.
-    final int target = needSlot ? max - 1 : max;
-    if (_entries.length <= target) return;
-
-    final evictable = _entries.values.where((e) => e.refCount == 0).toList()
-      ..sort((a, b) => a.lastUsedTick.compareTo(b.lastUsedTick));
-    int toEvict = _entries.length - target;
-    for (final e in evictable) {
-      if (toEvict <= 0) break;
-      _entries.remove(e.url);
+  /// Only slots ABOVE the pool's size are destroyed (r64): inside it, a slot
+  /// is re-pointed at the next video instead. A slot on screen is never
+  /// touched, so shrinking the setting takes effect as videos are released.
+  void _disposeOverflow() {
+    final List<int> gone = PlayerPoolPlanner.disposable(
+      slots: _slotStates(),
+      capacity: SettingsHandler.instance.mediaKitMaxPlayers,
+    );
+    for (final int i in gone.reversed) {
+      final _PooledPlayer e = _slots.removeAt(i);
       try {
         e.errorSub?.cancel();
         e.player.dispose();
       } catch (_) {}
-      toEvict--;
     }
   }
 }
