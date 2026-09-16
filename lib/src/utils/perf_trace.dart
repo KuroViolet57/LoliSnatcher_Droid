@@ -18,6 +18,85 @@ class PerfTraceRouteObserver extends NavigatorObserver {
       route.settings.name ?? route.settings.arguments?.toString() ?? route.runtimeType.toString();
 }
 
+/// A widget's state reports its own life to the trace (r67): `widget.init`
+/// when it is created, `widget.dispose` when it goes. Mixed into the heavy
+/// widgets - player views, the details panel, the viewer, the feed - so a
+/// trace shows what was built when, and what never went away.
+mixin TraceLifecycle<T extends StatefulWidget> on State<T> {
+  @override
+  void initState() {
+    super.initState();
+    PerfTrace.instance.lifecycle(runtimeType.toString(), alive: true);
+  }
+
+  @override
+  void dispose() {
+    PerfTrace.instance.lifecycle(runtimeType.toString(), alive: false);
+    super.dispose();
+  }
+}
+
+/// Records what the user did, at the root of the app (r67): every tap
+/// (`ui.tap`), every swipe with its direction (`ui.swipe left|right|up|down`),
+/// and every scroll once, with its axis and how deeply nested the scrollable
+/// is (`ui.scroll vertical, depth 0`). A sideways scroll at depth 1 next to a
+/// search on the timeline is the kind of thing this exists to catch.
+class PerfTraceGestureLayer extends StatefulWidget {
+  const PerfTraceGestureLayer({required this.child, super.key});
+
+  final Widget child;
+
+  /// A finger that travels less than this is a tap, not a swipe.
+  static const double tapSlop = 24;
+
+  @override
+  State<PerfTraceGestureLayer> createState() => _PerfTraceGestureLayerState();
+}
+
+class _PerfTraceGestureLayerState extends State<PerfTraceGestureLayer> {
+  Offset? _down;
+
+  void _onDown(PointerDownEvent e) {
+    if (!PerfTrace.instance.isRecording.value) return;
+    _down = e.position;
+  }
+
+  void _onUp(PointerUpEvent e) {
+    final Offset? down = _down;
+    _down = null;
+    if (down == null || !PerfTrace.instance.isRecording.value) return;
+    final Offset d = e.position - down;
+    if (d.distance < PerfTraceGestureLayer.tapSlop) {
+      PerfTrace.instance.event('ui.tap', '${down.dx.round()},${down.dy.round()}');
+      return;
+    }
+    final String direction = d.dx.abs() >= d.dy.abs() ? (d.dx > 0 ? 'right' : 'left') : (d.dy > 0 ? 'down' : 'up');
+    PerfTrace.instance.event('ui.swipe', direction);
+  }
+
+  bool _onScroll(ScrollNotification n) {
+    if (n is ScrollStartNotification && PerfTrace.instance.isRecording.value) {
+      final String axis = n.metrics.axis == Axis.vertical ? 'vertical' : 'horizontal';
+      PerfTrace.instance.event('ui.scroll', '$axis, depth ${n.depth}');
+    }
+    return false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: _onDown,
+      onPointerUp: _onUp,
+      onPointerCancel: (_) => _down = null,
+      child: NotificationListener<ScrollNotification>(
+        onNotification: _onScroll,
+        child: widget.child,
+      ),
+    );
+  }
+}
+
 /// One thing the app did while a trace was running.
 class TraceEvent {
   const TraceEvent({required this.atMs, required this.kind, this.detail});
@@ -25,27 +104,28 @@ class TraceEvent {
   /// Milliseconds since the recording started.
   final int atMs;
 
-  /// 'video.create', 'video.rebind', 'viewer.page', ...
+  /// 'video.create', 'video.rebind', 'viewer.page', 'ui.tap', 'widget.init', ...
   final String kind;
   final String? detail;
 }
 
 /// Records how smoothly the app ran and what it was doing, from inside the app
-/// (r65).
+/// (r65; widened in r67).
 ///
 /// Written so a slow moment can be looked at without a cable, a profile build
 /// and the Dart VM service - that machinery measured the recorder as much as
 /// the app. Frame timings come from the engine in any build (`build` is the
 /// app's own work for a frame, `raster` is drawing it), and the app drops a
-/// line on the same timeline when it builds or re-points a video player, or
-/// opens another post.
+/// line on the same timeline for what it did: players built or re-pointed,
+/// posts and screens opened, widgets created and disposed, taps, swipes and
+/// scrolls. Builds are only counted, never timelined - there are too many.
 class PerfTrace {
   PerfTrace._();
   static final PerfTrace instance = PerfTrace._();
 
   /// The timeline keeps this many events; the oldest drop off. The counts
   /// keep seeing everything.
-  static const int maxEvents = 600;
+  static const int maxEvents = 2000;
 
   final ValueNotifier<bool> isRecording = ValueNotifier(false);
 
@@ -60,12 +140,17 @@ class PerfTrace {
   final List<({int atMs, double buildMs, double rasterMs})> _slowest = [];
   final List<TraceEvent> _events = [];
   final Map<String, int> _counts = {};
+  final Map<String, int> _builds = {};
+  final Map<String, ({int created, int disposed})> _lifecycles = {};
 
   bool _listening = false;
 
   int get frameCount => _buildMs.length;
   List<TraceEvent> get events => List.unmodifiable(_events);
   Map<String, int> get counts => Map.unmodifiable(_counts);
+
+  /// How many times each widget rebuilt while recording.
+  Map<String, int> get builds => Map.unmodifiable(_builds);
 
   double get medianBuildMs => _percentile(_buildMs, 0.5);
   double get medianRasterMs => _percentile(_rasterMs, 0.5);
@@ -149,6 +234,22 @@ class PerfTrace {
     revision.value++;
   }
 
+  /// A widget rebuilt. Counted, not timelined: a scroll rebuilds hundreds.
+  void built(String widget) {
+    if (!isRecording.value) return;
+    _builds[widget] = (_builds[widget] ?? 0) + 1;
+  }
+
+  /// A widget's state was created ([alive] true) or disposed (false).
+  void lifecycle(String widget, {required bool alive}) {
+    if (!isRecording.value) return;
+    final ({int created, int disposed}) c = _lifecycles[widget] ?? (created: 0, disposed: 0);
+    _lifecycles[widget] = alive
+        ? (created: c.created + 1, disposed: c.disposed)
+        : (created: c.created, disposed: c.disposed + 1);
+    event(alive ? 'widget.init' : 'widget.dispose', widget);
+  }
+
   /// The whole thing as text: short enough to read, complete enough to act on.
   String report() {
     final StringBuffer b = StringBuffer();
@@ -183,6 +284,25 @@ class PerfTrace {
       b.writeln();
     }
 
+    if (_builds.isNotEmpty) {
+      b.writeln('WIDGET BUILDS');
+      final List<String> names = _builds.keys.toList()..sort((a, b) => _builds[b]!.compareTo(_builds[a]!));
+      for (final String n in names) {
+        b.writeln('  $n × ${_builds[n]}');
+      }
+      b.writeln();
+    }
+
+    if (_lifecycles.isNotEmpty) {
+      b.writeln('WIDGETS ALIVE');
+      final List<String> names = _lifecycles.keys.toList()..sort();
+      for (final String n in names) {
+        final ({int created, int disposed}) c = _lifecycles[n]!;
+        b.writeln('  $n: ${c.created} created, ${c.disposed} disposed, ${c.created - c.disposed} alive');
+      }
+      b.writeln();
+    }
+
     b.writeln('WHAT HAPPENED');
     if (_counts.isEmpty) {
       b.writeln('  nothing the app reports was recorded');
@@ -213,6 +333,8 @@ class PerfTrace {
     _slowest.clear();
     _events.clear();
     _counts.clear();
+    _builds.clear();
+    _lifecycles.clear();
   }
 
   @visibleForTesting

@@ -68,7 +68,7 @@ class GalleryViewPage extends StatefulWidget {
   State<GalleryViewPage> createState() => _GalleryViewPageState();
 }
 
-class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
+class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware, TraceLifecycle {
   final SettingsHandler settingsHandler = SettingsHandler.instance;
   final SearchHandler searchHandler = SearchHandler.instance;
   final SnatchHandler snatchHandler = SnatchHandler.instance;

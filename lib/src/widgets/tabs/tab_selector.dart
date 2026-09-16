@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'package:auto_size_text_plus/auto_size_text_plus.dart';
 import 'package:get/get.dart';
 
+import 'package:lolisnatcher/src/utils/perf_trace.dart';
 import 'package:lolisnatcher/src/widgets/image/custom_network_image.dart';
 import 'package:lolisnatcher/src/boorus/mergebooru_handler.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
@@ -401,7 +402,7 @@ class TabManagerPage extends StatefulWidget {
   State<TabManagerPage> createState() => _TabManagerPageState();
 }
 
-class _TabManagerPageState extends State<TabManagerPage> {
+class _TabManagerPageState extends State<TabManagerPage> with TraceLifecycle {
   final SearchHandler searchHandler = SearchHandler.instance;
   final SettingsHandler settingsHandler = SettingsHandler.instance;
   final TagHandler tagHandler = TagHandler.instance;

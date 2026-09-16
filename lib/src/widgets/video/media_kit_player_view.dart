@@ -51,7 +51,7 @@ class MediaKitPlayerView extends StatefulWidget {
   State<MediaKitPlayerView> createState() => _MediaKitPlayerViewState();
 }
 
-class _MediaKitPlayerViewState extends State<MediaKitPlayerView> {
+class _MediaKitPlayerViewState extends State<MediaKitPlayerView> with TraceLifecycle {
   _PooledPlayer? _entry;
   String? _acquiredUrl;
 

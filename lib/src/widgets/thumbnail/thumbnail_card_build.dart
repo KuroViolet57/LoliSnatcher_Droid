@@ -7,6 +7,7 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:get/get.dart';
 import 'package:scroll_to_index/scroll_to_index.dart';
 
+import 'package:lolisnatcher/src/utils/perf_trace.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
@@ -64,6 +65,7 @@ class ThumbnailCardBuild extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    PerfTrace.instance.built('ThumbnailCardBuild');
     final snatchHandler = SnatchHandler.instance;
 
     // Doujin cards: tags live UNDER the cover, never on the artwork, and

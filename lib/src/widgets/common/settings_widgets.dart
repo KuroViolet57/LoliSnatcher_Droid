@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 
+import 'package:lolisnatcher/src/utils/perf_trace.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/widgets/common/html.dart';
@@ -52,6 +53,7 @@ class SettingsButton extends StatelessWidget {
   bool get interactive => action != null || page != null;
 
   void onTapAction(BuildContext context) {
+    PerfTrace.instance.event('ui.button', name);
     if (action != null) {
       action?.call();
     } else if (page != null) {

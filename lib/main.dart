@@ -279,7 +279,10 @@ class _MainAppState extends State<MainApp> {
                       // built: this tree sits in an Overlay entry built once, so a
                       // MediaQuery made here kept the first frame's insets and the
                       // keyboard never reached the pages.
-                      final Widget content = HiddenStatusBarInsets(child: child ?? const SizedBox.shrink());
+                      // r67: taps, swipes and scrolls go on the trace's timeline from here.
+                      final Widget content = HiddenStatusBarInsets(
+                        child: PerfTraceGestureLayer(child: child ?? const SizedBox.shrink()),
+                      );
                       final Widget wrappedChild = content;
                       return Stack(
                         children: [

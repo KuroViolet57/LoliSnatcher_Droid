@@ -1410,6 +1410,30 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   `Scrollbar(thumbVisibility: true)`; it became Modular UI `grid.feedScrollbar`
   (on by default) after the user noticed it with the list cards.
 
+### 4.36 The trace records the UI too (r67)
+
+- **Asked for:** a capture that shows what the UI did and what triggered it -
+  widgets created and destroyed, taps, swipes, drawers, scrolls, buttons - to
+  find leaks and needless work without a cable.
+- **`utils/perf_trace.dart`:** `TraceLifecycle` (a mixin on `State`) reports
+  `widget.init` / `widget.dispose` with the state's type; `built(name)` counts
+  rebuilds (counts only - a scroll rebuilds hundreds); `PerfTraceGestureLayer`
+  at the root (in `main.dart`'s builder, inside `HiddenStatusBarInsets`)
+  records `ui.tap`, `ui.swipe left|right|up|down` (a finger that moved under
+  24 px is a tap) and `ui.scroll <axis>, depth N` once per scroll from
+  `ScrollStartNotification`. The timeline holds 2000 events. The report gained
+  "WIDGET BUILDS" and "WIDGETS ALIVE" (created / disposed / alive per widget).
+- **Hooks:** the InnerDrawer callback (`ui.drawer open|close`),
+  `SettingsButton.onTapAction` (`ui.button <name>`), `ToolbarAction`
+  (`ui.toolbar <tooltip>`). `TraceLifecycle` is mixed into `_TagViewState`,
+  `_MediaKitPlayerViewState`, `_GalleryViewPageState`, `_WaterfallViewState`,
+  `_TabManagerPageState`, `_ItemInfoBottomSheetState`, `_FlowTabCarouselState`,
+  `_DoujinTabViewState`; `DoujinListCard` and `ThumbnailCardBuild` count builds.
+- Reading a trace: a `ui.scroll horizontal, depth 1` followed by a search is
+  exactly the r66 bug; a widget with more created than disposed after leaving
+  its screen is a leak; builds far above the number of cards on screen are
+  needless rebuilds.
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
@@ -1835,8 +1859,12 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r66)
+## 12. Open items (as of r67)
 
+- r67 is unverified on the device: Settings → Debug → Record a trace, then open
+  a drawer, tap around, swipe, scroll a feed and a list card's tags, open the
+  viewer; the report should show ui.* lines in order, widgets alive per type,
+  and build counts.
 - r66 is unverified on the device: scrolling a list card's tags or title
   sideways no longer fetches the next page (watch the page pill); the list card
   height setting applies; the cards cast a shadow; the tab manager's title is

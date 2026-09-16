@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 
 import 'package:get/get.dart' hide ContextExt, FirstWhereOrNullExt;
 
+import 'package:lolisnatcher/src/utils/perf_trace.dart';
 import 'package:lolisnatcher/src/widgets/drawers/furaffinity_sidebar.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/handlers/drawer_refresh.dart';
@@ -149,6 +150,7 @@ class _MobileHomeState extends State<MobileHome> {
 
           innerDrawerCallback: (bool isOpen, InnerDrawerDirection? direction) {
             isDrawerOpened = isOpen;
+            PerfTrace.instance.event('ui.drawer', isOpen ? 'open' : 'close');
             // Opening a drawer is the moment its cached counts/pins must be
             // current — they are not observable, so they are re-read here.
             if (isOpen) DrawerRefresh.request();

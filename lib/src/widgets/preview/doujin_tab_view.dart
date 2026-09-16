@@ -5,6 +5,7 @@ import 'package:get/get.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
+import 'package:lolisnatcher/src/utils/perf_trace.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/pages/doujin_detail_page.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
@@ -31,7 +32,7 @@ class DoujinTabView extends StatefulWidget {
   State<DoujinTabView> createState() => _DoujinTabViewState();
 }
 
-class _DoujinTabViewState extends State<DoujinTabView> {
+class _DoujinTabViewState extends State<DoujinTabView> with TraceLifecycle {
   final SearchHandler searchHandler = SearchHandler.instance;
 
   @override

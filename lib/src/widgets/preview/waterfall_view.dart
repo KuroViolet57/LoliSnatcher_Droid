@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:scroll_to_index/scroll_to_index.dart';
 
+import 'package:lolisnatcher/src/utils/perf_trace.dart';
 import 'package:lolisnatcher/src/data/modular_ui.dart';
 import 'package:lolisnatcher/src/widgets/preview/feed_scroll.dart';
 import 'package:lolisnatcher/src/widgets/preview/furaffinity_artist_header.dart';
@@ -44,7 +45,7 @@ class WaterfallView extends StatefulWidget {
   State<WaterfallView> createState() => _WaterfallViewState();
 }
 
-class _WaterfallViewState extends State<WaterfallView> with RouteAware {
+class _WaterfallViewState extends State<WaterfallView> with RouteAware, TraceLifecycle {
   final SettingsHandler settingsHandler = SettingsHandler.instance;
   final SearchHandler searchHandler = SearchHandler.instance;
   final ViewerHandler viewerHandler = ViewerHandler.instance;

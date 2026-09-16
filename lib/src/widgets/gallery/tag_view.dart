@@ -13,6 +13,7 @@ import 'package:fading_edge_scrollview/fading_edge_scrollview.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:fpdart/fpdart.dart' show FpdartOnIterable;
 import 'package:get/get.dart' hide ContextExt, FirstWhereOrNullExt;
+import 'package:lolisnatcher/src/utils/perf_trace.dart';
 import 'package:lolisnatcher/src/handlers/tag_type_lookup.dart';
 import 'package:lolisnatcher/src/pages/furaffinity_post_page.dart';
 import 'package:lolisnatcher/src/boorus/furaffinity_handler.dart';
@@ -113,7 +114,7 @@ class TagView extends StatefulWidget {
   State<TagView> createState() => _TagViewState();
 }
 
-class _TagViewState extends State<TagView> {
+class _TagViewState extends State<TagView> with TraceLifecycle {
   final SettingsHandler settingsHandler = SettingsHandler.instance;
   final SearchHandler searchHandler = SearchHandler.instance;
   final ViewerHandler viewerHandler = ViewerHandler.instance;

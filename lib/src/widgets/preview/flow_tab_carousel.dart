@@ -4,6 +4,7 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:get/get.dart';
 
+import 'package:lolisnatcher/src/utils/perf_trace.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
@@ -196,7 +197,7 @@ class FlowTabCarousel extends StatefulWidget {
   State<FlowTabCarousel> createState() => _FlowTabCarouselState();
 }
 
-class _FlowTabCarouselState extends State<FlowTabCarousel> {
+class _FlowTabCarouselState extends State<FlowTabCarousel> with TraceLifecycle {
   final SearchHandler searchHandler = SearchHandler.instance;
   final ScrollController _scroll = ScrollController();
   int _lastActive = -1;
