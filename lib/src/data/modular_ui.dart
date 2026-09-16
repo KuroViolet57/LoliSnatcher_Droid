@@ -115,6 +115,14 @@ class ModularUi {
     defaultValue: true,
   );
 
+  static const ModularUiToggle videoCapToScreen = ModularUiToggle(
+    key: 'viewer.videoCapToScreen',
+    area: viewerArea,
+    title: 'Videos play at screen size',
+    description: 'A video bigger than your screen is played at screen size instead of its own, which costs much less memory and drawing work (an 8K video about 7 times less). Off plays every video at its full resolution.',
+    defaultValue: true,
+  );
+
   static const ModularUiToggle imageCap4k = ModularUiToggle(
     key: 'viewer.imageCap4k',
     area: viewerArea,
@@ -142,6 +150,7 @@ class ModularUi {
     gridSeenThumbnailsAtOnce,
     viewerLinkedMedia,
     viewerLinkedMediaReplacesShare,
+    videoCapToScreen,
     imageCap4k,
     appDrawUnderHiddenStatusBar,
   ];

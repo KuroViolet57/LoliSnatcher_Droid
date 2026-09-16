@@ -10,6 +10,7 @@ import 'package:get/get.dart' hide ContextExt, FirstWhereOrNullExt;
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
+import 'package:lolisnatcher/src/widgets/video/video_surface_cap.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -342,6 +343,8 @@ class _MediaKitPlayerPool {
   }) async {
     if (!_initialized) {
       MediaKit.ensureInitialized();
+      // r59: tells our copy of media_kit_video how big the surface may be.
+      VideoSurfaceCap.install();
       _initialized = true;
     }
 

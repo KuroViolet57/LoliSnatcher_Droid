@@ -119,6 +119,10 @@ dependency_overrides:
   android_intent_plus: ^6.0.0
   material_color_utilities: ^0.13.0 # flutter_test conflict
   share_plus: ^12.0.2 # alice conflict
+  # r59: our own copy, so the Android video surface can be capped to the screen
+  # (third_party/media_kit_video/LOLISNATCHER_PATCH.md says how to undo it).
+  media_kit_video:
+    path: third_party/media_kit_video
 
 
 

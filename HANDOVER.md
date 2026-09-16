@@ -1240,6 +1240,31 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
 - **Kept:** the seen-thumbnail change (r56, `grid.seenThumbnailsAtOnce`) and
   the picture ceiling (r57, `viewer.imageCap4k`, `MediaSizeCap`).
 
+### 4.28 The video cap, done inside our own copy of media_kit_video (r59)
+
+- **The user allowed patching the package** (2026-09-16), asking only that it
+  stay easy to undo. `third_party/media_kit_video` is media_kit_video 2.0.1
+  verbatim plus one change, pinned by `dependency_overrides` in `pubspec.yaml`;
+  `third_party/media_kit_video/LOLISNATCHER_PATCH.md` says what changed and how
+  to undo it (delete four lines and the folder).
+- **The change:** `PlatformVideoController.androidSurfaceSizeCap` (a static
+  hook) and, in `android_video_controller/real.dart`, the `videoParams`
+  listener asks it for the size before `VideoOutputManager.SetSurfaceSize` and
+  before it publishes `rect`. The surface is therefore created once, at the
+  capped size: no second resize, no new `wid`, no `widListener` rebuild — which
+  is exactly what made r57 fail (§4.27).
+- **The app** installs the hook in `_MediaKitPlayerPool.acquire`'s init
+  (`widgets/video/video_surface_cap.dart`), reading the Modular UI switch
+  `viewer.videoCapToScreen` per video, so turning it off works without a
+  restart. The size comes from `MediaSizeCap.videoSurface`: the screen in its
+  best orientation for that video (fullscreen landscape keeps 1080p intact),
+  shape kept, even pixels, never upscaled.
+- **Not verified on the device yet:** that mpv renders correctly into the
+  capped surface, that seeking, looping and fullscreen still work, and that
+  graphics memory drops. The switch brings the old behaviour back.
+- `flutter pub upgrade` will not touch media_kit_video while the override is
+  there; re-apply the two edits when moving to a newer version.
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
@@ -1665,8 +1690,11 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r58)
+## 12. Open items (as of r59)
 
+- r59 is unverified on the device: the 8K video plays, with the right shape, no
+  freeze and far less graphics memory; 1080p videos unchanged, fullscreen and
+  seeking fine; the switch off restores the old behaviour.
 - r58 is unverified on the device: videos of every resolution play again
   (nothing caps them), the info button opens the sheet with one tap and the
   drag works, seen thumbnails still appear at once, a very tall picture still
