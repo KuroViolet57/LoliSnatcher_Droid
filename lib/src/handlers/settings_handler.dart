@@ -211,6 +211,10 @@ class SettingsHandler {
   // intact, at the cost of RAM. libmpv has no MediaCodec limit so this is
   // safe to raise on devices with spare memory.
   int mediaKitMaxPlayers = 4;
+
+  /// r62: how long a video has to stay on screen before its player is built.
+  /// Swiping past faster than this builds nothing at all.
+  int videoStartDelayMs = 333;
   // ExoPlayer on-disk cache size for the better_player engine, in MB.
   // 0 disables. Default 500 MB; bumping this means more recently-watched
   // videos serve from disk on rewatch / scroll-back without re-hitting the
@@ -683,6 +687,13 @@ class SettingsHandler {
       'step': 1,
       'lowerLimit': 1,
       'upperLimit': 20,
+    },
+    'videoStartDelayMs': {
+      'type': 'int',
+      'default': 333,
+      'step': 50,
+      'lowerLimit': 0,
+      'upperLimit': 5000,
     },
     'betterPlayerCacheMb': {
       'type': 'int',
@@ -1334,6 +1345,8 @@ class SettingsHandler {
         return useMediaKitPlayer;
       case 'mediaKitMaxPlayers':
         return mediaKitMaxPlayers;
+      case 'videoStartDelayMs':
+        return videoStartDelayMs;
       case 'betterPlayerCacheMb':
         return betterPlayerCacheMb;
       case 'betterPlayerPerFileMb':
@@ -1619,6 +1632,9 @@ class SettingsHandler {
         break;
       case 'mediaKitMaxPlayers':
         mediaKitMaxPlayers = (validatedValue as int).clamp(1, 20);
+        break;
+      case 'videoStartDelayMs':
+        videoStartDelayMs = (validatedValue as int).clamp(0, 5000);
         break;
       case 'betterPlayerCacheMb':
         betterPlayerCacheMb = (validatedValue as int).clamp(0, 50000);

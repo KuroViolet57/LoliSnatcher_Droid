@@ -54,7 +54,6 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> {
   String? _acquiredUrl;
 
   Timer? _initDebounce;
-  static const Duration _initDelay = Duration(milliseconds: 300);
   bool _initInProgress = false;
 
   // Error-recovery probe: mpv does its own networking, so an expired
@@ -111,7 +110,7 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> {
 
   void _scheduleInit() {
     _initDebounce?.cancel();
-    _initDebounce = Timer(_initDelay, () {
+    _initDebounce = Timer(MediaKitEngineOptions.startDelay(SettingsHandler.instance), () {
       if (!mounted || !_wantsPlayer || _entry != null) return;
       _init();
     });

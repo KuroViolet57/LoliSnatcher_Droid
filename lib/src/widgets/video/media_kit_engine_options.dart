@@ -20,6 +20,14 @@ class MediaKitEngineOptions {
     );
   }
 
+  /// How long a video has to stay on screen before its player is built (r62).
+  ///
+  /// Swiping past videos used to build and tear down a player for nearly
+  /// every post (42 created, 38 destroyed in 25 s of swiping), and the codec
+  /// churn showed up as stutter. Zero keeps the old behaviour.
+  static Duration startDelay(SettingsHandler settings) =>
+      Duration(milliseconds: settings.videoStartDelayMs.clamp(0, 5000));
+
   /// libmpv properties applied after the player opens a URL.
   ///
   /// [cacheDir] turns on the on-disk demuxer cache (the in-memory pool is

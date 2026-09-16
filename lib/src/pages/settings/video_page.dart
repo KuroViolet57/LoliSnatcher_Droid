@@ -29,6 +29,7 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
   bool useBetterPlayer = false;
   bool useMediaKitPlayer = false;
   final TextEditingController mediaKitMaxPlayersController = TextEditingController();
+  final TextEditingController videoStartDelayController = TextEditingController();
   final TextEditingController betterPlayerCacheMbController = TextEditingController();
   final TextEditingController betterPlayerPerFileMbController = TextEditingController();
   bool altVideoPlayerHwAccel = true;
@@ -50,6 +51,7 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
     useBetterPlayer = settingsHandler.useBetterPlayer;
     useMediaKitPlayer = settingsHandler.useMediaKitPlayer;
     mediaKitMaxPlayersController.text = settingsHandler.mediaKitMaxPlayers.toString();
+    videoStartDelayController.text = settingsHandler.videoStartDelayMs.toString();
     betterPlayerCacheMbController.text = settingsHandler.betterPlayerCacheMb.toString();
     betterPlayerPerFileMbController.text = settingsHandler.betterPlayerPerFileMb.toString();
     videoBackendMode = settingsHandler.videoBackendMode;
@@ -68,6 +70,8 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
     settingsHandler.useMediaKitPlayer = useMediaKitPlayer;
     settingsHandler.mediaKitMaxPlayers =
         (int.tryParse(mediaKitMaxPlayersController.text) ?? 4).clamp(1, 20);
+    settingsHandler.videoStartDelayMs =
+        (int.tryParse(videoStartDelayController.text) ?? 333).clamp(0, 5000);
     settingsHandler.betterPlayerCacheMb =
         (int.tryParse(betterPlayerCacheMbController.text) ?? 500).clamp(0, 50000);
     settingsHandler.betterPlayerPerFileMb =
@@ -197,6 +201,19 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
                   resetText: () => '4',
                   subtitle: const Text(
                     "How many recently-viewed videos to keep warm in memory. Scrolling back to a video that's still in the pool resumes with its buffer intact instead of restarting the download. Higher = smoother scrub-back but more RAM. libmpv has no MediaCodec limit, so values up to ~10 are safe on most devices. Default 4 (current + previous + next + one more).",
+                  ),
+                ),
+              if (!SettingsHandler.isDesktopPlatform && useMediaKitPlayer)
+                SettingsTextInput(
+                  controller: videoStartDelayController,
+                  title: 'Video start delay (ms)',
+                  hintText: '333',
+                  inputType: TextInputType.number,
+                  numberStep: 50,
+                  numberButtons: true,
+                  resetText: () => '333',
+                  subtitle: const Text(
+                    'How long a video has to stay on screen before its player is built. Swipe past faster than this and no player is built at all, so flicking through a feed of videos stops creating and destroying decoders (42 created and 38 destroyed in 25 seconds of swiping, before this). Lower = videos start sooner; higher = flicking stays smoother. 0 starts them at once, as before. Default 333, a third of a second.',
                   ),
                 ),
               if (!SettingsHandler.isDesktopPlatform)

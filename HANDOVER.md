@@ -1302,6 +1302,24 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   `SettingsHandler.loadFromJSON` appends enum values missing from a stored
   `buttonOrder`.
 
+### 4.31 A video waits before it gets a player (r62)
+
+- **Measured (r60 profile build, 25 s of swiping):** 42 `VideoOutputManager`
+  creates and 38 disposes, about two a second, with the warm pool at 4. Every
+  post that stayed on screen longer than the old fixed 300 ms built a player,
+  and building one evicted another.
+- **Now:** `SettingsHandler.videoStartDelayMs` (default **333**, 0-5000,
+  Settings → Video → "Video start delay (ms)", shown with the media_kit
+  engine on) feeds `MediaKitEngineOptions.startDelay`, which
+  `_MediaKitPlayerView._scheduleInit` uses instead of the old constant. The
+  timer is cancelled on dispose and on item change, so a post swiped past
+  before the delay builds nothing - and builds nothing to evict either.
+- 0 keeps the old behaviour; the user asked for the value to be theirs to
+  tune, so the number is a setting rather than a constant.
+- Unverified on the device: that a third of a second feels right, and that
+  fast swiping no longer churns players (count `VideoOutputManager.create` /
+  `dispose` in logcat over a fixed swipe run).
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
@@ -1727,8 +1745,12 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r61)
+## 12. Open items (as of r62)
 
+- r62 is unverified on the device: with the default 333 ms, flicking through
+  videos should create no players (check `VideoOutputManager.create` in
+  logcat), and a video you stay on should start about a third of a second
+  later. The user will tune the value in Settings → Video.
 - r61 is unverified on the device: the visited-tabs history scrolls; the link
   button appears on posts with links, can be moved and switched off in
   Settings → Viewer, and still works with the share button switched off.

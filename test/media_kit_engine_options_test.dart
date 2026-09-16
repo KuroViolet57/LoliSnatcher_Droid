@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
@@ -51,5 +53,44 @@ void main() {
     final Map<String, String> disk = MediaKitEngineOptions.nativeProperties(cacheDir: r'C:\tmp\mpv_cache');
     expect(disk['cache-on-disk'], 'yes');
     expect(disk['cache-dir'], r'C:\tmp\mpv_cache');
+  });
+
+  /// r62: swiping past videos built and tore down a player for almost every
+  /// post (42 created, 38 destroyed in 25 s). A video now has to stay on
+  /// screen for a moment before its player is built, and the wait is a
+  /// setting so the user can find the value they like.
+  test('a video waits a third of a second before its player is built, by default', () {
+    final SettingsHandler s = SettingsHandler.instance;
+    expect(s.videoStartDelayMs, 333);
+    expect(MediaKitEngineOptions.startDelay(s), const Duration(milliseconds: 333));
+  });
+
+  test('the wait follows the setting and stays sane', () {
+    final SettingsHandler s = SettingsHandler.instance;
+    s.videoStartDelayMs = 800;
+    expect(MediaKitEngineOptions.startDelay(s), const Duration(milliseconds: 800));
+    s.videoStartDelayMs = 0;
+    expect(MediaKitEngineOptions.startDelay(s), Duration.zero, reason: 'zero starts videos at once, as before');
+    s.videoStartDelayMs = -5;
+    expect(MediaKitEngineOptions.startDelay(s), Duration.zero);
+    s.videoStartDelayMs = 99999;
+    expect(MediaKitEngineOptions.startDelay(s), const Duration(milliseconds: 5000), reason: 'capped');
+  });
+
+  test('the setting is stored, read back and clamped on load', () async {
+    final Directory tempDir = Directory.systemTemp.createTempSync('video_start_delay');
+    SettingsHandler.instance.path = '${tempDir.path}${Platform.pathSeparator}';
+    try {
+      await SettingsHandler.instance.loadFromJSON('{"videoStartDelayMs": 750}', false);
+      expect(SettingsHandler.instance.videoStartDelayMs, 750);
+      // Out of range in the file falls back to the default, the way every
+      // other numeric setting behaves.
+      await SettingsHandler.instance.loadFromJSON('{"videoStartDelayMs": 99999}', false);
+      expect(SettingsHandler.instance.videoStartDelayMs, 333);
+    } finally {
+      try {
+        tempDir.deleteSync(recursive: true);
+      } catch (_) {}
+    }
   });
 }
