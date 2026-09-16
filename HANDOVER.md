@@ -1215,6 +1215,31 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   (no crop or stretch), seeking and looping, and that the cap survives an app
   resume. Both switches restore the old behaviour.
 
+### 4.27 The video cap and the lazy info sheet, reverted (r58)
+
+- **r57's video cap does not work and must not come back this way.** On the
+  device (talker log 2026-09-16 02:54): `video surface cap failed: Assertion
+  failed: "[Player] has been disposed"` and errors from
+  `AndroidVideoController.widListener`. Resizing the surface from outside
+  makes the plugin's `VideoOutput.onSurfaceAvailable` hand out a **new**
+  `wid`, and its `widListener` then rebuilds the whole video output
+  (`vo=null` -> `android-surface-size` -> `wid` -> `vo=gpu`) and re-seeks.
+  Small videos survive it; anything that needed scaling never rendered (the
+  thumbnail stayed) and the app turned sluggish. Reverted whole:
+  `widgets/video/video_surface_cap.dart`, the pool's `_startSurfaceCap`,
+  `stopCap`, `paramsSub`/`rectListener`, switch `viewer.videoCapToScreen`,
+  `MediaSizeCap.videoSurface`. **Doing this properly needs a patched
+  media_kit_video (a fork), which the user's no-package rule forbids.**
+- **r56's details-on-open, reverted too.** With the details built only once
+  the sheet opened, the info button needed two taps (the first opened an
+  empty, see-through sheet) and a drag on the closed sheet often did nothing:
+  the placeholder list on the sheet's controller does not behave like the
+  TagView the sheet was built around. Switch
+  `viewer.detailsWhenInfoSheetOpens` gone; the sheet builds its TagView for
+  the post on screen again, as in r55.
+- **Kept:** the seen-thumbnail change (r56, `grid.seenThumbnailsAtOnce`) and
+  the picture ceiling (r57, `viewer.imageCap4k`, `MediaSizeCap`).
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
@@ -1640,8 +1665,17 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r57)
+## 12. Open items (as of r58)
 
+- r58 is unverified on the device: videos of every resolution play again
+  (nothing caps them), the info button opens the sheet with one tap and the
+  drag works, seen thumbnails still appear at once, a very tall picture still
+  decodes bounded.
+- Still open from the profiling: the viewer's page-change build cost (35-68 ms
+  for ~55 widgets), the grid's stall when a page of posts arrives (163-177 ms),
+  the tab manager's build cost, and the video controls' rebuild when a video
+  starts. The 8K video's cost stays as it is unless the user allows a patched
+  media_kit_video (§4.27).
 - r57 is unverified on the device: the 8K video plays with no freeze and the
   right shape, `VideoOutputManager.setSurfaceSize` in logcat shows the capped
   size, graphics memory stays far below the 2.1 GB seen before, a very tall

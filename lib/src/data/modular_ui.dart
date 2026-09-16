@@ -115,22 +115,6 @@ class ModularUi {
     defaultValue: true,
   );
 
-  static const ModularUiToggle viewerDetailsOnOpen = ModularUiToggle(
-    key: 'viewer.detailsWhenInfoSheetOpens',
-    area: viewerArea,
-    title: 'Post details load when the info sheet opens',
-    description: "The bottom info sheet builds a post's details, and loads them from the site, only once you open it instead of for every post you land on. Off builds them for every post again.",
-    defaultValue: true,
-  );
-
-  static const ModularUiToggle videoCapToScreen = ModularUiToggle(
-    key: 'viewer.videoCapToScreen',
-    area: viewerArea,
-    title: 'Videos play at screen size',
-    description: 'A video bigger than your screen is played at screen size instead of its own (an 8K video costs about 7 times less memory and drawing work). Off plays every video at its full resolution.',
-    defaultValue: true,
-  );
-
   static const ModularUiToggle imageCap4k = ModularUiToggle(
     key: 'viewer.imageCap4k',
     area: viewerArea,
@@ -158,8 +142,6 @@ class ModularUi {
     gridSeenThumbnailsAtOnce,
     viewerLinkedMedia,
     viewerLinkedMediaReplacesShare,
-    viewerDetailsOnOpen,
-    videoCapToScreen,
     imageCap4k,
     appDrawUnderHiddenStatusBar,
   ];
