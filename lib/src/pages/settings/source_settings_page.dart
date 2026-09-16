@@ -709,6 +709,15 @@ class _SourceSettingsPageState extends State<SourceSettingsPage> {
             inheritedValue: globalLayer.coverDisplay ?? 'crop',
             onChanged: (v) => _update((s) => s.coverDisplay = v),
           ),
+          _choiceRow<String>(
+            title: 'Feed cards',
+            subtitle:
+                'Grid keeps the covers in columns. List gives each gallery a row: cover, title and uploader, the tags in rows you can scroll sideways, and what it is - kind, language, pages.',
+            options: const [('grid', 'Grid'), ('list', 'List')],
+            layerValue: layer.feedCardStyle,
+            inheritedValue: globalLayer.feedCardStyle ?? 'grid',
+            onChanged: (v) => _update((s) => s.feedCardStyle = v),
+          ),
           _switchRow(
             title: 'Tags on grid cards',
             subtitle: 'Most relevant tags under each cover, favourites in gold, and the +N button with the full list.',

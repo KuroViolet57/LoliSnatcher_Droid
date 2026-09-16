@@ -1320,6 +1320,26 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   fast swiping no longer churns players (count `VideoOutputManager.create` /
   `dispose` in logcat over a fixed swipe run).
 
+### 4.32 Doujin feeds can use list cards (r63)
+
+- **Source settings → GRID → Feed cards: Grid | List** (`SourceSettings.
+  feedCardStyle`, resolved by `SourceSettingsHandler.feedCardStyle`, default
+  `grid`), per source with the usual global layer. Asked for with a screen
+  recording of another reader's list layout.
+- **`widgets/thumbnail/doujin_list_card.dart`:** one row per gallery - cover
+  (116 px) on the left, then the title on a line that **scrolls sideways**
+  (long titles are read, not truncated), the uploader, the tags in three rows
+  inside a **horizontal scroller**, and a bottom row with the kind badge
+  (Doujinshi / Western / Artist CG ...), the language code and the page count.
+  Row height 176.
+- **`widgets/thumbnail/doujin_card_meta.dart`** holds what both card layouts
+  read (title, language, category, pages, which tags and in what order), for
+  namespaced and plain tags alike; the page count comes from
+  `item.fileCountHint`, which the doujin handlers set while parsing listings.
+- `GridBuilder` returns a `SliverList` of these instead of its grid when the
+  source asks for it, and `waterfall_view._computeIsStaggered` returns false
+  in that case (the staggered grid gives cells no height).
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
@@ -1745,8 +1765,14 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r62)
+## 12. Open items (as of r63)
 
+- r63 is unverified on the device: Source settings → GRID → Feed cards → List
+  on a doujin source, then the feed shows a row per gallery with a scrollable
+  title and scrollable tag rows, the kind/language/pages read right, and Grid
+  brings the old cards back.
+- The list card's chips are display-only for now; the grid card's chips are
+  tappable (`tagChipTap`). Ask the user before making them tappable here too.
 - r62 is unverified on the device: with the default 333 ms, flicking through
   videos should create no players (check `VideoOutputManager.create` in
   logcat), and a video you stay on should start about a third of a second

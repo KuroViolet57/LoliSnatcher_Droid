@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:scroll_to_index/scroll_to_index.dart';
 
+import 'package:lolisnatcher/src/widgets/thumbnail/doujin_list_card.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
@@ -33,6 +34,40 @@ class GridBuilder extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final SettingsHandler settingsHandler = SettingsHandler.instance;
+
+    // r63: doujin sources can trade the grid for a row per gallery.
+    final bool listCards =
+        tab.booruHandler.hasReader &&
+        SourceSettingsHandler.instance.feedCardStyle(tab.booruHandler.booru) == 'list';
+    if (listCards) {
+      return ValueListenableBuilder(
+        valueListenable: tab.booruHandler.filteredFetched,
+        builder: (context, currentFetched, child) => SliverList.builder(
+          addAutomaticKeepAlives: false,
+          itemCount: currentFetched.length,
+          itemBuilder: (BuildContext context, int index) => Obx(() {
+            final BooruItem item = currentFetched[index];
+            final bool hasSelected = tab.selected.isNotEmpty;
+            final int selectedIndex = tab.selected.indexOf(item);
+            final bool isSelected = selectedIndex != -1;
+
+            return DoujinListCard(
+              index: index,
+              item: item,
+              handler: tab.booruHandler,
+              scrollController: scrollController,
+              isHighlighted: ViewerHandler.instance.current.value?.key == item.key,
+              selectedIndex: isSelected ? selectedIndex : null,
+              onSelected: hasSelected ? onSelected : null,
+              onTap: onTap,
+              onDoubleTap: onDoubleTap,
+              onLongPress: onLongPress,
+              onSecondaryTap: onSecondaryTap,
+            );
+          }),
+        ),
+      );
+    }
 
     final previewDisplay = (settingsHandler.previewDisplay.isStaggered && !tab.booruHandler.hasSizeData)
         ? settingsHandler.previewDisplayFallback

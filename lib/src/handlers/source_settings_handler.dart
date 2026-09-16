@@ -29,6 +29,7 @@ class SourceSettings {
     this.siteVariant,
     this.gridTagStrip,
     this.coverDisplay,
+    this.feedCardStyle,
     this.recommendedCount,
     this.pagePreviewColumns,
     this.titleLanguage,
@@ -58,6 +59,7 @@ class SourceSettings {
     siteVariant: json['siteVariant'] as String?,
     gridTagStrip: json['gridTagStrip'] as bool?,
     coverDisplay: json['coverDisplay'] as String?,
+    feedCardStyle: json['feedCardStyle'] as String?,
     recommendedCount: json['recommendedCount'] as int?,
     pagePreviewColumns: json['pagePreviewColumns'] as int?,
     titleLanguage: json['titleLanguage'] as String?,
@@ -118,6 +120,11 @@ class SourceSettings {
   /// the cover's aspect ratio (staggered grid).
   String? coverDisplay;
 
+  /// r63: how a doujin feed draws its cards: 'grid' (covers in columns) or
+  /// 'list' (a row per gallery: cover, title, tags that scroll sideways, and
+  /// what it is - kind, language, pages).
+  String? feedCardStyle;
+
   /// How many items the Recommended strip shows (the site supplies 5; the
   /// rest are found by matching the gallery's signals).
   int? recommendedCount;
@@ -176,6 +183,7 @@ class SourceSettings {
     if (siteVariant != null) 'siteVariant': siteVariant,
     if (gridTagStrip != null) 'gridTagStrip': gridTagStrip,
     if (coverDisplay != null) 'coverDisplay': coverDisplay,
+    if (feedCardStyle != null) 'feedCardStyle': feedCardStyle,
     if (recommendedCount != null) 'recommendedCount': recommendedCount,
     if (pagePreviewColumns != null) 'pagePreviewColumns': pagePreviewColumns,
     if (titleLanguage != null) 'titleLanguage': titleLanguage,
@@ -377,6 +385,9 @@ class SourceSettingsHandler {
   /// 'fit' remains available per source for anyone who would rather see the
   /// whole cover than fill the card.
   String coverDisplay(Booru? booru) => _resolve(booru, (s) => s.coverDisplay, 'crop');
+
+  /// 'grid' | 'list' (r63)
+  String feedCardStyle(Booru? booru) => _resolve(booru, (s) => s.feedCardStyle, 'grid');
 
   /// 0 = endless (the Recommended strip keeps loading on scroll).
   int recommendedCount(Booru? booru) {

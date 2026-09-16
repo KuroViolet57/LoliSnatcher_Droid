@@ -263,6 +263,12 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware {
   /// learns its cover's aspect from the decoded image instead
   /// (DoujinCoverAspects), so it needs nothing from the API.
   bool _computeIsStaggered() {
+    // r63: the list card lays out its own row, so the staggered grid (which
+    // gives cells no height) must step aside.
+    if (searchHandler.currentBooruHandler.hasReader &&
+        SourceSettingsHandler.instance.feedCardStyle(searchHandler.currentBooru) == 'list') {
+      return false;
+    }
     final bool adaptCovers =
         searchHandler.currentBooruHandler.hasReader &&
         SourceSettingsHandler.instance.coverDisplay(searchHandler.currentBooru) == 'adapt';
