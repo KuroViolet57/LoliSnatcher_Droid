@@ -31,11 +31,11 @@ older chronological build log, kept verbatim as history.
   Never push elsewhere; force-push is blocked.
 - **Version:** `2.6.0+5211` in `pubspec.yaml`, mirrored in
   `lib/src/data/constants.dart` (`updateInfo`). Builds are told apart by
-  `Constants.buildCodename` (`'r39-speed-fixes'` now), shown in About. Bump the
+  `Constants.buildCodename` (`'r60-mpv-libs'` now), shown in About. Bump the
   codename every build: `rNN-<two words>`.
-- **Build counter:** builds are numbered r21, r22, … r39. Each build gets a
-  numbered folder on the K: drive (§2): r39 used **58**; the next build
-  uses **59**.
+- **Build counter:** builds are numbered r21, r22, … r60. Each build gets a
+  numbered folder on the K: drive (§2): r59 used **78**; r60 uses **79**;
+  the next build uses **80**.
 - **The user** talks in voice notes and logs; expects one build per request
   round, checked on a Samsung phone. They cannot see tool output — only the
   final message.
@@ -1264,6 +1264,22 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   graphics memory drops. The switch brings the old behaviour back.
 - `flutter pub upgrade` will not touch media_kit_video while the override is
   there; re-apply the two edits when moving to a newer version.
+
+### 4.29 Custom arm64 libmpv + pool hwdec (r60)
+
+- **Path A** of the engine choice: keep media_kit, do **not** ship mpv 0.41
+  (Android `vo=gpu` flickers, media-kit #1091), do **not** switch the gallery
+  to FVP yet. Work only in `C:\clone-bodu-apk`; never write `C:\bodu-apk`.
+- `third_party/libmpv-android/default-arm64-v8a.jar` is libmpv-android-video-build
+  **v1.1.11 default** (0.36 ABI). `third_party/media_kit_libs_android_video`
+  copies that jar instead of downloading v1.1.7 for every ABI. Drop a
+  self-built jar there later; keep mpv below 0.37.
+- The gallery pool now uses Settings → Video hwdec/vo/hwaccel (those used to
+  hit only Chewie's media_kit plugin) and can write a demuxer cache under
+  `SettingsHandler.path/mpv_cache`. Init delay 200→300 ms.
+- Tests: `test/media_kit_engine_options_test.dart`. Device: turn on
+  "Use media_kit engine", play a tube video, seek/loop/mute; confirm About
+  shows r60-mpv-libs. FVP/MDK gallery view is B, only if this is not enough.
 
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 

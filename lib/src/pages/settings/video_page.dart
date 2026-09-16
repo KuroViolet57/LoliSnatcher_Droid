@@ -265,10 +265,10 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
 
               AnimatedSize(
                 duration: const Duration(milliseconds: 300),
-                child: (!videoBackendMode.isNormal || SettingsHandler.isDesktopPlatform)
+                child: (useMediaKitPlayer || !videoBackendMode.isNormal || SettingsHandler.isDesktopPlatform)
                     ? Column(
                         children: [
-                          if (videoBackendMode.isMpv) ...[
+                          if (videoBackendMode.isMpv || useMediaKitPlayer) ...[
                             Padding(
                               padding: const EdgeInsets.only(left: 16, right: 16, top: 8),
                               child: Text(

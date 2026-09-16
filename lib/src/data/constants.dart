@@ -44,7 +44,7 @@ class Constants {
   // Short 1-2 word codename describing this build's changes. Shown in the
   // settings version row and used for the uploaded APK name, following the
   // '{codename}-{version}' scheme.
-  static const String buildCodename = 'r59-video-cap-patched';
+  static const String buildCodename = 'r60-mpv-libs';
 
   // TODO don't forget to update on every new release
   static const UpdateInfo updateInfo = UpdateInfo(

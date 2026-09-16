@@ -10,6 +10,7 @@ import 'package:get/get.dart' hide ContextExt, FirstWhereOrNullExt;
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
+import 'package:lolisnatcher/src/widgets/video/media_kit_engine_options.dart';
 import 'package:lolisnatcher/src/widgets/video/video_surface_cap.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
@@ -53,7 +54,7 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> {
   String? _acquiredUrl;
 
   Timer? _initDebounce;
-  static const Duration _initDelay = Duration(milliseconds: 200);
+  static const Duration _initDelay = Duration(milliseconds: 300);
   bool _initInProgress = false;
 
   // Error-recovery probe: mpv does its own networking, so an expired
@@ -370,13 +371,17 @@ class _MediaKitPlayerPool {
     // Make room for the new entry up-front.
     _evictIfNeeded(needSlot: true);
 
+    final settings = SettingsHandler.instance;
     final player = Player(
       configuration: const PlayerConfiguration(
         bufferSize: 64 * 1024 * 1024,
         logLevel: MPVLogLevel.error,
       ),
     );
-    final controller = VideoController(player);
+    final controller = VideoController(
+      player,
+      configuration: MediaKitEngineOptions.videoController(settings),
+    );
 
     await player.open(Media(url, httpHeaders: headers), play: false);
     // PlaylistMode.single => mpv loop-file=yes: loops THIS file in place
@@ -386,17 +391,16 @@ class _MediaKitPlayerPool {
     await player.setPlaylistMode(PlaylistMode.single);
 
     // Tune libmpv cache so we don't underrun mid-clip on jittery CDNs and so
-    // we keep enough back-buffer to seek-back without re-downloading.
+    // we keep enough back-buffer to seek-back without re-downloading. Disk
+    // cache sits next to the app files dir when SettingsHandler.path is set.
     try {
       final platform = player.platform;
       if (platform is NativePlayer) {
-        await platform.setProperty('cache', 'yes');
-        await platform.setProperty('cache-secs', '30');
-        await platform.setProperty('demuxer-readahead-secs', '20');
-        await platform.setProperty('demuxer-max-bytes', '67108864');
-        await platform.setProperty('demuxer-max-back-bytes', '33554432');
-        // Belt-and-suspenders: gapless in-place file loop at the mpv level.
-        await platform.setProperty('loop-file', 'inf');
+        final String path = settings.path.trim();
+        final String? cacheDir = path.isEmpty ? null : '${path}mpv_cache';
+        for (final entry in MediaKitEngineOptions.nativeProperties(cacheDir: cacheDir).entries) {
+          await platform.setProperty(entry.key, entry.value);
+        }
       }
     } catch (e, s) {
       Logger.Inst().log(

@@ -123,6 +123,9 @@ dependency_overrides:
   # (third_party/media_kit_video/LOLISNATCHER_PATCH.md says how to undo it).
   media_kit_video:
     path: third_party/media_kit_video
+  # r60: arm64 libmpv v1.1.11 (0.36 ABI) instead of the package's v1.1.7 all-ABI download.
+  media_kit_libs_android_video:
+    path: third_party/media_kit_libs_android_video
 
 
 
