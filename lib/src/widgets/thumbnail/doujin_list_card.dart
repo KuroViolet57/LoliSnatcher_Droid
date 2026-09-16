@@ -29,6 +29,7 @@ class DoujinListCard extends StatelessWidget {
     this.onDoubleTap,
     this.onLongPress,
     this.onSecondaryTap,
+    this.height = defaultHeight,
     super.key,
   });
 
@@ -45,9 +46,12 @@ class DoujinListCard extends StatelessWidget {
   final void Function(int)? onLongPress;
   final void Function(int)? onSecondaryTap;
 
-  /// One row's height, and the cover's width inside it.
-  static const double rowHeight = 176;
+  /// One row's height unless the source's settings say otherwise (r66), and
+  /// the cover's width inside it.
+  static const double defaultHeight = 176;
   static const double coverWidth = 116;
+
+  final double height;
 
   /// The tag block is this many rows tall and scrolls sideways.
   static const int tagRows = 3;
@@ -72,7 +76,15 @@ class DoujinListCard extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
         child: Material(
-          color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
+          key: const ValueKey('doujin-list-card-surface'),
+          // r66: a raised card - a shadow gives the row some volume instead of
+          // reading as a flat block.
+          elevation: 3,
+          shadowColor: Colors.black.withValues(alpha: 0.7),
+          color: Color.alphaBlend(
+            theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
+            theme.colorScheme.surface,
+          ),
           borderRadius: BorderRadius.circular(14),
           child: InkWell(
             borderRadius: BorderRadius.circular(14),
@@ -91,7 +103,8 @@ class DoujinListCard extends StatelessWidget {
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(14),
                 child: SizedBox(
-                  height: rowHeight,
+                  key: const ValueKey('doujin-list-card-row'),
+                  height: height,
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [

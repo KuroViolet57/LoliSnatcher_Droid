@@ -718,6 +718,16 @@ class _SourceSettingsPageState extends State<SourceSettingsPage> {
             inheritedValue: globalLayer.feedCardStyle ?? 'grid',
             onChanged: (v) => _update((s) => s.feedCardStyle = v),
           ),
+          _stepperRow(
+            title: 'List card height',
+            subtitle: 'How tall each row is with Feed cards set to List. The cover fills the height; more height means more tag rows and a bigger cover.',
+            layerValue: layer.listCardHeight,
+            effective: sourceSettings.listCardHeight(booru),
+            min: 120,
+            max: 320,
+            step: 8,
+            onChanged: (v) => _update((s) => s.listCardHeight = v),
+          ),
           _switchRow(
             title: 'Tags on grid cards',
             subtitle: 'Most relevant tags under each cover, favourites in gold, and the +N button with the full list.',

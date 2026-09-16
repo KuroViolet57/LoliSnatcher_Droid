@@ -1908,18 +1908,28 @@ class _TabManagerPageState extends State<TabManagerPage> {
     _invalidateDisplayCache();
     return Scaffold(
       appBar: AppBar(
+        // r66: two lines need more than the default 56 px, or the title is
+        // pushed above the screen edge and cut.
+        toolbarHeight: 64,
         title: Column(
           mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               context.loc.tabs.tabsManager,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: Theme.of(context).appBarTheme.titleTextStyle,
             ),
             RichText(
               text: TextSpan(
+                // r66: the count is drawn ON the app bar, so it takes the
+                // bar's own text colour; onPrimary is the colour for text on
+                // the accent and read as black on the dark bar.
                 style: Theme.of(context).appBarTheme.titleTextStyle?.copyWith(
-                  color: Theme.of(context).colorScheme.onPrimary,
+                  color: (Theme.of(context).appBarTheme.foregroundColor ?? Theme.of(context).colorScheme.onSurface)
+                      .withValues(alpha: 0.75),
                   fontSize: 12,
                   fontWeight: FontWeight.normal,
                 ),

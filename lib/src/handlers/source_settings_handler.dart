@@ -30,6 +30,7 @@ class SourceSettings {
     this.gridTagStrip,
     this.coverDisplay,
     this.feedCardStyle,
+    this.listCardHeight,
     this.recommendedCount,
     this.pagePreviewColumns,
     this.titleLanguage,
@@ -60,6 +61,7 @@ class SourceSettings {
     gridTagStrip: json['gridTagStrip'] as bool?,
     coverDisplay: json['coverDisplay'] as String?,
     feedCardStyle: json['feedCardStyle'] as String?,
+    listCardHeight: json['listCardHeight'] as int?,
     recommendedCount: json['recommendedCount'] as int?,
     pagePreviewColumns: json['pagePreviewColumns'] as int?,
     titleLanguage: json['titleLanguage'] as String?,
@@ -125,6 +127,9 @@ class SourceSettings {
   /// what it is - kind, language, pages).
   String? feedCardStyle;
 
+  /// r66: the list card's row height in pixels (120-320).
+  int? listCardHeight;
+
   /// How many items the Recommended strip shows (the site supplies 5; the
   /// rest are found by matching the gallery's signals).
   int? recommendedCount;
@@ -184,6 +189,7 @@ class SourceSettings {
     if (gridTagStrip != null) 'gridTagStrip': gridTagStrip,
     if (coverDisplay != null) 'coverDisplay': coverDisplay,
     if (feedCardStyle != null) 'feedCardStyle': feedCardStyle,
+    if (listCardHeight != null) 'listCardHeight': listCardHeight,
     if (recommendedCount != null) 'recommendedCount': recommendedCount,
     if (pagePreviewColumns != null) 'pagePreviewColumns': pagePreviewColumns,
     if (titleLanguage != null) 'titleLanguage': titleLanguage,
@@ -388,6 +394,10 @@ class SourceSettingsHandler {
 
   /// 'grid' | 'list' (r63)
   String feedCardStyle(Booru? booru) => _resolve(booru, (s) => s.feedCardStyle, 'grid');
+
+  /// The list card's row height (r66): never smaller than the cover needs,
+  /// never taller than a third of a tall screen.
+  int listCardHeight(Booru? booru) => _resolve(booru, (s) => s.listCardHeight, 176).clamp(120, 320);
 
   /// 0 = endless (the Recommended strip keeps loading on scroll).
   int recommendedCount(Booru? booru) {

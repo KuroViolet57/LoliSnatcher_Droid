@@ -81,6 +81,14 @@ class ModularUi {
 
   static const String gridArea = 'Preview grid';
 
+  static const ModularUiToggle feedScrollbar = ModularUiToggle(
+    key: 'grid.feedScrollbar',
+    area: gridArea,
+    title: 'Feed scrollbar',
+    description: 'The thin scrollbar at the side of a feed, which you can drag to jump. Off hides it; the feed scrolls the same.',
+    defaultValue: true,
+  );
+
   static const ModularUiToggle gridSeenThumbnailsAtOnce = ModularUiToggle(
     key: 'grid.seenThumbnailsAtOnce',
     area: gridArea,
@@ -139,6 +147,7 @@ class ModularUi {
     searchSiteFilters,
     sidebarSourceSettings,
     sidebarPinnedTags,
+    feedScrollbar,
     gridSeenThumbnailsAtOnce,
     viewerLinkedMedia,
     videoCapToScreen,

@@ -1387,6 +1387,29 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   disturbs the app far less than the VM service did - but it is still a
   measurement: compare traces with each other, not with an unrecorded run.
 
+### 4.35 The feed loads on its own scrolling only; list card height and shadow; tab manager title (r66)
+
+- **Next-page trigger** (`widgets/preview/waterfall_view.dart`): the feed's
+  `NotificationListener<ScrollNotification>` acted on every notification that
+  bubbled up, including a horizontal scroll inside a card (the list card's tag
+  rows and title, the tab cards), and one at its own end satisfied "near the
+  bottom" - so pages were fetched while the user read tags. `FeedScroll.
+  isFeedScroll` (`widgets/preview/feed_scroll.dart`, tested) admits only depth
+  0 and a vertical axis; the scroll stream that hides the bars gets the same
+  filter.
+- **List card:** `SourceSettings.listCardHeight` (per source, 120-320, default
+  176, Source settings → GRID → "List card height"), passed by `GridBuilder`;
+  the card's `Material` has `elevation: 3` over an opaque blend so the shadow
+  shows. Test keys `doujin-list-card-row` / `doujin-list-card-surface`.
+- **Tab manager app bar:** the two-line title (title + filtered/total count)
+  overflowed the 56 px toolbar, so the first line was pushed above the screen
+  edge and cut, and the count used `colorScheme.onPrimary` - the colour for
+  text on the lavender accent - which is near black on the dark bar. Now
+  `toolbarHeight: 64`, single-line title, count in the bar's foreground colour.
+- **Feed scrollbar:** the thin bar at the feed's side is the app's standard
+  `Scrollbar(thumbVisibility: true)`; it became Modular UI `grid.feedScrollbar`
+  (on by default) after the user noticed it with the list cards.
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
@@ -1812,8 +1835,15 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r65)
+## 12. Open items (as of r66)
 
+- r66 is unverified on the device: scrolling a list card's tags or title
+  sideways no longer fetches the next page (watch the page pill); the list card
+  height setting applies; the cards cast a shadow; the tab manager's title is
+  whole and its count readable; the feed scrollbar switch hides the bar.
+- Next (asked for): a much wider in-app trace - widgets created and disposed,
+  builds counted, gestures (taps, swipes, drawer), scrolls with axis and depth,
+  buttons pressed - on the same timeline as the frames (r67).
 - r65 is unverified on the device: Settings → Debug → Record a trace, use the
   app, stop, and the report should show frames and a timeline of video
   players, posts and screens - saved under `traces/` and copyable.

@@ -9,6 +9,8 @@ import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:scroll_to_index/scroll_to_index.dart';
 
+import 'package:lolisnatcher/src/data/modular_ui.dart';
+import 'package:lolisnatcher/src/widgets/preview/feed_scroll.dart';
 import 'package:lolisnatcher/src/widgets/preview/furaffinity_artist_header.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
@@ -462,8 +464,9 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware {
           child: Scrollbar(
             controller: searchHandler.gridScrollController,
             interactive: true,
-            thickness: 8,
-            thumbVisibility: true,
+            // r66: Modular UI - off hides the thumb, the bar still scrolls.
+            thickness: ModularUi.isOn(ModularUi.feedScrollbar) ? 8 : 0,
+            thumbVisibility: ModularUi.isOn(ModularUi.feedScrollbar),
             scrollbarOrientation: settingsHandler.handSide.value.isLeft
                 ? ScrollbarOrientation.left
                 : ScrollbarOrientation.right,
@@ -658,6 +661,11 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware {
             ),
           ),
           onNotification: (notif) {
+            // r66: a horizontal scroll inside a card (tag rows, a title, the
+            // tab cards) bubbles up here too, and one at its own end looks
+            // exactly like the feed near its bottom - so the next page was
+            // fetched while the user was only reading tags.
+            if (!FeedScroll.isFeedScroll(notif)) return false;
             if (notif is ScrollUpdateNotification || notif is OverscrollNotification) {
               searchHandler.sendToScrollStream(notif);
 
