@@ -123,6 +123,22 @@ class ModularUi {
     defaultValue: true,
   );
 
+  static const ModularUiToggle videoCapToScreen = ModularUiToggle(
+    key: 'viewer.videoCapToScreen',
+    area: viewerArea,
+    title: 'Videos play at screen size',
+    description: 'A video bigger than your screen is played at screen size instead of its own (an 8K video costs about 7 times less memory and drawing work). Off plays every video at its full resolution.',
+    defaultValue: true,
+  );
+
+  static const ModularUiToggle imageCap4k = ModularUiToggle(
+    key: 'viewer.imageCap4k',
+    area: viewerArea,
+    title: 'Pictures decode at 4K at most',
+    description: 'A picture never decodes taller than 3840 pixels, which bounds very tall pictures. Turning image scaling off, or reloading one post without scaling, still loads it at full size.',
+    defaultValue: true,
+  );
+
   static const String wholeAppArea = 'Whole app';
 
   static const ModularUiToggle appDrawUnderHiddenStatusBar = ModularUiToggle(
@@ -143,6 +159,8 @@ class ModularUi {
     viewerLinkedMedia,
     viewerLinkedMediaReplacesShare,
     viewerDetailsOnOpen,
+    videoCapToScreen,
+    imageCap4k,
     appDrawUnderHiddenStatusBar,
   ];
 

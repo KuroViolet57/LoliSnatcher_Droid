@@ -12,11 +12,13 @@ import 'package:media_kit_video/media_kit_video.dart';
 
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/data/modular_ui.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
+import 'package:lolisnatcher/src/widgets/video/video_surface_cap.dart';
 
 /// Experimental video engine backed by media_kit (libmpv) rather than
 /// ExoPlayer/MediaCodec. libmpv manages its own decoders (with software
@@ -322,6 +324,24 @@ class _PooledPlayer {
   // Cancelled on evict/reset/dispose — the pool owns the lifecycle.
   // ignore: cancel_subscriptions
   StreamSubscription<String>? errorSub;
+
+  /// r57: watches the video's real size so the surface can be capped to the
+  /// screen, and re-caps if a recreated surface comes back at full size.
+  // ignore: cancel_subscriptions
+  StreamSubscription<VideoParams>? paramsSub;
+  VoidCallback? rectListener;
+
+  /// Stops the surface-cap watchers (the pool owns the lifecycle).
+  Future<void> stopCap() async {
+    final VoidCallback? listener = rectListener;
+    rectListener = null;
+    if (listener != null) {
+      controller.rect.removeListener(listener);
+    }
+    final StreamSubscription<VideoParams>? sub = paramsSub;
+    paramsSub = null;
+    await sub?.cancel();
+  }
 }
 
 /// Global URL-keyed LRU pool. Survives widget disposal so scrolling back to a
@@ -354,6 +374,7 @@ class _MediaKitPlayerPool {
         _entries.remove(url);
         try {
           await existing.errorSub?.cancel();
+          await existing.stopCap();
           await existing.player.dispose();
         } catch (_) {}
       } else {
@@ -424,8 +445,69 @@ class _MediaKitPlayerPool {
         LogTypes.booruItemLoad,
       );
     });
+    _startSurfaceCap(entry);
     _entries[url] = entry;
     return entry;
+  }
+
+  /// r57: keeps a player's Android surface down to screen size.
+  ///
+  /// media_kit_video sets the surface to the video's native size on every
+  /// videoParams event (an 8K video then costs hundreds of MB of buffers and
+  /// 600-925 ms draws), and it offers no API to ask for anything else on
+  /// Android, so the app repeats its own platform call with a capped size.
+  void _startSurfaceCap(_PooledPlayer entry) {
+    Future<void> cap(Size source) async {
+      if (!ModularUi.isOn(ModularUi.videoCapToScreen)) return;
+      try {
+        await VideoSurfaceCap.applyTo(
+          handle: await entry.player.handle,
+          source: source,
+          screen: VideoSurfaceCap.screenSize(),
+          enabled: true,
+          setProperty: (key, value) async {
+            final platform = entry.player.platform;
+            if (platform is NativePlayer) {
+              await platform.setProperty(key, value, waitForInitialization: false);
+            }
+          },
+        );
+      } catch (e, s) {
+        Logger.Inst().log(
+          'video surface cap failed: $e',
+          '_MediaKitPlayerPool',
+          'surfaceCap',
+          LogTypes.exception,
+          s: s,
+        );
+      }
+    }
+
+    // ignore: cancel_subscriptions
+    entry.paramsSub = entry.player.stream.videoParams.listen((params) async {
+      final int width = params.dw ?? 0;
+      final int height = params.dh ?? 0;
+      if (width <= 0 || height <= 0) return;
+      // media_kit sets the native size from this same event, inside its own
+      // lock: let that finish, then cap what it set.
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      final bool turned = params.rotate == 90 || params.rotate == 270;
+      await cap(
+        Size(
+          (turned ? height : width).toDouble(),
+          (turned ? width : height).toDouble(),
+        ),
+      );
+    });
+
+    // A surface recreated at full size (app resumed, fullscreen) reports its
+    // rect here; capping it again settles at the capped size and stops.
+    entry.rectListener = () {
+      final Rect? rect = entry.controller.rect.value;
+      if (rect == null || rect.isEmpty) return;
+      unawaited(cap(rect.size));
+    };
+    entry.controller.rect.addListener(entry.rectListener!);
   }
 
   void markErrored(String url) {
@@ -441,6 +523,7 @@ class _MediaKitPlayerPool {
       _entries.remove(e.url);
       try {
         e.errorSub?.cancel();
+        unawaited(e.stopCap());
         e.player.dispose();
       } catch (_) {}
     }
@@ -478,6 +561,7 @@ class _MediaKitPlayerPool {
       _entries.remove(e.url);
       try {
         e.errorSub?.cancel();
+        unawaited(e.stopCap());
         e.player.dispose();
       } catch (_) {}
       toEvict--;

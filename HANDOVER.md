@@ -1183,6 +1183,38 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   media does not depend on it (its handler does not load in TagView). The
   right-side endDrawer was already built only when opened.
 
+### 4.26 Resolution caps: video to screen size, pictures to 4K (r57)
+
+- **Why:** §4.23-§4.25. media_kit_video gives the Android surface the video's
+  native size, so an 8K post (4320x7680) made Skia draws take 600-925 ms and
+  the warm pool held ~2.1 GB of graphics memory (EGL mtrack 1.13 GB).
+- **`utils/media_size_cap.dart`** (pure, tested): `videoSurface` fits a video
+  inside the screen taken in its best orientation (a landscape video may be
+  watched fullscreen sideways, so 1080p is left alone while 8K is cut down),
+  keeps the shape, even pixels, never upscales; `imageDecodeSize` mirrors
+  `ResizeImage(policy: fit, allowUpscaling: false)` with the 4K ceiling.
+- **`widgets/video/video_surface_cap.dart`:** there is no API for this on
+  Android (`AndroidVideoController.setSize` throws; the width/height in
+  `VideoControllerConfiguration` are read only by the desktop controller), so
+  the app repeats media_kit's own call on its channel
+  `com.alexmercerind/media_kit_video` -> `VideoOutputManager.SetSurfaceSize`
+  (Java side: `surfaceProducer.setSize`, i.e. the texture buffer), then sets
+  mpv's `android-surface-size` - the plugin only refreshes that when the
+  surface is recreated.
+- **In the pool** (`media_kit_player_view.dart`): per entry, a `videoParams`
+  subscription caps 100 ms after the event (the plugin does its own work
+  inside a `Lock`), plus a `controller.rect` listener so a surface recreated
+  at full size is capped again; both stopped in `stopCap()` wherever
+  `errorSub` is cancelled. Switch `viewer.videoCapToScreen`.
+- **Pictures** (`image_viewer.dart`): the existing `ResizeImage` also gets a
+  height of `MediaSizeCap.imageLongEdge`, which is what bounds very tall
+  pictures; the width limit (about twice the screen width) is unchanged and
+  the user's overrides (`disableImageScaling`, per-post `isNoScale`) still
+  load the full picture. Switch `viewer.imageCap4k`.
+- Unverified on the device: that mpv renders correctly into a capped surface
+  (no crop or stretch), seeking and looping, and that the cap survives an app
+  resume. Both switches restore the old behaviour.
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
@@ -1608,8 +1640,12 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r56)
+## 12. Open items (as of r57)
 
+- r57 is unverified on the device: the 8K video plays with no freeze and the
+  right shape, `VideoOutputManager.setSurfaceSize` in logcat shows the capped
+  size, graphics memory stays far below the 2.1 GB seen before, a very tall
+  picture still looks right, and both switches bring the old behaviour back.
 - r56 is unverified on the device: scrolling back through the grid shows seen
   thumbnails at once; the info sheet opens (button and swipe up) with the
   post's details loading as it opens; both switches bring the old behaviour

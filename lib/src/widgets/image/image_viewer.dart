@@ -8,6 +8,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import 'package:dio/dio.dart';
+import 'package:lolisnatcher/src/data/modular_ui.dart';
 import 'package:lolisnatcher/src/utils/extensions.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:photo_view/photo_view.dart';
@@ -22,6 +23,7 @@ import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/services/image_writer.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
+import 'package:lolisnatcher/src/utils/media_size_cap.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 import 'package:lolisnatcher/src/widgets/common/media_loading.dart';
 import 'package:lolisnatcher/src/widgets/image/custom_network_image.dart';
@@ -408,6 +410,9 @@ class ImageViewerState extends State<ImageViewer> {
       provider = ResizeImage(
         provider,
         width: widthLimit,
+        // r57: bound the height too, so a very tall picture cannot decode into
+        // hundreds of MB - the width limit alone never caught those.
+        height: ModularUi.isOn(ModularUi.imageCap4k) ? MediaSizeCap.imageLongEdge : null,
         policy: ResizeImagePolicy.fit,
         allowUpscaling: false,
       );
