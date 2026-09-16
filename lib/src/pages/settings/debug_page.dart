@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
@@ -11,6 +12,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
+import 'package:lolisnatcher/src/utils/perf_trace.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/secure_storage_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -53,6 +55,67 @@ class _DebugPageState extends State<DebugPage> {
 
   Future<void> _onPopInvoked(_, _) async {
     await settingsHandler.saveSettings(restate: true);
+  }
+
+  /// Saves the finished trace next to the settings, logs it, and shows it.
+  Future<void> _showTraceReport() async {
+    final String report = PerfTrace.instance.report();
+
+    String? savedPath;
+    try {
+      final String dir = '${SettingsHandler.instance.path}traces${Platform.pathSeparator}';
+      await Directory(dir).create(recursive: true);
+      final String stamp = DateTime.now().toIso8601String().split('.').first.replaceAll(':', '-');
+      final File file = File('${dir}trace-$stamp.txt');
+      await file.writeAsString(report);
+      savedPath = file.path;
+    } catch (e, s) {
+      Logger.Inst().log('could not save the trace: $e', 'DebugPage', 'trace', LogTypes.exception, s: s);
+    }
+    // Also in the log page, so it travels with a log export.
+    Logger.Inst().log(report, 'PerfTrace', 'report', LogTypes.settingsLoad);
+
+    if (!mounted) return;
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Trace'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: SingleChildScrollView(
+            child: SelectableText(
+              report,
+              style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
+            ),
+          ),
+        ),
+        actions: [
+          if (savedPath != null)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: Text(
+                'Saved',
+                style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
+              ),
+            ),
+          TextButton.icon(
+            icon: const Icon(Symbols.content_copy_rounded),
+            label: const Text('Copy'),
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: report));
+              if (!context.mounted) return;
+              FlashElements.showSnackbar(
+                context: context,
+                title: const Text('Trace copied'),
+                content: Text(savedPath == null ? 'In the log page too' : 'Also saved to $savedPath'),
+                leadingIcon: Symbols.content_copy_rounded,
+              );
+            },
+          ),
+          const CancelButton(label: 'Close', withIcon: true),
+        ],
+      ),
+    );
   }
 
   @override
@@ -138,6 +201,35 @@ class _DebugPageState extends State<DebugPage> {
                   timeDilation = speeds[newIndex];
                   setState(() {});
                 },
+              ),
+
+              ValueListenableBuilder<bool>(
+                valueListenable: PerfTrace.instance.isRecording,
+                builder: (context, recording, _) => ValueListenableBuilder<int>(
+                  valueListenable: PerfTrace.instance.revision,
+                  builder: (context, _, _) => SettingsButton(
+                    name: recording
+                        ? 'Stop recording · ${PerfTrace.instance.frameCount} frames'
+                        : 'Record a trace',
+                    subtitle: Text(
+                      recording
+                          ? 'Use the app as usual, then come back here and stop. Frames, video players and pages opened are being written down.'
+                          : 'Records how smoothly the app runs (per frame) and what it is doing — video players built, re-pointed or dropped, posts and screens opened. No cable and no special build needed.',
+                    ),
+                    icon: Icon(
+                      recording ? Symbols.stop_circle_rounded : Symbols.fiber_manual_record_rounded,
+                      color: recording ? Colors.red : null,
+                    ),
+                    action: () async {
+                      if (recording) {
+                        PerfTrace.instance.stop();
+                        await _showTraceReport();
+                      } else {
+                        PerfTrace.instance.start();
+                      }
+                    },
+                  ),
+                ),
               ),
 
               SettingsButton(

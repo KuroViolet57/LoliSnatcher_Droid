@@ -17,6 +17,7 @@ import 'package:lemberfpsmonitor/lemberfpsmonitor.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:talker_flutter/talker_flutter.dart';
 
+import 'package:lolisnatcher/src/utils/perf_trace.dart';
 import 'package:lolisnatcher/src/utils/status_bar_inset.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/theme_item.dart';
@@ -265,6 +266,7 @@ class _MainAppState extends State<MainApp> {
                       navigationHandler.routeObserver,
                       FloatingPreviewHandler.instance.routeObserver,
                       TalkerRouteObserver(Logger.talker),
+                      PerfTraceRouteObserver(),
                     ],
                     home: const Home(),
                     locale: TranslationProvider.of(context).flutterLocale,

@@ -10,6 +10,7 @@ import 'package:get/get.dart' hide ContextExt, FirstWhereOrNullExt;
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
+import 'package:lolisnatcher/src/utils/perf_trace.dart';
 import 'package:lolisnatcher/src/widgets/video/player_pool_planner.dart';
 import 'package:lolisnatcher/src/widgets/video/media_kit_engine_options.dart';
 import 'package:lolisnatcher/src/widgets/video/video_surface_cap.dart';
@@ -373,6 +374,7 @@ class _MediaKitPlayerPool {
       entry.refCount++;
       entry.lastUsedTick = ++_tick;
       entry.wasReused = true;
+      PerfTrace.instance.event('video.reuse', url);
       return entry;
     }
 
@@ -403,6 +405,7 @@ class _MediaKitPlayerPool {
           s: s,
         );
       }
+      PerfTrace.instance.event('video.rebind', url);
       return entry;
     }
 
@@ -466,6 +469,7 @@ class _MediaKitPlayerPool {
         LogTypes.booruItemLoad,
       );
     });
+    PerfTrace.instance.event('video.create', url);
     _slots.add(entry);
     _disposeOverflow();
     return entry;
@@ -548,6 +552,7 @@ class _MediaKitPlayerPool {
     );
     for (final int i in gone.reversed) {
       final _PooledPlayer e = _slots.removeAt(i);
+      PerfTrace.instance.event('video.dispose', e.url);
       try {
         e.errorSub?.cancel();
         e.player.dispose();

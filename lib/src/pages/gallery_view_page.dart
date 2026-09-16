@@ -11,6 +11,7 @@ import 'package:flutter/services.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:preload_page_view/preload_page_view.dart';
 
+import 'package:lolisnatcher/src/utils/perf_trace.dart';
 import 'package:lolisnatcher/src/widgets/video/flash_play_viewer.dart';
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/boorus/idol_sankaku_handler.dart';
@@ -734,6 +735,7 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
                               );
                             },
                             onPageChanged: (int index) {
+                              PerfTrace.instance.event('viewer.page', '$index');
                               page.value = index;
                               widget.onPageChanged?.call(index);
                               ServiceHandler.disableSleep();

@@ -1363,6 +1363,30 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   logcat over a fixed swipe run (was 42 / 38), and check that a rebound player
   plays, seeks, loops and goes fullscreen normally.
 
+### 4.34 A trace recorder inside the app (r65)
+
+- **Why:** measuring over USB with a profile build and the Dart VM service
+  perturbed the app enough to invent freezes that were not there (§4.27 and
+  the 2026-09-16 session). The app can measure itself in a release build.
+- **`utils/perf_trace.dart`:** `PerfTrace.instance.start()/stop()` listens to
+  `SchedulerBinding.addTimingsCallback` - available in release - and records
+  per frame the app's own work (`build`) and the drawing (`raster`), with
+  medians, 95ths, worsts and the counts over 8.3 / 16.7 / 33.3 / 100 ms, plus
+  the twelve slowest frames. `event(kind, detail)` puts what the app did on
+  the same timeline (capped at `maxEvents`, counts keep everything).
+  `report()` writes it as text. Nothing is collected while it is stopped.
+- **Hooks:** the player pool (`video.create` / `video.rebind` / `video.reuse`
+  / `video.dispose`), the viewer's `onPageChanged` (`viewer.page`), and
+  `PerfTraceRouteObserver` in `main.dart`'s `navigatorObservers`
+  (`route.push` / `route.pop`).
+- **Settings → Debug → "Record a trace"** starts and stops it (the button
+  shows the frame count while running); stopping saves the report to
+  `<settings path>/traces/trace-<stamp>.txt`, logs it to talker so it travels
+  with a log export, and shows it with a Copy button.
+- The recorder costs a callback per frame and a list append per event, so it
+  disturbs the app far less than the VM service did - but it is still a
+  measurement: compare traces with each other, not with an unrecorded run.
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
@@ -1788,8 +1812,11 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r64)
+## 12. Open items (as of r65)
 
+- r65 is unverified on the device: Settings → Debug → Record a trace, use the
+  app, stop, and the report should show frames and a timeline of video
+  players, posts and screens - saved under `traces/` and copyable.
 - r64 is unverified on the device: swiping through videos should show almost
   no `VideoOutputManager.create` / `dispose` in logcat (was 42 / 38 in 25 s),
   and videos must still play, seek, loop and go fullscreen after their slot
