@@ -107,14 +107,6 @@ class ModularUi {
     defaultValue: true,
   );
 
-  static const ModularUiToggle viewerLinkedMediaReplacesShare = ModularUiToggle(
-    key: 'viewer.linkedMediaReplacesShare',
-    area: viewerArea,
-    title: "Linked media in the share button's place",
-    description: 'The share button leaves the top bar; the linked media button takes its place on posts whose description links to media. Off brings the share button back.',
-    defaultValue: true,
-  );
-
   static const ModularUiToggle videoCapToScreen = ModularUiToggle(
     key: 'viewer.videoCapToScreen',
     area: viewerArea,
@@ -149,7 +141,6 @@ class ModularUi {
     sidebarPinnedTags,
     gridSeenThumbnailsAtOnce,
     viewerLinkedMedia,
-    viewerLinkedMediaReplacesShare,
     videoCapToScreen,
     imageCap4k,
     appDrawUnderHiddenStatusBar,

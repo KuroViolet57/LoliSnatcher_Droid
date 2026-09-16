@@ -165,10 +165,6 @@ class LinkedMediaButton {
   /// video can link its full or sound version too.
   static bool offerFor(BooruItem item) => ModularUi.isOn(ModularUi.viewerLinkedMedia) && LinkedMediaStore.hasLinks(item.postURL);
 
-  /// The toolbar's share button becomes the link button (Modular UI).
-  static bool get replacesShare =>
-      ModularUi.isOn(ModularUi.viewerLinkedMedia) && ModularUi.isOn(ModularUi.viewerLinkedMediaReplacesShare);
-
   /// The media links of [item]'s description, read once per session.
   static Future<List<LinkedMedia>> linksFor(FurAffinityHandler handler, BooruItem item) async {
     final List<LinkedMedia>? known = LinkedMediaStore.linksFor(item.postURL);

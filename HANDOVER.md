@@ -1281,6 +1281,27 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   "Use media_kit engine", play a tube video, seek/loop/mute; confirm About
   shows r60-mpv-libs. FVP/MDK gallery view is B, only if this is not enough.
 
+### 4.30 The link button stands alone; the tab history scrolls (r61)
+
+- **Visited tabs history** (`widgets/tabs/tab_selector.dart`): the dialog would
+  not scroll. `SettingsDialog` already scrolls its content, and the inner
+  `ListView` (shrinkWrap, built at full height) ate the drag without having
+  anything to scroll. The list moved into `VisitedTabsHistoryList` with
+  `NeverScrollableScrollPhysics`, so the dialog scrolls it; the widget takes
+  its entries and callbacks, which is what the test drives.
+- **Linked media** is now `GalleryButton.linkedMedia`: its own entry in
+  Settings → Viewer → the toolbar list, orderable and switchable like the
+  rest, shown on any post whose description links to media. It used to be the
+  share button wearing a link icon, so turning share off in that same list
+  took the link sheet away — the user found that. Gone with it:
+  `LinkedMediaButton.replacesShare`, the Modular UI switch
+  `viewer.linkedMediaReplacesShare`, and the r49 FurAffinity-only toolbar
+  action (the real button covers every source). `ModularUi.viewerLinkedMedia`
+  still switches the feature off entirely.
+- A toolbar saved before this build gains the button automatically:
+  `SettingsHandler.loadFromJSON` appends enum values missing from a stored
+  `buttonOrder`.
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
@@ -1706,8 +1727,15 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r59)
+## 12. Open items (as of r61)
 
+- r61 is unverified on the device: the visited-tabs history scrolls; the link
+  button appears on posts with links, can be moved and switched off in
+  Settings → Viewer, and still works with the share button switched off.
+- Next (asked for, not started): video players are created and destroyed on
+  every swipe past a video (42 created / 38 destroyed in 25 s at 4 warm
+  players). A post should have to stay on screen before its player is built,
+  and eviction should wait until swiping stops.
 - r59 is unverified on the device: the 8K video plays, with the right shape, no
   freeze and far less graphics memory; 1080p videos unchanged, fullscreen and
   seeking fine; the switch off restores the old behaviour.

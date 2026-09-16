@@ -556,6 +556,7 @@ class _GalleryPageState extends State<GalleryPage> {
                                           .favourite => Symbols.favorite_rounded,
                                           .info => Symbols.info_rounded,
                                           .share => Symbols.share_rounded,
+                                          .linkedMedia => Symbols.link_rounded,
                                           .select => Symbols.check_box_rounded,
                                           .open => Symbols.public_rounded,
                                           .autoscroll => Symbols.play_arrow_rounded,

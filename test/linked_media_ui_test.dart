@@ -64,7 +64,7 @@ void main() {
     return item;
   }
 
-  test("r52: the link button is offered once the post's links are known, for any file, in the share button's place", () {
+  test("r61: the link button is offered once the post's links are known, for any file, as its own toolbar button", () {
     LinkedMediaStore.resetForTests();
     final BooruItem gif = post(['animated', FurAffinityParser.typeTag('image').fullString], type: MediaType.animation);
     expect(LinkedMediaButton.offerFor(gif), isFalse, reason: 'nothing known yet');
@@ -72,15 +72,12 @@ void main() {
       LinkedMedia(url: 'https://e621.net/posts/2197695', kind: LinkedMediaKind.sourcePost, booru: e621, postId: '2197695'),
     ]);
     expect(LinkedMediaButton.offerFor(gif), isTrue, reason: 'a GIF can link its full video too');
-    expect(LinkedMediaButton.replacesShare, isTrue);
-    SettingsHandler.instance.modularUi[ModularUi.viewerLinkedMediaReplacesShare.key] = false;
-    expect(LinkedMediaButton.replacesShare, isFalse);
     SettingsHandler.instance.modularUi[ModularUi.viewerLinkedMedia.key] = false;
     expect(LinkedMediaButton.offerFor(gif), isFalse, reason: 'the button switched off');
     SettingsHandler.instance.modularUi.clear();
     LinkedMediaStore.remember(gif.postURL, const []);
     expect(LinkedMediaButton.offerFor(gif), isFalse);
-    expect(ModularUi.all, containsAll([ModularUi.viewerLinkedMedia, ModularUi.viewerLinkedMediaReplacesShare]));
+    expect(ModularUi.all, contains(ModularUi.viewerLinkedMedia));
   });
 
   test("r52: loading a FurAffinity post remembers the media links of its description", () {

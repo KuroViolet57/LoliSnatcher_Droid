@@ -16,7 +16,6 @@ import 'package:preload_page_view/preload_page_view.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
 import 'package:lolisnatcher/src/boorus/linked_media.dart';
-import 'package:lolisnatcher/src/data/modular_ui.dart';
 import 'package:lolisnatcher/src/widgets/linked_media_sheet.dart';
 import 'package:lolisnatcher/src/pages/flash_player_page.dart';
 import 'package:lolisnatcher/src/pages/furaffinity_post_page.dart';
@@ -242,9 +241,11 @@ class _HideableAppBarState extends State<HideableAppBar> {
 
         //
 
+        case .linkedMedia:
+          // r61: a button of its own - it used to take the share button's
+          // place, so switching share off took the links away with it.
+          return LinkedMediaButton.offerFor(item);
         case .share:
-          // r52: the linked media button takes the share button's place (Modular UI).
-          return !LinkedMediaButton.replacesShare || LinkedMediaButton.offerFor(item);
         case .info:
         case .open:
         case .autoscroll:
@@ -328,29 +329,6 @@ class _HideableAppBarState extends State<HideableAppBar> {
         );
       }),
     );
-
-    // FurAffinity (r49): an animated post whose file is a still picture lists
-    // the links its description gives for the animation (Modular UI).
-    if (widget.tab.booruHandler is FurAffinityHandler && ModularUi.isOn(ModularUi.viewerLinkedMedia) && !LinkedMediaButton.replacesShare) {
-      actions.add(
-        Obx(() {
-          final BooruItem? item = page.value >= 0 && page.value < widget.tab.booruHandler.filteredFetched.length
-              ? widget.tab.booruHandler.filteredFetched[page.value]
-              : null;
-          if (item == null || !LinkedMediaButton.offerFor(item)) return const SizedBox.shrink();
-          return ToolbarAction(
-            key: const ValueKey('furaffinity-linked-media'),
-            icon: const Icon(Symbols.link_rounded),
-            tooltip: 'Linked media',
-            onTap: () async {
-              final links = await LinkedMediaButton.linksFor(widget.tab.booruHandler as FurAffinityHandler, item);
-              if (!context.mounted) return;
-              await LinkedMediaSheet.show(context, links, title: item.description);
-            },
-          );
-        }),
-      );
-    }
 
     // FurAffinity (r42b): a Flash submission plays through Ruffle.
     if (widget.tab.booruHandler is FurAffinityHandler) {
@@ -533,7 +511,10 @@ class _HideableAppBarState extends State<HideableAppBar> {
           );
         });
       case .share:
-        icon = LinkedMediaButton.replacesShare ? Symbols.link_rounded : Symbols.share_rounded;
+        icon = Symbols.share_rounded;
+        break;
+      case .linkedMedia:
+        icon = Symbols.link_rounded;
         break;
       case .select:
         return Obx(() {
@@ -671,8 +652,11 @@ class _HideableAppBarState extends State<HideableAppBar> {
           );
         }
         break;
+      case .linkedMedia:
+        // Nothing stacked on it: the link button has no progress to show.
+        return null;
       case .share:
-        if (!LinkedMediaButton.replacesShare && sharedItem != null && shareProgress != 0) {
+        if (sharedItem != null && shareProgress != 0) {
           return AnimatedProgressIndicator(
             value: shareProgress,
             animationDuration: const Duration(milliseconds: 50),
@@ -701,7 +685,6 @@ class _HideableAppBarState extends State<HideableAppBar> {
 
   String buttonText(GalleryButton button) {
     final String defaultLabel = button.locName;
-    if (button == GalleryButton.share && LinkedMediaButton.replacesShare) return 'Linked media';
     late String label;
 
     if (page.value == -1) {
@@ -790,7 +773,9 @@ class _HideableAppBarState extends State<HideableAppBar> {
           });
         };
       case .share:
-        return LinkedMediaButton.replacesShare ? openLinkedMedia : () async => onShareClick();
+        return () async => onShareClick();
+      case .linkedMedia:
+        return openLinkedMedia;
       case .select:
         return () async {
           final bool isSelected = widget.tab.selected.contains(item);
@@ -858,8 +843,9 @@ class _HideableAppBarState extends State<HideableAppBar> {
   AsyncCallback? buttonHold(GalleryButton button) {
     // TODO long press slideshow button to set the timer
     switch (button) {
+      case .linkedMedia:
+        return openLinkedMedia;
       case .share:
-        if (LinkedMediaButton.replacesShare) return openLinkedMedia;
         return () async {
           await ServiceHandler.vibrate();
           // Ignore share setting on long press
