@@ -12,7 +12,9 @@ import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/pages/settings/booru_edit_page.dart';
+import 'package:lolisnatcher/src/boorus/doujin/eahentai_handler.dart';
 import 'package:lolisnatcher/src/boorus/doujin/ehentai_handler.dart';
+import 'package:lolisnatcher/src/handlers/eahentai_session_handler.dart';
 import 'package:lolisnatcher/src/handlers/ehentai_session_handler.dart';
 import 'package:lolisnatcher/src/pages/settings/ehentai_login_page.dart';
 import 'package:lolisnatcher/src/widgets/webview/webview_page.dart';
@@ -199,6 +201,97 @@ class _SourceSettingsPageState extends State<SourceSettingsPage> {
             OutlinedButton.icon(icon: const Icon(Symbols.label_rounded, size: 18), label: const Text('My Tags'), onPressed: () => _openEhPage(handler, '/mytags', 'My Tags')),
             OutlinedButton.icon(icon: const Icon(Symbols.visibility_rounded, size: 18), label: const Text('Watched'), onPressed: () => _openEhPage(handler, '/watched', 'Watched')),
           ],
+        ),
+      ),
+    ];
+  }
+
+  // ── eahentai: the API login (r69) ───────────────────────────────────
+
+  /// The booru as saved right now: this page can be reached from the edit
+  /// page, which saves a NEW object without popping, so `widget.booru` may
+  /// still be the pre-edit one. The handler's own copy learns the
+  /// credentials from it.
+  Booru _liveBooru(EaHentaiHandler handler) {
+    final Booru? shown = widget.booru;
+    Booru live = shown ?? handler.booru;
+    if (shown != null) {
+      for (final Booru b in SettingsHandler.instance.booruList) {
+        if (b.type == shown.type && b.baseURL == shown.baseURL) {
+          live = b;
+          break;
+        }
+      }
+    }
+    if (!identical(live, handler.booru)) {
+      handler.booru
+        ..userID = live.userID
+        ..apiKey = live.apiKey;
+    }
+    return live;
+  }
+
+  Future<void> _eaLogin(EaHentaiHandler handler) async {
+    final Booru live = _liveBooru(handler);
+    final bool hasCredentials = (live.userID?.isNotEmpty ?? false) && (live.apiKey?.isNotEmpty ?? false);
+    if (!hasCredentials) {
+      FlashElements.showSnackbar(
+        context: context,
+        title: const Text('Set the username or email and the password on the edit page first'),
+        duration: const Duration(seconds: 4),
+        sideColor: Colors.orange,
+      );
+      return;
+    }
+    if (!await handler.canSignIn()) {
+      if (!mounted) return;
+      FlashElements.showSnackbar(
+        context: context,
+        title: Text(handler.loginMessage ?? 'eahentai refused these credentials a moment ago; change them, or try again later'),
+        duration: const Duration(seconds: 5),
+        sideColor: Colors.orange,
+      );
+      return;
+    }
+    final bool ok = await handler.signIn();
+    if (!mounted) return;
+    setState(() {});
+    FlashElements.showSnackbar(
+      context: context,
+      title: Text(handler.loginMessage ?? (ok ? 'Logged in' : 'Login failed')),
+      duration: const Duration(seconds: 4),
+      sideColor: ok ? Colors.green : Colors.orange,
+    );
+  }
+
+  List<Widget> _eahentaiRows(EaHentaiHandler handler) {
+    final EaHentaiSessionHandler session = EaHentaiSessionHandler.instance;
+    final Booru live = _liveBooru(handler);
+    final bool hasCredentials = (live.userID?.isNotEmpty ?? false) && (live.apiKey?.isNotEmpty ?? false);
+    return [
+      _header('ACCOUNT'),
+      ValueListenableBuilder<int>(
+        valueListenable: session.revision,
+        builder: (context, _, child) => ListTile(
+          leading: Icon(session.isLoggedIn ? Symbols.person_check_rounded : Symbols.person_rounded),
+          title: Text(session.isLoggedIn ? 'Logged in as ${session.username ?? live.userID ?? 'member'}' : 'Not logged in'),
+          subtitle: Text(
+            session.isLoggedIn
+                ? "The site's login token is kept in its own file and sent to the site's API only, never to the image servers."
+                : (handler.loginMessage ??
+                      (hasCredentials
+                          ? 'Username or email and password are set on the edit page. Log in asks the site once and keeps its token.'
+                          : "Enter your username or email and the password on the source's edit page, then Log in.")),
+          ),
+          trailing: session.isLoggedIn
+              ? TextButton(
+                  onPressed: () async {
+                    await handler.signOut();
+                    if (mounted) setState(() {});
+                  },
+                  child: const Text('Log out'),
+                )
+              : FilledButton.tonal(onPressed: () => _eaLogin(handler), child: const Text('Log in')),
         ),
       ),
     ];
@@ -498,6 +591,7 @@ class _SourceSettingsPageState extends State<SourceSettingsPage> {
           ],
           // e-hentai: the WebView login, the host choice and the account pages.
           if (!isGlobal && _handler is EHentaiHandler) ..._ehentaiRows(_handler),
+          if (!isGlobal && _handler is EaHentaiHandler) ..._eahentaiRows(_handler),
           //
           _header('READING'),
           _choiceRow<String>(
@@ -661,6 +755,20 @@ class _SourceSettingsPageState extends State<SourceSettingsPage> {
             inheritedValue: globalLayer.detailLayout ?? 'compact',
             onChanged: (v) => _update((s) => s.detailLayout = v),
           ),
+          // r69: e-hentai's covers are 250 px wide and the site has nothing
+          // bigger; the first page of the gallery is the sharp cover.
+          // eahentai's covers are 450 px; its first page is known from the
+          // listing and costs one image.
+          if (!isGlobal && (_handler is EHentaiHandler || _handler is EaHentaiHandler))
+            _switchRow(
+              title: 'Detail cover from the first page',
+              subtitle: _handler is EHentaiHandler
+                  ? "The site's covers are small (250 px). Show the gallery's first page as the detail cover instead - one page load and one image per opened gallery, counted against the site's image quota; the reader reuses the image."
+                  : "Show the gallery's full first page (about 1280 px) as the detail cover instead of the 450-px thumbnail - one image per opened gallery; the reader reuses it.",
+              layerValue: layer.detailCoverFromFirstPage,
+              inheritedValue: globalLayer.detailCoverFromFirstPage ?? true,
+              onChanged: (v) => _update((s) => s.detailCoverFromFirstPage = v),
+            ),
           //
           _header('TABS'),
           _choiceRow<String>(
@@ -702,14 +810,6 @@ class _SourceSettingsPageState extends State<SourceSettingsPage> {
           //
           _header('GRID'),
           _choiceRow<String>(
-            title: 'Cover display',
-            subtitle: 'Fit letterboxes the whole cover; crop fills the card; adapt sizes the card to the cover.',
-            options: const [('fit', 'Fit'), ('crop', 'Crop'), ('adapt', 'Adapt')],
-            layerValue: layer.coverDisplay,
-            inheritedValue: globalLayer.coverDisplay ?? 'crop',
-            onChanged: (v) => _update((s) => s.coverDisplay = v),
-          ),
-          _choiceRow<String>(
             title: 'Feed cards',
             subtitle:
                 'Grid keeps the covers in columns. List gives each gallery a row: cover, title and uploader, the tags in rows you can scroll sideways, and what it is - kind, language, pages.',
@@ -717,6 +817,15 @@ class _SourceSettingsPageState extends State<SourceSettingsPage> {
             layerValue: layer.feedCardStyle,
             inheritedValue: globalLayer.feedCardStyle ?? 'grid',
             onChanged: (v) => _update((s) => s.feedCardStyle = v),
+          ),
+          _choiceRow<String>(
+            title: 'Cover display',
+            subtitle:
+                'Grid and list cards alike. Fit shows the whole cover with bars; crop fills the card or the cover column; adapt gives the card (or the list column) the shape of the cover.',
+            options: const [('fit', 'Fit'), ('crop', 'Crop'), ('adapt', 'Adapt')],
+            layerValue: layer.coverDisplay,
+            inheritedValue: globalLayer.coverDisplay ?? 'crop',
+            onChanged: (v) => _update((s) => s.coverDisplay = v),
           ),
           _stepperRow(
             title: 'List card height',
@@ -727,6 +836,17 @@ class _SourceSettingsPageState extends State<SourceSettingsPage> {
             max: 320,
             step: 8,
             onChanged: (v) => _update((s) => s.listCardHeight = v),
+          ),
+          _stepperRow(
+            title: 'List cover width',
+            subtitle:
+                'The cover column of a list card. Fixed for Fit and Crop; for Adapt the widest the column may get. Sites serve small covers (e-hentai: 250 px), so a narrower column is a sharper one.',
+            layerValue: layer.listCoverWidth,
+            effective: sourceSettings.listCoverWidth(booru),
+            min: 72,
+            max: 240,
+            step: 8,
+            onChanged: (v) => _update((s) => s.listCoverWidth = v),
           ),
           _switchRow(
             title: 'Tags on grid cards',

@@ -1154,6 +1154,46 @@ class EHentaiHandler extends BooruHandler with DoujinNamespacedTags {
     return null;
   }
 
+  // ── the detail cover: the first page (r69) ────────────────────────────
+
+  /// The site's covers are 250 px wide and nothing bigger exists on its
+  /// thumbnail host; the detail page shows the first page instead, resolved
+  /// exactly as the reader resolves it (paced, showkey learned on the way),
+  /// once - a resolved page is not fetched again, and the reader starts warm.
+  /// Per-source switch, on by default; nothing before the gallery is loaded.
+  /// The item's name is the page's, so the reader finds the bytes in the
+  /// media cache instead of asking the hath node again.
+  @override
+  Future<BooruItem?> detailCoverImage(BooruItem item) async {
+    if (!SourceSettingsHandler.instance.detailCoverFromFirstPage(booru)) return null;
+    final List<BooruItem>? pages = ReaderHandler.instance.pagesFor(item);
+    if (pages == null || pages.isEmpty) return null;
+    final BooruItem first = pages.first;
+    if (!first.mediaType.value.isImage || first.fileURL.isEmpty || first.fileURL == first.thumbnailURL) {
+      final r = await loadItem(item: first);
+      if (r.failed || r.item == null || r.item!.fileURL.isEmpty) return null;
+    }
+    final String url = first.fileURL;
+    if (url.isEmpty || url == first.thumbnailURL) return null;
+    final BooruItem cover = BooruItem(
+      fileURL: url,
+      sampleURL: url,
+      thumbnailURL: url,
+      tagsList: const [],
+      postURL: item.postURL,
+      serverId: item.serverId,
+      fileExt: first.fileExt,
+      // The page's own name: the detail cover and the reader share one
+      // cached file, so the hath node serves the bytes once.
+      fileNameExtras: first.fileNameExtras,
+      fileWidth: first.fileWidth,
+      fileHeight: first.fileHeight,
+    );
+    if (first.fileAspectRatio != null) cover.fileAspectRatio = first.fileAspectRatio;
+    cover.mediaType.value = MediaType.image;
+    return cover;
+  }
+
   // ── page thumbnails: one strip per block, read as its pages come into view ──
 
   /// A page's tile of its block's sprite strip: known already when its

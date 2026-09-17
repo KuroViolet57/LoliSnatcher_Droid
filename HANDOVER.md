@@ -1447,6 +1447,89 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   route observer prefers over the type name; the report's WHAT HAPPENED block
   starts with `posts opened N · swipes between posts M`.
 
+### 4.38 List-card cover options, e-hentai sharpness, eahentai on its API (r69)
+
+- **List cards:** `coverDisplay` (fit / crop / adapt) applies to
+  `DoujinListCard` (`_cover`): crop = `BoxFit.cover`, fit = `BoxFit.contain`
+  on a `surfaceContainerHighest` column, adapt = column width `height ×
+  aspect` from `DoujinCoverAspects.notifierFor(item.displayThumbnailURL)`,
+  clamped to `[minCoverWidth 48, coverWidth]`; capped or provisional → cover
+  fit. New `SourceSettings.listCoverWidth` (72–240, default 116; resolver
+  `listCoverWidth`), row "List cover width"; `GridBuilder` passes it. Column
+  key `doujin-list-card-cover`.
+- **Thumbnail decode box** (`widgets/thumbnail/thumbnail_decode_box.dart`,
+  `ThumbnailDecodeBox.of`): a standalone doujin cover (`isDoujinCover =
+  DoujinDataHandler.isDoujinBooru(booru)`) in a bounded box decodes for that
+  box × `coverSlack` 1.5 (fit policy, never upscaled); everything else keeps
+  the square/rectangle/staggered rules verbatim. Before: the app-wide square
+  preview shape sized the decode, so a 450×629 cover in a 116×176 column
+  decoded to 290×406 and was drawn 1.4× larger (self-inflicted blur). Doujin
+  covers/tiles draw with `FilterQuality.high` (bicubic) — e-hentai's 250-px
+  covers and 200-px tiles are upscaled 1.6–2.8× on the S24 Ultra.
+- **e-hentai facts (verified 2026-09-17 with the built-in browser + curl):**
+  extended-listing cover `ehgt.org/w/…webp` is 250×375; `_l`, `-500`, `?w=`
+  variants 404/ignored; gallery tiles `#gdt.gt200` 200×283 sprites;
+  `inline_set=ts_l|ts_m` set no cookie any more (only `dm_e` → `sl=dm_2`);
+  `uconfig.php` bounces to login, so a larger tile size, if the account
+  setting still exists, is unverified — the app parses whatever size the
+  page declares.
+- **Detail cover from page 1:** `BooruHandler.detailCoverImage(item)` (null
+  by default) → `EHentaiHandler` resolves the registered book's page 1
+  through `loadItem(page)` (page view / showpage, paced) once and returns a
+  cover-only `BooruItem` (thumbnail = sample = file = the hath image, size,
+  `fileNameExtras <gid>_cover`); `SourceSettings.detailCoverFromFirstPage`
+  (default true, e-hentai's Detail page row). `DoujinDetailPage._loadSharpCover`
+  after `_load`; `_coverImage` stacks the sharp `Thumbnail` over the site cover
+  (no blank while it loads); `bigCoverBox` takes the sharp size.
+- **eahentai (`boorus/doujin/eahentai_handler.dart`, `eahentai_query.dart`,
+  `handlers/eahentai_session_handler.dart`):** the site's JSON API, found in
+  its own scripts (`30amskxbf3cfb.js`: `getApiBaseUrl` = `/api/`) and
+  fetched: `image/latest/?page&take` (`{items,totalPages,totalResults}`),
+  `image/search/v2/?type=gallery|artist|character|parody|tag&q&take&page&orderby=date_desc|views_daily|views_weekly|views_monthly|views_alltime`,
+  `image/popular/?page&take&orderby` (bare array, endless), `image/random/?take`,
+  `image/album/<id>` (`[album]` with `images[]{imageUri,thumbnailUri,sort}`),
+  `image/search/suggestions?q&type=all&limit` (`items[]{value,type,albumCount}`),
+  `image/recommendations` (POST `{seedAlbumIds,take}`); account, Bearer:
+  `auth/login` (POST JSON `{login,password[,turnstileToken]}` →
+  `{accessToken}`; 401 `{error}`; wrong field names → 400 validation
+  `errors.Login`; no Turnstile needed for the API — a fake pair answered 401),
+  `auth/me`, `bookmarks`, `bookmarks/albums?type=all&page&take&orderby=bookmarked…&q&addedDays`,
+  `bookmarks/sync`, `bookmarks/<id>` POST/DELETE, `lists/mine[?albumId]`,
+  `lists/mine/album-ids`, `lists` POST, `lists/<id>` PATCH/DELETE,
+  `lists/<id>/albums/<albumId>` PUT/DELETE, `lists/users/<user>[/<id>?page&take&orderby&desc]`,
+  `lists/<id>/vote` PUT/DELETE, `comments/album/<id>`, `image/view/<id>` PUT.
+  Pages count from 0; `take` capped ~100–200. Quick-filter buttons append
+  their words to `q` (`q=santa Full Color`); `q` matches title, tags, kind,
+  author, parody, characters. `image1t.jpg` thumbnails are 450×629; full
+  first page `image1.webp` ~1280 px; the site's own cover route
+  `/_next/image?url=<encoded imageUri>&w=640&q=75` (640/384 only).
+  Items: `albumID`, `thumbnailUri` (cover), `imageUri` (sample), `tags|`,
+  `author|` → artist, `from` → parody, `characters|` → character,
+  `albumType` (`Doujinshi|Lolicon`, `Manga|Yaoi`, `Colored|Doujinshi`) →
+  `category:` for doujinshi/manga, the rest plain tags; `addDt` ISO →
+  `postDateFormat 'iso'`; `language:english` on everything. Grammar:
+  `sort:latest|today|weekly|monthly|alltime` (alone → popular), `type:`,
+  `filter:` (multi, `EaHentaiQuery.filterWords`), one namespaced term →
+  typed search, mixed → gallery search, `random:`, `id:`. `signIn` → API;
+  token + username in `eahentai_session.json`; `getHeaders` adds the Bearer
+  header (API only; media headers stay Referer); a 401 on an API call drops
+  the token. `DoujinListingTagBackfill` removed from the handler. Old:
+  `POST /login` (HTML route) with `username`+`email`+`password` → 405 on
+  every search, 16× in the 2026-09-17 05:23 log.
+- **Redaction:** the talker Dio logger no longer prints request bodies
+  (`printRequestData: false`); `Logger.requestDataInterceptor` writes one
+  line through `Logger.requestDataLine` (redacted); `redactSecrets` also
+  redacts JSON fields (password, tokens, login, username, email); the log
+  export (`settings_page.dart`) redacts every history line. The uploaded log
+  had the eahentai password in clear.
+- Tests: `thumbnail_decode_box_test`, `doujin_eahentai_test` (rewritten
+  around fixtures `eahentai_api_*.json`), `eahentai_live_test`, additions in
+  `doujin_list_card_test`, `doujin_list_card_size_test`, `doujin_ehentai_test`,
+  `log_redaction_test`, `booru_source_settings_test`,
+  `doujin_listing_tag_backfill_test`.
+- r70 (planned): bookmarks / lists feeds and add/remove, the site's
+  recommendations endpoint.
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
@@ -1514,7 +1597,9 @@ HDoujin (r30; `hdoujin.org`, the Schale software on its own network — see
 NiyaNiya below and `SchaleNetwork`), NHentai (official v2
 API; API key optional; account favourites sync), NiyaNiya (Schale Network
 JSON API + Turnstile clearance, §8.3), AsmHentai (HTML; login form),
-EaHentai (Next.js; one reader page lists every page; login), Faccina =
+EaHentai (r69: the site's JSON API — latest, typed/sorted search, popular,
+random, album with pages, suggestions; bearer login; HTML parsers as the
+fallback), Faccina =
 hentalk.pw (REST API; query translation), Hitomi (`gg.js` hosts + packed
 binary indexes; throws a visible "hitomi changed" error rather than
 guessing), HentaiPaw (Next.js server-rendered; fetched through
@@ -1756,10 +1841,12 @@ behaviour failed; every round that started from a capture or a log worked.
 - **WebView / cookie logins:** Sankaku, rule34.xyz, RedGifs
   (`redgifs_login_page`), XXXFollow, Cloudflare-fronted boorus (a 403 on
   media triggers the captcha page; `44bd311`).
-- **Form logins done by the app:** asmhentai (`/login/`), eahentai
-  (`/login`), hentalk/faccina, pawchive (`/account/login`) — result
-  visibility for the first three is an open item (the user could not tell
-  whether login succeeded).
+- **Form logins done by the app:** asmhentai (`/login/`), hentalk/faccina,
+  pawchive (`/account/login`) — result visibility for asmhentai and hentalk
+  is an open item (the user could not tell whether login succeeded).
+- **eahentai (r69):** `POST /api/auth/login` (JSON) → bearer token in
+  `eahentai_session.json` (`handlers/eahentai_session_handler.dart`), shown
+  on its Source settings page with the site's own refusal text.
 - **API login:** kemono (`POST /api/v1/authentication/login` → `session`
   cookie).
 - **niyaniya / Schale clearance** (`handlers/schale_clearance_handler.dart`,
@@ -1872,8 +1959,23 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r68)
+## 12. Open items (as of r69)
 
+- r69 is unverified on the device: eahentai Log in (Source settings →
+  Account) shows "Logged in as …" or the site's refusal; feed cards carry
+  tags at once; the search window's Sort / Search in / Quick filters change
+  the results; page 2 differs; a gallery opens and reads; no `POST /login`
+  and no clear-text password in the log. e-hentai: the detail cover sharpens
+  after a gallery opens (switch off → site cover); covers and tiles crisper.
+  List cards: Fit / Crop / Adapt visibly different; the cover width stepper
+  resizes the column. Site settings on e-hentai: is there a thumbnail-size
+  option (unverified; the app would honour it).
+- r70: eahentai bookmarks (`bookmarks/albums`) and lists (`lists/mine`,
+  `lists/users/<me>/<id>`) as feeds, Bookmark / Add to list actions,
+  Related via `image/recommendations`. Response shapes need a logged-in
+  check on the device.
+- The r69 contrarian review's verdicts are recorded in the r69 commit
+  message / changes.txt.
 - r68 is unverified on the device: a trace after opening a few posts from the
   feed shows `viewer.open` lines, `route.push viewer`, and the summary line.
 - r67 is unverified on the device: Settings → Debug → Record a trace, then open

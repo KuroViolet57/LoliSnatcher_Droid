@@ -10,12 +10,14 @@ import 'package:lolisnatcher/src/boorus/nhentai_handler.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
+import 'package:lolisnatcher/src/handlers/doujin_cover_aspect_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/snatch_handler.dart';
 import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/widgets/thumbnail/doujin_list_card.dart';
+import 'package:lolisnatcher/src/widgets/thumbnail/thumbnail_build.dart';
 
 /// r63: the list card a doujin feed can use instead of the grid cards - cover
 /// on the left, then the title, the tags, and what the gallery is: kind,
@@ -53,6 +55,7 @@ void main() {
     tempDir = Directory.systemTemp.createTempSync('doujin_list_card');
     SettingsHandler.instance.path = '${tempDir.path}${Platform.pathSeparator}';
     SourceSettingsHandler.instance.resetForTests();
+    DoujinCoverAspects.instance.resetForTests();
   });
 
   tearDown(() {
@@ -62,7 +65,7 @@ void main() {
     } catch (_) {}
   });
 
-  Future<BooruItem> pumpCard(WidgetTester tester) async {
+  Future<BooruItem> pumpCard(WidgetTester tester, {double coverWidth = DoujinListCard.defaultCoverWidth}) async {
     final NHentaiHandler handler = NHentaiHandler(nhentaiBooru(), 20);
     final BooruItem item = doujin();
     handler.fetched.add(item);
@@ -76,6 +79,7 @@ void main() {
               item: item,
               handler: handler,
               scrollController: AutoScrollController(),
+              coverWidth: coverWidth,
             ),
           ),
         ),
@@ -136,5 +140,49 @@ void main() {
 
     SourceSettingsHandler.instance.settingsFor(booru).feedCardStyle = 'list';
     expect(SourceSettingsHandler.instance.feedCardStyle(booru), 'list');
+  });
+
+  /// r69: the per-source Cover display choice applies to list cards too, and
+  /// the cover column has its own width.
+  group('cover display on the list card (r69)', () {
+    final Finder column = find.byKey(const ValueKey('doujin-list-card-cover'));
+
+    testWidgets('crop, the default, fills the column at the default width', (tester) async {
+      await pumpCard(tester);
+      expect(tester.widget<ThumbnailBuild>(find.byType(ThumbnailBuild)).fit, BoxFit.cover);
+      expect(tester.getSize(column).width, DoujinListCard.defaultCoverWidth);
+    });
+
+    testWidgets('fit letterboxes the whole cover inside the column', (tester) async {
+      SourceSettingsHandler.instance.settingsFor(nhentaiBooru()).coverDisplay = 'fit';
+      await pumpCard(tester);
+      expect(tester.widget<ThumbnailBuild>(find.byType(ThumbnailBuild)).fit, BoxFit.contain);
+      expect(tester.getSize(column).width, DoujinListCard.defaultCoverWidth);
+    });
+
+    testWidgets('the cover width setting is the column width', (tester) async {
+      await pumpCard(tester, coverWidth: 160);
+      expect(tester.getSize(column).width, 160);
+      expect(tester.getSize(find.byKey(const ValueKey('doujin-list-card-row'))).height, DoujinListCard.defaultHeight);
+    });
+
+    testWidgets('adapt gives the column the shape of the cover, the width setting as the cap', (tester) async {
+      SourceSettingsHandler.instance.settingsFor(nhentaiBooru()).coverDisplay = 'adapt';
+      // Nothing decoded yet: the provisional cover shape, capped.
+      final BooruItem item = await pumpCard(tester);
+      expect(tester.getSize(column).width, DoujinListCard.defaultCoverWidth);
+
+      // A tall cover (1:2) at the 176 row: 88 wide, whole, nothing cropped.
+      DoujinCoverAspects.instance.record(item.displayThumbnailURL, 300, 600);
+      await tester.pump();
+      expect(tester.getSize(column).width, closeTo(88, 0.5));
+      expect(tester.widget<ThumbnailBuild>(find.byType(ThumbnailBuild)).fit, BoxFit.contain);
+
+      // A square cover would want 176: the cap wins and the overflow is cropped.
+      DoujinCoverAspects.instance.record(item.displayThumbnailURL, 500, 500);
+      await tester.pump();
+      expect(tester.getSize(column).width, DoujinListCard.defaultCoverWidth);
+      expect(tester.widget<ThumbnailBuild>(find.byType(ThumbnailBuild)).fit, BoxFit.cover);
+    });
   });
 }

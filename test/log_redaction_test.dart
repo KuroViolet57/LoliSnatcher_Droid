@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/utils/log_redaction.dart';
+import 'package:lolisnatcher/src/utils/logger.dart';
 
 /// Two problems found in a talker log that was shared for an unrelated reason.
 ///
@@ -89,6 +90,59 @@ void main() {
         redactSecrets('token is ZZZZTOPSECRET', extraSecrets: ['ZZZZTOPSECRET']),
         isNot(contains('ZZZZTOPSECRET')),
       );
+    });
+  });
+
+  /// r69: a shared log carried an eahentai login's username and password in
+  /// clear, in the Dio logger's "Data:" block, which never passed through
+  /// redactSecrets. JSON fields are redacted, and the request-body line the
+  /// app writes itself is built redacted.
+  group('request bodies (r69)', () {
+    test('JSON credential fields are redacted, names kept', () {
+      const String body = 'Data: {\n  "login": "someone57",\n  "password": "Sup3r-Secret!Pass",\n  "turnstileToken": "abc"\n}';
+      final String out = redactSecrets(body);
+      expect(out, isNot(contains('Sup3r-Secret!Pass')));
+      expect(out, isNot(contains('someone57')));
+      expect(out, contains('"password": "<redacted>"'));
+      expect(out, contains('"login": "<redacted>"'));
+    });
+
+    test('a token in an answer is redacted', () {
+      final String out = redactSecrets('{"accessToken":"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.abc"}');
+      expect(out, isNot(contains('eyJhbGciOiJIUzI1NiJ9')));
+      expect(out, contains('accessToken'));
+    });
+
+    test('the request-body log line the app writes is redacted before it exists', () {
+      final String line = Logger.requestDataLine(
+        method: 'POST',
+        url: 'https://eahentai.com/api/auth/login',
+        data: {'login': 'someone57', 'password': 'Sup3r-Secret!Pass'},
+      );
+      expect(line, contains('https://eahentai.com/api/auth/login'));
+      expect(line, isNot(contains('Sup3r-Secret!Pass')));
+      expect(line, isNot(contains('someone57')));
+    });
+
+    test('a long body is redacted before it is cut, so a secret near the cut cannot survive in half', () {
+      final String filler = 'a' * 1990;
+      final String line = Logger.requestDataLine(
+        method: 'POST',
+        url: 'https://x.invalid/login',
+        data: {'login': 'someone57', 'filler': filler, 'password': 'Sup3r-Secret!Pass'},
+      );
+      expect(line, isNot(contains('Sup3r')));
+      expect(line, isNot(contains('someone57')));
+    });
+
+    test("a gallery token is an address, not a credential: e-hentai's gdata answers stay readable", () {
+      const String gdata = '{"gid":4178032,"token":"49d94b3d3c","title":"x"}';
+      expect(redactSecrets(gdata), contains('"token":"49d94b3d3c"'));
+    });
+
+    test('a form body is redacted too', () {
+      final String line = Logger.requestDataLine(method: 'POST', url: 'https://x.invalid/login', data: 'username=a&password=hunter2hunter2');
+      expect(line, isNot(contains('hunter2hunter2')));
     });
   });
 

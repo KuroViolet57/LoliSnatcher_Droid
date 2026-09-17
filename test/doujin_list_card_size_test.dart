@@ -100,4 +100,18 @@ void main() {
     SourceSettingsHandler.instance.settingsFor(booru).listCardHeight = 9999;
     expect(SourceSettingsHandler.instance.listCardHeight(booru), 320, reason: 'capped');
   });
+
+  test('the cover column width is a per-source setting with a sane range (r69)', () {
+    final Booru booru = nhentaiBooru();
+    expect(SourceSettingsHandler.instance.listCoverWidth(booru), 116, reason: 'the default');
+
+    SourceSettingsHandler.instance.settingsFor(booru).listCoverWidth = 200;
+    expect(SourceSettingsHandler.instance.listCoverWidth(booru), 200);
+
+    SourceSettingsHandler.instance.settingsFor(booru).listCoverWidth = 10;
+    expect(SourceSettingsHandler.instance.listCoverWidth(booru), 72, reason: 'never narrower than a readable cover');
+
+    SourceSettingsHandler.instance.settingsFor(booru).listCoverWidth = 9999;
+    expect(SourceSettingsHandler.instance.listCoverWidth(booru), 240, reason: 'capped: the text needs the rest of the row');
+  });
 }

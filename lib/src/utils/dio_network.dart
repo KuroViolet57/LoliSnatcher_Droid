@@ -122,6 +122,7 @@ class DioNetwork {
     );
 
     if (!skipLogging) {
+      dio.interceptors.add(Logger.requestDataInterceptor);
       dio.interceptors.add(Logger.dioInterceptor!);
       dio.interceptors.add(settingsHandler.alice.getDioInterceptor());
     }
@@ -363,8 +364,12 @@ class DioNetwork {
     void Function(int, int)? onReceiveProgress,
     void Function(int, int)? onSendProgress,
     Dio Function(Dio)? customInterceptor,
+    // r69: a body that carries a password (a site login) stays out of the
+    // request inspector and the log; the caller logs the outcome itself.
+    bool skipLogging = false,
   }) async {
-    final client = customInterceptor != null ? customInterceptor(getClient()) : getClient();
+    final Dio base = getClient(skipLogging: skipLogging);
+    final client = customInterceptor != null ? customInterceptor(base) : base;
     final urlAndQuery = separateUrlAndQueryParams(url, queryParameters);
 
     final res = await _withTransientRetries(

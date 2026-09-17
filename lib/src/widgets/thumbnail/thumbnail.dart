@@ -17,6 +17,7 @@ import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/modular_ui.dart';
 import 'package:lolisnatcher/src/handlers/doujin_cover_aspect_handler.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 import 'package:lolisnatcher/src/handlers/database_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/recommender_handler.dart';
@@ -31,6 +32,7 @@ import 'package:lolisnatcher/src/widgets/common/thumbnail_loading.dart';
 import 'package:lolisnatcher/src/widgets/image/custom_network_image.dart';
 import 'package:lolisnatcher/src/widgets/image/sprite_tile_image.dart';
 import 'package:lolisnatcher/src/widgets/preview/shimmer_builder.dart';
+import 'package:lolisnatcher/src/widgets/thumbnail/thumbnail_decode_box.dart';
 import 'package:lolisnatcher/src/widgets/thumbnail/thumbnail_reveal.dart';
 
 class Thumbnail extends StatefulWidget {
@@ -91,6 +93,11 @@ class _ThumbnailState extends State<Thumbnail> {
   ImageStream? mainImageStream, extraImageStream;
 
   bool isBlurred = true;
+
+  /// r69: a doujin cover or page tile. Decoded for the box it fills rather
+  /// than the app-wide preview shape, and upscaled bicubic: sites serve small
+  /// covers (e-hentai: 250 px) that are drawn 1.6-2.8x larger than they are.
+  late final bool isDoujinCover = DoujinDataHandler.isDoujinBooru(widget.booru);
 
   StreamSubscription<int>? _refreshEpochSub;
 
@@ -216,44 +223,17 @@ class _ThumbnailState extends State<Thumbnail> {
       return;
     }
 
-    final double widthLimit = constraints.maxWidth * MediaQuery.devicePixelRatioOf(context);
-    double thumbRatio = 1;
     final bool hasSizeData = widget.item.fileHeight != null && widget.item.fileWidth != null;
-
-    if (!widget.isStandalone) {
-      thumbWidth = widthLimit;
-      return;
-    }
-
-    switch (settingsHandler.previewDisplay) {
-      case .rectangle:
-        thumbRatio = 16 / 9;
-        thumbWidth = widthLimit;
-        thumbHeight = widthLimit * thumbRatio;
-        break;
-
-      case .staggered:
-        if (hasSizeData) {
-          thumbRatio = widget.item.fileAspectRatio!;
-          if (thumbRatio < 1) {
-            // vertical image - resize to width
-            thumbWidth = widthLimit;
-          } else {
-            // horizontal image - resize to height
-            thumbHeight = widthLimit * thumbRatio;
-          }
-        } else {
-          thumbRatio = 16 / 9;
-          thumbWidth = widthLimit;
-          thumbHeight = widthLimit * thumbRatio;
-        }
-        break;
-
-      case .square:
-        thumbWidth = widthLimit;
-        thumbHeight = widthLimit;
-        break;
-    }
+    final ({double? width, double? height}) box = ThumbnailDecodeBox.of(
+      constraints: constraints,
+      devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+      mode: settingsHandler.previewDisplay,
+      isStandalone: widget.isStandalone,
+      isCover: isDoujinCover,
+      aspectRatio: hasSizeData ? widget.item.fileAspectRatio : null,
+    );
+    thumbWidth = box.width;
+    thumbHeight = box.height;
   }
 
   void onBytesAdded(int receivedNew, int? totalNew) {
@@ -639,7 +619,7 @@ class _ThumbnailState extends State<Thumbnail> {
                           image: extraProvider,
                           fit: widget.fitOverride ?? (widget.isStandalone ? BoxFit.cover : BoxFit.contain),
                           isAntiAlias: true,
-                          filterQuality: FilterQuality.medium,
+                          filterQuality: (isDoujinCover && !settingsHandler.shitDevice) ? FilterQuality.high : FilterQuality.medium,
                           width: double.infinity,
                           height: double.infinity,
                           errorBuilder: (BuildContext context, Object exception, StackTrace? stackTrace) {
@@ -701,7 +681,7 @@ class _ThumbnailState extends State<Thumbnail> {
                           image: mainProvider,
                           fit: widget.fitOverride ?? (widget.isStandalone ? BoxFit.cover : BoxFit.contain),
                           isAntiAlias: true,
-                          filterQuality: FilterQuality.medium,
+                          filterQuality: (isDoujinCover && !settingsHandler.shitDevice) ? FilterQuality.high : FilterQuality.medium,
                           width: double.infinity,
                           height: double.infinity,
                           errorBuilder: (BuildContext context, Object exception, StackTrace? stackTrace) {

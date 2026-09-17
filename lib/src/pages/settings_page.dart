@@ -30,6 +30,7 @@ import 'package:lolisnatcher/src/pages/settings/tags_filters_page.dart';
 import 'package:lolisnatcher/src/pages/settings/theme_page.dart';
 import 'package:lolisnatcher/src/pages/settings/user_interface_page.dart';
 import 'package:lolisnatcher/src/pages/settings/video_page.dart';
+import 'package:lolisnatcher/src/utils/log_redaction.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/widgets/common/cancel_button.dart';
 import 'package:lolisnatcher/src/widgets/common/discord_button.dart';
@@ -247,8 +248,12 @@ class SettingsPage extends StatelessWidget {
                               for (int i = history.length - 1; i >= 0; i--) {
                                 String msg;
                                 try {
-                                  msg = history[i].generateTextMessage(
-                                    timeFormat: Logger.talker.settings.timeFormat,
+                                  // r69: every line, the Dio logger's own
+                                  // included, goes out redacted.
+                                  msg = redactSecrets(
+                                    history[i].generateTextMessage(
+                                      timeFormat: Logger.talker.settings.timeFormat,
+                                    ),
                                   );
                                 } catch (_) {
                                   continue;

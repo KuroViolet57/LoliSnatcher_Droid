@@ -114,12 +114,10 @@ void main() {
   });
 
   group('which sources need it', () {
-    test('the three tag-less listings mix it in', () {
+    test('the two tag-less listings mix it in', () {
       expect(SchaleHandler(Booru('n', BooruType.NiyaNiya, '', 'https://niyaniya.moe', ''), 20),
           isA<DoujinListingTagBackfill>());
       expect(AsmHentaiHandler(Booru('a', BooruType.AsmHentai, '', 'https://asmhentai.com', ''), 20),
-          isA<DoujinListingTagBackfill>());
-      expect(EaHentaiHandler(Booru('e', BooruType.EaHentai, '', 'https://eahentai.com', ''), 20),
           isA<DoujinListingTagBackfill>());
     });
 
@@ -129,6 +127,10 @@ void main() {
       expect(FaccinaHandler(Booru('h', BooruType.Faccina, '', 'https://hentalk.pw', ''), 20),
           isNot(isA<DoujinListingTagBackfill>()));
       expect(HitomiHandler(Booru('h', BooruType.Hitomi, '', 'https://hitomi.la', ''), 20),
+          isNot(isA<DoujinListingTagBackfill>()));
+      // r69: eahentai reads its site's JSON API, which lists every gallery
+      // with its tags; the 42 gallery-page fetches per feed page are gone.
+      expect(EaHentaiHandler(Booru('e', BooruType.EaHentai, '', 'https://eahentai.com', ''), 20),
           isNot(isA<DoujinListingTagBackfill>()));
     });
   });

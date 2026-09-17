@@ -178,4 +178,30 @@ void main() {
     await tester.pump();
     expect(SourceSettingsHandler.instance.settingsFor(danbooru).alwaysAdd, '-ai_generated');
   });
+
+  /// r69: eahentai logs in through its API and says so on its page; e-hentai
+  /// offers the first-page detail cover.
+  testWidgets('eahentai: an ACCOUNT row with the login state and a Log in button', (tester) async {
+    final Booru eahentai = Booru('eahentai', BooruType.EaHentai, '', 'https://eahentai.com', '');
+    SettingsHandler.instance.booruList.add(eahentai);
+    tester.view.physicalSize = const Size(420, 5000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(TranslationProvider(child: MaterialApp(home: SourceSettingsPage(booru: eahentai))));
+    await tester.pump();
+    expect(find.text('Not logged in'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, 'Log in'), findsOneWidget);
+    expect(find.text('Detail cover from the first page'), findsOneWidget, reason: 'eahentai offers its full first page as the detail cover too');
+  });
+
+  testWidgets('e-hentai: the first-page detail cover is a switch on its page', (tester) async {
+    final Booru eh = Booru('eh', BooruType.EHentai, '', 'https://e-hentai.org', '');
+    SettingsHandler.instance.booruList.add(eh);
+    tester.view.physicalSize = const Size(420, 6000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(TranslationProvider(child: MaterialApp(home: SourceSettingsPage(booru: eh))));
+    await tester.pump();
+    expect(find.text('Detail cover from the first page'), findsOneWidget);
+  });
 }

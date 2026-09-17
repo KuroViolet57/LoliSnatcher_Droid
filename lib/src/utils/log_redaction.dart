@@ -65,6 +65,32 @@ String redactSecrets(String input, {List<String>? extraSecrets}) {
     );
   }
 
+  // JSON bodies (r69): the Dio logger printed an eahentai login's username
+  // and password in clear in its "Data:" block; token answers likewise.
+  for (final name in const [
+    'password',
+    'currentPassword',
+    'newPassword',
+    'accessToken',
+    'access_token',
+    'refreshToken',
+    'refresh_token',
+    // Not plain "token": e-hentai's gdata answers name every gallery's
+    // token, which is an address, not a credential.
+    'apiKey',
+    'api_key',
+    'passHash',
+    'pass_hash',
+    'login',
+    'username',
+    'email',
+  ]) {
+    out = out.replaceAllMapped(
+      RegExp('("${RegExp.escape(name)}"\\s*:\\s*")[^"]*(")'),
+      (m) => '${m.group(1)}<redacted>${m.group(2)}',
+    );
+  }
+
   // A whole Cookie HEADER, to catch cookie names this list has never heard of.
   //
   // The lookbehind keeps it off `document.cookie="cf_clearance=..."`, which is

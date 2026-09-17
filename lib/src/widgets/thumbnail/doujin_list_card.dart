@@ -6,7 +6,9 @@ import 'package:lolisnatcher/src/utils/perf_trace.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
+import 'package:lolisnatcher/src/handlers/doujin_cover_aspect_handler.dart';
 import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
+import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/widgets/thumbnail/doujin_card_meta.dart';
 import 'package:lolisnatcher/src/widgets/thumbnail/thumbnail_build.dart';
 
@@ -31,6 +33,7 @@ class DoujinListCard extends StatelessWidget {
     this.onLongPress,
     this.onSecondaryTap,
     this.height = defaultHeight,
+    this.coverWidth = defaultCoverWidth,
     super.key,
   });
 
@@ -48,11 +51,17 @@ class DoujinListCard extends StatelessWidget {
   final void Function(int)? onSecondaryTap;
 
   /// One row's height unless the source's settings say otherwise (r66), and
-  /// the cover's width inside it.
+  /// the cover column's width (r69: a per-source setting too).
   static const double defaultHeight = 176;
-  static const double coverWidth = 116;
+  static const double defaultCoverWidth = 116;
+
+  /// Adapt never squeezes the column below this.
+  static const double minCoverWidth = 48;
 
   final double height;
+
+  /// The cover column's width; for Adapt the widest it may get.
+  final double coverWidth;
 
   /// The tag block is this many rows tall and scrolls sideways.
   static const int tagRows = 3;
@@ -110,17 +119,7 @@ class DoujinListCard extends StatelessWidget {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      SizedBox(
-                        width: coverWidth,
-                        child: ThumbnailBuild(
-                          item: item,
-                          handler: handler,
-                          selectable: selectable,
-                          selectedIndex: isSelected ? selectedIndex : null,
-                          onSelected: onSelected == null ? null : () => onSelected!(index),
-                          fit: BoxFit.cover,
-                        ),
-                      ),
+                      _cover(context, isSelected: isSelected),
                       Expanded(
                         child: Padding(
                           padding: const EdgeInsets.fromLTRB(8, 7, 8, 6),
@@ -158,6 +157,49 @@ class DoujinListCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  /// The cover column, following the source's Cover display choice (r69):
+  /// crop fills the column, fit shows the whole cover with bars, adapt gives
+  /// the column the cover's own shape at the row height - the width setting
+  /// is its cap, and a cover wider than the cap is cropped to it.
+  Widget _cover(BuildContext context, {required bool isSelected}) {
+    final ThemeData theme = Theme.of(context);
+
+    Widget column({required double width, required BoxFit fit}) => SizedBox(
+      key: const ValueKey('doujin-list-card-cover'),
+      width: width,
+      child: ColoredBox(
+        color: theme.colorScheme.surfaceContainerHighest,
+        child: ThumbnailBuild(
+          item: item,
+          handler: handler,
+          selectable: selectable,
+          selectedIndex: isSelected ? selectedIndex : null,
+          onSelected: onSelected == null ? null : () => onSelected!(index),
+          fit: fit,
+        ),
+      ),
+    );
+
+    switch (SourceSettingsHandler.instance.coverDisplay(handler.booru)) {
+      case 'fit':
+        return column(width: coverWidth, fit: BoxFit.contain);
+      case 'adapt':
+        return ValueListenableBuilder<double?>(
+          valueListenable: DoujinCoverAspects.instance.notifierFor(item.displayThumbnailURL),
+          builder: (context, aspect, _) {
+            final double wanted = height * (aspect ?? DoujinCoverAspects.provisional);
+            final double width = wanted.clamp(minCoverWidth, coverWidth);
+            // The column has the cover's exact shape: nothing to crop. Capped,
+            // or not decoded yet: the cover fills what it has.
+            final bool exact = aspect != null && wanted >= minCoverWidth && wanted <= coverWidth;
+            return column(width: width, fit: exact ? BoxFit.contain : BoxFit.cover);
+          },
+        );
+      default:
+        return column(width: coverWidth, fit: BoxFit.cover);
+    }
   }
 
   /// One line that scrolls sideways: long titles are read, not truncated.

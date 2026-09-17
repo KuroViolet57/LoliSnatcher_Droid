@@ -31,6 +31,8 @@ class SourceSettings {
     this.coverDisplay,
     this.feedCardStyle,
     this.listCardHeight,
+    this.listCoverWidth,
+    this.detailCoverFromFirstPage,
     this.recommendedCount,
     this.pagePreviewColumns,
     this.titleLanguage,
@@ -62,6 +64,8 @@ class SourceSettings {
     coverDisplay: json['coverDisplay'] as String?,
     feedCardStyle: json['feedCardStyle'] as String?,
     listCardHeight: json['listCardHeight'] as int?,
+    listCoverWidth: json['listCoverWidth'] as int?,
+    detailCoverFromFirstPage: json['detailCoverFromFirstPage'] as bool?,
     recommendedCount: json['recommendedCount'] as int?,
     pagePreviewColumns: json['pagePreviewColumns'] as int?,
     titleLanguage: json['titleLanguage'] as String?,
@@ -130,6 +134,16 @@ class SourceSettings {
   /// r66: the list card's row height in pixels (120-320).
   int? listCardHeight;
 
+  /// r69: the list card's cover column width (72-240): fixed for Fit and
+  /// Crop, the widest the column may get for Adapt.
+  int? listCoverWidth;
+
+  /// r69: on the detail page, show the gallery's first page image as the
+  /// cover instead of the site's small thumbnail. Only sources whose covers
+  /// are tiny offer it (e-hentai: 250 px); it costs one page load and one
+  /// image per opened gallery.
+  bool? detailCoverFromFirstPage;
+
   /// How many items the Recommended strip shows (the site supplies 5; the
   /// rest are found by matching the gallery's signals).
   int? recommendedCount;
@@ -190,6 +204,8 @@ class SourceSettings {
     if (coverDisplay != null) 'coverDisplay': coverDisplay,
     if (feedCardStyle != null) 'feedCardStyle': feedCardStyle,
     if (listCardHeight != null) 'listCardHeight': listCardHeight,
+    if (listCoverWidth != null) 'listCoverWidth': listCoverWidth,
+    if (detailCoverFromFirstPage != null) 'detailCoverFromFirstPage': detailCoverFromFirstPage,
     if (recommendedCount != null) 'recommendedCount': recommendedCount,
     if (pagePreviewColumns != null) 'pagePreviewColumns': pagePreviewColumns,
     if (titleLanguage != null) 'titleLanguage': titleLanguage,
@@ -398,6 +414,13 @@ class SourceSettingsHandler {
   /// The list card's row height (r66): never smaller than the cover needs,
   /// never taller than a third of a tall screen.
   int listCardHeight(Booru? booru) => _resolve(booru, (s) => s.listCardHeight, 176).clamp(120, 320);
+
+  /// The list card's cover column width (r69): never narrower than a
+  /// readable cover, never wider than leaves the text its share of the row.
+  int listCoverWidth(Booru? booru) => _resolve(booru, (s) => s.listCoverWidth, 116).clamp(72, 240);
+
+  /// r69: the detail page's cover is the gallery's first page (e-hentai).
+  bool detailCoverFromFirstPage(Booru? booru) => _resolve(booru, (s) => s.detailCoverFromFirstPage, true);
 
   /// 0 = endless (the Recommended strip keeps loading on scroll).
   int recommendedCount(Booru? booru) {

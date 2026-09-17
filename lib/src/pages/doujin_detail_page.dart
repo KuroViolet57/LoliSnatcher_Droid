@@ -22,11 +22,13 @@ import 'package:lolisnatcher/src/handlers/doujin_download_handler.dart';
 import 'package:lolisnatcher/src/handlers/snatch_handler.dart';
 import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/pages/doujin_reader_page.dart';
+import 'package:lolisnatcher/src/utils/tools.dart';
 import 'package:lolisnatcher/src/widgets/collections/add_to_collection_sheet.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 import 'package:lolisnatcher/src/widgets/gallery/doujin_tag_chip.dart';
 import 'package:lolisnatcher/src/widgets/tabs/doujin_mini_tab_manager.dart';
 import 'package:lolisnatcher/src/widgets/gallery/tag_view.dart';
+import 'package:lolisnatcher/src/widgets/image/custom_network_image.dart';
 import 'package:lolisnatcher/src/widgets/thumbnail/page_thumbnail_loader.dart';
 import 'package:lolisnatcher/src/widgets/thumbnail/thumbnail.dart';
 import 'package:lolisnatcher/src/widgets/thumbnail/thumbnail_build.dart';
@@ -146,6 +148,12 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
   bool _loading = true;
   String? _loadError;
 
+  /// r69: a sharper cover than the listing's thumbnail (the gallery's first
+  /// page), drawn over the site cover once it arrives. The provider is the
+  /// reader's own for that page (same URL, cache folder and name), so the
+  /// bytes are downloaded once when the media cache is on.
+  ImageProvider? _sharpProvider;
+
   /// Seconds left before "Complete the check" can be tapped again after the
   /// auth host answered 429: every attempt inside its window counts against
   /// the address (13 attempts in six minutes on the 2026-09-03 log).
@@ -192,6 +200,7 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
     if (ReaderHandler.instance.hasBook(item) && item.tagsList.isNotEmpty) {
       setState(() => _loading = false);
       DoujinDataHandler.instance.updateHistoryTags(item, booru, handler: handler);
+      unawaited(_loadSharpCover());
       return;
     }
     final res = await handler.loadItem(item: item, withCapcthaCheck: true);
@@ -202,7 +211,70 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
     });
     // Listings often carry no tags; the loaded gallery does. The history
     // entry learns them now, which is what the doujin For You reads.
-    if (!res.failed) DoujinDataHandler.instance.updateHistoryTags(item, booru, handler: handler);
+    if (!res.failed) {
+      DoujinDataHandler.instance.updateHistoryTags(item, booru, handler: handler);
+      unawaited(_loadSharpCover());
+    }
+  }
+
+  Future<void> _loadSharpCover() async {
+    try {
+      final BooruItem? cover = await handler.detailCoverImage(item);
+      if (!mounted || cover == null || cover.fileURL.isEmpty) return;
+      final Map<String, String> headers = await Tools.getFileCustomHeaders(booru, item: cover, checkForReferer: true);
+      if (!mounted) return;
+      setState(
+        () => _sharpProvider = CustomNetworkImage(
+          cover.fileURL,
+          headers: headers,
+          withCache: settingsHandler.mediaCache,
+          cacheFolder: 'media',
+          fileNameExtras: cover.fileNameExtras,
+        ),
+      );
+    } catch (_) {
+      // The site cover stays; a sharper one is a bonus, never an error.
+    }
+  }
+
+  /// The site cover in a stack that never changes shape, with the sharper
+  /// image (when it exists) fading in over it: a plain image, no shimmer, no
+  /// progress ring, no retry overlay - a failure leaves the site cover as it
+  /// is. Decoded for the box, with slack for the crop.
+  Widget _coverImage({BoxFit? fit, required double boxWidth}) {
+    final ImageProvider? sharp = _sharpProvider;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Thumbnail(
+          key: const ValueKey('doujin-site-cover'),
+          item: item,
+          booru: booru,
+          isStandalone: true,
+          useHero: false,
+          fitOverride: fit,
+        ),
+        if (sharp != null)
+          Image(
+            key: const ValueKey('doujin-sharp-cover'),
+            image: ResizeImage(
+              sharp,
+              width: (boxWidth * MediaQuery.devicePixelRatioOf(context) * 1.5).round(),
+              policy: ResizeImagePolicy.fit,
+              allowUpscaling: false,
+            ),
+            fit: fit ?? BoxFit.cover,
+            filterQuality: FilterQuality.high,
+            gaplessPlayback: true,
+            frameBuilder: (context, child, frame, wasSynchronouslyLoaded) => AnimatedOpacity(
+              opacity: (frame == null && !wasSynchronouslyLoaded) ? 0 : 1,
+              duration: const Duration(milliseconds: 250),
+              child: child,
+            ),
+            errorBuilder: (_, _, _) => const SizedBox.shrink(),
+          ),
+      ],
+    );
   }
 
   // ─────────────────────── header data helpers ───────────────────────
@@ -375,7 +447,7 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
             height: 185,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(10),
-              child: Thumbnail(item: item, booru: booru, isStandalone: true, useHero: false),
+              child: _coverImage(boxWidth: 130),
             ),
           ),
           const SizedBox(width: 12),
@@ -387,6 +459,8 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
 
   Widget _bigCoverHeader(BuildContext context) {
     const double sidePadding = DoujinDetailPage.coverSidePadding;
+    // The box follows the SITE cover's size even once the sharper image is
+    // in: a page whose shape differs would otherwise move the text below it.
     final box = DoujinDetailPage.bigCoverBox(
       screen: MediaQuery.sizeOf(context),
       imageWidth: item.fileWidth,
@@ -411,13 +485,7 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
             height: height,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(12),
-              child: Thumbnail(
-                item: item,
-                booru: booru,
-                isStandalone: true,
-                useHero: false,
-                fitOverride: fit,
-              ),
+              child: _coverImage(fit: fit, boxWidth: box.width),
             ),
           ),
         ),

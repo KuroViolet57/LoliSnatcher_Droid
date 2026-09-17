@@ -40,6 +40,28 @@ class _LateThumbHandler extends BooruHandler {
   }
 }
 
+/// r69: a source with a sharper detail cover than its listing thumbnail.
+class _SharpCoverHandler extends BooruHandler {
+  _SharpCoverHandler(super.booru, super.limit);
+
+  int asked = 0;
+
+  @override
+  Future<BooruItem?> detailCoverImage(BooruItem item) async {
+    asked++;
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    return BooruItem(
+      fileURL: 'https://pages.invalid/${item.serverId}-1.png',
+      sampleURL: 'https://pages.invalid/${item.serverId}-1.png',
+      thumbnailURL: 'https://pages.invalid/${item.serverId}-1.png',
+      tagsList: const [],
+      postURL: item.postURL,
+      serverId: item.serverId,
+      fileNameExtras: '${item.serverId}_0001',
+    );
+  }
+}
+
 /// Round 3, items 6 + 7: the detail page's strip sections put their
 /// open-in-new-tab action in the section header instead of spending a whole
 /// row on it, and the big-cover header is capped so the cover can't push
@@ -265,6 +287,33 @@ void main() {
     }
     expect(first.transientThumbnailURL, isNull, reason: 'a dead strip link (they expire within days) drops the tile');
     expect(first.displayThumbnailURL, first.thumbnailURL);
+    await closeDetail(tester);
+  });
+
+  /// r69: the sharp cover is a plain image layer over the site cover in a
+  /// stack that is there from the first frame - never a standalone
+  /// Thumbnail with its shimmer, progress ring and retry overlay, and never
+  /// a swap of the site cover's element.
+  testWidgets('the sharp detail cover fades in over the site cover without replacing it', (tester) async {
+    tester.view.physicalSize = const Size(1080, 1800);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    final _SharpCoverHandler handler = _SharpCoverHandler(nhentaiBooru(), 20);
+    await pumpDetail(tester, bookTab(3, handler: handler));
+
+    final Finder site = find.byKey(const ValueKey('doujin-site-cover'));
+    expect(site, findsOneWidget);
+    expect(find.ancestor(of: site, matching: find.byType(Stack)), findsWidgets, reason: 'the stack is there before the sharp cover');
+    final Element siteElement = tester.element(site);
+
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(handler.asked, 1);
+    final Finder sharp = find.byKey(const ValueKey('doujin-sharp-cover'));
+    expect(sharp, findsOneWidget);
+    expect(tester.widget(sharp), isA<Image>(), reason: 'a plain image: no shimmer, no retry overlay');
+    expect(site, findsOneWidget);
+    expect(identical(tester.element(site), siteElement), isTrue, reason: 'the site cover was not rebuilt from scratch');
     await closeDetail(tester);
   });
 }

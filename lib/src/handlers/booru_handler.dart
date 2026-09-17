@@ -1282,6 +1282,12 @@ abstract class BooruHandler {
   /// hidden tags, so Source settings offers the import button.
   bool get hasAccountBlacklist => false;
 
+  /// r69: a sharper cover for the detail page than the listing's thumbnail,
+  /// once the gallery is loaded - the gallery's first page on e-hentai, whose
+  /// covers are 250 px wide. A cover-only item (thumbnail = sample = file =
+  /// that image, with its size), or null when there is nothing better.
+  Future<BooruItem?> detailCoverImage(BooruItem item) async => null;
+
   /// The account's blacklisted tags as (ok, message, names).
   Future<(bool, String, List<String>)> fetchAccountBlacklist() async =>
       (false, 'This source cannot read an account blacklist.', const <String>[]);

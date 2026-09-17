@@ -57,6 +57,7 @@ class GridBuilder extends StatelessWidget {
               handler: tab.booruHandler,
               scrollController: scrollController,
               height: SourceSettingsHandler.instance.listCardHeight(tab.booruHandler.booru).toDouble(),
+              coverWidth: SourceSettingsHandler.instance.listCoverWidth(tab.booruHandler.booru).toDouble(),
               isHighlighted: ViewerHandler.instance.current.value?.key == item.key,
               selectedIndex: isSelected ? selectedIndex : null,
               onSelected: hasSelected ? onSelected : null,

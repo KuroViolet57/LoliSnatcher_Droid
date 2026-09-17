@@ -229,9 +229,10 @@ void main() {
   });
 
   testWidgets('a source with no language data shows no badge rather than an empty one', (tester) async {
-    // hentalk and eahentai publish no language namespace at all. The badge has
-    // to be absent, not blank.
-    for (final name in ['hentalk', 'eahentai']) {
+    // hentalk publishes no language namespace at all. The badge has to be
+    // absent, not blank. (eahentai used to be here too; since r69 its API
+    // items carry language:english - the site is English-only - see below.)
+    for (final name in ['hentalk']) {
       final entry = sources()[name]!;
       await tester.pumpWidget(
         host(
@@ -250,6 +251,23 @@ void main() {
         expect(find.text(code), findsNothing, reason: '$name rendered a $code badge from nothing');
       }
     }
+  });
+
+  testWidgets('eahentai items say English (r69): the site is English-only and its API items carry the language', (tester) async {
+    final entry = sources()['eahentai']!;
+    await tester.pumpWidget(
+      host(
+        ThumbnailCardBuild(
+          index: 0,
+          item: entry.item,
+          handler: entry.handler,
+          scrollController: AutoScrollController(),
+          selectable: false,
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('EN'), findsOneWidget);
   });
 
   testWidgets('the per-source cover setting is honoured, not hardcoded', (tester) async {

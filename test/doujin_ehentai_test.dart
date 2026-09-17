@@ -326,6 +326,70 @@ void main() {
     });
   });
 
+  /// r69: the site's covers are 250 px wide and nothing bigger exists; the
+  /// detail page shows the gallery's first page instead, resolved the way the
+  /// reader resolves a page, once, and only when the per-source switch is on.
+  group('detail cover from the first page (r69)', () {
+    BooruItem gallery() => BooruItem(
+      fileURL: 'https://ehgt.org/c.webp',
+      sampleURL: 'https://ehgt.org/c.webp',
+      thumbnailURL: 'https://ehgt.org/c.webp',
+      tagsList: const [],
+      postURL: 'https://e-hentai.org/g/4178032/49d94b3d3c/',
+      serverId: '4178032',
+    );
+
+    test('a loaded gallery answers with page 1 image, resolved once', () async {
+      final h = handler();
+      final List<String> pageViews = [];
+      h.fetcher = (url, {postJson}) async {
+        if (url.contains('/s/')) {
+          pageViews.add(url);
+          return (status: 200, body: fixture('ehentai_page.html'), finalUrl: url);
+        }
+        return (status: 200, body: fixture('ehentai_gallery_multi.html'), finalUrl: url);
+      };
+      final BooruItem item = gallery();
+      expect((await h.loadItem(item: item)).failed, isFalse);
+
+      final BooruItem? cover = await h.detailCoverImage(item);
+      final String expected = EHentaiHandler.parsePageHtml(fixture('ehentai_page.html')).imageUrl!;
+      expect(cover, isNotNull);
+      expect(cover!.thumbnailURL, expected);
+      expect(cover.sampleURL, expected);
+      expect(cover.fileURL, expected);
+      expect(cover.fileWidth, isNotNull, reason: 'the page view names the size; the big cover box uses it');
+      expect(pageViews, hasLength(1));
+      expect(ReaderHandler.instance.pagesFor(item)!.first.fileURL, expected, reason: 'page 1 is warm for the reader');
+
+      final BooruItem? again = await h.detailCoverImage(item);
+      expect(again?.thumbnailURL, expected);
+      expect(pageViews, hasLength(1), reason: 'a resolved page is not fetched twice');
+    });
+
+    test('switched off per source, nothing is fetched and the site cover stays', () async {
+      final h = handler();
+      SourceSettingsHandler.instance.settingsFor(booru).detailCoverFromFirstPage = false;
+      final List<String> pageViews = [];
+      h.fetcher = (url, {postJson}) async {
+        if (url.contains('/s/')) pageViews.add(url);
+        return (status: 200, body: fixture(url.contains('/s/') ? 'ehentai_page.html' : 'ehentai_gallery_multi.html'), finalUrl: url);
+      };
+      final BooruItem item = gallery();
+      expect((await h.loadItem(item: item)).failed, isFalse);
+      expect(await h.detailCoverImage(item), isNull);
+      expect(pageViews, isEmpty);
+      expect(SourceSettingsHandler.instance.detailCoverFromFirstPage(booru), isFalse);
+    });
+
+    test('a gallery that was never loaded answers nothing, and the switch is on by default', () async {
+      final h = handler();
+      h.fetcher = (url, {postJson}) async => throw StateError('no request expected for $url');
+      expect(await h.detailCoverImage(gallery()), isNull);
+      expect(SourceSettingsHandler.instance.detailCoverFromFirstPage(booru), isTrue);
+    });
+  });
+
   group('page resolution', () {
     test('a page view gives the image, its size, the showkey and the reload key', () {
       final info = EHentaiHandler.parsePageHtml(fixture('ehentai_page.html'));
