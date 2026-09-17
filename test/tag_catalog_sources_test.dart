@@ -328,8 +328,8 @@ void main() {
     // without deciding fails this test; a source silently LOSING its catalog
     // fails it too, which is how r30 shipped e-hentai without one.
     const Map<BooruType, String> noCatalog = {
-      BooruType.EaHentai: 'no taxonomy route in the documented API (tags come per gallery)',
-      BooruType.Faccina: 'the API lists no tags; the site ships a fixed 15-entry glossary',
+      // r70: eahentai's index pages and hentalk's page data (`tagList`) are
+      // catalogs now - see eahentai_tag_catalog.dart, faccina_tag_catalog.dart.
       BooruType.RedGifs: 'suggestions only, no index endpoint',
       BooruType.XXXTik: 'search answers prefixes; there is no full list',
       BooruType.XXXFollow: 'search answers prefixes; there is no full list',
@@ -392,8 +392,8 @@ void main() {
       expect(keys(AsmHentaiHandler(b('a', BooruType.AsmHentai, 'https://asmhentai.com'), 20)), ['artist', 'group', 'parody', 'character', 'tag']);
       expect(keys(NHentaiHandler(b('n', BooruType.NHentai, 'https://nhentai.net'), 20)), ['parody', 'character', 'artist', 'group', 'tag']);
       expect(keys(HentaiPawHandler(b('p', BooruType.HentaiPaw, 'https://hentaipaw.com'), 20)), ['artist', 'group', 'parody', 'character', 'tag']);
-      expect(FaccinaHandler(b('f', BooruType.Faccina, 'https://hentalk.pw'), 20).tagCatalog, isNull);
-      expect(EaHentaiHandler(b('e', BooruType.EaHentai, 'https://eahentai.com'), 20).tagCatalog, isNull);
+      expect(FaccinaHandler(b('f', BooruType.Faccina, 'https://hentalk.pw'), 20).tagCatalog, isNotNull, reason: 'r70: the page data lists every tag');
+      expect(EaHentaiHandler(b('e', BooruType.EaHentai, 'https://eahentai.com'), 20).tagCatalog, isNotNull, reason: 'r70: the index pages');
       expect(
         keys(EHentaiHandler(b('eh', BooruType.EHentai, 'https://e-hentai.org'), 25)),
         ['artist', 'character', 'parody', 'group', 'female', 'male', 'mixed', 'cosplayer', 'language', 'other'],

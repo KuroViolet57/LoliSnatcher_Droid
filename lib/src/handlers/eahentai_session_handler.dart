@@ -29,6 +29,9 @@ class EaHentaiSessionHandler {
   int _savedAt = 0;
   bool _loaded = false;
 
+  /// The lists the account made on the site (r70), learned at login.
+  List<({int id, String name})> _lists = const [];
+
   File? get _file {
     try {
       return File('${SettingsHandler.instance.path}$fileName');
@@ -49,6 +52,11 @@ class EaHentaiSessionHandler {
         _username = decoded['username']?.toString();
         _loginName = decoded['login']?.toString();
         if ((_loginName ?? '').isEmpty) _loginName = null;
+        _lists = [
+          for (final l in (decoded['lists'] is List ? decoded['lists'] as List : const []))
+            if (l is Map && int.tryParse(l['id']?.toString() ?? '') != null)
+              (id: int.parse(l['id'].toString()), name: l['name']?.toString() ?? ''),
+        ];
         _savedAt = int.tryParse(decoded['at']?.toString() ?? '') ?? 0;
         if ((_token ?? '').isEmpty) _token = null;
         if ((_username ?? '').isEmpty) _username = null;
@@ -80,6 +88,18 @@ class EaHentaiSessionHandler {
     return _savedAt;
   }
 
+  List<({int id, String name})> get lists {
+    ensureLoaded();
+    return _lists;
+  }
+
+  void setLists(List<({int id, String name})> lists) {
+    ensureLoaded();
+    _lists = List.unmodifiable(lists);
+    _persist();
+    revision.value++;
+  }
+
   bool get isLoggedIn => (token ?? '').isNotEmpty;
 
   /// The header the site's account endpoints want; nothing when logged out.
@@ -91,6 +111,8 @@ class EaHentaiSessionHandler {
     _token = token;
     if (username != null && username.isNotEmpty) _username = username;
     if (loginName != null && loginName.isNotEmpty) _loginName = loginName;
+    // The lists belong to the login that fetched them; the new one fetches its own.
+    _lists = const [];
     _savedAt = DateTime.now().millisecondsSinceEpoch;
     _persist();
     revision.value++;
@@ -108,6 +130,7 @@ class EaHentaiSessionHandler {
     _token = null;
     _username = null;
     _loginName = null;
+    _lists = const [];
     _savedAt = 0;
     try {
       final File? file = _file;
@@ -124,7 +147,15 @@ class EaHentaiSessionHandler {
         if (file.existsSync()) file.deleteSync();
         return;
       }
-      file.writeAsStringSync(jsonEncode({'token': _token, 'username': _username, 'login': _loginName, 'at': _savedAt}));
+      file.writeAsStringSync(
+        jsonEncode({
+          'token': _token,
+          'username': _username,
+          'login': _loginName,
+          'at': _savedAt,
+          'lists': [for (final l in _lists) {'id': l.id, 'name': l.name}],
+        }),
+      );
     } catch (e) {
       Logger.Inst().log('could not write $fileName: $e', 'EaHentaiSessionHandler', '_persist', LogTypes.exception);
     }
@@ -136,6 +167,7 @@ class EaHentaiSessionHandler {
     _token = null;
     _username = null;
     _loginName = null;
+    _lists = const [];
     _savedAt = 0;
   }
 }

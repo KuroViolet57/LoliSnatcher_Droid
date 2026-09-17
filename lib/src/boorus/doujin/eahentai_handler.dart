@@ -12,6 +12,7 @@ import 'package:lolisnatcher/src/boorus/doujin/doujin_filters.dart';
 import 'package:lolisnatcher/src/boorus/doujin/doujin_recommendation_engine.dart';
 import 'package:lolisnatcher/src/boorus/doujin/doujin_tag_namespaces.dart';
 import 'package:lolisnatcher/src/boorus/doujin/eahentai_query.dart';
+import 'package:lolisnatcher/src/boorus/doujin/eahentai_tag_catalog.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/meta_tag.dart';
 import 'package:lolisnatcher/src/data/response_error.dart';
@@ -22,6 +23,7 @@ import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/eahentai_session_handler.dart';
 import 'package:lolisnatcher/src/handlers/reader_handler.dart';
 import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
+import 'package:lolisnatcher/src/handlers/tag_catalog_source.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 
@@ -58,6 +60,25 @@ class EaHentaiHandler extends BooruHandler with DoujinNamespacedTags {
 
   /// What the last login attempt said, for the settings page.
   String? loginMessage;
+
+  /// Test seam for the account writes (bookmark on / off): answers the
+  /// status the site would.
+  @visibleForTesting
+  Future<int> Function(String url, String method)? accountWriter;
+
+  /// r70: the Tag builder, from the site's index pages.
+  @override
+  late final TagCatalogSource? tagCatalog = EaHentaiTagCatalog(this);
+
+  /// r70: the site's own suggestions (see [getTagSuggestions]).
+  @override
+  bool get hasTagSuggestions => true;
+
+  /// One index page for the catalog, on the handler's client (and seam).
+  Future<({int status, String body})> fetchForCatalog(String url) async {
+    final r = await _fetch(url);
+    return (status: r.status, body: r.body);
+  }
 
   /// The full first page of every gallery seen this session, by id: the
   /// detail cover (see [detailCoverImage]) without another request.
@@ -160,6 +181,7 @@ class EaHentaiHandler extends BooruHandler with DoujinNamespacedTags {
       session.store(token: token, username: booru.userID, loginName: booru.userID);
       final String? name = await _whoAmI();
       if (name != null) session.setUsername(name);
+      await fetchMyLists();
       loginMessage = 'Logged in to eahentai as ${session.username ?? booru.userID}.';
       Logger.Inst().log('POST /api/auth/login answered 200; token kept', className, 'signIn', LogTypes.booruHandlerInfo);
       return true;
@@ -168,6 +190,65 @@ class EaHentaiHandler extends BooruHandler with DoujinNamespacedTags {
       Logger.Inst().log(loginMessage!, className, 'signIn', LogTypes.booruHandlerFetchFailed);
       return false;
     }
+  }
+
+  /// The lists the account made (`GET /api/lists/mine`), kept in the session
+  /// so the search window can offer each as a shelf. Never throws.
+  Future<void> fetchMyLists() async {
+    try {
+      final r = await _fetch('$_site/api/lists/mine');
+      if (r.status != 200) return;
+      final dynamic decoded = _decode(r.body);
+      final List entries = decoded is List ? decoded : (decoded is Map && decoded['items'] is List ? decoded['items'] as List : const []);
+      final List<({int id, String name})> lists = [];
+      for (final e in entries) {
+        if (e is! Map) continue;
+        final int? id = int.tryParse((e['listID'] ?? e['listId'] ?? e['id'])?.toString() ?? '');
+        if (id == null) continue;
+        lists.add((id: id, name: (e['name'] ?? e['title'] ?? 'List $id').toString()));
+      }
+      EaHentaiSessionHandler.instance.setLists(lists);
+    } catch (e) {
+      Logger.Inst().log('lists could not be read: $e', className, 'fetchMyLists', LogTypes.booruHandlerInfo);
+    }
+  }
+
+  // ── bookmarks: the heart, once logged in (r70) ──────────────────────
+
+  @override
+  bool get hasSiteFavourites => EaHentaiSessionHandler.instance.isLoggedIn;
+
+  @override
+  String get siteFavouritesLoginHint => 'log in from Source settings to bookmark on eahentai';
+
+  /// `POST /api/bookmarks/<id>` adds, `DELETE` removes.
+  @override
+  Future<(bool, String)> setSiteFavourite(BooruItem item, bool value) async {
+    final String id = _idOf(item);
+    if (id.isEmpty) return (false, 'no gallery id');
+    if (!EaHentaiSessionHandler.instance.isLoggedIn) return (false, 'Log in from Source settings to bookmark on eahentai.');
+    final String url = '$_site/api/bookmarks/$id';
+    final String method = value ? 'POST' : 'DELETE';
+    try {
+      final int status = accountWriter != null ? await accountWriter!(url, method) : await _accountWrite(url, method);
+      if (status == 401) {
+        EaHentaiSessionHandler.instance.logout();
+        return (false, 'eahentai no longer accepts the login; log in again from Source settings.');
+      }
+      if (status < 200 || status >= 300) return (false, 'eahentai answered $status');
+      return (true, value ? 'Bookmarked on eahentai.' : 'Bookmark removed on eahentai.');
+    } catch (e) {
+      return (false, 'eahentai bookmark failed: $e');
+    }
+  }
+
+  Future<int> _accountWrite(String url, String method) async {
+    final Map<String, dynamic> headers = {...getHeaders(), 'Accept': 'application/json'};
+    final Options options = Options(validateStatus: (_) => true);
+    final Response response = method == 'DELETE'
+        ? await DioNetwork.delete(url, headers: headers, options: options)
+        : await DioNetwork.post(url, headers: headers, options: options);
+    return response.statusCode ?? 0;
   }
 
   /// The account's name from `auth/me`, whatever field the site spells it in.
@@ -235,7 +316,13 @@ class EaHentaiHandler extends BooruHandler with DoujinNamespacedTags {
       // answer for the base class to fetch and ignore.
       return '${EaHentaiQuery.api}/latest/?page=0&take=1';
     }
-    final EaHentaiRequest request = EaHentaiQuery.parse(tags, page: _page, take: limit);
+    final EaHentaiSessionHandler session = EaHentaiSessionHandler.instance;
+    final EaHentaiRequest request = EaHentaiQuery.parse(
+      tags,
+      page: _page,
+      take: limit,
+      username: session.isLoggedIn ? (session.username ?? session.loginName) : null,
+    );
     if (request.error != null) {
       errorString = 'eahentai: ${request.error}';
       locked = true;
@@ -399,13 +486,39 @@ class EaHentaiHandler extends BooruHandler with DoujinNamespacedTags {
 
   // ── requests ──────────────────────────────────────────────────────────
 
+  /// The account feeds go through the base class's fetch, not [_fetch]: a
+  /// 401 there is the token gone, and the session must say so instead of
+  /// keeping the heart and the shelves up on a dead login (review).
+  @override
+  Future<Response<dynamic>> fetchSearch(
+    Uri uri,
+    String input, {
+    bool withCaptchaCheck = true,
+    Map<String, dynamic>? queryParams,
+  }) async {
+    try {
+      return await super.fetchSearch(uri, input, withCaptchaCheck: withCaptchaCheck, queryParams: queryParams);
+    } on DioException catch (e) {
+      final String path = uri.path;
+      if (e.response?.statusCode == 401 && (path.contains('/api/bookmarks') || path.contains('/api/lists/')) && EaHentaiSessionHandler.instance.isLoggedIn) {
+        EaHentaiSessionHandler.instance.logout();
+        errorString = 'eahentai no longer accepts the login; log in again from Source settings.';
+      }
+      rethrow;
+    }
+  }
+
   Future<({int status, String body, String finalUrl})> _fetch(String url, {String? postJson, CancelToken? cancelToken}) async {
     final r = fetcher != null ? await fetcher!(url, postJson: postJson) : await _network(url, postJson: postJson, cancelToken: cancelToken);
     // A token the site no longer accepts is dropped, so the next search logs
     // in again instead of failing every account call. Not on the auth calls
     // themselves: a `/auth/me` the site answers 401 must not undo a login
     // that just succeeded.
-    if (r.status == 401 && url.contains('/api/') && !url.contains('/api/auth/') && EaHentaiSessionHandler.instance.isLoggedIn) {
+    if (r.status == 401 &&
+        url.contains('/api/') &&
+        !url.contains('/api/auth/') &&
+        !url.contains('/api/lists/mine') &&
+        EaHentaiSessionHandler.instance.isLoggedIn) {
       Logger.Inst().log('eahentai answered 401 with a token; forgetting it', className, '_fetch', LogTypes.booruHandlerInfo);
       EaHentaiSessionHandler.instance.logout();
     }
@@ -602,8 +715,8 @@ class EaHentaiHandler extends BooruHandler with DoujinNamespacedTags {
   // ── the search window ─────────────────────────────────────────────────
 
   @override
-  DoujinFilterSpec get doujinFilters => const DoujinFilterSpec([
-    DoujinFilterGroup(
+  DoujinFilterSpec get doujinFilters => DoujinFilterSpec([
+    const DoujinFilterGroup(
       key: 'sort',
       label: 'Sort',
       defaultValue: 'latest',
@@ -615,7 +728,24 @@ class EaHentaiHandler extends BooruHandler with DoujinNamespacedTags {
         DoujinFilterOption('alltime', 'Popular all time'),
       ],
     ),
-    DoujinFilterGroup(
+    // r70: the account's bookmarks and lists, once logged in.
+    if (EaHentaiSessionHandler.instance.isLoggedIn)
+      const DoujinFilterGroup(
+        key: 'bookmarks',
+        label: 'My bookmarks',
+        options: [
+          DoujinFilterOption('recent', 'Recently bookmarked'),
+          DoujinFilterOption('latest', 'Latest'),
+          DoujinFilterOption('alltime', 'Most viewed'),
+        ],
+      ),
+    if (EaHentaiSessionHandler.instance.lists.isNotEmpty)
+      DoujinFilterGroup(
+        key: 'list',
+        label: 'My lists',
+        options: [for (final l in EaHentaiSessionHandler.instance.lists) DoujinFilterOption('${l.id}', l.name)],
+      ),
+    const DoujinFilterGroup(
       key: 'type',
       label: 'Search in',
       options: [
@@ -626,7 +756,7 @@ class EaHentaiHandler extends BooruHandler with DoujinNamespacedTags {
         DoujinFilterOption('tag', 'Tags'),
       ],
     ),
-    DoujinFilterGroup(
+    const DoujinFilterGroup(
       key: 'filter',
       label: 'Quick filters',
       multi: true,

@@ -84,7 +84,11 @@ void main() {
       expect(h.siteVariants.map((v) => v.$1), ['e-hentai', 'exhentai']);
       expect(h.hasAccountBlacklist, isTrue);
       expect(h.readerImageQualities, isEmpty);
-      expect(h.supportsLanguageFilter, isFalse);
+      // r70: the site searches `language:"x"$`, so the per-source language
+      // setting works here; both titles are on every gallery page.
+      expect(h.supportsLanguageFilter, isTrue);
+      expect(h.supportsTitleLanguage, isTrue);
+      expect(h.hasTagSuggestions, isTrue, reason: "the site's tagsuggest API");
       expect(h.getHeaders()['Cookie'], 'nw=1; sl=dm_2', reason: 'anonymous: no session, only the content-warning skip and the display mode');
       expect(h.getMediaHeaders().containsKey('Cookie'), isFalse);
     });

@@ -1282,6 +1282,10 @@ abstract class BooruHandler {
   /// hidden tags, so Source settings offers the import button.
   bool get hasAccountBlacklist => false;
 
+  /// What to do so the heart also reaches the site (r70): shown when a
+  /// favourite is saved locally only.
+  String get siteFavouritesLoginHint => 'set up the account in Source settings to sync with the site';
+
   /// r69: a sharper cover for the detail page than the listing's thumbnail,
   /// once the gallery is loaded - the gallery's first page on e-hentai, whose
   /// covers are 250 px wide. A cover-only item (thumbnail = sample = file =

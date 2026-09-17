@@ -317,10 +317,11 @@ void main() {
       expect(await h.canSignIn(), isTrue);
     });
 
-    test('a 401 from /auth/me does not undo the login that just succeeded', () async {
+    test('a 401 from /auth/me or from the lists call does not undo the login that just succeeded', () async {
       final h = EaHentaiHandler(ea(), 42);
       h.fetcher = (url, {postJson}) async {
         if (url.endsWith('/api/auth/login')) return (status: 200, body: '{"accessToken":"tok"}', finalUrl: url);
+        // /auth/me AND /lists/mine answer 401 here: neither is a listing.
         return (status: 401, body: '', finalUrl: url);
       };
       expect(await h.signIn(), isTrue);

@@ -343,7 +343,7 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
     // the shared booru favourites DB. toggleFavouriteSynced is the ONE path
     // that also pushes to the site account when a key is set.
     if (handler.hasSiteFavourites) {
-      setState(() => _favSyncStatus = 'Syncing to your nhentai account…');
+      setState(() => _favSyncStatus = 'Syncing to your ${booru.name ?? 'site'} account…');
     }
     final result = await DoujinDataHandler.instance.toggleFavouriteSynced(item, handler);
     if (!mounted) return;
@@ -351,9 +351,7 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
       // Favourite = the ACCOUNT action when the source can sync (bookmark is
       // the purely-local sibling). Degrades to local-only with a visible note.
       setState(
-        () => _favSyncStatus = result.nowFavourite
-            ? 'Saved locally — add your nhentai API key in the booru settings to sync with your account'
-            : null,
+        () => _favSyncStatus = result.nowFavourite ? 'Saved locally — ${handler.siteFavouritesLoginHint}' : null,
       );
       return;
     }

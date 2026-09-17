@@ -69,7 +69,8 @@ void main() {
 
   testWidgets('a source without a catalog shows no card', (tester) async {
     SettingsHandler.instance.dbEnabled = true;
-    await pump(tester, b('e', BooruType.EaHentai, 'https://eahentai.com'));
+    // r70 gave eahentai a builder; nozomi still enumerates nothing.
+    await pump(tester, b('n', BooruType.Nozomi, 'https://nozomi.la'));
     expect(find.text('Tag builder'), findsNothing);
   });
 

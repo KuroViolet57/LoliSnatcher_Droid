@@ -7,6 +7,8 @@ class EHentaiSearch {
     this.minRating,
     this.minPages,
     this.maxPages,
+    this.showExpunged = false,
+    this.requireTorrent = false,
     this.error,
   });
 
@@ -22,12 +24,17 @@ class EHentaiSearch {
   final int? minPages;
   final int? maxPages;
 
+  /// The site's advanced options (r70): `f_sh` shows expunged galleries,
+  /// `f_sto` keeps only galleries with a torrent.
+  final bool showExpunged;
+  final bool requireTorrent;
+
   /// Refusal text; non-null means the handler locks with this message.
   final String? error;
 
   String get fSearch => terms.join(' ');
 
-  bool get advanced => minRating != null || minPages != null || maxPages != null;
+  bool get advanced => minRating != null || minPages != null || maxPages != null || showExpunged || requireTorrent;
 }
 
 /// e-hentai's search grammar, from the app's side (probed 2026-09-09).
@@ -109,7 +116,7 @@ class EHentaiQuery {
   ];
 
   /// The keys that are not site terms but instructions to the app.
-  static const Set<String> reservedKeys = {'category', 'cat', 'rating', 'pages'};
+  static const Set<String> reservedKeys = {'category', 'cat', 'rating', 'pages', 'expunged', 'torrent'};
 
   static EHentaiSearch parse(String input) {
     final String source = input.trim();
@@ -118,6 +125,8 @@ class EHentaiQuery {
     int? minRating;
     int? minPages;
     int? maxPages;
+    bool showExpunged = false;
+    bool requireTorrent = false;
     String? error;
     for (final String token in tokenize(source)) {
       if (token.isEmpty) continue;
@@ -148,6 +157,10 @@ class EHentaiQuery {
           } else {
             minRating = n;
           }
+        case 'expunged':
+          showExpunged = value.toLowerCase() != 'off';
+        case 'torrent':
+          requireTorrent = value.toLowerCase() != 'off';
         case 'pages':
           final RegExpMatch? m = _pagesRange.firstMatch(value);
           if (m == null) {
@@ -167,6 +180,8 @@ class EHentaiQuery {
       minRating: minRating,
       minPages: minPages,
       maxPages: maxPages,
+      showExpunged: showExpunged,
+      requireTorrent: requireTorrent,
       error: error,
     );
   }
@@ -174,18 +189,38 @@ class EHentaiQuery {
   /// The listing URL. The extended view (`inline_set=dm_e`) is asked for on
   /// every request so the rows carry their tags whatever the site's sticky
   /// display cookie says; [cursor] is the `next=<gid>` of the previous page.
-  static String listingUrl(String site, EHentaiSearch s, {String? cursor}) {
+  ///
+  /// r70: [path] is the page searched - `/` (the front page), `/watched`
+  /// (the account's tag-watch feed) or `/favorites.php` (the account's
+  /// favourites, [favcat] 0-9 for one of its categories); all three take the
+  /// same search parameters and the same cursor.
+  static String listingUrl(String site, EHentaiSearch s, {String? cursor, String path = '/', String? favcat}) {
     final List<String> params = [];
+    if (favcat != null && favcat.isNotEmpty) params.add('favcat=$favcat');
     if (s.fSearch.isNotEmpty) params.add('f_search=${Uri.encodeQueryComponent(s.fSearch)}');
     if (s.excludedCategories > 0) params.add('f_cats=${s.excludedCategories}');
     if (s.advanced) {
       params.add('advsearch=1');
+      if (s.showExpunged) params.add('f_sh=on');
+      if (s.requireTorrent) params.add('f_sto=on');
       if (s.minRating != null) params.add('f_srdd=${s.minRating}');
       if (s.minPages != null) params.add('f_spf=${s.minPages}');
       if (s.maxPages != null) params.add('f_spt=${s.maxPages}');
     }
     params.add('inline_set=dm_e');
     if (cursor != null && cursor.isNotEmpty) params.add('next=$cursor');
-    return '$site/?${params.join('&')}';
+    return '$site$path?${params.join('&')}';
   }
+
+  /// The site's toplists: galleries of all time, the past year, the past
+  /// month, yesterday. Numbered pages, `p` from 0 and absent on the first.
+  static const Map<String, int> toplistCodes = {
+    'toplist_alltime': 11,
+    'toplist_year': 12,
+    'toplist_month': 13,
+    'toplist_yesterday': 15,
+  };
+
+  static String toplistUrl(String site, String sort, {required int page}) =>
+      '$site/toplist.php?tl=${toplistCodes[sort]}${page > 1 ? '&p=${page - 1}' : ''}';
 }

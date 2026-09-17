@@ -1,6 +1,6 @@
 /// What one eahentai request is (r69): which endpoint, its URL, or why it
 /// cannot be made.
-enum EaHentaiRequestKind { latest, search, popular, random, album }
+enum EaHentaiRequestKind { latest, search, popular, random, album, bookmarks, list }
 
 class EaHentaiRequest {
   const EaHentaiRequest({required this.kind, required this.url, this.error, this.atEnd = false});
@@ -63,6 +63,13 @@ class EaHentaiQuery {
 
   static const Set<String> types = {'all', 'gallery', 'artist', 'character', 'parody', 'tag'};
 
+  /// The account's bookmarks (r70), in the site's three orders.
+  static const Map<String, String> bookmarkOrders = {
+    'recent': 'bookmarked',
+    'latest': 'date_desc',
+    'alltime': 'views_alltime',
+  };
+
   /// A namespace the app writes -> the search type the site knows.
   static const Map<String, String> namespaceTypes = {
     'artist': 'artist',
@@ -80,8 +87,10 @@ class EaHentaiQuery {
   /// The site's spelling of an app term: no quotes, underscores as spaces.
   static String words(String term) => term.replaceAll('"', '').replaceAll('_', ' ').trim();
 
-  static EaHentaiRequest parse(String tags, {required int page, int take = pageSize}) {
+  static EaHentaiRequest parse(String tags, {required int page, int take = pageSize, String? username}) {
     String sort = 'latest';
+    String? bookmarks;
+    String? list;
     String? type;
     final List<String> filters = [];
     final List<(String type, String name)> named = [];
@@ -117,6 +126,19 @@ class EaHentaiQuery {
           }
         case 'random':
           random = true;
+        case 'bookmarks':
+          final String v = value.toLowerCase();
+          if (bookmarkOrders.containsKey(v)) {
+            bookmarks = v;
+          } else {
+            error ??= 'bookmarks: takes ${bookmarkOrders.keys.join(' / ')}, not "$value".';
+          }
+        case 'list':
+          if (RegExp(r'^\d+$').hasMatch(value)) {
+            list = value;
+          } else {
+            error ??= 'list: takes the number of one of your lists.';
+          }
         case 'language':
           // The site is English-only: a language chip is not a search.
           break;
@@ -145,6 +167,23 @@ class EaHentaiQuery {
 
     final int p = page < 1 ? 0 : page - 1;
     final int n = take.clamp(1, 100);
+    if (bookmarks != null || list != null) {
+      if (username == null || username.isEmpty) {
+        return const EaHentaiRequest(kind: EaHentaiRequestKind.bookmarks, url: '', error: 'bookmarks and lists need the login: log in from Source settings.');
+      }
+      if (list != null) {
+        return EaHentaiRequest(kind: EaHentaiRequestKind.list, url: '$site/api/lists/users/${Uri.encodeComponent(username)}/$list?page=$p&take=$n');
+      }
+      final String q = [
+        for (final (_, String name) in named) name,
+        ...bare,
+        for (final String f in filters) filterWords[f]!,
+      ].join(' ').trim();
+      return EaHentaiRequest(
+        kind: EaHentaiRequestKind.bookmarks,
+        url: '$site/api/bookmarks/albums?type=all&page=$p&take=$n&orderby=${bookmarkOrders[bookmarks]}${q.isEmpty ? '' : '&q=${Uri.encodeComponent(q)}'}',
+      );
+    }
     if (random) {
       if (page > 1) return const EaHentaiRequest(kind: EaHentaiRequestKind.random, url: '', atEnd: true);
       return EaHentaiRequest(kind: EaHentaiRequestKind.random, url: '$api/random/?take=$n');

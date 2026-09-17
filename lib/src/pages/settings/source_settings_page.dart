@@ -675,7 +675,8 @@ class _SourceSettingsPageState extends State<SourceSettingsPage> {
               layerValues: sourceSettings.contentTypes(widget.booru),
               onChanged: (v) => _update((s) => s.contentTypes = v.isEmpty ? null : v.join(',')),
             ),
-          // Honoured by nhentai's search only; the others ignore the setting.
+          // Honoured where the site can filter by language (nhentai, e-hentai,
+          // hitomi - `supportsLanguageFilter`); the others do not offer the row.
           if (_offered((h) => h.supportsLanguageFilter))
           _choiceRow<String>(
             title: 'Only show language',

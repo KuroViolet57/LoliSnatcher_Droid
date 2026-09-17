@@ -5,6 +5,7 @@ import 'dart:ui' show Rect;
 import 'package:flutter/foundation.dart';
 
 import 'package:dio/dio.dart';
+import 'package:fpdart/fpdart.dart';
 import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart';
 
@@ -14,7 +15,9 @@ import 'package:lolisnatcher/src/boorus/doujin/ehentai_query.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/boorus/doujin/doujin_filters.dart';
 import 'package:lolisnatcher/src/data/meta_tag.dart';
+import 'package:lolisnatcher/src/data/response_error.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
+import 'package:lolisnatcher/src/data/tag_suggestion.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/ehentai_session_handler.dart';
@@ -315,6 +318,78 @@ class EHentaiHandler extends BooruHandler with DoujinNamespacedTags {
   @override
   bool get hasAccountBlacklist => true;
 
+  /// r70: the per-source "Only show language" and "Title language" settings
+  /// work here: the site searches `language:"x"$` and every gallery page
+  /// carries both titles.
+  @override
+  bool get supportsLanguageFilter => true;
+  @override
+  bool get supportsTitleLanguage => true;
+
+  /// The per-source language joins a search that names none.
+  @visibleForTesting
+  String withLanguageFilter(String tags) {
+    final String? language = SourceSettingsHandler.instance.languageFilter(booru);
+    if (language == null || language.isEmpty || tags.toLowerCase().contains('language:')) return tags;
+    return '$tags language:$language'.trim();
+  }
+
+  /// The two titles in the order the setting asks for.
+  String titlesFor(String title, String titleJpn) {
+    if (titleJpn.isEmpty) return title;
+    if (title.isEmpty) return titleJpn;
+    final bool preferJapanese = SourceSettingsHandler.instance.titleLanguage(booru) == 'japanese';
+    return preferJapanese ? '$titleJpn\n$title' : '$title\n$titleJpn';
+  }
+
+  // ── autocomplete: the site's own tagsuggest (r70) ───────────────────
+
+  @override
+  bool get hasTagSuggestions => true;
+
+  /// `api.php` `tagsuggest` answers `{"tags": {"<id>": {"ns", "tn"}}}` -
+  /// or an empty array when nothing matches.
+  @visibleForTesting
+  static List<TagSuggestion> parseTagSuggest(dynamic json) {
+    if (json is! Map || json['tags'] is! Map) return const [];
+    final List<TagSuggestion> out = [];
+    for (final entry in (json['tags'] as Map).values) {
+      if (entry is! Map) continue;
+      final String ns = (entry['ns']?.toString() ?? '').trim().toLowerCase();
+      final String name = normalizeDoujinTagName(entry['tn']?.toString() ?? '');
+      if (name.isEmpty) continue;
+      out.add(
+        TagSuggestion(
+          tag: ns.isEmpty ? name : '$ns:$name',
+          type: switch (ns) {
+            'artist' || 'group' => TagType.artist,
+            'parody' => TagType.copyright,
+            'character' => TagType.character,
+            'language' || 'reclass' || 'temp' => TagType.meta,
+            _ => TagType.none,
+          },
+        ),
+      );
+    }
+    return out;
+  }
+
+  @override
+  Future<Either<ResponseError, List<TagSuggestion>>> getTagSuggestions(String input, {CancelToken? cancelToken}) async {
+    // The whole input: the suggestion box holds one term, and a tag has
+    // spaces ("big breasts"); the site matches on the tag's own spelling.
+    final String text = input.trim().replaceAll('_', ' ').replaceFirst(RegExp(r'^-'), '').trim();
+    if (text.isEmpty) return const Right([]);
+    try {
+      final r = await _fetch(apiUrl, postJson: jsonEncode({'method': 'tagsuggest', 'text': text}), cancelToken: cancelToken);
+      if (r.status != 200) return Left(ResponseError(message: 'e-hentai tagsuggest answered ${r.status}', statusCode: r.status));
+      return Right(parseTagSuggest(jsonDecode(r.body)));
+    } catch (e, s) {
+      Logger.Inst().log(e.toString(), className, 'getTagSuggestions', LogTypes.exception, s: s);
+      return Left(ResponseError(message: 'tag suggestions failed', error: e));
+    }
+  }
+
   @override
   Map<String, String> getHeaders() => {
     'Accept': 'text/html,application/xml,application/json',
@@ -354,13 +429,30 @@ class EHentaiHandler extends BooruHandler with DoujinNamespacedTags {
     ('temp', 'Temp'),
   ];
 
+  /// r70: the site's shelves - Popular, the account's Watched and Favourites
+  /// (one category or all), the four toplists - its favourite categories, and
+  /// its advanced options, all as the search window's chips.
   @override
   DoujinFilterSpec get doujinFilters => DoujinFilterSpec([
     const DoujinFilterGroup(
       key: 'sort',
-      label: 'Sort',
+      label: 'Shelf',
       defaultValue: 'latest',
-      options: [DoujinFilterOption('latest', 'Latest'), DoujinFilterOption('popular', 'Popular')],
+      options: [
+        DoujinFilterOption('latest', 'Latest'),
+        DoujinFilterOption('popular', 'Popular'),
+        DoujinFilterOption('watched', 'Watched (login)'),
+        DoujinFilterOption('favorites', 'Favourites (login)'),
+        DoujinFilterOption('toplist_yesterday', 'Top yesterday'),
+        DoujinFilterOption('toplist_month', 'Top this month'),
+        DoujinFilterOption('toplist_year', 'Top this year'),
+        DoujinFilterOption('toplist_alltime', 'Top all time'),
+      ],
+    ),
+    DoujinFilterGroup(
+      key: 'favcat',
+      label: 'Favourite category',
+      options: [for (int n = 0; n <= 9; n++) DoujinFilterOption('$n', 'Favourites $n')],
     ),
     DoujinFilterGroup(
       key: 'category',
@@ -369,6 +461,12 @@ class EHentaiHandler extends BooruHandler with DoujinNamespacedTags {
       options: [for (final String k in EHentaiQuery.categoryBits.keys) DoujinFilterOption(k, k)],
     ),
     const DoujinFilterGroup(key: 'language', label: 'Language', options: DoujinFilters.commonLanguages),
+    const DoujinFilterGroup(
+      key: 'options',
+      label: 'Options',
+      multi: true,
+      options: [DoujinFilterOption('expunged', 'Show expunged'), DoujinFilterOption('torrent', 'With a torrent')],
+    ),
   ]);
 
   @override
@@ -379,6 +477,13 @@ class EHentaiHandler extends BooruHandler with DoujinNamespacedTags {
       isFree: true,
       values: [for (final k in EHentaiQuery.categoryBits.keys) MetaTagValue(name: k, value: k)],
     ),
+    MetaTagWithValues(
+      name: 'Favourite category (with the Favourites shelf)',
+      keyName: 'favcat',
+      values: [for (int n = 0; n <= 9; n++) MetaTagValue(name: 'Favourites $n', value: '$n')],
+    ),
+    MetaTagWithValues(name: 'Show expunged', keyName: 'expunged', values: [MetaTagValue(name: 'on', value: 'on')]),
+    MetaTagWithValues(name: 'Only with a torrent', keyName: 'torrent', values: [MetaTagValue(name: 'on', value: 'on')]),
     MetaTagWithValues(
       name: 'Minimum rating',
       keyName: 'rating',
@@ -467,29 +572,55 @@ class EHentaiHandler extends BooruHandler with DoujinNamespacedTags {
       return '$site/robots.txt';
     }
     // r37: `sort:popular` is the site's own popular page — one list, no
-    // search, no pages. With a search the search wins. The term is the
-    // app's and is never sent (the site would read it as a title word).
+    // search, no pages (r70: it does take the category filter). r70: the
+    // account's Watched and Favourites are searches on their own paths, the
+    // toplists numbered pages. The terms are the app's and are never sent.
     // The cursor map is keyed by the query AS TYPED (see _cursorsFor); the
     // sort term is taken out only of what is parsed, and only when there
     // is one, so a query without it keeps its exact spelling.
     final String sort = DoujinFilters.selected(tags, 'sort').lastOrNull ?? '';
-    final String searchTags = sort.isEmpty ? tags : DoujinFilters.strip(tags, 'sort');
-    if (sort == 'popular' && searchTags.trim().isEmpty) {
-      if (page > 1) {
-        locked = true;
-        return '';
+    final String favcat = DoujinFilters.selected(tags, 'favcat').lastOrNull ?? '';
+    final List<String> options = DoujinFilters.selected(tags, 'options');
+    String searchTags = sort.isEmpty ? tags : DoujinFilters.strip(tags, 'sort');
+    if (favcat.isNotEmpty) searchTags = DoujinFilters.strip(searchTags, 'favcat');
+    final bool shelfWithoutSearch = sort == 'popular' || EHentaiQuery.toplistCodes.containsKey(sort);
+    if (options.isNotEmpty) {
+      searchTags = DoujinFilters.strip(searchTags, 'options');
+      // The popular page and the toplists take no options: only a search does.
+      if (!shelfWithoutSearch) {
+        for (final String o in options) {
+          searchTags = '$searchTags $o:on';
+        }
       }
-      return '$site/popular';
     }
+    if (!shelfWithoutSearch) searchTags = withLanguageFilter(searchTags);
     final EHentaiSearch search = EHentaiQuery.parse(qualifyQuery(searchTags));
     if (search.error != null) {
       errorString = search.error!;
       locked = true;
       return '';
     }
+    // A toplist cannot be searched: with words typed, the search wins (as
+    // the popular shelf does), and the words are never lost.
+    if (EHentaiQuery.toplistCodes.containsKey(sort) && search.terms.isEmpty && !search.advanced) {
+      return EHentaiQuery.toplistUrl(site, sort, page: page);
+    }
+    if (sort == 'popular' && search.terms.isEmpty && !search.advanced) {
+      if (page > 1) {
+        locked = true;
+        return '';
+      }
+      return '$site/popular${search.excludedCategories > 0 ? '?f_cats=${search.excludedCategories}' : ''}';
+    }
+    final String path = switch (sort) {
+      'watched' => '/watched',
+      'favorites' => '/favorites.php',
+      _ => '/',
+    };
+    final String? cat = sort == 'favorites' && favcat.isNotEmpty ? favcat : null;
     final Map<int, String> cursors = _cursorsFor(tags.trim());
     final int p = page;
-    if (p == 1) return EHentaiQuery.listingUrl(site, search);
+    if (p == 1) return EHentaiQuery.listingUrl(site, search, path: path, favcat: cat);
     final String? cursor = cursors[p];
     if (cursor == null) {
       // The site links the next page with a cursor; the last page has none.
@@ -498,7 +629,7 @@ class EHentaiHandler extends BooruHandler with DoujinNamespacedTags {
       locked = true;
       return '';
     }
-    return EHentaiQuery.listingUrl(site, search, cursor: cursor);
+    return EHentaiQuery.listingUrl(site, search, cursor: cursor, path: path, favcat: cat);
   }
 
   /// `id:<gid>` with a remembered token, or `id:<gid>/<token>`.
@@ -548,32 +679,42 @@ class EHentaiHandler extends BooruHandler with DoujinNamespacedTags {
     return stars == stars.roundToDouble() ? stars.toInt().toString() : stars.toString();
   }
 
-  /// One extended-view listing into finished items.
+  /// One listing into finished items: the extended view (`td.gl1e` +
+  /// `td.gl2e`, what every search asks for) and, r70, the compact view
+  /// (`td.gl1c` category, `td.gl2c` thumb / posted / rating / pages,
+  /// `td.gl3c` title + tags, `td.gl4c` uploader) that the toplists are
+  /// always served in.
   List<BooruItem> itemsFromListing(String html) {
     final dom.Document doc = parse(html);
     final List<BooruItem> out = [];
     for (final dom.Element row in doc.querySelectorAll('table.itg tr')) {
-      final dom.Element? thumbCell = row.querySelector('td.gl1e');
-      final dom.Element? infoCell = row.querySelector('td.gl2e');
+      final bool compact = row.querySelector('td.gl1e') == null && row.querySelector('td.gl2c') != null;
+      final dom.Element? thumbCell = compact ? row.querySelector('td.gl2c') : row.querySelector('td.gl1e');
+      final dom.Element? infoCell = compact ? row.querySelector('td.gl3c') : row.querySelector('td.gl2e');
       if (thumbCell == null || infoCell == null) continue;
-      final String href = thumbCell.querySelector('a[href]')?.attributes['href'] ?? '';
+      final String href = (compact ? infoCell : thumbCell).querySelector('a[href]')?.attributes['href'] ?? '';
       final RegExpMatch? g = _galleryHref.firstMatch(href);
       if (g == null) continue;
       final String gid = g.group(1)!;
       final String token = g.group(2)!;
       _tokens[gid] = token;
       final dom.Element? img = thumbCell.querySelector('img');
-      final String thumb = thumbUrl(img?.attributes['src'] ?? '');
+      final String thumb = thumbUrl(img?.attributes['src'] ?? img?.attributes['data-src'] ?? '');
       final String title = (infoCell.querySelector('.glink')?.text ?? img?.attributes['title'] ?? '').trim();
-      final dom.Element? meta = infoCell.querySelector('.gl3e');
-      final String category = (meta?.querySelector('.cn')?.text ?? '').trim();
-      final String posted = (meta?.querySelector('#posted_$gid')?.text ?? '').trim();
-      final String uploader = (meta?.querySelector('a[href*="/uploader/"]')?.text ?? '').trim();
+      final dom.Element? meta = compact ? thumbCell : infoCell.querySelector('.gl3e');
+      final String category = (row.querySelector('td.gl1c .cn')?.text ?? meta?.querySelector('.cn')?.text ?? '').trim();
+      final String posted = (row.querySelector('#posted_$gid')?.text ?? '').trim();
+      final String uploader = (row.querySelector('td.gl4c a')?.text ?? meta?.querySelector('a[href*="/uploader/"]')?.text ?? '').trim();
       final String? rating = ratingFromStyle(meta?.querySelector('.ir')?.attributes['style']);
       int? pages;
-      for (final dom.Element div in meta?.children ?? const <dom.Element>[]) {
-        final RegExpMatch? m = _pagesText.firstMatch(div.text);
-        if (m != null) pages = int.tryParse(m.group(1)!.replaceAll(',', ''));
+      // The page count is one div's whole text ("73 pages"); the cell's flat
+      // text runs it into the posted time ("14:2873 pages").
+      final Iterable<dom.Element> pageDivs = compact ? (meta?.querySelectorAll('div') ?? const <dom.Element>[]) : (meta?.children ?? const <dom.Element>[]);
+      for (final dom.Element div in pageDivs) {
+        final RegExpMatch? m = _pagesText.firstMatch(compact ? div.text.trim() : div.text);
+        if (m != null && (!compact || RegExp(r'^[\d,]+\s+pages?$').hasMatch(div.text.trim()))) {
+          pages = int.tryParse(m.group(1)!.replaceAll(',', ''));
+        }
       }
       final List<Tag> tags = [];
       if (category.isNotEmpty) tags.add(namespacedTag(category, 'category'));
@@ -830,7 +971,7 @@ class EHentaiHandler extends BooruHandler with DoujinNamespacedTags {
       tagsList: g.tags,
       postURL: galleryUrl(g.gid, g.token),
       serverId: g.gid,
-      description: g.titleJpn.isEmpty ? g.title : '${g.title}\n${g.titleJpn}',
+      description: titlesFor(g.title, g.titleJpn),
       uploaderName: g.uploader.isEmpty ? null : g.uploader,
       postDate: g.posted.isEmpty ? null : g.posted,
       postDateFormat: g.posted.isEmpty ? null : 'yyyy-MM-dd HH:mm',
@@ -1059,7 +1200,7 @@ class EHentaiHandler extends BooruHandler with DoujinNamespacedTags {
       ];
       item
         ..tagsList = gallery.tags
-        ..description = gallery.titleJpn.isEmpty ? gallery.title : '${gallery.title}\n${gallery.titleJpn}'
+        ..description = titlesFor(gallery.title, gallery.titleJpn)
         ..uploaderName = gallery.uploader.isEmpty ? item.uploaderName : gallery.uploader
         ..postDate = gallery.posted.isEmpty ? item.postDate : gallery.posted
         ..postDateFormat = gallery.posted.isEmpty ? item.postDateFormat : 'yyyy-MM-dd HH:mm'

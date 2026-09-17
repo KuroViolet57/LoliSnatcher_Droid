@@ -77,7 +77,9 @@ void main() {
       final DoujinFilterSpec spec = h.doujinFilters;
       expect(spec.group('category')!.multi, isTrue);
       expect(spec.group('category')!.options.map((o) => o.value), contains('doujinshi'));
-      expect(spec.group('sort')!.options.map((o) => o.value), ['latest', 'popular']);
+      // r70: the site's shelves - the account's Watched and Favourites, the
+      // four toplists - joined Latest and Popular.
+      expect(spec.group('sort')!.options.map((o) => o.value), containsAll(['latest', 'popular', 'watched', 'favorites', 'toplist_alltime']));
       expect(h.makeURL('sort:popular'), 'https://e-hentai.org/popular');
       expect(h.makeURL('sort:latest'), 'https://e-hentai.org/?inline_set=dm_e');
       expect(h.makeURL('genshin sort:popular'), contains('f_search=genshin'), reason: 'popular has no search: the search wins, the term is not sent');

@@ -1530,6 +1530,76 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
 - r70 (planned): bookmarks / lists feeds and add/remove, the site's
   recommendations endpoint.
 
+### 4.39 Doujin parity sweep (r70)
+
+- The rule: every doujin source has nhentai's base (reader, tags on cards,
+  Tag builder, autocomplete, the site's sorts/shelves/categories as chips,
+  the per-source language and title settings), plus its own site's quirks.
+  `test/source_matrix_report_test.dart` prints the capability matrix (one
+  row per source: reader, catalog, suggestions, filter groups, metatags,
+  comments, notes, site favourites, login, blacklist, variants, reader
+  qualities, language/title support, content types, credential fields).
+- **Autocomplete:** `boorus/doujin/catalog_suggestions.dart` (mixin
+  `CatalogSuggestions`: `hasTagSuggestions` true, `getTagSuggestions` from
+  `BooruTagStore.browse` in the catalog's `searchTerm` spelling) on hitomi,
+  asmhentai, hentaipaw, hentalk. e-hentai: `api.php` `tagsuggest`
+  (`{"method":"tagsuggest","text"}` → `{"tags":{id:{ns,tn}}}` or `[]`),
+  `EHentaiHandler.parseTagSuggest`. eahentai: `hasTagSuggestions` now true.
+- **Tag builders:** `eahentai_tag_catalog.dart` (index pages
+  `/artists|characters|parodies?q=<L>&p=<n>` 100 a page, 404 past the end;
+  `/tags?q=<L>` one page; 27 letter shards; `EaHentaiHandler.fetchForCatalog`)
+  and `faccina_tag_catalog.dart` (`GET /__data.json`, SvelteKit devalue
+  decoded by `FaccinaTagCatalog.devalue`, node with `tagList`
+  `{namespace,name}`: artist 2470, magazine 944, circle 451, tag 332, parody
+  137, event 58, publisher 35; one shared shard).
+- **Site features as chips:** e-hentai `sort:` latest | popular (takes
+  `f_cats`) | watched (`/watched`) | favorites (`/favorites.php`, `favcat:N`)
+  | toplist_yesterday|month|year|alltime (`toplist.php?tl=15|13|12|11&p=N-1`,
+  numbered, compact rows - `itemsFromListing` now reads `td.gl1c/gl2c/gl3c/
+  gl4c`); `options:` expunged (`f_sh=on`) | torrent (`f_sto=on`)
+  (`EHentaiSearch.showExpunged/requireTorrent`, `listingUrl(path:, favcat:)`,
+  `toplistUrl`). hentalk `sort:released|added|title|pages|random` →
+  `sort=created_at|title|pages|random`, `order:asc`. asmhentai `category:`
+  (taxonomy path) and `random:` (`/random/` → 302 to a gallery; parsed from
+  `realUri`). hentaipaw `sort:rank` → `/articles/rank/?t=daily&page=N` (weekly
+  and monthly answer 308 to daily). koharu `category:doujinshi|manga|
+  illustration` → `&cat=4|2|8` (verified: `/books?cat=4` lists doujinshi;
+  a category alone browses `/books`, not the popular shelf).
+- **Language / title settings:** `supportsLanguageFilter` +
+  `withLanguageFilter` on e-hentai (`language:"x"$` via `qualifyQuery`) and
+  hitomi (`language:x` term, an index the search intersects);
+  `supportsTitleLanguage` + `titlesFor` on both (`#gn`/`#gj`;
+  `galleryinfo.title/japanese_title`).
+- **eahentai account:** `hasSiteFavourites` when logged in,
+  `setSiteFavourite` → `POST|DELETE /api/bookmarks/<id>` (`accountWriter`
+  seam); `bookmarks:recent|latest|alltime` → `GET /api/bookmarks/albums?type=all
+  &page&take&orderby=bookmarked|date_desc|views_alltime[&q]`; `list:<id>` →
+  `GET /api/lists/users/<username>/<id>?page&take`; lists learned at login
+  from `GET /api/lists/mine` (`listID|id`, `name|title`), kept in
+  `eahentai_session.json` (`lists`), offered as the `list` filter group. A
+  401 on `/api/lists/mine` or `/api/auth/*` never drops the token (only a
+  listing 401 does). Orderby values for bookmarks other than `bookmarked`
+  and the list-items shape are UNVERIFIED (no account here).
+- **Browser sweep notes:** nhentai, e621 and gelbooru are refused by both
+  the built-in browser and Chrome ("safety restrictions"); those were
+  worked from their APIs and the code. Sites seen: e-hentai (advanced
+  options, toplists, watched, favourites), eahentai (indexes, API), niyaniya
+  / hdoujin (`/browse?cat=`, `/popular`), asmhentai (`/random/`,
+  `/category/x/`, `/language/x/`, indexes, `/login/`), hentalk (sort/order,
+  per-page 24, `/series`, users + collections enabled), hitomi (order-by:
+  date added, published, popular today/week/month/year, random; indexes),
+  hentaipaw (Tags/Parodies/Characters/Artists/Groups, `/articles/rank`,
+  Favorites).
+- Tests: `doujin_parity_catalogs_test`, `doujin_parity_filters_test`,
+  `doujin_parity_live_test` (live), `source_matrix_report_test`; updated
+  `source_capabilities_test`, `doujin_filters_test`, `tag_builder_block_test`,
+  `tag_catalog_sources_test`, `doujin_eahentai_test`.
+- Still missing vs the rule, by choice or by site: hentalk collections
+  (login; API paths unverified), asmhentai/hentaipaw language filter (the
+  sites cannot combine a language with a search), comments outside nhentai
+  (e-hentai and eahentai have comment APIs; not built), hitomi "date
+  published" and random orders (nozomi paths not identified).
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
@@ -1959,8 +2029,21 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r69)
+## 12. Open items (as of r70)
 
+- r70 is unverified on the device: e-hentai chips (Watched / Favourites +
+  category, the four toplists, Show expunged / With a torrent), typed
+  suggestions while typing; eahentai Tag builder pulls (Artists 27 letters),
+  the heart as the site bookmark, My bookmarks / My lists shelves (shapes
+  unverified without an account); hentalk Tag builder (one pull) and
+  sort/order chips; asmhentai Category + Random; hentaipaw Daily ranking;
+  niyaniya Category; "Only show language" and "Title language" rows on
+  e-hentai and hitomi; autocomplete on hitomi/asmhentai/hentaipaw/hentalk
+  after a pull.
+- r71: the booru sources' sweep with the same method (matrix rows AGNPH,
+  BooruOnRails, GelbooruV1, InkBunny, Kusowanka, Moebooru, Nozomi, NyanPals,
+  Rainbooru, Realbooru, RedGifs, Rule34Dev, Shimmie, Szurubooru,
+  WildCritters, World, R34Hentai, R34US show few or no filters/metatags).
 - r69 is unverified on the device: eahentai Log in (Source settings →
   Account) shows "Logged in as …" or the site's refusal; feed cards carry
   tags at once; the search window's Sort / Search in / Quick filters change

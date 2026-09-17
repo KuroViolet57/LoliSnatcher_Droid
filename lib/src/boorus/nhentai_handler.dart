@@ -136,6 +136,9 @@ class NHentaiHandler extends BooruHandler {
   bool get hasSiteFavourites => booru.apiKey?.isNotEmpty ?? false;
 
   @override
+  String get siteFavouritesLoginHint => 'add your nhentai API key in the booru settings to sync with your account';
+
+  @override
   Future<(bool, String)> setSiteFavourite(BooruItem item, bool value) async {
     final String? id = item.serverId;
     if (id == null || id.isEmpty) return (false, 'No gallery id');
