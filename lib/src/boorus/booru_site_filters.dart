@@ -87,7 +87,7 @@ class BooruSiteNotes {
           'rule34hentai.net answered the PC with a Cloudflare check, so its search terms could not be checked; if searches fail, open the site once in the webview.',
         );
       case BooruType.Kusowanka:
-        notes.add('Kusowanka browses one tag at a time, so there is nothing to combine filters with.');
+        notes.add('Kusowanka browses one tag at a time; the Sort chip opens its Popular, Random and Top rated pages (one page each) and gives way to a typed search.');
       case BooruType.IdolSankaku:
         notes.add("Idol has Sankaku's order, rating and parent filters (the same engine); its API could not be checked from the PC.");
       case BooruType.FurAffinity:

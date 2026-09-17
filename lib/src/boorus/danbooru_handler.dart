@@ -255,7 +255,6 @@ class DanbooruHandler extends BooruHandler {
 
   @override
   CommentItem? parseComment(dynamic responseItem, int index) {
-    final String? dateStr = safeIsoDateMinusTimezone(responseItem['created_at']);
     return CommentItem(
       id: responseItem['id'].toString(),
       title: responseItem['post_id'].toString(),
@@ -264,7 +263,7 @@ class DanbooruHandler extends BooruHandler {
       authorName: responseItem['creator']['name'].toString(),
       score: responseItem['score'],
       postID: responseItem['post_id'].toString(),
-      createDate: dateStr, // 2021-11-29T01:42:28.351-05:00
+      createDate: responseItem['created_at']?.toString(), // 2021-11-29T01:42:28.351-05:00, zone kept for the dialog
       createDateFormat: 'iso',
     );
   }

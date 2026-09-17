@@ -13,6 +13,14 @@ import 'package:lolisnatcher/src/boorus/hanime1_handler.dart';
 import 'package:lolisnatcher/src/boorus/civitai_handler.dart';
 import 'package:lolisnatcher/src/boorus/booru_site_filters.dart';
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
+import 'package:lolisnatcher/src/boorus/booru_on_rails_handler.dart';
+import 'package:lolisnatcher/src/boorus/hydrus_handler.dart';
+import 'package:lolisnatcher/src/boorus/ink_bunny_handler.dart';
+import 'package:lolisnatcher/src/boorus/kusowanka_handler.dart';
+import 'package:lolisnatcher/src/boorus/moebooru_handler.dart';
+import 'package:lolisnatcher/src/boorus/realbooru_handler.dart';
+import 'package:lolisnatcher/src/boorus/redgifs_handler.dart';
+import 'package:lolisnatcher/src/boorus/szurubooru_handler.dart';
 import 'package:lolisnatcher/src/boorus/doujin/doujin_filters.dart';
 import 'package:lolisnatcher/src/boorus/e621_handler.dart';
 import 'package:lolisnatcher/src/boorus/furaffinity_handler.dart';
@@ -60,6 +68,15 @@ void main() {
     // r47: terms with = and > dividers.
     'rule34.paheal': () => ShimmieHtmlHandler(b('rule34paheal', BooruType.Shimmie, 'https://rule34.paheal.net'), 20).doujinFilters!,
     'rule34.us': () => R34USHandler(b('Rule34Us', BooruType.R34US, 'https://rule34.us'), 20).doujinFilters!,
+    // r71: the booru parity sweep.
+    'twibooru': () => BooruOnRailsHandler(b('twi', BooruType.BooruOnRails, 'https://twibooru.org'), 20).doujinFilters,
+    'szurubooru': () => SzurubooruHandler(b('szu', BooruType.Szurubooru, 'https://booru.example'), 20).doujinFilters!,
+    'yande.re': () => MoebooruHandler(b('yande', BooruType.Moebooru, 'https://yande.re'), 20).siteFilters!,
+    'kusowanka': () => KusowankaHandler(b('kuso', BooruType.Kusowanka, 'https://kusowanka.com'), 20).siteFilters!,
+    'inkbunny': () => InkBunnyHandler(b('ib', BooruType.InkBunny, 'https://inkbunny.net'), 20).siteFilters!,
+    'hydrus': () => HydrusHandler(b('hydrus', BooruType.Hydrus, 'http://localhost:45869'), 20).siteFilters!,
+    'redgifs': () => RedGifsHandler(b('rg', BooruType.RedGifs, 'https://www.redgifs.com'), 20).siteFilters!,
+    'realbooru': () => RealbooruHandler(b('rb', BooruType.Realbooru, 'https://realbooru.com'), 20).siteFilters!,
   };
 
   for (final MapEntry<String, DoujinFilterSpec Function()> entry in specs.entries) {

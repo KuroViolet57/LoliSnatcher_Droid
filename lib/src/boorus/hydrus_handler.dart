@@ -8,6 +8,7 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:lolisnatcher/gen/strings.g.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/data/meta_tag.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
@@ -302,29 +303,71 @@ class HydrusHandler extends BooruHandler {
     return '';
   }
 
+  /// Hydrus tags are comma-separated and may contain spaces, so the query
+  /// stays raw here: the base validator percent-encodes it, which would put
+  /// "%20" inside the JSON tag list below (r71 review).
+  @override
+  String validateTags(String tags) => tags.trim();
+
+  static final RegExp _sortTerm = RegExp(r'(^|\s)(sort|order):(\S+)', caseSensitive: false);
+
   @override
   String makeURL(String tags) {
-    if (tags.trim().isEmpty) {
-      tags = '*';
-    }
-    final List<String> tagList = tags.split(',').map((tag) => tag.trim()).toList();
+    // sort:/order: chips are space-joined onto the query while the tags are
+    // comma-joined, so the terms are lifted from the whole string first
+    // (r71 review: "blue eyes sort:random" used to lose its tag).
     int sortType = -1;
     bool ascending = false;
-    for (int i = tagList.length - 1; i >= 0; i--) {
-      if (tagList[i].contains('sort:')) {
-        sortType = getSortType(tagList[i].split(':')[1].trim());
-        tagList.removeAt(i);
-      } else if (tagList[i].contains('order:asc')) {
+    String rest = tags.replaceAllMapped(_sortTerm, (Match m) {
+      final String key = m.group(2)!.toLowerCase();
+      final String value = m.group(3)!.toLowerCase();
+      if (key == 'sort') {
+        sortType = getSortType(value);
+      } else if (value == 'asc') {
         ascending = true;
-        tagList.removeAt(i);
-      } else if (tagList[i].contains('order:desc')) {
+      } else if (value == 'desc') {
         ascending = false;
-        tagList.removeAt(i);
       }
+      return m.group(1)!;
+    }).trim();
+    if (rest.isEmpty) {
+      rest = '*';
     }
+    final List<String> tagList = rest.split(',').map((tag) => tag.trim()).where((tag) => tag.isNotEmpty).toList();
     final String encodedTags = Uri.encodeComponent(jsonEncode(tagList));
     return "${booru.baseURL}/get_files/search_files?tags=$encodedTags${sortType > -1 ? "&file_sort_type=$sortType" : ""}&file_sort_asc=$ascending";
   }
+
+  /// r71: the sorts the handler maps to file_sort_type and the direction.
+  /// (System predicates stay typed by hand, comma-separated like any tag.)
+  @override
+  List<MetaTag> availableMetaTags() => [
+    SortMetaTag(
+      values: [
+        MetaTagValue(name: 'Import time', value: 'importtime'),
+        MetaTagValue(name: 'Modified time', value: 'modifiedtime'),
+        MetaTagValue(name: 'Archive time', value: 'archivetime'),
+        MetaTagValue(name: 'Last viewed', value: 'lastviewed'),
+        MetaTagValue(name: 'Views', value: 'numviews'),
+        MetaTagValue(name: 'Total view time', value: 'totalviewtime'),
+        MetaTagValue(name: 'Random', value: 'random'),
+        MetaTagValue(name: 'File size', value: 'filesize'),
+        MetaTagValue(name: 'File type', value: 'filetype'),
+        MetaTagValue(name: 'Width', value: 'width'),
+        MetaTagValue(name: 'Height', value: 'height'),
+        MetaTagValue(name: 'Ratio', value: 'ratio'),
+        MetaTagValue(name: 'Pixels', value: 'numpixels'),
+        MetaTagValue(name: 'Tag count', value: 'numtags'),
+        MetaTagValue(name: 'Duration', value: 'duration'),
+        MetaTagValue(name: 'Frame rate', value: 'framerate'),
+        MetaTagValue(name: 'Frame count', value: 'framecount'),
+        MetaTagValue(name: 'Bitrate', value: 'bitrate'),
+        MetaTagValue(name: 'Has audio', value: 'hasaudio'),
+        MetaTagValue(name: 'Hash', value: 'hashhex'),
+      ],
+    ),
+    OrderMetaTag(values: [MetaTagValue(name: 'Descending', value: 'desc'), MetaTagValue(name: 'Ascending', value: 'asc')]),
+  ];
 
   int getSortType(String orderString) {
     switch (orderString) {

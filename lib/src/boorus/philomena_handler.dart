@@ -1,5 +1,6 @@
 import 'package:lolisnatcher/src/boorus/doujin/doujin_filters.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/data/comment_item.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_suggestion.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
@@ -81,6 +82,7 @@ class PhilomenaHandler extends BooruHandler {
         thumbnailURL: thumbURL,
         tagsList: currentTags.map(Tag.new).toList(),
         postURL: makePostURL(current['id'].toString()),
+        hasComments: (int.tryParse(current['comment_count']?.toString() ?? '') ?? 0) > 0,
         serverId: current['id'].toString(),
         score: current['score'].toString(),
         sources: [current['source_url'].toString()],
@@ -141,6 +143,43 @@ class PhilomenaHandler extends BooruHandler {
   };
 
   bool get _isDerpibooru => booru.baseURL?.contains('derpibooru') ?? false;
+
+  // r71: comments through the site's search API (derpibooru, 2026-09-17).
+  @override
+  bool get hasCommentsSupport => true;
+
+  @override
+  String makeCommentsURL(String postID, int pageNum) {
+    // EXAMPLE: https://derpibooru.org/api/v1/json/search/comments?q=image_id:1&per_page=50&page=1
+    // The dialog counts pages from 0, the site from 1 (page 0 is an alias of 1).
+    final String key = booru.apiKey?.isNotEmpty == true ? '&key=${booru.apiKey}' : '';
+    return '${booru.baseURL}/api/v1/json/search/comments?q=image_id:$postID&per_page=50&page=${pageNum + 1}$key';
+  }
+
+  @override
+  List parseCommentsList(dynamic response) {
+    final dynamic data = response.data;
+    if (data is Map && data['comments'] is List) return data['comments'] as List;
+    return const [];
+  }
+
+  @override
+  CommentItem? parseComment(dynamic responseItem, int index) {
+    final Map<String, dynamic> c = Map<String, dynamic>.from(responseItem as Map);
+    final String avatar = c['avatar']?.toString() ?? '';
+    return CommentItem(
+      id: c['id']?.toString(),
+      title: c['image_id']?.toString(),
+      content: c['body']?.toString(),
+      authorID: c['user_id']?.toString(),
+      authorName: c['author']?.toString(),
+      // Default avatars come as inline SVG data; only real URLs are shown.
+      avatarUrl: avatar.startsWith('http') ? avatar : null,
+      postID: c['image_id']?.toString(),
+      createDate: c['created_at']?.toString(), // 2026-08-03T18:16:28Z, zone kept for the dialog
+      createDateFormat: 'iso',
+    );
+  }
 
   @override
   DoujinFilterSpec get doujinFilters => DoujinFilterSpec([

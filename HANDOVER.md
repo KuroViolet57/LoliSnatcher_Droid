@@ -1600,6 +1600,98 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   (e-hentai and eahentai have comment APIs; not built), hitomi "date
   published" and random orders (nozomi paths not identified).
 
+### 4.40 Booru parity sweep (r71)
+
+- The rule, second half: every booru source has its family's base (the
+  site's search syntax as metatags and chips, comments, notes where the site
+  has them), plus its own quirks. Live checks 2026-09-17 (curl + browser;
+  nhentai / e621 / gelbooru are refused by both browsers, so their APIs).
+- **Comments** (`hasCommentsSupport`, `makeCommentsURL`, `parseCommentsList`,
+  `parseComment`; `comments_dialog.dart` counts pages from 0 and stops on an
+  empty answer): moebooru `/comment.json?post_id=` (one answer; page > 0 →
+  '' → `[]`); e621 `/comments.json?search[post_id]=ID&group_by=comment&
+  page=N+1`
+  (`creator_name`, `is_hidden` skipped); Philomena
+  `/api/v1/json/search/comments?q=image_id:ID&per_page=50&page=N+1[&key=]`
+  (`author`, `avatar` only when http - default avatars are inline SVG);
+  twibooru `/api/v3/posts/ID/comments` → `{comments:[{id, created_at,
+  hidden_from_users, body}]}` (anonymous, one answer); szurubooru
+  `/api/post/ID` → `comments[]` `{id, postId, user{name, avatarUrl}, text,
+  creationTime, score}`. Dates go to the dialog exactly as sent
+  (`comments_dialog.dart` `formatDate` parses ISO with its zone and shows
+  local time; `safeIsoDateMinusTimezone` cut the zone off and the dialog
+  then read UTC as local - no longer used for comment dates, danbooru
+  included; it still serves post dates). Items carry
+  `hasComments` from `comment_count` / `commentCount` (fills the icon) and
+  moebooru `hasNotes` from `last_noted_at != "0"` (the notes button is
+  gated on it).
+- **Notes:** moebooru `/note.json?post_id=` (`{id, x, y, width, height,
+  is_active, post_id, body}`, inactive skipped) - `hasNotesSupport`.
+- **Metatags → chips** (`BooruSiteFilters.fromMetaTags`; sort/order lists
+  drop `*asc` values and names containing "ascending"): moebooru (rating;
+  order id / id_desc / score / score_asc / mpixels / mpixels_asc / landscape /
+  portrait / vote; ComparableNumber id / score / width / height / mpixels;
+  string ratio / date / vote / md5 / source / parent; user - the yande.re
+  cheat sheet); szurubooru (sort ×19, order, safety, type, special, flag,
+  string ranges `n..` / `..n` / `a..b`; `doujinFilters` rebuilt from the
+  metatags with a real Direction group because the generic card drops "asc";
+  `withDirection`: `order:asc` + `sort:x` → `-sort:x`, `order:desc` unflips
+  a typed `-sort:`, URL-encoded input decoded and re-encoded); kusowanka
+  (`sort:popular|random|top` → `/popular/`, `/random/`, `/top-rated/`, one
+  page each: page > 0 locks without an error; a shelf beside other terms
+  gives way to the search, so a Sort saved as a source default cannot break
+  typed queries; an unknown shelf errors; facets as StringMetaTags);
+  inkbunny (`type:`
+  picture / sketch / series / comic / portfolio / video / charactersheet /
+  photo → ids 1 / 2 / 3 / 4 / 5 / 8,9 / 13 / 14, several add up, else the
+  full supported list; `scraps:no|only` → `&scraps=`); hydrus (sort ×20 =
+  `getSortType`, order; `validateTags` now keeps the text raw - the base
+  validator percent-encoded it into the JSON tag list - and `sort:`/`order:`
+  are lifted by regex from the space-joined query before the comma split, so
+  "blue eyes sort:random" keeps its tag; no `system:` chip, predicates are
+  typed with commas); RedGifs (`type:gifs|images` → `type=g|i` on the
+  search, creator and niche endpoints, `verified:yes` → `verified=y` on the
+  search, both dropped from the tag list); realbooru (sort score / score:asc / id /
+  id:asc - verified; `rating:` and `score:>n` do nothing on the site).
+- **twibooru:** `doujinFilters` sf (score, faves, upvotes, comment_count,
+  tag_count, width, height, random - score and random verified to reorder),
+  sd (asc), score.gte and faves.gte 10/25/50/100 (top scores ~200;
+  score.gte:100 = 83 posts); `makeURL` takes sf:/sd: out with
+  `DoujinFilters.selected/strip` into `&sf=&sd=`, range terms stay in q
+  (`score.gte:100`), an empty rest → `q=*`; metatags uploader / id /
+  score.gte / faves.gte / width.gte / height.gte / source_url / description
+  / sha512_hash.
+- **Page bases:** `BooruHandlerFactory` seeds 1-based sites (moebooru,
+  danbooru, e621, philomena, twibooru, RedGifs) with `startingPage 0`, so the
+  app's first fetch is page 1. RedGifs answers 400 "Invalid page number" and
+  e621 410 to page 0; danbooru and twibooru alias page 0 to page 1. A live
+  test that calls `search()` directly must seed `pageNum` the same way, or it
+  reports a failure the app never sees.
+- Not changed: rule34.us (had sort / score since r47; `rating:` is a no-op),
+  Shimmie / paheal (`order:` changed nothing, r45), r34hentai (Cloudflare),
+  agn.ph (no sort control on the site), gelbooru v1 (no operators), nyanpals
+  (404), rainbooru (522), nozomi and rule34.dev (no query syntax of their
+  own). Booru site favourites (danbooru / e621 / moebooru / sankaku) later.
+- Tests: `booru_parity_test` (fixtures `moebooru_comments`,
+  `moebooru_notes`, `e621_comments`, `philomena_comments`,
+  `twibooru_comments`), `booru_parity_live_test` (live: yande.re comments +
+  notes + order:score, e621 / derpibooru / twibooru comments, twibooru
+  sf:score, kusowanka shelves, RedGifs images, realbooru sort:id:asc),
+  `filter_chip_keys_test` registers the new specs.
+- Contrarian review (one agent, read-only), ten findings, all applied:
+  moebooru notes never showed (the viewer gates on `item.hasNotes`);
+  e621/Philomena comment pages were 1-based against the dialog's 0 (only the
+  first page ever loaded); the zone-stripping date helper shifted every
+  comment time by the UTC offset (danbooru's older helper too); hydrus Sort
+  chips discarded the typed tag (comma split) and the `system:` chip could
+  not work; a kusowanka Sort saved as a default broke every search; RedGifs
+  `type:` was dropped on the creator and niche endpoints (both accept it);
+  twibooru 500+/1000+ steps could never match; single-answer comment
+  endpoints answered page 1 twice; the szurubooru/realbooru URL tests only
+  used raw text (production sends percent-encoded); a cosmetic realbooru
+  label. Pre-existing, noted only: RedGifs niche feeds answer 400 `BadOrder`
+  to `order=trending`, which `_nicheOrder` returns by default.
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
@@ -2029,7 +2121,7 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r70)
+## 12. Open items (as of r71)
 
 - r70 is unverified on the device: e-hentai chips (Watched / Favourites +
   category, the four toplists, Show expunged / With a torrent), typed
@@ -2040,10 +2132,15 @@ cards have had regressions).
   niyaniya Category; "Only show language" and "Title language" rows on
   e-hentai and hitomi; autocomplete on hitomi/asmhentai/hentaipaw/hentalk
   after a pull.
-- r71: the booru sources' sweep with the same method (matrix rows AGNPH,
-  BooruOnRails, GelbooruV1, InkBunny, Kusowanka, Moebooru, Nozomi, NyanPals,
-  Rainbooru, Realbooru, RedGifs, Rule34Dev, Shimmie, Szurubooru,
-  WildCritters, World, R34Hentai, R34US show few or no filters/metatags).
+- r71 is unverified on the device: the comments button on yande.re / e621 /
+  derpibooru / twibooru / a szurubooru post; notes drawn on a yande.re post;
+  the Filters card on yande.re (Order, Rating), twibooru (Sort, Direction,
+  Score, Favorites), szurubooru (Sort, Direction, Safety, Type, Special,
+  Flag), kusowanka (Sort: Popular / Random / Top rated), inkbunny (Type,
+  Scraps), hydrus (Sort, Direction), RedGifs (Type, Verified creators),
+  realbooru (Sort); the query editor's new metatags.
+- Left for a later round: booru site favourites (danbooru / e621 / moebooru /
+  sankaku APIs); comments on e-hentai and eahentai; hentalk collections.
 - r69 is unverified on the device: eahentai Log in (Source settings →
   Account) shows "Logged in as …" or the site's refusal; feed cards carry
   tags at once; the search window's Sort / Search in / Quick filters change

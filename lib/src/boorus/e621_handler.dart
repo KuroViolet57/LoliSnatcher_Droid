@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:lolisnatcher/src/data/meta_tag.dart';
 import 'package:lolisnatcher/src/boorus/doujin/doujin_filters.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/data/comment_item.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_suggestion.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
@@ -197,6 +198,37 @@ class e621Handler extends BooruHandler {
     StringMetaTag(name: 'Random seed', keyName: 'randseed'),
   ];
 
+  // r71: e621's comments API (comments.json, checked live 2026-09-17).
+  @override
+  bool get hasCommentsSupport => true;
+
+  @override
+  String makeCommentsURL(String postID, int pageNum) {
+    // EXAMPLE: https://e621.net/comments.json?search[post_id]=5000000&group_by=comment&page=1
+    // The dialog counts pages from 0, the site from 1.
+    return '${booru.baseURL}/comments.json?search[post_id]=$postID&group_by=comment&page=${pageNum + 1}';
+  }
+
+  @override
+  List parseCommentsList(dynamic response) => BooruHandler.asResponseList(response.data);
+
+  @override
+  CommentItem? parseComment(dynamic responseItem, int index) {
+    final Map<String, dynamic> c = Map<String, dynamic>.from(responseItem as Map);
+    if (c['is_hidden'] == true) return null;
+    return CommentItem(
+      id: c['id']?.toString(),
+      title: c['post_id']?.toString(),
+      content: c['body']?.toString(),
+      authorID: c['creator_id']?.toString(),
+      authorName: c['creator_name']?.toString(),
+      score: int.tryParse(c['score']?.toString() ?? ''),
+      postID: c['post_id']?.toString(),
+      createDate: c['created_at']?.toString(), // 2026-08-26T22:17:26.682-04:00, zone kept for the dialog
+      createDateFormat: 'iso',
+    );
+  }
+
   @override
   Map<String, TagType> get tagTypeMap => {
     '7': TagType.meta,
@@ -293,6 +325,7 @@ class e621Handler extends BooruHandler {
         previewWidth: current['preview']['width']?.toDouble(),
         previewHeight: current['preview']['height']?.toDouble(),
         hasNotes: current['has_notes'],
+        hasComments: (int.tryParse(current['comment_count']?.toString() ?? '') ?? 0) > 0,
         serverId: current['id']?.toString(),
         rating: current['rating'],
         score: current['score']['total']?.toString(),

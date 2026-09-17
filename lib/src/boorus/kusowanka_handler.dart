@@ -7,6 +7,7 @@ import 'package:html/dom.dart';
 import 'package:html/parser.dart';
 
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/data/meta_tag.dart';
 import 'package:lolisnatcher/src/data/response_error.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_suggestion.dart';
@@ -93,6 +94,40 @@ class KusowankaHandler extends BooruHandler {
     'metadata': ('metadata', 'metadatas', TagType.meta),
   };
 
+  /// The site's own shelves (2026-09-17): one page each, no search on them.
+  static const Map<String, String> shelves = {'popular': 'popular', 'random': 'random', 'top': 'top-rated'};
+
+  /// A `sort:` term names a shelf; `mixed` when other terms sit beside it.
+  static ({String? shelf, bool mixed}) shelfOf(String input) {
+    final List<String> terms = input.trim().split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
+    String? shelf;
+    for (final String t in terms) {
+      final String lower = t.toLowerCase();
+      if (lower.startsWith('sort:')) shelf = lower.substring(5);
+    }
+    if (shelf == null) return (shelf: null, mixed: false);
+    return (shelf: shelf, mixed: terms.length > 1);
+  }
+
+  /// The query without its `sort:` terms.
+  static String withoutShelf(String input) => input.replaceAll(RegExp(r'(^|\s)sort:\S+', caseSensitive: false), ' ').trim();
+
+  /// r71: the shelves as a Sort chip and the facets as typed metatags.
+  @override
+  List<MetaTag> availableMetaTags() => [
+    SortMetaTag(
+      values: [
+        MetaTagValue(name: 'Popular', value: 'popular'),
+        MetaTagValue(name: 'Random', value: 'random'),
+        MetaTagValue(name: 'Top rated', value: 'top'),
+      ],
+    ),
+    StringMetaTag(name: 'Artist', keyName: 'artist'),
+    StringMetaTag(name: 'Character', keyName: 'character'),
+    StringMetaTag(name: 'Parody', keyName: 'parody'),
+    StringMetaTag(name: 'Metadata', keyName: 'metadata'),
+  ];
+
   @override
   bool get hasSizeData => false;
 
@@ -173,7 +208,26 @@ class KusowankaHandler extends BooruHandler {
 
   @override
   String makeURL(String tags) {
-    final parsed = _parse(tags);
+    final ({String? shelf, bool mixed}) shelf = shelfOf(tags);
+    if (shelf.shelf != null && !shelf.mixed) {
+      final String? route = shelves[shelf.shelf];
+      if (route == null) {
+        errorString = 'kusowanka has no "${shelf.shelf}" shelf: Popular, Random or Top rated.';
+        locked = true;
+        return '';
+      }
+      // One page each: a second page is the end, not an error.
+      if (pageNum > 0) {
+        locked = true;
+        return '';
+      }
+      return '$_site/$route/';
+    }
+
+    // A shelf beside other terms gives way to the search: the site cannot
+    // search inside a shelf, and a Sort saved as a source default must not
+    // break every typed query (r71 review).
+    final parsed = _parse(withoutShelf(tags));
     if (parsed.tooMany) {
       errorString = 'kusowanka can only browse one tag at a time — '
           'it has no way to combine them. Try a single tag, or '
