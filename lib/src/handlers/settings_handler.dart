@@ -2285,6 +2285,7 @@ class SettingsHandler {
         tempList.add(Booru(loc.downloads, BooruType.Downloads, '', '', ''));
         tempList.add(Booru('For You', BooruType.ForYou, '', '', ''));
         tempList.add(Booru('For You (doujin)', BooruType.ForYouDoujin, '', '', ''));
+        tempList.add(Booru('Boards', BooruType.Board, '', '', ''));
         tempList.add(Booru('Collections', BooruType.Collections, '', '', ''));
         tempList.add(Booru('History', BooruType.History, '', '', ''));
       }
@@ -2337,6 +2338,16 @@ class SettingsHandler {
       if (b.type?.isForYouDoujin == true) return b;
     }
     final Booru b = Booru('For You (doujin)', BooruType.ForYouDoujin, '', '', '');
+    booruList.add(b);
+    return b;
+  }
+
+  /// The virtual source behind board tabs (r73).
+  Booru ensureBoardsBooru() {
+    for (final b in booruList) {
+      if (b.type?.isBoard == true) return b;
+    }
+    final Booru b = Booru('Boards', BooruType.Board, '', '', '');
     booruList.add(b);
     return b;
   }
@@ -2398,6 +2409,7 @@ class SettingsHandler {
     for (final isType in [
       (Booru b) => b.type?.isForYou == true,
       (Booru b) => b.type?.isForYouDoujin == true,
+      (Booru b) => b.type?.isBoard == true,
       (Booru b) => b.type?.isCollections == true,
       (Booru b) => b.type?.isHistory == true,
     ]) {

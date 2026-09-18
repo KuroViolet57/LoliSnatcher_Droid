@@ -46,6 +46,7 @@ import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/reader_handler.dart';
 import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/pages/kemono_post_page.dart';
+import 'package:lolisnatcher/src/pages/boards_page.dart';
 import 'package:lolisnatcher/src/pages/doujin_detail_page.dart';
 import 'package:lolisnatcher/src/pages/doujin_reader_page.dart';
 import 'package:lolisnatcher/src/widgets/gallery/doujin_item_menu.dart';
@@ -2075,6 +2076,20 @@ class _TagViewState extends State<TagView> with TraceLifecycle {
                       item,
                       (possibleBooruHandler ?? handler).booru,
                     ),
+                  ),
+                //
+                // Boards (r73): a saved search seeded by this post - its tags
+                // as words, its image as the reference. Booru-only.
+                if (!isDoujinContext)
+                  ListTile(
+                    dense: true,
+                    minVerticalPadding: 0,
+                    leading: Icon(Symbols.dashboard_rounded, size: 20, color: Theme.of(context).colorScheme.secondary),
+                    title: const Text(
+                      'Find posts like this (new board)',
+                      style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
+                    ),
+                    onTap: () => BoardEditPage.openFromItem(context, item, (possibleBooruHandler ?? handler).booru),
                   ),
                 //
                 // Inline "more from artist / uploader" grids — Boorusama-style.

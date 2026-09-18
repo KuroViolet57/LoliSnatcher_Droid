@@ -15,6 +15,7 @@ import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/handlers/boards_handler.dart';
 import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/tag_handler.dart';
 import 'package:lolisnatcher/src/services/drive_backup.dart';
@@ -42,6 +43,8 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
     'doujinData.json',
     'sourceSettings.json',
     'bookmarks.json',
+    // r73: the boards and the SauceNAO key (the copied images stay local).
+    'boards.json',
   ];
 
   /// After restoring the doujin store files, drop the lazily-loaded singleton
@@ -50,6 +53,8 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
     DoujinDataHandler.instance.reloadFromDisk();
     SourceSettingsHandler.instance.reloadFromDisk();
     BookmarkHandler.instance.reloadFromDisk();
+    // r73: the boards live in boards.json too.
+    unawaited(BoardsHandler.instance.reloadFromDisk());
   }
 
   /// A restored store.db may predate the doujin split and still carry doujin

@@ -1735,6 +1735,125 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
 - Left: site favourites through the app's login (Shimmie `favourite/add`,
   needs a logged-in check); `/random` (empty on the site).
 
+### 4.42 Boards: describe it or show a picture, the app searches the sources (r73)
+
+- **What:** a saved search (`data/board.dart` `Board`: name, description,
+  mustTags, excludeTags, sourceNames (empty = every eligible booru),
+  imagePath (a copy under `boards/`), imageUrl) kept by
+  `handlers/boards_handler.dart` (`boards.json` beside the settings, with
+  `sauceNaoApiKey`; `revision` notifier; `importImageBytes/File`; a deleted
+  board takes its image copy; `imageBooru` names the booru a post's image
+  came from; `matches` / `matchedAt` / `matchedImage` cache the reverse-image
+  answer for the image it was made from - `imageKey` = `file:<path>` or
+  `url:<address>`, `hasFreshMatches` when they agree; `boards.json` is in the
+  backup list). A board opens as a tab of the virtual
+  `BooruType.Board` booru (`ensureBoardsBooru`, registered with the other
+  virtual entries, excluded from the dropdown / detectable / saveable lists,
+  `isRecommendationFeed` true) with the search string `board:<id>`, so tabs
+  restore.
+- **Query understanding** (`handlers/board_query.dart`, `BoardQueryBuilder`):
+  `tokens` (lowercase words minus stop words) and `bigrams`; `deriveTags`
+  scores candidates: an image match's names +4, an exact tag-list name +3,
+  a name starting with the word +1.5, containing it +0.5, the site's own
+  suggestions for words no list knows (+2 first, +1 others), then the
+  encoder adds 2 × cosine(description, tag) when it is downloaded; top 8.
+  `accepts(item, must, exclude, aliases)` enforces the must-have tags (as
+  typed or in the site's spelling) and the exclusions. Seams: `storeLookup`
+  (BooruTagStore.browse), `siteSuggest` (handler.getTagSuggestions),
+  `embed` (EncoderHandler.embedText).
+- **Reverse image search** (`handlers/reverse_image_search.dart`): SauceNAO
+  `POST search.php` (`api_key`, `output_type=2`, `numres`, `db=999`, `file`
+  upload or `url`) → `parseSauceNao` (header.status ≠ 0 → the site's
+  message as an error; results ≥ 55 similarity; site + post id from the
+  `<site>_id` keys in preference order danbooru, gelbooru, yandere,
+  konachan, sankaku, e621, anime-pictures, idol; `alsoOn` for the rest;
+  tags = characters, material, creator as booru names). The anonymous
+  account may not use the API (checked 2026-09-18), so the key is the
+  user's own (Settings → Recommendations → Boards); with a key the API path
+  answers JSON even to curl (no Cloudflare page). e621's own iqdb:
+  `POST /iqdb_queries.json` `search[file]` → rows ≥ 60 score; the REAL answer (post 5000000,
+  2026-09-18, `test/fixtures/e621_iqdb.json`) wraps the post as
+  `post.posts` with a space-separated `tag_string` (the parser reads that,
+  and `post.tags` by category if a site ever sends it). e621 refuses
+  `search[url]` for foreign hosts. SauceNAO's anonymous HTML page works in
+  a browser (seen in Chrome: similarity, creator, characters) - a keyless
+  route through `OriginPageClient` is possible later. danbooru's own
+  reverse image could not be reached from the PC (both browsers refuse
+  danbooru by policy, curl meets Cloudflare) - out. iqdb.org stays the
+  Find-elsewhere path.
+- **The feed** (`boorus/board_handler.dart`, `BoardHandler`): `_init` reads
+  the board, builds one handler per source (max 8; `sourceFactory` seam),
+  runs the image matcher unless the board holds fresh matches for the same
+  image (then the cache answers and SauceNAO's quota is untouched; a fresh
+  answer is saved on the board; a failure is not cached; 45 s cap; a
+  failure is logged and kept in `imageError`, the feed goes on), derives
+  the tags, resolves each
+  must-have tag per source through `TagAliasResolver.resolve` (a confirmed
+  miss = null → the source is skipped, `skippedSources`; nothing left → an
+  error naming the tags), and embeds the description. A page asks up to 4
+  sources (rotating), each for `must (site spelling) + one derived tag`
+  (rotating), deepening per (source, query) pair; page 0 also asks `id:<n>`
+  for every image match on its own site (by host, else by type; only
+  danbooru, gelbooru and alikes, moebooru and e621, whose `id:` is known -
+  sankaku is out until checked), in a wave of its own before the derived
+  queries (sub-handlers are not re-entrant). Answers
+  go through `accepts`, seen/duplicate checks, then `scoreItem` = 100 if
+  exact + 10 × cosine(description, post) + the weights of the derived tags
+  the post carries + jitter; `withoutDismissed`; exposures logged under
+  surface `board`. Two empty rounds lock the feed (an error only when
+  nothing was ever found).
+- **UI** (`pages/boards_page.dart`): `BoardsPage` (drawer → Boards, booru
+  tabs; list, New board, per-board menu Open / Edit / Duplicate / Delete;
+  `opener` seam) and `BoardEditPage` (name, description, must / never tags,
+  reference image: `image_picker` gallery pick copied under `boards/`, or
+  an address; sources as chips; a board created from a post copies the
+  post's image at save time through `Tools.getFileCustomHeaders(source)`
+  (`BoardEditPage.imageFetcher` seam), keeping the address as the fallback;
+  the menu's "Refresh image matches" clears the cache). `BoardEditPage.
+  openFromItem` (post menu → "Find posts like this (new board)") prefills
+  from the post: characters / series / artists first, then tags as words
+  (14), the sample as the reference url, the booru as `imageBooru`.
+  `_BoardsSection` on the Recommendations page holds the SauceNAO key
+  (debounced save).
+- **Dependency:** `image_picker` 1.2.3 (plus its platform packages); no
+  other package moved (checked in the lockfile diff).
+- Tests: `boards_store_test`, `board_query_test`, `reverse_image_search_test`
+  (SauceNAO shape from the documented format - a real answer needs the
+  user's key; e621 from the real answer), `board_handler_test` (fake
+  sources, resolver, matcher, encoder; the cache; the id: sites; no
+  re-entry), `boards_page_test`. No live test: SauceNAO needs the key, the
+  boorus are already covered.
+- The plan for this round went through the user's plan-revision checklist
+  (2026-09-18) after being built first - see the plan file and
+  [[plan-before-changes]] in memory: plan, approval, then work.
+- Contrarian review (one agent, read-only), twelve findings, ten applied:
+  a restored `board:<id>` tab found no board because nothing had loaded
+  `boards.json` (`_init` now loads the store); a tab switch during the
+  first load searched again, found nothing set up and locked the feed
+  (one init future and one page future are shared by concurrent callers,
+  `_ensureInit` / `_pageInFlight`); a match's id was asked of any site of
+  the same engine (rule34.xxx for a gelbooru id) - now by host only, and
+  a match's `alsoOn` ids are used; a restore from backup left the store
+  stale (`reloadFromDisk`, called with the doujin stores); a positive
+  SauceNAO status (an index down) threw away the results (only a negative
+  status is a refusal now; an empty cached answer is trusted for a day);
+  the first page embedded every candidate one by one and scanned the tag
+  lists source by source (one batch of the top 24 through `embedTexts`,
+  lookups per source in parallel, at most four site suggestions; the
+  match cap is 100 s over 20 + 30 + 30 s parts); the editor's Remove kept
+  the address and Save copied it back, Duplicate lost a picked image, a
+  picked file was copied before Save (the copy happens on Save, the old
+  copy goes); the handler kept a stale board after caching (it keeps its
+  own copy); the reference post itself was dropped as "seen"; the key
+  field lost the last keystrokes on leave; the tokeniser's range and the
+  prefix rule (`girl` no longer proposes `girls_und_panzer` as a prefix);
+  "Find posts like this" from a board tab passed the virtual source as the
+  image's booru. Left as is: `-x` typed into Must means `x` (documented),
+  and the pre-existing cross-site `serverId` duplicate rule of
+  `filterFetched` (For You has it too).
+- Left: tags from pixels (an on-device tagger, r74), visual re-ranking,
+  showing `imageError` / `skippedSources` on the board tab.
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
@@ -2164,7 +2283,7 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r72)
+## 12. Open items (as of r73)
 
 - r70 is unverified on the device: e-hentai chips (Watched / Favourites +
   category, the four toplists, Show expunged / With a torrent), typed
@@ -2175,6 +2294,11 @@ cards have had regressions).
   niyaniya Category; "Only show language" and "Title language" rows on
   e-hentai and hitomi; autocomplete on hitomi/asmhentai/hentaipaw/hentalk
   after a pull.
+- r73 is unverified on the device: Boards in the drawer; a description board
+  fills; must-have tags hold; a picked image and a pasted address work with
+  the SauceNAO key; "Find posts like this (new board)" from a post; the
+  key field under Recommendations. The image picker has never run on the
+  phone (the plugin is new).
 - r72 is unverified on the device: rule34hentai's Filters card (Sort: Top
   voted reorders; Popular: Today / This month / This year; Content; File
   type; Score; Favorites; Comments), typed fields in the query editor,

@@ -8,6 +8,7 @@ import 'package:get/get.dart' hide FirstWhereOrNullExt;
 
 import 'package:lolisnatcher/src/data/modular_ui.dart';
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
+import 'package:lolisnatcher/src/pages/boards_page.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/handlers/local_auth_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
@@ -316,6 +317,19 @@ class MainDrawer extends StatelessWidget {
                       name: 'For You',
                       icon: const Icon(Symbols.auto_awesome_rounded),
                       page: () => ForYouPage(world: isDoujinTab ? RecommenderWorld.doujin : RecommenderWorld.booru),
+                    );
+                  }),
+                  // Boards (r73): saved "find me posts like this" searches
+                  // across the boorus - a description, a reference image,
+                  // must-have tags. Booru world only.
+                  Obx(() {
+                    final bool isDoujinTab =
+                        searchHandler.tabs.isNotEmpty && searchHandler.currentBooruHandler.hasReader;
+                    if (isDoujinTab) return const SizedBox.shrink();
+                    return SettingsButton(
+                      name: 'Boards',
+                      icon: const Icon(Symbols.dashboard_rounded),
+                      page: () => const BoardsPage(),
                     );
                   }),
                   // Collections route to the store matching the tab's world.

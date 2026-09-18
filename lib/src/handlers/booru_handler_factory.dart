@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:lolisnatcher/src/boorus/furaffinity_handler.dart';
 import 'package:lolisnatcher/src/boorus/agnph_handler.dart';
 import 'package:lolisnatcher/src/boorus/booru_on_rails_handler.dart';
+import 'package:lolisnatcher/src/boorus/board_handler.dart';
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/boorus/collections_handler.dart';
 import 'package:lolisnatcher/src/boorus/danbooru_handler.dart';
@@ -207,6 +208,9 @@ class BooruHandlerFactory {
           break;
         case BooruType.ForYouDoujin:
           booruHandler = DoujinForYouHandler(booru, limit);
+          break;
+        case BooruType.Board:
+          booruHandler = BoardHandler(booru, limit);
           break;
         case BooruType.History:
           booruHandler = HistoryHandler(booru, limit);

@@ -4,6 +4,7 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   dynamic_color
+  file_selector_linux
   flutter_avif_linux
   flutter_inappwebview_linux
   flutter_onnxruntime
