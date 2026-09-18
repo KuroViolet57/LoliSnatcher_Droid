@@ -243,6 +243,14 @@ class SettingsHandler {
   // = none downloaded. `aiEncoder` = its vectors join the learner's features.
   bool aiEncoder = true;
   String encoderModel = '';
+  // r74: the downloaded image tagger (ImageTaggerHandler). `imageTaggerModel`
+  // is a preset id ('wd-vit', 'wd-convnext', 'wd-swinv2') or a Hugging Face
+  // repo id; '' = none. `aiImageTagger` = pictures are read with it once it
+  // is downloaded (boards). `taggerOnReactions` = a strong reaction on a
+  // booru post also learns the tags read from its thumbnail.
+  bool aiImageTagger = true;
+  String imageTaggerModel = '';
+  bool taggerOnReactions = false;
   // Render the post-info panel (tags, metadata) as a Boorusama-style bottom
   // sheet dragged up from the bottom edge instead of the classic right-side
   // drawer. On by default; turn off to restore the side drawer.
@@ -736,6 +744,18 @@ class SettingsHandler {
     'encoderModel': {
       'type': 'string',
       'default': '',
+    },
+    'aiImageTagger': {
+      'type': 'bool',
+      'default': true,
+    },
+    'imageTaggerModel': {
+      'type': 'string',
+      'default': '',
+    },
+    'taggerOnReactions': {
+      'type': 'bool',
+      'default': false,
     },
     'useBottomInfoSheet': {
       'type': 'bool',
@@ -1365,6 +1385,12 @@ class SettingsHandler {
         return aiEncoder;
       case 'encoderModel':
         return encoderModel;
+      case 'aiImageTagger':
+        return aiImageTagger;
+      case 'imageTaggerModel':
+        return imageTaggerModel;
+      case 'taggerOnReactions':
+        return taggerOnReactions;
       case 'useBottomInfoSheet':
         return useBottomInfoSheet;
       case 'bottomSheetSizeMultiplier':
@@ -1662,6 +1688,15 @@ class SettingsHandler {
         break;
       case 'encoderModel':
         encoderModel = validatedValue;
+        break;
+      case 'aiImageTagger':
+        aiImageTagger = validatedValue;
+        break;
+      case 'imageTaggerModel':
+        imageTaggerModel = validatedValue;
+        break;
+      case 'taggerOnReactions':
+        taggerOnReactions = validatedValue;
         break;
       case 'useBottomInfoSheet':
         useBottomInfoSheet = validatedValue;

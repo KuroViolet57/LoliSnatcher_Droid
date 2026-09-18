@@ -83,6 +83,7 @@ class ItemFeatures {
     RecommenderWorld world, {
     Map<String, String>? namespaces,
     BooruHandler? handler,
+    List<String> extraTags = const [],
   }) {
     final _Builder b = _Builder();
     for (final Tag tag in item.tagsList) {
@@ -96,6 +97,11 @@ class ItemFeatures {
       } else if (type != TagType.none) {
         b.add('type:${type.name}:$name');
       }
+    }
+    // r74: tags read from the picture join the site's; the builder drops duplicates.
+    for (final String raw in extraTags) {
+      final String name = normalizeDoujinTagName(raw);
+      if (name.isNotEmpty) b.add('tag:$name');
     }
     final String host = Uri.tryParse(item.postURL)?.host.toLowerCase() ?? '';
     if (host.isNotEmpty) b.add('site:$host');

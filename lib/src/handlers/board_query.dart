@@ -92,6 +92,7 @@ class BoardQueryBuilder {
     required List<Booru> sources,
     List<BooruHandler> handlers = const [],
     List<String> seedTags = const [],
+    List<WeightedTag> weightedSeeds = const [],
     Set<String> exclude = const {},
     int limit = 6,
     Duration timeout = const Duration(seconds: 6),
@@ -107,6 +108,10 @@ class BoardQueryBuilder {
 
     for (final String s in seedTags) {
       add(s, 4);
+    }
+    // r74: what the tagger read in the picture, each with its own weight.
+    for (final WeightedTag s in weightedSeeds) {
+      add(s.tag, s.weight);
     }
     final List<String> words = tokens(description);
     final List<String> terms = [...bigrams(words), ...words];

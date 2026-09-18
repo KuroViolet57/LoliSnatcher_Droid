@@ -1,11 +1,14 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:lolisnatcher/src/handlers/recommender/encoder_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/image_tagger_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/item_features.dart';
 import 'package:lolisnatcher/src/handlers/recommender/recommender_handler.dart';
 import 'package:lolisnatcher/src/handlers/boards_handler.dart';
@@ -18,6 +21,22 @@ import 'package:lolisnatcher/src/widgets/common/settings_widgets.dart';
 /// recommender, what each world's model has learned, and a way to forget it.
 class RecommendationsPage extends StatefulWidget {
   const RecommendationsPage({super.key});
+
+  /// r74: how Try it gets a picture and its tags. Replaced in tests.
+  static Future<Uint8List?> Function()? pickImageBytes = _defaultPickImageBytes;
+  static Future<TaggerResult> Function(Uint8List bytes)? tagImage = _defaultTagImage;
+
+  static void resetForTests() {
+    pickImageBytes = _defaultPickImageBytes;
+    tagImage = _defaultTagImage;
+  }
+
+  static Future<Uint8List?> _defaultPickImageBytes() async {
+    final XFile? file = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 1600, maxHeight: 1600, imageQuality: 92);
+    return file == null ? null : await file.readAsBytes();
+  }
+
+  static Future<TaggerResult> _defaultTagImage(Uint8List bytes) => ImageTaggerHandler.instance.tag(bytes);
 
   @override
   State<RecommendationsPage> createState() => _RecommendationsPageState();
@@ -109,6 +128,7 @@ class _RecommendationsPageState extends State<RecommendationsPage> {
             ),
           for (final RecommenderWorld world in RecommenderWorld.values) _reportCard(context, world),
           _EncoderSection(onChanged: _load),
+          const _TaggerSection(),
           const _BoardsSection(),
         ],
       ),
@@ -402,6 +422,265 @@ class _EncoderSectionState extends State<_EncoderSection> {
                             : 'Takes effect once an encoder is downloaded.',
                       ),
                       leadingIcon: const Icon(Symbols.psychology_rounded),
+                    ),
+                  ],
+                );
+              },
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// r74: the downloadable image tagger — which one, its state, the download,
+/// Try it on a picture, and the two switches.
+class _TaggerSection extends StatefulWidget {
+  const _TaggerSection();
+
+  @override
+  State<_TaggerSection> createState() => _TaggerSectionState();
+}
+
+class _TaggerSectionState extends State<_TaggerSection> {
+  final SettingsHandler settings = SettingsHandler.instance;
+  final TextEditingController custom = TextEditingController();
+  late String choice;
+  TaggerResult? tried;
+  String tryError = '';
+  bool trying = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final String current = settings.imageTaggerModel.trim();
+    if (TaggerPreset.byId(current) != null) {
+      choice = current;
+    } else if (current.isNotEmpty) {
+      choice = 'custom';
+      custom.text = current;
+    } else {
+      choice = TaggerPreset.wdVit.id;
+    }
+  }
+
+  @override
+  void dispose() {
+    custom.dispose();
+    super.dispose();
+  }
+
+  String get chosenSetting => choice == 'custom' ? custom.text.trim() : choice;
+
+  static String _mb(int bytes) => (bytes / 1000000).toStringAsFixed(bytes >= 100000000 ? 0 : 1);
+
+  String _statusText(TaggerStatus s) {
+    switch (s.state) {
+      case TaggerState.none:
+        return 'No image tagger downloaded. Boards read a reference image through SauceNAO only.${s.message.isEmpty ? '' : ' ${s.message}'}';
+      case TaggerState.downloading:
+        return 'Downloading ${s.repo}… ${(s.progress * 100).round()} %${s.bytes > 0 ? ' of ${_mb(s.bytes)} MB' : ''}';
+      case TaggerState.ready:
+        return 'Ready: ${s.repo} · ${s.tagCount} tags · ${s.inputSize} px · ${_mb(s.bytes)} MB'
+            '${s.downloadedAt == null ? '' : ' · downloaded ${DateFormat('dd MMM').format(s.downloadedAt!)}'}';
+      case TaggerState.error:
+        return 'Error: ${s.message}';
+    }
+  }
+
+  Future<void> _download(ImageTaggerHandler tagger) async {
+    final String setting = chosenSetting;
+    if (setting.isEmpty) return;
+    final bool ok = await tagger.download(setting);
+    if (!ok && mounted) {
+      FlashElements.showSnackbar(
+        context: context,
+        title: const Text('Image tagger download failed', style: TextStyle(fontSize: 18)),
+        content: Text(tagger.status.value.message, style: const TextStyle(fontSize: 14)),
+        duration: const Duration(seconds: 4),
+        sideColor: Colors.red,
+      );
+    }
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _tryIt() async {
+    if (trying) return;
+    setState(() {
+      trying = true;
+      tryError = '';
+      tried = null;
+    });
+    try {
+      final Uint8List? bytes = await RecommendationsPage.pickImageBytes?.call();
+      if (bytes == null) return;
+      final TaggerResult? r = await RecommendationsPage.tagImage?.call(bytes);
+      if (mounted) setState(() => tried = r);
+    } catch (e) {
+      if (mounted) setState(() => tryError = 'Could not read the picture: $e');
+    } finally {
+      if (mounted) setState(() => trying = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final ImageTaggerHandler? tagger = ImageTaggerHandler.maybe;
+    final TextStyle muted = TextStyle(fontSize: 12, color: theme.colorScheme.onSurface.withValues(alpha: 0.6));
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Image tagger', style: theme.textTheme.titleMedium),
+          const SizedBox(height: 4),
+          Text(
+            'A booru tagger from Hugging Face (ONNX) that reads tags straight from the pixels, on the phone: general tags, characters and a rating in the danbooru spelling. '
+            "A board's reference image is read with it (no SauceNAO key needed), and, with the switch below, so is the thumbnail of a post you react to.",
+            style: muted,
+          ),
+          if (tagger == null)
+            const Padding(padding: EdgeInsets.only(top: 12), child: Text('The image tagger is not available in this build.'))
+          else
+            ValueListenableBuilder<TaggerStatus>(
+              valueListenable: tagger.status,
+              builder: (context, status, _) {
+                final bool downloading = status.state == TaggerState.downloading;
+                final bool ready = status.state == TaggerState.ready;
+                final TaggerPreset? preset = TaggerPreset.byId(choice);
+                final TaggerResult? r = tried;
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 12),
+                    Text(
+                      _statusText(status),
+                      key: const ValueKey('tagger-status'),
+                      style: TextStyle(color: status.state == TaggerState.error ? theme.colorScheme.error : null),
+                    ),
+                    if (downloading) ...[
+                      const SizedBox(height: 8),
+                      LinearProgressIndicator(value: status.progress > 0 ? status.progress : null),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(key: const ValueKey('tagger-cancel'), onPressed: tagger.cancelDownload, child: const Text('Cancel')),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final TaggerPreset p in TaggerPreset.values)
+                          ChoiceChip(
+                            key: ValueKey('tagger-preset-${p.id}'),
+                            label: Text(p.label),
+                            selected: choice == p.id,
+                            onSelected: downloading ? null : (_) => setState(() => choice = p.id),
+                          ),
+                        ChoiceChip(
+                          key: const ValueKey('tagger-preset-custom'),
+                          label: const Text('Custom repo'),
+                          selected: choice == 'custom',
+                          onSelected: downloading ? null : (_) => setState(() => choice = 'custom'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    if (preset != null)
+                      Text(preset.description, style: muted)
+                    else
+                      TextField(
+                        key: const ValueKey('tagger-custom-repo'),
+                        controller: custom,
+                        enabled: !downloading,
+                        decoration: const InputDecoration(
+                          labelText: 'Hugging Face repo id',
+                          hintText: 'owner/model — needs model.onnx (one picture in, one score per tag out) and selected_tags.csv',
+                          isDense: true,
+                        ),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        FilledButton.icon(
+                          key: const ValueKey('tagger-download'),
+                          onPressed: downloading || chosenSetting.isEmpty ? null : () => _download(tagger),
+                          icon: const Icon(Symbols.download_rounded),
+                          label: Text(ready && settings.imageTaggerModel == chosenSetting ? 'Download again' : 'Download'),
+                        ),
+                        if (ready)
+                          OutlinedButton.icon(
+                            key: const ValueKey('tagger-delete'),
+                            onPressed: downloading
+                                ? null
+                                : () async {
+                                    await tagger.delete();
+                                    if (mounted) setState(() => tried = null);
+                                  },
+                            icon: const Icon(Symbols.delete_rounded),
+                            label: const Text('Delete'),
+                          ),
+                        OutlinedButton.icon(
+                          key: const ValueKey('tagger-try'),
+                          onPressed: ready && !trying ? _tryIt : null,
+                          icon: const Icon(Symbols.image_search_rounded),
+                          label: Text(trying ? 'Reading…' : 'Try it on a picture'),
+                        ),
+                      ],
+                    ),
+                    Text('Models come from huggingface.co; download over Wi-Fi. The model is opened on first use and closed after two idle minutes.', style: muted),
+                    if (tryError.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 8), child: Text(tryError, style: TextStyle(color: theme.colorScheme.error))),
+                    if (r != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        '${r.count} tags in ${r.totalMs} ms (decode ${r.decodeMs} ms, model ${r.modelMs} ms, ${r.provider}) · rating ${r.rating} ${(r.ratingConfidence * 100).round()}%',
+                        key: const ValueKey('tagger-try-result'),
+                        style: muted,
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: [
+                          for (final PixelTag p in r.all)
+                            Chip(
+                              avatar: p.character ? const Icon(Symbols.person_rounded, size: 16) : null,
+                              label: Text('${p.tag} ${(p.confidence * 100).round()}%'),
+                              visualDensity: VisualDensity.compact,
+                            ),
+                        ],
+                      ),
+                    ],
+                    SettingsToggle(
+                      key: const ValueKey('ai-tagger-toggle'),
+                      value: settings.aiImageTagger,
+                      onChanged: (bool v) {
+                        setState(() => settings.aiImageTagger = v);
+                        settings.saveSettings(restate: false);
+                      },
+                      title: 'Use the image tagger',
+                      subtitle: Text(
+                        ready ? 'Boards read their reference image with it. Off = the downloaded model is kept but not read.' : 'Takes effect once a tagger is downloaded.',
+                      ),
+                      leadingIcon: const Icon(Symbols.image_search_rounded),
+                    ),
+                    SettingsToggle(
+                      key: const ValueKey('tagger-reactions-toggle'),
+                      value: settings.taggerOnReactions,
+                      onChanged: (bool v) {
+                        setState(() => settings.taggerOnReactions = v);
+                        settings.saveSettings(restate: false);
+                      },
+                      title: 'Tag reactions with the picture',
+                      subtitle: const Text(
+                        "A favourite, a snatch, a collection, a finished video or Not interested on a booru post also reads its thumbnail (for a video, the preview frame the site chose), about a second each in the background. The tags join the site's tags for the learner. It does not change how a disliked post shares the blame between its tags.",
+                      ),
+                      leadingIcon: const Icon(Symbols.thumbs_up_down_rounded),
                     ),
                   ],
                 );

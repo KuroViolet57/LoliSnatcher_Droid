@@ -14,6 +14,7 @@ import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/encoder_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/ftrl_model.dart';
 import 'package:lolisnatcher/src/handlers/recommender/item_features.dart';
+import 'package:lolisnatcher/src/handlers/recommender/pixel_tags.dart';
 import 'package:lolisnatcher/src/handlers/recommender/rewards.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
@@ -100,6 +101,18 @@ class RecommenderHandler {
   /// often at most, and at once when the app goes to the background
   /// (`main.dart`) or [flush] is called.
   static const Duration saveInterval = Duration(seconds: 30);
+
+  /// r74: the tags the image tagger reads from a post's thumbnail, for a
+  /// strong reaction (Settings → Recommendations → Tag reactions with the
+  /// picture). Replaced in tests.
+  static Future<List<String>> Function(BooruItem item, BooruHandler? handler)? pixelTagsFor = _defaultPixelTagsFor;
+  static const Duration pixelTimeout = Duration(seconds: 30);
+
+  static void resetSeamsForTests() {
+    pixelTagsFor = _defaultPixelTagsFor;
+  }
+
+  static Future<List<String>> _defaultPixelTagsFor(BooruItem item, BooruHandler? handler) => PixelTags.forItem(item, handler?.booru);
 
   final Map<RecommenderWorld, FtrlModel> _models = {};
   final Map<RecommenderWorld, Future<FtrlModel>> _loading = {};
@@ -256,8 +269,9 @@ class RecommenderHandler {
     Map<String, String>? namespaces,
     Float32List? embedding,
     bool fromMemory = false,
+    List<String> extraTags = const [],
   }) {
-    final FeatureVector base = ItemFeatures.of(item, world, handler: handler, namespaces: namespaces);
+    final FeatureVector base = ItemFeatures.of(item, world, handler: handler, namespaces: namespaces, extraTags: extraTags);
     final EncoderHandler? encoder = _encoder;
     if (encoder == null) return base;
     final Float32List? vector = embedding ?? (fromMemory ? encoder.cached(item) : null);
@@ -295,7 +309,8 @@ class RecommenderHandler {
     final RecommenderWorld world = ItemFeatures.worldOf(item);
     await modelFor(world);
     final Float32List? embedding = (await _embeddings([item], handler: handler)).first;
-    final FeatureVector features = _featuresFor(item, world, handler: handler, namespaces: namespaces, embedding: embedding);
+    final List<String> pixel = await _pixelTags(item, world, reward, kind, handler: handler);
+    final FeatureVector features = _featuresFor(item, world, handler: handler, namespaces: namespaces, embedding: embedding, extraTags: pixel);
     if (features.isEmpty) return;
     await _learn(world, key, _hostOf(item), kind, value, features, reward);
     if (embedding != null && reward.positive && reward.weight >= 2) {
@@ -304,6 +319,24 @@ class RecommenderHandler {
         (_taste[world] ??= _Taste.empty()).learn(embedding, model: encoder.modelId, rate: tasteRate);
         _markDirty(world);
       }
+    }
+  }
+
+  /// r74: a strong reaction (weight 2 or more) on a booru post also learns
+  /// what the picture shows — never a view or a flick, never a doujin. A
+  /// tagger that fails or takes too long leaves the site's tags alone.
+  Future<List<String>> _pixelTags(BooruItem item, RecommenderWorld world, Reward reward, InteractionKind kind, {BooruHandler? handler}) async {
+    final Future<List<String>> Function(BooruItem item, BooruHandler? handler)? tagger = pixelTagsFor;
+    if (tagger == null || !_settings.taggerOnReactions || world != RecommenderWorld.booru || reward.weight < 2) return const [];
+    try {
+      final List<String> tags = await tagger(item, handler).timeout(pixelTimeout);
+      final Set<String> own = {for (final t in item.tagsList) t.fullString.toLowerCase()};
+      final int fresh = tags.where((t) => !own.contains(t.toLowerCase())).length;
+      Logger.Inst().log('tagger: reaction ${kind.name}, ${tags.length} tags from the picture, $fresh new', className, '_pixelTags', LogTypes.booruHandlerInfo);
+      return tags;
+    } catch (e) {
+      Logger.Inst().log('tagger: reaction ${kind.name} not tagged: $e', className, '_pixelTags', LogTypes.booruHandlerInfo);
+      return const [];
     }
   }
 

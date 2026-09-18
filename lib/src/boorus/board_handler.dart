@@ -17,6 +17,7 @@ import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/encoder_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/image_tagger_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/recommender_handler.dart';
 import 'package:lolisnatcher/src/handlers/reverse_image_search.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
@@ -46,6 +47,7 @@ class BoardHandler extends BooruHandler {
   static const Duration searchTimeout = Duration(seconds: 12);
   static const Duration matchTimeout = Duration(seconds: 100);
   static const Duration embedTimeout = Duration(seconds: 20);
+  static const Duration tagTimeout = Duration(seconds: 30);
 
   // Seams: the sources, the alias resolver, the image matcher and the
   // encoder, replaced in tests.
@@ -54,6 +56,11 @@ class BoardHandler extends BooruHandler {
   static Board? Function(String id) boardLookup = _defaultBoardLookup;
   static Future<String?> Function(String tag, Booru booru) resolveTag = TagAliasResolver.resolve;
   static Future<List<ReverseMatch>> Function(Board board, List<Booru> sources) imageMatcher = defaultImageMatcher;
+
+  /// r74: the downloaded image tagger over the reference image (seeds with
+  /// their weights), and the model it is — '' when none is usable.
+  static Future<List<WeightedTag>> Function(Board board) pixelTagger = defaultPixelTagger;
+  static String Function() pixelModelId = _defaultPixelModelId;
   static Future<Float32List?> Function(String text)? embedText = _defaultEmbedText;
   static Future<List<Float32List?>> Function(List<BooruItem> items, BooruHandler handler)? embedItems = _defaultEmbedItems;
 
@@ -63,6 +70,8 @@ class BoardHandler extends BooruHandler {
     boardLookup = _defaultBoardLookup;
     resolveTag = TagAliasResolver.resolve;
     imageMatcher = defaultImageMatcher;
+    pixelTagger = defaultPixelTagger;
+    pixelModelId = _defaultPixelModelId;
     embedText = _defaultEmbedText;
     embedItems = _defaultEmbedItems;
   }
@@ -75,6 +84,11 @@ class BoardHandler extends BooruHandler {
   static List<Booru> _defaultAllSources() => SettingsHandler.instance.booruList.toList();
 
   static Board? _defaultBoardLookup(String id) => BoardsHandler.instance.byId(id);
+
+  static String _defaultPixelModelId() {
+    final ImageTaggerHandler? t = ImageTaggerHandler.maybe;
+    return t != null && t.enabled ? t.modelId : '';
+  }
 
   static Future<Float32List?> _defaultEmbedText(String text) async {
     final EncoderHandler? e = EncoderHandler.maybe;
@@ -230,12 +244,35 @@ class BoardHandler extends BooruHandler {
         }
       }
     }
+    // r74: what the downloaded tagger reads in the picture, cached on the
+    // board with the image and the model it came from.
+    List<WeightedTag> pixel = const [];
+    final String model = pixelModelId();
+    if (b.hasImage && model.isNotEmpty) {
+      if (b.hasFreshPixelTags(model)) {
+        pixel = [...b.pixelTags!];
+      } else {
+        try {
+          pixel = await pixelTagger(b).timeout(tagTimeout);
+          try {
+            final Board fresh = boardLookup(b.id) ?? b;
+            await BoardsHandler.instance.save(fresh.copyWith(pixelTags: pixel, pixelImage: fresh.pixelKey(model)));
+          } catch (e) {
+            Logger.Inst().log('board pixel tags could not be cached: $e', 'BoardHandler', '_init', LogTypes.booruHandlerInfo);
+          }
+        } catch (e) {
+          Logger.Inst().log('board image tagging failed: $e', 'BoardHandler', '_init', LogTypes.booruHandlerInfo);
+          pixel = const [];
+        }
+      }
+    }
     final List<String> seeds = [for (final ReverseMatch m in _matches) ...m.tags];
     _derived = await BoardQueryBuilder.deriveTags(
       b.description,
       sources: _sources,
       handlers: _handlers,
       seedTags: seeds,
+      weightedSeeds: pixel,
       exclude: {...b.mustTags, ...b.excludeTags},
       limit: 8,
     );
@@ -490,28 +527,49 @@ class BoardHandler extends BooruHandler {
   /// The reference image through SauceNAO (the user's key) and, when e621
   /// is among the sources, e621's own iqdb. A board created from a post
   /// keeps the post's url; a picked file lives under boards/.
-  static Future<List<ReverseMatch>> defaultImageMatcher(Board board, List<Booru> sources) async {
-    List<int>? bytes;
+  /// The reference image's bytes: the copy under boards/, else the address
+  /// fetched with its booru's own headers (some boorus refuse hot-links).
+  static Future<List<int>?> referenceImageBytes(Board board) async {
     if (board.imagePath.isNotEmpty && File(board.imagePath).existsSync()) {
-      bytes = File(board.imagePath).readAsBytesSync();
-    } else if (board.imageUrl.isNotEmpty) {
-      try {
-        // The address of a post's image: fetched with its booru's own headers.
-        Map<String, String> headers = {'User-Agent': Tools.browserUserAgent};
-        if (board.imageBooru.isNotEmpty) {
-          final Booru? source = SettingsHandler.instance.booruList.where((s) => s.name == board.imageBooru).firstOrNull;
-          if (source != null) headers = await Tools.getFileCustomHeaders(source, checkForReferer: true);
-        }
-        final Response<dynamic> res = await DioNetwork.get(
-          board.imageUrl,
-          headers: headers,
-          options: Options(responseType: ResponseType.bytes),
-        ).timeout(const Duration(seconds: 20));
-        if (res.data is List<int>) bytes = res.data as List<int>;
-      } catch (e) {
-        Logger.Inst().log('board image download failed: $e', 'BoardHandler', 'defaultImageMatcher', LogTypes.booruHandlerInfo);
-      }
+      return File(board.imagePath).readAsBytesSync();
     }
+    if (board.imageUrl.isEmpty) return null;
+    try {
+      Map<String, String> headers = {'User-Agent': Tools.browserUserAgent};
+      if (board.imageBooru.isNotEmpty) {
+        final Booru? source = SettingsHandler.instance.booruList.where((s) => s.name == board.imageBooru).firstOrNull;
+        if (source != null) headers = await Tools.getFileCustomHeaders(source, checkForReferer: true);
+      }
+      final Response<dynamic> res = await DioNetwork.get(
+        board.imageUrl,
+        headers: headers,
+        options: Options(responseType: ResponseType.bytes),
+      ).timeout(const Duration(seconds: 20));
+      return res.data is List<int> ? res.data as List<int> : null;
+    } catch (e) {
+      Logger.Inst().log('board image download failed: $e', 'BoardHandler', 'referenceImageBytes', LogTypes.booruHandlerInfo);
+      return null;
+    }
+  }
+
+  /// The tagger's answer as seeds: a character weighs like a SauceNAO name
+  /// (4), a general tag 3 x its confidence, ten general tags at most.
+  static List<WeightedTag> seedsFrom(TaggerResult r) => [
+    for (final PixelTag c in r.characters) (tag: c.tag, weight: 4.0),
+    for (final PixelTag g in r.general.take(10)) (tag: g.tag, weight: 3 * g.confidence),
+  ];
+
+  /// r74: the downloaded tagger over the reference image.
+  static Future<List<WeightedTag>> defaultPixelTagger(Board board) async {
+    final ImageTaggerHandler? t = ImageTaggerHandler.maybe;
+    if (t == null || !t.enabled) return const [];
+    final List<int>? bytes = await referenceImageBytes(board);
+    if (bytes == null || bytes.isEmpty) throw StateError('the reference image could not be read');
+    return seedsFrom(await t.tag(Uint8List.fromList(bytes)));
+  }
+
+  static Future<List<ReverseMatch>> defaultImageMatcher(Board board, List<Booru> sources) async {
+    final List<int>? bytes = await referenceImageBytes(board);
     final List<ReverseMatch> out = [];
     final List<String> errors = [];
     final String key = BoardsHandler.instance.sauceNaoApiKey;
@@ -531,8 +589,9 @@ class BoardHandler extends BooruHandler {
       }
     }
     if (out.isEmpty && errors.isNotEmpty) throw Exception(errors.join(' / '));
-    if (key.isEmpty && e621 == null) {
-      throw StateError('No reverse image search available: add your SauceNAO API key in Settings → Recommendations → Boards.');
+    // With the image tagger downloaded, an image board needs no reverse search.
+    if (key.isEmpty && e621 == null && pixelModelId().isEmpty) {
+      throw StateError('No reverse image search available: add your SauceNAO API key (Settings → Recommendations → Boards) or download the image tagger (Settings → Recommendations).');
     }
     return out;
   }

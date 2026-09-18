@@ -1,3 +1,4 @@
+import 'package:lolisnatcher/src/handlers/board_query.dart';
 import 'package:lolisnatcher/src/handlers/reverse_image_search.dart';
 
 /// A board (r73): a saved "find me posts like this" search. A description
@@ -18,12 +19,15 @@ class Board {
     List<ReverseMatch>? matches,
     this.matchedAt,
     this.matchedImage = '',
+    List<WeightedTag>? pixelTags,
+    this.pixelImage = '',
     DateTime? createdAt,
     DateTime? updatedAt,
   }) : mustTags = List<String>.from(mustTags ?? const <String>[]),
        excludeTags = List<String>.from(excludeTags ?? const <String>[]),
        sourceNames = List<String>.from(sourceNames ?? const <String>[]),
        matches = matches == null ? null : List<ReverseMatch>.unmodifiable(matches),
+       pixelTags = pixelTags == null ? null : List<WeightedTag>.unmodifiable(pixelTags),
        createdAt = createdAt ?? DateTime.now(),
        updatedAt = updatedAt ?? createdAt ?? DateTime.now();
 
@@ -51,6 +55,12 @@ class Board {
   final List<ReverseMatch>? matches;
   final DateTime? matchedAt;
   final String matchedImage;
+
+  /// r74: what the downloaded tagger read in the image, as seeds for the
+  /// search, cached with the image and the model ([pixelImage] =
+  /// [pixelKey] at the time).
+  final List<WeightedTag>? pixelTags;
+  final String pixelImage;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -66,6 +76,12 @@ class Board {
     if (matches!.isNotEmpty) return true;
     return matchedAt != null && DateTime.now().difference(matchedAt!) < const Duration(hours: 24);
   }
+
+  /// The image and the model a set of pixel tags belongs to.
+  String pixelKey(String modelId) => '$imageKey@$modelId';
+
+  /// The cached pixel tags hold for the same image read by the same model.
+  bool hasFreshPixelTags(String modelId) => pixelTags != null && modelId.isNotEmpty && pixelImage == pixelKey(modelId);
 
   /// Tags typed by hand: split on spaces and commas, lowercase, a leading
   /// `-` or `~` dropped (the field itself says whether the tag is wanted
@@ -103,6 +119,8 @@ class Board {
     List<ReverseMatch>? matches,
     DateTime? matchedAt,
     String? matchedImage,
+    List<WeightedTag>? pixelTags,
+    String? pixelImage,
     bool clearMatches = false,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -119,6 +137,8 @@ class Board {
     matches: clearMatches ? null : (matches ?? this.matches),
     matchedAt: clearMatches ? null : (matchedAt ?? this.matchedAt),
     matchedImage: clearMatches ? '' : (matchedImage ?? this.matchedImage),
+    pixelTags: clearMatches ? null : (pixelTags ?? this.pixelTags),
+    pixelImage: clearMatches ? '' : (pixelImage ?? this.pixelImage),
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
@@ -136,6 +156,8 @@ class Board {
     'matches': matches?.map((m) => m.toJson()).toList(),
     'matchedAt': matchedAt?.millisecondsSinceEpoch,
     'matchedImage': matchedImage,
+    'pixelTags': pixelTags?.map((t) => {'tag': t.tag, 'weight': t.weight}).toList(),
+    'pixelImage': pixelImage,
     'createdAt': createdAt.millisecondsSinceEpoch,
     'updatedAt': updatedAt.millisecondsSinceEpoch,
   };
@@ -158,6 +180,13 @@ class Board {
           : null,
       matchedAt: when(json['matchedAt']),
       matchedImage: json['matchedImage']?.toString() ?? '',
+      pixelTags: json['pixelTags'] is List
+          ? [
+              for (final dynamic t in json['pixelTags'] as List)
+                if (t is Map && t['tag'] != null) (tag: t['tag'].toString(), weight: (t['weight'] as num?)?.toDouble() ?? 0),
+            ]
+          : null,
+      pixelImage: json['pixelImage']?.toString() ?? '',
       createdAt: when(json['createdAt']),
       updatedAt: when(json['updatedAt']),
     );

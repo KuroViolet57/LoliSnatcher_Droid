@@ -15,6 +15,7 @@ import 'package:lolisnatcher/src/handlers/board_query.dart';
 import 'package:lolisnatcher/src/handlers/boards_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
+import 'package:lolisnatcher/src/handlers/recommender/image_tagger_handler.dart';
 import 'package:lolisnatcher/src/handlers/reverse_image_search.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 
@@ -310,6 +311,83 @@ void main() {
     expect(h.sources.map((s) => s.name), ['one', 'two']);
     expect(h.locked, isTrue);
     expect(h.errorString, contains('nothing'), reason: 'a description no site understands says so');
+  });
+
+  group('r74: tags from the picture', () {
+    late int taggerCalls;
+    setUp(() {
+      taggerCalls = 0;
+      BoardHandler.pixelModelId = () => 'wd';
+      BoardHandler.pixelTagger = (Board board) async {
+        taggerCalls++;
+        return [(tag: 'sakamata_chloe', weight: 4.0), (tag: 'cat_ears', weight: 2.7)];
+      };
+    });
+
+    test('the tagger\'s tags seed the queries, strongest first, and are cached on the board with the image and the model', () async {
+      final Board bd = await board(imageUrl: 'https://x.example/ref.jpg', sources: ['one', 'two']);
+      fakes['one'] = _FakeSource(b('one'), 20)..answers = {'sakamata_chloe': [['sakamata_chloe', 'cat_ears']]};
+      fakes['two'] = _FakeSource(b('two'), 20)..answers = {'cat_ears': [['cat_ears', 'beach']]};
+      final BoardHandler h = BoardHandler(boardBooru, 20);
+      final List<BooruItem> items = List<BooruItem>.from(await h.search('board:${bd.id}', null) as List);
+      expect(items, isNotEmpty);
+      expect(h.derivedTags.map((t) => t.tag).toList(), ['sakamata_chloe', 'cat_ears']);
+      expect([...fakes['one']!.queries, ...fakes['two']!.queries], containsAll(['sakamata_chloe', 'cat_ears']));
+      expect(taggerCalls, 1);
+      final Board stored = BoardsHandler.instance.byId(bd.id)!;
+      expect(stored.pixelTags?.map((t) => t.tag).toList(), ['sakamata_chloe', 'cat_ears']);
+      expect(stored.pixelImage, '${stored.imageKey}@wd');
+      expect(stored.hasFreshPixelTags('wd'), isTrue);
+      expect(stored.hasFreshPixelTags('other-model'), isFalse);
+      // A second open: the cache answers, the tagger is not run again.
+      final BoardHandler again = BoardHandler(boardBooru, 20);
+      await again.search('board:${bd.id}', null);
+      expect(taggerCalls, 1);
+      expect(again.derivedTags.map((t) => t.tag).toList(), ['sakamata_chloe', 'cat_ears']);
+      // A new image, then a new model: tagged again.
+      await BoardsHandler.instance.save(stored.copyWith(imageUrl: 'https://x.example/other.jpg'));
+      await BoardHandler(boardBooru, 20).search('board:${bd.id}', null);
+      expect(taggerCalls, 2);
+      BoardHandler.pixelModelId = () => 'wd-2';
+      await BoardHandler(boardBooru, 20).search('board:${bd.id}', null);
+      expect(taggerCalls, 3);
+      // Refreshing the image matches forgets the pixel tags too.
+      final Board cleared = BoardsHandler.instance.byId(bd.id)!.copyWith(clearMatches: true);
+      expect(cleared.pixelTags, isNull);
+      expect(cleared.pixelImage, '');
+    });
+
+    test('a tagger failure leaves the feed on the description and caches nothing; no tagger = nothing asked', () async {
+      BoardHandler.pixelTagger = (Board board) async {
+        taggerCalls++;
+        throw StateError('boom');
+      };
+      BoardQueryBuilder.storeLookup = (Booru booru, String query) async => query == 'beach' ? [entry('beach')] : const [];
+      final Board bd = await board(description: 'beach', imageUrl: 'https://x.example/ref.jpg', sources: ['one']);
+      fakes['one'] = _FakeSource(b('one'), 20)..answers = {'beach': [['beach', 'solo']]};
+      final BoardHandler h = BoardHandler(boardBooru, 20);
+      final List items = await h.search('board:${bd.id}', null) as List;
+      expect(items, hasLength(1));
+      expect(taggerCalls, 1);
+      expect(BoardsHandler.instance.byId(bd.id)!.pixelTags, isNull);
+      BoardHandler.pixelModelId = () => '';
+      await BoardHandler(boardBooru, 20).search('board:${bd.id}', null);
+      expect(taggerCalls, 1, reason: 'no tagger downloaded: not asked');
+    });
+
+    test('seedsFrom: a character weighs like a SauceNAO name, general tags by confidence, ten at most', () {
+      final TaggerResult r = TaggerResult(
+        general: [for (int i = 0; i < 12; i++) (tag: 'g$i', confidence: 0.9 - i * 0.05, character: false)],
+        characters: const [(tag: 'hatsune_miku', confidence: 0.95, character: true)],
+        rating: 'general',
+        ratingConfidence: 0.8,
+      );
+      final List<WeightedTag> seeds = BoardHandler.seedsFrom(r);
+      expect(seeds.first, (tag: 'hatsune_miku', weight: 4.0));
+      expect(seeds, hasLength(11));
+      expect(seeds[1].tag, 'g0');
+      expect(seeds[1].weight, closeTo(2.7, 1e-9));
+    });
   });
 }
 

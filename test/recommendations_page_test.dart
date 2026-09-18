@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -6,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lolisnatcher/src/handlers/recommender/encoder_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/image_tagger_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/item_features.dart';
 import 'package:lolisnatcher/src/handlers/recommender/recommender_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
@@ -16,6 +18,17 @@ import 'package:lolisnatcher/src/pages/settings/recommendations_page.dart';
 
 /// r33: Settings → Recommendations holds the two switches, independent of
 /// each other; the For You page comes in a doujin flavour.
+class _NoRunner implements TagRunner {
+  @override
+  String get provider => 'none';
+
+  @override
+  Future<Float32List> run(Float32List nhwc, int size) => throw StateError('no inference in this test');
+
+  @override
+  Future<void> close() async {}
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -159,6 +172,93 @@ void main() {
     expect(field.decoration?.hintText, contains('parody:'));
     expect(find.text('Your taste profile'), findsNothing, reason: 'the classic tag profile is a booru thing');
     expect(find.textContaining('What the model learned'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('r74: the Image tagger section — presets, download, ready with the tag count, the two switches, Try it, delete', (tester) async {
+    tester.view.physicalSize = const Size(1080, 8000);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.reset);
+    final List<String> fetched = [];
+    ImageTaggerHandler.unregister();
+    final ImageTaggerHandler tagger = ImageTaggerHandler.register();
+    tagger.runnerFactory = (String p) => _NoRunner();
+    tagger.fetcher = (String url, File to, {void Function(int received, int total)? onProgress, CancelToken? cancelToken}) async {
+      fetched.add(url);
+      to.parent.createSync(recursive: true);
+      if (url.endsWith('selected_tags.csv')) {
+        to.writeAsStringSync('tag_id,name,category,count\n1,general,9,1\n2,sensitive,9,1\n3,questionable,9,1\n4,explicit,9,1\n5,1girl,0,1\n6,cat_ears,0,1\n');
+      } else if (url.endsWith('config.json')) {
+        to.writeAsStringSync('{"model_args": {"img_size": 448}}');
+      } else {
+        to.writeAsBytesSync(List<int>.filled(500, 3));
+      }
+      onProgress?.call(500, 500);
+    };
+    addTearDown(ImageTaggerHandler.unregister);
+    addTearDown(RecommendationsPage.resetForTests);
+    SettingsHandler.instance
+      ..imageTaggerModel = ''
+      ..aiImageTagger = true
+      ..taggerOnReactions = false;
+    RecommendationsPage.pickImageBytes = () async => Uint8List.fromList(List<int>.filled(10, 1));
+    RecommendationsPage.tagImage = (Uint8List bytes) async => const TaggerResult(
+      general: [(tag: 'cat_ears', confidence: 0.9, character: false)],
+      characters: [(tag: 'hatsune_miku', confidence: 0.96, character: true)],
+      rating: 'general',
+      ratingConfidence: 0.6,
+      decodeMs: 12,
+      modelMs: 345,
+      provider: 'CPU',
+    );
+    await warm(tester);
+    await tester.pumpWidget(const MaterialApp(home: RecommendationsPage()));
+    await settle(tester);
+    expect(find.byKey(const ValueKey('tagger-status')), findsOneWidget);
+    expect(find.textContaining('No image tagger'), findsOneWidget);
+    expect(find.byKey(const ValueKey('tagger-preset-wd-vit')), findsOneWidget);
+    expect(find.byKey(const ValueKey('tagger-preset-wd-convnext')), findsOneWidget);
+    expect(find.byKey(const ValueKey('tagger-preset-wd-swinv2')), findsOneWidget);
+    expect(find.byKey(const ValueKey('tagger-preset-custom')), findsOneWidget);
+    expect(find.textContaining('379 MB'), findsWidgets);
+    expect(tester.widget<ButtonStyleButton>(find.byKey(const ValueKey('tagger-try'))).onPressed, isNull, reason: 'nothing to try before a download');
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const ValueKey('tagger-download')));
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    });
+    await settle(tester);
+    expect(fetched, hasLength(3));
+    expect(fetched.first, contains('SmilingWolf/wd-vit-tagger-v3'));
+    final Text status = tester.widget<Text>(find.byKey(const ValueKey('tagger-status')));
+    expect(status.data, contains('Ready'));
+    expect(status.data, contains('6 tags'));
+    expect(SettingsHandler.instance.imageTaggerModel, 'wd-vit');
+    final Finder use = find.byKey(const ValueKey('ai-tagger-toggle'));
+    await tester.tap(find.descendant(of: use, matching: find.byType(Switch)));
+    await tester.pump();
+    expect(SettingsHandler.instance.aiImageTagger, isFalse);
+    await tester.tap(find.descendant(of: use, matching: find.byType(Switch)));
+    await tester.pump();
+    expect(SettingsHandler.instance.aiImageTagger, isTrue);
+    final Finder reactions = find.byKey(const ValueKey('tagger-reactions-toggle'));
+    await tester.tap(find.descendant(of: reactions, matching: find.byType(Switch)));
+    await tester.pump();
+    expect(SettingsHandler.instance.taggerOnReactions, isTrue);
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const ValueKey('tagger-try')));
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await settle(tester);
+    expect(find.textContaining('hatsune_miku'), findsOneWidget);
+    expect(find.textContaining('cat_ears'), findsOneWidget);
+    expect(find.textContaining('357 ms'), findsOneWidget);
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const ValueKey('tagger-delete')));
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    });
+    await settle(tester);
+    expect(SettingsHandler.instance.imageTaggerModel, '');
+    expect(find.textContaining('No image tagger'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 }

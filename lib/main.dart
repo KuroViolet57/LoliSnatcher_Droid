@@ -27,6 +27,7 @@ import 'package:lolisnatcher/src/handlers/doujin_migration.dart';
 import 'package:lolisnatcher/src/handlers/floating_preview_handler.dart';
 import 'package:lolisnatcher/src/handlers/interests_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/encoder_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/image_tagger_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/recommender_handler.dart';
 import 'package:lolisnatcher/src/handlers/local_auth_handler.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
@@ -107,6 +108,9 @@ void main() async {
   // settings (its model id) and the app path are known.
   EncoderHandler.register();
   unawaited(EncoderHandler.instance.refresh());
+  // r74: the downloaded image tagger, likewise.
+  ImageTaggerHandler.register();
+  unawaited(ImageTaggerHandler.instance.refresh());
   LocalAuthHandler.register();
 
   await ServiceHandler.setSystemUiVisibility(true);

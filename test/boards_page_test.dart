@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -7,6 +8,7 @@ import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/data/board.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/handlers/boards_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/image_tagger_handler.dart';
 import 'package:lolisnatcher/src/handlers/reverse_image_search.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/pages/boards_page.dart';
@@ -179,5 +181,56 @@ void main() {
     await tester.pumpAndSettle();
     expect(store.boards, isEmpty);
     expect(find.text('Gone'), findsNothing);
+  });
+
+  group('r74: tags from the picture in the editor', () {
+    testWidgets('the button reads the address (or the picked file) through the tagger; a tapped chip joins Must-have once', (tester) async {
+      BoardEditPage.taggerReady = () => true;
+      final List<int> seen = [];
+      BoardEditPage.pixelTagger = (Uint8List bytes) async {
+        seen.add(bytes.length);
+        return const TaggerResult(
+          general: [(tag: 'cat_ears', confidence: 0.91, character: false), (tag: 'beach', confidence: 0.4, character: false)],
+          characters: [(tag: 'sakamata_chloe', confidence: 0.97, character: true)],
+          rating: 'sensitive',
+          ratingConfidence: 0.7,
+        );
+      };
+      BoardEditPage.imageFetcher = (String url, String? booruName) async => List<int>.filled(321, 1);
+      await tester.pumpWidget(const MaterialApp(home: BoardEditPage()));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const ValueKey('board-image-url')), 'https://img.example/ref.jpg');
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(find.byKey(const ValueKey('board-tag-image')), 200, scrollable: find.byType(Scrollable).first);
+      await tester.ensureVisible(find.byKey(const ValueKey('board-tag-image')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('board-tag-image')));
+      await tester.pumpAndSettle();
+      expect(seen, [321]);
+      expect(find.byKey(const ValueKey('board-pixel-sakamata_chloe')), findsOneWidget);
+      expect(find.byKey(const ValueKey('board-pixel-cat_ears')), findsOneWidget);
+      expect(find.byKey(const ValueKey('board-pixel-beach')), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('board-pixel-cat_ears')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('board-pixel-cat_ears')));
+      await tester.pumpAndSettle();
+      final TextField must = tester.widget(find.byKey(const ValueKey('board-must')));
+      expect(must.controller!.text.trim(), 'cat_ears');
+      await tester.tap(find.byKey(const ValueKey('board-pixel-sakamata_chloe')));
+      await tester.pumpAndSettle();
+      expect(must.controller!.text.trim(), 'cat_ears sakamata_chloe');
+      await tester.tap(find.byKey(const ValueKey('board-save')));
+      await tester.pumpAndSettle();
+      expect(store.boards.single.mustTags, ['cat_ears', 'sakamata_chloe']);
+    });
+
+    testWidgets('without a downloaded tagger the row says where to get one', (tester) async {
+      BoardEditPage.taggerReady = () => false;
+      await tester.pumpWidget(const MaterialApp(home: BoardEditPage()));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('board-tag-image')), findsNothing);
+      await tester.scrollUntilVisible(find.byKey(const ValueKey('board-tag-hint')), 200, scrollable: find.byType(Scrollable).first);
+      expect(find.byKey(const ValueKey('board-tag-hint')), findsOneWidget);
+    });
   });
 }

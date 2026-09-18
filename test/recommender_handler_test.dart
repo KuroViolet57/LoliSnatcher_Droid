@@ -365,6 +365,44 @@ void main() {
     final rows = await db.recentInteractions('booru', limit: 100);
     expect(rows.first.itemKey, 'k29', reason: 'the newest are kept, newest first');
   });
+
+  group('r74: reactions tagged with the picture', () {
+    tearDown(RecommenderHandler.resetSeamsForTests);
+
+    test('a strong reaction on a booru post carries the picture\'s tags as tag features; views, doujins and the switch off never ask', () async {
+      if (!dbReady) return;
+      final List<String> asked = [];
+      RecommenderHandler.pixelTagsFor = (BooruItem item, handler) async {
+        asked.add(item.postURL);
+        return ['cat_ears', 'red_hair'];
+      };
+      SettingsHandler.instance.taggerOnReactions = true;
+      final RecommenderHandler r = RecommenderHandler.instance;
+      await r.onEvent(booruPost('alice'), InteractionKind.favourite);
+      expect(asked, hasLength(1));
+      final RecommenderReport report = await r.report(RecommenderWorld.booru);
+      expect(report.liked.map((e) => e.name), contains('tag:cat_ears'));
+      expect(report.liked.map((e) => e.name), contains('tag:red_hair'));
+      await r.onEvent(booruPost('alice', id: '2'), InteractionKind.view, value: 10);
+      expect(asked, hasLength(1), reason: 'a view is not worth a second of the tagger');
+      await r.onEvent(doujinGallery('carol'), InteractionKind.favourite);
+      expect(asked, hasLength(1), reason: 'the booru world only');
+      SettingsHandler.instance.taggerOnReactions = false;
+      await r.onEvent(booruPost('alice', id: '3'), InteractionKind.favourite);
+      expect(asked, hasLength(1));
+    });
+
+    test('a tagger that fails still lets the reaction teach the site\'s tags', () async {
+      if (!dbReady) return;
+      RecommenderHandler.pixelTagsFor = (BooruItem item, handler) async => throw StateError('no model');
+      SettingsHandler.instance.taggerOnReactions = true;
+      final RecommenderHandler r = RecommenderHandler.instance;
+      await r.onEvent(booruPost('alice'), InteractionKind.favourite);
+      final RecommenderReport report = await r.report(RecommenderWorld.booru);
+      expect(report.events, 1);
+      expect(report.liked.map((e) => e.name), contains('type:artist:alice'));
+    });
+  });
 }
 
 /// A stand-in encoder: every token id has its own fixed direction (a

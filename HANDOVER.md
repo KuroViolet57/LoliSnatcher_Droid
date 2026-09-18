@@ -1854,6 +1854,97 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
 - Left: tags from pixels (an on-device tagger, r74), visual re-ranking,
   showing `imageError` / `skippedSources` on the board tab.
 
+### 4.43 Image tagger: tags from the pixels, as an optional download (r74)
+
+- **What:** an on-device booru tagger the user downloads from Hugging Face
+  (`handlers/recommender/image_tagger_handler.dart`, `ImageTaggerHandler`,
+  modelled on the encoder): the WD v3 taggers by SmilingWolf as presets
+  (`TaggerPreset`: `wd-vit` 378,536,310 B (default), `wd-convnext`
+  394,990,732 B, `wd-swinv2` 467,460,978 B; sizes from the Hugging Face API
+  on 2026-09-18), any repo with `model.onnx` + `selected_tags.csv` through the
+  custom field. Files under `<settings.path>tagger/<slug>/` (model, csv,
+  `config.json` when the repo has one, `manifest.json`: repo, setting, bytes,
+  inputSize, tagCount, downloadedAt); download into `.download-<slug>/` then
+  rename; `fetcher` and `runnerFactory` seams; `status`
+  (`TaggerStatus`: none / downloading / ready / error, progress, tagCount,
+  inputSize); `refresh()` at startup (`main.dart`, beside the encoder) and
+  after a download; `delete()`; `enabled` = `settings.aiImageTagger` and ready.
+  Settings: `imageTaggerModel`, `aiImageTagger` (true), `taggerOnReactions`
+  (false).
+- **Reading a picture** (`tag(bytes)` → `TaggerResult`): `prepareTensor`
+  follows the author's reference code (space SmilingWolf/wd-tagger `app.py`,
+  read 2026-09-18): transparency onto white, the picture in a white square
+  padded from the top-left half (`(max - w) ~/ 2`), cubic resize to the
+  model's size (448; `config.json` `model_args.img_size` or
+  `pretrained_cfg.input_size` when present), float32 0-255, **BGR**, NHWC
+  batch of one; it runs through `compute`. `interpret` reads the answer by
+  the csv's categories: 9 = rating (argmax), 4 = character (> 0.85), anything
+  else general (> 0.35, strongest first, 24 at most); tags keep their
+  underscores (the demo replaces them for display only). The csv (10,861
+  rows: 8,106 general, 2,751 characters, 4 ratings) is parsed by header name.
+  `OnnxTagRunner` (`onnx_tag_runner.dart`): one session,
+  `intraOpNumThreads` = half the cores (max 4), plain CPU — XNNPACK was
+  planned but the plugin cannot set that provider's own thread count, which
+  would leave it single-threaded; the session's own input name; the first
+  output. The session closes 120 s after the last picture (`idleClose`) and
+  reopens on the next; a runtime failure sets an error status until a
+  refresh; a picture that cannot be decoded is a `FormatException`. One log
+  line per run: `tagger: N general, M characters, rating r p; decode X ms,
+  model Y ms (provider)` — the S24 Ultra timing lives there.
+- **Boards** (`boorus/board_handler.dart`): `pixelTagger` / `pixelModelId`
+  seams; `_init` reads the reference image through the tagger when one is
+  enabled (`referenceImageBytes`, the reading shared with the reverse-image
+  matcher), 30 s cap; `seedsFrom`: a character seeds at 4 (as a SauceNAO
+  name), the top 10 general tags at 3 × confidence; `deriveTags` takes them
+  as `weightedSeeds`. Cached on the board (`Board.pixelTags`, `pixelImage` =
+  `<imageKey>@<modelId>`, `hasFreshPixelTags(model)`), cleared by
+  "Refresh image matches" (`clearMatches`), re-read for a new image or a
+  new model; a failure is logged, not cached. With a tagger the "no reverse
+  image search available" error is not raised: an image board needs no
+  SauceNAO key. Editor (`pages/boards_page.dart`): "Tags from the picture"
+  (`board-tag-image`; `taggerReady` / `pixelTagger` seams) reads the picked
+  file, the copy or the address into chips (`board-pixel-<tag>`, characters
+  first, confidence shown); a tap appends the tag to Must-have once; without
+  a tagger the row (`board-tag-hint`) says where to download one.
+- **Reactions** (`RecommenderHandler.onEvent`, `pixelTagsFor` seam,
+  `resetSeamsForTests`; `handlers/recommender/pixel_tags.dart`): with
+  `taggerOnReactions` on, a booru-world event whose reward weighs 2 or more
+  (favourite, unfavourite, collect, snatch, videoComplete, Not interested)
+  reads the post's thumbnail (the grid's cache through
+  `ImageWriter.getCachePath`, else a download with the booru's headers) and
+  the tags join the site's as ordinary `tag:` features (`ItemFeatures.of`
+  `extraTags`; duplicates dropped by the builder). Candidates are still
+  ranked by their site tags, so the learned weights apply to every post.
+  Views and skips never tag (cost); doujins never; a failure or a 30 s
+  timeout leaves the site's tags alone. Log: `tagger: reaction <kind>, N tags
+  from the picture, M new`. Honest limit: this does not change how a
+  disliked post shares the blame between its tags (r75).
+- **Settings page** (`pages/settings/recommendations_page.dart`,
+  `_TaggerSection` between the encoder and Boards): presets
+  (`tagger-preset-<id>`, `tagger-preset-custom`, `tagger-custom-repo`),
+  Download / Cancel / Delete (`tagger-download`, `tagger-cancel`,
+  `tagger-delete`), status (`tagger-status`), **Try it on a picture**
+  (`tagger-try`; `RecommendationsPage.pickImageBytes` / `tagImage` seams;
+  the picker from r73) showing the tags, the rating and the time
+  (`tagger-try-result`), "Use the image tagger" (`ai-tagger-toggle`), "Tag
+  reactions with the picture" (`tagger-reactions-toggle`).
+- **Tests:** `test/image_tagger_handler_test.dart` (presets and paths,
+  download / failure / cancel / bad csv, config sizes, refresh, delete,
+  `tag()` through a fake runner, `interpret`, `parseTagsCsv`, the idle
+  close, the switch, a runtime failure, a bad picture),
+  `test/image_tagger_preprocess_test.dart` (BGR, padding sides, resize,
+  transparency, a broken picture), additions to `board_handler_test`
+  (seeds, cache by image and model, failure, `seedsFrom`),
+  `boards_page_test` (chips, the hint), `recommender_handler_test`
+  (reaction tagging and its limits), `recommendations_page_test` (the
+  section end to end).
+- **Not verified from the PC:** the model has never run here (no
+  onnxruntime for Python was installed, no model downloaded — permission
+  was asked); the phone is the first real run, as for the encoder. Cut:
+  the frame on screen for videos (a hook in the video player), tagging feed
+  candidates at ranking time, the large 1.26 GB models as presets, the
+  thresholds as settings, the rating's use.
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
@@ -2283,7 +2374,7 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r73)
+## 12. Open items (as of r74)
 
 - r70 is unverified on the device: e-hentai chips (Watched / Favourites +
   category, the four toplists, Show expunged / With a torrent), typed
@@ -2294,6 +2385,11 @@ cards have had regressions).
   niyaniya Category; "Only show language" and "Title language" rows on
   e-hentai and hitomi; autocomplete on hitomi/asmhentai/hentaipaw/hentalk
   after a pull.
+- r74 is unverified on the device: the Image tagger section (download of
+  a 379 MB preset, Ready with 10,861 tags, Try it on a picture and the
+  `tagger:` timing line - the model has never run off the PC, and the
+  PC never ran it either); Tags from the picture in the board editor; an
+  image board without a SauceNAO key; Tag reactions with the picture.
 - r73 is unverified on the device: Boards in the drawer; a description board
   fills; must-have tags hold; a picked image and a pasted address work with
   the SauceNAO key; "Find posts like this (new board)" from a post; the

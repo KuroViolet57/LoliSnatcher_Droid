@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
@@ -13,6 +14,7 @@ import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/boards_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/image_tagger_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
@@ -181,8 +183,23 @@ class BoardEditPage extends StatefulWidget {
   /// creation. Replaced in tests.
   static Future<List<int>?> Function(String url, String? booruName)? imageFetcher = _defaultImageFetcher;
 
+  /// r74: the downloaded image tagger — whether one is ready, and what it
+  /// reads in a picture. Replaced in tests.
+  static bool Function() taggerReady = _defaultTaggerReady;
+  static Future<TaggerResult?> Function(Uint8List bytes)? pixelTagger = _defaultPixelTagger;
+
   static void resetForTests() {
     imageFetcher = _defaultImageFetcher;
+    taggerReady = _defaultTaggerReady;
+    pixelTagger = _defaultPixelTagger;
+  }
+
+  static bool _defaultTaggerReady() => ImageTaggerHandler.maybe?.enabled ?? false;
+
+  static Future<TaggerResult?> _defaultPixelTagger(Uint8List bytes) async {
+    final ImageTaggerHandler? t = ImageTaggerHandler.maybe;
+    if (t == null || !t.enabled) return null;
+    return t.tag(bytes);
   }
 
   static Future<List<int>?> _defaultImageFetcher(String url, String? booruName) async {
@@ -253,6 +270,11 @@ class _BoardEditPageState extends State<BoardEditPage> {
 
   /// A picked file, copied under boards/ only when the board is saved.
   String? pendingPick;
+
+  /// r74: what the tagger read in the reference image, as chips.
+  List<PixelTag> pixelTags = [];
+  bool tagging = false;
+  String tagError = '';
   late final String id;
   bool saving = false;
 
@@ -292,6 +314,41 @@ class _BoardEditPageState extends State<BoardEditPage> {
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not pick an image: $e')));
     }
+  }
+
+  /// r74: the reference image (the picked file, the copy, or the address)
+  /// through the downloaded tagger; the tags become chips.
+  Future<void> _tagImage() async {
+    if (tagging) return;
+    setState(() {
+      tagging = true;
+      tagError = '';
+    });
+    try {
+      final String shown = pendingPick ?? imagePath;
+      final String url = imageUrl.text.trim();
+      List<int>? bytes;
+      if (shown.isNotEmpty && File(shown).existsSync()) {
+        bytes = File(shown).readAsBytesSync();
+      } else if (url.isNotEmpty) {
+        final String booru = _seed?.imageBooru ?? '';
+        bytes = await BoardEditPage.imageFetcher?.call(url, booru.isNotEmpty ? booru : null);
+      }
+      if (bytes == null || bytes.isEmpty) throw StateError('the image could not be read');
+      final TaggerResult? r = await BoardEditPage.pixelTagger?.call(Uint8List.fromList(bytes));
+      if (r == null) throw StateError('no image tagger is downloaded');
+      if (mounted) setState(() => pixelTags = r.all);
+    } catch (e) {
+      if (mounted) setState(() => tagError = 'Could not read tags from the picture: $e');
+    } finally {
+      if (mounted) setState(() => tagging = false);
+    }
+  }
+
+  /// A tapped chip joins the must-have tags, once.
+  void _addMust(String tag) {
+    if (Board.parseTags(must.text).contains(tag)) return;
+    setState(() => must.text = '${must.text.trim()} $tag'.trim());
   }
 
   Future<void> _save() async {
@@ -396,7 +453,7 @@ class _BoardEditPageState extends State<BoardEditPage> {
           Text('Reference image', style: theme.textTheme.titleSmall),
           const SizedBox(height: 4),
           Text(
-            'Found on SauceNAO (your API key, Settings → Recommendations → Boards) and e621\'s own search; exact matches come first, and what the match names (character, series, artist) leads the search.',
+            'Found on SauceNAO (your API key, Settings → Recommendations → Boards) and e621\'s own search, and read by the downloaded tagger; exact matches come first, and what the match names (character, series, artist) and what the picture shows lead the search.',
             style: muted,
           ),
           const SizedBox(height: 8),
@@ -434,6 +491,45 @@ class _BoardEditPageState extends State<BoardEditPage> {
             decoration: const InputDecoration(labelText: 'Or an image address', hintText: 'https://…  (a post\'s image, a picked file wins over it)'),
             onChanged: (_) => setState(() {}),
           ),
+          const SizedBox(height: 12),
+          // r74: the downloaded tagger reads the picture into chips.
+          if (!BoardEditPage.taggerReady())
+            Text(
+              'Download the image tagger (Settings → Recommendations → Image tagger) to read tags straight from the picture.',
+              key: const ValueKey('board-tag-hint'),
+              style: muted,
+            )
+          else ...[
+            Row(
+              children: [
+                OutlinedButton.icon(
+                  key: const ValueKey('board-tag-image'),
+                  onPressed: (hasFile || hasAddress) && !tagging ? _tagImage : null,
+                  icon: const Icon(Symbols.image_search_rounded),
+                  label: Text(tagging ? 'Reading the picture…' : 'Tags from the picture'),
+                ),
+                const SizedBox(width: 12),
+                Expanded(child: Text('Tap a tag to make it a must-have.', style: muted)),
+              ],
+            ),
+            if (tagError.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 8), child: Text(tagError, style: TextStyle(color: theme.colorScheme.error))),
+            if (pixelTags.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final PixelTag p in pixelTags)
+                    ActionChip(
+                      key: ValueKey('board-pixel-${p.tag}'),
+                      avatar: p.character ? const Icon(Symbols.person_rounded, size: 16) : null,
+                      label: Text('${p.tag} ${(p.confidence * 100).round()}%'),
+                      onPressed: () => _addMust(p.tag),
+                    ),
+                ],
+              ),
+            ],
+          ],
           const SizedBox(height: 20),
           Text('Sources', style: theme.textTheme.titleSmall),
           const SizedBox(height: 4),
