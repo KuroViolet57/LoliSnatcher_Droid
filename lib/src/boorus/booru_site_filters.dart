@@ -84,7 +84,7 @@ class BooruSiteNotes {
         notes.add('sort:score and score:>10 change the results; rating: does not.');
       case BooruType.R34Hentai:
         notes.add(
-          'rule34hentai.net answered the PC with a Cloudflare check, so its search terms could not be checked; if searches fail, open the site once in the webview.',
+          "rule34hentai.net sorts by Newest or Top voted only (its own menu; checked 2026-09-18). The Popular chips open its Today / This month / This year pages, one page each, without the other chips, and give way to a typed search. Its rating filter covers the few rated posts, so there is no Rating chip. If searches fail behind Cloudflare, open the site once in the webview.",
         );
       case BooruType.Kusowanka:
         notes.add('Kusowanka browses one tag at a time; the Sort chip opens its Popular, Random and Top rated pages (one page each) and gives way to a typed search.');

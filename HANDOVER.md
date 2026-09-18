@@ -1692,6 +1692,49 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   label. Pre-existing, noted only: RedGifs niche feeds answer 400 `BadOrder`
   to `order=trending`, which `_nicheOrder` returns by default.
 
+### 4.41 rule34hentai's own search (r72)
+
+- r71 said "behind Cloudflare, could not be checked"; the user's Chrome gets
+  through, so the site was checked there on 2026-09-18 (`/ext_doc` is the
+  Shimmie2 engine's extension index, `/ext_doc/index` its search help;
+  forty `/post/list/<term>/1` probes compared first ids and page counts).
+- **Verified:** the Sort menu is `order=id_desc` (default) and
+  `order=score_desc`; every other order form (asc, filesize, width, random,
+  and the colon spelling) is ignored. `content:video|audio`, `ext=webm|mp4|
+  gif|png|jpg`, `score>`, `favorites>`, `comments>`, `size>=WxH`, `ratio:`,
+  `filesize>`, `width>`, `posted>=`, `id<`, `source:any`, `upvoted_by:`,
+  `favorited_by:` (American spelling) filter. `rating:` covers only rated
+  posts (s 138 pages, q 48, e/u none, of 9,803) - no chip. `/popular_by_day|
+  month|year` exist (one page, same `.thumb` markup); `/random` is empty;
+  pools / notes / artists not installed. Autocomplete
+  `/api/internal/autocomplete?s=` → `{tag: count}`.
+- **Handler (`r34hentai_handler.dart`):** `doujinFilters` order (`=`),
+  popular, content, ext (`=`), score / favorites / comments (`>`);
+  `availableMetaTags` (the typed fields; `ComparableNumberMetaTag` for the
+  numeric ones, `DateMetaTag` for posted - `posted:date` alone and `tags=N`
+  answer nothing on the site; `score:100`, `size:1920x1080`, `width:1920`,
+  `filesize:>10mb` checked); `makeURL` maps `popular:day|month|year` to the
+  site page when the rest is only the card's own chip terms (`chipTerm`:
+  order= / content: / ext= / score / favorites / comments - saved defaults
+  compose the same way), page > 1 locks silently, a typed tag or field beside
+  it wins, an unknown value → errorString + locked; rewrites `order:x` →
+  `order=x` (the Sort chip does not see the typed form - known, minor);
+  `makeTagURL` + Map/String-aware `parseTagSuggestionsList` (a non-JSON
+  answer THROWS so the alias resolver records no miss). `usesUserId` /
+  `usesApiKey` true with Username / Password labels (the generic Shimmie
+  handler hid both fields, so the site login was unreachable - pre-existing);
+  the signed-in dummy sets `applySourceSettings = false`. Site note updated.
+- Contrarian review (one agent, read-only): a Popular chip was defeated by
+  any other chip or saved default; a non-JSON autocomplete answer became an
+  alias miss; the login fields were hidden; the site note lacked the Popular
+  clause; exact-value spellings unverified (then checked in Chrome: score,
+  size, width, filesize fine; posted and tags not). All applied.
+- Tests: `r34hentai_parity_test`; `filter_chip_keys_test` registers the spec.
+  No live test through the app from this PC (Cloudflare on curl/Dio); the
+  checks were made in Chrome and are due on the device.
+- Left: site favourites through the app's login (Shimmie `favourite/add`,
+  needs a logged-in check); `/random` (empty on the site).
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
@@ -2121,7 +2164,7 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r71)
+## 12. Open items (as of r72)
 
 - r70 is unverified on the device: e-hentai chips (Watched / Favourites +
   category, the four toplists, Show expunged / With a torrent), typed
@@ -2132,6 +2175,10 @@ cards have had regressions).
   niyaniya Category; "Only show language" and "Title language" rows on
   e-hentai and hitomi; autocomplete on hitomi/asmhentai/hentaipaw/hentalk
   after a pull.
+- r72 is unverified on the device: rule34hentai's Filters card (Sort: Top
+  voted reorders; Popular: Today / This month / This year; Content; File
+  type; Score; Favorites; Comments), typed fields in the query editor,
+  suggestions while typing.
 - r71 is unverified on the device: the comments button on yande.re / e621 /
   derpibooru / twibooru / a szurubooru post; notes drawn on a yande.re post;
   the Filters card on yande.re (Order, Rating), twibooru (Sort, Direction,

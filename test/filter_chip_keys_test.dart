@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lolisnatcher/src/boorus/shimmie_handler.dart';
+import 'package:lolisnatcher/src/boorus/r34hentai_handler.dart';
 import 'package:lolisnatcher/src/boorus/r34us_handler.dart';
 import 'package:lolisnatcher/src/boorus/worldxyz_handler.dart';
 import 'package:lolisnatcher/src/boorus/sankaku_handler.dart';
@@ -68,6 +69,8 @@ void main() {
     // r47: terms with = and > dividers.
     'rule34.paheal': () => ShimmieHtmlHandler(b('rule34paheal', BooruType.Shimmie, 'https://rule34.paheal.net'), 20).doujinFilters!,
     'rule34.us': () => R34USHandler(b('Rule34Us', BooruType.R34US, 'https://rule34.us'), 20).doujinFilters!,
+    // r72: rule34hentai's own menu and operators.
+    'rule34hentai': () => R34HentaiHandler(b('r34h', BooruType.R34Hentai, 'https://rule34hentai.net'), 20).doujinFilters!,
     // r71: the booru parity sweep.
     'twibooru': () => BooruOnRailsHandler(b('twi', BooruType.BooruOnRails, 'https://twibooru.org'), 20).doujinFilters,
     'szurubooru': () => SzurubooruHandler(b('szu', BooruType.Szurubooru, 'https://booru.example'), 20).doujinFilters!,
