@@ -16,6 +16,7 @@ import 'package:uuid/uuid.dart';
 
 import 'package:lolisnatcher/src/boorus/mergebooru_handler.dart';
 import 'package:lolisnatcher/src/boorus/pool_posts_handler.dart';
+import 'package:lolisnatcher/src/boorus/suggestion_handler.dart';
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
@@ -248,7 +249,7 @@ class SearchHandler {
     // record search query — doujin queries go to the doujin store, booru
     // queries to store.db (SearchHistoryStore routes by source). Opening a
     // doujin DETAIL tab isn't a search, so its `id:<n>` query is not history.
-    if (searchText != '' && doujinPostURL == null) {
+    if (searchText != '' && doujinPostURL == null && isPlainSearch(searchText)) {
       unawaited(SearchHistoryStore.record(searchText, booru));
     }
 
@@ -641,7 +642,8 @@ class SearchHandler {
     if (text.isNotEmpty &&
         actionType?.isLocalDb != true &&
         actionType?.isRecommendationFeed != true &&
-        !DoujinDataHandler.isDoujinBooru(actionBooru)) {
+        !DoujinDataHandler.isDoujinBooru(actionBooru) &&
+        isPlainSearch(text)) {
       InterestsHandler.instance.onSearch(text, booru: actionBooru);
     }
 
@@ -693,10 +695,15 @@ class SearchHandler {
     changeTabIndex(currentIndex, ignoreSameIndexCheck: true);
 
     // write to history (doujin searches never reach the booru history table)
-    if (text != '') {
+    if (text != '' && isPlainSearch(text)) {
       unawaited(SearchHistoryStore.record(text, newBooru ?? currentBooru));
     }
   }
+
+  /// r76: a search the user typed, as opposed to a tab query that carries a
+  /// post for its loader (`suggest: …`), which is neither history nor a
+  /// search the learner should count.
+  static bool isPlainSearch(String text) => !SuggestionHandler.isQuery(text);
 
   //
 
@@ -1877,6 +1884,15 @@ class SearchTab {
       booruHandler = customHandler;
       booruHandler.pageNum = 0;
       seedPersistedDoujinItem();
+      return;
+    }
+    // r76: a tab opened from a post's Suggested strip carries the post in
+    // its query (`suggest: … post:…`) and builds the strip's own loader,
+    // also when restored from a saved tab.
+    final SuggestionHandler? suggestions = SuggestionHandler.fromQuery(selectedBooru, 30, tags);
+    if (suggestions != null) {
+      booruHandler = suggestions;
+      booruHandler.pageNum = 0;
       return;
     }
     // Rebuilt from persisted state on restore too, so a pool tab keeps

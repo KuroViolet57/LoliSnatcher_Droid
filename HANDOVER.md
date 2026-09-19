@@ -2146,6 +2146,38 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   `recommendations_page_test`.
 - **Not verified:** mpv writing the file on the phone (first real run there).
 
+### 4.46 The Suggested strip's new tab fills (r76, build 96)
+
+- **Cause:** `TagContentPreview` (in `widgets/gallery/tag_view.dart`) runs
+  the Suggested strip with a `SuggestionHandler` built around the post, and
+  a placeholder tag "suggestions"; its "open in new tab" (and the long-press
+  variant) passed `_effectiveTag` ("suggestions") to `addTabByString`, so
+  the new tab searched the site for that tag. On e621 it is a real tag with
+  2 unrelated posts (checked through `tags.json`); the user's screenshot
+  showed "Error, no results loaded". r75's change to "Recommend more like
+  this" had aimed at the wrong list (harmless; kept).
+- **Fix:** `SuggestionHandler.queryFor(item, {filter, boorus})` →
+  `suggest: c:<character>… f:<copyright>… a:<artist>… t:<act>… s:<style>
+  [with:<filter>] [on:<booru>] post:<address>` (spaces and `%` escaped; the
+  first 12 act tags in `actTags` order; the style only when not already an
+  act). `isQuery` (the marker first, a `post:` term), `fromQuery(booru,
+  limit, query)` rebuilds the post with the same typed tags (acts get
+  ascending counts so `actTags` keeps their order), the `on:` sources
+  (else the tab's own booru) and the filter. `SearchTab`'s constructor
+  builds that loader for such a query right after the custom-handler
+  branch, so a restored tab and a re-run search get it too; any other
+  query is a normal search. `SearchHandler.isPlainSearch` keeps these
+  queries out of `SearchHistoryStore.record` (both call sites) and out of
+  `InterestsHandler.onSearch`. `TagContentPreview.newTabQuery` is what both
+  open actions use.
+- **Tests:** `test/suggestion_query_test.dart` (facets of the rebuilt post
+  equal the original's for rounds 0-5, booru and doujin; escaping, filter
+  and sources; the marker rule; `SearchTab` picks the loader, also from a
+  `TabBackup` JSON round trip; `newTabQuery`; history through an in-memory
+  database). Live (`test/suggestion_tab_live_test.dart`): the screenshot
+  post (e621 6717654) → 27 posts, every one carrying a facet tag.
+- **Left:** tabs opened before this build hold only "suggestions".
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
@@ -2586,6 +2618,8 @@ cards have had regressions).
   niyaniya Category; "Only show language" and "Title language" rows on
   e-hentai and hitomi; autocomplete on hitomi/asmhentai/hentaipaw/hentalk
   after a pull.
+- r76 (build 96) is unverified on the device: Suggested → open in new tab
+  fills in the background and after a restart (checked live from the PC).
 - r76 (build 95) is unverified on the device: `look: frame n/5` lines while
   a video plays in the pooled media_kit viewer; the `video: decoder` line
   (expected "no (software)" with MPV: HWDEC vulkan, "mediacodec" with

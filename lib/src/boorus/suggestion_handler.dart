@@ -5,10 +5,13 @@ import 'package:flutter/foundation.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/meta_tag.dart';
+import 'package:lolisnatcher/src/data/tag.dart';
+import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 import 'package:lolisnatcher/src/handlers/recommender/item_features.dart';
 import 'package:lolisnatcher/src/handlers/recommender/recommender_handler.dart';
+import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/suggestion_engine.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 // The handlers/ resolver translates a whole space-separated query term by
@@ -52,6 +55,107 @@ class SuggestionHandler extends BooruHandler {
 
   /// The post the suggestions are built around.
   final BooruItem sourceItem;
+
+  // ── r76: a tab's query that carries the post ──
+
+  /// The first term of a suggestion tab's query.
+  static const String queryMarker = 'suggest:';
+
+  /// How many distinctive tags the query keeps (rounds rotate through them).
+  static const int maxActs = 12;
+
+  /// A tab query that starts with [queryMarker] and names a `post:`.
+  static bool isQuery(String query) {
+    final List<String> terms = query.trim().split(RegExp(r'\s+'));
+    return terms.length >= 2 && terms.first.toLowerCase() == queryMarker && terms.skip(1).any((t) => t.startsWith('post:') && t.length > 'post:'.length);
+  }
+
+  static String _esc(String s) => s.replaceAll('%', '%25').replaceAll(' ', '%20');
+
+  static String _unesc(String s) {
+    try {
+      return Uri.decodeComponent(s);
+    } catch (_) {
+      return s;
+    }
+  }
+
+  /// What the strip's loader needs from [item], as a tab query:
+  /// `suggest: c:<character> f:<series> a:<artist> t:<tag> s:<style>
+  /// [with:<filter>] [on:<source>] post:<address>`, in the order the
+  /// suggestion engine reads them, spaces and `%` escaped.
+  static String queryFor(BooruItem item, {String filter = '', List<Booru>? boorus}) {
+    final List<String> terms = [queryMarker];
+    for (final String c in SuggestionEngine.tagsOfType(item, TagType.character)) {
+      terms.add('c:${_esc(c)}');
+    }
+    for (final String f in SuggestionEngine.tagsOfType(item, TagType.copyright)) {
+      terms.add('f:${_esc(f)}');
+    }
+    for (final String a in SuggestionEngine.tagsOfType(item, TagType.artist)) {
+      terms.add('a:${_esc(a)}');
+    }
+    final List<Tag> acts = SuggestionEngine.actTags(item).take(maxActs).toList();
+    for (final Tag t in acts) {
+      terms.add('t:${_esc(t.fullString)}');
+    }
+    final String? style = SuggestionEngine.styleTag(item);
+    if (style != null && !acts.any((t) => t.fullString.trim().toLowerCase().replaceAll(' ', '_') == style)) {
+      terms.add('s:${_esc(style)}');
+    }
+    if (filter.trim().isNotEmpty) terms.add('with:${_esc(filter.trim())}');
+    for (final Booru b in boorus ?? const <Booru>[]) {
+      if ((b.name ?? '').isNotEmpty) terms.add('on:${_esc(b.name!)}');
+    }
+    terms.add('post:${_esc(item.postURL.isNotEmpty ? item.postURL : item.fileURL)}');
+    return terms.join(' ');
+  }
+
+  /// The loader for a tab whose query came from [queryFor]: the post is
+  /// rebuilt with the same typed tags (distinctive tags in the same order),
+  /// the sources named by `on:` (else the tab's own [booru]), the filter.
+  static SuggestionHandler? fromQuery(Booru booru, int limit, String query) {
+    if (!isQuery(query)) return null;
+    final List<Tag> tags = [];
+    final List<Booru> targets = [];
+    String post = '';
+    String filter = '';
+    int acts = 0;
+    for (final String term in query.trim().split(RegExp(r'\s+')).skip(1)) {
+      final int i = term.indexOf(':');
+      if (i <= 0) continue;
+      final String key = term.substring(0, i);
+      final String value = _unesc(term.substring(i + 1));
+      if (value.isEmpty) continue;
+      switch (key) {
+        case 'c':
+          tags.add(Tag(value, tagType: TagType.character));
+        case 'f':
+          tags.add(Tag(value, tagType: TagType.copyright));
+        case 'a':
+          tags.add(Tag(value, tagType: TagType.artist));
+        case 't':
+          // Ascending counts keep the engine's rarest-first order.
+          tags.add(Tag(value, count: ++acts));
+        case 's':
+          if (!tags.any((t) => t.fullString == value)) tags.add(Tag(value));
+        case 'with':
+          filter = value;
+        case 'on':
+          for (final Booru b in SettingsHandler.instance.booruList) {
+            if (b.name == value) {
+              targets.add(b);
+              break;
+            }
+          }
+        case 'post':
+          post = value;
+      }
+    }
+    if (post.isEmpty) return null;
+    final BooruItem source = BooruItem(fileURL: post, sampleURL: '', thumbnailURL: '', tagsList: tags, postURL: post);
+    return SuggestionHandler(booru, limit, sourceItem: source, targetBoorus: targets.isEmpty ? null : targets, extraFilter: filter);
+  }
 
   /// The name the recommender logs this strip's exposures under.
   static const String surface = 'suggested';

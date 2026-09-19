@@ -3418,6 +3418,14 @@ class TagContentPreview extends StatefulWidget {
   // per-character caps. See SuggestionHandler / SuggestionEngine.
   final BooruItem? suggestFor;
 
+  /// r76: the query a new tab gets from this strip. A Suggested strip's
+  /// placeholder tag means nothing to a site, so its tab carries the post
+  /// for the same suggestion loader instead.
+  static String newTabQuery({required String effectiveTag, BooruItem? suggestFor, String? filter, List<Booru>? boorus}) {
+    if (suggestFor == null) return effectiveTag;
+    return SuggestionHandler.queryFor(suggestFor, filter: filter ?? '', boorus: boorus);
+  }
+
   // Cross-booru discovery: when set (and longer than one), the facets are
   // spread across these boorus with tag spellings translated per site.
   final List<Booru>? suggestBoorus;
@@ -3836,10 +3844,17 @@ class _TagContentPreviewState extends State<TagContentPreview> with AutomaticKee
 
   // The "open this tag in a new tab" action — extracted so it can be reused
   // from the chip's icon button.
+  String get _newTabQuery => TagContentPreview.newTabQuery(
+    effectiveTag: _effectiveTag,
+    suggestFor: widget.suggestFor,
+    filter: _activeAnimatedFilter,
+    boorus: widget.suggestBoorus,
+  );
+
   void _openInNewTab(BuildContext context) {
     final defaultMode = settingsHandler.defaultTabAddMode == 'next' ? TabAddMode.next : TabAddMode.end;
     SearchHandler.instance.addTabByString(
-      _effectiveTag,
+      _newTabQuery,
       customBooru: selectedBooru,
       addMode: defaultMode,
       group: SearchHandler.inheritGroup,
@@ -3926,7 +3941,7 @@ class _TagContentPreviewState extends State<TagContentPreview> with AutomaticKee
     if (chosenMode == null) return;
 
     SearchHandler.instance.addTabByString(
-      _effectiveTag,
+      _newTabQuery,
       customBooru: selectedBooru,
       addMode: chosenMode,
       switchToNew: false,
