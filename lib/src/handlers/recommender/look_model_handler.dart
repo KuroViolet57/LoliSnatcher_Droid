@@ -528,6 +528,34 @@ class LookModelHandler {
     return out;
   }
 
+  /// r76: a video's vector read from its frames (VideoFrames), in memory
+  /// and in the database, over the one its preview picture gave.
+  Future<void> putItemVector(BooruItem item, Float32List v) async {
+    final String key = keyOf(item);
+    _remember('k:$key', v);
+    if (_settings.dbEnabled && _slug.isNotEmpty) {
+      try {
+        await _settings.dbHandler.putEmbeddings(storeKey, {key: v});
+      } catch (e, s) {
+        Logger.Inst().log('storing a video\'s look vector failed: $e', className, 'putItemVector', LogTypes.exception, s: s);
+      }
+    }
+  }
+
+  /// The average of unit vectors, made unit again; empty for none.
+  static Float32List meanOf(List<Float32List> vectors) {
+    if (vectors.isEmpty) return Float32List(0);
+    final int n = vectors.first.length;
+    final Float32List out = Float32List(n);
+    for (final Float32List v in vectors) {
+      for (int i = 0; i < n && i < v.length; i++) {
+        out[i] += v[i];
+      }
+    }
+    normalizeInPlace(out);
+    return out;
+  }
+
   /// An item's vector when it is already in memory (a scorer in a loop).
   Float32List? cached(BooruItem item) => _recall('k:${keyOf(item)}');
 

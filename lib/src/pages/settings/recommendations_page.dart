@@ -650,6 +650,20 @@ class _LookSectionState extends State<_LookSection> {
                       ),
                       leadingIcon: const Icon(Symbols.visibility_rounded),
                     ),
+                    // r76: frames from the playing video.
+                    SettingsToggle(
+                      key: const ValueKey('look-video-frames-toggle'),
+                      value: settings.videoFrames,
+                      onChanged: (bool v) {
+                        setState(() => settings.videoFrames = v);
+                        settings.saveSettings(restate: false);
+                      },
+                      title: 'Read frames from playing videos',
+                      subtitle: const Text(
+                        'While a video plays in the media_kit player, a few pictures of what is on screen are read, and the video is judged by them instead of its preview picture: For You, Posts like this, boards and tagging your reactions. Off = the preview picture, as before.',
+                      ),
+                      leadingIcon: const Icon(Symbols.movie_rounded),
+                    ),
                   ],
                 );
               },

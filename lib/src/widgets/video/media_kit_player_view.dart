@@ -1211,3 +1211,22 @@ class _ProgressBarState extends State<_ProgressBar> {
     );
   }
 }
+
+/// r76: which pooled player is showing a video right now, for reading its
+/// frames (VideoFrames). Read-only: nothing here changes the pool or a
+/// player. [stillShowing] tells afterwards whether that player still holds
+/// the same video (the pool may re-point an idle player at another one).
+class MediaKitFrameSource {
+  const MediaKitFrameSource._();
+
+  static ({Player player, bool Function() stillShowing})? showing(String url) {
+    for (final _PooledPlayer e in _MediaKitPlayerPool.instance._slots) {
+      if (e.url != url || e.hasError) continue;
+      return (
+        player: e.player,
+        stillShowing: () => e.url == url && !e.hasError && _MediaKitPlayerPool.instance._slots.contains(e),
+      );
+    }
+    return null;
+  }
+}

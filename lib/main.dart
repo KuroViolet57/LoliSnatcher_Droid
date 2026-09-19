@@ -29,6 +29,7 @@ import 'package:lolisnatcher/src/handlers/interests_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/encoder_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/image_tagger_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/look_model_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/video_frames.dart';
 import 'package:lolisnatcher/src/handlers/recommender/recommender_handler.dart';
 import 'package:lolisnatcher/src/handlers/local_auth_handler.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
@@ -115,6 +116,8 @@ void main() async {
   // r75: the downloaded looks model, likewise.
   LookModelHandler.register();
   unawaited(LookModelHandler.instance.refresh());
+  // r76: frames from the playing video follow the viewer's current item.
+  VideoFrames.register().attach();
   LocalAuthHandler.register();
 
   await ServiceHandler.setSystemUiVisibility(true);

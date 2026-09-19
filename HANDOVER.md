@@ -2070,6 +2070,82 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   reference, the ONNX halves are not. Cut: video frames (player hook),
   faces, per-site image search (none offers it).
 
+### 4.45 Frames from the playing video (r76, build 95)
+
+- **Why:** the user asked for "the frames from a playing video" (listed as
+  not done in r75): every model read a video through its preview picture.
+  Plan approved through the user's checklist; they added the switch.
+- **Player (pooled media_kit viewer only, the user's setup):**
+  `MediaKitFrameSource.showing(url)` at the end of
+  `widgets/video/media_kit_player_view.dart` is a read-only lookup in
+  `_MediaKitPlayerPool._slots` (entry with that url and no error) returning
+  `(player, stillShowing)`; nothing else in the player file changed.
+- **The grab** (`handlers/recommender/video_frames.dart`, `VideoFrames`,
+  GetIt, `register().attach()` in `main.dart` after `LookModelHandler`):
+  mpv's `screenshot-to-file <tmp>/f<n>.jpg video` through
+  `NativePlayer.command` (media_kit builds that argument list as
+  `calloc<Pointer<Utf8>>(128)` and sends it with `mpv_command_async`; the
+  pool keeps the default async=true). **Not** `Player.screenshot()`: in
+  media_kit 1.2.6 it allocates `args.join().length` bytes (19) for mpv's
+  NULL-terminated `char**`, so mpv reads past the end (issues #569, #1222,
+  #1075). mpv 0.36: `screenshot-to-file` has `.spawn_thread = true`,
+  format from the extension (JPEG q90), reply after the write. Safety:
+  media_kit's `dispose` sets `disposed = true` and calls
+  `mpv_terminate_destroy` 5 s later; `command()`/`getProperty()` refuse a
+  disposed player; `stillShowing()` after the reply drops a frame the pool
+  re-pointed. No media_kit lock is taken (its `lock` is one static lock for
+  every player).
+- **Schedule:** follows `ViewerHandler.instance.current` through
+  `addListener` (NOT `.listen`: GetX 5 builds `stream` with
+  `StreamController.broadcast(onCancel: addListener(...))`, so once the
+  last stream listener cancels the stream is never fed again — found by a
+  test). A timer ticks every second while a qualifying item is current:
+  first grab after `firstDelay` 2.5 s, then every `gap` 6 s, `maxFrames` 5,
+  none while paused after the first, `maxFailures` 4 per video. Qualifies:
+  a video (`mediaType`), not a doujin item, not `isHidden`; wanted:
+  `settings.videoFrames` and (looks model enabled, or tagger enabled with
+  `taggerOnReactions`). No grabs with the `mediacodec_embed` output (mpv
+  can't read that picture back; logged once). Frames: shrunk to 512 px
+  (`shrinkJpeg`, average filter, JPEG q88) off the main thread, kept for 24
+  videos in memory; temp files deleted, late ones swept after a minute.
+  After each frame the looks model reads it (`lookOf`) and the normalised
+  mean of the video's frame vectors is stored with the new
+  `LookModelHandler.putItemVector` (memory + `ItemEmbedding` under
+  `look:<slug>`, over the preview picture's vector); `LookModelHandler.meanOf`.
+- **Decoder line:** once per video, `video: decoder <hwdec-current> ·
+  output <current-vo> · codec <video-codec>` ("no" → "no (software)"),
+  read with `getProperty`. Why: the user's MPV: HWDEC is "vulkan"; the
+  bundled libmpv (`third_party/libmpv-android/default-arm64-v8a.jar`,
+  libmpv-android-video-build v1.1.11, mpv commit 78d43740, 14 Oct 2023) was
+  built with FFmpeg `--disable-vulkan` and mpv `-Dvulkan=disabled
+  -Dlibplacebo=disabled` (both strings embedded in libmpv.so; no
+  `*_vulkan` decoders, no `vkCreateInstance`; the MediaCodec decoders and
+  AImageReader are there). mpv's `vd_lavc.c` keeps only hwdecs named like
+  the option (503–504), warns "Unsupported hwdec" (581) and decodes in
+  software (599). So "vulkan" = software decoding; "auto-safe" = MediaCodec.
+  The pooled players log errors only, so those lines never reached the
+  user's log. `gpu-next` isn't in this build either.
+- **Consumers:** `PixelTags.forItem` tags up to three kept frames (first,
+  middle, last) and merges them (`mergeNames`: best confidence, characters
+  first, first-seen on ties), else the thumbnail; seams `taggerReady`,
+  `framesFor`, `tagBytes`, `thumbnail`. `BoardsPage.openSimilar` and
+  `BoardEditPage.openFromItem` use `BoardsPage.videoFrame` (→
+  `VideoFrames.frameNow`: a fresh grab when its player shows it, else the
+  newest kept frame) for a video; the editor's copy is deleted
+  `frameCleanupDelay` (2 s) after a cancel or a changed picture, through
+  `deleteCopy` (a seam: Windows, where tests run, keeps a shown picture's
+  file memory-mapped, so a real delete fails there).
+- **Setting:** `videoFrames` (true), toggle `look-video-frames-toggle` in
+  the Looks model section.
+- **Tests:** `test/video_frames_test.dart` (the exact command to the
+  player the lookup returns for that address, the decoder properties once,
+  maxFrames, the stored mean, no grabs for switch off / picture / hidden /
+  doujin / no consumer / mediacodec_embed / an item left early / paused,
+  moved-on / no file / timeout then retry, `frameNow`), `pixel_tags_test`,
+  and additions to `look_model_handler_test`, `boards_page_test`,
+  `recommendations_page_test`.
+- **Not verified:** mpv writing the file on the phone (first real run there).
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
@@ -2499,7 +2575,7 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r75)
+## 12. Open items (as of r76)
 
 - r70 is unverified on the device: e-hentai chips (Watched / Favourites +
   category, the four toplists, Show expunged / With a torrent), typed
@@ -2510,6 +2586,10 @@ cards have had regressions).
   niyaniya Category; "Only show language" and "Title language" rows on
   e-hentai and hitomi; autocomplete on hitomi/asmhentai/hentaipaw/hentalk
   after a pull.
+- r76 (build 95) is unverified on the device: `look: frame n/5` lines while
+  a video plays in the pooled media_kit viewer; the `video: decoder` line
+  (expected "no (software)" with MPV: HWDEC vulkan, "mediacodec" with
+  auto-safe); the board editor opening on the frame on screen; the switch.
 - r75 is unverified on the device: the Looks model download (55 MB) and
   its first run (the `look:` timing line); Posts like this from a
   favourite; a words-only board ordered by the words; "Picked because"

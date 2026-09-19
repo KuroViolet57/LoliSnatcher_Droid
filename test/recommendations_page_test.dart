@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -331,6 +332,31 @@ void main() {
     await settle(tester);
     expect(SettingsHandler.instance.lookModel, '');
     expect(find.textContaining('No looks model'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('r76: the frames switch sits in the Looks model section, flips the setting, and the setting survives a save and a load', (tester) async {
+    tester.view.physicalSize = const Size(1080, 9000);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.reset);
+    LookModelHandler.unregister();
+    LookModelHandler.register();
+    addTearDown(LookModelHandler.unregister);
+    SettingsHandler.instance.videoFrames = true;
+    await warm(tester);
+    await tester.pumpWidget(const MaterialApp(home: RecommendationsPage()));
+    await settle(tester);
+    final Finder toggle = find.byKey(const ValueKey('look-video-frames-toggle'));
+    expect(toggle, findsOneWidget);
+    expect(find.textContaining('Read frames from playing videos'), findsOneWidget);
+    await tester.tap(find.descendant(of: toggle, matching: find.byType(Switch)));
+    await tester.pump();
+    expect(SettingsHandler.instance.videoFrames, isFalse);
+    final Map<String, dynamic> json = SettingsHandler.instance.toJson();
+    expect(json['videoFrames'], isFalse);
+    SettingsHandler.instance.videoFrames = true;
+    await tester.runAsync(() => SettingsHandler.instance.loadFromJSON(jsonEncode({'videoFrames': false}), false));
+    expect(SettingsHandler.instance.videoFrames, isFalse);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 }

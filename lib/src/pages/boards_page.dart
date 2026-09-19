@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -15,6 +16,7 @@ import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/boards_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/image_tagger_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/video_frames.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
@@ -30,8 +32,15 @@ class BoardsPage extends StatefulWidget {
   /// How a board opens; the default makes a tab. Replaced in tests.
   static void Function(Board board, bool switchTo)? opener;
 
+  /// r76: the frame on screen of a playing video (VideoFrames), used as a
+  /// board's picture instead of the video's preview. Replaced in tests.
+  static Future<Uint8List?> Function(BooruItem item) videoFrame = _defaultVideoFrame;
+
+  static Future<Uint8List?> _defaultVideoFrame(BooruItem item) async => VideoFrames.maybe?.frameNow(item);
+
   static void resetForTests() {
     opener = null;
+    videoFrame = _defaultVideoFrame;
   }
 
   /// Opens [board] as a tab: switching to it when the user chose it from
@@ -71,8 +80,17 @@ class BoardsPage extends StatefulWidget {
     await store.load();
     final Board draft = BoardEditPage.similarFromItem(item, source, id: store.newId());
     String imagePath = '';
+    // r76: for a video, the frame on screen, not its preview picture.
+    if (item.mediaType.value.isVideo) {
+      try {
+        final Uint8List? frame = await videoFrame(item).timeout(const Duration(seconds: 6));
+        if (frame != null && frame.isNotEmpty) imagePath = await store.importImageBytes(frame, draft.id, ext: 'jpg');
+      } catch (e) {
+        Logger.Inst().log('similar board: no frame from the video ($e)', 'BoardsPage', 'openSimilar', LogTypes.booruHandlerInfo);
+      }
+    }
     final Future<List<int>?> Function(String url, String? booruName)? fetch = BoardEditPage.imageFetcher;
-    if (fetch != null && draft.imageUrl.isNotEmpty && draft.imageBooru.isNotEmpty) {
+    if (imagePath.isEmpty && fetch != null && draft.imageUrl.isNotEmpty && draft.imageBooru.isNotEmpty) {
       try {
         final List<int>? bytes = await fetch(draft.imageUrl, draft.imageBooru).timeout(const Duration(seconds: 20));
         if (bytes != null && bytes.isNotEmpty) imagePath = await store.importImageBytes(bytes, draft.id, ext: BoardEditPage.extensionOf(draft.imageUrl));
@@ -225,10 +243,25 @@ class BoardEditPage extends StatefulWidget {
   static bool Function() taggerReady = _defaultTaggerReady;
   static Future<TaggerResult?> Function(Uint8List bytes)? pixelTagger = _defaultPixelTagger;
 
+  /// r76: how long after the editor closes a video frame it no longer
+  /// needs is deleted (the closing page still paints it). Tests shorten it.
+  static Duration frameCleanupDelay = const Duration(seconds: 2);
+
+  /// r76: how an unused frame copy is deleted. Replaced in tests: Windows,
+  /// where they run, keeps a shown picture's file mapped.
+  static void Function(String path) deleteCopy = _defaultDeleteCopy;
+
+  static void _defaultDeleteCopy(String path) {
+    final File f = File(path);
+    if (f.existsSync()) f.deleteSync();
+  }
+
   static void resetForTests() {
     imageFetcher = _defaultImageFetcher;
     taggerReady = _defaultTaggerReady;
     pixelTagger = _defaultPixelTagger;
+    frameCleanupDelay = const Duration(seconds: 2);
+    deleteCopy = _defaultDeleteCopy;
   }
 
   static bool _defaultTaggerReady() => ImageTaggerHandler.maybe?.enabled ?? false;
@@ -290,9 +323,42 @@ class BoardEditPage extends StatefulWidget {
   }
 
   static Future<void> openFromItem(BuildContext context, BooruItem item, Booru? source) async {
+    Board template = templateFromItem(item, source);
+    // r76: for a video, the editor opens on the frame on screen; the copy
+    // goes if the editor is cancelled or the picture is changed.
+    String framePath = '';
+    if (item.mediaType.value.isVideo) {
+      try {
+        final Uint8List? frame = await BoardsPage.videoFrame(item).timeout(const Duration(seconds: 6));
+        if (frame != null && frame.isNotEmpty) {
+          final BoardsHandler store = BoardsHandler.instance;
+          framePath = await store.importImageBytes(frame, store.newId(), ext: 'jpg');
+          template = template.copyWith(imagePath: framePath);
+        }
+      } catch (e) {
+        Logger.Inst().log('new board: no frame from the video ($e)', 'BoardEditPage', 'openFromItem', LogTypes.booruHandlerInfo);
+      }
+    }
+    void dropFrame() {
+      if (framePath.isEmpty) return;
+      try {
+        BoardEditPage.deleteCopy(framePath);
+      } catch (e) {
+        Logger.Inst().log('new board: the unused frame copy could not be deleted ($e)', 'BoardEditPage', 'openFromItem', LogTypes.booruHandlerInfo);
+      }
+    }
+
+    if (!context.mounted) {
+      dropFrame();
+      return;
+    }
     final Board? saved = await Navigator.of(context).push<Board>(
-      MaterialPageRoute(builder: (_) => BoardEditPage(template: templateFromItem(item, source))),
+      MaterialPageRoute(builder: (_) => BoardEditPage(template: template)),
     );
+    if (saved == null || saved.imagePath != framePath) {
+      // After the editor's page has finished closing: it still paints the picture while it slides out.
+      unawaited(Future<void>.delayed(BoardEditPage.frameCleanupDelay, dropFrame));
+    }
     if (saved != null && context.mounted) {
       BoardsPage.open(context, saved, switchTo: false);
     }

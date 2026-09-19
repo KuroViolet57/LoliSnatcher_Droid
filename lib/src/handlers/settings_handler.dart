@@ -256,6 +256,9 @@ class SettingsHandler {
   // this and the learner read pictures with it once it is downloaded.
   bool aiLook = true;
   String lookModel = '';
+  // r76: frames from the playing video (VideoFrames) replace a video's
+  // preview picture for the looks model, boards and the tagger.
+  bool videoFrames = true;
   // Render the post-info panel (tags, metadata) as a Boorusama-style bottom
   // sheet dragged up from the bottom edge instead of the classic right-side
   // drawer. On by default; turn off to restore the side drawer.
@@ -769,6 +772,10 @@ class SettingsHandler {
     'lookModel': {
       'type': 'string',
       'default': '',
+    },
+    'videoFrames': {
+      'type': 'bool',
+      'default': true,
     },
     'useBottomInfoSheet': {
       'type': 'bool',
@@ -1408,6 +1415,8 @@ class SettingsHandler {
         return aiLook;
       case 'lookModel':
         return lookModel;
+      case 'videoFrames':
+        return videoFrames;
       case 'useBottomInfoSheet':
         return useBottomInfoSheet;
       case 'bottomSheetSizeMultiplier':
@@ -1720,6 +1729,9 @@ class SettingsHandler {
         break;
       case 'lookModel':
         lookModel = validatedValue;
+        break;
+      case 'videoFrames':
+        videoFrames = validatedValue;
         break;
       case 'useBottomInfoSheet':
         useBottomInfoSheet = validatedValue;

@@ -44,7 +44,7 @@ class Constants {
   // Short 1-2 word codename describing this build's changes. Shown in the
   // settings version row and used for the uploaded APK name, following the
   // '{codename}-{version}' scheme.
-  static const String buildCodename = 'r75-looks';
+  static const String buildCodename = 'r76-video-frames';
 
   // TODO don't forget to update on every new release
   static const UpdateInfo updateInfo = UpdateInfo(

@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image/image.dart' as img;
 
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/data/board.dart';
@@ -290,6 +291,93 @@ void main() {
       expect(opened, hasLength(1));
       expect(opened.single.$2, isFalse);
       expect(store.boards.single.hidden, isFalse);
+    });
+  });
+
+  group('r76: a video\'s frame instead of its preview picture', () {
+    BooruItem videoPost() => BooruItem(
+      fileURL: 'https://img.gelbooru.com/v/1.mp4',
+      sampleURL: 'https://img.gelbooru.com/s/1.jpg',
+      thumbnailURL: 'https://img.gelbooru.com/t/1.jpg',
+      tagsList: [Tag('hatsune_miku', tagType: TagType.character), Tag('beach')],
+      postURL: 'https://gelbooru.com/p/1',
+    );
+
+    testWidgets('Posts like this on a video: the board\'s picture is exactly the frame; nothing is downloaded', (tester) async {
+      final Uint8List frame = Uint8List.fromList(List<int>.generate(64, (int i) => i));
+      int fetches = 0;
+      BoardsPage.videoFrame = (BooruItem item) async => frame;
+      BoardEditPage.imageFetcher = (String url, String? booruName) async {
+        fetches++;
+        return [1, 2, 3];
+      };
+      BoardsPage.opener = (Board board, bool switchTo) {};
+      final Booru gelbooru = SettingsHandler.instance.booruList.first;
+      await tester.pumpWidget(MaterialApp(home: Builder(builder: (context) => TextButton(onPressed: () => BoardsPage.openSimilar(context, videoPost(), gelbooru), child: const Text('go')))));
+      await tester.runAsync(() async {
+        await tester.tap(find.text('go'));
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
+      await tester.pumpAndSettle();
+      final Board made = store.boards.single;
+      expect(File(made.imagePath).readAsBytesSync(), frame);
+      expect(made.imagePath.endsWith('.jpg'), isTrue);
+      expect(fetches, 0);
+    });
+
+    testWidgets('Find posts like this on a video: the editor opens on the frame; cancelling deletes it, saving keeps it; no frame = the preview picture', (tester) async {
+      // A real picture: the editor shows it.
+      final Uint8List frame = img.encodePng(img.Image(width: 4, height: 4));
+      BoardsPage.videoFrame = (BooruItem item) async => frame;
+      BoardEditPage.frameCleanupDelay = const Duration(milliseconds: 10);
+      final List<String> deleted = [];
+      BoardEditPage.deleteCopy = (String path) => deleted.add(path);
+      BoardEditPage.imageFetcher = (String url, String? booruName) async => null;
+      final List<(String, bool)> opened = [];
+      BoardsPage.opener = (Board board, bool switchTo) => opened.add((board.id, switchTo));
+      await tester.pumpWidget(MaterialApp(home: Builder(builder: (context) => TextButton(onPressed: () => BoardEditPage.openFromItem(context, videoPost(), null), child: const Text('go')))));
+      await tester.runAsync(() async {
+        await tester.tap(find.text('go'));
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
+      await tester.pumpAndSettle();
+      // Let the editor's picture load from the file (real I/O) before leaving.
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 100)));
+      await tester.pump();
+      expect(find.byKey(const ValueKey('board-save')), findsOneWidget);
+      List<File> copies() => store.imagesDir.existsSync() ? store.imagesDir.listSync().whereType<File>().toList() : <File>[];
+      expect(copies(), hasLength(1));
+      expect(copies().single.readAsBytesSync(), frame);
+      final String copyPath = copies().single.path;
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      // The cleanup waits a moment after the editor closes; let both clocks pass it.
+      for (int i = 0; i < 3; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+      }
+      expect(deleted, [copyPath], reason: 'a cancelled editor deletes exactly its frame copy');
+      expect(store.boards, isEmpty);
+
+      await tester.runAsync(() async {
+        await tester.tap(find.text('go'));
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
+      await tester.pumpAndSettle();
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 100)));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('board-save')));
+      await tester.pumpAndSettle();
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+      final Board saved = store.boards.single;
+      expect(File(saved.imagePath).readAsBytesSync(), frame);
+      expect(opened.single.$2, isFalse);
+      expect(deleted, [copyPath], reason: 'a saved board keeps its frame copy');
+
+      BoardsPage.videoFrame = (BooruItem item) async => null;
+      final Board t = BoardEditPage.templateFromItem(videoPost(), null);
+      expect(t.imagePath, isEmpty);
+      expect(t.imageUrl, 'https://img.gelbooru.com/t/1.jpg', reason: 'without a frame: the preview picture, as before');
     });
   });
 }

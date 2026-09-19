@@ -387,4 +387,25 @@ void main() {
     ]));
     expect(runner.lastSize, 224);
   });
+
+  test('r76: putItemVector puts a video\'s vector in memory and the database, over its preview picture\'s; meanOf averages unit vectors', () async {
+    final LookModelHandler h = await ready();
+    runner.imageAnswer = (int run) => Float32List.fromList([1, 0]);
+    final BooruItem item = BooruItem(fileURL: 'https://x.example/9.mp4', sampleURL: '', thumbnailURL: 'https://x.example/t9.jpg', tagsList: const [], postURL: 'https://x.example/p/9');
+    await h.imageVectors([item]);
+    expect(h.cached(item), [1, 0]);
+    await h.putItemVector(item, Float32List.fromList([0, 1]));
+    expect(h.cached(item), [0, 1]);
+    if (dbReady) {
+      h.resetMemoryForTests();
+      final List<Float32List?> again = await h.imageVectors([item]);
+      expect(again.single, [0, 1], reason: 'the database holds the frames\' vector now');
+      expect(runner.imageRuns, 1, reason: 'the preview picture is not read again');
+    }
+    final Float32List m = LookModelHandler.meanOf([Float32List.fromList([1, 0]), Float32List.fromList([0, 1])]);
+    expect(m[0], closeTo(0.70710678, 1e-6));
+    expect(m[1], closeTo(0.70710678, 1e-6));
+    expect(LookModelHandler.meanOf([Float32List.fromList([3, 4])]), [0.6000000238418579, 0.800000011920929]);
+    expect(LookModelHandler.meanOf(const []), isEmpty);
+  });
 }
