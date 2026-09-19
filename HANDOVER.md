@@ -1945,6 +1945,131 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   candidates at ranking time, the large 1.26 GB models as presets, the
   thresholds as settings, the rating's use.
 
+### 4.44 Looks: posts that look alike, explanations and corrections, tabs that stay put (r75)
+
+- **Why:** after r74 the user said "similar" means how a picture looks (their
+  image server: CLIP smart search), not shared tags; the tagger round had
+  not given that, and did not make For You more accurate. Approved plan:
+  visual similarity on device, the recommender explaining itself and taking
+  corrections, tabs that never switch the user away, and the blank seeded
+  tab. Report style: plain words, few blocks (the r74 report overwhelmed).
+- **Looks model** (`handlers/recommender/look_model_handler.dart`,
+  `LookModelHandler`, modelled on the encoder): presets `LookPreset.s0`
+  (Xenova/mobileclip_s0: `onnx/vision_model_quantized.onnx` 11,846,843 B +
+  `onnx/text_model_quantized.onnx` 42,799,238 B) and `s2`
+  (Xenova/mobileclip_s2: 36,735,889 + 64,117,260 B); any CLIP export with
+  those two files, `tokenizer.json` and `preprocessor_config.json` through the
+  custom field. Files under `<settings.path>look/<slug>/` as
+  `vision_model.onnx`, `text_model.onnx`, `tokenizer.json`,
+  `preprocessor_config.json`, `manifest.json` (repo, setting, bytes,
+  inputSize, mean/std when the config normalises, dim, downloadedAt).
+  `prepareImage`: shortest edge to the size (256 for MobileCLIP; from
+  `crop_size`/`size`), centre crop, RGB planes channels-first, 0-1,
+  `(x-mean)/std` only when `do_normalize` (MobileCLIP: no; OpenAI CLIP:
+  yes), through `compute`. `imageVector(bytes)` and `textVector(text)`
+  answer unit vectors; `imageVectors(items)` reads memory, then the
+  `ItemEmbedding` table under model `look:<slug>` (shared with the encoder's
+  table; `putEmbeddings/getEmbeddings/clearEmbeddings`), then the thumbnails
+  (`PixelTags.thumbnailBytes`, the grid's cache first) through the model,
+  one log line per batch `look: N thumbnails in X ms`. `OnnxLookRunner`
+  (`onnx_look_runner.dart`): one session per half, plain CPU with half the
+  cores (max 4), the sessions' own input names (`pixel_values`;
+  `input_ids` + `attention_mask` int64), first output; idle-closed after
+  120 s like the tagger; a runtime failure is an error status until a
+  refresh. Settings `lookModel` ('' / preset id / repo), `aiLook` (true).
+  Registered in `main.dart` beside the encoder and the tagger.
+- **CLIP tokenizer** (`handlers/recommender/clip_tokenizer.dart`,
+  `ClipTokenizer`): what a Hugging Face `tokenizer.json` of the CLIP family
+  describes — whitespace collapsed, lowercase, the split regex
+  (contractions, `\p{L}+`, one `\p{N}`, runs of anything else), the GPT-2
+  byte-to-unicode alphabet, merges by rank with `</w>` on a word's last
+  piece, `<|startoftext|>` 49406 … `<|endoftext|>` 49407 (also the unknown
+  id), padded with 0 to 77 with a mask, the end mark kept when cut. NFC is
+  not applied (Dart has none built in; accents already composed encode
+  right). `test/fixtures/clip_tokenizer_small.json` is cut from the real
+  MobileCLIP tokenizer (110 vocab entries, 58 merges, the ids a Python
+  re-implementation produced, validated on the known "a photo of a cat" =
+  320 1125 539 320 2368); the cut keeps every merge on the paths taken, so
+  the small file encodes those sentences exactly as the full one does.
+- **Boards by looks** (`boorus/board_handler.dart`): seams `referenceLook`,
+  `lookText`, `lookItems`, `lookModelId`; `_init` puts the reference
+  image's vector in `_refLook` (cached on the board as `Board.lookVector` +
+  `lookImage` = `<imageKey>@<model>`, `hasFreshLook`, cleared by
+  `clearMatches`), or the description's text vector when there is no image;
+  `_searchPage` embeds the page's thumbnails (`lookItems`, per source by
+  the item's host, 20 s bound) and `scoreItem` adds `lookWeight` (20) ×
+  cosine — above the text-encoder term (10) and the derived-tag weights
+  (3-4), so looks decide the order among tag matches; a failing model
+  leaves the tags in charge.
+- **Posts like this** (`pages/boards_page.dart`, `widgets/gallery/tag_view.dart`):
+  `BoardsPage.openSimilar(context, item, source)` makes a *hidden* board
+  (`BoardEditPage.similarFromItem`: the post's image, its lead tags as the
+  words, `Board.hidden = true`, name "Like: …"), copies the image through
+  the source's headers when it can, saves, and opens it in the background
+  with the "Opened in a new tab" notice. `BoardsHandler.visibleBoards`
+  keeps hidden boards off the page; `load()` prunes hidden boards older
+  than `hiddenLifetime` (3 days), image copy included. The tile sits in the
+  post info sheet before "Recommend more like this" (booru context only).
+- **For You by looks** (`item_features.dart`, `recommender_handler.dart`):
+  `ItemFeatures.withLook(base, vector, model:, taste:)` adds
+  `look:<model>:<i>` valued features (`lookScale` 1.5, like the encoder's)
+  and `ltaste:<model>:<bucket>`; stacks with `withEmbedding`, logged count
+  unchanged. `RecommenderHandler.lookVectorsFor` seam (default
+  `LookModelHandler.imageVectors`), `_looks()` bounded 8 s, booru world
+  only; vectors join `onEvent`, `rerank`, `score`, `scorer` and `explain`;
+  a strong like also moves a visual taste centroid (`_lookTaste`, saved as
+  `<world>.look-taste.json`, `RecommenderReport.lookTasteCount`). The
+  model id in feature names is the looks model's slug, or `look` when a
+  test seam supplies vectors without a model.
+- **Pairs, why, corrections:** `ItemFeatures.of` adds `pair:<lead>|<tag>`
+  (booru world; leads = character / copyright / artist, 3 at most, × every
+  other tag, 40 at most). `RecommenderHandler.explain(item)` →
+  `Explanation` (top 4 positive, 3 negative contributions weight × value,
+  grouped by plain label: `tag:` as words, `type:artist:x` "artist x",
+  `pair:a|b` "a with b", the encoder block "how it reads", the looks block
+  "how it looks", `site:` "from …"); shown as "Picked because" in the info
+  sheet on recommendation feeds. `FtrlModel.setWeight(i, w)` (z solved
+  from the closed form at the feature's n) and `nudge(i, delta)`;
+  `RecommenderHandler.adjust(world, name, how: more|less|forget)` (±0.5 /
+  zero, counted as an update, saved). The Recommendations page's learned
+  tags are `ActionChip`s (`feature-<name>`) opening a sheet with More of
+  this / Less of this / Forget it (`feature-more|less|forget`).
+- **Tabs never kidnap:** `BoardsPage.open(context, board, switchTo:)` (the
+  `opener` seam takes the flag); `openFromItem` and `openSimilar` open in
+  the background with the notice; "Recommend more like this" too
+  (`switchToNew: false`, no `popUntil`). The Boards page's own Open and the
+  Collections page still switch (the user chose from a list).
+- **The blank seeded tab:** the live test
+  (`test/foryou_seed_live_test.dart`, gelbooru + yande.re,
+  `seed:hatsune_miku seed:vocaloid`) came back with 20 posts once the test
+  set the network inspector the app sets at startup — the seed mode itself
+  works. What does come back empty: seeds a site does not know. Now a
+  resolver answer of null (the site confirmed the miss) skips that site for
+  that seed instead of searching it (`ForYouHandler.resolveTag` seam; a
+  resolver that fails leaves the seed as typed); `from:<host>` (added by
+  "Recommend more like this" with the post's own site) moves that source
+  first and zeroes the rotation offset (`preferredHost`); and an empty feed
+  sets `errorString` ("No source answered for: …" in seed mode, "Nothing
+  new to show" in profile mode) through `_sayWhyEmpty` in both search
+  paths. `sourceFactory` seam for tests.
+- **Tests:** `clip_tokenizer_test`, `look_model_handler_test` (download /
+  refresh / delete, `prepareImage` planes, crop and normalisation,
+  `imageVector`, `textVector` with the real tokenizer, `imageVectors` cache
+  levels, idle close, failure), `foryou_seed_test` (fills, says why, skips
+  a confirmed miss, `from:` first) + the live one, and additions to
+  `board_handler_test` (looks order, cache, text side, failure),
+  `boards_store_test` (hidden pruning), `boards_page_test` (Posts like
+  this, background opens), `recommender_features_test` (pairs, `withLook`),
+  `recommender_ftrl_test` (`setWeight`/`nudge`), `recommender_handler_test`
+  (`explain`, `adjust`, looks + taste), `recommendations_page_test` (the
+  section). One older encoder test moved its bar from 0.5 to the tags-only
+  score: with pairs in the mix the site and media features carry a little
+  net liking, and the claim it protects is the encoder's pull, not 0.5.
+- **Not verified from the PC:** the looks model has never run here or on
+  the phone; the tokenizer and the preprocessing are checked against the
+  reference, the ONNX halves are not. Cut: video frames (player hook),
+  faces, per-site image search (none offers it).
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
@@ -2374,7 +2499,7 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r74)
+## 12. Open items (as of r75)
 
 - r70 is unverified on the device: e-hentai chips (Watched / Favourites +
   category, the four toplists, Show expunged / With a torrent), typed
@@ -2385,6 +2510,12 @@ cards have had regressions).
   niyaniya Category; "Only show language" and "Title language" rows on
   e-hentai and hitomi; autocomplete on hitomi/asmhentai/hentaipaw/hentalk
   after a pull.
+- r75 is unverified on the device: the Looks model download (55 MB) and
+  its first run (the `look:` timing line); Posts like this from a
+  favourite; a words-only board ordered by the words; "Picked because"
+  on a For You post; More / Less / Forget on a learned tag; the
+  background opens with their notice; a seeded feed that says why it is
+  empty. The seeded feed itself was checked live from the PC (20 posts).
 - r74 is unverified on the device: the Image tagger section (download of
   a 379 MB preset, Ready with 10,861 tags, Try it on a picture and the
   `tagger:` timing line - the model has never run off the PC, and the

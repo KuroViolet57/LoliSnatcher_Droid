@@ -46,6 +46,7 @@ import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/reader_handler.dart';
 import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/pages/kemono_post_page.dart';
+import 'package:lolisnatcher/src/handlers/recommender/recommender_handler.dart';
 import 'package:lolisnatcher/src/pages/boards_page.dart';
 import 'package:lolisnatcher/src/pages/doujin_detail_page.dart';
 import 'package:lolisnatcher/src/pages/doujin_reader_page.dart';
@@ -1174,6 +1175,20 @@ class _TagViewState extends State<TagView> with TraceLifecycle {
     return ordered;
   }
 
+  /// r75: the notice for a tab opened in the background.
+  void _openedInNewTab(BuildContext context, String what) {
+    FlashElements.showSnackbar(
+      context: context,
+      isKeyUnique: true,
+      key: 'added_new_tab',
+      duration: const Duration(seconds: 2),
+      title: const Text('Opened in a new tab', style: TextStyle(fontSize: 20)),
+      content: Text(what, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16)),
+      leadingIcon: Symbols.fiber_new_rounded,
+      sideColor: Colors.green,
+    );
+  }
+
   void _openSelectedTagsAsTabs({required bool combined}) {
     final List<String> toOpen = _selectedBatchTagsOrdered;
     if (toOpen.isEmpty) return;
@@ -2225,6 +2240,28 @@ class _TagViewState extends State<TagView> with TraceLifecycle {
                   },
                 ),
                 notesButton(),
+                // r75: why the learner put this post here (recommendation feeds).
+                if (!isDoujinContext && searchHandler.currentTab.booruHandler.booru.type?.isRecommendationFeed == true)
+                  FutureBuilder<Explanation?>(
+                    future: RecommenderHandler.maybe?.explain(item, handler: possibleBooruHandler ?? handler),
+                    builder: (context, snap) {
+                      final Explanation? e = snap.data;
+                      if (e == null || e.isEmpty) return const SizedBox.shrink();
+                      return ListTile(
+                        leading: Icon(Symbols.lightbulb_rounded, color: Theme.of(context).iconTheme.color),
+                        title: const Text('Picked because'),
+                        subtitle: Text(e.sentence, maxLines: 3, overflow: TextOverflow.ellipsis),
+                      );
+                    },
+                  ),
+                // r75: posts that look like this one, in a background tab.
+                if (!isDoujinContext && (item.sampleURL.isNotEmpty || item.thumbnailURL.isNotEmpty))
+                  ListTile(
+                    leading: Icon(Symbols.image_search_rounded, color: Theme.of(context).iconTheme.color),
+                    title: const Text('Posts like this'),
+                    subtitle: const Text('A tab in the background with posts that look like this one, from your sources', maxLines: 2, overflow: TextOverflow.ellipsis),
+                    onTap: () => BoardsPage.openSimilar(context, item, tagBooru),
+                  ),
                 // For You is the BOORU taste system — never seeded from a
                 // doujin item.
                 if (settingsHandler.dbEnabled && !isDoujinContext)
@@ -2242,11 +2279,12 @@ class _TagViewState extends State<TagView> with TraceLifecycle {
                         ),
                         onTap: () {
                           final booru = settingsHandler.ensureForYouBooru();
-                          final String query = seeds.map((s) => 'seed:$s').join(' ');
-                          searchHandler.addTabByString(query, customBooru: booru, switchToNew: true);
-                          if (settingsHandler.appMode.value.isMobile) {
-                            Navigator.of(context).popUntil((route) => route.isFirst);
-                          }
+                          // r75: the post's own site first (it knows these tags), the rest after.
+                          final String fromHost = Uri.tryParse(tagBooru.baseURL ?? '')?.host ?? '';
+                          final String query = [if (fromHost.isNotEmpty) 'from:$fromHost', ...seeds.map((s) => 'seed:$s')].join(' ');
+                          // r75: in the background — a tab never drags the user away.
+                          searchHandler.addTabByString(query, customBooru: booru, switchToNew: false);
+                          _openedInNewTab(context, seeds.map((s) => s.replaceAll('_', ' ')).join(', '));
                         },
                       );
                     },

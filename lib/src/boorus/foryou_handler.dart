@@ -95,6 +95,23 @@ class ForYouHandler extends BooruHandler {
   static const Duration _resolveTimeout = Duration(seconds: 6);
   static const Duration _searchTimeout = Duration(seconds: 12);
 
+  /// r75: how a source's handler is made; replaced in tests.
+  static ({BooruHandler handler, int startingPage}) Function(Booru booru, int limit) sourceFactory = _defaultSourceFactory;
+
+  /// r75: a seed in a site's own spelling (null = the site confirmed it has
+  /// no such tag); replaced in tests.
+  static Future<String?> Function(String tag, Booru booru) resolveTag = TagAliasResolver.resolve;
+
+  static void resetForTests() {
+    sourceFactory = _defaultSourceFactory;
+    resolveTag = TagAliasResolver.resolve;
+  }
+
+  static ({BooruHandler handler, int startingPage}) _defaultSourceFactory(Booru booru, int limit) {
+    final res = BooruHandlerFactory().getBooruHandler([booru], limit);
+    return (handler: res.booruHandler, startingPage: res.startingPage);
+  }
+
   @override
   bool get hasSizeData => false;
 
@@ -147,6 +164,16 @@ class ForYouHandler extends BooruHandler {
     return '$query $filter';
   }
 
+  /// The host named by a `from:` term, if any.
+  @visibleForTesting
+  static String? preferredHost(String input) {
+    for (final String term in input.split(' ')) {
+      final String t = term.trim().toLowerCase();
+      if (t.startsWith('from:') && t.length > 'from:'.length) return t.substring('from:'.length);
+    }
+    return null;
+  }
+
   List<String> _parseSeeds(String input) {
     final List<String> seeds = [];
     for (final term in input.split(' ').where((t) => t.trim().isNotEmpty)) {
@@ -170,6 +197,7 @@ class ForYouHandler extends BooruHandler {
   // meta filters don't port across sites, so strip them to the bare term for
   // cross-booru fanning — a plain name the alias resolver can actually match.
   static const List<String> _dropPrefixes = [
+    'from:',
     'creator:',
     'artist:',
     'niche:',
@@ -186,7 +214,7 @@ class ForYouHandler extends BooruHandler {
     for (final p in _dropPrefixes) {
       if (s.startsWith(p)) {
         // sort:/order:/rating:/etc. carry no reusable term — drop entirely.
-        if (p == 'sort:' || p == 'order:' || p == 'rating:' || p == 'status:' || p == 'score:') {
+        if (p == 'from:' || p == 'sort:' || p == 'order:' || p == 'rating:' || p == 'status:' || p == 'score:') {
           return '';
         }
         s = s.substring(p.length).trim();
@@ -196,6 +224,14 @@ class ForYouHandler extends BooruHandler {
     // Keep the meaningful prefix forms out; also skip empties and lone digits.
     if (s.isEmpty || RegExp(r'^\d+$').hasMatch(s)) return '';
     return s;
+  }
+
+  /// r75: the reason an empty feed stopped, for the tab to show.
+  void _sayWhyEmpty() {
+    if (fetched.isNotEmpty || errorString.isNotEmpty) return;
+    errorString = _explicitSeeds
+        ? 'No source answered for: ${_seeds.join(', ')}. The sites were asked in their own spelling; try other seeds, or open the tag itself.'
+        : 'Nothing new to show: the sources answered nothing that was not already seen.';
   }
 
   /// Runs [future] but gives up (returns null) after [timeout] or on error, so
@@ -235,9 +271,9 @@ class ForYouHandler extends BooruHandler {
         if (_sources.length >= _maxSources) break;
       }
       for (final b in _sources) {
-        final res = BooruHandlerFactory().getBooruHandler([b], limit);
-        res.booruHandler.storeTagsGlobally = false;
-        _sourceHandlers.add(res.booruHandler);
+        final res = sourceFactory(b, limit);
+        res.handler.storeTagsGlobally = false;
+        _sourceHandlers.add(res.handler);
         _sourceStartPages.add(res.startingPage);
       }
     } else {
@@ -306,6 +342,18 @@ class ForYouHandler extends BooruHandler {
     // Session variety: nudge the source/seed rotation a little so openings
     // differ between sessions, but stay within the strongest few seeds.
     _rotationOffset = _seeds.length <= 1 ? 0 : _rand.nextInt(min(4, _seeds.length));
+    // r75: `from:<host>` (Recommend more like this) names the post's own
+    // site, which knows the seeds for sure: it is asked first.
+    final String? preferred = preferredHost(tags);
+    if (preferred != null) {
+      final int i = _sources.indexWhere((b) => (Uri.tryParse(b.baseURL ?? '')?.host ?? '') == preferred);
+      if (i > 0) {
+        _sources.insert(0, _sources.removeAt(i));
+        _sourceHandlers.insert(0, _sourceHandlers.removeAt(i));
+        _sourceStartPages.insert(0, _sourceStartPages.removeAt(i));
+      }
+      if (i >= 0) _rotationOffset = 0;
+    }
   }
 
   double _scoreItem(BooruItem item) {
@@ -386,13 +434,20 @@ class ForYouHandler extends BooruHandler {
       final String seed = _seeds[(_feedPage + _rotationOffset + k) % _seeds.length];
 
       requests.add(() async {
-        String resolved = seed;
-        final String? aliased = await _bounded<String?>(
-          () => TagAliasResolver.resolve(seed, booru),
-          _resolveTimeout,
-        );
-        if (aliased != null && aliased.isNotEmpty) resolved = aliased;
-        if (resolved.isEmpty) return <BooruItem>[];
+        // r75: the site's own spelling; a confirmed miss (null) skips this
+        // site for this seed instead of asking for a tag it does not have,
+        // while a resolver that fails or stalls leaves the seed as typed.
+        String? resolved;
+        try {
+          resolved = await resolveTag(seed, booru).timeout(_resolveTimeout);
+        } catch (_) {
+          resolved = seed;
+        }
+        if (resolved == null) {
+          Logger.Inst().log('For You: ${booru.name} has no tag "$seed"; skipped', 'ForYouHandler', 'search', LogTypes.booruHandlerInfo);
+          return <BooruItem>[];
+        }
+        if (resolved.isEmpty) resolved = seed;
 
         handler.pageNum = _sourceStartPages[j] + 1 + _feedPage;
         handler.locked = false;
@@ -447,6 +502,8 @@ class ForYouHandler extends BooruHandler {
       }
       _emptyStreak = 0;
       locked = true;
+      // r75: a feed that found nothing says so instead of staying blank.
+      _sayWhyEmpty();
       return fetched;
     }
     _emptyStreak = 0;
@@ -529,6 +586,8 @@ class ForYouHandler extends BooruHandler {
       }
       _emptyStreak = 0;
       locked = true;
+      // r75: a feed that found nothing says so instead of staying blank.
+      _sayWhyEmpty();
       return fetched;
     }
     _emptyStreak = 0;

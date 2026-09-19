@@ -18,6 +18,9 @@ class BoardsHandler {
   static const String fileName = 'boards.json';
   static const String imagesDirName = 'boards';
 
+  /// r75: how long a hidden board (Posts like this) is kept.
+  static const Duration hiddenLifetime = Duration(days: 3);
+
   /// Ticks on every change; the Boards page listens.
   final ValueNotifier<int> revision = ValueNotifier<int>(0);
 
@@ -35,6 +38,9 @@ class BoardsHandler {
 
   bool get isLoaded => _loaded;
   List<Board> get boards => List<Board>.unmodifiable(_boards);
+
+  /// The boards the Boards page lists: the hidden ones (Posts like this) stay out.
+  List<Board> get visibleBoards => List<Board>.unmodifiable(_boards.where((b) => !b.hidden));
 
   Board? byId(String id) => _boards.where((b) => b.id == id).firstOrNull;
 
@@ -57,10 +63,26 @@ class BoardsHandler {
       for (final dynamic b in (decoded['boards'] as List?) ?? const []) {
         if (b is Map) _boards.add(Board.fromJson(Map<String, dynamic>.from(b)));
       }
+      if (_pruneHidden()) await _write();
     } catch (e, s) {
       Logger.Inst().log('boards.json could not be read: $e', 'BoardsHandler', 'load', LogTypes.exception, s: s);
       _boards.clear();
     }
+  }
+
+  /// r75: hidden boards older than [hiddenLifetime] go, image copy included.
+  bool _pruneHidden() {
+    final DateTime cutoff = DateTime.now().subtract(hiddenLifetime);
+    final List<Board> stale = _boards.where((b) => b.hidden && b.createdAt.isBefore(cutoff)).toList();
+    for (final Board b in stale) {
+      _boards.remove(b);
+      if (b.imagePath.isNotEmpty && b.imagePath.startsWith(imagesDir.path)) {
+        try {
+          File(b.imagePath).deleteSync();
+        } catch (_) {}
+      }
+    }
+    return stale.isNotEmpty;
   }
 
   /// After a restore from backup: read the file again.

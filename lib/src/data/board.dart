@@ -21,6 +21,9 @@ class Board {
     this.matchedImage = '',
     List<WeightedTag>? pixelTags,
     this.pixelImage = '',
+    this.hidden = false,
+    List<double>? lookVector,
+    this.lookImage = '',
     DateTime? createdAt,
     DateTime? updatedAt,
   }) : mustTags = List<String>.from(mustTags ?? const <String>[]),
@@ -28,6 +31,7 @@ class Board {
        sourceNames = List<String>.from(sourceNames ?? const <String>[]),
        matches = matches == null ? null : List<ReverseMatch>.unmodifiable(matches),
        pixelTags = pixelTags == null ? null : List<WeightedTag>.unmodifiable(pixelTags),
+       lookVector = lookVector == null ? null : List<double>.unmodifiable(lookVector),
        createdAt = createdAt ?? DateTime.now(),
        updatedAt = updatedAt ?? createdAt ?? DateTime.now();
 
@@ -61,6 +65,15 @@ class Board {
   /// [pixelKey] at the time).
   final List<WeightedTag>? pixelTags;
   final String pixelImage;
+
+  /// r75: a board made by "Posts like this": kept out of the list and
+  /// forgotten after [BoardsHandler.hiddenLifetime].
+  final bool hidden;
+
+  /// r75: the reference image through the looks model, cached with the
+  /// image and the model ([lookImage] = [pixelKey] at the time).
+  final List<double>? lookVector;
+  final String lookImage;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -82,6 +95,9 @@ class Board {
 
   /// The cached pixel tags hold for the same image read by the same model.
   bool hasFreshPixelTags(String modelId) => pixelTags != null && modelId.isNotEmpty && pixelImage == pixelKey(modelId);
+
+  /// The cached look vector holds for the same image read by the same model.
+  bool hasFreshLook(String modelId) => lookVector != null && lookVector!.isNotEmpty && modelId.isNotEmpty && lookImage == pixelKey(modelId);
 
   /// Tags typed by hand: split on spaces and commas, lowercase, a leading
   /// `-` or `~` dropped (the field itself says whether the tag is wanted
@@ -121,6 +137,9 @@ class Board {
     String? matchedImage,
     List<WeightedTag>? pixelTags,
     String? pixelImage,
+    bool? hidden,
+    List<double>? lookVector,
+    String? lookImage,
     bool clearMatches = false,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -139,6 +158,9 @@ class Board {
     matchedImage: clearMatches ? '' : (matchedImage ?? this.matchedImage),
     pixelTags: clearMatches ? null : (pixelTags ?? this.pixelTags),
     pixelImage: clearMatches ? '' : (pixelImage ?? this.pixelImage),
+    hidden: hidden ?? this.hidden,
+    lookVector: clearMatches ? null : (lookVector ?? this.lookVector),
+    lookImage: clearMatches ? '' : (lookImage ?? this.lookImage),
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
@@ -158,6 +180,9 @@ class Board {
     'matchedImage': matchedImage,
     'pixelTags': pixelTags?.map((t) => {'tag': t.tag, 'weight': t.weight}).toList(),
     'pixelImage': pixelImage,
+    'hidden': hidden,
+    'lookVector': lookVector,
+    'lookImage': lookImage,
     'createdAt': createdAt.millisecondsSinceEpoch,
     'updatedAt': updatedAt.millisecondsSinceEpoch,
   };
@@ -187,6 +212,9 @@ class Board {
             ]
           : null,
       pixelImage: json['pixelImage']?.toString() ?? '',
+      hidden: json['hidden'] == true,
+      lookVector: json['lookVector'] is List ? [for (final dynamic x in json['lookVector'] as List) (x as num).toDouble()] : null,
+      lookImage: json['lookImage']?.toString() ?? '',
       createdAt: when(json['createdAt']),
       updatedAt: when(json['updatedAt']),
     );

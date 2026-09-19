@@ -47,6 +47,20 @@ class FtrlModel {
   /// Probability that the user likes an item with [features]; 0.5 when the
   /// model knows nothing about it. [values] (r34, the encoder's vector
   /// components) give features a magnitude; absent, every feature is 1.
+  /// r75: feature [i] at exactly [w]: the closed form solved for z at the
+  /// feature's current n, so later updates keep working from there.
+  void setWeight(int i, double w) {
+    if (w == 0) {
+      _z[i] = 0;
+      return;
+    }
+    final double d = (beta + math.sqrt(_n[i])) / alpha + l2;
+    _z[i] = w > 0 ? -w * d - l1 : -w * d + l1;
+  }
+
+  /// r75: feature [i] moved by [delta].
+  void nudge(int i, double delta) => setWeight(i, weight(i) + delta);
+
   double predict(List<int> features, {List<double>? values}) {
     if (features.isEmpty) return 0.5;
     double logit = 0;

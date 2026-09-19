@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lolisnatcher/src/handlers/recommender/encoder_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/image_tagger_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/look_model_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/item_features.dart';
 import 'package:lolisnatcher/src/handlers/recommender/recommender_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
@@ -24,6 +25,20 @@ class _NoRunner implements TagRunner {
 
   @override
   Future<Float32List> run(Float32List nhwc, int size) => throw StateError('no inference in this test');
+
+  @override
+  Future<void> close() async {}
+}
+
+class _NoLook implements LookRunner {
+  @override
+  String get provider => 'none';
+
+  @override
+  Future<Float32List> image(Float32List nchw, int size) => throw StateError('no inference in this test');
+
+  @override
+  Future<Float32List> text(List<int> ids, List<int> mask) => throw StateError('no inference in this test');
 
   @override
   Future<void> close() async {}
@@ -259,6 +274,63 @@ void main() {
     await settle(tester);
     expect(SettingsHandler.instance.imageTaggerModel, '');
     expect(find.textContaining('No image tagger'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('r75: the Looks model section — presets, download, ready, the switch, delete', (tester) async {
+    tester.view.physicalSize = const Size(1080, 9000);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.reset);
+    final List<String> fetched = [];
+    LookModelHandler.unregister();
+    final LookModelHandler look = LookModelHandler.register();
+    look.runnerFactory = (String imagePath, String textPath) => _NoLook();
+    final String tokenizerText = File('test/fixtures/clip_tokenizer_small.json').readAsStringSync();
+    look.fetcher = (String url, File to, {void Function(int received, int total)? onProgress, CancelToken? cancelToken}) async {
+      fetched.add(url);
+      to.parent.createSync(recursive: true);
+      if (url.endsWith('tokenizer.json')) {
+        to.writeAsStringSync(tokenizerText);
+      } else if (url.endsWith('preprocessor_config.json')) {
+        to.writeAsStringSync('{"do_normalize":false,"size":{"shortest_edge":256},"crop_size":{"height":256,"width":256}}');
+      } else {
+        to.writeAsBytesSync(List<int>.filled(100, 1));
+      }
+      onProgress?.call(100, 100);
+    };
+    addTearDown(LookModelHandler.unregister);
+    SettingsHandler.instance
+      ..lookModel = ''
+      ..aiLook = true;
+    await warm(tester);
+    await tester.pumpWidget(const MaterialApp(home: RecommendationsPage()));
+    await settle(tester);
+    expect(find.byKey(const ValueKey('look-status')), findsOneWidget);
+    expect(find.textContaining('No looks model'), findsOneWidget);
+    expect(find.byKey(const ValueKey('look-preset-s0')), findsOneWidget);
+    expect(find.byKey(const ValueKey('look-preset-s2')), findsOneWidget);
+    expect(find.byKey(const ValueKey('look-preset-custom')), findsOneWidget);
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const ValueKey('look-download')));
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    });
+    await settle(tester);
+    expect(fetched, hasLength(4));
+    expect(fetched.first, contains('Xenova/mobileclip_s0'));
+    final Text status = tester.widget<Text>(find.byKey(const ValueKey('look-status')));
+    expect(status.data, contains('Ready'));
+    expect(SettingsHandler.instance.lookModel, 's0');
+    final Finder use = find.byKey(const ValueKey('ai-look-toggle'));
+    await tester.tap(find.descendant(of: use, matching: find.byType(Switch)));
+    await tester.pump();
+    expect(SettingsHandler.instance.aiLook, isFalse);
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const ValueKey('look-delete')));
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    });
+    await settle(tester);
+    expect(SettingsHandler.instance.lookModel, '');
+    expect(find.textContaining('No looks model'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 }

@@ -135,4 +135,20 @@ void main() {
     await store.save(Board(id: store.newId(), name: 'x'));
     expect(store.revision.value, greaterThan(before));
   });
+
+  test('r75: hidden boards (Posts like this) stay out of the list and are forgotten after three days, image copy included', () async {
+    await store.save(Board(id: 'v', name: 'visible'));
+    final Board fresh = Board(id: 'h1', name: 'Like: x', hidden: true);
+    final String img = await store.importImageBytes([1, 2, 3], 'h2', ext: 'png');
+    final DateTime old = DateTime.now().subtract(const Duration(days: 4));
+    final Board stale = Board(id: 'h2', name: 'Like: y', hidden: true, imagePath: img, createdAt: old, updatedAt: old);
+    store.file.writeAsStringSync(jsonEncode({'version': 1, 'sauceNaoApiKey': '', 'boards': [store.byId('v')!.toJson(), fresh.toJson(), stale.toJson()]}));
+    await store.reloadFromDisk();
+    expect(store.boards.map((b) => b.id).toList(), ['v', 'h1']);
+    expect(store.visibleBoards.map((b) => b.id).toList(), ['v']);
+    expect(File(img).existsSync(), isFalse, reason: 'the stale hidden board took its copy');
+    expect(store.byId('h1')!.hidden, isTrue);
+    final Board round = Board.fromJson(store.byId('h1')!.toJson());
+    expect(round.hidden, isTrue);
+  });
 }

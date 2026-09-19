@@ -103,6 +103,27 @@ class ItemFeatures {
       final String name = normalizeDoujinTagName(raw);
       if (name.isNotEmpty) b.add('tag:$name');
     }
+    // r75: a lead tag (character, series, artist) with each other tag, so
+    // "this character doing that" can be liked or disliked on its own.
+    if (world == RecommenderWorld.booru) {
+      final List<String> leads = [];
+      final List<String> others = [];
+      for (final Tag tag in item.tagsList) {
+        final String name = normalizeDoujinTagName(tag.fullString);
+        if (name.isEmpty) continue;
+        final TagType type = _typeOf(tag, item, world);
+        if (type.isCharacter || type.isCopyright || type.isArtist) {
+          if (leads.length < 3 && !leads.contains(name)) leads.add(name);
+        } else if (others.length < 40 && !others.contains(name)) {
+          others.add(name);
+        }
+      }
+      for (final String lead in leads) {
+        for (final String other in others) {
+          b.add('pair:$lead|$other');
+        }
+      }
+    }
     final String host = Uri.tryParse(item.postURL)?.host.toLowerCase() ?? '';
     if (host.isNotEmpty) b.add('site:$host');
     b.add('media:${_mediumOf(item, world)}');
@@ -185,6 +206,34 @@ class ItemFeatures {
     }
     return FeatureVector(hashes, names, values: values, logged: base.hashes.length);
   }
+
+  /// r75: [base] with the looks model's vector — one valued feature per
+  /// component, `look:<model>:<i>`, and, with a visual taste centroid, one
+  /// binary feature `ltaste:<model>:<bucket>`. Stacks with [withEmbedding];
+  /// the logged count is the base's either way.
+  static FeatureVector withLook(FeatureVector base, List<double> look, {required String model, List<double>? taste}) {
+    if (look.isEmpty || model.isEmpty) return base;
+    final List<int> hashes = [...base.hashes, ...lookHashes(model, look.length)];
+    final List<String> names = [...base.names, for (int i = 0; i < look.length; i++) 'look:$model:$i'];
+    final List<double> values = [
+      ...(base.values ?? List<double>.filled(base.hashes.length, 1)),
+      for (final double x in look) x * lookScale,
+    ];
+    if (taste != null && taste.length == look.length) {
+      final String name = 'ltaste:$model:${tasteBucket(cosine(look, taste))}';
+      hashes.add(hash(name));
+      names.add(name);
+      values.add(1);
+    }
+    return FeatureVector(hashes, names, values: values, logged: base.logged);
+  }
+
+  /// The looks block weighs like the encoder's (see [embeddingScale]).
+  static const double lookScale = 1.5;
+
+  static final Map<String, List<int>> _lookHashes = {};
+
+  static List<int> lookHashes(String model, int dim) => _lookHashes['$model:$dim'] ??= List<int>.unmodifiable([for (int i = 0; i < dim; i++) hash('look:$model:$i')]);
 
   /// How much a unit vector's components weigh as features. The whole block
   /// moves together (every component points along the item), so its pull on

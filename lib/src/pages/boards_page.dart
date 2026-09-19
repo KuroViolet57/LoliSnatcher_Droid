@@ -19,6 +19,7 @@ import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
+import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 
 /// Boards (r73): saved "find me posts like this" searches. Each opens as a
@@ -27,24 +28,60 @@ class BoardsPage extends StatefulWidget {
   const BoardsPage({super.key});
 
   /// How a board opens; the default makes a tab. Replaced in tests.
-  static void Function(Board board)? opener;
+  static void Function(Board board, bool switchTo)? opener;
 
   static void resetForTests() {
     opener = null;
   }
 
-  static void open(BuildContext context, Board board) {
-    final void Function(Board)? custom = opener;
+  /// Opens [board] as a tab: switching to it when the user chose it from
+  /// this list, in the background with a notice when it came from a post
+  /// (r75: a tab never drags the user away from where they were).
+  static void open(BuildContext context, Board board, {bool switchTo = true}) {
+    final void Function(Board, bool)? custom = opener;
     if (custom != null) {
-      custom(board);
+      custom(board, switchTo);
       return;
     }
     SearchHandler.instance.addTabByString(
       'board:${board.id}',
       customBooru: SettingsHandler.instance.ensureBoardsBooru(),
-      switchToNew: true,
+      switchToNew: switchTo,
     );
-    Navigator.of(context).popUntil((route) => route.isFirst);
+    if (switchTo) {
+      Navigator.of(context).popUntil((route) => route.isFirst);
+      return;
+    }
+    FlashElements.showSnackbar(
+      context: context,
+      isKeyUnique: true,
+      key: 'added_new_tab',
+      duration: const Duration(seconds: 2),
+      title: const Text('Opened in a new tab', style: TextStyle(fontSize: 20)),
+      content: Text(board.name, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16)),
+      leadingIcon: Symbols.fiber_new_rounded,
+      sideColor: Colors.green,
+    );
+  }
+
+  /// r75: "Posts like this" — a hidden board made from [item] (its image
+  /// as the reference, its lead tags as the words), opened in the background.
+  static Future<void> openSimilar(BuildContext context, BooruItem item, Booru? source) async {
+    final BoardsHandler store = BoardsHandler.instance;
+    await store.load();
+    final Board draft = BoardEditPage.similarFromItem(item, source, id: store.newId());
+    String imagePath = '';
+    final Future<List<int>?> Function(String url, String? booruName)? fetch = BoardEditPage.imageFetcher;
+    if (fetch != null && draft.imageUrl.isNotEmpty && draft.imageBooru.isNotEmpty) {
+      try {
+        final List<int>? bytes = await fetch(draft.imageUrl, draft.imageBooru).timeout(const Duration(seconds: 20));
+        if (bytes != null && bytes.isNotEmpty) imagePath = await store.importImageBytes(bytes, draft.id, ext: BoardEditPage.extensionOf(draft.imageUrl));
+      } catch (e) {
+        Logger.Inst().log('similar board image copy failed, keeping the address: $e', 'BoardsPage', 'openSimilar', LogTypes.booruHandlerInfo);
+      }
+    }
+    final Board saved = await store.save(draft.copyWith(imagePath: imagePath));
+    if (context.mounted) open(context, saved, switchTo: false);
   }
 
   @override
@@ -80,7 +117,7 @@ class _BoardsPageState extends State<BoardsPage> {
       body: ValueListenableBuilder<int>(
         valueListenable: store.revision,
         builder: (context, _, __) {
-          final List<Board> boards = store.boards;
+          final List<Board> boards = store.visibleBoards;
           if (boards.isEmpty) {
             return const Padding(
               padding: EdgeInsets.all(24),
@@ -245,12 +282,19 @@ class BoardEditPage extends StatefulWidget {
     );
   }
 
+  /// r75: a hidden board for "Posts like this": the post's image as the
+  /// reference, its lead tags as the words, named after them.
+  static Board similarFromItem(BooruItem item, Booru? source, {required String id}) {
+    final Board t = templateFromItem(item, source);
+    return Board(id: id, name: 'Like: ${t.name}', description: t.description, imageUrl: t.imageUrl, imageBooru: t.imageBooru, sourceNames: const [], hidden: true);
+  }
+
   static Future<void> openFromItem(BuildContext context, BooruItem item, Booru? source) async {
     final Board? saved = await Navigator.of(context).push<Board>(
       MaterialPageRoute(builder: (_) => BoardEditPage(template: templateFromItem(item, source))),
     );
     if (saved != null && context.mounted) {
-      BoardsPage.open(context, saved);
+      BoardsPage.open(context, saved, switchTo: false);
     }
   }
 

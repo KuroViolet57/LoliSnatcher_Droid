@@ -18,6 +18,7 @@ import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/encoder_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/image_tagger_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/look_model_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/recommender_handler.dart';
 import 'package:lolisnatcher/src/handlers/reverse_image_search.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
@@ -48,6 +49,10 @@ class BoardHandler extends BooruHandler {
   static const Duration matchTimeout = Duration(seconds: 100);
   static const Duration embedTimeout = Duration(seconds: 20);
   static const Duration tagTimeout = Duration(seconds: 30);
+  static const Duration lookTimeout = Duration(seconds: 20);
+
+  /// How much looking like the reference weighs against the tags carried.
+  static const double lookWeight = 20;
 
   // Seams: the sources, the alias resolver, the image matcher and the
   // encoder, replaced in tests.
@@ -61,6 +66,13 @@ class BoardHandler extends BooruHandler {
   /// their weights), and the model it is — '' when none is usable.
   static Future<List<WeightedTag>> Function(Board board) pixelTagger = defaultPixelTagger;
   static String Function() pixelModelId = _defaultPixelModelId;
+
+  /// r75: the looks model — the reference image's vector, a sentence's
+  /// vector, the page's thumbnails' vectors, and which model it is ('' = none).
+  static Future<Float32List?> Function(Board board) referenceLook = defaultReferenceLook;
+  static Future<Float32List?> Function(String text) lookText = _defaultLookText;
+  static Future<List<Float32List?>> Function(List<BooruItem> items, List<Booru> sources) lookItems = _defaultLookItems;
+  static String Function() lookModelId = _defaultLookModelId;
   static Future<Float32List?> Function(String text)? embedText = _defaultEmbedText;
   static Future<List<Float32List?>> Function(List<BooruItem> items, BooruHandler handler)? embedItems = _defaultEmbedItems;
 
@@ -72,6 +84,10 @@ class BoardHandler extends BooruHandler {
     imageMatcher = defaultImageMatcher;
     pixelTagger = defaultPixelTagger;
     pixelModelId = _defaultPixelModelId;
+    referenceLook = defaultReferenceLook;
+    lookText = _defaultLookText;
+    lookItems = _defaultLookItems;
+    lookModelId = _defaultLookModelId;
     embedText = _defaultEmbedText;
     embedItems = _defaultEmbedItems;
   }
@@ -88,6 +104,54 @@ class BoardHandler extends BooruHandler {
   static String _defaultPixelModelId() {
     final ImageTaggerHandler? t = ImageTaggerHandler.maybe;
     return t != null && t.enabled ? t.modelId : '';
+  }
+
+  static String _defaultLookModelId() {
+    final LookModelHandler? l = LookModelHandler.maybe;
+    return l != null && l.enabled ? l.modelId : '';
+  }
+
+  static Future<Float32List?> _defaultLookText(String text) async {
+    final LookModelHandler? l = LookModelHandler.maybe;
+    if (l == null || !l.enabled) return null;
+    return l.textVector(text);
+  }
+
+  /// The page's thumbnails through the looks model, each fetched with its
+  /// own booru's headers (the item's host names the source).
+  static Future<List<Float32List?>> _defaultLookItems(List<BooruItem> items, List<Booru> sources) async {
+    final LookModelHandler? l = LookModelHandler.maybe;
+    if (l == null || !l.enabled) return List<Float32List?>.filled(items.length, null);
+    final List<Float32List?> out = List<Float32List?>.filled(items.length, null);
+    final Map<Booru?, List<int>> byBooru = {};
+    for (int i = 0; i < items.length; i++) {
+      final String host = Uri.tryParse(items[i].postURL)?.host ?? '';
+      Booru? owner;
+      for (final Booru s in sources) {
+        final String h = Uri.tryParse(s.baseURL ?? '')?.host ?? '';
+        if (h.isNotEmpty && (host == h || host.endsWith('.$h'))) {
+          owner = s;
+          break;
+        }
+      }
+      byBooru.putIfAbsent(owner, () => []).add(i);
+    }
+    for (final MapEntry<Booru?, List<int>> e in byBooru.entries) {
+      final List<Float32List?> got = await l.imageVectors([for (final int i in e.value) items[i]], booru: e.key);
+      for (int k = 0; k < e.value.length; k++) {
+        out[e.value[k]] = got[k];
+      }
+    }
+    return out;
+  }
+
+  /// The reference image through the looks model.
+  static Future<Float32List?> defaultReferenceLook(Board board) async {
+    final LookModelHandler? l = LookModelHandler.maybe;
+    if (l == null || !l.enabled) return null;
+    final List<int>? bytes = await referenceImageBytes(board);
+    if (bytes == null || bytes.isEmpty) return null;
+    return l.imageVector(Uint8List.fromList(bytes));
   }
 
   static Future<Float32List?> _defaultEmbedText(String text) async {
@@ -137,6 +201,9 @@ class BoardHandler extends BooruHandler {
   /// The last image search failure, for the page to show.
   String imageError = '';
   Float32List? _descVec;
+
+  /// r75: what the results should look like (the reference image, or the words).
+  Float32List? _refLook;
   int _feedPage = 0;
   int _emptyStreak = 0;
   final Map<String, int> _asked = {};
@@ -195,6 +262,7 @@ class BoardHandler extends BooruHandler {
     _derived = [];
     _matches = [];
     _descVec = null;
+    _refLook = null;
     storeTagsGlobally = false;
 
     // A restored tab may be the first thing to touch the boards.
@@ -263,6 +331,38 @@ class BoardHandler extends BooruHandler {
         } catch (e) {
           Logger.Inst().log('board image tagging failed: $e', 'BoardHandler', '_init', LogTypes.booruHandlerInfo);
           pixel = const [];
+        }
+      }
+    }
+    // r75: the reference image (or the words) through the looks model; the
+    // image's vector is cached on the board with the image and the model.
+    final String lookModel = lookModelId();
+    if (lookModel.isNotEmpty) {
+      if (b.hasImage) {
+        if (b.hasFreshLook(lookModel)) {
+          _refLook = Float32List.fromList(b.lookVector!);
+        } else {
+          try {
+            _refLook = await referenceLook(b).timeout(lookTimeout);
+            if (_refLook != null) {
+              try {
+                final Board fresh = boardLookup(b.id) ?? b;
+                await BoardsHandler.instance.save(fresh.copyWith(lookVector: _refLook!.toList(), lookImage: fresh.pixelKey(lookModel)));
+              } catch (e) {
+                Logger.Inst().log('board look vector could not be cached: $e', 'BoardHandler', '_init', LogTypes.booruHandlerInfo);
+              }
+            }
+          } catch (e) {
+            Logger.Inst().log('board reference look failed: $e', 'BoardHandler', '_init', LogTypes.booruHandlerInfo);
+            _refLook = null;
+          }
+        }
+      } else if (b.description.trim().isNotEmpty) {
+        try {
+          _refLook = await lookText(b.description).timeout(lookTimeout);
+        } catch (e) {
+          Logger.Inst().log('board description look failed: $e', 'BoardHandler', '_init', LogTypes.booruHandlerInfo);
+          _refLook = null;
         }
       }
     }
@@ -388,9 +488,10 @@ class BoardHandler extends BooruHandler {
 
   /// How well a post answers the board: the description (encoder), the
   /// derived tags it carries, a little jitter so ties vary.
-  double scoreItem(BooruItem item, Float32List? vec, {bool exact = false}) {
+  double scoreItem(BooruItem item, Float32List? vec, {bool exact = false, Float32List? look}) {
     double score = exact ? 100 : 0;
     if (vec != null && _descVec != null) score += 10 * max(0, BoardQueryBuilder.dot(_descVec!, vec));
+    if (look != null && _refLook != null) score += lookWeight * max(0, BoardQueryBuilder.dot(_refLook!, look));
     final Set<String> tags = {for (final t in item.tagsList) t.fullString.toLowerCase()};
     for (final WeightedTag d in _derived) {
       if (tags.contains(d.tag)) score += d.weight;
@@ -509,8 +610,14 @@ class BoardHandler extends BooruHandler {
       final List<Float32List?>? got = await _bounded(() => embedItems!(pageItems, this), embedTimeout);
       if (got != null && got.length == pageItems.length) vecs = got;
     }
+    // r75: how much each thumbnail looks like the reference, when a looks model is on.
+    List<Float32List?> looks = List<Float32List?>.filled(pageItems.length, null);
+    if (_refLook != null) {
+      final List<Float32List?>? got = await _bounded(() => lookItems(pageItems, _sources), lookTimeout);
+      if (got != null && got.length == pageItems.length) looks = got;
+    }
     final Map<BooruItem, double> scores = {
-      for (int i = 0; i < pageItems.length; i++) pageItems[i]: scoreItem(pageItems[i], vecs[i], exact: exactItems.contains(pageItems[i])),
+      for (int i = 0; i < pageItems.length; i++) pageItems[i]: scoreItem(pageItems[i], vecs[i], exact: exactItems.contains(pageItems[i]), look: looks[i]),
     };
     pageItems.sort((x, y) => scores[y]!.compareTo(scores[x]!));
     final List<BooruItem> wanted = await (RecommenderHandler.maybe?.withoutDismissed(pageItems) ?? Future.value(pageItems));

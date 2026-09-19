@@ -389,6 +389,67 @@ void main() {
       expect(seeds[1].weight, closeTo(2.7, 1e-9));
     });
   });
+
+  group('r75: posts that look alike', () {
+    setUp(() {
+      BoardHandler.lookModelId = () => 'clip';
+      BoardHandler.referenceLook = (Board board) async => Float32List.fromList([1, 0]);
+      BoardHandler.lookText = (String text) async => Float32List.fromList([0, 1]);
+      BoardHandler.lookItems = (List<BooruItem> items, List<Booru> sources) async => [
+        for (final BooruItem i in items)
+          i.tagsList.any((t) => t.fullString == 'lookalike') ? Float32List.fromList([1, 0]) : Float32List.fromList([0, 1]),
+      ];
+    });
+
+    test('a page is ordered by how much each thumbnail looks like the reference image, above the tags it carries; the reference vector is cached on the board', () async {
+      BoardQueryBuilder.storeLookup = (Booru booru, String query) async => query == 'beach' ? [entry('beach')] : const [];
+      final Board bd = await board(description: 'beach', imageUrl: 'https://x.example/ref.jpg', sources: ['one']);
+      fakes['one'] = _FakeSource(b('one'), 20)..answers = {'beach': [['beach', 'solo', 'long_hair'], ['beach', 'lookalike']]};
+      final BoardHandler h = BoardHandler(boardBooru, 20);
+      final List<BooruItem> items = List<BooruItem>.from(await h.search('board:${bd.id}', null) as List);
+      expect(items, hasLength(2));
+      expect(items.first.tagsList.map((t) => t.fullString), contains('lookalike'));
+      final Board stored = BoardsHandler.instance.byId(bd.id)!;
+      expect(stored.lookVector, [1.0, 0.0]);
+      expect(stored.lookImage, '${stored.imageKey}@clip');
+      expect(stored.hasFreshLook('clip'), isTrue);
+      expect(stored.hasFreshLook('other'), isFalse);
+      int calls = 0;
+      BoardHandler.referenceLook = (Board board) async {
+        calls++;
+        return Float32List.fromList([1, 0]);
+      };
+      final BoardHandler again = BoardHandler(boardBooru, 20);
+      final List<BooruItem> again2 = List<BooruItem>.from(await again.search('board:${bd.id}', null) as List);
+      expect(calls, 0, reason: 'cached on the board');
+      expect(again2.first.tagsList.map((t) => t.fullString), contains('lookalike'));
+      expect(stored.copyWith(clearMatches: true).lookVector, isNull, reason: 'Refresh image matches forgets it');
+      // No model: nothing asked, the tags order the page.
+      BoardHandler.lookModelId = () => '';
+      BoardHandler.lookItems = (List<BooruItem> items, List<Booru> sources) async => throw StateError('must not be asked');
+      final List<BooruItem> plain = List<BooruItem>.from(await BoardHandler(boardBooru, 20).search('board:${bd.id}', null) as List);
+      expect(plain, hasLength(2));
+    });
+
+    test('a board with words and no picture ranks by the words through the model\'s text side; a failing model leaves the tags in charge', () async {
+      BoardQueryBuilder.storeLookup = (Booru booru, String query) async => query == 'beach' ? [entry('beach')] : const [];
+      final List<String> asked = [];
+      BoardHandler.lookText = (String text) async {
+        asked.add(text);
+        return Float32List.fromList([0, 1]);
+      };
+      final Board bd = await board(description: 'beach', sources: ['one']);
+      fakes['one'] = _FakeSource(b('one'), 20)..answers = {'beach': [['beach', 'lookalike'], ['beach', 'solo']]};
+      final BoardHandler h = BoardHandler(boardBooru, 20);
+      final List<BooruItem> items = List<BooruItem>.from(await h.search('board:${bd.id}', null) as List);
+      expect(asked, ['beach']);
+      expect(items.first.tagsList.map((t) => t.fullString), contains('solo'), reason: 'the words\' vector [0,1] matches the non-lookalike item');
+      BoardHandler.lookItems = (List<BooruItem> items, List<Booru> sources) async => throw StateError('model down');
+      final Board other = await board(description: 'beach', sources: ['one']);
+      final List<BooruItem> still = List<BooruItem>.from(await BoardHandler(boardBooru, 20).search('board:${other.id}', null) as List);
+      expect(still, hasLength(2));
+    });
+  });
 }
 
 BooruTagEntry entry(String name) => BooruTagEntry(name: name, tagType: TagType.none);

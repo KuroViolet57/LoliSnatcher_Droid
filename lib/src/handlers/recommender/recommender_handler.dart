@@ -14,6 +14,7 @@ import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/encoder_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/ftrl_model.dart';
 import 'package:lolisnatcher/src/handlers/recommender/item_features.dart';
+import 'package:lolisnatcher/src/handlers/recommender/look_model_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/pixel_tags.dart';
 import 'package:lolisnatcher/src/handlers/recommender/rewards.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -30,6 +31,7 @@ class RecommenderReport {
     required this.disliked,
     this.encoderFeatures = 0,
     this.tasteCount = 0,
+    this.lookTasteCount = 0,
   });
 
   final RecommenderWorld world;
@@ -47,6 +49,52 @@ class RecommenderReport {
   /// without an encoder), and how many liked items shaped the taste centroid.
   final int encoderFeatures;
   final int tasteCount;
+
+  /// r75: how many liked posts shaped the visual taste centroid.
+  final int lookTasteCount;
+}
+
+/// r75: why a post stands where it does — what pulled it up and down, in
+/// plain words, by weight.
+class Explanation {
+  const Explanation({required this.positive, required this.negative});
+
+  static const Explanation empty = Explanation(positive: [], negative: []);
+
+  final List<({String label, double weight})> positive;
+  final List<({String label, double weight})> negative;
+
+  bool get isEmpty => positive.isEmpty && negative.isEmpty;
+
+  /// "because you liked: a, b; despite: c".
+  String get sentence {
+    final List<String> parts = [];
+    if (positive.isNotEmpty) parts.add('because you liked: ${positive.map((p) => p.label).join(', ')}');
+    if (negative.isNotEmpty) parts.add('despite: ${negative.map((p) => p.label).join(', ')}');
+    return parts.join('; ');
+  }
+
+  /// A feature name as a person would say it.
+  static String labelOf(String name) {
+    String words(String s) => s.replaceAll('_', ' ');
+    String split(String rest, String sep, String joiner) {
+      final int i = rest.indexOf(sep);
+      return i < 0 ? words(rest) : '${words(rest.substring(0, i))}$joiner${words(rest.substring(i + 1))}';
+    }
+
+    if (name.startsWith('emb:') || name.startsWith('taste:')) return 'how it reads';
+    if (name.startsWith('look:') || name.startsWith('ltaste:')) return 'how it looks';
+    if (name.startsWith('tag:')) return words(name.substring(4));
+    if (name.startsWith('type:')) return split(name.substring(5), ':', ' ');
+    if (name.startsWith('pair:')) return split(name.substring(5), '|', ' with ');
+    if (name.startsWith('ns:')) return split(name.substring(3), ':', ' ');
+    if (name.startsWith('site:')) return 'from ${name.substring(5)}';
+    if (name.startsWith('media:')) return name.substring(6);
+    if (name.startsWith('score:')) return 'score ${name.substring(6)}';
+    if (name.startsWith('pages:')) return '${name.substring(6)} pages';
+    if (name.startsWith('title:')) return 'the title (${words(name.substring(6))})';
+    return words(name);
+  }
 }
 
 /// The on-device recommender behind every recommendation surface.
@@ -108,11 +156,44 @@ class RecommenderHandler {
   static Future<List<String>> Function(BooruItem item, BooruHandler? handler)? pixelTagsFor = _defaultPixelTagsFor;
   static const Duration pixelTimeout = Duration(seconds: 30);
 
+  /// r75: the looks model's vectors for items (their thumbnails), for the
+  /// learner's visual features. Replaced in tests.
+  static Future<List<Float32List?>> Function(List<BooruItem> items, BooruHandler? handler)? lookVectorsFor = _defaultLookVectorsFor;
+  static const Duration lookTimeout = Duration(seconds: 8);
+
   static void resetSeamsForTests() {
     pixelTagsFor = _defaultPixelTagsFor;
+    lookVectorsFor = _defaultLookVectorsFor;
   }
 
   static Future<List<String>> _defaultPixelTagsFor(BooruItem item, BooruHandler? handler) => PixelTags.forItem(item, handler?.booru);
+
+  static Future<List<Float32List?>> _defaultLookVectorsFor(List<BooruItem> items, BooruHandler? handler) async {
+    final LookModelHandler? l = LookModelHandler.maybe;
+    if (l == null || !l.enabled) return List<Float32List?>.filled(items.length, null);
+    return l.imageVectors(items, booru: handler?.booru);
+  }
+
+  /// The looks model's name in feature names; 'look' when none is loaded
+  /// (a test seam's vectors still need one).
+  String get _lookModelId {
+    final LookModelHandler? l = LookModelHandler.maybe;
+    return l != null && l.enabled && l.modelId.isNotEmpty ? l.modelId : 'look';
+  }
+
+  /// The items' look vectors (booru world only); a failure or a wait past
+  /// [lookTimeout] leaves them out.
+  Future<List<Float32List?>> _looks(List<BooruItem> items, {BooruHandler? handler, RecommenderWorld? world}) async {
+    final Future<List<Float32List?>> Function(List<BooruItem> items, BooruHandler? handler)? f = lookVectorsFor;
+    if (f == null || items.isEmpty || world == RecommenderWorld.doujin) return List<Float32List?>.filled(items.length, null);
+    try {
+      final List<Float32List?> got = await f(items, handler).timeout(lookTimeout);
+      return got.length == items.length ? got : List<Float32List?>.filled(items.length, null);
+    } catch (e) {
+      Logger.Inst().log('look vectors for the recommender failed: $e', className, '_looks', LogTypes.booruHandlerInfo);
+      return List<Float32List?>.filled(items.length, null);
+    }
+  }
 
   final Map<RecommenderWorld, FtrlModel> _models = {};
   final Map<RecommenderWorld, Future<FtrlModel>> _loading = {};
@@ -139,6 +220,9 @@ class RecommenderHandler {
   /// liked (favourites, finishes, downloads…): "reads like what you liked"
   /// becomes a feature. Tied to the encoder model that produced it.
   final Map<RecommenderWorld, _Taste> _taste = {};
+
+  /// r75: the visual taste centroid per world (the looks model's vectors of liked posts).
+  final Map<RecommenderWorld, _Taste> _lookTaste = {};
   static const double tasteRate = 0.1;
 
   EncoderHandler? get _encoder {
@@ -197,11 +281,15 @@ class RecommenderHandler {
     }
     await _loadDismissed(world);
     _taste[world] ??= _Taste.read(File(tasteFileFor(world)));
+    _lookTaste[world] ??= _Taste.read(File(lookTasteFileFor(world)));
     return _models[world] = model;
   }
 
   String tasteFileFor(RecommenderWorld world) =>
       '${_settings.path}recommender${Platform.pathSeparator}${world.name}.taste.json';
+
+  String lookTasteFileFor(RecommenderWorld world) =>
+      '${_settings.path}recommender${Platform.pathSeparator}${world.name}.look-taste.json';
 
   Future<void> _loadDismissed(RecommenderWorld world) async {
     if (!_settings.dbEnabled) return;
@@ -253,6 +341,8 @@ class RecommenderHandler {
         await file.writeAsBytes(model.toBytes(), flush: true);
         final _Taste? taste = _taste[world];
         if (taste != null && taste.count > 0) await File(tasteFileFor(world)).writeAsString(taste.toJson());
+        final _Taste? lookTaste = _lookTaste[world];
+        if (lookTaste != null && lookTaste.count > 0) await File(lookTasteFileFor(world)).writeAsString(lookTaste.toJson());
       } catch (e, s) {
         Logger.Inst().log('saving the ${world.name} model failed: $e', className, 'flush', LogTypes.exception, s: s);
         _dirty.add(world);
@@ -268,15 +358,23 @@ class RecommenderHandler {
     BooruHandler? handler,
     Map<String, String>? namespaces,
     Float32List? embedding,
+    Float32List? look,
     bool fromMemory = false,
     List<String> extraTags = const [],
   }) {
-    final FeatureVector base = ItemFeatures.of(item, world, handler: handler, namespaces: namespaces, extraTags: extraTags);
+    FeatureVector f = ItemFeatures.of(item, world, handler: handler, namespaces: namespaces, extraTags: extraTags);
     final EncoderHandler? encoder = _encoder;
-    if (encoder == null) return base;
-    final Float32List? vector = embedding ?? (fromMemory ? encoder.cached(item) : null);
-    if (vector == null) return base;
-    return ItemFeatures.withEmbedding(base, vector, model: encoder.modelId, taste: _taste[world]?.vectorFor(encoder.modelId));
+    final Float32List? vector = encoder == null ? null : (embedding ?? (fromMemory ? encoder.cached(item) : null));
+    if (encoder != null && vector != null) {
+      f = ItemFeatures.withEmbedding(f, vector, model: encoder.modelId, taste: _taste[world]?.vectorFor(encoder.modelId));
+    }
+    // r75: how the picture looks, when the looks model has seen it.
+    final Float32List? lookVec = look ?? (fromMemory ? LookModelHandler.maybe?.cached(item) : null);
+    if (lookVec != null && world == RecommenderWorld.booru) {
+      final String lm = _lookModelId;
+      f = ItemFeatures.withLook(f, lookVec, model: lm, taste: _lookTaste[world]?.vectorFor(lm));
+    }
+    return f;
   }
 
   Future<List<Float32List?>> _embeddings(List<BooruItem> items, {BooruHandler? handler}) async {
@@ -309,8 +407,9 @@ class RecommenderHandler {
     final RecommenderWorld world = ItemFeatures.worldOf(item);
     await modelFor(world);
     final Float32List? embedding = (await _embeddings([item], handler: handler)).first;
+    final Float32List? look = (await _looks([item], handler: handler, world: world)).first;
     final List<String> pixel = await _pixelTags(item, world, reward, kind, handler: handler);
-    final FeatureVector features = _featuresFor(item, world, handler: handler, namespaces: namespaces, embedding: embedding, extraTags: pixel);
+    final FeatureVector features = _featuresFor(item, world, handler: handler, namespaces: namespaces, embedding: embedding, look: look, extraTags: pixel);
     if (features.isEmpty) return;
     await _learn(world, key, _hostOf(item), kind, value, features, reward);
     if (embedding != null && reward.positive && reward.weight >= 2) {
@@ -320,6 +419,55 @@ class RecommenderHandler {
         _markDirty(world);
       }
     }
+    // r75: a strong like also shapes what the user likes to look at.
+    if (look != null && reward.positive && reward.weight >= 2 && world == RecommenderWorld.booru) {
+      (_lookTaste[world] ??= _Taste.empty()).learn(look, model: _lookModelId, rate: tasteRate);
+      _markDirty(world);
+    }
+  }
+
+  /// r75: why a post stands where it does — the features pulling it up and
+  /// down by their weight, grouped into plain words.
+  Future<Explanation> explain(BooruItem item, {RecommenderWorld? world, BooruHandler? handler}) async {
+    final RecommenderWorld w = world ?? ItemFeatures.worldOf(item);
+    final FtrlModel model = await modelFor(w);
+    if (model.updates == 0) return Explanation.empty;
+    final Float32List? embedding = (await _embeddings([item], handler: handler)).first;
+    final Float32List? look = (await _looks([item], handler: handler, world: w)).first;
+    final FeatureVector f = _featuresFor(item, w, handler: handler, embedding: embedding, look: look);
+    final Map<String, double> byLabel = {};
+    for (int k = 0; k < f.hashes.length; k++) {
+      final double x = f.values == null ? 1 : f.values![k];
+      if (x == 0) continue;
+      final double c = model.weight(f.hashes[k]) * x;
+      if (c == 0) continue;
+      final String label = Explanation.labelOf(f.names[k]);
+      byLabel[label] = (byLabel[label] ?? 0) + c;
+    }
+    final List<({String label, double weight})> all = [for (final MapEntry<String, double> e in byLabel.entries) (label: e.key, weight: e.value)];
+    final List<({String label, double weight})> positive = all.where((e) => e.weight > 0).toList()..sort((a, b) => b.weight.compareTo(a.weight));
+    final List<({String label, double weight})> negative = all.where((e) => e.weight < 0).toList()..sort((a, b) => a.weight.compareTo(b.weight));
+    return Explanation(positive: positive.take(4).toList(), negative: negative.take(3).toList());
+  }
+
+  /// r75: a correction from the settings page: 'more' / 'less' move a
+  /// feature's weight by half a point, 'forget' zeroes it.
+  Future<void> adjust(RecommenderWorld world, String featureName, {required String how}) async {
+    final FtrlModel model = await modelFor(world);
+    final int h = ItemFeatures.hash(featureName);
+    switch (how) {
+      case 'more':
+        model.nudge(h, 0.5);
+      case 'less':
+        model.nudge(h, -0.5);
+      case 'forget':
+        model.setWeight(h, 0);
+      default:
+        return;
+    }
+    model.updates++;
+    model.lastUpdate = DateTime.now();
+    _markDirty(world);
   }
 
   /// r74: a strong reaction (weight 2 or more) on a booru post also learns
@@ -509,7 +657,8 @@ class RecommenderHandler {
     final FtrlModel model = await modelFor(w);
     if (model.updates == 0) return 0.5;
     final Float32List? embedding = (await _embeddings([item], handler: handler)).first;
-    final FeatureVector f = _featuresFor(item, w, handler: handler, namespaces: namespaces, embedding: embedding);
+    final Float32List? look = (await _looks([item], handler: handler, world: w)).first;
+    final FeatureVector f = _featuresFor(item, w, handler: handler, namespaces: namespaces, embedding: embedding, look: look);
     return model.predict(f.hashes, values: f.values);
   }
 
@@ -521,7 +670,10 @@ class RecommenderHandler {
     if (!recommendationsEnabled) return null;
     final FtrlModel model = await modelFor(world);
     if (model.updates == 0) return null;
-    if (items != null) await _embeddings(items, handler: handler);
+    if (items != null) {
+      await _embeddings(items, handler: handler);
+      await _looks(items, handler: handler, world: world);
+    }
     return (BooruItem item) {
       final FeatureVector f = _featuresFor(item, world, handler: handler, fromMemory: true);
       return model.predict(f.hashes, values: f.values);
@@ -571,9 +723,10 @@ class RecommenderHandler {
     if (model.updates == 0) return items;
     final int n = items.length;
     final List<Float32List?> embeddings = await _embeddings(items, handler: handler);
+    final List<Float32List?> looks = await _looks(items, handler: handler, world: w);
     final List<({BooruItem item, double combined, double novelty, int index})> scored = [];
     for (int i = 0; i < n; i++) {
-      final FeatureVector f = _featuresFor(items[i], w, handler: handler, embedding: embeddings[i]);
+      final FeatureVector f = _featuresFor(items[i], w, handler: handler, embedding: embeddings[i], look: looks[i]);
       final double p = model.predict(f.hashes, values: f.values);
       final double position = 1 - i / (n - 1);
       // Novelty is judged on what the item is, not on the encoder's components.
@@ -650,6 +803,7 @@ class RecommenderHandler {
       disliked: named(disliked),
       encoderFeatures: encoderFeatures,
       tasteCount: _taste[world]?.count ?? 0,
+      lookTasteCount: _lookTaste[world]?.count ?? 0,
     );
   }
 
@@ -679,13 +833,14 @@ class RecommenderHandler {
     _exposed.clear();
     _dismissed[world]?.clear();
     _taste[world] = _Taste.empty();
+    _lookTaste[world] = _Taste.empty();
     try {
       await _db.clearInteractions(world.name);
       await _db.clearFeatureNames(world.name);
     } catch (e, s) {
       Logger.Inst().log('clearing the ${world.name} log failed: $e', className, 'reset', LogTypes.exception, s: s);
     }
-    for (final String path in [fileFor(world), tasteFileFor(world)]) {
+    for (final String path in [fileFor(world), tasteFileFor(world), lookTasteFileFor(world)]) {
       try {
         final File file = File(path);
         if (await file.exists()) await file.delete();
@@ -705,6 +860,7 @@ class RecommenderHandler {
     _rendered.clear();
     _dismissed.clear();
     _taste.clear();
+    _lookTaste.clear();
   }
 }
 

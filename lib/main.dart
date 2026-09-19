@@ -28,6 +28,7 @@ import 'package:lolisnatcher/src/handlers/floating_preview_handler.dart';
 import 'package:lolisnatcher/src/handlers/interests_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/encoder_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/image_tagger_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/look_model_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/recommender_handler.dart';
 import 'package:lolisnatcher/src/handlers/local_auth_handler.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
@@ -111,6 +112,9 @@ void main() async {
   // r74: the downloaded image tagger, likewise.
   ImageTaggerHandler.register();
   unawaited(ImageTaggerHandler.instance.refresh());
+  // r75: the downloaded looks model, likewise.
+  LookModelHandler.register();
+  unawaited(LookModelHandler.instance.refresh());
   LocalAuthHandler.register();
 
   await ServiceHandler.setSystemUiVisibility(true);

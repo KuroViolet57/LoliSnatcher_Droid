@@ -7,6 +7,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/data/board.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
+import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/data/tag.dart';
+import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/boards_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/image_tagger_handler.dart';
 import 'package:lolisnatcher/src/handlers/reverse_image_search.dart';
@@ -48,7 +51,7 @@ void main() {
     await store.save(Board(id: 'b1', name: 'Beach girls', description: 'blonde on a beach', mustTags: const ['animated']));
     await store.save(Board(id: 'b2', name: 'Cats'));
     final List<String> opened = [];
-    BoardsPage.opener = (Board board) => opened.add(board.id);
+    BoardsPage.opener = (Board board, bool switchTo) => opened.add(board.id);
     await tester.pumpWidget(const MaterialApp(home: BoardsPage()));
     await tester.pumpAndSettle();
     expect(find.text('Beach girls'), findsOneWidget);
@@ -231,6 +234,62 @@ void main() {
       expect(find.byKey(const ValueKey('board-tag-image')), findsNothing);
       await tester.scrollUntilVisible(find.byKey(const ValueKey('board-tag-hint')), 200, scrollable: find.byType(Scrollable).first);
       expect(find.byKey(const ValueKey('board-tag-hint')), findsOneWidget);
+    });
+  });
+
+  group('r75: Posts like this, and tabs that stay put', () {
+    testWidgets('Posts like this makes a hidden board from the post and opens it in the background; the page does not list it', (tester) async {
+      final List<(String, bool)> opened = [];
+      BoardsPage.opener = (Board board, bool switchTo) => opened.add((board.id, switchTo));
+      BoardEditPage.imageFetcher = (String url, String? booruName) async => null;
+      final BooruItem item = BooruItem(
+        fileURL: 'https://img.gelbooru.com/a.jpg',
+        sampleURL: 'https://img.gelbooru.com/s.jpg',
+        thumbnailURL: 'https://img.gelbooru.com/t.jpg',
+        tagsList: [Tag('hatsune_miku', tagType: TagType.character), Tag('beach'), Tag('solo')],
+        postURL: 'https://gelbooru.com/p/1',
+      );
+      final Booru gelbooru = SettingsHandler.instance.booruList.first;
+      await tester.pumpWidget(
+        MaterialApp(home: Builder(builder: (context) => TextButton(onPressed: () => BoardsPage.openSimilar(context, item, gelbooru), child: const Text('go')))),
+      );
+      await tester.tap(find.text('go'));
+      await tester.pumpAndSettle();
+      expect(store.boards, hasLength(1));
+      final Board made = store.boards.single;
+      expect(made.hidden, isTrue);
+      expect(made.imageUrl, 'https://img.gelbooru.com/s.jpg');
+      expect(made.imageBooru, 'Gelbooru');
+      expect(made.description, contains('hatsune miku'));
+      expect(made.name, contains('hatsune miku'));
+      expect(opened, [(made.id, false)]);
+      expect(store.visibleBoards, isEmpty);
+      await tester.pumpWidget(const MaterialApp(home: BoardsPage()));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('No boards yet'), findsOneWidget);
+    });
+
+    testWidgets('a board saved from a post opens in the background too', (tester) async {
+      final List<(String, bool)> opened = [];
+      BoardsPage.opener = (Board board, bool switchTo) => opened.add((board.id, switchTo));
+      BoardEditPage.imageFetcher = (String url, String? booruName) async => null;
+      final BooruItem item = BooruItem(
+        fileURL: 'https://img.gelbooru.com/a.jpg',
+        sampleURL: 'https://img.gelbooru.com/s.jpg',
+        thumbnailURL: 'https://img.gelbooru.com/t.jpg',
+        tagsList: [Tag('beach')],
+        postURL: 'https://gelbooru.com/p/1',
+      );
+      await tester.pumpWidget(
+        MaterialApp(home: Builder(builder: (context) => TextButton(onPressed: () => BoardEditPage.openFromItem(context, item, null), child: const Text('go')))),
+      );
+      await tester.tap(find.text('go'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('board-save')));
+      await tester.pumpAndSettle();
+      expect(opened, hasLength(1));
+      expect(opened.single.$2, isFalse);
+      expect(store.boards.single.hidden, isFalse);
     });
   });
 }

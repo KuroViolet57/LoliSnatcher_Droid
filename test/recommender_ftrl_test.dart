@@ -187,4 +187,25 @@ void main() {
       expect(afterNo, lessThan(sure));
     });
   });
+
+  test('r75: setWeight puts a feature at an exact weight, fresh or after learning; nudge moves it by a step; both survive a save', () {
+    final FtrlModel m = FtrlModel();
+    final int h = ItemFeatures.hash('tag:beach');
+    m.setWeight(h, 1.25);
+    expect(m.weight(h), closeTo(1.25, 1e-6));
+    m.setWeight(h, -0.75);
+    expect(m.weight(h), closeTo(-0.75, 1e-6));
+    m.setWeight(h, 0);
+    expect(m.weight(h), 0);
+    for (int i = 0; i < 20; i++) {
+      m.update([h], positive: true);
+    }
+    final double learned = m.weight(h);
+    expect(learned, greaterThan(0));
+    m.nudge(h, -0.5);
+    expect(m.weight(h), closeTo(learned - 0.5, 1e-6));
+    m.setWeight(h, 2);
+    expect(m.weight(h), closeTo(2, 1e-6));
+    expect(FtrlModel.fromBytes(m.toBytes())!.weight(h), closeTo(2, 1e-6));
+  });
 }

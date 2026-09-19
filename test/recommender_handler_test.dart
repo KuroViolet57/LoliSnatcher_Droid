@@ -348,7 +348,9 @@ void main() {
     final double readBob = await r.score(likeBob);
     expect(readAlice, greaterThan(readBob + 0.1), reason: 'the word alice in the name carries the liking over');
     expect(readAlice, greaterThan(0.5));
-    expect(readBob, lessThan(0.5));
+    // r75: with tag pairs in the mix the site and media features carry a
+    // little net liking, so the bar is the tags-only score, not 0.5.
+    expect(readBob, lessThan(plainBob), reason: 'reading the name pulls a bob-like item below its tags-only score');
     // The report names the encoder's part in what was learned.
     final RecommenderReport report = await r.report(RecommenderWorld.booru);
     expect(report.encoderFeatures, greaterThan(0));
@@ -401,6 +403,68 @@ void main() {
       final RecommenderReport report = await r.report(RecommenderWorld.booru);
       expect(report.events, 1);
       expect(report.liked.map((e) => e.name), contains('type:artist:alice'));
+    });
+  });
+
+  group('r75: why, corrections and looks', () {
+    tearDown(RecommenderHandler.resetSeamsForTests);
+
+    test('explain names what pulled a post up and down, in plain words', () async {
+      if (!dbReady) return;
+      final RecommenderHandler r = RecommenderHandler.instance;
+      await teach(r);
+      final Explanation e = await r.explain(booruPost('alice'));
+      expect(e.positive.map((p) => p.label), contains('artist alice'));
+      expect(e.positive.length, lessThanOrEqualTo(4));
+      expect(e.negative.length, lessThanOrEqualTo(3));
+      final Explanation bad = await r.explain(booruPost('bob'));
+      expect(bad.negative.map((p) => p.label), contains('artist bob'));
+      expect(Explanation.labelOf('pair:hatsune_miku|beach'), 'hatsune miku with beach');
+      expect(Explanation.labelOf('type:character:hatsune_miku'), 'character hatsune miku');
+      expect(Explanation.labelOf('tag:red_hair'), 'red hair');
+      expect(Explanation.labelOf('site:gelbooru.com'), 'from gelbooru.com');
+      expect(Explanation.labelOf('emb:m:3'), 'how it reads');
+      expect(Explanation.labelOf('look:clip:3'), 'how it looks');
+      final Explanation unseen = await r.explain(booruPost('nobody', tag: 'zzz'));
+      expect(unseen.positive.map((p) => p.label), isNot(contains('artist nobody')), reason: 'an unseen artist has no weight');
+      expect(unseen.positive.map((p) => p.label), isNot(contains('zzz')));
+    });
+
+    test('adjust: forget zeroes a learned tag, less and more move it, and the report follows', () async {
+      if (!dbReady) return;
+      final RecommenderHandler r = RecommenderHandler.instance;
+      await teach(r);
+      final FtrlModel m = await r.modelFor(RecommenderWorld.booru);
+      final int h = ItemFeatures.hash('type:artist:alice');
+      final double before = m.weight(h);
+      expect(before, greaterThan(0));
+      await r.adjust(RecommenderWorld.booru, 'type:artist:alice', how: 'less');
+      expect(m.weight(h), lessThan(before));
+      await r.adjust(RecommenderWorld.booru, 'type:artist:alice', how: 'more');
+      expect(m.weight(h), closeTo(before, 1e-6));
+      await r.adjust(RecommenderWorld.booru, 'type:artist:alice', how: 'forget');
+      expect(m.weight(h), 0);
+      expect((await r.report(RecommenderWorld.booru)).liked.map((e) => e.name), isNot(contains('type:artist:alice')));
+    });
+
+    test('look vectors join the features and shape a visual taste; nothing is asked for views', () async {
+      if (!dbReady) return;
+      int asked = 0;
+      RecommenderHandler.lookVectorsFor = (List<BooruItem> items, handler) async {
+        asked += items.length;
+        return [for (final BooruItem _ in items) Float32List.fromList([0.6, 0.8])];
+      };
+      final RecommenderHandler r = RecommenderHandler.instance;
+      await r.onEvent(booruPost('alice'), InteractionKind.favourite);
+      expect(asked, 1);
+      final FtrlModel m = await r.modelFor(RecommenderWorld.booru);
+      expect(m.weight(ItemFeatures.hash('look:look:0')), isNot(0), reason: 'the look components were learned');
+      expect((await r.report(RecommenderWorld.booru)).lookTasteCount, 1);
+      final Explanation e = await r.explain(booruPost('alice', id: '9'));
+      expect(e.positive.map((p) => p.label), contains('how it looks'));
+      RecommenderHandler.lookVectorsFor = (List<BooruItem> items, handler) async => throw StateError('model down');
+      await r.onEvent(booruPost('alice', id: '2'), InteractionKind.favourite);
+      expect((await r.report(RecommenderWorld.booru)).events, 2, reason: 'a failing model never blocks learning');
     });
   });
 }

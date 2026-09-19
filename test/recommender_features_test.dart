@@ -169,4 +169,45 @@ void main() {
       expect(ItemFeatures.isSeedable('ns:language:english'), isFalse);
     });
   });
+
+  group('r75: pairs and looks', () {
+    BooruItem post() => BooruItem(
+      fileURL: 'https://img.gelbooru.com/1.jpg',
+      sampleURL: '',
+      thumbnailURL: '',
+      tagsList: [Tag('hatsune_miku', tagType: TagType.character), Tag('vocaloid', tagType: TagType.copyright), Tag('beach'), Tag('solo')],
+      postURL: 'https://gelbooru.com/index.php?page=post&s=view&id=1',
+    );
+
+    test('pair features: a lead tag (character, copyright, artist) with each general tag, booru world only', () {
+      final FeatureVector f = ItemFeatures.of(post(), RecommenderWorld.booru);
+      expect(f.names, containsAll(['pair:hatsune_miku|beach', 'pair:hatsune_miku|solo', 'pair:vocaloid|beach', 'pair:vocaloid|solo']));
+      expect(f.names.where((n) => n.startsWith('pair:')), hasLength(4));
+      expect(f.names, containsAll(['tag:hatsune_miku', 'tag:beach']));
+      final BooruItem gallery = BooruItem(
+        fileURL: 'https://nhentai.net/g/1/',
+        sampleURL: '',
+        thumbnailURL: '',
+        tagsList: [Tag('artist_x', tagType: TagType.artist), Tag('big_breasts')],
+        postURL: 'https://nhentai.net/g/1/',
+      );
+      expect(ItemFeatures.of(gallery, RecommenderWorld.doujin).names.where((n) => n.startsWith('pair:')), isEmpty);
+    });
+
+    test('withLook adds one valued feature per component and a taste bucket, keeps the logged count, and stacks with the encoder', () {
+      final FeatureVector base = ItemFeatures.of(post(), RecommenderWorld.booru);
+      final FeatureVector f = ItemFeatures.withLook(base, [0.6, 0.8], model: 'clip', taste: [0.6, 0.8]);
+      expect(f.names, containsAll(['look:clip:0', 'look:clip:1']));
+      expect(f.names.any((n) => n.startsWith('ltaste:clip:')), isTrue);
+      expect(f.values, isNotNull);
+      expect(f.values!.length, f.hashes.length);
+      expect(f.logged, base.hashes.length);
+      expect(f.values![base.hashes.length], closeTo(0.6 * ItemFeatures.lookScale, 1e-9));
+      final FeatureVector both = ItemFeatures.withLook(ItemFeatures.withEmbedding(base, [1, 0], model: 'm'), [0, 1], model: 'clip');
+      expect(both.logged, base.hashes.length);
+      expect(both.names, containsAll(['emb:m:0', 'look:clip:1']));
+      expect(both.values!.length, both.hashes.length);
+      expect(ItemFeatures.withLook(base, const [], model: 'clip'), same(base));
+    });
+  });
 }

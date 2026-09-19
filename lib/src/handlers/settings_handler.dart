@@ -251,6 +251,11 @@ class SettingsHandler {
   bool aiImageTagger = true;
   String imageTaggerModel = '';
   bool taggerOnReactions = false;
+  // r75: the downloaded "looks" model (LookModelHandler): a preset id ('s0',
+  // 's2') or a Hugging Face repo id; '' = none. `aiLook` = boards, Posts like
+  // this and the learner read pictures with it once it is downloaded.
+  bool aiLook = true;
+  String lookModel = '';
   // Render the post-info panel (tags, metadata) as a Boorusama-style bottom
   // sheet dragged up from the bottom edge instead of the classic right-side
   // drawer. On by default; turn off to restore the side drawer.
@@ -756,6 +761,14 @@ class SettingsHandler {
     'taggerOnReactions': {
       'type': 'bool',
       'default': false,
+    },
+    'aiLook': {
+      'type': 'bool',
+      'default': true,
+    },
+    'lookModel': {
+      'type': 'string',
+      'default': '',
     },
     'useBottomInfoSheet': {
       'type': 'bool',
@@ -1391,6 +1404,10 @@ class SettingsHandler {
         return imageTaggerModel;
       case 'taggerOnReactions':
         return taggerOnReactions;
+      case 'aiLook':
+        return aiLook;
+      case 'lookModel':
+        return lookModel;
       case 'useBottomInfoSheet':
         return useBottomInfoSheet;
       case 'bottomSheetSizeMultiplier':
@@ -1697,6 +1714,12 @@ class SettingsHandler {
         break;
       case 'taggerOnReactions':
         taggerOnReactions = validatedValue;
+        break;
+      case 'aiLook':
+        aiLook = validatedValue;
+        break;
+      case 'lookModel':
+        lookModel = validatedValue;
         break;
       case 'useBottomInfoSheet':
         useBottomInfoSheet = validatedValue;
