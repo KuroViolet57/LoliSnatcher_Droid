@@ -6,12 +6,19 @@ import 'dart:typed_data';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
+import 'package:lolisnatcher/src/handlers/bookmark_handler.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/handlers/boards_handler.dart';
+import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/tag_handler.dart';
+import 'package:lolisnatcher/src/services/drive_backup.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/widgets/common/cancel_button.dart';
 import 'package:lolisnatcher/src/widgets/common/confirm_button.dart';
@@ -31,14 +38,51 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
   final TagHandler tagHandler = TagHandler.instance;
   String backupPath = '';
 
+  /// The doujin side's own store files, backed up alongside the booru data.
+  static const List<String> _doujinStoreFiles = [
+    'doujinData.json',
+    'sourceSettings.json',
+    'bookmarks.json',
+    // r73: the boards and the SauceNAO key (the copied images stay local).
+    'boards.json',
+  ];
+
+  /// After restoring the doujin store files, drop the lazily-loaded singleton
+  /// state so the next read comes from the restored files.
+  void _reloadDoujinStores() {
+    DoujinDataHandler.instance.reloadFromDisk();
+    SourceSettingsHandler.instance.reloadFromDisk();
+    BookmarkHandler.instance.reloadFromDisk();
+    // r73: the boards live in boards.json too.
+    unawaited(BoardsHandler.instance.reloadFromDisk());
+  }
+
+  /// A restored store.db may predate the doujin split and still carry doujin
+  /// rows in the shared stores — re-arm the one-time migration so they get
+  /// moved out again on the post-restore restart. The migration is additive
+  /// and idempotent, so re-running it on already-migrated data is safe.
+  void _rearmDoujinMigration() {
+    final store = DoujinDataHandler.instance..ensureLoaded();
+    store.migrationDone = false;
+    store.save();
+  }
+
   bool inProgress = false;
   int progress = 0, total = 0;
+
+  // Google Drive
+  bool driveLinked = false;
+  bool driveHasCreds = false;
+  bool driveBusy = false;
+  String driveStatus = '';
+  List<DriveFile> driveFiles = const [];
 
   @override
   void initState() {
     super.initState();
     backupPath = settingsHandler.backupPath;
     validateBackupPathAccess();
+    unawaited(_refreshDriveState());
   }
 
   Future<void> validateBackupPathAccess() async {
@@ -78,7 +122,7 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
         text,
         style: const TextStyle(fontSize: 16),
       ),
-      leadingIcon: isError ? Icons.error_outline : Icons.done,
+      leadingIcon: isError ? Symbols.error_rounded : Symbols.done_rounded,
       leadingIconColor: isError ? Colors.red : Colors.green,
       sideColor: isError ? Colors.red : Colors.green,
     );
@@ -173,6 +217,9 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
     // settings.json
     await step('settings', () async {
       final File file = File('${await ServiceHandler.getConfigDir()}settings.json');
+      if (await ServiceHandler.existsFileFromSAFDirectory(backupPath, 'settings.json')) {
+        await ServiceHandler.deleteFileFromSAFDirectory(backupPath, 'settings.json');
+      }
       await ServiceHandler.writeImage(
         await file.readAsBytes(),
         'settings',
@@ -186,6 +233,9 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
     await step('boorus', () async {
       final List<Booru> booruList =
           settingsHandler.booruList.where((e) => BooruType.saveable.contains(e.type)).toList();
+      if (await ServiceHandler.existsFileFromSAFDirectory(backupPath, 'boorus.json')) {
+        await ServiceHandler.deleteFileFromSAFDirectory(backupPath, 'boorus.json');
+      }
       await ServiceHandler.writeImage(
         utf8.encode(json.encode(booruList)),
         'boorus',
@@ -195,10 +245,38 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
       );
     });
 
+    // Doujin-side stores (favourites/collections/pins/history + doujin
+    // settings + bookmarks) — separate files, so the separated data
+    // round-trips through backups too. Missing files just aren't written yet.
+    // SAF createFile never overwrites (it dedupes to "name (1).json", which
+    // restore would never read), so delete any existing copy first — the
+    // bulk dialog already promises overwriting.
+    for (final name in _doujinStoreFiles) {
+      await step(name, () async {
+        final File file = File('${await ServiceHandler.getConfigDir()}$name');
+        if (!await file.exists()) return;
+        if (await ServiceHandler.existsFileFromSAFDirectory(backupPath, name)) {
+          await ServiceHandler.deleteFileFromSAFDirectory(backupPath, name);
+        }
+        await ServiceHandler.writeImage(
+          await file.readAsBytes(),
+          name.replaceAll('.json', ''),
+          'text/json',
+          'json',
+          backupPath,
+        );
+      });
+    }
+
     // store.db
     await step('database', () async {
       final File file = File('${await ServiceHandler.getConfigDir()}store.db');
       if (!await file.exists()) throw Exception('database file not found');
+      // Same SAF dedupe trap as the JSON files: createFile would write
+      // "store (1).db" and restore would keep reading the first-ever copy.
+      if (await ServiceHandler.existsFileFromSAFDirectory(backupPath, 'store.db')) {
+        await ServiceHandler.deleteFileFromSAFDirectory(backupPath, 'store.db');
+      }
       await ServiceHandler.copyFileToSafDir(
         await ServiceHandler.getConfigDir(),
         'store.db',
@@ -298,6 +376,23 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
       Logger.Inst().log(e.toString(), 'BackupRestorePage', 'restoreAll/boorus', LogTypes.exception, s: s);
     }
 
+    // Doujin-side stores — absent in older backups, so missing files are
+    // skipped silently rather than reported.
+    for (final name in _doujinStoreFiles) {
+      try {
+        final Uint8List? bytes = await ServiceHandler.getFileFromSAFDirectory(backupPath, name);
+        if (bytes != null) {
+          final File f = File('${await ServiceHandler.getConfigDir()}$name');
+          if (!await f.exists()) await f.create();
+          await f.writeAsBytes(bytes);
+        }
+      } catch (e, s) {
+        failures.add(name);
+        Logger.Inst().log(e.toString(), 'BackupRestorePage', 'restoreAll/$name', LogTypes.exception, s: s);
+      }
+    }
+    _reloadDoujinStores();
+
     // store.db — last because it restarts the app on success
     try {
       final fileExists = await ServiceHandler.existsFileFromSAFDirectory(backupPath, 'store.db');
@@ -320,6 +415,8 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
           if (!await newFile.exists()) {
             failures.add('database (post-copy missing)');
             searchHandler.canBackup.value = true;
+          } else {
+            _rearmDoujinMigration();
           }
         }
       }
@@ -341,6 +438,261 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
     }
   }
 
+  // ───────────────────────────── Google Drive ─────────────────────────────
+
+  Future<void> _refreshDriveState() async {
+    final bool linked = await DriveBackup.isLinked;
+    final bool hasCreds = await DriveBackup.hasCredentials;
+    final List<DriveFile> files = linked ? await DriveBackup.list() : const [];
+    if (!mounted) return;
+    setState(() {
+      driveLinked = linked;
+      driveHasCreds = hasCreds;
+      driveFiles = files;
+    });
+  }
+
+  Future<void> _editDriveCredentials() async {
+    final idController = TextEditingController(text: await DriveBackup.clientId ?? '');
+    final secretController = TextEditingController(text: await DriveBackup.clientSecret ?? '');
+    if (!mounted) return;
+
+    final bool? saved = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Google OAuth client'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'These are not stored in the app source, so you paste them once here and '
+                'they stay in the phone’s encrypted storage.\n\n'
+                'Create them at console.cloud.google.com → APIs & Services → Credentials → '
+                'Create credentials → OAuth client ID, application type "Desktop app", '
+                'and enable the Google Drive API for that project.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: idController,
+                decoration: const InputDecoration(labelText: 'Client ID', border: OutlineInputBorder()),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: secretController,
+                decoration: const InputDecoration(labelText: 'Client secret', border: OutlineInputBorder()),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Save')),
+        ],
+      ),
+    );
+
+    if (saved == true) {
+      await DriveBackup.setCredentials(idController.text, secretController.text);
+      await _refreshDriveState();
+    }
+  }
+
+  Future<void> _linkDrive() async {
+    setState(() {
+      driveBusy = true;
+      driveStatus = 'Waiting for Google sign-in in your browser…';
+    });
+    final String? error = await DriveBackup.link(
+      onProgress: (String status) {
+        if (mounted) setState(() => driveStatus = status);
+      },
+    );
+    if (!mounted) return;
+    setState(() {
+      driveBusy = false;
+      driveStatus = '';
+    });
+    if (error == null) {
+      showSnackbar('Google Drive linked.', isError: false);
+    } else {
+      // r42: a dialog, not a snackbar: the person is often still coming back
+      // from the browser when this lands.
+      await showDialog<void>(
+        context: context,
+        builder: (BuildContext ctx) => AlertDialog(
+          title: const Text('Google Drive was not linked'),
+          content: SelectableText(error),
+          actions: [TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('OK'))],
+        ),
+      );
+      if (!mounted) return;
+    }
+    await _refreshDriveState();
+  }
+
+  /// Uploads the same three artefacts the folder backup writes.
+  Future<void> _backupToDrive() async {
+    setState(() {
+      driveBusy = true;
+      driveStatus = 'Starting…';
+    });
+    final List<String> failures = [];
+
+    Future<void> step(String label, String name, String mime, Future<List<int>> Function() read) async {
+      if (!mounted) return;
+      setState(() => driveStatus = 'Uploading $label…');
+      try {
+        final List<int> bytes = await read();
+        final String? error = await DriveBackup.upload(
+          name,
+          bytes,
+          mime,
+          onProgress: (sent, total) {
+            if (!mounted || total == 0) return;
+            setState(() => driveStatus = 'Uploading $label — ${(100 * sent / total).round()}%');
+          },
+        );
+        if (error != null) failures.add('$label: $error');
+      } catch (e) {
+        failures.add('$label: $e');
+      }
+    }
+
+    final String configDir = await ServiceHandler.getConfigDir();
+
+    await step('settings', 'settings.json', 'application/json', () async {
+      return File('${configDir}settings.json').readAsBytes();
+    });
+    await step('boorus', 'boorus.json', 'application/json', () async {
+      final List<Booru> booruList =
+          settingsHandler.booruList.where((e) => BooruType.saveable.contains(e.type)).toList();
+      return utf8.encode(json.encode(booruList));
+    });
+    for (final name in _doujinStoreFiles) {
+      final File file = File('$configDir$name');
+      if (await file.exists()) {
+        await step(name, name, 'application/json', file.readAsBytes);
+      }
+    }
+    await step('database', 'store.db', 'application/x-sqlite3', () async {
+      final File file = File('${configDir}store.db');
+      if (!await file.exists()) throw Exception('database file not found');
+      return file.readAsBytes();
+    });
+
+    if (!mounted) return;
+    setState(() {
+      driveBusy = false;
+      driveStatus = '';
+    });
+    showSnackbar(
+      failures.isEmpty ? 'Backed up to Google Drive.' : 'Finished with errors: ${failures.join(", ")}',
+      isError: failures.isNotEmpty,
+    );
+    await _refreshDriveState();
+  }
+
+  Future<void> _restoreFromDrive() async {
+    final bool ok = await confirmRestore('Restore everything from Google Drive');
+    if (!ok) return;
+
+    setState(() {
+      driveBusy = true;
+      driveStatus = 'Downloading…';
+    });
+    final List<String> failures = [];
+    final String configDir = await ServiceHandler.getConfigDir();
+
+    // Settings and boorus first, database last — restoring the database is
+    // what triggers the restart, same order the folder restore uses.
+    try {
+      final bytes = await DriveBackup.download('settings.json');
+      if (bytes == null) {
+        failures.add('settings: not on Drive');
+      } else {
+        await File('${configDir}settings.json').writeAsBytes(bytes, flush: true);
+        await settingsHandler.loadSettings();
+      }
+    } catch (e) {
+      failures.add('settings: $e');
+    }
+
+    try {
+      final bytes = await DriveBackup.download('boorus.json');
+      if (bytes == null) {
+        failures.add('boorus: not on Drive');
+      } else {
+        final List<dynamic> raw = json.decode(utf8.decode(bytes)) as List<dynamic>;
+        final List<Booru> boorus = raw.map((e) => Booru.fromMap(e)).toList();
+        for (final booru in boorus) {
+          if (!settingsHandler.booruList.contains(booru)) {
+            await settingsHandler.saveBooru(booru);
+          }
+        }
+      }
+    } catch (e) {
+      failures.add('boorus: $e');
+    }
+
+    for (final name in _doujinStoreFiles) {
+      try {
+        final bytes = await DriveBackup.download(name);
+        // Older backups simply don't have these files — skip silently.
+        if (bytes != null) {
+          await File('$configDir$name').writeAsBytes(bytes, flush: true);
+        }
+      } catch (e) {
+        failures.add('$name: $e');
+      }
+    }
+    _reloadDoujinStores();
+
+    try {
+      final bytes = await DriveBackup.download('store.db');
+      if (bytes == null) {
+        failures.add('database: not on Drive');
+      } else {
+        await settingsHandler.dbHandler.closeDb();
+        await File('${configDir}store.db').writeAsBytes(bytes, flush: true);
+        _rearmDoujinMigration();
+      }
+    } catch (e) {
+      failures.add('database: $e');
+    }
+
+    if (!mounted) return;
+    setState(() {
+      driveBusy = false;
+      driveStatus = '';
+    });
+
+    if (failures.isEmpty) {
+      showSnackbar('Restored from Drive. App will restart in a moment.', isError: false);
+      await Future.delayed(const Duration(seconds: 3));
+      unawaited(ServiceHandler.restartApp());
+    } else {
+      showSnackbar('Restore finished with errors: ${failures.join(", ")}', isError: true);
+    }
+  }
+
+  String _driveSummary() {
+    if (!driveHasCreds) return 'No OAuth client set yet';
+    if (!driveLinked) return 'Client set — not linked to an account yet';
+    if (driveFiles.isEmpty) return 'Linked — nothing backed up yet';
+    final DriveFile newest = driveFiles.reduce(
+      (a, b) => (a.modifiedTime ?? DateTime(0)).isAfter(b.modifiedTime ?? DateTime(0)) ? a : b,
+    );
+    final DateTime? when = newest.modifiedTime?.toLocal();
+    final String stamp = when == null
+        ? 'unknown time'
+        : '${when.year}-${when.month.toString().padLeft(2, '0')}-${when.day.toString().padLeft(2, '0')} '
+              '${when.hour.toString().padLeft(2, '0')}:${when.minute.toString().padLeft(2, '0')}';
+    return 'Last backup: $stamp — ${driveFiles.length} file(s)';
+  }
+
   //called when page is closed, sets settingshandler variables and then writes settings to disk
   Future<void> _onPopInvoked(bool didPop, _) async {
     if (didPop) {
@@ -350,7 +702,7 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
     if (inProgress) {
       FlashElements.showSnackbar(
         title: Text(context.loc.pleaseWait),
-        leadingIcon: Icons.warning_amber,
+        leadingIcon: Symbols.warning_amber_rounded,
         leadingIconColor: Colors.yellow,
         sideColor: Colors.yellow,
       );
@@ -392,7 +744,7 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
                   // Backup Directory
                   SettingsButton(
                     name: context.loc.settings.backupAndRestore.selectBackupDir,
-                    icon: const Icon(Icons.folder),
+                    icon: const Icon(Symbols.folder_rounded),
                     action: () async {
                       final String path = await ServiceHandler.getSAFDirectoryAccess();
                       if (path.isNotEmpty) {
@@ -424,7 +776,7 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
                   if (backupPath.isNotEmpty)
                     SettingsButton(
                       name: context.loc.settings.backupAndRestore.resetBackupDir,
-                      icon: const Icon(Icons.refresh_rounded),
+                      icon: const Icon(Symbols.refresh_rounded),
                       action: () async {
                         setState(() {
                           backupPath = '';
@@ -440,13 +792,13 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
                     const SettingsButton(name: '', enabled: false),
                     SettingsButton(
                       name: 'Backup all (settings + boorus + database)',
-                      icon: const Icon(Icons.cloud_upload_outlined),
+                      icon: const Icon(Symbols.cloud_upload_rounded),
                       action: () => _runBackupAll(context),
                       drawTopBorder: true,
                     ),
                     SettingsButton(
                       name: context.loc.settings.backupAndRestore.backupSettings,
-                      icon: const Icon(Icons.settings),
+                      icon: const Icon(Symbols.settings_rounded),
                       action: () async {
                         inProgress = true;
                         setState(() {});
@@ -496,7 +848,7 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
                     ),
                     SettingsButton(
                       name: context.loc.settings.backupAndRestore.backupBoorus,
-                      icon: const Icon(Icons.image_search),
+                      icon: const Icon(Symbols.image_search_rounded),
                       action: () async {
                         inProgress = true;
                         setState(() {});
@@ -547,7 +899,7 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
                     ),
                     SettingsButton(
                       name: context.loc.settings.backupAndRestore.backupDatabase,
-                      icon: const Icon(Icons.list_alt),
+                      icon: const Icon(Symbols.list_alt_rounded),
                       action: () async {
                         inProgress = true;
                         setState(() {});
@@ -654,6 +1006,78 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
                         },
                       ),
 
+                    // ── Google Drive ────────────────────────────────
+                    const SettingsButton(name: '', enabled: false),
+                    Container(
+                      margin: const EdgeInsets.fromLTRB(10, 10, 10, 4),
+                      width: double.infinity,
+                      child: Text(
+                        'Google Drive',
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                    Container(
+                      margin: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+                      width: double.infinity,
+                      child: Text(
+                        'Backs up settings, boorus and the database into a "${DriveBackup.folderName}" '
+                        'folder on your Drive. The app only ever sees files it created there — it has no '
+                        'access to the rest of your Drive.\n\n${_driveSummary()}',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+                    if (driveBusy && driveStatus.isNotEmpty)
+                      Container(
+                        margin: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+                        width: double.infinity,
+                        child: Row(
+                          children: [
+                            const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(child: Text(driveStatus)),
+                          ],
+                        ),
+                      ),
+                    SettingsButton(
+                      name: driveHasCreds ? 'Change OAuth client' : 'Set OAuth client…',
+                      icon: const Icon(Symbols.key_rounded),
+                      action: driveBusy ? null : _editDriveCredentials,
+                      drawTopBorder: true,
+                    ),
+                    if (driveHasCreds && !driveLinked)
+                      SettingsButton(
+                        name: 'Link Google account',
+                        icon: const Icon(Symbols.link_rounded),
+                        action: driveBusy ? null : _linkDrive,
+                      ),
+                    if (driveLinked) ...[
+                      SettingsButton(
+                        name: 'Back up to Google Drive',
+                        icon: const Icon(Symbols.cloud_upload_rounded),
+                        action: driveBusy ? null : _backupToDrive,
+                      ),
+                      SettingsButton(
+                        name: 'Restore from Google Drive',
+                        icon: const Icon(Symbols.cloud_download_rounded),
+                        action: driveBusy ? null : _restoreFromDrive,
+                      ),
+                      SettingsButton(
+                        name: 'Unlink Google account',
+                        icon: const Icon(Symbols.link_off_rounded),
+                        action: driveBusy
+                            ? null
+                            : () async {
+                                await DriveBackup.unlink();
+                                await _refreshDriveState();
+                                showSnackbar('Google account unlinked.', isError: false);
+                              },
+                      ),
+                    ],
+
                     // Restore
                     const SettingsButton(name: '', enabled: false),
                     Container(
@@ -663,13 +1087,13 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
                     ),
                     SettingsButton(
                       name: 'Restore all (settings + boorus + database)',
-                      icon: const Icon(Icons.cloud_download_outlined),
+                      icon: const Icon(Symbols.cloud_download_rounded),
                       action: () => _runRestoreAll(context),
                       drawTopBorder: true,
                     ),
                     SettingsButton(
                       name: context.loc.settings.backupAndRestore.restoreSettings,
-                      icon: const Icon(Icons.settings_backup_restore),
+                      icon: const Icon(Symbols.settings_backup_restore_rounded),
                       subtitle: const Text('settings.json'),
                       action: () async {
                         final bool res = await confirmRestore(context.loc.settings.backupAndRestore.restoreSettings);
@@ -719,7 +1143,7 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
                     ),
                     SettingsButton(
                       name: context.loc.settings.backupAndRestore.restoreBoorus,
-                      icon: const Icon(Icons.image_search),
+                      icon: const Icon(Symbols.image_search_rounded),
                       subtitle: const Text('boorus.json'),
                       action: () async {
                         final bool res = await confirmRestore(context.loc.settings.backupAndRestore.restoreBoorus);
@@ -795,7 +1219,7 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
                     ),
                     SettingsButton(
                       name: context.loc.settings.backupAndRestore.restoreDatabase,
-                      icon: const Icon(Icons.list_alt),
+                      icon: const Icon(Symbols.list_alt_rounded),
                       subtitle: Text('store.db (${context.loc.settings.backupAndRestore.restoreDatabaseInfo})'),
                       action: () async {
                         final bool res = await confirmRestore(context.loc.settings.backupAndRestore.restoreDatabase);
@@ -860,6 +1284,7 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
                             setState(() {});
                             return;
                           }
+                          _rearmDoujinMigration();
                           showSnackbar(
                             context.loc.settings.backupAndRestore.databaseRestored,
                             isError: false,

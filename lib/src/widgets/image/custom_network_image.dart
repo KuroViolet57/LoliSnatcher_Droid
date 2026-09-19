@@ -15,6 +15,37 @@ import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 import 'package:lolisnatcher/src/widgets/image/abstract_custom_network_image.dart' as custom_network_image;
 
+/// How far back from the end of a JPEG to look for its EOI marker.
+///
+/// A truncated JPEG has no EOI anywhere, so any window comfortably larger than
+/// a plausible trailer distinguishes the two cases. 8KB covers signatures,
+/// appended thumbnails and stray metadata without reading a whole file back.
+const int jpegTailWindow = 8 * 1024;
+
+/// Whether a JPEG's tail contains the EOI marker `FF D9`.
+///
+/// It looks for the LAST EOI rather than requiring the file to end on one.
+/// Trailing bytes after EOI are legal JPEG and hosts do use them: every image
+/// on erocdn ends `FF D9 53 4E` — EOI followed by a two-byte "SN" signature.
+/// The previous check read the final two bytes and demanded they be `FF D9`,
+/// which is false for every one of those files, so it rejected 2,141 perfectly
+/// decodable images as "truncated" and took the reader's first page with them.
+///
+/// This is deliberately not special-cased to one host; the bytes are valid
+/// JPEG and any CDN is free to append to them.
+/// Whether the bytes start with the JPEG SOI marker `FF D8`. The end-marker
+/// check is only meaningful for a real JPEG: pawchive's thumbnail service
+/// serves WebP under `.jpeg` URLs and `image/jpeg`, which has no EOI at all
+/// and decodes fine.
+bool looksLikeJpeg(List<int> head) => head.length >= 2 && head[0] == 0xFF && head[1] == 0xD8;
+
+bool hasJpegEndMarker(List<int> tail) {
+  for (int i = tail.length - 2; i >= 0; i--) {
+    if (tail[i] == 0xFF && tail[i + 1] == 0xD9) return true;
+  }
+  return false;
+}
+
 /// Shared logic for downloading, caching, and atomic writing of images.
 mixin _NetworkImageLoaderMixin {
   Future<void> _commitCacheFile(File tempFile, String destPath) async {
@@ -72,6 +103,7 @@ mixin _NetworkImageLoaderMixin {
     required bool withCaptchaCheck,
     required StreamController<ImageChunkEvent> chunkEvents,
     required void Function(bool)? onCacheDetected,
+    List<String> fallbackUrls = const [],
   }) async {
     final Uri resolved = Uri.base.resolve(url);
     final String cacheFilePath = await ImageWriter().getCachePathString(
@@ -129,66 +161,98 @@ mixin _NetworkImageLoaderMixin {
       );
     }
 
-    Response? response;
-    try {
-      response = withCache
-          ? await client.downloadUri(
-              resolved,
+    // Mirrors to try if the first URL fails.
+    //
+    // Some sources publish a spare CDN alongside the primary for exactly this
+    // reason — niyaniya's API returns a `fallback` host with every thumbnail
+    // because its main mirrors intermittently drop requests. The loader used to
+    // give up on the first error, so that spare was carried all the way into
+    // the item and then never used, and a flaky mirror read as a broken source.
+    final List<Uri> candidates = [
+      resolved,
+      for (final fallback in fallbackUrls)
+        if (fallback.isNotEmpty && fallback != url) Uri.base.resolve(fallback),
+    ];
+
+    Future<Response<dynamic>> attempt(Uri uri) {
+      void onReceiveProgress(int count, int total) {
+        chunkEvents.add(
+          ImageChunkEvent(
+            cumulativeBytesLoaded: count,
+            expectedTotalBytes: total <= 0 ? null : total,
+          ),
+        );
+      }
+
+      final bool noRedirects = headers?.containsKey('LS-IGNORE-REDIRECT') == true;
+      return withCache
+          ? client.downloadUri(
+              uri,
               tempFilePath,
               options: Options(
                 headers: headers,
                 sendTimeout: sendTimeout,
                 receiveTimeout: receiveTimeout,
-                followRedirects: headers?.containsKey('LS-IGNORE-REDIRECT') == true ? false : true,
+                followRedirects: !noRedirects,
               ),
-              onReceiveProgress: (int count, int total) {
-                chunkEvents.add(
-                  ImageChunkEvent(
-                    cumulativeBytesLoaded: count,
-                    expectedTotalBytes: total <= 0 ? null : total,
-                  ),
-                );
-              },
+              onReceiveProgress: onReceiveProgress,
               cancelToken: cancelToken,
             )
-          : await client.getUri(
-              resolved,
+          : client.getUri(
+              uri,
               options: Options(
                 headers: headers,
                 responseType: ResponseType.bytes,
                 sendTimeout: sendTimeout,
                 receiveTimeout: receiveTimeout,
-                followRedirects: headers?.containsKey('LS-IGNORE-REDIRECT') == true ? false : true,
+                followRedirects: !noRedirects,
               ),
-              onReceiveProgress: (int count, int total) {
-                chunkEvents.add(
-                  ImageChunkEvent(
-                    cumulativeBytesLoaded: count,
-                    expectedTotalBytes: total <= 0 ? null : total,
-                  ),
-                );
-              },
+              onReceiveProgress: onReceiveProgress,
               cancelToken: cancelToken,
             );
-    } catch (e) {
+    }
+
+    Response? response;
+    Exception? lastError;
+    for (final Uri candidate in candidates) {
+      try {
+        final Response<dynamic> attempted = await attempt(candidate);
+        if (Tools.isGoodResponse(attempted)) {
+          response = attempted;
+          break;
+        }
+        lastError = NetworkImageLoadException(
+          statusCode: attempted.statusCode ?? 0,
+          uri: candidate,
+        );
+      } catch (e) {
+        // A cancelled request is the caller's decision, not a mirror failing;
+        // trying the next one would defeat the cancellation.
+        if (e is DioException && CancelToken.isCancel(e)) {
+          try {
+            await File(tempFilePath).delete();
+          } catch (_) {}
+          rethrow;
+        }
+        lastError = e is Exception ? e : Exception(e.toString());
+      }
+      // Each attempt writes to the same temp path, so clear it before the next.
       try {
         await File(tempFilePath).delete();
       } catch (_) {}
-      rethrow;
-    } finally {
-      client.close();
     }
 
-    if (!Tools.isGoodResponse(response)) {
+    if (response == null) {
       try {
         await File(tempFilePath).delete();
       } catch (_) {}
-
-      throw NetworkImageLoadException(
-        statusCode: response.statusCode ?? 0,
-        uri: resolved,
-      );
+      throw lastError ?? NetworkImageLoadException(statusCode: 0, uri: resolved);
     }
+    // Every candidate above is checked with isGoodResponse before being
+    // accepted, so reaching here means a good response.
+    // NOTE: do NOT close `client` — it now shares the app-wide pooled
+    // HttpClient (see DioNetwork.getClient); closing would drop every other
+    // request's warm connections.
 
     if (withCache) {
       final tempFile = File(tempFilePath);
@@ -208,9 +272,11 @@ mixin _NetworkImageLoaderMixin {
         if (actualLen > 2 && (url.toLowerCase().endsWith('.jpg') || url.toLowerCase().endsWith('.jpeg'))) {
           final handle = await tempFile.open();
           try {
-            await handle.setPosition(actualLen - 2);
-            final endBytes = await handle.read(2);
-            if (endBytes.length == 2 && (endBytes[0] != 0xFF || endBytes[1] != 0xD9)) {
+            final headBytes = await handle.read(2);
+            final int window = actualLen < jpegTailWindow ? actualLen : jpegTailWindow;
+            await handle.setPosition(actualLen - window);
+            final endBytes = await handle.read(window);
+            if (looksLikeJpeg(headBytes) && !hasJpegEndMarker(endBytes)) {
               throw Exception('Image file is truncated (missing JPEG EOI marker)');
             }
           } catch (e) {
@@ -301,6 +367,7 @@ class CustomNetworkImage extends ImageProvider<custom_network_image.CustomNetwor
     this.sendTimeout,
     this.receiveTimeout,
     this.withCaptchaCheck = false,
+    this.fallbackUrls = const [],
   }) : assert(!withCache || cacheFolder != null, 'cacheFolder must be set when withCache is true');
 
   @override
@@ -317,6 +384,10 @@ class CustomNetworkImage extends ImageProvider<custom_network_image.CustomNetwor
   final void Function(Object)? onError;
   final Duration? sendTimeout;
   final Duration? receiveTimeout;
+
+  /// Spare mirrors for [url], tried in order if it fails. Sources that publish
+  /// a backup CDN (niyaniya returns one with every thumbnail) put it here.
+  final List<String> fallbackUrls;
   final bool withCaptchaCheck;
 
   @override
@@ -368,6 +439,7 @@ class CustomNetworkImage extends ImageProvider<custom_network_image.CustomNetwor
         withCaptchaCheck: withCaptchaCheck,
         chunkEvents: chunkEvents,
         onCacheDetected: onCacheDetected,
+        fallbackUrls: fallbackUrls,
       );
 
       if (bytes.isEmpty) {
@@ -441,6 +513,7 @@ class CustomNetworkAvifImage extends ImageProvider<custom_network_image.CustomNe
     this.sendTimeout,
     this.receiveTimeout,
     this.withCaptchaCheck = false,
+    this.fallbackUrls = const [],
   }) : assert(!withCache || cacheFolder != null, 'cacheFolder must be set when withCache is true');
 
   @override
@@ -457,6 +530,10 @@ class CustomNetworkAvifImage extends ImageProvider<custom_network_image.CustomNe
   final void Function(Object)? onError;
   final Duration? sendTimeout;
   final Duration? receiveTimeout;
+
+  /// Spare mirrors for [url], tried in order if it fails. Sources that publish
+  /// a backup CDN (niyaniya returns one with every thumbnail) put it here.
+  final List<String> fallbackUrls;
   final bool withCaptchaCheck;
 
   @override
@@ -508,6 +585,7 @@ class CustomNetworkAvifImage extends ImageProvider<custom_network_image.CustomNe
         withCaptchaCheck: withCaptchaCheck,
         chunkEvents: chunkEvents,
         onCacheDetected: onCacheDetected,
+        fallbackUrls: fallbackUrls,
       );
 
       if (bytes.isEmpty) {

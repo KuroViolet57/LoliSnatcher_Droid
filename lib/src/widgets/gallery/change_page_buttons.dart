@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:preload_page_view/preload_page_view.dart';
 
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -57,8 +59,8 @@ class ChangePageButtons extends StatelessWidget {
       child: IconButton(
         icon: Icon(
           settingsHandler.galleryScrollDirection.isHorizontal
-              ? (isPrev ? Icons.arrow_back : Icons.arrow_forward)
-              : (isPrev ? Icons.arrow_upward : Icons.arrow_downward),
+              ? (isPrev ? Symbols.arrow_back_rounded : Symbols.arrow_forward_rounded)
+              : (isPrev ? Symbols.arrow_upward_rounded : Symbols.arrow_downward_rounded),
         ),
         // what idiot designed mirrored arrow icons with 1px of difference????????
         // padding: direction == 1 ? const EdgeInsets.fromLTRB(8, 8, 8, 8) : const EdgeInsets.fromLTRB(7, 8, 8, 8),

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:developer' as dev;
 import 'dart:io';
 
@@ -7,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 
 import 'package:lolisnatcher/src/widgets/common/compact_error_widget.dart';
+import 'package:lolisnatcher/src/utils/log_redaction.dart';
 import 'package:talker/talker.dart';
 import 'package:talker_dio_logger/talker_dio_logger.dart';
 // ignore: implementation_imports
@@ -23,7 +25,7 @@ class Logger {
     _talkerInstance ??= Talker(
       settings: TalkerSettings(
         enabled: true,
-        maxHistoryItems: 100000,
+        maxHistoryItems: 10000,
         useConsoleLogs: kDebugMode,
         useHistory: true,
       ),
@@ -94,6 +96,15 @@ class Logger {
       logStr = object.runtimeType.toString();
     }
 
+    // Credentials never belong in a log. A shared export carried this
+    // install's API keys, its login and complete session cookies in plain
+    // text, dozens of times over, because every request line is logged whole.
+    try {
+      logStr = redactSecrets(logStr);
+    } catch (_) {
+      // Redaction must never be the reason a log line is lost.
+    }
+
     if (logStr.length > 10000) {
       logStr = '${logStr.substring(0, 10000)}...';
     }
@@ -116,12 +127,48 @@ class Logger {
     }
   }
 
+  /// r69: the one line the app writes about a request body, built redacted.
+  /// The Dio logger's own "Data:" dump printed an eahentai login's username
+  /// and password in clear, so it is off and this stands in for it.
+  static String requestDataLine({required String method, required String url, required dynamic data}) {
+    String body;
+    try {
+      body = data is String ? data : jsonEncode(data);
+    } catch (_) {
+      body = data.toString();
+    }
+    // Redacted first: a cut through a secret would leave half of it in a
+    // shape the rules cannot recognise.
+    String line = redactSecrets('$method $url data: $body');
+    if (line.length > 2200) line = '${line.substring(0, 2200)}...';
+    return line;
+  }
+
+  /// Logs request bodies through [requestDataLine]; GETs carry none.
+  static Interceptor get requestDataInterceptor => InterceptorsWrapper(
+    onRequest: (RequestOptions options, RequestInterceptorHandler handler) {
+      if (options.data != null) {
+        Logger.Inst().log(
+          requestDataLine(method: options.method, url: options.uri.toString(), data: options.data),
+          'DioNetwork',
+          'request',
+          LogTypes.booruHandlerInfo,
+        );
+      }
+      handler.next(options);
+    },
+  );
+
   static TalkerDioLogger? get dioInterceptor => _talkerInstance != null
       ? TalkerDioLogger(
           talker: _talkerInstance,
           settings: const TalkerDioLoggerSettings(
+            // The header dumps are where whole session cookies and bearer
+            // tokens ended up; the body dump carried a login's password
+            // (r69), so it is written by requestDataInterceptor instead.
+            hiddenHeaders: {'cookie', 'set-cookie', 'authorization', 'x-api-key'},
             printResponseData: false,
-            printRequestData: true,
+            printRequestData: false,
             printErrorData: true,
             printResponseHeaders: true,
             printRequestHeaders: true,

@@ -2,13 +2,18 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
+import 'package:lolisnatcher/src/data/booru.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/handlers/tag_handler.dart';
+import 'package:lolisnatcher/src/utils/extensions.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 import 'package:lolisnatcher/src/widgets/history/history.dart';
 import 'package:lolisnatcher/src/widgets/preview/main_search_query_editor_page.dart';
-import 'package:lolisnatcher/src/widgets/preview/main_search_tag_chip.dart';
 
 /// The Flow browse floating search bar: a blurred pill hugging the bottom with
 /// a search icon, the current query (tap → Query Editor), a history button,
@@ -67,7 +72,7 @@ class _FlowSearchBarState extends State<FlowSearchBar> {
         context: context,
         title: const Text('Nothing to save', style: TextStyle(fontSize: 18)),
         content: const Text('Type some tags first.'),
-        leadingIcon: Icons.info_outline,
+        leadingIcon: Symbols.info_rounded,
         duration: const Duration(seconds: 2),
       );
       return;
@@ -78,7 +83,7 @@ class _FlowSearchBarState extends State<FlowSearchBar> {
       context: context,
       title: Text(id != null ? 'Search saved' : 'Already saved', style: const TextStyle(fontSize: 18)),
       content: Text(text),
-      leadingIcon: Icons.bookmark_added,
+      leadingIcon: Symbols.bookmark_added_rounded,
       leadingIconColor: Colors.green,
       duration: const Duration(seconds: 2),
     );
@@ -90,26 +95,92 @@ class _FlowSearchBarState extends State<FlowSearchBar> {
     searchHandler.searchAction(searchHandler.searchTextController.text, null);
   }
 
-  // Current query shown as removable, type-coloured chips (horizontally
-  // scrollable). Tap a chip to open the editor; the ✕ removes that tag and
+  // Current query shown as removable, type-coloured chips (fixed height,
+  // vertically centred, horizontally scrollable). Tap a chip (or any empty
+  // space around the chips) to open the editor; the ✕ removes that tag and
   // re-runs the search.
+  //
+  // The scroll view shrink-wraps to the chips so the empty space to their
+  // right belongs to the outer GestureDetector — a tap handler behind a
+  // scrollable loses the gesture arena, so the empty area must not be part
+  // of the scrollable itself.
   Widget _chips() {
     final List<String> tags = searchHandler.searchTextControllerTags;
-    return ListView.separated(
-      scrollDirection: Axis.horizontal,
-      itemCount: tags.length,
-      separatorBuilder: (_, _) => const SizedBox(width: 5),
-      itemBuilder: (context, i) {
-        final String tag = tags[i];
-        return Center(
-          child: MainSearchTagChip(
-            tag: tag,
-            tab: searchHandler.currentTab,
-            onTap: _openEditor,
-            onDeleteTap: () => _removeTag(tag),
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: _openEditor,
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (int i = 0; i < tags.length; i++) ...[
+                if (i > 0) const SizedBox(width: 5),
+                _chip(context, tags[i]),
+              ],
+            ],
           ),
-        );
-      },
+        ),
+      ),
+    );
+  }
+
+  Widget _chip(BuildContext context, String tag) {
+    // Strip a leading -/~ (exclude / or) for colour lookup + display prefix.
+    final bool isExclude = tag.startsWith('-');
+    final bool isOr = tag.startsWith('~');
+    final String bare = tag.replaceFirst(RegExp('^[-~]'), '');
+    final Booru? currentBooru = searchHandler.tabs.isEmpty ? null : searchHandler.currentBooru;
+    // Doujin queries never take colours from the shared booru tag store.
+    Color color =
+        (DoujinDataHandler.isDoujinBooru(currentBooru)
+            ? null
+            : TagHandler.instance.getTagFor(bare, currentBooru).getColour()) ??
+        const Color(0xFF8A80A0);
+    if (isExclude) color = const Color(0xFFE5766B);
+    final Color textColor = Color.lerp(color, Colors.white, context.isLight ? 0.0 : 0.35)!;
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: _openEditor,
+      child: Container(
+        height: 34,
+        padding: const EdgeInsets.only(left: 12, right: 5),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.16),
+          borderRadius: BorderRadius.circular(17),
+          border: Border.all(color: color.withValues(alpha: 0.5)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (isExclude || isOr)
+              Text(
+                isExclude ? '−' : '~',
+                style: TextStyle(color: textColor, fontSize: 14, fontWeight: FontWeight.w800),
+              ),
+            Flexible(
+              child: Text(
+                bare.replaceAll('_', ' '),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: textColor, fontSize: 13, fontWeight: FontWeight.w700),
+              ),
+            ),
+            const SizedBox(width: 3),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => _removeTag(tag),
+              child: Padding(
+                padding: const EdgeInsets.all(4),
+                child: Icon(Symbols.close_rounded, size: 14, color: textColor.withValues(alpha: 0.8)),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -140,7 +211,19 @@ class _FlowSearchBarState extends State<FlowSearchBar> {
           padding: const EdgeInsets.only(left: 18, right: 7),
           child: Row(
             children: [
-              const Icon(Icons.search, size: 21, color: Color(0xFF8A80A0)),
+              // Tapping the magnifier RUNS the current query (the rest of
+              // the pill opens the editor).
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  searchHandler.searchTextController.clearComposing();
+                  searchHandler.searchAction(searchHandler.searchTextController.text, null);
+                },
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: Icon(Symbols.search_rounded, size: 21, color: Color(0xFF8A80A0)),
+                ),
+              ),
               const SizedBox(width: 10),
               Expanded(
                 child: hasQuery
@@ -166,13 +249,13 @@ class _FlowSearchBarState extends State<FlowSearchBar> {
               IconButton(
                 tooltip: 'Search history',
                 visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.history, size: 21, color: Color(0xFFB5AEC4)),
+                icon: const Icon(Symbols.history_rounded, size: 21, color: Color(0xFFB5AEC4)),
                 onPressed: _openHistory,
               ),
               IconButton(
                 tooltip: 'Save search',
                 visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.bookmark_add_outlined, size: 21, color: Color(0xFFB5AEC4)),
+                icon: const Icon(Symbols.bookmark_add_rounded, size: 21, color: Color(0xFFB5AEC4)),
                 onPressed: _saveSearch,
               ),
               const SizedBox(width: 2),
@@ -186,7 +269,7 @@ class _FlowSearchBarState extends State<FlowSearchBar> {
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Icon(
-                    Icons.arrow_forward,
+                    Symbols.arrow_forward_rounded,
                     size: 20,
                     color: theme.colorScheme.onSecondary,
                   ),

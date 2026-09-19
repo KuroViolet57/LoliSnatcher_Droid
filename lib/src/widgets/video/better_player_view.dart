@@ -4,9 +4,16 @@ import 'dart:math';
 import 'package:better_player_plus/better_player_plus.dart';
 import 'package:flutter/material.dart';
 
+import 'package:get/get.dart' hide ContextExt, FirstWhereOrNullExt;
+
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/handlers/interests_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/handlers/video_completion_tracker.dart';
+import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 
@@ -54,6 +61,15 @@ class _BetterPlayerPool {
     if (!_lru.contains(s)) return;
     _lru.remove(s);
     _lru.add(s);
+  }
+
+  /// Soft-refresh: tear down every live controller so videos re-init with
+  /// freshly-read cookies (e.g. after re-solving a Cloudflare challenge).
+  static void resetAll() {
+    for (final s in [..._lru]) {
+      s._forceDisposeFromPool();
+    }
+    _lru.clear();
   }
 }
 
@@ -103,6 +119,10 @@ class BetterPlayerView extends StatefulWidget {
   });
 
   final BooruItem booruItem;
+
+  /// Soft-refresh hook for the appbar reload button.
+  static void resetPool() => _BetterPlayerPool.resetAll();
+
   final Booru booru;
   final bool isViewed;
 
@@ -130,6 +150,14 @@ class _BetterPlayerViewState extends State<BetterPlayerView> {
   //     spin up a controller mid-flight.
   Timer? _initDebounce;
   static const Duration _initDelay = Duration(milliseconds: 250);
+
+  // Position parked by a previous incarnation of this video (nested-viewer
+  // cover) — applied once the fresh controller reports initialized.
+  Duration? _pendingResumePosition;
+  // The fileURL the live controller was created for — the key for the
+  // position hand-off (widget.booruItem may already point at a different
+  // item by the time the controller is torn down).
+  String? _controllerUrl;
 
   bool get _wantsPlayer => widget.isViewed || SettingsHandler.instance.preloadVideos;
 
@@ -159,7 +187,9 @@ class _BetterPlayerViewState extends State<BetterPlayerView> {
           // Already-alive controller is back on-screen — make sure the pool
           // knows it's the most-recently-used so it isn't the next to evict.
           _BetterPlayerPool.touch(this);
-          if (SettingsHandler.instance.autoPlayEnabled) {
+          if (SettingsHandler.instance.autoPlayEnabled &&
+              !(SettingsHandler.instance.respectManualPause &&
+                  ViewerHandler.instance.isManuallyPaused(widget.booruItem.fileURL))) {
             _controller?.play();
           }
         }
@@ -282,12 +312,15 @@ class _BetterPlayerViewState extends State<BetterPlayerView> {
         return _BetterControls(
           controller: controller,
           onVisibilityChanged: onVisibilityChanged,
+          url: widget.booruItem.fileURL,
         );
       },
     );
 
     final config = BetterPlayerConfiguration(
-      autoPlay: widget.isViewed && settings.autoPlayEnabled,
+      autoPlay: widget.isViewed &&
+          settings.autoPlayEnabled &&
+          !(settings.respectManualPause && ViewerHandler.instance.isManuallyPaused(widget.booruItem.fileURL)),
       looping: true,
       allowedScreenSleep: false,
       // Letterbox the video inside whatever box we're given (we make the box
@@ -321,6 +354,11 @@ class _BetterPlayerViewState extends State<BetterPlayerView> {
       },
     );
 
+    // Claim any parked position now (take = consume) so the initialized
+    // event can seek back to it.
+    _pendingResumePosition = ViewerHandler.instance.takeVideoPosition(widget.booruItem.fileURL);
+    _controllerUrl = widget.booruItem.fileURL;
+
     final controller = BetterPlayerController(config, betterPlayerDataSource: dataSource);
     if (!mounted) {
       controller.dispose();
@@ -349,8 +387,21 @@ class _BetterPlayerViewState extends State<BetterPlayerView> {
     }
   }
 
+  /// r34: a video watched through is a signal, once per item.
+  final VideoCompletionTracker _completion = VideoCompletionTracker();
+
   void _onPlayerEvent(BetterPlayerEvent event) {
     final type = event.betterPlayerEventType;
+
+    if (widget.isViewed && (type == BetterPlayerEventType.progress || type == BetterPlayerEventType.finished)) {
+      final Duration? duration = event.parameters?['duration'] as Duration? ?? _controller?.videoPlayerController?.value.duration;
+      final Duration? position = type == BetterPlayerEventType.finished ? duration : event.parameters?['progress'] as Duration?;
+      if (position != null &&
+          duration != null &&
+          _completion.update(key: widget.booruItem.fileURL, position: position, duration: duration)) {
+        InterestsHandler.instance.onVideoCompleted(widget.booruItem);
+      }
+    }
 
     // Surface noteworthy events into the in-app talker log so users can
     // share a full event trail when reporting a playback hang/crash via
@@ -375,6 +426,16 @@ class _BetterPlayerViewState extends State<BetterPlayerView> {
         break;
       default:
         break;
+    }
+
+    if (type == BetterPlayerEventType.initialized) {
+      // A re-created controller starts over: not a loop having wrapped.
+      _completion.markResumed();
+      final Duration? resume = _pendingResumePosition;
+      _pendingResumePosition = null;
+      if (resume != null && resume > Duration.zero) {
+        _controller?.seekTo(resume);
+      }
     }
 
     if (type == BetterPlayerEventType.hideFullscreen) {
@@ -412,6 +473,16 @@ class _BetterPlayerViewState extends State<BetterPlayerView> {
     if (unregister) {
       _BetterPlayerPool.unregister(this);
     }
+    // Torn down while still the viewed page = unmounted under the user
+    // (nested viewer cover / pool eviction), not swiped away — park the
+    // position so the next incarnation resumes instead of restarting.
+    if (c != null && widget.isViewed) {
+      ViewerHandler.instance.saveVideoPosition(
+        _controllerUrl,
+        c.videoPlayerController?.value.position,
+      );
+    }
+    _controllerUrl = null;
     c?.removeEventsListener(_onPlayerEvent);
     c?.pause();
     c?.dispose();
@@ -468,10 +539,12 @@ class _BetterControls extends StatefulWidget {
   const _BetterControls({
     required this.controller,
     required this.onVisibilityChanged,
+    this.url,
   });
 
   final BetterPlayerController controller;
   final void Function(bool visible) onVisibilityChanged;
+  final String? url;
 
   @override
   State<_BetterControls> createState() => _BetterControlsState();
@@ -559,7 +632,10 @@ class _BetterControlsState extends State<_BetterControls> {
   void _playPause() {
     if (_isPlaying) {
       _bpc.pause();
+      // User-initiated pause: keep this video paused across auto-play paths.
+      ViewerHandler.instance.markManualPause(widget.url);
     } else {
+      ViewerHandler.instance.clearManualPause(widget.url);
       _bpc.play();
     }
     _wake();
@@ -669,23 +745,34 @@ class _BetterControlsState extends State<_BetterControls> {
                     shape: BoxShape.circle,
                   ),
                   padding: const EdgeInsets.all(12),
-                  child: const Icon(Icons.play_arrow, color: Colors.white, size: 48),
+                  child: const Icon(Symbols.play_arrow_rounded, color: Colors.white, size: 48),
                 ),
               ),
             ),
           ),
 
-        // Bottom control bar.
+        // Bottom control bar. While the viewer chrome is visible the Flow
+        // info peek bar overlays the bottom of the screen — lift the
+        // seek/controls above it.
         Positioned(
           left: 0,
           right: 0,
           bottom: 0,
-          child: AnimatedOpacity(
-            opacity: _hidden ? 0 : 1,
-            duration: const Duration(milliseconds: 200),
-            child: IgnorePointer(
-              ignoring: _hidden,
-              child: _buildBottomBar(accent),
+          child: Obx(
+            () => Padding(
+              padding: EdgeInsets.only(
+                bottom: ViewerHandler.instance.isPeekBarVisible
+                    ? 64 + MediaQuery.viewPaddingOf(context).bottom
+                    : 0,
+              ),
+              child: AnimatedOpacity(
+                opacity: _hidden ? 0 : 1,
+                duration: const Duration(milliseconds: 200),
+                child: IgnorePointer(
+                  ignoring: _hidden,
+                  child: _buildBottomBar(accent),
+                ),
+              ),
             ),
           ),
         ),
@@ -730,7 +817,7 @@ class _BetterControlsState extends State<_BetterControls> {
             Row(
               children: [
                 IconButton(
-                  icon: Icon(_isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white),
+                  icon: Icon(_isPlaying ? Symbols.pause_rounded : Symbols.play_arrow_rounded, color: Colors.white),
                   onPressed: _playPause,
                 ),
                 Text(
@@ -739,7 +826,7 @@ class _BetterControlsState extends State<_BetterControls> {
                 ),
                 const Spacer(),
                 IconButton(
-                  icon: Icon(muted ? Icons.volume_off : Icons.volume_up, color: Colors.white),
+                  icon: Icon(muted ? Symbols.volume_off_rounded : Symbols.volume_up_rounded, color: Colors.white),
                   onPressed: () {
                     _bpc.setVolume(muted ? 1.0 : 0.0);
                     _wake();
@@ -747,7 +834,7 @@ class _BetterControlsState extends State<_BetterControls> {
                 ),
                 IconButton(
                   icon: Icon(
-                    _bpc.isFullScreen ? Icons.fullscreen_exit : Icons.fullscreen,
+                    _bpc.isFullScreen ? Symbols.fullscreen_exit_rounded : Symbols.fullscreen_rounded,
                     color: Colors.white,
                   ),
                   onPressed: () {
@@ -790,7 +877,7 @@ class _SeekFeedback extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              side < 0 ? Icons.fast_rewind : Icons.fast_forward,
+              side < 0 ? Symbols.fast_rewind_rounded : Symbols.fast_forward_rounded,
               color: Colors.white,
               size: 28,
             ),

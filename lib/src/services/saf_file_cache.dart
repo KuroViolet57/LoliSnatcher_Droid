@@ -11,6 +11,7 @@ class SAFFileCache {
   final Set<String> _fileNames = {};
   Set<String> get fileNames => _fileNames;
   bool _isPopulated = false;
+  bool get isPopulated => _isPopulated;
   bool _isPopulating = false;
   Completer<void>? _populateCompleter;
 

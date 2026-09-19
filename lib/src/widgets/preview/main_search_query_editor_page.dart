@@ -3,6 +3,8 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 
 import 'package:calendar_date_picker2/calendar_date_picker2.dart';
@@ -12,8 +14,13 @@ import 'package:flutter_keyboard_visibility/flutter_keyboard_visibility.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:keyboard_actions/keyboard_actions.dart';
+import 'package:lolisnatcher/src/data/pinned_tag_visibility.dart';
+import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
+import 'package:lolisnatcher/src/data/modular_ui.dart';
 import 'package:lolisnatcher/src/widgets/desktop/desktop_scroll.dart';
+import 'package:lolisnatcher/src/handlers/tag_catalog_source.dart';
 import 'package:lolisnatcher/src/widgets/preview/tag_search_query_editor_page.dart';
+import 'package:lolisnatcher/src/widgets/preview/tag_type_strip.dart';
 import 'package:rich_text_controller/rich_text_controller.dart';
 import 'package:scroll_to_index/scroll_to_index.dart';
 import 'package:url_launcher/url_launcher_string.dart';
@@ -24,8 +31,15 @@ import 'package:lolisnatcher/src/data/history_item.dart';
 import 'package:lolisnatcher/src/data/meta_tag.dart';
 import 'package:lolisnatcher/src/data/pinned_tag.dart';
 import 'package:lolisnatcher/src/data/tag_suggestion.dart';
+import 'package:lolisnatcher/src/handlers/booru_handler.dart';
+import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
+import 'package:lolisnatcher/src/handlers/booru_tag_store.dart';
+import 'package:lolisnatcher/src/boorus/doujin/doujin_filters.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
+import 'package:lolisnatcher/src/handlers/followed_artists_handler.dart';
+import 'package:lolisnatcher/src/handlers/search_history_store.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/tag_handler.dart';
 import 'package:lolisnatcher/src/utils/extensions.dart';
@@ -208,7 +222,15 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
           (p) => p.keyParser(suggestionTextControllerCleanedInput) != null,
         );
         if (metaTag != null) {
-          if (metaTag.hasAutoComplete) {
+          // A typed `artist:asa` lists the source's own catalog first.
+          final List<TagSuggestion>? fromCatalog = await TagCatalogSource.suggestFromCatalog(
+            handler,
+            searchHandler.currentBooru,
+            suggestionTextControllerCleanedInput,
+          );
+          if (fromCatalog != null) {
+            suggestedTags = fromCatalog;
+          } else if (metaTag.hasAutoComplete) {
             suggestedTags = await metaTag.getAutoComplete(suggestionTextControllerCleanedInput);
             suggestedTags.sort((a, b) => a.tag.compareTo(b.tag));
           } else {
@@ -251,8 +273,10 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
                 setState(() {});
               }
 
+              // Through the HANDLER, so handlers that don't feed the shared
+              // booru tag store (doujin sources) don't re-type booru tags.
               for (final tag in suggestedTags.where((t) => !t.type.isNone)) {
-                unawaited(tagHandler.addTagsWithType([tag.tag], tag.type));
+                handler.addTagsWithType([tag.tag], tag.type);
               }
             },
           );
@@ -264,18 +288,18 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
                 return TagSuggestion(
                   tag: tag,
                   type: tagHandler.getTag(tag).tagType,
-                  icon: const Icon(Icons.archive),
+                  icon: const Icon(Symbols.archive_rounded),
                 );
               })
               .toList();
 
           final historySearch =
-              (await settingsHandler.dbHandler.getSearchHistoryByInput(suggestionTextControllerCleanedInput, 10))
+              (await SearchHistoryStore.byInput(suggestionTextControllerCleanedInput, 10))
                   .map((tag) {
                     return TagSuggestion(
                       tag: tag,
                       type: tagHandler.getTag(tag).tagType,
-                      icon: const Icon(Icons.history),
+                      icon: const Icon(Symbols.history_rounded),
                     );
                   })
                   .where(
@@ -339,7 +363,14 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
   }
 
   void onChipLongTap(String tag, int tagIndex) {
-    onChipTap(tag, tagIndex);
+    // Same action sheet as long-pressing a suggestion (tag type, preview,
+    // copy, pin/unpin) — single tap already covers editing, and pinning is
+    // the thing you actually want from a tag that's already in the query.
+    // Add/exclude entries are hidden: the tag is in the query already.
+    onSuggestionLongTap(
+      TagSuggestion(tag: tag.startsWith('-') ? tag.substring(1) : tag),
+      showAddActions: false,
+    );
   }
 
   void onChipDeleteTap(String tag, int tagIndex) {
@@ -428,7 +459,10 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
     runSearch();
   }
 
-  Future<void> onSuggestionLongTap(TagSuggestion tag) async {
+  Future<void> onSuggestionLongTap(
+    TagSuggestion tag, {
+    bool showAddActions = true,
+  }) async {
     // TODO add more actions? hate/fave +-, add as exclude, add with multibooru number?
     await SettingsPageOpen(
       context: context,
@@ -445,13 +479,21 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
                   width: 6,
                   height: 24,
                   decoration: BoxDecoration(
-                    color: tagHandler.getTag(tag.tag).getColour(),
+                    // Domain-aware: the site's own type wins, and the shared
+                    // booru tag map is never consulted on a doujin source.
+                    color: tagHandler.colourForDisplay(
+                      tag.tag,
+                      searchHandler.currentBooru,
+                      ownType: tag.type,
+                    ),
                     borderRadius: BorderRadius.circular(5),
                   ),
                 ),
                 const SizedBox(width: 10),
                 Text(
-                  tagHandler.getTag(tag.tag).tagType.locName,
+                  tagHandler
+                      .typeForDisplay(tag.tag, searchHandler.currentBooru, ownType: tag.type)
+                      .locName,
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
@@ -460,29 +502,31 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
               ],
             ),
             const SizedBox(height: 16),
-            ListTile(
-              title: Text(context.loc.add),
-              leading: const Icon(
-                Icons.add_rounded,
-                color: Colors.green,
+            if (showAddActions) ...[
+              ListTile(
+                title: Text(context.loc.add),
+                leading: const Icon(
+                  Symbols.add_rounded,
+                  color: Colors.green,
+                ),
+                onTap: () async {
+                  onSuggestionTap(tag);
+                  Navigator.of(context).pop();
+                },
               ),
-              onTap: () async {
-                onSuggestionTap(tag);
-                Navigator.of(context).pop();
-              },
-            ),
-            ListTile(
-              title: Text(context.loc.exclude),
-              leading: const Icon(
-                Icons.remove_rounded,
-                color: Colors.red,
+              ListTile(
+                title: Text(context.loc.exclude),
+                leading: const Icon(
+                  Symbols.remove_rounded,
+                  color: Colors.red,
+                ),
+                onTap: () async {
+                  tag = tag.copyWith(tag: '-${tag.tag}');
+                  onSuggestionTap(tag);
+                  Navigator.of(context).pop();
+                },
               ),
-              onTap: () async {
-                tag = tag.copyWith(tag: '-${tag.tag}');
-                onSuggestionTap(tag);
-                Navigator.of(context).pop();
-              },
-            ),
+            ],
             TagContentPreview(
               tag: tag.tag,
               boorus: searchHandler.currentBooru.type?.isMerge == true
@@ -494,7 +538,7 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
             ),
             ListTile(
               title: Text(context.loc.copy),
-              leading: const Icon(Icons.copy),
+              leading: const Icon(Symbols.content_copy_rounded),
               onTap: () async {
                 final tagText = tag.tag;
 
@@ -503,7 +547,7 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
                   title: Text(context.loc.copied, style: const TextStyle(fontSize: 20)),
                   content: Text(context.loc.searchBar.copiedTagToClipboard(tag: tagText)),
                   sideColor: Colors.green,
-                  leadingIcon: Icons.check,
+                  leadingIcon: Symbols.check_rounded,
                   leadingIconColor: Colors.green,
                   duration: const Duration(seconds: 2),
                 );
@@ -511,18 +555,24 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
               },
             ),
             FutureBuilder<PinnedTag?>(
-              future: settingsHandler.dbHandler.getPinnedTag(
-                tag.tag,
-                booruType: searchHandler.currentBooru.type?.name,
-                booruName: searchHandler.currentBooru.name,
-              ),
+              future: DoujinDataHandler.isDoujinBooru(searchHandler.currentBooru)
+                  ? Future.value(
+                      doujinPinsAsPinnedTags(searchHandler.currentBooru)
+                          .where((p) => p.tagName == tag.tag)
+                          .firstOrNull,
+                    )
+                  : settingsHandler.dbHandler.getPinnedTag(
+                      tag.tag,
+                      booruType: searchHandler.currentBooru.type?.name,
+                      booruName: searchHandler.currentBooru.name,
+                    ),
               builder: (_, snapshot) {
                 final isPinned = snapshot.data != null || tag.isPinned == true;
                 final pinnedTag = snapshot.data;
 
                 return ListTile(
                   title: Text(isPinned ? context.loc.pinnedTags.unpinTag : context.loc.pinnedTags.pinTag),
-                  leading: Icon(isPinned ? Icons.push_pin : Icons.push_pin_outlined),
+                  leading: Icon(isPinned ? Symbols.push_pin_rounded : Symbols.push_pin_rounded),
                   onTap: () async {
                     Navigator.of(context).pop();
                     if (isPinned && pinnedTag != null) {
@@ -696,7 +746,7 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
                         child: Padding(
                           padding: EdgeInsets.only(bottom: isKbVisible ? 0 : 20),
                           child: Icon(
-                            Icons.paste,
+                            Symbols.content_paste_rounded,
                             color: context.theme.colorScheme.onSecondary,
                           ),
                         ),
@@ -708,7 +758,7 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
                         child: Padding(
                           padding: EdgeInsets.only(bottom: isKbVisible ? 0 : 20),
                           child: Icon(
-                            Icons.keyboard_hide,
+                            Symbols.keyboard_hide_rounded,
                             color: context.theme.colorScheme.onSecondary,
                           ),
                         ),
@@ -728,7 +778,7 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
                             child: Padding(
                               padding: EdgeInsets.only(bottom: isKbVisible ? 0 : 20),
                               child: Icon(
-                                suggestionTextControllerCleanedInput.isEmpty ? Icons.search : Icons.add_rounded,
+                                suggestionTextControllerCleanedInput.isEmpty ? Symbols.search_rounded : Symbols.add_rounded,
                                 color: context.theme.colorScheme.onSecondary,
                               ),
                             ),
@@ -811,7 +861,7 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
                                         mainAxisSize: MainAxisSize.min,
                                         mainAxisAlignment: MainAxisAlignment.center,
                                         children: [
-                                          const Icon(Icons.refresh),
+                                          const Icon(Symbols.refresh_rounded),
                                           const SizedBox(width: 8),
                                           Expanded(
                                             child: Text(
@@ -833,7 +883,13 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
                               return SuggestionsMainContent(
                                 onMetatagSelect: onMetatagSelect,
                                 onTagTap: (tag) => onSuggestionTap(TagSuggestion(tag: tag)),
+                                onInsertTerm: (term) => onSuggestionTap(TagSuggestion(tag: term), raw: true),
                                 hidePopular: searchHandler.currentBooru.type?.isFavouritesOrDownloads == true,
+                                queryText: () => searchHandler.searchTextController.text,
+                                onQueryReplaced: (String q) {
+                                  searchHandler.searchTextController.text = q;
+                                  setState(() {});
+                                },
                               );
                             }
 
@@ -862,7 +918,11 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
                           }
 
                           final TagSuggestion tag = suggestedTags[index];
-                          final tagColor = tagHandler.getTag(tag.tag).getColour();
+                          final tagColor = tagHandler.colourForDisplay(
+                            tag.tag,
+                            searchHandler.currentBooru,
+                            ownType: tag.type,
+                          );
 
                           return Container(
                             height: kMinInteractiveDimension + (tag.hasDescription ? 8 : 0),
@@ -924,14 +984,25 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
                                       ),
                                       //
                                       FutureBuilder<PinnedTag?>(
-                                        future: settingsHandler.dbHandler.getPinnedTag(
-                                          tag.tag,
-                                          booruType: searchHandler.currentBooru.type?.name,
-                                          booruName: searchHandler.currentBooru.name,
-                                        ),
+                                        // Doujin pins live in the doujin
+                                        // store; the booru table also answers
+                                        // with GLOBAL booru pins, which would
+                                        // mark doujin suggestions as pinned
+                                        // while the drawer showed nothing.
+                                        future: DoujinDataHandler.isDoujinBooru(searchHandler.currentBooru)
+                                            ? Future.value(
+                                                doujinPinsAsPinnedTags(searchHandler.currentBooru)
+                                                    .where((p) => p.tagName == tag.tag)
+                                                    .firstOrNull,
+                                              )
+                                            : settingsHandler.dbHandler.getPinnedTag(
+                                                tag.tag,
+                                                booruType: searchHandler.currentBooru.type?.name,
+                                                booruName: searchHandler.currentBooru.name,
+                                              ),
                                         builder: (context, snapshot) {
                                           final isPinned = snapshot.data != null || tag.isPinned == true;
-                                          if (isPinned) return const Icon(Icons.push_pin, size: 16);
+                                          if (isPinned) return const Icon(Symbols.push_pin_rounded, size: 16);
 
                                           return const SizedBox.shrink();
                                         },
@@ -1055,14 +1126,15 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
                       buttonItems: buttonItems,
                     );
                   },
-                  submitIcon: Icons.add_rounded,
+                  submitIcon: Symbols.add_rounded,
                   prefixIcon: IconButton(
-                    icon: const Icon(Icons.arrow_back_rounded),
+                    icon: const Icon(Symbols.arrow_back_rounded),
                     onPressed: () => Navigator.of(context).pop(),
                   ),
                 ),
               ),
-              //
+              // The tag builder lives in the Metatags card of the suggestions
+              // (MetatagsBlock); the old helper-key row is gone.
               if (settingsHandler.useTopSearchbarInput)
                 const SizedBox(height: 4)
               else if (settingsHandler.showSearchbarQuickActions && (Platform.isAndroid || Platform.isIOS))
@@ -1274,7 +1346,7 @@ class AddMetatagBottomSheet extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    const Icon(Icons.info_outline_rounded),
+                    const Icon(Symbols.info_rounded),
                     const SizedBox(width: 8),
                     Text(
                       context.loc.searchBar.freeMetatags,
@@ -1392,7 +1464,7 @@ class AddMetatagBottomSheet extends StatelessWidget {
                                   },
                                   icon: metaTag.supportsRange
                                       ? Text(context.loc.searchBar.single)
-                                      : const Icon(Icons.calendar_month_rounded),
+                                      : const Icon(Symbols.calendar_month_rounded),
                                 ),
                                 if (metaTag.supportsRange)
                                   IconButton.outlined(
@@ -1416,13 +1488,13 @@ class AddMetatagBottomSheet extends StatelessWidget {
                                     },
                                     icon: Text(context.loc.searchBar.range),
                                   ),
-                                if (metaTag.supportsRange) const Icon(Icons.calendar_month_rounded),
+                                if (metaTag.supportsRange) const Icon(Symbols.calendar_month_rounded),
                               ],
                             );
                           },
                         ),
-                        .sort => const Icon(Icons.sort_rounded),
-                        .user => const Icon(Icons.person_outline_rounded),
+                        .sort => const Icon(Symbols.sort_rounded),
+                        .user => const Icon(Symbols.person_outline_rounded),
                         .comparableNumber => Row(
                           spacing: 2,
                           children: [
@@ -1458,24 +1530,42 @@ class SuggestionsMainContent extends StatefulWidget {
   const SuggestionsMainContent({
     required this.onMetatagSelect,
     required this.onTagTap,
+    this.onInsertTerm,
+    this.booru,
     this.hideHistory = false,
     this.hidePopular = false,
     this.hidePinned = false,
+    this.queryText,
+    this.onQueryReplaced,
     super.key,
   });
 
   final void Function(AddMetatagBottomSheetResult result) onMetatagSelect;
   final void Function(String tag) onTagTap;
+
+  /// Where a term picked in the tag builder (inside the Metatags card) goes.
+  final void Function(String term)? onInsertTerm;
+
+  /// The source the Metatags card builds for; null follows the current tab.
+  final Booru? booru;
   final bool hideHistory;
   final bool hidePopular;
   final bool hidePinned;
+
+  /// The whole query as it stands, and where a rewritten one goes: the
+  /// doujin Filters card (r37) reads and replaces terms in it.
+  final String Function()? queryText;
+  final void Function(String query)? onQueryReplaced;
 
   @override
   State<SuggestionsMainContent> createState() => _SuggestionsMainContentState();
 }
 
-class _SuggestionsMainContentState extends State<SuggestionsMainContent> {
+class _SuggestionsMainContentState extends State<SuggestionsMainContent> with _EditorSourceMixin {
   final ScrollController scrollController = ScrollController();
+
+  @override
+  Booru? get ownBooru => widget.booru;
 
   final GlobalKey<_PinnedTagsBlockState> _pinnedTagsKey = GlobalKey();
 
@@ -1485,15 +1575,34 @@ class _SuggestionsMainContentState extends State<SuggestionsMainContent> {
 
     // Ordered by how often each section is actually reached for:
     // recent searches first, then the user's own pinned tags, then
-    // site-wide popular tags, then the metatag builder.
+    // site-wide popular tags, then the metatags, then the tag builder.
+    // r41: History, Pinned tags and Popular tags are Modular UI switches
+    // (off by default) for every source, boorus and doujins alike; r37 hid
+    // them on doujin sources only. A switched-off block is never built.
+    // Any source that declares filters shows them (r40: FurAffinity too).
+    // r43: booru sources show their site's own sort/order and rating choices
+    // (a Modular UI switch), with the source's saved defaults checked.
+    final DoujinFilterSpec? siteFilters = sourceHandler.hasReader || ModularUi.isOn(ModularUi.searchSiteFilters) ? sourceHandler.siteFilters : null;
+    final DoujinFilterSpec? filters = widget.queryText != null && widget.onQueryReplaced != null && siteFilters != null
+        ? SourceSettingsHandler.withDefaults(siteFilters, SourceSettingsHandler.instance.settingsFor(sourceBooru).defaultFilters ?? '')
+        : null;
     List<Widget> blocks = [
-      if (!widget.hideHistory)
+      if (filters != null)
+        DoujinFiltersBlock(
+          spec: filters,
+          query: widget.queryText!(),
+          onQueryChanged: (String q) {
+            widget.onQueryReplaced!(q);
+            setState(() {});
+          },
+        ),
+      if (!widget.hideHistory && ModularUi.isOn(ModularUi.searchHistory))
         HistoryBlock(
           delay: const Duration(milliseconds: 10),
           onTagApply: widget.onTagTap,
         ),
       //
-      if (!widget.hidePinned)
+      if (!widget.hidePinned && ModularUi.isOn(ModularUi.searchPinned))
         PinnedTagsBlock(
           key: _pinnedTagsKey,
           onTagTap: widget.onTagTap,
@@ -1503,13 +1612,22 @@ class _SuggestionsMainContentState extends State<SuggestionsMainContent> {
           },
         ),
       //
-      if (!widget.hidePopular)
+      if (!widget.hidePopular && ModularUi.isOn(ModularUi.searchPopular))
         PopularTagsBlock(
           onTagTap: widget.onTagTap,
           delay: const Duration(milliseconds: 20),
         ),
       //
-      MetatagsBlock(onSelect: widget.onMetatagSelect),
+      MetatagsBlock(
+        onSelect: widget.onMetatagSelect,
+        booru: widget.booru,
+      ),
+      //
+      if (widget.onInsertTerm != null)
+        TagBuilderBlock(
+          booru: widget.booru,
+          onInsertTerm: widget.onInsertTerm!,
+        ),
       //
       const SizedBox(height: 16),
     ];
@@ -1739,7 +1857,7 @@ class _HistoryBlockState extends State<HistoryBlock> {
   Future<void> init() async {
     loading = true;
     setState(() {});
-    history = await settingsHandler.dbHandler.getLatestSearchHistory();
+    history = await SearchHistoryStore.latest();
     loading = false;
     if (mounted) {
       setState(() {});
@@ -1770,7 +1888,7 @@ class _HistoryBlockState extends State<HistoryBlock> {
                     widget.onTagApply?.call(entry.searchText);
                     Navigator.of(context).pop();
                   },
-                  icon: const Icon(Icons.add),
+                  icon: const Icon(Symbols.add_rounded),
                   label: Text(context.loc.tabs.filters.apply),
                 ),
               ),
@@ -1783,7 +1901,7 @@ class _HistoryBlockState extends State<HistoryBlock> {
                 } else {
                   FlashElements.showSnackbar(
                     title: Text(context.loc.history.unknownBooruType, style: const TextStyle(fontSize: 20)),
-                    leadingIcon: Icons.warning_amber,
+                    leadingIcon: Symbols.warning_amber_rounded,
                     leadingIconColor: Colors.red,
                     sideColor: Colors.red,
                   );
@@ -1792,7 +1910,7 @@ class _HistoryBlockState extends State<HistoryBlock> {
 
                 Navigator.of(context).popUntil(ModalRoute.withName('/'));
               },
-              icon: const Icon(Icons.open_in_browser),
+              icon: const Icon(Symbols.open_in_browser_rounded),
               label: Text(context.loc.open),
             ),
             //
@@ -1809,7 +1927,7 @@ class _HistoryBlockState extends State<HistoryBlock> {
                 } else {
                   FlashElements.showSnackbar(
                     title: Text(context.loc.history.unknownBooruType, style: const TextStyle(fontSize: 20)),
-                    leadingIcon: Icons.warning_amber,
+                    leadingIcon: Symbols.warning_amber_rounded,
                     leadingIconColor: Colors.red,
                     sideColor: Colors.red,
                   );
@@ -1818,7 +1936,7 @@ class _HistoryBlockState extends State<HistoryBlock> {
 
                 Navigator.of(context).popUntil(ModalRoute.withName('/'));
               },
-              icon: const Icon(Icons.add_circle_outline),
+              icon: const Icon(Symbols.add_circle_rounded),
               label: Text(context.loc.openInNewTab),
             ),
             //
@@ -1830,12 +1948,12 @@ class _HistoryBlockState extends State<HistoryBlock> {
                   duration: const Duration(seconds: 2),
                   title: Text(context.loc.copied, style: const TextStyle(fontSize: 20)),
                   content: Text(entry.searchText, style: const TextStyle(fontSize: 16)),
-                  leadingIcon: Icons.copy,
+                  leadingIcon: Symbols.content_copy_rounded,
                   sideColor: Colors.green,
                 );
                 Navigator.of(context).pop();
               },
-              icon: const Icon(Icons.copy),
+              icon: const Icon(Symbols.content_copy_rounded),
               label: Text(context.loc.copy),
             ),
           ],
@@ -1874,7 +1992,7 @@ class _HistoryBlockState extends State<HistoryBlock> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Icon(
-                  Icons.history_rounded,
+                  Symbols.history_rounded,
                   size: 20,
                 ),
                 const SizedBox(width: 8),
@@ -1892,7 +2010,7 @@ class _HistoryBlockState extends State<HistoryBlock> {
                       page: (_) => const HistoryList(),
                     ).open();
                   },
-                  icon: const Icon(Icons.chevron_right_rounded),
+                  icon: const Icon(Symbols.chevron_right_rounded),
                 ),
               ],
             ),
@@ -1935,7 +2053,7 @@ class _HistoryBlockState extends State<HistoryBlock> {
                   const favIcon = Padding(
                     padding: EdgeInsets.only(left: 6),
                     child: Icon(
-                      Icons.favorite,
+                      Symbols.favorite_rounded,
                       color: Colors.red,
                       size: 16,
                     ),
@@ -1982,21 +2100,58 @@ class _HistoryBlockState extends State<HistoryBlock> {
   }
 }
 
+/// The Metatags card: the source's metatag chips. Tap one to insert `key:`
+/// (or pick a date); the full list is a chevron away. The tag builder —
+/// every artist, character… the source can list — is the card under this
+/// one, [TagBuilderBlock].
 class MetatagsBlock extends StatefulWidget {
   const MetatagsBlock({
     required this.onSelect,
+    this.booru,
     super.key,
   });
 
   final Function(AddMetatagBottomSheetResult) onSelect;
 
+  /// The source to build for; null follows the current tab.
+  final Booru? booru;
+
   @override
   State<MetatagsBlock> createState() => _MetatagsBlockState();
 }
 
-class _MetatagsBlockState extends State<MetatagsBlock> {
-  final searchHandler = SearchHandler.instance;
+/// The source a query-editor block builds for: the current tab's handler, or
+/// a throwaway handler for an explicit booru, cached across rebuilds.
+mixin _EditorSourceMixin<T extends StatefulWidget> on State<T> {
+  Booru? get ownBooru;
+
+  BooruHandler? _cachedHandler;
+  Booru? _cachedFor;
+
+  Booru get sourceBooru => ownBooru ?? SearchHandler.instance.currentBooru;
+
+  BooruHandler get sourceHandler {
+    final Booru? own = ownBooru;
+    if (own == null) return SearchHandler.instance.currentBooruHandler;
+    if (_cachedHandler == null || _cachedFor != own) {
+      _cachedHandler = BooruHandlerFactory().getBooruHandler([own], null).booruHandler;
+      _cachedFor = own;
+    }
+    return _cachedHandler!;
+  }
+}
+
+class _MetatagsBlockState extends State<MetatagsBlock> with _EditorSourceMixin {
   final scrollController = ScrollController();
+
+  @override
+  Booru? get ownBooru => widget.booru;
+
+  @override
+  void dispose() {
+    scrollController.dispose();
+    super.dispose();
+  }
 
   Future<void> openMetatagsDialog() async {
     final res = await SettingsPageOpen(
@@ -2028,140 +2183,277 @@ class _MetatagsBlockState extends State<MetatagsBlock> {
 
   @override
   Widget build(BuildContext context) {
-    List<MetaTag> metaTags = searchHandler.currentBooruHandler.availableMetaTags();
+    final BooruHandler handler = sourceHandler;
+    List<MetaTag> entries = handler.availableMetaTags();
     bool overflows = false;
-    if (metaTags.length > 15) {
-      // show only first 15 tags (only danbooru has this much right now) to motivate user to open bottom sheet dialog with full list
-      metaTags = metaTags.sublist(0, 15);
+    if (entries.length > 15) {
+      // show only first 15 (only danbooru has this much right now) to motivate
+      // user to open the bottom sheet with the full list
+      entries = entries.sublist(0, 15);
       overflows = true;
     }
 
-    if (metaTags.isEmpty) {
+    if (entries.isEmpty) {
       return const SizedBox.shrink();
     }
 
     return SearchSectionCard(
       child: Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: GestureDetector(
-            onTap: () => scrollController.animateTo(
-              0,
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeInOut,
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Icon(
-                  Icons.filter_list,
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    context.loc.searchBar.metatags,
-                    style: context.theme.textTheme.bodyLarge,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: GestureDetector(
+              onTap: () => scrollController.animateTo(
+                0,
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeInOut,
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Icon(
+                    Symbols.filter_list_rounded,
+                    size: 20,
                   ),
-                ),
-                const SizedBox(width: 8),
-                if (searchHandler.currentBooruHandler.metatagsCheatSheetLink != null)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: IconButton(
-                      onPressed: () {
-                        launchUrlString(
-                          searchHandler.currentBooruHandler.metatagsCheatSheetLink!,
-                          mode: LaunchMode.externalApplication,
-                        );
-                      },
-                      icon: const Icon(Icons.help_outline_rounded),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      context.loc.searchBar.metatags,
+                      style: context.theme.textTheme.bodyLarge,
                     ),
                   ),
-                IconButton(
-                  onPressed: openMetatagsDialog,
-                  icon: const Icon(Icons.chevron_right_rounded),
+                  const SizedBox(width: 8),
+                  if (handler.metatagsCheatSheetLink != null)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: IconButton(
+                        onPressed: () {
+                          launchUrlString(
+                            handler.metatagsCheatSheetLink!,
+                            mode: LaunchMode.externalApplication,
+                          );
+                        },
+                        icon: const Icon(Symbols.help_outline_rounded),
+                      ),
+                    ),
+                  IconButton(
+                    onPressed: openMetatagsDialog,
+                    icon: const Icon(Symbols.chevron_right_rounded),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 50,
+            child: Listener(
+              onPointerSignal: (event) => desktopPointerScroll(scrollController, event),
+              child: FadingEdgeScrollView.fromScrollView(
+                child: ListView.builder(
+                  controller: scrollController,
+                  scrollDirection: Axis.horizontal,
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: entries.length + (overflows ? 1 : 0),
+                  itemBuilder: (BuildContext context, int index) {
+                    if (overflows && index == entries.length) {
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: ActionChip(
+                          label: Text(context.loc.searchBar.more),
+                          onPressed: openMetatagsDialog,
+                        ),
+                      );
+                    }
+
+                    final MetaTag tag = entries[index];
+
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: ActionChip(
+                        label: Text(tag.name),
+                        avatar: switch (tag.type) {
+                          .date => Icon(
+                            Symbols.calendar_month_rounded,
+                            color: context.theme.colorScheme.onSurface,
+                          ),
+                          .sort => Icon(
+                            Symbols.sort_rounded,
+                            color: context.theme.colorScheme.onSurface,
+                          ),
+                          .user => Icon(
+                            Symbols.person_outline_rounded,
+                            color: context.theme.colorScheme.onSurface,
+                          ),
+                          _ => null,
+                        },
+                        onPressed: () async {
+                          switch (tag.type) {
+                            case .date:
+                              final metaTag = tag as DateMetaTag;
+                              final res = await showSingleDatePicker(
+                                context,
+                                dateFormat: metaTag.dateFormat,
+                              );
+
+                              if (res is DateTime) {
+                                onOptionSelect(
+                                  context,
+                                  tag,
+                                  compareMode: null,
+                                  value: DateFormat(metaTag.dateFormat).format(res),
+                                );
+                              }
+                              break;
+                            default:
+                              onOptionSelect(context, tag);
+                              break;
+                          }
+                        },
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The Tag builder card: one chip per namespace the current source can list
+/// in full (`BooruHandler.tagCatalog`) — every artist, character, … the site
+/// knows, most-used first, picked from a sheet instead of typed. Sits under
+/// the Metatags card; absent when the source has no catalog. The lists live
+/// in the database, so with it off the card says so instead of offering
+/// pulls that would store nothing.
+class TagBuilderBlock extends StatefulWidget {
+  const TagBuilderBlock({
+    required this.onInsertTerm,
+    this.booru,
+    super.key,
+  });
+
+  /// Where a picked term goes.
+  final void Function(String term) onInsertTerm;
+
+  /// The source to build for; null follows the current tab.
+  final Booru? booru;
+
+  @override
+  State<TagBuilderBlock> createState() => _TagBuilderBlockState();
+}
+
+class _TagBuilderBlockState extends State<TagBuilderBlock> with _EditorSourceMixin {
+  final scrollController = ScrollController();
+
+  /// Rows stored per namespace for the source, the badge on each chip.
+  Map<String, int> _counts = const {};
+  String _countsFor = '';
+
+  @override
+  Booru? get ownBooru => widget.booru;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_refreshCounts());
+  }
+
+  @override
+  void didUpdateWidget(covariant TagBuilderBlock oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.booru != widget.booru) unawaited(_refreshCounts());
+  }
+
+  @override
+  void dispose() {
+    scrollController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _refreshCounts() async {
+    final TagCatalogSource? catalog = sourceHandler.tagCatalog;
+    final Booru booru = sourceBooru;
+    final String key = BooruTagStore.keyFor(booru);
+    final Map<String, int> counts = catalog == null ? const {} : await BooruTagStore.catalogCounts(booru, catalog);
+    if (!mounted) return;
+    setState(() {
+      _counts = counts;
+      _countsFor = key;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final TagCatalogSource? catalog = sourceHandler.tagCatalog;
+    if (catalog == null || catalog.namespaces.isEmpty) return const SizedBox.shrink();
+
+    final Booru booru = sourceBooru;
+    if (_countsFor != BooruTagStore.keyFor(booru)) {
+      // The tab changed under an open editor: recount for the new source.
+      WidgetsBinding.instance.addPostFrameCallback((_) => _refreshCounts());
+    }
+    final List<TagCatalogNamespace> namespaces = catalog.namespaces;
+
+    return SearchSectionCard(
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                const Icon(Symbols.category_rounded, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text('Tag builder', style: context.theme.textTheme.bodyLarge),
                 ),
               ],
             ),
           ),
-        ),
-        const SizedBox(height: 8),
-        SizedBox(
-          height: 50,
-          child: Listener(
-            onPointerSignal: (event) => desktopPointerScroll(scrollController, event),
-            child: FadingEdgeScrollView.fromScrollView(
-              child: ListView.builder(
-                controller: scrollController,
-                scrollDirection: Axis.horizontal,
-                physics: const BouncingScrollPhysics(),
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                itemCount: metaTags.length + (overflows ? 1 : 0),
-                itemBuilder: (BuildContext context, int index) {
-                  if (overflows && index == metaTags.length) {
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: ActionChip(
-                        label: Text(context.loc.searchBar.more),
-                        onPressed: openMetatagsDialog,
-                      ),
-                    );
-                  }
-
-                  final tag = metaTags[index];
-
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: ActionChip(
-                      label: Text(tag.name),
-                      avatar: switch (tag.type) {
-                        .date => Icon(
-                          Icons.calendar_month_rounded,
-                          color: context.theme.colorScheme.onSurface,
+          const SizedBox(height: 8),
+          if (!SettingsHandler.instance.dbEnabled)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+              child: Text(
+                'Turn on the database (Settings → Database) to use the tag builder: the lists it pulls are kept there.',
+                style: context.theme.textTheme.bodySmall,
+              ),
+            )
+          else
+            SizedBox(
+              height: 50,
+              child: Listener(
+                onPointerSignal: (event) => desktopPointerScroll(scrollController, event),
+                child: FadingEdgeScrollView.fromScrollView(
+                  child: ListView.builder(
+                    controller: scrollController,
+                    scrollDirection: Axis.horizontal,
+                    physics: const BouncingScrollPhysics(),
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    itemCount: namespaces.length,
+                    itemBuilder: (BuildContext context, int index) {
+                      final TagCatalogNamespace ns = namespaces[index];
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: TagCatalogChip(
+                          booru: booru,
+                          catalog: catalog,
+                          namespace: ns,
+                          count: _counts[ns.key] ?? 0,
+                          onInsert: widget.onInsertTerm,
+                          onStoredChanged: _refreshCounts,
                         ),
-                        .sort => Icon(
-                          Icons.sort_rounded,
-                          color: context.theme.colorScheme.onSurface,
-                        ),
-                        .user => Icon(
-                          Icons.person_outline_rounded,
-                          color: context.theme.colorScheme.onSurface,
-                        ),
-                        _ => null,
-                      },
-                      onPressed: () async {
-                        switch (tag.type) {
-                          case .date:
-                            final metaTag = tag as DateMetaTag;
-                            final res = await showSingleDatePicker(
-                              context,
-                              dateFormat: metaTag.dateFormat,
-                            );
-
-                            if (res is DateTime) {
-                              onOptionSelect(
-                                context,
-                                tag,
-                                compareMode: null,
-                                value: DateFormat(metaTag.dateFormat).format(res),
-                              );
-                            }
-                            break;
-                          default:
-                            onOptionSelect(context, tag);
-                            break;
-                        }
-                      },
-                    ),
-                  );
-                },
+                      );
+                    },
+                  ),
+                ),
               ),
             ),
-          ),
-        ),
-      ],
+        ],
       ),
     );
   }
@@ -2230,7 +2522,7 @@ class _PopularTagsBlockState extends State<PopularTagsBlock> {
         if (mounted) setState(() {});
 
         for (final tag in popularTags.where((t) => !t.type.isNone)) {
-          unawaited(tagHandler.addTagsWithType([tag.tag], tag.type));
+          searchHandler.currentBooruHandler.addTagsWithType([tag.tag], tag.type);
         }
       },
     );
@@ -2264,7 +2556,7 @@ class _PopularTagsBlockState extends State<PopularTagsBlock> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Icon(
-                  Icons.trending_up_rounded,
+                  Symbols.trending_up_rounded,
                   size: 20,
                 ),
                 const SizedBox(width: 8),
@@ -2284,7 +2576,7 @@ class _PopularTagsBlockState extends State<PopularTagsBlock> {
                 else if (failed)
                   IconButton(
                     onPressed: loadPopularTags,
-                    icon: const Icon(Icons.refresh),
+                    icon: const Icon(Symbols.refresh_rounded),
                   ),
               ],
             ),
@@ -2299,7 +2591,7 @@ class _PopularTagsBlockState extends State<PopularTagsBlock> {
             child: Center(
               child: TextButton.icon(
                 onPressed: loadPopularTags,
-                icon: const Icon(Icons.refresh),
+                icon: const Icon(Symbols.refresh_rounded),
                 label: Text(context.loc.retry),
               ),
             ),
@@ -2330,7 +2622,11 @@ class _PopularTagsBlockState extends State<PopularTagsBlock> {
                   itemCount: popularTags.length,
                   itemBuilder: (BuildContext context, int index) {
                     final tag = popularTags[index];
-                    final tagColor = tagHandler.getTag(tag.tag).getColour();
+                    final tagColor = tagHandler.colourForDisplay(
+                      tag.tag,
+                      searchHandler.currentBooru,
+                      ownType: tag.type,
+                    );
 
                     return Padding(
                       padding: const EdgeInsets.only(right: 8),
@@ -2572,10 +2868,20 @@ class _PinnedTagsBlockState extends State<PinnedTagsBlock> {
     if (mounted) setState(() {});
 
     final booru = searchHandler.currentBooru;
-    allPinnedTags = await settingsHandler.dbHandler.getPinnedTags(
-      booruType: booru.type?.name,
-      booruName: booru.name,
-    );
+    if (DoujinDataHandler.isDoujinBooru(booru)) {
+      // Doujin tabs: pins come from the doujin store only.
+      allPinnedTags = doujinPinsAsPinnedTags(booru);
+    } else {
+      allPinnedTags = await settingsHandler.dbHandler.getPinnedTags(
+        booruType: booru.type?.name,
+        booruName: booru.name,
+      );
+      // Follows are stored as labelled pins but have their own screen.
+      allPinnedTags.removeWhere(FollowedArtistsHandler.isFollowPin);
+    }
+
+    // r52: pins hidden on this source (the pinned tags page) are left out here.
+    allPinnedTags = PinnedTagVisibility.visible(allPinnedTags, booru);
 
     // Get unique labels from all tags
     final labelsSet = <String>{};
@@ -2641,9 +2947,9 @@ class _PinnedTagsBlockState extends State<PinnedTagsBlock> {
   }
 
   IconData get _sortIcon => switch (sortMode) {
-    PinnedTagsSortMode.custom => Icons.sort,
-    PinnedTagsSortMode.alphabetical => Icons.sort_by_alpha,
-    PinnedTagsSortMode.reverseAlphabetical => Icons.sort_by_alpha,
+    PinnedTagsSortMode.custom => Symbols.sort_rounded,
+    PinnedTagsSortMode.alphabetical => Symbols.sort_by_alpha_rounded,
+    PinnedTagsSortMode.reverseAlphabetical => Symbols.sort_by_alpha_rounded,
   };
 
   String get _sortTooltip => switch (sortMode) {
@@ -2682,7 +2988,7 @@ class _PinnedTagsBlockState extends State<PinnedTagsBlock> {
               mainAxisAlignment: MainAxisAlignment.start,
               children: [
                 const Icon(
-                  Icons.push_pin_rounded,
+                  Symbols.push_pin_rounded,
                   size: 20,
                 ),
                 const SizedBox(width: 8),
@@ -2705,7 +3011,7 @@ class _PinnedTagsBlockState extends State<PinnedTagsBlock> {
                             selectedLabel ?? context.loc.pinnedTags.all,
                             style: context.theme.textTheme.bodyLarge,
                           ),
-                          const Icon(Icons.arrow_drop_down),
+                          const Icon(Symbols.arrow_drop_down_rounded),
                         ],
                       ),
                     ),
@@ -2715,7 +3021,7 @@ class _PinnedTagsBlockState extends State<PinnedTagsBlock> {
                         onTap: () => _selectLabel(null),
                         child: Row(
                           children: [
-                            if (selectedLabel == null) const Icon(Icons.check, size: 18) else const SizedBox(width: 18),
+                            if (selectedLabel == null) const Icon(Symbols.check_rounded, size: 18) else const SizedBox(width: 18),
                             const SizedBox(width: 8),
                             Text(context.loc.pinnedTags.all),
                           ],
@@ -2728,7 +3034,7 @@ class _PinnedTagsBlockState extends State<PinnedTagsBlock> {
                           child: Row(
                             children: [
                               if (selectedLabel == label)
-                                const Icon(Icons.check, size: 18)
+                                const Icon(Symbols.check_rounded, size: 18)
                               else
                                 const SizedBox(width: 18),
                               const SizedBox(width: 8),
@@ -2751,7 +3057,7 @@ class _PinnedTagsBlockState extends State<PinnedTagsBlock> {
                             right: 0,
                             bottom: 0,
                             child: Icon(
-                              Icons.arrow_downward,
+                              Symbols.arrow_downward_rounded,
                               size: 10,
                               color: context.theme.colorScheme.primary,
                             ),
@@ -2770,7 +3076,7 @@ class _PinnedTagsBlockState extends State<PinnedTagsBlock> {
                     // Always refresh after closing the dialog since changes might have been made
                     await init();
                   },
-                  icon: const Icon(Icons.chevron_right_rounded),
+                  icon: const Icon(Symbols.chevron_right_rounded),
                 ),
               ],
             ),
@@ -2819,7 +3125,7 @@ class _PinnedTagsBlockState extends State<PinnedTagsBlock> {
                   }
 
                   final pinnedTag = filteredPinnedTags[index];
-                  final tagColor = tagHandler.getTag(pinnedTag.tagName).getColour();
+                  final tagColor = tagHandler.colourForDisplay(pinnedTag.tagName, SearchHandler.instance.tabs.isEmpty ? null : SearchHandler.instance.currentBooru);
                   final bool isMultiword = pinnedTag.tagName.split(' ').length > 1;
 
                   return Padding(
@@ -2843,7 +3149,7 @@ class _PinnedTagsBlockState extends State<PinnedTagsBlock> {
                         ),
                         onPressed: () => widget.onTagTap(pinnedTag.tagName),
                         onDeleted: () => widget.onTagLongTap(pinnedTag.tagName, pinnedTag),
-                        deleteIcon: const Icon(Icons.more_vert, size: 18),
+                        deleteIcon: const Icon(Symbols.more_vert_rounded, size: 18),
                         deleteButtonTooltipMessage: '',
                       ),
                     ),
@@ -2960,7 +3266,7 @@ class _PinTagDialogState extends State<PinTagDialog> {
                       isDense: true,
                       suffixIcon: labelController.text.isNotEmpty
                           ? IconButton(
-                              icon: const Icon(Icons.add, size: 18),
+                              icon: const Icon(Symbols.add_rounded, size: 18),
                               onPressed: () => _addLabel(labelController.text),
                             )
                           : null,
@@ -2973,7 +3279,7 @@ class _PinTagDialogState extends State<PinTagDialog> {
                   Padding(
                     padding: const EdgeInsets.only(left: 6),
                     child: PopupMenuButton<String>(
-                      icon: const Icon(Icons.arrow_drop_down),
+                      icon: const Icon(Symbols.arrow_drop_down_rounded),
                       tooltip: context.loc.pinnedTags.selectExistingLabel,
                       onSelected: _addLabel,
                       itemBuilder: (context) => widget.existingLabels
@@ -2997,7 +3303,7 @@ class _PinTagDialogState extends State<PinTagDialog> {
                       builder: (_, value, _) {
                         if (value.text.isNotEmpty) {
                           return IconButton(
-                            icon: const Icon(Icons.add),
+                            icon: const Icon(Symbols.add_rounded),
                             onPressed: () => _addLabel(value.text),
                           );
                         }
@@ -3044,7 +3350,7 @@ class _PinTagDialogState extends State<PinTagDialog> {
                         labels: selectedLabels.toList(),
                       ),
                     ),
-                    icon: const Icon(Icons.push_pin),
+                    icon: const Icon(Symbols.push_pin_rounded),
                     label: Text(context.loc.pinnedTags.pin),
                   ),
                 ],
@@ -3057,6 +3363,18 @@ class _PinTagDialogState extends State<PinTagDialog> {
   }
 }
 
+/// Doujin pins rendered as PinnedTag rows for the shared pin UI.
+/// id == -1 marks them: never a DB row, unpin routes to the doujin store.
+List<PinnedTag> doujinPinsAsPinnedTags(Booru booru) => [
+  for (final p in DoujinDataHandler.instance.pinsFor(booru))
+    PinnedTag(
+      id: -1,
+      tagName: p.tag,
+      pinnedAt: p.addedAt,
+      labels: p.booruHost == null ? const ['all doujins'] : const [],
+    ),
+];
+
 Future<void> showPinTagDialog(
   BuildContext context,
   String tagName,
@@ -3064,12 +3382,15 @@ Future<void> showPinTagDialog(
   VoidCallback onTagPinned,
 ) async {
   final settingsHandler = SettingsHandler.instance;
+  final bool isDoujin = DoujinDataHandler.isDoujinBooru(currentBooru);
 
-  // Load existing labels for the dropdown
-  final existingLabels = await settingsHandler.dbHandler.getPinnedTagLabels(
-    booruType: currentBooru.type?.name,
-    booruName: currentBooru.name,
-  );
+  // Load existing labels for the dropdown (doujin pins don't do labels)
+  final existingLabels = isDoujin
+      ? const <String>[]
+      : await settingsHandler.dbHandler.getPinnedTagLabels(
+          booruType: currentBooru.type?.name,
+          booruName: currentBooru.name,
+        );
 
   final result = await showModalBottomSheet<PinTagDialogResult>(
     context: context,
@@ -3084,12 +3405,22 @@ Future<void> showPinTagDialog(
   );
 
   if (result != null) {
-    await settingsHandler.dbHandler.addPinnedTag(
-      tagName,
-      booruType: result.pinForCurrentBooru ? currentBooru.type?.name : null,
-      booruName: result.pinForCurrentBooru ? currentBooru.name : null,
-      labels: result.labels,
-    );
+    if (isDoujin) {
+      // Doujin pins live in the doujin store, never in the PinnedTag table.
+      // "Global" here means all DOUJIN sources, not booru-global.
+      DoujinDataHandler.instance.addPin(
+        tagName,
+        currentBooru,
+        global: !result.pinForCurrentBooru,
+      );
+    } else {
+      await settingsHandler.dbHandler.addPinnedTag(
+        tagName,
+        booruType: result.pinForCurrentBooru ? currentBooru.type?.name : null,
+        booruName: result.pinForCurrentBooru ? currentBooru.name : null,
+        labels: result.labels,
+      );
+    }
 
     onTagPinned();
 
@@ -3102,7 +3433,7 @@ Future<void> showPinTagDialog(
             : context.loc.pinnedTags.pinnedGloballyWithLabels(labels: labelText),
       ),
       sideColor: Colors.green,
-      leadingIcon: Icons.push_pin,
+      leadingIcon: Symbols.push_pin_rounded,
       leadingIconColor: Colors.green,
       duration: const Duration(seconds: 2),
     );
@@ -3156,7 +3487,7 @@ Future<bool> showUnpinTagDialog(
                       const CancelButton(),
                       ElevatedButton.icon(
                         onPressed: () => Navigator.of(ctx).pop(true),
-                        icon: const Icon(Icons.push_pin_outlined),
+                        icon: const Icon(Symbols.push_pin_rounded),
                         label: Text(ctx.loc.pinnedTags.unpin),
                       ),
                     ],
@@ -3172,14 +3503,19 @@ Future<bool> showUnpinTagDialog(
 
   if (result == true) {
     final settingsHandler = SettingsHandler.instance;
-    await settingsHandler.dbHandler.removePinnedTag(pinnedTag.id);
+    if (pinnedTag.id == -1) {
+      // Sentinel id: a doujin pin — remove from the doujin store.
+      DoujinDataHandler.instance.removePin(tagName, SearchHandler.instance.currentBooru);
+    } else {
+      await settingsHandler.dbHandler.removePinnedTag(pinnedTag.id);
+    }
 
     onTagUnpinned();
 
     FlashElements.showSnackbar(
       title: Text(context.loc.pinnedTags.tagUnpinned, style: const TextStyle(fontSize: 20)),
       sideColor: Colors.orange,
-      leadingIcon: Icons.push_pin_outlined,
+      leadingIcon: Symbols.push_pin_rounded,
       leadingIconColor: Colors.orange,
       duration: const Duration(seconds: 2),
     );
@@ -3270,7 +3606,7 @@ class _PinnedTagsReorderDialogState extends State<PinnedTagsReorderDialog> {
                 },
                 itemBuilder: (context, index) {
                   final pinnedTag = tags[index];
-                  final tagColor = tagHandler.getTag(pinnedTag.tagName).getColour();
+                  final tagColor = tagHandler.colourForDisplay(pinnedTag.tagName, SearchHandler.instance.tabs.isEmpty ? null : SearchHandler.instance.currentBooru);
                   final bool isMultiword = pinnedTag.tagName.split(' ').length > 1;
 
                   return ListTile(
@@ -3280,7 +3616,7 @@ class _PinnedTagsReorderDialogState extends State<PinnedTagsReorderDialog> {
                       children: [
                         ReorderableDragStartListener(
                           index: index,
-                          child: const Icon(Icons.drag_handle),
+                          child: const Icon(Symbols.drag_handle_rounded),
                         ),
                         const SizedBox(width: 8),
                         if (!pinnedTag.isGlobal)
@@ -3300,7 +3636,7 @@ class _PinnedTagsReorderDialogState extends State<PinnedTagsReorderDialog> {
                     ),
                     subtitle: Text(pinnedTag.booruName ?? ''),
                     trailing: IconButton(
-                      icon: const Icon(Icons.delete_outline),
+                      icon: const Icon(Symbols.delete_rounded),
                       onPressed: () => showUnpinTagDialog(
                         context,
                         pinnedTag.tagName,
@@ -3334,7 +3670,7 @@ class _PinnedTagsReorderDialogState extends State<PinnedTagsReorderDialog> {
                             dimension: 16,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Icon(Icons.check),
+                        : const Icon(Symbols.check_rounded),
                     label: Text(saving ? context.loc.pinnedTags.saving : context.loc.save),
                   ),
                 ],
@@ -3414,10 +3750,17 @@ class _PinnedTagsManagerDialogState extends State<PinnedTagsManagerDialog> {
     if (mounted) setState(() {});
 
     final booru = searchHandler.currentBooru;
-    allTags = await settingsHandler.dbHandler.getPinnedTags(
-      booruType: booru.type?.name,
-      booruName: booru.name,
-    );
+    if (DoujinDataHandler.isDoujinBooru(booru)) {
+      // Doujin tabs: pins come from the doujin store only.
+      allTags = doujinPinsAsPinnedTags(booru);
+    } else {
+      allTags = await settingsHandler.dbHandler.getPinnedTags(
+        booruType: booru.type?.name,
+        booruName: booru.name,
+      );
+      // Follows are stored as labelled pins but have their own screen.
+      allTags.removeWhere(FollowedArtistsHandler.isFollowPin);
+    }
 
     _applySorting();
     _applyFilter();
@@ -3461,9 +3804,9 @@ class _PinnedTagsManagerDialogState extends State<PinnedTagsManagerDialog> {
   }
 
   IconData get _sortIcon => switch (sortMode) {
-    PinnedTagsSortMode.custom => Icons.sort,
-    PinnedTagsSortMode.alphabetical => Icons.sort_by_alpha,
-    PinnedTagsSortMode.reverseAlphabetical => Icons.sort_by_alpha,
+    PinnedTagsSortMode.custom => Symbols.sort_rounded,
+    PinnedTagsSortMode.alphabetical => Symbols.sort_by_alpha_rounded,
+    PinnedTagsSortMode.reverseAlphabetical => Symbols.sort_by_alpha_rounded,
   };
 
   String get _sortTooltip => switch (sortMode) {
@@ -3486,6 +3829,8 @@ class _PinnedTagsManagerDialogState extends State<PinnedTagsManagerDialog> {
   }
 
   Future<void> _editTagLabels(PinnedTag tag) async {
+    // Doujin pins (sentinel id) have no labels to edit.
+    if (tag.id == -1) return;
     // Collect all unique labels from all tags
     final existingLabels = <String>{};
     for (final t in allTags) {
@@ -3518,6 +3863,8 @@ class _PinnedTagsManagerDialogState extends State<PinnedTagsManagerDialog> {
   }
 
   Future<void> _openReorderDialog() async {
+    // Doujin pins keep their pin order; the reorder dialog writes to the DB.
+    if (allTags.any((t) => t.id == -1)) return;
     final result = await showPinnedTagsReorderDialog(context, allTags);
     if (result == true) {
       hasChanges = true;
@@ -3540,12 +3887,20 @@ class _PinnedTagsManagerDialogState extends State<PinnedTagsManagerDialog> {
     );
 
     if (result != null) {
-      await settingsHandler.dbHandler.addPinnedTag(
-        result.tagName,
-        booruType: result.pinForCurrentBooru ? widget.currentBooru.type?.name : null,
-        booruName: result.pinForCurrentBooru ? widget.currentBooru.name : null,
-        labels: result.labels,
-      );
+      if (DoujinDataHandler.isDoujinBooru(widget.currentBooru)) {
+        DoujinDataHandler.instance.addPin(
+          result.tagName,
+          widget.currentBooru,
+          global: !result.pinForCurrentBooru,
+        );
+      } else {
+        await settingsHandler.dbHandler.addPinnedTag(
+          result.tagName,
+          booruType: result.pinForCurrentBooru ? widget.currentBooru.type?.name : null,
+          booruName: result.pinForCurrentBooru ? widget.currentBooru.name : null,
+          labels: result.labels,
+        );
+      }
       hasChanges = true;
       await init();
     }
@@ -3584,7 +3939,7 @@ class _PinnedTagsManagerDialogState extends State<PinnedTagsManagerDialog> {
                   const SizedBox(width: 8),
                   IconButton(
                     onPressed: () => Navigator.of(context).pop(hasChanges),
-                    icon: const Icon(Icons.close),
+                    icon: const Icon(Symbols.close_rounded),
                   ),
                 ],
               ),
@@ -3600,10 +3955,10 @@ class _PinnedTagsManagerDialogState extends State<PinnedTagsManagerDialog> {
                       controller: searchController,
                       decoration: InputDecoration(
                         labelText: context.loc.search,
-                        prefixIcon: const Icon(Icons.search),
+                        prefixIcon: const Icon(Symbols.search_rounded),
                         suffixIcon: searchController.text.isNotEmpty
                             ? IconButton(
-                                icon: const Icon(Icons.clear),
+                                icon: const Icon(Symbols.clear_rounded),
                                 onPressed: searchController.clear,
                               )
                             : null,
@@ -3625,7 +3980,7 @@ class _PinnedTagsManagerDialogState extends State<PinnedTagsManagerDialog> {
                             right: 0,
                             bottom: 0,
                             child: Icon(
-                              Icons.arrow_downward,
+                              Symbols.arrow_downward_rounded,
                               size: 10,
                               color: context.theme.colorScheme.primary,
                             ),
@@ -3637,12 +3992,12 @@ class _PinnedTagsManagerDialogState extends State<PinnedTagsManagerDialog> {
                   if (allTags.length > 1)
                     IconButton(
                       onPressed: _openReorderDialog,
-                      icon: const Icon(Icons.reorder_rounded),
+                      icon: const Icon(Symbols.reorder_rounded),
                       tooltip: context.loc.pinnedTags.reorder,
                     ),
                   IconButton(
                     onPressed: _addManualTag,
-                    icon: const Icon(Icons.add_rounded),
+                    icon: const Icon(Symbols.add_rounded),
                     tooltip: context.loc.pinnedTags.addTagManually,
                   ),
                 ],
@@ -3666,7 +4021,7 @@ class _PinnedTagsManagerDialogState extends State<PinnedTagsManagerDialog> {
                       itemCount: filteredTags.length,
                       itemBuilder: (context, index) {
                         final pinnedTag = filteredTags[index];
-                        final tagColor = tagHandler.getTag(pinnedTag.tagName).getColour();
+                        final tagColor = tagHandler.colourForDisplay(pinnedTag.tagName, widget.currentBooru);
                         final bool isMultiword = pinnedTag.tagName.split(' ').length > 1;
 
                         final scopeText = pinnedTag.isGlobal ? null : '${pinnedTag.booruName ?? ''} '.trim();
@@ -3700,14 +4055,14 @@ class _PinnedTagsManagerDialogState extends State<PinnedTagsManagerDialog> {
                             children: [
                               IconButton(
                                 icon: Icon(
-                                  pinnedTag.labels.isNotEmpty ? Icons.label : Icons.label_outline,
+                                  pinnedTag.labels.isNotEmpty ? Symbols.label_rounded : Symbols.label_rounded,
                                   size: 20,
                                 ),
                                 tooltip: context.loc.pinnedTags.editLabels,
                                 onPressed: () => _editTagLabels(pinnedTag),
                               ),
                               IconButton(
-                                icon: const Icon(Icons.delete_outline),
+                                icon: const Icon(Symbols.delete_rounded),
                                 tooltip: context.loc.pinnedTags.unpin,
                                 onPressed: () => _deleteTag(pinnedTag),
                               ),
@@ -3803,7 +4158,7 @@ class _EditLabelsDialogState extends State<EditLabelsDialog> {
                       isDense: true,
                       suffixIcon: labelController.text.isNotEmpty
                           ? IconButton(
-                              icon: const Icon(Icons.add, size: 18),
+                              icon: const Icon(Symbols.add_rounded, size: 18),
                               onPressed: () => _addLabel(labelController.text),
                             )
                           : null,
@@ -3817,7 +4172,7 @@ class _EditLabelsDialogState extends State<EditLabelsDialog> {
                   Padding(
                     padding: const EdgeInsets.only(left: 6),
                     child: PopupMenuButton<String>(
-                      icon: const Icon(Icons.arrow_drop_down),
+                      icon: const Icon(Symbols.arrow_drop_down_rounded),
                       tooltip: context.loc.pinnedTags.selectExistingLabel,
                       onSelected: _addLabel,
                       itemBuilder: (context) => widget.existingLabels
@@ -3841,7 +4196,7 @@ class _EditLabelsDialogState extends State<EditLabelsDialog> {
                       builder: (_, value, _) {
                         if (value.text.isNotEmpty) {
                           return IconButton(
-                            icon: const Icon(Icons.add),
+                            icon: const Icon(Symbols.add_rounded),
                             onPressed: () => _addLabel(value.text),
                           );
                         }
@@ -3891,7 +4246,7 @@ class _EditLabelsDialogState extends State<EditLabelsDialog> {
                     const CancelButton(),
                     ElevatedButton.icon(
                       onPressed: () => Navigator.of(context).pop(selectedLabels.toList()),
-                      icon: const Icon(Icons.check),
+                      icon: const Icon(Symbols.check_rounded),
                       label: Text(context.loc.save),
                     ),
                   ],
@@ -4018,7 +4373,7 @@ class _ManualPinTagDialogState extends State<ManualPinTagDialog> {
                       isDense: true,
                       suffixIcon: labelController.text.isNotEmpty
                           ? IconButton(
-                              icon: const Icon(Icons.add, size: 18),
+                              icon: const Icon(Symbols.add_rounded, size: 18),
                               onPressed: () => _addLabel(labelController.text),
                             )
                           : null,
@@ -4031,7 +4386,7 @@ class _ManualPinTagDialogState extends State<ManualPinTagDialog> {
                   Padding(
                     padding: const EdgeInsets.only(left: 6),
                     child: PopupMenuButton<String>(
-                      icon: const Icon(Icons.arrow_drop_down),
+                      icon: const Icon(Symbols.arrow_drop_down_rounded),
                       tooltip: context.loc.pinnedTags.selectExistingLabel,
                       onSelected: _addLabel,
                       itemBuilder: (context) => widget.existingLabels
@@ -4055,7 +4410,7 @@ class _ManualPinTagDialogState extends State<ManualPinTagDialog> {
                       builder: (_, value, _) {
                         if (value.text.isNotEmpty) {
                           return IconButton(
-                            icon: const Icon(Icons.add),
+                            icon: const Icon(Symbols.add_rounded),
                             onPressed: () => _addLabel(value.text),
                           );
                         }
@@ -4113,7 +4468,7 @@ class _ManualPinTagDialogState extends State<ManualPinTagDialog> {
                               ),
                             )
                           : null,
-                      icon: const Icon(Icons.push_pin),
+                      icon: const Icon(Symbols.push_pin_rounded),
                       label: Text(context.loc.pinnedTags.pin),
                     ),
                   ],
@@ -4123,6 +4478,88 @@ class _ManualPinTagDialogState extends State<ManualPinTagDialog> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// r37: a doujin source's browse filters as checkmarks. A single-choice
+/// group replaces its term (tapping the chosen one clears it); a
+/// multiple-choice group toggles; the source's default reads as checked
+/// when the query names nothing.
+class DoujinFiltersBlock extends StatelessWidget {
+  const DoujinFiltersBlock({
+    required this.spec,
+    required this.query,
+    required this.onQueryChanged,
+    super.key,
+  });
+
+  final DoujinFilterSpec spec;
+  final String query;
+  final void Function(String query) onQueryChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return SearchSectionCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                const Icon(Symbols.tune_rounded, size: 20),
+                const SizedBox(width: 8),
+                Text('Filters', style: context.theme.textTheme.bodyLarge),
+              ],
+            ),
+          ),
+          for (final DoujinFilterGroup g in spec.groups) ...[
+            const SizedBox(height: 10),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(g.label, style: context.theme.textTheme.labelLarge),
+            ),
+            const SizedBox(height: 6),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [for (final DoujinFilterOption o in g.options) _chip(context, g, o)],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _chip(BuildContext context, DoujinFilterGroup g, DoujinFilterOption o) {
+    final List<String> chosen = DoujinFilters.selected(query, g.key, divider: g.divider);
+    final bool selected = chosen.isEmpty
+        ? (g.multi && g.defaultValues.isNotEmpty ? g.defaultValues.contains(o.value) : o.value == g.defaultValue)
+        : chosen.contains(o.value);
+    return FilterChip(
+      // r45: the site default is '(default)', not 'none': danbooru's parent: and
+      // child: groups also have a real `none` value, and the duplicate key
+      // crashed the whole Filters card.
+      key: ValueKey('doujin-filter-${g.key}-${o.value.isEmpty ? '(default)' : o.value}'),
+      label: Text(o.label),
+      selected: selected,
+      showCheckmark: true,
+      visualDensity: VisualDensity.compact,
+      onSelected: (_) {
+        final List<String> next;
+        if (g.multi) {
+          // Nothing chosen means the defaults: a tap starts from them.
+          next = [...(chosen.isEmpty ? g.defaultValues : chosen)];
+          if (!next.remove(o.value)) next.add(o.value);
+        } else {
+          next = chosen.contains(o.value) ? const [] : [o.value];
+        }
+        onQueryChanged(DoujinFilters.apply(query, g.key, next, divider: g.divider));
+      },
     );
   }
 }

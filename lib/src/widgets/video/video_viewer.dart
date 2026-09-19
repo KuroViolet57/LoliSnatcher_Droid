@@ -15,10 +15,13 @@ import 'package:video_player/video_player.dart';
 
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 import 'package:lolisnatcher/src/data/settings/video_cache_mode.dart';
+import 'package:lolisnatcher/src/handlers/interests_handler.dart';
 import 'package:lolisnatcher/src/handlers/local_auth_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/handlers/video_completion_tracker.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/services/dio_downloader.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
@@ -88,6 +91,10 @@ class VideoViewerState extends State<VideoViewer> {
   // Futures from the previous player's dispose calls — the next initPlayer
   // awaits them so we never have two decoders fighting for the GPU.
   final List<Future<void>> _pendingDispose = [];
+  // The fileURL the live controller was created for — the key for the
+  // nested-viewer position hand-off (widget.booruItem may already point at a
+  // different item by the time disposables() runs).
+  String? _positionKeyUrl;
 
   Future<Map<String, String>> _customHeaders() async {
     return _cachedCustomHeaders ??= await Tools.getFileCustomHeaders(
@@ -237,6 +244,7 @@ class VideoViewerState extends State<VideoViewer> {
     if (error is DioException && CancelToken.isCancel(error)) {
       // print('Canceled by user: $imageURL | $error');
     } else {
+      BooruHandlerFactory.onMediaErrorFor(widget.booru, widget.booruItem.fileURL, error);
       if (error is DioException) {
         stopLoading(
           reason: ViewerStopReason.error,
@@ -295,6 +303,9 @@ class VideoViewerState extends State<VideoViewer> {
     if (oldWidget.isViewed != widget.isViewed) {
       videoController.value?.seekTo(Duration.zero);
       isViewed.value = widget.isViewed;
+      // Sought to the start on every flip: the next low position is a
+      // restart, not a loop having wrapped.
+      _completion.markResumed();
 
       if (isViewed.value) {
         // Deferred-load case: this page just became visible without ever
@@ -302,7 +313,8 @@ class VideoViewerState extends State<VideoViewer> {
         if (videoController.value == null && client == null && !isStopped.value) {
           initVideo(false);
         }
-        if (settingsHandler.autoPlayEnabled) {
+        if (settingsHandler.autoPlayEnabled &&
+            !(settingsHandler.respectManualPause && viewerHandler.isManuallyPaused(widget.booruItem.fileURL))) {
           videoController.value?.play();
         }
         if (viewerHandler.videoAutoMute) {
@@ -325,12 +337,17 @@ class VideoViewerState extends State<VideoViewer> {
 
   Future<void> initVideo(bool ignoreTagsCheck) async {
     if (widget.booruItem.isHidden && !ignoreTagsCheck) {
-      final tagsData = settingsHandler.parseTagsList(widget.booruItem.tagsList, isCapped: true);
+      final tagsData = settingsHandler.parseTagsListForItem(widget.booruItem, isCapped: true);
       stopLoading(
         reason: ViewerStopReason.hidden,
         details: tagsData.hiddenTags.join('\n'),
       );
     } else {
+      final String? outage = BooruHandlerFactory.mediaOutageNoticeFor(widget.booru, widget.booruItem.fileURL);
+      if (outage != null) {
+        stopLoading(reason: ViewerStopReason.videoError, title: 'File host unreachable', details: outage);
+        return;
+      }
       await downloadVideo();
     }
   }
@@ -397,6 +414,15 @@ class VideoViewerState extends State<VideoViewer> {
 
     final vc = videoController.value;
     final cc = chewieController.value;
+    // Tearing down while still the viewed page = we're being unmounted under
+    // the user (nested viewer cover / backend restart), not swiped away —
+    // park the position so the next init resumes instead of starting over.
+    // Keyed on the URL the controller was actually created for, not the
+    // (possibly already swapped) current widget item.
+    if (vc != null && widget.isViewed && vc.value.isInitialized) {
+      viewerHandler.saveVideoPosition(_positionKeyUrl, vc.value.position);
+    }
+    _positionKeyUrl = null;
     vc?.setVolume(0);
     vc?.pause();
     vc?.removeListener(updateVideoState);
@@ -515,10 +541,21 @@ class VideoViewerState extends State<VideoViewer> {
     scaleController.scaleState = PhotoViewScaleState.covering;
   }
 
+  /// r34: a video watched through is a signal, once per item.
+  final VideoCompletionTracker _completion = VideoCompletionTracker();
+
   void updateVideoState() {
     // print(videoController?.value);
 
     if (chewieController.value == null) return;
+
+    final vp = videoController.value?.value;
+    if (vp != null &&
+        isViewed.value &&
+        vp.isInitialized &&
+        _completion.update(key: widget.booruItem.fileURL, position: vp.position, duration: vp.duration)) {
+      InterestsHandler.instance.onVideoCompleted(widget.booruItem);
+    }
 
     if (isVideoInited) {
       bufferingTimer?.cancel();
@@ -564,6 +601,10 @@ class VideoViewerState extends State<VideoViewer> {
     }
 
     registerVideoBackendForCurrentAttempt();
+
+    // Remember which item this controller belongs to for the position
+    // hand-off in disposables().
+    _positionKeyUrl = widget.booruItem.fileURL;
 
     if (video != null) {
       // Start from cache if was already cached or only caching is allowed
@@ -694,7 +735,15 @@ class VideoViewerState extends State<VideoViewer> {
     }
     mpvWatchdogTimer?.cancel();
 
-    if (settingsHandler.autoPlayEnabled) {
+    // Position parked by a previous incarnation of this video (nested-viewer
+    // cover, backend fallback restart) — pick up where it left off.
+    final Duration? savedPosition = viewerHandler.takeVideoPosition(widget.booruItem.fileURL);
+    if (savedPosition != null) {
+      await videoController.value!.seekTo(savedPosition);
+    }
+
+    if (settingsHandler.autoPlayEnabled &&
+        !(settingsHandler.respectManualPause && viewerHandler.isManuallyPaused(widget.booruItem.fileURL))) {
       await videoController.value!.play();
     }
 
@@ -772,6 +821,7 @@ class VideoViewerState extends State<VideoViewer> {
   Future<void> onManualRestart() async {
     resetBackendFallback();
 
+    await BooruHandlerFactory.beforeMediaRetryFor(widget.booru, widget.booruItem.fileURL);
     if (blockPreloadState.isTooBig) {
       blockPreloadState = .ignore;
     }

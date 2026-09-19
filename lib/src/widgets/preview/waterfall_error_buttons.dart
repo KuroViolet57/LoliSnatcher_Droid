@@ -3,6 +3,8 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:flutter_html/flutter_html.dart';
 import 'package:get/get.dart';
 
@@ -109,7 +111,7 @@ class _WaterfallErrorButtonsState extends State<WaterfallErrorButtons> {
       final bool hasError = searchHandler.errorString.isNotEmpty;
 
       String title = '', subtitle = '';
-      Widget icon = const Icon(Icons.refresh);
+      Widget icon = const Icon(Symbols.refresh_rounded);
       VoidCallback onTap = retrySearch;
       bool showSubtitle = true;
       bool htmlSubtitle = false;
@@ -210,7 +212,7 @@ class _WaterfallErrorButtonsState extends State<WaterfallErrorButtons> {
                         IconButton(
                           onPressed: toggleCollapsed,
                           iconSize: 28,
-                          icon: const Icon(Icons.arrow_drop_up),
+                          icon: const Icon(Symbols.arrow_drop_up_rounded),
                         ),
                       ],
                     ),
@@ -308,7 +310,7 @@ class _WaterfallErrorButtonsState extends State<WaterfallErrorButtons> {
                     IconButton(
                       onPressed: toggleCollapsed,
                       iconSize: 28,
-                      icon: const Icon(Icons.arrow_drop_down),
+                      icon: const Icon(Symbols.arrow_drop_down_rounded),
                     ),
                     const SizedBox(width: 8),
                   ],

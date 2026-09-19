@@ -4,7 +4,9 @@ import 'package:get_it/get_it.dart';
 import 'package:uuid/uuid.dart';
 
 import 'package:lolisnatcher/src/data/booru.dart';
+import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/handlers/interests_handler.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
 import 'package:lolisnatcher/src/widgets/preview/floating_tag_preview_window.dart';
 
@@ -20,12 +22,18 @@ class FloatingPreviewEntry {
     required this.tag,
     required this.booru,
     required this.ownerRoute,
+    this.doujinItem,
   }) : id = const Uuid().v4();
 
   final String id;
   final String tag;
   final Booru booru;
   final Route<dynamic>? ownerRoute;
+
+  /// When set, the window hosts this doujin's DETAIL PAGE (with its own
+  /// nested navigator, so Read opens the reader inside the window) instead
+  /// of a tag-result grid.
+  final BooruItem? doujinItem;
 }
 
 /// Manages the floating tag-preview windows (Boorusama-style).
@@ -58,7 +66,24 @@ class FloatingPreviewHandler extends ChangeNotifier {
 
   Route<dynamic>? get topPageRoute => _pageRoutes.isNotEmpty ? _pageRoutes.last : null;
 
-  bool isEntryVisible(FloatingPreviewEntry entry) => entry.ownerRoute == topPageRoute;
+  // Windows render in the root overlay, ABOVE any dialog/bottom sheet pushed
+  // on the navigator. UI launched FROM a window (group picker etc.) wraps
+  // itself in push/popSuppress so the windows duck out of the way instead of
+  // burying the modal.
+  int _suppressCount = 0;
+  bool get isSuppressed => _suppressCount > 0;
+
+  void pushSuppress() {
+    _suppressCount++;
+    notifyListeners();
+  }
+
+  void popSuppress() {
+    if (_suppressCount > 0) _suppressCount--;
+    notifyListeners();
+  }
+
+  bool isEntryVisible(FloatingPreviewEntry entry) => !isSuppressed && entry.ownerRoute == topPageRoute;
 
   /// Opens (or replaces, when the current top route already has one) the
   /// floating preview window for [tag] on [booru].
@@ -77,7 +102,29 @@ class FloatingPreviewHandler extends ChangeNotifier {
       ),
     );
     _ensureOverlay();
-    InterestsHandler.instance.onTagPreviewOpened(tag);
+    // Doujin tag previews must not feed the booru taste profile.
+    if (!DoujinDataHandler.isDoujinBooru(booru)) {
+      InterestsHandler.instance.onTagPreviewOpened(tag, booru: booru);
+    }
+    notifyListeners();
+  }
+
+  /// Opens a floating DETAIL-PAGE window for one doujin. Same ownership
+  /// rules as tag windows; never feeds the booru taste profile.
+  void openDoujinPreview({
+    required BooruItem item,
+    required Booru booru,
+  }) {
+    entries.removeWhere((e) => e.ownerRoute == topPageRoute);
+    entries.add(
+      FloatingPreviewEntry(
+        tag: 'id:${item.serverId}',
+        booru: booru,
+        ownerRoute: topPageRoute,
+        doujinItem: item,
+      ),
+    );
+    _ensureOverlay();
     notifyListeners();
   }
 

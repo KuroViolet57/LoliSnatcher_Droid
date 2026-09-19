@@ -1,0 +1,78 @@
+import java.io.File
+import java.nio.file.Files
+import java.security.MessageDigest
+
+group 'com.alexmercerind.media_kit_libs_android_video'
+version '1.0'
+
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.13.0'
+    }
+}
+
+rootProject.allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+apply plugin: 'com.android.library'
+
+android {
+    if (project.android.hasProperty("namespace")) {
+        namespace 'com.alexmercerind.media_kit_libs_android_video'
+    }
+
+    compileSdkVersion 36
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    defaultConfig {
+        minSdkVersion 16
+    }
+
+    dependencies {
+        implementation fileTree(dir: "$buildDir/output", include: "*.jar")
+    }
+}
+
+// LoliSnatcher: arm64-only libmpv from third_party/libmpv-android (v1.1.11
+// default, mpv 0.36 ABI). The published package downloads v1.1.7 for every ABI.
+task copyLibmpvJar {
+    def jarName = "default-arm64-v8a.jar"
+    def expectedSha256 = "2A906875AF68BE8C98C4A83C236BC24053F46E0ACCF62B115993EF1D740E98CC"
+    def srcJar = file("${project.projectDir}/../../libmpv-android/${jarName}")
+    def outputDir = file("$buildDir/output")
+
+    doLast {
+        if (!srcJar.exists()) {
+            throw new GradleException("Missing ${srcJar}. See third_party/libmpv-android/README.md")
+        }
+        def digest = MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(srcJar.toPath()))
+        def hex = digest.encodeHex().toString().toUpperCase()
+        if (hex != expectedSha256) {
+            throw new GradleException("SHA-256 mismatch for ${srcJar}: ${hex}")
+        }
+        if (outputDir.exists()) {
+            outputDir.deleteDir()
+        }
+        outputDir.mkdirs()
+        copy {
+            from srcJar
+            into outputDir
+        }
+    }
+}
+
+assemble.dependsOn(copyLibmpvJar)
+preBuild.dependsOn(copyLibmpvJar)

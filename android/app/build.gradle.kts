@@ -98,6 +98,8 @@ android {
             signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
+            // r34: ONNX Runtime binds its Java classes by name; R8 must keep them.
+            proguardFiles("proguard-rules.pro")
         }
 
         debug {

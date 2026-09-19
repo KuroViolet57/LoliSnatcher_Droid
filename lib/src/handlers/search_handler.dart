@@ -4,6 +4,8 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 
 import 'package:get/get.dart' hide FirstWhereOrNullExt;
@@ -13,6 +15,8 @@ import 'package:scroll_to_index/scroll_to_index.dart';
 import 'package:uuid/uuid.dart';
 
 import 'package:lolisnatcher/src/boorus/mergebooru_handler.dart';
+import 'package:lolisnatcher/src/boorus/pool_posts_handler.dart';
+import 'package:lolisnatcher/src/boorus/suggestion_handler.dart';
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
@@ -20,9 +24,11 @@ import 'package:lolisnatcher/src/data/saved_search.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 import 'package:lolisnatcher/src/handlers/database_handler.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/interests_handler.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
+import 'package:lolisnatcher/src/handlers/search_history_store.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/snatch_handler.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
@@ -148,19 +154,43 @@ class SearchHandler {
     } catch (_) {}
   }
 
+  // Sentinel for addTabByString's `group` param: inherit the current tab's
+  // group. Used by tag-driven opens (tag chips, previews, batch open) so a
+  // tab spawned from inside a group lands in the same group.
+  static const Object inheritGroup = Object();
+
   // add new tab by the given search string
   void addTabByString(
     String searchText, {
     bool switchToNew = false,
     Booru? customBooru,
     List<Booru>? secondaryBoorus,
-    TabAddMode addMode = TabAddMode.end,
+    // null = follow the user's "New tab position" setting. Pass explicitly
+    // only when the caller offers its own placement choice.
+    TabAddMode? addMode,
+    // Tab group to open into: a String places the tab in that group (created
+    // if new), [inheritGroup] copies the current tab's group, null = none.
+    Object? group,
     int? customPage,
     Map<String, String>? tagOverrides,
     Map<String, bool>? inheritMainTags,
     String? tabId,
+    // Pool tabs carry the pool as tab state, since several sites can't express
+    // "posts in pool N" as a search at all.
+    String? poolId,
+    String? poolName,
+    // Doujin detail tabs: identity + cover of the doujin this tab IS. Set
+    // them to make the new tab a real detail-page tab instead of an id:
+    // search feed (see SearchTab.isDoujinDetail).
+    String? doujinPostURL,
+    String? doujinTitle,
+    String? doujinThumb,
   }) {
     final Booru booru = customBooru ?? currentBooru;
+
+    final String? groupName = identical(group, inheritGroup)
+        ? (tabs.isNotEmpty ? currentTab.groupName : null)
+        : group as String?;
 
     // Add new tab depending on the add mode
     final SearchTab newTab = SearchTab(
@@ -170,35 +200,57 @@ class SearchHandler {
       tabId: tabId,
       tagOverrides: tagOverrides,
       inheritMainTags: inheritMainTags,
+      poolId: poolId,
+      poolName: poolName,
+      doujinPostURL: doujinPostURL,
+      doujinTitle: doujinTitle,
+      doujinThumb: doujinThumb,
     );
+    newTab.groupName = groupName;
     if (customPage != null) {
       newTab.booruHandler.pageNum = customPage;
     }
 
+    TabAddMode resolvedMode = addMode ?? defaultTabAddModeResolved;
+    // Opening into an EXISTING group the current tab is not part of:
+    // prev/next would drop the tab outside the group's block and fragment
+    // it — force end-of-group placement instead. A brand-new group has no
+    // block yet, so it honours the requested placement (e.g. next to the
+    // current tab).
+    final bool groupExists = groupName != null && tabs.any((t) => t.groupName == groupName);
+    if (groupExists && (tabs.isEmpty || currentTab.groupName != groupName)) {
+      resolvedMode = TabAddMode.end;
+    }
+
     int newIndex = 0;
-    switch (addMode) {
+    switch (resolvedMode) {
       case TabAddMode.prev:
-        newIndex = currentIndex;
+        newIndex = _snapInsertionIndex(currentIndex, groupName, forward: false);
         tabs.insert(newIndex, newTab);
         break;
       case TabAddMode.next:
-        newIndex = currentIndex + 1;
+        newIndex = _snapInsertionIndex(currentIndex + 1, groupName, forward: true);
         tabs.insert(newIndex, newTab);
         break;
       case TabAddMode.end:
-        tabs.add(newTab);
-        newIndex = total - 1;
+        // "End" for a grouped tab means the end of ITS GROUP's block, so the
+        // group stays contiguous in the tab list.
+        final int lastInGroup = groupName == null ? -1 : tabs.lastIndexWhere((t) => t.groupName == groupName);
+        if (lastInGroup != -1) {
+          newIndex = lastInGroup + 1;
+          tabs.insert(newIndex, newTab);
+        } else {
+          tabs.add(newTab);
+          newIndex = total - 1;
+        }
         break;
     }
 
-    // record search query to db
-    final SettingsHandler settingsHandler = SettingsHandler.instance;
-    if (searchText != '' && settingsHandler.searchHistoryEnabled) {
-      settingsHandler.dbHandler.updateSearchHistory(
-        searchText,
-        booru.type?.name,
-        booru.name,
-      );
+    // record search query — doujin queries go to the doujin store, booru
+    // queries to store.db (SearchHistoryStore routes by source). Opening a
+    // doujin DETAIL tab isn't a search, so its `id:<n>` query is not history.
+    if (searchText != '' && doujinPostURL == null && isPlainSearch(searchText)) {
+      unawaited(SearchHistoryStore.record(searchText, booru));
     }
 
     // set to last tab if requested
@@ -246,7 +298,7 @@ class SearchHandler {
             Text(context.loc.searchHandler.resettingSearchToDefaultTags),
           ],
         ),
-        leadingIcon: Icons.warning_amber,
+        leadingIcon: Symbols.warning_amber_rounded,
         leadingIconColor: Colors.yellow,
         sideColor: Colors.yellow,
       );
@@ -281,7 +333,7 @@ class SearchHandler {
             Text(context.loc.searchHandler.resettingSearchToDefaultTags),
           ],
         ),
-        leadingIcon: Icons.warning_amber,
+        leadingIcon: Symbols.warning_amber_rounded,
         leadingIconColor: Colors.yellow,
         sideColor: Colors.yellow,
       );
@@ -424,7 +476,7 @@ class SearchHandler {
     if (!ignoreSameIndexCheck && newIndex != currentIndex) {
       index.value = newIndex;
       tabId.value = tabs[newIndex].id;
-      Tools.forceClearMemoryCache(withLive: true);
+      Tools.trimMemoryCacheIfFull();
     }
 
     // set search text (even if index didn't change)
@@ -583,10 +635,16 @@ class SearchHandler {
     // Remove extra spaces
     text = text.trim();
 
-    // Record the search as a taste signal (skip virtual/local feeds).
-    final BooruType? actionType = (newBooru ?? currentBooru).type;
-    if (text.isNotEmpty && actionType?.isLocalDb != true && actionType?.isForYou != true) {
-      InterestsHandler.instance.onSearch(text);
+    // Record the search as a taste signal (skip virtual/local feeds AND
+    // doujin sources — doujin activity must not feed the booru For You).
+    final Booru actionBooru = newBooru ?? currentBooru;
+    final BooruType? actionType = actionBooru.type;
+    if (text.isNotEmpty &&
+        actionType?.isLocalDb != true &&
+        actionType?.isRecommendationFeed != true &&
+        !DoujinDataHandler.isDoujinBooru(actionBooru) &&
+        isPlainSearch(text)) {
+      InterestsHandler.instance.onSearch(text, booru: actionBooru);
     }
 
     // clear image memory cache
@@ -607,6 +665,11 @@ class SearchHandler {
       // so the user's search-bar tap doesn't wipe edits they made.
       final Map<String, String> carriedOverrides = Map<String, String>.from(currentTab.tagOverrides);
       final Map<String, bool> carriedInherit = Map<String, bool>.from(currentTab.inheritMainTags);
+      // Retry on a doujin detail tab re-runs the same `id:` query. Dropping
+      // doujinPostURL here used to throw away the gallery key that survives
+      // a restart. A genuinely new query is no longer that tab.
+      final bool keepDoujin =
+          currentTab.isDoujinDetail && text.trim().toLowerCase() == currentTab.tags.trim().toLowerCase();
       final SearchTab newTab = SearchTab(
         newBooru ?? currentBooru,
         currentSecondaryBoorus.value,
@@ -614,7 +677,12 @@ class SearchHandler {
         tabId: currentTab.id, // keep the same tab identity across the search change
         tagOverrides: carriedOverrides,
         inheritMainTags: carriedInherit,
+        doujinPostURL: keepDoujin ? currentTab.doujinPostURL : null,
+        doujinTitle: keepDoujin ? currentTab.doujinTitle : null,
+        doujinThumb: keepDoujin ? currentTab.doujinThumb : null,
       );
+      // In-place search change keeps the tab in its group.
+      newTab.groupName = currentTab.groupName;
       tabs[currentIndex] = newTab;
       // The user changed this tab's search while viewing it — update its
       // visited-history entry in place (same id) instead of duplicating.
@@ -626,17 +694,16 @@ class SearchHandler {
     // run search
     changeTabIndex(currentIndex, ignoreSameIndexCheck: true);
 
-    // write to history
-    if (text != '' && settingsHandler.searchHistoryEnabled) {
-      unawaited(
-        settingsHandler.dbHandler.updateSearchHistory(
-          text,
-          currentBooru.type?.name,
-          currentBooru.name,
-        ),
-      );
+    // write to history (doujin searches never reach the booru history table)
+    if (text != '' && isPlainSearch(text)) {
+      unawaited(SearchHistoryStore.record(text, newBooru ?? currentBooru));
     }
   }
+
+  /// r76: a search the user typed, as opposed to a tab query that carries a
+  /// post for its loader (`suggest: …`), which is neither history nor a
+  /// search the learner should count.
+  static bool isPlainSearch(String text) => !SuggestionHandler.isQuery(text);
 
   //
 
@@ -692,7 +759,7 @@ class SearchHandler {
               ),
             ],
           ),
-          leadingIcon: Icons.warning_amber,
+          leadingIcon: Symbols.warning_amber_rounded,
           leadingIconColor: Colors.yellow,
           sideColor: Colors.red,
         );
@@ -730,7 +797,10 @@ class SearchHandler {
     } catch (_) {}
   }
 
-  Future<void> markPostSeen(BooruItem item) async {
+  /// [tab] is the tab the item actually belongs to — viewers opened off the
+  /// current tab (floating previews) must pass their own, or history could be
+  /// routed to the wrong store.
+  Future<void> markPostSeen(BooruItem item, {SearchTab? tab}) async {
     final String? key = seenKeyFor(item);
     if (key == null) return;
     item.isSeen.value = true;
@@ -740,6 +810,22 @@ class SearchHandler {
         await SettingsHandler.instance.dbHandler.addSeenPost(key);
       } catch (_) {}
     }
+    // Viewing history: store the full item every time (a re-view bumps the
+    // entry back to the top of the History feed). Doujin ITEMS go to the
+    // doujin history store instead — never the booru ViewedPost table — no
+    // matter which tab or viewer they were opened from.
+    final SearchTab? owner = tab ?? (tabs.isNotEmpty ? currentTab : null);
+    if ((owner?.booruHandler.hasReader ?? false) || DoujinDataHandler.isDoujinItem(item)) {
+      final Booru? itemBooru = DoujinDataHandler.doujinBooruForItem(item) ?? owner?.selectedBooru.value;
+      DoujinDataHandler.instance.addHistory(item, itemBooru);
+      return;
+    }
+    try {
+      await SettingsHandler.instance.dbHandler.addViewedPost(
+        key,
+        DBHandler.serializeHistoryItem(item),
+      );
+    } catch (_) {}
   }
 
   Future<void> clearSeenPosts() async {
@@ -774,6 +860,19 @@ class SearchHandler {
     if (tabs.isEmpty) return null;
     final SettingsHandler settingsHandler = SettingsHandler.instance;
     final SearchTab tab = currentTab;
+    // Doujin tabs save into the doujin store, never the booru SavedSearch
+    // table — the doujin saved-searches screen scopes them per source.
+    // Merge tabs (secondaries present) are hybrids and stay booru-side so
+    // their secondaries/overrides aren't dropped.
+    if (DoujinDataHandler.isDoujinBooru(tab.selectedBooru.value) &&
+        (tab.secondaryBoorus.value?.isEmpty ?? true)) {
+      final entry = DoujinDataHandler.instance.addSavedSearch(
+        name: name?.trim() ?? '',
+        query: tab.tags,
+        booru: tab.selectedBooru.value,
+      );
+      return entry.id;
+    }
     final entry = SavedSearch(
       id: null,
       name: name?.trim() ?? '',
@@ -800,6 +899,157 @@ class SearchHandler {
     final SettingsHandler settingsHandler = SettingsHandler.instance;
     await settingsHandler.dbHandler.renameSavedSearch(id, name);
     await reloadSavedSearches();
+  }
+
+  // Inserting at [index] must never split another group's contiguous block
+  // (e.g. opening a NEW group from inside group A would otherwise cut A in
+  // two). When the insertion point falls inside a foreign block, snap it to
+  // the block's end (forward) or start (backward).
+  int _snapInsertionIndex(int index, String? groupName, {required bool forward}) {
+    if (index <= 0 || index >= tabs.length) return index.clamp(0, tabs.length);
+    final String? before = tabs[index - 1].groupName;
+    final String? at = tabs[index].groupName;
+    final bool splitsForeignBlock = before != null && before.isNotEmpty && before == at && before != groupName;
+    if (!splitsForeignBlock) return index;
+
+    int i = index;
+    if (forward) {
+      while (i < tabs.length && tabs[i].groupName == before) {
+        i++;
+      }
+    } else {
+      while (i > 0 && tabs[i - 1].groupName == before) {
+        i--;
+      }
+    }
+    return i;
+  }
+
+  // Ordered distinct tab-group names, in first-appearance order.
+  List<String> get tabGroupNames {
+    final List<String> names = [];
+    for (final tab in tabs) {
+      final String? g = tab.groupName;
+      if (g != null && g.isNotEmpty && !names.contains(g)) names.add(g);
+    }
+    return names;
+  }
+
+  List<SearchTab> tabsInGroup(String groupName) => tabs.where((t) => t.groupName == groupName).toList();
+
+  void renameTabGroup(String oldName, String newName) {
+    for (final tab in tabs) {
+      if (tab.groupName == oldName) tab.groupName = newName;
+    }
+    tabs.value = [...tabs];
+  }
+
+  void dissolveTabGroup(String groupName) {
+    for (final tab in tabs) {
+      if (tab.groupName == groupName) tab.groupName = null;
+    }
+    tabs.value = [...tabs];
+  }
+
+  /// Makes every group's tabs contiguous: each group's block sits where the
+  /// group first appears, fragments (from pre-snapping inserts) are folded
+  /// into it in their existing relative order. Ungrouped tabs keep their
+  /// positions relative to each other. No-op when nothing is fragmented.
+  void compactGroupBlocks() {
+    if (tabs.isEmpty) return;
+    final SearchTab current = currentTab;
+
+    final List<SearchTab> result = [];
+    final Set<String> doneGroups = {};
+    for (final tab in tabs) {
+      final String? g = (tab.groupName?.isNotEmpty ?? false) ? tab.groupName : null;
+      if (g == null) {
+        result.add(tab);
+      } else if (doneGroups.add(g)) {
+        result.addAll(tabs.where((t) => t.groupName == g));
+      }
+    }
+
+    bool changed = false;
+    for (int i = 0; i < tabs.length; i++) {
+      if (!identical(tabs[i], result[i])) {
+        changed = true;
+        break;
+      }
+    }
+    if (!changed) return;
+
+    tabs.value = result;
+    final int newIndex = tabs.indexOf(current);
+    changeTabIndex(newIndex == -1 ? 0 : newIndex);
+  }
+
+  /// Moves [tabsToMove] into [groupName], keeping their relative order and
+  /// the group block contiguous. An existing group receives them at its end;
+  /// a new group's block forms where the first moved tab sat.
+  void moveTabsToGroup(List<SearchTab> tabsToMove, String groupName) {
+    if (tabsToMove.isEmpty || groupName.isEmpty) return;
+    final SearchTab current = currentTab;
+
+    // Preserve on-screen order of the moved tabs.
+    final List<SearchTab> ordered = tabs.where(tabsToMove.contains).toList();
+    if (ordered.isEmpty) return;
+    final List<SearchTab> remaining = tabs.where((t) => !tabsToMove.contains(t)).toList();
+
+    int insertAt;
+    final int lastMember = remaining.lastIndexWhere((t) => t.groupName == groupName);
+    if (lastMember != -1) {
+      insertAt = lastMember + 1;
+    } else {
+      // New group: keep the block where its first tab was.
+      final int anchor = tabs.indexOf(ordered.first);
+      int before = 0;
+      for (int i = 0; i < anchor; i++) {
+        if (!tabsToMove.contains(tabs[i])) before++;
+      }
+      insertAt = before;
+      // Don't split a foreign group block in the remaining list.
+      if (insertAt > 0 && insertAt < remaining.length) {
+        final String? b = remaining[insertAt - 1].groupName;
+        final String? a = remaining[insertAt].groupName;
+        if (b != null && b.isNotEmpty && b == a && b != groupName) {
+          while (insertAt < remaining.length && remaining[insertAt].groupName == b) {
+            insertAt++;
+          }
+        }
+      }
+    }
+
+    for (final t in ordered) {
+      t.groupName = groupName;
+    }
+    remaining.insertAll(insertAt, ordered);
+    tabs.value = remaining;
+
+    final int newIndex = tabs.indexOf(current);
+    changeTabIndex(newIndex == -1 ? 0 : newIndex);
+  }
+
+  // The TabAddMode matching the user's "New tab position" setting
+  // (next / end / prev), falling back to end.
+  TabAddMode get defaultTabAddModeResolved =>
+      TabAddMode.values.firstWhereOrNull(
+        (m) => m.name == SettingsHandler.instance.defaultTabAddMode,
+      ) ??
+      TabAddMode.end;
+
+  // One-tap "new tab": opens an empty tab in the current booru (or its default
+  // tags), honouring the New tab position setting, and switches to it.
+  void addNewTabRespectingSetting() {
+    final String defaultText = currentBooru.defTags?.isNotEmpty == true
+        ? currentBooru.defTags!
+        : SettingsHandler.instance.defTags;
+    searchTextController.text = defaultText;
+    addTabByString(
+      defaultText,
+      switchToNew: true,
+      addMode: defaultTabAddModeResolved,
+    );
   }
 
   // Opens a saved search as a new tab. `customBooru` overrides the saved
@@ -880,6 +1130,43 @@ class SearchHandler {
   RxString errorString = ''.obs;
 
   // run search on current tab
+  /// Re-points every open tab at an edited booru config.
+  ///
+  /// Called after a booru is saved in the editor. Tabs match by name (the
+  /// booru's identity in configs and tab backups); only a changed type or
+  /// base URL forces a handler rebuild, so ordinary edits (favicon, API key)
+  /// don't throw away loaded results.
+  void applyBooruEdit(Booru updated) {
+    if (updated.name?.isEmpty ?? true) return;
+
+    bool changedAny = false;
+    for (final tab in tabs) {
+      final Booru current = tab.selectedBooru.value;
+      if (current.name != updated.name) continue;
+      final bool needsRebuild = current.type != updated.type || current.baseURL != updated.baseURL;
+      if (needsRebuild) {
+        tab.rebuildHandler(updated);
+        changedAny = true;
+        Logger.Inst().log(
+          'rebuilt tab handler for "${updated.name}": ${current.type?.name} -> ${updated.type?.name}',
+          'SearchHandler',
+          'applyBooruEdit',
+          LogTypes.booruHandlerInfo,
+        );
+      } else {
+        // Same API, new details (key, favicon, ...) — just adopt the object.
+        tab.selectedBooru.value = updated;
+      }
+    }
+
+    if (changedAny) {
+      tabs.value = [...tabs];
+      if (tabs.isNotEmpty) {
+        unawaited(runSearch());
+      }
+    }
+  }
+
   Future<void> runSearch() async {
     final startTabId = currentTab.id;
     // do nothing if reached the end or detected an error
@@ -1051,7 +1338,7 @@ class SearchHandler {
           ],
         ),
         sideColor: foundBrokenItem ? Colors.yellow : Colors.green,
-        leadingIcon: foundBrokenItem ? Icons.warning_amber : Icons.settings_backup_restore,
+        leadingIcon: foundBrokenItem ? Symbols.warning_amber_rounded : Symbols.settings_backup_restore_rounded,
         duration: Duration(seconds: brokenItems.isEmpty ? 4 : 10),
       );
 
@@ -1112,7 +1399,7 @@ class SearchHandler {
         context.loc.searchHandler.addedTabsCount(count: restoredGlobals.length),
       ),
       sideColor: Colors.green,
-      leadingIcon: Icons.settings_backup_restore,
+      leadingIcon: Symbols.settings_backup_restore_rounded,
     );
   }
 
@@ -1157,7 +1444,7 @@ class SearchHandler {
         context.loc.searchHandler.receivedTabsCount(count: restoredGlobals.length),
       ),
       sideColor: Colors.green,
-      leadingIcon: Icons.settings_backup_restore,
+      leadingIcon: Symbols.settings_backup_restore_rounded,
     );
   }
 
@@ -1233,7 +1520,7 @@ class SearchHandler {
           ],
         ),
         sideColor: foundBrokenItems ? Colors.yellow : Colors.green,
-        leadingIcon: foundBrokenItems ? Icons.warning_amber : Icons.settings_backup_restore,
+        leadingIcon: foundBrokenItems ? Symbols.warning_amber_rounded : Symbols.settings_backup_restore_rounded,
         duration: Duration(seconds: brokenItems.isEmpty ? 4 : 10),
       );
 
@@ -1286,7 +1573,7 @@ class SearchHandler {
         context.loc.searchHandler.addedTabsCount(count: restoredTabs.length),
       ),
       sideColor: Colors.green,
-      leadingIcon: Icons.settings_backup_restore,
+      leadingIcon: Symbols.settings_backup_restore_rounded,
     );
   }
 
@@ -1319,7 +1606,7 @@ class SearchHandler {
         context.loc.searchHandler.receivedTabsCount(count: restoredTabs.length),
       ),
       sideColor: Colors.green,
-      leadingIcon: Icons.settings_backup_restore,
+      leadingIcon: Symbols.settings_backup_restore_rounded,
     );
   }
 
@@ -1350,6 +1637,12 @@ class SearchHandler {
             tags: tags,
             booru: booruName,
             id: tab.id,
+            group: tab.groupName,
+            poolId: tab.poolId,
+            poolName: tab.poolName,
+            doujinPostURL: tab.doujinPostURL,
+            doujinTitle: tab.doujinTitle,
+            doujinThumb: tab.doujinThumb,
             secondaryBoorus: secondaryBoorusNames,
             tagOverrides: overrides,
             inheritMainTags: inherit,
@@ -1391,7 +1684,15 @@ class SearchHandler {
       tagOverrides: backup.tagOverrides.isEmpty ? null : Map<String, String>.from(backup.tagOverrides),
       inheritMainTags:
           backup.inheritMainTags.isEmpty ? null : Map<String, bool>.from(backup.inheritMainTags),
-    );
+      // Passed to the constructor (not assigned after) so the pool handler is
+      // rebuilt on restore — otherwise the tab would come back as a plain,
+      // broken text search.
+      poolId: (backup.poolId?.isEmpty ?? true) ? null : backup.poolId,
+      poolName: (backup.poolName?.isEmpty ?? true) ? null : backup.poolName,
+      doujinPostURL: (backup.doujinPostURL?.isEmpty ?? true) ? null : backup.doujinPostURL,
+      doujinTitle: (backup.doujinTitle?.isEmpty ?? true) ? null : backup.doujinTitle,
+      doujinThumb: (backup.doujinThumb?.isEmpty ?? true) ? null : backup.doujinThumb,
+    )..groupName = (backup.group?.isEmpty ?? true) ? null : backup.group;
   }
 
   Booru handleFavDlsNameChange(Booru booru) {
@@ -1430,6 +1731,9 @@ class SearchHandler {
         // ignore: deprecated_member_use_from_same_package
         await restoreTabsLegacy(result);
       }
+      // Heal group blocks that were split by pre-fix inserts: each group's
+      // stray fragments are pulled back to its first occurrence.
+      compactGroupBlocks();
     } catch (e, s) {
       Logger.Inst().log(
         'Error restoring tabs: $e',
@@ -1545,7 +1849,23 @@ class SearchTab {
     Map<String, String>? tagOverrides,
     Map<String, bool>? inheritMainTags,
     String? tabId,
+    // Virtual/synthetic feeds (blended suggestions) supply their own handler
+    // instead of one built from the booru's type.
+    BooruHandler? customHandler,
+    // Pool tabs: identity of the pool this tab shows. Kept as tab STATE (not a
+    // tag string) because several sites have no pool metatag at all — the
+    // pool only exists as its own page there.
+    String? poolId,
+    String? poolName,
+    // Doujin detail tabs: the tab IS one doujin's detail page, not a feed.
+    // postURL is the identity; title/thumb let the tab manager render the
+    // cover before (or without) a fetch.
+    this.doujinPostURL,
+    this.doujinTitle,
+    this.doujinThumb,
   }) : id = (tabId != null && tabId.isNotEmpty) ? tabId : uuid.v4() {
+    this.poolId = poolId;
+    this.poolName = poolName;
     this.selectedBooru = selectedBooru.obs;
     this.secondaryBoorus = Rxn<List<Booru>?>(secondaryBoorus);
     if (tagOverrides != null && tagOverrides.isNotEmpty) {
@@ -1560,6 +1880,34 @@ class SearchTab {
     if (secondaryBoorus?.isNotEmpty == true) {
       tempBooruList.addAll(secondaryBoorus!);
     }
+    if (customHandler != null) {
+      booruHandler = customHandler;
+      booruHandler.pageNum = 0;
+      seedPersistedDoujinItem();
+      return;
+    }
+    // r76: a tab opened from a post's Suggested strip carries the post in
+    // its query (`suggest: … post:…`) and builds the strip's own loader,
+    // also when restored from a saved tab.
+    final SuggestionHandler? suggestions = SuggestionHandler.fromQuery(selectedBooru, 30, tags);
+    if (suggestions != null) {
+      booruHandler = suggestions;
+      booruHandler.pageNum = 0;
+      return;
+    }
+    // Rebuilt from persisted state on restore too, so a pool tab keeps
+    // working across restarts.
+    if (poolId != null && poolId.isNotEmpty) {
+      booruHandler = PoolPostsHandler(
+        selectedBooru,
+        SettingsHandler.instance.itemLimit,
+        poolId: poolId,
+        poolName: poolName,
+      );
+      booruHandler.pageNum = 0;
+      seedPersistedDoujinItem();
+      return;
+    }
     final temp = BooruHandlerFactory().getBooruHandler(tempBooruList, null);
     booruHandler = temp.booruHandler;
     booruHandler.pageNum = temp.startingPage;
@@ -1568,12 +1916,102 @@ class SearchTab {
       handler.tagOverrides = Map<String, String>.from(this.tagOverrides);
       handler.inheritMainTags = Map<String, bool>.from(this.inheritMainTags);
     }
+    seedPersistedDoujinItem();
   }
   // unique id to use for booru controller. Preserved across in-place search
   // changes and app restarts (see SearchTab tabId param + TabBackup.id) so the
   // visited-tabs history can track a tab as one entry rather than duplicating.
   final String id;
   String tags = '';
+  /// Pool this tab shows, when it is one. Drives the red "pool" chip in
+  /// TabRow and is persisted through TabBackup.
+  String? poolId;
+  String? poolName;
+  bool get isPool => poolId?.isNotEmpty ?? false;
+
+  /// Doujin detail tab state: when set, this tab renders one doujin's DETAIL
+  /// PAGE as its whole content (no feed chrome). The handler still fetches
+  /// the single item via the id: search in [tags]; these fields carry the
+  /// identity and the tab-manager cover across restarts.
+  String? doujinPostURL;
+  String? doujinTitle;
+  String? doujinThumb;
+
+  /// A REAL doujin-detail tab (created as one, or restored with the marker).
+  /// The tags heuristic keeps tabs from older backups working — they were
+  /// created as `id:` searches on a doujin source before the marker existed.
+  bool get isDoujinDetail =>
+      (doujinPostURL?.isNotEmpty ?? false) ||
+      (booruHandler.hasReader && tags.trim().toLowerCase().startsWith('id:'));
+
+  /// `id:<serverId>` or `id:<serverId>/<key>` when the post URL is `/g/{id}/{key}`
+  /// (HDoujin, niyaniya, e-hentai). Sources that only need the numeric id
+  /// (nhentai) stay `id:<n>`.
+  static String doujinIdQuery(BooruItem item) =>
+      doujinIdQueryFrom(serverId: item.serverId ?? '', postURL: item.postURL);
+
+  static String doujinIdQueryFrom({required String serverId, required String postURL}) {
+    final String id = serverId.trim();
+    if (id.isEmpty) return '';
+    final String? key = galleryKeyFromPostURL(postURL, id);
+    return key == null ? 'id:$id' : 'id:$id/$key';
+  }
+
+  static String? galleryKeyFromPostURL(String postURL, String id) {
+    if (id.isEmpty) return null;
+    final List<String> parts = [
+      for (final p in Uri.tryParse(postURL)?.pathSegments ?? const [])
+        if (p.isNotEmpty) p,
+    ];
+    final int idAt = parts.indexOf(id);
+    if (idAt >= 0 && idAt + 1 < parts.length) {
+      final String key = parts[idAt + 1];
+      if (key.isNotEmpty && key != id) return key;
+    }
+    return null;
+  }
+
+  /// After a restart the listing-key map is gone, but the tab backup still
+  /// has the gallery URL (and the key in its path). Plant a stub item so the
+  /// detail page can `loadItem` without an `id:` search that would miss.
+  bool seedPersistedDoujinItem() {
+    final String? url = doujinPostURL;
+    if (url == null || url.isEmpty) return false;
+    if (booruHandler.fetched.isNotEmpty) return false;
+    final String id = _serverIdFromDoujinTab();
+    if (id.isEmpty) return false;
+    final String thumb = doujinThumb ?? '';
+    final item = BooruItem(
+      fileURL: thumb,
+      sampleURL: thumb,
+      thumbnailURL: thumb,
+      tagsList: const [],
+      postURL: url,
+      serverId: id,
+    );
+    if (doujinTitle != null && doujinTitle!.isNotEmpty) {
+      item.description = doujinTitle;
+    }
+    booruHandler.fetched.add(item);
+    booruHandler.filterFetched();
+    return booruHandler.filteredFetched.isNotEmpty;
+  }
+
+  String _serverIdFromDoujinTab() {
+    final match = RegExp(r'^id:([^/\s]+)', caseSensitive: false).firstMatch(tags.trim());
+    if (match != null) return match.group(1)!;
+    final List<String> parts = [
+      for (final p in Uri.tryParse(doujinPostURL ?? '')?.pathSegments ?? const [])
+        if (p.isNotEmpty) p,
+    ];
+    if (parts.length >= 2 && (parts[0] == 'g' || parts[0] == 'gallery')) return parts[1];
+    return '';
+  }
+
+  // Tab group this tab belongs to (null = ungrouped). Groups are rendered as
+  // bordered blocks in the tab manager; tabs opened from within a grouped tab
+  // (tag taps etc.) inherit the group. Persisted via TabBackup.
+  String? groupName;
   // Per-booru tag overrides used when this tab is in merge mode. Keyed by
   // child booru name. Reactive so the per-booru text fields refresh when
   // a new tab is restored from a backup.
@@ -1593,9 +2031,38 @@ class SearchTab {
     }
   }
 
+  /// Rebuilds this tab around an edited booru config.
+  ///
+  /// A tab builds its handler ONCE, from the booru's type at creation time,
+  /// and holds a reference to that Booru object. Editing the booru replaces
+  /// the entry in the booru list with a new object, so without this the open
+  /// tab kept using the OLD handler forever — changing a site's type from
+  /// (say) Nozomi to Gelbooru appeared to do nothing, and the tab quietly
+  /// went on loading the old handler's hardcoded hosts.
+  void rebuildHandler(Booru booru) {
+    selectedBooru.value = booru;
+
+    final List<Booru> tempBooruList = [booru, ...?secondaryBoorus.value];
+    final temp = BooruHandlerFactory().getBooruHandler(tempBooruList, null);
+    booruHandler = temp.booruHandler;
+    booruHandler.pageNum = temp.startingPage;
+    final handler = booruHandler;
+    if (handler is MergebooruHandler) {
+      handler.tagOverrides = Map<String, String>.from(tagOverrides);
+      handler.inheritMainTags = Map<String, bool>.from(inheritMainTags);
+    }
+    // The previous handler's results came from a different site/API, so they
+    // can't be kept. Re-seed a doujin stub from the persisted URL so an
+    // HDoujin tab does not fall back to an id: search with no gallery key.
+    selected.clear();
+    seedPersistedDoujinItem();
+  }
+
   late final Rx<Booru> selectedBooru;
   late final Rxn<List<Booru>?> secondaryBoorus;
-  late final BooruHandler booruHandler;
+  // NOT final: editing a booru's config (type/URL) has to be able to swap the
+  // handler of tabs that are already open — see [rebuildHandler].
+  late BooruHandler booruHandler;
 
   double scrollPosition = 0;
   RxList<BooruItem> selected = RxList<BooruItem>.from([]);
@@ -1610,6 +2077,22 @@ class SearchTab {
     bool skipSnatching = false,
   }) async {
     final BooruItem item = booruHandler.filteredFetched[itemIndex];
+    // Doujin items NEVER touch the shared favourites DB — any caller that
+    // lands here with a doujin item (doujin tab OR a merge tab mixing one in)
+    // is rerouted to the one doujin path (doujin store + site account sync).
+    if (booruHandler.hasReader || DoujinDataHandler.isDoujinItem(item)) {
+      if (forcedValue != null && DoujinDataHandler.instance.isFavourite(item) == forcedValue) {
+        return forcedValue;
+      }
+      // In a merge tab, sync through the item's real source handler.
+      BooruHandler syncHandler = booruHandler;
+      final handler = booruHandler;
+      if (!handler.hasReader && handler is MergebooruHandler) {
+        syncHandler = handler.subHandlerForItem(item) ?? handler;
+      }
+      final result = await DoujinDataHandler.instance.toggleFavouriteSynced(item, syncHandler);
+      return result.nowFavourite;
+    }
     if (item.isFavourite.value != null) {
       if (item.tagsList.isEmpty || item.mediaType.value.isNeedToLoadItem) {
         // try to update the item before favouriting, do nothing on fail
@@ -1651,6 +2134,29 @@ class SearchTab {
         BooruUpdateMode.local,
       );
 
+      // Sources with an account (kemono) mirror the heart to the site. The
+      // local state is already set; a refusal is shown, never retried.
+      if (booruHandler.hasSiteFavourites) {
+        unawaited(
+          booruHandler.setSiteFavourite(item, newValue).then((result) {
+            if (!result.$1) {
+              FlashElements.showSnackbar(
+                title: const Text('Favourite kept on the phone only'),
+                content: Text(result.$2),
+                duration: const Duration(seconds: 5),
+                sideColor: Colors.orange,
+              );
+            }
+          }),
+        );
+      }
+
+      // Keep the post visible for the rest of this session: the favourites /
+      // snatched filters are meant to apply on LOAD, not to make a post vanish
+      // the moment you like it (which used to happen mid-video). The refilter
+      // itself stays so the blacklist and the other filters keep updating.
+      booruHandler.exemptFromLiveFilter(item);
+
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         // update filtered items list in case user has favourites filter enabled
         await Future.delayed(const Duration(milliseconds: 200));
@@ -1666,6 +2172,31 @@ class SearchTab {
     bool skipSnatching = false,
   }) async {
     final SettingsHandler settingsHandler = SettingsHandler.instance;
+
+    // Split off doujin items: they go through the one doujin favourite path
+    // (doujin store + site sync), never the booru favourites DB.
+    final List<BooruItem> doujinItems = [
+      for (final i in items)
+        if (booruHandler.hasReader || DoujinDataHandler.isDoujinItem(i)) i,
+    ];
+    if (doujinItems.isNotEmpty) {
+      items = [
+        for (final i in items)
+          if (!doujinItems.contains(i)) i,
+      ];
+      final handler = booruHandler;
+      for (final item in doujinItems) {
+        BooruHandler syncHandler = handler;
+        if (!handler.hasReader && handler is MergebooruHandler) {
+          syncHandler = handler.subHandlerForItem(item) ?? handler;
+        }
+        if (DoujinDataHandler.instance.isFavourite(item) != newValue) {
+          await DoujinDataHandler.instance.toggleFavouriteSynced(item, syncHandler);
+        }
+        booruHandler.exemptFromLiveFilter(item);
+      }
+      if (items.isEmpty) return;
+    }
     if (!skipSnatching && settingsHandler.snatchOnFavourite && newValue) {
       SnatchHandler.instance.queue(
         items.where((e) => e.isSnatched.value != true).toList(),
@@ -1677,6 +2208,9 @@ class SearchTab {
 
     for (final BooruItem item in items) {
       item.isFavourite.value = newValue;
+      // Same rule as the single-item path: liking something in bulk shouldn't
+      // make it disappear until the feed is reloaded.
+      booruHandler.exemptFromLiveFilter(item);
     }
 
     await settingsHandler.dbHandler.updateMultipleBooruItems(
@@ -1702,6 +2236,12 @@ class TabBackup {
     required this.tags,
     required this.booru,
     this.id,
+    this.group,
+    this.poolId,
+    this.poolName,
+    this.doujinPostURL,
+    this.doujinTitle,
+    this.doujinThumb,
     this.secondaryBoorus = const [],
     this.tagOverrides = const {},
     this.inheritMainTags = const {},
@@ -1712,6 +2252,19 @@ class TabBackup {
   // Stable tab id, so a restored tab keeps the same identity the visited-tabs
   // history recorded. Optional for backward-compat with older backups.
   final String? id;
+  // Tab group name (null/absent = ungrouped).
+  final String? group;
+  // Pool this tab shows, when it is a pool tab. Persisted so a restored pool
+  // tab still fetches pool contents (and still shows its chip) instead of
+  // degrading into a plain — and broken — text search.
+  final String? poolId;
+  final String? poolName;
+  // Doujin detail tab: this tab is one doujin's detail page. Persisted so a
+  // restored tab comes back as a detail-page tab with its cover in the tab
+  // manager, not as a plain search feed.
+  final String? doujinPostURL;
+  final String? doujinTitle;
+  final String? doujinThumb;
   final List<String> secondaryBoorus;
   // Per-booru tag overrides used in merge mode. Keys are booru names; missing
   // entries (or older backups without this field) fall back to `tags`.
@@ -1726,6 +2279,12 @@ class TabBackup {
       't': tags,
       'b': booru,
       if (id != null) 'i': id,
+      if (group != null && group!.isNotEmpty) 'g': group,
+      if (poolId != null && poolId!.isNotEmpty) 'p': poolId,
+      if (poolName != null && poolName!.isNotEmpty) 'pn': poolName,
+      if (doujinPostURL != null && doujinPostURL!.isNotEmpty) 'dp': doujinPostURL,
+      if (doujinTitle != null && doujinTitle!.isNotEmpty) 'dt': doujinTitle,
+      if (doujinThumb != null && doujinThumb!.isNotEmpty) 'dth': doujinThumb,
       if (secondaryBoorus.isNotEmpty) 'sb': secondaryBoorus,
       if (tagOverrides.isNotEmpty) 'to': tagOverrides,
       if (inheritMainTags.isNotEmpty) 'in': inheritMainTags,
@@ -1739,6 +2298,12 @@ class TabBackup {
         tags: json['t'] as String,
         booru: json['b'] as String,
         id: json['i'] as String?,
+        group: json['g'] as String?,
+        poolId: json['p'] as String?,
+        poolName: json['pn'] as String?,
+        doujinPostURL: json['dp'] as String?,
+        doujinTitle: json['dt'] as String?,
+        doujinThumb: json['dth'] as String?,
         secondaryBoorus: (json['sb'] as List<dynamic>?)?.map((e) => e as String).toList() ?? const [],
         tagOverrides:
             (json['to'] as Map<String, dynamic>?)?.map((k, v) => MapEntry(k, v.toString())) ?? const {},

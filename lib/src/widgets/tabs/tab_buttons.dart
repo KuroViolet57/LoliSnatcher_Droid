@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:get/get.dart';
 
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
@@ -49,7 +51,7 @@ class TabButtons extends StatelessWidget {
 
       // Prev tab
       final Widget leftArrow = IconButton(
-        icon: const Icon(Icons.arrow_upward),
+        icon: const Icon(Symbols.arrow_upward_rounded),
         color: iconColor,
         onPressed: () {
           // switch to the prev tab, loop if reached the first
@@ -63,7 +65,7 @@ class TabButtons extends StatelessWidget {
 
       // Next tab
       final Widget rightArrow = IconButton(
-        icon: const Icon(Icons.arrow_downward),
+        icon: const Icon(Symbols.arrow_downward_rounded),
         color: iconColor,
         onPressed: () {
           // switch to the next tab, loop if reached the last
@@ -77,32 +79,42 @@ class TabButtons extends StatelessWidget {
 
       // Remove current tab
       final Widget removeButton = IconButton(
-        icon: const Icon(Icons.remove_circle_outline),
+        icon: const Icon(Symbols.remove_circle_rounded),
         color: iconColor,
         // Remove selected searchtab from list and apply nearest to search bar
         onPressed: searchHandler.removeTabAt,
       );
 
       // Add new tab
-      final Widget addButton = GestureDetector(
+      // Tap and long-press live on the SAME widget on purpose. This used to be
+      // a GestureDetector wrapped around an IconButton, and the long-press
+      // never reached the picker: IconButton builds its own InkResponse, whose
+      // tap recognizer is the innermost entry in the gesture arena, so the
+      // ancestor detector lost the contest under real touch input. InkResponse
+      // handles both gestures itself, so there is no arena to lose.
+      final Widget addButton = InkResponse(
+        onTap: () {
+          final String defaultText = searchHandler.currentBooru.defTags?.isNotEmpty == true
+              ? searchHandler.currentBooru.defTags!
+              : SettingsHandler.instance.defTags;
+          // add new tab to the list end and switch to it
+          searchHandler.searchTextController.text = defaultText;
+          searchHandler.addTabByString(defaultText, switchToNew: true);
+        },
         onLongPress: () => showLongTapAddDialog(context),
-        child: IconButton(
-          icon: const Icon(Icons.add_circle_outline),
-          color: iconColor,
-          onPressed: () {
-            final String defaultText = searchHandler.currentBooru.defTags?.isNotEmpty == true
-                ? searchHandler.currentBooru.defTags!
-                : SettingsHandler.instance.defTags;
-            // add new tab to the list end and switch to it
-            searchHandler.searchTextController.text = defaultText;
-            searchHandler.addTabByString(defaultText, switchToNew: true);
-          },
+        radius: 24,
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Icon(
+            Symbols.add_circle_rounded,
+            color: iconColor,
+          ),
         ),
       );
 
       // Show search history
       final Widget historyButton = IconButton(
-        icon: const Icon(Icons.history),
+        icon: const Icon(Symbols.history_rounded),
         color: iconColor,
         onPressed: () async {
           await showHistory(context);
@@ -111,7 +123,7 @@ class TabButtons extends StatelessWidget {
 
       // Show page number dialog
       final Widget pageNumberNutton = IconButton(
-        icon: const Icon(Icons.format_list_numbered),
+        icon: const Icon(Symbols.format_list_numbered_rounded),
         color: iconColor,
         onPressed: () {
           SettingsPageOpen(

@@ -1,6 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 
 /// A compact error widget that replaces Flutter's default ErrorWidget.
@@ -60,7 +62,7 @@ class CompactErrorWidget extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                Icons.error_outline,
+                Symbols.error_rounded,
                 color: errorColor,
                 size: 16,
               ),
@@ -91,7 +93,7 @@ class CompactErrorWidget extends StatelessWidget {
                   ),
                 );
               },
-              icon: Icon(Icons.copy, size: 12, color: onErrorColor),
+              icon: Icon(Symbols.content_copy_rounded, size: 12, color: onErrorColor),
               label: Text(
                 'Copy details',
                 style: TextStyle(fontSize: 10, color: onErrorColor),
@@ -111,7 +113,7 @@ class CompactErrorWidget extends StatelessWidget {
                 onPressed: () {
                   Navigator.of(context).pop();
                 },
-                icon: Icon(Icons.keyboard_return_rounded, size: 12, color: onErrorColor),
+                icon: Icon(Symbols.keyboard_return_rounded, size: 12, color: onErrorColor),
                 label: Text(
                   'Return',
                   style: TextStyle(fontSize: 10, color: onErrorColor),

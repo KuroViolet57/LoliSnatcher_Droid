@@ -3,6 +3,8 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 
 import 'package:lolisnatcher/src/data/settings/image_quality.dart';
@@ -175,7 +177,7 @@ class _SaveCachePageState extends State<SaveCachePage> {
 
     return SettingsButton(
       name: '$label: $text',
-      icon: isLoading ? const CircularProgressIndicator() : Icon(allowedToClear ? Icons.delete_forever : null),
+      icon: isLoading ? const CircularProgressIndicator() : Icon(allowedToClear ? Symbols.delete_forever_rounded : null),
       action: () async {
         if (allowedToClear) {
           FlashElements.showSnackbar(
@@ -190,7 +192,7 @@ class _SaveCachePageState extends State<SaveCachePage> {
               context.loc.settings.cache.clearedCacheType(type: label),
               style: const TextStyle(fontSize: 16),
             ),
-            leadingIcon: Icons.delete_forever,
+            leadingIcon: Symbols.delete_forever_rounded,
             leadingIconColor: Colors.red,
             leadingIconSize: 40,
             sideColor: Colors.yellow,
@@ -266,9 +268,9 @@ class _SaveCachePageState extends State<SaveCachePage> {
                 },
                 trailingIcon: const Row(
                   children: [
-                    Icon(Icons.favorite, color: Colors.red),
-                    Icon(Icons.arrow_right_alt_rounded),
-                    Icon(Icons.save),
+                    Icon(Symbols.favorite_rounded, color: Colors.red),
+                    Icon(Symbols.arrow_right_alt_rounded),
+                    Icon(Symbols.save_rounded),
                   ],
                 ),
                 title: context.loc.settings.cache.snatchItemsOnFavouriting,
@@ -282,9 +284,9 @@ class _SaveCachePageState extends State<SaveCachePage> {
                 },
                 trailingIcon: const Row(
                   children: [
-                    Icon(Icons.save),
-                    Icon(Icons.arrow_right_alt_rounded),
-                    Icon(Icons.favorite, color: Colors.red),
+                    Icon(Symbols.save_rounded),
+                    Icon(Symbols.arrow_right_alt_rounded),
+                    Icon(Symbols.favorite_rounded, color: Colors.red),
                   ],
                 ),
                 title: context.loc.settings.cache.favouriteItemsOnSnatching,
@@ -307,7 +309,7 @@ class _SaveCachePageState extends State<SaveCachePage> {
                 subtitle: extPathOverride.isEmpty
                     ? null
                     : Text(context.loc.settings.cache.currentPath(path: extPathOverride)),
-                icon: const Icon(Icons.folder_outlined),
+                icon: const Icon(Symbols.folder_rounded),
                 action: () async {
                   //String url = await ServiceHandler.setExtDir();
 
@@ -347,7 +349,7 @@ class _SaveCachePageState extends State<SaveCachePage> {
                         context.loc.settings.cache.notAvailableForPlatform,
                         style: const TextStyle(fontSize: 16),
                       ),
-                      leadingIcon: Icons.error_outline,
+                      leadingIcon: Symbols.error_rounded,
                       leadingIconColor: Colors.red,
                       sideColor: Colors.red,
                     );
@@ -357,7 +359,7 @@ class _SaveCachePageState extends State<SaveCachePage> {
               if (extPathOverride.isNotEmpty)
                 SettingsButton(
                   name: context.loc.settings.cache.resetStorageDirectory,
-                  icon: const Icon(Icons.refresh),
+                  icon: const Icon(Symbols.refresh_rounded),
                   action: () {
                     setState(() {
                       extPathOverride = '';
@@ -394,7 +396,7 @@ class _SaveCachePageState extends State<SaveCachePage> {
                 title: context.loc.settings.cache.videoCacheMode,
                 itemTitleBuilder: (e) => e?.locName ?? '',
                 trailingIcon: IconButton(
-                  icon: const Icon(Icons.help_outline),
+                  icon: const Icon(Symbols.help_rounded),
                   onPressed: () {
                     showDialog(
                       context: context,
@@ -452,7 +454,7 @@ class _SaveCachePageState extends State<SaveCachePage> {
               SettingsButton(
                 name: context.loc.settings.cache.clearAllCache,
                 icon: Icon(
-                  Icons.delete_forever,
+                  Symbols.delete_forever_rounded,
                   color: Theme.of(context).colorScheme.error,
                 ),
                 action: () async {
@@ -476,7 +478,7 @@ class _SaveCachePageState extends State<SaveCachePage> {
                         ),
                       ],
                     ),
-                    leadingIcon: Icons.delete_forever,
+                    leadingIcon: Symbols.delete_forever_rounded,
                     leadingIconColor: Colors.red,
                     leadingIconSize: 40,
                     sideColor: Colors.yellow,

@@ -48,7 +48,13 @@ class DioDownloader {
     receivePort.close();
     isolate?.kill(priority: Isolate.immediate);
     isolate = null;
-    currentClient?.close(force: true);
+    // Abort any in-flight request via its cancel token — do NOT close the
+    // client, it's the app-wide shared pooled HttpClient now.
+    if (cancelToken?.isCancelled == false) {
+      try {
+        cancelToken?.cancel();
+      } catch (_) {}
+    }
     currentClient = null;
   }
 
@@ -198,7 +204,7 @@ class DioDownloader {
         cancelToken: cancelToken,
         onReceiveProgress: onProgress,
       );
-      currentClient!.close();
+      // shared HttpClient — do not close
 
       if (response.isRedirect == true && isRedirectBroken(response)) {
         throw DioLoadException(
@@ -315,7 +321,7 @@ class DioDownloader {
         cancelToken: cancelToken,
         onReceiveProgress: onProgress,
       );
-      currentClient!.close();
+      // shared HttpClient — do not close
 
       if (response.isRedirect == true && isRedirectBroken(response)) {
         throw DioLoadException(
@@ -434,7 +440,7 @@ class DioDownloader {
         onReceiveProgress: onProgress,
         deleteOnError: true,
       );
-      currentClient!.close();
+      // shared HttpClient — do not close
 
       if (response.isRedirect == true && isRedirectBroken(response)) {
         throw DioLoadException(
@@ -503,7 +509,7 @@ class DioDownloader {
         ),
         cancelToken: cancelToken,
       );
-      currentClient!.close();
+      // shared HttpClient — do not close
 
       // print('response size: ${response.headers['content-length']}');
 

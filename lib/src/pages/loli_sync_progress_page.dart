@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:lolisnatcher/src/handlers/loli_sync_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -125,14 +127,14 @@ class _LoliSyncProgressPageState extends State<LoliSyncProgressPage> {
           ),
           actionButtons: [
             ElevatedButton.icon(
-              icon: const Icon(Icons.cancel),
+              icon: const Icon(Symbols.cancel_rounded),
               label: Text(context.loc.no),
               onPressed: () {
                 Navigator.of(context).pop(false);
               },
             ),
             ElevatedButton.icon(
-              icon: const Icon(Icons.exit_to_app),
+              icon: const Icon(Symbols.exit_to_app_rounded),
               label: Text(context.loc.yes),
               onPressed: () {
                 if (widget.type == 'sender') {
@@ -176,7 +178,7 @@ class _LoliSyncProgressPageState extends State<LoliSyncProgressPage> {
         appBar: SettingsAppBar(
           title: context.loc.loliSync.title,
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back),
+            icon: const Icon(Symbols.arrow_back_rounded),
             onPressed: () async {
               if (await _onWillPop()) {
                 Navigator.of(context).pop();
@@ -215,7 +217,7 @@ class _LoliSyncProgressPageState extends State<LoliSyncProgressPage> {
                 child: Column(
                   children: [
                     const SizedBox(height: 10),
-                    Icon(widget.type == 'sender' ? Icons.sync : Icons.dns_outlined, size: 250),
+                    Icon(widget.type == 'sender' ? Symbols.sync_rounded : Symbols.dns_rounded, size: 250),
                     const SizedBox(height: 10),
                     if (Platform.isAndroid || Platform.isIOS)
                       SettingsToggle(

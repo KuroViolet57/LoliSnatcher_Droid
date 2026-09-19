@@ -25,11 +25,16 @@ class TagsManagerListItem extends StatelessWidget {
     final String staleText = (isStale && debug) ? ' (stale)' : '';
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 0, vertical: 4),
+      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainer,
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+      ),
+      clipBehavior: Clip.antiAlias,
       child: ListTile(
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(5),
-          side: const BorderSide(color: Colors.grey),
+          borderRadius: BorderRadius.circular(13),
         ),
         onTap: onTap,
         minLeadingWidth: 20,

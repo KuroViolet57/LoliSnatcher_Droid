@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/widgets/common/transparent_pointer.dart';
 
@@ -80,7 +82,7 @@ class ImageTutorial extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.image_outlined, size: 28),
+                const Icon(Symbols.image_rounded, size: 28),
                 const SizedBox(width: 8),
                 Text(context.loc.viewer.tutorial.images, style: const TextStyle(color: Colors.white, fontSize: 28)),
               ],

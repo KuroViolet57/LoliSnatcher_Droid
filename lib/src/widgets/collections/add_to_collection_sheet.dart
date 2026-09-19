@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
+import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/collection_info.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/interests_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
@@ -16,12 +20,149 @@ Future<void> showAddToCollectionSheet(
   List<BooruItem> items,
 ) async {
   if (items.isEmpty) return;
-  await showModalBottomSheet<void>(
+  // Per-ITEM routing: doujin items go to DOUJIN collections (doujinData.json),
+  // booru items to the booru Collection tables — regardless of which tab or
+  // viewer they came from (merge tabs / floating previews included). A mixed
+  // batch shows both sheets, one after the other.
+  final List<BooruItem> doujinItems = [
+    for (final i in items)
+      if (DoujinDataHandler.isDoujinItem(i)) i,
+  ];
+  final List<BooruItem> booruItems = [
+    for (final i in items)
+      if (!DoujinDataHandler.isDoujinItem(i)) i,
+  ];
+  if (doujinItems.isNotEmpty) {
+    await showDoujinCollectionPicker(
+      context,
+      items: doujinItems,
+      booru: DoujinDataHandler.doujinBooruForItem(doujinItems.first),
+    );
+  }
+  if (booruItems.isNotEmpty && context.mounted) {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => _AddToCollectionSheet(items: booruItems),
+    );
+  }
+}
+
+/// The doujin collection picker — a CENTERED popup (doujin surfaces use
+/// dialogs, not sheets), backed by [DoujinDataHandler] only. Used by the
+/// add-to-collection flow and the bookmark button's long-press.
+Future<void> showDoujinCollectionPicker(
+  BuildContext context, {
+  required List<BooruItem> items,
+  Booru? booru,
+}) async {
+  if (items.isEmpty) return;
+  await showDialog<void>(
     context: context,
-    isScrollControlled: true,
-    showDragHandle: true,
-    builder: (_) => _AddToCollectionSheet(items: items),
+    builder: (_) => Dialog(
+      clipBehavior: Clip.antiAlias,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 360),
+        child: SingleChildScrollView(
+          child: _DoujinCollectionPicker(items: items, booru: booru),
+        ),
+      ),
+    ),
   );
+}
+
+class _DoujinCollectionPicker extends StatefulWidget {
+  const _DoujinCollectionPicker({required this.items, required this.booru});
+
+  final List<BooruItem> items;
+  final Booru? booru;
+
+  @override
+  State<_DoujinCollectionPicker> createState() => _DoujinCollectionPickerState();
+}
+
+class _DoujinCollectionPickerState extends State<_DoujinCollectionPicker> {
+  final store = DoujinDataHandler.instance..ensureLoaded();
+
+  bool get isSingle => widget.items.length == 1;
+
+  Future<void> _createNew() async {
+    final controller = TextEditingController();
+    final String? name = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('New doujin collection'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: 'Name'),
+          onSubmitted: (v) => Navigator.of(context).pop(v),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.of(context).pop(controller.text), child: const Text('Create')),
+        ],
+      ),
+    );
+    if (name == null || name.trim().isEmpty) return;
+    final collection = store.createCollection(name.trim());
+    _addAllTo(collection);
+  }
+
+  void _addAllTo(DoujinCollection collection) {
+    for (final item in widget.items) {
+      store.addToCollection(collection, item, widget.booru);
+    }
+    if (mounted) Navigator.of(context).pop();
+    FlashElements.showSnackbar(
+      title: Text('Added to "${collection.name}"'),
+      duration: const Duration(seconds: 2),
+      sideColor: Colors.green,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Text(
+              isSingle ? 'Add to doujin collection' : 'Add ${widget.items.length} doujins to collection',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Symbols.create_new_folder_rounded),
+            title: const Text('New collection'),
+            onTap: _createNew,
+          ),
+          for (final c in store.collections)
+            ListTile(
+              leading: Icon(
+                isSingle && store.collectionContains(c, widget.items.first)
+                    ? Symbols.check_circle_rounded
+                    : Symbols.folder_rounded,
+              ),
+              title: Text(c.name),
+              subtitle: Text('${c.items.length} doujins'),
+              onTap: () {
+                if (isSingle && store.collectionContains(c, widget.items.first)) {
+                  // toggle off for a single item
+                  store.removeFromCollection(c, widget.items.first);
+                  Navigator.of(context).pop();
+                  return;
+                }
+                _addAllTo(c);
+              },
+            ),
+        ],
+      ),
+    );
+  }
 }
 
 class _AddToCollectionSheet extends StatefulWidget {
@@ -79,7 +220,7 @@ class _AddToCollectionSheetState extends State<_AddToCollectionSheet> {
       context: context,
       duration: const Duration(seconds: 2),
       title: Text('Added $added to "${c.name}"', style: const TextStyle(fontSize: 18)),
-      leadingIcon: Icons.playlist_add_check,
+      leadingIcon: Symbols.playlist_add_check_rounded,
       sideColor: Colors.green,
     );
   }
@@ -104,7 +245,7 @@ class _AddToCollectionSheetState extends State<_AddToCollectionSheet> {
         context: context,
         duration: const Duration(seconds: 2),
         title: Text('Added $added to "$name"', style: const TextStyle(fontSize: 18)),
-        leadingIcon: Icons.playlist_add_check,
+        leadingIcon: Symbols.playlist_add_check_rounded,
         sideColor: Colors.green,
       );
     }
@@ -123,7 +264,7 @@ class _AddToCollectionSheetState extends State<_AddToCollectionSheet> {
               padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
               child: Row(
                 children: [
-                  const Icon(Icons.collections_bookmark_outlined),
+                  const Icon(Symbols.collections_bookmark_rounded),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
@@ -141,7 +282,7 @@ class _AddToCollectionSheetState extends State<_AddToCollectionSheet> {
                       shrinkWrap: true,
                       children: [
                         ListTile(
-                          leading: const Icon(Icons.add, color: Colors.green),
+                          leading: const Icon(Symbols.add_rounded, color: Colors.green),
                           title: const Text('New collection'),
                           onTap: _createCollection,
                         ),
@@ -158,17 +299,17 @@ class _AddToCollectionSheetState extends State<_AddToCollectionSheet> {
                           if (isSingle)
                             CheckboxListTile(
                               value: memberOf.contains(c.id),
-                              secondary: const Icon(Icons.folder_outlined),
+                              secondary: const Icon(Symbols.folder_rounded),
                               title: Text(c.name, maxLines: 1, overflow: TextOverflow.ellipsis),
                               subtitle: Text('${c.itemCount}'),
                               onChanged: (_) => _toggleSingle(c),
                             )
                           else
                             ListTile(
-                              leading: const Icon(Icons.folder_outlined),
+                              leading: const Icon(Symbols.folder_rounded),
                               title: Text(c.name, maxLines: 1, overflow: TextOverflow.ellipsis),
                               subtitle: Text('${c.itemCount}'),
-                              trailing: const Icon(Icons.add),
+                              trailing: const Icon(Symbols.add_rounded),
                               onTap: () => _addBatch(c),
                             ),
                         const SizedBox(height: 12),

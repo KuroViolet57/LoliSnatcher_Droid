@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:get/get.dart';
 
 import 'package:lolisnatcher/gen/strings.g.dart';
@@ -42,7 +44,7 @@ class DDQueueControls extends StatelessWidget {
                         }
                       }
                     },
-                    icon: snatchHandler.active.value ? const Icon(Icons.pause) : const Icon(Icons.play_arrow),
+                    icon: snatchHandler.active.value ? const Icon(Symbols.pause_rounded) : const Icon(Symbols.play_arrow_rounded),
                     name: snatchHandler.active.value ? context.loc.pause : context.loc.resume,
                     subtitle: snatchHandler.active.value
                         ? Text('(${context.loc.settings.downloads.fromNextItemInQueue})')
@@ -66,7 +68,7 @@ class DDQueueControls extends StatelessWidget {
                     drawTopBorder: true,
                     action: () => controller.onRetryAllFailed(false),
                     onLongPress: () => controller.onRetryAllFailed(true),
-                    icon: const Icon(Icons.refresh),
+                    icon: const Icon(Symbols.refresh_rounded),
                     name: context.loc.mobileHome.retryAll(
                       count:
                           snatchHandler.existsItems.length +
@@ -92,7 +94,7 @@ class DDQueueControls extends StatelessWidget {
                     drawBottomBorder: false,
                     drawTopBorder: true,
                     action: snatchHandler.onClearRetryableItems,
-                    icon: const Icon(Icons.delete_forever),
+                    icon: const Icon(Symbols.delete_forever_rounded),
                     name: context.loc.mobileHome.clearAllRetryableItems,
                   ),
           ),

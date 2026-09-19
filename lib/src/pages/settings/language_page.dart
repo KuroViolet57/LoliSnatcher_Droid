@@ -4,6 +4,8 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:country_flags/country_flags.dart';
 import 'package:lolisnatcher/src/data/constants.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
@@ -33,7 +35,7 @@ class LanguageSettingsPage extends StatelessWidget {
             SettingsButton(
               name: context.loc.settings.language.visitForDetails,
               useHtml: true,
-              trailingIcon: const Icon(Icons.exit_to_app),
+              trailingIcon: const Icon(Symbols.exit_to_app_rounded),
             ),
             const SizedBox(height: 12),
             const Padding(
@@ -126,7 +128,7 @@ Widget buildFlag(BuildContext context, AppLocale? locale) {
         borderRadius: BorderRadius.circular(6),
       ),
       child: Icon(
-        Icons.settings,
+        Symbols.settings_rounded,
         size: 20,
         color: Theme.of(context).colorScheme.onSecondaryContainer,
       ),
@@ -344,7 +346,7 @@ class _POEditorProgressWidgetState extends State<POEditorProgressWidget> {
                   top: 12,
                   right: 12,
                   child: Icon(
-                    Icons.exit_to_app,
+                    Symbols.exit_to_app_rounded,
                     size: 24,
                   ),
                 ),

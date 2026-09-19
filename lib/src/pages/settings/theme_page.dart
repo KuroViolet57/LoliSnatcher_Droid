@@ -5,6 +5,8 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:flex_color_picker/flex_color_picker.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -219,10 +221,10 @@ class _ThemePageState extends State<ThemePage> {
       },
       actionButtons: const ColorPickerActionButtons(
         // okButton: true,
-        okIcon: Icons.save,
+        okIcon: Symbols.save_rounded,
         dialogOkButtonType: ColorPickerActionButtonType.elevated,
         // closeButton: true,
-        closeIcon: Icons.keyboard_return_rounded,
+        closeIcon: Symbols.keyboard_return_rounded,
         dialogCancelButtonType: ColorPickerActionButtonType.elevated,
         dialogActionIcons: true,
         dialogActionButtons: true,
@@ -263,8 +265,8 @@ class _ThemePageState extends State<ThemePage> {
                     width: size,
                     height: size,
                     child: switch (item) {
-                      ThemeMode.dark => const Icon(Icons.dark_mode),
-                      ThemeMode.light => const Icon(Icons.light_mode),
+                      ThemeMode.dark => const Icon(Symbols.dark_mode_rounded),
+                      ThemeMode.light => const Icon(Symbols.light_mode_rounded),
                       ThemeMode.system => Stack(
                         alignment: Alignment.center,
                         children: [
@@ -272,14 +274,14 @@ class _ThemePageState extends State<ThemePage> {
                             clipper: _SunClipper(),
                             child: const Padding(
                               padding: EdgeInsets.only(right: 8),
-                              child: Icon(Icons.light_mode),
+                              child: Icon(Symbols.light_mode_rounded),
                             ),
                           ),
                           ClipPath(
                             clipper: _MoonClipper(),
                             child: const Padding(
                               padding: EdgeInsets.only(left: 5),
-                              child: Icon(Icons.dark_mode),
+                              child: Icon(Symbols.dark_mode_rounded),
                             ),
                           ),
                         ],
@@ -376,7 +378,7 @@ class _ThemePageState extends State<ThemePage> {
                           ),
                           'Custom' => const Padding(
                             padding: EdgeInsets.only(left: 8),
-                            child: Icon(Icons.build),
+                            child: Icon(Symbols.build_rounded),
                           ),
                           _ => const SizedBox.shrink(),
                         },
@@ -455,7 +457,7 @@ class _ThemePageState extends State<ThemePage> {
               if (theme.name == 'Custom' && !useDynamicColor)
                 SettingsButton(
                   name: context.loc.reset,
-                  icon: const Icon(Icons.refresh),
+                  icon: const Icon(Symbols.refresh_rounded),
                   action: () {
                     final ThemeItem theme = settingsHandler.map['theme']!['default'];
                     primaryPickerColor = theme.primary;
@@ -470,20 +472,20 @@ class _ThemePageState extends State<ThemePage> {
                   fontFamily == 'System' ? context.loc.settings.theme.systemDefault : fontFamily,
                   style: _getFontStyle(fontFamily),
                 ),
-                icon: const Icon(Icons.font_download),
+                icon: const Icon(Symbols.font_download_rounded),
                 trailingIcon: fontFamily == 'System'
                     ? null
                     : Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           IconButton(
-                            icon: const Icon(Icons.refresh),
+                            icon: const Icon(Symbols.refresh_rounded),
                             onPressed: () {
                               fontFamily = 'System';
                               updateTheme();
                             },
                           ),
-                          const Icon(Icons.chevron_right),
+                          const Icon(Symbols.chevron_right_rounded),
                         ],
                       ),
                 action: _showFontPicker,
@@ -502,7 +504,7 @@ class _ThemePageState extends State<ThemePage> {
                 subtitle: mascotPathOverride.isEmpty
                     ? null
                     : Text('${context.loc.settings.theme.currentMascotPath}: $mascotPathOverride'),
-                icon: const Icon(Icons.image_search_outlined),
+                icon: const Icon(Symbols.image_search_rounded),
                 action: () async {
                   mascotPathOverride = await ServiceHandler.getImageSAFUri();
                   needToWriteMascot = true;
@@ -512,7 +514,7 @@ class _ThemePageState extends State<ThemePage> {
               if (mascotPathOverride.isNotEmpty)
                 SettingsButton(
                   name: context.loc.settings.theme.removeCustomMascot,
-                  icon: const Icon(Icons.delete_forever),
+                  icon: const Icon(Symbols.delete_forever_rounded),
                   action: () async {
                     final File file = File(mascotPathOverride);
                     if (await file.exists()) {
@@ -706,7 +708,7 @@ class _FontPickerSheetState extends State<_FontPickerSheet> {
               ),
               const Spacer(),
               IconButton(
-                icon: const Icon(Icons.close),
+                icon: const Icon(Symbols.close_rounded),
                 onPressed: () => Navigator.of(context).pop(),
               ),
             ],
@@ -727,7 +729,7 @@ class _FontPickerSheetState extends State<_FontPickerSheet> {
                 // "View more fonts" button (when collapsed)
                 if (!showAllFonts && index == fontsToShow.length) {
                   return ListTile(
-                    leading: const Icon(Icons.expand_more),
+                    leading: const Icon(Symbols.expand_more_rounded),
                     title: Text(context.loc.settings.theme.viewMoreFonts),
                     onTap: () => setState(() => showAllFonts = true),
                   );
@@ -741,10 +743,10 @@ class _FontPickerSheetState extends State<_FontPickerSheet> {
                       selectedFont != 'System';
 
                   return ListTile(
-                    leading: isCustomSelected ? const Icon(Icons.check) : const SizedBox(width: 24),
+                    leading: isCustomSelected ? const Icon(Symbols.check_rounded) : const SizedBox(width: 24),
                     title: Text(context.loc.settings.theme.customFont),
                     subtitle: Text(context.loc.settings.theme.customFontSubtitle),
-                    trailing: const Icon(Icons.edit),
+                    trailing: const Icon(Symbols.edit_rounded),
                     selectedTileColor: Theme.of(context).colorScheme.secondary,
                     selectedColor: Theme.of(context).colorScheme.onSecondary,
                     selected: isCustomSelected,
@@ -759,7 +761,7 @@ class _FontPickerSheetState extends State<_FontPickerSheet> {
                 return Material(
                   color: Colors.transparent,
                   child: ListTile(
-                    leading: isSelected ? const Icon(Icons.check) : const SizedBox(width: 24),
+                    leading: isSelected ? const Icon(Symbols.check_rounded) : const SizedBox(width: 24),
                     title: Text(
                       font == 'System' ? context.loc.settings.theme.systemDefault : font,
                       style: fontStyle?.copyWith(fontSize: 16),
@@ -797,7 +799,7 @@ class _FontPickerSheetState extends State<_FontPickerSheet> {
                   child: Row(
                     spacing: 12,
                     children: [
-                      const Icon(Icons.check),
+                      const Icon(Symbols.check_rounded),
                       Expanded(
                         child: Text(
                           selectedFont == 'System' ? context.loc.settings.theme.systemDefault : selectedFont,

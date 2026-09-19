@@ -3,6 +3,8 @@ import 'dart:core';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 
 import 'package:lolisnatcher/src/handlers/loli_sync_handler.dart';
@@ -218,7 +220,7 @@ class _LoliSyncPageState extends State<LoliSyncPage> {
           ],
         ),
         sideColor: Colors.red,
-        leadingIcon: Icons.error,
+        leadingIcon: Symbols.error_rounded,
         leadingIconColor: Colors.red,
       );
       return;
@@ -253,7 +255,7 @@ class _LoliSyncPageState extends State<LoliSyncPage> {
       children: [
         SettingsButton(
           name: context.loc.settings.sync.selectWhatYouWantToDo,
-          icon: const Icon(Icons.help_center_outlined),
+          icon: const Icon(Symbols.help_center_rounded),
           enabled: false,
         ),
         const SettingsButton(
@@ -262,7 +264,7 @@ class _LoliSyncPageState extends State<LoliSyncPage> {
         ),
         SettingsButton(
           name: context.loc.settings.sync.sendDataToDevice,
-          icon: const Icon(Icons.send_to_mobile),
+          icon: const Icon(Symbols.send_to_mobile_rounded),
           action: () {
             syncSide = SyncSide.sender;
             updateState();
@@ -270,7 +272,7 @@ class _LoliSyncPageState extends State<LoliSyncPage> {
         ),
         SettingsButton(
           name: context.loc.settings.sync.receiveDataFromDevice,
-          icon: const Icon(Icons.dns_outlined),
+          icon: const Icon(Symbols.dns_rounded),
           action: () {
             syncSide = SyncSide.receiver;
             updateState();
@@ -349,7 +351,7 @@ class _LoliSyncPageState extends State<LoliSyncPage> {
                   numberMin: 0,
                   numberMax: favCount?.toDouble() ?? double.infinity,
                   trailingIcon: IconButton(
-                    icon: const Icon(Icons.help_outline),
+                    icon: const Icon(Symbols.help_rounded),
                     onPressed: () {
                       showDialog(
                         context: context,
@@ -401,7 +403,7 @@ class _LoliSyncPageState extends State<LoliSyncPage> {
                   numberMin: 0,
                   numberMax: snatchedCount?.toDouble() ?? double.infinity,
                   trailingIcon: IconButton(
-                    icon: const Icon(Icons.help_outline),
+                    icon: const Icon(Symbols.help_rounded),
                     onPressed: () {
                       showDialog(
                         context: context,
@@ -471,7 +473,7 @@ class _LoliSyncPageState extends State<LoliSyncPage> {
                   title: context.loc.settings.sync.tabsSyncMode,
                   itemTitleBuilder: (m) => m?.locName ?? '',
                   trailingIcon: IconButton(
-                    icon: const Icon(Icons.help_outline),
+                    icon: const Icon(Symbols.help_rounded),
                     onPressed: () {
                       showDialog(
                         context: context,
@@ -520,7 +522,7 @@ class _LoliSyncPageState extends State<LoliSyncPage> {
                   title: context.loc.settings.sync.tagsSyncMode,
                   itemTitleBuilder: (m) => m?.locName ?? '',
                   trailingIcon: IconButton(
-                    icon: const Icon(Icons.help_outline),
+                    icon: const Icon(Symbols.help_rounded),
                     onPressed: () {
                       showDialog(
                         context: context,
@@ -547,10 +549,10 @@ class _LoliSyncPageState extends State<LoliSyncPage> {
         const SettingsButton(name: '', enabled: false),
         SettingsButton(
           name: context.loc.settings.sync.testConnection,
-          icon: const Icon(Icons.wifi_tethering),
+          icon: const Icon(Symbols.wifi_tethering_rounded),
           action: sendTestRequest,
           trailingIcon: IconButton(
-            icon: const Icon(Icons.help_outline),
+            icon: const Icon(Symbols.help_rounded),
             onPressed: () {
               showDialog(
                 context: context,
@@ -569,7 +571,7 @@ class _LoliSyncPageState extends State<LoliSyncPage> {
         ),
         SettingsButton(
           name: context.loc.settings.sync.startSync,
-          icon: const Icon(Icons.send_to_mobile),
+          icon: const Icon(Symbols.send_to_mobile_rounded),
           action: () async {
             final bool isAddressEntered = ipController.text.isNotEmpty && portController.text.isNotEmpty;
             final bool isAnySyncSelected = favouritesv2 || favourites || snatched || settings || booru || tabs || tags;
@@ -613,7 +615,7 @@ class _LoliSyncPageState extends State<LoliSyncPage> {
                   ],
                 ),
                 sideColor: Colors.red,
-                leadingIcon: Icons.error,
+                leadingIcon: Symbols.error_rounded,
                 leadingIconColor: Colors.red,
               );
             }
@@ -677,7 +679,7 @@ class _LoliSyncPageState extends State<LoliSyncPage> {
         ),
         SettingsButton(
           name: context.loc.settings.sync.startReceiverServer,
-          icon: const Icon(Icons.dns_outlined),
+          icon: const Icon(Symbols.dns_rounded),
           action: () async {
             await SettingsPageOpen(
               context: context,

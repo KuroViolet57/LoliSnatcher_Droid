@@ -1,6 +1,8 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -52,7 +54,7 @@ class TagsFiltersSettingsList extends StatelessWidget {
           value: filterMarked,
           onChanged: onFilterMarkedChanged,
           trailingIcon: const Icon(
-            Icons.star,
+            Symbols.star_rounded,
             color: Colors.yellow,
           ),
         ),
@@ -60,13 +62,13 @@ class TagsFiltersSettingsList extends StatelessWidget {
           title: context.loc.settings.itemFilters.removeFavourited,
           value: filterFavourites,
           onChanged: onFilterFavouritesChanged,
-          trailingIcon: const Icon(Icons.favorite, color: Colors.red),
+          trailingIcon: const Icon(Symbols.favorite_rounded, color: Colors.red),
         ),
         SettingsToggle(
           title: context.loc.settings.itemFilters.removeSnatched,
           value: filterSnatched,
           onChanged: onFilterSnatchedChanged,
-          trailingIcon: const Icon(Icons.file_download_outlined),
+          trailingIcon: const Icon(Symbols.file_download_rounded),
         ),
         SettingsToggle(
           title: context.loc.settings.itemFilters.removeAI,

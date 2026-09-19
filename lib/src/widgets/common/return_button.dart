@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:lolisnatcher/gen/strings.g.dart';
 
 class ReturnButton extends StatelessWidget {
@@ -33,7 +35,7 @@ class ReturnButton extends StatelessWidget {
             Navigator.of(context).pop(returnData);
           }
         },
-        icon: const Icon(Icons.keyboard_return_rounded),
+        icon: const Icon(Symbols.keyboard_return_rounded),
         label: Text(context.loc.kReturn),
       );
     }

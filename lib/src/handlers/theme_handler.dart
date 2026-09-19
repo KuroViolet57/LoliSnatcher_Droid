@@ -164,10 +164,34 @@ class ThemeHandler {
     return flowBg;
   }
 
+  /// Pins neutral surfaces/text/borders to the Flow tokens. The accent slots
+  /// (primary/secondary) are left untouched so custom accents and dynamic
+  /// (wallpaper) colours keep working — only the neutrals become Flow.
+  ColorScheme _pinFlowNeutrals(ColorScheme base) {
+    return base.copyWith(
+      surface: flowSurface,
+      onSurface: flowTextBody,
+      surfaceContainerLowest: flowLowest,
+      surfaceContainerLow: flowSurface,
+      surfaceContainer: flowRaised,
+      surfaceContainerHigh: flowInput,
+      surfaceContainerHighest: flowDeep,
+      onSurfaceVariant: flowTextSecondary,
+      outline: flowBorder,
+      outlineVariant: flowBorderSoft,
+      surfaceTint: Colors.transparent,
+      error: flowError,
+      onError: Colors.white,
+    );
+  }
+
   ColorScheme colorScheme() {
     if (isDark) {
       if (darkDynamic != null) {
-        return darkDynamic!;
+        // Dynamic (wallpaper) accents are kept, but the neutrals must still be
+        // Flow — otherwise a warm wallpaper turns every surface brown/grey and
+        // the skin falls apart.
+        return _pinFlowNeutrals(darkDynamic!);
       }
     } else {
       if (lightDynamic != null) {
@@ -197,27 +221,12 @@ class ThemeHandler {
       brightness: brightness,
     );
 
-    // In light mode, or AMOLED, keep the seed-generated scheme.
-    if (!isDark || isAmoled) return base;
+    // Light mode keeps the seed-generated scheme.
+    if (!isDark) return base;
 
-    // Dark mode: pin neutral surfaces/text to the Flow tokens (accent stays
-    // theme-driven). This gives every screen the modern violet-near-black look
-    // without hardcoding the accent.
-    return base.copyWith(
-      surface: flowSurface,
-      onSurface: flowTextBody,
-      surfaceContainerLowest: flowLowest,
-      surfaceContainerLow: flowSurface,
-      surfaceContainer: flowRaised,
-      surfaceContainerHigh: flowInput,
-      surfaceContainerHighest: flowDeep,
-      onSurfaceVariant: flowTextSecondary,
-      outline: flowBorder,
-      outlineVariant: flowBorderSoft,
-      surfaceTint: Colors.transparent,
-      error: flowError,
-      onError: Colors.white,
-    );
+    // Every dark path (normal dark AND AMOLED) gets the Flow neutrals; AMOLED
+    // additionally keeps the pure-black scaffold via [scaffoldBackground].
+    return _pinFlowNeutrals(base);
   }
 
   TextTheme textTheme() {

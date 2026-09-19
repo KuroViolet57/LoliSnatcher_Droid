@@ -1,0 +1,893 @@
+import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
+
+import 'package:lolisnatcher/src/pages/settings/booru_source_settings_view.dart';
+import 'package:lolisnatcher/src/data/booru.dart';
+import 'package:lolisnatcher/src/data/meta_tag.dart';
+import 'package:lolisnatcher/src/handlers/booru_handler.dart';
+import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
+import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
+import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
+import 'package:lolisnatcher/src/pages/settings/booru_edit_page.dart';
+import 'package:lolisnatcher/src/boorus/doujin/eahentai_handler.dart';
+import 'package:lolisnatcher/src/boorus/doujin/ehentai_handler.dart';
+import 'package:lolisnatcher/src/handlers/eahentai_session_handler.dart';
+import 'package:lolisnatcher/src/handlers/ehentai_session_handler.dart';
+import 'package:lolisnatcher/src/pages/settings/ehentai_login_page.dart';
+import 'package:lolisnatcher/src/widgets/webview/webview_page.dart';
+
+/// One layer of the doujin settings, reference-app style.
+///
+/// With a [booru] this edits that SOURCE's overrides: every row can override
+/// the global value and shows "Overridden for this source · tap to reset"
+/// while it does. Without a booru it edits the GLOBAL layer that all doujin
+/// sources inherit.
+class SourceSettingsPage extends StatefulWidget {
+  const SourceSettingsPage({this.booru, super.key});
+
+  /// null = edit the global layer.
+  final Booru? booru;
+
+  @override
+  State<SourceSettingsPage> createState() => _SourceSettingsPageState();
+}
+
+class _SourceSettingsPageState extends State<SourceSettingsPage> {
+  final sourceSettings = SourceSettingsHandler.instance;
+
+  bool get isGlobal => widget.booru == null;
+
+  /// The handler behind this layer's source (null on the global layer). Rows
+  /// are offered by CAPABILITY, the way the drawer offers its webview button:
+  /// a source that cannot use a setting does not show it.
+  late final BooruHandler? _handler = widget.booru == null
+      ? null
+      : BooruHandlerFactory().getBooruHandler([widget.booru!], null).booruHandler;
+
+  /// Every configured doujin source. The global layer offers a row only when
+  /// at least one source honours it; otherwise the row would set nothing.
+  late final List<BooruHandler> _doujinHandlers = [
+    for (final b in SettingsHandler.instance.booruList)
+      if (DoujinDataHandler.isDoujinSource(b)) BooruHandlerFactory().getBooruHandler([b], null).booruHandler,
+  ];
+
+  bool _offered(bool Function(BooruHandler h) supports) =>
+      _handler != null ? supports(_handler!) : _doujinHandlers.any(supports);
+
+  /// Page sizes for the image-quality row: the source's own, or on the
+  /// global layer the first configured source that has any.
+  List<(String, String)> get _qualityOptions {
+    if (_handler != null) return _handler!.readerImageQualities;
+    for (final h in _doujinHandlers) {
+      if (h.readerImageQualities.isNotEmpty) return h.readerImageQualities;
+    }
+    return const [];
+  }
+
+  /// Names of the sources the image-quality row applies to (global layer).
+  String get _qualitySourceNames => [
+    for (final h in _doujinHandlers)
+      if (h.readerImageQualities.isNotEmpty) h.booru.name ?? '',
+  ].where((n) => n.isNotEmpty).join(', ');
+
+  bool get _usesLogin => _handler != null && _handler!.usesUserId && _handler!.usesApiKey;
+
+  String get _accountTitle {
+    final Booru b = widget.booru!;
+    if (_usesLogin) return (b.userID?.isNotEmpty ?? false) ? 'Signed in as ${b.userID}' : 'Not signed in';
+    return (b.apiKey?.isNotEmpty ?? false) ? 'API key configured' : 'No API key';
+  }
+
+  String get _accountSubtitle {
+    final Booru b = widget.booru!;
+    if (_usesLogin) {
+      return (b.userID?.isNotEmpty ?? false)
+          ? 'Your account favourites sync with this site. Tap to edit the login.'
+          : 'Add your site username and password to sync account favourites. Tap to edit.';
+    }
+    return (b.apiKey?.isNotEmpty ?? false)
+        ? 'Favourites sync with your account. Tap to edit the key.'
+        : "Add your key (from the site's account settings) to sync favourites. Tap to edit.";
+  }
+
+  SourceSettings get layer =>
+      isGlobal ? sourceSettings.globalSettings : sourceSettings.settingsFor(widget.booru);
+
+  SourceSettings get globalLayer => sourceSettings.globalSettings;
+
+  late final TextEditingController _blacklistController =
+      TextEditingController(text: layer.tagBlacklist ?? '');
+
+  bool _importingBlacklist = false;
+
+  /// The source handler when it can serve the ACCOUNT's blacklist (nhentai's
+  /// API blacklist, e-hentai's My Tags).
+  BooruHandler? get _accountBlacklistHandler {
+    final Booru? booru = widget.booru;
+    if (booru == null) return null;
+    final handler = BooruHandlerFactory().getBooruHandler([booru], null).booruHandler;
+    return handler.hasAccountBlacklist ? handler : null;
+  }
+
+  // ── e-hentai: login, site, the account pages ───────────────────────
+
+  Future<void> _ehLogin() async {
+    final result = await Navigator.push<(bool, String)>(context, MaterialPageRoute(builder: (_) => const EHentaiLoginPage()));
+    if (!mounted || result == null) return;
+    setState(() {});
+    FlashElements.showSnackbar(context: context, title: Text(result.$2), duration: const Duration(seconds: 4), sideColor: result.$1 ? Colors.green : Colors.orange);
+  }
+
+  /// Opens one of the account's pages in the in-app browser with the session
+  /// cookies set for that visit only; they are removed again afterwards so
+  /// they never ride on image requests.
+  Future<void> _openEhPage(EHentaiHandler handler, String path, String title) async {
+    final EHentaiSessionHandler session = EHentaiSessionHandler.instance;
+    final String host = handler.site;
+    try {
+      if (session.isLoggedIn) await session.seedJar(host, session.cookiePairs(exhentai: handler.usingExHentai));
+      if (!mounted) return;
+      await Navigator.push(context, MaterialPageRoute(builder: (_) => InAppWebviewView(initialUrl: '$host$path', title: title)));
+    } finally {
+      // Whatever happened — an early return, a thrown route, a back press —
+      // the session must not stay in the jar.
+      await session.scrubJar();
+    }
+  }
+
+  List<Widget> _ehentaiRows(EHentaiHandler handler) {
+    final EHentaiSessionHandler session = EHentaiSessionHandler.instance;
+    return [
+      _header('ACCOUNT'),
+      ValueListenableBuilder<int>(
+        valueListenable: session.revision,
+        builder: (context, _, child) => ListTile(
+          leading: Icon(session.isLoggedIn ? Symbols.person_check_rounded : Symbols.person_rounded),
+          title: Text(session.isLoggedIn ? 'Logged in as member ${session.memberId}' : 'Not logged in'),
+          subtitle: Text(
+            session.isLoggedIn
+                ? (session.hasExHentai
+                      ? 'exhentai access confirmed'
+                      : 'exhentai refused this account from this address ("mystery"): the account is too new, or the address '
+                            '(a VPN exit, often) is one the site distrusts. e-hentai is read meanwhile; the site is asked again '
+                            'once a day by itself, or now with Check again — from your home network if that is where it worked.')
+                : 'The forum login opens in a browser page; the app keeps only the two session cookies, in its own file.',
+          ),
+          trailing: session.isLoggedIn
+              ? Wrap(
+                  spacing: 4,
+                  children: [
+                    if (!session.hasExHentai)
+                      TextButton(
+                        key: const ValueKey('ehentai-check-again'),
+                        onPressed: () async {
+                          final (bool ok, String message) = await session.fetchIgneous();
+                          if (!mounted) return;
+                          FlashElements.showSnackbar(
+                            context: context,
+                            title: Text(ok ? 'exhentai access confirmed' : 'Still no exhentai access', style: const TextStyle(fontSize: 18)),
+                            content: Text(message, style: const TextStyle(fontSize: 14)),
+                            duration: const Duration(seconds: 6),
+                            sideColor: ok ? Colors.green : Colors.orange,
+                          );
+                          setState(() {});
+                        },
+                        child: const Text('Check again'),
+                      ),
+                    TextButton(onPressed: () { session.logout(); setState(() {}); }, child: const Text('Log out')),
+                  ],
+                )
+              : FilledButton.tonal(onPressed: _ehLogin, child: const Text('Log in')),
+        ),
+      ),
+      _choiceRow<String>(
+        title: 'Site',
+        subtitle: 'exhentai.org has the full catalogue and needs the login above; without it e-hentai.org is read.',
+        options: handler.siteVariants,
+        layerValue: layer.siteVariant,
+        inheritedValue: EHentaiHandler.variantEHentai,
+        onChanged: (v) => _update((s) => s.siteVariant = v),
+      ),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          children: [
+            OutlinedButton.icon(icon: const Icon(Symbols.settings_rounded, size: 18), label: const Text('Site settings'), onPressed: () => _openEhPage(handler, '/uconfig.php', 'e-hentai settings')),
+            OutlinedButton.icon(icon: const Icon(Symbols.label_rounded, size: 18), label: const Text('My Tags'), onPressed: () => _openEhPage(handler, '/mytags', 'My Tags')),
+            OutlinedButton.icon(icon: const Icon(Symbols.visibility_rounded, size: 18), label: const Text('Watched'), onPressed: () => _openEhPage(handler, '/watched', 'Watched')),
+          ],
+        ),
+      ),
+    ];
+  }
+
+  // ── eahentai: the API login (r69) ───────────────────────────────────
+
+  /// The booru as saved right now: this page can be reached from the edit
+  /// page, which saves a NEW object without popping, so `widget.booru` may
+  /// still be the pre-edit one. The handler's own copy learns the
+  /// credentials from it.
+  Booru _liveBooru(EaHentaiHandler handler) {
+    final Booru? shown = widget.booru;
+    Booru live = shown ?? handler.booru;
+    if (shown != null) {
+      for (final Booru b in SettingsHandler.instance.booruList) {
+        if (b.type == shown.type && b.baseURL == shown.baseURL) {
+          live = b;
+          break;
+        }
+      }
+    }
+    if (!identical(live, handler.booru)) {
+      handler.booru
+        ..userID = live.userID
+        ..apiKey = live.apiKey;
+    }
+    return live;
+  }
+
+  Future<void> _eaLogin(EaHentaiHandler handler) async {
+    final Booru live = _liveBooru(handler);
+    final bool hasCredentials = (live.userID?.isNotEmpty ?? false) && (live.apiKey?.isNotEmpty ?? false);
+    if (!hasCredentials) {
+      FlashElements.showSnackbar(
+        context: context,
+        title: const Text('Set the username or email and the password on the edit page first'),
+        duration: const Duration(seconds: 4),
+        sideColor: Colors.orange,
+      );
+      return;
+    }
+    if (!await handler.canSignIn()) {
+      if (!mounted) return;
+      FlashElements.showSnackbar(
+        context: context,
+        title: Text(handler.loginMessage ?? 'eahentai refused these credentials a moment ago; change them, or try again later'),
+        duration: const Duration(seconds: 5),
+        sideColor: Colors.orange,
+      );
+      return;
+    }
+    final bool ok = await handler.signIn();
+    if (!mounted) return;
+    setState(() {});
+    FlashElements.showSnackbar(
+      context: context,
+      title: Text(handler.loginMessage ?? (ok ? 'Logged in' : 'Login failed')),
+      duration: const Duration(seconds: 4),
+      sideColor: ok ? Colors.green : Colors.orange,
+    );
+  }
+
+  List<Widget> _eahentaiRows(EaHentaiHandler handler) {
+    final EaHentaiSessionHandler session = EaHentaiSessionHandler.instance;
+    final Booru live = _liveBooru(handler);
+    final bool hasCredentials = (live.userID?.isNotEmpty ?? false) && (live.apiKey?.isNotEmpty ?? false);
+    return [
+      _header('ACCOUNT'),
+      ValueListenableBuilder<int>(
+        valueListenable: session.revision,
+        builder: (context, _, child) => ListTile(
+          leading: Icon(session.isLoggedIn ? Symbols.person_check_rounded : Symbols.person_rounded),
+          title: Text(session.isLoggedIn ? 'Logged in as ${session.username ?? live.userID ?? 'member'}' : 'Not logged in'),
+          subtitle: Text(
+            session.isLoggedIn
+                ? "The site's login token is kept in its own file and sent to the site's API only, never to the image servers."
+                : (handler.loginMessage ??
+                      (hasCredentials
+                          ? 'Username or email and password are set on the edit page. Log in asks the site once and keeps its token.'
+                          : "Enter your username or email and the password on the source's edit page, then Log in.")),
+          ),
+          trailing: session.isLoggedIn
+              ? TextButton(
+                  onPressed: () async {
+                    await handler.signOut();
+                    if (mounted) setState(() {});
+                  },
+                  child: const Text('Log out'),
+                )
+              : FilledButton.tonal(onPressed: () => _eaLogin(handler), child: const Text('Log in')),
+        ),
+      ),
+    ];
+  }
+
+  /// Pulls the account's blacklisted tags and MERGES them into this source's
+  /// list (dedup, existing entries kept).
+  Future<void> _importAccountBlacklist() async {
+    final handler = _accountBlacklistHandler;
+    if (handler == null) return;
+    setState(() => _importingBlacklist = true);
+    final (bool ok, String message, List<String> names) = await handler.fetchAccountBlacklist();
+    if (!mounted) return;
+    setState(() => _importingBlacklist = false);
+    if (!ok) {
+      FlashElements.showSnackbar(
+        context: context,
+        title: Text(message),
+        duration: const Duration(seconds: 3),
+        sideColor: Colors.red,
+      );
+      return;
+    }
+    final List<String> existing = [
+      for (final part in (layer.tagBlacklist ?? '').split(','))
+        if (part.trim().isNotEmpty) part.trim(),
+    ];
+    final Set<String> lower = {for (final t in existing) t.toLowerCase()};
+    int added = 0;
+    for (final name in names) {
+      if (lower.add(name.toLowerCase())) {
+        existing.add(name);
+        added++;
+      }
+    }
+    _update((s) => s.tagBlacklist = existing.isEmpty ? null : existing.join(', '));
+    _blacklistController.text = layer.tagBlacklist ?? '';
+    FlashElements.showSnackbar(
+      context: context,
+      title: Text(added > 0 ? 'Imported $added tags from your account' : 'Nothing new — already in your list'),
+      content: Text(message),
+      duration: const Duration(seconds: 3),
+      sideColor: Colors.green,
+    );
+  }
+
+  @override
+  void dispose() {
+    _blacklistController.dispose();
+    super.dispose();
+  }
+
+  void _update(void Function(SourceSettings) change) {
+    if (isGlobal) {
+      sourceSettings.updateGlobal(change);
+    } else {
+      sourceSettings.update(widget.booru, change);
+    }
+    setState(() {});
+  }
+
+  List<MetaTagValue> get _sortValues {
+    final Booru? booru = widget.booru;
+    if (booru == null) {
+      // Global layer: nhentai's sorts are the doujin vocabulary for now.
+      return [
+        MetaTagValue(name: 'Newest', value: 'date'),
+        MetaTagValue(name: 'Popular (all time)', value: 'popular'),
+        MetaTagValue(name: 'Popular today', value: 'popular-today'),
+        MetaTagValue(name: 'Popular this week', value: 'popular-week'),
+        MetaTagValue(name: 'Popular this month', value: 'popular-month'),
+      ];
+    }
+    final handler = BooruHandlerFactory().getBooruHandler([booru], null).booruHandler;
+    for (final metaTag in handler.availableMetaTags()) {
+      if (metaTag is SortMetaTag) return metaTag.values;
+    }
+    return const [];
+  }
+
+  Widget _header(String text) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 18, 16, 4),
+    child: Text(
+      text,
+      style: TextStyle(
+        fontSize: 13,
+        fontWeight: FontWeight.w800,
+        color: Theme.of(context).colorScheme.secondary,
+      ),
+    ),
+  );
+
+  /// The reference app's override marker. Shown under any row whose
+  /// per-source layer holds a value; tapping it resets to the global.
+  Widget _overrideMarker(bool overridden, VoidCallback reset) {
+    if (isGlobal || !overridden) return const SizedBox.shrink();
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: reset,
+      child: Padding(
+        padding: const EdgeInsets.only(top: 3),
+        child: Text(
+          'Overridden for this source · tap to reset',
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: Theme.of(context).colorScheme.error,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _choiceRow<T>({
+    required String title,
+    required String subtitle,
+    required List<(T, String)> options,
+    required T? layerValue,
+    required T? inheritedValue,
+    required void Function(T?) onChanged,
+  }) {
+    final T? shown = layerValue ?? (isGlobal ? layerValue : inheritedValue);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: const TextStyle(fontSize: 15)),
+          const SizedBox(height: 2),
+          Text(
+            subtitle,
+            style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 6,
+            children: [
+              for (final option in options)
+                ChoiceChip(
+                  label: Text(option.$2),
+                  selected: shown == option.$1,
+                  onSelected: (_) => onChanged(layerValue == option.$1 ? null : option.$1),
+                ),
+            ],
+          ),
+          _overrideMarker(layerValue != null, () => onChanged(null)),
+        ],
+      ),
+    );
+  }
+
+  /// Several values at once (a union), per source only: the marker resets
+  /// the whole selection.
+  Widget _multiChoiceRow({
+    required String title,
+    required String subtitle,
+    required List<(String, String)> options,
+    required List<String> layerValues,
+    required void Function(List<String>) onChanged,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: const TextStyle(fontSize: 15)),
+          const SizedBox(height: 2),
+          Text(
+            subtitle,
+            style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 6,
+            children: [
+              for (final option in options)
+                FilterChip(
+                  label: Text(option.$2),
+                  selected: layerValues.contains(option.$1),
+                  onSelected: (on) => onChanged(
+                    on ? [...layerValues, option.$1] : [for (final v in layerValues) if (v != option.$1) v],
+                  ),
+                ),
+            ],
+          ),
+          _overrideMarker(layerValues.isNotEmpty, () => onChanged(const [])),
+        ],
+      ),
+    );
+  }
+
+  Widget _switchRow({
+    required String title,
+    String? subtitle,
+    required bool? layerValue,
+    required bool inheritedValue,
+    required void Function(bool?) onChanged,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SwitchListTile(
+          title: Text(title),
+          subtitle: subtitle == null ? null : Text(subtitle),
+          value: layerValue ?? inheritedValue,
+          onChanged: onChanged,
+        ),
+        if (!isGlobal && layerValue != null)
+          Padding(
+            padding: const EdgeInsets.only(left: 16, bottom: 6),
+            child: _overrideMarker(true, () => onChanged(null)),
+          ),
+      ],
+    );
+  }
+
+  Widget _stepperRow({
+    required String title,
+    required String subtitle,
+    required int? layerValue,
+    required int effective,
+    required int min,
+    required int max,
+    required int step,
+    required void Function(int?) onChanged,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ListTile(
+          title: Text(title),
+          subtitle: Text(subtitle),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                icon: const Icon(Symbols.remove_rounded),
+                onPressed: () => onChanged((effective - step).clamp(min, max)),
+              ),
+              Text('$effective'),
+              IconButton(
+                icon: const Icon(Symbols.add_rounded),
+                onPressed: () => onChanged((effective + step).clamp(min, max)),
+              ),
+            ],
+          ),
+        ),
+        if (!isGlobal && layerValue != null)
+          Padding(
+            padding: const EdgeInsets.only(left: 16, bottom: 6),
+            child: _overrideMarker(true, () => onChanged(null)),
+          ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // r43: a booru source has its own layout (search defaults, hidden tags,
+    // the site); the rows below are the doujin reader's.
+    if (!isGlobal && !_handler!.hasReader) return BooruSourceSettingsView(booru: widget.booru!, handler: _handler);
+    final sorts = _sortValues;
+    final Booru? booru = widget.booru;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(isGlobal ? 'Doujin settings' : '${booru!.name ?? 'Source'} settings'),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.only(bottom: 32),
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: Text(
+              isGlobal
+                  ? 'These apply to every doujin source. Each source can override any of them in its own settings page.'
+                  : 'These apply to ${booru!.name ?? 'this source'} only, overriding the global doujin settings.',
+              style: TextStyle(fontSize: 12.5, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
+            ),
+          ),
+          //
+          // Only where the handler reads a credential (nhentai: key; asmhentai,
+          // eahentai, faccina: login). niyaniya and hitomi have neither.
+          if (!isGlobal && (_handler!.usesApiKey || _handler!.usesUserId)) ...[
+            _header('ACCOUNT'),
+            ListTile(
+              leading: Icon(_usesLogin ? Symbols.person_rounded : Symbols.key_rounded),
+              title: Text(_accountTitle),
+              subtitle: Text(_accountSubtitle),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => BooruEdit(booru!)),
+                );
+              },
+            ),
+          ],
+          // e-hentai: the WebView login, the host choice and the account pages.
+          if (!isGlobal && _handler is EHentaiHandler) ..._ehentaiRows(_handler),
+          if (!isGlobal && _handler is EaHentaiHandler) ..._eahentaiRows(_handler),
+          //
+          _header('READING'),
+          _choiceRow<String>(
+            title: 'Reading direction',
+            subtitle: 'Right-to-left is the native direction for most manga. (Webtoon continuous scroll is not available yet.)',
+            options: const [('ltr', 'Left-to-right'), ('rtl', 'Right-to-left'), ('vertical', 'Vertical')],
+            layerValue: layer.readingDirection,
+            inheritedValue: globalLayer.readingDirection ?? 'ltr',
+            onChanged: (v) => _update((s) => s.readingDirection = v),
+          ),
+          _choiceRow<String>(
+            title: 'Page turn animation',
+            subtitle: 'How tap zones and the slider move between pages.',
+            options: const [('animated', 'Animated'), ('instant', 'Instant')],
+            layerValue: layer.pageTurnAnimation,
+            inheritedValue: globalLayer.pageTurnAnimation ?? 'animated',
+            onChanged: (v) => _update((s) => s.pageTurnAnimation = v),
+          ),
+          _switchRow(
+            title: 'Tap zones turn pages',
+            subtitle: 'Tap the screen edges to change page, the middle for the reader controls.',
+            layerValue: layer.tapZones,
+            inheritedValue: globalLayer.tapZones ?? true,
+            onChanged: (v) => _update((s) => s.tapZones = v),
+          ),
+          _switchRow(
+            title: 'Double-tap to zoom',
+            subtitle: 'Adds a small delay to every tap and turns rapid tap-tap paging into zoom — pinch zoom always works.',
+            layerValue: layer.doubleTapZoom,
+            inheritedValue: globalLayer.doubleTapZoom ?? false,
+            onChanged: (v) => _update((s) => s.doubleTapZoom = v),
+          ),
+          _stepperRow(
+            title: 'Preload pages',
+            subtitle: 'Pages fetched ahead in the reader.',
+            layerValue: layer.preloadPages,
+            effective: sourceSettings.preloadPages(booru),
+            min: 0,
+            max: 20,
+            step: 1,
+            onChanged: (v) => _update((s) => s.preloadPages = v),
+          ),
+          _switchRow(
+            title: 'Keep screen on while reading',
+            layerValue: layer.keepScreenOn,
+            inheritedValue: globalLayer.keepScreenOn ?? true,
+            onChanged: (v) => _update((s) => s.keepScreenOn = v),
+          ),
+          // Only sources with several page sizes (niyaniya's five sets).
+          if (_qualityOptions.isNotEmpty)
+            _choiceRow<String>(
+              title: 'Image quality',
+              subtitle: isGlobal
+                  ? 'Width of reader pages. Applies to $_qualitySourceNames; other sources have one size. '
+                        'If a gallery lacks the chosen size, the nearest available one is used.'
+                  : 'Width of reader pages. If a gallery lacks the chosen size, the nearest available one is used.',
+              options: _qualityOptions,
+              layerValue: layer.imageQuality,
+              inheritedValue: globalLayer.imageQuality ?? '1280',
+              onChanged: (v) => _update((s) => s.imageQuality = v),
+            ),
+          _header('SEARCH'),
+          if (sorts.isNotEmpty)
+            _choiceRow<String>(
+              title: 'Default sort',
+              subtitle: 'Applied when a search has no sort: term of its own.',
+              options: [for (final v in sorts) (v.value, v.name)],
+              layerValue: layer.defaultSort,
+              inheritedValue: globalLayer.defaultSort,
+              onChanged: (v) => _update((s) => s.defaultSort = v),
+            ),
+          // A site-wide content filter (rule34video's Straight / Gay / Futa /
+          // Music / Iwara). Per source only: the keys mean nothing elsewhere.
+          if (_handler != null && _handler.contentTypeOptions.isNotEmpty)
+            _multiChoiceRow(
+              title: 'Content types',
+              subtitle:
+                  'Applied when a search has no type: term of its own. The site filters its own pages; '
+                  'on a text search the phone drops what it can tell apart.',
+              options: [for (final v in _handler.contentTypeOptions) (v.value, v.name)],
+              layerValues: sourceSettings.contentTypes(widget.booru),
+              onChanged: (v) => _update((s) => s.contentTypes = v.isEmpty ? null : v.join(',')),
+            ),
+          // Honoured where the site can filter by language (nhentai, e-hentai,
+          // hitomi - `supportsLanguageFilter`); the others do not offer the row.
+          if (_offered((h) => h.supportsLanguageFilter))
+          _choiceRow<String>(
+            title: 'Only show language',
+            subtitle: 'Adds a language filter to every search.',
+            options: const [('english', 'English'), ('japanese', 'Japanese'), ('chinese', 'Chinese')],
+            layerValue: layer.languageFilter,
+            inheritedValue: globalLayer.languageFilter,
+            onChanged: (v) => _update((s) => s.languageFilter = v),
+          ),
+          if (_offered((h) => h.supportsTitleLanguage))
+          _choiceRow<String>(
+            title: 'Title language',
+            subtitle: 'Which title shows first on cards and the detail page.',
+            options: const [('english', 'English'), ('japanese', 'Japanese')],
+            layerValue: layer.titleLanguage,
+            inheritedValue: globalLayer.titleLanguage ?? 'english',
+            onChanged: (v) => _update((s) => s.titleLanguage = v),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Tag blacklist', style: TextStyle(fontSize: 15)),
+                const SizedBox(height: 2),
+                Text(
+                  'Comma-separated tags excluded from every search on ${isGlobal ? 'all doujin sources' : 'this source'}.',
+                  style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6)),
+                ),
+                const SizedBox(height: 6),
+                TextField(
+                  controller: _blacklistController,
+                  decoration: InputDecoration(
+                    isDense: true,
+                    hintText: 'e.g. netorare, guro',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  onChanged: (value) => _update((s) => s.tagBlacklist = value.trim().isEmpty ? null : value.trim()),
+                ),
+                _overrideMarker(layer.tagBlacklist != null, () {
+                  _blacklistController.clear();
+                  _update((s) => s.tagBlacklist = null);
+                }),
+              ],
+            ),
+          ),
+          if (!isGlobal)
+            _choiceRow<String>(
+              title: 'Blacklist mode',
+              subtitle: 'Extend applies this list on top of the global doujin blacklist; override uses only this list here.',
+              options: const [('extend', 'Extend'), ('override', 'Override')],
+              layerValue: layer.blacklistMode,
+              inheritedValue: 'extend',
+              onChanged: (v) => _update((s) => s.blacklistMode = v),
+            ),
+          if (!isGlobal && _accountBlacklistHandler != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: OutlinedButton.icon(
+                  icon: _importingBlacklist
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Symbols.cloud_download_rounded, size: 18),
+                  label: const Text('Import blacklist from my account'),
+                  onPressed: _importingBlacklist ? null : _importAccountBlacklist,
+                ),
+              ),
+            ),
+          //
+          _header('DETAIL PAGE'),
+          _choiceRow<String>(
+            title: 'Detail layout',
+            subtitle: 'Compact puts the cover beside the titles; big cover puts a full-width cover on top with everything below.',
+            options: const [('compact', 'Compact'), ('cover', 'Big cover')],
+            layerValue: layer.detailLayout,
+            inheritedValue: globalLayer.detailLayout ?? 'compact',
+            onChanged: (v) => _update((s) => s.detailLayout = v),
+          ),
+          // r69: e-hentai's covers are 250 px wide and the site has nothing
+          // bigger; the first page of the gallery is the sharp cover.
+          // eahentai's covers are 450 px; its first page is known from the
+          // listing and costs one image.
+          if (!isGlobal && (_handler is EHentaiHandler || _handler is EaHentaiHandler))
+            _switchRow(
+              title: 'Detail cover from the first page',
+              subtitle: _handler is EHentaiHandler
+                  ? "The site's covers are small (250 px). Show the gallery's first page as the detail cover instead - one page load and one image per opened gallery, counted against the site's image quota; the reader reuses the image."
+                  : "Show the gallery's full first page (about 1280 px) as the detail cover instead of the 450-px thumbnail - one image per opened gallery; the reader reuses it.",
+              layerValue: layer.detailCoverFromFirstPage,
+              inheritedValue: globalLayer.detailCoverFromFirstPage ?? true,
+              onChanged: (v) => _update((s) => s.detailCoverFromFirstPage = v),
+            ),
+          //
+          _header('TABS'),
+          _choiceRow<String>(
+            title: 'New-tab placement',
+            subtitle: 'Where "Open in new tab" on a doujin card puts the tab.',
+            options: const [('end', 'End of list'), ('next', 'Next to current')],
+            layerValue: layer.tabPlacement,
+            inheritedValue: globalLayer.tabPlacement ?? 'end',
+            onChanged: (v) => _update((s) => s.tabPlacement = v),
+          ),
+          _choiceRow<String>(
+            title: 'Tag chip tap',
+            subtitle: 'What tapping a tag chip does — long-press always does the other one. Cards keep the opposite: tap opens, long-press menus.',
+            options: const [('menu', 'Open menu'), ('newtab', 'Background tab')],
+            layerValue: layer.tagChipTap,
+            inheritedValue: globalLayer.tagChipTap ?? 'menu',
+            onChanged: (v) => _update((s) => s.tagChipTap = v),
+          ),
+          //
+          _header('RECOMMENDATIONS'),
+          _switchRow(
+            title: 'Endless recommendations',
+            subtitle: 'The Recommended strip keeps loading more as you scroll.',
+            layerValue: layer.recommendedCount == null ? null : layer.recommendedCount == 0,
+            inheritedValue: sourceSettings.recommendedCount(booru) == 0,
+            onChanged: (v) => _update((s) => s.recommendedCount = (v ?? false) ? 0 : 30),
+          ),
+          if (sourceSettings.recommendedCount(booru) != 0)
+            _stepperRow(
+              title: 'Recommended items per gallery',
+              subtitle: "The source supplies a handful; the rest are found by matching the gallery's tags (artist stays a small minority).",
+              layerValue: layer.recommendedCount,
+              effective: sourceSettings.recommendedCount(booru),
+              min: 5,
+              max: 100,
+              step: 5,
+              onChanged: (v) => _update((s) => s.recommendedCount = v),
+            ),
+          //
+          _header('GRID'),
+          _choiceRow<String>(
+            title: 'Feed cards',
+            subtitle:
+                'Grid keeps the covers in columns. List gives each gallery a row: cover, title and uploader, the tags in rows you can scroll sideways, and what it is - kind, language, pages.',
+            options: const [('grid', 'Grid'), ('list', 'List')],
+            layerValue: layer.feedCardStyle,
+            inheritedValue: globalLayer.feedCardStyle ?? 'grid',
+            onChanged: (v) => _update((s) => s.feedCardStyle = v),
+          ),
+          _choiceRow<String>(
+            title: 'Cover display',
+            subtitle:
+                'Grid and list cards alike. Fit shows the whole cover with bars; crop fills the card or the cover column; adapt gives the card (or the list column) the shape of the cover.',
+            options: const [('fit', 'Fit'), ('crop', 'Crop'), ('adapt', 'Adapt')],
+            layerValue: layer.coverDisplay,
+            inheritedValue: globalLayer.coverDisplay ?? 'crop',
+            onChanged: (v) => _update((s) => s.coverDisplay = v),
+          ),
+          _stepperRow(
+            title: 'List card height',
+            subtitle: 'How tall each row is with Feed cards set to List. The cover fills the height; more height means more tag rows and a bigger cover.',
+            layerValue: layer.listCardHeight,
+            effective: sourceSettings.listCardHeight(booru),
+            min: 120,
+            max: 320,
+            step: 8,
+            onChanged: (v) => _update((s) => s.listCardHeight = v),
+          ),
+          _stepperRow(
+            title: 'List cover width',
+            subtitle:
+                'The cover column of a list card. Fixed for Fit and Crop; for Adapt the widest the column may get. Sites serve small covers (e-hentai: 250 px), so a narrower column is a sharper one.',
+            layerValue: layer.listCoverWidth,
+            effective: sourceSettings.listCoverWidth(booru),
+            min: 72,
+            max: 240,
+            step: 8,
+            onChanged: (v) => _update((s) => s.listCoverWidth = v),
+          ),
+          _switchRow(
+            title: 'Tags on grid cards',
+            subtitle: 'Most relevant tags under each cover, favourites in gold, and the +N button with the full list.',
+            layerValue: layer.gridTagStrip,
+            inheritedValue: globalLayer.gridTagStrip ?? true,
+            onChanged: (v) => _update((s) => s.gridTagStrip = v),
+          ),
+          _stepperRow(
+            title: 'Feed columns (portrait)',
+            subtitle: 'Overrides the app-wide column count on doujin feeds.',
+            layerValue: layer.columnsPortrait,
+            effective: sourceSettings.columnsPortrait(booru) ?? SettingsHandler.instance.portraitColumns,
+            min: 1,
+            max: 5,
+            step: 1,
+            onChanged: (v) => _update((s) => s.columnsPortrait = v),
+          ),
+          _stepperRow(
+            title: 'Feed columns (landscape / tablet)',
+            subtitle: 'Overrides the app-wide column count on doujin feeds.',
+            layerValue: layer.columnsLandscape,
+            effective: sourceSettings.columnsLandscape(booru) ?? SettingsHandler.instance.landscapeColumns,
+            min: 1,
+            max: 8,
+            step: 1,
+            onChanged: (v) => _update((s) => s.columnsLandscape = v),
+          ),
+          _stepperRow(
+            title: 'Page preview columns',
+            subtitle: 'Thumbnails per row in the Pages grid. Fewer columns means bigger previews.',
+            layerValue: layer.pagePreviewColumns,
+            effective: sourceSettings.pagePreviewColumns(booru),
+            min: 1,
+            max: 6,
+            step: 1,
+            onChanged: (v) => _update((s) => s.pagePreviewColumns = v),
+          ),
+        ],
+      ),
+    );
+  }
+}

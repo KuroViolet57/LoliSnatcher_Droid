@@ -5,6 +5,13 @@ import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 class NyanPalsHandler extends BooruHandler {
   NyanPalsHandler(super.booru, super.limit);
 
+  // Reads neither field (audited): the fields are hidden on the edit page.
+  @override
+  bool get usesUserId => false;
+  @override
+  bool get usesApiKey => false;
+
+
   @override
   List parseListFromResponse(dynamic response) {
     final parsedResponse = response.data;

@@ -5,6 +5,8 @@ import 'dart:math';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 
 import 'package:dio/dio.dart';
@@ -13,7 +15,13 @@ import 'package:get/get.dart';
 import 'package:preload_page_view/preload_page_view.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
+import 'package:lolisnatcher/src/boorus/linked_media.dart';
+import 'package:lolisnatcher/src/widgets/linked_media_sheet.dart';
+import 'package:lolisnatcher/src/pages/flash_player_page.dart';
+import 'package:lolisnatcher/src/pages/furaffinity_post_page.dart';
+import 'package:lolisnatcher/src/boorus/furaffinity_handler.dart';
 import 'package:lolisnatcher/src/boorus/hydrus_handler.dart';
+import 'package:lolisnatcher/src/boorus/kemono_handler.dart';
 import 'package:lolisnatcher/src/data/settings/gallery_button.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
@@ -22,7 +30,15 @@ import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/database_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/handlers/post_files_handler.dart';
+import 'package:lolisnatcher/src/handlers/reader_handler.dart';
+import 'package:lolisnatcher/src/data/site_profile.dart';
+import 'package:lolisnatcher/src/pages/doujin_reader_page.dart';
+import 'package:lolisnatcher/src/pages/kemono_post_page.dart';
+import 'package:lolisnatcher/src/pages/post_files_page.dart';
+import 'package:lolisnatcher/src/handlers/recommender/recommender_handler.dart';
 import 'package:lolisnatcher/src/handlers/snatch_handler.dart';
 import 'package:lolisnatcher/src/handlers/tag_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
@@ -140,7 +156,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
             context: context,
             title: Text(context.loc.viewer.appBar.cantStartSlideshow, style: const TextStyle(fontSize: 20)),
             content: Text(context.loc.viewer.appBar.reachedLastLoadedItem, style: const TextStyle(fontSize: 16)),
-            leadingIcon: Icons.warning_amber,
+            leadingIcon: Symbols.warning_amber_rounded,
             leadingIconColor: Colors.red,
             sideColor: Colors.red,
           );
@@ -187,7 +203,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
   List<Widget> getActions() {
     final disabled = [...settingsHandler.disabledButtons];
     final filteredButtonOrder = settingsHandler.buttonOrder.where((button) {
-      if (page.value == -1 || widget.tab.booruHandler.filteredFetched.isEmpty) {
+      if (page.value == -1 || page.value >= widget.tab.booruHandler.filteredFetched.length) {
         return false;
       }
 
@@ -219,11 +235,18 @@ class _HideableAppBarState extends State<HideableAppBar> {
           return isVideo && Platform.isAndroid;
         case .imageSearch:
           return isImage;
+        case .notInterested:
+          // r34: only where the item was recommended.
+          return widget.tab.booruHandler.booru.type?.isRecommendationFeed == true && !widget.readOnly;
 
         //
 
-        case .info:
+        case .linkedMedia:
+          // r61: a button of its own - it used to take the share button's
+          // place, so switching share off took the links away with it.
+          return LinkedMediaButton.offerFor(item);
         case .share:
+        case .info:
         case .open:
         case .autoscroll:
           return true;
@@ -255,9 +278,120 @@ class _HideableAppBarState extends State<HideableAppBar> {
       );
     }
 
+    // Doujin sources: the post is a BOOK — its pages arrive with loadItem
+    // (see ReaderHandler), and this opens the reader on them.
+    actions.add(
+      Obx(() {
+        final BooruItem? item = page.value >= 0 && page.value < widget.tab.booruHandler.filteredFetched.length
+            ? widget.tab.booruHandler.filteredFetched[page.value]
+            : null;
+        final readerHandler = ReaderHandler.instance;
+        if (item == null || !widget.tab.booruHandler.hasReader || !readerHandler.hasBook(item)) {
+          return const SizedBox.shrink();
+        }
+        final int pageCount = readerHandler.pagesFor(item)!.length;
+        return ToolbarAction(
+          key: const ValueKey('doujin-reader'),
+          icon: const Icon(Symbols.menu_book_rounded),
+          tooltip: 'Read · $pageCount pages',
+          onTap: () => openDoujinReader(
+            context,
+            item: item,
+            booru: widget.tab.booruHandler.booru,
+          ),
+        );
+      }),
+    );
+
+    // Gallery posts: some sites hold several files behind one post, and the
+    // API only ever describes the cover. The file list is fetched lazily when
+    // a post is opened (see PostFilesHandler), so this action appears as soon
+    // as we know there is more than one file — and never otherwise.
+    actions.add(
+      Obx(() {
+        final BooruItem? item = page.value >= 0 && page.value < widget.tab.booruHandler.filteredFetched.length
+            ? widget.tab.booruHandler.filteredFetched[page.value]
+            : null;
+        final filesHandler = PostFilesHandler.instance;
+        if (item == null || !filesHandler.hasMultiple(item)) {
+          return const SizedBox.shrink();
+        }
+        final List<PostFile> files = filesHandler.cached(item)!;
+        return ToolbarAction(
+          key: const ValueKey('post-files'),
+          icon: const Icon(Symbols.burst_mode_rounded),
+          tooltip: '${files.length} files in this post',
+          onTap: () => openPostFilesOverlay(
+            context,
+            items: filesHandler.itemsFor(item, files),
+            booru: widget.tab.booruHandler.booru,
+          ),
+        );
+      }),
+    );
+
+    // FurAffinity (r42b): a Flash submission plays through Ruffle.
+    if (widget.tab.booruHandler is FurAffinityHandler) {
+      actions.add(
+        Obx(() {
+          final BooruItem? item = page.value >= 0 && page.value < widget.tab.booruHandler.filteredFetched.length
+              ? widget.tab.booruHandler.filteredFetched[page.value]
+              : null;
+          if (item == null || !FlashPlayerPage.isFlash(item)) return const SizedBox.shrink();
+          return ToolbarAction(
+            key: const ValueKey('furaffinity-flash'),
+            icon: const Icon(Symbols.play_circle_rounded),
+            tooltip: 'Play Flash',
+            onTap: () => FlashPlayerPage.openFor(context, widget.tab.booruHandler, item),
+          );
+        }),
+      );
+    }
+
+    // FurAffinity (r42): the submission page — description, gallery around
+    // it, folders, keywords, comments.
+    if (widget.tab.booruHandler is FurAffinityHandler) {
+      actions.add(
+        Obx(() {
+          final BooruItem? item = page.value >= 0 && page.value < widget.tab.booruHandler.filteredFetched.length
+              ? widget.tab.booruHandler.filteredFetched[page.value]
+              : null;
+          if (item == null) return const SizedBox.shrink();
+          return ToolbarAction(
+            key: const ValueKey('furaffinity-post'),
+            icon: const Icon(Symbols.article_rounded),
+            tooltip: 'Post page',
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => FurAffinityPostPage(booru: widget.tab.booruHandler.booru, item: item)),
+            ),
+          );
+        }),
+      );
+    }
+
+    // kemono: the post page — content, every file with its name, comments.
+    if (widget.tab.booruHandler is KemonoHandler) {
+      actions.add(
+        Obx(() {
+          final BooruItem? item = page.value >= 0 && page.value < widget.tab.booruHandler.filteredFetched.length
+              ? widget.tab.booruHandler.filteredFetched[page.value]
+              : null;
+          if (item == null) return const SizedBox.shrink();
+          return ToolbarAction(
+            key: const ValueKey('kemono-post'),
+            icon: const Icon(Symbols.article_rounded),
+            tooltip: 'Post page',
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => KemonoPostPage(booru: widget.tab.booruHandler.booru, item: item)),
+            ),
+          );
+        }),
+      );
+    }
+
     // Debug - print current item info
     // actions.add(IconButton(
-    //   icon: Icon(Icons.developer_board),
+    //   icon: Icon(Symbols.developer_board_rounded),
     //   color: Colors.white,
     //   onPressed: () {
     //     print(searchHandler.viewedItem.value.toJSON().toString());
@@ -286,12 +420,12 @@ class _HideableAppBarState extends State<HideableAppBar> {
                 children: [
                   if (isSelected && isSelectOverflowed)
                     const Icon(
-                      Icons.check_box,
+                      Symbols.check_box_rounded,
                       color: Colors.white,
                       size: 18,
                     ),
                   const Icon(
-                    Icons.more_vert,
+                    Symbols.more_vert_rounded,
                     color: Colors.white,
                   ),
                 ],
@@ -337,19 +471,22 @@ class _HideableAppBarState extends State<HideableAppBar> {
 
     switch (button) {
       case .info:
-        icon = Icons.info;
+        icon = Symbols.info_rounded;
         break;
       case .open:
-        icon = Icons.public;
+        icon = Symbols.public_rounded;
         break;
       case .autoscroll:
-        icon = autoScroll ? Icons.pause : Icons.play_arrow;
+        icon = autoScroll ? Symbols.pause_rounded : Symbols.play_arrow_rounded;
         break;
       case .snatch:
-        icon = Icons.save;
+        icon = Symbols.save_rounded;
+        break;
+      case .notInterested:
+        icon = Symbols.thumb_down_rounded;
         break;
       case .favourite:
-        // icon = isFav == true ? Icons.favorite : Icons.favorite_border;
+        // icon = isFav == true ? Symbols.favorite_rounded : Symbols.favorite_border_rounded;
         // early return to override with animated icon
         return Obx(() {
           if (page.value == -1 || widget.tab.booruHandler.filteredFetched.isEmpty) {
@@ -357,17 +494,27 @@ class _HideableAppBarState extends State<HideableAppBar> {
           }
 
           final bool? isFav = item.isFavourite.value;
+          // Material Symbols renders the same outline glyph for both states —
+          // the favourited state needs fill: 1 (variable font axis) + the
+          // accent tint to actually light up.
           return AnimatedCrossFade(
             duration: const Duration(milliseconds: 200),
             crossFadeState: isFav == true ? CrossFadeState.showFirst : CrossFadeState.showSecond,
-            firstChild: const Icon(Icons.favorite),
+            firstChild: const Icon(
+              Symbols.favorite_rounded,
+              fill: 1,
+              color: Color(0xFFF0708A),
+            ),
             secondChild: Icon(
-              isFav == true ? Icons.favorite : (isFav == false ? Icons.favorite_border : CupertinoIcons.heart_slash),
+              isFav == false ? Symbols.favorite_rounded : CupertinoIcons.heart_slash,
             ),
           );
         });
       case .share:
-        icon = Icons.share;
+        icon = Symbols.share_rounded;
+        break;
+      case .linkedMedia:
+        icon = Symbols.link_rounded;
         break;
       case .select:
         return Obx(() {
@@ -415,7 +562,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
                           ),
                         )
                       : const Icon(
-                          Icons.check_box_outline_blank,
+                          Symbols.check_box_outline_blank_rounded,
                           size: 24,
                         ),
                 ),
@@ -424,16 +571,16 @@ class _HideableAppBarState extends State<HideableAppBar> {
           );
         });
       case .reloadnoscale:
-        icon = Icons.refresh;
+        icon = Symbols.refresh_rounded;
         break;
       case .toggleQuality:
         final bool isHq = settingsHandler.galleryMode.isFullRes ? !item.toggleQuality.value : item.toggleQuality.value;
-        icon = isHq ? Icons.high_quality : Icons.high_quality_outlined;
+        icon = isHq ? Symbols.high_quality_rounded : Symbols.high_quality_rounded;
       case .externalPlayer:
-        icon = Icons.exit_to_app;
+        icon = Symbols.exit_to_app_rounded;
         break;
       case .imageSearch:
-        icon = Icons.image_search_rounded;
+        icon = Symbols.image_search_rounded;
         break;
     }
     return Icon(icon);
@@ -505,6 +652,9 @@ class _HideableAppBarState extends State<HideableAppBar> {
           );
         }
         break;
+      case .linkedMedia:
+        // Nothing stacked on it: the link button has no progress to show.
+        return null;
       case .share:
         if (sharedItem != null && shareProgress != 0) {
           return AnimatedProgressIndicator(
@@ -527,6 +677,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
       case .toggleQuality:
       case .externalPlayer:
       case .imageSearch:
+      case .notInterested:
         break;
     }
     return null;
@@ -623,6 +774,8 @@ class _HideableAppBarState extends State<HideableAppBar> {
         };
       case .share:
         return () async => onShareClick();
+      case .linkedMedia:
+        return openLinkedMedia;
       case .select:
         return () async {
           final bool isSelected = widget.tab.selected.contains(item);
@@ -654,12 +807,44 @@ class _HideableAppBarState extends State<HideableAppBar> {
           context,
           item.fileURL,
         );
+      case .notInterested:
+        // r34: a loud no the learner keeps; the item leaves the feed and the
+        // viewer moves on to the next one.
+        return () async {
+          await RecommenderHandler.maybe?.dismiss(item);
+          widget.tab.booruHandler.fetched.remove(item);
+          widget.tab.booruHandler.filterFetched();
+          FlashElements.showSnackbar(
+            context: context,
+            title: const Text('Not interested', style: TextStyle(fontSize: 18)),
+            content: const Text('Gone from your recommendations; the model learned from it.', style: TextStyle(fontSize: 14)),
+            duration: const Duration(seconds: 2),
+            sideColor: Colors.orange,
+          );
+          if (!mounted) return;
+          // The list shrank under the viewer: nothing left closes it, a
+          // removed last item moves to the new last, otherwise the next
+          // item is now at this index and becomes the current one.
+          final List<BooruItem> left = widget.tab.booruHandler.filteredFetched;
+          if (left.isEmpty) {
+            Navigator.of(context).pop();
+            return;
+          }
+          if (page.value >= left.length) {
+            page.value = left.length - 1;
+            widget.pageController.jumpToPage(page.value);
+          }
+          viewerHandler.setCurrent(left[page.value]);
+          setState(() {});
+        };
     }
   }
 
   AsyncCallback? buttonHold(GalleryButton button) {
     // TODO long press slideshow button to set the timer
     switch (button) {
+      case .linkedMedia:
+        return openLinkedMedia;
       case .share:
         return () async {
           await ServiceHandler.vibrate();
@@ -690,7 +875,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
                           await settingsHandler.dbHandler.updateBooruItem(item, BooruUpdateMode.local);
                           Navigator.of(context).pop();
                         },
-                        leading: item.isSnatched.value == true ? const Icon(Icons.clear) : const Icon(Icons.check),
+                        leading: item.isSnatched.value == true ? const Icon(Symbols.clear_rounded) : const Icon(Symbols.check_rounded),
                         title: item.isSnatched.value == true
                             ? Text(context.loc.viewer.appBar.dropSnatchedStatus)
                             : Text(context.loc.viewer.appBar.setSnatchedStatus),
@@ -720,7 +905,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
                         }
                         Navigator.of(context).pop();
                       },
-                      leading: const Icon(Icons.file_download_outlined),
+                      leading: const Icon(Symbols.file_download_rounded),
                       title: Text(
                         '${context.loc.viewer.appBar.snatch} ${item.isSnatched.value == true ? context.loc.viewer.appBar.forced : ''}'
                             .trim(),
@@ -744,6 +929,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
       case .toggleQuality:
       case .externalPlayer:
       case .imageSearch:
+      case .notInterested:
         return null;
     }
   }
@@ -758,7 +944,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
           FlashElements.showSnackbar(
             context: context,
             title: Text(context.loc.gallery.noPostUrl, style: const TextStyle(fontSize: 20)),
-            leadingIcon: Icons.warning_amber,
+            leadingIcon: Symbols.warning_amber_rounded,
             leadingIconColor: Colors.red,
             sideColor: Colors.red,
           );
@@ -772,14 +958,14 @@ class _HideableAppBarState extends State<HideableAppBar> {
           FlashElements.showSnackbar(
             context: context,
             title: Text(context.loc.gallery.noPostUrl, style: const TextStyle(fontSize: 20)),
-            leadingIcon: Icons.warning_amber,
+            leadingIcon: Symbols.warning_amber_rounded,
             leadingIconColor: Colors.red,
             sideColor: Colors.red,
           );
           return;
         }
 
-        final tags = await showSelectTagsDialog(context, item.tagsList);
+        final tags = await showSelectTagsDialog(context, item.tagsList, forItem: item);
         if (tags.isNotEmpty) {
           shareTextAction('${item.postURL} \n ${tags.join(' ')}');
         } else {
@@ -790,7 +976,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
         shareTextAction(item.fileURL);
         break;
       case .fileUrlWithTags:
-        final tags = await showSelectTagsDialog(context, item.tagsList);
+        final tags = await showSelectTagsDialog(context, item.tagsList, forItem: item);
         if (tags.isNotEmpty) {
           shareTextAction('${item.fileURL} \n ${tags.join(' ')}');
         } else {
@@ -801,7 +987,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
         await shareFileAction();
         break;
       case .fileWithTags:
-        final tags = await showSelectTagsDialog(context, item.tagsList);
+        final tags = await showSelectTagsDialog(context, item.tagsList, forItem: item);
         if (tags.isNotEmpty) {
           await shareFileAction(text: tags.join(' '));
         } else {
@@ -825,7 +1011,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
         duration: const Duration(seconds: 2),
         title: Text(context.loc.copiedToClipboard, style: const TextStyle(fontSize: 20)),
         content: Text(Uri.encodeFull(text), style: const TextStyle(fontSize: 16)),
-        leadingIcon: Icons.copy,
+        leadingIcon: Symbols.content_copy_rounded,
         sideColor: Colors.green,
       );
     } else if (Platform.isAndroid) {
@@ -852,21 +1038,21 @@ class _HideableAppBarState extends State<HideableAppBar> {
                 const SizedBox(height: 12),
                 ListTile(
                   title: Text(context.loc.viewer.appBar.postURL),
-                  leading: const Icon(Icons.arrow_forward),
+                  leading: const Icon(Symbols.arrow_forward_rounded),
                   onTap: () {
                     Navigator.of(context).pop('post');
                   },
                 ),
                 ListTile(
                   title: Text(context.loc.viewer.appBar.fileURL),
-                  leading: const Icon(Icons.arrow_forward),
+                  leading: const Icon(Symbols.arrow_forward_rounded),
                   onTap: () {
                     Navigator.of(context).pop('file');
                   },
                 ),
                 ListTile(
                   title: Text(context.loc.cancel),
-                  leading: const Icon(Icons.cancel_outlined),
+                  leading: const Icon(Symbols.cancel_rounded),
                   onTap: () {
                     Navigator.of(context).pop();
                   },
@@ -935,7 +1121,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
                     if (!alreadyLoadingSame) ...[
                       const SizedBox(width: 8),
                       Icon(
-                        Icons.arrow_forward_ios,
+                        Symbols.arrow_forward_ios_rounded,
                         size: 30,
                         color: Theme.of(context).colorScheme.onSurface,
                       ),
@@ -1072,7 +1258,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
             context.loc.viewer.appBar.savingFileError,
             style: const TextStyle(fontSize: 16),
           ),
-          leadingIcon: Icons.warning_amber,
+          leadingIcon: Symbols.warning_amber_rounded,
           leadingIconColor: Colors.red,
           sideColor: Colors.red,
         );
@@ -1129,7 +1315,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
                     ),
                     onTap: () async {
                       Navigator.of(context).pop();
-                      final tags = await showSelectTagsDialog(context, item.tagsList);
+                      final tags = await showSelectTagsDialog(context, item.tagsList, forItem: item);
                       if (tags.isNotEmpty) {
                         shareTextAction('${item.postURL} \n ${tags.join(' ')}');
                       } else {
@@ -1177,7 +1363,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
                   ),
                   onTap: () async {
                     Navigator.of(context).pop();
-                    final tags = await showSelectTagsDialog(context, item.tagsList);
+                    final tags = await showSelectTagsDialog(context, item.tagsList, forItem: item);
                     if (tags.isNotEmpty) {
                       shareTextAction('${item.fileURL} \n ${tags.join(' ')}');
                     } else {
@@ -1210,7 +1396,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
                     Navigator.of(context).pop();
                     shareFileAction();
                   },
-                  leading: const Icon(Icons.file_present),
+                  leading: const Icon(Symbols.file_present_rounded),
                   title: Text(context.loc.viewer.appBar.file),
                 ),
                 const SizedBox(height: 15),
@@ -1224,7 +1410,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
                   ),
                   onTap: () async {
                     Navigator.of(context).pop();
-                    final tags = await showSelectTagsDialog(context, item.tagsList);
+                    final tags = await showSelectTagsDialog(context, item.tagsList, forItem: item);
                     if (tags.isNotEmpty) {
                       await shareFileAction(text: tags.join(' '));
                     } else {
@@ -1234,7 +1420,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
                   leading: const Stack(
                     clipBehavior: Clip.none,
                     children: [
-                      Icon(Icons.file_present),
+                      Icon(Symbols.file_present_rounded),
                       Positioned(
                         bottom: -10,
                         right: -10,
@@ -1258,7 +1444,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
                       await shareHydrusAction(item);
                       Navigator.of(context).pop();
                     },
-                    leading: const Icon(Icons.file_present),
+                    leading: const Icon(Symbols.file_present_rounded),
                     title: Text(context.loc.viewer.appBar.hydrus),
                   ),
               ],
@@ -1286,6 +1472,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
     viewerHandler.displayAppbar.value = !settingsHandler.autoHideImageBar;
 
     viewerHandler.displayAppbar.addListener(appbarListener);
+    LinkedMediaStore.revision.addListener(linkedMediaListener);
 
     WidgetsBinding.instance.addPostFrameCallback(
       (_) => pageListener(),
@@ -1295,6 +1482,22 @@ class _HideableAppBarState extends State<HideableAppBar> {
     autoScrollProgressController = TimedProgressController(
       duration: Duration(milliseconds: settingsHandler.galleryAutoScrollTime),
     );
+  }
+
+  /// r52: the linked media sheet of the post on screen.
+  Future<void> openLinkedMedia() async {
+    final BooruItem item = widget.tab.booruHandler.filteredFetched[page.value];
+    final handler = widget.tab.booruHandler;
+    final List<LinkedMedia> links =
+        LinkedMediaStore.linksFor(item.postURL) ??
+        (handler is FurAffinityHandler ? await LinkedMediaButton.linksFor(handler, item) : const <LinkedMedia>[]);
+    if (!mounted) return;
+    await LinkedMediaSheet.show(context, links, title: item.description);
+  }
+
+  /// A post's links became known: the share button's place may change.
+  void linkedMediaListener() {
+    if (mounted) setState(() {});
   }
 
   void appbarListener() {
@@ -1308,6 +1511,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
     autoScrollProgressController?.dispose();
     autoScrollTimer?.cancel();
     viewerHandler.displayAppbar.removeListener(appbarListener);
+    LinkedMediaStore.revision.removeListener(linkedMediaListener);
     ServiceHandler.setSystemUiVisibility(true);
 
     super.dispose();
@@ -1359,7 +1563,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
                 surfaceTintColor: Colors.transparent,
                 leading: IconButton(
                   // to ignore icon change
-                  icon: const Icon(Icons.arrow_back, color: Colors.white),
+                  icon: const Icon(Symbols.arrow_back_rounded, color: Colors.white),
                   onPressed: () => Navigator.of(context).pop(),
                 ),
                 title: FittedBox(
@@ -1381,8 +1585,12 @@ class _HideableAppBarState extends State<HideableAppBar> {
 
 Future<List<String>> showSelectTagsDialog(
   BuildContext context,
-  List<Tag> tags,
-) async {
+  List<Tag> tags, {
+  /// The item those tags came from, when known — decides whether the shared
+  /// booru tag store may be consulted for their types.
+  BooruItem? forItem,
+}) async {
+  final bool isDoujin = forItem != null && DoujinDataHandler.isDoujinItem(forItem);
   if (tags.isEmpty) return [];
 
   tags = tags.where((t) => t.fullString.trim().isNotEmpty).toList();
@@ -1393,7 +1601,10 @@ Future<List<String>> showSelectTagsDialog(
     for (final type in TagType.values) type: [],
   };
   for (final t in tags) {
-    final tag = tagHandler.getTag(t.fullString);
+    // Keep the item's OWN type when it has one (doujin tags always do), and
+    // never consult the shared booru tag store for a doujin item - that
+    // replaced its tags with a booru's classification of the same names.
+    final Tag tag = (t.tagType != TagType.none || isDoujin) ? t : tagHandler.getTag(t.fullString);
     tagMap[tag.tagType]?.add(tag);
   }
   final List<Tag> items = tagMap.values.expand((i) => i).toList();

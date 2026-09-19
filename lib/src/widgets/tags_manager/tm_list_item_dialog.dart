@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 
 import 'package:lolisnatcher/src/data/constants.dart';
@@ -106,12 +108,12 @@ class _TagsManagerListItemDialogState extends State<TagsManagerListItemDialog> {
                 duration: const Duration(seconds: 2),
                 title: Text(context.loc.tagsManager.addedATab, style: const TextStyle(fontSize: 20)),
                 content: Text(widget.tag.fullString, style: const TextStyle(fontSize: 16)),
-                leadingIcon: Icons.copy,
+                leadingIcon: Symbols.content_copy_rounded,
                 sideColor: Colors.green,
               );
               Navigator.of(context).pop(true);
             },
-            leading: const Icon(Icons.add_circle_outline),
+            leading: const Icon(Symbols.add_circle_rounded),
             trailing: BooruFavicon(SearchHandler.instance.currentBooruHandler.booru),
             title: Text(context.loc.tagsManager.addATab),
           ),
@@ -130,12 +132,12 @@ class _TagsManagerListItemDialogState extends State<TagsManagerListItemDialog> {
               duration: const Duration(seconds: 2),
               title: Text(context.loc.copiedToClipboard, style: const TextStyle(fontSize: 20)),
               content: Text(widget.tag.fullString, style: const TextStyle(fontSize: 16)),
-              leadingIcon: Icons.copy,
+              leadingIcon: Symbols.content_copy_rounded,
               sideColor: Colors.green,
             );
             Navigator.of(context).pop(true);
           },
-          leading: const Icon(Icons.copy),
+          leading: const Icon(Symbols.content_copy_rounded),
           title: Text(context.loc.tagsManager.copy),
         ),
         //
@@ -147,7 +149,7 @@ class _TagsManagerListItemDialogState extends State<TagsManagerListItemDialog> {
         //     side: BorderSide(color: Theme.of(context).colorScheme.secondary),
         //   ),
         //   onTap: widget.onDelete,
-        //   leading: Icon(Icons.delete_forever, color: Theme.of(context).errorColor),
+        //   leading: Icon(Symbols.delete_forever_rounded, color: Theme.of(context).errorColor),
         //   title: const Text('Delete'),
         // ),
         //
@@ -159,7 +161,7 @@ class _TagsManagerListItemDialogState extends State<TagsManagerListItemDialog> {
               side: BorderSide(color: Theme.of(context).colorScheme.secondary),
             ),
             onTap: () => callbackWithSetState(widget.onSetStale!),
-            leading: const Icon(Icons.timer_off),
+            leading: const Icon(Symbols.timer_off_rounded),
             title: Text(context.loc.tagsManager.setStale),
           ),
         ],
@@ -172,7 +174,7 @@ class _TagsManagerListItemDialogState extends State<TagsManagerListItemDialog> {
               side: BorderSide(color: Theme.of(context).colorScheme.secondary),
             ),
             onTap: () => callbackWithSetState(widget.onResetStale!),
-            leading: const Icon(Icons.restore),
+            leading: const Icon(Symbols.restore_rounded),
             title: Text(context.loc.tagsManager.resetStale),
           ),
         ],
@@ -185,7 +187,7 @@ class _TagsManagerListItemDialogState extends State<TagsManagerListItemDialog> {
               side: BorderSide(color: Theme.of(context).colorScheme.secondary),
             ),
             onTap: () => callbackWithSetState(widget.onSetUnstaleable!),
-            leading: const Icon(Icons.lock_clock),
+            leading: const Icon(Symbols.lock_clock_rounded),
             title: Text(context.loc.tagsManager.makeUnstaleable),
           ),
         ],
@@ -196,7 +198,7 @@ class _TagsManagerListItemDialogState extends State<TagsManagerListItemDialog> {
             side: BorderSide(color: Theme.of(context).colorScheme.secondary),
           ),
           onTap: () => Navigator.of(context).pop(),
-          leading: const Icon(Icons.cancel_outlined),
+          leading: const Icon(Symbols.cancel_rounded),
           title: Text(context.loc.close),
         ),
       ],

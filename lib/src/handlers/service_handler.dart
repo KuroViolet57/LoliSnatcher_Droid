@@ -241,6 +241,42 @@ class ServiceHandler {
     return result;
   }
 
+  /// Children of a SAF directory — the picked root OR a folder created by
+  /// [getOrCreateSAFDirectory] — as {name, uri, isDir, mime, size, modified}.
+  static Future<List<Map<String, dynamic>>> listSAFDirectory(String safUri) async {
+    try {
+      final List<dynamic>? entries = await platform.invokeMethod('listSafDirectory', {'uri': safUri});
+      return [
+        for (final e in entries ?? const [])
+          if (e is Map) Map<String, dynamic>.from(e),
+      ];
+    } catch (e) {
+      log(e);
+      return [];
+    }
+  }
+
+  /// The URI of [name] under [safUri], created when missing. Null when the
+  /// name exists but is a file, or the directory cannot be written.
+  static Future<String?> getOrCreateSAFDirectory(String safUri, String name) async {
+    try {
+      return await platform.invokeMethod('getOrCreateSafDirectory', {'uri': safUri, 'name': name});
+    } catch (e) {
+      log(e);
+      return null;
+    }
+  }
+
+  /// Deletes a SAF directory (or document) with everything under it.
+  static Future<bool> deleteSAFTree(String safUri) async {
+    try {
+      return await platform.invokeMethod('deleteSafTree', {'uri': safUri}) ?? false;
+    } catch (e) {
+      log(e);
+      return false;
+    }
+  }
+
   static Future<bool> deleteFileFromSAFDirectory(String safUri, String fileName) async {
     bool result = false;
     try {
@@ -447,6 +483,14 @@ class ServiceHandler {
     }
   }
 
+  // What setSystemUiVisibility last applied — the re-hide callback below only
+  // acts while the app still wants the "visible chrome, hidden status bar"
+  // combination (manual mode never re-hides on its own after the user swipes
+  // the status bar back in).
+  static bool _wantsHiddenStatusBar = false;
+  static bool _statusBarCallbackArmed = false;
+  static int _statusBarReHideGeneration = 0;
+
   static Future<void> setSystemUiVisibility(bool visible) async {
     // When the user opted to hide the status bar, "showing" the system UI still
     // keeps the top status bar hidden (bottom nav stays visible) so it doesn't
@@ -457,13 +501,32 @@ class ServiceHandler {
     } catch (_) {}
 
     if (visible && hideStatusBar) {
+      _wantsHiddenStatusBar = true;
       await SystemChrome.setEnabledSystemUIMode(
         SystemUiMode.manual,
         overlays: [SystemUiOverlay.bottom],
       );
+      if (!_statusBarCallbackArmed) {
+        _statusBarCallbackArmed = true;
+        await SystemChrome.setSystemUIChangeCallback((bool systemOverlaysAreVisible) async {
+          if (!systemOverlaysAreVisible || !_wantsHiddenStatusBar) return;
+          // The user swiped the status bar back in — let it linger briefly
+          // (so quick-settings access still works), then re-hide, unless the
+          // desired mode changed in the meantime.
+          final int generation = ++_statusBarReHideGeneration;
+          await Future.delayed(const Duration(seconds: 3));
+          if (_wantsHiddenStatusBar && generation == _statusBarReHideGeneration) {
+            await SystemChrome.setEnabledSystemUIMode(
+              SystemUiMode.manual,
+              overlays: [SystemUiOverlay.bottom],
+            );
+          }
+        });
+      }
       return;
     }
 
+    _wantsHiddenStatusBar = false;
     await SystemChrome.setEnabledSystemUIMode(
       visible ? SystemUiMode.edgeToEdge : SystemUiMode.immersiveSticky,
       overlays: visible ? SystemUiOverlay.values : [],

@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/saved_search.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
@@ -24,53 +26,64 @@ class SavedSearchTile extends StatelessWidget {
       if (entry.booru.isNotEmpty) entry.booru,
       if (entry.secondaryBoorus.isNotEmpty) '+ ${entry.secondaryBoorus.join(", ")}',
     ];
-    return ListTile(
-      title: Text(
-        entry.displayLabel,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainer,
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
       ),
-      subtitle: subtitleParts.isEmpty
-          ? null
-          : Text(
-              subtitleParts.join(' '),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+      clipBehavior: Clip.antiAlias,
+      child: ListTile(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(13)),
+        title: Text(
+          entry.displayLabel,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+        ),
+        subtitle: subtitleParts.isEmpty
+            ? null
+            : Text(
+                subtitleParts.join(' '),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+        leading: Icon(Symbols.bookmark_rounded, color: theme.colorScheme.secondary),
+        onTap: () => _openDefault(context),
+        trailing: PopupMenuButton<_TileAction>(
+          icon: const Icon(Symbols.more_vert_rounded),
+          onSelected: (action) => _handle(context, action),
+          itemBuilder: (_) => const [
+            PopupMenuItem(
+              value: _TileAction.openInOther,
+              child: ListTile(
+                dense: true,
+                leading: Icon(Symbols.open_in_new_rounded),
+                title: Text('Open in another booru'),
               ),
             ),
-      leading: const Icon(Icons.bookmark),
-      onTap: () => _openDefault(context),
-      trailing: PopupMenuButton<_TileAction>(
-        icon: const Icon(Icons.more_vert),
-        onSelected: (action) => _handle(context, action),
-        itemBuilder: (_) => const [
-          PopupMenuItem(
-            value: _TileAction.openInOther,
-            child: ListTile(
-              dense: true,
-              leading: Icon(Icons.open_in_new),
-              title: Text('Open in another booru'),
+            PopupMenuItem(
+              value: _TileAction.rename,
+              child: ListTile(
+                dense: true,
+                leading: Icon(Symbols.edit_rounded),
+                title: Text('Rename'),
+              ),
             ),
-          ),
-          PopupMenuItem(
-            value: _TileAction.rename,
-            child: ListTile(
-              dense: true,
-              leading: Icon(Icons.edit),
-              title: Text('Rename'),
+            PopupMenuItem(
+              value: _TileAction.delete,
+              child: ListTile(
+                dense: true,
+                leading: Icon(Symbols.delete_rounded),
+                title: Text('Delete'),
+              ),
             ),
-          ),
-          PopupMenuItem(
-            value: _TileAction.delete,
-            child: ListTile(
-              dense: true,
-              leading: Icon(Icons.delete_outline),
-              title: Text('Delete'),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

@@ -66,6 +66,16 @@ class RedGifsHandler extends BooruHandler {
           MetaTagValue(name: 'Latest', value: 'latest'),
         ],
       ),
+      MetaTagWithValues(
+        name: 'Type',
+        keyName: 'type',
+        values: [MetaTagValue(name: 'Gifs (videos)', value: 'gifs'), MetaTagValue(name: 'Images', value: 'images')],
+      ),
+      MetaTagWithValues(
+        name: 'Verified creators',
+        keyName: 'verified',
+        values: [MetaTagValue(name: 'Only verified', value: 'yes')],
+      ),
     ];
   }
 
@@ -186,6 +196,10 @@ class RedGifsHandler extends BooruHandler {
     final List<String> tags = [];
     for (final term in terms) {
       final lower = term.toLowerCase();
+      if (lower.startsWith('type:') || lower.startsWith('verified:')) {
+        // r71: search options, not tags (see makeURL).
+        continue;
+      }
       if (lower.startsWith('sort:') || lower.startsWith('order:')) {
         final value = lower.split(':').last;
         if (['trending', 'top', 'latest'].contains(value)) {
@@ -208,6 +222,15 @@ class RedGifsHandler extends BooruHandler {
         .where((e) => e.isNotEmpty && e != 'nsfw')
         .toList();
 
+    // r71: type=g (gifs) / i (images) on the search, creator and niche
+    // endpoints and verified=y on the search, checked live 2026-09-17.
+    final String? mediaType = switch (_prefixValue(tags, 'type')?.toLowerCase()) {
+      'gifs' || 'gif' || 'videos' || 'video' => 'g',
+      'images' || 'image' || 'photos' || 'photo' => 'i',
+      _ => null,
+    };
+    final bool verifiedOnly = _prefixValue(tags, 'verified')?.toLowerCase() == 'yes';
+
     // A `niche:id` term routes to a curated RedGifs niche feed, e.g.
     // `niche:just-boobs`. Browse the catalogue at redgifs.com/niches.
     final String? niche = _prefixValue(tags, 'niche');
@@ -217,6 +240,7 @@ class RedGifsHandler extends BooruHandler {
           'order': _nicheOrder(parts.order),
           'count': limit.toString(),
           'page': pageNum.toString(),
+          'type': ?mediaType,
         },
       ).toString();
     }
@@ -231,6 +255,7 @@ class RedGifsHandler extends BooruHandler {
           'order': _userOrder(parts.order),
           'count': limit.toString(),
           'page': pageNum.toString(),
+          'type': ?mediaType,
         },
       ).toString();
     }
@@ -243,6 +268,8 @@ class RedGifsHandler extends BooruHandler {
         'order': parts.order,
         'count': limit.toString(),
         'page': pageNum.toString(),
+        'type': ?mediaType,
+        if (verifiedOnly) 'verified': 'y',
       },
     ).toString();
   }
