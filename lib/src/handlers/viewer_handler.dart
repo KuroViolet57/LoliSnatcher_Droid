@@ -115,6 +115,21 @@ class ViewerHandler {
   // AND the sheet is closed.
   final RxDouble infoSheetExtent = 0.0.obs;
 
+  /// r77: the viewer that is on screen right now (no page, dialog or sheet
+  /// route over it), or null. Each viewer claims it when its route becomes
+  /// the top one and gives it back when covered or closed - only the owner
+  /// can give it back, so a nested viewer closing after its parent took over
+  /// again cannot clear the parent's claim.
+  Object? _onScreen;
+
+  bool get viewerOnScreen => _onScreen != null;
+
+  void claimScreen(Object viewer) => _onScreen = viewer;
+
+  void releaseScreen(Object viewer) {
+    if (identical(_onScreen, viewer)) _onScreen = null;
+  }
+
   bool get isPeekBarVisible => displayAppbar.value && infoSheetExtent.value < 0.06;
 
   // ── manual pause tracking ────────────────────────────────────────────────

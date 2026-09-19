@@ -189,16 +189,26 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware, Trac
   @override
   void didPushNext() {
     isActive.value = false;
+    viewerHandler.releaseScreen(this);
   }
 
   @override
   void didPush() {
     isActive.value = true;
+    viewerHandler.claimScreen(this);
+  }
+
+  // r77: frames are read only while a viewer is really on screen; a closing
+  // viewer stops that the moment its route pops, not after its animation.
+  @override
+  void didPop() {
+    viewerHandler.releaseScreen(this);
   }
 
   @override
   void didPopNext() {
     isActive.value = true;
+    viewerHandler.claimScreen(this);
 
     // A nested viewer (e.g. opened from a tag preview strip) shares the
     // global sheet-extent mirror and resets it to 0 in its own initState —
@@ -230,6 +240,7 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware, Trac
 
   @override
   void dispose() {
+    viewerHandler.releaseScreen(this);
     _flushDwell();
     if (widget.key is GlobalKey) {
       WidgetsBinding.instance.addPostFrameCallback((_) {

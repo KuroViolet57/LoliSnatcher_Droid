@@ -13,8 +13,10 @@ import 'package:lolisnatcher/src/handlers/database_handler.dart';
 import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/encoder_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/ftrl_model.dart';
+import 'package:lolisnatcher/src/handlers/recommender/image_tagger_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/item_features.dart';
 import 'package:lolisnatcher/src/handlers/recommender/look_model_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/model_work.dart';
 import 'package:lolisnatcher/src/handlers/recommender/pixel_tags.dart';
 import 'package:lolisnatcher/src/handlers/recommender/rewards.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -120,6 +122,9 @@ class RecommenderHandler {
     if (!GetIt.instance.isRegistered<RecommenderHandler>()) {
       GetIt.instance.registerSingleton(RecommenderHandler());
     }
+    // r77: steps learned lite while the app was leaving reach the disk too,
+    // not only at the next timed save of a process Android may end.
+    ModelWork.instance.onDrainedAway = () => unawaited(maybe?.flush() ?? Future<void>.value());
     return instance;
   }
 
@@ -198,6 +203,10 @@ class RecommenderHandler {
   final Map<RecommenderWorld, FtrlModel> _models = {};
   final Map<RecommenderWorld, Future<FtrlModel>> _loading = {};
   final Set<RecommenderWorld> _dirty = {};
+
+  /// r77: bumped by [reset]; a learning step queued before a reset of its
+  /// world is dropped instead of teaching the fresh model.
+  final Map<RecommenderWorld, int> _generation = {};
   Timer? _saveTimer;
   int _sincePrune = 0;
 
@@ -392,6 +401,10 @@ class RecommenderHandler {
 
   /// An interaction with [item]. Logged and learned at once when learning is
   /// on; a kind that teaches nothing (see [rewardFor]) is neither.
+  ///
+  /// r77: the learning itself is a background step ([ModelWork]): it runs at
+  /// a quiet moment, one at a time, and without the models (lite) when the
+  /// app leaves the screen first. The timeouts start when the step starts.
   Future<void> onEvent(
     BooruItem item,
     InteractionKind kind, {
@@ -405,10 +418,47 @@ class RecommenderHandler {
     final Reward? reward = rewardFor(kind, value: value);
     if (reward == null) return;
     final RecommenderWorld world = ItemFeatures.worldOf(item);
+    final int generation = _generation[world] ?? 0;
+    await ModelWork.instance.run(
+      'learn ${kind.name}',
+      (bool lite) {
+        if ((_generation[world] ?? 0) != generation) return Future<void>.value();
+        return _learnEvent(item, kind, key, world, reward, value: value, handler: handler, namespaces: namespaces, lite: lite);
+      },
+      heavy: _wantsPixelTags(world, reward),
+    );
+  }
+
+  /// The image tagger will read the picture for this reaction: the heaviest
+  /// step, held while a video plays.
+  bool _wantsPixelTags(RecommenderWorld world, Reward reward) =>
+      pixelTagsFor != null &&
+      _settings.taggerOnReactions &&
+      world == RecommenderWorld.booru &&
+      reward.weight >= 2 &&
+      (ImageTaggerHandler.maybe?.enabled ?? false);
+
+  Future<void> _learnEvent(
+    BooruItem item,
+    InteractionKind kind,
+    String key,
+    RecommenderWorld world,
+    Reward reward, {
+    required double value,
+    required bool lite,
+    BooruHandler? handler,
+    Map<String, String>? namespaces,
+  }) async {
+    if (!learningEnabled) {
+      // Learning was switched off while this step waited: a "Not interested"
+      // is an order all the same, and is logged the way [dismiss] logs one.
+      if (kind == InteractionKind.notInterested) await _logDismissal(item, world, key, handler: handler);
+      return;
+    }
     await modelFor(world);
-    final Float32List? embedding = (await _embeddings([item], handler: handler)).first;
-    final Float32List? look = (await _looks([item], handler: handler, world: world)).first;
-    final List<String> pixel = await _pixelTags(item, world, reward, kind, handler: handler);
+    final Float32List? embedding = lite ? null : (await _embeddings([item], handler: handler)).first;
+    final Float32List? look = lite ? null : (await _looks([item], handler: handler, world: world)).first;
+    final List<String> pixel = lite ? const [] : await _pixelTags(item, world, reward, kind, handler: handler);
     final FeatureVector features = _featuresFor(item, world, handler: handler, namespaces: namespaces, embedding: embedding, look: look, extraTags: pixel);
     if (features.isEmpty) return;
     await _learn(world, key, _hostOf(item), kind, value, features, reward);
@@ -492,14 +542,21 @@ class RecommenderHandler {
   /// again (see [withoutDismissed]). It is an order, not a passive signal:
   /// it is written to the log even while learning is off, so it survives a
   /// restart either way; the model learns from it only when learning is on.
+  ///
+  /// r77: the learning is a background step; this returns at once (the item
+  /// is left out of every surface from now on either way).
   Future<void> dismiss(BooruItem item, {BooruHandler? handler}) async {
     final String key = keyOf(item);
     final RecommenderWorld world = ItemFeatures.worldOf(item);
     if (key.isNotEmpty) (_dismissed[world] ??= {}).add(key);
     if (learningEnabled) {
-      await onEvent(item, InteractionKind.notInterested, handler: handler);
+      unawaited(onEvent(item, InteractionKind.notInterested, handler: handler));
       return;
     }
+    await _logDismissal(item, world, key, handler: handler);
+  }
+
+  Future<void> _logDismissal(BooruItem item, RecommenderWorld world, String key, {BooruHandler? handler}) async {
     if (!_settings.dbEnabled || key.isEmpty) return;
     try {
       final FeatureVector features = ItemFeatures.of(item, world, handler: handler);
@@ -569,11 +626,18 @@ class RecommenderHandler {
   /// interacted with and is not shown again was passed over. That is learned
   /// but not logged — the log is what the user did, and a rebuild from it
   /// must not be drowned in what they scrolled past.
+  ///
+  /// r77: a background step ([ModelWork]), like [onEvent].
   Future<void> onExposed(List<BooruItem> items, String surface, {BooruHandler? handler}) async {
+    if (!learningEnabled) return;
+    await ModelWork.instance.run('exposed $surface', (bool lite) => _exposedNow(items, surface, handler: handler, lite: lite));
+  }
+
+  Future<void> _exposedNow(List<BooruItem> items, String surface, {required bool lite, BooruHandler? handler}) async {
     if (!learningEnabled) return;
     final Map<String, ({RecommenderWorld world, String host, FeatureVector features})>? previous = _exposed[surface];
     final Map<String, ({RecommenderWorld world, String host, FeatureVector features})> current = {};
-    final List<Float32List?> embeddings = await _embeddings(items, handler: handler);
+    final List<Float32List?> embeddings = lite ? List<Float32List?>.filled(items.length, null) : await _embeddings(items, handler: handler);
     for (int i = 0; i < items.length; i++) {
       final BooruItem item = items[i];
       final String key = keyOf(item);
@@ -828,6 +892,7 @@ class RecommenderHandler {
     }
     _saveTimer?.cancel();
     _saveTimer = null;
+    _generation[world] = (_generation[world] ?? 0) + 1;
     _dirty.remove(world);
     _models[world] = FtrlModel();
     _exposed.clear();

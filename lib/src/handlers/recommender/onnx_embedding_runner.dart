@@ -13,7 +13,15 @@ import 'package:lolisnatcher/src/utils/logger.dart';
 /// `[batch, length, dim]` (or an already pooled `[batch, dim]`, which the
 /// handler recognises by its size).
 class OnnxEmbeddingRunner implements EmbeddingRunner {
-  OnnxEmbeddingRunner(this.modelPath, {required this.dim, required this.wantsTokenTypeIds});
+  OnnxEmbeddingRunner(this.modelPath, {required this.dim, required this.wantsTokenTypeIds, int? threads}) : threads = threads ?? defaultThreads;
+
+  /// r77: one thread (no count was set before, so ORT used every core - 8
+  /// on an 8-core phone). With one thread ORT builds no pool and nothing spins.
+  static const int defaultThreads = 1;
+
+  final int threads;
+
+  OrtSessionOptions get options => OrtSessionOptions(intraOpNumThreads: threads);
 
   final String modelPath;
 
@@ -32,7 +40,14 @@ class OnnxEmbeddingRunner implements EmbeddingRunner {
 
   Future<OrtSession> _openNow() async {
     try {
-      return _session = await OnnxRuntime().createSession(modelPath);
+      try {
+        return _session = await OnnxRuntime().createSession(modelPath, options: options);
+      } catch (e) {
+        // Like the tagger's and the looks model's runners: a thread count the
+        // runtime refuses falls back to its defaults, and says so.
+        Logger.Inst().log('encoder: could not open the model with $threads thread(s) ($e); default options', 'OnnxEmbeddingRunner', '_openNow', LogTypes.booruHandlerInfo);
+        return _session = await OnnxRuntime().createSession(modelPath);
+      }
     } catch (_) {
       _opening = null;
       rethrow;
@@ -71,6 +86,9 @@ class OnnxEmbeddingRunner implements EmbeddingRunner {
       try {
         final OrtValue value = outputs['last_hidden_state'] ?? outputs['token_embeddings'] ?? outputs.values.first;
         final List<dynamic> raw = await value.asFlattenedList();
+        // r77: the plugin hands float outputs over as a typed array already;
+        // copying it value by value was work on the UI isolate for nothing.
+        if (raw is Float32List) return raw;
         final Float32List out = Float32List(raw.length);
         for (int i = 0; i < raw.length; i++) {
           out[i] = (raw[i] as num).toDouble();

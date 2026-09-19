@@ -29,6 +29,7 @@ import 'package:lolisnatcher/src/handlers/interests_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/encoder_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/image_tagger_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/look_model_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/model_work.dart';
 import 'package:lolisnatcher/src/handlers/recommender/video_frames.dart';
 import 'package:lolisnatcher/src/handlers/recommender/recommender_handler.dart';
 import 'package:lolisnatcher/src/handlers/local_auth_handler.dart';
@@ -57,6 +58,7 @@ import 'package:lolisnatcher/src/widgets/common/settings_widgets.dart';
 import 'package:lolisnatcher/src/widgets/root/dev_overlay.dart';
 import 'package:lolisnatcher/src/widgets/root/image_stats.dart';
 import 'package:lolisnatcher/src/widgets/root/scroll_physics.dart';
+import 'package:lolisnatcher/src/widgets/video/media_kit_player_view.dart';
 import 'package:lolisnatcher/src/widgets/webview/webview_page.dart';
 
 void main() async {
@@ -118,6 +120,9 @@ void main() async {
   unawaited(LookModelHandler.instance.refresh());
   // r76: frames from the playing video follow the viewer's current item.
   VideoFrames.register().attach();
+  // r77: background model work waits for quiet moments and holds the image
+  // tagger while a video plays.
+  ModelWork.instance.attach(videoPlaying: MediaKitPlayerView.anyPlaying);
   LocalAuthHandler.register();
 
   await ServiceHandler.setSystemUiVisibility(true);

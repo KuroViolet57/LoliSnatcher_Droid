@@ -1,5 +1,3 @@
-import 'dart:io';
-import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter_onnxruntime/flutter_onnxruntime.dart';
@@ -15,10 +13,17 @@ import 'package:lolisnatcher/src/utils/logger.dart';
 /// threads: the plugin cannot set XNNPACK's own thread count, which would
 /// leave that path single-threaded.
 class OnnxTagRunner implements TagRunner {
-  OnnxTagRunner(this.modelPath, {int? threads}) : threads = threads ?? math.max(1, math.min(4, Platform.numberOfProcessors ~/ 2));
+  OnnxTagRunner(this.modelPath, {int? threads}) : threads = threads ?? defaultThreads;
+
+  /// r77: two threads for everyone (was half the cores, 4 on an 8-core phone):
+  /// a session's pool is fixed when it opens, and a reaction's tagging runs
+  /// next to the screen and the video.
+  static const int defaultThreads = 2;
 
   final String modelPath;
   final int threads;
+
+  OrtSessionOptions get options => OrtSessionOptions(intraOpNumThreads: threads);
 
   OrtSession? _session;
   Future<OrtSession>? _opening;
@@ -35,7 +40,7 @@ class OnnxTagRunner implements TagRunner {
   Future<OrtSession> _openNow() async {
     try {
       try {
-        _session = await OnnxRuntime().createSession(modelPath, options: OrtSessionOptions(intraOpNumThreads: threads));
+        _session = await OnnxRuntime().createSession(modelPath, options: options);
         _provider = 'CPU x$threads';
       } catch (e) {
         Logger.Inst().log('tagger: could not open the model with $threads threads ($e); default options', 'OnnxTagRunner', '_openNow', LogTypes.booruHandlerInfo);

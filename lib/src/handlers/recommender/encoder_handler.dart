@@ -19,6 +19,7 @@ import 'package:lolisnatcher/src/handlers/recommender/onnx_embedding_runner.dart
 import 'package:lolisnatcher/src/handlers/recommender/wordpiece_tokenizer.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
+import 'package:lolisnatcher/src/utils/perf_trace.dart';
 
 /// A sentence encoder the user can download from Hugging Face (r34).
 ///
@@ -547,10 +548,15 @@ class EncoderHandler {
     }
     if (missing.isEmpty) return out;
     final Map<String, Float32List> fresh = {};
+    // r77: the encoder's runs are logged and put on the trace, like the
+    // tagger's and the looks model's; they never were.
+    final Stopwatch modelTime = Stopwatch();
+    String cpu = 'CPU';
     try {
       await _ensureLoaded();
       final WordPieceTokenizer tokenizer = _tokenizer!;
       final EmbeddingRunner runner = _runner!;
+      if (runner is OnnxEmbeddingRunner) cpu = 'CPU x${runner.threads}';
       for (int start = 0; start < missing.length; start += _batch) {
         final List<int> chunk = missing.sublist(start, math.min(start + _batch, missing.length));
         final List<TokenizedText> encoded = [for (final int i in chunk) tokenizer.encode(texts[i], maxLength: _maxLen)];
@@ -561,7 +567,9 @@ class EncoderHandler {
         final List<List<int>> mask = [
           for (final TokenizedText e in encoded) [...e.mask, ...List.filled(length - e.mask.length, 0)],
         ];
+        modelTime.start();
         final Float32List flat = await runner.run(ids, mask);
+        modelTime.stop();
         final int dim = _dimFromOutput(flat.length, chunk.length, length) ?? runner.dim;
         if (dim != _dim) {
           Logger.Inst().log('encoder returns $dim-wide vectors (the manifest said $_dim)', className, 'embedTexts', LogTypes.booruHandlerInfo);
@@ -576,6 +584,10 @@ class EncoderHandler {
       }
     } catch (e) {
       _fail(e);
+    }
+    if (fresh.isNotEmpty) {
+      PerfTrace.instance.event('model.encoder', '${fresh.length} texts ${modelTime.elapsedMilliseconds} ms');
+      Logger.Inst().log('encoder: ${fresh.length} texts in ${modelTime.elapsedMilliseconds} ms ($cpu)', className, 'embedTexts', LogTypes.booruHandlerInfo);
     }
     await _store(fresh);
     return out;

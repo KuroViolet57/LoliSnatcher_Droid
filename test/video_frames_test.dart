@@ -9,6 +9,7 @@ import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/settings/mpv_video_output.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/handlers/recommender/look_model_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/model_work.dart';
 import 'package:lolisnatcher/src/handlers/recommender/video_frames.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
@@ -86,6 +87,8 @@ void main() {
   late List<String> looked;
   late List<Float32List> stored;
   late bool showing;
+  late bool onScreen;
+  late bool quiet;
   final Uint8List bigFrame = halves(1024, 512);
 
   Future<void> waitFor(bool Function() done, {Duration timeout = const Duration(seconds: 5)}) async {
@@ -96,6 +99,7 @@ void main() {
   }
 
   setUp(() {
+    ModelWork.resetForTests();
     SettingsHandler.register();
     ViewerHandler.register();
     tempDir = Directory.systemTemp.createTempSync('video_frames');
@@ -108,6 +112,8 @@ void main() {
     looked = [];
     stored = [];
     showing = true;
+    onScreen = true;
+    quiet = true;
     VideoFrames.unregister();
     frames = VideoFrames.register()
       ..frameDirOverride = Directory('${tempDir.path}${Platform.pathSeparator}frames')
@@ -127,13 +133,16 @@ void main() {
         final int n = stored.length;
         return Float32List.fromList(n == 0 ? [1, 0] : (n == 1 ? [0, 1] : [1, 1]));
       })
-      ..storeLook = ((BooruItem item, Float32List v) async => stored.add(v));
+      ..storeLook = ((BooruItem item, Float32List v) async => stored.add(v))
+      ..onScreen = (() => onScreen)
+      ..quiet = (() => quiet);
     frames.attach();
   });
 
   tearDown(() {
     frames.detach();
     VideoFrames.unregister();
+    ModelWork.resetForTests();
     ViewerHandler.instance.current.value = null;
     try {
       tempDir.deleteSync(recursive: true);
@@ -284,5 +293,55 @@ void main() {
     SettingsHandler.instance.videoFrames = false;
     frames.lookup = (String url) => (target: target, stillShowing: () => true);
     expect(await frames.frameNow(v), isNull);
+  });
+
+  test('r77: no grab under another page, with the app away, or while the user touches or scrolls; the grab comes once all is clear', () async {
+    onScreen = false;
+    final BooruItem v = video('20');
+    ViewerHandler.instance.current.value = v;
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    expect(target.commands, isEmpty, reason: 'a page, dialog or sheet covers the viewer, or the app is in the background');
+
+    onScreen = true;
+    quiet = false;
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    expect(target.commands, isEmpty, reason: 'a touch or scroll less than 1.5 s ago');
+
+    quiet = true;
+    await waitFor(() => target.commands.isNotEmpty);
+    expect(target.commands.first.first, 'screenshot-to-file');
+    // No further grabs, and let the ones in flight finish inside this test.
+    onScreen = false;
+    await waitFor(() => stored.length >= frames.framesOf(v).length && stored.isNotEmpty);
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+  });
+
+  test('r77: the looks run of a frame is a background step - frameNow hands the frame over without waiting for it', () async {
+    final Completer<void> slowLook = Completer<void>();
+    frames.lookOf = (Uint8List jpeg) async {
+      await slowLook.future;
+      return Float32List.fromList([1, 0]);
+    };
+    final BooruItem v = video('21');
+    final Stopwatch sw = Stopwatch()..start();
+    final Uint8List? got = await frames.frameNow(v);
+    expect(got, isNotNull);
+    expect(sw.elapsedMilliseconds, lessThan(2000));
+    expect(stored, isEmpty, reason: 'the looks model is still reading it');
+    slowLook.complete();
+    await waitFor(() => stored.isNotEmpty);
+    expect(stored.single, Float32List.fromList([1, 0]));
+  });
+
+  test('r77: a post hidden by the blacklist after its frame was grabbed gets no looks vector', () async {
+    final Completer<void> slowLook = Completer<void>();
+    final BooruItem v = video('22');
+    // The queue is busy with another step while the frame waits its turn.
+    unawaited(ModelWork.instance.run('busy', (bool lite) => slowLook.future));
+    expect(await frames.frameNow(v), isNotNull);
+    v.hiddenInSource = true;
+    slowLook.complete();
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    expect(stored, isEmpty);
   });
 }

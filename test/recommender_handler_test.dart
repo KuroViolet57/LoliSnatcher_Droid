@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -14,6 +16,7 @@ import 'package:lolisnatcher/src/handlers/interests_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/encoder_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/ftrl_model.dart';
 import 'package:lolisnatcher/src/handlers/recommender/item_features.dart';
+import 'package:lolisnatcher/src/handlers/recommender/model_work.dart';
 import 'package:lolisnatcher/src/handlers/recommender/recommender_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/rewards.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -287,6 +290,8 @@ void main() {
     final BooruItem gone = booruPost('bob', id: 'gone');
     await r.dismiss(gone);
     expect(r.isDismissed(gone), isTrue);
+    // r77: dismiss returns at once; its learning is a background step.
+    await ModelWork.instance.drained();
     expect((await r.withoutDismissed([booruPost('alice'), gone])).map((i) => i.postURL), [booruPost('alice').postURL]);
     expect(await r.score(booruPost('bob', tag: 'glasses')), lessThan(0.5));
     final rows = await SettingsHandler.instance.dbHandler.recentInteractions('booru', limit: 5);
@@ -467,6 +472,135 @@ void main() {
       expect((await r.report(RecommenderWorld.booru)).events, 2, reason: 'a failing model never blocks learning');
     });
   });
+  group('r77: learning is a background step', () {
+    late DateTime now;
+
+    setUp(() {
+      ModelWork.resetForTests();
+      // register() hooks the save-after-leaving callback the reset cleared.
+      RecommenderHandler.register();
+      now = DateTime(2026, 9, 19, 12);
+      ActivityClock.instance.now = () => now;
+    });
+
+    tearDown(() {
+      ModelWork.resetForTests();
+      RecommenderHandler.resetSeamsForTests();
+      SettingsHandler.instance.taggerOnReactions = false;
+    });
+
+    test('an event right after a touch is learned only once 1.5 s have passed without one', () async {
+      if (!dbReady) return;
+      final r = RecommenderHandler.instance;
+      ActivityClock.instance.mark();
+      unawaited(r.onEvent(booruPost('alice'), InteractionKind.favourite));
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      expect(await SettingsHandler.instance.dbHandler.countInteractions('booru'), 0, reason: 'still touching');
+      now = now.add(const Duration(seconds: 2));
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      expect(await SettingsHandler.instance.dbHandler.countInteractions('booru'), 1);
+      expect((await r.modelFor(RecommenderWorld.booru)).updates, 1);
+    });
+
+    test('leaving the app: a waiting event is learned at once without the models, so it is not lost', () async {
+      if (!dbReady) return;
+      int looks = 0;
+      int pixels = 0;
+      RecommenderHandler.lookVectorsFor = (List<BooruItem> items, handler) async {
+        looks++;
+        return List<Float32List?>.filled(items.length, Float32List.fromList([1, 0]));
+      };
+      RecommenderHandler.pixelTagsFor = (BooruItem item, handler) async {
+        pixels++;
+        return const ['from_the_picture'];
+      };
+      SettingsHandler.instance.taggerOnReactions = true;
+      final r = RecommenderHandler.instance;
+      ActivityClock.instance.mark();
+      final Future<void> learned = r.onEvent(booruPost('bob'), InteractionKind.favourite);
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(await SettingsHandler.instance.dbHandler.countInteractions('booru'), 0);
+      ModelWork.instance.away = () => true;
+      ModelWork.instance.didChangeAppLifecycleState(AppLifecycleState.paused);
+      await learned;
+      expect(await SettingsHandler.instance.dbHandler.countInteractions('booru'), 1);
+      expect(looks, 0, reason: 'no model runs while the app is away');
+      expect(pixels, 0);
+    });
+
+    test('"Not interested" returns at once while its learning waits; the post is left out right away', () async {
+      if (!dbReady) return;
+      final r = RecommenderHandler.instance;
+      final BooruItem post = booruPost('dave');
+      ActivityClock.instance.mark();
+      final Stopwatch sw = Stopwatch()..start();
+      await r.dismiss(post);
+      expect(sw.elapsedMilliseconds, lessThan(1000));
+      expect(r.isDismissed(post), isTrue);
+      expect(await SettingsHandler.instance.dbHandler.countInteractions('booru'), 0, reason: 'learned at the next quiet moment');
+      now = now.add(const Duration(seconds: 2));
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      expect(await SettingsHandler.instance.dbHandler.countInteractions('booru'), 1);
+    });
+
+    test('a step queued before the model was reset is dropped, not learned into the fresh model', () async {
+      if (!dbReady) return;
+      final r = RecommenderHandler.instance;
+      await r.modelFor(RecommenderWorld.booru);
+      ActivityClock.instance.mark();
+      unawaited(r.onEvent(booruPost('erin'), InteractionKind.favourite));
+      await r.reset(RecommenderWorld.booru);
+      now = now.add(const Duration(seconds: 2));
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      expect(await SettingsHandler.instance.dbHandler.countInteractions('booru'), 0);
+      expect((await r.modelFor(RecommenderWorld.booru)).updates, 0);
+    });
+
+    test('learning switched off while a "Not interested" waited: it is still logged as an order', () async {
+      if (!dbReady) return;
+      final r = RecommenderHandler.instance;
+      // Loaded first, so the check below does not replay the logged row.
+      await r.modelFor(RecommenderWorld.booru);
+      ActivityClock.instance.mark();
+      await r.dismiss(booruPost('frank'));
+      SettingsHandler.instance.aiLearning = false;
+      now = now.add(const Duration(seconds: 2));
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      expect(await SettingsHandler.instance.dbHandler.countInteractions('booru'), 1);
+      expect((await r.modelFor(RecommenderWorld.booru)).updates, 0, reason: 'logged, not learned');
+      SettingsHandler.instance.aiLearning = true;
+    });
+
+    test('after steps ran lite as the app left, the models are written to disk', () async {
+      if (!dbReady) return;
+      final r = RecommenderHandler.instance;
+      ActivityClock.instance.mark();
+      final Future<void> learned = r.onEvent(booruPost('gina'), InteractionKind.favourite);
+      ModelWork.instance.away = () => true;
+      ModelWork.instance.didChangeAppLifecycleState(AppLifecycleState.paused);
+      await learned;
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      expect(File(r.fileFor(RecommenderWorld.booru)).existsSync(), isTrue);
+    });
+
+    test('exposures wait their turn behind a running step and never overlap it', () async {
+      if (!dbReady) return;
+      final Completer<void> gate = Completer<void>();
+      final List<String> order = [];
+      unawaited(ModelWork.instance.run('busy', (bool lite) async {
+        order.add('busy start');
+        await gate.future;
+        order.add('busy end');
+      }));
+      final Future<void> exposed = RecommenderHandler.instance.onExposed([booruPost('carol')], 'test-surface').then((_) => order.add('exposed'));
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(order, ['busy start']);
+      gate.complete();
+      await exposed;
+      expect(order, ['busy start', 'busy end', 'exposed']);
+    });
+  });
+
 }
 
 /// A stand-in encoder: every token id has its own fixed direction (a

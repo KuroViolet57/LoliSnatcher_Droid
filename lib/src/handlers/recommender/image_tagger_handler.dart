@@ -12,6 +12,7 @@ import 'package:image/image.dart' as img;
 import 'package:lolisnatcher/src/handlers/recommender/onnx_tag_runner.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
+import 'package:lolisnatcher/src/utils/perf_trace.dart';
 
 /// An image tagger the user can download from Hugging Face (r74).
 ///
@@ -467,6 +468,7 @@ class ImageTaggerHandler {
     final String provider = _runner?.provider ?? '';
     _touch();
     final TaggerResult r = interpret(probs, _rows ?? const [], decodeMs: decodeMs, modelMs: modelMs, provider: provider);
+    PerfTrace.instance.event('model.tagger', 'decode $decodeMs ms, model $modelMs ms');
     Logger.Inst().log(
       'tagger: ${r.general.length} general, ${r.characters.length} characters, rating ${r.rating} ${r.ratingConfidence.toStringAsFixed(2)}; decode $decodeMs ms, model $modelMs ms ($provider)',
       className,

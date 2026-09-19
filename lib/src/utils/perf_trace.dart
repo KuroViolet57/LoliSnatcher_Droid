@@ -1,18 +1,32 @@
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
+import 'package:lolisnatcher/src/handlers/recommender/model_work.dart';
+
 /// Puts screens on the trace's timeline: added to the app's
 /// `navigatorObservers`, it costs nothing while no trace is running.
+///
+/// r77: every page change also marks the [ActivityClock], so background model
+/// work waits until a page has finished opening or closing (system Back sends
+/// no touch).
 class PerfTraceRouteObserver extends NavigatorObserver {
   @override
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    ActivityClock.instance.mark();
     PerfTrace.instance.event('route.push', _name(route));
   }
 
   @override
   void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    ActivityClock.instance.mark();
     PerfTrace.instance.event('route.pop', _name(route));
   }
+
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) => ActivityClock.instance.mark();
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) => ActivityClock.instance.mark();
 
   static String _name(Route<dynamic> route) =>
       route.settings.name ?? route.settings.arguments?.toString() ?? route.runtimeType.toString();
@@ -75,6 +89,8 @@ class _PerfTraceGestureLayerState extends State<PerfTraceGestureLayer> {
   }
 
   bool _onScroll(ScrollNotification n) {
+    // r77: a fling keeps scrolling after the finger has left the screen.
+    if (n is ScrollStartNotification || n is ScrollUpdateNotification) ActivityClock.instance.mark();
     if (n is ScrollStartNotification && PerfTrace.instance.isRecording.value) {
       final String axis = n.metrics.axis == Axis.vertical ? 'vertical' : 'horizontal';
       PerfTrace.instance.event('ui.scroll', '$axis, depth ${n.depth}');

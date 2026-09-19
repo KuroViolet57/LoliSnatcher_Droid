@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 
 import 'package:get_it/get_it.dart';
 import 'package:image/image.dart' as img;
@@ -13,6 +14,7 @@ import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/image_tagger_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/look_model_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/model_work.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
@@ -124,6 +126,13 @@ class VideoFrames {
   bool Function() taggerWanted = _defaultTaggerWanted;
   Future<Float32List> Function(Uint8List jpeg) lookOf = _defaultLookOf;
   Future<void> Function(BooruItem item, Float32List v) storeLook = _defaultStoreLook;
+
+  /// r77: a viewer is really on screen (no page, dialog or sheet over it) and
+  /// the app is in the foreground.
+  bool Function() onScreen = _defaultOnScreen;
+
+  /// r77: no touch, scroll or page change for [ModelWork.quiet].
+  bool Function() quiet = _defaultQuiet;
   Duration firstDelay = const Duration(milliseconds: 2500);
   Duration gap = const Duration(seconds: 6);
   Duration tick = const Duration(seconds: 1);
@@ -193,6 +202,10 @@ class VideoFrames {
     }
     final DateTime now = DateTime.now();
     if (now.difference(_since) < firstDelay) return;
+    // r77: never under another page or with the app in the background, and not
+    // while the user is touching or scrolling (a grab costs about a second of
+    // mpv's time). frameNow, which the user asked for, skips these checks.
+    if (!onScreen() || !quiet()) return;
     final DateTime? last = k?.lastAt;
     if (last != null && now.difference(last) < gap) return;
     final found = lookup(item.fileURL);
@@ -296,12 +309,21 @@ class VideoFrames {
     if (keep) k.frames.add(small);
     _log('look: frame ${k.frames.length}/$maxFrames of ${_name(item)} in ${sw.elapsedMilliseconds} ms (${raw.length ~/ 1024} KB from mpv)');
     if (keep && lookWanted()) {
-      try {
-        k.vectors.add(await lookOf(small));
-        await storeLook(item, LookModelHandler.meanOf(k.vectors));
-      } catch (e) {
-        _log('look: the looks model could not read a frame: $e');
-      }
+      // r77: the looks model reads the frame as a background step, at a quiet
+      // moment - and "Find posts like this" gets its frame without waiting
+      // for that run.
+      final List<Float32List> vectors = k.vectors;
+      unawaited(
+        ModelWork.instance.run('frame look', (bool lite) async {
+          if (lite || item.isHidden) return;
+          try {
+            vectors.add(await lookOf(small));
+            await storeLook(item, LookModelHandler.meanOf(vectors));
+          } catch (e) {
+            _log('look: the looks model could not read a frame: $e');
+          }
+        }),
+      );
     }
     return small;
   }
@@ -389,6 +411,13 @@ class VideoFrames {
   }
 
   static bool _defaultLookWanted() => LookModelHandler.maybe?.enabled ?? false;
+
+  static bool _defaultOnScreen() {
+    final AppLifecycleState? s = WidgetsBinding.instance.lifecycleState;
+    return ViewerHandler.instance.viewerOnScreen && (s == null || s == AppLifecycleState.resumed);
+  }
+
+  static bool _defaultQuiet() => ActivityClock.instance.quietFor(ModelWork.instance.quiet);
 
   static bool _defaultTaggerWanted() => (ImageTaggerHandler.maybe?.enabled ?? false) && SettingsHandler.instance.taggerOnReactions;
 

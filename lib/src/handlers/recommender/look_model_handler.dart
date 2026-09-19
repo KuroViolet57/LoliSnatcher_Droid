@@ -18,6 +18,7 @@ import 'package:lolisnatcher/src/handlers/recommender/onnx_look_runner.dart';
 import 'package:lolisnatcher/src/handlers/recommender/pixel_tags.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
+import 'package:lolisnatcher/src/utils/perf_trace.dart';
 
 /// The "looks" model the user can download from Hugging Face (r75): a
 /// CLIP-family pair of ONNX halves (MobileCLIP presets) that turn a picture,
@@ -516,6 +517,7 @@ class LookModelHandler {
       }
     }
     if (embedded > 0) {
+      PerfTrace.instance.event('model.look', '$embedded thumbnails ${sw.elapsedMilliseconds} ms');
       Logger.Inst().log('look: $embedded thumbnails in ${sw.elapsedMilliseconds} ms (${_runner?.provider ?? ''})', className, 'imageVectors', LogTypes.booruHandlerInfo);
     }
     if (fresh.isNotEmpty && _settings.dbEnabled) {

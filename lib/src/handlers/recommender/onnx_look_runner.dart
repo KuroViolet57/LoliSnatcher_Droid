@@ -1,5 +1,3 @@
-import 'dart:io';
-import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter_onnxruntime/flutter_onnxruntime.dart';
@@ -15,11 +13,17 @@ import 'package:lolisnatcher/src/utils/logger.dart';
 /// vector. The sessions' own input names are used, so another CLIP export
 /// works too; the first output is taken either way.
 class OnnxLookRunner implements LookRunner {
-  OnnxLookRunner(this.imagePath, this.textPath, {int? threads}) : threads = threads ?? math.max(1, math.min(4, Platform.numberOfProcessors ~/ 2));
+  OnnxLookRunner(this.imagePath, this.textPath, {int? threads}) : threads = threads ?? defaultThreads;
+
+  /// r77: one thread for everyone (was half the cores): with one thread ORT
+  /// builds no thread pool, so nothing spins next to the screen and the video.
+  static const int defaultThreads = 1;
 
   final String imagePath;
   final String textPath;
   final int threads;
+
+  OrtSessionOptions get options => OrtSessionOptions(intraOpNumThreads: threads);
 
   OrtSession? _image;
   OrtSession? _text;
@@ -33,7 +37,7 @@ class OnnxLookRunner implements LookRunner {
   Future<OrtSession> _open(String path, {required bool image}) async {
     OrtSession s;
     try {
-      s = await OnnxRuntime().createSession(path, options: OrtSessionOptions(intraOpNumThreads: threads));
+      s = await OnnxRuntime().createSession(path, options: options);
       _provider = 'CPU x$threads';
     } catch (e) {
       Logger.Inst().log('look: could not open ${image ? 'the picture' : 'the text'} half with $threads threads ($e); default options', 'OnnxLookRunner', '_open', LogTypes.booruHandlerInfo);

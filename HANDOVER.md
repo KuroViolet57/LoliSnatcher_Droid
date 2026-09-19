@@ -2178,6 +2178,68 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   post (e621 6717654) → 27 posts, every one carrying a facet tag.
 - **Left:** tabs opened before this build hold only "suggestions".
 
+### 4.47 Models out of the way: measure, fewer threads, quiet moments (r77, build 97)
+
+- **Evidence (the user's 19 Sep log, 14:12-14:31):** the dips were not proven to
+  be the models - 8 of the trace's 12 slowest frames sat next to a page, dialog
+  or viewer opening/closing with no model run near; 2 lined up with model work.
+  Proven: closing the viewer fires a view event (`_flushDwell`, viewer
+  `dispose`) whose learning step ran the encoder (no thread count = ORT default
+  = every core), the looks model and, for favourites, the tagger (4 threads)
+  right as the feed came back; frame grabs went on under other pages.
+- **`handlers/recommender/model_work.dart` (new):** `ActivityClock` (a global
+  `pointerRouter` route, root scroll notifications in `PerfTraceGestureLayer`,
+  page changes in `PerfTraceRouteObserver` incl. remove/replace) and
+  `ModelWork`, a one-at-a-time queue: a step runs after `quiet` (1.5 s) without
+  activity; `heavy` steps (the tagger) wait while `videoPlaying()` (the pool's
+  `MediaKitPlayerView.anyPlaying`) up to `maxVideoWait` (60 s) while lighter
+  steps behind them go first; when the app pauses/hides, waiting steps run at
+  once with `lite = true` (no models). Steps are logged when they waited 3 s+,
+  and go on the trace as `model.start` / `model.end <label> <ms>`. Errors are
+  logged, never rethrown. `ModelWork.instance.attach(...)` in `main.dart`.
+- **Recommender:** `onEvent` = cheap checks + `ModelWork.run('learn <kind>',
+  _learnEvent, heavy: _wantsPixelTags)`; `onExposed` = `ModelWork.run('exposed
+  <surface>', _exposedNow)`. Lite skips the encoder, looks and pixel tags; the
+  timeouts now start when the step starts. User-facing model work (score,
+  rerank, explain, boards, Posts like this, Try it) is not queued; it can still
+  wait for the running step (the plugin serialises every call).
+- **Threads:** `OnnxEmbeddingRunner` 1 (new `threads`/`options`), `OnnxLookRunner`
+  1, `OnnxTagRunner` 2 (`defaultThreads`, `options`). A session's pool is fixed
+  at creation, so one count per model for every caller. The encoder returns the
+  plugin's `Float32List` as is (it was copied value by value on the UI isolate).
+- **Frames (`video_frames.dart`):** `_tick` also needs `onScreen()`
+  (`ViewerHandler.viewerOnScreen`, claimed/released by the viewer's RouteAware
+  `didPush`/`didPopNext` vs `didPushNext`/`didPop`/`dispose`; only the owner can
+  release) with the app resumed, and `quiet()`. `frameNow` skips both. The
+  frame's looks run is a `ModelWork` step (`frame look`), outside `_inFlight`,
+  skipped for a post hidden meanwhile. `MediaKitFrameSource.showing` needs
+  `refCount > 0`.
+- **Measure:** `encoder: N texts in X ms (CPU x1)` log line; `model.encoder`,
+  `model.tagger`, `model.look` trace events; the pool logs `video: N frames
+  dropped by the output, M by the decoder (<url>)` when a played video is
+  released (mpv `frame-drop-count` / `decoder-frame-drop-count`).
+- **Tests:** `test/model_work_test.dart` (thread counts; quiet gate with a fake
+  clock; touches, moves, route pops and fling scrolls count; no overlap; 20
+  steps in order; the tagger held by video, released by the limit or the video
+  stopping; lite flush on pause; a throwing step; trace events), 3 new
+  `video_frames_test` cases (covered / away / touching; frameNow does not wait
+  for the looks run; a post hidden meanwhile gets no vector), 3 new
+  `recommender_handler_test` cases (learned only after the quiet window; lite
+  on pause writes the row without model calls; exposures never overlap a step).
+- **After one contrarian review:** `dismiss()` no longer awaits the queued
+  step (the viewer and doujin menus await it; with the tagger held by a video
+  it could wait 60 s), and a "Not interested" whose step finds learning off
+  is logged by `_logDismissal`; `reset(world)` bumps `_generation[world]` so a
+  step queued before the reset is dropped; `away` = paused/hidden/detached only
+  (inactive - the notification shade - is not leaving); `stepTimeout` 60 s;
+  `onDrainedAway` (set in `RecommenderHandler.register`) flushes the models once
+  lite steps drained; the clock is monotonic (a Stopwatch); `drained()` for
+  tests; fullscreen claims the screen for its lifetime (frames go on in
+  fullscreen); the encoder runner falls back to default options like the
+  others. The r34 dismissal test now awaits `ModelWork.instance.drained()`.
+- **Not verified on a phone:** whether the dips were the models (the user's
+  A/B traces answer it), real run times with fewer threads.
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
@@ -2607,7 +2669,10 @@ the theme's `colorScheme`), add a setting only if the user asked for a
 choice, and add a widget test where geometry matters (the reader and the
 cards have had regressions).
 
-## 12. Open items (as of r76)
+## 12. Open items (as of r77)
+
+- r77 (build 97) is unverified on the device: the user's two traces (models on / off)
+  decide whether the dips were the models; builds 98-100 follow (videos, tag preview, Try it).
 
 - r70 is unverified on the device: e-hentai chips (Watched / Favourites +
   category, the four toplists, Show expunged / With a torrent), typed

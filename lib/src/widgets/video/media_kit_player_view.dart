@@ -47,6 +47,26 @@ class MediaKitPlayerView extends StatefulWidget {
   /// Cloudflare challenge).
   static void resetPool() => _MediaKitPlayerPool.instance.reset();
 
+  /// r77: a pooled player in use is playing right now (background model work
+  /// holds the image tagger while one does).
+  static bool anyPlaying() {
+    for (final _PooledPlayer e in _MediaKitPlayerPool.instance._slots) {
+      if (e.refCount > 0 && e.player.state.playing) return true;
+    }
+    return false;
+  }
+
+  /// r77: the log line for a video left with dropped frames, from mpv's
+  /// `frame-drop-count` (the output skipped them) and
+  /// `decoder-frame-drop-count` (the decoder fell behind); null when none
+  /// were dropped or mpv did not say.
+  static String? droppedLine(String output, String decoder, String url) {
+    final int o = int.tryParse(output.trim()) ?? 0;
+    final int d = int.tryParse(decoder.trim()) ?? 0;
+    if (o <= 0 && d <= 0) return null;
+    return 'video: $o frames dropped by the output, $d by the decoder ($url)';
+  }
+
   @override
   State<MediaKitPlayerView> createState() => _MediaKitPlayerViewState();
 }
@@ -533,6 +553,7 @@ class _MediaKitPlayerPool {
     if (entry.refCount > 0) entry.refCount--;
     entry.lastUsedTick = ++_tick;
     if (entry.refCount == 0) {
+      _logDropped(entry);
       // Idle but kept warm in the pool. Pause to free decode CPU; the buffer
       // is preserved by libmpv until the slot is re-pointed.
       try {
@@ -540,6 +561,24 @@ class _MediaKitPlayerPool {
       } catch (_) {}
     }
     _disposeOverflow();
+  }
+
+  /// r77: how many frames mpv dropped while this video played, read when it
+  /// is left - with the trace, it shows whether playback itself stuttered.
+  void _logDropped(_PooledPlayer entry) {
+    final platform = entry.player.platform;
+    if (platform is! NativePlayer || entry.player.state.position <= Duration.zero) return;
+    final String url = entry.url;
+    unawaited(() async {
+      try {
+        final String output = await platform.getProperty('frame-drop-count');
+        final String decoder = await platform.getProperty('decoder-frame-drop-count');
+        final String? line = MediaKitPlayerView.droppedLine(output, decoder, url);
+        if (line == null) return;
+        PerfTrace.instance.event('video.drops', '$output/$decoder');
+        Logger.Inst().log(line, '_MediaKitPlayerPool', 'release', LogTypes.booruItemLoad);
+      } catch (_) {}
+    }());
   }
 
   /// Only slots ABOVE the pool's size are destroyed (r64): inside it, a slot
@@ -1012,6 +1051,11 @@ class _MediaKitControlsState extends State<_MediaKitControls> {
       return;
     }
     setState(() => _fullscreen = true);
+    // r77: the video is still what the user watches - frames go on reading it.
+    // The viewer under fullscreen gives the screen up when this route covers
+    // it and takes it back when it pops; this claim only lasts in between.
+    final Object fullscreenClaim = Object();
+    ViewerHandler.instance.claimScreen(fullscreenClaim);
     await Navigator.of(context).push(
       PageRouteBuilder(
         opaque: true,
@@ -1022,6 +1066,7 @@ class _MediaKitControlsState extends State<_MediaKitControls> {
         ),
       ),
     );
+    ViewerHandler.instance.releaseScreen(fullscreenClaim);
     if (mounted) setState(() => _fullscreen = false);
   }
 
@@ -1221,7 +1266,8 @@ class MediaKitFrameSource {
 
   static ({Player player, bool Function() stillShowing})? showing(String url) {
     for (final _PooledPlayer e in _MediaKitPlayerPool.instance._slots) {
-      if (e.url != url || e.hasError) continue;
+      // r77: an idle pooled player (refCount 0) is paused off screen.
+      if (e.url != url || e.hasError || e.refCount <= 0) continue;
       return (
         player: e.player,
         stillShowing: () => e.url == url && !e.hasError && _MediaKitPlayerPool.instance._slots.contains(e),
