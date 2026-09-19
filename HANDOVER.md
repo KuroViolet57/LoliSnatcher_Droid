@@ -2240,6 +2240,65 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
 - **Not verified on a phone:** whether the dips were the models (the user's
   A/B traces answer it), real run times with fewer threads.
 
+### 4.48 Frame grabs no longer break videos (r77, build 98)
+
+- **Evidence (19 Sep log):** 37 of 49 grabs worked; all 12 failures were a
+  video's first grab, 2.6-6.6 s after the player was bound, answered by mpv in
+  1-11 ms with "Taking screenshot failed." (the output was being rebuilt after
+  the first video-size event: vo=null -> gpu -> seek in media_kit_video's
+  Android `real.dart`). media_kit puts error-level mpv messages on
+  `stream.error`; the pool set `hasError`; `_onPlayerError` stamped its 2-min
+  cooldown; the next visit re-opened the same file on that player (planner
+  `rebind` of the errored slot): one of two such re-opens showed no size in
+  7.8 s. The emulator's 0:00 stall was NOT this: there mpv has no video output
+  at all, and every rebind stalls, frames on or off (checked with one pooled
+  player).
+- **Readiness (`video_frames.dart`):** before `screenshot-to-file`, `current-vo`
+  must be non-empty and not "null", and `video-frame-info/interlaced`
+  non-empty (the VO's current frame, what the screenshot copies); otherwise no
+  command, one log line per video ("look: waiting for the picture from mpv
+  (...)"). The decoder line is read after the first check passes. "No file
+  written" counts `notReady` (max `maxNotReady` = 10 per video), not failures.
+- **Error filter (`media_kit_player_view.dart`):**
+  `MediaKitPlayerView.isScreenshotNoise(message, lastGrabAt:, now:)` = exactly
+  "Taking screenshot failed." or "Error writing screenshot!" within
+  `screenshotWindow` of the entry's `lastGrabAt`, which
+  `MediaKitFrameTarget.command` sets through `MediaKitFrameSource.noteGrab`
+  before a screenshot command. The pool's `errorSub` and the widget's
+  `_onPlayerError` (before the cooldown stamp) skip it. Error lines name
+  `entry.url`.
+- **Replace (`player_pool_planner.dart` `PoolAction.replace`):** an errored free
+  slot with the requested URL is disposed (`cancelSubs`, `dispose`) and a new
+  player is built (`entry.replaced`, logged "replacing a broken player").
+  `release(_PooledPlayer entry)` goes by identity (all three widget call
+  sites). Errored slots of other URLs are still re-pointed at capacity.
+- **Diagnostics:** `_watchForPicture` logs "video: no picture 8 s after start
+  (idle, output, codec, waiting for cache, cached s)" for a viewed video with
+  no width; `logSub` logs mpv's fatal-level messages ("mpv fatal (...)").
+- **Tests:** planner (replace slot 0; errored in use -> create; errored other
+  URL -> rebind), `test/media_kit_error_filter_test.dart` (exact messages in
+  and out of the window; lookalikes stay errors), frames (no command while the
+  output is none/"null" or no frame is drawn, exactly one once ready; more "no
+  file" answers than the failure limit, then a kept frame; frameNow sends
+  nothing while not ready and answers with the kept frame).
+- **After one contrarian review:** the view's `Video` is keyed by its
+  controller (`ObjectKey`), since media_kit_video's state does not rebind to
+  the new controller of a replaced player (in-place recovery via
+  `_onPlayerError` -> `markErrored` -> `_release` -> `_scheduleInit`);
+  fullscreen holds its player (`holdForFullscreen` / `endFullscreenHold`:
+  refCount and `fullscreenHolds`), and `_onPlayerError` does nothing while a
+  hold exists; at capacity an errored idle slot is replaced, never re-pointed;
+  grab times use a monotonic clock (`MediaKitPlayerView.monoNow`) and the
+  window is 15 s; readiness checks every `waitGap` (2 s), at most
+  `maxWaitsPerVisit` (30); "no picture yet" answers grow the gap
+  (`gap * (1 + visitNotReady)`), 5 per visit, 10 per video, reset by a
+  successful frame; the 8 s picture watch is re-armed when a preloaded
+  player becomes the viewed one. Pool-level identity tests (replace disposes
+  once, release by identity) would need a player factory seam over media_kit's
+  Player; not added.
+- **Not verified on a phone:** first-grab success rate, a replaced player's
+  picture (the emulator has no video output).
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
@@ -2671,6 +2730,8 @@ cards have had regressions).
 
 ## 12. Open items (as of r77)
 
+- r77 (build 98) is unverified on the device: first grabs should now wait for a picture;
+  a replaced player's picture and the grab success rate need the user's log.
 - r77 (build 97) is unverified on the device: the user's two traces (models on / off)
   decide whether the dips were the models; builds 98-100 follow (videos, tag preview, Try it).
 

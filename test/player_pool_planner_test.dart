@@ -56,14 +56,34 @@ void main() {
     expect(plan.slot, 1, reason: 'the oldest idle slot, not the one on screen');
   });
 
-  test('a slot that errored on this video is re-pointed, never handed back', () {
+  test('r77: a slot that errored on this video is replaced by a new player, never re-opened or handed back', () {
     final PoolPlan plan = PlayerPoolPlanner.plan(
       slots: [slot('a', tick: 1, hasError: true), slot('b', tick: 2)],
       url: 'a',
       capacity: 4,
     );
+    expect(plan.action, PoolAction.replace);
+    expect(plan.slot, 0, reason: 'that slot is disposed and a fresh player opens the video with the headers we were just given');
+  });
+
+  test('r77: at capacity an errored idle slot is replaced, not re-pointed at another video', () {
+    final PoolPlan plan = PlayerPoolPlanner.plan(
+      slots: [slot('a', tick: 1, hasError: true), slot('b', tick: 2, refCount: 1)],
+      url: 'c',
+      capacity: 2,
+    );
+    expect(plan.action, PoolAction.replace);
+    expect(plan.slot, 0);
+  });
+
+  test('r77: at capacity a healthy idle slot is still re-pointed', () {
+    final PoolPlan plan = PlayerPoolPlanner.plan(
+      slots: [slot('a', tick: 1), slot('b', tick: 2, refCount: 1)],
+      url: 'c',
+      capacity: 2,
+    );
     expect(plan.action, PoolAction.rebind);
-    expect(plan.slot, 0, reason: 'same slot, fresh open with the headers we were just given');
+    expect(plan.slot, 0);
   });
 
   test('a slot that errored but is still on screen is left alone and a new one is built', () {

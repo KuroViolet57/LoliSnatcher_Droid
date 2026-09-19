@@ -18,6 +18,11 @@ enum PoolAction {
 
   /// At capacity: open this video on a free slot's existing player.
   rebind,
+
+  /// r77: the free slot that errored on this very video: dispose it and build
+  /// a new player. Re-opening the file on the broken player was seen to leave
+  /// the video without a picture (19 Sep, one of two re-opens).
+  replace,
 }
 
 /// What the pool knows about one slot when it decides.
@@ -71,13 +76,14 @@ class PlayerPoolPlanner {
       if (slots[i].url != url) continue;
       if (!slots[i].hasError) return PoolPlan(PoolAction.reuse, slot: i);
       // Errored: open it again on the same player, if nobody is watching it.
-      if (slots[i].isFree) return PoolPlan(PoolAction.rebind, slot: i);
+      if (slots[i].isFree) return PoolPlan(PoolAction.replace, slot: i);
     }
 
     if (slots.length < capacity) return const PoolPlan(PoolAction.create);
 
     final int? oldestFree = _oldestFree(slots);
-    if (oldestFree != null) return PoolPlan(PoolAction.rebind, slot: oldestFree);
+    // r77: a broken player is never re-pointed at another video either.
+    if (oldestFree != null) return PoolPlan(slots[oldestFree].hasError ? PoolAction.replace : PoolAction.rebind, slot: oldestFree);
 
     // Every slot is on screen (preloaded neighbours, a split view): building
     // one more beats stealing a player someone is watching. [disposable]

@@ -34,6 +34,15 @@ class _FakeTarget implements FrameTarget {
   bool writeFile = true;
   Completer<void>? hang;
 
+  /// mpv's answers; r77: a grab waits for 'current-vo' (not empty, not
+  /// "null") and a current frame ('video-frame-info/interlaced').
+  final Map<String, String> props = {
+    'hwdec-current': 'no',
+    'current-vo': 'gpu',
+    'video-codec': 'h264',
+    'video-frame-info/interlaced': 'no',
+  };
+
   @override
   Future<void> command(List<String> args) async {
     commands.add(List<String>.of(args));
@@ -48,7 +57,7 @@ class _FakeTarget implements FrameTarget {
   @override
   Future<String> getProperty(String name) async {
     properties.add(name);
-    return const {'hwdec-current': 'no', 'current-vo': 'gpu', 'video-codec': 'h264'}[name] ?? '';
+    return props[name] ?? '';
   }
 }
 
@@ -121,6 +130,7 @@ void main() {
       ..gap = const Duration(milliseconds: 40)
       ..tick = const Duration(milliseconds: 10)
       ..requestTimeout = const Duration(milliseconds: 300)
+      ..waitGap = const Duration(milliseconds: 20)
       ..maxFrames = 3
       ..lookWanted = (() => true)
       ..taggerWanted = (() => false)
@@ -185,7 +195,11 @@ void main() {
       expect(c[2], 'video');
     }
     expect(looked.toSet(), {v.fileURL}, reason: 'only the player showing this video is asked');
-    expect(target.properties, ['hwdec-current', 'current-vo', 'video-codec'], reason: 'the decoder line, once per video');
+    // r77: every grab first checks mpv's output and current frame; the
+    // decoder line is read once per video, after the first check passes.
+    const List<String> ready = ['current-vo', 'video-frame-info/interlaced'];
+    expect(target.properties.sublist(0, 5), [...ready, 'hwdec-current', 'current-vo', 'video-codec'], reason: 'the decoder line, once per video');
+    expect(target.properties.sublist(5), [...ready, ...ready], reason: 'grabs 2 and 3 only check readiness');
     final List<Uint8List> kept = frames.framesOf(v);
     expect(kept, hasLength(3));
     expect(img.decodeJpg(kept.first)!.width, 512, reason: 'kept shrunk');
@@ -343,5 +357,81 @@ void main() {
     slowLook.complete();
     await Future<void>.delayed(const Duration(milliseconds: 100));
     expect(stored, isEmpty);
+  });
+
+  test('r77: no grab until mpv has a picture output and a current frame; then exactly one command', () async {
+    target.props['current-vo'] = '';
+    final BooruItem v = video('30');
+    ViewerHandler.instance.current.value = v;
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    expect(target.commands, isEmpty, reason: 'no picture output at all (the emulator case)');
+
+    target.props['current-vo'] = 'null';
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    expect(target.commands, isEmpty, reason: 'the placeholder output while the surface is attached');
+
+    target.props['current-vo'] = 'gpu';
+    target.props['video-frame-info/interlaced'] = '';
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    expect(target.commands, isEmpty, reason: 'the output has not drawn a frame yet');
+
+    target.props['video-frame-info/interlaced'] = 'no';
+    await waitFor(() => target.commands.isNotEmpty);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(target.commands, hasLength(1));
+    expect(target.commands.single, ['screenshot-to-file', target.commands.single[1], 'video']);
+    onScreen = false;
+    await waitFor(() => stored.isNotEmpty);
+  });
+
+  test('r77: "no file written" means not ready yet: tried again with a growing gap, never a failure, 5 times a visit, and a new visit tries again', () async {
+    frames.maxFrames = 1;
+    target.writeFile = false;
+    final BooruItem v = video('31');
+    ViewerHandler.instance.current.value = v;
+    await waitFor(() => target.commands.length >= VideoFrames.maxNotReadyPerVisit, timeout: const Duration(seconds: 3));
+    await Future<void>.delayed(const Duration(milliseconds: 400));
+    expect(target.commands, hasLength(VideoFrames.maxNotReadyPerVisit), reason: 'past the failure limit (4): these were not failures; then this visit stops');
+    expect(frames.framesOf(v), isEmpty);
+    target.writeFile = true;
+    ViewerHandler.instance.current.value = null;
+    ViewerHandler.instance.current.value = v;
+    await waitFor(() => frames.framesOf(v).isNotEmpty);
+    expect(frames.framesOf(v), hasLength(1), reason: 'the next visit tried again');
+    onScreen = false;
+    await waitFor(() => stored.isNotEmpty);
+  });
+
+  test('r77: a video that never shows a picture is left alone after 10 answers across visits', () async {
+    target.writeFile = false;
+    final BooruItem v = video('33');
+    for (int visit = 0; visit < 3; visit++) {
+      ViewerHandler.instance.current.value = null;
+      ViewerHandler.instance.current.value = v;
+      await Future<void>.delayed(const Duration(milliseconds: 900));
+    }
+    expect(target.commands, hasLength(VideoFrames.maxNotReady), reason: 'two visits of 5, then nothing');
+  });
+
+  test('r77: checks for the picture stop after 30 in one visit', () async {
+    target.props['current-vo'] = '';
+    final BooruItem v = video('34');
+    ViewerHandler.instance.current.value = v;
+    await Future<void>.delayed(const Duration(milliseconds: 1500));
+    final int reads = target.properties.where((p) => p == 'current-vo').length;
+    expect(reads, VideoFrames.maxWaitsPerVisit);
+    expect(target.commands, isEmpty);
+  });
+
+  test('r77: frameNow asks for no frame while the output has none; the kept frame answers instead', () async {
+    final BooruItem v = video('32');
+    final Uint8List? first = await frames.frameNow(v);
+    expect(first, isNotNull);
+    await waitFor(() => stored.isNotEmpty);
+    final int before = target.commands.length;
+    target.props['video-frame-info/interlaced'] = '';
+    final Uint8List? again = await frames.frameNow(v);
+    expect(target.commands.length, before, reason: 'no command while no frame is drawn');
+    expect(again, same(frames.framesOf(v).last));
   });
 }

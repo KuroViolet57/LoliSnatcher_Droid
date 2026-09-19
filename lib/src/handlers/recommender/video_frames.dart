@@ -59,6 +59,9 @@ class MediaKitFrameTarget implements FrameTarget {
   Future<void> command(List<String> args) {
     final NativePlayer? n = _native;
     if (n == null) throw StateError('not a native media_kit player');
+    // r77: mpv's screenshot messages right after this are its answer, not a
+    // player error (the pool would mark the player broken).
+    if (args.isNotEmpty && args.first.startsWith('screenshot')) MediaKitFrameSource.noteGrab(player);
     return n.command(args);
   }
 
@@ -75,6 +78,16 @@ class _Kept {
   final List<Float32List> vectors = [];
   DateTime? lastAt;
   int failures = 0;
+
+  /// r77: answers without a picture ("no file written") - not failures.
+  /// Reset by a frame that works.
+  int notReady = 0;
+
+  /// r77: this visit's "no picture yet" answers and readiness checks that
+  /// found no picture, and when the last check was.
+  int visitNotReady = 0;
+  int visitWaits = 0;
+  DateTime? lastWaitAt;
 }
 
 /// Frames from the playing video (r76).
@@ -120,6 +133,15 @@ class VideoFrames {
   /// A video whose player failed this many times is left alone.
   static const int maxFailures = 4;
 
+  /// r77: after this many "no picture yet" answers a video is left alone;
+  /// per visit, after [maxNotReadyPerVisit].
+  static const int maxNotReady = 10;
+  static const int maxNotReadyPerVisit = 5;
+
+  /// r77: a visit stops checking for mpv's picture after this many checks
+  /// (each one reads two mpv properties on the UI isolate).
+  static const int maxWaitsPerVisit = 30;
+
   // Seams and knobs, replaced in tests.
   FrameLookup lookup = _mediaKitLookup;
   bool Function() lookWanted = _defaultLookWanted;
@@ -137,11 +159,15 @@ class VideoFrames {
   Duration gap = const Duration(seconds: 6);
   Duration tick = const Duration(seconds: 1);
   Duration requestTimeout = const Duration(seconds: 3);
+
+  /// r77: between two checks for mpv's picture.
+  Duration waitGap = const Duration(seconds: 2);
   int maxFrames = 5;
   Directory? frameDirOverride;
 
   final LinkedHashMap<String, _Kept> _kept = LinkedHashMap();
   final Set<String> _decoderLogged = {};
+  final Set<String> _waitLogged = {};
   void Function()? _unlisten;
   Timer? _timer;
   BooruItem? _current;
@@ -188,6 +214,14 @@ class VideoFrames {
     _current = item;
     _since = DateTime.now();
     if (item == null || !qualifies(item)) return;
+    // r77: a new visit gets its own tries.
+    final _Kept? seen = _kept[keyOf(item)];
+    if (seen != null) {
+      seen
+        ..visitNotReady = 0
+        ..visitWaits = 0
+        ..lastWaitAt = null;
+    }
     _timer = Timer.periodic(tick, (_) => unawaited(_tick(item)));
   }
 
@@ -195,7 +229,11 @@ class VideoFrames {
     if (!identical(_current, item)) return;
     if (_inFlight != null || !wanted) return;
     final _Kept? k = _kept[keyOf(item)];
-    if ((k?.frames.length ?? 0) >= maxFrames || (k?.failures ?? 0) >= maxFailures) {
+    if ((k?.frames.length ?? 0) >= maxFrames ||
+        (k?.failures ?? 0) >= maxFailures ||
+        (k?.notReady ?? 0) >= maxNotReady ||
+        (k?.visitNotReady ?? 0) >= maxNotReadyPerVisit ||
+        (k?.visitWaits ?? 0) >= maxWaitsPerVisit) {
       _timer?.cancel();
       _timer = null;
       return;
@@ -207,7 +245,10 @@ class VideoFrames {
     // mpv's time). frameNow, which the user asked for, skips these checks.
     if (!onScreen() || !quiet()) return;
     final DateTime? last = k?.lastAt;
-    if (last != null && now.difference(last) < gap) return;
+    // r77: after "no picture yet" answers the gap grows (6, 12, 18 s ...).
+    if (last != null && now.difference(last) < gap * (1 + (k?.visitNotReady ?? 0))) return;
+    final DateTime? lastWait = k?.lastWaitAt;
+    if (lastWait != null && now.difference(lastWait) < waitGap) return;
     final found = lookup(item.fileURL);
     // Not bound yet (the viewer's start delay): the next tick looks again.
     if (found == null) return;
@@ -266,6 +307,19 @@ class VideoFrames {
       }
       return null;
     }
+    // r77: a grab before mpv has drawn a frame fails ("Taking screenshot
+    // failed."), and media_kit reported that as a player error. Wait for a
+    // real picture output (not the placeholder "null" used while the surface
+    // is attached) and a current frame - the same frame a screenshot copies.
+    final String vo = (await _read(t, 'current-vo')).trim();
+    if (vo.isEmpty || vo == 'null') {
+      _waiting(k, key, item, 'output ${vo.isEmpty ? 'none' : vo}');
+      return null;
+    }
+    if ((await _read(t, 'video-frame-info/interlaced')).trim().isEmpty) {
+      _waiting(k, key, item, 'no frame drawn yet');
+      return null;
+    }
     if (_decoderLogged.add(key)) await _logDecoder(t, item);
     final Directory dir = _dir;
     try {
@@ -293,7 +347,10 @@ class VideoFrames {
     }
     final File file = File(path);
     if (!file.existsSync() || file.lengthSync() == 0) {
-      _failed(k, 'the player gave no frame (no file written)');
+      // r77: mpv had nothing to copy yet - tried again later, not a failure.
+      k.notReady++;
+      k.visitNotReady++;
+      _log('look: mpv had no picture for frame ${k.frames.length + 1} yet (${k.notReady}/$maxNotReady, ${_name(item)})');
       _delete(path);
       return null;
     }
@@ -305,6 +362,7 @@ class VideoFrames {
       return null;
     }
     k.failures = 0;
+    k.notReady = 0;
     final bool keep = k.frames.length < maxFrames;
     if (keep) k.frames.add(small);
     _log('look: frame ${k.frames.length}/$maxFrames of ${_name(item)} in ${sw.elapsedMilliseconds} ms (${raw.length ~/ 1024} KB from mpv)');
@@ -331,6 +389,21 @@ class VideoFrames {
   void _failed(_Kept k, String why) {
     k.failures++;
     _log('look: $why');
+  }
+
+  static Future<String> _read(FrameTarget t, String name) async {
+    try {
+      return await t.getProperty(name);
+    } catch (_) {
+      return '';
+    }
+  }
+
+  /// Said once per video: the grab waits for mpv's picture.
+  void _waiting(_Kept k, String key, BooruItem item, String why) {
+    k.visitWaits++;
+    k.lastWaitAt = DateTime.now();
+    if (_waitLogged.add(key)) _log('look: waiting for the picture from mpv ($why, ${_name(item)})');
   }
 
   static void _delete(String path) {

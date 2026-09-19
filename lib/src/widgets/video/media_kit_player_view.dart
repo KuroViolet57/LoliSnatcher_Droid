@@ -56,6 +56,30 @@ class MediaKitPlayerView extends StatefulWidget {
     return false;
   }
 
+  /// r77: how long after a frame grab mpv's screenshot messages are taken as
+  /// its answer rather than as a player error. Generous: mpv may run a queued
+  /// screenshot after the frame service stopped waiting (3 s), and only
+  /// screenshots produce these two messages anyway.
+  static const Duration screenshotWindow = Duration(seconds: 15);
+
+  static final Stopwatch _mono = Stopwatch()..start();
+
+  /// A monotonic clock for grab times (a wall-clock correction must not move
+  /// them).
+  static Duration monoNow() => _mono.elapsed;
+
+  /// r77: [message] is mpv's answer to a frame grab on this player - exactly
+  /// "Taking screenshot failed." (nothing drawn yet) or "Error writing
+  /// screenshot!" - within [screenshotWindow] of [lastGrabAt]. Nothing else
+  /// is, even a message that mentions a screenshot.
+  static bool isScreenshotNoise(String message, {required Duration? lastGrabAt, required Duration now}) {
+    if (lastGrabAt == null) return false;
+    final Duration since = now - lastGrabAt;
+    if (since.isNegative || since > screenshotWindow) return false;
+    final String m = message.trim();
+    return m == 'Taking screenshot failed.' || m == 'Error writing screenshot!';
+  }
+
   /// r77: the log line for a video left with dropped frames, from mpv's
   /// `frame-drop-count` (the output skipped them) and
   /// `decoder-frame-drop-count` (the decoder fell behind); null when none
@@ -84,6 +108,8 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> with TraceLifec
   // WITH the captcha interceptor (which pops the solve webview when the
   // host is challenging), then rebuild the player with the fresh cookies.
   StreamSubscription<String>? _errorProbeSub;
+  // r77: logs what mpv was doing when a video shows no picture 8 s in.
+  Timer? _pictureCheck;
   // Per-URL cooldown so a genuinely broken file can't loop probe/retry.
   static final Map<String, int> _lastProbeAt = {};
   static const Duration _probeCooldown = Duration(minutes: 2);
@@ -116,6 +142,8 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> with TraceLifec
           // Always restart from the beginning when a video becomes the
           // active page — user expectation from the previous engine.
           _entry!.player.seek(Duration.zero);
+          // r77: a preloaded player becoming the viewed one is watched too.
+          _watchForPicture(_entry!, widget.booruItem.fileURL);
           if (SettingsHandler.instance.autoPlayEnabled &&
               !(SettingsHandler.instance.respectManualPause &&
                   ViewerHandler.instance.isManuallyPaused(widget.booruItem.fileURL))) {
@@ -157,7 +185,7 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> with TraceLifec
       );
 
       if (!mounted || !_wantsPlayer) {
-        _MediaKitPlayerPool.instance.release(url);
+        _MediaKitPlayerPool.instance.release(entry);
         return;
       }
 
@@ -178,7 +206,7 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> with TraceLifec
       }
 
       if (!mounted) {
-        _MediaKitPlayerPool.instance.release(url);
+        _MediaKitPlayerPool.instance.release(entry);
         return;
       }
 
@@ -191,11 +219,12 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> with TraceLifec
       _errorProbeSub = entry.player.stream.error.listen(_onPlayerError);
 
       Logger.Inst().log(
-        'media_kit acquired ${entry.wasReused ? "(reused)" : "(new)"} for $url',
+        'media_kit acquired ${entry.wasReused ? "(reused)" : (entry.replaced ? "(new, replacing a broken player)" : "(new)")} for $url',
         'MediaKitPlayerView',
         '_init',
         LogTypes.booruItemLoad,
       );
+      _watchForPicture(entry, url);
     } catch (e, s) {
       Logger.Inst().log(
         'media_kit init threw for ${widget.booruItem.fileURL}: $e',
@@ -209,9 +238,42 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> with TraceLifec
     }
   }
 
+  /// r77: a video with no picture size 8 s after its player was handed out
+  /// is logged with mpv's state - idle, output, codec, cache - so a stalled
+  /// video says why in the user's log.
+  void _watchForPicture(_PooledPlayer entry, String url) {
+    _pictureCheck?.cancel();
+    _pictureCheck = Timer(const Duration(seconds: 8), () async {
+      if (!mounted || !identical(_entry, entry) || !widget.isViewed) return;
+      if ((entry.player.state.width ?? 0) > 0) return;
+      final platform = entry.player.platform;
+      if (platform is! NativePlayer) return;
+      Future<String> read(String name) async {
+        try {
+          return await platform.getProperty(name);
+        } catch (_) {
+          return '?';
+        }
+      }
+
+      final String line =
+          'video: no picture 8 s after start (idle ${await read('idle-active')}, output ${await read('current-vo')}, codec ${await read('video-codec')}, '
+          'waiting for cache ${await read('paused-for-cache')}, cached ${await read('demuxer-cache-duration')} s) ($url)';
+      PerfTrace.instance.event('video.nopicture', url);
+      Logger.Inst().log(line, 'MediaKitPlayerView', 'picture', LogTypes.booruItemLoad);
+    });
+  }
+
   Future<void> _onPlayerError(String message) async {
     // Only recover for the video the user is actually looking at.
     if (!mounted || !widget.isViewed) return;
+
+    // r77: mpv's answer to a frame grab that came too early is not a playback
+    // problem - and it must not use up this video's recovery window below.
+    if (MediaKitPlayerView.isScreenshotNoise(message, lastGrabAt: _entry?.lastGrabAt, now: MediaKitPlayerView.monoNow())) return;
+    // r77: fullscreen shows this very player; rebuilding it underneath would
+    // leave fullscreen on a disposed player.
+    if ((_entry?.fullscreenHolds ?? 0) > 0) return;
 
     // Decoder-level hiccups ('Could not open codec.' on some webm tracks)
     // are NOT session/network problems — mpv usually plays the file anyway.
@@ -274,16 +336,20 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> with TraceLifec
     _initDebounce?.cancel();
     _initDebounce = null;
     final url = _acquiredUrl;
+    final _PooledPlayer? entry = _entry;
     // Released while still the viewed page = unmounted under the user
     // (nested viewer cover), not swiped away — park the position so the
     // re-created widget resumes instead of restarting.
-    if (_entry != null && widget.isViewed) {
-      ViewerHandler.instance.saveVideoPosition(url, _entry!.player.state.position);
+    if (entry != null && widget.isViewed) {
+      ViewerHandler.instance.saveVideoPosition(url, entry.player.state.position);
     }
+    _pictureCheck?.cancel();
+    _pictureCheck = null;
     _entry = null;
     _acquiredUrl = null;
-    if (url != null) {
-      _MediaKitPlayerPool.instance.release(url);
+    // r77: by identity - during a replace two slots can hold the same address.
+    if (entry != null) {
+      _MediaKitPlayerPool.instance.release(entry);
     }
   }
 
@@ -306,6 +372,10 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> with TraceLifec
           fit: StackFit.expand,
           children: [
             Video(
+              // r77: a replaced player comes with its own controller; the
+              // video surface is rebuilt for it (media_kit_video's state does
+              // not rebind to a new controller).
+              key: ObjectKey(entry.controller),
               controller: entry.controller,
               fit: BoxFit.contain,
               controls: NoVideoControls,
@@ -352,6 +422,25 @@ class _PooledPlayer {
   // Cancelled on evict/reset/dispose — the pool owns the lifecycle.
   // ignore: cancel_subscriptions
   StreamSubscription<String>? errorSub;
+  // r77: mpv's fatal messages (only error level reaches the error stream).
+  StreamSubscription<PlayerLog>? logSub;
+
+  /// r77: when a frame was last asked of this player (on
+  /// [MediaKitPlayerView.monoNow]'s clock); mpv's screenshot messages right
+  /// after it are not player errors.
+  Duration? lastGrabAt;
+
+  /// r77: fullscreen routes showing this player outside the widgets' counts;
+  /// while any does, the slot counts as in use.
+  int fullscreenHolds = 0;
+
+  /// r77: built to replace a player that broke on this video.
+  bool replaced = false;
+
+  void cancelSubs() {
+    errorSub?.cancel();
+    logSub?.cancel();
+  }
 }
 
 /// Global pool of player slots. Survives widget disposal so scrolling back to
@@ -396,6 +485,21 @@ class _MediaKitPlayerPool {
       entry.wasReused = true;
       PerfTrace.instance.event('video.reuse', url);
       return entry;
+    }
+
+    bool replacing = false;
+    if (plan.action == PoolAction.replace) {
+      // r77: the player that broke on this video is disposed; a new one opens
+      // it with the headers just read (re-opening it on the broken player was
+      // seen to leave the video without a picture).
+      final _PooledPlayer old = _slots.removeAt(plan.slot!);
+      PerfTrace.instance.event('video.replace', url);
+      Logger.Inst().log('media_kit: replacing a broken player for $url', '_MediaKitPlayerPool', 'acquire', LogTypes.booruItemLoad);
+      try {
+        old.cancelSubs();
+        unawaited(old.player.dispose());
+      } catch (_) {}
+      replacing = true;
     }
 
     if (plan.action == PoolAction.rebind) {
@@ -473,21 +577,32 @@ class _MediaKitPlayerPool {
       ..refCount = 1
       ..lastUsedTick = ++_tick
       ..wasReused = false
+      ..replaced = replacing
       ..options = options;
     // Cancelled on evict/reset/dispose — the pool owns the lifecycle.
     // ignore: cancel_subscriptions
     entry.errorSub = player.stream.error.listen((message) {
+      // r77: a frame grab that came before mpv drew anything: not an error.
+      if (MediaKitPlayerView.isScreenshotNoise(message, lastGrabAt: entry.lastGrabAt, now: MediaKitPlayerView.monoNow())) {
+        Logger.Inst().log('look: mpv had no picture for a frame yet (${entry.url})', '_MediaKitPlayerPool', 'errorStream', LogTypes.booruHandlerInfo);
+        return;
+      }
       // Codec grumbles aren't fatal (playback usually continues) — don't
       // condemn the entry to a rebuild over them.
       if (!message.toLowerCase().contains('codec')) {
         entry.hasError = true;
       }
+      // r77: the address this player shows now, not the one it was built for.
       Logger.Inst().log(
-        'media_kit player error for $url: $message',
+        'media_kit player error for ${entry.url}: $message',
         '_MediaKitPlayerPool',
         'errorStream',
         LogTypes.booruItemLoad,
       );
+    });
+    entry.logSub = player.stream.log.listen((PlayerLog l) {
+      if (l.level != 'fatal') return;
+      Logger.Inst().log('mpv fatal (${l.prefix}) for ${entry.url}: ${l.text.trim()}', '_MediaKitPlayerPool', 'log', LogTypes.booruItemLoad);
     });
     PerfTrace.instance.event('video.create', url);
     _slots.add(entry);
@@ -517,7 +632,7 @@ class _MediaKitPlayerPool {
     for (final int i in stale.reversed) {
       final _PooledPlayer e = _slots.removeAt(i);
       try {
-        e.errorSub?.cancel();
+        e.cancelSubs();
         e.player.dispose();
       } catch (_) {}
     }
@@ -537,7 +652,7 @@ class _MediaKitPlayerPool {
     for (final _PooledPlayer e in idle) {
       _slots.remove(e);
       try {
-        e.errorSub?.cancel();
+        e.cancelSubs();
         e.player.dispose();
       } catch (_) {}
     }
@@ -546,10 +661,10 @@ class _MediaKitPlayerPool {
     }
   }
 
-  void release(String url) {
-    final int i = _slots.indexWhere((e) => e.url == url);
-    if (i == -1) return;
-    final _PooledPlayer entry = _slots[i];
+  /// r77: by identity, not by address - during a replace, or after an
+  /// errored slot stayed on screen, two slots can hold the same address.
+  void release(_PooledPlayer entry) {
+    if (!_slots.contains(entry)) return;
     if (entry.refCount > 0) entry.refCount--;
     entry.lastUsedTick = ++_tick;
     if (entry.refCount == 0) {
@@ -561,6 +676,24 @@ class _MediaKitPlayerPool {
       } catch (_) {}
     }
     _disposeOverflow();
+  }
+
+  /// r77: fullscreen shows [player] outside the widgets' counts; while it
+  /// does, its slot is in use - never replaced, re-pointed or disposed.
+  void holdForFullscreen(Player player) {
+    for (final _PooledPlayer e in _slots) {
+      if (!identical(e.player, player)) continue;
+      e.refCount++;
+      e.fullscreenHolds++;
+    }
+  }
+
+  void endFullscreenHold(Player player) {
+    for (final _PooledPlayer e in List<_PooledPlayer>.of(_slots)) {
+      if (!identical(e.player, player) || e.fullscreenHolds <= 0) continue;
+      e.fullscreenHolds--;
+      release(e);
+    }
   }
 
   /// r77: how many frames mpv dropped while this video played, read when it
@@ -593,7 +726,7 @@ class _MediaKitPlayerPool {
       final _PooledPlayer e = _slots.removeAt(i);
       PerfTrace.instance.event('video.dispose', e.url);
       try {
-        e.errorSub?.cancel();
+        e.cancelSubs();
         e.player.dispose();
       } catch (_) {}
     }
@@ -1056,6 +1189,9 @@ class _MediaKitControlsState extends State<_MediaKitControls> {
     // it and takes it back when it pops; this claim only lasts in between.
     final Object fullscreenClaim = Object();
     ViewerHandler.instance.claimScreen(fullscreenClaim);
+    // r77: the pool must not replace or dispose this player under fullscreen.
+    final Player held = _p;
+    _MediaKitPlayerPool.instance.holdForFullscreen(held);
     await Navigator.of(context).push(
       PageRouteBuilder(
         opaque: true,
@@ -1067,6 +1203,7 @@ class _MediaKitControlsState extends State<_MediaKitControls> {
       ),
     );
     ViewerHandler.instance.releaseScreen(fullscreenClaim);
+    _MediaKitPlayerPool.instance.endFullscreenHold(held);
     if (mounted) setState(() => _fullscreen = false);
   }
 
@@ -1263,6 +1400,14 @@ class _ProgressBarState extends State<_ProgressBar> {
 /// the same video (the pool may re-point an idle player at another one).
 class MediaKitFrameSource {
   const MediaKitFrameSource._();
+
+  /// r77: a frame is about to be asked of [player]; its screenshot messages
+  /// in the next few seconds are its answer, not a player error.
+  static void noteGrab(Player player) {
+    for (final _PooledPlayer e in _MediaKitPlayerPool.instance._slots) {
+      if (identical(e.player, player)) e.lastGrabAt = MediaKitPlayerView.monoNow();
+    }
+  }
 
   static ({Player player, bool Function() stillShowing})? showing(String url) {
     for (final _PooledPlayer e in _MediaKitPlayerPool.instance._slots) {
