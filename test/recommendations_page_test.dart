@@ -268,6 +268,21 @@ void main() {
     expect(find.textContaining('hatsune_miku'), findsOneWidget);
     expect(find.textContaining('cat_ears'), findsOneWidget);
     expect(find.textContaining('357 ms'), findsOneWidget);
+    // r77: nothing back from the picker is said, not swallowed.
+    RecommendationsPage.pickImageBytes = () async => null;
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const ValueKey('tagger-try')));
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await settle(tester);
+    expect(tester.widget<Text>(find.byKey(const ValueKey('tagger-try-message'))).data, 'No picture came back from the picker.');
+    RecommendationsPage.pickImageBytes = () async => throw StateError('photo picker unavailable');
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const ValueKey('tagger-try')));
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await settle(tester);
+    expect(tester.widget<Text>(find.byKey(const ValueKey('tagger-try-message'))).data, 'Could not read the picture: Bad state: photo picker unavailable');
     await tester.runAsync(() async {
       await tester.tap(find.byKey(const ValueKey('tagger-delete')));
       await Future<void>.delayed(const Duration(milliseconds: 200));
@@ -275,6 +290,37 @@ void main() {
     await settle(tester);
     expect(SettingsHandler.instance.imageTaggerModel, '');
     expect(find.textContaining('No image tagger'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('r77: a Try it picture that came back after Android ended the app is read when the page opens', (tester) async {
+    tester.view.physicalSize = const Size(1080, 8000);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.reset);
+    ImageTaggerHandler.unregister();
+    final ImageTaggerHandler tagger = ImageTaggerHandler.register();
+    tagger.runnerFactory = (String p) => _NoRunner();
+    addTearDown(ImageTaggerHandler.unregister);
+    addTearDown(RecommendationsPage.resetForTests);
+    int asked = 0;
+    RecommendationsPage.lostPick = () async {
+      asked++;
+      return Uint8List.fromList(List<int>.filled(10, 1));
+    };
+    RecommendationsPage.tagImage = (Uint8List bytes) async => const TaggerResult(
+      general: [(tag: 'cat_ears', confidence: 0.9, character: false)],
+      characters: [],
+      rating: 'general',
+      ratingConfidence: 0.6,
+      decodeMs: 12,
+      modelMs: 345,
+      provider: 'CPU',
+    );
+    await warm(tester);
+    await tester.pumpWidget(const MaterialApp(home: RecommendationsPage()));
+    await settle(tester);
+    expect(asked, 1, reason: 'asked once, when the page opens');
+    expect(find.textContaining('cat_ears'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 

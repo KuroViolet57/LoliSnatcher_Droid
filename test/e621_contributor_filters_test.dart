@@ -41,11 +41,15 @@ void main() {
     s.invalidateBlacklistCache();
   });
 
-  tearDown(() {
+  tearDown(() async {
     final SettingsHandler s = SettingsHandler.instance;
     s.hiddenTags.clear();
     s.hiddenTagsPerBooru.clear();
     s.invalidateBlacklistCache();
+    // r77: addTagToBooruHiddenList starts a settings save nobody awaits; on a
+    // loaded machine it wrote into this folder after it was deleted ("failed
+    // after it had already completed"). Let it finish first.
+    await Future<void>.delayed(const Duration(milliseconds: 300));
     try {
       tempDir.deleteSync(recursive: true);
     } catch (_) {}

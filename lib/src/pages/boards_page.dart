@@ -256,12 +256,22 @@ class BoardEditPage extends StatefulWidget {
     if (f.existsSync()) f.deleteSync();
   }
 
+  /// r77: how a picture is picked (its file path, or null when nothing came
+  /// back). Replaced in tests.
+  static Future<String?> Function() pickImagePath = _defaultPickImagePath;
+
+  static Future<String?> _defaultPickImagePath() async {
+    final XFile? file = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 1600, maxHeight: 1600, imageQuality: 92);
+    return file?.path;
+  }
+
   static void resetForTests() {
     imageFetcher = _defaultImageFetcher;
     taggerReady = _defaultTaggerReady;
     pixelTagger = _defaultPixelTagger;
     frameCleanupDelay = const Duration(seconds: 2);
     deleteCopy = _defaultDeleteCopy;
+    pickImagePath = _defaultPickImagePath;
   }
 
   static bool _defaultTaggerReady() => ImageTaggerHandler.maybe?.enabled ?? false;
@@ -418,10 +428,17 @@ class _BoardEditPageState extends State<BoardEditPage> {
 
   Future<void> _pick() async {
     try {
-      final XFile? file = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 1600, maxHeight: 1600, imageQuality: 92);
-      if (file == null) return;
-      if (mounted) setState(() => pendingPick = file.path);
+      final String? path = await BoardEditPage.pickImagePath();
+      if (path == null) {
+        // r77: said, not swallowed (the same picker as Try it).
+        Logger.Inst().log('boards: no picture came back from the picker', 'BoardEditPage', '_pick', LogTypes.booruHandlerInfo);
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No picture came back from the picker.')));
+        return;
+      }
+      Logger.Inst().log('boards: a picture came back from the picker', 'BoardEditPage', '_pick', LogTypes.booruHandlerInfo);
+      if (mounted) setState(() => pendingPick = path);
     } catch (e) {
+      Logger.Inst().log('boards: the picker failed: $e', 'BoardEditPage', '_pick', LogTypes.booruHandlerInfo);
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not pick an image: $e')));
     }
   }

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -7,6 +8,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+import 'package:lolisnatcher/src/utils/logger.dart';
+import 'package:lolisnatcher/src/utils/photo_picker.dart';
 import 'package:lolisnatcher/src/handlers/recommender/encoder_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/image_tagger_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/look_model_handler.dart';
@@ -27,9 +30,23 @@ class RecommendationsPage extends StatefulWidget {
   static Future<Uint8List?> Function()? pickImageBytes = _defaultPickImageBytes;
   static Future<TaggerResult> Function(Uint8List bytes)? tagImage = _defaultTagImage;
 
+  /// r77: a picture picked before Android ended the app (it is ended more
+  /// easily while the picker is in front and the models hold memory);
+  /// image_picker keeps it until asked. Null when there is none. Replaced in
+  /// tests.
+  static Future<Uint8List?> Function() lostPick = _defaultLostPick;
+
   static void resetForTests() {
     pickImageBytes = _defaultPickImageBytes;
     tagImage = _defaultTagImage;
+    lostPick = _defaultLostPick;
+  }
+
+  static Future<Uint8List?> _defaultLostPick() async {
+    if (!Platform.isAndroid) return null;
+    final LostDataResponse lost = await ImagePicker().retrieveLostData();
+    final XFile? file = lost.isEmpty ? null : lost.file;
+    return file == null ? null : await file.readAsBytes();
   }
 
   static Future<Uint8List?> _defaultPickImageBytes() async {
@@ -689,6 +706,10 @@ class _TaggerSectionState extends State<_TaggerSection> {
   late String choice;
   TaggerResult? tried;
   String tryError = '';
+
+  /// r77: a neutral note (nothing came back from the picker - a cancel looks
+  /// the same), not an error.
+  String tryNote = '';
   bool trying = false;
 
   @override
@@ -702,6 +723,40 @@ class _TaggerSectionState extends State<_TaggerSection> {
       custom.text = current;
     } else {
       choice = TaggerPreset.wdVit.id;
+    }
+    unawaited(_recoverLostPick());
+  }
+
+  /// r77: a Try it whose picture came back after Android had ended the app
+  /// is finished now instead of being lost without a word.
+  Future<void> _recoverLostPick() async {
+    Uint8List? bytes;
+    try {
+      bytes = await RecommendationsPage.lostPick();
+    } catch (_) {
+      return;
+    }
+    if (bytes == null || !mounted) return;
+    Logger.Inst().log('tagger: Try it - a picture picked before the app was restarted came back (${bytes.length ~/ 1024} KB)', 'RecommendationsPage', '_recoverLostPick', LogTypes.booruHandlerInfo);
+    await _readPicked(bytes);
+  }
+
+  Future<void> _readPicked(Uint8List bytes) async {
+    if (trying) return;
+    setState(() {
+      trying = true;
+      tryError = '';
+      tryNote = '';
+      tried = null;
+    });
+    try {
+      final TaggerResult? r = await RecommendationsPage.tagImage?.call(bytes);
+      if (mounted) setState(() => tried = r);
+    } catch (e) {
+      Logger.Inst().log('tagger: Try it failed: $e', 'RecommendationsPage', '_tryIt', LogTypes.booruHandlerInfo);
+      if (mounted) setState(() => tryError = 'Could not read the picture: $e');
+    } finally {
+      if (mounted) setState(() => trying = false);
     }
   }
 
@@ -750,14 +805,27 @@ class _TaggerSectionState extends State<_TaggerSection> {
     setState(() {
       trying = true;
       tryError = '';
+      tryNote = '';
       tried = null;
     });
     try {
+      // r77: how long the picker was open tells an instant automatic
+      // cancel from a person who cancelled.
+      final Stopwatch open = Stopwatch()..start();
       final Uint8List? bytes = await RecommendationsPage.pickImageBytes?.call();
-      if (bytes == null) return;
+      final String openFor = '${(open.elapsedMilliseconds / 1000).toStringAsFixed(1)} s, ${PhotoPicker.systemPickerOn ? "Android's photo picker" : 'the default picker'}';
+      if (bytes == null) {
+        // r77: said, not swallowed - on 19 Sep the phone showed nothing and
+        // logged nothing.
+        Logger.Inst().log('tagger: Try it - no picture came back from the picker (open $openFor)', 'RecommendationsPage', '_tryIt', LogTypes.booruHandlerInfo);
+        if (mounted) setState(() => tryNote = 'No picture came back from the picker.');
+        return;
+      }
+      Logger.Inst().log('tagger: Try it on a picture of ${bytes.length ~/ 1024} KB (picker open $openFor)', 'RecommendationsPage', '_tryIt', LogTypes.booruHandlerInfo);
       final TaggerResult? r = await RecommendationsPage.tagImage?.call(bytes);
       if (mounted) setState(() => tried = r);
     } catch (e) {
+      Logger.Inst().log('tagger: Try it failed: $e', 'RecommendationsPage', '_tryIt', LogTypes.booruHandlerInfo);
       if (mounted) setState(() => tryError = 'Could not read the picture: $e');
     } finally {
       if (mounted) setState(() => trying = false);
@@ -875,7 +943,15 @@ class _TaggerSectionState extends State<_TaggerSection> {
                       ],
                     ),
                     Text('Models come from huggingface.co; download over Wi-Fi. The model is opened on first use and closed after two idle minutes.', style: muted),
-                    if (tryError.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 8), child: Text(tryError, style: TextStyle(color: theme.colorScheme.error))),
+                    if (tryError.isNotEmpty || tryNote.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          tryError.isNotEmpty ? tryError : tryNote,
+                          key: const ValueKey('tagger-try-message'),
+                          style: tryError.isNotEmpty ? TextStyle(color: theme.colorScheme.error) : muted,
+                        ),
+                      ),
                     if (r != null) ...[
                       const SizedBox(height: 8),
                       Text(

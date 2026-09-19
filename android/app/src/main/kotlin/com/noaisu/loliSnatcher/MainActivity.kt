@@ -54,6 +54,8 @@ class MainActivity: FlutterFragmentActivity() {
     private var isSinkingVolume: Boolean = false
     private var SAFUri: String? = ""
     private var methodResult: MethodChannel.Result? = null
+    // r77: the request code of our own folder/file pickers (see onActivityResult).
+    private val SAF_REQUEST = 4273
 
     private val activeFiles = mutableMapOf<Uri, OutputStream?>()
 
@@ -493,7 +495,7 @@ class MainActivity: FlutterFragmentActivity() {
                     Intent.FLAG_GRANT_WRITE_URI_PERMISSION
         }
         
-        startActivityForResult(intent, 1)
+        startActivityForResult(intent, SAF_REQUEST)
     }
 
     private fun requestTemporaryDirectoryAccess() {
@@ -502,7 +504,7 @@ class MainActivity: FlutterFragmentActivity() {
             flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
         }
 
-        startActivityForResult(intent, 1)
+        startActivityForResult(intent, SAF_REQUEST)
     }
 
     private fun requestImageAccess() {
@@ -519,12 +521,19 @@ class MainActivity: FlutterFragmentActivity() {
                     Intent.FLAG_GRANT_WRITE_URI_PERMISSION
         }
 
-        startActivityForResult(intent, 1)
+        startActivityForResult(intent, SAF_REQUEST)
     }
 
     @RequiresApi(Build.VERSION_CODES.KITKAT)
     override fun onActivityResult(requestCode: Int, resultCode: Int, resultData: Intent?) {
         super.onActivityResult(requestCode, resultCode, resultData)
+        // r77: only our own folder/file requests are answered here. Every other
+        // result (the image picker's, a share's) is the plugins' business, and
+        // answering it on the stale reply of an earlier folder request made
+        // Flutter throw "Reply already submitted" and could crash the app.
+        if (requestCode != SAF_REQUEST) return
+        val reply = methodResult ?: return
+        methodResult = null
 
         if (resultCode == Activity.RESULT_OK && resultData?.data != null) {
             val uri = resultData.data
@@ -534,16 +543,16 @@ class MainActivity: FlutterFragmentActivity() {
                 SAFUri = uri.toString()
                 try {
                     contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-                    methodResult?.success(uri.toString())
+                    reply.success(uri.toString())
                 } catch (e: SecurityException) {
                     Log.e("MainActivity", "Failed to take persistable URI permission", e)
-                    methodResult?.error("PERMISSION_ERROR", "Failed to take persistable URI permission", null)
+                    reply.error("PERMISSION_ERROR", "Failed to take persistable URI permission", null)
                 }
             } else {
-                methodResult?.error("INVALID_URI", "URI is null", null)
+                reply.error("INVALID_URI", "URI is null", null)
             }
         } else {
-            methodResult?.error("RESULT_ERROR", "Invalid result or data", null)
+            reply.error("RESULT_ERROR", "Invalid result or data", null)
         }
     }
 

@@ -17,6 +17,7 @@ import 'package:lemberfpsmonitor/lemberfpsmonitor.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:talker_flutter/talker_flutter.dart';
 
+import 'package:lolisnatcher/src/utils/photo_picker.dart';
 import 'package:lolisnatcher/src/utils/perf_trace.dart';
 import 'package:lolisnatcher/src/utils/status_bar_inset.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
@@ -126,6 +127,9 @@ void main() async {
   ModelWork.instance.attach(videoPlaying: MediaKitPlayerView.anyPlaying);
   // r77: system Back and Back gestures, in the log (next to what they closed).
   BackGestureLogger.attach();
+  // r77: Try it and a board's picture use Android's own photo picker (one
+  // variable less while the 19 Sep "nothing happens" is not explained).
+  PhotoPicker.useSystemPicker();
   LocalAuthHandler.register();
 
   await ServiceHandler.setSystemUiVisibility(true);

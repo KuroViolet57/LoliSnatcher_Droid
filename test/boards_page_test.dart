@@ -48,6 +48,17 @@ void main() {
     } catch (_) {}
   });
 
+  testWidgets('r77: a picture that never comes back from the picker is said, not swallowed', (tester) async {
+    BoardEditPage.pickImagePath = () async => null;
+    await tester.pumpWidget(const MaterialApp(home: BoardEditPage()));
+    await tester.tap(find.byKey(const ValueKey('board-pick')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text('No picture came back from the picker.'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 5));
+  });
+
   testWidgets('the page lists the boards; tapping one opens it as a tab through the opener', (tester) async {
     await store.save(Board(id: 'b1', name: 'Beach girls', description: 'blonde on a beach', mustTags: const ['animated']));
     await store.save(Board(id: 'b2', name: 'Cats'));

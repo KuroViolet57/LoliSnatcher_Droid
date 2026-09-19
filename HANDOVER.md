@@ -2365,6 +2365,39 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
 - **Not verified on a phone:** the closer (the new lines will name it),
   Samsung's predictive Back.
 
+### 4.50 Try it: no silent failure (r77, build 100)
+
+- **Evidence (19 Sep):** no Try-it run in the user's log (19 tagger runs = 19
+  favourites). Cause NOT proven. Candidates: (1) `_tryIt` returned silently on
+  a null pick; (2) Android ended the process while the picker was open and
+  image_picker kept the pick for `retrieveLostData()`, which the app never
+  called; (3) after a folder chooser in the same process, `MainActivity`'s
+  catch-all `onActivityResult` answered the picker's return on the stale
+  `methodResult` ("Reply already submitted"). image_picker's README note on
+  `singleInstance` (always RESULT_CANCELED) is contradicted here: the SAF
+  folder links in the user's settings came back to this same activity, and
+  on the emulator GET_CONTENT worked - the launch mode is left as it is.
+- **`utils/photo_picker.dart` (new):** `PhotoPicker.useSystemPicker()` in
+  `main()` sets `ImagePickerAndroid.useAndroidPhotoPicker` (PICK_IMAGES on
+  Android 13+: the media library and the cloud provider, no other apps' file
+  browsers); `systemPickerOn` for the log. image_picker's platform packages
+  were already in the lockfile (transitive); no pubspec change.
+- **Try it:** a null pick shows a neutral note "No picture came back from the
+  picker." (`tagger-try-message`; errors stay red) and logs how long the
+  picker was open and which picker; `lostPick` (a seam over
+  `retrieveLostData`, Android only) runs on the section's `initState` and
+  reads a recovered picture. The board editor goes through
+  `BoardEditPage.pickImagePath` and logs every outcome.
+- **`MainActivity.onActivityResult`:** answers only `SAF_REQUEST` (4273, the
+  three folder/file requests), once (`methodResult` taken and cleared).
+- **Tests:** `test/photo_picker_test.dart` (an `ImagePickerAndroid` instance and
+  the registered instance as `main()` calls it), the r74 Try-it widget test
+  (null and throwing picks), a lost-pick test (read on open),
+  `boards_page_test` (null pick). Checked on the emulator: folder chooser,
+  then the photo picker - cancel shows the note, a pick reads, no crash.
+- **Not done:** a "the tagger is busy" message (nothing to hook: `tag()` just
+  waits); the Kotlin change has no unit test.
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
@@ -2796,6 +2829,8 @@ cards have had regressions).
 
 ## 12. Open items (as of r77)
 
+- r77 (build 100) is unverified on the device: Try it through Android's photo picker
+  on Samsung; the log says "tagger: Try it ..." per outcome (cause not proven).
 - r77 (build 99) is unverified on the device: if the viewer closes by itself again,
   the user's log names the closer ("viewer closed by").
 - r77 (build 98) is unverified on the device: first grabs should now wait for a picture;
