@@ -19,6 +19,7 @@ import 'package:lolisnatcher/src/boorus/sankaku_handler.dart';
 import 'package:get/get.dart' hide ContextExt, FirstWhereOrNullExt;
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
+import 'package:lolisnatcher/src/handlers/floating_preview_handler.dart';
 import 'package:lolisnatcher/src/handlers/tag_handler.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/handlers/interests_handler.dart';
@@ -919,7 +920,12 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware, Trac
               return PopScope(
                 canPop: extent <= 0.001,
                 onPopInvokedWithResult: (didPop, result) {
-                  if (!didPop) closeInfoSheet();
+                  // r77: a preview window shown on this page takes this Back
+                  // (it closes first; the sheet closes on the next one).
+                  // (The top page is this viewer when its Back runs; asking
+                  // ModalRoute.of here would rebuild on every route change.)
+                  final FloatingPreviewHandler previews = FloatingPreviewHandler.instance;
+                  if (!didPop && !previews.hasWindowFor(previews.topPageRoute)) closeInfoSheet();
                 },
                 child: child!,
               );

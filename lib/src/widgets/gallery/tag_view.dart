@@ -21,6 +21,8 @@ import 'package:lolisnatcher/src/boorus/danbooru_handler.dart';
 import 'package:lolisnatcher/src/boorus/kemono_handler.dart';
 import 'package:lolisnatcher/src/data/meta_tag.dart';
 import 'package:lolisnatcher/src/data/pinned_tag.dart';
+import 'package:lolisnatcher/src/widgets/gallery/tag_chip_shell.dart';
+import 'package:lolisnatcher/src/utils/navigation_trace.dart';
 import 'package:lolisnatcher/src/widgets/common/loli_dropdown.dart';
 import 'package:lolisnatcher/src/widgets/preview/main_search_query_editor_page.dart';
 import 'package:lolisnatcher/src/widgets/tabs/tab_selector.dart';
@@ -31,6 +33,7 @@ import 'package:uuid/uuid.dart';
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/boorus/downloads_handler.dart';
 import 'package:lolisnatcher/src/boorus/favourites_handler.dart';
+import 'package:lolisnatcher/src/boorus/board_handler.dart';
 import 'package:lolisnatcher/src/boorus/foryou_handler.dart';
 import 'package:lolisnatcher/src/boorus/history_handler.dart';
 import 'package:lolisnatcher/src/boorus/idol_sankaku_handler.dart';
@@ -227,6 +230,10 @@ class _TagViewState extends State<TagView> with TraceLifecycle {
         handler is DownloadsHandler ||
         handler is ForYouHandler ||
         handler is HistoryHandler ||
+        // r77: the Suggested strip's tab and boards (Posts like this) mix
+        // posts from several sources too.
+        handler is SuggestionHandler ||
+        handler is BoardHandler ||
         isMergeHandler;
     if (!isVirtualFeed) {
       return;
@@ -1819,7 +1826,10 @@ class _TagViewState extends State<TagView> with TraceLifecycle {
 
     final bool isSelectedForBatch = tagSelectionMode && selectedBatchTags.contains(currentTag);
 
-    return Material(
+    // r77: the preview icon is its own button laid over the chip (see
+    // TagChipShell): it reacts at once - no double-tap wait - opens the
+    // preview for the page it was tapped on, on the post's own site.
+    return TagChipShell(
       key: ValueKey('tag-chip-$currentTag'),
       color: isSelectedForBatch
           ? Theme.of(context).colorScheme.secondary.withValues(alpha: 0.22)
@@ -1832,159 +1842,168 @@ class _TagViewState extends State<TagView> with TraceLifecycle {
                 width: isInSearch ? 1.6 : 1,
               ),
       ),
-      child: InkWell(
-        customBorder: const StadiumBorder(),
-        onTap: tagSelectionMode
-            ? () => _toggleBatchTag(currentTag)
-            : () {
-                showTagDialog(
-                  context: context,
-                  tag: currentTag,
-                  // Virtual feeds (For You, favourites, merge) resolve the item's
-                  // real source booru — the dialog's preview / hub entries should
-                  // originate there, not on the virtual feed.
-                  handler: possibleBooruHandler ?? handler,
-                  isHidden: isHidden,
-                  isMarked: isMarked,
-                  isInSearch: isInSearch,
-                  hasTabWithTag: hasTabWithTag,
-                  onUpdate: parseSortGroupTagsWithoutCache,
-                  knownType: resolvedType,
-                );
-              },
-        onDoubleTap: tagSelectionMode
-            ? null
-            : () async {
-                // Shortcut straight to the tag editor (same dialog as tap →
-                // "Edit tag") — mainly for quickly recolouring a tag's type.
-                final Booru booru = tagBooru;
-                // A COPY: mutating the object handed out by TagHandler would
-                // edit the app-wide tag map in place.
-                // Seeded from the source's own type on a doujin booru: the
-                // shared map is a booru store and would preselect a booru's
-                // classification for a coinciding name.
-                final item = tagHandler
-                    .getTagFor(currentTag, booru)
-                    .copyWith(tagType: typeOfTag(rawTag));
-                await showDialog(
-                  context: context,
-                  builder: (context) => TagsManagerListItemDialog(
-                    tag: item,
-                    onChangedType: (TagType? newValue) async {
-                      if (newValue == null || item.tagType == newValue) return;
-                      item.tagType = newValue;
-                      // Stored as a correction for THIS booru only. The global
-                      // tag map holds one type per tag string for the whole
-                      // app, so writing there would recolour the same tag on
-                      // every other site as a side effect. Doing it this way
-                      // also permanently excludes the pair from automatic
-                      // re-typing, which is the point of correcting it.
-                      await BooruTagStore.setManualType(booru, currentTag, newValue);
-                      parseSortGroupTagsWithoutCache();
-                    },
-                  ),
-                );
-                parseSortGroupTagsWithoutCache();
-              },
-        onLongPress: tagSelectionMode ? null : () async {
-          // Long-press opens the tag as a new background tab, honouring the
-          // user's "New tab placement" setting and showing the same toast every
-          // other background-tab action does. Adding to the current search
-          // still lives behind tap → dialog.
-          await ServiceHandler.vibrate(duration: 40, amplitude: 180);
-          final Booru previewBooru = possibleBooruHandler?.booru ?? searchHandler.currentBooru;
-          final TabAddMode addMode =
-              settingsHandler.defaultTabAddMode == 'next' ? TabAddMode.next : TabAddMode.end;
-          searchHandler.addTabByString(
-            currentTag,
-            customBooru: previewBooru,
-            addMode: addMode,
-            group: SearchHandler.inheritGroup,
-          );
-          if (!context.mounted) return;
-          FlashElements.showSnackbar(
-            context: context,
-            isKeyUnique: true,
-            key: 'added_new_tab',
-            duration: const Duration(seconds: 2),
-            title: Text(
-              context.loc.tagView.addedNewTab,
-              style: const TextStyle(fontSize: 20),
-            ),
-            content: Text(currentTag, style: const TextStyle(fontSize: 16)),
-            leadingIcon: Symbols.fiber_new_rounded,
-            sideColor: Colors.green,
-          );
-        },
-        child: Padding(
-          padding: const EdgeInsets.only(left: 10, right: 2, top: 3, bottom: 3),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final t in tagIconAndColor)
-                Padding(
-                  padding: const EdgeInsets.only(right: 4),
-                  child: switch (t.icon) {
-                    FaIconData _ => FaIcon(t.icon, color: t.color, size: 12),
-                    IconData _ => Icon(t.icon, color: t.color, size: 14),
-                    _ => const SizedBox.shrink(),
+      previewZoneWidth: TagChipShell.previewZoneWidthFor(),
+      previewLabel: '${context.loc.tagView.preview} $currentTag',
+      guardRepeats: !tagSelectionMode,
+      onPreview: () {
+        if (tagSelectionMode) {
+          _toggleBatchTag(currentTag);
+          return;
+        }
+        // The icon reacts at once now, so the top page is the page it was
+        // tapped on (ModalRoute.of here would make the whole tag list
+        // rebuild on every route change).
+        FloatingPreviewHandler.instance.open(tag: currentTag, booru: tagBooru);
+      },
+      onPreviewLongPress: tagSelectionMode ? null : () => _openTagInNewTab(context, currentTag),
+      onTap: tagSelectionMode
+          ? () => _toggleBatchTag(currentTag)
+          : () {
+              showTagDialog(
+                context: context,
+                tag: currentTag,
+                // Virtual feeds (For You, favourites, merge) resolve the item's
+                // real source booru — the dialog's preview / hub entries should
+                // originate there, not on the virtual feed.
+                handler: possibleBooruHandler ?? handler,
+                isHidden: isHidden,
+                isMarked: isMarked,
+                isInSearch: isInSearch,
+                hasTabWithTag: hasTabWithTag,
+                onUpdate: parseSortGroupTagsWithoutCache,
+                knownType: resolvedType,
+              );
+            },
+      onDoubleTap: tagSelectionMode
+          ? null
+          : () async {
+              // Shortcut straight to the tag editor (same dialog as tap →
+              // "Edit tag") — mainly for quickly recolouring a tag's type.
+              final Booru booru = tagBooru;
+              // A COPY: mutating the object handed out by TagHandler would
+              // edit the app-wide tag map in place.
+              // Seeded from the source's own type on a doujin booru: the
+              // shared map is a booru store and would preselect a booru's
+              // classification for a coinciding name.
+              final item = tagHandler
+                  .getTagFor(currentTag, booru)
+                  .copyWith(tagType: typeOfTag(rawTag));
+              await showDialog(
+                context: context,
+                builder: (context) => TagsManagerListItemDialog(
+                  tag: item,
+                  onChangedType: (TagType? newValue) async {
+                    if (newValue == null || item.tagType == newValue) return;
+                    item.tagType = newValue;
+                    // Stored as a correction for THIS booru only. The global
+                    // tag map holds one type per tag string for the whole
+                    // app, so writing there would recolour the same tag on
+                    // every other site as a side effect. Doing it this way
+                    // also permanently excludes the pair from automatic
+                    // re-typing, which is the point of correcting it.
+                    await BooruTagStore.setManualType(booru, currentTag, newValue);
+                    parseSortGroupTagsWithoutCache();
                   },
                 ),
-              ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.62),
-                child: _chipTagLabel(currentTag, textColor),
-              ),
-              if (tagCount > 0) ...[
-                const SizedBox(width: 5),
-                Text(
-                  tagCount.toFormattedString(),
-                  style: TextStyle(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w500,
-                    color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
-                  ),
-                ),
-              ],
-              if (hasTabWithTag.hasTagInAnyForm) ...[
-                const SizedBox(width: 5),
-                Icon(
-                  Symbols.circle_rounded,
-                  size: 7,
-                  color: hasTabWithTag.color(context),
-                ),
-              ],
-              // ⧉ preview zone: a divider + picture-in-picture that opens the
-              // floating preview window for this tag (its own tap target, so it
-              // doesn't trigger the chip's tap = menu). Generously padded —
-              // the icon is small but the hit area must be finger-sized.
-              const SizedBox(width: 4),
-              Container(width: 1, height: 16, color: baseColor.withValues(alpha: 0.3)),
-              GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () {
-                  if (tagSelectionMode) {
-                    _toggleBatchTag(currentTag);
-                    return;
-                  }
-                  final Booru previewBooru = possibleBooruHandler?.booru ?? searchHandler.currentBooru;
-                  FloatingPreviewHandler.instance.open(tag: currentTag, booru: previewBooru);
+              );
+              parseSortGroupTagsWithoutCache();
+            },
+      onLongPress: tagSelectionMode ? null : () => _openTagInNewTab(context, currentTag),
+      child: Padding(
+        padding: const EdgeInsets.only(left: 10, right: 2, top: 3, bottom: 3),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final t in tagIconAndColor)
+              Padding(
+                padding: const EdgeInsets.only(right: 4),
+                child: switch (t.icon) {
+                  FaIconData _ => FaIcon(t.icon, color: t.color, size: 12),
+                  IconData _ => Icon(t.icon, color: t.color, size: 14),
+                  _ => const SizedBox.shrink(),
                 },
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(11, 9, 8, 9),
-                  child: Icon(
-                    tagSelectionMode
-                        ? (isSelectedForBatch ? Symbols.check_circle_rounded : Symbols.circle_rounded)
-                        : Symbols.picture_in_picture_alt_rounded,
-                    size: 16,
-                    fill: isSelectedForBatch ? 1 : 0,
-                    color: isSelectedForBatch ? Theme.of(context).colorScheme.secondary : baseColor,
-                  ),
+              ),
+            ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.62),
+              child: _chipTagLabel(currentTag, textColor),
+            ),
+            if (tagCount > 0) ...[
+              const SizedBox(width: 5),
+              Text(
+                tagCount.toFormattedString(),
+                style: TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w500,
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
                 ),
               ),
             ],
-          ),
+            if (hasTabWithTag.hasTagInAnyForm) ...[
+              const SizedBox(width: 5),
+              Icon(
+                Symbols.circle_rounded,
+                size: 7,
+                color: hasTabWithTag.color(context),
+              ),
+            ],
+            // ⧉ preview zone: a divider + picture-in-picture that opens the
+            // floating preview window for this tag (its own tap target, so it
+            // doesn't trigger the chip's tap = menu). Generously padded —
+            // the icon is small but the hit area must be finger-sized.
+            const SizedBox(width: 4),
+            Container(width: 1, height: 16, color: baseColor.withValues(alpha: 0.3)),
+            // Drawn here; its taps go to TagChipShell's zone over it (r77).
+            Padding(
+              padding: const EdgeInsets.fromLTRB(11, 9, 8, 9),
+              child: Icon(
+                tagSelectionMode
+                    ? (isSelectedForBatch ? Symbols.check_circle_rounded : Symbols.circle_rounded)
+                    : Symbols.picture_in_picture_alt_rounded,
+                size: 16,
+                fill: isSelectedForBatch ? 1 : 0,
+                color: isSelectedForBatch ? Theme.of(context).colorScheme.secondary : baseColor,
+              ),
+            ),
+          ],
         ),
       ),
+    );
+  }
+
+  /// Opens [currentTag] as a new background tab, honouring the user's "New
+  /// tab placement" setting, with the same toast as every other
+  /// background-tab action. r77: from the tag name's hold and the preview
+  /// icon's hold alike.
+  Future<void> _openTagInNewTab(BuildContext context, String currentTag) async {
+    // Long-press opens the tag as a new background tab, honouring the
+    // user's "New tab placement" setting and showing the same toast every
+    // other background-tab action does. Adding to the current search
+    // still lives behind tap → dialog.
+    await ServiceHandler.vibrate(duration: 40, amplitude: 180);
+    // r77: the post's own site (was the main feed's when the post came
+    // from elsewhere, e.g. a nested viewer on another site).
+    final Booru previewBooru = tagBooru;
+    final TabAddMode addMode =
+        settingsHandler.defaultTabAddMode == 'next' ? TabAddMode.next : TabAddMode.end;
+    searchHandler.addTabByString(
+      currentTag,
+      customBooru: previewBooru,
+      addMode: addMode,
+      group: SearchHandler.inheritGroup,
+    );
+    if (!context.mounted) return;
+    FlashElements.showSnackbar(
+      context: context,
+      isKeyUnique: true,
+      key: 'added_new_tab',
+      duration: const Duration(seconds: 2),
+      title: Text(
+        context.loc.tagView.addedNewTab,
+        style: const TextStyle(fontSize: 20),
+      ),
+      content: Text(currentTag, style: const TextStyle(fontSize: 16)),
+      leadingIcon: Symbols.fiber_new_rounded,
+      sideColor: Colors.green,
     );
   }
 
@@ -2517,10 +2536,13 @@ Future<void> showTagDialog({
               final Booru previewBooru = handler.booru.type?.isMerge == true
                   ? (handler as MergebooruHandler).booruHandlers.first.booru
                   : handler.booru;
+              // r77: the page under this menu, taken before the menu closes.
+              final Route<dynamic>? page = FloatingPreviewHandler.instance.topPageRoute;
               Navigator.of(context).pop();
               FloatingPreviewHandler.instance.open(
                 tag: tag,
                 booru: previewBooru,
+                owner: page,
               );
             },
           ),
@@ -3665,6 +3687,9 @@ class _TagContentPreviewState extends State<TagContentPreview> with AutomaticKee
     setState(() {});
 
     await tab!.booruHandler.search(_effectiveTag, null);
+    // r77: the strip may be gone by now (a closed hub page, 19 Sep 14:23:53:
+    // "Null check operator used on a null value" in setState).
+    if (!mounted) return;
 
     if (tab!.booruHandler.locked && !isLastPage) {
       isLastPage = true;
@@ -3724,6 +3749,8 @@ class _TagContentPreviewState extends State<TagContentPreview> with AutomaticKee
     ViewerHandler.instance.addViewer(viewerKey);
     await Navigator.of(context).push(
       PageRouteBuilder(
+        // r77: named like the feed's viewer, so its close is logged too.
+        settings: const RouteSettings(name: ViewerCloseObserver.viewerRoute),
         pageBuilder: (_, _, _) => GalleryViewPage(
           key: viewerKey,
           tab: tab!,

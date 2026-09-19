@@ -27,6 +27,7 @@ import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
+import 'package:lolisnatcher/src/handlers/floating_preview_handler.dart';
 import 'package:lolisnatcher/src/handlers/database_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
@@ -1522,7 +1523,11 @@ class _HideableAppBarState extends State<HideableAppBar> {
     final double extraPadding = isOnTop ? 0 : MediaQuery.paddingOf(context).bottom;
 
     return PopScope(
-      onPopInvokedWithResult: (_, _) {
+      onPopInvokedWithResult: (bool didPop, _) {
+        // r77: a Back that only closes a preview window leaves the viewer (and
+        // a share in progress) alone.
+        final FloatingPreviewHandler previews = FloatingPreviewHandler.instance;
+        if (!didPop && previews.hasWindowFor(previews.topPageRoute)) return;
         // clear currently loading item from cache to avoid creating broken files
         // TODO move sharing download routine to somewhere in global context?
         shareCancelToken?.cancel();

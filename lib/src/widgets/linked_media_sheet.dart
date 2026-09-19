@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:material_symbols_icons/symbols.dart';
 
+import 'package:lolisnatcher/src/utils/navigation_trace.dart';
 import 'package:lolisnatcher/src/boorus/furaffinity_handler.dart';
 import 'package:lolisnatcher/src/boorus/furaffinity_parser.dart';
 import 'package:lolisnatcher/src/boorus/furaffinity_query.dart';
@@ -72,7 +73,11 @@ class LinkedMediaOpener {
     final GlobalKey viewerKey = GlobalKey(debugLabel: 'viewer-linked-${booru.name}-${media.postId}');
     ViewerHandler.instance.addViewer(viewerKey);
     await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => GalleryViewPage(key: viewerKey, tab: tab, initialIndex: 0, canSelect: false)),
+      MaterialPageRoute(
+        // r77: named like the feed's viewer, so its close is logged too.
+        settings: const RouteSettings(name: ViewerCloseObserver.viewerRoute),
+        builder: (_) => GalleryViewPage(key: viewerKey, tab: tab, initialIndex: 0, canSelect: false),
+      ),
     );
   }
 }

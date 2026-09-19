@@ -53,6 +53,7 @@ import 'package:lolisnatcher/src/pages/mobile_home_page.dart';
 import 'package:lolisnatcher/src/pages/settings/booru_edit_page.dart';
 import 'package:lolisnatcher/src/services/image_writer.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
+import 'package:lolisnatcher/src/utils/navigation_trace.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 import 'package:lolisnatcher/src/widgets/common/settings_widgets.dart';
 import 'package:lolisnatcher/src/widgets/root/dev_overlay.dart';
@@ -123,6 +124,8 @@ void main() async {
   // r77: background model work waits for quiet moments and holds the image
   // tagger while a video plays.
   ModelWork.instance.attach(videoPlaying: MediaKitPlayerView.anyPlaying);
+  // r77: system Back and Back gestures, in the log (next to what they closed).
+  BackGestureLogger.attach();
   LocalAuthHandler.register();
 
   await ServiceHandler.setSystemUiVisibility(true);
@@ -283,6 +286,8 @@ class _MainAppState extends State<MainApp> {
                       FloatingPreviewHandler.instance.routeObserver,
                       TalkerRouteObserver(Logger.talker),
                       PerfTraceRouteObserver(),
+                      // r77: what closed the viewer, in the log.
+                      ViewerCloseObserver(),
                     ],
                     home: const Home(),
                     locale: TranslationProvider.of(context).flutterLocale,

@@ -10,6 +10,7 @@ import 'package:get/get.dart' hide ContextExt, FirstWhereOrNullExt;
 import 'package:lolisnatcher/src/utils/perf_trace.dart';
 import 'package:lolisnatcher/src/widgets/drawers/furaffinity_sidebar.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
+import 'package:lolisnatcher/src/handlers/floating_preview_handler.dart';
 import 'package:lolisnatcher/src/handlers/drawer_refresh.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -49,6 +50,12 @@ class _MobileHomeState extends State<MobileHome> {
 
   Future<void> _onPopInvoked(bool didPop, _) async {
     if (didPop) {
+      return;
+    }
+    // r77: a preview window shown on the feed takes this Back - no exit
+    // prompt, no drawer toggle.
+    final FloatingPreviewHandler previews = FloatingPreviewHandler.instance;
+    if (previews.hasWindowFor(previews.topPageRoute)) {
       return;
     }
 

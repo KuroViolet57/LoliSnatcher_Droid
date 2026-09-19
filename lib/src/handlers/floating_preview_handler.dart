@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'package:get_it/get_it.dart';
@@ -8,6 +11,7 @@ import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/handlers/interests_handler.dart';
 import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
+import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/widgets/preview/floating_tag_preview_window.dart';
 
 /// One floating tag-preview window.
@@ -85,22 +89,44 @@ class FloatingPreviewHandler extends ChangeNotifier {
 
   bool isEntryVisible(FloatingPreviewEntry entry) => !isSuppressed && entry.ownerRoute == topPageRoute;
 
-  /// Opens (or replaces, when the current top route already has one) the
-  /// floating preview window for [tag] on [booru].
+  /// r77: the page a preview asked for from [owner] belongs to - [owner]
+  /// itself for a page still up, the page under it for a dialog or sheet
+  /// still up; null when that is gone. Without an owner, the top page.
+  Route<dynamic>? _pageFor(Route<dynamic>? owner) {
+    if (owner == null) return topPageRoute;
+    if (owner is PageRoute) return _pageRoutes.contains(owner) ? owner : null;
+    return owner.isActive ? topPageRoute : null;
+  }
+
+  /// r77: a preview window is shown for [route] (its page's own Back
+  /// handlers stand down while one is: this Back closes the window).
+  bool hasWindowFor(Route<dynamic>? route) => route != null && entries.any((e) => e.ownerRoute == route);
+
+  /// Opens (or replaces, when that page already has one) the floating preview
+  /// window for [tag] on [booru]. r77: [owner] is the route the user tapped
+  /// on; when that page has closed meanwhile, nothing opens (the window used
+  /// to land on whatever page was left - on 19 Sep, the main feed).
   void open({
     required String tag,
     required Booru booru,
+    Route<dynamic>? owner,
   }) {
+    final Route<dynamic>? page = _pageFor(owner);
+    if (page == null && owner != null) {
+      Logger.Inst().log('preview of "$tag" dropped: the page it was asked from has closed', 'FloatingPreviewHandler', 'open', LogTypes.booruHandlerInfo);
+      return;
+    }
     // One window per owner route — opening a new preview on the same page
     // replaces the previous window instead of stacking an unbounded pile.
-    entries.removeWhere((e) => e.ownerRoute == topPageRoute);
+    entries.removeWhere((e) => e.ownerRoute == page);
     entries.add(
       FloatingPreviewEntry(
         tag: tag,
         booru: booru,
-        ownerRoute: topPageRoute,
+        ownerRoute: page,
       ),
     );
+    _syncBackEntries();
     _ensureOverlay();
     // Doujin tag previews must not feed the booru taste profile.
     if (!DoujinDataHandler.isDoujinBooru(booru)) {
@@ -114,30 +140,70 @@ class FloatingPreviewHandler extends ChangeNotifier {
   void openDoujinPreview({
     required BooruItem item,
     required Booru booru,
+    Route<dynamic>? owner,
   }) {
-    entries.removeWhere((e) => e.ownerRoute == topPageRoute);
+    final Route<dynamic>? page = _pageFor(owner);
+    if (page == null && owner != null) return;
+    entries.removeWhere((e) => e.ownerRoute == page);
     entries.add(
       FloatingPreviewEntry(
         tag: 'id:${item.serverId}',
         booru: booru,
-        ownerRoute: topPageRoute,
+        ownerRoute: page,
         doujinItem: item,
       ),
     );
+    _syncBackEntries();
     _ensureOverlay();
     notifyListeners();
   }
 
   void close(FloatingPreviewEntry entry) {
     entries.remove(entry);
+    _syncBackEntries();
     notifyListeners();
     _maybeRemoveOverlay();
   }
 
   void closeAll() {
     entries.clear();
+    _syncBackEntries();
     notifyListeners();
     _maybeRemoveOverlay();
+  }
+
+  // r77: a page with a preview window gets a Back entry that blocks its pop
+  // and closes the window instead - Back goes preview, then the page's own
+  // steps (the viewer's info sheet), then the page. Code pops (the back arrow,
+  // swipe-down) are not blocked by it and take the window with the page.
+  final Map<Route<dynamic>, _PreviewBackEntry> _backEntries = {};
+
+  void _syncBackEntries() {
+    final Set<Route<dynamic>> owners = {
+      for (final FloatingPreviewEntry e in entries)
+        if (e.ownerRoute != null) e.ownerRoute!,
+    };
+    for (final Route<dynamic> route in _backEntries.keys.toList()) {
+      if (owners.contains(route)) continue;
+      final _PreviewBackEntry? back = _backEntries.remove(route);
+      if (back != null && route is ModalRoute) route.unregisterPopEntry(back);
+    }
+    for (final Route<dynamic> route in owners) {
+      if (_backEntries.containsKey(route) || route is! ModalRoute) continue;
+      final _PreviewBackEntry back = _PreviewBackEntry(this, route);
+      _backEntries[route] = back;
+      route.registerPopEntry(back);
+    }
+  }
+
+  /// Back on [route] while it shows a window: the newest window goes.
+  void _closeTopFor(Route<dynamic> route) {
+    for (int i = entries.length - 1; i >= 0; i--) {
+      if (entries[i].ownerRoute == route) {
+        close(entries[i]);
+        return;
+      }
+    }
   }
 
   void _ensureOverlay() {
@@ -176,6 +242,7 @@ class FloatingPreviewHandler extends ChangeNotifier {
       _pageRoutes.remove(route);
       // The page a window belonged to is gone — its preview goes with it.
       entries.removeWhere((e) => e.ownerRoute == route);
+      _syncBackEntries();
       notifyListeners();
       _maybeRemoveOverlay();
     }
@@ -216,5 +283,26 @@ class FloatingPreviewRouteObserver extends NavigatorObserver {
   @override
   void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
     handler._onRouteReplaced(newRoute, oldRoute);
+  }
+}
+
+/// r77: blocks Back on a page that shows a preview window and closes the
+/// window instead. The close waits a microtask: every Back handler of the
+/// page hears this same Back, and they check [FloatingPreviewHandler.hasWindowFor]
+/// to stand down - the window must still be there when they look.
+class _PreviewBackEntry extends PopEntry<Object?> {
+  _PreviewBackEntry(this.handler, this.route);
+
+  final FloatingPreviewHandler handler;
+  final Route<dynamic> route;
+  final ValueNotifier<bool> _canPop = ValueNotifier<bool>(false);
+
+  @override
+  ValueListenable<bool> get canPopNotifier => _canPop;
+
+  @override
+  void onPopInvokedWithResult(bool didPop, Object? result) {
+    if (didPop) return;
+    scheduleMicrotask(() => handler._closeTopFor(route));
   }
 }

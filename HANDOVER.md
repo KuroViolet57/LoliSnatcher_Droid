@@ -2299,6 +2299,72 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
 - **Not verified on a phone:** first-grab success rate, a replaced player's
   picture (the emulator has no video output).
 
+### 4.49 Tag previews: the icon reacts at once, previews belong to their page, Back order (r77, build 99)
+
+- **Evidence (19 Sep):** twice (14:16:28, 14:25:13) the viewer closed 0.1-0.2 s
+  after a tap on a chip's preview icon; the preview's first request came
+  0.3 s after each icon tap (the chip's `InkWell.onDoubleTap` holds the arena
+  for `kDoubleTapTimeout`), and `FloatingPreviewHandler.open` bound the window
+  to the top page - the feed. Nothing in the icon's path pops the viewer; the
+  closer is still unknown. Back with a window open acted on the page under it.
+- **`widgets/gallery/tag_chip_shell.dart` (new):** `TagChipShell` = the chip's
+  Material + a Stack of the body's `InkWell` (tap = menu, double tap =
+  editor, hold = tab) and a `Positioned` preview zone
+  (`previewZoneWidthFor()` = 11 + 16 + 8 + 2) over the icon the body draws:
+  hit first and alone, so no double-tap wait. The zone has onTap (a 500 ms
+  repeat guard via a Timer, off in selection mode) and onLongPress, and a
+  button semantics label. `buildTagChip` uses it; the long-press body is
+  `_openTagInNewTab`, used by the tag name and the icon, with `tagBooru`
+  (was `possibleBooruHandler?.booru ?? searchHandler.currentBooru`, the main
+  feed's site for a nested viewer on another site).
+- **`FloatingPreviewHandler`:** `open`/`openDoujinPreview` take `owner`
+  (`_pageFor`: a page still in `_pageRoutes`, or the top page under a dialog
+  still up; a closed owner opens nothing and logs "preview ... dropped");
+  `hasWindowFor(route)`; `_syncBackEntries` registers a `_PreviewBackEntry`
+  (a `PopEntry` with canPop false) on every page that owns a window: Back is
+  blocked and the newest window of that page closes in a microtask (every pop
+  entry of the page hears the same Back first). Code pops (back arrow,
+  swipe-down) are not blocked and take the windows with the route. The
+  viewer's `PopScope` (closes the info sheet) and the feed's `_onPopInvoked`
+  (exit prompt, drawer) stand down while `hasWindowFor` their route. Callers:
+  the chip (`ModalRoute.of(context)`), the tag menu's Preview (the top page
+  taken before the menu pops), the strip header's floating-window button.
+- **`utils/navigation_trace.dart` (new):** `ViewerCloseObserver` (in
+  `navigatorObservers`) logs "viewer closed by: <app frames>" for the route
+  named `viewer` (Flutter/dart frames dropped; "the system" when none);
+  `BackGestureLogger` (added in `main()` before `runApp` - `handlePopRoute`
+  asks observers in order and stops at the first that handles it) logs
+  "Back pressed (system)" and "Back gesture started (<edge> edge)".
+  `PerfTraceGestureLayer` keeps each pointer (`ui.fingers` when more than
+  one) and logs `ui.cancel`.
+- **`TagContentPreview.loadPreview`:** returns when unmounted after its search
+  (the 14:23:53 "Null check operator" in `setState`).
+- **Tests:** `test/tag_chip_shell_test.dart` (icon fires on the first frame and
+  not the chip; tap/double tap/hold on the name; hold on the icon; repeat
+  guard; semantics label; same height), `test/floating_preview_owner_test.dart`
+  (owner page; closed owner opens nothing; dialog -> page under it; Back
+  closes the window and the page's own Back stands down; next Back pops;
+  back arrow takes the window), `test/navigation_trace_test.dart` (the
+  caller's frame in the line; other pages log nothing; system Back logged
+  before the close).
+- **After one contrarian review:** no `ModalRoute.of(context)` in callbacks
+  (it subscribes the element to every route change: the whole tag list and
+  the feed's `MobileHome` would rebuild on each page change) - the chip and
+  the strip header open for the top page, and the viewer's / feed's Back
+  handlers check `hasWindowFor(topPageRoute)`; the viewer app bar's
+  `PopScope` (share cancel + cache delete) stands down for a preview Back;
+  the strip's, the preview windows' and linked media's viewer pushes are
+  named `ViewerCloseObserver.viewerRoute` too; `<asynchronous suspension>`
+  and elided lines are dropped from the close line; `SuggestionHandler` and
+  `BoardHandler` count as virtual feeds (the post's real site for previews,
+  related strips, the source row); the zone's `Semantics` has onTap and
+  onLongPress, labelled with `loc.tagView.preview`. Known: pages that pop with
+  `maybePop` (a doujin's AppBar, the reader, post files) close their window
+  first when they own one; a chip whose row overflows the list width puts the
+  zone over its count/dot (pre-existing overflow).
+- **Not verified on a phone:** the closer (the new lines will name it),
+  Samsung's predictive Back.
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
@@ -2730,6 +2796,8 @@ cards have had regressions).
 
 ## 12. Open items (as of r77)
 
+- r77 (build 99) is unverified on the device: if the viewer closes by itself again,
+  the user's log names the closer ("viewer closed by").
 - r77 (build 98) is unverified on the device: first grabs should now wait for a picture;
   a replaced player's picture and the grab success rate need the user's log.
 - r77 (build 97) is unverified on the device: the user's two traces (models on / off)

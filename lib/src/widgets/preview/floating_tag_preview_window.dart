@@ -8,6 +8,7 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:get/get.dart' hide ContextExt;
 import 'package:scroll_to_index/scroll_to_index.dart';
 
+import 'package:lolisnatcher/src/utils/navigation_trace.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/handlers/floating_preview_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
@@ -393,6 +394,8 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
     ViewerHandler.instance.addViewer(viewerKey);
     await Navigator.of(context).push(
       PageRouteBuilder(
+        // r77: named like the feed's viewer, so its close is logged too.
+        settings: const RouteSettings(name: ViewerCloseObserver.viewerRoute),
         pageBuilder: (_, _, _) => GalleryViewPage(
           key: viewerKey,
           tab: tab!,

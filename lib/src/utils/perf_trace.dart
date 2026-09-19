@@ -68,16 +68,24 @@ class PerfTraceGestureLayer extends StatefulWidget {
 }
 
 class _PerfTraceGestureLayerState extends State<PerfTraceGestureLayer> {
-  Offset? _down;
+  // r77: every finger on its own (a second finger used to replace the first,
+  // so a palm or a second touch left no trace), and cancelled touches too.
+  final Map<int, Offset> _downs = {};
 
   void _onDown(PointerDownEvent e) {
     if (!PerfTrace.instance.isRecording.value) return;
-    _down = e.position;
+    _downs[e.pointer] = e.position;
+    if (_downs.length > 1) PerfTrace.instance.event('ui.fingers', '${_downs.length}');
+  }
+
+  void _onCancel(PointerCancelEvent e) {
+    final Offset? down = _downs.remove(e.pointer);
+    if (down == null || !PerfTrace.instance.isRecording.value) return;
+    PerfTrace.instance.event('ui.cancel', '${down.dx.round()},${down.dy.round()}');
   }
 
   void _onUp(PointerUpEvent e) {
-    final Offset? down = _down;
-    _down = null;
+    final Offset? down = _downs.remove(e.pointer);
     if (down == null || !PerfTrace.instance.isRecording.value) return;
     final Offset d = e.position - down;
     if (d.distance < PerfTraceGestureLayer.tapSlop) {
@@ -104,7 +112,7 @@ class _PerfTraceGestureLayerState extends State<PerfTraceGestureLayer> {
       behavior: HitTestBehavior.translucent,
       onPointerDown: _onDown,
       onPointerUp: _onUp,
-      onPointerCancel: (_) => _down = null,
+      onPointerCancel: _onCancel,
       child: NotificationListener<ScrollNotification>(
         onNotification: _onScroll,
         child: widget.child,
