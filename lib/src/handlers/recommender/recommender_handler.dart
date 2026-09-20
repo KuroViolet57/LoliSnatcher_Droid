@@ -16,6 +16,7 @@ import 'package:lolisnatcher/src/handlers/recommender/ftrl_model.dart';
 import 'package:lolisnatcher/src/handlers/recommender/image_tagger_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/item_features.dart';
 import 'package:lolisnatcher/src/handlers/recommender/look_model_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/deferred_learning.dart';
 import 'package:lolisnatcher/src/handlers/recommender/model_work.dart';
 import 'package:lolisnatcher/src/handlers/recommender/pixel_tags.dart';
 import 'package:lolisnatcher/src/handlers/recommender/rewards.dart';
@@ -415,6 +416,7 @@ class RecommenderHandler {
     final String key = keyOf(item);
     if (key.isNotEmpty) _interacted.add(key);
     if (!learningEnabled) return;
+    _maybeReplayKept();
     final Reward? reward = rewardFor(kind, value: value);
     if (reward == null) return;
     final RecommenderWorld world = ItemFeatures.worldOf(item);
@@ -426,7 +428,63 @@ class RecommenderHandler {
         return _learnEvent(item, kind, key, world, reward, value: value, handler: handler, namespaces: namespaces, lite: lite);
       },
       heavy: _wantsPixelTags(world, reward),
+      // r78: if the app leaves before this ran, keep it for next time rather
+      // than learn it without the models - that cannot be undone.
+      defer: () => DeferredLearning.instance.keep(<String, dynamic>{
+        'v': 1,
+        'kind': kind.name,
+        'value': value,
+        'key': key,
+        'world': world.name,
+        'item': item.toJson(),
+        'ns': ?namespaces,
+      }),
     );
+  }
+
+  /// r78: learning kept from a run that ended before it could be done. Each
+  /// one is queued like any other step, so it still waits for a quiet moment,
+  /// and can be kept again if the app leaves first.
+  /// r78: the first time the recommender is really used in a run, learning
+  /// kept from the last one is picked up. Not in [register]: that runs before
+  /// SettingsHandler exists (main.dart), where asking anything throws.
+  void _maybeReplayKept() {
+    if (_replayedKept) return;
+    if (!GetIt.instance.isRegistered<SettingsHandler>()) return;
+    _replayedKept = true;
+    unawaited(replayKept());
+  }
+
+  bool _replayedKept = false;
+
+  Future<void> replayKept() async {
+    if (!learningEnabled) return;
+    final List<Map<String, dynamic>> kept = await DeferredLearning.instance.takeAll();
+    if (kept.isEmpty) return;
+    Logger.Inst().log('recommender: ${kept.length} learning step(s) kept from last time', className, 'replayKept', LogTypes.booruHandlerInfo);
+    for (final Map<String, dynamic> e in kept) {
+      try {
+        final InteractionKind kind = InteractionKind.values.byName(e['kind'] as String);
+        final double value = (e['value'] as num?)?.toDouble() ?? 0;
+        final Reward? reward = rewardFor(kind, value: value);
+        if (reward == null) continue;
+        final BooruItem item = BooruItem.fromMap(Map<String, dynamic>.from(e['item'] as Map));
+        final RecommenderWorld world = RecommenderWorld.values.byName(e['world'] as String);
+        final String key = (e['key'] as String?) ?? keyOf(item);
+        if (key.isEmpty) continue;
+        final Map<String, String>? namespaces = (e['ns'] as Map?)?.map((k, v) => MapEntry(k.toString(), v.toString()));
+        unawaited(
+          ModelWork.instance.run(
+            'learn ${kind.name} (kept)',
+            (bool lite) => _learnEvent(item, kind, key, world, reward, value: value, namespaces: namespaces, lite: lite),
+            heavy: _wantsPixelTags(world, reward),
+            defer: () => DeferredLearning.instance.keep(e),
+          ),
+        );
+      } catch (err, s) {
+        Logger.Inst().log('recommender: a kept learning step could not be read: $err', className, 'replayKept', LogTypes.exception, s: s);
+      }
+    }
   }
 
   /// The image tagger will read the picture for this reaction: the heaviest
@@ -915,6 +973,7 @@ class RecommenderHandler {
 
   @visibleForTesting
   void resetForTests() {
+    _replayedKept = false;
     _saveTimer?.cancel();
     _saveTimer = null;
     _models.clear();

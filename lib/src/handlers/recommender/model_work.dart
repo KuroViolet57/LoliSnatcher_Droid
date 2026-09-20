@@ -62,12 +62,15 @@ class ActivityClock {
 typedef ModelStep = Future<void> Function(bool lite);
 
 class _Pending {
-  _Pending(this.label, this.step, this.heavy, this.queuedAt);
+  _Pending(this.label, this.step, this.heavy, this.queuedAt, this.defer);
 
   final String label;
   final ModelStep step;
   final bool heavy;
   final DateTime queuedAt;
+
+  /// r78: what to do instead when the app leaves before this step ran.
+  final void Function()? defer;
   final Completer<void> done = Completer<void>();
 }
 
@@ -91,7 +94,17 @@ class ModelWork with WidgetsBindingObserver {
 
   // Knobs and seams, replaced in tests.
   Duration quiet = const Duration(milliseconds: 1500);
-  Duration maxVideoWait = const Duration(seconds: 60);
+
+  /// r78: how long a step may wait for a quiet moment before it runs anyway.
+  /// Without this a person who never stops for [quiet] never learned with the
+  /// models at all: the queue only drained when the app left the screen, and
+  /// that drain runs lite.
+  Duration maxWait = const Duration(seconds: 20);
+
+  /// r78: was 60 s. Measured on the 19 Sep phone log: a video was on screen
+  /// 56 % of the session and every tagger run came from a favourite, so the
+  /// video hold - not the quiet gate - was the real brake.
+  Duration maxVideoWait = const Duration(seconds: 10);
   Duration poll = const Duration(milliseconds: 250);
 
   /// A step that waited this long says so in the log.
@@ -153,7 +166,8 @@ class ModelWork with WidgetsBindingObserver {
     w._drainWaiters.clear();
     w
       ..quiet = const Duration(milliseconds: 1500)
-      ..maxVideoWait = const Duration(seconds: 60)
+      ..maxWait = const Duration(seconds: 20)
+      ..maxVideoWait = const Duration(seconds: 10)
       ..poll = const Duration(milliseconds: 250)
       ..logWait = const Duration(seconds: 3)
       ..stepTimeout = const Duration(seconds: 60)
@@ -182,8 +196,12 @@ class ModelWork with WidgetsBindingObserver {
 
   /// Runs [step] at the next quiet moment; the future completes when it has
   /// run. A step that throws is logged, never rethrown - callers do not wait.
-  Future<void> run(String label, ModelStep step, {bool heavy = false}) {
-    final _Pending p = _Pending(label, step, heavy, ActivityClock.instance.now());
+  ///
+  /// r78: [defer] is what to do instead when the app leaves the screen before
+  /// the step ran - keep it for later, rather than learn it lite and lose the
+  /// models' half for good. A step without [defer] still runs lite.
+  Future<void> run(String label, ModelStep step, {bool heavy = false, void Function()? defer}) {
+    final _Pending p = _Pending(label, step, heavy, ActivityClock.instance.now(), defer);
     _pending.add(p);
     _pump();
     return p.done.future;
@@ -210,11 +228,16 @@ class ModelWork with WidgetsBindingObserver {
     _Pending? next;
     if (lite) {
       next = _pending.first;
-    } else if (ActivityClock.instance.quietFor(quiet)) {
+    } else {
+      // r78: quiet, or waited long enough. Each gate has its own deadline, so
+      // a person who never stops still gets their learning done.
+      final bool quietNow = ActivityClock.instance.quietFor(quiet);
       final bool video = videoPlaying();
       final DateTime t = ActivityClock.instance.now();
       for (final _Pending p in _pending) {
-        if (p.heavy && video && t.difference(p.queuedAt) < maxVideoWait) continue;
+        final Duration waited = t.difference(p.queuedAt);
+        if (p.heavy && video && waited < maxVideoWait) continue;
+        if (!quietNow && waited < maxWait) continue;
         next = p;
         break;
       }
@@ -236,6 +259,21 @@ class ModelWork with WidgetsBindingObserver {
 
   Future<void> _runOne(_Pending p, {required bool lite}) async {
     final Duration waited = ActivityClock.instance.now().difference(p.queuedAt);
+    if (lite && p.defer != null) {
+      // r78: the app is leaving with this step still waiting. Keeping it is
+      // better than learning it without the models, which cannot be undone.
+      Logger.Inst().log('model: ${p.label} kept for later (the app is leaving)', className, 'run', LogTypes.booruHandlerInfo);
+      PerfTrace.instance.event('model.kept', p.label);
+      try {
+        p.defer!.call();
+      } catch (e, s) {
+        Logger.Inst().log('model: ${p.label} could not be kept: $e', className, 'run', LogTypes.exception, s: s);
+      }
+      if (!p.done.isCompleted) p.done.complete();
+      _running = false;
+      _pump();
+      return;
+    }
     if (waited >= logWait) {
       Logger.Inst().log(
         'model: ${p.label} waited ${(waited.inMilliseconds / 1000).toStringAsFixed(1)} s for a quiet moment (${_pending.length} more waiting)',
@@ -243,6 +281,18 @@ class ModelWork with WidgetsBindingObserver {
         'run',
         LogTypes.booruHandlerInfo,
       );
+    }
+    // r78: it ran although the screen was still busy - the deadline. The log
+    // and the trace say so, so a phone log shows how often that happens.
+    final bool pastDeadline = !lite && !ActivityClock.instance.quietFor(quiet);
+    if (pastDeadline) {
+      Logger.Inst().log(
+        'model: ${p.label} ran after waiting ${(waited.inMilliseconds / 1000).toStringAsFixed(1)} s (the screen never went quiet)',
+        className,
+        'run',
+        LogTypes.booruHandlerInfo,
+      );
+      PerfTrace.instance.event('model.deadline', p.label);
     }
     final Stopwatch sw = Stopwatch()..start();
     PerfTrace.instance.event('model.start', p.label);

@@ -2452,6 +2452,64 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   Android's photo picker)`. The give-up path cannot be forced there - it needs
   a picker that never answers.
 
+### 4.52 Learning is never dropped (r78, build 102)
+
+- **The flaw, from the code:** `ModelWork._pump` had no deadline. A step waited
+  for `quiet` (1.5 s with no touch, scroll or route change) for ever; the only
+  escape was `away()`, and that path runs every step lite -
+  `_learnEvent(lite: true)` passes no embedding, no look vector and no pixel
+  tags (`recommender_handler.dart:459-461`), and the event is learned once, so
+  it cannot be undone. A person who never pauses would get that for
+  everything.
+- **Measured from the user's 19 Sep log** (a full PerfTrace recording, 914 s,
+  ~540 gestures, one per 1.19 s): the 1.5 s gate would still have opened about
+  11 times a minute, ~46 % of the time overall but only ~27 % while a video
+  played; the worst wait was 8.1 s. The real brake was `maxVideoWait` 60 s: a
+  video was on screen 56 % of the session and all 19 tagger runs were
+  favourites.
+- **`ModelWork`:** `maxWait` (20 s) is a deadline on the quiet gate - past it a
+  step runs regardless, and `lite` stays tied to `away()` alone, so a deadline
+  run is a full run. `maxVideoWait` 60 s -> 10 s. A run past the deadline logs
+  `model: <label> ran after waiting N s (the screen never went quiet)` and
+  adds a `model.deadline` trace event, so the next phone log says how often it
+  happens.
+- **`run(..., defer:)`:** when the app leaves with a step still waiting and the
+  step has a `defer`, `_runOne` calls it instead of running lite, logs
+  `kept for later` and emits `model.kept`. A step without `defer` (exposures,
+  frame looks) still runs lite as before.
+- **`recommender/deferred_learning.dart` (new):** `DeferredLearning.keep(map)`
+  appends and writes `<config>/recommender/deferred.json` synchronously (the
+  app is usually about to be ended), capped at 200, oldest first;
+  `takeAll()` hands them over once and empties the file. Seams: `fileFor`,
+  `resetForTests()`.
+- **`recommender_handler`:** `onEvent` passes a `defer` that keeps
+  `{v, kind, value, key, world, item.toJson(), ns}` - the reward is recomputed
+  from kind+value on replay, so it is not stored. `replayKept()` queues each
+  kept event as a normal step (so it still waits for quiet, and can be kept
+  again), with `handler: null`.
+- **Where the replay is triggered, and why not in `register()`:** `register()`
+  runs at `main.dart:105`, BEFORE SettingsHandler is registered - calling
+  `learningEnabled` there threw `GetIt: Object/factory with type
+  SettingsHandler is not registered` on the device (seen in the emulator log
+  of the first build 102). It now runs from `_maybeReplayKept()` at the first
+  `onEvent` of a run, guarded by `_replayedKept` and
+  `GetIt.isRegistered<SettingsHandler>()`. Consequence: kept work waits until
+  the person reacts to something in the next run.
+- **Tests:** five r78 tests in `model_work_test` (deadline with the models and
+  a `model.deadline` event; still held before it; the 10 s video hold; kept
+  instead of lite; lite when there is nothing to keep),
+  `test/deferred_learning_test.dart` (4: round trip through a new run, the
+  cap, a broken file, nowhere to write), four in `recommender_handler_test`
+  (kept then learned later, kept picked up by itself on the next run,
+  exposures still lite, the deadline end to end). The r77 tests that asserted
+  lite learning were rewritten to the r78 truth; the flush test now uses an
+  exposure, since a learning event is no longer lite.
+- **Checked on the emulator (build 102):** a favourite then Home writes
+  `deferred.json` with that event and logs `model: learn favourite kept for
+  later (the app is leaving)`; after a force-stop and a restart, the first
+  reaction consumes the file. The 20 s deadline could not be exercised there -
+  adb input cannot keep the screen busy that long - so it rests on the tests.
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.

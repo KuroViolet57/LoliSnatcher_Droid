@@ -45,6 +45,84 @@ void main() {
     expect(OnnxTagRunner('t.onnx').options.intraOpNumThreads, 2);
   });
 
+  // ── r78: nothing waits for ever ──
+
+  testWidgets('r78: a step that has waited too long runs anyway, with the models', (tester) async {
+    work.maxWait = const Duration(seconds: 20);
+    PerfTrace.instance.start();
+    addTearDown(PerfTrace.instance.stop);
+    final List<String> ran = [];
+    clock.mark();
+    unawaited(work.run('learn favourite', (bool lite) async => ran.add('learn lite=$lite')));
+    // The person never stops: every poll finds a fresh touch.
+    for (int i = 0; i < 40; i++) {
+      now = now.add(const Duration(milliseconds: 500));
+      clock.mark();
+      await tester.pump(const Duration(milliseconds: 500));
+      if (ran.isNotEmpty) break;
+    }
+    expect(ran, ['learn lite=false'], reason: 'it runs with the models, not lite');
+    expect(
+      PerfTrace.instance.events.where((e) => e.kind == 'model.deadline').map((e) => e.detail),
+      ['learn favourite'],
+      reason: 'the log and the trace say it ran on the deadline',
+    );
+    expect(now.difference(DateTime(2026, 9, 19, 12)).inSeconds, greaterThanOrEqualTo(20));
+  });
+
+  testWidgets('r78: before the deadline a busy screen still holds a step back', (tester) async {
+    work.maxWait = const Duration(seconds: 20);
+    final List<String> ran = [];
+    clock.mark();
+    unawaited(work.run('learn favourite', (bool lite) async => ran.add('learn')));
+    for (int i = 0; i < 20; i++) {
+      now = now.add(const Duration(milliseconds: 500));
+      clock.mark();
+      await tester.pump(const Duration(milliseconds: 500));
+    }
+    expect(ran, isEmpty, reason: '10 s of constant touching is not yet the deadline');
+    now = now.add(const Duration(seconds: 20));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(ran, ['learn'], reason: 'and then it runs anyway');
+  });
+
+  testWidgets('r78: a heavy step waits for the video only up to maxVideoWait, then for quiet', (tester) async {
+    expect(work.maxVideoWait, const Duration(seconds: 10), reason: 'r78: was 60 s');
+    playing = true;
+    final List<String> ran = [];
+    unawaited(work.run('learn favourite', (bool lite) async => ran.add('learn'), heavy: true));
+    await tester.pump();
+    expect(ran, isEmpty, reason: 'the video is playing');
+    now = now.add(const Duration(seconds: 11));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(ran, ['learn'], reason: 'the video hold is over, and the screen is quiet');
+  });
+
+  testWidgets('r78: leaving the app keeps a deferrable step for later instead of learning it without the models', (tester) async {
+    final List<String> ran = [];
+    final List<String> kept = [];
+    away = true;
+    final Future<void> f = work.run(
+      'learn favourite',
+      (bool lite) async => ran.add('learn lite=$lite'),
+      heavy: true,
+      defer: () => kept.add('learn favourite'),
+    );
+    await tester.pump();
+    await f;
+    expect(ran, isEmpty, reason: 'nothing is learned with the models missing');
+    expect(kept, ['learn favourite'], reason: 'it is kept for later instead');
+  });
+
+  testWidgets('r78: a step with nothing to keep still runs lite when the app leaves', (tester) async {
+    final List<String> ran = [];
+    away = true;
+    final Future<void> f = work.run('exposed feed', (bool lite) async => ran.add('exposed lite=$lite'));
+    await tester.pump();
+    await f;
+    expect(ran, ['exposed lite=true']);
+  });
+
   testWidgets('quiet: a step runs at once, and its future completes when it is done', (tester) async {
     final List<String> ran = [];
     final Future<void> f = work.run('a', (bool lite) async => ran.add('a lite=$lite'));
@@ -142,12 +220,12 @@ void main() {
     unawaited(work.run('view', (bool lite) async => ran.add('view')));
     await tester.pump(const Duration(milliseconds: 300));
     expect(ran, ['view']);
-    now = now.add(const Duration(seconds: 30));
+    now = now.add(const Duration(seconds: 5));
     await tester.pump(const Duration(milliseconds: 300));
-    expect(ran, ['view'], reason: '30 s of video');
-    now = now.add(const Duration(seconds: 31));
+    expect(ran, ['view'], reason: '5 s of video');
+    now = now.add(const Duration(seconds: 6));
     await tester.pump(const Duration(milliseconds: 300));
-    expect(ran, ['view', 'tagger'], reason: 'past the 60 s limit');
+    expect(ran, ['view', 'tagger'], reason: 'r78: past the 10 s limit (was 60 s)');
   });
 
   testWidgets('a tagger step runs as soon as the video stops', (tester) async {

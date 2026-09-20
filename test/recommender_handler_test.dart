@@ -16,6 +16,7 @@ import 'package:lolisnatcher/src/handlers/interests_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/encoder_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/ftrl_model.dart';
 import 'package:lolisnatcher/src/handlers/recommender/item_features.dart';
+import 'package:lolisnatcher/src/handlers/recommender/deferred_learning.dart';
 import 'package:lolisnatcher/src/handlers/recommender/model_work.dart';
 import 'package:lolisnatcher/src/handlers/recommender/recommender_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/rewards.dart';
@@ -475,6 +476,20 @@ void main() {
   group('r77: learning is a background step', () {
     late DateTime now;
 
+    /// r78: kept learning must not leak from one test into the next, where
+    /// register() would replay it.
+    void keptInItsOwnFile() {
+      final Directory dir = Directory.systemTemp.createTempSync('kept_learning');
+      DeferredLearning.instance.resetForTests();
+      DeferredLearning.instance.fileFor = () => '${dir.path}${Platform.pathSeparator}deferred.json';
+      addTearDown(() {
+        DeferredLearning.instance.resetForTests();
+        try {
+          dir.deleteSync(recursive: true);
+        } catch (_) {}
+      });
+    }
+
     setUp(() {
       ModelWork.resetForTests();
       // register() hooks the save-after-leaving callback the reset cleared.
@@ -487,6 +502,80 @@ void main() {
       ModelWork.resetForTests();
       RecommenderHandler.resetSeamsForTests();
       SettingsHandler.instance.taggerOnReactions = false;
+    });
+
+    test('r78: an event the app could not finish is kept, then learned with the models next time', () async {
+      if (!dbReady) return;
+      final r = RecommenderHandler.instance;
+      keptInItsOwnFile();
+      // The app is leaving the screen with a step still waiting.
+      ModelWork.instance.away = () => true;
+      ActivityClock.instance.mark();
+      await r.onEvent(booruPost('alice'), InteractionKind.favourite);
+      await ModelWork.instance.drained();
+      expect(
+        await SettingsHandler.instance.dbHandler.countInteractions('booru'),
+        0,
+        reason: 'r78: not learned half-way, without the models',
+      );
+      expect(DeferredLearning.instance.waiting, 1, reason: 'kept for later');
+      // A later run, with time to do it properly.
+      ModelWork.instance.away = () => false;
+      now = now.add(const Duration(seconds: 2));
+      await r.replayKept();
+      await ModelWork.instance.drained();
+      expect(await SettingsHandler.instance.dbHandler.countInteractions('booru'), 1);
+      expect((await r.modelFor(RecommenderWorld.booru)).updates, 1);
+      expect(DeferredLearning.instance.waiting, 0, reason: 'handed over once');
+    });
+
+    test('r78: kept learning is picked up by itself on the next run, without being asked', () async {
+      if (!dbReady) return;
+      final r = RecommenderHandler.instance;
+      keptInItsOwnFile();
+      ModelWork.instance.away = () => true;
+      ActivityClock.instance.mark();
+      await r.onEvent(booruPost('kept-one'), InteractionKind.favourite);
+      await ModelWork.instance.drained();
+      expect(DeferredLearning.instance.waiting, 1);
+      expect(await SettingsHandler.instance.dbHandler.countInteractions('booru'), 0);
+      // A new run of the app: the first thing the person does picks it up.
+      // (register() cannot: it runs before SettingsHandler exists.)
+      r.resetForTests();
+      ModelWork.instance.away = () => false;
+      now = now.add(const Duration(seconds: 2));
+      await r.onEvent(booruPost('new-one'), InteractionKind.favourite);
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      await ModelWork.instance.drained();
+      expect(await SettingsHandler.instance.dbHandler.countInteractions('booru'), 2, reason: 'the kept one and the new one');
+      expect(DeferredLearning.instance.waiting, 0);
+    });
+
+    test('r78: a step with nothing to keep (exposures) still learns lite when the app leaves', () async {
+      if (!dbReady) return;
+      final r = RecommenderHandler.instance;
+      keptInItsOwnFile();
+      ModelWork.instance.away = () => true;
+      await r.onExposed([booruPost('alice'), booruPost('bob')], 'feed');
+      await ModelWork.instance.drained();
+      expect(DeferredLearning.instance.waiting, 0, reason: 'exposures are not worth keeping');
+    });
+
+    test('r78: nothing waits for ever - a step runs after the deadline even while the person keeps touching', () async {
+      if (!dbReady) return;
+      final r = RecommenderHandler.instance;
+      keptInItsOwnFile();
+      ModelWork.instance.maxWait = const Duration(seconds: 20);
+      ActivityClock.instance.mark();
+      unawaited(r.onEvent(booruPost('alice'), InteractionKind.favourite));
+      for (int i = 0; i < 60; i++) {
+        now = now.add(const Duration(milliseconds: 500));
+        ActivityClock.instance.mark();
+        await Future<void>.delayed(const Duration(milliseconds: 15));
+        if (await SettingsHandler.instance.dbHandler.countInteractions('booru') > 0) break;
+      }
+      expect(await SettingsHandler.instance.dbHandler.countInteractions('booru'), 1, reason: 'it ran anyway');
+      expect((await r.modelFor(RecommenderWorld.booru)).updates, 1);
     });
 
     test('an event right after a touch is learned only once 1.5 s have passed without one', () async {
@@ -502,7 +591,7 @@ void main() {
       expect((await r.modelFor(RecommenderWorld.booru)).updates, 1);
     });
 
-    test('leaving the app: a waiting event is learned at once without the models, so it is not lost', () async {
+    test('r78: leaving the app keeps a waiting event for later instead of learning it without the models', () async {
       if (!dbReady) return;
       int looks = 0;
       int pixels = 0;
@@ -516,6 +605,7 @@ void main() {
       };
       SettingsHandler.instance.taggerOnReactions = true;
       final r = RecommenderHandler.instance;
+      keptInItsOwnFile();
       ActivityClock.instance.mark();
       final Future<void> learned = r.onEvent(booruPost('bob'), InteractionKind.favourite);
       await Future<void>.delayed(const Duration(milliseconds: 100));
@@ -523,7 +613,9 @@ void main() {
       ModelWork.instance.away = () => true;
       ModelWork.instance.didChangeAppLifecycleState(AppLifecycleState.paused);
       await learned;
-      expect(await SettingsHandler.instance.dbHandler.countInteractions('booru'), 1);
+      // r77 learned it here without the models, which could not be undone.
+      expect(await SettingsHandler.instance.dbHandler.countInteractions('booru'), 0, reason: 'r78: nothing is learned half-way');
+      expect(DeferredLearning.instance.waiting, 1, reason: 'kept for the next run');
       expect(looks, 0, reason: 'no model runs while the app is away');
       expect(pixels, 0);
     });
@@ -574,11 +666,19 @@ void main() {
     test('after steps ran lite as the app left, the models are written to disk', () async {
       if (!dbReady) return;
       final r = RecommenderHandler.instance;
+      keptInItsOwnFile();
+      await r.modelFor(RecommenderWorld.booru);
+      // Something learned and not yet written: this is what the flush saves.
+      await r.onEvent(booruPost('gina'), InteractionKind.favourite);
+      await ModelWork.instance.drained();
+      expect(await SettingsHandler.instance.dbHandler.countInteractions('booru'), 1);
+      // r78: a learning event is kept for later now, so the step that still
+      // runs lite is an exposure.
       ActivityClock.instance.mark();
-      final Future<void> learned = r.onEvent(booruPost('gina'), InteractionKind.favourite);
+      final Future<void> seen = r.onExposed([booruPost('gina')], 'feed');
       ModelWork.instance.away = () => true;
       ModelWork.instance.didChangeAppLifecycleState(AppLifecycleState.paused);
-      await learned;
+      await seen;
       await Future<void>.delayed(const Duration(milliseconds: 300));
       expect(File(r.fileFor(RecommenderWorld.booru)).existsSync(), isTrue);
     });
