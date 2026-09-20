@@ -10,6 +10,7 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/utils/photo_picker.dart';
+import 'package:lolisnatcher/src/utils/picker_watch.dart';
 import 'package:lolisnatcher/src/handlers/recommender/encoder_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/image_tagger_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/look_model_handler.dart';
@@ -730,15 +731,35 @@ class _TaggerSectionState extends State<_TaggerSection> {
   /// r77: a Try it whose picture came back after Android had ended the app
   /// is finished now instead of being lost without a word.
   Future<void> _recoverLostPick() async {
-    Uint8List? bytes;
-    try {
-      bytes = await RecommendationsPage.lostPick();
-    } catch (_) {
-      return;
-    }
+    final Uint8List? bytes = await _keptPicture();
     if (bytes == null || !mounted) return;
     Logger.Inst().log('tagger: Try it - a picture picked before the app was restarted came back (${bytes.length ~/ 1024} KB)', 'RecommendationsPage', '_recoverLostPick', LogTypes.booruHandlerInfo);
     await _readPicked(bytes);
+  }
+
+  /// r78: a picture the picker kept for us, if any. Its failure is said,
+  /// not swallowed.
+  Future<Uint8List?> _keptPicture() async {
+    try {
+      return await RecommendationsPage.lostPick();
+    } catch (e) {
+      Logger.Inst().log('tagger: Try it - could not ask the picker for a kept picture: $e', 'RecommendationsPage', '_keptPicture', LogTypes.booruHandlerInfo);
+      return null;
+    }
+  }
+
+  /// r78: why the tagger cannot read a picture right now.
+  String _notReadyNote(TaggerStatus s) {
+    switch (s.state) {
+      case TaggerState.none:
+        return 'Download an image tagger first.';
+      case TaggerState.downloading:
+        return 'The image tagger is still downloading.';
+      case TaggerState.error:
+        return 'The image tagger is not ready: ${s.message}';
+      case TaggerState.ready:
+        return '';
+    }
   }
 
   Future<void> _readPicked(Uint8List bytes) async {
@@ -801,7 +822,26 @@ class _TaggerSectionState extends State<_TaggerSection> {
   }
 
   Future<void> _tryIt() async {
-    if (trying) return;
+    // r78: a tap is never silent. Before, the button was simply dead while a
+    // pick was in flight or the tagger was not ready - and a pick that never
+    // answered left it dead for good.
+    if (trying) {
+      Logger.Inst().log('tagger: Try it - still reading the last picture', 'RecommendationsPage', '_tryIt', LogTypes.booruHandlerInfo);
+      setState(() {
+        tryError = '';
+        tryNote = 'Still reading the last picture…';
+      });
+      return;
+    }
+    final TaggerStatus status = ImageTaggerHandler.maybe?.status.value ?? TaggerStatus.none;
+    if (status.state != TaggerState.ready) {
+      Logger.Inst().log('tagger: Try it - the tagger is not ready (${status.state.name})', 'RecommendationsPage', '_tryIt', LogTypes.booruHandlerInfo);
+      setState(() {
+        tryError = '';
+        tryNote = _notReadyNote(status);
+      });
+      return;
+    }
     setState(() {
       trying = true;
       tryError = '';
@@ -811,9 +851,30 @@ class _TaggerSectionState extends State<_TaggerSection> {
     try {
       // r77: how long the picker was open tells an instant automatic
       // cancel from a person who cancelled.
-      final Stopwatch open = Stopwatch()..start();
-      final Uint8List? bytes = await RecommendationsPage.pickImageBytes?.call();
-      final String openFor = '${(open.elapsedMilliseconds / 1000).toStringAsFixed(1)} s, ${PhotoPicker.systemPickerOn ? "Android's photo picker" : 'the default picker'}';
+      final PickResult<Uint8List> picked = await PickerWatch.run<Uint8List>(
+        () => RecommendationsPage.pickImageBytes?.call() ?? Future<Uint8List?>.value(),
+        onLate: (Uint8List bytes) => unawaited(_readPicked(bytes)),
+      );
+      final String openFor = '${picked.openFor}, ${PhotoPicker.systemPickerOn ? "Android's photo picker" : 'the default picker'}';
+      if (picked.outcome == PickOutcome.failed) {
+        Logger.Inst().log('tagger: Try it failed: ${picked.error}', 'RecommendationsPage', '_tryIt', LogTypes.booruHandlerInfo);
+        if (mounted) setState(() => tryError = 'Could not read the picture: ${picked.error}');
+        return;
+      }
+      if (picked.outcome == PickOutcome.lost) {
+        // r78: the picker never answered. Before, this waited for ever.
+        Logger.Inst().log('tagger: Try it - gave up waiting for the picker (${picked.reason}, open $openFor)', 'RecommendationsPage', '_tryIt', LogTypes.booruHandlerInfo);
+        final Uint8List? kept = await _keptPicture();
+        if (kept != null) {
+          Logger.Inst().log('tagger: Try it - the picker had kept the picture (${kept.length ~/ 1024} KB)', 'RecommendationsPage', '_tryIt', LogTypes.booruHandlerInfo);
+          final TaggerResult? r = await RecommendationsPage.tagImage?.call(kept);
+          if (mounted) setState(() => tried = r);
+          return;
+        }
+        if (mounted) setState(() => tryNote = 'The picker closed without giving a picture. Try again.');
+        return;
+      }
+      final Uint8List? bytes = picked.value;
       if (bytes == null) {
         // r77: said, not swallowed - on 19 Sep the phone showed nothing and
         // logged nothing.
@@ -936,7 +997,9 @@ class _TaggerSectionState extends State<_TaggerSection> {
                           ),
                         OutlinedButton.icon(
                           key: const ValueKey('tagger-try'),
-                          onPressed: ready && !trying ? _tryIt : null,
+                          // r78: never a dead grey rectangle - a tap that
+                          // cannot read a picture says why.
+                          onPressed: _tryIt,
                           icon: const Icon(Symbols.image_search_rounded),
                           label: Text(trying ? 'Reading…' : 'Try it on a picture'),
                         ),

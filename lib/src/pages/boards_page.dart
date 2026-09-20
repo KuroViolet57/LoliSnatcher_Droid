@@ -21,6 +21,7 @@ import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
+import 'package:lolisnatcher/src/utils/picker_watch.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 
@@ -427,19 +428,31 @@ class _BoardEditPageState extends State<BoardEditPage> {
   List<Booru> get _eligible => SettingsHandler.instance.booruList.where(BoardHandler.eligible).toList();
 
   Future<void> _pick() async {
-    try {
-      final String? path = await BoardEditPage.pickImagePath();
-      if (path == null) {
+    // r78: the same watched pick as Try it - a picker that never answers
+    // used to leave this waiting for ever.
+    final PickResult<String> picked = await PickerWatch.run<String>(
+      () => BoardEditPage.pickImagePath(),
+      onLate: (String path) {
+        Logger.Inst().log('boards: a picture came back after we gave up', 'BoardEditPage', '_pick', LogTypes.booruHandlerInfo);
+        if (mounted) setState(() => pendingPick = path);
+      },
+    );
+    switch (picked.outcome) {
+      case PickOutcome.picture:
+        Logger.Inst().log('boards: a picture came back from the picker (open ${picked.openFor})', 'BoardEditPage', '_pick', LogTypes.booruHandlerInfo);
+        if (mounted) setState(() => pendingPick = picked.value);
+      case PickOutcome.nothing:
         // r77: said, not swallowed (the same picker as Try it).
-        Logger.Inst().log('boards: no picture came back from the picker', 'BoardEditPage', '_pick', LogTypes.booruHandlerInfo);
+        Logger.Inst().log('boards: no picture came back from the picker (open ${picked.openFor})', 'BoardEditPage', '_pick', LogTypes.booruHandlerInfo);
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No picture came back from the picker.')));
-        return;
-      }
-      Logger.Inst().log('boards: a picture came back from the picker', 'BoardEditPage', '_pick', LogTypes.booruHandlerInfo);
-      if (mounted) setState(() => pendingPick = path);
-    } catch (e) {
-      Logger.Inst().log('boards: the picker failed: $e', 'BoardEditPage', '_pick', LogTypes.booruHandlerInfo);
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not pick an image: $e')));
+      case PickOutcome.lost:
+        Logger.Inst().log('boards: gave up waiting for the picker (${picked.reason}, open ${picked.openFor})', 'BoardEditPage', '_pick', LogTypes.booruHandlerInfo);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('The picker closed without giving a picture. Try again.')));
+        }
+      case PickOutcome.failed:
+        Logger.Inst().log('boards: the picker failed: ${picked.error}', 'BoardEditPage', '_pick', LogTypes.booruHandlerInfo);
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not pick an image: ${picked.error}')));
     }
   }
 

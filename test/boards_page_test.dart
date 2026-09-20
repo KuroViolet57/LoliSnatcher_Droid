@@ -1,7 +1,8 @@
+import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 
@@ -16,12 +17,22 @@ import 'package:lolisnatcher/src/handlers/recommender/image_tagger_handler.dart'
 import 'package:lolisnatcher/src/handlers/reverse_image_search.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/pages/boards_page.dart';
+import 'package:lolisnatcher/src/utils/picker_watch.dart';
 
 /// r73: the Boards page (left drawer) lists the saved boards and opens one
 /// as a tab; the editor takes a name, a description, must-have and excluded
 /// tags, the sources and a reference image.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  /// r78: the app going away to the picker and coming back.
+  Future<void> lifecycle(WidgetTester tester, AppLifecycleState state) async {
+    await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+      'flutter/lifecycle',
+      const StringCodec().encodeMessage(state.toString()),
+      (_) {},
+    );
+  }
   late Directory tempDir;
   final BoardsHandler store = BoardsHandler.instance;
 
@@ -46,6 +57,27 @@ void main() {
     try {
       tempDir.deleteSync(recursive: true);
     } catch (_) {}
+  });
+
+  testWidgets('r78: a board picture picker that never answers ends by itself and says so', (tester) async {
+    addTearDown(PickerWatch.resetForTests);
+    PickerWatch.afterResume = const Duration(milliseconds: 100);
+    final Completer<String?> never = Completer<String?>();
+    BoardEditPage.pickImagePath = () => never.future;
+    await tester.pumpWidget(const MaterialApp(home: BoardEditPage()));
+    await tester.tap(find.byKey(const ValueKey('board-pick')));
+    await tester.pump();
+    await lifecycle(tester, AppLifecycleState.paused);
+    await tester.pump(const Duration(seconds: 30));
+    expect(find.text('The picker closed without giving a picture. Try again.'), findsNothing, reason: 'the person is still choosing');
+    await lifecycle(tester, AppLifecycleState.resumed);
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pump();
+    expect(find.text('The picker closed without giving a picture. Try again.'), findsOneWidget);
+    never.complete(null);
+    await tester.pump();
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 5));
   });
 
   testWidgets('r77: a picture that never comes back from the picker is said, not swallowed', (tester) async {

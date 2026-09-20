@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 
@@ -17,6 +19,7 @@ import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/pages/foryou_page.dart';
 import 'package:lolisnatcher/src/pages/settings/recommendations_page.dart';
+import 'package:lolisnatcher/src/utils/picker_watch.dart';
 
 /// r33: Settings → Recommendations holds the two switches, independent of
 /// each other; the For You page comes in a doujin flavour.
@@ -47,6 +50,15 @@ class _NoLook implements LookRunner {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  /// r78: the app going away to the picker and coming back.
+  Future<void> lifecycle(WidgetTester tester, AppLifecycleState state) async {
+    await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+      'flutter/lifecycle',
+      const StringCodec().encodeMessage(state.toString()),
+      (_) {},
+    );
+  }
 
   late Directory tempDir;
 
@@ -237,7 +249,8 @@ void main() {
     expect(find.byKey(const ValueKey('tagger-preset-wd-swinv2')), findsOneWidget);
     expect(find.byKey(const ValueKey('tagger-preset-custom')), findsOneWidget);
     expect(find.textContaining('379 MB'), findsWidgets);
-    expect(tester.widget<ButtonStyleButton>(find.byKey(const ValueKey('tagger-try'))).onPressed, isNull, reason: 'nothing to try before a download');
+    // r78: the button is never dead; before a download a tap says what is missing.
+    expect(tester.widget<ButtonStyleButton>(find.byKey(const ValueKey('tagger-try'))).onPressed, isNotNull);
     await tester.runAsync(() async {
       await tester.tap(find.byKey(const ValueKey('tagger-download')));
       await Future<void>.delayed(const Duration(milliseconds: 300));
@@ -290,6 +303,121 @@ void main() {
     await settle(tester);
     expect(SettingsHandler.instance.imageTaggerModel, '');
     expect(find.textContaining('No image tagger'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('r78: a picker that never answers ends by itself, says so, and frees the button', (tester) async {
+    tester.view.physicalSize = const Size(1080, 8000);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.reset);
+    ImageTaggerHandler.unregister();
+    final ImageTaggerHandler tagger = ImageTaggerHandler.register();
+    tagger.runnerFactory = (String p) => _NoRunner();
+    tagger.status.value = const TaggerStatus(state: TaggerState.ready, repo: 'SmilingWolf/wd-vit-tagger-v3', tagCount: 6, inputSize: 448, bytes: 500);
+    addTearDown(ImageTaggerHandler.unregister);
+    addTearDown(RecommendationsPage.resetForTests);
+    addTearDown(PickerWatch.resetForTests);
+    PickerWatch.afterResume = const Duration(milliseconds: 100);
+    final Completer<Uint8List?> never = Completer<Uint8List?>();
+    int picks = 0, kept = 0;
+    RecommendationsPage.pickImageBytes = () {
+      picks++;
+      return never.future;
+    };
+    RecommendationsPage.lostPick = () async {
+      kept++;
+      return null;
+    };
+    RecommendationsPage.tagImage = (Uint8List bytes) async => const TaggerResult(
+      general: [(tag: 'cat_ears', confidence: 0.9, character: false)],
+      characters: [],
+      rating: 'general',
+      ratingConfidence: 0.6,
+      decodeMs: 12,
+      modelMs: 345,
+      provider: 'CPU',
+    );
+    await warm(tester);
+    await tester.pumpWidget(const MaterialApp(home: RecommendationsPage()));
+    await settle(tester);
+    await tester.ensureVisible(find.byKey(const ValueKey('tagger-try')));
+    final int keptWhenOpened = kept;
+    await tester.tap(find.byKey(const ValueKey('tagger-try')));
+    await tester.pump();
+    expect(picks, 1);
+    expect(find.text('Reading…'), findsOneWidget);
+    // The picker is in front: the app is away, and waiting is right.
+    await lifecycle(tester, AppLifecycleState.paused);
+    await tester.pump(const Duration(seconds: 30));
+    expect(find.text('Reading…'), findsOneWidget, reason: 'the person is still choosing');
+    // It closed, and no answer ever came.
+    await lifecycle(tester, AppLifecycleState.resumed);
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pump();
+    expect(kept, keptWhenOpened + 1, reason: 'the picker is asked whether it kept the picture');
+    expect(
+      tester.widget<Text>(find.byKey(const ValueKey('tagger-try-message'))).data,
+      'The picker closed without giving a picture. Try again.',
+    );
+    expect(find.text('Try it on a picture'), findsOneWidget, reason: 'the button is usable again');
+    // r78: and a picture that turns up afterwards is still read.
+    never.complete(Uint8List.fromList(List<int>.filled(10, 1)));
+    await tester.pump();
+    await settle(tester);
+    expect(find.textContaining('cat_ears'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('r78: taps that cannot read a picture say why instead of nothing', (tester) async {
+    tester.view.physicalSize = const Size(1080, 8000);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.reset);
+    ImageTaggerHandler.unregister();
+    final ImageTaggerHandler tagger = ImageTaggerHandler.register();
+    tagger.runnerFactory = (String p) => _NoRunner();
+    addTearDown(ImageTaggerHandler.unregister);
+    addTearDown(RecommendationsPage.resetForTests);
+    addTearDown(PickerWatch.resetForTests);
+    int picks = 0;
+    RecommendationsPage.pickImageBytes = () async {
+      picks++;
+      return null;
+    };
+    RecommendationsPage.lostPick = () async => null;
+    await warm(tester);
+    await tester.pumpWidget(const MaterialApp(home: RecommendationsPage()));
+    await settle(tester);
+    await tester.ensureVisible(find.byKey(const ValueKey('tagger-try')));
+    // Nothing downloaded: the button is alive and says what is missing.
+    expect(tester.widget<ButtonStyleButton>(find.byKey(const ValueKey('tagger-try'))).onPressed, isNotNull);
+    await tester.tap(find.byKey(const ValueKey('tagger-try')));
+    await tester.pump();
+    expect(picks, 0, reason: 'no picker without a tagger to read with');
+    expect(tester.widget<Text>(find.byKey(const ValueKey('tagger-try-message'))).data, 'Download an image tagger first.');
+    tagger.status.value = const TaggerStatus(state: TaggerState.downloading, repo: 'SmilingWolf/wd-vit-tagger-v3', progress: 0.5);
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('tagger-try')));
+    await tester.pump();
+    expect(picks, 0);
+    expect(tester.widget<Text>(find.byKey(const ValueKey('tagger-try-message'))).data, 'The image tagger is still downloading.');
+    // Ready, but already reading: the second tap says that too.
+    tagger.status.value = const TaggerStatus(state: TaggerState.ready, repo: 'SmilingWolf/wd-vit-tagger-v3', tagCount: 6, inputSize: 448, bytes: 500);
+    await tester.pump();
+    final Completer<Uint8List?> never = Completer<Uint8List?>();
+    RecommendationsPage.pickImageBytes = () {
+      picks++;
+      return never.future;
+    };
+    await tester.tap(find.byKey(const ValueKey('tagger-try')));
+    await tester.pump();
+    expect(picks, 1);
+    await tester.tap(find.byKey(const ValueKey('tagger-try')));
+    await tester.pump();
+    expect(picks, 1, reason: 'one picker at a time');
+    expect(tester.widget<Text>(find.byKey(const ValueKey('tagger-try-message'))).data, 'Still reading the last picture…');
+    never.complete(null);
+    await tester.pump();
+    await settle(tester);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 

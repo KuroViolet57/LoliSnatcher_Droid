@@ -2398,6 +2398,60 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
 - **Not done:** a "the tagger is busy" message (nothing to hook: `tag()` just
   waits); the Kotlin change has no unit test.
 
+### 4.51 Try it cannot stop without a word (r78, build 101)
+
+- **Two holes, both read off the code (not guessed):** (1) the Try it button
+  was `ready && !trying ? _tryIt : null`, so a pick whose future never
+  completed - which the pre-r77 catch-all `onActivityResult` could cause by
+  answering the picker on a used `methodResult` - left `trying` true for the
+  life of the State: a grey button, every tap silent, nothing logged. That
+  fits the 19 Sep report exactly (no `tagger:` Try-it line at all).
+  (2) A tap with no tagger, a downloading tagger or one already reading did
+  nothing at all.
+- **The permission theory was checked and dropped.** targetSdk is 36 (Flutter
+  3.42 beta's `FlutterExtension.kt:34`); READ/WRITE_EXTERNAL_STORAGE are dead
+  there and `requestLegacyExternalStorage` has been ignored since Android 11.
+  Neither picker route needs a runtime permission: both hand back a
+  `content://` uri with a transient read grant read through ContentResolver
+  (`FileUtils.java:63`), and image_picker's PermissionManager is only ever
+  asked for CAMERA (`ImagePickerDelegate.java:383-385`, `:545-547`). Do NOT
+  add READ_MEDIA_IMAGES or a `<queries>` entry.
+- **Also dropped:** "the picker decodes the photo at full size". Its resizer
+  reads the bounds first and decodes with `inSampleSize`
+  (`ImageResizer.java:56`, `:139`), so `maxWidth/maxHeight/imageQuality` stay:
+  they are what keeps a 200 MP photo out of our own `img.decodeImage`
+  (`image_tagger_handler.dart:584`), which decodes at full size in a compute
+  isolate.
+- **`utils/picker_watch.dart` (new):** `PickerWatch.run<T>(pick, {onLate})`
+  returns a `PickResult<T>` (`picture | nothing | lost | failed`, `openMs`,
+  `reason`). While the picker is in front the app is away and the wait is
+  unbounded; on the first `resumed` after that, the answer is due within
+  `afterResume` (6 s), else the pick is given up on. `hardLimit` (5 min) is
+  the backstop when nothing ever opened. A late answer goes to `onLate`
+  instead of being dropped. Seams: `afterResume`, `hardLimit`,
+  `resetForTests()`.
+- **Try it:** every tap answers - "Download an image tagger first." / "The
+  image tagger is still downloading." / "Still reading the last picture…" -
+  and logs `tagger: Try it - the tagger is not ready (<state>)`. A lost pick
+  says "The picker closed without giving a picture. Try again.", after asking
+  `lostPick()` whether the picker kept it. `_keptPicture()` logs the failure
+  that `_recoverLostPick` used to swallow. The button's `onPressed` is never
+  null.
+- **Boards:** `_pick` runs through the same watch, with the same four
+  outcomes and a log line each.
+- **Tests:** `test/picker_watch_test.dart` (8, including the lifecycle
+  paused/resumed give-up, the backstop, the late answer, and no timer or
+  observer left behind), two r78 widget tests in `recommendations_page_test`
+  (a picker that never answers; taps that cannot read), one in
+  `boards_page_test`. Lifecycle in tests is driven through the
+  `flutter/lifecycle` platform message, not the protected binding method.
+- **Checked on the emulator (build 101):** with no tagger, Try it says
+  "Download an image tagger first." (it was a dead button before) and logs
+  `the tagger is not ready (none)`; with one ready, Android's photo picker
+  opens and a cancel gives `no picture came back from the picker (open 16.7 s,
+  Android's photo picker)`. The give-up path cannot be forced there - it needs
+  a picker that never answers.
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
