@@ -210,7 +210,7 @@ void main() {
     final List<String> fetched = [];
     ImageTaggerHandler.unregister();
     final ImageTaggerHandler tagger = ImageTaggerHandler.register();
-    tagger.runnerFactory = (String p) => _NoRunner();
+    tagger.runnerFactory = (String p, int threads) => _NoRunner();
     tagger.fetcher = (String url, File to, {void Function(int received, int total)? onProgress, CancelToken? cancelToken}) async {
       fetched.add(url);
       to.parent.createSync(recursive: true);
@@ -312,7 +312,7 @@ void main() {
     addTearDown(tester.view.reset);
     ImageTaggerHandler.unregister();
     final ImageTaggerHandler tagger = ImageTaggerHandler.register();
-    tagger.runnerFactory = (String p) => _NoRunner();
+    tagger.runnerFactory = (String p, int threads) => _NoRunner();
     tagger.status.value = const TaggerStatus(state: TaggerState.ready, repo: 'SmilingWolf/wd-vit-tagger-v3', tagCount: 6, inputSize: 448, bytes: 500);
     addTearDown(ImageTaggerHandler.unregister);
     addTearDown(RecommendationsPage.resetForTests);
@@ -374,7 +374,7 @@ void main() {
     addTearDown(tester.view.reset);
     ImageTaggerHandler.unregister();
     final ImageTaggerHandler tagger = ImageTaggerHandler.register();
-    tagger.runnerFactory = (String p) => _NoRunner();
+    tagger.runnerFactory = (String p, int threads) => _NoRunner();
     addTearDown(ImageTaggerHandler.unregister);
     addTearDown(RecommendationsPage.resetForTests);
     addTearDown(PickerWatch.resetForTests);
@@ -427,7 +427,7 @@ void main() {
     addTearDown(tester.view.reset);
     ImageTaggerHandler.unregister();
     final ImageTaggerHandler tagger = ImageTaggerHandler.register();
-    tagger.runnerFactory = (String p) => _NoRunner();
+    tagger.runnerFactory = (String p, int threads) => _NoRunner();
     addTearDown(ImageTaggerHandler.unregister);
     addTearDown(RecommendationsPage.resetForTests);
     int asked = 0;

@@ -38,7 +38,8 @@ class PixelTags {
 
   static List<Uint8List> _defaultFramesFor(BooruItem item) => VideoFrames.maybe?.framesOf(item) ?? const <Uint8List>[];
 
-  static Future<TaggerResult> _defaultTagBytes(Uint8List bytes) => ImageTaggerHandler.instance.tag(bytes);
+  // r79: a reaction's tags are background work - the light session.
+  static Future<TaggerResult> _defaultTagBytes(Uint8List bytes) => ImageTaggerHandler.instance.tag(bytes, use: TaggerUse.background);
 
   /// The thumbnail's bytes: the grid's cache first, else a download with
   /// the booru's own headers.

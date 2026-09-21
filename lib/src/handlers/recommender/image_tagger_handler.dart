@@ -158,7 +158,18 @@ abstract class TagRunner {
 }
 
 typedef TaggerFetcher = Future<void> Function(String url, File to, {void Function(int received, int total)? onProgress, CancelToken? cancelToken});
-typedef TagRunnerFactory = TagRunner Function(String modelPath);
+typedef TagRunnerFactory = TagRunner Function(String modelPath, int threads);
+
+/// r79: who is waiting for a picture's tags. The session's thread count is
+/// fixed when it opens (the ONNX plugin has no per-run setting), so the
+/// purpose of the call that opens it decides.
+enum TaggerUse {
+  /// Try it, a board's reference picture, the board editor: someone waits.
+  waiting,
+
+  /// A reaction's tags, in the background (ModelWork).
+  background,
+}
 
 Float32List _prepareEntry((Uint8List, int) args) => ImageTaggerHandler.prepareTensor(args.$1, args.$2);
 
@@ -194,6 +205,12 @@ class ImageTaggerHandler {
   static const int defaultInputSize = 448;
   static const Duration defaultIdleClose = Duration(seconds: 120);
 
+  /// r79: measured on the S24 Ultra, the model part of a picture took
+  /// 1.1-1.9 s at 4 threads (19 Sep) and 1.8-4.0 s at 2 (20 Sep). The looks
+  /// model and the text encoder showed no such gain, and stay at 1.
+  static const int waitingThreads = 4;
+  static const int backgroundThreads = 2;
+
   /// The session (several hundred MB of RAM) is closed this long after the
   /// last picture; the next one opens it again.
   Duration idleClose = defaultIdleClose;
@@ -210,6 +227,11 @@ class ImageTaggerHandler {
   TagRunner? _runner;
   Future<void>? _loading;
   Timer? _idle;
+
+  /// r79: runs using the session right now. The idle close waits for them:
+  /// r78's timer could close the session under a run, the run failed, and a
+  /// failed run switches the tagger off until a restart.
+  int _inFlight = 0;
   String _slug = '';
   int _inputSize = defaultInputSize;
   CancelToken? _downloading;
@@ -450,19 +472,33 @@ class ImageTaggerHandler {
   /// the runtime's own thread. A picture that cannot be decoded is a
   /// [FormatException]; a model that cannot run is shown on the settings
   /// page and not tried again until a [refresh].
-  Future<TaggerResult> tag(Uint8List bytes) async {
+  ///
+  /// r79: [use] decides the session's threads when this call opens it; a
+  /// session already open is used as it is - never a second copy.
+  Future<TaggerResult> tag(Uint8List bytes, {TaggerUse use = TaggerUse.waiting}) async {
     if (!isReady) throw StateError('No image tagger downloaded (Settings → Recommendations → Image tagger).');
+    // Counted from before the decode: the session is needed right after it,
+    // and closing it meanwhile would only mean opening it again.
+    _inFlight++;
     final Stopwatch sw = Stopwatch()..start();
-    final Float32List tensor = await compute(_prepareEntry, (bytes, _inputSize));
+    final Float32List tensor;
+    try {
+      tensor = await compute(_prepareEntry, (bytes, _inputSize));
+    } catch (_) {
+      _inFlight--;
+      rethrow;
+    }
     final int decodeMs = sw.elapsedMilliseconds;
     sw.reset();
     Float32List probs;
     try {
-      await _ensureLoaded();
+      await _ensureLoaded(use);
       probs = await _runner!.run(tensor, _inputSize);
     } catch (e) {
       _fail(e);
       rethrow;
+    } finally {
+      _inFlight--;
     }
     final int modelMs = sw.elapsedMilliseconds;
     final String provider = _runner?.provider ?? '';
@@ -470,7 +506,7 @@ class ImageTaggerHandler {
     final TaggerResult r = interpret(probs, _rows ?? const [], decodeMs: decodeMs, modelMs: modelMs, provider: provider);
     PerfTrace.instance.event('model.tagger', 'decode $decodeMs ms, model $modelMs ms');
     Logger.Inst().log(
-      'tagger: ${r.general.length} general, ${r.characters.length} characters, rating ${r.rating} ${r.ratingConfidence.toStringAsFixed(2)}; decode $decodeMs ms, model $modelMs ms ($provider)',
+      'tagger: ${r.general.length} general, ${r.characters.length} characters, rating ${r.rating} ${r.ratingConfidence.toStringAsFixed(2)}; decode $decodeMs ms, model $modelMs ms ($provider, ${use.name})',
       className,
       'tag',
       LogTypes.booruHandlerInfo,
@@ -605,14 +641,14 @@ class ImageTaggerHandler {
     return out;
   }
 
-  Future<void> _ensureLoaded() => _loading ??= _load();
+  Future<void> _ensureLoaded(TaggerUse use) => _loading ??= _load(use);
 
-  Future<void> _load() async {
+  Future<void> _load(TaggerUse use) async {
     try {
       final String dir = dirFor(_settings.imageTaggerModel);
       _rows ??= parseTagsCsv(await File('$dir$tagsFileName').readAsString());
       if (_rows!.isEmpty) throw const FormatException('the tag list is empty');
-      _runner = runnerFactory('$dir$modelFileName');
+      _runner = runnerFactory('$dir$modelFileName', use == TaggerUse.waiting ? waitingThreads : backgroundThreads);
     } catch (e) {
       _loading = null;
       rethrow;
@@ -640,7 +676,8 @@ class ImageTaggerHandler {
     _idle?.cancel();
     _idle = Timer(idleClose, () {
       _idle = null;
-      if (_runner == null) return;
+      // r79: a run still using the session re-arms the timer when it ends.
+      if (_runner == null || _inFlight > 0) return;
       Logger.Inst().log('tagger: session closed (idle)', className, '_touch', LogTypes.booruHandlerInfo);
       unawaited(close());
     });
@@ -664,5 +701,5 @@ class ImageTaggerHandler {
     );
   }
 
-  static TagRunner _onnxRunner(String modelPath) => OnnxTagRunner(modelPath);
+  static TagRunner _onnxRunner(String modelPath, int threads) => OnnxTagRunner(modelPath, threads: threads);
 }

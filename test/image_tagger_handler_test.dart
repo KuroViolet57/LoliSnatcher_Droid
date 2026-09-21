@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -7,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 
 import 'package:lolisnatcher/src/handlers/recommender/image_tagger_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/pixel_tags.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 
 /// r74: the downloadable image tagger (WD v3 ONNX exports from Hugging
@@ -23,6 +25,11 @@ class _FakeRunner implements TagRunner {
   int lastLength = 0;
   bool closed = false;
 
+  /// r79: a run that waits on this, to catch a close in the middle of it.
+  Completer<void>? gate;
+  bool _running = false;
+  bool closedDuringRun = false;
+
   @override
   String get provider => 'fake';
 
@@ -32,11 +39,21 @@ class _FakeRunner implements TagRunner {
     lastSize = size;
     lastLength = nhwc.length;
     if (fail) throw StateError('the runtime said no');
+    _running = true;
+    try {
+      await gate?.future;
+    } finally {
+      _running = false;
+    }
+    if (closed) throw StateError('INVALID_SESSION: the session was closed');
     return probs;
   }
 
   @override
-  Future<void> close() async => closed = true;
+  Future<void> close() async {
+    if (_running) closedDuringRun = true;
+    closed = true;
+  }
 }
 
 /// Rows: 0-3 ratings, 4 1girl, 5 cat_ears, 6 long_hair, 7 ^_^, 8 beach,
@@ -74,6 +91,7 @@ void main() {
   late _FakeRunner runner;
   final List<String> fetched = [];
   int factoryCalls = 0;
+  int lastThreads = 0;
   String configText = '{"model_args": {"img_size": 448}}';
   String csvText = csv;
   bool failCsv = false;
@@ -95,8 +113,9 @@ void main() {
     cancelDuringModel = false;
     ImageTaggerHandler.unregister();
     final ImageTaggerHandler t = ImageTaggerHandler.register();
-    t.runnerFactory = (String modelPath) {
+    t.runnerFactory = (String modelPath, int threads) {
       factoryCalls++;
+      lastThreads = threads;
       return runner;
     };
     t.fetcher = (String url, File to, {void Function(int received, int total)? onProgress, CancelToken? cancelToken}) async {
@@ -288,6 +307,59 @@ void main() {
     expect(ImageTaggerHandler.parseTagsCsv('id,count\n1,2\n'), isEmpty, reason: 'no name column');
     expect(ImageTaggerHandler.parseTagsCsv(''), isEmpty);
     expect(ImageTaggerHandler.parseTagsCsv(csv), hasLength(11));
+  });
+
+  group('r79: the tagger is fast when you wait for it', () {
+    test('a picture you wait for opens the session with 4 threads; a background reaction opens it with 2', () async {
+      final ImageTaggerHandler t = ImageTaggerHandler.instance;
+      expect(await t.download('wd-vit'), isTrue);
+      await t.tag(png());
+      expect(lastThreads, ImageTaggerHandler.waitingThreads);
+      expect(ImageTaggerHandler.waitingThreads, 4, reason: '1.5 s a picture on the phone at 4 threads, 2.9 s at 2');
+      await t.close();
+      runner = _FakeRunner(runner.probs);
+      await t.tag(png(), use: TaggerUse.background);
+      expect(lastThreads, ImageTaggerHandler.backgroundThreads);
+      expect(ImageTaggerHandler.backgroundThreads, 2);
+    });
+
+    test('a background run uses the session already open instead of loading a second copy', () async {
+      final ImageTaggerHandler t = ImageTaggerHandler.instance;
+      expect(await t.download('wd-vit'), isTrue);
+      await t.tag(png());
+      await t.tag(png(), use: TaggerUse.background);
+      expect(factoryCalls, 1, reason: 'about 400 MB each - never two at once');
+      expect(runner.runs, 2);
+    });
+
+    test("a reaction's tags (PixelTags) are a background run", () async {
+      final ImageTaggerHandler t = ImageTaggerHandler.instance;
+      expect(await t.download('wd-vit'), isTrue);
+      PixelTags.resetForTests();
+      await PixelTags.tagBytes(png());
+      expect(lastThreads, ImageTaggerHandler.backgroundThreads);
+    });
+
+    test('the idle close never closes a session a run is still using', () async {
+      final ImageTaggerHandler t = ImageTaggerHandler.instance;
+      t.idleClose = const Duration(milliseconds: 40);
+      expect(await t.download('wd-vit'), isTrue);
+      await t.tag(png());
+      // The next picture's run is slow; the idle timer from the first one
+      // runs out while it is still going.
+      final Completer<void> gate = Completer<void>();
+      runner.gate = gate;
+      final Future<TaggerResult> slow = t.tag(png());
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      expect(runner.closedDuringRun, isFalse, reason: 'r78 closed it here and the run failed: the tagger was off until a restart');
+      gate.complete();
+      final TaggerResult r = await slow;
+      expect(r.count, greaterThan(0));
+      expect(t.status.value.state, TaggerState.ready);
+      // Idle again afterwards: now it closes.
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      expect(runner.closed, isTrue);
+    });
   });
 
   test('the session is closed after the idle time and opened again on the next picture', () async {

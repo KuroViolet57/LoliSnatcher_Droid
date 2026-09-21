@@ -2551,6 +2551,34 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
 - **Not verified on a device:** the emulator froze after boot on 21 Sep (see
   the emulator memory); the phone check is the user's.
 
+### 4.54 The tagger's threads follow who is waiting (r79, build 105)
+
+- **Evidence:** tagger model time 1096-1933 ms at CPU x4 (19 Sep log) against
+  1753-4012 ms, median 2862, at CPU x2 (20 Sep log). The looks model (0.24-0.55
+  s per thumbnail at x4 vs 0.30-0.57 at x1, the per-thumbnail time includes the
+  thumbnail fetch) and the encoder (44-80 ms a text at x1) show no thread
+  effect; the 18-23 s looks batches overlapped For You's first-load burst of 60
+  `score()` calls. So only the tagger changed.
+- **`TaggerUse { waiting, background }`**, `tag(bytes, {use = waiting})`. The
+  plugin fixes the thread count when a session opens (no per-run option,
+  flutter_onnxruntime 1.8.5 RunOptions), so the call that OPENS the session
+  decides: `waitingThreads` 4, `backgroundThreads` 2. An open session is used
+  as it is - never a second one (each copy ~379-467 MB; the plugin runs every
+  call under one lock anyway). `PixelTags._defaultTagBytes` passes
+  `background`; Try it, `BoardHandler.defaultPixelTagger` and the board
+  editor use the default. `TagRunnerFactory` is now `(modelPath, threads)`.
+- **Idle-close race fixed:** `_touch`'s 120 s timer was never cancelled when a
+  run started, so it could close the session under a run - the plugin answers
+  INVALID_SESSION, `_fail` sets TaggerState.error, and the tagger stays off
+  until a refresh. `_inFlight` counts runs from before the decode; the timer
+  skips the close while it is above 0 and the run's own `_touch` re-arms it.
+  (The looks model has the same timer shape - not changed in this build.)
+- The log line ends `(<provider>, waiting|background)`.
+- **Tests:** four r79 tests in `image_tagger_handler_test` (4 vs 2 threads by
+  who opens; a background run reuses the open session; PixelTags is
+  background; the idle close waits for a slow run, with a fake that fails a
+  closed session like the plugin does).
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
