@@ -9,6 +9,7 @@ import 'package:lolisnatcher/src/pages/pinned_tags_page.dart';
 import 'package:lolisnatcher/src/boorus/kemono_site.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/pinned_tag.dart';
+import 'package:lolisnatcher/src/data/pinned_tag_visibility.dart';
 import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/drawer_refresh.dart';
 import 'package:lolisnatcher/src/handlers/followed_artists_handler.dart';
@@ -91,7 +92,8 @@ class _DrawerQuickAccessState extends State<DrawerQuickAccess> {
         ];
         if (mounted) {
           setState(() {
-            _pinned = pinned;
+            // r79: the pins hidden on this source stay out of the sidebar.
+            _pinned = PinnedTagVisibility.visible(pinned, current!);
             _favCount = store.favourites.length;
             _collectionCount = store.collections.length;
             _followedCount = store.followed.length;
@@ -111,6 +113,9 @@ class _DrawerQuickAccessState extends State<DrawerQuickAccess> {
       // Follows live in the same table but have their own screen — keep them
       // out of the pinned list here.
       pinned.removeWhere(FollowedArtistsHandler.isFollowPin);
+      // r79: and so do the ones hidden on this source (the pins editor's
+      // "Hidden on <source>"); only the search window's pinned row read it.
+      final List<PinnedTag> shown = current == null ? pinned : PinnedTagVisibility.visible(pinned, current);
       int fav = 0;
       int col = 0;
       int followed = 0;
@@ -129,7 +134,7 @@ class _DrawerQuickAccessState extends State<DrawerQuickAccess> {
       } catch (_) {}
       if (mounted) {
         setState(() {
-          _pinned = pinned;
+          _pinned = shown;
           _favCount = fav;
           _collectionCount = col;
           _followedCount = followed;

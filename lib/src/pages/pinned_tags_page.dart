@@ -54,8 +54,16 @@ class _DbPinnedTagsStore extends PinnedTagsStore {
   bool get supportsTitles => true;
 
   @override
-  Future<List<PinnedTag>> list() =>
-      SettingsHandler.instance.dbHandler.getPinnedTags(booruType: booru.type?.name, booruName: booru.name);
+  Future<List<PinnedTag>> list() async {
+    // r79: hides left by pins deleted before r79 are dropped here, where every
+    // database pin can be read; they would hide a new pin that reuses the id.
+    if (SettingsHandler.instance.dbHandler.db != null) {
+      try {
+        PinnedTagVisibility.forgetMissing(await SettingsHandler.instance.dbHandler.getAllPinnedTags());
+      } catch (_) {}
+    }
+    return SettingsHandler.instance.dbHandler.getPinnedTags(booruType: booru.type?.name, booruName: booru.name);
+  }
 
   @override
   Future<void> add(String tags, {String? title, required bool global}) async {

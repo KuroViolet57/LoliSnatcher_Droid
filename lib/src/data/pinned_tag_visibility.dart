@@ -33,4 +33,24 @@ class PinnedTagVisibility {
     final Set<String> hidden = _keys(SourceSettingsHandler.instance.settingsFor(booru).hiddenPins);
     return pins.where((p) => !hidden.contains(keyOf(p))).toList();
   }
+
+  /// r79: a deleted database pin's hides go with it, on every source. SQLite
+  /// hands a freed id out again (the table has no AUTOINCREMENT), so a hide
+  /// left behind would hide the next new pin - which the sidebar shows since
+  /// r79 honours hides.
+  static void forgetId(int id) {
+    if (id <= 0) return;
+    SourceSettingsHandler.instance.dropHiddenPins((String key) => key == 'id:$id');
+  }
+
+  /// r79: hides of database pins that no longer exist (deleted before r79),
+  /// given every database pin there is. Doujin pins (`tag:` keys) live in
+  /// their own store and are left alone.
+  static void forgetMissing(List<PinnedTag> allDatabasePins) {
+    final Set<String> alive = {
+      for (final PinnedTag p in allDatabasePins)
+        if (p.id > 0) 'id:${p.id}',
+    };
+    SourceSettingsHandler.instance.dropHiddenPins((String key) => key.startsWith('id:') && !alive.contains(key));
+  }
 }

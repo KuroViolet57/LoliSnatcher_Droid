@@ -2579,6 +2579,30 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   background; the idle close waits for a slow run, with a fake that fails a
   closed session like the plugin does).
 
+### 4.55 A pin hidden on a source stays out of its sidebar (r79, build 106)
+
+- **Why the hide did nothing for the user:** the hide (r52) lives in that
+  source's `SourceSettings.hiddenPins` (`id:N` for database pins, `tag:x` for
+  doujin pins) and only `PinnedTagVisibility.visible()` reads it - called by
+  the search window's `PinnedTagsBlock` alone, a Modular UI part that is off by
+  default. `DrawerQuickAccess._load` read the same pins and never filtered.
+- **Fix:** both branches of `_load` (doujin store, database) pass their list
+  through `PinnedTagVisibility.visible(pins, current)`. The sidebar already
+  reloads on drawer open, tab change and the editor's close. Hides are per
+  source entry (keyed by the base URL's host), so For You, merged and
+  favourites tabs still show the pin.
+- **Id reuse:** `PinnedTag.id` is `INTEGER PRIMARY KEY` without AUTOINCREMENT,
+  so SQLite hands a deleted pin's id to the next pin, which inherited its hide.
+  `DBHandler.removePinnedTag` now calls `PinnedTagVisibility.forgetId(id)`
+  (every source, via `SourceSettingsHandler.dropHiddenPins`), and the pins
+  editor's database store runs `forgetMissing(getAllPinnedTags())` when it
+  lists (only with an open database), dropping `id:` hides of pins that no
+  longer exist; `tag:` hides are left alone.
+- **Tests:** `test/pinned_hide_sidebar_test.dart` (5, real in-memory SQLite):
+  hidden pin absent and a visible pin present (the loader swallows errors), the
+  same pin present on another source, a doujin pin, delete-then-reuse of an id,
+  and the orphan cleanup. The first fails against the r78 sidebar.
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.

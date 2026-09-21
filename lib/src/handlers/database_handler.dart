@@ -13,6 +13,7 @@ import 'package:lolisnatcher/src/data/collection_info.dart';
 import 'package:lolisnatcher/src/data/constants.dart';
 import 'package:lolisnatcher/src/data/history_item.dart';
 import 'package:lolisnatcher/src/data/pinned_tag.dart';
+import 'package:lolisnatcher/src/data/pinned_tag_visibility.dart';
 import 'package:lolisnatcher/src/data/saved_search.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
@@ -2267,6 +2268,10 @@ class DBHandler {
   /// Remove a pinned tag by id
   Future<void> removePinnedTag(int id) async {
     await db?.rawDelete('DELETE FROM PinnedTag WHERE id = ?', [id]);
+    // r79: its hides go with it, or a new pin reusing the id is born hidden.
+    try {
+      PinnedTagVisibility.forgetId(id);
+    } catch (_) {}
   }
 
   /// Remove a pinned tag by tagName and scope

@@ -311,6 +311,23 @@ class SourceSettingsHandler {
     _save();
   }
 
+  /// r79: removes pin hides that [drop] picks, on every source. Written only
+  /// when something changed.
+  void dropHiddenPins(bool Function(String key) drop) {
+    _ensureLoaded();
+    bool changed = false;
+    for (final SourceSettings s in _byHost.values) {
+      final String? stored = s.hiddenPins;
+      if (stored == null || stored.isEmpty) continue;
+      final List<String> keys = stored.split('\n').where((String k) => k.isNotEmpty).toList();
+      final List<String> kept = keys.where((String k) => !drop(k)).toList();
+      if (kept.length == keys.length) continue;
+      s.hiddenPins = kept.isEmpty ? null : kept.join('\n');
+      changed = true;
+    }
+    if (changed) _save();
+  }
+
   /// Appends [tag] to the blacklist of one layer: [booru] == null targets the
   /// doujin-global layer, otherwise that source's own list. No-op when the
   /// layer already lists the tag.
