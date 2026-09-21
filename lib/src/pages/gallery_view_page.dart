@@ -11,6 +11,7 @@ import 'package:flutter/services.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:preload_page_view/preload_page_view.dart';
 
+import 'package:lolisnatcher/src/utils/navigation_trace.dart';
 import 'package:lolisnatcher/src/utils/perf_trace.dart';
 import 'package:lolisnatcher/src/widgets/video/flash_play_viewer.dart';
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
@@ -396,7 +397,7 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware, Trac
               ServiceHandler.vibrate();
             }
           },
-          onDismissed: (_) => Navigator.of(context).pop(),
+          onDismissed: (_) => NavigationTrace.closing('swipe down', () => Navigator.of(context).pop()),
           child: ValueListenableBuilder(
             valueListenable: dismissProgress,
             builder: (context, dismissProgress, child) {
@@ -487,7 +488,7 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware, Trac
                     } else if (event.physicalKey == PhysicalKeyboardKey.escape) {
                       // exit on escape if in focus
                       if (kbFocusNode.hasFocus) {
-                        Navigator.of(context).pop();
+                        NavigationTrace.closing('Escape key', () => Navigator.of(context).pop());
                       }
                     }
                   }

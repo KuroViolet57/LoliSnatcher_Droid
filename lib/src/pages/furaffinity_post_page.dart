@@ -20,6 +20,7 @@ import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 import 'package:lolisnatcher/src/widgets/common/html.dart';
 import 'package:lolisnatcher/src/widgets/image/custom_network_image.dart';
 import 'package:lolisnatcher/src/widgets/webview/webview_page.dart';
+import 'package:lolisnatcher/src/utils/navigation_trace.dart';
 
 /// A FurAffinity submission the way its page shows it (r42): the picture,
 /// title and artist, stats and file details, the description with its links,
@@ -92,7 +93,7 @@ class _FurAffinityPostPageState extends State<FurAffinityPostPage> {
   }
 
   void _openTab(String query) {
-    Navigator.of(context).popUntil((route) => route.isFirst);
+    NavigationTrace.closing('FurAffinity post page: opened a tab', () => Navigator.of(context).popUntil((route) => route.isFirst));
     SearchHandler.instance.addTabByString(query, customBooru: widget.booru, switchToNew: true);
   }
 

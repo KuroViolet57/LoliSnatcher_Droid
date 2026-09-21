@@ -28,6 +28,7 @@ import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/snatch_handler.dart';
 import 'package:lolisnatcher/src/pages/kemono_artists_page.dart';
 import 'package:lolisnatcher/src/pages/post_files_page.dart';
+import 'package:lolisnatcher/src/utils/navigation_trace.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 import 'package:lolisnatcher/src/widgets/common/html.dart';
@@ -159,7 +160,7 @@ class _KemonoPostPageState extends State<KemonoPostPage> {
 
   void _openTab(String query) {
     searchHandler.addTabByString(query, customBooru: widget.booru, switchToNew: true);
-    Navigator.of(context).popUntil((r) => r.isFirst);
+    NavigationTrace.closing('Kemono post page: opened a tab', () => Navigator.of(context).popUntil((r) => r.isFirst));
   }
 
   Future<void> _openExternal(String url) async {

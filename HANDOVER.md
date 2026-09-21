@@ -2510,6 +2510,47 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   reaction consumes the file. The 20 s deadline could not be exercised there -
   adb input cannot keep the screen busy that long - so it rests on the tests.
 
+### 4.53 Why the viewer closed - a reason, not a stack (r79, build 104)
+
+- **r77's line lied in release builds.** `ViewerCloseObserver` logged
+  `callerOf(StackTrace.current)`. On 20 Sep all 34 closes named
+  `_BackupRestorePageState._linkDrive.<anonymous closure>` (the "Google Drive
+  was not linked" dialog's OK button, backup_restore_page.dart:528), back-arrow
+  taps included. The back arrow (hideable_appbar.dart, `() =>
+  Navigator.of(context).pop()`) has the same shape; AOT release builds share
+  one copy of machine code between identical functions (dedup_instructions),
+  and the VM names any one of them. JIT tests could not see it. Inference from
+  the VM source plus the log, not disassembled. `callerOf` is removed.
+- **`NavigationTrace.closing(reason, close)`** holds the reason only while
+  `close` runs; a pop and a popUntil notify observers inside the call
+  (navigator.dart), so every viewer pop of that call gets it. The observer
+  logs `viewer closed by: <reason>` and a `viewer.close` trace event.
+  Otherwise: `Back gesture (system)` within `gestureWindow` (5 s) of a
+  gesture start (the app's predictive-back detector commits with a plain pop
+  that never passes `didPopRoute`), `Back button (system)` within
+  `systemBackWindow` (1 s) of `didPopRoute`, else `unmarked - ...`.
+- **Marked sites:** back arrow, swipe down, Escape (gallery_view_page), Not
+  interested emptying the list, tab list "exit viewer" and the new-tab notice's
+  button (tag_view), the tag previews breadcrumb, FurAffinity and Kemono post
+  pages' `_openTab`. Unmarked on purpose: the fullscreen video's `maybePop`
+  (reaches a viewer only through a stale flag) - an "unmarked" line would show
+  it.
+- **Two ways a viewer closed by mistake, closed:** (1) the tag previews
+  breadcrumb popped until `tagDialog/$tag` OR the first route; the chain's
+  dialogs are popped as it goes on, so a gone dialog fell through to the feed -
+  `NavigationTrace.tagDialogOrViewer` also stops at the `viewer` route. (2) The
+  snatch dialog's two buttons and the share dialog's Hydrus button popped
+  after an await; a dialog dismissed meanwhile meant the viewer was popped -
+  `NavigationTrace.popIfOnTop(dialogContext, what)` pops only while the
+  dialog's route is current, else logs `<what> was already closed`.
+- **Tests:** `test/navigation_trace_test.dart` rewritten (13): the reason,
+  one line through a dialog-to-feed popUntil, a reason not outliving its
+  close, unmarked, system Back and its window, the gesture, the trace event,
+  the breadcrumb with its dialog gone and present, the dialog pop after its
+  dialog closed and while open.
+- **Not verified on a device:** the emulator froze after boot on 21 Sep (see
+  the emulator memory); the phone check is the user's.
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.

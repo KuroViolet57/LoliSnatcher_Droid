@@ -3194,7 +3194,7 @@ class _RelatedTabsDialogState extends State<_RelatedTabsDialog> {
                   onTap: () async {
                     await ServiceHandler.vibrate();
                     if (SettingsHandler.instance.appMode.value.isMobile) {
-                      Navigator.of(context).popUntil((r) => r.isFirst); // exit viewer
+                      NavigationTrace.closing('tab list: switched tab', () => Navigator.of(context).popUntil((r) => r.isFirst)); // exit viewer
                     }
                     WidgetsBinding.instance.addPostFrameCallback((_) {
                       searchHandler.changeTabIndex(tabIndex);
@@ -3906,7 +3906,7 @@ class _TagContentPreviewState extends State<TagContentPreview> with AutomaticKee
               onPressed: () {
                 ServiceHandler.vibrate();
                 if (settingsHandler.appMode.value.isMobile) {
-                  Navigator.of(context).popUntil((r) => r.isFirst);
+                  NavigationTrace.closing('new tab notice: go to the tab', () => Navigator.of(context).popUntil((r) => r.isFirst));
                 }
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   SearchHandler.instance.changeTabIndex(
@@ -4568,9 +4568,14 @@ class _TagPreviewsListDialog extends StatelessWidget {
                                                 if (isActive) {
                                                   // close everything up to this tag
                                                   WidgetsBinding.instance.addPostFrameCallback((_) {
-                                                    Navigator.of(context).popUntil(
-                                                      (route) =>
-                                                          route.settings.name == 'tagDialog/$tag' || route.isFirst,
+                                                    // r79: stops at the viewer too - with this
+                                                    // tag's dialog already gone it fell through
+                                                    // to the feed.
+                                                    NavigationTrace.closing(
+                                                      'tag previews breadcrumb',
+                                                      () => Navigator.of(context).popUntil(
+                                                        (route) => NavigationTrace.tagDialogOrViewer(route, tag),
+                                                      ),
                                                     );
                                                   });
                                                 } else {

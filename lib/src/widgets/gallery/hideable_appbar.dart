@@ -46,6 +46,7 @@ import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/services/get_perms.dart';
 import 'package:lolisnatcher/src/services/image_writer.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
+import 'package:lolisnatcher/src/utils/navigation_trace.dart';
 import 'package:lolisnatcher/src/utils/timed_progress_controller.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 import 'package:lolisnatcher/src/widgets/common/animated_progress_indicator.dart';
@@ -828,7 +829,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
           // item is now at this index and becomes the current one.
           final List<BooruItem> left = widget.tab.booruHandler.filteredFetched;
           if (left.isEmpty) {
-            Navigator.of(context).pop();
+            NavigationTrace.closing('Not interested emptied the list', () => Navigator.of(context).pop());
             return;
           }
           if (page.value >= left.length) {
@@ -874,7 +875,9 @@ class _HideableAppBarState extends State<HideableAppBar> {
                         onTap: () async {
                           item.isSnatched.value = !item.isSnatched.value!;
                           await settingsHandler.dbHandler.updateBooruItem(item, BooruUpdateMode.local);
-                          Navigator.of(context).pop();
+                          // r79: only if the dialog is still open - after the
+                          // await a plain pop closed the viewer instead.
+                          if (context.mounted) NavigationTrace.popIfOnTop(context, 'the snatch dialog');
                         },
                         leading: item.isSnatched.value == true ? const Icon(Symbols.clear_rounded) : const Icon(Symbols.check_rounded),
                         title: item.isSnatched.value == true
@@ -904,7 +907,8 @@ class _HideableAppBarState extends State<HideableAppBar> {
                             skipSnatching: true,
                           );
                         }
-                        Navigator.of(context).pop();
+                        // r79: only if the dialog is still open.
+                        if (context.mounted) NavigationTrace.popIfOnTop(context, 'the snatch dialog');
                       },
                       leading: const Icon(Symbols.file_download_rounded),
                       title: Text(
@@ -1443,7 +1447,8 @@ class _HideableAppBarState extends State<HideableAppBar> {
                     ),
                     onTap: () async {
                       await shareHydrusAction(item);
-                      Navigator.of(context).pop();
+                      // r79: only if the dialog is still open.
+                      if (context.mounted) NavigationTrace.popIfOnTop(context, 'the share dialog');
                     },
                     leading: const Icon(Symbols.file_present_rounded),
                     title: Text(context.loc.viewer.appBar.hydrus),
@@ -1569,7 +1574,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
                 leading: IconButton(
                   // to ignore icon change
                   icon: const Icon(Symbols.arrow_back_rounded, color: Colors.white),
-                  onPressed: () => Navigator.of(context).pop(),
+                  onPressed: () => NavigationTrace.closing('back arrow', () => Navigator.of(context).pop()),
                 ),
                 title: FittedBox(
                   fit: BoxFit.fitWidth,
