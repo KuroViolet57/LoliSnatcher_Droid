@@ -2631,6 +2631,25 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   least 48 dp each with an equal-width last row, a 1.3x font, four tiles in
   one row, the switch). No test pumps TagView itself (none did before).
 
+### 4.57 The left sidebar scrolls in landscape (r79, build 108)
+
+- **Report (22 Sep, AYN Thor held sideways):** the left sidebar did not
+  scroll; nothing above QUICK ACCESS was visible and the last rows were cut.
+  `DrawerQuickAccess.build` was a `Column`: header, `Expanded(pins ListView)`,
+  then the Quick access rows at full height. When those rows alone exceed the
+  height, the pins get 0 and the column overflows; nothing scrolls.
+- **Fix:** one `CustomScrollView`: header `SliverToBoxAdapter`, the pins
+  `SliverList` (or the empty text), then `SliverFillRemaining(hasScrollBody:
+  false)` holding the divider, the label and the rows in a `Column` aligned to
+  the end - with room to spare Quick access stays at the bottom edge as before;
+  otherwise the whole panel scrolls. Behaviour change only when the pins alone
+  overflow a portrait panel: everything scrolls instead of the pins alone.
+- **Tests:** `test/drawer_landscape_test.dart` (480x400: no overflow,
+  Collections reachable, pins reachable again - fails on the r78 layout;
+  400x1400: Quick access within 60 dp of the bottom, the first pin near the
+  top). Note: `scrollUntilVisible` stops when a row peeks in; `ensureVisible`
+  before `hitTestable` checks.
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.

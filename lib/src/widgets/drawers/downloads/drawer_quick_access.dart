@@ -269,57 +269,67 @@ class _DrawerQuickAccessState extends State<DrawerQuickAccess> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    // r79: one scrollable list. It was a fixed column - the pins got what the
+    // Quick access rows left over - and on a landscape screen (an AYN Thor
+    // held sideways) those rows alone were taller than the screen: the pins
+    // were squeezed to nothing, the last rows cut off, and nothing scrolled.
+    // With room to spare it looks as before: the remaining space sits between
+    // the pins and Quick access, which stays at the bottom edge.
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+      child: CustomScrollView(
+        slivers: [
           // header
-          Padding(
-            padding: const EdgeInsets.fromLTRB(4, 0, 0, 8),
-            child: Row(
-              children: [
-                Icon(Symbols.push_pin_rounded, size: 18, color: theme.colorScheme.secondary),
-                const SizedBox(width: 8),
-                Text(
-                  'Pinned tags',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                    color: theme.colorScheme.onSurface,
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(4, 0, 0, 8),
+              child: Row(
+                children: [
+                  Icon(Symbols.push_pin_rounded, size: 18, color: theme.colorScheme.secondary),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Pinned tags',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: theme.colorScheme.onSurface,
+                    ),
                   ),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Symbols.close_rounded),
+                    onPressed: widget.toggleDrawer,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (_pinned.isEmpty)
+            SliverToBoxAdapter(
+              child: Text(
+                'No pinned tags yet. Pin a tag from its menu to keep it here.',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  color: theme.colorScheme.onSurfaceVariant,
                 ),
-                const Spacer(),
-                IconButton(
-                  icon: const Icon(Symbols.close_rounded),
-                  onPressed: widget.toggleDrawer,
-                ),
+              ),
+            )
+          else
+            SliverList.list(children: [for (final pt in _pinned) _pinnedRow(pt)]),
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.end,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 8),
+                const Divider(height: 1),
+                const SizedBox(height: 8),
+                _sectionLabel('QUICK ACCESS'),
+                ..._quickAccessRows(),
               ],
             ),
           ),
-          // pinned tags (scrolls; pushes quick access to the bottom)
-          Expanded(
-            child: _pinned.isEmpty
-                ? Align(
-                    alignment: Alignment.topLeft,
-                    child: Text(
-                      'No pinned tags yet. Pin a tag from its menu to keep it here.',
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  )
-                : ListView(
-                    padding: EdgeInsets.zero,
-                    children: [for (final pt in _pinned) _pinnedRow(pt)],
-                  ),
-          ),
-          const SizedBox(height: 8),
-          const Divider(height: 1),
-          const SizedBox(height: 8),
-          _sectionLabel('QUICK ACCESS'),
-          ..._quickAccessRows(),
         ],
       ),
     );
