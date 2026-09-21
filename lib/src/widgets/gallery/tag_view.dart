@@ -23,6 +23,8 @@ import 'package:lolisnatcher/src/data/meta_tag.dart';
 import 'package:lolisnatcher/src/data/pinned_tag.dart';
 import 'package:lolisnatcher/src/widgets/gallery/tag_chip_shell.dart';
 import 'package:lolisnatcher/src/utils/navigation_trace.dart';
+import 'package:lolisnatcher/src/data/modular_ui.dart';
+import 'package:lolisnatcher/src/widgets/gallery/flow_action_grid.dart';
 import 'package:lolisnatcher/src/widgets/common/loli_dropdown.dart';
 import 'package:lolisnatcher/src/widgets/preview/main_search_query_editor_page.dart';
 import 'package:lolisnatcher/src/widgets/tabs/tab_selector.dart';
@@ -593,12 +595,24 @@ class _TagViewState extends State<TagView> with TraceLifecycle {
     );
   }
 
+  /// r79: shared by the Comments row and its button in the action block.
+  bool get _commentsAvailable => handler.hasCommentsSupport && item.fileURL.isNotEmpty;
+
+  void _openComments() {
+    SettingsPageOpen(
+      context: context,
+      page: (_) => CommentsDialog(
+        item: item,
+        handler: handler,
+      ),
+    ).open();
+  }
+
   Widget commentsButton() {
-    final bool hasSupport = handler.hasCommentsSupport;
     final bool hasComments = item.hasComments == true;
     final IconData icon = hasComments ? CupertinoIcons.text_bubble_fill : CupertinoIcons.text_bubble;
 
-    if (!hasSupport || item.fileURL.isEmpty) {
+    if (!_commentsAvailable) {
       return const SizedBox.shrink();
     }
 
@@ -608,17 +622,82 @@ class _TagViewState extends State<TagView> with TraceLifecycle {
         icon,
         color: Theme.of(context).iconTheme.color,
       ),
-      action: () {
-        SettingsPageOpen(
-          context: context,
-          page: (_) => CommentsDialog(
-            item: item,
-            handler: handler,
-          ),
-        ).open();
-      },
+      action: _openComments,
       drawBottomBorder: false,
     );
+  }
+
+  /// r79: the post actions that sat as full-width rows under the action
+  /// block are buttons in it, unless Settings > Modular UI > Viewer switches
+  /// that off. Read when the panel builds - one form is ever built.
+  bool get _actionsAsButtons => ModularUi.isOn(ModularUi.viewerPostActionsAsButtons);
+
+  void _openFindElsewhere(BuildContext context) => showFindElsewhereSheet(
+    context,
+    item,
+    (possibleBooruHandler ?? handler).booru,
+  );
+
+  void _openNewBoard(BuildContext context) => BoardEditPage.openFromItem(context, item, (possibleBooruHandler ?? handler).booru);
+
+  void _openSimilar(BuildContext context) => BoardsPage.openSimilar(context, item, tagBooru);
+
+  bool get _hasPicture => item.sampleURL.isNotEmpty || item.thumbnailURL.isNotEmpty;
+
+  /// For You is the BOORU taste system - never seeded from a doujin item.
+  List<String> _recommendSeeds() =>
+      settingsHandler.dbEnabled && !isDoujinContext ? InterestsHandler.seedTagsFromItem(item, limit: 3) : const <String>[];
+
+  void _openRecommend(BuildContext context, List<String> seeds) {
+    final booru = settingsHandler.ensureForYouBooru();
+    // r75: the post's own site first (it knows these tags), the rest after.
+    final String fromHost = Uri.tryParse(tagBooru.baseURL ?? '')?.host ?? '';
+    final String query = [if (fromHost.isNotEmpty) 'from:$fromHost', ...seeds.map((s) => 'seed:$s')].join(' ');
+    // r75: in the background — a tab never drags the user away.
+    searchHandler.addTabByString(query, customBooru: booru, switchToNew: false);
+    _openedInNewTab(context, seeds.map((s) => s.replaceAll('_', ' ')).join(', '));
+  }
+
+  FlowActionTile _extraTile(BuildContext context, FlowExtra e, List<String> seeds) {
+    final String label = e == FlowExtra.comments ? context.loc.tagView.comments : FlowExtras.labelOf(e);
+    switch (e) {
+      case FlowExtra.comments:
+        return FlowActionTile(
+          key: const ValueKey('flow-comments'),
+          icon: Symbols.chat_bubble_rounded,
+          label: label,
+          active: item.hasComments == true,
+          onTap: _openComments,
+        );
+      case FlowExtra.elsewhere:
+        return FlowActionTile(
+          key: const ValueKey('flow-elsewhere'),
+          icon: Symbols.travel_explore_rounded,
+          label: label,
+          onTap: () => _openFindElsewhere(context),
+        );
+      case FlowExtra.board:
+        return FlowActionTile(
+          key: const ValueKey('flow-board'),
+          icon: Symbols.dashboard_rounded,
+          label: label,
+          onTap: () => _openNewBoard(context),
+        );
+      case FlowExtra.similar:
+        return FlowActionTile(
+          key: const ValueKey('flow-similar'),
+          icon: Symbols.image_search_rounded,
+          label: label,
+          onTap: () => _openSimilar(context),
+        );
+      case FlowExtra.recommend:
+        return FlowActionTile(
+          key: const ValueKey('flow-recommend'),
+          icon: Symbols.auto_awesome_rounded,
+          label: label,
+          onTap: () => _openRecommend(context, seeds),
+        );
+    }
   }
 
   /// FurAffinity (r42): the submission page.
@@ -1533,89 +1612,50 @@ class _TagViewState extends State<TagView> with TraceLifecycle {
   }
 
   Widget _flowActionRow(BuildContext context) {
-    final theme = Theme.of(context);
-
-    Widget btn({
-      required IconData icon,
-      required String label,
-      required Color activeColor,
-      required VoidCallback onTap,
-      bool active = false,
-    }) {
-      final Color fg = active ? activeColor : theme.colorScheme.onSurface;
-      return Expanded(
-        child: InkWell(
-          borderRadius: BorderRadius.circular(14),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // fill is the Material Symbols variable-font axis — without it
-                // the "active" state renders the same outline glyph.
-                Icon(icon, size: 22, color: fg, fill: active ? 1 : 0),
-                const SizedBox(height: 3),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: active ? activeColor : theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          ),
+    final List<String> seeds = _actionsAsButtons ? _recommendSeeds() : const <String>[];
+    final List<FlowExtra> extras = _actionsAsButtons
+        ? FlowExtras.of(
+            doujin: isDoujinContext,
+            comments: _commentsAvailable,
+            hasPicture: _hasPicture,
+            recommend: seeds.isNotEmpty,
+          )
+        : const <FlowExtra>[];
+    return FlowActionGrid(
+      tiles: [
+        Obx(() {
+          final bool fav = item.isFavourite.value == true;
+          return FlowActionTile(
+            icon: Symbols.favorite_rounded,
+            label: 'Favorite',
+            activeColor: const Color(0xFFF0708A),
+            active: fav,
+            onTap: _toggleFavourite,
+          );
+        }),
+        Obx(() {
+          final bool snatched = item.isSnatched.value == true;
+          return FlowActionTile(
+            icon: snatched ? Symbols.download_done_rounded : Symbols.download_rounded,
+            label: snatched ? 'Saved' : 'Save',
+            activeColor: const Color(0xFF7FC98B),
+            active: snatched,
+            onTap: () => _snatchItem(context),
+          );
+        }),
+        FlowActionTile(
+          icon: Symbols.bookmark_add_rounded,
+          label: 'Collect',
+          activeColor: const Color(0xFFE8C46B),
+          onTap: () => showAddToCollectionSheet(context, [item]),
         ),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 4, 12, 6),
-      child: Container(
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainer,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: theme.colorScheme.outlineVariant),
+        FlowActionTile(
+          icon: Symbols.info_rounded,
+          label: 'Details',
+          onTap: () => showPostDetailsSheet(context, item),
         ),
-        child: Row(
-          children: [
-            Obx(() {
-              final bool fav = item.isFavourite.value == true;
-              return btn(
-                icon: Symbols.favorite_rounded,
-                label: 'Favorite',
-                activeColor: const Color(0xFFF0708A),
-                active: fav,
-                onTap: _toggleFavourite,
-              );
-            }),
-            Obx(() {
-              final bool snatched = item.isSnatched.value == true;
-              return btn(
-                icon: snatched ? Symbols.download_done_rounded : Symbols.download_rounded,
-                label: snatched ? 'Saved' : 'Save',
-                activeColor: const Color(0xFF7FC98B),
-                active: snatched,
-                onTap: () => _snatchItem(context),
-              );
-            }),
-            btn(
-              icon: Symbols.bookmark_add_rounded,
-              label: 'Collect',
-              activeColor: const Color(0xFFE8C46B),
-              onTap: () => showAddToCollectionSheet(context, [item]),
-            ),
-            btn(
-              icon: Symbols.info_rounded,
-              label: 'Details',
-              activeColor: theme.colorScheme.secondary,
-              onTap: () => showPostDetailsSheet(context, item),
-            ),
-          ],
-        ),
-      ),
+        for (final FlowExtra e in extras) _extraTile(context, e, seeds),
+      ],
     );
   }
 
@@ -2096,7 +2136,8 @@ class _TagViewState extends State<TagView> with TraceLifecycle {
                 // Cross-booru lookup: pivot on the post's artist/character
                 // tag to find related content on the other boorus. Booru-only
                 // (see isDoujinContext).
-                if (!isDoujinContext)
+                // r79: a button in the action block unless Modular UI says rows.
+                if (!isDoujinContext && !_actionsAsButtons)
                   ListTile(
                     dense: true,
                     minVerticalPadding: 0,
@@ -2105,16 +2146,12 @@ class _TagViewState extends State<TagView> with TraceLifecycle {
                       'Find this post elsewhere',
                       style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
                     ),
-                    onTap: () => showFindElsewhereSheet(
-                      context,
-                      item,
-                      (possibleBooruHandler ?? handler).booru,
-                    ),
+                    onTap: () => _openFindElsewhere(context),
                   ),
                 //
                 // Boards (r73): a saved search seeded by this post - its tags
                 // as words, its image as the reference. Booru-only.
-                if (!isDoujinContext)
+                if (!isDoujinContext && !_actionsAsButtons)
                   ListTile(
                     dense: true,
                     minVerticalPadding: 0,
@@ -2123,7 +2160,7 @@ class _TagViewState extends State<TagView> with TraceLifecycle {
                       'Find posts like this (new board)',
                       style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
                     ),
-                    onTap: () => BoardEditPage.openFromItem(context, item, (possibleBooruHandler ?? handler).booru),
+                    onTap: () => _openNewBoard(context),
                   ),
                 //
                 // Inline "more from artist / uploader" grids — Boorusama-style.
@@ -2140,7 +2177,7 @@ class _TagViewState extends State<TagView> with TraceLifecycle {
                 // is gone — the Flow Details sheet (action row → Details)
                 // covers all of it. Comments have no other home, so they stay
                 // as a standalone row.
-                commentsButton(),
+                if (!_actionsAsButtons) commentsButton(),
                 kemonoPostButton(),
                 furAffinityPostButton(),
                 // Doujin "Related": other CHAPTERS and language versions of
@@ -2274,19 +2311,19 @@ class _TagViewState extends State<TagView> with TraceLifecycle {
                     },
                   ),
                 // r75: posts that look like this one, in a background tab.
-                if (!isDoujinContext && (item.sampleURL.isNotEmpty || item.thumbnailURL.isNotEmpty))
+                if (!isDoujinContext && _hasPicture && !_actionsAsButtons)
                   ListTile(
                     leading: Icon(Symbols.image_search_rounded, color: Theme.of(context).iconTheme.color),
                     title: const Text('Posts like this'),
                     subtitle: const Text('A tab in the background with posts that look like this one, from your sources', maxLines: 2, overflow: TextOverflow.ellipsis),
-                    onTap: () => BoardsPage.openSimilar(context, item, tagBooru),
+                    onTap: () => _openSimilar(context),
                   ),
                 // For You is the BOORU taste system — never seeded from a
                 // doujin item.
-                if (settingsHandler.dbEnabled && !isDoujinContext)
+                if (settingsHandler.dbEnabled && !isDoujinContext && !_actionsAsButtons)
                   Builder(
                     builder: (context) {
-                      final List<String> seeds = InterestsHandler.seedTagsFromItem(item, limit: 3);
+                      final List<String> seeds = _recommendSeeds();
                       if (seeds.isEmpty) return const SizedBox.shrink();
                       return ListTile(
                         leading: Icon(Symbols.auto_awesome_rounded, color: Theme.of(context).iconTheme.color),
@@ -2296,15 +2333,7 @@ class _TagViewState extends State<TagView> with TraceLifecycle {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        onTap: () {
-                          final booru = settingsHandler.ensureForYouBooru();
-                          // r75: the post's own site first (it knows these tags), the rest after.
-                          final String fromHost = Uri.tryParse(tagBooru.baseURL ?? '')?.host ?? '';
-                          final String query = [if (fromHost.isNotEmpty) 'from:$fromHost', ...seeds.map((s) => 'seed:$s')].join(' ');
-                          // r75: in the background — a tab never drags the user away.
-                          searchHandler.addTabByString(query, customBooru: booru, switchToNew: false);
-                          _openedInNewTab(context, seeds.map((s) => s.replaceAll('_', ' ')).join(', '));
-                        },
+                        onTap: () => _openRecommend(context, seeds),
                       );
                     },
                   ),

@@ -2603,6 +2603,34 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   same pin present on another source, a doujin pin, delete-then-reuse of an id,
   and the orphan cleanup. The first fails against the r78 sidebar.
 
+### 4.56 Post actions as buttons in the info sheet (r79, build 107)
+
+- **User request (21 Sep, annotated screenshot):** "Find this post elsewhere",
+  "Find posts like this (new board)", Comments, "Posts like this" and
+  "Recommend more like this" move from full-width rows into the compact block
+  with Favorite / Save / Collect / Details, icon + one word. "More from
+  artist/uploader", the Suggested strip and the Tags block stay.
+- **`widgets/gallery/flow_action_grid.dart` (new):** `FlowActionTile` (the
+  r74 tile, with the label in a scale-down `FittedBox`), `FlowActionGrid`
+  (`shapeFor(n)`: n<=5 one row, else rows = ceil(n/5), columns =
+  ceil(n/rows); the last row padded with empty `Expanded` slots so every tile
+  keeps one width: 4, 5, 3+3, 4+3, 4+4, 5+4), `FlowExtras.of(doujin,
+  comments, hasPicture, recommend)` with each old row's gate, and one-word
+  labels Comments / Elsewhere / Board / Similar / Recommend.
+- **`tag_view.dart`:** `_flowActionRow` builds the grid. The taps and gates
+  are shared methods (`_openComments`, `_openFindElsewhere`, `_openNewBoard`,
+  `_openSimilar`, `_openRecommend`, `_commentsAvailable`, `_hasPicture`,
+  `_recommendSeeds`) used by the buttons and by the old rows. Comments keeps
+  the FEED handler's `hasCommentsSupport` (doujins too); the other four are
+  booru-only (`isDoujinContext`). Comments' icon is `Symbols.chat_bubble_rounded`,
+  filled when the post has comments.
+- **Modular UI:** `viewer.postActionsAsButtons` (Viewer, default on). Off:
+  the block has the four and the old rows build as before - one form only.
+- **Tests:** `test/flow_action_grid_test.dart` (the gates and order, one-word
+  labels, the shapes, nine tiles at 412 and 330 dp without overflow and at
+  least 48 dp each with an equal-width last row, a 1.3x font, four tiles in
+  one row, the switch). No test pumps TagView itself (none did before).
+
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.

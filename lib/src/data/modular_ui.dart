@@ -131,6 +131,14 @@ class ModularUi {
     defaultValue: true,
   );
 
+  static const ModularUiToggle viewerPostActionsAsButtons = ModularUiToggle(
+    key: 'viewer.postActionsAsButtons',
+    area: viewerArea,
+    title: 'Post actions as buttons',
+    description: "In a post's info sheet, Comments, Find elsewhere, a new board, Similar posts and Recommend are buttons next to Favorite, Save, Collect and Details. Off brings back their full-width rows below the block.",
+    defaultValue: true,
+  );
+
   static const String wholeAppArea = 'Whole app';
 
   static const ModularUiToggle appDrawUnderHiddenStatusBar = ModularUiToggle(
@@ -152,6 +160,7 @@ class ModularUi {
     viewerLinkedMedia,
     videoCapToScreen,
     imageCap4k,
+    viewerPostActionsAsButtons,
     appDrawUnderHiddenStatusBar,
   ];
 
