@@ -31,19 +31,21 @@ older chronological build log, kept verbatim as history.
   Never push elsewhere; force-push is blocked.
 - **Version:** `2.6.0+5211` in `pubspec.yaml`, mirrored in
   `lib/src/data/constants.dart` (`updateInfo`). Builds are told apart by
-  `Constants.buildCodename` (`'r60-mpv-libs'` now), shown in About. Bump the
+  `Constants.buildCodename` (`'r80-backup'` now), shown in About. Bump the
   codename every build: `rNN-<two words>`.
-- **Build counter:** builds are numbered r21, r22, … r60. Each build gets a
-  numbered folder on the K: drive (§2): r59 used **78**; r60 uses **79**;
-  the next build uses **80**.
+- **Build counter:** rounds are numbered r21, r22, … r80. Each build gets a
+  numbered folder on the K: drive (§2): r80's first build is **109**; the
+  next build uses **110**. **103** is Grok's ("exp flutter 347") - never
+  reuse a number.
 - **The user** talks in voice notes and logs; expects one build per request
   round, checked on a Samsung phone. They cannot see tool output — only the
   final message.
 - **Tests first, then an adversarial review (user rule, 2026-09-08).** Write
-  the failing tests before the code; after the code is green, launch an
-  Agent whose only job is to find why the diff is wrong (scoped to the
-  change, with the fixtures at hand), fix what it finds, and only then
-  build. The user noticed tests written after the code pass trivially. r29
+  the failing tests before the code; after the code is green, review the
+  diff yourself. **Since 2026-09-21 an Agent (the adversarial review
+  included) runs only after the user says yes, and a multi-agent Workflow
+  only after an explicit yes to a cost estimate** - they burn the user's
+  usage. The user noticed tests written after the code pass trivially. r29
   was the first round under it: the r28 review found five real bugs (§12).
 
 ### The user's standing rules (verbatim intent, all still in force)
@@ -2649,6 +2651,68 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   400x1400: Quick access within 60 dp of the bottom, the first pin near the
   top). Note: `scrollUntilVisible` stops when a row peeks in; `ensureVisible`
   before `hitTestable` checks.
+
+### 4.58 Backup & restore: one list, named Drive backups, the database in parts (r80, build 109)
+
+- **Asked (21-22 Sep):** every file selectable for backup and restore
+  (multi-select), the recommender's folder too; the database back whole or
+  in parts (pulled tags, the recommendation log and For You interests, the
+  vector cache); Google Drive usable on a fresh install (it was gated behind
+  choosing a backup folder); the Drive buttons appearing only after a
+  restart once linked; named snapshot folders on Drive with dates, the old
+  root files shown as an earlier backup.
+- **Link bug cause:** `_refreshDriveState` read `isLinked`, then listed the
+  Drive files, then called `setState` - with no try/catch. A listing that
+  threw right after the sign-in lost the whole update. Now the linked state
+  is set first; the listing runs after it inside try/catch
+  (`DriveBackup.list` is also wrapped whole).
+- **Core (UI-free, tested):** `lib/src/services/backup_plan.dart` -
+  `BackupItem` (settings, sources, doujinLibrary, sourceSettings, bookmarks,
+  boards, boardPictures, tagTypes, database, recommender), file names
+  (`recommender.<file>`, `board-picture.<file>` prefixes for folders),
+  `BackupTarget` (folder or Drive), `BackupHooks` (everything app-side),
+  `BackupRunner.backup/restore`. Restore order: files first, database last;
+  the recommender restore calls `hooks.stopRecommenderWrites()` first
+  (`RecommenderHandler.stopWritingForRestore()` + `DeferredLearning.stop()`:
+  memory dropped, no flush/keep until restart - otherwise the exit flush
+  writes the old models over the restored ones). A whole-DB attempt forces a
+  restart even when it failed (the DB was closed).
+- **Database parts:** `lib/src/services/db_parts.dart` - the backup's
+  store.db is copied to `restore-parts.db`, ATTACHed, and per table the
+  common columns are copied with `INSERT OR REPLACE`; the recommendation
+  log (`Interaction`, `RecommenderFeature`, `TagSignal`) is DELETEd first
+  (replaced, so reactions are not counted twice on a rebuild); pulled tags
+  (`BooruTag`, `BooruTagOverride`, `TagAliasCache`) and the vector cache
+  (`ItemEmbedding`) are merged. A backup is checkpointed first
+  (`PRAGMA wal_checkpoint(TRUNCATE)`).
+- **Drive:** `DriveSnapshot`, `snapshots()` (folders in LoliSnatcher newest
+  first; top-level files become one `earlier` entry named "Earlier backup",
+  dated by its newest file), `createSnapshot(name)` (unique name),
+  `deleteSnapshot`, and `folderId` on `list/upload/download`. Query strings
+  are escaped (`quoted`).
+- **App side:** `lib/src/services/backup_app.dart` - `appBackupHooks()`,
+  `FolderBackupTarget` (SAF; every file passes through the cache's
+  `backup/` scratch folder under its own name; an old copy is deleted first
+  because SAF writes "name (1)"), `DriveBackupTarget`.
+- **Page:** `backup_restore_page.dart` rewritten: the checklist (All/None,
+  keys `backup-item-<name>`), the folder section, the Drive section (always
+  shown on Android), snapshot-name dialog (default
+  `DriveBackup.defaultSnapshotName`), snapshot picker (dates, delete),
+  item picker (only items present), database mode dialog (whole / parts),
+  confirm, restart after 3 s when needed (not for tag types alone). Tag
+  types are no longer debug-only. Test seams: `BackupRestorePage.isAndroid`,
+  `driveHasCredentials`, `driveIsLinked`, `driveSnapshots`, `driveLink`.
+- **Tests:** `backup_plan_test` (12: ticked items only, the journal
+  checkpoint, empty items skipped, restore into place with the recommender
+  stopped first, the loaders, missing items, the whole database, parts
+  merged vs replaced, a backup older than a table), `drive_snapshots_test` (4),
+  `backup_page_test` (6: fresh install shows Drive, the checklist, link with a
+  failing listing, the snapshot picker), a freeze test in
+  `recommender_handler_test`. The page tests need an app-bar title of 20 px:
+  `MarqueeText` asserts on the default 22 px (22 x 0.85 is not a whole number
+  of 0.1 steps in floating point). The page's widget tests were written after
+  the page (the core's tests came first).
+- **Not verified here:** SAF and Drive on the phone (no emulator on 22 Sep).
 
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 

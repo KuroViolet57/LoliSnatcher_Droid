@@ -34,14 +34,22 @@ class DeferredLearning {
   void resetForTests() {
     _kept.clear();
     _read = false;
+    _stopped = false;
     fileFor = _defaultFile;
   }
+
+  /// r80: a restore is replacing the recommender's files (this one among
+  /// them); nothing is kept or written until the app restarts.
+  bool _stopped = false;
+
+  void stop() => _stopped = true;
 
   /// How many are waiting for a next run (after [takeAll] has read the file).
   int get waiting => _kept.length;
 
   /// Keeps one event. Synchronous on purpose: the app may be ended next.
   void keep(Map<String, dynamic> event) {
+    if (_stopped) return;
     _readFile();
     _kept.add(event);
     while (_kept.length > cap) {
@@ -54,6 +62,7 @@ class DeferredLearning {
   /// emptied, so a crash during the replay loses them rather than doubling
   /// them.
   Future<List<Map<String, dynamic>>> takeAll() async {
+    if (_stopped) return const <Map<String, dynamic>>[];
     _readFile();
     if (_kept.isEmpty) return const <Map<String, dynamic>>[];
     final List<Map<String, dynamic>> out = List<Map<String, dynamic>>.of(_kept);

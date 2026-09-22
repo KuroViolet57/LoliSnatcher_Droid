@@ -551,6 +551,24 @@ void main() {
       expect(DeferredLearning.instance.waiting, 0);
     });
 
+    test('r80: before a restore the recommender stops writing, so it cannot write over the restored files', () async {
+      if (!dbReady) return;
+      final r = RecommenderHandler.instance;
+      keptInItsOwnFile();
+      await r.onEvent(booruPost('alice'), InteractionKind.favourite);
+      await ModelWork.instance.drained();
+      r.stopWritingForRestore();
+      // What the restore wrote.
+      final File file = File(r.fileFor(RecommenderWorld.booru));
+      file.parent.createSync(recursive: true);
+      file.writeAsBytesSync([1, 2, 3]);
+      await r.flush();
+      expect(file.readAsBytesSync(), [1, 2, 3], reason: 'the learning in memory was not written over it');
+      // Leaving the app with a step waiting keeps nothing either.
+      DeferredLearning.instance.keep({'kind': 'favourite'});
+      expect(DeferredLearning.instance.waiting, 0);
+    });
+
     test('r78: a step with nothing to keep (exposures) still learns lite when the app leaves', () async {
       if (!dbReady) return;
       final r = RecommenderHandler.instance;

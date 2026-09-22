@@ -20,6 +20,17 @@ class DriveFile {
   final int? size;
 }
 
+/// r80: one backup on Drive - a folder inside the LoliSnatcher folder, or
+/// ([earlier]) the files a backup made before snapshots left at its top.
+class DriveSnapshot {
+  const DriveSnapshot({required this.id, required this.name, this.created, this.earlier = false});
+
+  final String id;
+  final String name;
+  final DateTime? created;
+  final bool earlier;
+}
+
 /// Google Drive backup target.
 ///
 /// Deliberately credential-less in the source: the OAuth client id/secret are
@@ -261,6 +272,119 @@ class DriveBackup {
     await Future<void>.delayed(const Duration(milliseconds: 600));
   }
 
+  // ──────────────────────────── snapshots ───────────────────────────
+
+  static const String folderMime = 'application/vnd.google-apps.folder';
+  static const String earlierBackupName = 'Earlier backup';
+
+  /// A name for Drive's search, with its quotes and backslashes escaped.
+  static String quoted(String s) => s.replaceAll(r'\', r'\\').replaceAll("'", r"\'");
+
+  /// The name a new snapshot gets unless you type one.
+  static String defaultSnapshotName(DateTime t) {
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${t.year}-${two(t.month)}-${two(t.day)} ${two(t.hour)}.${two(t.minute)}';
+  }
+
+  /// [wanted], or with a number when a snapshot already has that name.
+  static String uniqueName(String wanted, Iterable<String> taken) {
+    final String base = wanted.trim().isEmpty ? defaultSnapshotName(DateTime.now()) : wanted.trim();
+    final Set<String> used = taken.toSet();
+    if (!used.contains(base)) return base;
+    int i = 2;
+    while (used.contains('$base ($i)')) {
+      i++;
+    }
+    return '$base ($i)';
+  }
+
+  /// The snapshots in the LoliSnatcher folder's listing, newest first; files
+  /// lying at its top are the backup made before snapshots, listed last.
+  static List<DriveSnapshot> snapshotsFrom(List<Map<dynamic, dynamic>> files, {required String rootId}) {
+    final List<DriveSnapshot> out = [];
+    DateTime? newestTop;
+    bool anyTop = false;
+    for (final Map<dynamic, dynamic> f in files) {
+      if (f['mimeType']?.toString() == folderMime) {
+        out.add(
+          DriveSnapshot(
+            id: f['id'].toString(),
+            name: f['name'].toString(),
+            created: DateTime.tryParse(f['createdTime']?.toString() ?? f['modifiedTime']?.toString() ?? ''),
+          ),
+        );
+      } else {
+        anyTop = true;
+        final DateTime? m = DateTime.tryParse(f['modifiedTime']?.toString() ?? '');
+        if (m != null && (newestTop == null || m.isAfter(newestTop))) newestTop = m;
+      }
+    }
+    out.sort((DriveSnapshot a, DriveSnapshot b) => (b.created ?? DateTime(0)).compareTo(a.created ?? DateTime(0)));
+    if (anyTop) out.add(DriveSnapshot(id: rootId, name: earlierBackupName, created: newestTop, earlier: true));
+    return out;
+  }
+
+  /// Every snapshot on Drive.
+  static Future<List<DriveSnapshot>> snapshots() async {
+    try {
+      final String? token = await _token();
+      if (token == null) return const [];
+      final String? root = await _ensureFolder(token);
+      if (root == null) return const [];
+      final Uri query = Uri.parse('$_api/files').replace(
+        queryParameters: {
+          'q': "'${quoted(root)}' in parents and trashed = false",
+          'fields': 'files(id,name,mimeType,createdTime,modifiedTime)',
+          'pageSize': '500',
+        },
+      );
+      final HttpClientResponse res = await _send('GET', query, token: token);
+      final String text = await res.transform(utf8.decoder).join();
+      if (res.statusCode != 200) return const [];
+      final List files = (jsonDecode(text) as Map)['files'] as List? ?? const [];
+      return snapshotsFrom([for (final f in files) if (f is Map) f], rootId: root);
+    } catch (e, s) {
+      Logger.Inst().log('drive snapshots failed: $e', 'DriveBackup', 'snapshots', LogTypes.exception, s: s);
+      return const [];
+    }
+  }
+
+  /// A new snapshot folder named [name] (numbered when taken); null on failure.
+  static Future<DriveSnapshot?> createSnapshot(String name) async {
+    final String? token = await _token();
+    if (token == null) return null;
+    final String? root = await _ensureFolder(token);
+    if (root == null) return null;
+    final String unique = uniqueName(name, [for (final DriveSnapshot s in await snapshots()) s.name]);
+    final HttpClientResponse res = await _send(
+      'POST',
+      Uri.parse('$_api/files').replace(queryParameters: {'fields': 'id,name,createdTime'}),
+      token: token,
+      headers: {'Content-Type': 'application/json'},
+      body: utf8.encode(
+        jsonEncode({
+          'name': unique,
+          'mimeType': folderMime,
+          'parents': [root],
+        }),
+      ),
+    );
+    final String text = await res.transform(utf8.decoder).join();
+    if (res.statusCode != 200 && res.statusCode != 201) return null;
+    final Map made = jsonDecode(text) as Map;
+    return DriveSnapshot(id: made['id'].toString(), name: made['name']?.toString() ?? unique, created: DateTime.tryParse(made['createdTime']?.toString() ?? ''));
+  }
+
+  /// Deletes a snapshot folder and what is in it (the app's own files only).
+  static Future<bool> deleteSnapshot(DriveSnapshot snapshot) async {
+    if (snapshot.earlier) return false;
+    final String? token = await _token();
+    if (token == null) return false;
+    final HttpClientResponse res = await _send('DELETE', Uri.parse('$_api/files/${snapshot.id}'), token: token);
+    await res.drain<void>();
+    return res.statusCode == 204 || res.statusCode == 200;
+  }
+
   // ──────────────────────────── plumbing ────────────────────────────
 
   static Future<Map<String, dynamic>?> _postForm(String url, Map<String, String> body) async {
@@ -363,7 +487,7 @@ class DriveBackup {
   static Future<DriveFile?> _find(String token, String folderId, String name) async {
     final Uri query = Uri.parse('$_api/files').replace(
       queryParameters: {
-        'q': "name = '$name' and '$folderId' in parents and trashed = false",
+        'q': "name = '${quoted(name)}' and '${quoted(folderId)}' in parents and trashed = false",
         'fields': 'files(id,name,modifiedTime,size)',
         'pageSize': '5',
       },
@@ -394,21 +518,24 @@ class DriveBackup {
     List<int> bytes,
     String mimeType, {
     void Function(int sent, int total)? onProgress,
+    String? folderId,
   }) async {
     final String? token = await _token();
     if (token == null) return 'Not signed in to Google Drive.';
-    final String? folderId = await _ensureFolder(token);
-    if (folderId == null) return 'Could not create the $folderName folder.';
+    // r80: into a snapshot folder when given one.
+    final String? parent = folderId ?? await _ensureFolder(token);
+    if (parent == null) return 'Could not create the $folderName folder.';
+    final String folderId0 = parent;
 
     try {
-      final DriveFile? existing = await _find(token, folderId, name);
+      final DriveFile? existing = await _find(token, folderId0, name);
       final Uri start = Uri.parse(
         existing == null ? '$_uploadApi/files?uploadType=resumable' : '$_uploadApi/files/${existing.id}?uploadType=resumable',
       );
       final Map<String, dynamic> metadata = existing == null
           ? {
               'name': name,
-              'parents': [folderId],
+              'parents': [folderId0],
             }
           : {'name': name};
 
@@ -458,12 +585,12 @@ class DriveBackup {
     }
   }
 
-  static Future<Uint8List?> download(String name) async {
+  static Future<Uint8List?> download(String name, {String? folderId}) async {
     final String? token = await _token();
     if (token == null) return null;
-    final String? folderId = await _ensureFolder(token);
-    if (folderId == null) return null;
-    final DriveFile? file = await _find(token, folderId, name);
+    final String? parent = folderId ?? await _ensureFolder(token);
+    if (parent == null) return null;
+    final DriveFile? file = await _find(token, parent, name);
     if (file == null) return null;
 
     try {
@@ -488,18 +615,21 @@ class DriveBackup {
   }
 
   /// What is currently in the backup folder, for the "last backed up" line.
-  static Future<List<DriveFile>> list() async {
-    final String? token = await _token();
-    if (token == null) return const [];
-    final String? folderId = await _ensureFolder(token);
-    if (folderId == null) return const [];
+  static Future<List<DriveFile>> list({String? folderId}) async {
     try {
+      // r80: the token and the folder lookup are network calls too; right
+      // after the Google sign-in they failed and took the page's refresh
+      // down with them (the options appeared only after a restart).
+      final String? token = await _token();
+      if (token == null) return const [];
+      final String? parent = folderId ?? await _ensureFolder(token);
+      if (parent == null) return const [];
       final Uri query = Uri.parse('$_api/files').replace(
         queryParameters: {
-          'q': "'$folderId' in parents and trashed = false",
+          'q': "'${quoted(parent)}' in parents and trashed = false",
           'fields': 'files(id,name,modifiedTime,size)',
           'orderBy': 'modifiedTime desc',
-          'pageSize': '25',
+          'pageSize': '200',
         },
       );
       final HttpClientResponse res = await _send('GET', query, token: token);

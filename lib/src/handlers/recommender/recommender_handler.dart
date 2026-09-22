@@ -328,7 +328,28 @@ class RecommenderHandler {
     }
   }
 
+  /// r80: a restore is replacing the recommender's files; nothing is
+  /// written until the app restarts.
+  bool _frozen = false;
+
+  /// r80: before a restore writes the recommender's files, what is in memory
+  /// is forgotten and nothing more is written - the models, the tastes and
+  /// the learning kept for later would otherwise be written over the restored
+  /// files on the way out (a flush when the app leaves the screen).
+  void stopWritingForRestore() {
+    _frozen = true;
+    _saveTimer?.cancel();
+    _saveTimer = null;
+    _dirty.clear();
+    _models.clear();
+    _loading.clear();
+    _taste.clear();
+    _lookTaste.clear();
+    DeferredLearning.instance.stop();
+  }
+
   void _markDirty(RecommenderWorld world) {
+    if (_frozen) return;
     _dirty.add(world);
     _saveTimer ??= Timer(saveInterval, () {
       _saveTimer = null;
@@ -338,6 +359,7 @@ class RecommenderHandler {
 
   /// Writes every changed model to disk now.
   Future<void> flush() async {
+    if (_frozen) return;
     _saveTimer?.cancel();
     _saveTimer = null;
     final List<RecommenderWorld> worlds = _dirty.toList();
@@ -973,6 +995,7 @@ class RecommenderHandler {
 
   @visibleForTesting
   void resetForTests() {
+    _frozen = false;
     _replayedKept = false;
     _saveTimer?.cancel();
     _saveTimer = null;
