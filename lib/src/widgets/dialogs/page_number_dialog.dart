@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:get/get.dart';
 
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
@@ -40,7 +42,10 @@ class _PageNumberDialogState extends State<PageNumberDialog> {
     final int total = searchHandler.currentBooruHandler.totalCount.value;
     final int possibleMaxPageNum = total != 0 ? (total / settingsHandler.itemLimit).round() : 0;
 
-    return SettingsBottomSheet(
+    return Padding(
+      // Ride above the keyboard when an input IS focused.
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: SettingsBottomSheet(
       title: Text(
         context.loc.pageChanger.title,
         style: const TextStyle(fontSize: 20),
@@ -52,7 +57,8 @@ class _PageNumberDialogState extends State<PageNumberDialog> {
           hintText: context.loc.pageChanger.pageLabel,
           onlyInput: true,
           controller: pageNumberController,
-          autofocus: true,
+          // No autofocus: popping the keyboard immediately covered the sheet.
+          autofocus: false,
           inputType: TextInputType.number,
           numberButtons: true,
           numberStep: 1,
@@ -108,7 +114,7 @@ class _PageNumberDialogState extends State<PageNumberDialog> {
                   name: context.loc.pageChanger.searchCurrentlyRunning,
                   icon: const PulseWidget(
                     child: Icon(
-                      Icons.warning_amber,
+                      Symbols.warning_amber_rounded,
                       color: Colors.yellow,
                     ),
                   ),
@@ -118,7 +124,7 @@ class _PageNumberDialogState extends State<PageNumberDialog> {
       ],
       actionButtons: [
         ElevatedButton.icon(
-          icon: const Icon(Icons.subdirectory_arrow_right_rounded),
+          icon: const Icon(Symbols.subdirectory_arrow_right_rounded),
           label: Text(context.loc.pageChanger.jumpToPage),
           onPressed: () {
             if (pageNumberController.text.isNotEmpty) {
@@ -129,7 +135,7 @@ class _PageNumberDialogState extends State<PageNumberDialog> {
         ),
         Obx(
           () => ElevatedButton.icon(
-            icon: const Icon(Icons.search_rounded),
+            icon: const Icon(Symbols.search_rounded),
             label: Text(context.loc.pageChanger.searchUntilPage),
             onPressed: searchHandler.isRunningAutoSearch.value
                 ? null
@@ -147,7 +153,7 @@ class _PageNumberDialogState extends State<PageNumberDialog> {
         Obx(
           () => searchHandler.isRunningAutoSearch.value
               ? ElevatedButton.icon(
-                  icon: const Icon(Icons.cancel_outlined),
+                  icon: const Icon(Symbols.cancel_rounded),
                   label: Text(context.loc.pageChanger.stopSearching),
                   onPressed: () {
                     searchHandler.isRunningAutoSearch.value = false;
@@ -156,6 +162,7 @@ class _PageNumberDialogState extends State<PageNumberDialog> {
               : const SizedBox.shrink(),
         ),
       ],
+      ),
     );
   }
 }

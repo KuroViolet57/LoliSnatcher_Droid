@@ -7,7 +7,10 @@ import 'dart:math' hide e;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:chewie/chewie.dart';
+import 'package:get/get.dart' hide ContextExt, FirstWhereOrNullExt;
 import 'package:chewie/src/center_play_button.dart';
 import 'package:chewie/src/helpers/utils.dart';
 import 'package:chewie/src/progress_bar.dart';
@@ -73,7 +76,7 @@ class _LoliControlsState extends State<LoliControls> {
           ) ??
           const Center(
             child: Icon(
-              Icons.error,
+              Symbols.error_rounded,
               color: Colors.white,
               size: 42,
             ),
@@ -117,12 +120,24 @@ class _LoliControlsState extends State<LoliControls> {
                     ],
                   ),
                 ),
-                Stack(
-                  alignment: AlignmentDirectional.bottomStart,
-                  children: [
-                    _buildBottomBar(context),
-                    _buildBottomProgress(),
-                  ],
+                // While the viewer chrome is visible the Flow info peek bar
+                // overlays the bottom of the screen — lift the seek/controls
+                // above it so they stay reachable.
+                Obx(
+                  () => Padding(
+                    padding: EdgeInsets.only(
+                      bottom: viewerHandler.isPeekBarVisible
+                          ? 64 + MediaQuery.viewPaddingOf(context).bottom
+                          : 0,
+                    ),
+                    child: Stack(
+                      alignment: AlignmentDirectional.bottomStart,
+                      children: [
+                        _buildBottomBar(context),
+                        _buildBottomProgress(),
+                      ],
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -278,7 +293,7 @@ class _LoliControlsState extends State<LoliControls> {
   AnimatedOpacity _buildDoubleTapMessage() {
     final String msgText = _doubleTapExtraMessage != '' ? _doubleTapExtraMessage : '${_lastDoubleTapAmount}s';
 
-    final IconData iconData = _lastDoubleTapSide > 0 ? Icons.fast_forward : Icons.fast_rewind;
+    final IconData iconData = _lastDoubleTapSide > 0 ? Symbols.fast_forward_rounded : Symbols.fast_rewind_rounded;
     final Widget msgIcon = Icon(
       iconData,
       color: Colors.white,
@@ -363,7 +378,7 @@ class _LoliControlsState extends State<LoliControls> {
             ),
             child: Center(
               child: Icon(
-                chewieController.isFullScreen ? Icons.fullscreen_exit : Icons.fullscreen,
+                chewieController.isFullScreen ? Symbols.fullscreen_exit_rounded : Symbols.fullscreen_rounded,
                 color: Colors.white,
               ),
             ),
@@ -578,7 +593,7 @@ class _LoliControlsState extends State<LoliControls> {
               right: 8,
             ),
             child: Icon(
-              Icons.speed,
+              Symbols.speed_rounded,
               color: _latestValue.playbackSpeed == 1 ? Colors.white : Theme.of(context).colorScheme.secondary,
             ),
           ),
@@ -621,7 +636,7 @@ class _LoliControlsState extends State<LoliControls> {
               right: 8,
             ),
             child: Icon(
-              _latestValue.volume > 0 ? Icons.volume_up : (isGlobalMute ? Icons.volume_off : Icons.volume_mute),
+              _latestValue.volume > 0 ? Symbols.volume_up_rounded : (isGlobalMute ? Symbols.volume_off_rounded : Symbols.volume_mute_rounded),
               color: isGlobalMute ? Theme.of(context).colorScheme.secondary : Colors.white,
             ),
           ),
@@ -642,7 +657,7 @@ class _LoliControlsState extends State<LoliControls> {
           right: 12,
         ),
         child: Icon(
-          controller.value.isPlaying ? Icons.pause : Icons.play_arrow,
+          controller.value.isPlaying ? Symbols.pause_rounded : Symbols.play_arrow_rounded,
           color: Colors.white,
         ),
       ),
@@ -777,10 +792,14 @@ class _LoliControlsState extends State<LoliControls> {
         _hideStuff = false;
         _hideTimer?.cancel();
         controller.pause();
+        // User-initiated pause: remember it so auto-play paths don't restart
+        // this video when returning from previews/nested viewers.
+        viewerHandler.markManualPause(controller.dataSource);
         if (widget.useLongTapFastForward) {
           viewerHandler.toggleToolbar(false, forcedNewValue: true);
         }
       } else {
+        viewerHandler.clearManualPause(controller.dataSource);
         _cancelAndRestartTimer();
 
         if (!controller.value.isInitialized) {
@@ -1188,7 +1207,7 @@ class _PlaybackSpeedDialogState extends State<_PlaybackSpeedDialog> {
                   const SizedBox(width: 16),
                   IconButton(
                     onPressed: confirmValue,
-                    icon: const Icon(Icons.close),
+                    icon: const Icon(Symbols.close_rounded),
                   ),
                   const SizedBox(width: 8),
                 ],
@@ -1202,28 +1221,28 @@ class _PlaybackSpeedDialogState extends State<_PlaybackSpeedDialog> {
                 IconButton(
                   onPressed: () => changeValue(-1),
                   icon: const Icon(
-                    Icons.keyboard_double_arrow_left_sharp,
+                    Symbols.keyboard_double_arrow_left_rounded,
                     size: 30,
                   ),
                 ),
                 IconButton(
                   onPressed: resetValue,
                   icon: const Icon(
-                    Icons.refresh,
+                    Symbols.refresh_rounded,
                     size: 30,
                   ),
                 ),
                 IconButton(
                   onPressed: confirmValue,
                   icon: const Icon(
-                    Icons.check_rounded,
+                    Symbols.check_rounded,
                     size: 30,
                   ),
                 ),
                 IconButton(
                   onPressed: () => changeValue(1),
                   icon: const Icon(
-                    Icons.keyboard_double_arrow_right_sharp,
+                    Symbols.keyboard_double_arrow_right_rounded,
                     size: 30,
                   ),
                 ),

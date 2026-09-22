@@ -5,6 +5,8 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
@@ -346,7 +348,7 @@ class LoliSync {
         context.loc.loliSync.serverKilled,
         style: const TextStyle(fontSize: 20),
       ),
-      leadingIcon: Icons.warning_amber,
+      leadingIcon: Symbols.warning_amber_rounded,
       leadingIconColor: Colors.yellow,
       sideColor: Colors.yellow,
     );
@@ -442,7 +444,7 @@ class LoliSync {
             ),
             style: const TextStyle(fontSize: 20),
           ),
-          leadingIcon: Icons.warning_amber,
+          leadingIcon: Symbols.warning_amber_rounded,
           leadingIconColor: Colors.red,
           sideColor: Colors.red,
         );
@@ -457,7 +459,7 @@ class LoliSync {
             context.loc.loliSync.testSuccessMessage,
             style: const TextStyle(fontSize: 20),
           ),
-          leadingIcon: Icons.warning_amber,
+          leadingIcon: Symbols.warning_amber_rounded,
           leadingIconColor: Colors.green,
           sideColor: Colors.green,
         );
@@ -476,7 +478,7 @@ class LoliSync {
           context.loc.loliSync.testErrorException(error: e.toString()),
           style: const TextStyle(fontSize: 20),
         ),
-        leadingIcon: Icons.warning_amber,
+        leadingIcon: Symbols.warning_amber_rounded,
         leadingIconColor: Colors.red,
         sideColor: Colors.red,
       );

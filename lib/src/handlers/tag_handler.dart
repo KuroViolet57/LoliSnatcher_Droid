@@ -11,6 +11,8 @@ import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
+import 'package:lolisnatcher/src/handlers/booru_tag_store.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/services/get_perms.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
@@ -78,6 +80,40 @@ class TagHandler {
       tag = tagMap[tagString];
     }
     return tag ?? Tag(tagString, tagType: TagType.none);
+  }
+
+  /// The tag as a SPECIFIC booru sees it.
+  ///
+  /// [tagMap] holds one type per tag string for the whole app, so the last
+  /// site you browsed wins whenever two disagree. This applies your per-booru
+  /// correction on top without touching that shared state — see
+  /// [BooruTagStore] for why the two are kept apart. Falls back to the global
+  /// answer when you have not corrected this pair, which is almost always.
+  Tag getTagFor(String tagString, Booru? booru) {
+    final Tag base = getTag(tagString);
+    final TagType? mine = BooruTagStore.manualType(tagString, booru);
+    if (mine == null || mine == base.tagType) return base;
+    return base.copyWith(tagType: mine);
+  }
+
+  /// Domain-aware type lookup for DISPLAY (chip colours, type labels, icons).
+  ///
+  /// The shared tag map is a BOORU store: two sites that use the same tag
+  /// name for different things overwrite each other in it, and a doujin
+  /// source must not be coloured by a booru's classification of a coinciding
+  /// name. Doujin tags already carry the site's own type, so on a doujin
+  /// source the caller's [ownType] is the whole answer and the shared map is
+  /// never consulted.
+  TagType typeForDisplay(String tagString, Booru? booru, {TagType? ownType}) {
+    if (ownType != null && ownType != TagType.none) return ownType;
+    if (DoujinDataHandler.isDoujinBooru(booru)) return TagType.none;
+    return getTagFor(tagString, booru).tagType;
+  }
+
+  /// The colour [typeForDisplay] resolves to, or null for an untyped tag.
+  Color? colourForDisplay(String tagString, Booru? booru, {TagType? ownType}) {
+    final Color? colour = typeForDisplay(tagString, booru, ownType: ownType).getColour();
+    return colour == Colors.transparent ? null : colour;
   }
 
   Future<void> putTag(
@@ -222,7 +258,11 @@ class TagHandler {
 
   void queue(List<String> untypedTags, Booru booru, int cooldown) {
     Logger.Inst().log(
-      'Added ${untypedTags.length} tags to queue from ${booru.name}',
+      // Type included: a booru's NAME says nothing about which API a tab is
+      // actually talking to, which made a mis-typed config (loading a
+      // completely different site's content under your name for it) hard to
+      // spot in logs.
+      'Added ${untypedTags.length} tags to queue from ${booru.name} [${booru.type?.name}]',
       'TagHandler',
       'queue',
       LogTypes.tagHandlerInfo,
@@ -236,6 +276,9 @@ class TagHandler {
     if (SettingsHandler.instance.path.isNotEmpty) {
       await loadTags();
     }
+    // Your per-booru corrections are small and consulted on every tag chip
+    // build, so they are held in memory from here on.
+    await BooruTagStore.load();
   }
 
   Future<bool> loadTags() async {

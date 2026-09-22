@@ -1,0 +1,549 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
+
+import 'package:lolisnatcher/src/boorus/doujin/doujin_filters.dart';
+import 'package:lolisnatcher/src/data/booru.dart';
+import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/item_features.dart';
+import 'package:lolisnatcher/src/handlers/recommender/recommender_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/rewards.dart';
+import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/utils/logger.dart';
+
+/// One layer of doujin preferences — either the GLOBAL layer or one
+/// source's overrides. Every field is nullable = "not set at this layer".
+class SourceSettings {
+  SourceSettings({
+    this.readingDirection,
+    this.pageTurnAnimation,
+    this.imageQuality,
+    this.tapZones,
+    this.doubleTapZoom,
+    this.preloadPages,
+    this.keepScreenOn,
+    this.defaultSort,
+    this.contentTypes,
+    this.siteVariant,
+    this.gridTagStrip,
+    this.coverDisplay,
+    this.feedCardStyle,
+    this.listCardHeight,
+    this.listCoverWidth,
+    this.detailCoverFromFirstPage,
+    this.recommendedCount,
+    this.pagePreviewColumns,
+    this.titleLanguage,
+    this.languageFilter,
+    this.tagBlacklist,
+    this.hiddenPins,
+    this.blacklistMode,
+    this.tabPlacement,
+    this.tagChipTap,
+    this.detailLayout,
+    this.columnsPortrait,
+    this.columnsLandscape,
+    this.alwaysAdd,
+    this.defaultFilters,
+  });
+
+  factory SourceSettings.fromJson(Map<String, dynamic> json) => SourceSettings(
+    readingDirection: json['readingDirection'] as String?,
+    pageTurnAnimation: json['pageTurnAnimation'] as String?,
+    imageQuality: json['imageQuality'] as String?,
+    tapZones: json['tapZones'] as bool?,
+    doubleTapZoom: json['doubleTapZoom'] as bool?,
+    preloadPages: json['preloadPages'] as int?,
+    keepScreenOn: json['keepScreenOn'] as bool?,
+    defaultSort: json['defaultSort'] as String?,
+    contentTypes: json['contentTypes'] as String?,
+    siteVariant: json['siteVariant'] as String?,
+    gridTagStrip: json['gridTagStrip'] as bool?,
+    coverDisplay: json['coverDisplay'] as String?,
+    feedCardStyle: json['feedCardStyle'] as String?,
+    listCardHeight: json['listCardHeight'] as int?,
+    listCoverWidth: json['listCoverWidth'] as int?,
+    detailCoverFromFirstPage: json['detailCoverFromFirstPage'] as bool?,
+    recommendedCount: json['recommendedCount'] as int?,
+    pagePreviewColumns: json['pagePreviewColumns'] as int?,
+    titleLanguage: json['titleLanguage'] as String?,
+    languageFilter: json['languageFilter'] as String?,
+    tagBlacklist: json['tagBlacklist'] as String?,
+    hiddenPins: json['hiddenPins'] as String?,
+    blacklistMode: json['blacklistMode'] as String?,
+    tabPlacement: json['tabPlacement'] as String?,
+    tagChipTap: json['tagChipTap'] as String?,
+    detailLayout: json['detailLayout'] as String?,
+    columnsPortrait: json['columnsPortrait'] as int?,
+    columnsLandscape: json['columnsLandscape'] as int?,
+    alwaysAdd: json['alwaysAdd'] as String?,
+    defaultFilters: json['defaultFilters'] as String?,
+  );
+
+  /// 'ltr' | 'rtl' | 'vertical'
+  String? readingDirection;
+
+  /// 'animated' | 'instant'
+  String? pageTurnAnimation;
+
+  /// Reader image width for sources that serve several: '780' | '980' |
+  /// '1280' | '1600' | '0' (original). Null inherits.
+  String? imageQuality;
+
+  /// Tap left/right screen edges to turn pages.
+  bool? tapZones;
+
+  /// Double-tap to zoom in the reader. OFF by default: any double-tap
+  /// recognizer under the pointer delays every single tap by the double-tap
+  /// window (~300ms) and turns rapid tap-tap paging into a zoom — pinch
+  /// zoom always works regardless.
+  bool? doubleTapZoom;
+
+  /// Pages fetched ahead in the reader.
+  int? preloadPages;
+
+  bool? keepScreenOn;
+
+  /// Sort value applied when a search has no sort: term (e.g. 'popular').
+  String? defaultSort;
+
+  /// Comma list of the source's content-type keys (rule34video: 'gay,futa')
+  /// applied when a search has no type: term of its own. Per source only —
+  /// the keys mean nothing on another site, so the global layer never sets it.
+  String? contentTypes;
+
+  /// Which of the source's hosts to read from (one of `BooruHandler.siteVariants`;
+  /// e-hentai: 'e-hentai' | 'exhentai'). Per source only.
+  String? siteVariant;
+
+  /// Show the tag strip + language badge on grid cards.
+  bool? gridTagStrip;
+
+  /// How feed cards show the cover: 'fit' letterboxes the whole cover,
+  /// 'crop' fills the card (the old behaviour), 'adapt' sizes the card to
+  /// the cover's aspect ratio (staggered grid).
+  String? coverDisplay;
+
+  /// r63: how a doujin feed draws its cards: 'grid' (covers in columns) or
+  /// 'list' (a row per gallery: cover, title, tags that scroll sideways, and
+  /// what it is - kind, language, pages).
+  String? feedCardStyle;
+
+  /// r66: the list card's row height in pixels (120-320).
+  int? listCardHeight;
+
+  /// r69: the list card's cover column width (72-240): fixed for Fit and
+  /// Crop, the widest the column may get for Adapt.
+  int? listCoverWidth;
+
+  /// r69: on the detail page, show the gallery's first page image as the
+  /// cover instead of the site's small thumbnail. Only sources whose covers
+  /// are tiny offer it (e-hentai: 250 px); it costs one page load and one
+  /// image per opened gallery.
+  bool? detailCoverFromFirstPage;
+
+  /// How many items the Recommended strip shows (the site supplies 5; the
+  /// rest are found by matching the gallery's signals).
+  int? recommendedCount;
+
+  /// Columns of the Pages thumbnail grid (detail page / drawer).
+  int? pagePreviewColumns;
+
+  /// Preferred title on doujin sources: 'english' | 'japanese'.
+  String? titleLanguage;
+
+  /// Only show this language ('english'/'japanese'/'chinese'; null = all).
+  String? languageFilter;
+
+  /// Comma-separated tags excluded from every search on this source.
+  String? tagBlacklist;
+
+  /// Pins hidden on this source (r52), one key a line: see PinnedTagVisibility.
+  String? hiddenPins;
+
+  /// How the per-source blacklist combines with the doujin-global one:
+  /// 'extend' (default; both apply) | 'override' (only this source's list).
+  String? blacklistMode;
+
+  /// Where "Open in new tab" places doujin tabs: 'end' | 'next'.
+  String? tabPlacement;
+
+  /// What TAPPING a doujin tag chip does: 'menu' (centered popup; long-press
+  /// opens a background tab) | 'newtab' (background tab; long-press = menu).
+  String? tagChipTap;
+
+  /// Detail page header layout: 'compact' (side-by-side cover + titles) |
+  /// 'cover' (full-width cover, titles and metadata below).
+  String? detailLayout;
+
+  /// Grid columns for doujin feeds, overriding the app-wide columns.
+  int? columnsPortrait;
+  int? columnsLandscape;
+
+  /// Booru sources (r43): terms added to every search on the source.
+  String? alwaysAdd;
+
+  /// Booru sources (r43): the source's default Filters, as filter terms
+  /// (`order:score rating:general`), used where a search sets none.
+  String? defaultFilters;
+
+  Map<String, dynamic> toJson() => {
+    if (readingDirection != null) 'readingDirection': readingDirection,
+    if (pageTurnAnimation != null) 'pageTurnAnimation': pageTurnAnimation,
+    if (imageQuality != null) 'imageQuality': imageQuality,
+    if (tapZones != null) 'tapZones': tapZones,
+    if (doubleTapZoom != null) 'doubleTapZoom': doubleTapZoom,
+    if (preloadPages != null) 'preloadPages': preloadPages,
+    if (keepScreenOn != null) 'keepScreenOn': keepScreenOn,
+    if (defaultSort != null) 'defaultSort': defaultSort,
+    if (contentTypes != null) 'contentTypes': contentTypes,
+    if (siteVariant != null) 'siteVariant': siteVariant,
+    if (gridTagStrip != null) 'gridTagStrip': gridTagStrip,
+    if (coverDisplay != null) 'coverDisplay': coverDisplay,
+    if (feedCardStyle != null) 'feedCardStyle': feedCardStyle,
+    if (listCardHeight != null) 'listCardHeight': listCardHeight,
+    if (listCoverWidth != null) 'listCoverWidth': listCoverWidth,
+    if (detailCoverFromFirstPage != null) 'detailCoverFromFirstPage': detailCoverFromFirstPage,
+    if (recommendedCount != null) 'recommendedCount': recommendedCount,
+    if (pagePreviewColumns != null) 'pagePreviewColumns': pagePreviewColumns,
+    if (titleLanguage != null) 'titleLanguage': titleLanguage,
+    if (languageFilter != null) 'languageFilter': languageFilter,
+    if (tagBlacklist != null) 'tagBlacklist': tagBlacklist,
+    if (hiddenPins != null) 'hiddenPins': hiddenPins,
+    if (blacklistMode != null) 'blacklistMode': blacklistMode,
+    if (tabPlacement != null) 'tabPlacement': tabPlacement,
+    if (tagChipTap != null) 'tagChipTap': tagChipTap,
+    if (detailLayout != null) 'detailLayout': detailLayout,
+    if (columnsPortrait != null) 'columnsPortrait': columnsPortrait,
+    if (columnsLandscape != null) 'columnsLandscape': columnsLandscape,
+    if (alwaysAdd != null) 'alwaysAdd': alwaysAdd,
+    if (defaultFilters != null) 'defaultFilters': defaultFilters,
+  };
+
+  bool get isEmpty => toJson().isEmpty;
+}
+
+/// Doujin settings in two layers, exactly like the reference app:
+/// a GLOBAL layer applying to every doujin source, and per-source overrides
+/// on top ("Overridden for this source · tap to reset"). Effective value =
+/// source override ?? global ?? hardcoded default.
+///
+/// Persisted as sourceSettings.json next to settings.json; the global layer
+/// lives under the reserved '_global' key. Loaded lazily on first use.
+class SourceSettingsHandler {
+  SourceSettingsHandler._();
+
+  static final SourceSettingsHandler instance = SourceSettingsHandler._();
+
+  static const String globalKey = '_global';
+
+  final Map<String, SourceSettings> _byHost = {};
+  bool _loaded = false;
+
+  static String keyFor(Booru? booru) => Uri.tryParse(booru?.baseURL ?? '')?.host ?? (booru?.name ?? '');
+
+  File get _file => File('${SettingsHandler.instance.path}sourceSettings.json');
+
+  void _ensureLoaded() {
+    if (_loaded) return;
+    _loaded = true;
+    try {
+      final file = _file;
+      if (!file.existsSync()) return;
+      final Map<String, dynamic> data = jsonDecode(file.readAsStringSync());
+      for (final entry in data.entries) {
+        _byHost[entry.key] = SourceSettings.fromJson(entry.value as Map<String, dynamic>);
+      }
+    } catch (e, s) {
+      Logger.Inst().log('failed to load source settings: $e', 'SourceSettingsHandler', '_ensureLoaded', LogTypes.exception, s: s);
+    }
+  }
+
+  void _save() {
+    try {
+      final Map<String, dynamic> data = {
+        for (final entry in _byHost.entries)
+          if (!entry.value.isEmpty) entry.key: entry.value.toJson(),
+      };
+      _file.writeAsStringSync(jsonEncode(data));
+    } catch (e, s) {
+      Logger.Inst().log('failed to save source settings: $e', 'SourceSettingsHandler', '_save', LogTypes.exception, s: s);
+    }
+  }
+
+  /// Tests only: forget everything and reload from the (per-test) file on
+  /// next access — the singleton otherwise leaks state between tests.
+  @visibleForTesting
+  void resetForTests() {
+    _byHost.clear();
+    _loaded = false;
+  }
+
+  /// Forgets the in-memory state and reloads from the file — used after a
+  /// backup restore replaces sourceSettings.json on disk.
+  void reloadFromDisk() {
+    _byHost.clear();
+    _loaded = false;
+    _ensureLoaded();
+  }
+
+  SourceSettings settingsFor(Booru? booru) {
+    _ensureLoaded();
+    return _byHost.putIfAbsent(keyFor(booru), SourceSettings.new);
+  }
+
+  SourceSettings get globalSettings {
+    _ensureLoaded();
+    return _byHost.putIfAbsent(globalKey, SourceSettings.new);
+  }
+
+  void update(Booru? booru, void Function(SourceSettings) change) {
+    _ensureLoaded();
+    change(settingsFor(booru));
+    _save();
+  }
+
+  void updateGlobal(void Function(SourceSettings) change) {
+    _ensureLoaded();
+    change(globalSettings);
+    _save();
+  }
+
+  /// r79: removes pin hides that [drop] picks, on every source. Written only
+  /// when something changed.
+  void dropHiddenPins(bool Function(String key) drop) {
+    _ensureLoaded();
+    bool changed = false;
+    for (final SourceSettings s in _byHost.values) {
+      final String? stored = s.hiddenPins;
+      if (stored == null || stored.isEmpty) continue;
+      final List<String> keys = stored.split('\n').where((String k) => k.isNotEmpty).toList();
+      final List<String> kept = keys.where((String k) => !drop(k)).toList();
+      if (kept.length == keys.length) continue;
+      s.hiddenPins = kept.isEmpty ? null : kept.join('\n');
+      changed = true;
+    }
+    if (changed) _save();
+  }
+
+  /// Appends [tag] to the blacklist of one layer: [booru] == null targets the
+  /// doujin-global layer, otherwise that source's own list. No-op when the
+  /// layer already lists the tag.
+  void addBlacklistTag(Booru? booru, String tag) {
+    final String normalized = tag.trim();
+    if (normalized.isEmpty) return;
+    // r33: a blacklisted tag is a strong no for the recommender of that world.
+    RecommenderHandler.maybe?.onQueryInWorld(
+      normalized,
+      booru == null ? RecommenderWorld.doujin : ItemFeatures.worldOfBooru(booru),
+      InteractionKind.blacklist,
+      host: DoujinDataHandler.hostOf(booru),
+    );
+    void change(SourceSettings s) {
+      final existing = [
+        for (final part in (s.tagBlacklist ?? '').split(','))
+          if (part.trim().isNotEmpty) part.trim(),
+      ];
+      if (existing.any((t) => t.toLowerCase() == normalized.toLowerCase())) return;
+      existing.add(normalized);
+      s.tagBlacklist = existing.join(', ');
+    }
+
+    if (booru == null) {
+      updateGlobal(change);
+    } else {
+      update(booru, change);
+    }
+  }
+
+  /// Removes [tag] from BOTH doujin blacklist layers (the source's own list
+  /// and the doujin-global one) — used by the "remove from hidden" action,
+  /// where the user just wants the tag unhidden no matter which layer holds
+  /// it.
+  void removeBlacklistTag(Booru? booru, String tag) {
+    final String normalized = DoujinDataHandler.normalizeTag(tag);
+    if (normalized.isEmpty) return;
+    void change(SourceSettings s) {
+      final kept = [
+        for (final part in (s.tagBlacklist ?? '').split(','))
+          if (part.trim().isNotEmpty && DoujinDataHandler.normalizeTag(part) != normalized) part.trim(),
+      ];
+      s.tagBlacklist = kept.isEmpty ? null : kept.join(', ');
+    }
+
+    updateGlobal(change);
+    if (booru != null) {
+      update(booru, change);
+    }
+  }
+
+  // ── effective values: source override ?? global ?? default ──
+
+  T _resolve<T>(Booru? booru, T? Function(SourceSettings) pick, T fallback) => pick(settingsFor(booru)) ?? pick(globalSettings) ?? fallback;
+
+  String readingDirection(Booru? booru) => _resolve(booru, (s) => s.readingDirection, 'ltr');
+
+  /// Reader image width. Koharu's default and fallback order are followed by
+  /// the handlers that use it; '0' is original size.
+  String imageQuality(Booru? booru) => _resolve(booru, (s) => s.imageQuality, '1280');
+
+  bool instantPageTurns(Booru? booru) => _resolve(booru, (s) => s.pageTurnAnimation, 'animated') == 'instant';
+
+  bool tapZones(Booru? booru) => _resolve(booru, (s) => s.tapZones, true);
+
+  bool doubleTapZoom(Booru? booru) => _resolve(booru, (s) => s.doubleTapZoom, false);
+
+  int preloadPages(Booru? booru) => _resolve(booru, (s) => s.preloadPages, SettingsHandler.instance.preloadCount);
+
+  bool keepScreenOn(Booru? booru) => _resolve(booru, (s) => s.keepScreenOn, true);
+
+  String? defaultSort(Booru? booru) => settingsFor(booru).defaultSort ?? globalSettings.defaultSort;
+
+  /// The source's default content types (see [SourceSettings.contentTypes]);
+  /// empty when none are set. Read from the source layer only.
+  List<String> contentTypes(Booru? booru) => [
+    for (final t in (settingsFor(booru).contentTypes ?? '').split(','))
+      if (t.trim().isNotEmpty) t.trim(),
+  ];
+
+  /// The source's host choice (see [SourceSettings.siteVariant]); null = the
+  /// handler's default. Source layer only.
+  String? siteVariant(Booru? booru) => settingsFor(booru).siteVariant;
+
+  bool gridTagStrip(Booru? booru) => _resolve(booru, (s) => s.gridTagStrip, true);
+
+  /// 'crop' (default) | 'fit' | 'adapt'.
+  ///
+  /// Crop is the default because the CARD owns the geometry: it is a fixed
+  /// shape in a grid, and a cover narrower than that shape leaves side bars
+  /// rather than growing the card. Measured on a 200x300 card, a 320x454 cover
+  /// under 'fit' paints 159x226 inside a 200x226 box — 20% of the card width is
+  /// dead space, on every source, because most covers are taller than the slot.
+  /// 'fit' remains available per source for anyone who would rather see the
+  /// whole cover than fill the card.
+  String coverDisplay(Booru? booru) => _resolve(booru, (s) => s.coverDisplay, 'crop');
+
+  /// 'grid' | 'list' (r63)
+  String feedCardStyle(Booru? booru) => _resolve(booru, (s) => s.feedCardStyle, 'grid');
+
+  /// The list card's row height (r66): never smaller than the cover needs,
+  /// never taller than a third of a tall screen.
+  int listCardHeight(Booru? booru) => _resolve(booru, (s) => s.listCardHeight, 176).clamp(120, 320);
+
+  /// The list card's cover column width (r69): never narrower than a
+  /// readable cover, never wider than leaves the text its share of the row.
+  int listCoverWidth(Booru? booru) => _resolve(booru, (s) => s.listCoverWidth, 116).clamp(72, 240);
+
+  /// r69: the detail page's cover is the gallery's first page (e-hentai).
+  bool detailCoverFromFirstPage(Booru? booru) => _resolve(booru, (s) => s.detailCoverFromFirstPage, true);
+
+  /// 0 = endless (the Recommended strip keeps loading on scroll).
+  int recommendedCount(Booru? booru) {
+    final int v = _resolve(booru, (s) => s.recommendedCount, 30);
+    return v <= 0 ? 0 : v.clamp(5, 100);
+  }
+
+  int pagePreviewColumns(Booru? booru) => _resolve(booru, (s) => s.pagePreviewColumns, 3).clamp(1, 6);
+
+  /// 'english' | 'japanese'
+  String titleLanguage(Booru? booru) => _resolve(booru, (s) => s.titleLanguage, 'english');
+
+  String? languageFilter(Booru? booru) => settingsFor(booru).languageFilter ?? globalSettings.languageFilter;
+
+  /// 'extend' | 'override' — how [tagBlacklist] combines the two layers.
+  String blacklistMode(Booru? booru) => settingsFor(booru).blacklistMode ?? 'extend';
+
+  /// 'end' | 'next' — where doujin "Open in new tab" places the tab.
+  String tabPlacement(Booru? booru) => _resolve(booru, (s) => s.tabPlacement, 'end');
+
+  /// 'menu' | 'newtab' — what tapping a doujin tag chip does (long-press
+  /// always does the other one).
+  String tagChipTap(Booru? booru) => _resolve(booru, (s) => s.tagChipTap, 'menu');
+
+  /// 'compact' | 'cover' — detail page header layout.
+  String detailLayout(Booru? booru) => _resolve(booru, (s) => s.detailLayout, 'compact');
+
+  List<String> tagBlacklist(Booru? booru) {
+    final bool override = blacklistMode(booru) == 'override';
+    final String raw = [
+      settingsFor(booru).tagBlacklist ?? '',
+      if (!override) globalSettings.tagBlacklist ?? '',
+    ].join(',');
+    return [
+      for (final part in raw.split(','))
+        if (part.trim().isNotEmpty) part.trim().toLowerCase().replaceAll(' ', '_'),
+    ];
+  }
+
+  int? columnsPortrait(Booru? booru) => settingsFor(booru).columnsPortrait ?? globalSettings.columnsPortrait;
+
+  int? columnsLandscape(Booru? booru) => settingsFor(booru).columnsLandscape ?? globalSettings.columnsLandscape;
+
+  /// The resolved doujin blacklist for the source an ITEM belongs to (post
+  /// URL host attribution — works in merge feeds too).
+  Set<String> tagBlacklistForItem(BooruItem item) => tagBlacklist(DoujinDataHandler.doujinBooruForItem(item)).toSet();
+
+  /// Doujin counterpart of [SettingsHandler.isItemHiddenGlobally] — the ONLY
+  /// hidden-check doujin items may use. Booru blacklists never apply to
+  /// doujin items and vice versa, even when tag names coincide.
+  bool isItemHiddenForDoujin(BooruItem item) {
+    final Set<String> blacklist = tagBlacklistForItem(item);
+    return blacklist.isNotEmpty && matchesBlacklist(item, blacklist);
+  }
+
+  /// Client-side doujin blacklist check (server-side -tag filters can't cover
+  /// related/recommend/id feeds). Blacklist entries are already normalized to
+  /// lowercase_underscores; item tags may carry a namespace prefix.
+  /// What a booru source searches (r43): [query], then the default filter of
+  /// every group [query] leaves unset (values the site offers only), then
+  /// the always-add terms it does not already have.
+  static String composeQuery({required String query, DoujinFilterSpec? spec, String defaultFilters = '', String alwaysAdd = ''}) {
+    final List<String> parts = [if (query.trim().isNotEmpty) query.trim()];
+    if (spec != null && defaultFilters.trim().isNotEmpty) {
+      for (final DoujinFilterGroup g in spec.groups) {
+        if (DoujinFilters.selected(parts.join(' '), g.key, divider: g.divider).isNotEmpty) continue;
+        for (final String v in DoujinFilters.selected(defaultFilters, g.key, divider: g.divider)) {
+          if (v.isNotEmpty && g.options.any((o) => o.value.toLowerCase() == v)) parts.add('${g.key}${g.divider}$v');
+        }
+      }
+    }
+    final Set<String> have = parts.join(' ').toLowerCase().split(RegExp(r'\s+')).toSet();
+    for (final String w in alwaysAdd.trim().split(RegExp(r'\s+'))) {
+      if (w.isNotEmpty && have.add(w.toLowerCase())) parts.add(w);
+    }
+    return parts.join(' ');
+  }
+
+  /// [spec] with a source's saved defaults as its checked choices (r43).
+  static DoujinFilterSpec withDefaults(DoujinFilterSpec spec, String defaultFilters) {
+    if (defaultFilters.trim().isEmpty) return spec;
+    return DoujinFilterSpec([
+      for (final DoujinFilterGroup g in spec.groups)
+        DoujinFilterGroup(
+          key: g.key,
+          label: g.label,
+          options: g.options,
+          multi: g.multi,
+          divider: g.divider,
+          defaultValue: (!g.multi ? DoujinFilters.selected(defaultFilters, g.key, divider: g.divider).firstOrNull : null) ?? g.defaultValue,
+          defaultValues: g.multi && DoujinFilters.selected(defaultFilters, g.key, divider: g.divider).isNotEmpty
+              ? DoujinFilters.selected(defaultFilters, g.key, divider: g.divider)
+              : g.defaultValues,
+        ),
+    ]);
+  }
+
+  static bool matchesBlacklist(BooruItem item, Set<String> blacklist) {
+    for (final tag in item.tagsList) {
+      if (blacklist.contains(normalizeTagName(tag.fullString))) return true;
+    }
+    return false;
+  }
+
+  /// Normalizes an item tag to the blacklist token form: namespace stripped,
+  /// lowercased, spaces to underscores. One canonical implementation shared
+  /// with the starred-tags store.
+  static String normalizeTagName(String raw) => DoujinDataHandler.normalizeTag(raw);
+}

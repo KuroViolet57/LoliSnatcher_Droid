@@ -1,9 +1,10 @@
 import 'dart:async';
 import 'dart:math';
 
-import 'package:auto_size_text_plus/auto_size_text_plus.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 
 import 'package:collection/collection.dart';
@@ -12,9 +13,18 @@ import 'package:fading_edge_scrollview/fading_edge_scrollview.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:fpdart/fpdart.dart' show FpdartOnIterable;
 import 'package:get/get.dart' hide ContextExt, FirstWhereOrNullExt;
+import 'package:lolisnatcher/src/utils/perf_trace.dart';
+import 'package:lolisnatcher/src/handlers/tag_type_lookup.dart';
+import 'package:lolisnatcher/src/pages/furaffinity_post_page.dart';
+import 'package:lolisnatcher/src/boorus/furaffinity_handler.dart';
 import 'package:lolisnatcher/src/boorus/danbooru_handler.dart';
+import 'package:lolisnatcher/src/boorus/kemono_handler.dart';
 import 'package:lolisnatcher/src/data/meta_tag.dart';
 import 'package:lolisnatcher/src/data/pinned_tag.dart';
+import 'package:lolisnatcher/src/widgets/gallery/tag_chip_shell.dart';
+import 'package:lolisnatcher/src/utils/navigation_trace.dart';
+import 'package:lolisnatcher/src/data/modular_ui.dart';
+import 'package:lolisnatcher/src/widgets/gallery/flow_action_grid.dart';
 import 'package:lolisnatcher/src/widgets/common/loli_dropdown.dart';
 import 'package:lolisnatcher/src/widgets/preview/main_search_query_editor_page.dart';
 import 'package:lolisnatcher/src/widgets/tabs/tab_selector.dart';
@@ -25,6 +35,9 @@ import 'package:uuid/uuid.dart';
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/boorus/downloads_handler.dart';
 import 'package:lolisnatcher/src/boorus/favourites_handler.dart';
+import 'package:lolisnatcher/src/boorus/board_handler.dart';
+import 'package:lolisnatcher/src/boorus/foryou_handler.dart';
+import 'package:lolisnatcher/src/boorus/history_handler.dart';
 import 'package:lolisnatcher/src/boorus/idol_sankaku_handler.dart';
 import 'package:lolisnatcher/src/boorus/mergebooru_handler.dart';
 import 'package:lolisnatcher/src/boorus/sankaku_handler.dart';
@@ -33,21 +46,36 @@ import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
+import 'package:lolisnatcher/src/handlers/booru_tag_store.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
+import 'package:lolisnatcher/src/handlers/reader_handler.dart';
+import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
+import 'package:lolisnatcher/src/pages/kemono_post_page.dart';
+import 'package:lolisnatcher/src/handlers/recommender/recommender_handler.dart';
+import 'package:lolisnatcher/src/pages/boards_page.dart';
+import 'package:lolisnatcher/src/pages/doujin_detail_page.dart';
+import 'package:lolisnatcher/src/pages/doujin_reader_page.dart';
+import 'package:lolisnatcher/src/widgets/gallery/doujin_item_menu.dart';
+import 'package:lolisnatcher/src/widgets/thumbnail/thumbnail_build.dart';
 import 'package:lolisnatcher/src/handlers/database_handler.dart';
 import 'package:lolisnatcher/src/handlers/floating_preview_handler.dart';
 import 'package:lolisnatcher/src/handlers/interests_handler.dart';
+import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/snatch_handler.dart';
+import 'package:lolisnatcher/src/handlers/tag_alias_resolver.dart';
+import 'package:lolisnatcher/src/boorus/suggestion_handler.dart';
+import 'package:lolisnatcher/src/handlers/suggestion_engine.dart';
 import 'package:lolisnatcher/src/handlers/tag_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
+import 'package:lolisnatcher/src/pages/tag_hub_page.dart';
 import 'package:lolisnatcher/src/pages/gallery_view_page.dart';
 import 'package:lolisnatcher/src/utils/debouncer.dart';
 import 'package:lolisnatcher/src/utils/extensions.dart';
 import 'package:lolisnatcher/src/utils/text_parser/rules/url_rule.dart';
-import 'package:lolisnatcher/src/utils/tools.dart';
 import 'package:lolisnatcher/src/widgets/collections/add_to_collection_sheet.dart';
 import 'package:lolisnatcher/src/widgets/gallery/post_details_sheet.dart';
 import 'package:lolisnatcher/src/widgets/common/close_dialog_button.dart';
@@ -59,6 +87,7 @@ import 'package:lolisnatcher/src/widgets/common/settings_widgets.dart';
 import 'package:lolisnatcher/src/widgets/desktop/desktop_scroll.dart';
 import 'package:lolisnatcher/src/widgets/dialogs/comments_dialog.dart';
 import 'package:lolisnatcher/src/widgets/gallery/notes_renderer.dart';
+import 'package:lolisnatcher/src/widgets/gallery/find_elsewhere_sheet.dart';
 import 'package:lolisnatcher/src/widgets/image/booru_favicon.dart';
 import 'package:lolisnatcher/src/widgets/preview/main_search_tag_chip.dart';
 import 'package:lolisnatcher/src/widgets/tabs/tab_booru_selector.dart';
@@ -92,7 +121,7 @@ class TagView extends StatefulWidget {
   State<TagView> createState() => _TagViewState();
 }
 
-class _TagViewState extends State<TagView> {
+class _TagViewState extends State<TagView> with TraceLifecycle {
   final SettingsHandler settingsHandler = SettingsHandler.instance;
   final SearchHandler searchHandler = SearchHandler.instance;
   final ViewerHandler viewerHandler = ViewerHandler.instance;
@@ -104,6 +133,29 @@ class _TagViewState extends State<TagView> {
   late BooruItem item;
   late BooruHandler handler;
   BooruHandler? possibleBooruHandler;
+
+  /// The booru whose tag vocabulary applies to this post. On virtual feeds
+  /// (For You, favourites, merge) that is the item's real source booru, not
+  /// the feed — a tag's type is a property of the site it came from.
+  Booru get tagBooru => (possibleBooruHandler ?? handler).booru;
+
+  /// The type to colour and GROUP a tag by, in priority order:
+  /// your per-booru correction, then the app-wide tag store, then whatever
+  /// the handler stamped on the item itself.
+  ///
+  /// The store lookup used to be gated on `tagHandler.hasTag(...)`, which
+  /// silently dropped corrections for any tag the global store had never
+  /// heard of — so re-typing such a tag recoloured the chip but left it
+  /// sitting in the General group until the whole view was rebuilt.
+  /// True when this info panel belongs to a DOUJIN item/source. Booru-only
+  /// discovery tools (cross-BOORU "find elsewhere", For You seeding) are not
+  /// offered there: they would send doujin data to booru APIs and pull booru
+  /// results onto a doujin surface. Doujin sources have their own
+  /// Related/Recommended sections on the detail page.
+  bool get isDoujinContext =>
+      (possibleBooruHandler ?? handler).hasReader || DoujinDataHandler.isDoujinItem(item);
+
+  TagType typeOfTag(Tag tag) => TagTypeLookup.resolve(tag, booru: tagBooru, handler: handler);
   bool hasLoadItemSupport = false;
   bool canLoadItemOnStart = false;
   List<Tag> tags = [];
@@ -119,10 +171,13 @@ class _TagViewState extends State<TagView> {
 
   bool? detailsExpanded;
   bool relatedExpanded = false;
+
+  // Batch tag selection: pick several tags from the list and open them as
+  // tabs in one go (each its own tab, or combined into one search).
+  bool tagSelectionMode = false;
+  final Set<String> selectedBatchTags = {};
   // Cached so collapsing / re-expanding the "Related" tile doesn't re-derive
   // (and the preview widget's own state doesn't get torn down on the second
-  // expand). Filled lazily on the first expand.
-  String? _relatedQueryCache;
 
   Timer? sortTimer;
 
@@ -169,8 +224,20 @@ class _TagViewState extends State<TagView> {
 
     final bool isMergeHandler = handler is MergebooruHandler;
 
-    final bool isFavsOrDlsOrMerge = handler is FavouritesHandler || handler is DownloadsHandler || isMergeHandler;
-    if (!isFavsOrDlsOrMerge) {
+    // Virtual feeds (favourites, downloads, merge, For You, History)
+    // aggregate posts from real boorus — resolve the item's actual source so
+    // tag previews, related strips and the source row point at the right booru.
+    final bool isVirtualFeed =
+        handler is FavouritesHandler ||
+        handler is DownloadsHandler ||
+        handler is ForYouHandler ||
+        handler is HistoryHandler ||
+        // r77: the Suggested strip's tab and boards (Posts like this) mix
+        // posts from several sources too.
+        handler is SuggestionHandler ||
+        handler is BoardHandler ||
+        isMergeHandler;
+    if (!isVirtualFeed) {
       return;
     }
 
@@ -205,7 +272,6 @@ class _TagViewState extends State<TagView> {
     if (widget.item != item) {
       item = widget.item;
       // Different item -> different related query; bust the cache.
-      _relatedQueryCache = null;
       checkForPossibleBooruHandler();
       tags = [...Set.from(item.tagsList)];
       filteredTags = [...tags];
@@ -301,7 +367,16 @@ class _TagViewState extends State<TagView> {
   }
 
   void parseTags() {
-    tagsData = settingsHandler.parseTagsList(tags, isCapped: false);
+    // Doujin items get their hidden badges from the doujin blacklist, never
+    // the booru-global one (and vice versa).
+    final bool itemIsDoujin = DoujinDataHandler.isDoujinItem(item);
+    if (itemIsDoujin) DoujinDataHandler.instance.ensureLoaded();
+    tagsData = settingsHandler.parseTagsList(
+      tags,
+      isCapped: false,
+      hiddenTokensOverride: itemIsDoujin ? SourceSettingsHandler.instance.tagBlacklistForItem(item) : null,
+      markedTokensOverride: itemIsDoujin ? DoujinDataHandler.instance.starredTags : null,
+    );
   }
 
   List<Tag> filterTags(List<Tag> tagsToFilter) {
@@ -340,11 +415,7 @@ class _TagViewState extends State<TagView> {
     }
 
     for (int i = 0; i < tags.length; i++) {
-      if (tagHandler.hasTag(tags[i].fullString)) {
-        tagMap[tagHandler.getTag(tags[i].fullString).tagType]?.add(tags[i]);
-      } else {
-        tagMap[TagType.none]?.add(tags[i]);
-      }
+      tagMap[typeOfTag(tags[i])]?.add(tags[i]);
     }
     // tagMap.forEach((key, value) => {
     //   print("Type: $key Tags: $value")
@@ -476,7 +547,7 @@ class _TagViewState extends State<TagView> {
                             ),
                           ),
                           Icon(
-                            Icons.close,
+                            Symbols.close_rounded,
                             color: Theme.of(context).iconTheme.color,
                             size: 24,
                           ),
@@ -487,7 +558,7 @@ class _TagViewState extends State<TagView> {
                     IconButton(
                       onPressed: () => reloadItemData(force: true),
                       icon: Icon(
-                        failedUpdate ? Icons.error_outline : Icons.refresh,
+                        failedUpdate ? Symbols.error_rounded : Symbols.refresh_rounded,
                         color: failedUpdate ? Colors.red : Theme.of(context).iconTheme.color,
                         size: 28,
                       ),
@@ -499,7 +570,7 @@ class _TagViewState extends State<TagView> {
                   transform: sortTags == true ? Matrix4.rotationX(pi) : Matrix4.rotationX(0),
                   child: IconButton(
                     icon: Icon(
-                      (sortTags == true || sortTags == false) ? Icons.sort : Icons.sort_by_alpha,
+                      (sortTags == true || sortTags == false) ? Symbols.sort_rounded : Symbols.sort_by_alpha_rounded,
                       color: Theme.of(context).iconTheme.color,
                     ),
                     onPressed: () {
@@ -524,12 +595,24 @@ class _TagViewState extends State<TagView> {
     );
   }
 
+  /// r79: shared by the Comments row and its button in the action block.
+  bool get _commentsAvailable => handler.hasCommentsSupport && item.fileURL.isNotEmpty;
+
+  void _openComments() {
+    SettingsPageOpen(
+      context: context,
+      page: (_) => CommentsDialog(
+        item: item,
+        handler: handler,
+      ),
+    ).open();
+  }
+
   Widget commentsButton() {
-    final bool hasSupport = handler.hasCommentsSupport;
     final bool hasComments = item.hasComments == true;
     final IconData icon = hasComments ? CupertinoIcons.text_bubble_fill : CupertinoIcons.text_bubble;
 
-    if (!hasSupport || item.fileURL.isEmpty) {
+    if (!_commentsAvailable) {
       return const SizedBox.shrink();
     }
 
@@ -539,14 +622,107 @@ class _TagViewState extends State<TagView> {
         icon,
         color: Theme.of(context).iconTheme.color,
       ),
+      action: _openComments,
+      drawBottomBorder: false,
+    );
+  }
+
+  /// r79: the post actions that sat as full-width rows under the action
+  /// block are buttons in it, unless Settings > Modular UI > Viewer switches
+  /// that off. Read when the panel builds - one form is ever built.
+  bool get _actionsAsButtons => ModularUi.isOn(ModularUi.viewerPostActionsAsButtons);
+
+  void _openFindElsewhere(BuildContext context) => showFindElsewhereSheet(
+    context,
+    item,
+    (possibleBooruHandler ?? handler).booru,
+  );
+
+  void _openNewBoard(BuildContext context) => BoardEditPage.openFromItem(context, item, (possibleBooruHandler ?? handler).booru);
+
+  void _openSimilar(BuildContext context) => BoardsPage.openSimilar(context, item, tagBooru);
+
+  bool get _hasPicture => item.sampleURL.isNotEmpty || item.thumbnailURL.isNotEmpty;
+
+  /// For You is the BOORU taste system - never seeded from a doujin item.
+  List<String> _recommendSeeds() =>
+      settingsHandler.dbEnabled && !isDoujinContext ? InterestsHandler.seedTagsFromItem(item, limit: 3) : const <String>[];
+
+  void _openRecommend(BuildContext context, List<String> seeds) {
+    final booru = settingsHandler.ensureForYouBooru();
+    // r75: the post's own site first (it knows these tags), the rest after.
+    final String fromHost = Uri.tryParse(tagBooru.baseURL ?? '')?.host ?? '';
+    final String query = [if (fromHost.isNotEmpty) 'from:$fromHost', ...seeds.map((s) => 'seed:$s')].join(' ');
+    // r75: in the background — a tab never drags the user away.
+    searchHandler.addTabByString(query, customBooru: booru, switchToNew: false);
+    _openedInNewTab(context, seeds.map((s) => s.replaceAll('_', ' ')).join(', '));
+  }
+
+  FlowActionTile _extraTile(BuildContext context, FlowExtra e, List<String> seeds) {
+    final String label = e == FlowExtra.comments ? context.loc.tagView.comments : FlowExtras.labelOf(e);
+    switch (e) {
+      case FlowExtra.comments:
+        return FlowActionTile(
+          key: const ValueKey('flow-comments'),
+          icon: Symbols.chat_bubble_rounded,
+          label: label,
+          active: item.hasComments == true,
+          onTap: _openComments,
+        );
+      case FlowExtra.elsewhere:
+        return FlowActionTile(
+          key: const ValueKey('flow-elsewhere'),
+          icon: Symbols.travel_explore_rounded,
+          label: label,
+          onTap: () => _openFindElsewhere(context),
+        );
+      case FlowExtra.board:
+        return FlowActionTile(
+          key: const ValueKey('flow-board'),
+          icon: Symbols.dashboard_rounded,
+          label: label,
+          onTap: () => _openNewBoard(context),
+        );
+      case FlowExtra.similar:
+        return FlowActionTile(
+          key: const ValueKey('flow-similar'),
+          icon: Symbols.image_search_rounded,
+          label: label,
+          onTap: () => _openSimilar(context),
+        );
+      case FlowExtra.recommend:
+        return FlowActionTile(
+          key: const ValueKey('flow-recommend'),
+          icon: Symbols.auto_awesome_rounded,
+          label: label,
+          onTap: () => _openRecommend(context, seeds),
+        );
+    }
+  }
+
+  /// FurAffinity (r42): the submission page.
+  Widget furAffinityPostButton() {
+    final BooruHandler h = possibleBooruHandler ?? handler;
+    if (h is! FurAffinityHandler || item.serverId == null) return const SizedBox.shrink();
+    return SettingsButton(
+      name: 'Post page',
+      icon: Icon(Symbols.article_rounded, color: Theme.of(context).iconTheme.color),
       action: () {
-        SettingsPageOpen(
-          context: context,
-          page: (_) => CommentsDialog(
-            item: item,
-            handler: handler,
-          ),
-        ).open();
+        Navigator.of(context).push(MaterialPageRoute(builder: (_) => FurAffinityPostPage(booru: h.booru, item: item)));
+      },
+      drawBottomBorder: false,
+    );
+  }
+
+  /// kemono: the post page (content, every file with its name, comments).
+  Widget kemonoPostButton() {
+    final BooruHandler h = possibleBooruHandler ?? handler;
+    if (h is! KemonoHandler || item.serverId == null) return const SizedBox.shrink();
+    return SettingsButton(
+      name: 'Post page',
+      icon: Icon(Symbols.article_rounded, color: Theme.of(context).iconTheme.color),
+      action: () {
+        Navigator.of(context).push(MaterialPageRoute(builder: (_) => KemonoPostPage(booru: h.booru, item: item)));
       },
       drawBottomBorder: false,
     );
@@ -567,7 +743,7 @@ class _TagViewState extends State<TagView> {
               ? context.loc.tagView.hideNotes(count: item.notes.length)
               : context.loc.tagView.showNotes(count: item.notes.length),
           icon: Icon(
-            Icons.note_add,
+            Symbols.note_add_rounded,
             color: Theme.of(context).iconTheme.color,
           ),
           action: viewerHandler.showNotes.toggle,
@@ -583,7 +759,7 @@ class _TagViewState extends State<TagView> {
         return SettingsButton(
           name: context.loc.tagView.loadNotes,
           icon: Icon(
-            Icons.note_add,
+            Symbols.note_add_rounded,
             color: Theme.of(context).iconTheme.color,
           ),
           action: () async {
@@ -657,6 +833,8 @@ class _TagViewState extends State<TagView> {
     }
   }
 
+  // Flow key/value row (matches the Details sheet): muted key column, bold
+  // value, subtle copy/open glyph. Tap copies (or opens links).
   Widget infoText(
     String title,
     String data, {
@@ -666,84 +844,76 @@ class _TagViewState extends State<TagView> {
     VoidCallback? onLongPress,
     Widget? trailing,
   }) {
-    if (data.isNotEmpty) {
-      return ListTile(
-        onTap:
-            onTap ??
-            (canCopy
-                ? () {
-                    Clipboard.setData(ClipboardData(text: data));
-                    FlashElements.showSnackbar(
-                      context: context,
-                      duration: const Duration(seconds: 2),
-                      title: Text(
-                        context.loc.copiedToClipboard,
-                        style: const TextStyle(fontSize: 20),
-                      ),
-                      content: Text(
-                        '$title: $data',
-                        style: const TextStyle(fontSize: 16),
-                      ),
-                      leadingIcon: Icons.copy,
-                      sideColor: Colors.green,
-                    );
-                  }
-                : null),
-        onLongPress: onLongPress,
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.center,
+    if (data.isEmpty) return const SizedBox.shrink();
+
+    final theme = Theme.of(context);
+    return InkWell(
+      onTap:
+          onTap ??
+          (isLink
+              ? () => launchUrlString(data, mode: LaunchMode.externalApplication)
+              : (canCopy
+                    ? () {
+                        Clipboard.setData(ClipboardData(text: data));
+                        FlashElements.showSnackbar(
+                          context: context,
+                          duration: const Duration(seconds: 2),
+                          title: Text(
+                            context.loc.copiedToClipboard,
+                            style: const TextStyle(fontSize: 20),
+                          ),
+                          content: Text(
+                            '$title: $data',
+                            style: const TextStyle(fontSize: 16),
+                          ),
+                          leadingIcon: Symbols.content_copy_rounded,
+                          sideColor: Colors.green,
+                        );
+                      }
+                    : null)),
+      onLongPress: onLongPress,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+        child: Row(
           children: [
-            Text(
-              '$title: ',
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            if (!isLink)
-              Expanded(
-                child: AutoSizeText(
-                  data,
-                  maxLines: 1,
-                  minFontSize: 13,
-                  maxFontSize: 14,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    height: 1,
-                  ),
-                  overflowReplacement: DraggableOverflowText(
-                    data,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      height: 1,
-                    ),
-                  ),
+            SizedBox(
+              width: 92,
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
+            ),
+            Expanded(
+              child: Text(
+                data,
+                maxLines: isLink ? 1 : 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: isLink ? theme.colorScheme.secondary : theme.colorScheme.onSurface,
+                  decoration: isLink ? TextDecoration.underline : null,
+                  decorationColor: theme.colorScheme.secondary,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            trailing ??
+                Icon(
+                  isLink ? Symbols.open_in_new_rounded : Symbols.content_copy_rounded,
+                  size: 15,
+                  color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                ),
           ],
         ),
-        subtitle: isLink
-            ? DraggableOverflowText(
-                data,
-                style: const TextStyle(fontSize: 14),
-              )
-            : null,
-        trailing:
-            trailing ??
-            (isLink
-                ? IconButton(
-                    icon: const Icon(Icons.exit_to_app),
-                    onPressed: () => launchUrlString(
-                      data,
-                      mode: LaunchMode.externalApplication,
-                    ),
-                  )
-                : null),
-      );
-    }
-
-    return const SizedBox.shrink();
+      ),
+    );
   }
 
   /// Builds the "More from artist X" + "More from uploader Y" inline grid
@@ -754,7 +924,14 @@ class _TagViewState extends State<TagView> {
   /// into the sliver child list unconditionally.
   List<Widget> _buildRelatedGrids() {
     final List<Widget> sections = [];
-    final Booru currentBooru = searchHandler.currentBooru;
+    // The post's OWN booru, not the feed's.
+    //
+    // On a virtual feed (For You, favourites, merge) searchHandler.currentBooru
+    // is the feed itself, so these strips searched For You for the artist and
+    // came back with another For You page instead of that artist's work on the
+    // site the post came from. tagBooru already resolves this — the tag-type
+    // lookup a few lines below has always used it; the strips did not.
+    final Booru currentBooru = tagBooru;
     if (currentBooru.name == null) {
       return const [];
     }
@@ -766,8 +943,8 @@ class _TagViewState extends State<TagView> {
     //    object on the item (see groupTagsList above for the same pattern).
     //    Check both so this works regardless of how the handler tagged it.
     final artists = item.tagsList.where((t) {
-      if (t.tagType.isArtist) return true;
-      return tagHandler.getTag(t.fullString).tagType.isArtist;
+      if (t.tagType.isArtist || typeOfTag(t).isArtist) return true;
+      return tagHandler.getTagFor(t.fullString, tagBooru).tagType.isArtist;
     }).take(3).toList();
     for (final artist in artists) {
       if (artist.fullString.trim().isEmpty) continue;
@@ -776,7 +953,7 @@ class _TagViewState extends State<TagView> {
         _CollapsibleRelatedPreview(
           key: ValueKey('related-artist-${currentBooru.name}-$artistQuery'),
           title: 'More from artist ${artistQuery.replaceAll('_', ' ')}',
-          icon: Icons.brush,
+          icon: Symbols.brush_rounded,
           booru: currentBooru,
           query: artistQuery,
           parentTab: parentTab,
@@ -792,7 +969,11 @@ class _TagViewState extends State<TagView> {
     //    can't satisfy. Skip until the name is in.
     final String? uploader = item.uploaderName?.isNotEmpty == true ? item.uploaderName : null;
     if (uploader != null) {
-      final userMetaTag = searchHandler.currentBooruHandler.availableMetaTags().firstWhereOrNull((t) => t is UserMetaTag);
+      // Same reason: on a virtual feed the FEED's handler has no user metatag
+      // (or the wrong one), so the uploader strip silently never appeared.
+      final userMetaTag = (possibleBooruHandler ?? handler)
+          .availableMetaTags()
+          .firstWhereOrNull((t) => t is UserMetaTag);
       if (userMetaTag != null) {
         final String userQuery = userMetaTag.tagBuilder(null, null, uploader);
         if (userQuery.trim().isNotEmpty) {
@@ -800,7 +981,7 @@ class _TagViewState extends State<TagView> {
             _CollapsibleRelatedPreview(
               key: ValueKey('related-uploader-${currentBooru.name}-$userQuery'),
               title: 'More from uploader $uploader',
-              icon: Icons.person,
+              icon: Symbols.person_rounded,
               booru: currentBooru,
               query: userQuery,
               parentTab: parentTab,
@@ -827,26 +1008,41 @@ class _TagViewState extends State<TagView> {
   List<Widget> tagChipSectionSlivers(BuildContext context) {
     if (filteredTags.isEmpty) return const [];
 
-    final List<(TagType?, List<Tag>)> sections = [];
-    if (sortTags == null) {
+    final List<(String?, Color?, List<Tag>)> sections = [];
+    final BooruHandler nsHandler = possibleBooruHandler ?? handler;
+    final List<(String, String)> nsSections = nsHandler.tagNamespaceSections;
+    final bool useNativeNamespaces = sortTags == null &&
+        nsSections.isNotEmpty &&
+        filteredTags.any((t) => nsHandler.tagNamespace(t.fullString) != null);
+    if (useNativeNamespaces) {
+      // Doujin sources: the site's own namespaces (Parodies / Characters /
+      // Artists / Groups / Categories / Languages / Tags) are richer than
+      // TagType, so section by those; chip colours still follow TagType.
+      final Map<String, List<Tag>> byNs = {for (final s in nsSections) s.$1: <Tag>[]};
+      final String fallbackNs = nsSections.last.$1;
+      for (final tag in filteredTags) {
+        final String ns = nsHandler.tagNamespace(tag.fullString) ?? fallbackNs;
+        (byNs[ns] ?? byNs[fallbackNs]!).add(tag);
+      }
+      for (final s in nsSections) {
+        if (byNs[s.$1]!.isNotEmpty) {
+          sections.add((s.$2, typeOfTag(byNs[s.$1]!.first).getColour(), byNs[s.$1]!));
+        }
+      }
+    } else if (sortTags == null) {
       final Map<TagType, List<Tag>> byType = {
         for (final type in TagType.values) type: <Tag>[],
       };
       for (final tag in filteredTags) {
-        // Types usually live in TagHandler's enriched store rather than on
-        // the item's Tag object; check both (same pattern as groupTagsList).
-        final TagType type = tagHandler.hasTag(tag.fullString)
-            ? tagHandler.getTag(tag.fullString).tagType
-            : tag.tagType;
-        byType[type]!.add(tag);
+        byType[typeOfTag(tag)]!.add(tag);
       }
       for (final type in TagType.values) {
         if (byType[type]!.isNotEmpty) {
-          sections.add((type, byType[type]!));
+          sections.add((type.locName, type.getColour(), byType[type]!));
         }
       }
     } else {
-      sections.add((null, filteredTags));
+      sections.add((null, null, filteredTags));
     }
 
     return [
@@ -876,7 +1072,7 @@ class _TagViewState extends State<TagView> {
               const Spacer(),
               Flexible(
                 child: Text(
-                  'tap · hold = tab · ⧉ = preview',
+                  tagSelectionMode ? 'tap tags to select' : 'tap · hold = tab · ⧉ = preview',
                   textAlign: TextAlign.right,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -886,10 +1082,107 @@ class _TagViewState extends State<TagView> {
                   ),
                 ),
               ),
+              const SizedBox(width: 8),
+              // Batch selection toggle: pick several tags, open them as tabs.
+              // A labelled pill (not a bare icon) so it reads as a button.
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  setState(() {
+                    tagSelectionMode = !tagSelectionMode;
+                    if (!tagSelectionMode) selectedBatchTags.clear();
+                  });
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: tagSelectionMode
+                        ? Theme.of(context).colorScheme.secondary.withValues(alpha: 0.22)
+                        : Theme.of(context).colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: tagSelectionMode
+                          ? Theme.of(context).colorScheme.secondary
+                          : Theme.of(context).colorScheme.outlineVariant,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Symbols.checklist_rounded,
+                        size: 15,
+                        color: tagSelectionMode
+                            ? Theme.of(context).colorScheme.secondary
+                            : Theme.of(context).colorScheme.onSurface,
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        tagSelectionMode ? 'Done' : 'Select',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                          color: tagSelectionMode
+                              ? Theme.of(context).colorScheme.secondary
+                              : Theme.of(context).colorScheme.onSurface,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ],
           ),
         ),
       ),
+      // Batch-selection action bar: appears while selecting, offers opening
+      // the picked tags as separate tabs or one combined search tab.
+      if (tagSelectionMode)
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 2),
+          sliver: SliverToBoxAdapter(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainer,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${selectedBatchTags.length} selected',
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: selectedBatchTags.isEmpty ? null : () => _openSelectedTagsAsTabs(combined: true),
+                    icon: const Icon(Symbols.join_rounded, size: 18),
+                    label: const Text('One tab'),
+                  ),
+                  TextButton.icon(
+                    onPressed: selectedBatchTags.isEmpty ? null : () => _openSelectedTagsAsTabs(combined: false),
+                    icon: const Icon(Symbols.tab_rounded, size: 18),
+                    label: Text(selectedBatchTags.length > 1 ? '${selectedBatchTags.length} tabs' : 'Open tab'),
+                  ),
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    tooltip: 'More actions',
+                    icon: const Icon(Symbols.more_horiz_rounded, size: 20),
+                    onPressed: selectedBatchTags.isEmpty ? null : _showBatchActionsSheet,
+                  ),
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    tooltip: 'Cancel selection',
+                    icon: const Icon(Symbols.close_rounded, size: 18),
+                    onPressed: _exitTagSelectionMode,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       for (final section in sections) ...[
         if (section.$1 != null)
           SliverPadding(
@@ -902,19 +1195,19 @@ class _TagViewState extends State<TagView> {
                     height: 16,
                     decoration: BoxDecoration(
                       color:
-                          section.$1!.getColour() ??
+                          section.$2 ??
                           Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4),
                       borderRadius: BorderRadius.circular(3),
                     ),
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    section.$1!.locName,
+                    section.$1!,
                     style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
                   ),
                   const SizedBox(width: 6),
                   Text(
-                    '${section.$2.length}',
+                    '${section.$3.length}',
                     style: TextStyle(
                       fontSize: 12,
                       color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
@@ -931,7 +1224,7 @@ class _TagViewState extends State<TagView> {
               spacing: 6,
               runSpacing: 6,
               children: [
-                for (final tag in section.$2) buildTagChip(context, tag),
+                for (final tag in section.$3) buildTagChip(context, tag),
               ],
             ),
           ),
@@ -940,12 +1233,366 @@ class _TagViewState extends State<TagView> {
     ];
   }
 
+  void _toggleBatchTag(String tag) {
+    setState(() {
+      if (!selectedBatchTags.remove(tag)) {
+        selectedBatchTags.add(tag);
+      }
+    });
+  }
+
+  void _exitTagSelectionMode() {
+    setState(() {
+      tagSelectionMode = false;
+      selectedBatchTags.clear();
+    });
+  }
+
+  // Selected tags in on-screen order (selection set order is insertion order,
+  // which may not match the list after sorting/filtering).
+  List<String> get _selectedBatchTagsOrdered {
+    final List<String> ordered = [
+      for (final t in filteredTags)
+        if (selectedBatchTags.contains(t.fullString)) t.fullString,
+    ];
+    for (final t in selectedBatchTags) {
+      if (!ordered.contains(t)) ordered.add(t);
+    }
+    return ordered;
+  }
+
+  /// r75: the notice for a tab opened in the background.
+  void _openedInNewTab(BuildContext context, String what) {
+    FlashElements.showSnackbar(
+      context: context,
+      isKeyUnique: true,
+      key: 'added_new_tab',
+      duration: const Duration(seconds: 2),
+      title: const Text('Opened in a new tab', style: TextStyle(fontSize: 20)),
+      content: Text(what, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16)),
+      leadingIcon: Symbols.fiber_new_rounded,
+      sideColor: Colors.green,
+    );
+  }
+
+  void _openSelectedTagsAsTabs({required bool combined}) {
+    final List<String> toOpen = _selectedBatchTagsOrdered;
+    if (toOpen.isEmpty) return;
+
+    final Booru batchBooru = possibleBooruHandler?.booru ?? searchHandler.currentBooru;
+    final TabAddMode addMode = settingsHandler.defaultTabAddMode == 'next' ? TabAddMode.next : TabAddMode.end;
+
+    if (combined) {
+      searchHandler.addTabByString(
+        toOpen.join(' '),
+        customBooru: batchBooru,
+        addMode: addMode,
+        switchToNew: false,
+        group: SearchHandler.inheritGroup,
+      );
+    } else {
+      // "next" inserts right after the current tab, so add in reverse to end
+      // up with the tabs in selection order.
+      for (final tag in addMode == TabAddMode.next ? toOpen.reversed : toOpen) {
+        searchHandler.addTabByString(
+          tag,
+          customBooru: batchBooru,
+          addMode: addMode,
+          switchToNew: false,
+          group: SearchHandler.inheritGroup,
+        );
+      }
+    }
+
+    FlashElements.showSnackbar(
+      context: context,
+      isKeyUnique: true,
+      key: 'added_new_tab',
+      duration: const Duration(seconds: 2),
+      title: Text(
+        combined ? 'Opened combined tab' : 'Opened ${toOpen.length} ${toOpen.length == 1 ? 'tab' : 'tabs'}',
+        style: const TextStyle(fontSize: 20),
+      ),
+      content: Text(
+        toOpen.join(combined ? ' ' : ', '),
+        maxLines: 3,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontSize: 16),
+      ),
+      leadingIcon: Symbols.fiber_new_rounded,
+      sideColor: Colors.green,
+    );
+
+    _exitTagSelectionMode();
+  }
+
+  void _batchSnackbar(String title, List<String> tags) {
+    FlashElements.showSnackbar(
+      context: context,
+      isKeyUnique: true,
+      key: 'batch_tags',
+      duration: const Duration(seconds: 2),
+      title: Text(title, style: const TextStyle(fontSize: 20)),
+      content: Text(
+        tags.join(', '),
+        maxLines: 3,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontSize: 16),
+      ),
+      leadingIcon: Symbols.checklist_rounded,
+      sideColor: Colors.green,
+    );
+  }
+
+  Future<void> _openSelectedTagsInGroup() async {
+    final List<String> toOpen = _selectedBatchTagsOrdered;
+    if (toOpen.isEmpty) return;
+    final String? groupName = await pickTabGroupName(
+      context,
+      title: 'Open ${toOpen.length} ${toOpen.length == 1 ? 'tag' : 'tags'} in group',
+    );
+    if (groupName == null) return;
+
+    final Booru batchBooru = possibleBooruHandler?.booru ?? searchHandler.currentBooru;
+    for (final tag in toOpen) {
+      searchHandler.addTabByString(
+        tag,
+        customBooru: batchBooru,
+        group: groupName,
+        switchToNew: false,
+      );
+    }
+    _batchSnackbar('Opened in group "$groupName"', toOpen);
+    _exitTagSelectionMode();
+  }
+
+  void _batchAddToSearch({bool exclude = false}) {
+    final List<String> toAdd = _selectedBatchTagsOrdered;
+    if (toAdd.isEmpty) return;
+    for (final tag in toAdd) {
+      searchHandler.addTagToSearch(exclude ? '-$tag' : tag);
+    }
+    _batchSnackbar(exclude ? 'Exclusions added to search bar' : 'Added to search bar', toAdd);
+    _exitTagSelectionMode();
+  }
+
+  Future<void> _batchHide() async {
+    final List<String> toHide = _selectedBatchTagsOrdered;
+    if (toHide.isEmpty) return;
+    final Booru scopeBooru = (possibleBooruHandler ?? handler).booru;
+    final scope = await _pickBlacklistScope(context, scopeBooru);
+    if (scope == null) return;
+    final bool isDoujin = DoujinDataHandler.isDoujinBooru(scopeBooru);
+    for (final tag in toHide) {
+      if (isDoujin) {
+        // Doujin sources blacklist via sourceSettings, never the booru lists.
+        SourceSettingsHandler.instance.addBlacklistTag(
+          scope == _BlacklistScope.global ? null : scopeBooru,
+          tag,
+        );
+      } else if (scope == _BlacklistScope.global) {
+        settingsHandler.addTagToList('hidden', tag);
+      } else if (scopeBooru.name?.isNotEmpty == true) {
+        settingsHandler.addTagToBooruHiddenList(scopeBooru.name!, tag);
+      }
+    }
+    searchHandler.filterCurrentFetched();
+    handler.filterFetched();
+    parseSortGroupTagsWithoutCache();
+    _batchSnackbar('Added to blacklist', toHide);
+    _exitTagSelectionMode();
+  }
+
+  void _batchMark() {
+    final List<String> toMark = _selectedBatchTagsOrdered;
+    if (toMark.isEmpty) return;
+    final bool isDoujin = DoujinDataHandler.isDoujinBooru((possibleBooruHandler ?? handler).booru);
+    for (final tag in toMark) {
+      if (isDoujin) {
+        // Doujin sources star tags in the doujin store, never the booru
+        // markedTags list.
+        DoujinDataHandler.instance.starTag(tag);
+      } else {
+        settingsHandler.addTagToList('marked', tag);
+      }
+    }
+    searchHandler.filterCurrentFetched();
+    handler.filterFetched();
+    parseSortGroupTagsWithoutCache();
+    _batchSnackbar('Marked', toMark);
+    _exitTagSelectionMode();
+  }
+
+  Future<void> _batchPin() async {
+    final List<String> toPin = _selectedBatchTagsOrdered;
+    if (toPin.isEmpty) return;
+    final Booru scopeBooru = (possibleBooruHandler ?? handler).booru;
+    for (final tag in toPin) {
+      try {
+        if (DoujinDataHandler.isDoujinBooru(scopeBooru)) {
+          // Doujin pins live in the doujin store, scoped to this source.
+          DoujinDataHandler.instance.addPin(tag, scopeBooru);
+        } else {
+          await settingsHandler.dbHandler.addPinnedTag(tag);
+        }
+      } catch (_) {}
+    }
+    _batchSnackbar('Pinned', toPin);
+    _exitTagSelectionMode();
+  }
+
+  Future<void> _batchCopy() async {
+    final List<String> toCopy = _selectedBatchTagsOrdered;
+    if (toCopy.isEmpty) return;
+    await Clipboard.setData(ClipboardData(text: toCopy.join(' ')));
+    _batchSnackbar('Copied to clipboard', toCopy);
+    _exitTagSelectionMode();
+  }
+
+  // Every tag action that makes sense for several tags at once, in one sheet.
+  Future<void> _showBatchActionsSheet() async {
+    if (selectedBatchTags.isEmpty) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        return Container(
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                margin: const EdgeInsets.only(top: 8, bottom: 2),
+                width: 40,
+                height: 4.5,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF4A4260),
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+                child: Row(
+                  children: [
+                    Icon(Symbols.checklist_rounded, size: 20, color: theme.colorScheme.secondary),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        '${selectedBatchTags.length} ${selectedBatchTags.length == 1 ? 'tag' : 'tags'} selected',
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.only(bottom: 8),
+                  children: [
+                    ListTile(
+                      leading: Icon(Symbols.create_new_folder_rounded, color: theme.colorScheme.secondary),
+                      title: const Text('Open in group'),
+                      subtitle: const Text('Each as a background tab inside a tab group'),
+                      onTap: () {
+                        Navigator.of(ctx).pop();
+                        _openSelectedTagsInGroup();
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(Symbols.add_rounded, color: Colors.green),
+                      title: const Text('Add all to search'),
+                      onTap: () {
+                        Navigator.of(ctx).pop();
+                        _batchAddToSearch();
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(Symbols.remove_rounded, color: Colors.red),
+                      title: const Text('Exclude all from search'),
+                      onTap: () {
+                        Navigator.of(ctx).pop();
+                        _batchAddToSearch(exclude: true);
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(CupertinoIcons.eye_slash, color: Colors.red),
+                      title: const Text('Hide all (blacklist)'),
+                      onTap: () {
+                        Navigator.of(ctx).pop();
+                        _batchHide();
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(Symbols.star_rounded, color: Colors.yellow),
+                      title: const Text('Mark all'),
+                      onTap: () {
+                        Navigator.of(ctx).pop();
+                        _batchMark();
+                      },
+                    ),
+                    ListTile(
+                      leading: Icon(Symbols.push_pin_rounded, color: theme.iconTheme.color),
+                      title: const Text('Pin all'),
+                      onTap: () {
+                        Navigator.of(ctx).pop();
+                        _batchPin();
+                      },
+                    ),
+                    ListTile(
+                      leading: Icon(Symbols.content_copy_rounded, color: theme.iconTheme.color),
+                      title: const Text('Copy all'),
+                      onTap: () {
+                        Navigator.of(ctx).pop();
+                        _batchCopy();
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   // Flow post-action row (Favorite / Save / Collect) shown at the top of the
   // info panel. Reuses the existing favourite / snatch / collection plumbing.
   void _toggleFavourite() {
+    // Route by the ITEM on ITS OWN feed — this panel can belong to a
+    // floating preview whose tab is NOT the current one, so indexing into
+    // currentTab could toggle a different item in a different store.
+    if (handler.hasReader || DoujinDataHandler.isDoujinItem(item)) {
+      DoujinDataHandler.instance.toggleFavouriteSynced(item, possibleBooruHandler ?? handler);
+      return;
+    }
     final int idx = handler.filteredFetched.indexOf(item);
     if (idx < 0) return;
-    searchHandler.currentTab.toggleItemFavourite(idx);
+    // Prefer the real tab that owns this handler; floating previews have
+    // stand-alone tabs, so fall back to a direct item toggle + DB write.
+    SearchTab? ownerTab;
+    for (final t in searchHandler.tabs) {
+      if (t.booruHandler == handler) {
+        ownerTab = t;
+        break;
+      }
+    }
+    if (ownerTab != null) {
+      ownerTab.toggleItemFavourite(idx);
+      return;
+    }
+    if (item.isFavourite.value != null) {
+      item.isFavourite.value = item.isFavourite.value != true;
+      handler.exemptFromLiveFilter(item);
+      settingsHandler.dbHandler.updateBooruItem(item, BooruUpdateMode.local);
+    }
   }
 
   void _snatchItem(BuildContext context) {
@@ -959,94 +1606,218 @@ class _TagViewState extends State<TagView> {
       context: context,
       duration: const Duration(seconds: 2),
       title: const Text('Queued for download', style: TextStyle(fontSize: 18)),
-      leadingIcon: Icons.download,
+      leadingIcon: Symbols.download_rounded,
       sideColor: const Color(0xFF7FC98B),
     );
   }
 
   Widget _flowActionRow(BuildContext context) {
-    final theme = Theme.of(context);
+    final List<String> seeds = _actionsAsButtons ? _recommendSeeds() : const <String>[];
+    final List<FlowExtra> extras = _actionsAsButtons
+        ? FlowExtras.of(
+            doujin: isDoujinContext,
+            comments: _commentsAvailable,
+            hasPicture: _hasPicture,
+            recommend: seeds.isNotEmpty,
+          )
+        : const <FlowExtra>[];
+    return FlowActionGrid(
+      tiles: [
+        Obx(() {
+          final bool fav = item.isFavourite.value == true;
+          return FlowActionTile(
+            icon: Symbols.favorite_rounded,
+            label: 'Favorite',
+            activeColor: const Color(0xFFF0708A),
+            active: fav,
+            onTap: _toggleFavourite,
+          );
+        }),
+        Obx(() {
+          final bool snatched = item.isSnatched.value == true;
+          return FlowActionTile(
+            icon: snatched ? Symbols.download_done_rounded : Symbols.download_rounded,
+            label: snatched ? 'Saved' : 'Save',
+            activeColor: const Color(0xFF7FC98B),
+            active: snatched,
+            onTap: () => _snatchItem(context),
+          );
+        }),
+        FlowActionTile(
+          icon: Symbols.bookmark_add_rounded,
+          label: 'Collect',
+          activeColor: const Color(0xFFE8C46B),
+          onTap: () => showAddToCollectionSheet(context, [item]),
+        ),
+        FlowActionTile(
+          icon: Symbols.info_rounded,
+          label: 'Details',
+          onTap: () => showPostDetailsSheet(context, item),
+        ),
+        for (final FlowExtra e in extras) _extraTile(context, e, seeds),
+      ],
+    );
+  }
 
-    Widget btn({
-      required IconData icon,
-      required String label,
-      required Color activeColor,
-      required VoidCallback onTap,
-      bool active = false,
-    }) {
-      final Color fg = active ? activeColor : theme.colorScheme.onSurface;
-      return Expanded(
-        child: InkWell(
-          borderRadius: BorderRadius.circular(14),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, size: 22, color: fg),
-                const SizedBox(height: 3),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: active ? activeColor : theme.colorScheme.onSurfaceVariant,
-                  ),
+  /// Reference-style "Pages" grid for doujin sources: every page's own
+  /// thumbnail; tapping one opens the reader at exactly that page.
+  List<Widget> _pagesGridSlivers(BuildContext context) {
+    final BooruHandler bookHandler = possibleBooruHandler ?? handler;
+    if (!bookHandler.hasReader) return const [];
+    final List<BooruItem>? pages =
+        ReaderHandler.instance.books[item.postURL.isNotEmpty ? item.postURL : item.fileURL];
+    if (pages == null || pages.isEmpty) return const [];
+    return [
+      SliverPadding(
+        padding: const EdgeInsets.fromLTRB(14, 16, 14, 2),
+        sliver: SliverToBoxAdapter(
+          child: Row(
+            children: [
+              Text(
+                'Pages',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  color: Theme.of(context).colorScheme.onSurface,
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                '${pages.length}',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                ),
+              ),
+            ],
           ),
         ),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 4, 12, 6),
-      child: Container(
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainer,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      SliverPadding(
+        padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+        sliver: SliverGrid(
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: SourceSettingsHandler.instance.pagePreviewColumns(bookHandler.booru),
+            mainAxisSpacing: 6,
+            crossAxisSpacing: 6,
+            // Doujin pages are portrait; the fixed ratio keeps rows tidy and
+            // the thumbnail crops the difference.
+            childAspectRatio: 0.7,
+          ),
+          delegate: SliverChildBuilderDelegate(
+            (context, index) {
+              final BooruItem page = pages[index];
+              return GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => openDoujinReader(
+                  context,
+                  item: item,
+                  booru: bookHandler.booru,
+                  startAt: index,
+                ),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    ThumbnailBuild(
+                      item: page,
+                      handler: bookHandler,
+                      selectable: false,
+                      simple: true,
+                    ),
+                    Positioned(
+                      right: 4,
+                      bottom: 4,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.55),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          '${index + 1}',
+                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+            childCount: pages.length,
+          ),
         ),
-        child: Row(
+      ),
+    ];
+  }
+
+  /// Book header for doujin sources: language / category / page count /
+  /// favourites pulled from the site's own namespaces, and the Read button
+  /// as the drawer's primary action — "Continue" with the saved page when
+  /// the book was started before.
+  Widget _doujinBookHeader(BuildContext context) {
+    final BooruHandler bookHandler = possibleBooruHandler ?? handler;
+    if (!bookHandler.hasReader) return const SizedBox.shrink();
+    return Obx(() {
+      final List<BooruItem>? pages =
+          ReaderHandler.instance.books[item.postURL.isNotEmpty ? item.postURL : item.fileURL];
+      if (pages == null || pages.isEmpty) return const SizedBox.shrink();
+      final progress = ReaderHandler.instance.cachedProgress(
+        bookHandler.booru,
+        item.serverId ?? item.postURL,
+      );
+      final bool resuming = progress != null && !progress.isFinished && progress.page > 0;
+
+      final List<String> languages = [];
+      String? category;
+      for (final t in item.tagsList) {
+        final String? ns = bookHandler.tagNamespace(t.fullString);
+        if (ns == 'language' && t.fullString != 'translated') languages.add(t.fullString);
+        if (ns == 'category') category ??= t.fullString;
+      }
+      final List<String> infoParts = [
+        if (languages.isNotEmpty) languages.join(' / '),
+        ?category,
+        '${pages.length} pages',
+        if (item.score?.isNotEmpty ?? false) '♥ ${item.score}',
+      ];
+
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(14, 2, 14, 4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Obx(() {
-              final bool fav = item.isFavourite.value == true;
-              return btn(
-                icon: fav ? Icons.favorite : Icons.favorite_border,
-                label: 'Favorite',
-                activeColor: const Color(0xFFF0708A),
-                active: fav,
-                onTap: _toggleFavourite,
-              );
-            }),
-            Obx(() {
-              final bool snatched = item.isSnatched.value == true;
-              return btn(
-                icon: snatched ? Icons.download_done : Icons.download_outlined,
-                label: snatched ? 'Saved' : 'Save',
-                activeColor: const Color(0xFF7FC98B),
-                active: snatched,
-                onTap: () => _snatchItem(context),
-              );
-            }),
-            btn(
-              icon: Icons.bookmark_add_outlined,
-              label: 'Collect',
-              activeColor: const Color(0xFFE8C46B),
-              onTap: () => showAddToCollectionSheet(context, [item]),
+            Text(
+              infoParts.join('  ·  '),
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+              ),
             ),
-            btn(
-              icon: Icons.info_outline,
-              label: 'Details',
-              activeColor: theme.colorScheme.secondary,
-              onTap: () => showPostDetailsSheet(context, item),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              height: 44,
+              child: FilledButton.icon(
+                icon: Icon(resuming ? Symbols.auto_stories_rounded : Symbols.menu_book_rounded, size: 20),
+                label: Text(
+                  resuming
+                      ? 'Continue reading · page ${progress.page + 1} of ${pages.length}'
+                      : 'Read · ${pages.length} pages',
+                  style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800),
+                ),
+                onPressed: () => openDoujinReader(
+                  context,
+                  item: item,
+                  booru: bookHandler.booru,
+                ),
+              ),
             ),
           ],
         ),
-      ),
-    );
+      );
+    });
   }
 
   Widget buildTagChip(BuildContext context, Tag rawTag) {
@@ -1054,8 +1825,8 @@ class _TagViewState extends State<TagView> {
     if (currentTag.isEmpty) return const SizedBox.shrink();
 
     final theme = Theme.of(context);
-    final tag = tagHandler.getTag(currentTag);
-    Color? color = tag.getColour();
+    final TagType resolvedType = typeOfTag(rawTag);
+    Color? color = resolvedType.getColour();
     color = color == Colors.transparent ? null : color;
 
     final bool isHidden = tagsData.hiddenTags.contains(currentTag);
@@ -1088,120 +1859,191 @@ class _TagViewState extends State<TagView> {
 
     final List<_TagInfoIcon> tagIconAndColor = [
       if (isAi) _TagInfoIcon(FontAwesomeIcons.robot, textColor),
-      if (isSound) _TagInfoIcon(Icons.volume_up_rounded, textColor),
+      if (isSound) _TagInfoIcon(Symbols.volume_up_rounded, textColor),
       if (isHidden) _TagInfoIcon(CupertinoIcons.eye_slash, Colors.red),
-      if (isMarked) _TagInfoIcon(Icons.star, Colors.yellow),
+      if (isMarked) _TagInfoIcon(Symbols.star_rounded, Colors.yellow),
     ];
 
-    return Material(
+    final bool isSelectedForBatch = tagSelectionMode && selectedBatchTags.contains(currentTag);
+
+    // r77: the preview icon is its own button laid over the chip (see
+    // TagChipShell): it reacts at once - no double-tap wait - opens the
+    // preview for the page it was tapped on, on the post's own site.
+    return TagChipShell(
       key: ValueKey('tag-chip-$currentTag'),
-      color: baseColor.withValues(alpha: context.isLight ? 0.09 : 0.16),
+      color: isSelectedForBatch
+          ? Theme.of(context).colorScheme.secondary.withValues(alpha: 0.22)
+          : baseColor.withValues(alpha: context.isLight ? 0.09 : 0.16),
       shape: StadiumBorder(
-        side: BorderSide(
-          color: isInSearch ? baseColor.withValues(alpha: 0.9) : baseColor.withValues(alpha: 0.35),
-          width: isInSearch ? 1.6 : 1,
-        ),
+        side: isSelectedForBatch
+            ? BorderSide(color: Theme.of(context).colorScheme.secondary, width: 1.8)
+            : BorderSide(
+                color: isInSearch ? baseColor.withValues(alpha: 0.9) : baseColor.withValues(alpha: 0.35),
+                width: isInSearch ? 1.6 : 1,
+              ),
       ),
-      child: InkWell(
-        customBorder: const StadiumBorder(),
-        onTap: () {
-          showTagDialog(
-            context: context,
-            tag: currentTag,
-            handler: handler,
-            isHidden: isHidden,
-            isMarked: isMarked,
-            isInSearch: isInSearch,
-            hasTabWithTag: hasTabWithTag,
-            onUpdate: parseSortGroupTagsWithoutCache,
-          );
-        },
-        onLongPress: () async {
-          // Long-press opens the tag as a new background tab, honouring the
-          // user's "New tab placement" setting and showing the same toast every
-          // other background-tab action does. Adding to the current search
-          // still lives behind tap → dialog.
-          await ServiceHandler.vibrate(duration: 40, amplitude: 180);
-          final Booru previewBooru = possibleBooruHandler?.booru ?? searchHandler.currentBooru;
-          final TabAddMode addMode =
-              settingsHandler.defaultTabAddMode == 'next' ? TabAddMode.next : TabAddMode.end;
-          searchHandler.addTabByString(
-            currentTag,
-            customBooru: previewBooru,
-            addMode: addMode,
-          );
-          if (!context.mounted) return;
-          FlashElements.showSnackbar(
-            context: context,
-            isKeyUnique: true,
-            key: 'added_new_tab',
-            duration: const Duration(seconds: 2),
-            title: Text(
-              context.loc.tagView.addedNewTab,
-              style: const TextStyle(fontSize: 20),
-            ),
-            content: Text(currentTag, style: const TextStyle(fontSize: 16)),
-            leadingIcon: Icons.fiber_new,
-            sideColor: Colors.green,
-          );
-        },
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final t in tagIconAndColor)
-                Padding(
-                  padding: const EdgeInsets.only(right: 4),
-                  child: switch (t.icon) {
-                    FaIconData _ => FaIcon(t.icon, color: t.color, size: 12),
-                    IconData _ => Icon(t.icon, color: t.color, size: 14),
-                    _ => const SizedBox.shrink(),
+      previewZoneWidth: TagChipShell.previewZoneWidthFor(),
+      previewLabel: '${context.loc.tagView.preview} $currentTag',
+      guardRepeats: !tagSelectionMode,
+      onPreview: () {
+        if (tagSelectionMode) {
+          _toggleBatchTag(currentTag);
+          return;
+        }
+        // The icon reacts at once now, so the top page is the page it was
+        // tapped on (ModalRoute.of here would make the whole tag list
+        // rebuild on every route change).
+        FloatingPreviewHandler.instance.open(tag: currentTag, booru: tagBooru);
+      },
+      onPreviewLongPress: tagSelectionMode ? null : () => _openTagInNewTab(context, currentTag),
+      onTap: tagSelectionMode
+          ? () => _toggleBatchTag(currentTag)
+          : () {
+              showTagDialog(
+                context: context,
+                tag: currentTag,
+                // Virtual feeds (For You, favourites, merge) resolve the item's
+                // real source booru — the dialog's preview / hub entries should
+                // originate there, not on the virtual feed.
+                handler: possibleBooruHandler ?? handler,
+                isHidden: isHidden,
+                isMarked: isMarked,
+                isInSearch: isInSearch,
+                hasTabWithTag: hasTabWithTag,
+                onUpdate: parseSortGroupTagsWithoutCache,
+                knownType: resolvedType,
+              );
+            },
+      onDoubleTap: tagSelectionMode
+          ? null
+          : () async {
+              // Shortcut straight to the tag editor (same dialog as tap →
+              // "Edit tag") — mainly for quickly recolouring a tag's type.
+              final Booru booru = tagBooru;
+              // A COPY: mutating the object handed out by TagHandler would
+              // edit the app-wide tag map in place.
+              // Seeded from the source's own type on a doujin booru: the
+              // shared map is a booru store and would preselect a booru's
+              // classification for a coinciding name.
+              final item = tagHandler
+                  .getTagFor(currentTag, booru)
+                  .copyWith(tagType: typeOfTag(rawTag));
+              await showDialog(
+                context: context,
+                builder: (context) => TagsManagerListItemDialog(
+                  tag: item,
+                  onChangedType: (TagType? newValue) async {
+                    if (newValue == null || item.tagType == newValue) return;
+                    item.tagType = newValue;
+                    // Stored as a correction for THIS booru only. The global
+                    // tag map holds one type per tag string for the whole
+                    // app, so writing there would recolour the same tag on
+                    // every other site as a side effect. Doing it this way
+                    // also permanently excludes the pair from automatic
+                    // re-typing, which is the point of correcting it.
+                    await BooruTagStore.setManualType(booru, currentTag, newValue);
+                    parseSortGroupTagsWithoutCache();
                   },
                 ),
-              ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.62),
-                child: _chipTagLabel(currentTag, textColor),
-              ),
-              if (tagCount > 0) ...[
-                const SizedBox(width: 5),
-                Text(
-                  tagCount.toFormattedString(),
-                  style: TextStyle(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w500,
-                    color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
-                  ),
-                ),
-              ],
-              if (hasTabWithTag.hasTagInAnyForm) ...[
-                const SizedBox(width: 5),
-                Icon(
-                  Icons.circle,
-                  size: 7,
-                  color: hasTabWithTag.color(context),
-                ),
-              ],
-              // ⧉ preview zone: a divider + picture-in-picture that opens the
-              // floating preview window for this tag (its own tap target, so it
-              // doesn't trigger the chip's tap = menu).
-              const SizedBox(width: 7),
-              Container(width: 1, height: 16, color: baseColor.withValues(alpha: 0.3)),
-              GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () {
-                  final Booru previewBooru = possibleBooruHandler?.booru ?? searchHandler.currentBooru;
-                  FloatingPreviewHandler.instance.open(tag: currentTag, booru: previewBooru);
+              );
+              parseSortGroupTagsWithoutCache();
+            },
+      onLongPress: tagSelectionMode ? null : () => _openTagInNewTab(context, currentTag),
+      child: Padding(
+        padding: const EdgeInsets.only(left: 10, right: 2, top: 3, bottom: 3),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final t in tagIconAndColor)
+              Padding(
+                padding: const EdgeInsets.only(right: 4),
+                child: switch (t.icon) {
+                  FaIconData _ => FaIcon(t.icon, color: t.color, size: 12),
+                  IconData _ => Icon(t.icon, color: t.color, size: 14),
+                  _ => const SizedBox.shrink(),
                 },
-                child: Padding(
-                  padding: const EdgeInsets.only(left: 7, right: 1),
-                  child: Icon(Icons.picture_in_picture_alt_outlined, size: 15, color: baseColor),
+              ),
+            ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.62),
+              child: _chipTagLabel(currentTag, textColor),
+            ),
+            if (tagCount > 0) ...[
+              const SizedBox(width: 5),
+              Text(
+                tagCount.toFormattedString(),
+                style: TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w500,
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
                 ),
               ),
             ],
-          ),
+            if (hasTabWithTag.hasTagInAnyForm) ...[
+              const SizedBox(width: 5),
+              Icon(
+                Symbols.circle_rounded,
+                size: 7,
+                color: hasTabWithTag.color(context),
+              ),
+            ],
+            // ⧉ preview zone: a divider + picture-in-picture that opens the
+            // floating preview window for this tag (its own tap target, so it
+            // doesn't trigger the chip's tap = menu). Generously padded —
+            // the icon is small but the hit area must be finger-sized.
+            const SizedBox(width: 4),
+            Container(width: 1, height: 16, color: baseColor.withValues(alpha: 0.3)),
+            // Drawn here; its taps go to TagChipShell's zone over it (r77).
+            Padding(
+              padding: const EdgeInsets.fromLTRB(11, 9, 8, 9),
+              child: Icon(
+                tagSelectionMode
+                    ? (isSelectedForBatch ? Symbols.check_circle_rounded : Symbols.circle_rounded)
+                    : Symbols.picture_in_picture_alt_rounded,
+                size: 16,
+                fill: isSelectedForBatch ? 1 : 0,
+                color: isSelectedForBatch ? Theme.of(context).colorScheme.secondary : baseColor,
+              ),
+            ),
+          ],
         ),
       ),
+    );
+  }
+
+  /// Opens [currentTag] as a new background tab, honouring the user's "New
+  /// tab placement" setting, with the same toast as every other
+  /// background-tab action. r77: from the tag name's hold and the preview
+  /// icon's hold alike.
+  Future<void> _openTagInNewTab(BuildContext context, String currentTag) async {
+    // Long-press opens the tag as a new background tab, honouring the
+    // user's "New tab placement" setting and showing the same toast every
+    // other background-tab action does. Adding to the current search
+    // still lives behind tap → dialog.
+    await ServiceHandler.vibrate(duration: 40, amplitude: 180);
+    // r77: the post's own site (was the main feed's when the post came
+    // from elsewhere, e.g. a nested viewer on another site).
+    final Booru previewBooru = tagBooru;
+    final TabAddMode addMode =
+        settingsHandler.defaultTabAddMode == 'next' ? TabAddMode.next : TabAddMode.end;
+    searchHandler.addTabByString(
+      currentTag,
+      customBooru: previewBooru,
+      addMode: addMode,
+      group: SearchHandler.inheritGroup,
+    );
+    if (!context.mounted) return;
+    FlashElements.showSnackbar(
+      context: context,
+      isKeyUnique: true,
+      key: 'added_new_tab',
+      duration: const Duration(seconds: 2),
+      title: Text(
+        context.loc.tagView.addedNewTab,
+        style: const TextStyle(fontSize: 20),
+      ),
+      content: Text(currentTag, style: const TextStyle(fontSize: 16)),
+      leadingIcon: Symbols.fiber_new_rounded,
+      sideColor: Colors.green,
     );
   }
 
@@ -1239,121 +2081,11 @@ class _TagViewState extends State<TagView> {
   }
 
   // Builds a space-separated tag query for the "Related" preview strip.
-  // Prefers character + artist + copyright tags (the narrowest, most-likely-
-  // to-match-vibe categories); falls back to a few general tags if none of
-  // those are present. Always excludes the current post id so the strip
-  // doesn't show this same item back to the user.
-  String? _buildRelatedQuery() {
-    if (_relatedQueryCache != null) return _relatedQueryCache;
-
-    final List<String> picked = [];
-
-    void pickFrom(TagType type, int limit) {
-      int taken = 0;
-      for (final t in item.tagsList) {
-        if (taken >= limit) break;
-        if (t.tagType == type && t.fullString.trim().isNotEmpty && !picked.contains(t.fullString)) {
-          picked.add(t.fullString);
-          taken++;
-        }
-      }
-    }
-
-    // Up to 2 characters + 1 artist + 1 copyright; if all empty, take 2 general.
-    pickFrom(TagType.character, 2);
-    pickFrom(TagType.artist, 1);
-    pickFrom(TagType.copyright, 1);
-    if (picked.isEmpty) {
-      pickFrom(TagType.none, 2);
-    }
-
-    if (picked.isEmpty) return null;
-
-    final String? id = item.serverId;
-    final String exclusion = (id != null && id.isNotEmpty) ? ' -id:$id' : '';
-    return _relatedQueryCache = picked.join(' ') + exclusion;
-  }
-
   @override
   Widget build(BuildContext context) {
-    final String fileName = Tools.getFileName(item.fileURL);
-    final String fileExt = Tools.getFileExt(item.fileURL);
-    final String fileUrl = item.fileURL;
-    final String fileRes = (item.fileWidth != null && item.fileHeight != null)
-        ? '${item.fileWidth?.toInt() ?? ''}x${item.fileHeight?.toInt() ?? ''}'
-        : '';
-    final String fileSize = item.fileSize != null ? Tools.formatBytes(item.fileSize!, 2) : '';
-    final String rating = item.rating ?? '';
-    final String score = item.score ?? '';
-    final String md5 = item.md5String ?? '';
-    final List<String> sources = item.sources ?? [];
     final bool tagsAvailable = tags.isNotEmpty || hasLoadItemSupport;
-    // Note: post ID + post URL + formatted post date are intentionally not
-    // surfaced at the top of the drawer anymore (per user request); the
-    // remaining metadata still renders via the Details expansion further below.
-
-    // Uploader row — moved into the Details expansion (per user request) so it
-    // doesn't eat space at the top of the sheet when collapsed.
-    final Widget uploaderTile =
-        (item.uploaderId?.isNotEmpty == true || item.uploaderName?.isNotEmpty == true)
-        ? Builder(
-            builder: (context) {
-              final bool hasUploaderName = item.uploaderName?.isNotEmpty == true;
-              final String text = item.uploaderName ?? item.uploaderId ?? '';
-
-              return infoText(
-                context.loc.tagView.uploader,
-                text,
-                trailing: hasUploaderName
-                    ? IgnorePointer(
-                        child: IconButton(
-                          icon: const Icon(Icons.add),
-                          onPressed: () {},
-                        ),
-                      )
-                    : null,
-                onTap: hasUploaderName
-                    ? () {
-                        final userMetaTag = searchHandler.currentBooruHandler
-                            .availableMetaTags()
-                            .firstWhereOrNull(
-                              (t) => t is UserMetaTag,
-                            );
-                        if (userMetaTag == null) return;
-
-                        final String tag = userMetaTag.tagBuilder(null, null, item.uploaderName);
-
-                        searchHandler.addTagToSearch(tag);
-                        FlashElements.showSnackbar(
-                          context: context,
-                          duration: const Duration(seconds: 2),
-                          title: Text(
-                            context.loc.tagView.addedToCurrentSearch,
-                            style: const TextStyle(fontSize: 20),
-                          ),
-                          content: Text(tag, style: const TextStyle(fontSize: 16)),
-                          leadingIcon: Icons.add,
-                          sideColor: Colors.green,
-                        );
-                      }
-                    : null,
-                onLongPress: hasUploaderName
-                    ? () {
-                        Clipboard.setData(ClipboardData(text: text));
-                        FlashElements.showSnackbar(
-                          context: context,
-                          duration: const Duration(seconds: 2),
-                          title: Text(context.loc.copiedToClipboard, style: const TextStyle(fontSize: 20)),
-                          content: Text(text, style: const TextStyle(fontSize: 16)),
-                          leadingIcon: Icons.copy,
-                          sideColor: Colors.green,
-                        );
-                      }
-                    : null,
-              );
-            },
-          )
-        : const SizedBox.shrink();
+    // Post metadata (url/resolution/size/rating/score/md5/uploader/sources)
+    // lives in the Flow Details sheet now — opened from the action row.
 
     return Scrollbar(
       interactive: true,
@@ -1380,62 +2112,162 @@ class _TagViewState extends State<TagView> {
                 else
                   const SizedBox(height: kMinInteractiveDimension),
                 //
+                // Doujin sources: reference-style book header — metadata line
+                // and a prominent Read/Continue button, shown the moment
+                // loadItem registers the pages.
+                _doujinBookHeader(context),
+                //
                 // Flow post actions (Favorite / Save / Collect).
                 _flowActionRow(context),
+                //
+                // Source booru — virtual feeds (For You, favourites, merge)
+                // aggregate posts from real boorus; say which one this is.
+                if (possibleBooruHandler != null)
+                  ListTile(
+                    dense: true,
+                    minVerticalPadding: 0,
+                    leading: BooruFavicon(possibleBooruHandler!.booru, size: 20),
+                    title: Text(
+                      'From ${possibleBooruHandler!.booru.name ?? 'unknown booru'}',
+                      style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                //
+                // Cross-booru lookup: pivot on the post's artist/character
+                // tag to find related content on the other boorus. Booru-only
+                // (see isDoujinContext).
+                // r79: a button in the action block unless Modular UI says rows.
+                if (!isDoujinContext && !_actionsAsButtons)
+                  ListTile(
+                    dense: true,
+                    minVerticalPadding: 0,
+                    leading: Icon(Symbols.travel_explore_rounded, size: 20, color: Theme.of(context).colorScheme.secondary),
+                    title: const Text(
+                      'Find this post elsewhere',
+                      style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
+                    ),
+                    onTap: () => _openFindElsewhere(context),
+                  ),
+                //
+                // Boards (r73): a saved search seeded by this post - its tags
+                // as words, its image as the reference. Booru-only.
+                if (!isDoujinContext && !_actionsAsButtons)
+                  ListTile(
+                    dense: true,
+                    minVerticalPadding: 0,
+                    leading: Icon(Symbols.dashboard_rounded, size: 20, color: Theme.of(context).colorScheme.secondary),
+                    title: const Text(
+                      'Find posts like this (new board)',
+                      style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
+                    ),
+                    onTap: () => _openNewBoard(context),
+                  ),
                 //
                 // Inline "more from artist / uploader" grids — Boorusama-style.
                 // Each grid is gated on:
                 //   - the global Settings → Interface → inlineRelatedGrids toggle
                 //   - the data being available for this item + handler
-                if (settingsHandler.inlineRelatedGrids) ..._buildRelatedGrids(),
+                // Booru-only: the strips are built for the current booru and
+                // decide artist-ness from the shared booru tag map, so on a
+                // doujin item they render booru posts inside a doujin panel.
+                // Doujin sources have their own Related / Recommended.
+                if (settingsHandler.inlineRelatedGrids && !isDoujinContext) ..._buildRelatedGrids(),
                 //
-                // Uploader, comments and sources are tucked inside the Details
-                // expansion (per user request) so the collapsed sheet stays
-                // compact.
-                ExpansionTile(
-                  title: Text(
-                    context.loc.tagView.details,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  initiallyExpanded: detailsExpanded ?? settingsHandler.expandDetails,
-                  onExpansionChanged: (expanded) {
-                    setState(() {
-                      detailsExpanded = expanded;
-                    });
+                // The old "Details" expansion (url/extension/resolution/...)
+                // is gone — the Flow Details sheet (action row → Details)
+                // covers all of it. Comments have no other home, so they stay
+                // as a standalone row.
+                if (!_actionsAsButtons) commentsButton(),
+                kemonoPostButton(),
+                furAffinityPostButton(),
+                // Doujin "Related": other CHAPTERS and language versions of
+                // this very work, found by a quoted phrase search on the base
+                // title (the reference apps' Related semantics). Collapsed by
+                // default — most one-shots only find themselves.
+                Builder(
+                  builder: (context) {
+                    final BooruHandler versionsHandlerRef = possibleBooruHandler ?? handler;
+                    final String? versionsQuery = versionsHandlerRef.relatedVersionsQuery(item);
+                    if (versionsQuery == null) return const SizedBox.shrink();
+                    return ExpansionTile(
+                      title: const Text(
+                        'Related — chapters & versions',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
+                      ),
+                      initiallyExpanded: false,
+                      iconColor: Colors.white.withValues(alpha: 0.66),
+                      collapsedIconColor: Colors.white.withValues(alpha: 0.66),
+                      shape: const Border(),
+                      collapsedShape: const Border(),
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          child: TagContentPreview(
+                            key: ValueKey('versions-${item.serverId}'),
+                            tag: versionsQuery,
+                            boorus: [versionsHandlerRef.booru],
+                            parentTab: searchHandler.currentTab,
+                            compact: true,
+                            compactTitle: 'Other chapters and languages of this work',
+                          ),
+                        ),
+                      ],
+                    );
                   },
-                  iconColor: Colors.white.withValues(alpha: 0.66),
-                  collapsedIconColor: Colors.white.withValues(alpha: 0.66),
-                  shape: const Border(),
-                  collapsedShape: const Border(),
-                  children: [
-                    uploaderTile,
-                    if (settingsHandler.isDebug.value) infoText(context.loc.tagView.filename, fileName),
-                    infoText(context.loc.tagView.url, fileUrl, isLink: true),
-                    infoText(context.loc.tagView.extension, fileExt),
-                    infoText(context.loc.tagView.resolution, fileRes),
-                    infoText(context.loc.tagView.size, fileSize),
-                    infoText(context.loc.tagView.md5, md5),
-                    infoText(context.loc.tagView.rating, rating),
-                    infoText(context.loc.tagView.score, score),
-                    commentsButton(),
-                    sourcesList(sources),
-                  ],
+                ),
+                // Doujin "Recommended": the site's own related list, served
+                // through the normal strip machinery via a `related:<id>`
+                // query. Open by default, like the reference app.
+                Builder(
+                  builder: (context) {
+                    final BooruHandler relatedHandlerRef = possibleBooruHandler ?? handler;
+                    final String? galleryId = item.serverId;
+                    if (!relatedHandlerRef.hasReader || galleryId == null || galleryId.isEmpty) {
+                      return const SizedBox.shrink();
+                    }
+                    return ExpansionTile(
+                      title: const Text(
+                        'Recommended',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
+                      ),
+                      initiallyExpanded: true,
+                      iconColor: Colors.white.withValues(alpha: 0.66),
+                      collapsedIconColor: Colors.white.withValues(alpha: 0.66),
+                      shape: const Border(),
+                      collapsedShape: const Border(),
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          child: TagContentPreview(
+                            key: ValueKey('native-related-$galleryId'),
+                            tag: 'recommend:$galleryId',
+                            boorus: [relatedHandlerRef.booru],
+                            parentTab: searchHandler.currentTab,
+                            compact: true,
+                            compactTitle: "The site's related list, extended by this gallery's tags and artist",
+                          ),
+                        ),
+                      ],
+                    );
+                  },
                 ),
                 // "Related" — preview strip seeded from the item's strongest
                 // tags (character/artist/copyright, falling back to general).
                 // Only shows when we can build a meaningful seed query.
                 Builder(
                   builder: (context) {
-                    final String? query = _buildRelatedQuery();
-                    if (query == null) return const SizedBox.shrink();
+                    // Blended suggestions: several different facet queries
+                    // (character / franchise minus that character / artist /
+                    // act / style) mixed under quotas, rather than one tag
+                    // search — a single tag just reproduces Tag Hub.
+                    if (SuggestionEngine.facetsForItem(item).isEmpty) {
+                      return const SizedBox.shrink();
+                    }
                     final Booru previewBooru =
                         possibleBooruHandler?.booru ?? searchHandler.currentBooru;
                     return ExpansionTile(
                       title: const Text(
-                        'Related',
+                        'Suggested',
                         style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900),
                       ),
                       initiallyExpanded: relatedExpanded,
@@ -1450,12 +2282,13 @@ class _TagViewState extends State<TagView> {
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 8),
                           child: TagContentPreview(
-                            key: ValueKey('related-${previewBooru.name}-${item.serverId ?? item.fileURL}'),
-                            tag: query,
+                            key: ValueKey('suggested-${previewBooru.name}-${item.serverId ?? item.fileURL}'),
+                            tag: 'suggestions',
                             boorus: [previewBooru],
                             parentTab: searchHandler.currentTab,
                             compact: true,
-                            compactTitle: 'Related',
+                            compactTitle: 'Mixed suggestions',
+                            suggestFor: item,
                           ),
                         ),
                       ],
@@ -1463,36 +2296,44 @@ class _TagViewState extends State<TagView> {
                   },
                 ),
                 notesButton(),
-                if (settingsHandler.dbEnabled)
-                  ListTile(
-                    leading: Icon(
-                      Icons.collections_bookmark_outlined,
-                      color: Theme.of(context).iconTheme.color,
-                    ),
-                    title: const Text('Add to collection'),
-                    onTap: () => showAddToCollectionSheet(context, [item]),
+                // r75: why the learner put this post here (recommendation feeds).
+                if (!isDoujinContext && searchHandler.currentTab.booruHandler.booru.type?.isRecommendationFeed == true)
+                  FutureBuilder<Explanation?>(
+                    future: RecommenderHandler.maybe?.explain(item, handler: possibleBooruHandler ?? handler),
+                    builder: (context, snap) {
+                      final Explanation? e = snap.data;
+                      if (e == null || e.isEmpty) return const SizedBox.shrink();
+                      return ListTile(
+                        leading: Icon(Symbols.lightbulb_rounded, color: Theme.of(context).iconTheme.color),
+                        title: const Text('Picked because'),
+                        subtitle: Text(e.sentence, maxLines: 3, overflow: TextOverflow.ellipsis),
+                      );
+                    },
                   ),
-                if (settingsHandler.dbEnabled)
+                // r75: posts that look like this one, in a background tab.
+                if (!isDoujinContext && _hasPicture && !_actionsAsButtons)
+                  ListTile(
+                    leading: Icon(Symbols.image_search_rounded, color: Theme.of(context).iconTheme.color),
+                    title: const Text('Posts like this'),
+                    subtitle: const Text('A tab in the background with posts that look like this one, from your sources', maxLines: 2, overflow: TextOverflow.ellipsis),
+                    onTap: () => _openSimilar(context),
+                  ),
+                // For You is the BOORU taste system — never seeded from a
+                // doujin item.
+                if (settingsHandler.dbEnabled && !isDoujinContext && !_actionsAsButtons)
                   Builder(
                     builder: (context) {
-                      final List<String> seeds = InterestsHandler.seedTagsFromItem(item, limit: 3);
+                      final List<String> seeds = _recommendSeeds();
                       if (seeds.isEmpty) return const SizedBox.shrink();
                       return ListTile(
-                        leading: Icon(Icons.auto_awesome, color: Theme.of(context).iconTheme.color),
+                        leading: Icon(Symbols.auto_awesome_rounded, color: Theme.of(context).iconTheme.color),
                         title: const Text('Recommend more like this'),
                         subtitle: Text(
                           seeds.map((s) => s.replaceAll('_', ' ')).join(', '),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        onTap: () {
-                          final booru = settingsHandler.ensureForYouBooru();
-                          final String query = seeds.map((s) => 'seed:$s').join(' ');
-                          searchHandler.addTabByString(query, customBooru: booru, switchToNew: true);
-                          if (settingsHandler.appMode.value.isMobile) {
-                            Navigator.of(context).popUntil((route) => route.isFirst);
-                          }
-                        },
+                        onTap: () => _openRecommend(context, seeds),
                       );
                     },
                   ),
@@ -1561,6 +2402,7 @@ class _TagViewState extends State<TagView> {
                 : const SizedBox.shrink(),
           ),
           ...tagChipSectionSlivers(context),
+          ..._pagesGridSlivers(context),
           SliverToBoxAdapter(
             child: SizedBox(
               height: MediaQuery.viewInsetsOf(context).bottom + kMinInteractiveDimension,
@@ -1588,13 +2430,13 @@ Future<_BlacklistScope?> _pickBlacklistScope(BuildContext context, Booru booru) 
         mainAxisSize: MainAxisSize.min,
         children: [
           ListTile(
-            leading: const Icon(Icons.public),
+            leading: const Icon(Symbols.public_rounded),
             title: const Text('Globally'),
             subtitle: const Text('Hides items with this tag on every booru'),
             onTap: () => Navigator.of(ctx).pop(_BlacklistScope.global),
           ),
           ListTile(
-            leading: const Icon(Icons.collections_bookmark),
+            leading: const Icon(Symbols.collections_bookmark_rounded),
             title: const Text('Only on this booru'),
             subtitle: Text(booruName),
             onTap: () => Navigator.of(ctx).pop(_BlacklistScope.perBooru),
@@ -1620,29 +2462,34 @@ Future<void> showTagDialog({
   required bool isInSearch,
   required HasTabWithTagResult hasTabWithTag,
   required VoidCallback onUpdate,
+  // The type the tag list shows (the source's own parse, the tag's own
+  // type); the shared tag map alone missed artists it never stored (r50).
+  TagType? knownType,
 }) async {
   final settingsHandler = SettingsHandler.instance;
   final searchHandler = SearchHandler.instance;
   final tagHandler = TagHandler.instance;
 
-  final Color typeColor = tagHandler.getTag(tag).getColour() ?? const Color(0xFF8A80A0);
-  final String typeName = tagHandler.getTag(tag).tagType.locName;
-  await showModalBottomSheet<void>(
-    context: context,
-    routeSettings: RouteSettings(name: 'tagDialog/$tag'),
-    isScrollControlled: true,
-    useSafeArea: true,
-    backgroundColor: Colors.transparent,
-    builder: (BuildContext context) {
+  // Domain-aware: on a doujin source the shared booru tag map is not
+  // consulted, so the dialog's header can't contradict the chip the user
+  // just tapped (or offer an "Artist hub" for a tag the site doesn't call an
+  // artist).
+  final TagType resolvedType =
+      knownType != null && knownType != TagType.none ? knownType : tagHandler.typeForDisplay(tag, handler.booru);
+  final Color typeColor = resolvedType.getColour() ?? const Color(0xFF8A80A0);
+  final String typeName = resolvedType.locName;
+  final bool isDoujin = handler.hasReader;
+  Widget buildContent(BuildContext context) {
       return Container(
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          borderRadius: isDoujin ? null : const BorderRadius.vertical(top: Radius.circular(24)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // drag handle
+            // drag handle (sheet only)
+            if (!isDoujin)
             Container(
               margin: const EdgeInsets.only(top: 8, bottom: 2),
               width: 40,
@@ -1693,7 +2540,7 @@ Future<void> showTagDialog({
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.close),
+                    icon: const Icon(Symbols.close_rounded),
                     onPressed: () => Navigator.of(context).pop(),
                   ),
                 ],
@@ -1710,7 +2557,7 @@ Future<void> showTagDialog({
           // opens over whatever page spawned this dialog).
           ListTile(
             leading: Icon(
-              Icons.picture_in_picture_alt_outlined,
+              Symbols.picture_in_picture_alt_rounded,
               color: Theme.of(context).colorScheme.secondary,
             ),
             title: Text(context.loc.tagView.preview),
@@ -1718,17 +2565,47 @@ Future<void> showTagDialog({
               final Booru previewBooru = handler.booru.type?.isMerge == true
                   ? (handler as MergebooruHandler).booruHandlers.first.booru
                   : handler.booru;
+              // r77: the page under this menu, taken before the menu closes.
+              final Route<dynamic>? page = FloatingPreviewHandler.instance.topPageRoute;
               Navigator.of(context).pop();
               FloatingPreviewHandler.instance.open(
                 tag: tag,
                 booru: previewBooru,
+                owner: page,
+              );
+            },
+          ),
+          //
+          // Tag hub — a dedicated page showing this tag across every
+          // configured booru. Artists get follow support and their own label.
+          ListTile(
+            leading: Icon(
+              resolvedType.isArtist ? Symbols.artist_rounded : Symbols.hub_rounded,
+              color: Theme.of(context).colorScheme.secondary,
+            ),
+            title: Text(resolvedType.isArtist ? 'Artist hub' : 'Tag hub'),
+            subtitle: Text(
+              resolvedType.isArtist
+                  ? 'Follow + their work across your boorus'
+                  : 'This tag across your boorus',
+            ),
+            onTap: () {
+              Navigator.of(context).pop();
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => TagHubPage(
+                    tag: tag,
+                    originBooru: handler.booru,
+                    knownType: resolvedType,
+                  ),
+                ),
               );
             },
           ),
           //
           ListTile(
             leading: Icon(
-              Icons.copy,
+              Symbols.content_copy_rounded,
               color: Theme.of(context).iconTheme.color,
             ),
             title: Text(context.loc.tagView.copy),
@@ -1745,7 +2622,7 @@ Future<void> showTagDialog({
                   tag,
                   style: const TextStyle(fontSize: 16),
                 ),
-                leadingIcon: Icons.copy,
+                leadingIcon: Symbols.content_copy_rounded,
                 sideColor: Colors.green,
               );
               Navigator.of(context).pop();
@@ -1755,7 +2632,7 @@ Future<void> showTagDialog({
           if (isInSearch)
             ListTile(
               leading: Icon(
-                Icons.delete_outline,
+                Symbols.delete_rounded,
                 color: Theme.of(context).iconTheme.color,
               ),
               title: Text(context.loc.tagView.removeFromSearch),
@@ -1764,77 +2641,64 @@ Future<void> showTagDialog({
                 Navigator.of(context).pop();
               },
             )
-          else ...[
-            ListTile(
-              leading: const Icon(Icons.add, color: Colors.green),
-              title: Text(context.loc.tagView.addToSearch),
-              onTap: () {
-                searchHandler.addTagToSearch(tag);
-
-                FlashElements.showSnackbar(
-                  context: context,
-                  duration: const Duration(seconds: 2),
-                  title: Text(
-                    context.loc.tagView.addedToSearchBar,
-                    style: const TextStyle(fontSize: 20),
-                  ),
-                  content: Text(
-                    tag,
-                    style: const TextStyle(fontSize: 16),
-                  ),
-                  leadingIcon: Icons.add,
-                  sideColor: Colors.green,
-                );
-
-                Navigator.of(context).pop();
-              },
+          else
+            const SizedBox.shrink(),
+          //
+          // Open the tag as a background tab inside a tab group — existing
+          // group or a newly named one.
+          ListTile(
+            leading: Icon(
+              Symbols.create_new_folder_rounded,
+              color: Theme.of(context).iconTheme.color,
             ),
-            ListTile(
-              leading: const Icon(Icons.remove_rounded, color: Colors.red),
-              title: Text(context.loc.tagView.excludeFromSearch),
-              onTap: () {
-                searchHandler.addTagToSearch('-$tag');
-
-                FlashElements.showSnackbar(
-                  context: context,
-                  duration: const Duration(seconds: 2),
-                  title: Text(
-                    context.loc.tagView.exclusionAddedToSearchBar,
-                    style: const TextStyle(fontSize: 20),
-                  ),
-                  content: Text(
-                    tag,
-                    style: const TextStyle(fontSize: 16),
-                  ),
-                  leadingIcon: Icons.add,
-                  sideColor: Colors.green,
-                );
-
-                Navigator.of(context).pop();
-              },
-            ),
-          ],
+            title: const Text('Open in group'),
+            subtitle: const Text('Inside a group, outside it, or a new one'),
+            onTap: () {
+              Navigator.of(context).pop();
+              showOpenTagInGroupSheet(
+                NavigationHandler.instance.navContext,
+                tag,
+                handler.booru,
+              );
+            },
+          ),
           //
           if (!isHidden && !isMarked)
             ListTile(
-              leading: const Icon(Icons.star, color: Colors.yellow),
+              leading: const Icon(Symbols.star_rounded, color: Colors.yellow),
               title: Text(context.loc.tagView.addToMarked),
               onTap: () {
-                settingsHandler.addTagToList('marked', tag);
+                if (DoujinDataHandler.isDoujinBooru(handler.booru)) {
+                  // Doujin stars live in the doujin store only.
+                  DoujinDataHandler.instance.starTag(tag);
+                } else {
+                  settingsHandler.addTagToList('marked', tag);
+                }
                 searchHandler.filterCurrentFetched();
                 handler.filterFetched();
                 onUpdate();
                 Navigator.of(context).pop(true);
               },
             ),
-          if (!isHidden && !isMarked && !settingsHandler.isTagHiddenForBooru(tag, handler.booru.name))
+          // The per-booru list is a BOORU store and never filters doujin
+          // items, so it must not decide whether a doujin tag can be hidden.
+          if (!isHidden &&
+              !isMarked &&
+              (DoujinDataHandler.isDoujinBooru(handler.booru) ||
+                  !settingsHandler.isTagHiddenForBooru(tag, handler.booru.name)))
             ListTile(
               leading: const Icon(CupertinoIcons.eye_slash, color: Colors.red),
               title: Text(context.loc.tagView.addToHidden),
               onTap: () async {
                 final scope = await _pickBlacklistScope(context, handler.booru);
                 if (scope == null) return;
-                if (scope == _BlacklistScope.global) {
+                if (DoujinDataHandler.isDoujinBooru(handler.booru)) {
+                  // Doujin sources blacklist via sourceSettings only.
+                  SourceSettingsHandler.instance.addBlacklistTag(
+                    scope == _BlacklistScope.global ? null : handler.booru,
+                    tag,
+                  );
+                } else if (scope == _BlacklistScope.global) {
                   settingsHandler.addTagToList('hidden', tag);
                 } else if (handler.booru.name?.isNotEmpty == true) {
                   settingsHandler.addTagToBooruHiddenList(handler.booru.name!, tag);
@@ -1848,12 +2712,16 @@ Future<void> showTagDialog({
           if (isMarked)
             ListTile(
               leading: Icon(
-                Icons.star_border,
+                Symbols.star_border_rounded,
                 color: Theme.of(context).iconTheme.color,
               ),
               title: Text(context.loc.tagView.removeFromMarked),
               onTap: () {
-                settingsHandler.removeTagFromList('marked', tag);
+                if (DoujinDataHandler.isDoujinBooru(handler.booru)) {
+                  DoujinDataHandler.instance.unstarTag(tag);
+                } else {
+                  settingsHandler.removeTagFromList('marked', tag);
+                }
                 onUpdate();
                 Navigator.of(context).pop();
               },
@@ -1866,12 +2734,21 @@ Future<void> showTagDialog({
               ),
               title: Text(context.loc.tagView.removeFromHidden),
               onTap: () {
-                settingsHandler.removeTagFromList('hidden', tag);
+                if (DoujinDataHandler.isDoujinBooru(handler.booru)) {
+                  // The doujin hidden state comes from the doujin blacklist,
+                  // so removal has to happen there.
+                  SourceSettingsHandler.instance.removeBlacklistTag(handler.booru, tag);
+                } else {
+                  settingsHandler.removeTagFromList('hidden', tag);
+                }
+                searchHandler.filterCurrentFetched();
+                handler.filterFetched();
                 onUpdate();
                 Navigator.of(context).pop();
               },
             ),
-          if (settingsHandler.isTagHiddenForBooru(tag, handler.booru.name))
+          if (!DoujinDataHandler.isDoujinBooru(handler.booru) &&
+              settingsHandler.isTagHiddenForBooru(tag, handler.booru.name))
             ListTile(
               leading: Icon(
                 CupertinoIcons.eye_slash,
@@ -1892,11 +2769,22 @@ Future<void> showTagDialog({
             ),
           //
           FutureBuilder<PinnedTag?>(
-            future: settingsHandler.dbHandler.getPinnedTag(
-              tag,
-              booruType: searchHandler.currentBooru.type?.name,
-              booruName: searchHandler.currentBooru.name,
-            ),
+            // Against THIS dialog's source, like every other action here. On
+            // a merge tab the current booru is the Merge placeholder, so
+            // reading the pin state from it disagreed with the batch bar,
+            // which pins against the item's real source.
+            future: DoujinDataHandler.isDoujinBooru(handler.booru)
+                ? Future.value(() {
+                    for (final p in doujinPinsAsPinnedTags(handler.booru)) {
+                      if (p.tagName == tag) return p;
+                    }
+                    return null;
+                  }())
+                : settingsHandler.dbHandler.getPinnedTag(
+                    tag,
+                    booruType: handler.booru.type?.name,
+                    booruName: handler.booru.name,
+                  ),
             builder: (_, snapshot) {
               final isPinned = snapshot.data != null;
               final pinnedTag = snapshot.data;
@@ -1912,12 +2800,13 @@ Future<void> showTagDialog({
                   isInSearch: isInSearch,
                   hasTabWithTag: hasTabWithTag,
                   onUpdate: onUpdate,
+                  knownType: knownType,
                 );
               }
 
               return ListTile(
                 title: Text(isPinned ? context.loc.pinnedTags.unpinTag : context.loc.pinnedTags.pinTag),
-                leading: Icon(isPinned ? Icons.push_pin : Icons.push_pin_outlined),
+                leading: Icon(isPinned ? Symbols.push_pin_rounded : Symbols.push_pin_rounded),
                 onTap: () async {
                   if (isPinned && pinnedTag != null) {
                     await showUnpinTagDialog(
@@ -1930,7 +2819,7 @@ Future<void> showTagDialog({
                     await showPinTagDialog(
                       context,
                       tag,
-                      searchHandler.currentBooru,
+                      handler.booru,
                       () {},
                     );
                   }
@@ -1954,7 +2843,7 @@ Future<void> showTagDialog({
                     right: -5,
                     top: -5,
                     child: Icon(
-                      Icons.circle,
+                      Symbols.circle_rounded,
                       size: 6,
                       color: hasTabWithTag.color(context),
                     ),
@@ -1964,31 +2853,145 @@ Future<void> showTagDialog({
               title: Text(context.loc.tagView.relatedTabs),
               onTap: () => showRelatedTabsDialog(context, tag),
             ),
-          ListTile(
-            leading: Icon(
-              Icons.edit,
-              color: Theme.of(context).iconTheme.color,
+          // Edit tag removed from this menu — double-tapping the chip opens
+          // the tag editor directly.
+                ],
+              ),
             ),
-            title: Text(context.loc.tagView.editTag),
-            onTap: () async {
-              Navigator.of(context).pop();
-              final item = tagHandler.getTag(tag);
-              await showDialog(
-                context: context,
-                builder: (context) => TagsManagerListItemDialog(
-                  tag: item,
-                  onChangedType: (TagType? newValue) {
-                    if (newValue != null && item.tagType != newValue) {
-                      item.tagType = newValue;
-                      tagHandler.putTag(item, dbEnabled: settingsHandler.dbEnabled);
-                      onUpdate();
-                    }
-                  },
-                ),
-              );
-              onUpdate();
-            },
-          ),
+          ],
+        ),
+      );
+  }
+
+  // Doujin sources get the tag menu as a CENTERED popup; boorus keep the
+  // bottom sheet.
+  if (isDoujin) {
+    await showDialog<void>(
+      context: context,
+      routeSettings: RouteSettings(name: 'tagDialog/$tag'),
+      builder: (BuildContext context) => Dialog(
+        clipBehavior: Clip.antiAlias,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 380),
+          child: buildContent(context),
+        ),
+      ),
+    );
+    return;
+  }
+
+  await showModalBottomSheet<void>(
+    context: context,
+    routeSettings: RouteSettings(name: 'tagDialog/$tag'),
+    isScrollControlled: true,
+    useSafeArea: true,
+    backgroundColor: Colors.transparent,
+    builder: buildContent,
+  );
+}
+
+/// Sentinel returned by [pickTabGroupName] when the "Open outside group"
+/// entry (shown only if [pickTabGroupName]'s allowOutside is set and the
+/// current tab is grouped) is chosen.
+const String kOpenOutsideGroupSentinel = ' outside-group';
+const String kOpenFromSentinel = ' open-from';
+
+/// Group picker: bottom sheet listing existing tab groups (with counts) plus
+/// a "New group…" entry that prompts for a name. Returns the chosen/created
+/// group name, [kOpenOutsideGroupSentinel] for "outside group", or null when
+/// dismissed.
+Future<String?> pickTabGroupName(
+  BuildContext context, {
+  String title = 'Pick a group',
+  bool allowOutside = false,
+  // When set, offers an "Open from" entry: a new group named
+  // `from__<tag>` as the seed of a fresh discovery run.
+  String? openFromTag,
+}) async {
+  final searchHandler = SearchHandler.instance;
+  final List<String> groups = searchHandler.tabGroupNames;
+  const String newGroupSentinel = ' new-group';
+  // Only meaningful while browsing inside a group.
+  final bool showOutside =
+      allowOutside && searchHandler.tabs.isNotEmpty && (searchHandler.currentTab.groupName?.isNotEmpty ?? false);
+
+  final String? chosen = await showModalBottomSheet<String>(
+    context: context,
+    useSafeArea: true,
+    backgroundColor: Colors.transparent,
+    builder: (BuildContext ctx) {
+      final theme = Theme.of(ctx);
+      return Container(
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              margin: const EdgeInsets.only(top: 8, bottom: 2),
+              width: 40,
+              height: 4.5,
+              decoration: BoxDecoration(
+                color: const Color(0xFF4A4260),
+                borderRadius: BorderRadius.circular(3),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+              child: Row(
+                children: [
+                  Icon(Symbols.create_new_folder_rounded, size: 20, color: theme.colorScheme.secondary),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                padding: const EdgeInsets.only(bottom: 8),
+                children: [
+                  // Quick actions first: outside-group escape hatch, then the
+                  // "start a new discovery run from this tag" shortcut.
+                  if (showOutside)
+                    ListTile(
+                      leading: Icon(Symbols.folder_off_rounded, color: theme.iconTheme.color),
+                      title: const Text('Outside group'),
+                      subtitle: const Text("Ungrouped tab after this group's block"),
+                      onTap: () => Navigator.of(ctx).pop(kOpenOutsideGroupSentinel),
+                    ),
+                  if (openFromTag != null)
+                    ListTile(
+                      leading: const Icon(Symbols.conversion_path_rounded, color: Colors.green),
+                      title: const Text('Open from'),
+                      subtitle: Text('New group "from__${openFromTag.replaceAll(' ', '_')}" — a fresh starting point'),
+                      onTap: () => Navigator.of(ctx).pop(kOpenFromSentinel),
+                    ),
+                  if (showOutside || openFromTag != null) const Divider(height: 1),
+                  for (final g in groups)
+                    ListTile(
+                      leading: Icon(Symbols.folder_open_rounded, color: theme.colorScheme.secondary),
+                      title: Text(g),
+                      subtitle: Text(
+                        '${searchHandler.tabsInGroup(g).length} ${searchHandler.tabsInGroup(g).length == 1 ? 'tab' : 'tabs'}',
+                      ),
+                      onTap: () => Navigator.of(ctx).pop(g),
+                    ),
+                  ListTile(
+                    leading: const Icon(Symbols.add_rounded, color: Colors.green),
+                    title: const Text('New group…'),
+                    onTap: () => Navigator.of(ctx).pop(newGroupSentinel),
+                  ),
                 ],
               ),
             ),
@@ -1996,6 +2999,114 @@ Future<void> showTagDialog({
         ),
       );
     },
+  );
+
+  if (chosen == null) return null;
+  if (chosen == kOpenOutsideGroupSentinel || chosen == kOpenFromSentinel) return chosen;
+  if (chosen != newGroupSentinel) return chosen;
+
+  if (!context.mounted) return null;
+  final TextEditingController controller = TextEditingController();
+  final String? name = await showDialog<String>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('New tab group'),
+      content: TextField(
+        controller: controller,
+        autofocus: true,
+        decoration: const InputDecoration(
+          labelText: 'Group name',
+          border: OutlineInputBorder(),
+        ),
+        onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(),
+          child: Text(ctx.loc.cancel),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+          child: const Text('Create'),
+        ),
+      ],
+    ),
+  );
+  controller.dispose();
+  return (name == null || name.isEmpty) ? null : name;
+}
+
+/// Bottom sheet to open [tag] as a background tab inside a tab group:
+/// pick an existing group or name a new one on the spot.
+/// Domain-correct "is this tag blacklisted / starred" for a bare tag STRING
+/// on the source that [handler] belongs to. Doujin sources read the doujin
+/// blacklist and the doujin star store; boorus read the global blacklist and
+/// markedTags. Used where only a tag name is available (no item to run
+/// parseTagsListForItem on).
+bool tagHiddenForHandler(String tag, BooruHandler handler) {
+  if (DoujinDataHandler.isDoujinBooru(handler.booru)) {
+    return SourceSettingsHandler.instance
+        .tagBlacklist(handler.booru)
+        .contains(DoujinDataHandler.normalizeTag(tag));
+  }
+  return SettingsHandler.instance.hiddenTags.contains(tag);
+}
+
+bool tagMarkedForHandler(String tag, BooruHandler handler) {
+  if (DoujinDataHandler.isDoujinBooru(handler.booru)) {
+    return DoujinDataHandler.instance.isTagStarred(tag);
+  }
+  return SettingsHandler.instance.markedTags.contains(tag);
+}
+
+Future<void> showOpenTagInGroupSheet(
+  BuildContext context,
+  String tag,
+  Booru booru, {
+  // When opening a DOUJIN ITEM (not a tag search) into a group, its identity
+  // makes the new tab a real detail-page tab.
+  BooruItem? doujinItem,
+}) async {
+  final String? choice = await pickTabGroupName(
+    context,
+    title: 'Open "${tag.replaceAll('_', ' ')}" in group',
+    allowOutside: true,
+    openFromTag: tag,
+  );
+  if (choice == null) return;
+
+  final bool outside = choice == kOpenOutsideGroupSentinel;
+  final bool openFrom = choice == kOpenFromSentinel;
+  // "Open from": seed a fresh discovery run — new group named after the tag.
+  final String? groupName = outside
+      ? null
+      : openFrom
+      ? 'from__${tag.replaceAll(' ', '_')}'
+      : choice;
+
+  SearchHandler.instance.addTabByString(
+    tag,
+    customBooru: booru,
+    // Outside: ungrouped tab; the insertion snapping places it after the
+    // current group's block. New groups honour the placement setting.
+    group: groupName,
+    switchToNew: false,
+    doujinPostURL: doujinItem?.postURL,
+    doujinTitle: doujinItem == null ? null : DoujinDataHandler.titleOf(doujinItem),
+    doujinThumb: doujinItem?.thumbnailURL,
+  );
+
+  FlashElements.showSnackbar(
+    isKeyUnique: true,
+    key: 'added_new_tab',
+    duration: const Duration(seconds: 2),
+    title: Text(
+      outside ? 'Opened outside group' : 'Opened in group "$groupName"',
+      style: const TextStyle(fontSize: 20),
+    ),
+    content: Text(tag, style: const TextStyle(fontSize: 16)),
+    leadingIcon: Symbols.fiber_new_rounded,
+    sideColor: Colors.green,
   );
 }
 
@@ -2072,7 +3183,7 @@ class _RelatedTabsDialogState extends State<_RelatedTabsDialog> {
             ],
             itemBuilder: (v) => ListTile(
               leading: Icon(
-                Icons.circle,
+                Symbols.circle_rounded,
                 size: 12,
                 color: v?.color(context),
               ),
@@ -2087,7 +3198,7 @@ class _RelatedTabsDialogState extends State<_RelatedTabsDialog> {
             ),
             selectedItemBuilder: (v) => ListTile(
               leading: Icon(
-                Icons.circle,
+                Symbols.circle_rounded,
                 size: 12,
                 color: v?.color(context),
               ),
@@ -2112,7 +3223,7 @@ class _RelatedTabsDialogState extends State<_RelatedTabsDialog> {
                   onTap: () async {
                     await ServiceHandler.vibrate();
                     if (SettingsHandler.instance.appMode.value.isMobile) {
-                      Navigator.of(context).popUntil((r) => r.isFirst); // exit viewer
+                      NavigationTrace.closing('tab list: switched tab', () => Navigator.of(context).popUntil((r) => r.isFirst)); // exit viewer
                     }
                     WidgetsBinding.instance.addPostFrameCallback((_) {
                       searchHandler.changeTabIndex(tabIndex);
@@ -2153,7 +3264,7 @@ class SourceLinkErrorDialog extends StatelessWidget {
         style: const TextStyle(fontSize: 20),
       ),
       content: Text(link, style: const TextStyle(fontSize: 16)),
-      leadingIcon: Icons.copy,
+      leadingIcon: Symbols.content_copy_rounded,
       sideColor: Colors.green,
     );
   }
@@ -2178,7 +3289,7 @@ class SourceLinkErrorDialog extends StatelessWidget {
               (url) => ListTile(
                 dense: true,
                 contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.link, size: 20),
+                leading: const Icon(Symbols.link_rounded, size: 20),
                 title: Text(url, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14)),
                 onTap: () async {
                   final ok = await launchUrlString(
@@ -2212,7 +3323,7 @@ class SourceLinkErrorDialog extends StatelessWidget {
         ElevatedButton.icon(
           onPressed: () => copy(context),
           label: Text(context.loc.copy),
-          icon: const Icon(Icons.copy),
+          icon: const Icon(Symbols.content_copy_rounded),
         ),
         const CloseDialogButton(withIcon: true),
       ],
@@ -2270,7 +3381,7 @@ class _CollapsibleRelatedPreviewState extends State<_CollapsibleRelatedPreview> 
                 visualDensity: VisualDensity.compact,
                 tooltip: 'Open in floating window',
                 icon: Icon(
-                  Icons.picture_in_picture_alt_outlined,
+                  Symbols.picture_in_picture_alt_rounded,
                   size: 20,
                   color: Theme.of(context).colorScheme.secondary,
                 ),
@@ -2281,7 +3392,7 @@ class _CollapsibleRelatedPreviewState extends State<_CollapsibleRelatedPreview> 
                   );
                 },
               ),
-              Icon(_expanded ? Icons.expand_less : Icons.expand_more),
+              Icon(_expanded ? Symbols.expand_less_rounded : Symbols.expand_more_rounded),
             ],
           ),
           onTap: () => setState(() => _expanded = !_expanded),
@@ -2313,6 +3424,11 @@ class TagContentPreview extends StatefulWidget {
     this.compact = false,
     this.compactTitle,
     this.onEffectiveTagChanged,
+    this.hideWhenEmpty = false,
+    this.header,
+    this.suggestFor,
+    this.suggestBoorus,
+    this.showDoujinNewTabButton = true,
     super.key,
   }) : assert(
          boorus.isNotEmpty,
@@ -2336,13 +3452,93 @@ class TagContentPreview extends StatefulWidget {
   // Optional override for the "Preview" header — e.g. "More from artist X".
   final String? compactTitle;
 
+  // When true, the whole strip (and [header], if any) collapses to nothing
+  // once the search comes back empty — used by the hub pages so boorus that
+  // don't know the tag don't waste a "Nothing found" row of screen space.
+  final bool hideWhenEmpty;
+
+  // Optional widget rendered above the strip (e.g. the hub's favicon+name
+  // row). Lives inside the preview so it collapses together with it when
+  // [hideWhenEmpty] kicks in.
+  final Widget? header;
+
+  // When set, this strip stops being a single tag search and becomes the
+  // blended suggestion feed for that post: several different facet queries
+  // (character / franchise-minus-character / artist / act / style) fetched in
+  // parallel and interleaved under per-facet quotas and per-artist,
+  // per-character caps. See SuggestionHandler / SuggestionEngine.
+  final BooruItem? suggestFor;
+
+  /// r76: the query a new tab gets from this strip. A Suggested strip's
+  /// placeholder tag means nothing to a site, so its tab carries the post
+  /// for the same suggestion loader instead.
+  static String newTabQuery({required String effectiveTag, BooruItem? suggestFor, String? filter, List<Booru>? boorus}) {
+    if (suggestFor == null) return effectiveTag;
+    return SuggestionHandler.queryFor(suggestFor, filter: filter ?? '', boorus: boorus);
+  }
+
+  // Cross-booru discovery: when set (and longer than one), the facets are
+  // spread across these boorus with tag spellings translated per site.
+  final List<Booru>? suggestBoorus;
+
+  // Doujin strips replace the booru chip with a lone open-in-new-tab button.
+  // Callers that render that action in their own section header (the detail
+  // page puts it beside the chevron) set this false so the strip doesn't
+  // spend a whole row on it.
+  final bool showDoujinNewTabButton;
+
+  // ── strip cell geometry ────────────────────────────────────────────────
+  // The strip's height is DERIVED from the card height rather than written
+  // out separately. The two had drifted: when the doujin strips' header row
+  // was moved into the section title, the cards stayed at their old size and
+  // the reclaimed height simply became a gap.
+
+  static const double stripCardWidth = 148;
+
+  /// Card height when the strip still carries a header row of its own (the
+  /// booru source chip).
+  static const double stripCardBaseHeight = 220;
+
+  /// What the removed header row was worth. Strips without that row give the
+  /// height back to the cards - a taller cover, since the cover is the
+  /// flexible part of the cell and the title sits under it at a fixed size.
+  static const double stripReclaimedHeight = 38;
+
+  /// The ListView's own vertical padding inside the strip.
+  static const double stripListPadding = 26;
+
+  static double stripCardHeight({required bool hasHeaderRow}) =>
+      hasHeaderRow ? stripCardBaseHeight : stripCardBaseHeight + stripReclaimedHeight;
+
+  static double stripHeight({required bool hasHeaderRow}) =>
+      stripCardHeight(hasHeaderRow: hasHeaderRow) + stripListPadding;
+
   @override
   State<TagContentPreview> createState() => _TagContentPreviewState();
 }
 
-class _TagContentPreviewState extends State<TagContentPreview> {
+class _TagContentPreviewState extends State<TagContentPreview> with AutomaticKeepAliveClientMixin {
+
+  /// Whether this strip draws a header row of its own above the cards. Doujin
+  /// strips whose host renders the open-in-new-tab action in its own section
+  /// header (the detail page) have none, and the cards take that height back.
+  bool get _stripHasHeaderRow => !(tab?.booruHandler.hasReader == true && !widget.showDoujinNewTabButton);
+
+  // Hub strips stay alive off-screen: without this, scrolling a hub unmounts
+  // strips and they re-fetch (and re-collapse) when scrolled back — janky.
+  @override
+  bool get wantKeepAlive => widget.compact;
+
   final settingsHandler = SettingsHandler.instance;
   final viewerHandler = ViewerHandler.instance;
+
+  // Whether this strip has EVER shown results. A strip that once had posts
+  // must not collapse just because a later filter cycle (e.g. gif on a booru
+  // with no gifs for the tag) comes back empty.
+  bool _hadResults = false;
+  // Bounded auto-pagination: some boorus return thin/empty early pages for
+  // rare tags — keep fetching a few pages until there's something to show.
+  int _autoPagesFetched = 0;
 
   final AutoScrollController scrollController = AutoScrollController();
 
@@ -2352,6 +3548,13 @@ class _TagContentPreviewState extends State<TagContentPreview> {
   bool loading = false;
   bool isLastPage = false;
   String errorString = '';
+
+  // Cross-booru alias translation: when the strip is switched to a booru
+  // other than the one the tag was written for, the tag is resolved to that
+  // booru's own spelling via TagAliasResolver (e.g. `burnice` →
+  // `burnice_white_(zenless_zone_zero)`). null = no translation active.
+  String? resolvedQuery;
+  Map<String, String> resolvedTerms = {};
 
   // Header "videos / GIFs only" filter. -1 means off; otherwise it's an
   // index into the active booru's `animatedPreviewFilters` list, which the
@@ -2372,11 +3575,35 @@ class _TagContentPreviewState extends State<TagContentPreview> {
       ? _animatedFilters[animatedFilterIndex]
       : null;
 
-  // The actual query sent to the booru handler — `widget.tag` plus
-  // any per-strip filter the user toggled in the header.
+  // The actual query sent to the booru handler — `widget.tag` (translated to
+  // the selected booru's spelling when a resolution is active) plus any
+  // per-strip filter the user toggled in the header.
   String get _effectiveTag {
+    final String base = resolvedQuery ?? widget.tag;
     final filter = _activeAnimatedFilter;
-    return filter == null ? widget.tag : '${widget.tag} $filter';
+    return filter == null ? base : '$base $filter';
+  }
+
+  // The booru this strip's tag was originally written for.
+  Booru? get _originBooru =>
+      widget.parentTab?.selectedBooru.value ?? (widget.boorus.isNotEmpty ? widget.boorus.first : null);
+
+  // Translates the tag for the selected booru when it differs from the origin
+  // booru. Failures (or nothing to translate) leave the original query.
+  Future<void> _maybeResolveAliases() async {
+    resolvedQuery = null;
+    resolvedTerms = {};
+    final Booru? origin = _originBooru;
+    final Booru? target = selectedBooru;
+    if (origin == null || target == null) return;
+    if (origin.name == target.name && origin.type == target.type) return;
+    try {
+      final res = await TagAliasResolver.resolveQuery(widget.tag, target);
+      if (res.changed) {
+        resolvedQuery = res.query;
+        resolvedTerms = res.perTerm;
+      }
+    } catch (_) {}
   }
 
   // Whether the booru currently powering this strip understands
@@ -2434,10 +3661,25 @@ class _TagContentPreviewState extends State<TagContentPreview> {
     }
 
     if (refresh || tab == null) {
+      _autoPagesFetched = 0;
+      await _maybeResolveAliases();
+      if (!mounted) return;
       tab = SearchTab(
         selectedBooru!,
         null,
         _effectiveTag,
+        customHandler: widget.suggestFor == null
+            ? null
+            : SuggestionHandler(
+                selectedBooru!,
+                30,
+                sourceItem: widget.suggestFor!,
+                targetBoorus: widget.suggestBoorus,
+                // The header's videos/GIFs toggle. Suggestions are built from
+                // the source post, not from _effectiveTag, so without this the
+                // toggle was assembled into a string nothing ever read.
+                extraFilter: _activeAnimatedFilter ?? '',
+              ),
       );
       // Preview strips are throwaway mini-searches. Don't let them write the
       // previewed booru's tag types into the shared store — otherwise
@@ -2474,6 +3716,9 @@ class _TagContentPreviewState extends State<TagContentPreview> {
     setState(() {});
 
     await tab!.booruHandler.search(_effectiveTag, null);
+    // r77: the strip may be gone by now (a closed hub page, 19 Sep 14:23:53:
+    // "Null check operator used on a null value" in setState).
+    if (!mounted) return;
 
     if (tab!.booruHandler.locked && !isLastPage) {
       isLastPage = true;
@@ -2490,6 +3735,10 @@ class _TagContentPreviewState extends State<TagContentPreview> {
       unawaited(tab!.booruHandler.searchCount(_effectiveTag));
     }
 
+    if (tab!.booruHandler.filteredFetched.isNotEmpty) {
+      _hadResults = true;
+    }
+
     Future.delayed(const Duration(milliseconds: 200), () {
       if (!mounted) return;
       loading = false;
@@ -2497,14 +3746,40 @@ class _TagContentPreviewState extends State<TagContentPreview> {
     });
     if (!mounted) return;
     setState(() {});
+
+    // Thin/empty early pages (rare tags on some boorus): auto-fetch a few
+    // more pages so the strip doesn't claim "nothing found" (or show 3
+    // thumbs) when the tag actually has posts further in.
+    final BooruHandler handlerRef = tab!.booruHandler;
+    if (!isLastPage &&
+        errorString.isEmpty &&
+        handlerRef.filteredFetched.length < 10 &&
+        _autoPagesFetched < 4) {
+      _autoPagesFetched++;
+      Future.delayed(const Duration(milliseconds: 300), () {
+        if (mounted && tab?.booruHandler == handlerRef) {
+          loadPreview();
+        }
+      });
+    }
   }
 
   Future<void> onPreviewTap(int index) async {
+    // Doujin strips: a card tap opens the DETAIL PAGE, never the old image
+    // viewer flow.
+    if (tab!.booruHandler.hasReader) {
+      await Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => DoujinDetailPage(tab: tab!, index: index)),
+      );
+      return;
+    }
     viewedIndex.value = index;
     final viewerKey = GlobalKey(debugLabel: 'viewer-${tab!.tags.replaceAll(' ', '_')}');
     ViewerHandler.instance.addViewer(viewerKey);
     await Navigator.of(context).push(
       PageRouteBuilder(
+        // r77: named like the feed's viewer, so its close is logged too.
+        settings: const RouteSettings(name: ViewerCloseObserver.viewerRoute),
         pageBuilder: (_, _, _) => GalleryViewPage(
           key: viewerKey,
           tab: tab!,
@@ -2556,7 +3831,7 @@ class _TagContentPreviewState extends State<TagContentPreview> {
       duration: const Duration(seconds: 2),
       title: Text(context.loc.tagView.copiedFileURL, style: const TextStyle(fontSize: 20)),
       content: Text(Uri.encodeFull(item.fileURL), style: const TextStyle(fontSize: 16)),
-      leadingIcon: Icons.copy,
+      leadingIcon: Symbols.content_copy_rounded,
       sideColor: Colors.green,
     );
   }
@@ -2625,12 +3900,20 @@ class _TagContentPreviewState extends State<TagContentPreview> {
 
   // The "open this tag in a new tab" action — extracted so it can be reused
   // from the chip's icon button.
+  String get _newTabQuery => TagContentPreview.newTabQuery(
+    effectiveTag: _effectiveTag,
+    suggestFor: widget.suggestFor,
+    filter: _activeAnimatedFilter,
+    boorus: widget.suggestBoorus,
+  );
+
   void _openInNewTab(BuildContext context) {
     final defaultMode = settingsHandler.defaultTabAddMode == 'next' ? TabAddMode.next : TabAddMode.end;
     SearchHandler.instance.addTabByString(
-      _effectiveTag,
+      _newTabQuery,
       customBooru: selectedBooru,
       addMode: defaultMode,
+      group: SearchHandler.inheritGroup,
     );
 
     FlashElements.showSnackbar(
@@ -2643,7 +3926,7 @@ class _TagContentPreviewState extends State<TagContentPreview> {
         style: const TextStyle(fontSize: 20),
       ),
       content: Text(_effectiveTag, style: const TextStyle(fontSize: 16)),
-      leadingIcon: Icons.fiber_new,
+      leadingIcon: Symbols.fiber_new_rounded,
       sideColor: Colors.green,
       primaryActionBuilder: (context, controller) {
         return Row(
@@ -2652,7 +3935,7 @@ class _TagContentPreviewState extends State<TagContentPreview> {
               onPressed: () {
                 ServiceHandler.vibrate();
                 if (settingsHandler.appMode.value.isMobile) {
-                  Navigator.of(context).popUntil((r) => r.isFirst);
+                  NavigationTrace.closing('new tab notice: go to the tab', () => Navigator.of(context).popUntil((r) => r.isFirst));
                 }
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   SearchHandler.instance.changeTabIndex(
@@ -2662,14 +3945,14 @@ class _TagContentPreviewState extends State<TagContentPreview> {
                 controller.dismiss();
               },
               icon: Icon(
-                Icons.arrow_forward_rounded,
+                Symbols.arrow_forward_rounded,
                 color: Theme.of(context).colorScheme.onSurface,
               ),
             ),
             const SizedBox(width: 4),
             IconButton(
               onPressed: () => controller.dismiss(),
-              icon: Icon(Icons.close, color: Theme.of(context).colorScheme.onSurface),
+              icon: Icon(Symbols.close_rounded, color: Theme.of(context).colorScheme.onSurface),
             ),
           ],
         );
@@ -2690,12 +3973,12 @@ class _TagContentPreviewState extends State<TagContentPreview> {
             mainAxisSize: MainAxisSize.min,
             children: [
               ListTile(
-                leading: const Icon(Icons.vertical_align_bottom),
+                leading: const Icon(Symbols.vertical_align_bottom_rounded),
                 title: const Text('Open at end of tab list'),
                 onTap: () => Navigator.of(dialogContext).pop(TabAddMode.end),
               ),
               ListTile(
-                leading: const Icon(Icons.tab),
+                leading: const Icon(Symbols.tab_rounded),
                 title: const Text('Open next to current tab'),
                 onTap: () => Navigator.of(dialogContext).pop(TabAddMode.next),
               ),
@@ -2714,10 +3997,11 @@ class _TagContentPreviewState extends State<TagContentPreview> {
     if (chosenMode == null) return;
 
     SearchHandler.instance.addTabByString(
-      _effectiveTag,
+      _newTabQuery,
       customBooru: selectedBooru,
       addMode: chosenMode,
       switchToNew: false,
+      group: SearchHandler.inheritGroup,
     );
 
     if (!context.mounted) return;
@@ -2731,7 +4015,7 @@ class _TagContentPreviewState extends State<TagContentPreview> {
         style: const TextStyle(fontSize: 20),
       ),
       content: Text(_effectiveTag, style: const TextStyle(fontSize: 16)),
-      leadingIcon: Icons.fiber_new,
+      leadingIcon: Symbols.fiber_new_rounded,
       sideColor: Colors.green,
     );
   }
@@ -2741,6 +4025,36 @@ class _TagContentPreviewState extends State<TagContentPreview> {
   /// picker arrow. The chip surface is non-tappable — the arrow is the only
   /// way to open the booru picker, so the inline action buttons aren't
   /// swallowed by a wrapping button.
+  /// The rehomed open-in-new-tab action for doujin strips — the only piece
+  /// of the booru chip that still makes sense there.
+  Widget _buildDoujinStripNewTabButton(BuildContext context) {
+    final hasTabResult = SearchHandler.instance.hasTabWithTag(
+      _effectiveTag,
+      customBooru: selectedBooru,
+    );
+    return IconButton(
+      tooltip: 'Open in a new tab',
+      visualDensity: VisualDensity.compact,
+      icon: Stack(
+        children: [
+          const Icon(Symbols.fiber_new_rounded),
+          if (hasTabResult.hasTagInAnyForm)
+            Positioned(
+              right: 0,
+              top: 0,
+              child: Icon(
+                Symbols.circle_rounded,
+                size: 6,
+                color: hasTabResult.color(context),
+              ),
+            ),
+        ],
+      ),
+      onPressed: () => _openInNewTab(context),
+      onLongPress: () => _openInNewTabLongPress(context),
+    );
+  }
+
   Widget _buildBooruChip(BuildContext context) {
     final boo = selectedBooru;
     final theme = Theme.of(context);
@@ -2769,6 +4083,23 @@ class _TagContentPreviewState extends State<TagContentPreview> {
                 style: const TextStyle(fontWeight: FontWeight.w500),
               ),
             ),
+            // Alias translation indicator: this booru spells the tag
+            // differently, show what the strip is actually searching.
+            if (resolvedTerms.isNotEmpty) ...[
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  '→ ${resolvedTerms.values.map((t) => t.replaceAll('_', ' ')).join(', ')}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: theme.colorScheme.secondary,
+                  ),
+                ),
+              ),
+            ],
           ] else
             Flexible(
               child: Text(
@@ -2778,11 +4109,15 @@ class _TagContentPreviewState extends State<TagContentPreview> {
               ),
             ),
           const SizedBox(width: 4),
+          // Hidden when the booru has no way to express "animated" — an empty
+          // filter list means the site profile checked and there is nothing
+          // real to search for, so the button would only append dead tags.
+          if (_animatedFilters.isNotEmpty)
           IconButton(
             tooltip: _animatedButtonTooltip,
             visualDensity: VisualDensity.compact,
             icon: Icon(
-              _activeAnimatedFilter == null ? Icons.movie_outlined : Icons.movie,
+              _activeAnimatedFilter == null ? Symbols.movie_rounded : Symbols.movie_rounded,
               color: _activeAnimatedFilter == null ? null : theme.colorScheme.secondary,
             ),
             onPressed: _toggleAnimatedOnly,
@@ -2792,13 +4127,13 @@ class _TagContentPreviewState extends State<TagContentPreview> {
             visualDensity: VisualDensity.compact,
             icon: Stack(
               children: [
-                const Icon(Icons.fiber_new),
+                const Icon(Symbols.fiber_new_rounded),
                 if (hasTabResult.hasTagInAnyForm)
                   Positioned(
                     right: 0,
                     top: 0,
                     child: Icon(
-                      Icons.circle,
+                      Symbols.circle_rounded,
                       size: 6,
                       color: hasTabResult.color(context),
                     ),
@@ -2811,7 +4146,7 @@ class _TagContentPreviewState extends State<TagContentPreview> {
           IconButton(
             tooltip: 'Pick booru',
             visualDensity: VisualDensity.compact,
-            icon: const Icon(Icons.arrow_drop_down),
+            icon: const Icon(Symbols.arrow_drop_down_rounded),
             onPressed: () => _openBooruPicker(context),
           ),
         ],
@@ -2821,7 +4156,20 @@ class _TagContentPreviewState extends State<TagContentPreview> {
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedSize(
+    super.build(context);
+    // Search finished (not loading, no error) with zero results — the tag
+    // simply doesn't exist on this booru. With hideWhenEmpty the whole strip
+    // (header included) collapses instead of wasting a "Nothing found" row.
+    final bool isKnownEmpty =
+        tab != null && !loading && errorString.isEmpty && tab!.booruHandler.filteredFetched.isEmpty;
+    if (widget.hideWhenEmpty && isKnownEmpty && !_hadResults) {
+      return const AnimatedSize(
+        duration: Duration(milliseconds: 200),
+        child: SizedBox.shrink(),
+      );
+    }
+
+    final Widget strip = AnimatedSize(
       duration: const Duration(milliseconds: 200),
       child: AnimatedSwitcher(
         duration: const Duration(milliseconds: 200),
@@ -2834,14 +4182,14 @@ class _TagContentPreviewState extends State<TagContentPreview> {
                   ? const SizedBox(height: 32)
                   : ListTile(
                 leading: Icon(
-                  Icons.search,
+                  Symbols.search_rounded,
                   color: Theme.of(context).iconTheme.color,
                 ),
                 title: Text(widget.compactTitle ?? context.loc.tagView.preview),
                 trailing: widget.parentTab == null
                     ? null
                     : IconButton(
-                        icon: const Icon(Icons.list),
+                        icon: const Icon(Symbols.list_rounded),
                         onPressed: showTagPreviewsListDialog,
                       ),
                 subtitle: isSingleBooru
@@ -2869,7 +4217,7 @@ class _TagContentPreviewState extends State<TagContentPreview> {
             : ((tab!.booruHandler.filteredFetched.isEmpty && (loading || errorString.isNotEmpty))
                   ? ListTile(
                       leading: Icon(
-                        loading ? Icons.search : Icons.restart_alt,
+                        loading ? Symbols.search_rounded : Symbols.restart_alt_rounded,
                         color: Theme.of(context).iconTheme.color,
                       ),
                       trailing: loading
@@ -2877,7 +4225,7 @@ class _TagContentPreviewState extends State<TagContentPreview> {
                           : (widget.parentTab == null
                                 ? null
                                 : IconButton(
-                                    icon: const Icon(Icons.list),
+                                    icon: const Icon(Symbols.list_rounded),
                                     onPressed: showTagPreviewsListDialog,
                                   )),
                       title: loading
@@ -2895,13 +4243,31 @@ class _TagContentPreviewState extends State<TagContentPreview> {
                         // compact (tag-chevron / "More from artist X") and
                         // non-compact paths, because the original booru
                         // dropdown was present in both too.
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
-                          child: _buildBooruChip(context),
-                        ),
+                        // Doujin strips are source-locked (related/recommend
+                        // only exist on their own site), so the source-picker
+                        // chip is noise there — keep just the open-in-new-tab
+                        // button, rehomed to the strip's corner.
+                        if (tab!.booruHandler.hasReader)
+                          // ...unless the host renders it in its own header
+                          // (see showDoujinNewTabButton), in which case the
+                          // strip adds no vertical space at all here.
+                          widget.showDoujinNewTabButton
+                              ? Padding(
+                                  padding: const EdgeInsets.fromLTRB(8, 0, 8, 0),
+                                  child: Align(
+                                    alignment: Alignment.centerRight,
+                                    child: _buildDoujinStripNewTabButton(context),
+                                  ),
+                                )
+                              : const SizedBox.shrink()
+                        else
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+                            child: _buildBooruChip(context),
+                          ),
                         const SizedBox(height: 6),
                         SizedBox(
-                          height: 220 + 10 + 16, // bigger thumbs + listview paddings
+                          height: TagContentPreview.stripHeight(hasHeaderRow: _stripHasHeaderRow),
                           width: MediaQuery.sizeOf(context).width,
                           child: NotificationListener<ScrollUpdateNotification>(
                             onNotification: (notif) {
@@ -2996,7 +4362,7 @@ class _TagContentPreviewState extends State<TagContentPreview> {
                                               spacing: 8,
                                               children: [
                                                 const Icon(
-                                                  Icons.error_outline,
+                                                  Symbols.error_rounded,
                                                   size: 30,
                                                 ),
                                                 Text(
@@ -3019,8 +4385,10 @@ class _TagContentPreviewState extends State<TagContentPreview> {
                                         color: Colors.transparent,
                                         child: Container(
                                           padding: const EdgeInsets.only(right: 8),
-                                          height: 220,
-                                          width: 148,
+                                          height: TagContentPreview.stripCardHeight(
+                                            hasHeaderRow: _stripHasHeaderRow,
+                                          ),
+                                          width: TagContentPreview.stripCardWidth,
                                           child: ValueListenableBuilder(
                                             valueListenable: viewedIndex,
                                             builder: (context, viewedIndex, _) {
@@ -3031,9 +4399,17 @@ class _TagContentPreviewState extends State<TagContentPreview> {
                                                 scrollController: scrollController,
                                                 isHighlighted: viewedIndex == index,
                                                 selectable: false,
+                                                // Strips render the compact
+                                                // doujin cell: cover + badge
+                                                // + title, no tag strip.
+                                                stripMode: true,
                                                 onTap: onPreviewTap,
                                                 onDoubleTap: onPreviewDoubleTap,
-                                                // onLongPress: onPreviewLongPress, // TODO use select here somehow?
+                                                // Doujin strips get the full item context menu; other
+                                                // sources keep the old no-op (select doesn't fit here).
+                                                onLongPress: tab!.booruHandler.hasReader
+                                                    ? (i) => showDoujinItemMenu(context, tab: tab!, index: i)
+                                                    : null,
                                                 onSecondaryTap: onPreviewSecondaryTap,
                                               );
                                             },
@@ -3052,6 +4428,19 @@ class _TagContentPreviewState extends State<TagContentPreview> {
                     )),
       ),
     );
+
+    if (widget.header == null) {
+      return strip;
+    }
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        widget.header!,
+        strip,
+      ],
+    );
   }
 }
 
@@ -3066,7 +4455,6 @@ class _TagPreviewsListDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     final viewerHandler = ViewerHandler.instance;
     final searchHandler = SearchHandler.instance;
-    final settingsHandler = SettingsHandler.instance;
 
     final list = viewerHandler.tagPreviewsHistory[tabId] ?? [];
     final controllers = List.generate(list.length, (_) => ScrollController());
@@ -3143,7 +4531,7 @@ class _TagPreviewsListDialog extends StatelessWidget {
                             trailing: (isActive || matchesCurrentState)
                                 ? null
                                 : IconButton(
-                                    icon: const Icon(Icons.history),
+                                    icon: const Icon(Symbols.history_rounded),
                                     onPressed: () async {
                                       Navigator.of(context).pop();
 
@@ -3159,8 +4547,8 @@ class _TagPreviewsListDialog extends StatelessWidget {
                                               context: context,
                                               tag: tag,
                                               handler: searchHandler.currentBooruHandler,
-                                              isHidden: settingsHandler.hiddenTags.contains(tag),
-                                              isMarked: settingsHandler.markedTags.contains(tag),
+                                              isHidden: tagHiddenForHandler(tag, searchHandler.currentBooruHandler),
+                                              isMarked: tagMarkedForHandler(tag, searchHandler.currentBooruHandler),
                                               isInSearch:
                                                   searchHandler.searchTextController.text
                                                       .toLowerCase()
@@ -3209,9 +4597,14 @@ class _TagPreviewsListDialog extends StatelessWidget {
                                                 if (isActive) {
                                                   // close everything up to this tag
                                                   WidgetsBinding.instance.addPostFrameCallback((_) {
-                                                    Navigator.of(context).popUntil(
-                                                      (route) =>
-                                                          route.settings.name == 'tagDialog/$tag' || route.isFirst,
+                                                    // r79: stops at the viewer too - with this
+                                                    // tag's dialog already gone it fell through
+                                                    // to the feed.
+                                                    NavigationTrace.closing(
+                                                      'tag previews breadcrumb',
+                                                      () => Navigator.of(context).popUntil(
+                                                        (route) => NavigationTrace.tagDialogOrViewer(route, tag),
+                                                      ),
                                                     );
                                                   });
                                                 } else {
@@ -3222,8 +4615,8 @@ class _TagPreviewsListDialog extends StatelessWidget {
                                                       context: context,
                                                       tag: tag,
                                                       handler: searchHandler.currentBooruHandler,
-                                                      isHidden: settingsHandler.hiddenTags.contains(tag),
-                                                      isMarked: settingsHandler.markedTags.contains(tag),
+                                                      isHidden: tagHiddenForHandler(tag, searchHandler.currentBooruHandler),
+                                                      isMarked: tagMarkedForHandler(tag, searchHandler.currentBooruHandler),
                                                       isInSearch:
                                                           searchHandler.searchTextController.text
                                                               .toLowerCase()
@@ -3251,7 +4644,7 @@ class _TagPreviewsListDialog extends StatelessWidget {
                                               const Padding(
                                                 padding: EdgeInsets.symmetric(horizontal: 4),
                                                 child: Icon(
-                                                  Icons.arrow_forward,
+                                                  Symbols.arrow_forward_rounded,
                                                   size: 14,
                                                 ),
                                               ),
@@ -3273,7 +4666,7 @@ class _TagPreviewsListDialog extends StatelessWidget {
               //
               ListTile(
                 leading: Icon(
-                  Icons.cancel_outlined,
+                  Symbols.cancel_rounded,
                   color: Theme.of(context).iconTheme.color,
                 ),
                 title: Text(context.loc.close),

@@ -1,25 +1,49 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/handlers/search_handler.dart';
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/handlers/tag_handler.dart';
+import 'package:lolisnatcher/src/services/backup_app.dart';
+import 'package:lolisnatcher/src/services/backup_plan.dart';
+import 'package:lolisnatcher/src/services/db_parts.dart';
+import 'package:lolisnatcher/src/services/drive_backup.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
-import 'package:lolisnatcher/src/widgets/common/cancel_button.dart';
-import 'package:lolisnatcher/src/widgets/common/confirm_button.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 import 'package:lolisnatcher/src/widgets/common/settings_widgets.dart';
 
+/// Settings → Backup & restore.
+///
+/// r80: one list of everything a backup can carry, ticked item by item, for
+/// a folder you chose and for Google Drive alike. Drive keeps named snapshots
+/// (a folder each) instead of one set of files, and is there on a fresh
+/// install without choosing a folder first. The database can come back whole
+/// or in parts, and the recommender's learning is an item of its own.
 class BackupRestorePage extends StatefulWidget {
   const BackupRestorePage({super.key});
+
+  /// Seams for tests: the page is Android-only, and Drive is the network.
+  static bool Function() isAndroid = _defaultIsAndroid;
+  static Future<bool> Function() driveHasCredentials = _defaultHasCredentials;
+  static Future<bool> Function() driveIsLinked = _defaultIsLinked;
+  static Future<List<DriveSnapshot>> Function() driveSnapshots = DriveBackup.snapshots;
+  static Future<String?> Function({void Function(String status)? onProgress}) driveLink = _defaultLink;
+
+  static bool _defaultIsAndroid() => Platform.isAndroid;
+  static Future<bool> _defaultHasCredentials() => DriveBackup.hasCredentials;
+  static Future<bool> _defaultIsLinked() => DriveBackup.isLinked;
+  static Future<String?> _defaultLink({void Function(String status)? onProgress}) => DriveBackup.link(onProgress: onProgress);
+
+  static void resetForTests() {
+    isAndroid = _defaultIsAndroid;
+    driveHasCredentials = _defaultHasCredentials;
+    driveIsLinked = _defaultIsLinked;
+    driveSnapshots = DriveBackup.snapshots;
+    driveLink = _defaultLink;
+  }
 
   @override
   State<BackupRestorePage> createState() => _BackupRestorePageState();
@@ -27,34 +51,34 @@ class BackupRestorePage extends StatefulWidget {
 
 class _BackupRestorePageState extends State<BackupRestorePage> {
   final SettingsHandler settingsHandler = SettingsHandler.instance;
-  final SearchHandler searchHandler = SearchHandler.instance;
-  final TagHandler tagHandler = TagHandler.instance;
   String backupPath = '';
 
+  /// What a backup or a restore carries; everything to begin with.
+  final Set<BackupItem> selected = BackupItem.values.toSet();
+
   bool inProgress = false;
-  int progress = 0, total = 0;
+  String status = '';
+
+  bool driveLinked = false;
+  bool driveHasCreds = false;
+  bool driveBusy = false;
+  String driveStatus = '';
+  List<DriveSnapshot> snapshots = const [];
 
   @override
   void initState() {
     super.initState();
     backupPath = settingsHandler.backupPath;
-    validateBackupPathAccess();
+    unawaited(validateBackupPathAccess());
+    unawaited(_refreshDriveState());
   }
 
   Future<void> validateBackupPathAccess() async {
-    if (!Platform.isAndroid || backupPath.isEmpty) {
-      return;
-    }
-
+    if (!BackupRestorePage.isAndroid() || backupPath.isEmpty) return;
     try {
-      final success = await ServiceHandler.testSAFPersistence(backupPath);
-      if (!success) {
-        Logger.Inst().log(
-          'Invalid backup path',
-          'BackupRestorePage',
-          'validateBackupPathAccess',
-          LogTypes.exception,
-        );
+      final bool success = await ServiceHandler.testSAFPersistence(backupPath);
+      if (!success && mounted) {
+        Logger.Inst().log('Invalid backup path', 'BackupRestorePage', 'validateBackupPathAccess', LogTypes.exception);
         setState(() {
           backupPath = '';
           settingsHandler.backupPath = '';
@@ -64,303 +88,577 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
     } catch (_) {}
   }
 
-  void showSnackbar(
-    String text, {
-    required bool isError,
-  }) {
+  void showSnackbar(String text, {required bool isError}) {
     FlashElements.showSnackbar(
       context: context,
       title: Text(
         isError ? context.loc.errorExclamation : context.loc.successExclamation,
         style: const TextStyle(fontSize: 20),
       ),
-      content: Text(
-        text,
-        style: const TextStyle(fontSize: 16),
-      ),
-      leadingIcon: isError ? Icons.error_outline : Icons.done,
+      content: Text(text, style: const TextStyle(fontSize: 16)),
+      leadingIcon: isError ? Symbols.error_rounded : Symbols.done_rounded,
       leadingIconColor: isError ? Colors.red : Colors.green,
       sideColor: isError ? Colors.red : Colors.green,
     );
   }
 
-  Future<bool> detectedDuplicateFile(String fileName) async {
-    final bool? res = await showDialog(
+  // ───────────────────────────── Google Drive ─────────────────────────────
+
+  /// r80: whether Drive is set up is shown first; the list of snapshots after.
+  /// The listing is a network call: right after the Google sign-in it could
+  /// fail and, before r80, took the page's update down with it - the options
+  /// only appeared after a restart.
+  Future<void> _refreshDriveState() async {
+    bool hasCreds = false;
+    bool linked = false;
+    try {
+      hasCreds = await BackupRestorePage.driveHasCredentials();
+      linked = await BackupRestorePage.driveIsLinked();
+    } catch (e) {
+      Logger.Inst().log('drive state could not be read: $e', 'BackupRestorePage', '_refreshDriveState', LogTypes.exception);
+    }
+    if (!mounted) return;
+    setState(() {
+      driveHasCreds = hasCreds;
+      driveLinked = linked;
+      if (!linked) snapshots = const [];
+    });
+    if (!linked) return;
+    try {
+      final List<DriveSnapshot> list = await BackupRestorePage.driveSnapshots();
+      if (mounted) setState(() => snapshots = list);
+    } catch (e) {
+      Logger.Inst().log('drive snapshots could not be listed: $e', 'BackupRestorePage', '_refreshDriveState', LogTypes.exception);
+    }
+  }
+
+  Future<void> _editDriveCredentials() async {
+    final TextEditingController idController = TextEditingController(text: await DriveBackup.clientId ?? '');
+    final TextEditingController secretController = TextEditingController(text: await DriveBackup.clientSecret ?? '');
+    if (!mounted) return;
+    final bool? saved = await showDialog<bool>(
       context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text(context.loc.settings.backupAndRestore.duplicateFileDetectedTitle),
-          content: Text(context.loc.settings.backupAndRestore.duplicateFileDetectedMsg(fileName: fileName)),
-          actions: [
-            ElevatedButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: Text(context.loc.no),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                Navigator.of(context).pop(true);
-                await ServiceHandler.deleteFileFromSAFDirectory(backupPath, fileName);
-              },
-              child: Text(context.loc.yes),
-            ),
-          ],
-        );
-      },
-    );
-
-    return res ?? false;
-  }
-
-  Future<bool> confirmRestore(String title) async {
-    final bool? res = await showDialog<bool>(
-      context: context,
-      builder: (context) {
-        return SettingsDialog(
-          title: Text(title),
-          actionButtons: [
-            const CancelButton(withIcon: true),
-            ConfirmButton(
-              withIcon: true,
-              returnData: true,
-              label: context.loc.confirm,
-            ),
-          ],
-        );
-      },
-    );
-
-    return res ?? false;
-  }
-
-  // Bulk backup — runs settings + boorus + database sequentially after one
-  // confirmation. Overwrites existing files silently (you opted in to the
-  // bulk action, so we don't gate each file behind the duplicate prompt).
-  Future<void> _runBackupAll(BuildContext context) async {
-    if (backupPath.isEmpty) {
-      showSnackbar(context.loc.settings.backupAndRestore.noBackupDirSelected, isError: true);
-      return;
-    }
-    final bool ok = await showDialog<bool>(
-          context: context,
-          builder: (ctx) => const SettingsDialog(
-            title: Text('Backup all'),
-            contentItems: [
-              Text('This will back up settings.json, boorus.json and store.db to the selected directory, overwriting any existing copies.'),
-            ],
-            actionButtons: [
-              CancelButton(withIcon: true),
-              ConfirmButton(withIcon: true, returnData: true, label: 'Backup all'),
-            ],
-          ),
-        ) ??
-        false;
-    if (!ok) return;
-
-    inProgress = true;
-    setState(() {});
-
-    final List<String> failures = [];
-
-    Future<void> step(String label, Future<void> Function() body) async {
-      try {
-        await body();
-      } catch (e, s) {
-        failures.add(label);
-        Logger.Inst().log(e.toString(), 'BackupRestorePage', 'backupAll/$label', LogTypes.exception, s: s);
-      }
-    }
-
-    // settings.json
-    await step('settings', () async {
-      final File file = File('${await ServiceHandler.getConfigDir()}settings.json');
-      await ServiceHandler.writeImage(
-        await file.readAsBytes(),
-        'settings',
-        'text/json',
-        'json',
-        backupPath,
-      );
-    });
-
-    // boorus.json
-    await step('boorus', () async {
-      final List<Booru> booruList =
-          settingsHandler.booruList.where((e) => BooruType.saveable.contains(e.type)).toList();
-      await ServiceHandler.writeImage(
-        utf8.encode(json.encode(booruList)),
-        'boorus',
-        'text',
-        'json',
-        backupPath,
-      );
-    });
-
-    // store.db
-    await step('database', () async {
-      final File file = File('${await ServiceHandler.getConfigDir()}store.db');
-      if (!await file.exists()) throw Exception('database file not found');
-      await ServiceHandler.copyFileToSafDir(
-        await ServiceHandler.getConfigDir(),
-        'store.db',
-        backupPath,
-        'application/x-sqlite3',
-      );
-    });
-
-    inProgress = false;
-    setState(() {});
-
-    if (failures.isEmpty) {
-      showSnackbar('Backed up settings, boorus and database.', isError: false);
-    } else {
-      showSnackbar('Backup finished with errors: ${failures.join(", ")}', isError: true);
-    }
-  }
-
-  // Bulk restore — confirms once with a stronger warning, then restores all
-  // three sequentially. Database is restored last and triggers the standard
-  // app restart on success (already part of the single-file flow).
-  Future<void> _runRestoreAll(BuildContext context) async {
-    if (backupPath.isEmpty) {
-      showSnackbar(context.loc.settings.backupAndRestore.noBackupDirSelected, isError: true);
-      return;
-    }
-    final bool ok = await showDialog<bool>(
-          context: context,
-          builder: (ctx) => const SettingsDialog(
-            title: Text('Restore all'),
-            contentItems: [
+      builder: (BuildContext context) => AlertDialog(
+        title: const Text('Google OAuth client'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
               Text(
-                'This will replace your current settings, boorus and database with the files from the backup directory. '
-                'The app will restart at the end. This cannot be undone.',
+                'These are not stored in the app source, so you paste them once here and '
+                'they stay in the phone’s encrypted storage.\n\n'
+                'Create them at console.cloud.google.com → APIs & Services → Credentials → '
+                'Create credentials → OAuth client ID, application type "Desktop app", '
+                'and enable the Google Drive API for that project.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: idController,
+                decoration: const InputDecoration(labelText: 'Client ID', border: OutlineInputBorder()),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: secretController,
+                decoration: const InputDecoration(labelText: 'Client secret', border: OutlineInputBorder()),
               ),
             ],
-            actionButtons: [
-              CancelButton(withIcon: true),
-              ConfirmButton(withIcon: true, returnData: true, label: 'Restore all'),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Save')),
+        ],
+      ),
+    );
+    if (saved == true) {
+      await DriveBackup.setCredentials(idController.text, secretController.text);
+      await _refreshDriveState();
+    }
+  }
+
+  Future<void> _linkDrive() async {
+    setState(() {
+      driveBusy = true;
+      driveStatus = 'Waiting for Google sign-in in your browser…';
+    });
+    String? error;
+    try {
+      error = await BackupRestorePage.driveLink(
+        onProgress: (String s) {
+          if (mounted) setState(() => driveStatus = s);
+        },
+      );
+    } catch (e) {
+      error = e.toString();
+    }
+    if (!mounted) return;
+    setState(() {
+      driveBusy = false;
+      driveStatus = '';
+    });
+    if (error == null) {
+      showSnackbar('Google Drive linked.', isError: false);
+    } else {
+      // r42: a dialog, not a snackbar: the person is often still coming back
+      // from the browser when this lands.
+      final String message = error;
+      await showDialog<void>(
+        context: context,
+        builder: (BuildContext ctx) => AlertDialog(
+          title: const Text('Google Drive was not linked'),
+          content: SelectableText(message),
+          actions: [TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('OK'))],
+        ),
+      );
+      if (!mounted) return;
+    }
+    await _refreshDriveState();
+  }
+
+  Future<void> _unlinkDrive() async {
+    await DriveBackup.unlink();
+    await _refreshDriveState();
+  }
+
+  String _driveSummary() {
+    if (!driveHasCreds) return 'No OAuth client set yet.';
+    if (!driveLinked) return 'Client set - not linked to an account yet.';
+    if (snapshots.isEmpty) return 'Linked - nothing backed up yet.';
+    final DriveSnapshot newest = snapshots.first;
+    return 'Linked - ${snapshots.length} backup${snapshots.length == 1 ? '' : 's'}, newest "${newest.name}" (${_when(newest.created)}).';
+  }
+
+  static String _when(DateTime? t) {
+    if (t == null) return 'unknown date';
+    final DateTime l = t.toLocal();
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${l.year}-${two(l.month)}-${two(l.day)} ${two(l.hour)}:${two(l.minute)}';
+  }
+
+  // ───────────────────────────── back up / restore ─────────────────────────────
+
+  Future<BackupRunner> _runner() async => BackupRunner(configDir: await ServiceHandler.getConfigDir(), hooks: appBackupHooks());
+
+  void _setStatus(String s) {
+    if (mounted) setState(() => status = s);
+  }
+
+  Future<void> _backupTo(BackupTarget target) async {
+    setState(() {
+      inProgress = true;
+      status = 'Starting…';
+    });
+    BackupResult result;
+    try {
+      result = await (await _runner()).backup(selected, target, onStep: _setStatus);
+    } catch (e) {
+      result = BackupResult(['$e']);
+    }
+    if (!mounted) return;
+    setState(() {
+      inProgress = false;
+      status = '';
+    });
+    showSnackbar(
+      result.failures.isEmpty
+          ? 'Backed up ${result.done.length} item${result.done.length == 1 ? '' : 's'} to ${target.label}.'
+          : 'Finished with errors: ${result.failures.join(', ')}',
+      isError: result.failures.isNotEmpty,
+    );
+  }
+
+  Future<void> _backupToFolder() async {
+    if (!_checkSelection()) return;
+    await _backupTo(FolderBackupTarget(backupPath, scratchDir: await backupScratchDir()));
+  }
+
+  Future<void> _backupToDrive() async {
+    if (!_checkSelection()) return;
+    final String? name = await _askSnapshotName();
+    if (name == null || !mounted) return;
+    setState(() {
+      inProgress = true;
+      status = 'Making the snapshot folder…';
+    });
+    DriveSnapshot? snapshot;
+    try {
+      snapshot = await DriveBackup.createSnapshot(name);
+    } catch (e) {
+      Logger.Inst().log('drive snapshot folder not made: $e', 'BackupRestorePage', '_backupToDrive', LogTypes.exception);
+    }
+    if (!mounted) return;
+    if (snapshot == null) {
+      setState(() {
+        inProgress = false;
+        status = '';
+      });
+      showSnackbar('The snapshot folder could not be made on Google Drive.', isError: true);
+      return;
+    }
+    await _backupTo(
+      DriveBackupTarget(
+        snapshot,
+        onProgress: (String file, int sent, int total) {
+          if (total > 0) _setStatus('Uploading $file - ${(100 * sent / total).round()}%');
+        },
+      ),
+    );
+    await _refreshDriveState();
+  }
+
+  bool _checkSelection() {
+    if (selected.isNotEmpty) return true;
+    showSnackbar('Tick at least one item to back up.', isError: true);
+    return false;
+  }
+
+  Future<void> _restoreFromFolder() async {
+    final FolderBackupTarget target = FolderBackupTarget(backupPath, scratchDir: await backupScratchDir());
+    if (!mounted) return;
+    setState(() {
+      inProgress = true;
+      status = 'Reading the folder…';
+    });
+    Set<BackupItem> present = {};
+    try {
+      present = BackupItems.itemsIn(await target.names());
+    } catch (e) {
+      Logger.Inst().log('the backup folder could not be listed: $e', 'BackupRestorePage', '_restoreFromFolder', LogTypes.exception);
+    }
+    if (!mounted) return;
+    setState(() {
+      inProgress = false;
+      status = '';
+    });
+    final Set<BackupItem>? items = await _pickItems('Restore from the folder', present);
+    if (items == null || items.isEmpty || !mounted) return;
+    await _restore(target, items);
+  }
+
+  Future<void> _restoreFromDrive() async {
+    final DriveSnapshot? snapshot = await _pickSnapshot();
+    if (snapshot == null || !mounted) return;
+    final DriveBackupTarget target = DriveBackupTarget(snapshot);
+    setState(() {
+      inProgress = true;
+      status = 'Reading "${snapshot.name}"…';
+    });
+    Set<BackupItem> present = {};
+    try {
+      present = BackupItems.itemsIn(await target.names());
+    } catch (e) {
+      Logger.Inst().log('drive snapshot could not be listed: $e', 'BackupRestorePage', '_restoreFromDrive', LogTypes.exception);
+    }
+    if (!mounted) return;
+    setState(() {
+      inProgress = false;
+      status = '';
+    });
+    final Set<BackupItem>? items = await _pickItems('Restore from "${snapshot.name}"', present);
+    if (items == null || items.isEmpty || !mounted) return;
+    await _restore(target, items);
+  }
+
+  Future<void> _restore(BackupTarget target, Set<BackupItem> items) async {
+    DbRestore mode = DbRestore.whole;
+    Set<DbPart> parts = const {};
+    if (items.contains(BackupItem.database)) {
+      final (DbRestore, Set<DbPart>)? choice = await _askDatabaseRestore();
+      if (choice == null || !mounted) return;
+      (mode, parts) = choice;
+    }
+    final bool ok = await _confirmRestore(items, mode, parts, target.label);
+    if (!ok || !mounted) return;
+    setState(() {
+      inProgress = true;
+      status = 'Starting…';
+    });
+    BackupResult result;
+    try {
+      result = await (await _runner()).restore(items, target, db: mode, parts: parts, onStep: _setStatus);
+    } catch (e) {
+      result = BackupResult(['$e']);
+    }
+    if (!mounted) return;
+    setState(() {
+      inProgress = false;
+      status = '';
+    });
+    if (result.failures.isNotEmpty) {
+      showSnackbar('Restore finished with errors: ${result.failures.join(', ')}', isError: true);
+    }
+    if (result.needsRestart) {
+      if (result.failures.isEmpty) showSnackbar('Restored. The app restarts in a moment.', isError: false);
+      await Future<void>.delayed(const Duration(seconds: 3));
+      unawaited(ServiceHandler.restartApp());
+    } else if (result.failures.isEmpty) {
+      showSnackbar('Restored.', isError: false);
+    }
+  }
+
+  // ───────────────────────────── dialogs ─────────────────────────────
+
+  Future<String?> _askSnapshotName() async {
+    final TextEditingController name = TextEditingController(text: DriveBackup.defaultSnapshotName(DateTime.now()));
+    return showDialog<String>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        title: const Text('New backup on Google Drive'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'It goes into a folder of its own inside LoliSnatcher on your Drive. Earlier backups stay as they are.',
+              style: Theme.of(ctx).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              key: const ValueKey('snapshot-name'),
+              controller: name,
+              autofocus: true,
+              decoration: const InputDecoration(labelText: 'Name', border: OutlineInputBorder()),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.of(ctx).pop(name.text.trim()), child: const Text('Back up')),
+        ],
+      ),
+    );
+  }
+
+  /// The backups on Drive, newest first; tap one to restore from it. A
+  /// snapshot can be deleted here too.
+  Future<DriveSnapshot?> _pickSnapshot() async {
+    await _refreshDriveState();
+    if (!mounted) return null;
+    return showDialog<DriveSnapshot>(
+      context: context,
+      builder: (BuildContext ctx) => StatefulBuilder(
+        builder: (BuildContext ctx, StateSetter setDialog) => AlertDialog(
+          title: const Text('Restore from Google Drive'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: snapshots.isEmpty
+                ? const Text('There is no backup on your Drive yet.')
+                : ListView(
+                    shrinkWrap: true,
+                    children: [
+                      for (final DriveSnapshot s in snapshots)
+                        ListTile(
+                          key: ValueKey('snapshot-${s.id}'),
+                          leading: Icon(s.earlier ? Symbols.history_rounded : Symbols.folder_rounded),
+                          title: Text(s.name),
+                          subtitle: Text(s.earlier ? '${_when(s.created)} - made before backups had their own folders' : _when(s.created)),
+                          onTap: () => Navigator.of(ctx).pop(s),
+                          trailing: s.earlier
+                              ? null
+                              : IconButton(
+                                  tooltip: 'Delete this backup',
+                                  icon: const Icon(Symbols.delete_rounded),
+                                  onPressed: () async {
+                                    final bool sure =
+                                        await showDialog<bool>(
+                                          context: ctx,
+                                          builder: (BuildContext c) => AlertDialog(
+                                            title: Text('Delete "${s.name}"?'),
+                                            content: const Text('Its files are removed from your Google Drive.'),
+                                            actions: [
+                                              TextButton(onPressed: () => Navigator.of(c).pop(false), child: const Text('Cancel')),
+                                              TextButton(onPressed: () => Navigator.of(c).pop(true), child: const Text('Delete')),
+                                            ],
+                                          ),
+                                        ) ??
+                                        false;
+                                    if (!sure) return;
+                                    final bool gone = await DriveBackup.deleteSnapshot(s);
+                                    if (!gone) {
+                                      showSnackbar('"${s.name}" could not be deleted.', isError: true);
+                                      return;
+                                    }
+                                    await _refreshDriveState();
+                                    if (ctx.mounted) setDialog(() {});
+                                  },
+                                ),
+                        ),
+                    ],
+                  ),
+          ),
+          actions: [TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel'))],
+        ),
+      ),
+    );
+  }
+
+  /// Which of the items this backup holds come back; the ticks start from
+  /// the page's own.
+  Future<Set<BackupItem>?> _pickItems(String title, Set<BackupItem> present) async {
+    final Set<BackupItem> chosen = selected.intersection(present).isNotEmpty ? selected.intersection(present) : present.toSet();
+    return showDialog<Set<BackupItem>>(
+      context: context,
+      builder: (BuildContext ctx) => StatefulBuilder(
+        builder: (BuildContext ctx, StateSetter setDialog) => AlertDialog(
+          title: Text(title),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: present.isEmpty
+                ? const Text('No backup files were found there.')
+                : ListView(
+                    shrinkWrap: true,
+                    children: [
+                      for (final BackupItem i in BackupItem.values)
+                        CheckboxListTile(
+                          key: ValueKey('restore-item-${i.name}'),
+                          dense: true,
+                          value: chosen.contains(i),
+                          title: Text(BackupItems.labelOf(i)),
+                          subtitle: present.contains(i) ? null : const Text('not in this backup'),
+                          onChanged: present.contains(i)
+                              ? (bool? v) => setDialog(() => v == true ? chosen.add(i) : chosen.remove(i))
+                              : null,
+                        ),
+                    ],
+                  ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
+            TextButton(
+              onPressed: chosen.isEmpty ? null : () => Navigator.of(ctx).pop(chosen),
+              child: Text('Restore ${chosen.length}'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// The database back whole, or only some of its parts.
+  Future<(DbRestore, Set<DbPart>)?> _askDatabaseRestore() async {
+    DbRestore mode = DbRestore.whole;
+    final Set<DbPart> parts = DbPart.values.toSet();
+    return showDialog<(DbRestore, Set<DbPart>)>(
+      context: context,
+      builder: (BuildContext ctx) => StatefulBuilder(
+        builder: (BuildContext ctx, StateSetter setDialog) => AlertDialog(
+          title: const Text('Restore the database'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                RadioGroup<DbRestore>(
+                  groupValue: mode,
+                  onChanged: (DbRestore? v) => setDialog(() => mode = v ?? mode),
+                  child: const Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      RadioListTile<DbRestore>(
+                        key: ValueKey('db-whole'),
+                        value: DbRestore.whole,
+                        title: Text('The whole database'),
+                        subtitle: Text('Replaces favourites, history, collections, pins, pulled tags and the recommendation log.'),
+                      ),
+                      RadioListTile<DbRestore>(
+                        key: ValueKey('db-parts'),
+                        value: DbRestore.parts,
+                        title: Text('Only these parts'),
+                        subtitle: Text('Favourites, history and the rest stay as they are here.'),
+                      ),
+                    ],
+                  ),
+                ),
+                for (final DbPart p in DbPart.values)
+                  CheckboxListTile(
+                    key: ValueKey('db-part-${p.name}'),
+                    dense: true,
+                    value: parts.contains(p),
+                    title: Text(DbParts.labelOf(p)),
+                    subtitle: Text(DbParts.describe(p)),
+                    onChanged: mode == DbRestore.parts ? (bool? v) => setDialog(() => v == true ? parts.add(p) : parts.remove(p)) : null,
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
+            TextButton(
+              onPressed: mode == DbRestore.parts && parts.isEmpty ? null : () => Navigator.of(ctx).pop((mode, parts.toSet())),
+              child: const Text('Continue'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<bool> _confirmRestore(Set<BackupItem> items, DbRestore mode, Set<DbPart> parts, String from) async {
+    final List<String> what = [
+      for (final BackupItem i in BackupItem.values)
+        if (items.contains(i))
+          i == BackupItem.database && mode == DbRestore.parts
+              ? 'Database: ${[for (final DbPart p in DbPart.values) if (parts.contains(p)) DbParts.labelOf(p)].join(', ')}'
+              : BackupItems.labelOf(i),
+    ];
+    // Tag types and the vector cache come back without a restart.
+    final bool restarts = items.any((BackupItem i) => i != BackupItem.tagTypes && i != BackupItem.vectors);
+    final bool merges = items.contains(BackupItem.database) && mode == DbRestore.parts;
+    return await showDialog<bool>(
+          context: context,
+          builder: (BuildContext ctx) => AlertDialog(
+            title: const Text('Restore?'),
+            content: SingleChildScrollView(
+              child: Text(
+                'From $from:\n\n${what.map((String w) => '• $w').join('\n')}\n\n'
+                'What is on this device for these is replaced'
+                '${merges ? ' (pulled tags and vectors are added to what is here)' : ''}.'
+                '${restarts ? ' The app restarts at the end.' : ''}',
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+              TextButton(key: const ValueKey('confirm-restore'), onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Restore')),
             ],
           ),
         ) ??
         false;
-    if (!ok) return;
-
-    inProgress = true;
-    setState(() {});
-
-    final List<String> failures = [];
-
-    // settings.json
-    try {
-      final Uint8List? bytes = await ServiceHandler.getFileFromSAFDirectory(backupPath, 'settings.json');
-      if (bytes != null) {
-        final File f = File('${await ServiceHandler.getConfigDir()}settings.json');
-        if (!await f.exists()) await f.create();
-        await f.writeAsBytes(bytes);
-        await settingsHandler.loadSettingsJson();
-      } else {
-        failures.add('settings (file not found)');
-      }
-    } catch (e, s) {
-      failures.add('settings');
-      Logger.Inst().log(e.toString(), 'BackupRestorePage', 'restoreAll/settings', LogTypes.exception, s: s);
-    }
-
-    // boorus.json
-    try {
-      final Uint8List? bytes = await ServiceHandler.getFileFromSAFDirectory(backupPath, 'boorus.json');
-      if (bytes != null) {
-        final String boorusStr = String.fromCharCodes(bytes);
-        if (boorusStr.isNotEmpty) {
-          final List<dynamic> parsed = jsonDecode(boorusStr);
-          final String configBoorusPath = '${await ServiceHandler.getConfigDir()}boorus/';
-          final Directory configBoorusDir = await Directory(configBoorusPath).create(recursive: true);
-          for (int i = 0; i < parsed.length; i++) {
-            final Booru booru = Booru.fromMap(parsed[i]);
-            final bool alreadyExists = settingsHandler.booruList.indexWhere(
-                  (el) => el.baseURL == booru.baseURL && el.name == booru.name,
-                ) !=
-                -1;
-            final bool isAllowed = BooruType.saveable.contains(booru.type);
-            if (!alreadyExists && isAllowed) {
-              final File booruFile = File('${configBoorusDir.path}${booru.name}.json');
-              final writer = booruFile.openWrite();
-              writer.write(jsonEncode(booru.toJson()));
-              await writer.close();
-            }
-          }
-          await settingsHandler.loadBoorus();
-        }
-      } else {
-        failures.add('boorus (file not found)');
-      }
-    } catch (e, s) {
-      failures.add('boorus');
-      Logger.Inst().log(e.toString(), 'BackupRestorePage', 'restoreAll/boorus', LogTypes.exception, s: s);
-    }
-
-    // store.db — last because it restarts the app on success
-    try {
-      final fileExists = await ServiceHandler.existsFileFromSAFDirectory(backupPath, 'store.db');
-      if (!fileExists) {
-        failures.add('database (file not found)');
-      } else {
-        searchHandler.canBackup.value = false;
-        final String configDir = await ServiceHandler.getConfigDir();
-        await settingsHandler.dbHandler.closeDb();
-        for (final suffix in ['-wal', '-shm']) {
-          final sidecar = File('${configDir}store.db$suffix');
-          if (await sidecar.exists()) await sidecar.delete();
-        }
-        final bool copied = await ServiceHandler.copySafFileToDir(backupPath, 'store.db', configDir);
-        if (!copied) {
-          failures.add('database (copy failed)');
-          searchHandler.canBackup.value = true;
-        } else {
-          final File newFile = File('${configDir}store.db');
-          if (!await newFile.exists()) {
-            failures.add('database (post-copy missing)');
-            searchHandler.canBackup.value = true;
-          }
-        }
-      }
-    } catch (e, s) {
-      failures.add('database');
-      Logger.Inst().log(e.toString(), 'BackupRestorePage', 'restoreAll/database', LogTypes.exception, s: s);
-      searchHandler.canBackup.value = true;
-    }
-
-    inProgress = false;
-    setState(() {});
-
-    if (failures.isEmpty) {
-      showSnackbar('Restored. App will restart in a moment.', isError: false);
-      await Future.delayed(const Duration(seconds: 3));
-      unawaited(ServiceHandler.restartApp());
-    } else {
-      showSnackbar('Restore finished with errors: ${failures.join(", ")}', isError: true);
-    }
   }
 
-  //called when page is closed, sets settingshandler variables and then writes settings to disk
-  Future<void> _onPopInvoked(bool didPop, _) async {
-    if (didPop) {
-      return;
-    }
+  // ───────────────────────────── page ─────────────────────────────
 
-    if (inProgress) {
-      FlashElements.showSnackbar(
-        title: Text(context.loc.pleaseWait),
-        leadingIcon: Icons.warning_amber,
-        leadingIconColor: Colors.yellow,
-        sideColor: Colors.yellow,
-      );
+  Future<void> _chooseFolder() async {
+    final String path = await ServiceHandler.getSAFDirectoryAccess();
+    if (!mounted) return;
+    if (path.isEmpty) {
+      showSnackbar(context.loc.settings.backupAndRestore.failedToGetBackupPath, isError: true);
       return;
     }
+    setState(() {
+      backupPath = path;
+      settingsHandler.backupPath = path;
+    });
+    await settingsHandler.saveSettings(restate: false);
   }
+
+  Future<void> _resetFolder() async {
+    setState(() {
+      backupPath = '';
+      settingsHandler.backupPath = '';
+    });
+    await settingsHandler.saveSettings(restate: false);
+  }
+
+  Widget _section(String title) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 20, 16, 6),
+    child: Text(title, style: Theme.of(context).textTheme.titleMedium),
+  );
 
   @override
   Widget build(BuildContext context) {
-    if (!Platform.isAndroid) {
+    if (!BackupRestorePage.isAndroid()) {
       return Scaffold(
         resizeToAvoidBottomInset: false,
         appBar: SettingsAppBar(title: context.loc.settings.backupAndRestore.title),
@@ -368,7 +666,7 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
           child: ListView(
             children: [
               Container(
-                margin: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+                margin: const EdgeInsets.all(10),
                 width: double.infinity,
                 child: Text(context.loc.settings.backupAndRestore.androidOnlyFeatureMsg),
               ),
@@ -378,614 +676,159 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
       );
     }
 
+    final bool busy = inProgress || driveBusy;
+    final bool hasFolder = backupPath.isNotEmpty;
     return PopScope(
-      canPop: !inProgress,
-      onPopInvokedWithResult: _onPopInvoked,
+      canPop: !busy,
+      onPopInvokedWithResult: (bool didPop, _) {
+        if (didPop) return;
+        FlashElements.showSnackbar(
+          title: Text(context.loc.pleaseWait),
+          leadingIcon: Symbols.warning_amber_rounded,
+          leadingIconColor: Colors.yellow,
+          sideColor: Colors.yellow,
+        );
+      },
       child: Scaffold(
         resizeToAvoidBottomInset: false,
         appBar: SettingsAppBar(title: context.loc.settings.backupAndRestore.title),
-        body: Center(
-          child: Stack(
-            children: [
-              ListView(
-                children: [
-                  // Backup Directory
+        body: Stack(
+          children: [
+            ListView(
+              children: [
+                // ── what ──
+                _section('What to back up or restore'),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Row(
+                    children: [
+                      TextButton(
+                        key: const ValueKey('backup-all'),
+                        onPressed: busy ? null : () => setState(() => selected.addAll(BackupItem.values)),
+                        child: const Text('All'),
+                      ),
+                      TextButton(
+                        key: const ValueKey('backup-none'),
+                        onPressed: busy ? null : () => setState(selected.clear),
+                        child: const Text('None'),
+                      ),
+                      const Spacer(),
+                      Text('${selected.length} of ${BackupItem.values.length}', style: Theme.of(context).textTheme.bodySmall),
+                      const SizedBox(width: 8),
+                    ],
+                  ),
+                ),
+                for (final BackupItem i in BackupItem.values)
+                  CheckboxListTile(
+                    key: ValueKey('backup-item-${i.name}'),
+                    value: selected.contains(i),
+                    title: Text(BackupItems.labelOf(i)),
+                    subtitle: Text(BackupItems.describe(i)),
+                    onChanged: busy ? null : (bool? v) => setState(() => v == true ? selected.add(i) : selected.remove(i)),
+                  ),
+                // ── a folder ──
+                _section('A folder on this device'),
+                SettingsButton(
+                  name: context.loc.settings.backupAndRestore.selectBackupDir,
+                  icon: const Icon(Symbols.folder_rounded),
+                  action: busy ? null : _chooseFolder,
+                  drawTopBorder: true,
+                ),
+                Container(
+                  margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                  width: double.infinity,
+                  child: Text(
+                    hasFolder
+                        ? context.loc.settings.backupAndRestore.backupPathMsg(backupPath: backupPath)
+                        : context.loc.settings.backupAndRestore.noBackupDirSelected,
+                  ),
+                ),
+                if (hasFolder) ...[
                   SettingsButton(
-                    name: context.loc.settings.backupAndRestore.selectBackupDir,
-                    icon: const Icon(Icons.folder),
-                    action: () async {
-                      final String path = await ServiceHandler.getSAFDirectoryAccess();
-                      if (path.isNotEmpty) {
-                        setState(() {
-                          backupPath = path;
-                          settingsHandler.backupPath = path;
-                          settingsHandler.saveSettings(restate: false);
-                        });
-                      } else {
-                        showSnackbar(
-                          context.loc.settings.backupAndRestore.failedToGetBackupPath,
-                          isError: true,
-                        );
-                      }
-                    },
-                    drawTopBorder: true,
+                    key: const ValueKey('backup-to-folder'),
+                    name: 'Back up to the folder',
+                    subtitle: const Text('The ticked items; older copies there are replaced.'),
+                    icon: const Icon(Symbols.upload_rounded),
+                    action: busy ? null : _backupToFolder,
                   ),
-                  //
-                  Container(
-                    margin: const EdgeInsets.fromLTRB(10, 10, 10, 10),
-                    width: double.infinity,
-                    child: Text(
-                      backupPath.isNotEmpty
-                          ? context.loc.settings.backupAndRestore.backupPathMsg(backupPath: backupPath)
-                          : context.loc.settings.backupAndRestore.noBackupDirSelected,
-                    ),
+                  SettingsButton(
+                    key: const ValueKey('restore-from-folder'),
+                    name: 'Restore from the folder…',
+                    subtitle: const Text('Pick what comes back.'),
+                    icon: const Icon(Symbols.download_rounded),
+                    action: busy ? null : _restoreFromFolder,
                   ),
-                  //
-                  if (backupPath.isNotEmpty)
-                    SettingsButton(
-                      name: context.loc.settings.backupAndRestore.resetBackupDir,
-                      icon: const Icon(Icons.refresh_rounded),
-                      action: () async {
-                        setState(() {
-                          backupPath = '';
-                          settingsHandler.backupPath = '';
-                          settingsHandler.saveSettings(restate: false);
-                        });
-                      },
-                      drawTopBorder: true,
-                    ),
-                  //
-                  if (backupPath.isNotEmpty) ...[
-                    // Backup
-                    const SettingsButton(name: '', enabled: false),
-                    SettingsButton(
-                      name: 'Backup all (settings + boorus + database)',
-                      icon: const Icon(Icons.cloud_upload_outlined),
-                      action: () => _runBackupAll(context),
-                      drawTopBorder: true,
-                    ),
-                    SettingsButton(
-                      name: context.loc.settings.backupAndRestore.backupSettings,
-                      icon: const Icon(Icons.settings),
-                      action: () async {
-                        inProgress = true;
-                        setState(() {});
-                        try {
-                          final File file = File('${await ServiceHandler.getConfigDir()}settings.json');
-                          if (await ServiceHandler.existsFileFromSAFDirectory(backupPath, 'settings.json')) {
-                            final bool res = await detectedDuplicateFile('settings.json');
-                            if (!res) {
-                              showSnackbar(
-                                context.loc.settings.backupAndRestore.backupCancelled,
-                                isError: true,
-                              );
-                              inProgress = false;
-                              setState(() {});
-                              return;
-                            }
-                          }
-
-                          await ServiceHandler.writeImage(
-                            await file.readAsBytes(),
-                            'settings',
-                            'text/json',
-                            'json',
-                            backupPath,
-                          );
-                          showSnackbar(
-                            context.loc.settings.backupAndRestore.settingsBackedUp,
-                            isError: false,
-                          );
-                        } catch (e, s) {
-                          showSnackbar(
-                            context.loc.settings.backupAndRestore.backupSettingsError,
-                            isError: true,
-                          );
-                          Logger.Inst().log(
-                            e.toString(),
-                            'BackupRestorePage',
-                            'backupSettings',
-                            LogTypes.exception,
-                            s: s,
-                          );
-                        }
-                        inProgress = false;
-                        setState(() {});
-                      },
-                      drawTopBorder: true,
-                    ),
-                    SettingsButton(
-                      name: context.loc.settings.backupAndRestore.backupBoorus,
-                      icon: const Icon(Icons.image_search),
-                      action: () async {
-                        inProgress = true;
-                        setState(() {});
-                        try {
-                          final List<Booru> booruList = settingsHandler.booruList
-                              .where((e) => BooruType.saveable.contains(e.type))
-                              .toList();
-                          if (await ServiceHandler.existsFileFromSAFDirectory(backupPath, 'boorus.json')) {
-                            final bool res = await detectedDuplicateFile('boorus.json');
-                            if (!res) {
-                              showSnackbar(
-                                context.loc.settings.backupAndRestore.backupCancelled,
-                                isError: true,
-                              );
-                              inProgress = false;
-                              setState(() {});
-                              return;
-                            }
-                          }
-
-                          await ServiceHandler.writeImage(
-                            utf8.encode(json.encode(booruList)),
-                            'boorus',
-                            'text',
-                            'json',
-                            backupPath,
-                          );
-                          showSnackbar(
-                            context.loc.settings.backupAndRestore.boorusBackedUp,
-                            isError: false,
-                          );
-                        } catch (e, s) {
-                          showSnackbar(
-                            context.loc.settings.backupAndRestore.backupBoorusError,
-                            isError: true,
-                          );
-                          Logger.Inst().log(
-                            e.toString(),
-                            'BackupRestorePage',
-                            'backupBoorus',
-                            LogTypes.exception,
-                            s: s,
-                          );
-                        }
-                        inProgress = false;
-                        setState(() {});
-                      },
-                    ),
-                    SettingsButton(
-                      name: context.loc.settings.backupAndRestore.backupDatabase,
-                      icon: const Icon(Icons.list_alt),
-                      action: () async {
-                        inProgress = true;
-                        setState(() {});
-                        try {
-                          final File file = File('${await ServiceHandler.getConfigDir()}store.db');
-                          if (!await file.exists()) {
-                            showSnackbar(
-                              context.loc.settings.backupAndRestore.databaseFileNotFound,
-                              isError: true,
-                            );
-                            inProgress = false;
-                            setState(() {});
-                            return;
-                          }
-                          if (await ServiceHandler.existsFileFromSAFDirectory(backupPath, 'store.db')) {
-                            final bool res = await detectedDuplicateFile('store.db');
-                            if (!res) {
-                              showSnackbar(
-                                context.loc.settings.backupAndRestore.backupCancelled,
-                                isError: true,
-                              );
-                              inProgress = false;
-                              setState(() {});
-                              return;
-                            }
-                          }
-
-                          // WAL mode keeps store.db in a consistent readable state
-                          // at all times, so we can copy it safely while it's open.
-                          await ServiceHandler.copyFileToSafDir(
-                            await ServiceHandler.getConfigDir(),
-                            'store.db',
-                            backupPath,
-                            'application/x-sqlite3',
-                          );
-                          showSnackbar(
-                            context.loc.settings.backupAndRestore.databaseBackedUp,
-                            isError: false,
-                          );
-                        } catch (e, s) {
-                          showSnackbar(
-                            context.loc.settings.backupAndRestore.backupDatabaseError,
-                            isError: true,
-                          );
-                          Logger.Inst().log(
-                            e.toString(),
-                            'BackupRestorePage',
-                            'backupDatabase',
-                            LogTypes.exception,
-                            s: s,
-                          );
-                        }
-                        inProgress = false;
-                        setState(() {});
-                      },
-                    ),
-                    if (settingsHandler.isDebug.value)
-                      SettingsButton(
-                        name: context.loc.settings.backupAndRestore.backupTags,
-                        icon: const Icon(CupertinoIcons.tag),
-                        action: () async {
-                          inProgress = true;
-                          setState(() {});
-                          try {
-                            if (await ServiceHandler.existsFileFromSAFDirectory(backupPath, 'tags.json')) {
-                              final bool res = await detectedDuplicateFile('tags.json');
-                              if (!res) {
-                                showSnackbar(
-                                  context.loc.settings.backupAndRestore.backupCancelled,
-                                  isError: true,
-                                );
-                                inProgress = false;
-                                setState(() {});
-                                return;
-                              }
-                            }
-
-                            await ServiceHandler.writeImage(
-                              utf8.encode(json.encode(tagHandler.toList())),
-                              'tags',
-                              'text',
-                              'json',
-                              backupPath,
-                            );
-                            showSnackbar(
-                              context.loc.settings.backupAndRestore.tagsBackedUp,
-                              isError: false,
-                            );
-                          } catch (e, s) {
-                            showSnackbar(
-                              context.loc.settings.backupAndRestore.backupTagsError,
-                              isError: true,
-                            );
-                            Logger.Inst().log(
-                              e.toString(),
-                              'BackupRestorePage',
-                              'backupTags',
-                              LogTypes.exception,
-                              s: s,
-                            );
-                          }
-                          inProgress = false;
-                          setState(() {});
-                        },
-                      ),
-
-                    // Restore
-                    const SettingsButton(name: '', enabled: false),
-                    Container(
-                      margin: const EdgeInsets.fromLTRB(10, 10, 10, 10),
-                      width: double.infinity,
-                      child: Text(context.loc.settings.backupAndRestore.restoreInfoMsg),
-                    ),
-                    SettingsButton(
-                      name: 'Restore all (settings + boorus + database)',
-                      icon: const Icon(Icons.cloud_download_outlined),
-                      action: () => _runRestoreAll(context),
-                      drawTopBorder: true,
-                    ),
-                    SettingsButton(
-                      name: context.loc.settings.backupAndRestore.restoreSettings,
-                      icon: const Icon(Icons.settings_backup_restore),
-                      subtitle: const Text('settings.json'),
-                      action: () async {
-                        final bool res = await confirmRestore(context.loc.settings.backupAndRestore.restoreSettings);
-                        if (!res) return;
-
-                        inProgress = true;
-                        setState(() {});
-                        try {
-                          final Uint8List? settingsFileBytes = await ServiceHandler.getFileFromSAFDirectory(
-                            backupPath,
-                            'settings.json',
-                          );
-                          if (settingsFileBytes != null) {
-                            final File newFile = File('${await ServiceHandler.getConfigDir()}settings.json');
-                            if (!(await newFile.exists())) {
-                              await newFile.create();
-                            }
-                            await newFile.writeAsBytes(settingsFileBytes);
-                            await settingsHandler.loadSettingsJson();
-                            showSnackbar(
-                              context.loc.settings.backupAndRestore.settingsRestored,
-                              isError: false,
-                            );
-                          } else {
-                            showSnackbar(
-                              context.loc.settings.backupAndRestore.backupFileNotFound,
-                              isError: true,
-                            );
-                          }
-                        } catch (e, s) {
-                          showSnackbar(
-                            context.loc.settings.backupAndRestore.restoreSettingsError,
-                            isError: true,
-                          );
-                          Logger.Inst().log(
-                            e.toString(),
-                            'BackupRestorePage',
-                            'restoreSettings',
-                            LogTypes.exception,
-                            s: s,
-                          );
-                        }
-                        inProgress = false;
-                        setState(() {});
-                      },
-                      drawTopBorder: true,
-                    ),
-                    SettingsButton(
-                      name: context.loc.settings.backupAndRestore.restoreBoorus,
-                      icon: const Icon(Icons.image_search),
-                      subtitle: const Text('boorus.json'),
-                      action: () async {
-                        final bool res = await confirmRestore(context.loc.settings.backupAndRestore.restoreBoorus);
-                        if (!res) return;
-
-                        inProgress = true;
-                        setState(() {});
-                        try {
-                          final Uint8List? booruFileBytes = await ServiceHandler.getFileFromSAFDirectory(
-                            backupPath,
-                            'boorus.json',
-                          );
-                          String boorusJSONString = '';
-                          if (booruFileBytes != null) {
-                            boorusJSONString = String.fromCharCodes(booruFileBytes);
-
-                            if (boorusJSONString.isNotEmpty) {
-                              final List<dynamic> json = jsonDecode(boorusJSONString);
-                              final String configBoorusPath = '${await ServiceHandler.getConfigDir()}boorus/';
-                              final Directory configBoorusDir = await Directory(
-                                configBoorusPath,
-                              ).create(recursive: true);
-                              if (json.isNotEmpty) {
-                                for (int i = 0; i < json.length; i++) {
-                                  final Booru booru = Booru.fromMap(json[i]);
-                                  final bool alreadyExists =
-                                      settingsHandler.booruList.indexWhere(
-                                        (el) => el.baseURL == booru.baseURL && el.name == booru.name,
-                                      ) !=
-                                      -1;
-                                  final bool isAllowed = BooruType.saveable.contains(booru.type);
-                                  if (!alreadyExists && isAllowed) {
-                                    final File booruFile = File('${configBoorusDir.path}${booru.name}.json');
-                                    final writer = booruFile.openWrite();
-                                    writer.write(jsonEncode(booru.toJson()));
-                                    await writer.close();
-                                  }
-                                }
-                                await settingsHandler.loadBoorus();
-                                showSnackbar(
-                                  context.loc.settings.backupAndRestore.boorusRestored,
-                                  isError: false,
-                                );
-                              }
-                            } else {
-                              showSnackbar(
-                                context.loc.settings.backupAndRestore.backupFileNotFound,
-                                isError: true,
-                              );
-                            }
-                          } else {
-                            showSnackbar(
-                              context.loc.settings.backupAndRestore.backupFileNotFound,
-                              isError: true,
-                            );
-                          }
-                        } catch (e, s) {
-                          showSnackbar(
-                            context.loc.settings.backupAndRestore.restoreBoorusError,
-                            isError: true,
-                          );
-                          Logger.Inst().log(
-                            e.toString(),
-                            'BackupRestorePage',
-                            'restoreBoorus',
-                            LogTypes.exception,
-                            s: s,
-                          );
-                        }
-                        inProgress = false;
-                        setState(() {});
-                      },
-                    ),
-                    SettingsButton(
-                      name: context.loc.settings.backupAndRestore.restoreDatabase,
-                      icon: const Icon(Icons.list_alt),
-                      subtitle: Text('store.db (${context.loc.settings.backupAndRestore.restoreDatabaseInfo})'),
-                      action: () async {
-                        final bool res = await confirmRestore(context.loc.settings.backupAndRestore.restoreDatabase);
-                        if (!res) return;
-
-                        inProgress = true;
-                        setState(() {});
-                        try {
-                          final fileExists = await ServiceHandler.existsFileFromSAFDirectory(
-                            backupPath,
-                            'store.db',
-                          );
-                          if (!fileExists) {
-                            showSnackbar(
-                              context.loc.settings.backupAndRestore.backupFileNotFound,
-                              isError: true,
-                            );
-                            inProgress = false;
-                            setState(() {});
-                            return;
-                          }
-
-                          // disable backupping while restoring the db
-                          searchHandler.canBackup.value = false;
-
-                          final String configDir = await ServiceHandler.getConfigDir();
-
-                          // Close the DB before overwriting the file on disk.
-                          await settingsHandler.dbHandler.closeDb();
-
-                          // Delete stale WAL/SHM sidecars before copying.
-                          for (final suffix in ['-wal', '-shm']) {
-                            final sidecar = File('${configDir}store.db$suffix');
-                            if (await sidecar.exists()) await sidecar.delete();
-                          }
-
-                          final bool res = await ServiceHandler.copySafFileToDir(
-                            backupPath,
-                            'store.db',
-                            configDir,
-                          );
-
-                          if (!res) {
-                            showSnackbar(
-                              context.loc.settings.backupAndRestore.restoreDatabaseError,
-                              isError: true,
-                            );
-                            searchHandler.canBackup.value = true;
-                            inProgress = false;
-                            setState(() {});
-                            return;
-                          }
-
-                          final File newFile = File('${configDir}store.db');
-                          if (!(await newFile.exists())) {
-                            showSnackbar(
-                              context.loc.settings.backupAndRestore.restoreDatabaseError,
-                              isError: true,
-                            );
-                            searchHandler.canBackup.value = true;
-                            inProgress = false;
-                            setState(() {});
-                            return;
-                          }
-                          showSnackbar(
-                            context.loc.settings.backupAndRestore.databaseRestored,
-                            isError: false,
-                          );
-                          await Future.delayed(const Duration(seconds: 3));
-                          unawaited(ServiceHandler.restartApp());
-                        } catch (e, s) {
-                          showSnackbar(
-                            context.loc.settings.backupAndRestore.restoreDatabaseError,
-                            isError: true,
-                          );
-                          Logger.Inst().log(
-                            e.toString(),
-                            'BackupRestorePage',
-                            'restoreDatabase',
-                            LogTypes.exception,
-                            s: s,
-                          );
-                          searchHandler.canBackup.value = true;
-                        }
-                        inProgress = false;
-                        setState(() {});
-                      },
-                    ),
-                    if (settingsHandler.isDebug.value)
-                      SettingsButton(
-                        name: context.loc.settings.backupAndRestore.restoreTags,
-                        icon: const Icon(CupertinoIcons.tag),
-                        subtitle: Text('tags.json (${context.loc.settings.backupAndRestore.restoreTagsInfo})'),
-                        action: () async {
-                          final bool res = await confirmRestore(context.loc.settings.backupAndRestore.restoreTags);
-                          if (!res) return;
-
-                          inProgress = true;
-                          setState(() {});
-                          try {
-                            final Uint8List? tagFileBytes = await ServiceHandler.getFileFromSAFDirectory(
-                              backupPath,
-                              'tags.json',
-                            );
-                            String tagJSONString = '';
-                            if (tagFileBytes != null) {
-                              tagJSONString = String.fromCharCodes(tagFileBytes);
-
-                              if (tagJSONString.isNotEmpty) {
-                                await tagHandler.loadFromJSON(
-                                  tagJSONString,
-                                  onProgress: (newProgress, newTotal) {
-                                    progress = newProgress;
-                                    total = newTotal;
-                                    if (mounted) {
-                                      setState(() {});
-                                    }
-                                  },
-                                );
-                                showSnackbar(
-                                  context.loc.settings.backupAndRestore.tagsRestored,
-                                  isError: false,
-                                );
-                              } else {
-                                showSnackbar(
-                                  context.loc.settings.backupAndRestore.tagsFileNotFound,
-                                  isError: true,
-                                );
-                              }
-                            } else {
-                              showSnackbar(
-                                context.loc.settings.backupAndRestore.tagsFileNotFound,
-                                isError: true,
-                              );
-                            }
-                          } catch (e, s) {
-                            showSnackbar(
-                              context.loc.settings.backupAndRestore.restoreTagsError,
-                              isError: true,
-                            );
-                            Logger.Inst().log(
-                              e.toString(),
-                              'BackupRestorePage',
-                              'restoreTags',
-                              LogTypes.exception,
-                              s: s,
-                            );
-                          }
-                          inProgress = false;
-                          progress = 0;
-                          total = 0;
-                          if (mounted) {
-                            setState(() {});
-                          }
-                        },
-                      ),
-                  ],
+                  SettingsButton(
+                    name: context.loc.settings.backupAndRestore.resetBackupDir,
+                    icon: const Icon(Symbols.refresh_rounded),
+                    action: busy ? null : _resetFolder,
+                  ),
                 ],
-              ),
-              //
-              if (inProgress)
-                Positioned.fill(
-                  child: Container(
-                    alignment: Alignment.center,
-                    padding: const EdgeInsets.all(16),
-                    color: Colors.black38,
+                // ── Google Drive ── (r80: no folder needed first)
+                _section('Google Drive'),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: Text(driveStatus.isNotEmpty ? driveStatus : _driveSummary(), key: const ValueKey('drive-summary')),
+                ),
+                SettingsButton(
+                  key: const ValueKey('drive-client'),
+                  name: driveHasCreds ? 'Change OAuth client' : 'Set OAuth client…',
+                  icon: const Icon(Symbols.key_rounded),
+                  action: busy ? null : _editDriveCredentials,
+                ),
+                if (driveHasCreds && !driveLinked)
+                  SettingsButton(
+                    key: const ValueKey('drive-link'),
+                    name: 'Link Google account',
+                    icon: const Icon(Symbols.link_rounded),
+                    action: busy ? null : _linkDrive,
+                  ),
+                if (driveLinked) ...[
+                  SettingsButton(
+                    key: const ValueKey('backup-to-drive'),
+                    name: 'Back up to Google Drive…',
+                    subtitle: const Text('A new named backup in a folder of its own.'),
+                    icon: const Icon(Symbols.cloud_upload_rounded),
+                    action: busy ? null : _backupToDrive,
+                  ),
+                  SettingsButton(
+                    key: const ValueKey('restore-from-drive'),
+                    name: 'Restore from Google Drive…',
+                    subtitle: const Text('Pick a backup by name and date, then what comes back.'),
+                    icon: const Icon(Symbols.cloud_download_rounded),
+                    action: busy ? null : _restoreFromDrive,
+                  ),
+                  SettingsButton(
+                    name: 'Unlink Google account',
+                    icon: const Icon(Symbols.link_off_rounded),
+                    action: busy ? null : _unlinkDrive,
+                  ),
+                ],
+                const SizedBox(height: 24),
+              ],
+            ),
+            if (busy)
+              Positioned(
+                left: 0,
+                right: 0,
+                top: 0,
+                child: Material(
+                  elevation: 2,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
                     child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const CircularProgressIndicator(),
-                        const SizedBox(height: 10),
-                        Text(context.loc.pleaseWait),
-                        if (progress != 0 && total != 0) ...[
-                          Text('$progress / $total'),
-                          Text(context.loc.settings.backupAndRestore.operationTakesTooLongMsg),
-                          const SizedBox(height: 10),
-                          ElevatedButton(
-                            child: Text(context.loc.hide),
-                            onPressed: () async {
-                              inProgress = false;
-                              setState(() {});
-                            },
-                          ),
-                        ],
+                        const LinearProgressIndicator(),
+                        const SizedBox(height: 8),
+                        Text(status.isNotEmpty ? status : driveStatus, key: const ValueKey('backup-status')),
                       ],
                     ),
                   ),
                 ),
-            ],
-          ),
+              ),
+          ],
         ),
       ),
     );

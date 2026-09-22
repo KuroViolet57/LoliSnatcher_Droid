@@ -4,6 +4,8 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 
 import 'package:alice_lightweight/alice.dart';
@@ -11,6 +13,8 @@ import 'package:alice_lightweight/helper/alice_save_helper.dart';
 import 'package:fvp/fvp.dart' as fvp;
 import 'package:get/get.dart';
 import 'package:get_it/get_it.dart';
+import 'package:lolisnatcher/src/data/model_tasks.dart';
+import 'package:lolisnatcher/src/data/modular_ui.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/pages/settings/language_page.dart';
 import 'package:url_launcher/url_launcher_string.dart';
@@ -41,6 +45,8 @@ import 'package:lolisnatcher/src/data/settings/video_cache_mode.dart';
 import 'package:lolisnatcher/src/data/theme_item.dart';
 import 'package:lolisnatcher/src/data/update_info.dart';
 import 'package:lolisnatcher/src/handlers/database_handler.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
+import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/secure_storage_handler.dart';
@@ -115,6 +121,19 @@ class SettingsHandler {
   ShareAction shareAction = ShareAction.defaultValue;
   final Rx<AppMode> appMode = AppMode.defaultValue.obs;
   final Rx<HandSide> handSide = HandSide.defaultValue.obs;
+
+  /// On a Kemono tab, the pinned-tags drawer is replaced by the site's own
+  /// sidebar (Artists / Posts / Favorites / DMs). Off = the normal drawer.
+  /// Flipped from the bottom of either drawer.
+  final RxBool kemonoSidebar = true.obs;
+
+  /// On a FurAffinity tab the pinned-tags side carries the site's own
+  /// sidebar (r42). Off = the normal drawer. Flipped from either drawer.
+  final RxBool furAffinitySidebar = true.obs;
+
+  /// The kemono post page loads the real files instead of the site's 800 px
+  /// pictures. Off by default: pawchive rate-limits heavy downloading.
+  final RxBool kemonoPostFullImages = false.obs;
   VerticalPosition galleryBarPosition = VerticalPosition.defaultValue;
   ScrollDirection galleryScrollDirection = ScrollDirection.defaultValue;
   String extPathOverride = '';
@@ -139,6 +158,10 @@ class SettingsHandler {
   // Per-booru hidden tags. Keyed by booru.name. A tag in this map's value-set
   // hides matching items only on that booru, regardless of the global list.
   Map<String, Set<String>> hiddenTagsPerBooru = {};
+
+  // Modular UI switches (r41): toggle key -> on/off, only those changed
+  // from their default. See ModularUi.
+  Map<String, bool> modularUi = {};
   Set<String> markedTags = {};
 
   int itemLimit = Constants.defaultItemLimit;
@@ -169,6 +192,7 @@ class SettingsHandler {
 
   bool jsonWrite = false;
   bool autoPlayEnabled = true;
+  bool respectManualPause = true;
   // When false, neighbour pages in the gallery only start downloading their
   // video once the user actually swipes to them. Saves bandwidth and stops
   // the currently-watched video from competing with preloads.
@@ -188,6 +212,10 @@ class SettingsHandler {
   // intact, at the cost of RAM. libmpv has no MediaCodec limit so this is
   // safe to raise on devices with spare memory.
   int mediaKitMaxPlayers = 4;
+
+  /// r62: how long a video has to stay on screen before its player is built.
+  /// Swiping past faster than this builds nothing at all.
+  int videoStartDelayMs = 333;
   // ExoPlayer on-disk cache size for the better_player engine, in MB.
   // 0 disables. Default 500 MB; bumping this means more recently-watched
   // videos serve from disk on rewatch / scroll-back without re-hitting the
@@ -204,6 +232,53 @@ class SettingsHandler {
   // Local behaviour tracking that powers the "For You" recommendation tab.
   // Fully on-device (TagSignal table); can be disabled and wiped at any time.
   bool enableInterestTracking = true;
+  // r33: the on-device recommender (RecommenderHandler). `aiRecommendations`
+  // = the learned model orders and seeds every recommendation surface;
+  // `aiLearning` = it keeps learning from what is viewed, read, favourited
+  // and skipped. Independent by design: learning may run while the classic
+  // ordering is shown, and the learned model may serve while frozen.
+  bool aiRecommendations = true;
+  bool aiLearning = true;
+  // r34: the downloaded sentence encoder (EncoderHandler). `encoderModel` is
+  // a preset id ('english', 'multilingual') or a Hugging Face repo id; ''
+  // = none downloaded. `aiEncoder` = its vectors join the learner's features.
+  bool aiEncoder = true;
+  String encoderModel = '';
+  // r74: the downloaded image tagger (ImageTaggerHandler). `imageTaggerModel`
+  // is a preset id ('wd-vit', 'wd-convnext', 'wd-swinv2') or a Hugging Face
+  // repo id; '' = none. `aiImageTagger` = pictures are read with it once it
+  // is downloaded (boards). `taggerOnReactions` = a strong reaction on a
+  // booru post also learns the tags read from its thumbnail.
+  bool aiImageTagger = true;
+  String imageTaggerModel = '';
+  bool taggerOnReactions = false;
+  // r75: the downloaded "looks" model (LookModelHandler): a preset id ('s0',
+  // 's2') or a Hugging Face repo id; '' = none. `aiLook` = boards, Posts like
+  // this and the learner read pictures with it once it is downloaded.
+  bool aiLook = true;
+  String lookModel = '';
+  // r76: frames from the playing video (VideoFrames) replace a video's
+  // preview picture for the looks model, boards and the tagger.
+  bool videoFrames = true;
+  // r80: Settings → Recommendations → Models (ModelTasks): every model off
+  // at once, a switch per job (`modelTasks`, only the ones switched off are
+  // stored) and each model's two thread counts (`modelThreads`, only the
+  // ones changed from today's are stored). Not declared settings: written
+  // next to them, like `modularUi`.
+  bool aiModelsOff = false;
+  final Map<String, bool> modelTasks = {};
+  final Map<String, int> modelThreads = {};
+  // r80: where captures (a trace report, a source capture) are written;
+  // '' = a "captures" folder inside the download folder.
+  String capturesPath = '';
+  // r81: when a playing video's frames are taken, on For You and in any
+  // other tab (FrameMode; both 'playing' = the behaviour before r81), the
+  // "Remember the looks of posts you open" switch, and the space the
+  // vectors' database may take (MB).
+  FrameMode framesForYou = FrameMode.playing;
+  FrameMode framesOtherTabs = FrameMode.playing;
+  bool rememberLooks = false;
+  int vectorSpaceMb = 250;
   // Render the post-info panel (tags, metadata) as a Boorusama-style bottom
   // sheet dragged up from the bottom edge instead of the classic right-side
   // drawer. On by default; turn off to restore the side drawer.
@@ -254,6 +329,9 @@ class SettingsHandler {
   bool desktopListsDrag = false;
   bool showBottomSearchbar = true;
   bool useTopSearchbarInput = false;
+  // r38, experimental: the floating tab pill in the feed (tap = tab strip,
+  // swipe = next/previous tab, long-press = tab manager).
+  bool tabPill = false;
   bool dimSeenPosts = false;
   // Render .gif files with the extended_image engine (the same one Boorusama
   // uses) instead of Flutter's built-in Image widget. extended_image decodes
@@ -283,6 +361,13 @@ class SettingsHandler {
   final RxBool useDynamicColor = false.obs;
   final RxBool isAmoled = false.obs;
 
+  /// One-time "Flow" skin migration marker: existing installs keep their old
+  /// persisted theme (e.g. Pink/Red + AMOLED + dynamic colours), which makes
+  /// the reskin look broken. On the first launch after the redesign we switch
+  /// them to the Flow preset once and set this flag; after that their choices
+  /// are respected again.
+  final RxBool flowSkinApplied = false.obs;
+
   final Rx<String> fontFamily = 'System'.obs;
 
   final Rxn<AppLocale> locale = Rxn<AppLocale>(null);
@@ -303,6 +388,9 @@ class SettingsHandler {
     'prefBooru',
     'appMode',
     'handSide',
+    'kemonoSidebar',
+    'furAffinitySidebar',
+    'kemonoPostFullImages',
     'extPathOverride',
     'backupPath',
     'lastSyncIp',
@@ -338,11 +426,15 @@ class SettingsHandler {
     'showImageStats',
     'showVideoStats',
     'isDebug',
+    // r80: cores and folders belong to this phone.
+    'modelThreads',
+    'capturesPath',
     'desktopListsDrag',
     'incognitoKeyboard',
     'appAlias',
     'showBottomSearchbar',
     'useTopSearchbarInput',
+    'tabPill',
     'showSearchbarQuickActions',
     'autofocusSearchbar',
     'expandDetails',
@@ -608,6 +700,10 @@ class SettingsHandler {
       'type': 'bool',
       'default': false,
     },
+    'respectManualPause': {
+      'type': 'bool',
+      'default': true,
+    },
     'autoPlayEnabled': {
       'type': 'bool',
       'default': true,
@@ -630,6 +726,13 @@ class SettingsHandler {
       'step': 1,
       'lowerLimit': 1,
       'upperLimit': 20,
+    },
+    'videoStartDelayMs': {
+      'type': 'int',
+      'default': 333,
+      'step': 50,
+      'lowerLimit': 0,
+      'upperLimit': 5000,
     },
     'betterPlayerCacheMb': {
       'type': 'int',
@@ -656,6 +759,80 @@ class SettingsHandler {
     'enableInterestTracking': {
       'type': 'bool',
       'default': true,
+    },
+    'aiRecommendations': {
+      'type': 'bool',
+      'default': true,
+    },
+    'aiLearning': {
+      'type': 'bool',
+      'default': true,
+    },
+    'aiEncoder': {
+      'type': 'bool',
+      'default': true,
+    },
+    'encoderModel': {
+      'type': 'string',
+      'default': '',
+    },
+    'aiImageTagger': {
+      'type': 'bool',
+      'default': true,
+    },
+    'imageTaggerModel': {
+      'type': 'string',
+      'default': '',
+    },
+    'taggerOnReactions': {
+      'type': 'bool',
+      'default': false,
+    },
+    'aiLook': {
+      'type': 'bool',
+      'default': true,
+    },
+    'lookModel': {
+      'type': 'string',
+      'default': '',
+    },
+    'videoFrames': {
+      'type': 'bool',
+      'default': true,
+    },
+    'aiModelsOff': {
+      'type': 'bool',
+      'default': false,
+    },
+    'framesForYou': {
+      'type': 'stringFromList',
+      'default': 'playing',
+      'options': ['playing', 'reaction', 'off'],
+    },
+    'framesOtherTabs': {
+      'type': 'stringFromList',
+      'default': 'playing',
+      'options': ['playing', 'reaction', 'off'],
+    },
+    'rememberLooks': {
+      'type': 'bool',
+      'default': false,
+    },
+    'vectorSpaceMb': {
+      'type': 'int',
+      'default': 250,
+      'lowerLimit': 10,
+      'upperLimit': 100000,
+    },
+    'capturesPath': {
+      'type': 'string',
+      'default': '',
+    },
+    // r80: debug mode stays on across restarts until it is turned off (it
+    // was never saved: every start had it off again).
+    'isDebug': {
+      'type': 'bool',
+      'default': kDebugMode,
     },
     'useBottomInfoSheet': {
       'type': 'bool',
@@ -817,6 +994,10 @@ class SettingsHandler {
       'type': 'bool',
       'default': false,
     },
+    'tabPill': {
+      'type': 'bool',
+      'default': false,
+    },
     'dimSeenPosts': {
       'type': 'bool',
       'default': false,
@@ -891,6 +1072,18 @@ class SettingsHandler {
       'default': HandSide.defaultValue,
       'options': HandSide.values,
     },
+    'kemonoSidebar': {
+      'type': 'bool',
+      'default': true,
+    },
+    'furAffinitySidebar': {
+      'type': 'bool',
+      'default': true,
+    },
+    'kemonoPostFullImages': {
+      'type': 'bool',
+      'default': false,
+    },
     'theme': {
       'type': 'theme',
       'default': ThemeItem(name: 'Flow', primary: const Color(0xFFB9A0E8), accent: const Color(0xFFB9A0E8)),
@@ -916,6 +1109,10 @@ class SettingsHandler {
       'default': false,
     },
     'isAmoled': {
+      'type': 'bool',
+      'default': false,
+    },
+    'flowSkinApplied': {
       'type': 'bool',
       'default': false,
     },
@@ -1179,6 +1376,13 @@ class SettingsHandler {
     final String settings = await settingsFile.readAsString();
     // print('loadJSON $settings');
     await loadFromJSON(settings, true);
+    // If loading just triggered the one-time Flow skin migration (startup OR
+    // a restored pre-redesign backup), persist immediately so the migrated
+    // state hits disk even if the app is killed before the next save.
+    if (_flowMigrationPending) {
+      _flowMigrationPending = false;
+      await saveSettings(restate: false);
+    }
     return;
   }
 
@@ -1228,6 +1432,8 @@ class SettingsHandler {
         return markedTags;
       case 'autoPlayEnabled':
         return autoPlayEnabled;
+      case 'respectManualPause':
+        return respectManualPause;
       case 'preloadVideos':
         return preloadVideos;
       case 'useBetterPlayer':
@@ -1236,6 +1442,8 @@ class SettingsHandler {
         return useMediaKitPlayer;
       case 'mediaKitMaxPlayers':
         return mediaKitMaxPlayers;
+      case 'videoStartDelayMs':
+        return videoStartDelayMs;
       case 'betterPlayerCacheMb':
         return betterPlayerCacheMb;
       case 'betterPlayerPerFileMb':
@@ -1246,6 +1454,40 @@ class SettingsHandler {
         return previewWindowRect;
       case 'enableInterestTracking':
         return enableInterestTracking;
+      case 'aiRecommendations':
+        return aiRecommendations;
+      case 'aiLearning':
+        return aiLearning;
+      case 'aiEncoder':
+        return aiEncoder;
+      case 'encoderModel':
+        return encoderModel;
+      case 'aiImageTagger':
+        return aiImageTagger;
+      case 'imageTaggerModel':
+        return imageTaggerModel;
+      case 'taggerOnReactions':
+        return taggerOnReactions;
+      case 'aiLook':
+        return aiLook;
+      case 'lookModel':
+        return lookModel;
+      case 'videoFrames':
+        return videoFrames;
+      case 'aiModelsOff':
+        return aiModelsOff;
+      case 'framesForYou':
+        return framesForYou.name;
+      case 'framesOtherTabs':
+        return framesOtherTabs.name;
+      case 'rememberLooks':
+        return rememberLooks;
+      case 'vectorSpaceMb':
+        return vectorSpaceMb;
+      case 'capturesPath':
+        return capturesPath;
+      case 'isDebug':
+        return isDebug.value;
       case 'useBottomInfoSheet':
         return useBottomInfoSheet;
       case 'bottomSheetSizeMultiplier':
@@ -1320,6 +1562,8 @@ class SettingsHandler {
         return showBottomSearchbar;
       case 'useTopSearchbarInput':
         return useTopSearchbarInput;
+      case 'tabPill':
+        return tabPill;
       case 'dimSeenPosts':
         return dimSeenPosts;
       case 'fastGifPlayback':
@@ -1400,6 +1644,12 @@ class SettingsHandler {
         return appMode;
       case 'handSide':
         return handSide;
+      case 'kemonoSidebar':
+        return kemonoSidebar.value;
+      case 'furAffinitySidebar':
+        return furAffinitySidebar.value;
+      case 'kemonoPostFullImages':
+        return kemonoPostFullImages.value;
       case 'theme':
         return theme;
       case 'themeMode':
@@ -1408,6 +1658,8 @@ class SettingsHandler {
         return useDynamicColor;
       case 'isAmoled':
         return isAmoled;
+      case 'flowSkinApplied':
+        return flowSkinApplied;
       case 'fontFamily':
         return fontFamily;
       case 'customPrimaryColor':
@@ -1489,6 +1741,9 @@ class SettingsHandler {
       case 'autoPlayEnabled':
         autoPlayEnabled = validatedValue;
         break;
+      case 'respectManualPause':
+        respectManualPause = validatedValue;
+        break;
       case 'preloadVideos':
         preloadVideos = validatedValue;
         break;
@@ -1500,6 +1755,9 @@ class SettingsHandler {
         break;
       case 'mediaKitMaxPlayers':
         mediaKitMaxPlayers = (validatedValue as int).clamp(1, 20);
+        break;
+      case 'videoStartDelayMs':
+        videoStartDelayMs = (validatedValue as int).clamp(0, 5000);
         break;
       case 'betterPlayerCacheMb':
         betterPlayerCacheMb = (validatedValue as int).clamp(0, 50000);
@@ -1515,6 +1773,57 @@ class SettingsHandler {
         break;
       case 'enableInterestTracking':
         enableInterestTracking = validatedValue;
+        break;
+      case 'aiRecommendations':
+        aiRecommendations = validatedValue;
+        break;
+      case 'aiLearning':
+        aiLearning = validatedValue;
+        break;
+      case 'aiEncoder':
+        aiEncoder = validatedValue;
+        break;
+      case 'encoderModel':
+        encoderModel = validatedValue;
+        break;
+      case 'aiImageTagger':
+        aiImageTagger = validatedValue;
+        break;
+      case 'imageTaggerModel':
+        imageTaggerModel = validatedValue;
+        break;
+      case 'taggerOnReactions':
+        taggerOnReactions = validatedValue;
+        break;
+      case 'aiLook':
+        aiLook = validatedValue;
+        break;
+      case 'lookModel':
+        lookModel = validatedValue;
+        break;
+      case 'videoFrames':
+        videoFrames = validatedValue;
+        break;
+      case 'aiModelsOff':
+        aiModelsOff = validatedValue;
+        break;
+      case 'framesForYou':
+        framesForYou = FrameMode.parse(validatedValue);
+        break;
+      case 'framesOtherTabs':
+        framesOtherTabs = FrameMode.parse(validatedValue);
+        break;
+      case 'rememberLooks':
+        rememberLooks = validatedValue;
+        break;
+      case 'vectorSpaceMb':
+        vectorSpaceMb = validatedValue;
+        break;
+      case 'capturesPath':
+        capturesPath = validatedValue;
+        break;
+      case 'isDebug':
+        isDebug.value = validatedValue;
         break;
       case 'useBottomInfoSheet':
         useBottomInfoSheet = validatedValue;
@@ -1709,6 +2018,9 @@ class SettingsHandler {
       case 'useTopSearchbarInput':
         useTopSearchbarInput = validatedValue;
         break;
+      case 'tabPill':
+        tabPill = validatedValue;
+        break;
       case 'dimSeenPosts':
         dimSeenPosts = validatedValue;
         break;
@@ -1741,6 +2053,15 @@ class SettingsHandler {
       case 'handSide':
         handSide.value = validatedValue;
         break;
+      case 'kemonoSidebar':
+        kemonoSidebar.value = validatedValue;
+        break;
+      case 'furAffinitySidebar':
+        furAffinitySidebar.value = validatedValue;
+        break;
+      case 'kemonoPostFullImages':
+        kemonoPostFullImages.value = validatedValue;
+        break;
       case 'theme':
         theme.value = validatedValue;
         break;
@@ -1752,6 +2073,9 @@ class SettingsHandler {
         break;
       case 'isAmoled':
         isAmoled.value = validatedValue;
+        break;
+      case 'flowSkinApplied':
+        flowSkinApplied.value = validatedValue;
         break;
       case 'fontFamily':
         fontFamily.value = validatedValue;
@@ -1793,12 +2117,19 @@ class SettingsHandler {
           if (tags.isNotEmpty) out[boorus] = tags.toList();
         });
         json[key] = out;
+        // Modular UI (r41) is written next to it: not a declared setting, so
+        // the generic loop never validates it as one.
+        json['modularUi'] = Map<String, bool>.from(modularUi);
       } else if (key == 'markedTags') {
         json[key] = cleanTagsList(markedTags.map(Tag.new).toList());
       } else {
         json[key] = validateValue(key, null, toJSON: true);
       }
     }
+
+    // r80: Settings → Models, written next to the declared settings.
+    json['modelTasks'] = Map<String, bool>.from(modelTasks);
+    json['modelThreads'] = Map<String, int>.from(modelThreads);
 
     // Add version info
     json['version'] = Constants.updateInfo.versionName;
@@ -1916,6 +2247,16 @@ class SettingsHandler {
       );
     }
 
+    modularUi
+      ..clear()
+      ..addAll(ModularUi.parse(json['modularUi']));
+    modelTasks
+      ..clear()
+      ..addAll(ModelTasks.parse(json['modelTasks']));
+    modelThreads
+      ..clear()
+      ..addAll(ModelTasks.parseThreads(json['modelThreads']));
+
     try {
       final dynamic raw = json['hiddenTagsPerBooru'];
       hiddenTagsPerBooru.clear();
@@ -2027,8 +2368,29 @@ class SettingsHandler {
     // force mobile app mode, until we redo UI for desktop and start doing builds again
     appMode.value = AppMode.Mobile;
 
+    // One-time Flow skin migration (startup loads only, not sync payloads):
+    // older installs carry a pre-redesign theme (Pink/Red accent, AMOLED,
+    // dynamic wallpaper colours) that fights the Flow skin. Switch them to the
+    // Flow preset once; afterwards any manual theme change sticks.
+    if (setMissingKeys && flowSkinApplied.value != true) {
+      theme.value = ThemeItem(
+        name: 'Flow',
+        primary: const Color(0xFFB9A0E8),
+        accent: const Color(0xFFB9A0E8),
+      );
+      themeMode.value = ThemeMode.dark;
+      isAmoled.value = false;
+      useDynamicColor.value = false;
+      flowSkinApplied.value = true;
+      _flowMigrationPending = true;
+    }
+
     return true;
   }
+
+  /// Set when [loadFromJSON] just performed the one-time Flow skin migration —
+  /// tells [loadSettings] to persist immediately so it never re-runs.
+  bool _flowMigrationPending = false;
 
   Future<bool> saveSettings({required bool restate}) async {
     await getStoragePermission();
@@ -2094,7 +2456,10 @@ class SettingsHandler {
         tempList.add(Booru(loc.favourites, BooruType.Favourites, '', '', ''));
         tempList.add(Booru(loc.downloads, BooruType.Downloads, '', '', ''));
         tempList.add(Booru('For You', BooruType.ForYou, '', '', ''));
+        tempList.add(Booru('For You (doujin)', BooruType.ForYouDoujin, '', '', ''));
+        tempList.add(Booru('Boards', BooruType.Board, '', '', ''));
         tempList.add(Booru('Collections', BooruType.Collections, '', '', ''));
+        tempList.add(Booru('History', BooruType.History, '', '', ''));
       }
     } catch (e, s) {
       Logger.Inst().log(
@@ -2134,6 +2499,38 @@ class SettingsHandler {
       if (b.type?.isForYou == true) return b;
     }
     final Booru b = Booru('For You', BooruType.ForYou, '', '', '');
+    booruList.add(b);
+    return b;
+  }
+
+  /// Returns the virtual doujin For You booru (r33), adding it to the list
+  /// on first use.
+  Booru ensureForYouDoujinBooru() {
+    for (final b in booruList) {
+      if (b.type?.isForYouDoujin == true) return b;
+    }
+    final Booru b = Booru('For You (doujin)', BooruType.ForYouDoujin, '', '', '');
+    booruList.add(b);
+    return b;
+  }
+
+  /// The virtual source behind board tabs (r73).
+  Booru ensureBoardsBooru() {
+    for (final b in booruList) {
+      if (b.type?.isBoard == true) return b;
+    }
+    final Booru b = Booru('Boards', BooruType.Board, '', '', '');
+    booruList.add(b);
+    return b;
+  }
+
+  /// Returns the virtual viewing-history booru, adding it to the list on
+  /// first use.
+  Booru ensureHistoryBooru() {
+    for (final b in booruList) {
+      if (b.type?.isHistory == true) return b;
+    }
+    final Booru b = Booru('History', BooruType.History, '', '', '');
     booruList.add(b);
     return b;
   }
@@ -2183,7 +2580,10 @@ class SettingsHandler {
     // Keep the other virtual boorus grouped after Favourites / Downloads.
     for (final isType in [
       (Booru b) => b.type?.isForYou == true,
+      (Booru b) => b.type?.isForYouDoujin == true,
+      (Booru b) => b.type?.isBoard == true,
       (Booru b) => b.type?.isCollections == true,
+      (Booru b) => b.type?.isHistory == true,
     ]) {
       final int idx = sorted.indexWhere(isType);
       if (idx != -1) {
@@ -2248,16 +2648,57 @@ class SettingsHandler {
     'stable-diffusion',
   ];
 
-  TagsListData parseTagsList(List<Tag> itemTags, {bool isCapped = true}) {
+  /// Domain-aware wrapper around [parseTagsList]: doujin items (post URL
+  /// host attribution) get their hidden-tag badges from the DOUJIN blacklist;
+  /// everything else from the booru global blacklist. Every per-item surface
+  /// (thumbnails, viewers, tag lists) should call this instead of
+  /// [parseTagsList] so booru blacklist data never decorates doujin items.
+  TagsListData parseTagsListForItem(BooruItem item, {bool isCapped = true}) {
+    if (DoujinDataHandler.isDoujinItem(item)) {
+      DoujinDataHandler.instance.ensureLoaded();
+      return parseTagsList(
+        item.tagsList,
+        isCapped: isCapped,
+        hiddenTokensOverride: SourceSettingsHandler.instance.tagBlacklistForItem(item),
+        markedTokensOverride: DoujinDataHandler.instance.starredTags,
+      );
+    }
+    return parseTagsList(item.tagsList, isCapped: isCapped);
+  }
+
+  TagsListData parseTagsList(
+    List<Tag> itemTags, {
+    bool isCapped = true,
+    Set<String>? hiddenTokensOverride,
+    Set<String>? markedTokensOverride,
+  }) {
     final List<String> cleanItemTags = cleanTagsList(itemTags);
     // For the visual "this tag is in your blacklist" indicator we check the
     // tag against any plain-tag token mentioned in a global blacklist line.
     // (Multi-token lines still don't surface per-tag, but at least the
     // single-tag entries — which are what every existing user has — keep
     // their badge.)
-    final Set<String> globalTokens = blacklistedTagTokens;
-    List<String> hiddenInItem = cleanItemTags.where(globalTokens.contains).toList();
-    List<String> markedInItem = cleanItemTags.where(markedTags.contains).toList();
+    // `hiddenTokensOverride` swaps in a different blacklist (the doujin one,
+    // normalized lowercase_underscores) in place of the booru-global tokens.
+    List<String> hiddenInItem;
+    if (hiddenTokensOverride != null) {
+      hiddenInItem = cleanItemTags
+          .where((tag) => hiddenTokensOverride.contains(SourceSettingsHandler.normalizeTagName(tag)))
+          .toList();
+    } else {
+      final Set<String> globalTokens = blacklistedTagTokens;
+      hiddenInItem = cleanItemTags.where(globalTokens.contains).toList();
+    }
+    // `markedTokensOverride` swaps in the doujin starred-tag store (normalized
+    // tokens) in place of the booru markedTags list.
+    List<String> markedInItem;
+    if (markedTokensOverride != null) {
+      markedInItem = cleanItemTags
+          .where((tag) => markedTokensOverride.contains(SourceSettingsHandler.normalizeTagName(tag)))
+          .toList();
+    } else {
+      markedInItem = cleanItemTags.where(markedTags.contains).toList();
+    }
     final List<String> soundInItem = soundTags.where(cleanItemTags.contains).toList();
     final List<String> aiInItem = aiTags.where(cleanItemTags.contains).toList();
 
@@ -2537,7 +2978,7 @@ class SettingsHandler {
             e.toString(),
           ),
           sideColor: Colors.red,
-          leadingIcon: Icons.update,
+          leadingIcon: Symbols.update_rounded,
           leadingIconColor: Colors.red,
         );
       }
@@ -2551,7 +2992,7 @@ class SettingsHandler {
         style: const TextStyle(fontSize: 20),
       ),
       sideColor: Colors.green,
-      leadingIcon: Icons.update,
+      leadingIcon: Symbols.update_rounded,
       leadingIconColor: Colors.green,
       actionsBuilder: (context, controller) {
         return [
@@ -2563,7 +3004,7 @@ class SettingsHandler {
                 isAfterUpdate: true,
               );
             },
-            icon: const Icon(Icons.list_alt_rounded),
+            icon: const Icon(Symbols.list_alt_rounded),
             label: Text(
               loc.settings.checkForUpdates.viewLatestChangelog,
               maxLines: 2,
@@ -2641,7 +3082,7 @@ class SettingsHandler {
                         onPressed: () {
                           Navigator.of(ctx).pop();
                         },
-                        icon: const Icon(Icons.close),
+                        icon: const Icon(Symbols.close_rounded),
                         label: Text(isDiffVersion ? loc.later : loc.close),
                       ),
                       const SizedBox(width: 16),
@@ -2659,7 +3100,7 @@ class SettingsHandler {
                             );
                             Navigator.of(ctx).pop();
                           },
-                          icon: const Icon(Icons.play_arrow),
+                          icon: const Icon(Symbols.play_arrow_rounded),
                           label: Text(loc.settings.checkForUpdates.visitPlayStore),
                         )
                       else
@@ -2671,7 +3112,7 @@ class SettingsHandler {
                             );
                             Navigator.of(ctx).pop();
                           },
-                          icon: const Icon(Icons.exit_to_app),
+                          icon: const Icon(Symbols.exit_to_app_rounded),
                           label: Text(loc.settings.checkForUpdates.visitReleases),
                         ),
                     ],
@@ -2727,7 +3168,7 @@ class SettingsHandler {
           e.toString(),
         ),
         sideColor: Colors.red,
-        leadingIcon: Icons.error,
+        leadingIcon: Symbols.error_rounded,
         leadingIconColor: Colors.red,
       );
     }
@@ -2810,7 +3251,7 @@ class SettingsHandler {
           e.toString(),
         ),
         sideColor: Colors.red,
-        leadingIcon: Icons.error,
+        leadingIcon: Symbols.error_rounded,
         leadingIconColor: Colors.red,
       );
     }

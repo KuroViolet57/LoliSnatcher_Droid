@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:lolisnatcher/gen/strings.g.dart';
 
 class DeleteButton extends StatelessWidget {
@@ -34,7 +36,7 @@ class DeleteButton extends StatelessWidget {
             Navigator.of(context).pop(returnData);
           }
         },
-        icon: const Icon(Icons.delete_forever),
+        icon: const Icon(Symbols.delete_forever_rounded),
         label: Text(context.loc.delete),
       );
     }

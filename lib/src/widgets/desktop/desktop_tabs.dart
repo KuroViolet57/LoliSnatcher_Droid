@@ -4,6 +4,8 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:get/get.dart';
 import 'package:scroll_to_index/scroll_to_index.dart';
 
@@ -97,7 +99,7 @@ class _DesktopTabsState extends State<DesktopTabs> {
           ),
           const SizedBox(width: 3),
           IconButton(
-            icon: const Icon(Icons.close),
+            icon: const Icon(Symbols.close_rounded),
             onPressed: () {
               searchHandler.removeTabAt(tabIndex: searchHandler.tabs.indexOf(tab));
             },
@@ -153,7 +155,7 @@ class _DesktopTabsState extends State<DesktopTabs> {
               onPressed: () {
                 searchHandler.addTabByString('', switchToNew: true);
               },
-              icon: const Icon(Icons.add),
+              icon: const Icon(Symbols.add_rounded),
             ),
             const SizedBox(width: 3),
             PopupMenuButton<SearchTab>(

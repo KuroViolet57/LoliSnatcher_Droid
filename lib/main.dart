@@ -17,13 +17,28 @@ import 'package:lemberfpsmonitor/lemberfpsmonitor.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:talker_flutter/talker_flutter.dart';
 
+import 'package:lolisnatcher/src/utils/photo_picker.dart';
+import 'package:lolisnatcher/src/utils/perf_trace.dart';
+import 'package:lolisnatcher/src/utils/status_bar_inset.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/theme_item.dart';
+import 'package:lolisnatcher/src/handlers/bookmark_handler.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
+import 'package:lolisnatcher/src/handlers/doujin_migration.dart';
 import 'package:lolisnatcher/src/handlers/floating_preview_handler.dart';
 import 'package:lolisnatcher/src/handlers/interests_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/encoder_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/image_tagger_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/look_memory.dart';
+import 'package:lolisnatcher/src/handlers/recommender/look_model_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/model_work.dart';
+import 'package:lolisnatcher/src/handlers/recommender/video_frames.dart';
+import 'package:lolisnatcher/src/handlers/recommender/recommender_handler.dart';
 import 'package:lolisnatcher/src/handlers/local_auth_handler.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
 import 'package:lolisnatcher/src/handlers/notify_handler.dart';
+import 'package:lolisnatcher/src/boorus/doujin/hentaipaw_handler.dart';
+import 'package:lolisnatcher/src/handlers/schale_clearance_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/secure_storage_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
@@ -40,11 +55,13 @@ import 'package:lolisnatcher/src/pages/mobile_home_page.dart';
 import 'package:lolisnatcher/src/pages/settings/booru_edit_page.dart';
 import 'package:lolisnatcher/src/services/image_writer.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
+import 'package:lolisnatcher/src/utils/navigation_trace.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 import 'package:lolisnatcher/src/widgets/common/settings_widgets.dart';
 import 'package:lolisnatcher/src/widgets/root/dev_overlay.dart';
 import 'package:lolisnatcher/src/widgets/root/image_stats.dart';
 import 'package:lolisnatcher/src/widgets/root/scroll_physics.dart';
+import 'package:lolisnatcher/src/widgets/video/media_kit_player_view.dart';
 import 'package:lolisnatcher/src/widgets/webview/webview_page.dart';
 
 void main() async {
@@ -86,6 +103,7 @@ void main() async {
   ViewerHandler.register();
   FloatingPreviewHandler.register();
   InterestsHandler.register();
+  RecommenderHandler.register();
   SearchHandler.register();
   SnatchHandler.register();
   TagHandler.register();
@@ -93,6 +111,28 @@ void main() async {
   SecureStorageHandler.register();
   initSettingsEnumRegistry();
   await SettingsHandler.register().initialize();
+  // r34: the downloaded encoder, if any, is found from its manifest once the
+  // settings (its model id) and the app path are known.
+  EncoderHandler.register();
+  unawaited(EncoderHandler.instance.refresh());
+  // r74: the downloaded image tagger, likewise.
+  ImageTaggerHandler.register();
+  unawaited(ImageTaggerHandler.instance.refresh());
+  // r75: the downloaded looks model, likewise.
+  LookModelHandler.register();
+  unawaited(LookModelHandler.instance.refresh());
+  // r76: frames from the playing video follow the viewer's current item.
+  VideoFrames.register().attach();
+  // r81: the looks of the posts you open, when switched on.
+  LookMemory.instance.attach();
+  // r77: background model work waits for quiet moments and holds the image
+  // tagger while a video plays.
+  ModelWork.instance.attach(videoPlaying: MediaKitPlayerView.anyPlaying);
+  // r77: system Back and Back gestures, in the log (next to what they closed).
+  BackGestureLogger.attach();
+  // r77: Try it and a board's picture use Android's own photo picker (one
+  // variable less while the 19 Sep "nothing happens" is not explained).
+  PhotoPicker.useSystemPicker();
   LocalAuthHandler.register();
 
   await ServiceHandler.setSystemUiVisibility(true);
@@ -133,6 +173,23 @@ class _MainAppState extends State<MainApp> {
       await tagHandler.initialize();
       settingsHandler.postInitMessage.value = loc.init.restoringTabs;
       await searchHandler.restoreTabs();
+      // One-time move of doujin entries out of the shared booru stores into
+      // doujinData.json; no-ops after the first successful run.
+      await runDoujinMigrationIfNeeded();
+      // Bookmarks became collection entries: fold the old flat bookmark list
+      // into the bookmark collection, once.
+      BookmarkHandler.instance.ensureLoaded();
+      DoujinDataHandler.instance.mergeLegacyBookmarks([
+        for (final b in BookmarkHandler.instance.all())
+          DoujinEntry(
+            postURL: b.postURL,
+            serverId: b.serverId,
+            thumbnailURL: b.thumbnailURL,
+            title: b.title,
+            booruHost: b.booruHost,
+            addedAt: b.addedAt,
+          ),
+      ]);
     });
 
     settingsHandler.isDebug.addListener(devOverlayListener);
@@ -235,44 +292,60 @@ class _MainAppState extends State<MainApp> {
                       navigationHandler.routeObserver,
                       FloatingPreviewHandler.instance.routeObserver,
                       TalkerRouteObserver(Logger.talker),
+                      PerfTraceRouteObserver(),
+                      // r77: what closed the viewer, in the log.
+                      ViewerCloseObserver(),
                     ],
                     home: const Home(),
                     locale: TranslationProvider.of(context).flutterLocale,
                     supportedLocales: AppLocaleUtils.supportedLocales,
                     localizationsDelegates: GlobalMaterialLocalizations.delegates,
-                    builder: (_, child) => Stack(
-                      children: [
-                        Overlay(
-                          initialEntries: [
-                            OverlayEntry(
-                              builder: (context) {
-                                registerGlobalOverlay(context);
+                    builder: (builderContext, child) {
+                      // r50/r52: with the status bar hidden its space is kept (back
+                      // arrows clear of the swipe edge; Modular UI brings back the
+                      // full-height layout). The widget reads the insets where it is
+                      // built: this tree sits in an Overlay entry built once, so a
+                      // MediaQuery made here kept the first frame's insets and the
+                      // keyboard never reached the pages.
+                      // r67: taps, swipes and scrolls go on the trace's timeline from here.
+                      final Widget content = HiddenStatusBarInsets(
+                        child: PerfTraceGestureLayer(child: child ?? const SizedBox.shrink()),
+                      );
+                      final Widget wrappedChild = content;
+                      return Stack(
+                        children: [
+                          Overlay(
+                            initialEntries: [
+                              OverlayEntry(
+                                builder: (context) {
+                                  registerGlobalOverlay(context);
 
-                                return child ?? const SizedBox.shrink();
-                              },
-                            ),
-                          ],
-                        ),
-                        // Blur overlay
-                        Overlay(
-                          initialEntries: [
-                            OverlayEntry(
-                              builder: (_) => AppLifecycleOverlay(
-                                shouldOverlay: settingsHandler.blurOnLeave.value,
+                                  return wrappedChild;
+                                },
                               ),
-                            ),
-                          ],
-                        ),
-                        // Lock screen overlay
-                        Overlay(
-                          initialEntries: [
-                            OverlayEntry(
-                              builder: (_) => const LockScreenPage(),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
+                            ],
+                          ),
+                          // Blur overlay
+                          Overlay(
+                            initialEntries: [
+                              OverlayEntry(
+                                builder: (_) => AppLifecycleOverlay(
+                                  shouldOverlay: settingsHandler.blurOnLeave.value,
+                                ),
+                              ),
+                            ],
+                          ),
+                          // Lock screen overlay
+                          Overlay(
+                            initialEntries: [
+                              OverlayEntry(
+                                builder: (_) => const LockScreenPage(),
+                              ),
+                            ],
+                          ),
+                        ],
+                      );
+                    },
                   );
                 },
               );
@@ -546,10 +619,20 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
       case AppLifecycleState.paused:
         // record time when user left the app
         localAuthHandler.onLeave();
+        // What the recommender learned since its last timed save, and a
+        // gathered doujin history write, go to disk before the app may die.
+        unawaited(RecommenderHandler.maybe?.flush() ?? Future<void>.value());
+        DoujinDataHandler.instance.flushPendingSave();
         break;
       case AppLifecycleState.resumed:
         // check if app needs to be locked when user returns to the app
         localAuthHandler.onReturn();
+        // The headless pages that make requests for niyaniya and hentaipaw
+        // keep the engine's sockets and DNS from before the phone was away;
+        // a network that changed meanwhile is not something they notice.
+        // They are cheap to start again, so they go.
+        unawaited(SchaleClearanceHandler.instance.disposePageClient(reason: 'app resumed'));
+        unawaited(HentaiPawHandler.pageClient.drop('app resumed'));
         break;
     }
   }

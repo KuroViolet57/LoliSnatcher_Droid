@@ -6,6 +6,11 @@ enum GalleryButton {
   favourite,
   info,
   share,
+
+  /// r61: opens the sheet of media links found in the post's description. It
+  /// used to borrow the share button's place, so switching share off took it
+  /// away too.
+  linkedMedia,
   select,
   open,
   autoscroll,
@@ -13,6 +18,10 @@ enum GalleryButton {
   toggleQuality,
   externalPlayer,
   imageSearch,
+
+  /// r34: "Not interested" on a recommendation feed — a loud no the learner
+  /// keeps, and the item leaves the feed.
+  notInterested,
   ;
 
   /// Returns the string value used for JSON serialization.
@@ -25,6 +34,10 @@ enum GalleryButton {
         return 'external_player';
       case GalleryButton.imageSearch:
         return 'image_search';
+      case GalleryButton.notInterested:
+        return 'not_interested';
+      case GalleryButton.linkedMedia:
+        return 'linked_media';
       default:
         return name;
     }
@@ -55,6 +68,10 @@ enum GalleryButton {
         return GalleryButton.externalPlayer;
       case 'image_search':
         return GalleryButton.imageSearch;
+      case 'not_interested':
+        return GalleryButton.notInterested;
+      case 'linked_media':
+        return GalleryButton.linkedMedia;
       default:
         return null;
     }
@@ -70,6 +87,7 @@ enum GalleryButton {
   bool get isFavourite => this == GalleryButton.favourite;
   bool get isInfo => this == GalleryButton.info;
   bool get isShare => this == GalleryButton.share;
+  bool get isLinkedMedia => this == GalleryButton.linkedMedia;
   bool get isSelect => this == GalleryButton.select;
   bool get isOpen => this == GalleryButton.open;
   bool get isAutoscroll => this == GalleryButton.autoscroll;
@@ -77,6 +95,7 @@ enum GalleryButton {
   bool get isToggleQuality => this == GalleryButton.toggleQuality;
   bool get isExternalPlayer => this == GalleryButton.externalPlayer;
   bool get isImageSearch => this == GalleryButton.imageSearch;
+  bool get isNotInterested => this == GalleryButton.notInterested;
 
   /// Returns the localized display name for this button.
   String get locName {
@@ -103,6 +122,10 @@ enum GalleryButton {
         return loc.galleryButtons.externalPlayer;
       case GalleryButton.imageSearch:
         return loc.galleryButtons.imageSearch;
+      case GalleryButton.notInterested:
+        return 'Not interested';
+      case GalleryButton.linkedMedia:
+        return 'Linked media';
     }
   }
 }

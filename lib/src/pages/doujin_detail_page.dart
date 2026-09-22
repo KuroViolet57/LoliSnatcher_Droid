@@ -1,0 +1,942 @@
+import 'dart:async';
+import 'dart:math' as math;
+
+import 'package:flutter/material.dart';
+
+import 'package:intl/intl.dart';
+import 'package:material_symbols_icons/symbols.dart';
+
+import 'package:lolisnatcher/src/data/booru.dart';
+import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/data/tag.dart';
+import 'package:lolisnatcher/src/handlers/booru_handler.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
+import 'package:lolisnatcher/src/handlers/schale_clearance_handler.dart';
+import 'package:lolisnatcher/src/boorus/doujin/schale_handler.dart';
+import 'package:lolisnatcher/src/handlers/reader_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/recommender_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/rewards.dart';
+import 'package:lolisnatcher/src/handlers/search_handler.dart';
+import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/handlers/doujin_download_handler.dart';
+import 'package:lolisnatcher/src/handlers/snatch_handler.dart';
+import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
+import 'package:lolisnatcher/src/pages/doujin_reader_page.dart';
+import 'package:lolisnatcher/src/utils/tools.dart';
+import 'package:lolisnatcher/src/widgets/collections/add_to_collection_sheet.dart';
+import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
+import 'package:lolisnatcher/src/widgets/gallery/doujin_tag_chip.dart';
+import 'package:lolisnatcher/src/widgets/tabs/doujin_mini_tab_manager.dart';
+import 'package:lolisnatcher/src/widgets/gallery/tag_view.dart';
+import 'package:lolisnatcher/src/widgets/image/custom_network_image.dart';
+import 'package:lolisnatcher/src/widgets/thumbnail/page_thumbnail_loader.dart';
+import 'package:lolisnatcher/src/widgets/thumbnail/thumbnail.dart';
+import 'package:lolisnatcher/src/widgets/thumbnail/thumbnail_build.dart';
+import 'package:lolisnatcher/src/boorus/booru_type.dart';
+
+/// The doujin DETAIL page — what tapping a doujin card opens instead of the
+/// image viewer. Modeled on the reference reader apps:
+///
+///   cover + titles
+///   language · category · pages · favourites · date
+///   Read button · save · bookmark · favourite
+///   tag filter + tags grouped by the site's own namespaces
+///   Related (chapters & versions) — Recommended — Pages grid
+///
+/// The reader is reached from the Read button, a page thumbnail, or resumes
+/// where you left off. The classic viewer flow stays untouched for
+/// non-doujin sources.
+class DoujinDetailPage extends StatefulWidget {
+  const DoujinDetailPage({
+    required this.tab,
+    required this.index,
+    this.embedded = false,
+    this.asTab = false,
+    super.key,
+  });
+
+  final SearchTab tab;
+  final int index;
+
+  /// True when the page renders inside another chrome (floating preview
+  /// window): the page's own app bar is dropped.
+  final bool embedded;
+
+  /// True when the page IS a doujin tab's whole content: keeps its app bar
+  /// but WITHOUT a back button (there's nowhere to go back to). The mini tab
+  /// manager's drag strip is wide on every detail page, not just this one -
+  /// see [edgeDragWidthFor].
+  final bool asTab;
+
+  static final Set<String> _openedTabs = {};
+
+  /// Whether this page's appearance is a new open (history, the
+  /// recommender's `open`). A page pushed from a card always is; a doujin
+  /// TAB is rebuilt every time it is switched back to, and that is not
+  /// (r39: it used to count as reading the gallery again).
+  static bool claimOpen(String tabId, String postURL, {required bool asTab}) {
+    if (!asTab) return true;
+    return _openedTabs.add('$tabId|$postURL');
+  }
+
+  @visibleForTesting
+  static void resetOpensForTests() => _openedTabs.clear();
+
+  /// Share of the screen width that drags open the mini tab manager, and the
+  /// bounds that share is clamped to. A quarter to a third of the width is
+  /// what is actually reachable one-handed; Flutter's ~20px default sits
+  /// under Android's gesture handle and barely triggers.
+  static const double edgeDragWidthFraction = 0.3;
+  static const double minEdgeDragWidth = 90;
+  static const double maxEdgeDragWidth = 320;
+
+  /// The drag strip's width for a given viewport. Applies to EVERY doujin
+  /// detail page - pushed from a card as well as hosted as a tab.
+  static double edgeDragWidthFor(Size screen) =>
+      (screen.width * edgeDragWidthFraction).clamp(minEdgeDragWidth, maxEdgeDragWidth);
+
+  /// Share of the viewport the big cover may occupy at most. A portrait cover
+  /// at its natural ratio is nearly twice as tall as it is wide, which pushed
+  /// the title, action row and tags entirely below the fold.
+  static const double maxCoverViewportFraction = 0.5;
+
+  /// Horizontal padding either side of the big cover.
+  static const double coverSidePadding = 14;
+
+  /// The big cover's box for a given viewport and source image: full width,
+  /// and the cover's natural height at that width capped to
+  /// [maxCoverViewportFraction] of the viewport. `capped` says whether the
+  /// natural height was cut - i.e. whether the image has to crop or letterbox
+  /// rather than sit at its own size.
+  @visibleForTesting
+  static ({double width, double height, bool capped}) bigCoverBox({
+    required Size screen,
+    double? imageWidth,
+    double? imageHeight,
+  }) {
+    // The cover's own aspect ratio when known; a typical doujin cover shape
+    // otherwise.
+    final double aspect = (imageWidth != null && imageHeight != null && imageHeight > 0)
+        ? (imageWidth / imageHeight).clamp(0.5, 1.5)
+        : 0.7;
+
+    final double width = screen.width - coverSidePadding * 2;
+    final double naturalHeight = width / aspect;
+    final double maxHeight = screen.height * maxCoverViewportFraction;
+    return (
+      width: width,
+      height: math.min(naturalHeight, maxHeight),
+      capped: naturalHeight > maxHeight,
+    );
+  }
+
+  @override
+  State<DoujinDetailPage> createState() => _DoujinDetailPageState();
+}
+
+class _DoujinDetailPageState extends State<DoujinDetailPage> {
+  final settingsHandler = SettingsHandler.instance;
+  final searchHandler = SearchHandler.instance;
+
+  // The card's OWN source: a virtual feed (the doujin For You) hands each
+  // card to the handler it came from, so loading, the strips, the reader and
+  // the page thumbnails all run against the real site.
+  late final BooruItem item = widget.tab.booruHandler.filteredFetched[widget.index];
+  late final BooruHandler handler = widget.tab.booruHandler.handlerForItem(item);
+  late final Booru booru = handler.booru;
+
+  bool _loading = true;
+  String? _loadError;
+
+  /// r69: a sharper cover than the listing's thumbnail (the gallery's first
+  /// page), drawn over the site cover once it arrives. The provider is the
+  /// reader's own for that page (same URL, cache folder and name), so the
+  /// bytes are downloaded once when the media cache is on.
+  ImageProvider? _sharpProvider;
+
+  /// Seconds left before "Complete the check" can be tapped again after the
+  /// auth host answered 429: every attempt inside its window counts against
+  /// the address (13 attempts in six minutes on the 2026-09-03 log).
+  int _checkHold = 0;
+  Timer? _checkHoldTimer;
+
+  void _holdCheck(int seconds) {
+    _checkHoldTimer?.cancel();
+    setState(() => _checkHold = seconds);
+    _checkHoldTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      setState(() => _checkHold = _checkHold - 1);
+      if (_checkHold <= 0) timer.cancel();
+    });
+  }
+  // Per-strip expansion state, so the header's own chevron reflects it.
+  final Map<String, bool> _stripExpanded = {};
+  final TextEditingController _tagFilter = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    // Opening the detail page IS the doujin "viewed" event; doujin history
+    // lives in its own store, never in the booru ViewedPost table.
+    if (DoujinDetailPage.claimOpen(widget.tab.id, item.postURL, asTab: widget.asTab)) {
+      DoujinDataHandler.instance.addHistory(item, booru, handler: handler);
+    }
+    // Reflect the doujin store's favourite state on the item so the heart
+    // renders correctly regardless of which feed the card came from.
+    item.isFavourite.value = DoujinDataHandler.instance.isFavourite(item);
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _tagFilter.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    if (ReaderHandler.instance.hasBook(item) && item.tagsList.isNotEmpty) {
+      setState(() => _loading = false);
+      DoujinDataHandler.instance.updateHistoryTags(item, booru, handler: handler);
+      unawaited(_loadSharpCover());
+      return;
+    }
+    final res = await handler.loadItem(item: item, withCapcthaCheck: true);
+    if (!mounted) return;
+    setState(() {
+      _loading = false;
+      _loadError = res.failed ? (res.error ?? 'failed to load') : null;
+    });
+    // Listings often carry no tags; the loaded gallery does. The history
+    // entry learns them now, which is what the doujin For You reads.
+    if (!res.failed) {
+      DoujinDataHandler.instance.updateHistoryTags(item, booru, handler: handler);
+      unawaited(_loadSharpCover());
+    }
+  }
+
+  Future<void> _loadSharpCover() async {
+    try {
+      final BooruItem? cover = await handler.detailCoverImage(item);
+      if (!mounted || cover == null || cover.fileURL.isEmpty) return;
+      final Map<String, String> headers = await Tools.getFileCustomHeaders(booru, item: cover, checkForReferer: true);
+      if (!mounted) return;
+      setState(
+        () => _sharpProvider = CustomNetworkImage(
+          cover.fileURL,
+          headers: headers,
+          withCache: settingsHandler.mediaCache,
+          cacheFolder: 'media',
+          fileNameExtras: cover.fileNameExtras,
+        ),
+      );
+    } catch (_) {
+      // The site cover stays; a sharper one is a bonus, never an error.
+    }
+  }
+
+  /// The site cover in a stack that never changes shape, with the sharper
+  /// image (when it exists) fading in over it: a plain image, no shimmer, no
+  /// progress ring, no retry overlay - a failure leaves the site cover as it
+  /// is. Decoded for the box, with slack for the crop.
+  Widget _coverImage({BoxFit? fit, required double boxWidth}) {
+    final ImageProvider? sharp = _sharpProvider;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Thumbnail(
+          key: const ValueKey('doujin-site-cover'),
+          item: item,
+          booru: booru,
+          isStandalone: true,
+          useHero: false,
+          fitOverride: fit,
+        ),
+        if (sharp != null)
+          Image(
+            key: const ValueKey('doujin-sharp-cover'),
+            image: ResizeImage(
+              sharp,
+              width: (boxWidth * MediaQuery.devicePixelRatioOf(context) * 1.5).round(),
+              policy: ResizeImagePolicy.fit,
+              allowUpscaling: false,
+            ),
+            fit: fit ?? BoxFit.cover,
+            filterQuality: FilterQuality.high,
+            gaplessPlayback: true,
+            frameBuilder: (context, child, frame, wasSynchronouslyLoaded) => AnimatedOpacity(
+              opacity: (frame == null && !wasSynchronouslyLoaded) ? 0 : 1,
+              duration: const Duration(milliseconds: 250),
+              child: child,
+            ),
+            errorBuilder: (_, _, _) => const SizedBox.shrink(),
+          ),
+      ],
+    );
+  }
+
+  // ─────────────────────── header data helpers ───────────────────────
+
+  List<String> get _titleLines =>
+      (item.description ?? '').split('\n').where((l) => l.trim().isNotEmpty && !l.startsWith('Scanlator:')).toList();
+
+  String? _firstOfNamespace(String namespace) {
+    for (final t in item.tagsList) {
+      if (handler.tagNamespace(t.fullString) == namespace && t.fullString != 'translated') {
+        return t.fullString;
+      }
+    }
+    return null;
+  }
+
+  String get _metaLine {
+    final List<BooruItem>? pages = ReaderHandler.instance.pagesFor(item);
+    String? date;
+    if (item.postDate != null && item.postDateFormat == 'unix') {
+      final int? seconds = int.tryParse(item.postDate!);
+      if (seconds != null) {
+        date = DateFormat('dd MMM yyyy').format(DateTime.fromMillisecondsSinceEpoch(seconds * 1000));
+      }
+    }
+    final List<String> parts = [
+      if (_firstOfNamespace('language') != null) _firstOfNamespace('language')!,
+      if (_firstOfNamespace('category') != null) _firstOfNamespace('category')!,
+      if (pages != null) '${pages.length} pages',
+      if (item.score?.isNotEmpty ?? false) '♥ ${item.score}',
+      ?date,
+    ];
+    return parts.join('  ·  ');
+  }
+
+  // ─────────────────────────── actions ───────────────────────────
+
+  void _read({int? startAt}) {
+    openDoujinReader(context, item: item, booru: booru, startAt: startAt, handler: handler);
+  }
+
+  void _saveAll() {
+    final List<BooruItem>? pages = ReaderHandler.instance.pagesFor(item);
+    if (pages == null || pages.isEmpty) return;
+    SnatchHandler.instance.queue(
+      pages,
+      booru,
+      settingsHandler.snatchCooldown,
+      false,
+      doujin: DoujinDownloadInfo.fromGallery(item, booru, pages),
+    );
+    RecommenderHandler.maybe?.onEvent(item, InteractionKind.snatch, handler: handler);
+    FlashElements.showSnackbar(
+      context: context,
+      title: Text('Saving all ${pages.length} pages...'),
+      duration: const Duration(seconds: 2),
+      sideColor: Colors.green,
+    );
+  }
+
+  /// null = idle, otherwise the current sync-state line under the buttons.
+  String? _favSyncStatus;
+
+  Future<void> _toggleFavourite() async {
+    // Doujin favourites live in the doujin store (doujinData.json), never in
+    // the shared booru favourites DB. toggleFavouriteSynced is the ONE path
+    // that also pushes to the site account when a key is set.
+    if (handler.hasSiteFavourites) {
+      setState(() => _favSyncStatus = 'Syncing to your ${booru.name ?? 'site'} account…');
+    }
+    final result = await DoujinDataHandler.instance.toggleFavouriteSynced(item, handler);
+    if (!mounted) return;
+    if (!result.syncAttempted) {
+      // Favourite = the ACCOUNT action when the source can sync (bookmark is
+      // the purely-local sibling). Degrades to local-only with a visible note.
+      setState(
+        () => _favSyncStatus = result.nowFavourite ? 'Saved locally — ${handler.siteFavouritesLoginHint}' : null,
+      );
+      return;
+    }
+    final String? message = result.message;
+    setState(() => _favSyncStatus = message);
+    if (result.syncOk) {
+      // Let the confirmation breathe, then clear it.
+      Future.delayed(const Duration(seconds: 4), () {
+        if (mounted && _favSyncStatus == message) setState(() => _favSyncStatus = null);
+      });
+    }
+  }
+
+  void _toggleBookmark() {
+    // Bookmarks ARE collection entries: filed into the last-used bookmark
+    // collection (auto-creating "Default" on first use); toggling off pulls
+    // the doujin out of every collection.
+    final (bool nowBookmarked, collection) = DoujinDataHandler.instance.toggleBookmark(item, booru);
+    setState(() {});
+    FlashElements.showSnackbar(
+      context: context,
+      title: Text(nowBookmarked ? 'Bookmarked into "${collection!.name}"' : 'Removed from collections'),
+      duration: const Duration(seconds: 2),
+      sideColor: Colors.blue,
+    );
+  }
+
+  /// Long-press on the bookmark button: pick the collection explicitly
+  /// (centered popup, like every doujin menu).
+  void _pickBookmarkCollection() {
+    showDoujinCollectionPicker(context, items: [item], booru: booru).then((_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  // ─────────────────────────── sections ───────────────────────────
+
+  Widget _header(BuildContext context) {
+    // Layout follows the doujin "Detail layout" setting: 'cover' puts a
+    // full-width cover on top with titles + metadata below; 'compact' keeps
+    // the side-by-side card.
+    return SourceSettingsHandler.instance.detailLayout(booru) == 'cover'
+        ? _bigCoverHeader(context)
+        : _compactHeader(context);
+  }
+
+  Widget _titleBlock(BuildContext context, {required int titleLines}) {
+    final List<String> titles = _titleLines;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          titles.isNotEmpty ? titles.first : 'Untitled',
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+          maxLines: titleLines,
+          overflow: TextOverflow.ellipsis,
+        ),
+        if (titles.length > 1) ...[
+          const SizedBox(height: 4),
+          Text(
+            titles[1],
+            style: TextStyle(
+              fontSize: 12.5,
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+            ),
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+        const SizedBox(height: 8),
+        Text(
+          _metaLine,
+          style: TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w600,
+            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.75),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _compactHeader(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 130,
+            height: 185,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: _coverImage(boxWidth: 130),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(child: _titleBlock(context, titleLines: 4)),
+        ],
+      ),
+    );
+  }
+
+  Widget _bigCoverHeader(BuildContext context) {
+    const double sidePadding = DoujinDetailPage.coverSidePadding;
+    // The box follows the SITE cover's size even once the sharper image is
+    // in: a page whose shape differs would otherwise move the text below it.
+    final box = DoujinDetailPage.bigCoverBox(
+      screen: MediaQuery.sizeOf(context),
+      imageWidth: item.fileWidth,
+      imageHeight: item.fileHeight,
+    );
+    final double height = box.height;
+
+    // Past the cap the cover is cropped or letterboxed rather than squashed:
+    // 'fit' keeps the whole cover visible (bars at the sides), the other
+    // modes fill the box and crop the overflow.
+    final String coverDisplay = SourceSettingsHandler.instance.coverDisplay(booru);
+    final BoxFit fit = box.capped && coverDisplay != 'fit' ? BoxFit.cover : BoxFit.contain;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(sidePadding, 10, sidePadding, 0),
+          child: SizedBox(
+            key: const Key('doujin-big-cover'),
+            width: double.infinity,
+            height: height,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: _coverImage(fit: fit, boxWidth: box.width),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+          child: _titleBlock(context, titleLines: 3),
+        ),
+      ],
+    );
+  }
+
+  Widget _actionRow(BuildContext context) {
+    final List<BooruItem>? pages = ReaderHandler.instance.pagesFor(item);
+    final progress = ReaderHandler.instance.cachedProgress(booru, item.serverId ?? item.postURL);
+    final bool resuming = progress != null && !progress.isFinished && progress.page > 0;
+    final bool isBookmarked = DoujinDataHandler.instance.isInAnyCollection(item);
+    final bool? isFav = item.isFavourite.value;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: SizedBox(
+              height: 46,
+              child: FilledButton.icon(
+                icon: Icon(resuming ? Symbols.auto_stories_rounded : Symbols.menu_book_rounded, size: 20),
+                label: Text(
+                  pages == null
+                      ? 'Read'
+                      : resuming
+                      ? 'Continue · p.${progress.page + 1}'
+                      : 'Read · ${pages.length} pages',
+                  style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800),
+                ),
+                onPressed: pages == null ? null : _read,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          IconButton.filledTonal(
+            tooltip: 'Save all pages',
+            icon: const Icon(Symbols.download_rounded),
+            onPressed: pages == null ? null : _saveAll,
+          ),
+          IconButton.filledTonal(
+            tooltip: isBookmarked
+                ? 'In a collection — tap to remove, hold to pick'
+                : 'Bookmark into a collection (hold to pick which)',
+            icon: Icon(
+              isBookmarked ? Symbols.bookmark_rounded : Symbols.bookmark_add_rounded,
+              fill: isBookmarked ? 1 : 0,
+              color: isBookmarked ? Colors.lightBlueAccent : null,
+            ),
+            onPressed: _toggleBookmark,
+            onLongPress: _pickBookmarkCollection,
+          ),
+          IconButton.filledTonal(
+            tooltip: isFav == true ? 'Unfavourite' : 'Favourite',
+            icon: Icon(
+              Symbols.favorite_rounded,
+              fill: isFav == true ? 1 : 0,
+              color: isFav == true ? const Color(0xFFF0708A) : null,
+            ),
+            onPressed: isFav == null ? null : _toggleFavourite,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _favSyncLine(BuildContext context) {
+    if (_favSyncStatus == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 2, 16, 0),
+      child: Text(
+        _favSyncStatus!,
+        style: TextStyle(
+          fontSize: 11.5,
+          color: Theme.of(context).colorScheme.secondary,
+        ),
+      ),
+    );
+  }
+
+  Widget _tagSections(BuildContext context) {
+    final String filter = _tagFilter.text.trim().toLowerCase();
+    final List<Tag> tags = [
+      for (final t in item.tagsList)
+        if (filter.isEmpty || t.fullString.toLowerCase().contains(filter)) t,
+    ];
+    if (item.tagsList.isEmpty) return const SizedBox.shrink();
+
+    final sections = handler.tagNamespaceSections;
+    final Map<String, List<Tag>> byNs = {for (final s in sections) s.$1: <Tag>[]};
+    final String fallback = sections.isNotEmpty ? sections.last.$1 : 'tag';
+    for (final tag in tags) {
+      final String ns = handler.tagNamespace(tag.fullString) ?? fallback;
+      (byNs[ns] ?? byNs[fallback])?.add(tag);
+    }
+
+    final tagsData = settingsHandler.parseTagsListForItem(item, isCapped: false);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 14, 14, 6),
+          child: TextField(
+            controller: _tagFilter,
+            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(
+              isDense: true,
+              prefixIcon: const Icon(Symbols.search_rounded, size: 20),
+              hintText: 'Search ${item.tagsList.length} tags',
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+        ),
+        for (final section in sections)
+          if (byNs[section.$1]?.isNotEmpty ?? false) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 4),
+              child: Text(
+                section.$2.toUpperCase(),
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.6,
+                  color: Theme.of(context).colorScheme.secondary,
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              child: Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final tag in byNs[section.$1]!)
+                    _tagChip(
+                      context,
+                      tag,
+                      isMarked: tagsData.markedTags.contains(tag.fullString),
+                      isHidden: tagsData.hiddenTags.contains(tag.fullString),
+                    ),
+                ],
+              ),
+            ),
+          ],
+      ],
+    );
+  }
+
+  Widget _tagChip(BuildContext context, Tag tag, {required bool isMarked, required bool isHidden}) {
+    return DoujinTagChip(
+      tag: tag,
+      booru: booru,
+      isMarked: isMarked,
+      onOpenMenu: () => _openTagMenu(tag, isMarked: isMarked, isHidden: isHidden),
+    );
+  }
+
+  void _openTagMenu(Tag tag, {required bool isMarked, required bool isHidden}) {
+    showTagDialog(
+      context: context,
+      tag: tag.fullString,
+      handler: handler,
+      isHidden: isHidden,
+      isMarked: isMarked,
+      isInSearch: false,
+      hasTabWithTag: HasTabWithTagResult.noTag,
+      onUpdate: () => setState(() {}),
+    );
+  }
+
+  /// Opens a strip's query as its own tab, honouring the source's new-tab
+  /// placement setting like every other doujin new-tab action.
+  void _openStripInNewTab(String query) {
+    final String placement = SourceSettingsHandler.instance.tabPlacement(booru);
+    searchHandler.addTabByString(
+      query,
+      customBooru: booru,
+      addMode: placement == 'next' ? TabAddMode.next : TabAddMode.end,
+      switchToNew: false,
+    );
+    FlashElements.showSnackbar(
+      context: context,
+      title: const Text('Added new tab', style: TextStyle(fontSize: 18)),
+      content: Text(query, style: const TextStyle(fontSize: 14)),
+      duration: const Duration(seconds: 2),
+      leadingIcon: Symbols.fiber_new_rounded,
+      sideColor: Colors.green,
+    );
+  }
+
+  Widget _strip(BuildContext context, {required String title, required String query, required bool expanded, required String compactTitle}) {
+    // The open-in-new-tab action sits in the header next to the chevron
+    // rather than in a full-width row of its own inside the strip, which
+    // cost a whole row of screen for one button. A custom `trailing`
+    // replaces ExpansionTile's chevron, so the chevron is drawn here too and
+    // follows the tile's expansion state.
+    final bool isExpanded = _stripExpanded[title] ?? expanded;
+    return ExpansionTile(
+      title: Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900)),
+      initiallyExpanded: expanded,
+      shape: const Border(),
+      collapsedShape: const Border(),
+      onExpansionChanged: (v) => setState(() => _stripExpanded[title] = v),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            key: ValueKey('strip-new-tab-$title'),
+            tooltip: 'Open in a new tab',
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Symbols.fiber_new_rounded),
+            onPressed: () => _openStripInNewTab(query),
+          ),
+          Icon(isExpanded ? Symbols.expand_less_rounded : Symbols.expand_more_rounded),
+        ],
+      ),
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: TagContentPreview(
+            key: ValueKey('detail-$title-${item.serverId}'),
+            tag: query,
+            boorus: [booru],
+            parentTab: widget.tab,
+            compact: true,
+            compactTitle: compactTitle,
+            // rendered in the header above instead
+            showDoujinNewTabButton: false,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// The pages grid's slivers: a title and a REAL grid sliver, so only the
+  /// tiles in view (and a little past it) are built — a shrink-wrapped grid
+  /// inside the list laid out every one of a 2,000-page gallery's tiles at
+  /// once. Each tile asks its source for the page's own thumbnail as it
+  /// appears (e-hentai reads a block's sprite strip on demand).
+  List<Widget> _pagesSlivers(List<BooruItem> pages) {
+    return [
+      SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 16, 14, 6),
+          child: Text('Pages · ${pages.length}', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
+        ),
+      ),
+      SliverPadding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        sliver: SliverGrid.builder(
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: SourceSettingsHandler.instance.pagePreviewColumns(booru),
+            mainAxisSpacing: 6,
+            crossAxisSpacing: 6,
+            childAspectRatio: 0.7,
+          ),
+          itemCount: pages.length,
+          itemBuilder: (context, index) => _pageTile(pages[index], index),
+        ),
+      ),
+    ];
+  }
+
+  Widget _pageTile(BooruItem page, int index) {
+    return PageThumbnailLoader(
+      page: page,
+      handler: handler,
+      builder: (context) => GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _read(startAt: index),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            ThumbnailBuild(item: page, handler: handler, selectable: false, simple: true),
+            Positioned(
+              right: 4,
+              bottom: 4,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.55),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  '${index + 1}',
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final String? versionsQuery = handler.relatedVersionsQuery(item);
+    final String? galleryId = item.serverId;
+
+    return Scaffold(
+      appBar: widget.embedded
+          ? null
+          : AppBar(
+              titleSpacing: widget.asTab ? 16 : 0,
+              // A doujin TAB is not a pushed route — no back button.
+              automaticallyImplyLeading: !widget.asTab,
+              title: Text(
+                _titleLines.isNotEmpty ? _titleLines.first : 'Doujin',
+                style: const TextStyle(fontSize: 15),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+      // Right-edge swipe: the mini tab manager sidebar. The drag zone is a
+      // generous strip from the right edge on EVERY detail page - the pushed
+      // one (tapping a card) used to fall back to Flutter's ~20px default,
+      // which sits under Android's gesture handle and is unreachable
+      // one-handed. There is no horizontal carousel on this page to conflict
+      // with, so the strip can be this wide safely.
+      endDrawer: const DoujinMiniTabManager(),
+      drawerEdgeDragWidth: DoujinDetailPage.edgeDragWidthFor(MediaQuery.sizeOf(context)),
+      body: Stack(
+        children: [
+          _pageBody(context, versionsQuery, galleryId),
+          // Visible affordance: shows where the strip starts, and opens the
+          // sidebar on tap for anyone who would rather not swipe at all.
+          const Positioned(
+            top: 0,
+            bottom: 0,
+            right: 0,
+            child: DoujinMiniTabEdgeHandle(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _pageBody(BuildContext context, String? versionsQuery, String? galleryId) {
+    final List<BooruItem>? pages = ReaderHandler.instance.pagesFor(item);
+    return CustomScrollView(
+      slivers: [
+        SliverList.list(
+        children: [
+          _header(context),
+          _actionRow(context),
+          _favSyncLine(context),
+          if (_loading)
+            const Padding(
+              padding: EdgeInsets.all(20),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+          if (_loadError != null)
+            Padding(
+              padding: const EdgeInsets.all(14),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Failed to load details: $_loadError',
+                      style: const TextStyle(color: Colors.redAccent, fontSize: 12.5),
+                    ),
+                  ),
+                  if (_loadError == SchaleClearanceHandler.needsSolveMessage)
+                    // The clearance case gets its own action: open the visible
+                    // solver, then reload — which harvests what the site stored.
+                    TextButton(
+                      onPressed: _checkHold > 0
+                          ? null
+                          : () async {
+                              final String site = handler.booru.baseURL?.trim() ?? '';
+                              final SchaleClearanceHandler clearance = SchaleClearanceHandler.instance;
+                              await clearance.solve(
+                                site.isEmpty ? SchaleHandler.defaultSiteFor(handler.booru.type ?? BooruType.NiyaNiya) : site,
+                                // The gallery whose read was refused, not the home feed.
+                                startUrl: item.postURL,
+                              );
+                              if (!mounted) return;
+                              if (clearance.lastSolveRateLimited) {
+                                _holdCheck(60);
+                                FlashElements.showSnackbar(
+                                  context: context,
+                                  title: Text('${SchaleClearanceHandler.siteNameFor(site)} is rate-limiting the check'),
+                                  content: Text(
+                                    '${SchaleClearanceHandler.rateLimitedMessage} ${SchaleClearanceHandler.addressWorkaround}'
+                                        .replaceAll('niyaniya', SchaleClearanceHandler.siteNameFor(site)),
+                                  ),
+                                  duration: const Duration(seconds: 10),
+                                  sideColor: Colors.orange,
+                                );
+                              } else if (clearance.lastSolveAuthRefused) {
+                                FlashElements.showSnackbar(
+                                  context: context,
+                                  title: const Text('The site refused the clearance'),
+                                  content: Text(
+                                    clearance
+                                        .describeAuthRefusal(siteUrl: site)
+                                        .replaceAll('niyaniya', SchaleClearanceHandler.siteNameFor(site)),
+                                  ),
+                                  duration: const Duration(seconds: 12),
+                                  sideColor: Colors.red,
+                                );
+                              }
+                              setState(() {
+                                _loading = true;
+                                _loadError = null;
+                              });
+                              unawaited(_load());
+                            },
+                      child: Text(_checkHold > 0 ? 'Wait ${_checkHold}s' : 'Complete the check'),
+                    )
+                  else
+                    TextButton(
+                      onPressed: () {
+                        setState(() {
+                          _loading = true;
+                          _loadError = null;
+                        });
+                        _load();
+                      },
+                      child: const Text('Retry'),
+                    ),
+                ],
+              ),
+            ),
+          _tagSections(context),
+          if (versionsQuery != null)
+            _strip(
+              context,
+              title: 'Related — chapters & versions',
+              query: versionsQuery,
+              expanded: false,
+              compactTitle: 'Other chapters and languages of this work',
+            ),
+          if (galleryId != null && galleryId.isNotEmpty)
+            _strip(
+              context,
+              title: 'Recommended',
+              query: 'recommend:$galleryId',
+              expanded: true,
+              compactTitle: "The site's related list, extended by this gallery's tags and artist",
+            ),
+        ],
+        ),
+        if (pages != null && pages.isNotEmpty) ..._pagesSlivers(pages),
+        const SliverPadding(padding: EdgeInsets.only(bottom: 40)),
+      ],
+    );
+  }
+}

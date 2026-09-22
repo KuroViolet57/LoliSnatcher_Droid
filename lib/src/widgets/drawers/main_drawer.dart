@@ -2,17 +2,29 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:get/get.dart' hide FirstWhereOrNullExt;
 
+import 'package:lolisnatcher/src/data/modular_ui.dart';
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
+import 'package:lolisnatcher/src/pages/boards_page.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/data/constants.dart';
 import 'package:lolisnatcher/src/handlers/local_auth_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/pages/settings/source_settings_page.dart';
+import 'package:lolisnatcher/src/pages/doujin_downloads_page.dart';
+import 'package:lolisnatcher/src/pages/doujin_favourites_page.dart';
+import 'package:lolisnatcher/src/pages/doujin_favourite_tags_page.dart';
+import 'package:lolisnatcher/src/pages/doujin_library_pages.dart';
 import 'package:lolisnatcher/src/pages/collections_page.dart';
 import 'package:lolisnatcher/src/pages/foryou_page.dart';
+import 'package:lolisnatcher/src/handlers/recommender/item_features.dart';
+import 'package:lolisnatcher/src/handlers/pool_source.dart';
+import 'package:lolisnatcher/src/pages/pools_page.dart';
 import 'package:lolisnatcher/src/pages/settings_page.dart';
+import 'package:lolisnatcher/src/pages/tag_browser_page.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 import 'package:lolisnatcher/src/widgets/common/cancel_button.dart';
 import 'package:lolisnatcher/src/widgets/common/mascot_image.dart';
@@ -21,8 +33,6 @@ import 'package:lolisnatcher/src/widgets/common/settings_widgets.dart';
 import 'package:lolisnatcher/src/widgets/preview/main_search_bar.dart';
 import 'package:lolisnatcher/src/widgets/saved_searches/saved_search_tile.dart';
 import 'package:lolisnatcher/src/widgets/saved_searches/saved_searches_page.dart';
-import 'package:lolisnatcher/src/widgets/tabs/tab_buttons.dart';
-import 'package:lolisnatcher/src/widgets/tabs/tab_selector.dart';
 import 'package:lolisnatcher/src/widgets/booru/booru_switcher_sheet.dart';
 import 'package:lolisnatcher/src/widgets/common/inner_drawer.dart';
 import 'package:lolisnatcher/src/widgets/image/booru_favicon.dart';
@@ -95,7 +105,7 @@ class MainDrawer extends StatelessWidget {
                   ),
                   const Spacer(),
                   IconButton(
-                    icon: const Icon(Icons.close),
+                    icon: const Icon(Symbols.close_rounded),
                     onPressed: () {
                       final state = SearchHandler.instance.mainDrawerKey.currentState;
                       if (state is InnerDrawerState) state.close();
@@ -163,24 +173,61 @@ class MainDrawer extends StatelessWidget {
                             ],
                           ),
                         ),
-                        Icon(Icons.unfold_more, size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                        Icon(Symbols.unfold_more_rounded, size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant),
                       ],
                     ),
                   ),
                 ),
               );
             }),
-            const TabSelector(),
             Expanded(
               child: ListView(
                 controller: ScrollController(),
                 clipBehavior: Clip.antiAlias,
                 children: [
-                  const SizedBox(height: 12),
-                  const TabButtons(true, WrapAlignment.spaceEvenly),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
                   const MergeBooruToggleAndSelector(),
-                  const SavedSearchesDrawerSection(),
+                  Builder(
+                    builder: (context) {
+                      Booru? virtual(bool Function(BooruType) test) {
+                        for (final b in settingsHandler.booruList) {
+                          final t = b.type;
+                          if (t != null && test(t)) return b;
+                        }
+                        return null;
+                      }
+
+                      void openVirtual(Booru? b) {
+                        if (b == null) return;
+                        final state = searchHandler.mainDrawerKey.currentState;
+                        if (state is InnerDrawerState) state.close();
+                        searchHandler.addTabByString('', customBooru: b, switchToNew: true);
+                      }
+
+                      final bool isDoujinTab =
+                          searchHandler.tabs.isNotEmpty && searchHandler.currentBooruHandler.hasReader;
+                      final downloads = virtual((t) => t.isDownloads);
+                      final favourites = virtual((t) => t.isFavourites);
+                      return Column(
+                        children: [
+                          if (downloads != null)
+                            SettingsButton(
+                              name: 'Downloads',
+                              icon: const Icon(Symbols.download_rounded),
+                              action: () => openVirtual(downloads),
+                            ),
+                          // Redundant on doujin tabs: the doujin block below
+                          // has its own favourites entry (own store).
+                          if (favourites != null && !isDoujinTab)
+                            SettingsButton(
+                              name: 'Favourites',
+                              icon: const Icon(Symbols.favorite_rounded),
+                              action: () => openVirtual(favourites),
+                            ),
+                        ],
+                      );
+                    },
+                  ),
                   ListenableBuilder(
                     listenable: Listenable.merge([
                       LocalAuthHandler.instance.deviceSupportsBiometrics,
@@ -198,27 +245,142 @@ class MainDrawer extends StatelessWidget {
                     },
                     child: SettingsButton(
                       name: context.loc.mobileHome.lockApp,
-                      icon: const Icon(Icons.lock),
+                      icon: const Icon(Symbols.lock_rounded),
                       action: () => LocalAuthHandler.instance.lock(manually: true),
                     ),
                   ),
+                  // Doujin sources swap in their own quick access: favourites
+                  // & bookmarks, favourite tags, and a ONE-TAP shortcut to
+                  // this source's settings (no Booru-config crawl).
+                  Obx(() {
+                    if (settingsHandler.booruList.isEmpty ||
+                        searchHandler.tabs.isEmpty ||
+                        !searchHandler.currentBooruHandler.hasReader) {
+                      return const SizedBox.shrink();
+                    }
+                    final Booru doujinBooru = searchHandler.currentBooru;
+                    return Column(
+                      children: [
+                        SettingsButton(
+                          name: 'Doujin favourites & bookmarks',
+                          icon: const Icon(Symbols.bookmark_heart_rounded),
+                          page: () => DoujinFavouritesPage(booru: doujinBooru),
+                        ),
+                        SettingsButton(
+                          name: 'Doujin downloads',
+                          subtitle: const Text('Saved books on this device'),
+                          icon: const Icon(Symbols.menu_book_rounded),
+                          page: () => const DoujinDownloadsPage(),
+                        ),
+                        SettingsButton(
+                          name: 'Favourite tags',
+                          subtitle: const Text('Tags you starred, one tap from a search'),
+                          icon: const Icon(Symbols.star_rounded),
+                          page: () => DoujinFavouriteTagsPage(booru: doujinBooru),
+                        ),
+                        SettingsButton(
+                          name: '${doujinBooru.name ?? 'Source'} settings',
+                          icon: const Icon(Symbols.tune_rounded),
+                          page: () => SourceSettingsPage(booru: doujinBooru),
+                        ),
+                      ],
+                    );
+                  }),
+                  // r43: a booru source's own settings, one tap away (Modular UI).
+                  if (ModularUi.isOn(ModularUi.sidebarSourceSettings))
+                    Obx(() {
+                      if (settingsHandler.booruList.isEmpty || searchHandler.tabs.isEmpty) return const SizedBox.shrink();
+                      final handler = searchHandler.currentBooruHandler;
+                      final Booru current = searchHandler.currentBooru;
+                      final BooruType? type = current.type;
+                      if (handler.hasReader || type == null || type.isLocalDb || type.isRecommendationFeed || type.isMerge) {
+                        return const SizedBox.shrink();
+                      }
+                      return SettingsButton(
+                        name: '${current.name ?? 'Source'} settings',
+                        icon: const Icon(Symbols.tune_rounded),
+                        page: () => SourceSettingsPage(booru: current),
+                      );
+                    }),
                   SettingsButton(
                     name: context.loc.settings.title,
-                    icon: const Icon(Icons.settings),
+                    icon: const Icon(Symbols.settings_rounded),
                     page: () => const SettingsPage(),
                   ),
-                  if (settingsHandler.dbEnabled)
-                    SettingsButton(
+                  // For You: the booru taste engine on booru tabs, the doujin
+                  // one (r33) on doujin tabs. Two worlds, two feeds.
+                  Obx(() {
+                    final bool isDoujinTab =
+                        searchHandler.tabs.isNotEmpty && searchHandler.currentBooruHandler.hasReader;
+                    if (!isDoujinTab && !settingsHandler.dbEnabled) return const SizedBox.shrink();
+                    return SettingsButton(
                       name: 'For You',
-                      icon: const Icon(Icons.auto_awesome),
-                      page: () => const ForYouPage(),
-                    ),
-                  if (settingsHandler.dbEnabled)
-                    SettingsButton(
+                      icon: const Icon(Symbols.auto_awesome_rounded),
+                      page: () => ForYouPage(world: isDoujinTab ? RecommenderWorld.doujin : RecommenderWorld.booru),
+                    );
+                  }),
+                  // Boards (r73): saved "find me posts like this" searches
+                  // across the boorus - a description, a reference image,
+                  // must-have tags. Booru world only.
+                  Obx(() {
+                    final bool isDoujinTab =
+                        searchHandler.tabs.isNotEmpty && searchHandler.currentBooruHandler.hasReader;
+                    if (isDoujinTab) return const SizedBox.shrink();
+                    return SettingsButton(
+                      name: 'Boards',
+                      icon: const Icon(Symbols.dashboard_rounded),
+                      page: () => const BoardsPage(),
+                    );
+                  }),
+                  // Collections route to the store matching the tab's world.
+                  Obx(() {
+                    final bool isDoujinTab =
+                        searchHandler.tabs.isNotEmpty && searchHandler.currentBooruHandler.hasReader;
+                    if (isDoujinTab) {
+                      return SettingsButton(
+                        name: 'Collections',
+                        icon: const Icon(Symbols.collections_bookmark_rounded),
+                        page: () => DoujinCollectionsPage(booru: searchHandler.currentBooru),
+                      );
+                    }
+                    if (!settingsHandler.dbEnabled) return const SizedBox.shrink();
+                    return SettingsButton(
                       name: 'Collections',
-                      icon: const Icon(Icons.collections_bookmark_outlined),
+                      icon: const Icon(Symbols.collections_bookmark_rounded),
                       page: () => const CollectionsPage(),
-                    ),
+                    );
+                  }),
+                  // Pools are a PER-SITE capability, so this entry simply
+                  // doesn't exist on boorus without them rather than showing
+                  // up and failing (same shape as the webview button below).
+                  Obx(() {
+                    if (settingsHandler.booruList.isEmpty ||
+                        searchHandler.tabs.isEmpty ||
+                        !PoolSource.supports(searchHandler.currentBooru)) {
+                      return const SizedBox.shrink();
+                    }
+                    return SettingsButton(
+                      name: 'Pools',
+                      icon: const Icon(Symbols.collections_bookmark_rounded),
+                      page: () => const PoolsPage(),
+                    );
+                  }),
+                  // Even a booru with no browsable tag index still has
+                  // whatever the app collected while you browsed it. Hidden
+                  // on doujin tabs — their world navigates by tag chips and
+                  // the Favourite tags screen instead.
+                  Obx(() {
+                    final bool isDoujinTab =
+                        searchHandler.tabs.isNotEmpty && searchHandler.currentBooruHandler.hasReader;
+                    if (!settingsHandler.dbEnabled || settingsHandler.booruList.isEmpty || isDoujinTab) {
+                      return const SizedBox.shrink();
+                    }
+                    return SettingsButton(
+                      name: 'Tag browser',
+                      icon: const Icon(Symbols.sell_rounded),
+                      page: () => const TagBrowserPage(),
+                    );
+                  }),
                   Obx(() {
                     if (settingsHandler.booruList.isNotEmpty &&
                         searchHandler.tabs.isNotEmpty &&
@@ -232,7 +394,7 @@ class MainDrawer extends StatelessWidget {
 
                       return SettingsButton(
                         name: context.loc.settings.webview.openWebview,
-                        icon: const Icon(Icons.public),
+                        icon: const Icon(Symbols.public_rounded),
                         action: () async {
                           final Booru? selectedBooru = boorus.length == 1
                               ? boorus.first
@@ -261,45 +423,14 @@ class MainDrawer extends StatelessWidget {
 
                     return const SizedBox.shrink();
                   }),
-                  //
-                  Obx(() {
-                    if (settingsHandler.updateInfo.value != null &&
-                        Constants.updateInfo.buildNumber < (settingsHandler.updateInfo.value!.buildNumber)) {
-                      return SettingsButton(
-                        name: context.loc.settings.checkForUpdates.updateAvailable,
-                        icon: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            const Icon(Icons.update),
-                            Positioned(
-                              top: 1,
-                              left: 1,
-                              child: Center(
-                                child: Container(
-                                  width: 8,
-                                  height: 8,
-                                  decoration: BoxDecoration(
-                                    color: Colors.red,
-                                    borderRadius: BorderRadius.circular(15),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        action: () async {
-                          settingsHandler.showUpdate(true);
-                        },
-                      );
-                    }
-
-                    return const SizedBox.shrink();
-                  }),
+                  // (The "update available" row was removed from the drawer
+                  // per user request — updates stay reachable via Settings →
+                  // Check for updates.)
                   //
                   if (SettingsHandler.isDesktopPlatform)
                     SettingsButton(
                       name: context.loc.closeTheApp,
-                      icon: const Icon(Icons.exit_to_app),
+                      icon: const Icon(Symbols.exit_to_app_rounded),
                       action: () async {
                         // twice to trigger drawer close
                         await Navigator.of(context).maybePop();
@@ -351,11 +482,11 @@ class _SavedSearchesDrawerSectionState extends State<SavedSearchesDrawerSection>
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           ListTile(
-            leading: const Icon(Icons.bookmarks),
+            leading: const Icon(Symbols.bookmarks_rounded),
             title: Text(
               list.isEmpty ? 'Saved searches' : 'Saved searches (${list.length})',
             ),
-            trailing: Icon(_expanded ? Icons.expand_less : Icons.expand_more),
+            trailing: Icon(_expanded ? Symbols.expand_less_rounded : Symbols.expand_more_rounded),
             onTap: () => setState(() => _expanded = !_expanded),
           ),
           AnimatedSize(
@@ -381,7 +512,7 @@ class _SavedSearchesDrawerSectionState extends State<SavedSearchesDrawerSection>
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                         child: OutlinedButton.icon(
-                          icon: const Icon(Icons.list),
+                          icon: const Icon(Symbols.list_rounded),
                           label: const Text('View all'),
                           onPressed: () {
                             Navigator.of(context).push(

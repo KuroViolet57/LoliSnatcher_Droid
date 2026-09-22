@@ -1,5 +1,9 @@
+import 'package:flutter/foundation.dart';
+
+import 'package:lolisnatcher/src/boorus/furaffinity_handler.dart';
 import 'package:lolisnatcher/src/boorus/agnph_handler.dart';
 import 'package:lolisnatcher/src/boorus/booru_on_rails_handler.dart';
+import 'package:lolisnatcher/src/boorus/board_handler.dart';
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/boorus/collections_handler.dart';
 import 'package:lolisnatcher/src/boorus/danbooru_handler.dart';
@@ -8,6 +12,8 @@ import 'package:lolisnatcher/src/boorus/e621_handler.dart';
 import 'package:lolisnatcher/src/boorus/empty_handler.dart';
 import 'package:lolisnatcher/src/boorus/favourites_handler.dart';
 import 'package:lolisnatcher/src/boorus/foryou_handler.dart';
+import 'package:lolisnatcher/src/boorus/doujin_foryou_handler.dart';
+import 'package:lolisnatcher/src/boorus/history_handler.dart';
 import 'package:lolisnatcher/src/boorus/gelbooru_alikes_handler.dart';
 import 'package:lolisnatcher/src/boorus/gelbooru_handler.dart';
 import 'package:lolisnatcher/src/boorus/gelbooruv1_handler.dart';
@@ -25,21 +31,88 @@ import 'package:lolisnatcher/src/boorus/rainbooru_handler.dart';
 import 'package:lolisnatcher/src/boorus/realbooru_handler.dart';
 import 'package:lolisnatcher/src/boorus/redgifs_handler.dart';
 import 'package:lolisnatcher/src/boorus/rule34dev_handler.dart';
+import 'package:lolisnatcher/src/boorus/rule34video_handler.dart';
 import 'package:lolisnatcher/src/boorus/sankaku_handler.dart';
 import 'package:lolisnatcher/src/boorus/shimmie_handler.dart';
 import 'package:lolisnatcher/src/boorus/szurubooru_handler.dart';
 import 'package:lolisnatcher/src/boorus/webview_browser_handler.dart';
 import 'package:lolisnatcher/src/boorus/wildcritters_handler.dart';
 import 'package:lolisnatcher/src/boorus/worldxyz_handler.dart';
+import 'package:lolisnatcher/src/boorus/civitai_handler.dart';
 import 'package:lolisnatcher/src/boorus/xxxfollow_handler.dart';
+import 'package:lolisnatcher/src/boorus/hanime1_handler.dart';
+import 'package:lolisnatcher/src/boorus/doujin/asmhentai_handler.dart';
+import 'package:lolisnatcher/src/boorus/doujin/hentaipaw_handler.dart';
+import 'package:lolisnatcher/src/boorus/doujin/eahentai_handler.dart';
+import 'package:lolisnatcher/src/boorus/doujin/faccina_handler.dart';
+import 'package:lolisnatcher/src/boorus/doujin/hitomi_handler.dart';
+import 'package:lolisnatcher/src/boorus/doujin/schale_handler.dart';
+import 'package:lolisnatcher/src/boorus/nhentai_handler.dart';
+import 'package:lolisnatcher/src/boorus/kemono_handler.dart';
+import 'package:lolisnatcher/src/boorus/kusowanka_handler.dart';
+import 'package:lolisnatcher/src/boorus/tikporn_handler.dart';
 import 'package:lolisnatcher/src/boorus/xxxtik_handler.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/boorus/doujin/ehentai_handler.dart';
 
 class BooruHandlerFactory {
   late BooruHandler booruHandler;
   int pageNum = -1;
+
+  /// Media headers per booru, so the image loader can ask a source what its CDN
+  /// needs instead of a shared list of hosts having to know about every source.
+  static final Map<String, Map<String, String>> _mediaHeaderCache = {};
+
+  /// The headers this booru's own handler says its media host requires.
+  ///
+  /// Cached because it is consulted once per thumbnail and a grid asks for
+  /// dozens at a time; the answer only depends on which source this is.
+  static Map<String, String> mediaHeadersFor(Booru booru) {
+    final String key = '${booru.type?.name ?? '?'}|${booru.baseURL ?? ''}';
+    final Map<String, String>? cached = _mediaHeaderCache[key];
+    if (cached != null) return cached;
+
+    Map<String, String> resolved = const {};
+    try {
+      resolved = BooruHandlerFactory().getBooruHandler([booru], 1).booruHandler.getMediaHeaders();
+    } catch (_) {
+      // A source that cannot even be constructed here is not one whose images
+      // are about to load anyway; an empty map keeps the old behaviour.
+    }
+    _mediaHeaderCache[key] = resolved;
+    return resolved;
+  }
+
+  static final Map<String, BooruHandler?> _mediaHandlerCache = {};
+
+  /// One handler per source for the media hooks the viewer consults
+  /// (outage notice, error, retry); null when the source cannot be built.
+  static BooruHandler? mediaHandlerFor(Booru booru) {
+    final String key = '${booru.type?.name ?? '?'}|${booru.baseURL ?? ''}';
+    if (_mediaHandlerCache.containsKey(key)) return _mediaHandlerCache[key];
+    BooruHandler? handler;
+    try {
+      handler = BooruHandlerFactory().getBooruHandler([booru], 1).booruHandler;
+    } catch (_) {
+      handler = null;
+    }
+    _mediaHandlerCache[key] = handler;
+    return handler;
+  }
+
+  static String? mediaOutageNoticeFor(Booru booru, String url) => mediaHandlerFor(booru)?.mediaOutageNotice(url);
+
+  static void onMediaErrorFor(Booru booru, String url, Object error) => mediaHandlerFor(booru)?.onMediaError(url, error);
+
+  static Future<void> beforeMediaRetryFor(Booru booru, String url) async => mediaHandlerFor(booru)?.beforeMediaRetry(url);
+
+  @visibleForTesting
+  static void clearMediaHeaderCache() {
+    _mediaHeaderCache.clear();
+    _mediaHandlerCache.clear();
+  }
 
   ({BooruHandler booruHandler, int startingPage}) getBooruHandler(
     List<Booru> boorus,
@@ -133,6 +206,15 @@ class BooruHandlerFactory {
         case BooruType.ForYou:
           booruHandler = ForYouHandler(booru, limit);
           break;
+        case BooruType.ForYouDoujin:
+          booruHandler = DoujinForYouHandler(booru, limit);
+          break;
+        case BooruType.Board:
+          booruHandler = BoardHandler(booru, limit);
+          break;
+        case BooruType.History:
+          booruHandler = HistoryHandler(booru, limit);
+          break;
         case BooruType.Rainbooru:
           pageNum = 0;
           booruHandler = RainbooruHandler(booru, limit);
@@ -173,6 +255,71 @@ class BooruHandlerFactory {
           // first search increments it to page 0.
           booruHandler = Rule34DevHandler(booru, limit);
           break;
+        case BooruType.Hanime1:
+          // 1-based ?page=N; default pageNum of -1 makes the first fetch
+          // page 1.
+          booruHandler = Hanime1Handler(booru, limit);
+          break;
+        case BooruType.NHentai:
+          // 1-based &page=N; default pageNum of -1 makes the first fetch
+          // page 1.
+          booruHandler = NHentaiHandler(booru, limit);
+          break;
+        case BooruType.NiyaNiya:
+          // 1-based ?page=N, same as the other doujin sources.
+          booruHandler = SchaleHandler(booru, limit);
+          break;
+        case BooruType.HDoujin:
+          // The Schale software on its own hosts: same handler, same paging.
+          booruHandler = SchaleHandler(booru, limit);
+          break;
+        case BooruType.EHentai:
+          // Cursor paging; the default pageNum of -1 makes the first fetch page 1.
+          booruHandler = EHentaiHandler(booru, limit);
+          break;
+        case BooruType.AsmHentai:
+          // 1-based ?page=N.
+          booruHandler = AsmHentaiHandler(booru, limit);
+          break;
+        case BooruType.EaHentai:
+          // 1-based ?page=N.
+          booruHandler = EaHentaiHandler(booru, limit);
+          break;
+        case BooruType.Faccina:
+          // 1-based ?page=N on the faccina REST API.
+          booruHandler = FaccinaHandler(booru, limit);
+          break;
+        case BooruType.Hitomi:
+          // 1-based pages, resolved against hitomi's packed id indexes.
+          booruHandler = HitomiHandler(booru, limit);
+          break;
+        case BooruType.HentaiPaw:
+          // 1-based ?page=N on server-rendered pages.
+          booruHandler = HentaiPawHandler(booru, limit);
+          break;
+        case BooruType.Kemono:
+        case BooruType.Pawchive:
+          // Offset paging in steps of 50 (o = page*50). runSearch increments
+          // BEFORE the first fetch, so the default -1 becomes 0 and the first
+          // request is o=0 (a start of 0 skipped the newest 50 posts). The
+          // API ignores any limit.
+          booruHandler = KemonoHandler(booru, KemonoHandler.pageSize);
+          break;
+        case BooruType.Kusowanka:
+          // 1-based ?page=N; the default pageNum of -1 makes the first
+          // fetch page 1.
+          booruHandler = KusowankaHandler(booru, limit);
+          break;
+        case BooruType.TikPorn:
+          // limit/offset paging; the default pageNum of -1 makes the first
+          // fetch page 0 -> offset 0.
+          booruHandler = TikPornHandler(booru, limit);
+          break;
+        case BooruType.Rule34Video:
+          // 1-based pages (/latest-updates/N/, /search/q/?from_videos=N);
+          // the default pageNum of -1 makes the first fetch page 1.
+          booruHandler = Rule34VideoHandler(booru, Rule34VideoHandler.pageSize);
+          break;
         case BooruType.XXXTik:
           // keyset cursor pagination handled inside the handler.
           pageNum = 0;
@@ -184,6 +331,12 @@ class BooruHandlerFactory {
           pageNum = 0;
           booruHandler = XXXFollowHandler(booru, limit);
           break;
+        case BooruType.Civitai:
+          // cursor pagination handled inside the handler; pageNum only marks
+          // first-page resets.
+          pageNum = -1;
+          booruHandler = CivitaiHandler(booru, limit);
+          break;
         case BooruType.WebView:
           booruHandler = WebViewBrowserHandler(booru, limit);
           break;
@@ -191,10 +344,10 @@ class BooruHandlerFactory {
           pageNum = 0;
           booruHandler = WildCrittersHandler(booru, limit);
           break;
-        /*   case (BooruType.FurAffinity):
-          pageNum = 0;
-          booruHandler = FurAffinityHandler(booru, limit);
-          break;*/
+        case BooruType.FurAffinity:
+          // Read from the site's pages: 48 cards a page, 1-based, favorites by cursor.
+          booruHandler = FurAffinityHandler(booru, FurAffinityHandler.pageSize);
+          break;
         default:
           booruHandler = EmptyHandler(Booru.unknown(), limit);
           break;

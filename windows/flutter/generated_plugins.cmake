@@ -5,8 +5,10 @@
 list(APPEND FLUTTER_PLUGIN_LIST
   app_links
   dynamic_color
+  file_selector_windows
   flutter_avif_windows
   flutter_inappwebview_windows
+  flutter_onnxruntime
   flutter_secure_storage_windows
   fvp
   local_auth_windows

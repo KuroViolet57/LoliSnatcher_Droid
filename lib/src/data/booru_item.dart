@@ -7,7 +7,9 @@ import 'package:get/get.dart';
 
 import 'package:lolisnatcher/src/data/note_item.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 
 // ignore: must_be_immutable
@@ -39,6 +41,7 @@ class BooruItem extends Equatable {
     this.md5String,
     this.postDate,
     this.postDateFormat,
+    this.downloadFileName,
   }) {
     // Create a unique key for every loaded item, to later use them to read the state of their viewer
     key = GlobalKey();
@@ -48,13 +51,17 @@ class BooruItem extends Equatable {
     }
     fileExt = (fileExt ?? Tools.getFileExt(fileURL)).toLowerCase();
 
-    if (fileWidth != null && fileHeight != null) {
+    // Dimensions must be POSITIVE to give a usable ratio: some boorus report
+    // width="0" height="0" when they don't know the size (bakemono.app does),
+    // and 0/0 is NaN — which then propagates into thumbnail layout as a NaN
+    // aspect ratio. Leaving the ratio null lets the UI fall back properly.
+    if ((fileWidth ?? 0) > 0 && (fileHeight ?? 0) > 0) {
       fileAspectRatio = fileWidth! / fileHeight!;
     }
-    if (sampleWidth != null && sampleHeight != null) {
+    if ((sampleWidth ?? 0) > 0 && (sampleHeight ?? 0) > 0) {
       sampleAspectRatio = sampleWidth! / sampleHeight!;
     }
-    if (previewWidth != null && previewHeight != null) {
+    if ((previewWidth ?? 0) > 0 && (previewHeight ?? 0) > 0) {
       previewAspectRatio = previewWidth! / previewHeight!;
     }
 
@@ -77,8 +84,29 @@ class BooruItem extends Equatable {
   RxBool isNoScale = false.obs, toggleQuality = false.obs;
   bool isUpdated = false;
 
+  /// Whether the source's blacklist rules hide this item (its own list, and
+  /// the global one unless the source ignores it), as the feed filter last
+  /// found (r44). Null until a feed filtered it.
+  bool? hiddenInSource;
+
   String? fileExt;
   String? serverId;
+
+  /// Number of files in this post, when the source can tell us (some sites
+  /// treat a post as a gallery). Transient display hint, not persisted.
+  ///
+  /// Reactive because it can arrive AFTER the grid cell is built — counts are
+  /// backfilled in the background for sites whose API omits them.
+  final Rxn<int> fileCountHint = Rxn<int>();
+
+  /// A thumbnail for this session only, never persisted: a doujin page's
+  /// tile of its gallery's sprite strip (e-hentai), whose strip links expire
+  /// within days. Widgets that show thumbnails read [displayThumbnailURL];
+  /// the database, backups and sync keep [thumbnailURL], the stable cover.
+  String? transientThumbnailURL;
+
+  /// What a thumbnail widget loads for this item.
+  String get displayThumbnailURL => transientThumbnailURL ?? thumbnailURL;
   String? rating;
   String? score;
   String? uploaderId;
@@ -88,6 +116,10 @@ class BooruItem extends Equatable {
   String? postDate;
   String? postDateFormat;
   String fileNameExtras;
+
+  /// The name a download should get, when the site names the file itself
+  /// (kemono attachments); null = the app's own naming.
+  String? downloadFileName;
   List<String>? sources;
   RxList<NoteItem> notes = RxList([]);
   bool? hasNotes, hasComments;
@@ -106,13 +138,29 @@ class BooruItem extends Equatable {
     return fileAspectRatio != null && fileAspectRatio! < 0.3;
   }
 
-  /// True if this item matches any line in the global e621-style blacklist.
-  /// Doesn't honour per-booru scoping (no booru context here); the actual
-  /// item-filter path in BooruHandler.filterFetched calls
-  /// [SettingsHandler.isItemHiddenForBooru], which does.
-  bool get isHidden => SettingsHandler.instance.isItemHiddenGlobally(this);
+  /// Whether this item should be treated as blacklisted by every consumer of
+  /// the "hidden" state (blur overlay, pixelation, viewer stop screens,
+  /// snatch filtering). Domain-scoped per ITEM: doujin items check ONLY the
+  /// doujin blacklist (SourceSettingsHandler), everything else checks ONLY
+  /// the global e621-style booru blacklist. Doesn't honour per-booru scoping
+  /// (no booru context here); the actual item-filter path in
+  /// BooruHandler.filterFetched calls [SettingsHandler.isItemHiddenForBooru],
+  /// which does.
+  bool get isHidden {
+    if (DoujinDataHandler.isDoujinItem(this)) {
+      return SourceSettingsHandler.instance.isItemHiddenForDoujin(this);
+    }
+    // r44: a source ignoring the global blacklist used to still blur what
+    // only the global list hides; the feed's source-aware answer wins.
+    return hiddenInSource ?? SettingsHandler.instance.isItemHiddenGlobally(this);
+  }
 
+  /// Domain-scoped like [isHidden]: doujin items check the doujin starred-tag
+  /// store, everything else the booru markedTags list.
   bool get isMarked {
+    if (DoujinDataHandler.isDoujinItem(this)) {
+      return DoujinDataHandler.instance.starredIn(tagsList.map((t) => t.fullString).toList()).isNotEmpty;
+    }
     return SettingsHandler.instance.containsMarked(tagsList.map((t) => t.fullString).toList());
   }
 
@@ -141,6 +189,7 @@ class BooruItem extends Equatable {
       'md5String': md5String,
       'postDate': postDate,
       'postDateFormat': postDateFormat,
+      'downloadFileName': downloadFileName,
     };
   }
 

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 
 import 'package:lolisnatcher/src/widgets/common/cancel_button.dart';
@@ -50,7 +52,7 @@ class _TagsFiltersEditDialogState extends State<TagsFiltersEditDialog> {
           context.loc.tagsFiltersDialogs.emptyInput,
           style: const TextStyle(fontSize: 20),
         ),
-        leadingIcon: Icons.warning_amber,
+        leadingIcon: Symbols.warning_amber_rounded,
         leadingIconColor: Colors.red,
         sideColor: Colors.red,
       );

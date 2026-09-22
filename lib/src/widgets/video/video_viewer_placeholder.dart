@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:external_video_player_launcher/external_video_player_launcher.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
@@ -57,7 +59,7 @@ class VideoViewerPlaceholder extends StatelessWidget {
                 if (Platform.isLinux || Platform.isAndroid)
                   ElevatedButton.icon(
                     label: Text(context.loc.media.video.openVideoInExternalPlayer),
-                    icon: const Icon(Icons.play_arrow),
+                    icon: const Icon(Symbols.play_arrow_rounded),
                     onPressed: () {
                       if (Platform.isLinux) {
                         Process.run('mpv', ['--loop', item.fileURL]);
@@ -73,7 +75,7 @@ class VideoViewerPlaceholder extends StatelessWidget {
                 //
                 ElevatedButton.icon(
                   label: Text(context.loc.media.video.openVideoInBrowser),
-                  icon: const Icon(Icons.public),
+                  icon: const Icon(Symbols.public_rounded),
                   onPressed: () {
                     launchUrlString(
                       item.fileURL,

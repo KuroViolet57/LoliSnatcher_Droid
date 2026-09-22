@@ -1,8 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 
+import 'package:lolisnatcher/src/pages/settings/furaffinity_login_page.dart';
+import 'package:lolisnatcher/src/handlers/furaffinity_session_handler.dart';
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/boorus/gelbooru_alikes_handler.dart';
 import 'package:lolisnatcher/src/boorus/gelbooru_handler.dart';
@@ -15,6 +19,7 @@ import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/pages/settings/redgifs_login_page.dart';
 import 'package:lolisnatcher/src/services/get_perms.dart';
@@ -28,6 +33,7 @@ import 'package:lolisnatcher/src/widgets/common/html.dart';
 import 'package:lolisnatcher/src/widgets/common/settings_widgets.dart';
 import 'package:lolisnatcher/src/widgets/tags_filters/tf_add_dialog.dart';
 import 'package:lolisnatcher/src/widgets/image/booru_favicon.dart';
+import 'package:lolisnatcher/src/pages/settings/source_settings_page.dart';
 import 'package:lolisnatcher/src/widgets/preview/tag_search_query_editor_page.dart';
 import 'package:lolisnatcher/src/widgets/webview/webview_page.dart';
 
@@ -135,7 +141,7 @@ class _BooruEditState extends State<BooruEdit> {
           children: [
             SettingsButton(
               name: context.loc.settings.booruEditor.saveBooru,
-              icon: isTesting ? const CircularProgressIndicator() : const Icon(Icons.save),
+              icon: isTesting ? const CircularProgressIndicator() : const Icon(Symbols.save_rounded),
               action: onSave,
               onLongPress: settingsHandler.isDebug.value ? () => onSave(force: true) : null,
             ),
@@ -162,7 +168,7 @@ class _BooruEditState extends State<BooruEdit> {
               SettingsButton(
                 name: context.loc.settings.webview.openWebview,
                 subtitle: Text(context.loc.settings.webview.openWebviewTip),
-                icon: const Icon(Icons.public),
+                icon: const Icon(Symbols.public_rounded),
                 action: () {
                   if (booruURLController.text.isNotEmpty) {
                     Navigator.push(
@@ -177,6 +183,24 @@ class _BooruEditState extends State<BooruEdit> {
                 },
               ),
             //
+            // Per-source preferences (reader behaviour, default sort, grid
+            // tag strip) — the reference apps' "<source> settings" screen.
+            // Keyed by host, so only offered once the booru actually exists.
+            if (widget.booru.baseURL?.isNotEmpty ?? false)
+            SettingsButton(
+              name: 'Source settings',
+              subtitle: const Text('Reader, default sort and grid options for this source only'),
+              icon: const Icon(Symbols.tune_rounded),
+              action: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => SourceSettingsPage(booru: widget.booru),
+                  ),
+                );
+              },
+            ),
+            //
             SettingsDropdown(
               value: selectedBooruType,
               items: BooruType.dropDownValues,
@@ -184,6 +208,13 @@ class _BooruEditState extends State<BooruEdit> {
                 setState(() {
                   selectedBooruType = newValue ?? BooruType.values.first;
                   // Prefill sensible defaults for the special engines.
+                  if (selectedBooruType == BooruType.FurAffinity && booruURLController.text.trim().isEmpty) {
+                    booruURLController.text = 'https://www.furaffinity.net';
+                    if (booruNameController.text.trim().isEmpty) booruNameController.text = 'FurAffinity';
+                    if (booruFaviconController.text.trim().isEmpty) {
+                      booruFaviconController.text = 'https://www.furaffinity.net/favicon.ico';
+                    }
+                  }
                   if (selectedBooruType.isRedGifs && booruURLController.text.trim().isEmpty) {
                     booruURLController.text = 'https://www.redgifs.com';
                     if (booruNameController.text.trim().isEmpty) {
@@ -202,6 +233,144 @@ class _BooruEditState extends State<BooruEdit> {
                       booruFaviconController.text = 'https://app.rule34.dev/icon.webp';
                     }
                   }
+                  if (selectedBooruType.isHanime1 && booruURLController.text.trim().isEmpty) {
+                    booruURLController.text = 'https://hanime1.me';
+                    if (booruNameController.text.trim().isEmpty) {
+                      booruNameController.text = 'Hanime1';
+                    }
+                    if (booruFaviconController.text.trim().isEmpty) {
+                      booruFaviconController.text = 'https://hanime1.me/favicon.ico';
+                    }
+                  }
+                  if (selectedBooruType.isKusowanka && booruURLController.text.trim().isEmpty) {
+                    booruURLController.text = 'https://kusowanka.com';
+                    if (booruNameController.text.trim().isEmpty) {
+                      booruNameController.text = 'Kusowanka';
+                    }
+                    if (booruFaviconController.text.trim().isEmpty) {
+                      booruFaviconController.text = 'https://kusowanka.com/favicon.ico';
+                    }
+                  }
+                  if (selectedBooruType.isRule34Video && booruURLController.text.trim().isEmpty) {
+                    booruURLController.text = 'https://rule34video.com';
+                    if (booruNameController.text.trim().isEmpty) {
+                      booruNameController.text = 'Rule34Video';
+                    }
+                    if (booruFaviconController.text.trim().isEmpty) {
+                      // The page head declares apple-touch-icon.png; /favicon.ico is not there.
+                      booruFaviconController.text = 'https://rule34video.com/apple-touch-icon.png';
+                    }
+                  }
+                  if (selectedBooruType.isNHentai && booruURLController.text.trim().isEmpty) {
+                    booruURLController.text = 'https://nhentai.net';
+                    if (booruNameController.text.trim().isEmpty) {
+                      booruNameController.text = 'nhentai';
+                    }
+                    if (booruFaviconController.text.trim().isEmpty) {
+                      booruFaviconController.text = 'https://nhentai.net/favicon.ico';
+                    }
+                  }
+                  if (selectedBooruType.isNiyaNiya && booruURLController.text.trim().isEmpty) {
+                    booruURLController.text = 'https://niyaniya.moe';
+                    if (booruNameController.text.trim().isEmpty) {
+                      booruNameController.text = 'niyaniya';
+                    }
+                    if (booruFaviconController.text.trim().isEmpty) {
+                      booruFaviconController.text = 'https://niyaniya.moe/favicon.ico';
+                    }
+                  }
+                  if (selectedBooruType.isHDoujin && booruURLController.text.trim().isEmpty) {
+                    booruURLController.text = 'https://hdoujin.org';
+                    if (booruNameController.text.trim().isEmpty) {
+                      booruNameController.text = 'HDoujin';
+                    }
+                    if (booruFaviconController.text.trim().isEmpty) {
+                      booruFaviconController.text = 'https://hdoujin.org/favicon.ico';
+                    }
+                  }
+                  if (selectedBooruType.isEHentai && booruURLController.text.trim().isEmpty) {
+                    booruURLController.text = 'https://e-hentai.org';
+                    if (booruNameController.text.trim().isEmpty) {
+                      booruNameController.text = 'E-Hentai';
+                    }
+                    if (booruFaviconController.text.trim().isEmpty) {
+                      booruFaviconController.text = 'https://e-hentai.org/favicon.ico';
+                    }
+                  }
+                  if (selectedBooruType.isHentaiPaw && booruURLController.text.trim().isEmpty) {
+                    booruURLController.text = 'https://hentaipaw.com';
+                    if (booruNameController.text.trim().isEmpty) {
+                      booruNameController.text = 'HentaiPaw';
+                    }
+                    if (booruFaviconController.text.trim().isEmpty) {
+                      booruFaviconController.text = 'https://hentaipaw.com/favicon.ico';
+                    }
+                  }
+                  if (selectedBooruType == BooruType.Kemono && booruURLController.text.trim().isEmpty) {
+                    booruURLController.text = 'https://kemono.cr';
+                    if (booruNameController.text.trim().isEmpty) {
+                      booruNameController.text = 'Kemono';
+                    }
+                    if (booruFaviconController.text.trim().isEmpty) {
+                      booruFaviconController.text = 'https://kemono.cr/favicon.ico';
+                    }
+                  }
+                  if (selectedBooruType == BooruType.Pawchive && booruURLController.text.trim().isEmpty) {
+                    booruURLController.text = 'https://pawchive.pw';
+                    if (booruNameController.text.trim().isEmpty) {
+                      booruNameController.text = 'Pawchive';
+                    }
+                    if (booruFaviconController.text.trim().isEmpty) {
+                      booruFaviconController.text = 'https://pawchive.pw/static/favicon.png';
+                    }
+                  }
+                  if (selectedBooruType.isAsmHentai && booruURLController.text.trim().isEmpty) {
+                    booruURLController.text = 'https://asmhentai.com';
+                    if (booruNameController.text.trim().isEmpty) {
+                      booruNameController.text = 'ASMHentai';
+                    }
+                    if (booruFaviconController.text.trim().isEmpty) {
+                      booruFaviconController.text = 'https://asmhentai.com/favicon.ico';
+                    }
+                  }
+                  if (selectedBooruType.isEaHentai && booruURLController.text.trim().isEmpty) {
+                    booruURLController.text = 'https://eahentai.com';
+                    if (booruNameController.text.trim().isEmpty) {
+                      booruNameController.text = 'EAHentai';
+                    }
+                    if (booruFaviconController.text.trim().isEmpty) {
+                      booruFaviconController.text = 'https://eahentai.com/favicon.ico';
+                    }
+                  }
+                  if (selectedBooruType.isFaccina && booruURLController.text.trim().isEmpty) {
+                    booruURLController.text = 'https://hentalk.pw';
+                    if (booruNameController.text.trim().isEmpty) {
+                      booruNameController.text = 'hentalk';
+                    }
+                    if (booruFaviconController.text.trim().isEmpty) {
+                      booruFaviconController.text = 'https://hentalk.pw/favicon.png';
+                    }
+                  }
+                  if (selectedBooruType.isHitomi && booruURLController.text.trim().isEmpty) {
+                    booruURLController.text = 'https://hitomi.la';
+                    if (booruNameController.text.trim().isEmpty) {
+                      booruNameController.text = 'hitomi.la';
+                    }
+                    if (booruFaviconController.text.trim().isEmpty) {
+                      // hitomi serves nothing from its own host but HTML; the icon lives on ltn.
+                      booruFaviconController.text =
+                          'https://ltn.gold-usergeneratedcontent.net/favicon-192x192.png';
+                    }
+                  }
+                  if (selectedBooruType.isTikPorn && booruURLController.text.trim().isEmpty) {
+                    booruURLController.text = 'https://tik.porn';
+                    if (booruNameController.text.trim().isEmpty) {
+                      booruNameController.text = 'Tik.Porn';
+                    }
+                    if (booruFaviconController.text.trim().isEmpty) {
+                      booruFaviconController.text = 'https://tik.porn/apple-touch-icon.png';
+                    }
+                  }
                   if (selectedBooruType.isXXXTik && booruURLController.text.trim().isEmpty) {
                     booruURLController.text = 'https://xxxtik.com';
                     if (booruNameController.text.trim().isEmpty) {
@@ -218,6 +387,15 @@ class _BooruEditState extends State<BooruEdit> {
                     }
                     if (booruFaviconController.text.trim().isEmpty) {
                       booruFaviconController.text = 'https://www.xxxfollow.com/favicon.ico';
+                    }
+                  }
+                  if (selectedBooruType.isCivitai && booruURLController.text.trim().isEmpty) {
+                    booruURLController.text = 'https://civitai.com';
+                    if (booruNameController.text.trim().isEmpty) {
+                      booruNameController.text = 'Civitai';
+                    }
+                    if (booruFaviconController.text.trim().isEmpty) {
+                      booruFaviconController.text = 'https://civitai.com/favicon.ico';
                     }
                   }
                 });
@@ -269,23 +447,30 @@ class _BooruEditState extends State<BooruEdit> {
                 );
               },
             ),
-            SettingsToggle(
-              value: ignoreGlobalBlacklist,
-              onChanged: (newValue) {
-                setState(() {
-                  ignoreGlobalBlacklist = newValue;
-                });
-              },
-              title: 'Ignore global blacklist for this booru',
-              leadingIcon: const Icon(Icons.visibility_off_outlined),
-              subtitle: const Text(
-                "When on, the global hidden-tags list won't filter items from this booru. Per-booru hidden tags still apply.",
+            // Both of these edit BOORU blacklist state, which never filters a
+            // doujin source (its blacklist lives in the source settings page
+            // linked above). Offering them here meant entries that did
+            // nothing - and which then removed "Add to hidden" from the tag
+            // menu on that source.
+            if (!DoujinDataHandler.isDoujinBooru(widget.booru)) ...[
+              SettingsToggle(
+                value: ignoreGlobalBlacklist,
+                onChanged: (newValue) {
+                  setState(() {
+                    ignoreGlobalBlacklist = newValue;
+                  });
+                },
+                title: 'Ignore global blacklist for this booru',
+                leadingIcon: const Icon(Symbols.visibility_off_rounded),
+                subtitle: const Text(
+                  "When on, the global hidden-tags list won't filter items from this booru. Per-booru hidden tags still apply.",
+                ),
               ),
-            ),
-            _PerBooruBlacklistEditor(
-              booruName: widget.booru.name,
-              onChanged: () => setState(() {}),
-            ),
+              _PerBooruBlacklistEditor(
+                booruName: widget.booru.name,
+                onChanged: () => setState(() {}),
+              ),
+            ],
             Container(
               margin: const EdgeInsets.fromLTRB(10, 16, 10, 16),
               width: double.infinity,
@@ -301,35 +486,62 @@ class _BooruEditState extends State<BooruEdit> {
               ),
             //
             if (selectedBooruType == BooruType.RedGifs) _buildRedGifsLogin(),
+            if (selectedBooruType == BooruType.FurAffinity) _buildFurAffinityLogin(),
             // RedGifs has no per-user ID field — it logs in via the browser
             // button above and stores a session token in the key field.
-            if (selectedBooruType != BooruType.RedGifs)
+            // Credential fields appear only where the engine READS them
+            // (BooruHandler.usesUserId / usesApiKey): a field nothing reads
+            // would make an account look configurable when it is not.
+            if (selectedBooruType != BooruType.RedGifs && (_credentialCapabilities?.usesUserId ?? true))
               SettingsTextInput(
                 controller: booruUserIDController,
                 onChanged: (_) => setState(() {}),
-                title: getUserIDTitle(),
+                title: _credentialCapabilities?.userIdLabel ?? getUserIDTitle(),
                 hintText: getUserIdPlaceholder(),
                 clearable: true,
                 pasteable: true,
                 drawTopBorder: true,
                 enableIMEPersonalizedLearning: !settingsHandler.incognitoKeyboard,
               ),
-            if (selectedBooruType != BooruType.RedGifs)
+            if (selectedBooruType != BooruType.RedGifs && (_credentialCapabilities?.usesApiKey ?? true))
               SettingsTextInput(
                 controller: booruAPIKeyController,
                 onChanged: (_) => setState(() {}),
-                title: getApiKeyTitle(),
+                title: _credentialCapabilities?.apiKeyLabel ?? getApiKeyTitle(),
                 pasteable: true,
                 hintText: getApiKeyPlaceholder(),
                 clearable: true,
                 obscureable: shouldObscureApiKey(),
                 enableIMEPersonalizedLearning: !settingsHandler.incognitoKeyboard,
               ),
+            if (selectedBooruType != BooruType.RedGifs &&
+                _credentialCapabilities != null &&
+                !_credentialCapabilities!.usesUserId &&
+                !_credentialCapabilities!.usesApiKey)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                child: Text(
+                  'This source has no account or API key — there is nothing to enter.',
+                  style: TextStyle(fontSize: 12.5, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                ),
+              ),
             SizedBox(height: MediaQuery.sizeOf(context).height * 0.2),
           ],
         ),
       ),
     );
+  }
+
+  /// The engine behind the chosen type, asked which credential fields it
+  /// reads. Autodetect has no engine yet, so both fields stay visible.
+  BooruHandler? get _credentialCapabilities {
+    if (selectedBooruType == BooruType.Autodetect) return null;
+    return BooruHandlerFactory()
+        .getBooruHandler(
+          [Booru(booruNameController.text, selectedBooruType, '', booruURLController.text.trim(), '')],
+          null,
+        )
+        .booruHandler;
   }
 
   String getApiKeyTitle() {
@@ -365,6 +577,11 @@ class _BooruEditState extends State<BooruEdit> {
         break;
       case BooruType.Hydrus:
         return '';
+      case BooruType.FurAffinity:
+        return '<b>FurAffinity</b><br>Leave the URL as https://www.furaffinity.net. Browse the newest submissions with an '
+            'empty search, search with the site\'s own operators (<i>fox | wolf -dragon "red panda"</i>), or open an '
+            'artist with <i>user:name</i> (also <i>scraps:name</i>, <i>favorites:name</i>). Types, ratings, sort and '
+            'range are checkmarks in the search window. Log in below for mature and adult submissions.';
       case BooruType.RedGifs:
         return '<b>RedGifs</b><br>No setup needed — leave the URL as '
             'https://www.redgifs.com. Browse trending content or search tags '
@@ -389,6 +606,141 @@ class _BooruEditState extends State<BooruEdit> {
             'Note: the "real videos" (xvideos) section streams tube sites '
             'through a private proxy and cannot be scraped directly — open '
             'app.rule34.dev in a WebView booru for that part.';
+      case BooruType.Kemono:
+        return '<b>Kemono</b><br>Leave the URL as https://kemono.cr. A creator '
+            'archive: every post belongs to a creator on Patreon, Fanbox, '
+            'Gumroad, Fantia, Boosty, SubscribeStar or DLsite, and one post can '
+            'hold many files (the burst badge on a card; the files action in the '
+            'viewer opens them all).<br><br>'
+            '<b>Search:</b> plain words (3+ characters) search titles and text; '
+            '<i>tag:x</i> filters by the site\'s tags; <i>creator:name</i> or a '
+            'card from the Artists page opens one creator; <i>popular:day</i> '
+            '(week, month, recent), <i>random</i>. <i>service:patreon</i> filters '
+            'on the phone — the site cannot.<br><br>'
+            '<b>The kemono sidebar</b> (left drawer on a Kemono tab) mirrors the '
+            'site: Artists, Posts, Favorites, DMs, Announcements. Its bottom '
+            'button swaps to the normal pinned-tags drawer, and Quick access '
+            'swaps back.<br><br>'
+            '<b>Username and password (optional):</b> the app signs in to your '
+            'kemono account for Favorites (posts and artists) and syncs hearts '
+            'to it. Nothing is sent anywhere else.';
+      case BooruType.Pawchive:
+        return '<b>Pawchive</b><br>Leave the URL as https://pawchive.pw. An archive '
+            'of kemono (Patreon and Fanbox creators) on the older kemono API, '
+            'with its own file host that actually answers. Same tabs, sidebar, '
+            'Artists page and post page as Kemono.<br><br> '
+            '<b>Search:</b> plain words (2+ characters), <i>tag:x</i>, '
+            '<i>creator:name</i>, <i>service:patreon</i> (filtered on the phone). '
+            'No popular feed, random post, tag list or DMs — the site has none.<br><br> '
+            '<b>Username and password (optional):</b> the app signs in through '
+            "the site's login form for Favorites (posts and artists) and syncs "
+            'hearts. The file host blocks IPs that download unreasonably, so '
+            'nothing here prefetches files.';
+      case BooruType.HDoujin:
+        return '<b>HDoujin</b><br>Leave the URL as https://hdoujin.org. The same software as niyaniya '
+            'on its own network: browsing and the gallery page work at once; reading a book needs '
+            "the site's one-time check, which opens by itself the first time and is kept apart from "
+            "niyaniya's. Search like niyaniya: words, artist:name, parody:name, tag names.";
+      case BooruType.EHentai:
+        return '<b>E-Hentai / ExHentai</b><br>Leave the URL as https://e-hentai.org. A DOUJIN source: every '
+            'post is a whole gallery, read in the reader. No account is needed for e-hentai.org. '
+            'exhentai.org (the full catalogue) needs a forum login: Source settings → Log in opens '
+            'the forum in a browser page; the app keeps the two session cookies in its own file and '
+            'never sends them to image servers. Then pick the site under Source settings → Site.<br><br> '
+            'Search: tags as female:big_breasts, artist:name, parody:name, language:english (the app '
+            "turns them into the site's exact-match terms); -tag excludes; bare words search titles; "
+            'category:doujinshi limits the categories; rating:4 and pages:10-50 use the advanced search. '
+            "Lists are read forward with the site's own cursor, newest first.<br><br> "
+            'Pages are fetched as you read them (the site serves one at a time); a long gallery opens at '
+            "once. Source settings also opens the site's settings, My Tags and Watched pages, and can "
+            "import the tags you hide on My Tags into this source's blacklist.";
+      case BooruType.NHentai:
+        return '<b>nhentai</b><br>Leave the URL as https://nhentai.net. A '
+            'DOUJIN source: every post is a whole gallery, read page by page '
+            'in the built-in reader (the book icon in the viewer, or the '
+            '"Read" row in the post drawer). Your position in each book is '
+            'remembered.<br><br>'
+            '<b>Search</b> uses the site\'s own syntax: plain words search '
+            'titles and tags, <i>tag:x</i>, <i>artist:x</i>, <i>parody:x</i>, '
+            '<i>character:x</i>, <i>group:x</i>, <i>language:english</i>, '
+            '<i>category:doujinshi</i>, <i>pages:&gt;20</i>, and <i>-tag:x</i> '
+            'to exclude. <i>sort:popular</i> / <i>sort:popular-today</i> / '
+            '<i>sort:popular-week</i> / <i>sort:popular-month</i> for the '
+            'popular feeds; empty search shows the newest uploads.<br><br>'
+            '<b>API key (optional):</b> works fine without one. To use your '
+            'account later (favorites), generate a key at '
+            'nhentai.net/user/settings and paste it into the API key field.';
+      case BooruType.Hanime1:
+        return '<b>Hanime1</b><br>Leave the URL as https://hanime1.me. A '
+            'Chinese-language hentai video site — the app translates it for '
+            'you.<br><br>'
+            '<b>Search in English.</b> The site\'s entire tag list is built '
+            'into the app with English names, so type <i>creampie</i>, '
+            '<i>ntr</i>, <i>chinese_subtitles</i>… and the matching Chinese '
+            'tag is sent automatically. Autocomplete understands both '
+            'languages and suggests the English name. Multiple tags combine '
+            'as AND; add <i>mode:any</i> to match ANY of them instead.<br><br>'
+            'Extras: <i>genre:</i> (hentai / shorts / motion_anime / 3dcg / '
+            '2.5d / 2d / ai / mmd / cosplay), <i>sort:</i> (newest / '
+            'latest_upload / daily / weekly / monthly / views / trending), '
+            '<i>artist:name</i>, and any other words search titles as free '
+            'text.<br><br>'
+            'Tags on posts show in English too (appearing after you open a '
+            'post — the site\'s grid carries none). Titles stay original with '
+            'a machine-translated English line added underneath when '
+            'translation is reachable.';
+      case BooruType.Kusowanka:
+        return '<b>Kusowanka</b><br>Leave the URL as https://kusowanka.com. '
+            'No account or API key needed.<br><br>'
+            '<b>One tag at a time.</b> This site is not a booru engine and has '
+            'no way to combine tags, so a two-word search is refused rather '
+            'than quietly showing you the wrong thing. Leave the search empty '
+            'to browse everything newest-first.<br><br>'
+            'It keeps five separate kinds of tag, and you pick one with a '
+            'prefix: a bare word is a normal tag, or use '
+            '<i>artist:name</i>, <i>character:name</i>, <i>parody:name</i> '
+            '(series/copyright) or <i>metadata:name</i>. For example '
+            '<i>metadata:animated</i> for animations. Autocomplete searches '
+            'all five and labels each result.<br><br>'
+            '<b>Note on tags:</b> the thumbnail grid on this site only carries '
+            'numeric tag IDs, not names, so tags appear once you open a post. '
+            'That also means the tag blacklist cannot hide anything on this '
+            'booru until a post has been opened.';
+      case BooruType.Rule34Video:
+        return '<b>Rule34Video</b><br>Leave the URL as https://rule34video.com. '
+            'A video site — no account or API key needed.<br><br> '
+            'Leave the search empty to browse the newest uploads. Type words to '
+            "use the site's own text search (spaces or underscores both work). "
+            'A single tag name the app already knows (from a video you opened, '
+            "or a pulled Tags list) opens that tag's own page instead. "
+            '<i>artist:name</i>, <i>category:name</i> and <i>uploader:id</i> '
+            'open one page each; the site cannot combine them with each other '
+            'or with words, so such a query is refused rather than answered '
+            'wrongly.<br><br> '
+            '<b>Content type.</b> The <i>type:</i> chip (straight / gay / futa / '
+            'music / iwara, several allowed) is applied by the site on every '
+            'page except text search — there the phone drops cards itself, and '
+            'it can only tell Gay and Futa apart (Straight, Music and Iwara '
+            'cards look alike). A default for this source lives in Source '
+            'settings.<br><br> '
+            "The <i>sort:</i> chip offers the site's orders (text search adds "
+            "its own relevance order). The site's autocomplete is switched "
+            'off; suggestions come from the Tag builder lists once pulled. '
+            'Videos are resolved when opened and their links expire — Retry '
+            're-resolves them.';
+      case BooruType.TikPorn:
+        return '<b>Tik.Porn</b><br>Leave the URL as https://tik.porn. A '
+            'short-form vertical video site — video only, no images. No '
+            'account or API key is needed.<br><br>'
+            'Leave the search empty to browse the whole catalogue. Type any '
+            "words to search, or use one of the site's own categories: a "
+            'single tag name (e.g. <i>redhead</i>, <i>small-tits</i>) goes '
+            "straight to that tag's feed, and <i>action:anal-doggystyle</i> "
+            "goes to an act's feed. Tap a creator, or type "
+            "<i>creator:name</i>, for that creator's videos.<br><br>"
+            'The <i>sort:</i> chip (Recent / Popular) applies to tag, action '
+            'and creator feeds. Free-text search has a fixed relevance order '
+            'and ignores it — the site itself offers no other orderings.';
       case BooruType.XXXTik:
         return '<b>xxxtik</b><br>Leave the URL as https://xxxtik.com. A '
             'short-form video site.<br><br>'
@@ -411,6 +763,17 @@ class _BooruEditState extends State<BooruEdit> {
             'tag shown above a tag results opens it.<br><br>'
             'Videos are direct MP4 files, so downloads work. As a guest the site '
             'only exposes a limited set of public videos per tag.';
+      case BooruType.Civitai:
+        return '<b>Civitai</b><br>Leave the URL as https://civitai.com. '
+            'The AI-generation gallery, via its official public API.<br><br>'
+            'Put your Civitai <b>API key</b> (civitai.com → Account settings → '
+            "API Keys) in the API key field — it unlocks your account's "
+            "browsing level and <i>artist:me</i> (your uploads).<br><br>"
+            'Search with plain tags, or use the chips: <i>sort:</i> (incl. '
+            'Random), <i>period:</i>, <i>nsfw:</i> level, <i>type:</i> '
+            'image/video, <i>basemodel:</i>, <i>artist:</i>name, '
+            '<i>model:</i>id, <i>post:</i>id. Exclusions (-tag) are filtered '
+            'on-device. Note: the public API has no "liked images" feed.';
       case BooruType.WebView:
         return '<b>WebView (browser)</b><br>Renders any site inside a tab '
             'instead of scraping it — use it for sites that are hard or '
@@ -472,7 +835,7 @@ class _BooruEditState extends State<BooruEdit> {
           Row(
             children: [
               Icon(
-                signedIn ? Icons.check_circle : Icons.account_circle_outlined,
+                signedIn ? Symbols.check_circle_rounded : Symbols.account_circle_rounded,
                 color: signedIn ? Colors.green : Theme.of(context).colorScheme.onSurfaceVariant,
               ),
               const SizedBox(width: 8),
@@ -496,14 +859,14 @@ class _BooruEditState extends State<BooruEdit> {
           Row(
             children: [
               FilledButton.tonalIcon(
-                icon: const Icon(Icons.login),
+                icon: const Icon(Symbols.login_rounded),
                 label: Text(signedIn ? 'Sign in again' : 'Sign in with browser'),
                 onPressed: _openRedGifsLogin,
               ),
               if (signedIn) ...[
                 const SizedBox(width: 8),
                 TextButton.icon(
-                  icon: const Icon(Icons.logout),
+                  icon: const Icon(Symbols.logout_rounded),
                   label: const Text('Sign out'),
                   onPressed: () => setState(() => booruAPIKeyController.text = ''),
                 ),
@@ -515,13 +878,107 @@ class _BooruEditState extends State<BooruEdit> {
     );
   }
 
+  /// FurAffinity's account row (r40): the login is a web page (Cloudflare's
+  /// check included); the session is kept in its own file, not in the key field.
+  Widget _buildFurAffinityLogin() {
+    final FurAffinitySessionHandler session = FurAffinitySessionHandler.instance;
+    return ValueListenableBuilder<int>(
+      valueListenable: session.revision,
+      builder: (context, _, _) {
+        final bool signedIn = session.isLoggedIn;
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    signedIn ? Symbols.check_circle_rounded : Symbols.account_circle_rounded,
+                    color: signedIn ? Colors.green : Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      signedIn ? 'Logged in to FurAffinity' : 'Not logged in (general submissions only)',
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                signedIn
+                    ? 'Mature and adult submissions come through as far as your account settings allow. '
+                          'Content filter opens those settings on the site.'
+                    : 'Log in with your FurAffinity account for mature and adult submissions, music and stories.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: [
+                  FilledButton.tonalIcon(
+                    key: const ValueKey('fa-login'),
+                    icon: const Icon(Symbols.login_rounded),
+                    label: Text(signedIn ? 'Log in again' : 'Log in with browser'),
+                    onPressed: _openFurAffinityLogin,
+                  ),
+                  if (signedIn)
+                    OutlinedButton.icon(
+                      key: const ValueKey('fa-content-filter'),
+                      icon: const Icon(Symbols.tune_rounded),
+                      label: const Text('Content filter'),
+                      onPressed: _openFurAffinitySettings,
+                    ),
+                  if (signedIn)
+                    TextButton.icon(
+                      icon: const Icon(Symbols.logout_rounded),
+                      label: const Text('Log out'),
+                      onPressed: session.logout,
+                    ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _openFurAffinityLogin() async {
+    if (!Tools.isOnPlatformWithWebviewSupport) return;
+    final (bool, String)? result = await Navigator.of(context).push<(bool, String)>(
+      MaterialPageRoute(builder: (_) => const FurAffinityLoginPage()),
+    );
+    if (result != null && mounted) {
+      FlashElements.showSnackbar(context: context, title: Text(result.$2), leadingIcon: result.$1 ? Symbols.check_circle_rounded : Symbols.error_rounded, leadingIconColor: result.$1 ? Colors.green : Colors.red);
+    }
+  }
+
+  /// The account's settings page on the site, with the session in the jar
+  /// for the visit only.
+  Future<void> _openFurAffinitySettings() async {
+    final FurAffinitySessionHandler session = FurAffinitySessionHandler.instance;
+    try {
+      await session.seedJar();
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const InAppWebviewView(initialUrl: 'https://www.furaffinity.net/controls/settings/', title: 'FurAffinity settings')),
+      );
+    } finally {
+      await session.syncAfterWebView();
+    }
+  }
+
   Future<void> _openRedGifsLogin() async {
     if (!Tools.isOnPlatformWithWebviewSupport) {
       FlashElements.showSnackbar(
         context: context,
         title: const Text('WebView unavailable'),
         content: const Text('Signing in to RedGifs needs a WebView, which is not available on this device.'),
-        leadingIcon: Icons.error_outline,
+        leadingIcon: Symbols.error_rounded,
         leadingIconColor: Colors.red,
       );
       return;
@@ -535,7 +992,7 @@ class _BooruEditState extends State<BooruEdit> {
         context: context,
         title: const Text('Signed in'),
         content: const Text('RedGifs account connected.'),
-        leadingIcon: Icons.check_circle,
+        leadingIcon: Symbols.check_circle_rounded,
         leadingIconColor: Colors.green,
       );
     }
@@ -556,6 +1013,11 @@ class _BooruEditState extends State<BooruEdit> {
     if (selectedBooruType.isRedGifs ||
         selectedBooruType.isWebView ||
         selectedBooruType.isRule34Dev ||
+        selectedBooruType.isHanime1 ||
+        selectedBooruType.isKusowanka ||
+        selectedBooruType.isRule34Video ||
+        selectedBooruType.isNHentai ||
+        selectedBooruType.isTikPorn ||
         selectedBooruType.isXXXTik ||
         selectedBooruType.isXXXFollow) {
       if (booruNameController.text.trim().isEmpty) {
@@ -563,6 +1025,16 @@ class _BooruEditState extends State<BooruEdit> {
             ? 'RedGifs'
             : selectedBooruType.isRule34Dev
             ? 'Rule34.dev'
+            : selectedBooruType.isHanime1
+            ? 'Hanime1'
+            : selectedBooruType.isKusowanka
+            ? 'Kusowanka'
+            : selectedBooruType.isRule34Video
+            ? 'Rule34Video'
+            : selectedBooruType.isNHentai
+            ? 'nhentai'
+            : selectedBooruType.isTikPorn
+            ? 'Tik.Porn'
             : selectedBooruType.isXXXTik
             ? 'xxxtik'
             : selectedBooruType.isXXXFollow
@@ -574,6 +1046,21 @@ class _BooruEditState extends State<BooruEdit> {
       }
       if (booruURLController.text.trim().isEmpty && selectedBooruType.isRule34Dev) {
         booruURLController.text = 'https://app.rule34.dev';
+      }
+      if (booruURLController.text.trim().isEmpty && selectedBooruType.isHanime1) {
+        booruURLController.text = 'https://hanime1.me';
+      }
+      if (booruURLController.text.trim().isEmpty && selectedBooruType.isKusowanka) {
+        booruURLController.text = 'https://kusowanka.com';
+      }
+      if (booruURLController.text.trim().isEmpty && selectedBooruType.isRule34Video) {
+        booruURLController.text = 'https://rule34video.com';
+      }
+      if (booruURLController.text.trim().isEmpty && selectedBooruType.isNHentai) {
+        booruURLController.text = 'https://nhentai.net';
+      }
+      if (booruURLController.text.trim().isEmpty && selectedBooruType.isTikPorn) {
+        booruURLController.text = 'https://tik.porn';
       }
       if (booruURLController.text.trim().isEmpty && selectedBooruType.isXXXTik) {
         booruURLController.text = 'https://xxxtik.com';
@@ -588,7 +1075,7 @@ class _BooruEditState extends State<BooruEdit> {
             context.loc.settings.booruEditor.booruUrlRequired,
             style: const TextStyle(fontSize: 20),
           ),
-          leadingIcon: Icons.warning_amber,
+          leadingIcon: Symbols.warning_amber_rounded,
           leadingIconColor: Colors.red,
           sideColor: Colors.red,
         );
@@ -611,7 +1098,7 @@ class _BooruEditState extends State<BooruEdit> {
           context.loc.settings.booruEditor.booruNameRequired,
           style: const TextStyle(fontSize: 20),
         ),
-        leadingIcon: Icons.warning_amber,
+        leadingIcon: Symbols.warning_amber_rounded,
         leadingIconColor: Colors.red,
         sideColor: Colors.red,
       );
@@ -625,7 +1112,7 @@ class _BooruEditState extends State<BooruEdit> {
           context.loc.settings.booruEditor.booruUrlRequired,
           style: const TextStyle(fontSize: 20),
         ),
-        leadingIcon: Icons.warning_amber,
+        leadingIcon: Symbols.warning_amber_rounded,
         leadingIconColor: Colors.red,
         sideColor: Colors.red,
       );
@@ -706,17 +1193,17 @@ class _BooruEditState extends State<BooruEdit> {
                       style: const TextStyle(fontSize: 20),
                     ),
                     sideColor: Colors.green,
-                    leadingIcon: Icons.check,
+                    leadingIcon: Symbols.check_rounded,
                     leadingIconColor: Colors.green,
                     duration: const Duration(seconds: 2),
                   );
                 },
-                icon: const Icon(Icons.copy),
+                icon: const Icon(Symbols.content_copy_rounded),
                 label: Text(context.loc.copyErrorText),
               ),
           ];
         },
-        leadingIcon: Icons.warning_amber,
+        leadingIcon: Symbols.warning_amber_rounded,
         leadingIconColor: Colors.red,
         sideColor: Colors.red,
       );
@@ -741,7 +1228,7 @@ class _BooruEditState extends State<BooruEdit> {
           context.loc.settings.booruEditor.runningTest,
           style: const TextStyle(fontSize: 20),
         ),
-        leadingIcon: Icons.refresh,
+        leadingIcon: Symbols.refresh_rounded,
         leadingIconColor: Colors.yellow,
         sideColor: Colors.yellow,
       );
@@ -807,7 +1294,7 @@ class _BooruEditState extends State<BooruEdit> {
           context.loc.settings.booruEditor.thisBooruConfigWontBeAdded,
           style: const TextStyle(fontSize: 16),
         ),
-        leadingIcon: Icons.warning_amber,
+        leadingIcon: Symbols.warning_amber_rounded,
         leadingIconColor: Colors.red,
         sideColor: Colors.red,
       );
@@ -876,6 +1363,10 @@ class _BooruEditState extends State<BooruEdit> {
       }
 
       await settingsHandler.saveBooru(newBooru);
+      // Open tabs built their handler from the OLD config; re-point them at
+      // the saved one so a changed type/URL takes effect immediately instead
+      // of only after an app restart.
+      SearchHandler.instance.applyBooruEdit(newBooru);
 
       FlashElements.showSnackbar(
         context: context,
@@ -889,7 +1380,7 @@ class _BooruEditState extends State<BooruEdit> {
                 context.loc.settings.booruEditor.existingTabsNeedReload,
                 style: const TextStyle(fontSize: 16),
               ),
-        leadingIcon: Icons.done,
+        leadingIcon: Symbols.done_rounded,
         leadingIconColor: Colors.green,
         sideColor: Colors.green,
       );
@@ -1044,7 +1535,7 @@ class _HydrusAccessKeyWidget extends StatelessWidget {
                     context.loc.settings.booruEditor.accessKeyRequestedMsg,
                     style: const TextStyle(fontSize: 16),
                   ),
-                  leadingIcon: Icons.warning_amber,
+                  leadingIcon: Symbols.warning_amber_rounded,
                   leadingIconColor: Colors.yellow,
                   sideColor: Colors.yellow,
                 );
@@ -1060,7 +1551,7 @@ class _HydrusAccessKeyWidget extends StatelessWidget {
                     context.loc.settings.booruEditor.accessKeyFailedMsg,
                     style: const TextStyle(fontSize: 16),
                   ),
-                  leadingIcon: Icons.warning_amber,
+                  leadingIcon: Symbols.warning_amber_rounded,
                   leadingIconColor: Colors.red,
                   sideColor: Colors.red,
                 );
@@ -1115,12 +1606,12 @@ class _PerBooruBlacklistEditor extends StatelessWidget {
                 ),
               ),
               IconButton(
-                icon: const Icon(Icons.help_outline),
+                icon: const Icon(Symbols.help_rounded),
                 tooltip: 'Blacklist syntax',
                 onPressed: () => _showHelp(context),
               ),
               IconButton(
-                icon: const Icon(Icons.add),
+                icon: const Icon(Symbols.add_rounded),
                 tooltip: 'Add line',
                 onPressed: () async {
                   await showDialog<bool>(
@@ -1228,7 +1719,7 @@ class _PerBooruBlacklistRow extends StatelessWidget {
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.delete_outline, size: 20),
+            icon: const Icon(Symbols.delete_rounded, size: 20),
             tooltip: 'Remove',
             onPressed: onRemove,
           ),

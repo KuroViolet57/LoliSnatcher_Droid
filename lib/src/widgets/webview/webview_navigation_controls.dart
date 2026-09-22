@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -20,16 +22,30 @@ class WebviewNavigationControls extends StatelessWidget {
         if (snapshot.connectionState != ConnectionState.done || controller == null) {
           return const Row(
             children: [
-              Icon(Icons.arrow_back_ios),
-              Icon(Icons.arrow_forward_ios),
-              Icon(Icons.replay),
+              Icon(Symbols.arrow_back_ios_rounded),
+              Icon(Symbols.arrow_forward_ios_rounded),
+              Icon(Symbols.replay_rounded),
             ],
           );
         }
 
         return Row(
           children: [
-            GestureDetector(
+            // Both gestures on one InkResponse: nesting an IconButton inside
+            // a GestureDetector loses the long press to the button's own ink
+            // tap recognizer, which sits deeper in the gesture arena.
+            InkResponse(
+              radius: 24,
+              onTap: () async {
+                if (await controller.canGoBack()) {
+                  await controller.goBack();
+                } else {
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(context.loc.webview.navigation.noBackHistoryItem)),
+                  );
+                }
+              },
               onLongPress: () {
                 showDialog(
                   context: context,
@@ -41,22 +57,13 @@ class WebviewNavigationControls extends StatelessWidget {
                   ),
                 );
               },
-              child: IconButton(
-                icon: const Icon(Icons.arrow_back_ios),
-                onPressed: () async {
-                  if (await controller.canGoBack()) {
-                    await controller.goBack();
-                  } else {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(context.loc.webview.navigation.noBackHistoryItem)),
-                    );
-                    return;
-                  }
-                },
+              child: const Padding(
+                padding: EdgeInsets.all(8),
+                child: Icon(Symbols.arrow_back_ios_rounded),
               ),
             ),
             IconButton(
-              icon: const Icon(Icons.arrow_forward_ios),
+              icon: const Icon(Symbols.arrow_forward_ios_rounded),
               onPressed: () async {
                 if (await controller.canGoForward()) {
                   await controller.goForward();
@@ -69,7 +76,7 @@ class WebviewNavigationControls extends StatelessWidget {
               },
             ),
             IconButton(
-              icon: const Icon(Icons.replay),
+              icon: const Icon(Symbols.replay_rounded),
               onPressed: controller.reload,
             ),
           ],

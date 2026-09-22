@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:get/get.dart';
 
 import 'package:lolisnatcher/src/data/booru.dart';
@@ -46,7 +48,7 @@ class DownloadsDrawerController {
           context.loc.settings.downloads.pleaseProvideStoragePermission,
           style: const TextStyle(fontSize: 20),
         ),
-        leadingIcon: Icons.warning,
+        leadingIcon: Symbols.warning_rounded,
         sideColor: Colors.red,
         leadingIconColor: Colors.red,
       );

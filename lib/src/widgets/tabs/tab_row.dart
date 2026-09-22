@@ -2,9 +2,11 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import 'package:get/get.dart' hide FirstWhereOrNullExt;
-import 'package:lolisnatcher/gen/strings.g.dart';
-
+import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/widgets/image/custom_network_image.dart';
+import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/data/meta_tag.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/tag_handler.dart';
 import 'package:lolisnatcher/src/utils/extensions.dart';
@@ -20,8 +22,13 @@ class TabRow extends StatelessWidget {
     this.withColoredTags = true,
     this.filterText,
     this.isExpanded = true,
+    this.doujinCoverHeight = 32,
     super.key,
   });
+
+  /// The doujin cover's height (three-quarters as wide); 0 = none inline
+  /// (the tab manager draws its own at the row's left, r39).
+  final double doujinCoverHeight;
 
   final SearchTab tab;
   final Color? color;
@@ -31,12 +38,41 @@ class TabRow extends StatelessWidget {
   final String? filterText;
   final bool isExpanded;
 
+  /// A tab that IS a doujin: a real detail-page tab (or a legacy id: search
+  /// on a doujin source, which SearchTab.isDoujinDetail also recognizes).
+  static bool isDoujinTab(SearchTab tab) => tab.isDoujinDetail;
+
   @override
   Widget build(BuildContext context) {
     return Obx(
       () {
         final String rawTagsStr = tab.tags;
-        final String tagText = (rawTagsStr.trim().isEmpty ? context.loc.tabs.empty : rawTagsStr).trim();
+
+        // Doujin tabs: the gallery's COVER + title stand in for favicon +
+        // query text, in every tab list that renders through this row. The
+        // persisted tab fields let the cover/title render straight after a
+        // restart, before the tab has fetched anything.
+        final bool isDoujin = isDoujinTab(tab);
+        final BooruItem? doujin = isDoujin && tab.booruHandler.filteredFetched.isNotEmpty
+            ? tab.booruHandler.filteredFetched.first
+            : null;
+        final String? doujinThumbUrl = isDoujin
+            ? ((doujin?.thumbnailURL.isNotEmpty ?? false) ? doujin!.thumbnailURL : tab.doujinThumb)
+            : null;
+        String? doujinTitle;
+        if (isDoujin) {
+          doujinTitle = doujin == null
+              ? null
+              : (doujin.description ?? '')
+                    .split('\n')
+                    .firstWhere((l) => l.trim().isNotEmpty, orElse: rawTagsStr.trim);
+          if (doujinTitle == null || doujinTitle.trim().isEmpty || doujinTitle.trim() == rawTagsStr.trim()) {
+            if (tab.doujinTitle?.isNotEmpty ?? false) doujinTitle = tab.doujinTitle;
+          }
+        }
+
+        final String tagText =
+            doujinTitle ?? (rawTagsStr.trim().isEmpty ? context.loc.tabs.empty : rawTagsStr).trim();
 
         final bool hasItems = tab.booruHandler.filteredFetched.isNotEmpty;
 
@@ -54,7 +90,8 @@ class TabRow extends StatelessWidget {
           ),
         );
 
-        if (tab.tags.trim().isNotEmpty) {
+        // Doujin tabs show a plain title — never tag-coloured spans.
+        if (!isDoujin && tab.tags.trim().isNotEmpty) {
           if (filterText?.isNotEmpty == true) {
             final List<TextSpan> spans = [];
             final List<String> split = tagText.split(filterText!);
@@ -100,7 +137,10 @@ class TabRow extends StatelessWidget {
                 color: textColor,
               ),
             );
-          } else if (withColoredTags) {
+          } else if (withColoredTags && !DoujinDataHandler.isDoujinBooru(tab.selectedBooru.value)) {
+            // Tag colours come from the shared BOORU tag store — a doujin
+            // search tab shows plain text rather than a booru's colouring of
+            // a coinciding tag name.
             final List<TextSpan> spans = [];
             final List<String> split = tagText.trim().split(' ');
 
@@ -120,7 +160,9 @@ class TabRow extends StatelessWidget {
               final MetaTag? metaTag = metaTags.firstWhereOrNull((p) => p.tagParser(tag).isNotEmpty);
               final bool isMetaTag = metaTag != null;
 
-              final tagData = TagHandler.instance.getTag(tag);
+              // Per-tab booru: two tabs can show the same tag string on
+              // sites that classify it differently.
+              final tagData = TagHandler.instance.getTagFor(tag, tab.selectedBooru.value);
 
               final bool isColored = !tagData.tagType.isNone || isMetaTag;
 
@@ -198,7 +240,28 @@ class TabRow extends StatelessWidget {
 
         return Row(
           children: [
-            if (withFavicon) ...[
+            if (isDoujin && doujinCoverHeight > 0) ...[
+              // Cover thumbnail marks the tab as a doujin at a glance.
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: SizedBox(
+                  width: doujinCoverHeight * 0.75,
+                  height: doujinCoverHeight,
+                  child: (doujinThumbUrl == null || doujinThumbUrl.isEmpty)
+                      ? const ColoredBox(color: Colors.black26)
+                      : Image(
+                          image: CustomNetworkImage(
+                            doujinThumbUrl,
+                            withCache: SettingsHandler.instance.thumbnailCache,
+                            cacheFolder: 'thumbnails',
+                          ),
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => const ColoredBox(color: Colors.black26),
+                        ),
+                ),
+              ),
+              const SizedBox(width: 6),
+            ] else if (withFavicon) ...[
               ValueListenableBuilder(
                 valueListenable: tab.selectedBooru,
                 builder: (context, selectedBooru, child) {
@@ -219,6 +282,34 @@ class TabRow extends StatelessWidget {
               ),
               //
               const SizedBox(width: 4),
+            ],
+            // Pool tabs are otherwise indistinguishable from a tag search, and
+            // several open at once gets confusing. Deliberately RED (the
+            // theme's error role, so it survives theme switches and stays
+            // legible either way) to read as a type marker at a glance.
+            // Compact and non-flexing: the marquee keeps all remaining width.
+            if (tab.isPool) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.error.withValues(alpha: 0.22),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.error.withValues(alpha: 0.75),
+                    width: 0.8,
+                  ),
+                ),
+                child: Text(
+                  'pool',
+                  style: TextStyle(
+                    fontSize: 10,
+                    height: 1.2,
+                    fontWeight: FontWeight.w700,
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 5),
             ],
             marquee,
           ],
