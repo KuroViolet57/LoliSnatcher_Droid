@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -9,6 +10,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/data/model_tasks.dart';
 import 'package:lolisnatcher/src/handlers/recommender/look_model_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 
@@ -23,6 +25,9 @@ class _FakeLook implements LookRunner {
   List<int> lastIds = [];
   List<int> lastMask = [];
   bool closed = false;
+  bool closedDuringRun = false;
+  bool _running = false;
+  Completer<void>? gate;
   Float32List Function(int run)? imageAnswer;
 
   @override
@@ -33,6 +38,12 @@ class _FakeLook implements LookRunner {
     imageRuns++;
     lastSize = size;
     lastLength = nchw.length;
+    _running = true;
+    try {
+      if (gate != null) await gate!.future;
+    } finally {
+      _running = false;
+    }
     return imageAnswer?.call(imageRuns) ?? Float32List.fromList([3, 4]);
   }
 
@@ -45,7 +56,10 @@ class _FakeLook implements LookRunner {
   }
 
   @override
-  Future<void> close() async => closed = true;
+  Future<void> close() async {
+    if (_running) closedDuringRun = true;
+    closed = true;
+  }
 }
 
 const String preprocessorJson =
@@ -373,6 +387,73 @@ void main() {
     h.runnerFactory = (String i, String t) => _FakeLook();
     await h.refresh();
     expect(h.status.value.state, LookState.ready);
+  });
+
+  group('r80: the thread counts and the switches of Settings → Models', () {
+    Uint8List pic() => rgb([
+      [
+        [1, 2, 3],
+      ],
+    ]);
+
+    setUp(() {
+      ModelTasks.save = () async {};
+      ModelTasks.maxThreads = () => 8;
+    });
+
+    tearDown(() {
+      ModelTasks.resetForTests();
+      SettingsHandler.instance.modelThreads.clear();
+      SettingsHandler.instance.aiModelsOff = false;
+    });
+
+    test("learning opens the model with the background count, a board with the waiting count; today's are 1 and 1", () async {
+      final LookModelHandler h = await ready();
+      await h.imageVector(pic(), use: ModelUse.background);
+      expect(h.openedThreads, 1);
+      await h.close();
+      await ModelTasks.setThreads(ModelKind.look, ModelUse.background, 3);
+      await ModelTasks.setThreads(ModelKind.look, ModelUse.waiting, 5);
+      await h.imageVector(pic(), use: ModelUse.background);
+      expect(h.openedThreads, 3);
+      await h.close();
+      await h.imageVector(pic());
+      expect(h.openedThreads, 5, reason: 'waiting is the default');
+      await h.close();
+      await h.textVector('a board about cats', use: ModelUse.background);
+      expect(h.openedThreads, 3);
+    });
+
+    test('a new count applies at once, and never closes the model under a run', () async {
+      final LookModelHandler h = await ready();
+      await h.imageVector(pic());
+      h.threadsChanged();
+      await Future<void>.delayed(Duration.zero);
+      expect(runner.closed, isTrue, reason: 'idle: closed now, opened again with the new count');
+
+      runner = _FakeLook();
+      final Completer<void> gate = Completer<void>();
+      runner.gate = gate;
+      final Future<Float32List> slow = h.imageVector(pic());
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      h.threadsChanged();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(runner.closed, isFalse);
+      gate.complete();
+      await slow;
+      await Future<void>.delayed(Duration.zero);
+      expect(runner.closedDuringRun, isFalse);
+      expect(runner.closed, isTrue, reason: 'closed once the run is done');
+      expect(h.status.value.state, LookState.ready);
+    });
+
+    test('all models off: the looks model is off, its own switch untouched', () async {
+      final LookModelHandler h = await ready();
+      expect(h.enabled, isTrue);
+      SettingsHandler.instance.aiModelsOff = true;
+      expect(h.enabled, isFalse);
+      expect(SettingsHandler.instance.aiLook, isTrue);
+    });
   });
 
   test('a preprocessing config with mean and std lands in the manifest and is applied', () async {

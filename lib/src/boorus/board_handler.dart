@@ -10,6 +10,7 @@ import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/data/board.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/data/model_tasks.dart';
 import 'package:lolisnatcher/src/data/meta_tag.dart';
 import 'package:lolisnatcher/src/handlers/board_query.dart';
 import 'package:lolisnatcher/src/handlers/boards_handler.dart';
@@ -315,7 +316,8 @@ class BoardHandler extends BooruHandler {
     // r74: what the downloaded tagger reads in the picture, cached on the
     // board with the image and the model it came from.
     List<WeightedTag> pixel = const [];
-    final String model = pixelModelId();
+    // r80: Settings → Models can switch the tagger's boards job off.
+    final String model = ModelTasks.isOn(ModelTasks.taggerBoards) ? pixelModelId() : '';
     if (b.hasImage && model.isNotEmpty) {
       if (b.hasFreshPixelTags(model)) {
         pixel = [...b.pixelTags!];
@@ -336,7 +338,8 @@ class BoardHandler extends BooruHandler {
     }
     // r75: the reference image (or the words) through the looks model; the
     // image's vector is cached on the board with the image and the model.
-    final String lookModel = lookModelId();
+    // r80: a hidden board is Posts like this, a job of its own in Settings → Models.
+    final String lookModel = ModelTasks.isOn(b.hidden ? ModelTasks.lookSimilar : ModelTasks.lookBoards) ? lookModelId() : '';
     if (lookModel.isNotEmpty) {
       if (b.hasImage) {
         if (b.hasFreshLook(lookModel)) {
@@ -410,7 +413,7 @@ class BoardHandler extends BooruHandler {
       locked = true;
       return;
     }
-    if (b.description.trim().isNotEmpty && embedText != null) {
+    if (b.description.trim().isNotEmpty && embedText != null && ModelTasks.isOn(ModelTasks.textBoards)) {
       _descVec = await _bounded<Float32List?>(() => embedText!(b.description), embedTimeout);
     }
   }
@@ -697,7 +700,7 @@ class BoardHandler extends BooruHandler {
     }
     if (out.isEmpty && errors.isNotEmpty) throw Exception(errors.join(' / '));
     // With the image tagger downloaded, an image board needs no reverse search.
-    if (key.isEmpty && e621 == null && pixelModelId().isEmpty) {
+    if (key.isEmpty && e621 == null && (!ModelTasks.isOn(ModelTasks.taggerBoards) || pixelModelId().isEmpty)) {
       throw StateError('No reverse image search available: add your SauceNAO API key (Settings → Recommendations → Boards) or download the image tagger (Settings → Recommendations).');
     }
     return out;

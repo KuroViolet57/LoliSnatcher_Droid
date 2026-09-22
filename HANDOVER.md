@@ -31,11 +31,11 @@ older chronological build log, kept verbatim as history.
   Never push elsewhere; force-push is blocked.
 - **Version:** `2.6.0+5211` in `pubspec.yaml`, mirrored in
   `lib/src/data/constants.dart` (`updateInfo`). Builds are told apart by
-  `Constants.buildCodename` (`'r80-backup'` now), shown in About. Bump the
+  `Constants.buildCodename` (`'r80-models'` now), shown in About. Bump the
   codename every build: `rNN-<two words>`.
 - **Build counter:** rounds are numbered r21, r22, … r80. Each build gets a
-  numbered folder on the K: drive (§2): r80's first build is **109**; the
-  next build uses **110**. **103** is Grok's ("exp flutter 347") - never
+  numbered folder on the K: drive (§2): r80 used **109** and **110**; the
+  next build uses **111**. **103** is Grok's ("exp flutter 347") - never
   reuse a number.
 - **The user** talks in voice notes and logs; expects one build per request
   round, checked on a Samsung phone. They cannot see tool output — only the
@@ -2713,6 +2713,69 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   of 0.1 steps in floating point). The page's widget tests were written after
   the page (the core's tests came first).
 - **Not verified here:** SAF and Drive on the phone (no emulator on 22 Sep).
+
+### 4.59 Debug mode kept, captures as files, the Models page (r80, build 110)
+
+- **Debug mode** (`isDebug`) is a declared setting now (default
+  `kDebugMode`); `settings_page.dart` saves on the 6th tap and on the
+  long-press. It was in `deviceSpecificSettings` only, never saved.
+- **Why the trace report was "not in the log":** `Logger.log` cuts every
+  entry at 10,000 characters. `Logger.logParts(text, ..., title:)` redacts
+  the whole text once, then logs it in parts of at most 9,000 characters
+  cut at a line end in the part's second half, each headed
+  "<title> (part i/n)"; `Logger.splitParts` joins back to the input.
+- **`lib/src/services/capture_files.dart`:** `CaptureFiles.save(name, text)`
+  writes to `capturesPath` (a SAF tree picked in Debug → Captures folder),
+  else `getOrCreateSAFDirectory(extPathOverride, 'captures')`, else (no
+  folder, or the folder refused) `<ext dir>/LoliSnatcher/captures/`
+  (`fellBack`). SAF writes go through a scratch file in the cache and
+  `copyFileToSafDir`; an existing file of that name is deleted first (SAF
+  would write "name (1)"). Off Android the download folder is a plain path.
+  `keepTraceReport(report)` = `logParts` + `trace-<yyyy-MM-dd-HH-mm-ss>.txt`.
+  The Debug page's trace dialog shows at most 20,000 characters; Copy
+  catches the Binder failure. The old `<config>/traces/` copy is gone.
+- **Source capture:** `SourceCaptureHandler._startedAt` (restored from the
+  journal header) names one file per capture
+  (`source-capture-<host>-<stamp>.txt`); `saveToCaptures()` runs when the
+  recording browser closes, after "Fetch the response bodies" and from the
+  new "Save to the captures folder" button.
+- **Models page** (`lib/src/pages/settings/models_page.dart`, from the
+  Recommendations page's "Models: jobs and threads"):
+  `lib/src/data/model_tasks.dart` holds `ModelUse` (waiting/background;
+  `TaggerUse` is now a typedef of it), `ModelKind`, the nine `ModelTask`s
+  (text: learning, forYou, boards; look: learning, forYou, similar, boards;
+  tagger: tryIt, boards) and the thread counts. Stored as `modelTasks`
+  (only jobs switched off) and `modelThreads` (only counts changed from
+  today's: text 1/1, look 1/1, tagger 4/2), written next to the declared
+  settings like `modularUi`, plus the declared `aiModelsOff`. The frames
+  (`videoFrames`) and reactions (`taggerOnReactions`) switches are the old
+  ones, shown on the page too. `modelThreads` and `capturesPath` are
+  device-specific (not synced).
+- **Gates:** each handler's `enabled` includes `!aiModelsOff`. Recommender:
+  `_embeddings`/`_looks` take a `task` (learning in `_learnEvent` and
+  `_exposedNow`; For You in `score`, `scorer`, `rerank`, `explain`, the
+  doujin-parts scorers; the scorer's in-memory vectors follow For You too).
+  Boards: `BoardHandler._init` gates the tagger (taggerBoards), the looks
+  model (`b.hidden` → lookSimilar, else lookBoards) and the description
+  vector (textBoards); `BoardQueryBuilder.deriveTags` gates `embed`
+  (textBoards); the board editor shows `board-tag-off`; Try it is not built
+  when tryIt is off (`tagger-try-off`). `lookVectorsFor` now takes the
+  `ModelUse`.
+- **Threads:** the work that opens a model decides its count
+  (`ModelTasks.threads(kind, use)`, clamped to 1..cores). The text and
+  looks models record `openedThreads`; their default runners read it (the
+  test fakes' factory signatures are unchanged). `threadsChanged()` on all
+  three: closes an idle session at once, else when the last run ends
+  (`_inFlight`, `_closeWhenIdle`) - never under a run. The video frames
+  code was not touched (as asked), so frames open the looks model with the
+  "while you wait" count.
+- **Tests:** `model_tasks_test` (7), `capture_files_test` (10),
+  `models_page_test` (3), r80 groups in the tagger/looks/encoder tests,
+  recommender (looks and text jobs), board handler (3), board query,
+  Recommendations page (Try it off, Models opens), board editor. Written
+  before the code (they could not compile without it; not run red).
+- **Not verified here:** SAF writes into the download folder's
+  subfolder and the new thread counts on the phone.
 
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 

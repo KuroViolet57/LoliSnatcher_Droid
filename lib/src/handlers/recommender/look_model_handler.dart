@@ -12,6 +12,7 @@ import 'package:image/image.dart' as img;
 
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/data/model_tasks.dart';
 import 'package:lolisnatcher/src/handlers/recommender/clip_tokenizer.dart';
 import 'package:lolisnatcher/src/handlers/recommender/encoder_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/onnx_look_runner.dart';
@@ -188,7 +189,7 @@ class LookModelHandler {
   bool get isReady => status.value.state == LookState.ready;
 
   /// Downloaded and switched on.
-  bool get enabled => _settings.aiLook && isReady;
+  bool get enabled => _settings.aiLook && !_settings.aiModelsOff && isReady;
 
   /// Names the model in feature names and database rows.
   String get modelId => _slug;
@@ -386,6 +387,38 @@ class LookModelHandler {
     }
   }
 
+  /// r80: the threads the open session was opened with (Settings → Models:
+  /// the work that opens the model decides); null while it is closed.
+  int? get openedThreads => _openThreads;
+  int? _openThreads;
+
+  /// r80: runs using the session right now, and a close asked for while
+  /// one was running.
+  int _inFlight = 0;
+  bool _closeWhenIdle = false;
+
+  /// r80: the thread counts changed (Settings → Models): the session is
+  /// closed so the next use opens it with the new count - at once when
+  /// nothing runs, else as soon as the running work is done. Never under a
+  /// run: a run that fails switches the model off until a restart.
+  void threadsChanged() {
+    if (_runner == null && _loading == null) return;
+    if (_inFlight > 0) {
+      _closeWhenIdle = true;
+      return;
+    }
+    unawaited(close());
+  }
+
+  /// A run ended; a close asked for meanwhile happens now.
+  void _runEnded() {
+    _inFlight--;
+    if (_inFlight == 0 && _closeWhenIdle) {
+      _closeWhenIdle = false;
+      unawaited(close());
+    }
+  }
+
   /// Closes the sessions (the vectors in memory stay); not a failure.
   Future<void> close() async {
     _idle?.cancel();
@@ -393,6 +426,8 @@ class LookModelHandler {
     final LookRunner? r = _runner;
     _runner = null;
     _loading = null;
+    _openThreads = null;
+    _closeWhenIdle = false;
     if (r != null) {
       try {
         await r.close();
@@ -406,6 +441,8 @@ class LookModelHandler {
     final LookRunner? r = _runner;
     _runner = null;
     _loading = null;
+    _openThreads = null;
+    _closeWhenIdle = false;
     if (r != null) r.close().catchError((_) {});
   }
 
@@ -432,17 +469,21 @@ class LookModelHandler {
 
   // ── vectors ──
 
-  /// One picture (encoded bytes) to a unit vector.
-  Future<Float32List> imageVector(Uint8List bytes) async {
+  /// One picture (encoded bytes) to a unit vector. r80: [use] decides the
+  /// session's threads when this call opens it.
+  Future<Float32List> imageVector(Uint8List bytes, {ModelUse use = ModelUse.waiting}) async {
     if (!isReady) throw StateError('No looks model downloaded (Settings → Recommendations → Looks model).');
     final Float32List tensor = await compute(_prepareEntry, (bytes, _inputSize, _mean, _std));
     Float32List out;
+    _inFlight++;
     try {
-      await _ensureLoaded();
+      await _ensureLoaded(use);
       out = await _runner!.image(tensor, _inputSize);
     } catch (e) {
       _fail(e);
       rethrow;
+    } finally {
+      _runEnded();
     }
     _touch();
     normalizeInPlace(out);
@@ -451,7 +492,7 @@ class LookModelHandler {
   }
 
   /// A sentence to a unit vector (null for an empty one); remembered.
-  Future<Float32List?> textVector(String text) async {
+  Future<Float32List?> textVector(String text, {ModelUse use = ModelUse.waiting}) async {
     final String t = text.trim();
     if (t.isEmpty) return null;
     if (!isReady) throw StateError('No looks model downloaded (Settings → Recommendations → Looks model).');
@@ -459,13 +500,16 @@ class LookModelHandler {
     final Float32List? hit = _recall(key);
     if (hit != null) return hit;
     Float32List out;
+    _inFlight++;
     try {
-      await _ensureLoaded();
+      await _ensureLoaded(use);
       final ClipTokens tokens = _tokenizer!.encode(t);
       out = await _runner!.text(tokens.ids, tokens.mask);
     } catch (e) {
       _fail(e);
       rethrow;
+    } finally {
+      _runEnded();
     }
     _touch();
     normalizeInPlace(out);
@@ -476,7 +520,7 @@ class LookModelHandler {
   /// The items' vectors from memory, the database, or their thumbnails
   /// through the model — in that order; an item whose thumbnail cannot be
   /// read or embedded gets null and the others go on.
-  Future<List<Float32List?>> imageVectors(List<BooruItem> items, {Booru? booru}) async {
+  Future<List<Float32List?>> imageVectors(List<BooruItem> items, {Booru? booru, ModelUse use = ModelUse.waiting}) async {
     final List<Float32List?> out = List.filled(items.length, null);
     if (!enabled || items.isEmpty) return out;
     final List<int> missing = [];
@@ -507,7 +551,7 @@ class LookModelHandler {
       try {
         final Uint8List? bytes = await thumbnailFetcher(items[i], booru);
         if (bytes == null || bytes.isEmpty) continue;
-        final Float32List v = await imageVector(bytes);
+        final Float32List v = await imageVector(bytes, use: use);
         out[i] = _remember('k:${keyOf(items[i])}', v);
         fresh[keyOf(items[i])] = v;
         embedded++;
@@ -647,12 +691,13 @@ class LookModelHandler {
     return s;
   }
 
-  Future<void> _ensureLoaded() => _loading ??= _load();
+  Future<void> _ensureLoaded(ModelUse use) => _loading ??= _load(use);
 
-  Future<void> _load() async {
+  Future<void> _load(ModelUse use) async {
     try {
       final String dir = dirFor(_settings.lookModel);
       _tokenizer ??= ClipTokenizer.fromJsonText(await File('$dir$tokenizerFileName').readAsString());
+      _openThreads = ModelTasks.threads(ModelKind.look, use);
       _runner = runnerFactory('$dir$imageFileName', '$dir$textFileName');
     } catch (e) {
       _loading = null;
@@ -697,5 +742,5 @@ class LookModelHandler {
     );
   }
 
-  static LookRunner _onnxRunner(String imagePath, String textPath) => OnnxLookRunner(imagePath, textPath);
+  static LookRunner _onnxRunner(String imagePath, String textPath) => OnnxLookRunner(imagePath, textPath, threads: LookModelHandler.maybe?._openThreads);
 }

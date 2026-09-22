@@ -9,6 +9,7 @@ import 'package:lolisnatcher/src/data/board.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/booru_tag.dart';
+import 'package:lolisnatcher/src/data/model_tasks.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/board_query.dart';
@@ -105,8 +106,8 @@ void main() {
     } catch (_) {}
   });
 
-  Future<Board> board({String description = '', List<String> must = const [], List<String> exclude = const [], List<String> sources = const [], String imageUrl = ''}) =>
-      BoardsHandler.instance.save(Board(id: BoardsHandler.instance.newId(), name: 'test', description: description, mustTags: must, excludeTags: exclude, sourceNames: sources, imageUrl: imageUrl));
+  Future<Board> board({String description = '', List<String> must = const [], List<String> exclude = const [], List<String> sources = const [], String imageUrl = '', bool hidden = false}) =>
+      BoardsHandler.instance.save(Board(id: BoardsHandler.instance.newId(), name: 'test', description: description, mustTags: must, excludeTags: exclude, sourceNames: sources, imageUrl: imageUrl, hidden: hidden));
 
   test('the factory hands a Boards tab to the board handler; the type is a feed, not a saveable source', () {
     final r = BooruHandlerFactory().getBooruHandler([boardBooru], 20);
@@ -387,6 +388,85 @@ void main() {
       expect(seeds, hasLength(11));
       expect(seeds[1].tag, 'g0');
       expect(seeds[1].weight, closeTo(2.7, 1e-9));
+    });
+  });
+
+  group('r80: a job switched off in Settings → Models is not asked on boards', () {
+    late int lookCalls;
+    late int pixelCalls;
+    late int embedCalls;
+
+    setUp(() {
+      ModelTasks.save = () async {};
+      lookCalls = 0;
+      pixelCalls = 0;
+      embedCalls = 0;
+      BoardQueryBuilder.storeLookup = (Booru booru, String query) async => query == 'beach' ? [entry('beach')] : const [];
+      BoardHandler.lookModelId = () => 'clip';
+      BoardHandler.referenceLook = (Board board) async {
+        lookCalls++;
+        return Float32List.fromList([1, 0]);
+      };
+      BoardHandler.lookText = (String text) async {
+        lookCalls++;
+        return Float32List.fromList([0, 1]);
+      };
+      BoardHandler.lookItems = (List<BooruItem> items, List<Booru> sources) async {
+        lookCalls++;
+        return [for (final BooruItem _ in items) Float32List.fromList([1, 0])];
+      };
+      BoardHandler.pixelModelId = () => 'wd';
+      BoardHandler.pixelTagger = (Board board) async {
+        pixelCalls++;
+        return const [(tag: 'beach', weight: 2.0)];
+      };
+      BoardHandler.embedText = (String text) async {
+        embedCalls++;
+        return Float32List.fromList([1, 0]);
+      };
+      BoardHandler.embedItems = (List<BooruItem> items, BooruHandler handler) async {
+        embedCalls++;
+        return [for (final BooruItem _ in items) Float32List.fromList([1, 0])];
+      };
+    });
+
+    tearDown(() {
+      ModelTasks.resetForTests();
+      SettingsHandler.instance.modelTasks.clear();
+    });
+
+    Future<void> open(Board bd) async {
+      fakes['one'] = _FakeSource(b('one'), 20)..answers = {'beach': [['beach', 'solo'], ['beach', 'sea']]};
+      await BoardHandler(boardBooru, 20).search('board:${bd.id}', null);
+    }
+
+    test('boards off for the looks model: a board is not looked at; Posts like this still is', () async {
+      await ModelTasks.set(ModelTasks.lookBoards, false);
+      await open(await board(description: 'beach', imageUrl: 'https://x.example/a.jpg', sources: ['one']));
+      expect(lookCalls, 0);
+      await open(await board(description: 'beach', imageUrl: 'https://x.example/b.jpg', sources: ['one'], hidden: true));
+      expect(lookCalls, greaterThan(0), reason: 'Posts like this is a job of its own');
+    });
+
+    test('Posts like this off for the looks model: a hidden board is not looked at; a board still is', () async {
+      await ModelTasks.set(ModelTasks.lookSimilar, false);
+      await open(await board(description: 'beach', imageUrl: 'https://x.example/c.jpg', sources: ['one'], hidden: true));
+      expect(lookCalls, 0);
+      await open(await board(description: 'beach', imageUrl: 'https://x.example/d.jpg', sources: ['one']));
+      expect(lookCalls, greaterThan(0));
+    });
+
+    test('boards off for the tagger and the text model: neither is asked; with them on, both are', () async {
+      await open(await board(description: 'beach', imageUrl: 'https://x.example/e.jpg', sources: ['one']));
+      expect(pixelCalls, 1);
+      expect(embedCalls, greaterThan(0));
+      pixelCalls = 0;
+      embedCalls = 0;
+      await ModelTasks.set(ModelTasks.taggerBoards, false);
+      await ModelTasks.set(ModelTasks.textBoards, false);
+      await open(await board(description: 'beach', imageUrl: 'https://x.example/f.jpg', sources: ['one']));
+      expect(pixelCalls, 0);
+      expect(embedCalls, 0);
     });
   });
 

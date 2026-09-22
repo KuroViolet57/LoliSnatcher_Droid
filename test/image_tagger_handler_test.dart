@@ -9,6 +9,7 @@ import 'package:image/image.dart' as img;
 
 import 'package:lolisnatcher/src/handlers/recommender/image_tagger_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/pixel_tags.dart';
+import 'package:lolisnatcher/src/data/model_tasks.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 
 /// r74: the downloadable image tagger (WD v3 ONNX exports from Hugging
@@ -359,6 +360,75 @@ void main() {
       // Idle again afterwards: now it closes.
       await Future<void>.delayed(const Duration(milliseconds: 150));
       expect(runner.closed, isTrue);
+    });
+  });
+
+  group('r80: the thread counts and the switches of Settings → Models', () {
+    setUp(() {
+      ModelTasks.save = () async {};
+      ModelTasks.maxThreads = () => 8;
+    });
+
+    tearDown(() {
+      ModelTasks.resetForTests();
+      SettingsHandler.instance.modelThreads.clear();
+      SettingsHandler.instance.aiModelsOff = false;
+    });
+
+    test('a picture you wait for opens the session with its count, a background run with the other', () async {
+      final ImageTaggerHandler t = ImageTaggerHandler.instance;
+      expect(await t.download('wd-vit'), isTrue);
+      await ModelTasks.setThreads(ModelKind.tagger, ModelUse.waiting, 6);
+      await ModelTasks.setThreads(ModelKind.tagger, ModelUse.background, 1);
+      await t.tag(png());
+      expect(lastThreads, 6);
+      await t.close();
+      runner = _FakeRunner(runner.probs);
+      await t.tag(png(), use: ModelUse.background);
+      expect(lastThreads, 1);
+    });
+
+    test('a new count applies at once: the idle session closes, the next picture opens it with the new count', () async {
+      final ImageTaggerHandler t = ImageTaggerHandler.instance;
+      expect(await t.download('wd-vit'), isTrue);
+      await t.tag(png());
+      expect(lastThreads, 4);
+      final _FakeRunner first = runner;
+      await ModelTasks.setThreads(ModelKind.tagger, ModelUse.waiting, 3);
+      t.threadsChanged();
+      await Future<void>.delayed(Duration.zero);
+      expect(first.closed, isTrue);
+      runner = _FakeRunner(first.probs);
+      await t.tag(png());
+      expect(factoryCalls, 2);
+      expect(lastThreads, 3);
+    });
+
+    test('a new count never closes a session under a run: it closes when the run ends', () async {
+      final ImageTaggerHandler t = ImageTaggerHandler.instance;
+      expect(await t.download('wd-vit'), isTrue);
+      await t.tag(png());
+      final Completer<void> gate = Completer<void>();
+      runner.gate = gate;
+      final Future<TaggerResult> slow = t.tag(png());
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      t.threadsChanged();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(runner.closed, isFalse);
+      gate.complete();
+      expect((await slow).count, greaterThan(0));
+      await Future<void>.delayed(Duration.zero);
+      expect(runner.closed, isTrue, reason: 'closed once the run is done');
+      expect(t.status.value.state, TaggerState.ready);
+    });
+
+    test('all models off: the tagger is off, its own switch untouched', () async {
+      final ImageTaggerHandler t = ImageTaggerHandler.instance;
+      expect(await t.download('wd-vit'), isTrue);
+      expect(t.enabled, isTrue);
+      SettingsHandler.instance.aiModelsOff = true;
+      expect(t.enabled, isFalse);
+      expect(SettingsHandler.instance.aiImageTagger, isTrue);
     });
   });
 

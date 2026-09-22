@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/booru_tag.dart';
+import 'package:lolisnatcher/src/data/model_tasks.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_tag_store.dart';
 import 'package:lolisnatcher/src/handlers/recommender/encoder_handler.dart';
@@ -159,7 +160,8 @@ class BoardQueryBuilder {
     if (score.isEmpty) return const [];
     // The encoder: how close each candidate reads to the whole description.
     // The strongest two dozen by the lexical score, embedded in one batch.
-    final embedder = embed;
+    // r80: Settings → Models can switch the text model's boards job off.
+    final embedder = ModelTasks.isOn(ModelTasks.textBoards) ? embed : null;
     if (embedder != null && description.trim().isNotEmpty) {
       Float32List? desc;
       try {

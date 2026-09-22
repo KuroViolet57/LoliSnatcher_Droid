@@ -10,6 +10,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/data/model_tasks.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/interests_handler.dart';
@@ -362,6 +363,48 @@ void main() {
     expect(report.encoderFeatures, greaterThan(0));
   });
 
+  test('r80: the text model reads items only for the jobs switched on in Settings → Models', () async {
+    if (!dbReady) return;
+    ModelTasks.save = () async {};
+    addTearDown(() {
+      ModelTasks.resetForTests();
+      SettingsHandler.instance.modelTasks.clear();
+    });
+    final _CountingWordRunner runner = _CountingWordRunner();
+    EncoderHandler.unregister();
+    final EncoderHandler encoder = EncoderHandler.register();
+    encoder.runnerFactory = (String p, {required bool wantsTokenTypeIds}) => runner;
+    encoder.fetcher = (String url, File to, {void Function(int received, int total)? onProgress, CancelToken? cancelToken}) async {
+        to.parent.createSync(recursive: true);
+        to.writeAsStringSync(
+          url.endsWith('vocab.txt')
+              ? '[PAD]\n[UNK]\n[CLS]\n[SEP]\nalice\nbob\nred\nhair\nblue\nliddell\nross\n'
+              : url.endsWith('config.json')
+              ? '{"hidden_size": 16}'
+              : url.endsWith('tokenizer_config.json')
+              ? '{"do_lower_case": true}'
+              : 'model',
+        );
+      };
+    addTearDown(EncoderHandler.unregister);
+    expect(await encoder.download('english'), isTrue);
+    final RecommenderHandler r = RecommenderHandler.instance;
+    await r.onEvent(booruPost('alice'), InteractionKind.favourite);
+    expect(runner.runs, greaterThan(0), reason: 'learning reads the item');
+
+    await ModelTasks.set(ModelTasks.textForYou, false);
+    int before = runner.runs;
+    await r.rerank([booruPost('bob', id: '2'), booruPost('bob_ross', id: '3')]);
+    await r.score(booruPost('alice_liddell', id: '4'));
+    expect(runner.runs, before, reason: 'For You is off for the text model');
+
+    await ModelTasks.set(ModelTasks.textLearning, false);
+    before = runner.runs;
+    await r.onEvent(booruPost('bob', id: '5'), InteractionKind.favourite);
+    expect(runner.runs, before, reason: 'learning is off for the text model');
+    expect((await r.report(RecommenderWorld.booru)).events, 2, reason: 'learning goes on from the tags alone');
+  });
+
   test('the log is bounded', () async {
     if (!dbReady) return;
     final db = SettingsHandler.instance.dbHandler;
@@ -456,7 +499,7 @@ void main() {
     test('look vectors join the features and shape a visual taste; nothing is asked for views', () async {
       if (!dbReady) return;
       int asked = 0;
-      RecommenderHandler.lookVectorsFor = (List<BooruItem> items, handler) async {
+      RecommenderHandler.lookVectorsFor = (List<BooruItem> items, handler, ModelUse use) async {
         asked += items.length;
         return [for (final BooruItem _ in items) Float32List.fromList([0.6, 0.8])];
       };
@@ -468,9 +511,43 @@ void main() {
       expect((await r.report(RecommenderWorld.booru)).lookTasteCount, 1);
       final Explanation e = await r.explain(booruPost('alice', id: '9'));
       expect(e.positive.map((p) => p.label), contains('how it looks'));
-      RecommenderHandler.lookVectorsFor = (List<BooruItem> items, handler) async => throw StateError('model down');
+      RecommenderHandler.lookVectorsFor = (List<BooruItem> items, handler, ModelUse use) async => throw StateError('model down');
       await r.onEvent(booruPost('alice', id: '2'), InteractionKind.favourite);
       expect((await r.report(RecommenderWorld.booru)).events, 2, reason: 'a failing model never blocks learning');
+    });
+
+    test('r80: the looks model learns and ranks only for the jobs switched on in Settings → Models', () async {
+      if (!dbReady) return;
+      ModelTasks.save = () async {};
+      addTearDown(() {
+        ModelTasks.resetForTests();
+        SettingsHandler.instance.modelTasks.clear();
+      });
+      final List<ModelUse> asked = [];
+      RecommenderHandler.lookVectorsFor = (List<BooruItem> items, handler, ModelUse use) async {
+        asked.add(use);
+        return [for (final BooruItem _ in items) Float32List.fromList([0.6, 0.8])];
+      };
+      final RecommenderHandler r = RecommenderHandler.instance;
+      await r.onEvent(booruPost('alice'), InteractionKind.favourite);
+      expect(asked, [ModelUse.background], reason: 'learning is background work');
+      await r.rerank([booruPost('alice', id: '2'), booruPost('bob', id: '3')]);
+      expect(asked.last, ModelUse.waiting, reason: 'For You is waited for');
+
+      asked.clear();
+      await ModelTasks.set(ModelTasks.lookForYou, false);
+      await r.rerank([booruPost('alice', id: '4'), booruPost('bob', id: '5')]);
+      await r.score(booruPost('carol'));
+      await r.explain(booruPost('alice', id: '6'));
+      expect(asked, isEmpty, reason: 'For You is off for the looks model');
+      await r.onEvent(booruPost('alice', id: '7'), InteractionKind.favourite);
+      expect(asked, [ModelUse.background], reason: 'learning is still on');
+
+      asked.clear();
+      await ModelTasks.set(ModelTasks.lookLearning, false);
+      await r.onEvent(booruPost('alice', id: '8'), InteractionKind.favourite);
+      expect(asked, isEmpty);
+      expect((await r.report(RecommenderWorld.booru)).events, 3, reason: 'learning goes on from the tags alone');
     });
   });
   group('r77: learning is a background step', () {
@@ -613,7 +690,7 @@ void main() {
       if (!dbReady) return;
       int looks = 0;
       int pixels = 0;
-      RecommenderHandler.lookVectorsFor = (List<BooruItem> items, handler) async {
+      RecommenderHandler.lookVectorsFor = (List<BooruItem> items, handler, ModelUse use) async {
         looks++;
         return List<Float32List?>.filled(items.length, Float32List.fromList([1, 0]));
       };
@@ -723,6 +800,16 @@ void main() {
 
 /// A stand-in encoder: every token id has its own fixed direction (a
 /// seeded pseudo-random vector), so texts sharing a word share a direction.
+class _CountingWordRunner extends _WordRunner {
+  int runs = 0;
+
+  @override
+  Future<Float32List> run(List<List<int>> ids, List<List<int>> mask) {
+    runs++;
+    return super.run(ids, mask);
+  }
+}
+
 class _WordRunner implements EmbeddingRunner {
   @override
   int get dim => 16;

@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+import 'package:lolisnatcher/src/data/model_tasks.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/utils/photo_picker.dart';
 import 'package:lolisnatcher/src/utils/picker_watch.dart';
@@ -19,6 +20,7 @@ import 'package:lolisnatcher/src/handlers/recommender/recommender_handler.dart';
 import 'package:lolisnatcher/src/handlers/boards_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/pages/foryou_page.dart';
+import 'package:lolisnatcher/src/pages/settings/models_page.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 import 'package:lolisnatcher/src/widgets/common/settings_widgets.dart';
 
@@ -136,6 +138,21 @@ class _RecommendationsPageState extends State<RecommendationsPage> {
               'and a frozen model keeps recommending.',
             ),
             leadingIcon: const Icon(Symbols.school_rounded),
+          ),
+          // r80: every job of every model, its threads, and all models off.
+          SettingsButton(
+            key: const ValueKey('models-page'),
+            name: 'Models: jobs and threads',
+            subtitle: Text(
+              settingsHandler.aiModelsOff
+                  ? 'All models are off.'
+                  : 'What each model does, switched on or off job by job, and how many threads it uses.',
+            ),
+            icon: const Icon(Symbols.tune_rounded),
+            action: () async {
+              await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const ModelsPage()));
+              if (mounted) setState(() {});
+            },
           ),
           if (!settingsHandler.dbEnabled)
             const Padding(
@@ -995,13 +1012,22 @@ class _TaggerSectionState extends State<_TaggerSection> {
                             icon: const Icon(Symbols.delete_rounded),
                             label: const Text('Delete'),
                           ),
-                        OutlinedButton.icon(
-                          key: const ValueKey('tagger-try'),
-                          // r78: never a dead grey rectangle - a tap that
-                          // cannot read a picture says why.
-                          onPressed: _tryIt,
-                          icon: const Icon(Symbols.image_search_rounded),
-                          label: Text(trying ? 'Reading…' : 'Try it on a picture'),
+                        // r80: a job of its own in Models; switched off, not built.
+                        ValueListenableBuilder<int>(
+                          valueListenable: ModelTasks.revision,
+                          builder: (context, _, _) => ModelTasks.isOn(ModelTasks.taggerTryIt)
+                              ? OutlinedButton.icon(
+                                  key: const ValueKey('tagger-try'),
+                                  // r78: never a dead grey rectangle - a tap that
+                                  // cannot read a picture says why.
+                                  onPressed: _tryIt,
+                                  icon: const Icon(Symbols.image_search_rounded),
+                                  label: Text(trying ? 'Reading…' : 'Try it on a picture'),
+                                )
+                              : Padding(
+                                  padding: const EdgeInsets.only(top: 10),
+                                  child: Text('Try it is switched off (Models).', key: const ValueKey('tagger-try-off'), style: muted),
+                                ),
                         ),
                       ],
                     ),

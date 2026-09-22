@@ -13,6 +13,7 @@ import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/data/board.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/data/model_tasks.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/boards_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/image_tagger_handler.dart';
@@ -633,7 +634,14 @@ class _BoardEditPageState extends State<BoardEditPage> {
           ),
           const SizedBox(height: 12),
           // r74: the downloaded tagger reads the picture into chips.
-          if (!BoardEditPage.taggerReady())
+          // r80: unless its boards job is switched off in Models.
+          if (!ModelTasks.isOn(ModelTasks.taggerBoards))
+            Text(
+              'Tags from the picture are switched off (Settings → Recommendations → Models).',
+              key: const ValueKey('board-tag-off'),
+              style: muted,
+            )
+          else if (!BoardEditPage.taggerReady())
             Text(
               'Download the image tagger (Settings → Recommendations → Image tagger) to read tags straight from the picture.',
               key: const ValueKey('board-tag-hint'),

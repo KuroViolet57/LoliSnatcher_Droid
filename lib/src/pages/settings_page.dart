@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -354,6 +356,8 @@ class _VersionButtonState extends State<VersionButton> {
           debugTaps++;
           if (debugTaps > 5) {
             settingsHandler.isDebug.value = true;
+            // r80: kept across restarts until turned off.
+            unawaited(settingsHandler.saveSettings(restate: false));
             FlashElements.showSnackbar(
               context: context,
               title: Text(
@@ -376,6 +380,7 @@ class _VersionButtonState extends State<VersionButton> {
         //
         debugTaps = 0;
         settingsHandler.isDebug.value = false;
+        unawaited(settingsHandler.saveSettings(restate: false));
         FlashElements.showSnackbar(
           context: context,
           title: Text(

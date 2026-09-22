@@ -14,12 +14,14 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import 'package:lolisnatcher/src/utils/perf_trace.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
+import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/secure_storage_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/pages/settings/logger_page.dart';
 import 'package:lolisnatcher/src/pages/settings/source_capture_page.dart';
 import 'package:lolisnatcher/src/pages/settings/text_parser_test_page.dart';
+import 'package:lolisnatcher/src/services/capture_files.dart';
 import 'package:lolisnatcher/src/utils/extensions.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/widgets/common/cancel_button.dart';
@@ -57,25 +59,20 @@ class _DebugPageState extends State<DebugPage> {
     await settingsHandler.saveSettings(restate: true);
   }
 
-  /// Saves the finished trace next to the settings, logs it, and shows it.
+  /// r80: the finished trace's report goes whole into the log (in numbered
+  /// parts: an entry used to be cut at 10,000 characters) and into a file in
+  /// the captures folder, then shows. A long one is shown in part: the whole
+  /// of it is in the file and the log.
   Future<void> _showTraceReport() async {
     final String report = PerfTrace.instance.report();
-
-    String? savedPath;
-    try {
-      final String dir = '${SettingsHandler.instance.path}traces${Platform.pathSeparator}';
-      await Directory(dir).create(recursive: true);
-      final String stamp = DateTime.now().toIso8601String().split('.').first.replaceAll(':', '-');
-      final File file = File('${dir}trace-$stamp.txt');
-      await file.writeAsString(report);
-      savedPath = file.path;
-    } catch (e, s) {
-      Logger.Inst().log('could not save the trace: $e', 'DebugPage', 'trace', LogTypes.exception, s: s);
-    }
-    // Also in the log page, so it travels with a log export.
-    Logger.Inst().log(report, 'PerfTrace', 'report', LogTypes.settingsLoad);
+    final SavedCapture? saved = await CaptureFiles.keepTraceReport(report);
+    final String? savedPath = saved?.where;
 
     if (!mounted) return;
+    const int shownChars = 20000;
+    final String shown = report.length > shownChars
+        ? '${report.substring(0, shownChars)}\n\n… ${report.length - shownChars} more characters in the file and the log.'
+        : report;
     await showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -84,7 +81,7 @@ class _DebugPageState extends State<DebugPage> {
           width: double.maxFinite,
           child: SingleChildScrollView(
             child: SelectableText(
-              report,
+              shown,
               style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
             ),
           ),
@@ -102,7 +99,19 @@ class _DebugPageState extends State<DebugPage> {
             icon: const Icon(Symbols.content_copy_rounded),
             label: const Text('Copy'),
             onPressed: () async {
-              await Clipboard.setData(ClipboardData(text: report));
+              try {
+                await Clipboard.setData(ClipboardData(text: report));
+              } catch (e) {
+                // Android refuses a very large copy across the Binder.
+                if (!context.mounted) return;
+                FlashElements.showSnackbar(
+                  context: context,
+                  title: const Text('Too long to copy'),
+                  content: Text(savedPath == null ? 'It is in the log page, in parts.' : 'It is in the log page and in $savedPath'),
+                  leadingIcon: Symbols.error_rounded,
+                );
+                return;
+              }
               if (!context.mounted) return;
               FlashElements.showSnackbar(
                 context: context,
@@ -116,6 +125,23 @@ class _DebugPageState extends State<DebugPage> {
         ],
       ),
     );
+  }
+
+  /// r80: a folder of its own for captures instead of the download folder.
+  Future<void> _pickCapturesFolder() async {
+    if (!Platform.isAndroid) {
+      FlashElements.showSnackbar(
+        context: context,
+        title: const Text('Android only'),
+        content: const Text('Here captures go into a "captures" folder inside the download folder.'),
+        leadingIcon: Symbols.info_rounded,
+      );
+      return;
+    }
+    final String path = await ServiceHandler.getSAFDirectoryAccess();
+    if (path.isEmpty || !mounted) return;
+    setState(() => settingsHandler.capturesPath = path);
+    await settingsHandler.saveSettings(restate: false);
   }
 
   @override
@@ -231,6 +257,25 @@ class _DebugPageState extends State<DebugPage> {
                   ),
                 ),
               ),
+
+              // r80: where a trace report and a source capture are written.
+              SettingsButton(
+                key: const ValueKey('captures-folder'),
+                name: 'Captures folder',
+                subtitle: Text(CaptureFiles.describeTarget()),
+                icon: const Icon(Symbols.folder_rounded),
+                action: _pickCapturesFolder,
+              ),
+              if (settingsHandler.capturesPath.isNotEmpty)
+                SettingsButton(
+                  key: const ValueKey('captures-folder-reset'),
+                  name: 'Use the download folder for captures',
+                  icon: const Icon(Symbols.refresh_rounded),
+                  action: () async {
+                    setState(() => settingsHandler.capturesPath = '');
+                    await settingsHandler.saveSettings(restate: false);
+                  },
+                ),
 
               SettingsButton(
                 name: context.loc.settings.debug.tagsManager,

@@ -13,6 +13,7 @@ import 'package:alice_lightweight/helper/alice_save_helper.dart';
 import 'package:fvp/fvp.dart' as fvp;
 import 'package:get/get.dart';
 import 'package:get_it/get_it.dart';
+import 'package:lolisnatcher/src/data/model_tasks.dart';
 import 'package:lolisnatcher/src/data/modular_ui.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/pages/settings/language_page.dart';
@@ -259,6 +260,17 @@ class SettingsHandler {
   // r76: frames from the playing video (VideoFrames) replace a video's
   // preview picture for the looks model, boards and the tagger.
   bool videoFrames = true;
+  // r80: Settings → Recommendations → Models (ModelTasks): every model off
+  // at once, a switch per job (`modelTasks`, only the ones switched off are
+  // stored) and each model's two thread counts (`modelThreads`, only the
+  // ones changed from today's are stored). Not declared settings: written
+  // next to them, like `modularUi`.
+  bool aiModelsOff = false;
+  final Map<String, bool> modelTasks = {};
+  final Map<String, int> modelThreads = {};
+  // r80: where captures (a trace report, a source capture) are written;
+  // '' = a "captures" folder inside the download folder.
+  String capturesPath = '';
   // Render the post-info panel (tags, metadata) as a Boorusama-style bottom
   // sheet dragged up from the bottom edge instead of the classic right-side
   // drawer. On by default; turn off to restore the side drawer.
@@ -406,6 +418,9 @@ class SettingsHandler {
     'showImageStats',
     'showVideoStats',
     'isDebug',
+    // r80: cores and folders belong to this phone.
+    'modelThreads',
+    'capturesPath',
     'desktopListsDrag',
     'incognitoKeyboard',
     'appAlias',
@@ -776,6 +791,20 @@ class SettingsHandler {
     'videoFrames': {
       'type': 'bool',
       'default': true,
+    },
+    'aiModelsOff': {
+      'type': 'bool',
+      'default': false,
+    },
+    'capturesPath': {
+      'type': 'string',
+      'default': '',
+    },
+    // r80: debug mode stays on across restarts until it is turned off (it
+    // was never saved: every start had it off again).
+    'isDebug': {
+      'type': 'bool',
+      'default': kDebugMode,
     },
     'useBottomInfoSheet': {
       'type': 'bool',
@@ -1417,6 +1446,12 @@ class SettingsHandler {
         return lookModel;
       case 'videoFrames':
         return videoFrames;
+      case 'aiModelsOff':
+        return aiModelsOff;
+      case 'capturesPath':
+        return capturesPath;
+      case 'isDebug':
+        return isDebug.value;
       case 'useBottomInfoSheet':
         return useBottomInfoSheet;
       case 'bottomSheetSizeMultiplier':
@@ -1733,6 +1768,15 @@ class SettingsHandler {
       case 'videoFrames':
         videoFrames = validatedValue;
         break;
+      case 'aiModelsOff':
+        aiModelsOff = validatedValue;
+        break;
+      case 'capturesPath':
+        capturesPath = validatedValue;
+        break;
+      case 'isDebug':
+        isDebug.value = validatedValue;
+        break;
       case 'useBottomInfoSheet':
         useBottomInfoSheet = validatedValue;
         break;
@@ -2035,6 +2079,10 @@ class SettingsHandler {
       }
     }
 
+    // r80: Settings → Models, written next to the declared settings.
+    json['modelTasks'] = Map<String, bool>.from(modelTasks);
+    json['modelThreads'] = Map<String, int>.from(modelThreads);
+
     // Add version info
     json['version'] = Constants.updateInfo.versionName;
     json['build'] = Constants.updateInfo.buildNumber;
@@ -2154,6 +2202,12 @@ class SettingsHandler {
     modularUi
       ..clear()
       ..addAll(ModularUi.parse(json['modularUi']));
+    modelTasks
+      ..clear()
+      ..addAll(ModelTasks.parse(json['modelTasks']));
+    modelThreads
+      ..clear()
+      ..addAll(ModelTasks.parseThreads(json['modelThreads']));
 
     try {
       final dynamic raw = json['hiddenTagsPerBooru'];

@@ -8,6 +8,7 @@ import 'package:get_it/get_it.dart';
 
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/data/model_tasks.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/database_handler.dart';
 import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
@@ -164,7 +165,8 @@ class RecommenderHandler {
 
   /// r75: the looks model's vectors for items (their thumbnails), for the
   /// learner's visual features. Replaced in tests.
-  static Future<List<Float32List?>> Function(List<BooruItem> items, BooruHandler? handler)? lookVectorsFor = _defaultLookVectorsFor;
+  /// r80: [ModelUse] says who waits (learning is background work).
+  static Future<List<Float32List?>> Function(List<BooruItem> items, BooruHandler? handler, ModelUse use)? lookVectorsFor = _defaultLookVectorsFor;
   static const Duration lookTimeout = Duration(seconds: 8);
 
   static void resetSeamsForTests() {
@@ -174,10 +176,10 @@ class RecommenderHandler {
 
   static Future<List<String>> _defaultPixelTagsFor(BooruItem item, BooruHandler? handler) => PixelTags.forItem(item, handler?.booru);
 
-  static Future<List<Float32List?>> _defaultLookVectorsFor(List<BooruItem> items, BooruHandler? handler) async {
+  static Future<List<Float32List?>> _defaultLookVectorsFor(List<BooruItem> items, BooruHandler? handler, ModelUse use) async {
     final LookModelHandler? l = LookModelHandler.maybe;
     if (l == null || !l.enabled) return List<Float32List?>.filled(items.length, null);
-    return l.imageVectors(items, booru: handler?.booru);
+    return l.imageVectors(items, booru: handler?.booru, use: use);
   }
 
   /// The looks model's name in feature names; 'look' when none is loaded
@@ -188,12 +190,13 @@ class RecommenderHandler {
   }
 
   /// The items' look vectors (booru world only); a failure or a wait past
-  /// [lookTimeout] leaves them out.
-  Future<List<Float32List?>> _looks(List<BooruItem> items, {BooruHandler? handler, RecommenderWorld? world}) async {
-    final Future<List<Float32List?>> Function(List<BooruItem> items, BooruHandler? handler)? f = lookVectorsFor;
-    if (f == null || items.isEmpty || world == RecommenderWorld.doujin) return List<Float32List?>.filled(items.length, null);
+  /// [lookTimeout] leaves them out. r80: nothing is asked for a [task]
+  /// switched off in Settings → Models.
+  Future<List<Float32List?>> _looks(List<BooruItem> items, {required ModelTask task, BooruHandler? handler, RecommenderWorld? world}) async {
+    final Future<List<Float32List?>> Function(List<BooruItem> items, BooruHandler? handler, ModelUse use)? f = lookVectorsFor;
+    if (f == null || items.isEmpty || world == RecommenderWorld.doujin || !ModelTasks.isOn(task)) return List<Float32List?>.filled(items.length, null);
     try {
-      final List<Float32List?> got = await f(items, handler).timeout(lookTimeout);
+      final List<Float32List?> got = await f(items, handler, task.use).timeout(lookTimeout);
       return got.length == items.length ? got : List<Float32List?>.filled(items.length, null);
     } catch (e) {
       Logger.Inst().log('look vectors for the recommender failed: $e', className, '_looks', LogTypes.booruHandlerInfo);
@@ -396,12 +399,14 @@ class RecommenderHandler {
   }) {
     FeatureVector f = ItemFeatures.of(item, world, handler: handler, namespaces: namespaces, extraTags: extraTags);
     final EncoderHandler? encoder = _encoder;
-    final Float32List? vector = encoder == null ? null : (embedding ?? (fromMemory ? encoder.cached(item) : null));
+    // r80: [fromMemory] is the scorer's (For You): the vectors kept in memory
+    // are used only while For You is on for that model.
+    final Float32List? vector = encoder == null ? null : (embedding ?? (fromMemory && ModelTasks.isOn(ModelTasks.textForYou) ? encoder.cached(item) : null));
     if (encoder != null && vector != null) {
       f = ItemFeatures.withEmbedding(f, vector, model: encoder.modelId, taste: _taste[world]?.vectorFor(encoder.modelId));
     }
     // r75: how the picture looks, when the looks model has seen it.
-    final Float32List? lookVec = look ?? (fromMemory ? LookModelHandler.maybe?.cached(item) : null);
+    final Float32List? lookVec = look ?? (fromMemory && ModelTasks.isOn(ModelTasks.lookForYou) ? LookModelHandler.maybe?.cached(item) : null);
     if (lookVec != null && world == RecommenderWorld.booru) {
       final String lm = _lookModelId;
       f = ItemFeatures.withLook(f, lookVec, model: lm, taste: _lookTaste[world]?.vectorFor(lm));
@@ -409,11 +414,12 @@ class RecommenderHandler {
     return f;
   }
 
-  Future<List<Float32List?>> _embeddings(List<BooruItem> items, {BooruHandler? handler}) async {
+  /// r80: nothing is read for a [task] switched off in Settings → Models.
+  Future<List<Float32List?>> _embeddings(List<BooruItem> items, {required ModelTask task, BooruHandler? handler}) async {
     final EncoderHandler? encoder = _encoder;
-    if (encoder == null) return List.filled(items.length, null);
+    if (encoder == null || !ModelTasks.isOn(task)) return List.filled(items.length, null);
     try {
-      return await encoder.embedItems(items, handler: handler);
+      return await encoder.embedItems(items, handler: handler, use: task.use);
     } catch (e, s) {
       Logger.Inst().log('embedding for the recommender failed: $e', className, '_embeddings', LogTypes.exception, s: s);
       return List.filled(items.length, null);
@@ -536,8 +542,8 @@ class RecommenderHandler {
       return;
     }
     await modelFor(world);
-    final Float32List? embedding = lite ? null : (await _embeddings([item], handler: handler)).first;
-    final Float32List? look = lite ? null : (await _looks([item], handler: handler, world: world)).first;
+    final Float32List? embedding = lite ? null : (await _embeddings([item], handler: handler, task: ModelTasks.textLearning)).first;
+    final Float32List? look = lite ? null : (await _looks([item], handler: handler, world: world, task: ModelTasks.lookLearning)).first;
     final List<String> pixel = lite ? const [] : await _pixelTags(item, world, reward, kind, handler: handler);
     final FeatureVector features = _featuresFor(item, world, handler: handler, namespaces: namespaces, embedding: embedding, look: look, extraTags: pixel);
     if (features.isEmpty) return;
@@ -562,8 +568,8 @@ class RecommenderHandler {
     final RecommenderWorld w = world ?? ItemFeatures.worldOf(item);
     final FtrlModel model = await modelFor(w);
     if (model.updates == 0) return Explanation.empty;
-    final Float32List? embedding = (await _embeddings([item], handler: handler)).first;
-    final Float32List? look = (await _looks([item], handler: handler, world: w)).first;
+    final Float32List? embedding = (await _embeddings([item], handler: handler, task: ModelTasks.textForYou)).first;
+    final Float32List? look = (await _looks([item], handler: handler, world: w, task: ModelTasks.lookForYou)).first;
     final FeatureVector f = _featuresFor(item, w, handler: handler, embedding: embedding, look: look);
     final Map<String, double> byLabel = {};
     for (int k = 0; k < f.hashes.length; k++) {
@@ -668,7 +674,7 @@ class RecommenderHandler {
     if (model.updates == 0) return List.filled(entries.length, 0.5);
     final EncoderHandler? encoder = _encoder;
     List<Float32List?> vectors = List.filled(entries.length, null);
-    if (encoder != null) {
+    if (encoder != null && ModelTasks.isOn(ModelTasks.textForYou)) {
       try {
         vectors = await encoder.embedTexts([for (final e in entries) EncoderHandler.textOfDoujinParts(namespacedTags: e.namespacedTags, title: e.title)]);
       } catch (_) {}
@@ -717,7 +723,7 @@ class RecommenderHandler {
     if (!learningEnabled) return;
     final Map<String, ({RecommenderWorld world, String host, FeatureVector features})>? previous = _exposed[surface];
     final Map<String, ({RecommenderWorld world, String host, FeatureVector features})> current = {};
-    final List<Float32List?> embeddings = lite ? List<Float32List?>.filled(items.length, null) : await _embeddings(items, handler: handler);
+    final List<Float32List?> embeddings = lite ? List<Float32List?>.filled(items.length, null) : await _embeddings(items, handler: handler, task: ModelTasks.textLearning);
     for (int i = 0; i < items.length; i++) {
       final BooruItem item = items[i];
       final String key = keyOf(item);
@@ -800,8 +806,8 @@ class RecommenderHandler {
     final RecommenderWorld w = world ?? ItemFeatures.worldOf(item);
     final FtrlModel model = await modelFor(w);
     if (model.updates == 0) return 0.5;
-    final Float32List? embedding = (await _embeddings([item], handler: handler)).first;
-    final Float32List? look = (await _looks([item], handler: handler, world: w)).first;
+    final Float32List? embedding = (await _embeddings([item], handler: handler, task: ModelTasks.textForYou)).first;
+    final Float32List? look = (await _looks([item], handler: handler, world: w, task: ModelTasks.lookForYou)).first;
     final FeatureVector f = _featuresFor(item, w, handler: handler, namespaces: namespaces, embedding: embedding, look: look);
     return model.predict(f.hashes, values: f.values);
   }
@@ -815,8 +821,8 @@ class RecommenderHandler {
     final FtrlModel model = await modelFor(world);
     if (model.updates == 0) return null;
     if (items != null) {
-      await _embeddings(items, handler: handler);
-      await _looks(items, handler: handler, world: world);
+      await _embeddings(items, handler: handler, task: ModelTasks.textForYou);
+      await _looks(items, handler: handler, world: world, task: ModelTasks.lookForYou);
     }
     return (BooruItem item) {
       final FeatureVector f = _featuresFor(item, world, handler: handler, fromMemory: true);
@@ -841,7 +847,7 @@ class RecommenderHandler {
     if (model.updates == 0) return 0.5;
     FeatureVector f = ItemFeatures.ofDoujinParts(namespacedTags: namespacedTags, title: title, host: host, pages: pages);
     final EncoderHandler? encoder = _encoder;
-    if (encoder != null) {
+    if (encoder != null && ModelTasks.isOn(ModelTasks.textForYou)) {
       try {
         final Float32List? v = await encoder.embedText(EncoderHandler.textOfDoujinParts(namespacedTags: namespacedTags, title: title));
         if (v != null) f = ItemFeatures.withEmbedding(f, v, model: encoder.modelId, taste: _taste[RecommenderWorld.doujin]?.vectorFor(encoder.modelId));
@@ -866,8 +872,8 @@ class RecommenderHandler {
     final FtrlModel model = await modelFor(w);
     if (model.updates == 0) return items;
     final int n = items.length;
-    final List<Float32List?> embeddings = await _embeddings(items, handler: handler);
-    final List<Float32List?> looks = await _looks(items, handler: handler, world: w);
+    final List<Float32List?> embeddings = await _embeddings(items, handler: handler, task: ModelTasks.textForYou);
+    final List<Float32List?> looks = await _looks(items, handler: handler, world: w, task: ModelTasks.lookForYou);
     final List<({BooruItem item, double combined, double novelty, int index})> scored = [];
     for (int i = 0; i < n; i++) {
       final FeatureVector f = _featuresFor(items[i], w, handler: handler, embedding: embeddings[i], look: looks[i]);

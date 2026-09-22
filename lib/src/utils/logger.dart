@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:developer' as dev;
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -125,6 +126,45 @@ class Logger {
     } else {
       _talkerInstance?.verbose(logStr, null, s);
     }
+  }
+
+  /// r80: a long text (a trace report) into the log whole. [log] cuts an
+  /// entry at 10,000 characters, so it goes in numbered parts, cut at a line
+  /// end where one falls in a part's second half. Redacted once, whole,
+  /// before it is cut: a secret split between two parts would slip past.
+  void logParts(
+    String text,
+    String callerClass,
+    String callerFunction,
+    LogTypes? logType, {
+    required String title,
+    int partChars = 9000,
+  }) {
+    String body = text;
+    try {
+      body = redactSecrets(text);
+    } catch (_) {}
+    final List<String> parts = splitParts(body, partChars);
+    for (int i = 0; i < parts.length; i++) {
+      log('$title (part ${i + 1}/${parts.length})\n${parts[i]}', callerClass, callerFunction, logType);
+    }
+  }
+
+  /// [text] in pieces of at most [max] characters; joined, they are [text].
+  static List<String> splitParts(String text, int max) {
+    if (text.isEmpty) return const [''];
+    final List<String> out = [];
+    int start = 0;
+    while (start < text.length) {
+      int end = math.min(start + max, text.length);
+      if (end < text.length) {
+        final int lineEnd = text.lastIndexOf('\n', end - 1);
+        if (lineEnd >= start + max ~/ 2) end = lineEnd + 1;
+      }
+      out.add(text.substring(start, end));
+      start = end;
+    }
+    return out;
   }
 
   /// r69: the one line the app writes about a request body, built redacted.

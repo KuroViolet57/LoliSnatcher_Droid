@@ -8,6 +8,7 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/source_capture_handler.dart';
+import 'package:lolisnatcher/src/services/capture_files.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 import 'package:lolisnatcher/src/widgets/common/settings_widgets.dart';
 import 'package:lolisnatcher/src/widgets/webview/webview_page.dart';
@@ -149,7 +150,21 @@ class _SourceCapturePageState extends State<SourceCapturePage> {
       capture.detachController();
       capture.stop();
       if (mounted) setState(() {});
+      // r80: kept as a file in the captures folder as soon as it stops.
+      unawaited(_saveToCaptures());
     });
+  }
+
+  /// r80: the capture into the captures folder; said in a snackbar.
+  Future<void> _saveToCaptures() async {
+    final SavedCapture? saved = await capture.saveToCaptures();
+    if (saved == null || !mounted) return;
+    FlashElements.showSnackbar(
+      context: context,
+      title: const Text('Capture saved'),
+      content: Text(saved.fellBack ? "${saved.where}\n(the app's own folder - see Debug → Captures folder)" : saved.where),
+      leadingIcon: Symbols.save_rounded,
+    );
   }
 
   Future<void> _fetchBodies() async {
@@ -174,6 +189,8 @@ class _SourceCapturePageState extends State<SourceCapturePage> {
       title: Text('Fetched ${urls.length} response bodies'),
       leadingIcon: Symbols.check_rounded,
     );
+    // r80: the file in the captures folder gets the bodies too.
+    unawaited(_saveToCaptures());
   }
 
   Future<void> _share() async {
@@ -310,6 +327,14 @@ class _SourceCapturePageState extends State<SourceCapturePage> {
                 enabled: false,
               ),
 
+              SettingsButton(
+                key: const ValueKey('capture-save'),
+                name: 'Save to the captures folder',
+                subtitle: Text(CaptureFiles.describeTarget()),
+                icon: const Icon(Symbols.save_rounded),
+                enabled: hasCapture && !busy,
+                action: _saveToCaptures,
+              ),
               SettingsButton(
                 name: 'Share the capture file',
                 icon: const Icon(Symbols.share_rounded),

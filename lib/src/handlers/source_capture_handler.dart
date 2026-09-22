@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/services/capture_files.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/log_redaction.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
@@ -97,6 +98,9 @@ class SourceCaptureHandler {
   String _target = '';
   String get target => _target;
 
+  /// r80: when this capture started; names its file in the captures folder.
+  DateTime? _startedAt;
+
   List<CaptureEntry> get entries => List.unmodifiable(_entries);
 
   int get pageCount => _entries.where((e) => e.kind == CaptureKind.page).length;
@@ -109,6 +113,7 @@ class SourceCaptureHandler {
     _seenResources.clear();
     _totalChars = 0;
     _target = target;
+    _startedAt = DateTime.now();
     _recording = true;
     _resetJournal();
     _bump();
@@ -126,6 +131,7 @@ class SourceCaptureHandler {
     _seenXhr.clear();
     _totalChars = 0;
     _recording = false;
+    _startedAt = null;
     _deleteJournal();
     _bump();
   }
@@ -626,6 +632,7 @@ class SourceCaptureHandler {
         if (decoded is! Map) continue;
         if (decoded.containsKey('started')) {
           _target = decoded['target']?.toString() ?? '';
+          _startedAt = DateTime.tryParse(decoded['started']?.toString() ?? '');
           continue;
         }
         final CaptureEntry? entry = _entryFromJson(decoded);
@@ -770,6 +777,21 @@ class SourceCaptureHandler {
     }
 
     return out.toString();
+  }
+
+  /// r80: one file name per capture, so saving it again replaces the file.
+  String get captureFileName {
+    _startedAt ??= DateTime.now();
+    final String host = (Uri.tryParse(_target)?.host ?? '').replaceAll('.', '-');
+    return 'source-capture-${host.isEmpty ? 'site' : host}-${CaptureFiles.stamp(_startedAt!)}.txt';
+  }
+
+  /// r80: the capture as a file in the captures folder (the download
+  /// folder's "captures", or the folder picked for captures); saved again,
+  /// it replaces the file. Null when there is nothing captured yet.
+  Future<SavedCapture?> saveToCaptures() async {
+    if (_entries.isEmpty) return null;
+    return CaptureFiles.save(captureFileName, buildBundle());
   }
 
   /// Writes the bundle into the app CACHE directory — the only tree the

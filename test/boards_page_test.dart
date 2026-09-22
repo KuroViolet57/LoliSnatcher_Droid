@@ -10,6 +10,7 @@ import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/data/board.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/data/model_tasks.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/boards_handler.dart';
@@ -269,6 +270,21 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('board-save')));
       await tester.pumpAndSettle();
       expect(store.boards.single.mustTags, ['cat_ears', 'sakamata_chloe']);
+    });
+
+    testWidgets('r80: with boards off for the tagger in Models, the row says so instead of the button', (tester) async {
+      BoardEditPage.taggerReady = () => true;
+      ModelTasks.save = () async {};
+      addTearDown(() {
+        ModelTasks.resetForTests();
+        SettingsHandler.instance.modelTasks.clear();
+      });
+      await ModelTasks.set(ModelTasks.taggerBoards, false);
+      await tester.pumpWidget(const MaterialApp(home: BoardEditPage()));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('board-tag-image')), findsNothing);
+      await tester.scrollUntilVisible(find.byKey(const ValueKey('board-tag-off')), 200, scrollable: find.byType(Scrollable).first);
+      expect(find.byKey(const ValueKey('board-tag-off')), findsOneWidget);
     });
 
     testWidgets('without a downloaded tagger the row says where to get one', (tester) async {

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -6,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/data/model_tasks.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/recommender/encoder_handler.dart';
@@ -26,12 +28,21 @@ class _FakeRunner implements EmbeddingRunner {
   int runs = 0;
   int tokensSeen = 0;
   bool closed = false;
+  bool closedDuringRun = false;
+  bool _running = false;
+  Completer<void>? gate;
 
   /// Token id → a one-hot at 1 + id % (dim − 1); slot 0 is never used, so a
   /// padding token that leaked into the mean would show there.
   @override
   Future<Float32List> run(List<List<int>> ids, List<List<int>> mask) async {
     runs++;
+    _running = true;
+    try {
+      if (gate != null) await gate!.future;
+    } finally {
+      _running = false;
+    }
     final int length = ids.first.length;
     final Float32List out = Float32List(ids.length * length * dim);
     for (int b = 0; b < ids.length; b++) {
@@ -44,7 +55,10 @@ class _FakeRunner implements EmbeddingRunner {
   }
 
   @override
-  Future<void> close() async => closed = true;
+  Future<void> close() async {
+    if (_running) closedDuringRun = true;
+    closed = true;
+  }
 }
 
 void main() {
@@ -197,6 +211,69 @@ void main() {
       expect(Directory(e.dirFor('english')).existsSync(), isFalse);
       expect(SettingsHandler.instance.encoderModel, '');
       expect(runner.closed, isTrue, reason: 'the session is closed with the files');
+    });
+  });
+
+  group('r80: the thread counts and the switches of Settings → Models', () {
+    setUp(() {
+      ModelTasks.save = () async {};
+      ModelTasks.maxThreads = () => 8;
+    });
+
+    tearDown(() {
+      ModelTasks.resetForTests();
+      SettingsHandler.instance.modelThreads.clear();
+      SettingsHandler.instance.aiModelsOff = false;
+    });
+
+    test("learning opens the model with the background count, For You with the waiting count; today's are 1 and 1", () async {
+      final EncoderHandler e = EncoderHandler.instance;
+      await e.download('english');
+      await e.embedTexts(['alice'], use: ModelUse.background);
+      expect(e.openedThreads, 1);
+      await e.close();
+      await ModelTasks.setThreads(ModelKind.text, ModelUse.background, 2);
+      await ModelTasks.setThreads(ModelKind.text, ModelUse.waiting, 4);
+      await e.embedTexts(['bob'], use: ModelUse.background);
+      expect(e.openedThreads, 2);
+      await e.close();
+      await e.embedItems([post('carol')]);
+      expect(e.openedThreads, 4, reason: 'waiting is the default');
+    });
+
+    test('a new count applies at once, and never closes the model under a run', () async {
+      final EncoderHandler e = EncoderHandler.instance;
+      await e.download('english');
+      await e.embedText('alice');
+      e.threadsChanged();
+      await Future<void>.delayed(Duration.zero);
+      expect(runner.closed, isTrue, reason: 'idle: closed now, opened again with the new count');
+
+      runner = _FakeRunner();
+      final Completer<void> gate = Completer<void>();
+      runner.gate = gate;
+      final Future<Float32List?> slow = e.embedText('bob');
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      e.threadsChanged();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(runner.closed, isFalse);
+      gate.complete();
+      expect(await slow, isNotNull);
+      await Future<void>.delayed(Duration.zero);
+      expect(runner.closedDuringRun, isFalse);
+      expect(runner.closed, isTrue, reason: 'closed once the run is done');
+      expect(e.status.value.state, EncoderState.ready);
+    });
+
+    test('all models off: the text model is off and answers nulls, its own switch untouched', () async {
+      final EncoderHandler e = EncoderHandler.instance;
+      await e.download('english');
+      expect(e.enabled, isTrue);
+      SettingsHandler.instance.aiModelsOff = true;
+      expect(e.enabled, isFalse);
+      expect(await e.embedText('alice'), isNull);
+      expect(runner.runs, 0);
+      expect(SettingsHandler.instance.aiEncoder, isTrue);
     });
   });
 

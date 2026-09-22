@@ -11,6 +11,7 @@ import 'package:get_it/get_it.dart';
 
 import 'package:lolisnatcher/src/boorus/doujin/doujin_tag_namespaces.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/data/model_tasks.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
@@ -184,6 +185,38 @@ class EncoderHandler {
   /// Vectors by item key (`k:`) and by text (`t:`), most recent last.
   final LinkedHashMap<String, Float32List> _memory = LinkedHashMap();
 
+  /// r80: the threads the open session was opened with (Settings → Models:
+  /// the work that opens the model decides); null while it is closed.
+  int? get openedThreads => _openThreads;
+  int? _openThreads;
+
+  /// r80: runs using the session right now, and a close asked for while
+  /// one was running.
+  int _inFlight = 0;
+  bool _closeWhenIdle = false;
+
+  /// r80: the thread counts changed (Settings → Models): the session is
+  /// closed so the next use opens it with the new count - at once when
+  /// nothing runs, else as soon as the running work is done. Never under a
+  /// run: a run that fails switches the model off until a restart.
+  void threadsChanged() {
+    if (_runner == null && _loading == null) return;
+    if (_inFlight > 0) {
+      _closeWhenIdle = true;
+      return;
+    }
+    unawaited(close());
+  }
+
+  /// A run ended; a close asked for meanwhile happens now.
+  void _runEnded() {
+    _inFlight--;
+    if (_inFlight == 0 && _closeWhenIdle) {
+      _closeWhenIdle = false;
+      unawaited(close());
+    }
+  }
+
   static String fileUrl(String repo, String file) => 'https://huggingface.co/$repo/resolve/main/$file';
 
   /// The repo behind a setting value: a preset id, or a repo id as typed.
@@ -194,7 +227,7 @@ class EncoderHandler {
   String dirFor(String setting) => '${_settings.path}encoder${Platform.pathSeparator}${slugOf(repoOf(setting))}${Platform.pathSeparator}';
 
   /// The encoder is downloaded and the switch is on.
-  bool get enabled => _settings.aiEncoder && status.value.state == EncoderState.ready;
+  bool get enabled => _settings.aiEncoder && !_settings.aiModelsOff && status.value.state == EncoderState.ready;
 
   /// Names the model in feature names and cache rows.
   String get modelId => _slug;
@@ -358,6 +391,8 @@ class EncoderHandler {
     final EmbeddingRunner? r = _runner;
     _runner = null;
     _loading = null;
+    _openThreads = null;
+    _closeWhenIdle = false;
     if (r != null) {
       try {
         await r.close();
@@ -434,13 +469,14 @@ class EncoderHandler {
 
   // ── vectors ──
 
-  Future<void> _ensureLoaded() => _loading ??= _load();
+  Future<void> _ensureLoaded(ModelUse use) => _loading ??= _load(use);
 
-  Future<void> _load() async {
+  Future<void> _load(ModelUse use) async {
     try {
       final String dir = dirFor(_settings.encoderModel);
       final String vocab = await File('${dir}vocab.txt').readAsString();
       _tokenizer = WordPieceTokenizer.fromVocabText(vocab, lowerCase: _lowerCase);
+      _openThreads = ModelTasks.threads(ModelKind.text, use);
       _runner = runnerFactory('${dir}model.onnx', wantsTokenTypeIds: _tokenTypeIds);
     } catch (e) {
       _loading = null;
@@ -454,6 +490,7 @@ class EncoderHandler {
   void _fail(Object e) {
     Logger.Inst().log('encoder failed: $e', className, '_fail', LogTypes.exception);
     _loading = null;
+    _openThreads = null;
     final EmbeddingRunner? r = _runner;
     _runner = null;
     if (r != null) r.close().catchError((_) {});
@@ -520,9 +557,10 @@ class EncoderHandler {
   }
 
   /// The vector of one text; null when the encoder is off or fails.
-  Future<Float32List?> embedText(String text) async => (await embedTexts([text])).first;
+  /// r80: [use] decides the session's threads when this call opens it.
+  Future<Float32List?> embedText(String text, {ModelUse use = ModelUse.waiting}) async => (await embedTexts([text], use: use)).first;
 
-  Future<List<Float32List?>> embedTexts(List<String> texts) async {
+  Future<List<Float32List?>> embedTexts(List<String> texts, {ModelUse use = ModelUse.waiting}) async {
     final List<Float32List?> out = List.filled(texts.length, null);
     if (!enabled || texts.isEmpty) return out;
     final List<int> missing = [];
@@ -552,8 +590,9 @@ class EncoderHandler {
     // tagger's and the looks model's; they never were.
     final Stopwatch modelTime = Stopwatch();
     String cpu = 'CPU';
+    _inFlight++;
     try {
-      await _ensureLoaded();
+      await _ensureLoaded(use);
       final WordPieceTokenizer tokenizer = _tokenizer!;
       final EmbeddingRunner runner = _runner!;
       if (runner is OnnxEmbeddingRunner) cpu = 'CPU x${runner.threads}';
@@ -584,6 +623,8 @@ class EncoderHandler {
       }
     } catch (e) {
       _fail(e);
+    } finally {
+      _runEnded();
     }
     if (fresh.isNotEmpty) {
       PerfTrace.instance.event('model.encoder', '${fresh.length} texts ${modelTime.elapsedMilliseconds} ms');
@@ -633,7 +674,7 @@ class EncoderHandler {
 
   /// The items' vectors, from memory, the database, or the model — in that
   /// order; null where the encoder is off or the item has nothing to read.
-  Future<List<Float32List?>> embedItems(List<BooruItem> items, {BooruHandler? handler}) async {
+  Future<List<Float32List?>> embedItems(List<BooruItem> items, {BooruHandler? handler, ModelUse use = ModelUse.waiting}) async {
     final List<Float32List?> out = List.filled(items.length, null);
     if (!enabled || items.isEmpty) return out;
     final List<int> missing = [];
@@ -659,7 +700,7 @@ class EncoderHandler {
     final List<String> texts = [for (final int i in missing) textOf(items[i], ItemFeatures.worldOf(items[i]), handler: handler)];
     final List<int> readable = [for (int j = 0; j < missing.length; j++) if (texts[j].isNotEmpty) j];
     if (readable.isEmpty) return out;
-    final List<Float32List?> vectors = await embedTexts([for (final int j in readable) texts[j]]);
+    final List<Float32List?> vectors = await embedTexts([for (final int j in readable) texts[j]], use: use);
     final Map<String, Float32List> fresh = {};
     for (int k = 0; k < readable.length; k++) {
       final Float32List? v = vectors[k];
@@ -693,6 +734,10 @@ class EncoderHandler {
     );
   }
 
-  static EmbeddingRunner _onnxRunner(String modelPath, {required bool wantsTokenTypeIds}) =>
-      OnnxEmbeddingRunner(modelPath, dim: EncoderHandler.maybe?._dim ?? 0, wantsTokenTypeIds: wantsTokenTypeIds);
+  static EmbeddingRunner _onnxRunner(String modelPath, {required bool wantsTokenTypeIds}) => OnnxEmbeddingRunner(
+    modelPath,
+    dim: EncoderHandler.maybe?._dim ?? 0,
+    wantsTokenTypeIds: wantsTokenTypeIds,
+    threads: EncoderHandler.maybe?._openThreads,
+  );
 }

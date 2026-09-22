@@ -7,6 +7,7 @@ import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/booru_tag.dart';
+import 'package:lolisnatcher/src/data/model_tasks.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/board_query.dart';
@@ -116,6 +117,31 @@ void main() {
     final List<WeightedTag> tags = await BoardQueryBuilder.deriveTags('red hair girl', sources: [b('one')], limit: 2);
     expect(batches, 1);
     expect(tags.map((t) => t.tag).toList(), ['red_hair', 'red_car']);
+  });
+
+  test('r80: with boards off for the text model in Settings → Models, the words alone rank the tags', () async {
+    ModelTasks.save = () async {};
+    addTearDown(() {
+      ModelTasks.resetForTests();
+      SettingsHandler.instance.modelTasks.clear();
+    });
+    BoardQueryBuilder.storeLookup = (Booru booru, String query) async => query == 'red'
+        ? const [BooruTagEntry(name: 'red_hair', tagType: TagType.none), BooruTagEntry(name: 'red_car', tagType: TagType.none)]
+        : const [];
+    BoardQueryBuilder.siteSuggest = (handler, String word) async => const <String>[];
+    int asked = 0;
+    BoardQueryBuilder.embed = (String text) async {
+      asked++;
+      return Float32List.fromList([1, 0]);
+    };
+    BoardQueryBuilder.embedMany = (List<String> texts) async {
+      asked++;
+      return [for (final String _ in texts) Float32List.fromList([1, 0])];
+    };
+    await ModelTasks.set(ModelTasks.textBoards, false);
+    final List<WeightedTag> tags = await BoardQueryBuilder.deriveTags('red hair girl', sources: [b('one')], limit: 2);
+    expect(asked, 0);
+    expect(tags.map((t) => t.tag), containsAll(['red_hair', 'red_car']));
   });
 
   test('deriveTags: must-have and excluded tags never come back as derived ones; nothing known -> empty', () async {

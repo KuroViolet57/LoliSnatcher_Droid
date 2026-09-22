@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:lolisnatcher/src/data/model_tasks.dart';
 import 'package:lolisnatcher/src/handlers/recommender/encoder_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/image_tagger_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/look_model_handler.dart';
@@ -18,6 +19,7 @@ import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/pages/foryou_page.dart';
+import 'package:lolisnatcher/src/pages/settings/models_page.dart';
 import 'package:lolisnatcher/src/pages/settings/recommendations_page.dart';
 import 'package:lolisnatcher/src/utils/picker_watch.dart';
 
@@ -303,6 +305,39 @@ void main() {
     await settle(tester);
     expect(SettingsHandler.instance.imageTaggerModel, '');
     expect(find.textContaining('No image tagger'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('r80: Models opens from here; with Try it switched off there, the button is not built', (tester) async {
+    tester.view.physicalSize = const Size(1080, 8000);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.reset);
+    ModelTasks.save = () async {};
+    addTearDown(() {
+      ModelTasks.resetForTests();
+      SettingsHandler.instance.modelTasks.clear();
+    });
+    ImageTaggerHandler.unregister();
+    final ImageTaggerHandler tagger = ImageTaggerHandler.register();
+    tagger.runnerFactory = (String p, int threads) => _NoRunner();
+    addTearDown(ImageTaggerHandler.unregister);
+    await warm(tester);
+    await tester.pumpWidget(const MaterialApp(home: RecommendationsPage()));
+    await settle(tester);
+    expect(find.byKey(const ValueKey('tagger-try')), findsOneWidget);
+    expect(find.byKey(const ValueKey('models-page')), findsOneWidget);
+
+    await ModelTasks.set(ModelTasks.taggerTryIt, false);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpWidget(const MaterialApp(home: RecommendationsPage()));
+    await settle(tester);
+    expect(find.byKey(const ValueKey('tagger-try')), findsNothing);
+    expect(find.byKey(const ValueKey('tagger-try-off')), findsOneWidget, reason: 'says where it was switched off');
+
+    await tester.tap(find.byKey(const ValueKey('models-page')));
+    await tester.pumpAndSettle();
+    expect(find.byType(ModelsPage), findsOneWidget);
+    expect(find.byKey(const ValueKey('models-all-off')), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 

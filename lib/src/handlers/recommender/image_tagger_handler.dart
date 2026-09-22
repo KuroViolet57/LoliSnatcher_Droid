@@ -9,6 +9,7 @@ import 'package:dio/dio.dart';
 import 'package:get_it/get_it.dart';
 import 'package:image/image.dart' as img;
 
+import 'package:lolisnatcher/src/data/model_tasks.dart';
 import 'package:lolisnatcher/src/handlers/recommender/onnx_tag_runner.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
@@ -163,13 +164,10 @@ typedef TagRunnerFactory = TagRunner Function(String modelPath, int threads);
 /// r79: who is waiting for a picture's tags. The session's thread count is
 /// fixed when it opens (the ONNX plugin has no per-run setting), so the
 /// purpose of the call that opens it decides.
-enum TaggerUse {
-  /// Try it, a board's reference picture, the board editor: someone waits.
-  waiting,
-
-  /// A reaction's tags, in the background (ModelWork).
-  background,
-}
+/// r80: the same two uses as the text and looks models (ModelUse): Try it,
+/// a board's reference picture, the board editor wait; a reaction's tags
+/// are background work.
+typedef TaggerUse = ModelUse;
 
 Float32List _prepareEntry((Uint8List, int) args) => ImageTaggerHandler.prepareTensor(args.$1, args.$2);
 
@@ -208,8 +206,25 @@ class ImageTaggerHandler {
   /// r79: measured on the S24 Ultra, the model part of a picture took
   /// 1.1-1.9 s at 4 threads (19 Sep) and 1.8-4.0 s at 2 (20 Sep). The looks
   /// model and the text encoder showed no such gain, and stay at 1.
-  static const int waitingThreads = 4;
-  static const int backgroundThreads = 2;
+  /// r80: today's counts; Settings → Models can change them.
+  static int get waitingThreads => ModelTasks.defaultThreads['tagger.waiting']!;
+  static int get backgroundThreads => ModelTasks.defaultThreads['tagger.background']!;
+
+  /// r80: a close asked for (the thread counts changed) while a run was
+  /// using the session.
+  bool _closeWhenIdle = false;
+
+  /// r80: the thread counts changed (Settings → Models): the session is
+  /// closed so the next picture opens it with the new count - at once when
+  /// nothing runs, else as soon as the running pictures are done.
+  void threadsChanged() {
+    if (_runner == null && _loading == null) return;
+    if (_inFlight > 0) {
+      _closeWhenIdle = true;
+      return;
+    }
+    unawaited(close());
+  }
 
   /// The session (several hundred MB of RAM) is closed this long after the
   /// last picture; the next one opens it again.
@@ -248,7 +263,7 @@ class ImageTaggerHandler {
   bool get isReady => status.value.state == TaggerState.ready;
 
   /// The tagger is downloaded and the switch is on.
-  bool get enabled => _settings.aiImageTagger && isReady;
+  bool get enabled => _settings.aiImageTagger && !_settings.aiModelsOff && isReady;
 
   /// Names the model (a board's cached tags belong to one model).
   String get modelId => _slug;
@@ -426,6 +441,7 @@ class ImageTaggerHandler {
   Future<void> close() async {
     _idle?.cancel();
     _idle = null;
+    _closeWhenIdle = false;
     final TagRunner? r = _runner;
     _runner = null;
     _loading = null;
@@ -439,6 +455,7 @@ class ImageTaggerHandler {
   void _dropRunner() {
     _idle?.cancel();
     _idle = null;
+    _closeWhenIdle = false;
     final TagRunner? r = _runner;
     _runner = null;
     _loading = null;
@@ -502,7 +519,11 @@ class ImageTaggerHandler {
     }
     final int modelMs = sw.elapsedMilliseconds;
     final String provider = _runner?.provider ?? '';
-    _touch();
+    if (_inFlight == 0 && _closeWhenIdle) {
+      unawaited(close());
+    } else {
+      _touch();
+    }
     final TaggerResult r = interpret(probs, _rows ?? const [], decodeMs: decodeMs, modelMs: modelMs, provider: provider);
     PerfTrace.instance.event('model.tagger', 'decode $decodeMs ms, model $modelMs ms');
     Logger.Inst().log(
@@ -648,7 +669,7 @@ class ImageTaggerHandler {
       final String dir = dirFor(_settings.imageTaggerModel);
       _rows ??= parseTagsCsv(await File('$dir$tagsFileName').readAsString());
       if (_rows!.isEmpty) throw const FormatException('the tag list is empty');
-      _runner = runnerFactory('$dir$modelFileName', use == TaggerUse.waiting ? waitingThreads : backgroundThreads);
+      _runner = runnerFactory('$dir$modelFileName', ModelTasks.threads(ModelKind.tagger, use));
     } catch (e) {
       _loading = null;
       rethrow;
