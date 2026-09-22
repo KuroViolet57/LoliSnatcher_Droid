@@ -116,6 +116,59 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets("r81: frames for For You and for other tabs start on 'While it plays'; another choice is stored", (tester) async {
+    await open(tester);
+    SegmentedButton<FrameMode> choice(String key) =>
+        tester.widget<SegmentedButton<FrameMode>>(find.descendant(of: find.byKey(ValueKey(key)), matching: find.byType(SegmentedButton<FrameMode>)));
+    expect(choice('frames-foryou').selected, {FrameMode.playing});
+    expect(choice('frames-other').selected, {FrameMode.playing});
+
+    await tester.tap(find.descendant(of: find.byKey(const ValueKey('frames-other')), matching: find.text('When you react')));
+    await tester.pump();
+    expect(SettingsHandler.instance.framesOtherTabs, FrameMode.reaction);
+    expect(SettingsHandler.instance.framesForYou, FrameMode.playing, reason: 'only that place');
+    expect(choice('frames-other').selected, {FrameMode.reaction});
+    await tester.tap(find.descendant(of: find.byKey(const ValueKey('frames-foryou')), matching: find.text('Off')));
+    await tester.pump();
+    expect(SettingsHandler.instance.framesForYou, FrameMode.off);
+    expect(saves, 2);
+    SettingsHandler.instance
+      ..framesForYou = FrameMode.playing
+      ..framesOtherTabs = FrameMode.playing;
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets("r81: 'Remember the looks of posts you open' is off until switched on", (tester) async {
+    await open(tester);
+    expect(switchOf(tester, 'model-task-look.remember').value, isFalse);
+    await flip(tester, 'model-task-look.remember');
+    expect(SettingsHandler.instance.rememberLooks, isTrue);
+    expect(saves, 1);
+    SettingsHandler.instance.rememberLooks = false;
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('r81: space for saved vectors: 250 MB to begin with, the space used shown; a smaller size frees the room', (tester) async {
+    final List<(int, bool)> applied = [];
+    ModelsPage.vectorUsage = () async => (text: 1024 * 1024, looks: 3 * 1024 * 1024);
+    ModelsPage.applyVectorSpace = (int mb, {required bool smaller}) async => applied.add((mb, smaller));
+    await open(tester);
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(tester.widget<ChoiceChip>(find.byKey(const ValueKey('vector-space-250'))).selected, isTrue);
+    expect(tester.widget<Text>(find.byKey(const ValueKey('vector-space-used'))).data, 'Used: 4.0 MB of 250 MB (text 1.0 MB, looks 3.0 MB).');
+
+    await tester.tap(find.byKey(const ValueKey('vector-space-1000')));
+    await tester.pump();
+    expect(SettingsHandler.instance.vectorSpaceMb, 1000);
+    expect(applied, [(1000, false)]);
+    await tester.tap(find.byKey(const ValueKey('vector-space-100')));
+    await tester.pump();
+    expect(SettingsHandler.instance.vectorSpaceMb, 100);
+    expect(applied.last, (100, true), reason: 'smaller: the extra goes and the file shrinks');
+    SettingsHandler.instance.vectorSpaceMb = 250;
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('all models off: every switch below is greyed and every job off; on again, the choices are back', (tester) async {
     await ModelTasks.set(ModelTasks.textBoards, false);
     saves = 0;

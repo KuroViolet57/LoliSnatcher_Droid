@@ -150,16 +150,8 @@ class EncoderHandler {
   static const int _maxLength = 96;
   static const int _memoryCap = 4000;
 
-  /// Stored vectors are pruned every [pruneEvery] writes to the newest
-  /// [pruneKeep] — here, not on the learner's tick, so a switched-off
-  /// learner does not let the table grow without bound (review).
-  static const int defaultPruneEvery = 200;
-  static const int defaultPruneKeep = 6000;
-  @visibleForTesting
-  static int pruneEvery = defaultPruneEvery;
-  @visibleForTesting
-  static int pruneKeep = defaultPruneKeep;
-  int _putsSincePrune = 0;
+  // r81: the stored vectors are kept within their space by the vector
+  // database itself (DBHandler.putEmbeddings), whoever writes them.
 
   /// Text vectors are stored under this prefix, by a hash of the text.
   static const String _textKeyPrefix = 'text:';
@@ -530,11 +522,6 @@ class EncoderHandler {
     if (fresh.isEmpty || !_settings.dbEnabled) return;
     try {
       await _settings.dbHandler.putEmbeddings(_slug, fresh);
-      _putsSincePrune += fresh.length;
-      if (_putsSincePrune >= pruneEvery) {
-        _putsSincePrune = 0;
-        await _settings.dbHandler.pruneEmbeddings(keep: pruneKeep);
-      }
     } catch (e, s) {
       Logger.Inst().log('storing embeddings failed: $e', className, '_store', LogTypes.exception, s: s);
     }

@@ -21,6 +21,7 @@ import 'package:lolisnatcher/src/handlers/recommender/deferred_learning.dart';
 import 'package:lolisnatcher/src/handlers/recommender/model_work.dart';
 import 'package:lolisnatcher/src/handlers/recommender/pixel_tags.dart';
 import 'package:lolisnatcher/src/handlers/recommender/rewards.dart';
+import 'package:lolisnatcher/src/handlers/recommender/video_frames.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 
@@ -172,7 +173,25 @@ class RecommenderHandler {
   static void resetSeamsForTests() {
     pixelTagsFor = _defaultPixelTagsFor;
     lookVectorsFor = _defaultLookVectorsFor;
+    reactionFrames = _defaultReactionFrames;
   }
+
+  /// r81: a favourite, a download or a collection asks for the frames of
+  /// the video on screen first (VideoFrames.onReaction, where frames come
+  /// "When you react"), and the learning step is queued after, so it reads
+  /// them - the tagger's three frames and the looks model's average. Null
+  /// when no frame is to be taken: decided at once, so every other event
+  /// is queued exactly as before. Replaced in tests.
+  static Future<void>? Function(BooruItem item)? reactionFrames = _defaultReactionFrames;
+
+  static Future<void>? _defaultReactionFrames(BooruItem item) {
+    final VideoFrames? frames = VideoFrames.maybe;
+    if (frames == null || !frames.takesReactionFrame(item)) return null;
+    return frames.onReaction(item);
+  }
+
+  static bool _asksFrames(InteractionKind kind) =>
+      kind == InteractionKind.favourite || kind == InteractionKind.snatch || kind == InteractionKind.collect;
 
   static Future<List<String>> _defaultPixelTagsFor(BooruItem item, BooruHandler? handler) => PixelTags.forItem(item, handler?.booru);
 
@@ -443,12 +462,24 @@ class RecommenderHandler {
   }) async {
     final String key = keyOf(item);
     if (key.isNotEmpty) _interacted.add(key);
-    if (!learningEnabled) return;
+    final Future<void>? frames = _asksFrames(kind) ? reactionFrames?.call(item) : null;
+    if (!learningEnabled) {
+      // The frames still give the video its look; nothing waits for them.
+      if (frames != null) unawaited(frames.catchError((Object _) {}));
+      return;
+    }
     _maybeReplayKept();
     final Reward? reward = rewardFor(kind, value: value);
     if (reward == null) return;
     final RecommenderWorld world = ItemFeatures.worldOf(item);
     final int generation = _generation[world] ?? 0;
+    if (frames != null) {
+      try {
+        await frames;
+      } catch (e) {
+        Logger.Inst().log('recommender: the frames of a reaction could not be taken: $e', className, 'onEvent', LogTypes.booruHandlerInfo);
+      }
+    }
     await ModelWork.instance.run(
       'learn ${kind.name}',
       (bool lite) {
@@ -787,7 +818,6 @@ class RecommenderHandler {
         if (++_sincePrune >= 200) {
           _sincePrune = 0;
           await _db.pruneInteractions(keep: logCap);
-          await _db.pruneEmbeddings();
         }
       } catch (e, s) {
         Logger.Inst().log('logging an interaction failed: $e', className, '_learn', LogTypes.exception, s: s);

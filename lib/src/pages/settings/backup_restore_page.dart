@@ -560,7 +560,7 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
                         key: ValueKey('db-whole'),
                         value: DbRestore.whole,
                         title: Text('The whole database'),
-                        subtitle: Text('Replaces favourites, history, collections, pins, pulled tags, the recommendation log and the vector cache.'),
+                        subtitle: Text('Replaces favourites, history, collections, pins, pulled tags and the recommendation log.'),
                       ),
                       RadioListTile<DbRestore>(
                         key: ValueKey('db-parts'),
@@ -603,7 +603,8 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
               ? 'Database: ${[for (final DbPart p in DbPart.values) if (parts.contains(p)) DbParts.labelOf(p)].join(', ')}'
               : BackupItems.labelOf(i),
     ];
-    final bool restarts = items.any((BackupItem i) => i != BackupItem.tagTypes);
+    // Tag types and the vector cache come back without a restart.
+    final bool restarts = items.any((BackupItem i) => i != BackupItem.tagTypes && i != BackupItem.vectors);
     final bool merges = items.contains(BackupItem.database) && mode == DbRestore.parts;
     return await showDialog<bool>(
           context: context,

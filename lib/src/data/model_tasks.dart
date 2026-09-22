@@ -19,6 +19,34 @@ enum ModelUse {
 /// The three downloadable models.
 enum ModelKind { text, look, tagger }
 
+/// r81: when the frames of a playing video are taken, per place (For You,
+/// or any other tab). Both start on [playing], the behaviour before r81.
+enum FrameMode {
+  /// After 2.5 s, then every 6 s while it plays (5 at most).
+  playing,
+
+  /// Only when you favourite, download or add the video to a collection
+  /// while it plays: the frame on screen at once, then up to two more.
+  reaction,
+
+  /// None.
+  off;
+
+  String get label => switch (this) {
+    FrameMode.playing => 'While it plays',
+    FrameMode.reaction => 'When you react',
+    FrameMode.off => 'Off',
+  };
+
+  /// A stored value; anything unknown reads as [playing].
+  static FrameMode parse(Object? value) {
+    for (final FrameMode m in FrameMode.values) {
+      if (m.name == value) return m;
+    }
+    return FrameMode.playing;
+  }
+}
+
 /// One job a model does, with its own switch in Settings → Recommendations
 /// → Models (r80).
 class ModelTask {
@@ -229,6 +257,34 @@ class ModelTasks {
       });
     }
     return out;
+  }
+
+  // ── space for vectors ──
+
+  /// r81: the sizes offered for the vectors' database (MB).
+  static const List<int> vectorSpaceChoices = [25, 50, 100, 250, 500, 1000, 2000];
+
+  static String spaceLabel(int mb) => mb >= 1000 && mb % 1000 == 0 ? '${mb ~/ 1000} GB' : '$mb MB';
+
+  static Future<void> setVectorSpace(int mb) async {
+    _settings.vectorSpaceMb = mb;
+    await _changed();
+  }
+
+  static Future<void> setFrameMode({required bool forYou, required FrameMode mode}) async {
+    if (forYou) {
+      _settings.framesForYou = mode;
+    } else {
+      _settings.framesOtherTabs = mode;
+    }
+    await _changed();
+  }
+
+  static bool get rememberLooks => _settings.rememberLooks;
+
+  static Future<void> setRememberLooks(bool on) async {
+    _settings.rememberLooks = on;
+    await _changed();
   }
 
   // ── threads ──

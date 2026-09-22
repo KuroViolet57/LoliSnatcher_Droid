@@ -137,6 +137,49 @@ void main() {
     expect(SettingsHandler.instance.modelThreads, {'look.background': 3});
   });
 
+  test("r81: the new knobs start at today's behaviour, and survive a restart", () async {
+    final SettingsHandler s = SettingsHandler.instance;
+    expect(s.framesForYou, FrameMode.playing, reason: 'For You grabs while the video plays, as before');
+    expect(s.framesOtherTabs, FrameMode.playing, reason: 'other tabs too, as before');
+    expect(s.rememberLooks, isFalse, reason: 'a new job: off until switched on');
+    expect(s.vectorSpaceMb, 250);
+
+    s
+      ..framesForYou = FrameMode.off
+      ..framesOtherTabs = FrameMode.reaction
+      ..rememberLooks = true
+      ..vectorSpaceMb = 1000;
+    final String saved = jsonEncode(s.toJson());
+    s
+      ..framesForYou = FrameMode.playing
+      ..framesOtherTabs = FrameMode.playing
+      ..rememberLooks = false
+      ..vectorSpaceMb = 250;
+    await s.loadFromJSON(saved, false);
+    expect(s.framesForYou, FrameMode.off);
+    expect(s.framesOtherTabs, FrameMode.reaction);
+    expect(s.rememberLooks, isTrue);
+    expect(s.vectorSpaceMb, 1000);
+
+    // Something this build does not know reads as today's behaviour.
+    await s.loadFromJSON(jsonEncode({'framesForYou': 'sometimes', 'framesOtherTabs': 3}), false);
+    expect(s.framesForYou, FrameMode.playing);
+    expect(s.framesOtherTabs, FrameMode.playing);
+    s
+      ..framesForYou = FrameMode.playing
+      ..framesOtherTabs = FrameMode.playing
+      ..rememberLooks = false
+      ..vectorSpaceMb = 250;
+  });
+
+  test('r81: the space for vectors offers sizes from 25 MB to 2 GB', () {
+    expect(ModelTasks.vectorSpaceChoices, [25, 50, 100, 250, 500, 1000, 2000]);
+    expect(ModelTasks.vectorSpaceChoices, contains(SettingsHandler.instance.vectorSpaceMb));
+    expect(ModelTasks.spaceLabel(250), '250 MB');
+    expect(ModelTasks.spaceLabel(1000), '1 GB');
+    expect(ModelTasks.spaceLabel(2000), '2 GB');
+  });
+
   test('thread counts and the captures folder stay on this phone when settings are synced', () {
     expect(SettingsHandler.instance.deviceSpecificSettings, containsAll(['modelThreads', 'capturesPath', 'isDebug']));
   });

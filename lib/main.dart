@@ -29,6 +29,7 @@ import 'package:lolisnatcher/src/handlers/floating_preview_handler.dart';
 import 'package:lolisnatcher/src/handlers/interests_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/encoder_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/image_tagger_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/look_memory.dart';
 import 'package:lolisnatcher/src/handlers/recommender/look_model_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/model_work.dart';
 import 'package:lolisnatcher/src/handlers/recommender/video_frames.dart';
@@ -122,6 +123,8 @@ void main() async {
   unawaited(LookModelHandler.instance.refresh());
   // r76: frames from the playing video follow the viewer's current item.
   VideoFrames.register().attach();
+  // r81: the looks of the posts you open, when switched on.
+  LookMemory.instance.attach();
   // r77: background model work waits for quiet moments and holds the image
   // tagger while a video plays.
   ModelWork.instance.attach(videoPlaying: MediaKitPlayerView.anyPlaying);

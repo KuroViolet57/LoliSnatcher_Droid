@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/data/model_tasks.dart';
 import 'package:lolisnatcher/src/data/settings/mpv_video_output.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/handlers/recommender/look_model_handler.dart';
@@ -433,5 +434,98 @@ void main() {
     final Uint8List? again = await frames.frameNow(v);
     expect(target.commands.length, before, reason: 'no command while no frame is drawn');
     expect(again, same(frames.framesOf(v).last));
+  });
+
+  group('r81: frames by where the video was opened', () {
+    late bool forYou;
+
+    setUp(() {
+      forYou = false;
+      frames.inForYou = () => forYou;
+      frames.maxFrames = 5;
+      frames.reactionFrames = 3;
+    });
+
+    tearDown(() {
+      SettingsHandler.instance
+        ..framesForYou = FrameMode.playing
+        ..framesOtherTabs = FrameMode.playing;
+    });
+
+    test('by default both places grab while the video plays, as before', () async {
+      expect(SettingsHandler.instance.framesForYou, FrameMode.playing);
+      expect(SettingsHandler.instance.framesOtherTabs, FrameMode.playing);
+      forYou = true;
+      ViewerHandler.instance.current.value = video('40');
+      await waitFor(() => target.commands.isNotEmpty);
+      expect(target.commands, isNotEmpty, reason: 'For You');
+      forYou = false;
+      final int before = target.commands.length;
+      ViewerHandler.instance.current.value = video('41');
+      await waitFor(() => target.commands.length > before);
+      expect(target.commands.length, greaterThan(before), reason: 'another tab');
+      onScreen = false;
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+
+    test('For You set to off: nothing is taken there; another tab still grabs', () async {
+      SettingsHandler.instance.framesForYou = FrameMode.off;
+      forYou = true;
+      ViewerHandler.instance.current.value = video('42');
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      expect(target.commands, isEmpty);
+      expect(await frames.onReaction(video('42')), isNull, reason: 'off is off, a reaction included');
+      expect(target.commands, isEmpty);
+      forYou = false;
+      ViewerHandler.instance.current.value = video('43');
+      await waitFor(() => target.commands.isNotEmpty);
+      expect(target.commands, isNotEmpty);
+      onScreen = false;
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+
+    test('"When you react": nothing by itself; a reaction takes the frame on screen at once, even mid-touch, then up to two more while it plays', () async {
+      SettingsHandler.instance.framesOtherTabs = FrameMode.reaction;
+      final BooruItem v = video('44');
+      ViewerHandler.instance.current.value = v;
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      expect(target.commands, isEmpty, reason: 'never by itself');
+
+      quiet = false;
+      final Uint8List? now = await frames.onReaction(v);
+      expect(now, isNotNull);
+      expect(target.commands, hasLength(1), reason: 'the frame on screen, at once');
+
+      quiet = true;
+      await waitFor(() => target.commands.length >= 3);
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(target.commands, hasLength(3), reason: 'one at the reaction, two more while it plays');
+      expect(frames.framesOf(v), hasLength(3));
+      await waitFor(() => stored.length >= 3);
+    });
+
+    test('a reaction takes nothing extra where frames come while it plays, nor for a post that is not on screen', () async {
+      final BooruItem v = video('45');
+      quiet = false;
+      ViewerHandler.instance.current.value = v;
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      expect(await frames.onReaction(v), isNull, reason: 'while-it-plays mode: a reaction changes nothing');
+      expect(target.commands, isEmpty);
+
+      SettingsHandler.instance.framesOtherTabs = FrameMode.reaction;
+      ViewerHandler.instance.current.value = video('46');
+      expect(await frames.onReaction(video('47')), isNull, reason: 'not the post on screen');
+      expect(target.commands, isEmpty);
+    });
+
+    test('the switch for all frames still wins over a reaction', () async {
+      SettingsHandler.instance
+        ..framesOtherTabs = FrameMode.reaction
+        ..videoFrames = false;
+      final BooruItem v = video('48');
+      ViewerHandler.instance.current.value = v;
+      expect(await frames.onReaction(v), isNull);
+      expect(target.commands, isEmpty);
+    });
   });
 }

@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import 'package:lolisnatcher/src/handlers/database_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/services/backup_plan.dart';
 import 'package:lolisnatcher/src/services/db_parts.dart';
@@ -51,24 +52,28 @@ void main() {
 
   String p(String name) => '$config$name';
 
+  BackupHooks makeHooks({Database? Function()? liveDatabase, Database? Function()? liveVectors}) => BackupHooks(
+    sourcesJson: () => '[{"name":"rule34xxx"}]',
+    restoreSources: (String json) async => calls.add('sources $json'),
+    tagTypesJson: () => '[{"name":"tag_a"}]',
+    restoreTagTypes: (String json) async => calls.add('tag types $json'),
+    reloadStores: () => calls.add('reload stores'),
+    stopRecommenderWrites: () => calls.add('recommender stops writing'),
+    checkpointDatabase: () async => calls.add('checkpoint'),
+    closeDatabase: () async => calls.add('close database'),
+    rearmDoujinMigration: () => calls.add('rearm migration'),
+    boardPicturesDir: () => '${config}boards${Platform.pathSeparator}',
+    liveDatabase: liveDatabase ?? () => null,
+    checkpointVectors: () async => calls.add('vectors checkpoint'),
+    liveVectors: liveVectors ?? () => null,
+  );
+
   setUp(() {
     tempDir = Directory.systemTemp.createTempSync('backup_plan');
     config = '${tempDir.path}${Platform.pathSeparator}config${Platform.pathSeparator}';
     Directory(config).createSync(recursive: true);
     calls = [];
-    hooks = BackupHooks(
-      sourcesJson: () => '[{"name":"rule34xxx"}]',
-      restoreSources: (String json) async => calls.add('sources $json'),
-      tagTypesJson: () => '[{"name":"tag_a"}]',
-      restoreTagTypes: (String json) async => calls.add('tag types $json'),
-      reloadStores: () => calls.add('reload stores'),
-      stopRecommenderWrites: () => calls.add('recommender stops writing'),
-      checkpointDatabase: () async => calls.add('checkpoint'),
-      closeDatabase: () async => calls.add('close database'),
-      rearmDoujinMigration: () => calls.add('rearm migration'),
-      boardPicturesDir: () => '${config}boards${Platform.pathSeparator}',
-      liveDatabase: () => null,
-    );
+    hooks = makeHooks();
   });
 
   tearDown(() {
@@ -264,6 +269,46 @@ void main() {
       await DbParts.restore(backup, {DbPart.recommenderLog}, live!);
       expect([for (final r in await live!.rawQuery('SELECT itemKey FROM Interaction')) r['itemKey']], ['post/9']);
       expect((await live!.rawQuery('SELECT name FROM TagSignal')).single['name'], 'fox', reason: 'For You interests come along');
+    });
+
+    test("r81: an older backup's vector cache (inside its store.db) goes into the vector database, not the main one", () async {
+      if (!dbReady) return;
+      final File backup = await backupDbWith((Batch b) {
+        b.rawInsert("INSERT INTO ItemEmbedding(itemKey, model, dim, vector, at) VALUES('post/1', 'look:s0', 1, x'00000000', 1)");
+      });
+      live = await schemaDb(inMemoryDatabasePath);
+      // A file of its own: two in-memory databases opened by path are one.
+      final Database vectors = await databaseFactory.openDatabase('${tempDir.path}${Platform.pathSeparator}vectors-live.db');
+      await DBHandler.createVectorTable(vectors);
+      await DbParts.restore(backup, {DbPart.vectorCache}, live!, vectors: vectors);
+      expect((await vectors.rawQuery('SELECT itemKey FROM ItemEmbedding')).single['itemKey'], 'post/1');
+      expect(await live!.rawQuery('SELECT itemKey FROM ItemEmbedding'), isEmpty);
+      await vectors.close();
+    });
+
+    test('r81: the vector cache is an item of its own: written after its journal, restored by adding to what is here, no restart', () async {
+      if (!dbReady) return;
+      final Database mine = await databaseFactory.openDatabase(p('vectors.db'));
+      await DBHandler.createVectorTable(mine);
+      await mine.rawInsert("INSERT INTO ItemEmbedding(itemKey, model, dim, vector, at) VALUES('post/a', 'look:s0', 1, x'00000000', 1)");
+      await mine.close();
+      final _Memory target = _Memory();
+      final BackupResult saved = await BackupRunner(configDir: config, hooks: hooks).backup({BackupItem.vectors}, target);
+      expect(saved.done, {BackupItem.vectors});
+      expect(target.files.keys, ['vectors.db']);
+      expect(calls, ['vectors checkpoint']);
+      expect(BackupItems.itemsIn(target.files.keys), {BackupItem.vectors});
+
+      final Database other = await databaseFactory.openDatabase(inMemoryDatabasePath);
+      await DBHandler.createVectorTable(other);
+      await other.rawInsert("INSERT INTO ItemEmbedding(itemKey, model, dim, vector, at) VALUES('post/mine', 'look:s0', 1, x'00000000', 1)");
+      final BackupResult back = await BackupRunner(configDir: config, hooks: makeHooks(liveVectors: () => other)).restore({BackupItem.vectors}, target);
+      expect(back.failures, isEmpty);
+      expect(back.needsRestart, isFalse, reason: 'added to the open vector database');
+      final List<String> keys = [for (final r in await other.rawQuery('SELECT itemKey FROM ItemEmbedding ORDER BY itemKey')) r['itemKey']! as String];
+      expect(keys, ['post/a', 'post/mine']);
+      expect(File(p('restore-vectors.db')).existsSync(), isFalse, reason: 'the staging copy is removed');
+      await other.close();
     });
 
     test('a backup made before a table existed is not an error', () async {

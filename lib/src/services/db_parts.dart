@@ -50,40 +50,53 @@ class DbParts {
       case DbPart.recommenderLog:
         return "Every reaction the recommender learned from and For You's interests - replaces this device's.";
       case DbPart.vectorCache:
-        return 'Text and picture vectors already worked out for posts - added to what is here.';
+        return 'From a backup made before build 111, whose database still held the vectors - added to what is here. Newer backups carry them as the item "Vector cache".';
     }
   }
 
   /// Copies [parts] from the database file [backup] into [live], column by
   /// column where both have them (a backup from an older version may lack
   /// some). Returns the tables the backup does not have.
-  static Future<List<String>> restore(File backup, Set<DbPart> parts, Database live) async {
+  ///
+  /// r81: the vector cache goes into [vectors], the database the vectors
+  /// have of their own (into [live] when there is none).
+  static Future<List<String>> restore(File backup, Set<DbPart> parts, Database live, {Database? vectors}) async {
     final List<String> skipped = [];
-    await live.execute('ATTACH DATABASE ? AS bk', [backup.path]);
+    for (final DbPart part in DbPart.values) {
+      if (!parts.contains(part)) continue;
+      final Database into = part == DbPart.vectorCache && vectors != null ? vectors : live;
+      skipped.addAll(await _copy(backup, into, tables[part]!, replace: replaces(part)));
+    }
+    return skipped;
+  }
+
+  /// r81: a backup's vectors.db added to the open vectors' database.
+  static Future<List<String>> mergeVectors(File backup, Database live) => _copy(backup, live, tables[DbPart.vectorCache]!, replace: false);
+
+  static Future<List<String>> _copy(File backup, Database into, List<String> tables, {required bool replace}) async {
+    final List<String> skipped = [];
+    await into.execute('ATTACH DATABASE ? AS bk', [backup.path]);
     try {
-      for (final DbPart part in DbPart.values) {
-        if (!parts.contains(part)) continue;
-        for (final String table in tables[part]!) {
-          final List<String> theirs = await _columns(live, 'bk', table);
-          if (theirs.isEmpty) {
-            skipped.add(table);
-            continue;
-          }
-          final List<String> ours = await _columns(live, 'main', table);
-          final List<String> both = theirs.where(ours.contains).toList();
-          if (both.isEmpty) {
-            skipped.add(table);
-            continue;
-          }
-          final String cols = both.map((String c) => '"$c"').join(', ');
-          await live.transaction((Transaction txn) async {
-            if (replaces(part)) await txn.execute('DELETE FROM main."$table"');
-            await txn.execute('INSERT OR REPLACE INTO main."$table" ($cols) SELECT $cols FROM bk."$table"');
-          });
+      for (final String table in tables) {
+        final List<String> theirs = await _columns(into, 'bk', table);
+        if (theirs.isEmpty) {
+          skipped.add(table);
+          continue;
         }
+        final List<String> ours = await _columns(into, 'main', table);
+        final List<String> both = theirs.where(ours.contains).toList();
+        if (both.isEmpty) {
+          skipped.add(table);
+          continue;
+        }
+        final String cols = both.map((String c) => '"$c"').join(', ');
+        await into.transaction((Transaction txn) async {
+          if (replace) await txn.execute('DELETE FROM main."$table"');
+          await txn.execute('INSERT OR REPLACE INTO main."$table" ($cols) SELECT $cols FROM bk."$table"');
+        });
       }
     } finally {
-      await live.execute('DETACH DATABASE bk');
+      await into.execute('DETACH DATABASE bk');
     }
     return skipped;
   }

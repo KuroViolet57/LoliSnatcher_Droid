@@ -686,6 +686,35 @@ void main() {
       expect((await r.modelFor(RecommenderWorld.booru)).updates, 1);
     });
 
+    test("r81: a favourite, a download or a collection asks for the video's frames first, then the learning is queued; a view asks for nothing", () async {
+      if (!dbReady) return;
+      final List<String> asked = [];
+      Completer<void> gate = Completer<void>();
+      RecommenderHandler.reactionFrames = (BooruItem item) async {
+        asked.add(item.postURL);
+        await gate.future;
+      };
+      addTearDown(RecommenderHandler.resetSeamsForTests);
+      final r = RecommenderHandler.instance;
+      unawaited(r.onEvent(booruPost('alice'), InteractionKind.favourite));
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(asked, hasLength(1));
+      now = now.add(const Duration(seconds: 5));
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      expect(await SettingsHandler.instance.dbHandler.countInteractions('booru'), 0, reason: 'the learning waits for the frames');
+      gate.complete();
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      expect(await SettingsHandler.instance.dbHandler.countInteractions('booru'), 1);
+
+      gate = Completer<void>()..complete();
+      unawaited(r.onEvent(booruPost('bob'), InteractionKind.snatch));
+      unawaited(r.onEvent(booruPost('carol'), InteractionKind.collect));
+      unawaited(r.onEvent(booruPost('dave'), InteractionKind.view, value: 10));
+      unawaited(r.onEvent(booruPost('erin'), InteractionKind.unfavourite));
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(asked, hasLength(3), reason: 'favourite, download and collection; not a view, not an unfavourite');
+    });
+
     test('r78: leaving the app keeps a waiting event for later instead of learning it without the models', () async {
       if (!dbReady) return;
       int looks = 0;

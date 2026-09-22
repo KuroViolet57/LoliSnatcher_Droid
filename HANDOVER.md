@@ -31,11 +31,11 @@ older chronological build log, kept verbatim as history.
   Never push elsewhere; force-push is blocked.
 - **Version:** `2.6.0+5211` in `pubspec.yaml`, mirrored in
   `lib/src/data/constants.dart` (`updateInfo`). Builds are told apart by
-  `Constants.buildCodename` (`'r80-models'` now), shown in About. Bump the
+  `Constants.buildCodename` (`'r81-vectors-frames'` now), shown in About. Bump the
   codename every build: `rNN-<two words>`.
 - **Build counter:** rounds are numbered r21, r22, … r80. Each build gets a
-  numbered folder on the K: drive (§2): r80 used **109** and **110**; the
-  next build uses **111**. **103** is Grok's ("exp flutter 347") - never
+  numbered folder on the K: drive (§2): r80 used **109** and **110**, r81
+  used **111**; the next build uses **112**. **103** is Grok's ("exp flutter 347") - never
   reuse a number.
 - **The user** talks in voice notes and logs; expects one build per request
   round, checked on a Samsung phone. They cannot see tool output — only the
@@ -2776,6 +2776,61 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   before the code (they could not compile without it; not run red).
 - **Not verified here:** SAF writes into the download folder's
   subfolder and the new thread counts on the phone.
+
+### 4.60 Frames by place, remembered looks, vectors in their own database (r81, build 111)
+
+- **Asked (22-23 Sep):** a larger vector store whose disk space the user
+  picks; frame grabs switchable on For You and, in other tabs, only on a
+  reaction - with today's behaviour as the default ("do not change the
+  behaviour the app has now"); "remember the looks of posts you open"
+  reusing the frames already taken; the vectors in a database of their own
+  that a backup can take or leave.
+- **Frames:** `FrameMode {playing, reaction, off}` (model_tasks.dart);
+  settings `framesForYou` / `framesOtherTabs` (`stringFromList`, default
+  'playing'). `VideoFrames` reads the place at `_onCurrent` (`inForYou`
+  seam: `SearchHandler.currentBooru.type.isForYou`; boards, Posts like this
+  and everything else are "other tabs"). 'playing' = the old schedule;
+  'reaction' starts no timer; `onReaction(item)` takes the frame on screen
+  at once (skipping the quiet/on-screen checks - the person's own act),
+  then the timer takes more, `reactionFrames` (3) in all; 'off' nothing.
+  `frameNow` (Posts like this, the board editor) only follows the master
+  `videoFrames` switch, as before.
+- **Reaction hook:** `RecommenderHandler.reactionFrames` (favourite, snatch,
+  collect) returns null unless `VideoFrames.takesReactionFrame(item)` - so
+  every other event is queued exactly as before. When a frame is taken,
+  `onEvent` captures the world generation first, then awaits the frame
+  (its 'frame look' step is queued ahead of the learning step), then queues
+  the learning. Found by the r77 reset test: awaiting before the
+  generation capture let a step queued before a reset leak into the fresh
+  model.
+- **Remember looks** (`lib/src/handlers/recommender/look_memory.dart`,
+  attached in main.dart; setting `rememberLooks`, off by default): leaving
+  a post looked at for 2.5 s+ queues a ModelWork step
+  `LookModelHandler.imageVectors([item], use: background)` - memory and the
+  database answer first, so frames' averages and For You's vectors are not
+  read again; once per post per run; not for doujin items or hidden posts.
+- **Vectors database:** `DBHandler.vectorsDb` = `vectors.db` beside
+  store.db, opened in `dbConnect` (`openVectors`); rows in store.db's
+  ItemEmbedding move over with ATTACH + `INSERT OR IGNORE` on every start
+  that finds some (first r81 start, a whole restore of an older backup);
+  `vectorDatabase` falls back to `db` when none is open (tests).
+  `putEmbeddings` prunes every `pruneEvery` (200) writes to
+  `vectorSpaceMb` (default 250, choices 25 MB-2 GB on the Models page):
+  least recently used first (`getEmbeddings` refreshes `at` for rows older
+  than a day), down to 90%. `vectorUsage` splits text/looks by the
+  `look:` model prefix; `compactVectors` = VACUUM + checkpoint, run when the
+  space is lowered. The encoder's own count prune (6,000) and the
+  recommender's are gone.
+- **Backup:** `BackupItem.vectors` ("Vector cache", vectors.db): backup
+  after `checkpointVectors`; restore merges via `DbParts.mergeVectors`
+  into the open database, no restart. `DbPart.vectorCache` now means an
+  older backup's store.db vectors and goes into `vectorDatabase`.
+- **Tests:** `vector_store_test` (6), `look_memory_test` (4), five r81
+  frame tests in `video_frames_test`, settings in `model_tasks_test`, the
+  hook in `recommender_handler_test`, two in `backup_plan_test`, three on
+  the Models page; the encoder prune test moved to bytes.
+- **Not verified here:** the move of the phone's existing vectors, SAF and
+  frames on the phone.
 
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 

@@ -68,6 +68,10 @@ BackupHooks appBackupHooks() {
     },
     boardPicturesDir: () => '${BoardsHandler.instance.imagesDir.path}${Platform.pathSeparator}',
     liveDatabase: () => settings.dbHandler.db,
+    checkpointVectors: () async {
+      await settings.dbHandler.vectorsDb?.rawQuery('PRAGMA wal_checkpoint(TRUNCATE)');
+    },
+    liveVectors: () => settings.dbHandler.vectorDatabase,
   );
 }
 

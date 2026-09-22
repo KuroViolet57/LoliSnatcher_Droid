@@ -271,6 +271,14 @@ class SettingsHandler {
   // r80: where captures (a trace report, a source capture) are written;
   // '' = a "captures" folder inside the download folder.
   String capturesPath = '';
+  // r81: when a playing video's frames are taken, on For You and in any
+  // other tab (FrameMode; both 'playing' = the behaviour before r81), the
+  // "Remember the looks of posts you open" switch, and the space the
+  // vectors' database may take (MB).
+  FrameMode framesForYou = FrameMode.playing;
+  FrameMode framesOtherTabs = FrameMode.playing;
+  bool rememberLooks = false;
+  int vectorSpaceMb = 250;
   // Render the post-info panel (tags, metadata) as a Boorusama-style bottom
   // sheet dragged up from the bottom edge instead of the classic right-side
   // drawer. On by default; turn off to restore the side drawer.
@@ -795,6 +803,26 @@ class SettingsHandler {
     'aiModelsOff': {
       'type': 'bool',
       'default': false,
+    },
+    'framesForYou': {
+      'type': 'stringFromList',
+      'default': 'playing',
+      'options': ['playing', 'reaction', 'off'],
+    },
+    'framesOtherTabs': {
+      'type': 'stringFromList',
+      'default': 'playing',
+      'options': ['playing', 'reaction', 'off'],
+    },
+    'rememberLooks': {
+      'type': 'bool',
+      'default': false,
+    },
+    'vectorSpaceMb': {
+      'type': 'int',
+      'default': 250,
+      'lowerLimit': 10,
+      'upperLimit': 100000,
     },
     'capturesPath': {
       'type': 'string',
@@ -1448,6 +1476,14 @@ class SettingsHandler {
         return videoFrames;
       case 'aiModelsOff':
         return aiModelsOff;
+      case 'framesForYou':
+        return framesForYou.name;
+      case 'framesOtherTabs':
+        return framesOtherTabs.name;
+      case 'rememberLooks':
+        return rememberLooks;
+      case 'vectorSpaceMb':
+        return vectorSpaceMb;
       case 'capturesPath':
         return capturesPath;
       case 'isDebug':
@@ -1770,6 +1806,18 @@ class SettingsHandler {
         break;
       case 'aiModelsOff':
         aiModelsOff = validatedValue;
+        break;
+      case 'framesForYou':
+        framesForYou = FrameMode.parse(validatedValue);
+        break;
+      case 'framesOtherTabs':
+        framesOtherTabs = FrameMode.parse(validatedValue);
+        break;
+      case 'rememberLooks':
+        rememberLooks = validatedValue;
+        break;
+      case 'vectorSpaceMb':
+        vectorSpaceMb = validatedValue;
         break;
       case 'capturesPath':
         capturesPath = validatedValue;

@@ -11,10 +11,12 @@ import 'package:image/image.dart' as img;
 import 'package:media_kit/media_kit.dart';
 
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/data/model_tasks.dart';
 import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/image_tagger_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/look_model_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/model_work.dart';
+import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
@@ -155,6 +157,13 @@ class VideoFrames {
 
   /// r77: no touch, scroll or page change for [ModelWork.quiet].
   bool Function() quiet = _defaultQuiet;
+
+  /// r81: the post on screen was opened from For You (else another tab):
+  /// each place has its own FrameMode.
+  bool Function() inForYou = _defaultInForYou;
+
+  /// r81: frames at most per video where they come "When you react".
+  int reactionFrames = 3;
   Duration firstDelay = const Duration(milliseconds: 2500);
   Duration gap = const Duration(seconds: 6);
   Duration tick = const Duration(seconds: 1);
@@ -173,6 +182,7 @@ class VideoFrames {
   BooruItem? _current;
   DateTime _since = DateTime.now();
   Future<Uint8List?>? _inFlight;
+  FrameMode _mode = FrameMode.playing;
   int _seq = 0;
   bool _embedWarned = false;
 
@@ -208,12 +218,16 @@ class VideoFrames {
   /// The frames kept for [item], oldest first (512 px JPEGs).
   List<Uint8List> framesOf(BooruItem item) => List<Uint8List>.of(_kept[keyOf(item)]?.frames ?? const <Uint8List>[]);
 
+  /// r81: the place's setting, read when a post comes on screen.
+  FrameMode _modeHere() => inForYou() ? _settings.framesForYou : _settings.framesOtherTabs;
+
   void _onCurrent(BooruItem? item) {
     _timer?.cancel();
     _timer = null;
     _current = item;
     _since = DateTime.now();
     if (item == null || !qualifies(item)) return;
+    _mode = _modeHere();
     // r77: a new visit gets its own tries.
     final _Kept? seen = _kept[keyOf(item)];
     if (seen != null) {
@@ -222,14 +236,33 @@ class VideoFrames {
         ..visitWaits = 0
         ..lastWaitAt = null;
     }
+    // r81: "When you react" waits for a reaction (onReaction); "Off" never
+    // asks.
+    if (_mode != FrameMode.playing) return;
     _timer = Timer.periodic(tick, (_) => unawaited(_tick(item)));
+  }
+
+  /// r81: a favourite, a download or a collection of the video on screen,
+  /// where frames come "When you react": the frame on screen is taken at
+  /// once (mid-touch too - it is the person's own act), then more while it
+  /// keeps playing, [reactionFrames] in all. Anywhere else a reaction
+  /// changes nothing: "While it plays" takes them anyway, "Off" never.
+  Future<Uint8List?> onReaction(BooruItem item) async {
+    if (!takesReactionFrame(item)) return null;
+    final BooruItem current = _current!;
+    final found = lookup(current.fileURL);
+    if (found == null) return null;
+    final Future<Uint8List?>? pending = _inFlight;
+    final Uint8List? frame = pending != null ? await pending : await _take(current, found);
+    if (identical(_current, current)) _timer ??= Timer.periodic(tick, (_) => unawaited(_tick(current)));
+    return frame;
   }
 
   Future<void> _tick(BooruItem item) async {
     if (!identical(_current, item)) return;
     if (_inFlight != null || !wanted) return;
     final _Kept? k = _kept[keyOf(item)];
-    if ((k?.frames.length ?? 0) >= maxFrames ||
+    if ((k?.frames.length ?? 0) >= (_mode == FrameMode.reaction ? reactionFrames : maxFrames) ||
         (k?.failures ?? 0) >= maxFailures ||
         (k?.notReady ?? 0) >= maxNotReady ||
         (k?.visitNotReady ?? 0) >= maxNotReadyPerVisit ||
@@ -255,6 +288,15 @@ class VideoFrames {
     // Paused: the same picture again would teach nothing.
     if ((k?.frames.isNotEmpty ?? false) && !found.target.playing) return;
     await _take(item, found);
+  }
+
+  /// r81: whether [onReaction] would take a frame for [item] - decided at
+  /// once, without waiting for anything.
+  bool takesReactionFrame(BooruItem item) {
+    final BooruItem? current = _current;
+    if (current == null || keyOf(current) != keyOf(item)) return false;
+    if (_mode != FrameMode.reaction || !wanted || !qualifies(current)) return false;
+    return (_kept[keyOf(current)]?.frames.length ?? 0) < reactionFrames;
   }
 
   /// A fresh frame when the player shows [item], else the newest kept one;
@@ -365,7 +407,7 @@ class VideoFrames {
     k.notReady = 0;
     final bool keep = k.frames.length < maxFrames;
     if (keep) k.frames.add(small);
-    _log('look: frame ${k.frames.length}/$maxFrames of ${_name(item)} in ${sw.elapsedMilliseconds} ms (${raw.length ~/ 1024} KB from mpv)');
+    _log('look: frame ${k.frames.length}/${_mode == FrameMode.reaction ? reactionFrames : maxFrames} of ${_name(item)} in ${sw.elapsedMilliseconds} ms (${raw.length ~/ 1024} KB from mpv)');
     if (keep && lookWanted()) {
       // r77: the looks model reads the frame as a background step, at a quiet
       // moment - and "Find posts like this" gets its frame without waiting
@@ -484,6 +526,14 @@ class VideoFrames {
   }
 
   static bool _defaultLookWanted() => LookModelHandler.maybe?.enabled ?? false;
+
+  static bool _defaultInForYou() {
+    try {
+      return SearchHandler.instance.currentBooru.type?.isForYou ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
 
   static bool _defaultOnScreen() {
     final AppLifecycleState? s = WidgetsBinding.instance.lifecycleState;

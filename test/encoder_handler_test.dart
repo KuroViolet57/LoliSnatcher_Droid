@@ -10,6 +10,7 @@ import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/model_tasks.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
+import 'package:lolisnatcher/src/handlers/database_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/encoder_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/item_features.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -372,21 +373,22 @@ void main() {
       expect(made, 2, reason: 'a new text: a fresh session over the fresh files');
     });
 
-    test('stored vectors are pruned as they accumulate, learning or not (review)', () async {
+    test('stored vectors are pruned as they accumulate, learning or not (review); r81: to the space set for them', () async {
       if (!dbReady) return;
       final EncoderHandler e = EncoderHandler.instance;
-      EncoderHandler.pruneEvery = 5;
-      EncoderHandler.pruneKeep = 12;
+      DBHandler.pruneEvery = 5;
+      DBHandler.spaceOverrideBytes = 2000;
       addTearDown(() {
-        EncoderHandler.pruneEvery = EncoderHandler.defaultPruneEvery;
-        EncoderHandler.pruneKeep = EncoderHandler.defaultPruneKeep;
+        DBHandler.pruneEvery = DBHandler.defaultPruneEvery;
+        DBHandler.spaceOverrideBytes = null;
       });
       await e.download('english');
       for (int i = 0; i < 30; i++) {
         await e.embedItems([post('alice', id: '$i')]);
       }
       final int stored = await SettingsHandler.instance.dbHandler.countEmbeddings(e.modelId);
-      expect(stored, lessThanOrEqualTo(12 + 5));
+      expect(await SettingsHandler.instance.dbHandler.vectorBytes(), lessThanOrEqualTo(2000 + 5 * 300));
+      expect(stored, lessThan(30));
       expect(stored, greaterThan(0));
     });
 

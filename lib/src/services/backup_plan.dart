@@ -19,6 +19,9 @@ enum BackupItem {
   boardPictures,
   tagTypes,
   database,
+
+  /// r81: the vectors, in a database of their own (vectors.db).
+  vectors,
   recommender,
 }
 
@@ -41,6 +44,7 @@ class BackupItems {
     BackupItem.boards: 'boards.json',
     BackupItem.tagTypes: 'tags.json',
     BackupItem.database: 'store.db',
+    BackupItem.vectors: 'vectors.db',
   };
 
   static String labelOf(BackupItem item) {
@@ -63,6 +67,8 @@ class BackupItems {
         return 'Tag types';
       case BackupItem.database:
         return 'Database';
+      case BackupItem.vectors:
+        return 'Vector cache';
       case BackupItem.recommender:
         return 'Recommendations';
     }
@@ -87,7 +93,9 @@ class BackupItems {
       case BackupItem.tagTypes:
         return 'Tag types and colours you set (tags.json).';
       case BackupItem.database:
-        return 'Favourites, history, collections, pins, pulled tags, the recommendation log and the vector cache (store.db). A restore can take only some parts.';
+        return 'Favourites, history, collections, pins, pulled tags and the recommendation log (store.db). A restore can take only some parts.';
+      case BackupItem.vectors:
+        return 'What the text and looks models worked out for posts (vectors.db), so they are not read again. It can be large; a restore adds it to what is here.';
       case BackupItem.recommender:
         return 'What the recommender learned: its weights and your text and visual taste. With the same models on the other device, it recommends the same way.';
     }
@@ -157,6 +165,8 @@ class BackupHooks {
     required this.rearmDoujinMigration,
     required this.boardPicturesDir,
     required this.liveDatabase,
+    required this.checkpointVectors,
+    required this.liveVectors,
   });
 
   final String Function() sourcesJson;
@@ -180,6 +190,11 @@ class BackupHooks {
   /// With a trailing separator.
   final String Function() boardPicturesDir;
   final Database? Function() liveDatabase;
+
+  /// r81: the vectors' database: its journal written in before a copy, and
+  /// the open one a restore adds to.
+  final Future<void> Function() checkpointVectors;
+  final Database? Function() liveVectors;
 }
 
 class BackupResult {
@@ -238,6 +253,12 @@ class BackupRunner {
         await hooks.checkpointDatabase();
         await target.writeFile('store.db', db);
         return true;
+      case BackupItem.vectors:
+        final File vectors = File('${configDir}vectors.db');
+        if (!await vectors.exists()) return false;
+        await hooks.checkpointVectors();
+        await target.writeFile('vectors.db', vectors);
+        return true;
       case BackupItem.recommender:
         return _backupFolder(Directory(_recommenderDir), BackupItems.recommenderPrefix, target);
       case BackupItem.boardPictures:
@@ -295,7 +316,8 @@ class BackupRunner {
           continue;
         }
         done.add(item);
-        if (item != BackupItem.tagTypes) restart = true;
+        // r81: the vectors are added to the open database: no restart.
+        if (item != BackupItem.tagTypes && item != BackupItem.vectors) restart = true;
         if (item == BackupItem.doujinLibrary || item == BackupItem.sourceSettings || item == BackupItem.bookmarks || item == BackupItem.boards) {
           stores = true;
         }
@@ -337,6 +359,9 @@ class BackupRunner {
       case BackupItem.database:
         if (!names.contains('store.db')) return 'not in this backup';
         return db == DbRestore.whole ? _restoreWholeDatabase(target) : _restoreDatabaseParts(target, parts);
+      case BackupItem.vectors:
+        if (!names.contains('vectors.db')) return 'not in this backup';
+        return _restoreVectors(target);
       case BackupItem.settings:
       case BackupItem.doujinLibrary:
       case BackupItem.sourceSettings:
@@ -374,6 +399,20 @@ class BackupRunner {
     return null;
   }
 
+  /// r81: a backup's vectors added to the open vectors' database.
+  Future<String?> _restoreVectors(BackupTarget target) async {
+    final Database? live = hooks.liveVectors();
+    if (live == null) return 'the vector database is not open';
+    final File copy = File('${configDir}restore-vectors.db');
+    try {
+      if (!await target.readToFile('vectors.db', copy)) return 'the copy failed';
+      await DbParts.mergeVectors(copy, live);
+      return null;
+    } finally {
+      if (await copy.exists()) await copy.delete();
+    }
+  }
+
   Future<String?> _restoreDatabaseParts(BackupTarget target, Set<DbPart> parts) async {
     if (parts.isEmpty) return 'no part of the database was chosen';
     final Database? live = hooks.liveDatabase();
@@ -381,7 +420,7 @@ class BackupRunner {
     final File copy = File('${configDir}restore-parts.db');
     try {
       if (!await target.readToFile('store.db', copy)) return 'the copy failed';
-      final List<String> skipped = await DbParts.restore(copy, parts, live);
+      final List<String> skipped = await DbParts.restore(copy, parts, live, vectors: hooks.liveVectors());
       if (skipped.isNotEmpty) {
         Logger.Inst().log('restore: the backup has no ${skipped.join(', ')}', 'BackupRunner', 'restore', LogTypes.booruHandlerInfo);
       }
