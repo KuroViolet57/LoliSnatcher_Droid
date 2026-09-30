@@ -31,11 +31,11 @@ older chronological build log, kept verbatim as history.
   Never push elsewhere; force-push is blocked.
 - **Version:** `2.6.0+5211` in `pubspec.yaml`, mirrored in
   `lib/src/data/constants.dart` (`updateInfo`). Builds are told apart by
-  `Constants.buildCodename` (`'r82-earlier-folders'` now), shown in About. Bump the
+  `Constants.buildCodename` (`'r83-niches-folder-log'` now), shown in About. Bump the
   codename every build: `rNN-<two words>`.
 - **Build counter:** rounds are numbered r21, r22, … r80. Each build gets a
   numbered folder on the K: drive (§2): r80 used **109** and **110**, r81
-  **111**, r82 **112**; the next build uses **113**. **103** is Grok's ("exp flutter 347") - never
+  **111**, r82 **112**, r83 **113**; the next build uses **114**. **103** is Grok's ("exp flutter 347") - never
   reuse a number.
 - **The user** talks in voice notes and logs; expects one build per request
   round, checked on a Samsung phone. They cannot see tool output — only the
@@ -2868,6 +2868,35 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   folder, an unreadable folder, doujin scan, the note). The Save page list
   itself has no widget test (the page spawns a cache-stats isolate).
 - **Not verified here:** SAF listing of the user's real old folder.
+
+### 4.62 RedGifs niches; the Downloads folder report (r83, build 113)
+
+- **RedGifs (log 2026-09-30, checked live 2026-10-01 with an anonymous
+  token from `v2/auth/temporary`):** `v2/niches?count=1000` → 400 "Invalid
+  page size"; count ≤ 100 works (1,821 niches, 19 pages at 100; 200 is
+  refused). `v2/niches/<id>/gifs?order=trending` → 400 "Bad sorting order"
+  (with or without `type`), though the message lists trending; hot, best,
+  latest, oldest, top, new and no order work. Now: `nichePageSize = 100`,
+  first page then four at a time (`maxNichePages` 40, a failing later page
+  is skipped), seam `RedGifsHandler.nichePage`; `_nicheOrder`: trending →
+  `hot`, top → `best`, latest → `latest`. The normal search keeps trending
+  (it works, per the log).
+- **Downloads still empty on 112** with the user's old folder
+  (`AppBackup/Lsnatcher` on internal storage) added: the log had no line on
+  the earlier folders, so r83 adds a report: `DownloadsReconciler` logs once
+  per folder per run what the current and each earlier folder hold
+  (`DownloadFolders.probe` → `FolderProbe.describe()`: files, subfolders
+  with names, whether the persisted grant is still held, sample names, a
+  read error), and per check the file name the first missing download was
+  looked for as. New native method `probeSafFolder` (MainActivity) - the
+  old `listFileNames` turns every error into an empty list. `foundIn` counts
+  where downloads were found; the drawer's "check against the folder" shows
+  it. Adding/removing an earlier folder is logged.
+- **Open:** the cause of the empty Downloads list waits on the next log
+  (suspects: files one level down in the folder, no access kept, names that
+  differ from `ImageWriter.getFilename`).
+- **Tests:** three RedGifs tests in `booru_parity_test`, two in
+  `download_folders_test` (the report lines, the per-folder counts).
 
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 

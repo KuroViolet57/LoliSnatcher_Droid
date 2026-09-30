@@ -161,6 +161,47 @@ void main() {
       expect(entries.map((e) => e.title), contains('Old book'));
     });
 
+    test('r83: the log says what each folder holds and which file a missing download was looked for as', () async {
+      final String now = dir('now');
+      final String old = dir('old');
+      Directory('${old}LoliSnatcher').createSync();
+      File('${old}LoliSnatcher${Platform.pathSeparator}a.jpg').writeAsStringSync('x');
+      File('${old}loose.jpg').writeAsStringSync('x');
+      SettingsHandler.instance.extPathOverride = now;
+      SettingsHandler.instance.earlierDownloadFolders.add(old);
+      final List<String> lines = [];
+      DownloadsReconciler.instance.logLine = lines.add;
+      DownloadsReconciler.instance.forgetDescribed();
+      addTearDown(DownloadsReconciler.instance.resetForTests);
+      final BooruItem missing = post('9');
+      await DownloadsReconciler.instance.check([missing]);
+      expect(lines.where((l) => l.contains('current folder')), hasLength(1));
+      final String earlierLine = lines.singleWhere((l) => l.contains('earlier folder'));
+      expect(earlierLine, contains('1 file'));
+      expect(earlierLine, contains('1 folder'));
+      expect(earlierLine, contains('LoliSnatcher'), reason: 'a subfolder is named: the files may be one level down');
+      expect(lines.where((l) => l.contains(ImageWriter().getFilename(missing, gelbooru))), hasLength(1), reason: 'the name it looked for');
+      // The folders are described once per run, not per page.
+      await DownloadsReconciler.instance.check([post('10')]);
+      expect(lines.where((l) => l.contains('earlier folder')), hasLength(1));
+    });
+
+    test("r83: the check counts where downloads were found, for the drawer's report", () async {
+      final String now = dir('now');
+      final String old = dir('old');
+      SettingsHandler.instance.extPathOverride = now;
+      SettingsHandler.instance.earlierDownloadFolders.add(old);
+      final ImageWriter writer = ImageWriter();
+      File('$old${writer.getFilename(post('1'), gelbooru)}').writeAsStringSync('x');
+      File('$old${writer.getFilename(post('2'), gelbooru)}').writeAsStringSync('x');
+      File('$now${writer.getFilename(post('3'), gelbooru)}').writeAsStringSync('x');
+      DownloadsReconciler.instance.logLine = (_) {};
+      addTearDown(DownloadsReconciler.instance.resetForTests);
+      DownloadsReconciler.instance.foundIn.clear();
+      await DownloadsReconciler.instance.check([post('1'), post('2'), post('3'), post('4')]);
+      expect(DownloadsReconciler.instance.foundIn, {'': 1, old: 2});
+    });
+
     test('an empty Downloads tab says why instead of "No results"', () {
       expect(DownloadsHandler.missingNote(250, earlier: 0), contains('None of your 250 most recent downloads'));
       expect(DownloadsHandler.missingNote(250, earlier: 0), contains('Settings → Save & cache → Earlier download folders'));

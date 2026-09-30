@@ -33,6 +33,50 @@ class DownloadsReconciler {
   /// Set when the storage itself could not be read (no reconciling then).
   String? storageProblem;
 
+  /// r83: where the check writes its report; replaced in tests.
+  void Function(String line) logLine = _defaultLog;
+
+  static void _defaultLog(String line) => Logger.Inst().log(line, 'DownloadsReconciler', 'check', LogTypes.booruHandlerInfo);
+
+  /// r83: folders already described in the log this run (a key per folder).
+  final Set<String> _described = {};
+
+  void forgetDescribed() => _described.clear();
+
+  /// r83: how many downloads the checks found in each folder ('' = the
+  /// current one), for the drawer's report. Cleared by [audit].
+  final Map<String, int> foundIn = {};
+
+  void resetForTests() {
+    logLine = _defaultLog;
+    _described.clear();
+    foundIn.clear();
+  }
+
+  /// r83: once per folder per run, what it holds - so a log says why a
+  /// download is not found (no access, an empty folder, files one level down).
+  Future<void> _describeFolders({required String current, required String currentLabel}) async {
+    if (_described.add('current:$current')) {
+      try {
+        logLine('downloads: current folder "$currentLabel": ${(await DownloadFolders.probe(current)).describe()}');
+      } catch (e) {
+        logLine('downloads: current folder "$currentLabel" could not be described: $e');
+      }
+    }
+    for (final String folder in List<String>.of(DownloadFolders.earlier)) {
+      if (!_described.add('earlier:$folder')) continue;
+      try {
+        final Set<String>? names = await DownloadFolders.namesIn(folder);
+        logLine(
+          'downloads: earlier folder "${DownloadFolders.describe(folder)}": ${(await DownloadFolders.probe(folder)).describe()}'
+          '${names == null ? ' - its file list could not be read' : ''}',
+        );
+      } catch (e) {
+        logLine('downloads: earlier folder "${DownloadFolders.describe(folder)}" could not be described: $e');
+      }
+    }
+  }
+
   /// The row's booru — the writer's file name starts with its NAME, so the
   /// row alone cannot be resolved to a file without it. Matched by the post
   /// URL host (then the file host) against the configured boorus.
@@ -75,7 +119,9 @@ class DownloadsReconciler {
       return (present: items, missing: <BooruItem>[], unknown: items);
     }
     storageProblem = null;
+    await _describeFolders(current: saf ? extPath : writer.path, currentLabel: saf ? DownloadFolders.describe(extPath) : writer.path);
 
+    String? firstMissing;
     for (final item in items) {
       final Booru? booru = booruFor(item, settings.booruList);
       if (booru == null) {
@@ -84,11 +130,20 @@ class DownloadsReconciler {
         continue;
       }
       final String name = writer.getFilename(item, booru);
-      bool exists = saf ? SAFFileCache.instance.fileNames.contains(name) : await File(writer.path + name).exists();
+      final bool here = saf ? SAFFileCache.instance.fileNames.contains(name) : await File(writer.path + name).exists();
       // r82: a file saved before the download folder changed is still in the
       // folder it was saved to.
-      if (!exists) exists = await DownloadFolders.earlierFolderWith(name) != null;
-      (exists ? present : gone).add(item);
+      final String? where = here ? '' : await DownloadFolders.earlierFolderWith(name);
+      if (where != null) {
+        present.add(item);
+        foundIn[where] = (foundIn[where] ?? 0) + 1;
+      } else {
+        gone.add(item);
+        firstMissing ??= name;
+      }
+    }
+    if (firstMissing != null) {
+      logLine('downloads: ${gone.length} of ${items.length} not found in any folder; the first was looked for as "$firstMissing"');
     }
     return (present: present, missing: gone, unknown: unknown);
   }
@@ -101,6 +156,7 @@ class DownloadsReconciler {
     final db = SettingsHandler.instance.dbHandler;
     int scanned = 0, gone = 0, unknown = 0;
     final List<BooruItem> found = [];
+    foundIn.clear();
     const int page = 500;
     for (int offset = 0; ; offset += page) {
       final rows = await db.searchDB('', '$offset', '$page', isDownloads: true, customConditions: customConditions);

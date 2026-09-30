@@ -241,6 +241,18 @@ class ServiceHandler {
     return result;
   }
 
+  /// r83: what a picked folder holds at its top ({access, files, dirs,
+  /// sampleFiles, sampleDirs, error}); null when the call itself failed.
+  static Future<Map<String, dynamic>?> probeSafFolder(String safUri) async {
+    try {
+      final dynamic probe = await platform.invokeMethod('probeSafFolder', {'uri': safUri});
+      return probe is Map ? Map<String, dynamic>.from(probe) : null;
+    } catch (e) {
+      log(e);
+      return null;
+    }
+  }
+
   /// Children of a SAF directory — the picked root OR a folder created by
   /// [getOrCreateSAFDirectory] — as {name, uri, isDir, mime, size, modified}.
   static Future<List<Map<String, dynamic>>> listSAFDirectory(String safUri) async {

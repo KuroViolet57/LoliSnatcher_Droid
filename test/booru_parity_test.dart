@@ -365,6 +365,55 @@ void main() {
       expect(params('niche:just-boobs').containsKey('type'), isFalse);
     });
 
+    test('r83: a niche feed sorted by Trending asks for "hot" (RedGifs refuses trending there, checked live 2026-10-01)', () {
+      expect(params('niche:amateur-girls')['order'], 'hot');
+      expect(params('niche:amateur-girls sort:trending')['order'], 'hot');
+      expect(params('niche:amateur-girls sort:top')['order'], 'best');
+      expect(params('niche:amateur-girls sort:latest')['order'], 'latest');
+      expect(Uri.parse(h().makeURL('niche:amateur-girls')).path, '/v2/niches/amateur-girls/gifs');
+      expect(params('blonde')['order'], 'trending', reason: 'the normal search keeps trending');
+    });
+
+    test('r83: the niche list is read 100 at a time, every page, and suggests from all of it', () async {
+      final List<(int, int)> asked = [];
+      RedGifsHandler.resetNichesForTests();
+      RedGifsHandler.nichePage = (int page, int count) async {
+        asked.add((page, count));
+        return {
+          'pages': 19,
+          'niches': [
+            for (int i = 0; i < 100; i++) {'id': 'niche-$page-$i', 'name': 'Niche $page $i', 'gifs': page * 1000 + i},
+          ],
+        };
+      };
+      addTearDown(RedGifsHandler.resetNichesForTests);
+      final res = await h().fetchTagSuggestions(Uri.parse('https://api.redgifs.com/v2/search/suggest?query=niche'), 'niche:niche-19-');
+      expect(asked.map((a) => a.$2).toSet(), {100}, reason: 'RedGifs answers "Invalid page size" above 100');
+      expect(asked.map((a) => a.$1).toSet(), {for (int p = 1; p <= 19; p++) p}, reason: 'all 19 pages');
+      final List data = res.data as List;
+      expect(data, isNotEmpty, reason: 'a niche from the last page is found');
+      expect(data.first['text'], startsWith('niche-19-'));
+      // Read once per run.
+      await h().fetchTagSuggestions(Uri.parse('https://api.redgifs.com/v2/search/suggest?query=niche'), 'niche');
+      expect(asked, hasLength(19));
+    });
+
+    test('r83: a page of the niche list that fails keeps the rest', () async {
+      RedGifsHandler.resetNichesForTests();
+      RedGifsHandler.nichePage = (int page, int count) async {
+        if (page == 3) throw StateError('network');
+        return {
+          'pages': 4,
+          'niches': [
+            {'id': 'n$page', 'name': 'N$page', 'gifs': page},
+          ],
+        };
+      };
+      addTearDown(RedGifsHandler.resetNichesForTests);
+      final res = await h().fetchTagSuggestions(Uri.parse('https://api.redgifs.com/v2/search/suggest?query=niche'), 'niche');
+      expect((res.data as List).map((m) => m['text']).toSet(), {'n1', 'n2', 'n4'});
+    });
+
     test('metatags and chips', () {
       expect(keysOf(h().availableMetaTags()), containsAll(['sort', 'type', 'verified']));
       expect(values(h().siteFilters!, 'type'), ['', 'gifs', 'images']);

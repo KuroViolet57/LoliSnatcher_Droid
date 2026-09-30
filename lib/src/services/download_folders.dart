@@ -18,6 +18,40 @@ import 'package:lolisnatcher/src/utils/logger.dart';
 /// The app keeps its access to a picked folder (MainActivity takes a
 /// persistable grant and never releases it), so an earlier folder stays
 /// readable. Nothing is ever written there.
+/// r83: what a download folder holds at its top, for the Downloads log.
+class FolderProbe {
+  const FolderProbe({
+    required this.files,
+    required this.dirs,
+    this.sampleFiles = const [],
+    this.sampleDirs = const [],
+    this.access,
+    this.error,
+  });
+
+  final int files;
+  final int dirs;
+  final List<String> sampleFiles;
+  final List<String> sampleDirs;
+
+  /// Whether the app still holds its access to a picked folder (null for a
+  /// plain folder).
+  final bool? access;
+  final String? error;
+
+  static String _count(int n, String what) => '$n $what${n == 1 ? '' : 's'}';
+
+  /// "1,204 files, 1 folder (LoliSnatcher), access kept, e.g. a.jpg, b.mp4".
+  String describe() {
+    final StringBuffer b = StringBuffer('${_count(files, 'file')}, ${_count(dirs, 'folder')}');
+    if (sampleDirs.isNotEmpty) b.write(' (${sampleDirs.join(', ')}${dirs > sampleDirs.length ? ', …' : ''})');
+    if (access != null) b.write(access! ? ', access kept' : ', NO access kept');
+    if (error != null) b.write(', could not be read: $error');
+    if (sampleFiles.isNotEmpty) b.write(', e.g. ${sampleFiles.join(', ')}');
+    return b.toString();
+  }
+}
+
 class DownloadFolders {
   const DownloadFolders._();
 
@@ -35,6 +69,9 @@ class DownloadFolders {
   @visibleForTesting
   static Future<Set<String>?> Function(String folder) listNames = _defaultListNames;
 
+  /// What a folder holds at its top (the Downloads log); replaced in tests.
+  static Future<FolderProbe> Function(String folder) probe = _defaultProbe;
+
   /// The current folder changed: its cached file list is read again.
   @visibleForTesting
   static void Function(String folder) onChanged = _defaultOnChanged;
@@ -46,6 +83,7 @@ class DownloadFolders {
   static void resetForTests() {
     defaultFolder = ServiceHandler.getPicturesDir;
     listNames = _defaultListNames;
+    probe = _defaultProbe;
     onChanged = _defaultOnChanged;
     save = _defaultSave;
   }
@@ -79,6 +117,7 @@ class DownloadFolders {
     if (folder.isEmpty || earlier.contains(folder) || folder == await _current()) return false;
     earlier.insert(0, folder);
     _listings.remove(folder);
+    Logger.Inst().log('download folders: "${describe(folder)}" added as an earlier folder (${earlier.length} now)', 'DownloadFolders', 'addEarlier', LogTypes.settingsLoad);
     await save();
     return true;
   }
@@ -86,6 +125,7 @@ class DownloadFolders {
   static Future<void> removeEarlier(String folder) async {
     if (!earlier.remove(folder)) return;
     _listings.remove(folder);
+    Logger.Inst().log('download folders: "${describe(folder)}" removed from the earlier folders (${earlier.length} left)', 'DownloadFolders', 'removeEarlier', LogTypes.settingsLoad);
     await save();
   }
 
@@ -147,6 +187,39 @@ class DownloadFolders {
       if (e is File) names.add(e.path.split(Platform.pathSeparator).last);
     }
     return names;
+  }
+
+  static Future<FolderProbe> _defaultProbe(String folder) async {
+    if (isSaf(folder)) {
+      if (!Platform.isAndroid) return const FolderProbe(files: 0, dirs: 0, error: 'a picked folder is readable on the phone only');
+      final Map<String, dynamic>? p = await ServiceHandler.probeSafFolder(folder);
+      if (p == null) return const FolderProbe(files: 0, dirs: 0, error: 'the app could not ask the folder');
+      return FolderProbe(
+        files: (p['files'] as num?)?.toInt() ?? 0,
+        dirs: (p['dirs'] as num?)?.toInt() ?? 0,
+        sampleFiles: [for (final dynamic s in (p['sampleFiles'] as List?) ?? const []) s.toString()],
+        sampleDirs: [for (final dynamic s in (p['sampleDirs'] as List?) ?? const []) s.toString()],
+        access: p['access'] == true,
+        error: p['error']?.toString(),
+      );
+    }
+    final Directory d = Directory(folder);
+    if (!await d.exists()) return const FolderProbe(files: 0, dirs: 0, error: 'the folder does not exist');
+    int files = 0;
+    int dirs = 0;
+    final List<String> sampleFiles = [];
+    final List<String> sampleDirs = [];
+    await for (final FileSystemEntity e in d.list(followLinks: false)) {
+      final String name = e.path.split(Platform.pathSeparator).where((s) => s.isNotEmpty).last;
+      if (e is Directory) {
+        dirs++;
+        if (sampleDirs.length < 5) sampleDirs.add(name);
+      } else if (e is File) {
+        files++;
+        if (sampleFiles.length < 5) sampleFiles.add(name);
+      }
+    }
+    return FolderProbe(files: files, dirs: dirs, sampleFiles: sampleFiles, sampleDirs: sampleDirs);
   }
 
   static void _defaultOnChanged(String folder) {

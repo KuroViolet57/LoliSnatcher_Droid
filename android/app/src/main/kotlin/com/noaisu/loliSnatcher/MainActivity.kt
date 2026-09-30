@@ -287,6 +287,19 @@ class MainActivity: FlutterFragmentActivity() {
                         }
                     }
                     // Doujin downloads: one folder per book under the SAF root.
+                    // r83: what a picked folder holds at its top, and whether the
+                    // app still holds its access - for the Downloads log.
+                    "probeSafFolder" -> {
+                        val uri = call.argument<String>("uri")
+                        if (uri != null) {
+                            Executors.newSingleThreadExecutor().execute {
+                                val probe = probeSafFolder(uri)
+                                runOnUiThread { result.success(probe) }
+                            }
+                        } else {
+                            result.error("INVALID_ARGUMENT", "URI is null", null)
+                        }
+                    }
                     "listSafDirectory" -> {
                         val uri = call.argument<String>("uri")
                         if (uri != null) {
@@ -733,6 +746,54 @@ class MainActivity: FlutterFragmentActivity() {
             Log.e("MainActivity", "Error listing SAF directory: $uriString", e)
             emptyList()
         }
+    }
+
+    private fun probeSafFolder(uriString: String): Map<String, Any?> {
+        val uri = Uri.parse(uriString)
+        val access = try {
+            contentResolver.persistedUriPermissions.any { it.uri == uri && it.isReadPermission }
+        } catch (e: Exception) {
+            false
+        }
+        var files = 0
+        var dirs = 0
+        val sampleFiles = mutableListOf<String>()
+        val sampleDirs = mutableListOf<String>()
+        var error: String? = null
+        try {
+            val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(uri, childDocumentId(uri))
+            val cursor = contentResolver.query(
+                childrenUri,
+                arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_MIME_TYPE),
+                null, null, null
+            )
+            if (cursor == null) {
+                error = "the folder answered nothing"
+            } else {
+                cursor.use { c ->
+                    while (c.moveToNext()) {
+                        val name = c.getString(0) ?: ""
+                        if (c.getString(1) == DocumentsContract.Document.MIME_TYPE_DIR) {
+                            dirs++
+                            if (sampleDirs.size < 5) sampleDirs.add(name)
+                        } else {
+                            files++
+                            if (sampleFiles.size < 5) sampleFiles.add(name)
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            error = e.javaClass.simpleName + ": " + (e.message ?: "")
+        }
+        return mapOf(
+            "access" to access,
+            "files" to files,
+            "dirs" to dirs,
+            "sampleFiles" to sampleFiles,
+            "sampleDirs" to sampleDirs,
+            "error" to error
+        )
     }
 
     private fun getOrCreateSafDirectory(uriString: String, name: String): String? {

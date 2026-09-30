@@ -11,6 +11,7 @@ import 'package:lolisnatcher/src/handlers/doujin_download_handler.dart';
 import 'package:lolisnatcher/src/handlers/downloads_reconciler.dart';
 import 'package:lolisnatcher/src/pages/doujin_downloads_page.dart';
 import 'package:lolisnatcher/src/pages/snatcher_page.dart';
+import 'package:lolisnatcher/src/services/download_folders.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 import 'package:lolisnatcher/src/utils/extensions.dart';
 import 'package:lolisnatcher/src/widgets/collections/add_to_collection_sheet.dart';
@@ -173,6 +174,11 @@ class DDNavigationButtons extends StatelessWidget {
     final reconciler = DownloadsReconciler.instance;
     final result = await reconciler.audit(customConditions: DownloadsHandler.doujinExclusionConditions());
     final String root = await DoujinDownloadHandler.instance.describeRoot();
+    // r83: where they were found - the current folder and each earlier one.
+    final String where = [
+      for (final MapEntry<String, int> e in reconciler.foundIn.entries)
+        '${e.value} in ${e.key.isEmpty ? 'the current folder' : DownloadFolders.describe(e.key)}',
+    ].join('\n');
     if (!context.mounted) return;
     if (result.problem != null) {
       FlashElements.showSnackbar(
@@ -188,7 +194,7 @@ class DDNavigationButtons extends StatelessWidget {
       FlashElements.showSnackbar(
         context: context,
         title: Text('All ${result.scanned} media downloads have a file'),
-        content: Text('Checked under $root${result.unknown > 0 ? '\n${result.unknown} could not be checked (no matching booru config).' : ''}'),
+        content: Text('Checked under $root${where.isEmpty ? '' : '\n$where'}${result.unknown > 0 ? '\n${result.unknown} could not be checked (no matching booru config).' : ''}'),
         duration: const Duration(seconds: 4),
         sideColor: Colors.green,
       );
@@ -199,7 +205,8 @@ class DDNavigationButtons extends StatelessWidget {
       builder: (ctx) => AlertDialog(
         title: Text('${result.missing} of ${result.scanned} downloads have no file'),
         content: Text(
-          'Their files are not under\n$root\n\n'
+          'Their files are not under\n$root\nnor in an earlier download folder (Settings → Save & cache).\n'
+          '${where.isEmpty ? '' : '\nFound:\n$where\n'}\n'
           'Forgetting removes them from the Downloads list; the posts are not touched and can be saved again.'
           '${result.unknown > 0 ? '\n\n${result.unknown} entries could not be checked (no matching booru config) and are left alone.' : ''}',
         ),
