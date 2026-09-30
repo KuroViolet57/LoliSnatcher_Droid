@@ -101,6 +101,15 @@ class _WaterfallErrorButtonsState extends State<WaterfallErrorButtons> {
     super.dispose();
   }
 
+  String? _emptyNote() {
+    try {
+      final String? note = searchHandler.currentBooruHandler.emptyNote;
+      return note == null || note.isEmpty ? null : note;
+    } catch (_) {
+      return null;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Obx(() {
@@ -118,7 +127,8 @@ class _WaterfallErrorButtonsState extends State<WaterfallErrorButtons> {
       if (isLastPage) {
         if (isEmpty) {
           title = context.loc.preview.error.noResults;
-          subtitle = context.loc.preview.error.noResultsSubtitle;
+          // r82: a source that knows why it is empty says so.
+          subtitle = _emptyNote() ?? context.loc.preview.error.noResultsSubtitle;
         } else {
           title = context.loc.preview.error.reachedEnd;
           subtitle = context.loc.preview.error.reachedEndSubtitle(pageNum: pageNum);

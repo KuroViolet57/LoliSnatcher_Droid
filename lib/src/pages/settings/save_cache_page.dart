@@ -11,6 +11,7 @@ import 'package:lolisnatcher/src/data/settings/image_quality.dart';
 import 'package:lolisnatcher/src/data/settings/video_cache_mode.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/services/download_folders.dart';
 import 'package:lolisnatcher/src/services/image_writer.dart';
 import 'package:lolisnatcher/src/services/image_writer_isolate.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
@@ -136,12 +137,88 @@ class _SaveCachePageState extends State<SaveCachePage> {
     settingsHandler.videoCacheMode = videoCacheMode;
     settingsHandler.cacheDuration = cacheDuration;
     settingsHandler.cacheSize = int.parse(cacheSizeController.text);
-    settingsHandler.extPathOverride = extPathOverride;
+    // r82: through DownloadFolders, so the folder left is remembered and
+    // the new one's file list is read at once.
+    if (extPathOverride != settingsHandler.extPathOverride) await DownloadFolders.change(extPathOverride);
     settingsHandler.snatchMode = snatchMode;
     settingsHandler.downloadNotifications = downloadNotifications;
     settingsHandler.snatchOnFavourite = snatchOnFavourite;
     settingsHandler.favouriteOnSnatch = favouriteOnSnatch;
     await settingsHandler.saveSettings(restate: false);
+  }
+
+  /// r82: Settings → Save & cache → Earlier download folders.
+  List<Widget> _earlierFolders(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final List<String> folders = List<String>.of(DownloadFolders.earlier);
+    return [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 2),
+        child: Text('Earlier download folders', style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+      ),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+        child: Text(
+          'The Downloads list and the doujin downloads also look here for files saved before you changed the folder. '
+          'New downloads always go to the folder above; nothing is moved or written here.',
+          style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurface.withValues(alpha: 0.6)),
+        ),
+      ),
+      if (folders.isEmpty)
+        Padding(
+          key: const ValueKey('earlier-folders-none'),
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+          child: Text('None yet. A folder you change away from is added here.', style: theme.textTheme.bodySmall),
+        ),
+      for (final String folder in folders)
+        ListTile(
+          key: ValueKey('earlier-folder-$folder'),
+          dense: true,
+          leading: const Icon(Symbols.folder_open_rounded),
+          title: Text(DownloadFolders.describe(folder)),
+          trailing: IconButton(
+            key: ValueKey('earlier-folder-remove-$folder'),
+            tooltip: 'Stop looking here',
+            icon: const Icon(Symbols.close_rounded),
+            onPressed: () async {
+              await DownloadFolders.removeEarlier(folder);
+              if (mounted) setState(() {});
+            },
+          ),
+        ),
+      SettingsButton(
+        key: const ValueKey('earlier-folder-add'),
+        name: 'Add a folder you used before',
+        icon: const Icon(Symbols.create_new_folder_rounded),
+        action: _addEarlierFolder,
+      ),
+    ];
+  }
+
+  Future<void> _addEarlierFolder() async {
+    if (!Platform.isAndroid) {
+      FlashElements.showSnackbar(
+        context: context,
+        title: Text(context.loc.settings.cache.notAvailableForPlatform),
+        leadingIcon: Symbols.error_rounded,
+      );
+      return;
+    }
+    final String picked = await ServiceHandler.getSAFDirectoryAccess();
+    if (picked.isEmpty || !mounted) return;
+    final bool added = await DownloadFolders.addEarlier(picked);
+    if (!mounted) return;
+    setState(() {});
+    FlashElements.showSnackbar(
+      context: context,
+      title: Text(added ? 'Folder added' : 'Already there'),
+      content: Text(
+        added
+            ? 'The Downloads list looks in ${DownloadFolders.describe(picked)} too. Tap the Downloads tab to load it again.'
+            : 'That folder is the current download folder or already in the list.',
+      ),
+      leadingIcon: added ? Symbols.check_rounded : Symbols.info_rounded,
+    );
   }
 
   void setPath(String path) {
@@ -315,8 +392,12 @@ class _SaveCachePageState extends State<SaveCachePage> {
 
                   if (Platform.isAndroid) {
                     final String newPath = await ServiceHandler.setExtDir();
+                    // r82: a cancelled picker keeps the folder (it used to
+                    // reset it to the default); a new one is applied at once.
+                    if (newPath.isEmpty) return;
+                    await DownloadFolders.change(newPath);
                     extPathOverride = newPath;
-                    setState(() {});
+                    if (mounted) setState(() {});
                     // TODO Store uri in settings and make another button so can set seetings dir and pictures dir
                   } else {
                     // TODO need to update dir picker to work on desktop
@@ -360,12 +441,16 @@ class _SaveCachePageState extends State<SaveCachePage> {
                 SettingsButton(
                   name: context.loc.settings.cache.resetStorageDirectory,
                   icon: const Icon(Symbols.refresh_rounded),
-                  action: () {
+                  action: () async {
+                    await DownloadFolders.change('');
+                    if (!mounted) return;
                     setState(() {
                       extPathOverride = '';
                     });
                   },
                 ),
+              // r82: the folders used before, still looked in.
+              ..._earlierFolders(context),
               const SettingsButton(name: '', enabled: false),
               SettingsToggle(
                 value: thumbnailCache,

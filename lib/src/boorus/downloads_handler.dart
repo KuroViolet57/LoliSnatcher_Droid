@@ -9,6 +9,7 @@ import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/downloads_reconciler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/services/download_folders.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 
 /// The MEDIA downloads feed: booru images and videos from store.db, each
@@ -32,6 +33,14 @@ class DownloadsHandler extends BooruHandler {
     return [
       for (final h in hosts) "bi.postURL NOT LIKE '%://${h.replaceAll("'", "''")}/%'",
     ];
+  }
+
+  /// r82: why the Downloads tab is empty when the database has downloads
+  /// but none of their files is found.
+  static String missingNote(int rows, {required int earlier}) {
+    final String elsewhere = earlier == 0 ? '' : (earlier == 1 ? ' or the earlier folder' : ' or the $earlier earlier folders');
+    return 'None of your $rows most recent downloads has its file in the download folder$elsewhere. '
+        'If you changed the download folder, add the one you used before: Settings → Save & cache → Earlier download folders.';
   }
 
   @override
@@ -94,6 +103,10 @@ class DownloadsHandler extends BooruHandler {
         LogTypes.booruHandlerInfo,
       );
       newItems.addAll(r.present);
+      // r82: a first page whose files are all somewhere else says so.
+      emptyNote = rows.isNotEmpty && r.present.isEmpty && length == 0
+          ? missingNote(rows.length, earlier: DownloadFolders.earlier.length)
+          : null;
     } catch (e, s) {
       Logger.Inst().log(
         'DB FAILED',

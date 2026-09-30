@@ -5,6 +5,7 @@ import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/services/download_folders.dart';
 import 'package:lolisnatcher/src/services/image_writer.dart';
 import 'package:lolisnatcher/src/services/saf_file_cache.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
@@ -17,6 +18,9 @@ import 'package:lolisnatcher/src/utils/logger.dart';
 /// its row behind, so the list showed phantoms. This looks each row's file up
 /// by the same name the writer used, keeps the ones present, reports the
 /// missing ones, and on request forgets them — nothing is dropped silently.
+///
+/// r82: the download folders used before the current one are looked in
+/// too (DownloadFolders), so changing the folder no longer empties the list.
 class DownloadsReconciler {
   DownloadsReconciler._();
 
@@ -80,9 +84,10 @@ class DownloadsReconciler {
         continue;
       }
       final String name = writer.getFilename(item, booru);
-      final bool exists = saf
-          ? SAFFileCache.instance.fileNames.contains(name)
-          : await File(writer.path + name).exists();
+      bool exists = saf ? SAFFileCache.instance.fileNames.contains(name) : await File(writer.path + name).exists();
+      // r82: a file saved before the download folder changed is still in the
+      // folder it was saved to.
+      if (!exists) exists = await DownloadFolders.earlierFolderWith(name) != null;
       (exists ? present : gone).add(item);
     }
     return (present: present, missing: gone, unknown: unknown);

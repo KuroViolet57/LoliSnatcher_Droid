@@ -31,11 +31,11 @@ older chronological build log, kept verbatim as history.
   Never push elsewhere; force-push is blocked.
 - **Version:** `2.6.0+5211` in `pubspec.yaml`, mirrored in
   `lib/src/data/constants.dart` (`updateInfo`). Builds are told apart by
-  `Constants.buildCodename` (`'r81-vectors-frames'` now), shown in About. Bump the
+  `Constants.buildCodename` (`'r82-earlier-folders'` now), shown in About. Bump the
   codename every build: `rNN-<two words>`.
 - **Build counter:** rounds are numbered r21, r22, … r80. Each build gets a
   numbered folder on the K: drive (§2): r80 used **109** and **110**, r81
-  used **111**; the next build uses **112**. **103** is Grok's ("exp flutter 347") - never
+  **111**, r82 **112**; the next build uses **113**. **103** is Grok's ("exp flutter 347") - never
   reuse a number.
 - **The user** talks in voice notes and logs; expects one build per request
   round, checked on a Samsung phone. They cannot see tool output — only the
@@ -2831,6 +2831,43 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   the Models page; the encoder prune test moved to bytes.
 - **Not verified here:** the move of the phone's existing vectors, SAF and
   frames on the phone.
+
+### 4.61 Earlier download folders (r82, build 112)
+
+- **Report (30 Sep):** after changing the media download folder the
+  Downloads tab showed an error and no media. Cause: changing the folder
+  never moved the files, and `DownloadsReconciler.check` lists a snatched
+  row only when its file is in the CURRENT folder, so every row was held
+  back and the empty feed showed "No results". Second defect: the Save page
+  (and `get_perms`' dialog) assigned `extPathOverride` directly, so
+  `SAFFileCache` (invalidated only in `setByString`) kept the old folder's
+  names until a restart.
+- **`lib/src/services/download_folders.dart`:** `change(folder)` - the one
+  place a folder change goes through: records the folder left (the default
+  resolves through `ServiceHandler.getPicturesDir`) at the front of the
+  setting `earlierDownloadFolders` (device-specific, written next to the
+  declared settings), drops the new current one from it, invalidates and
+  repopulates `SAFFileCache`, saves. `addEarlier` / `removeEarlier` (the
+  Save page's list), `namesIn` (top-level names, cached per run; a folder
+  that cannot be read is null and skipped), `earlierFolderWith(name)`,
+  `describe` (tree id → `Download/Loli`, `1234-ABCD: Pictures`).
+  MainActivity takes persistable grants and never releases them, so an
+  earlier SAF folder stays readable; its `SAFUri` field is never read.
+- **Looked in:** `DownloadsReconciler.check` (so the drawer's audit and
+  "Forget" only count files missing everywhere), `SnatchedStatusIcon`,
+  `DoujinDownloadHandler.scan` (SAF or plain per folder). Writes (media,
+  doujins, captures) stay on the current folder.
+- **Empty feed:** `BooruHandler.emptyNote` (null by default);
+  `waterfall_error_buttons` shows it under "No results" when set;
+  `DownloadsHandler` sets `missingNote(rows, earlier:)` when a first page
+  has rows and no file.
+- **Also:** a cancelled folder picker on the Save page keeps the folder (it
+  reset it to the default before).
+- **Tests:** `download_folders_test` (9: change/remember/return, refresh at
+  once, add/remove, restart, names, the check with a file in an earlier
+  folder, an unreadable folder, doujin scan, the note). The Save page list
+  itself has no widget test (the page spawns a cache-stats isolate).
+- **Not verified here:** SAF listing of the user's real old folder.
 
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 

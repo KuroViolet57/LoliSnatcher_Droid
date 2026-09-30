@@ -8,6 +8,7 @@ import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/services/download_folders.dart';
 import 'package:lolisnatcher/src/services/image_writer.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
@@ -318,6 +319,20 @@ class DoujinDownloadHandler {
         await _scanSaf(root, entries);
       } else {
         await _scanPlain(root, entries);
+      }
+      // r82: books saved before the download folder changed stay where they
+      // were saved.
+      for (final String folder in List<String>.of(DownloadFolders.earlier)) {
+        if (folder == root) continue;
+        try {
+          if (DownloadFolders.isSaf(folder)) {
+            if (Platform.isAndroid) await _scanSaf(folder, entries);
+          } else {
+            await _scanPlain(folder, entries);
+          }
+        } catch (e) {
+          _log('an earlier download folder could not be scanned: $e');
+        }
       }
     } catch (e, s) {
       Logger.Inst().log('scan failed: $e', 'DoujinDownloadHandler', 'scan', LogTypes.exception, s: s);

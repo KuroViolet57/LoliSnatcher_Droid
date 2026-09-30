@@ -86,6 +86,11 @@ abstract class BooruHandler {
   TagType? ownTagType(String tag) => ownTagTypes[tag.trim().toLowerCase()];
 
   String errorString = '';
+
+  /// r82: why a feed that ended empty is empty, shown instead of "Change
+  /// search query or tap to retry" (the Downloads tab when no file is found).
+  /// Null for every source that sets nothing.
+  String? emptyNote;
   // List<({BooruItem item, Object e, StackTrace? s})> failedItems = [];
 
   // Discovery strip data (rendered above the results grid). Handlers that can

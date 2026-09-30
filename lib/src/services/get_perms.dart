@@ -9,6 +9,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/services/download_folders.dart';
 import 'package:lolisnatcher/src/widgets/common/cancel_button.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 
@@ -73,11 +74,11 @@ Future<bool> showStorageNeedsUpdateDialog() async {
               label: Text(context.loc.permissions.setDirectory),
               icon: const Icon(Symbols.settings_rounded),
               onPressed: () async {
-                SettingsHandler.instance.extPathOverride = '';
                 if (Platform.isAndroid) {
                   final String newPath = await ServiceHandler.setExtDir();
-                  SettingsHandler.instance.extPathOverride = newPath;
-                  await SettingsHandler.instance.saveSettings(restate: false);
+                  // r82: the folder left is remembered; the new one's file
+                  // list is read at once ('' = the default folder, as before).
+                  await DownloadFolders.change(newPath);
                   Navigator.of(context).pop(true);
                 } else {
                   FlashElements.showSnackbar(
@@ -107,8 +108,7 @@ Future<bool> showStorageNeedsUpdateDialog() async {
                 foregroundColor: const WidgetStatePropertyAll(Colors.white),
               ),
               onPressed: () async {
-                SettingsHandler.instance.extPathOverride = '';
-                await SettingsHandler.instance.saveSettings(restate: false);
+                await DownloadFolders.change('');
                 Navigator.of(context).pop(true);
               },
             ),

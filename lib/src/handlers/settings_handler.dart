@@ -279,6 +279,9 @@ class SettingsHandler {
   FrameMode framesOtherTabs = FrameMode.playing;
   bool rememberLooks = false;
   int vectorSpaceMb = 250;
+  // r82: download folders used before the current one (DownloadFolders),
+  // newest first. Written next to the declared settings, like `modularUi`.
+  final List<String> earlierDownloadFolders = [];
   // Render the post-info panel (tags, metadata) as a Boorusama-style bottom
   // sheet dragged up from the bottom edge instead of the classic right-side
   // drawer. On by default; turn off to restore the side drawer.
@@ -429,6 +432,7 @@ class SettingsHandler {
     // r80: cores and folders belong to this phone.
     'modelThreads',
     'capturesPath',
+    'earlierDownloadFolders',
     'desktopListsDrag',
     'incognitoKeyboard',
     'appAlias',
@@ -2130,6 +2134,7 @@ class SettingsHandler {
     // r80: Settings → Models, written next to the declared settings.
     json['modelTasks'] = Map<String, bool>.from(modelTasks);
     json['modelThreads'] = Map<String, int>.from(modelThreads);
+    json['earlierDownloadFolders'] = List<String>.from(earlierDownloadFolders);
 
     // Add version info
     json['version'] = Constants.updateInfo.versionName;
@@ -2256,6 +2261,13 @@ class SettingsHandler {
     modelThreads
       ..clear()
       ..addAll(ModelTasks.parseThreads(json['modelThreads']));
+    earlierDownloadFolders.clear();
+    final dynamic earlierFolders = json['earlierDownloadFolders'];
+    if (earlierFolders is List) {
+      for (final dynamic f in earlierFolders) {
+        if (f is String && f.isNotEmpty && !earlierDownloadFolders.contains(f)) earlierDownloadFolders.add(f);
+      }
+    }
 
     try {
       final dynamic raw = json['hiddenTagsPerBooru'];
