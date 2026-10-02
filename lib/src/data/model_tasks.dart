@@ -60,13 +60,23 @@ enum ModelAccelerator {
 
   /// Android's Neural Networks API: the phone maker's driver decides
   /// between its GPU, NPU and CPU; the CPU for what it does not take.
-  nnapi;
+  nnapi,
+
+  /// r87: the Snapdragon NPU (Hexagon HTP) through Qualcomm's QNN, at 16-bit
+  /// precision; compiled once per model file and kept.
+  npu;
 
   String get label => switch (this) {
     ModelAccelerator.cpu => 'CPU',
     ModelAccelerator.xnnpack => 'XNNPACK',
     ModelAccelerator.nnapi => 'NNAPI',
+    ModelAccelerator.npu => 'NPU',
   };
+
+  /// r87: what [model] may run on. Not the NPU for the text model: its inputs
+  /// change length with every text, and the NPU needs fixed sizes.
+  static List<ModelAccelerator> choicesFor(ModelKind model) =>
+      model == ModelKind.text ? const [cpu, xnnpack, nnapi] : ModelAccelerator.values;
 
   /// A stored value; anything unknown reads as [cpu].
   static ModelAccelerator parse(Object? value) {
@@ -389,10 +399,13 @@ class ModelTasks {
   }
 
   /// What [model] opens on: the saved choice, or the CPU.
-  static ModelAccelerator runOn(ModelKind model) => ModelAccelerator.parse(_settings.modelRunOn[model.name]);
+  static ModelAccelerator runOn(ModelKind model) {
+    final ModelAccelerator a = ModelAccelerator.parse(_settings.modelRunOn[model.name]);
+    return ModelAccelerator.choicesFor(model).contains(a) ? a : ModelAccelerator.cpu;
+  }
 
   static Future<void> setRunOn(ModelKind model, ModelAccelerator accelerator) async {
-    if (accelerator == ModelAccelerator.cpu) {
+    if (accelerator == ModelAccelerator.cpu || !ModelAccelerator.choicesFor(model).contains(accelerator)) {
       _settings.modelRunOn.remove(model.name);
     } else {
       _settings.modelRunOn[model.name] = accelerator.name;
@@ -408,7 +421,8 @@ class ModelTasks {
       raw.forEach((key, value) {
         if (key is! String || !models.contains(key) || value is! String) return;
         final ModelAccelerator a = ModelAccelerator.parse(value);
-        if (a != ModelAccelerator.cpu && a.name == value) out[key] = value;
+        final ModelKind model = ModelKind.values.firstWhere((m) => m.name == key);
+        if (a != ModelAccelerator.cpu && a.name == value && ModelAccelerator.choicesFor(model).contains(a)) out[key] = value;
       });
     }
     return out;

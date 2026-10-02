@@ -31,7 +31,15 @@ class OnnxLookRunner implements LookRunner {
   /// r86: what the model runs on (Settings → Models → Run on).
   final ModelAccelerator accelerator;
 
-  OrtSessionOptions get options => onnxSessionOptions(threads: threads, accelerator: accelerator);
+  OrtSessionOptions get options => onnxSessionOptions(threads: threads, accelerator: acceleratorFor(image: true));
+
+  /// r87: the NPU runs the picture half only from its full-precision file
+  /// (the int8 one uses operations the NPU does not have); the text half's
+  /// inputs change length, so it stays on the CPU.
+  ModelAccelerator acceleratorFor({required bool image}) {
+    if (accelerator != ModelAccelerator.npu) return accelerator;
+    return image && imagePath.endsWith(LookModelHandler.npuImageFileName) ? ModelAccelerator.npu : ModelAccelerator.cpu;
+  }
 
   /// What the picture half really opened on (the CPU when the choice was refused).
   ModelAccelerator _used = ModelAccelerator.cpu;
@@ -50,7 +58,7 @@ class OnnxLookRunner implements LookRunner {
       path,
       model: ModelKind.look,
       threads: threads,
-      accelerator: accelerator,
+      accelerator: acceleratorFor(image: image),
       who: image ? 'look (picture half)' : 'look (text half)',
     );
     if (image) _used = o.used;

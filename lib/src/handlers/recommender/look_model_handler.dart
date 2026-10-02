@@ -38,7 +38,12 @@ class LookPreset {
     required this.textBytes,
     this.imageFile = LookModelHandler.defaultImageRemote,
     this.textFile = LookModelHandler.defaultTextRemote,
+    this.npuImageBytes,
   });
+
+  /// r87: the full-precision picture half (`onnx/vision_model.onnx`) the NPU
+  /// runs, fetched when the NPU is chosen.
+  final int? npuImageBytes;
 
   final String id;
   final String repo;
@@ -58,6 +63,7 @@ class LookPreset {
     description: 'MobileCLIP-S0, 8-bit: 12 MB for pictures, 43 MB for words. Made for phones; a thumbnail in a few tens of milliseconds.',
     imageBytes: 11846843,
     textBytes: 42799238,
+    npuImageBytes: 45543630,
   );
 
   static const LookPreset s2 = LookPreset(
@@ -67,6 +73,7 @@ class LookPreset {
     description: 'MobileCLIP-S2, 8-bit: 37 MB for pictures, 64 MB for words. Better matches, roughly three times slower.',
     imageBytes: 36735889,
     textBytes: 64117260,
+    npuImageBytes: 143020962,
   );
 
   static const List<LookPreset> values = [s0, s2];
@@ -179,6 +186,53 @@ class LookModelHandler {
   final LinkedHashMap<String, Float32List> _memory = LinkedHashMap();
 
   static String fileUrl(String repo, String file) => 'https://huggingface.co/$repo/resolve/main/$file';
+
+  // ── r87: the NPU's picture half ──
+
+  /// The full-precision picture half, kept next to the int8 one.
+  static const String npuImageFileName = 'vision_model_npu.onnx';
+  static const String npuImageRemote = 'onnx/vision_model.onnx';
+
+  String get npuImagePath => '${dirFor(_settings.lookModel)}$npuImageFileName';
+
+  bool get hasNpuFile {
+    try {
+      return _settings.lookModel.isNotEmpty && File(npuImagePath).existsSync();
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Its size for the chosen model, when known (the presets).
+  int? get npuImageBytes => LookPreset.byId(_settings.lookModel)?.npuImageBytes;
+
+  /// Fetches the full-precision picture half; true when it is there.
+  Future<bool> downloadNpuFile({void Function(double progress)? onProgress}) async {
+    final String setting = _settings.lookModel;
+    if (setting.isEmpty) return false;
+    final File target = File(npuImagePath);
+    final File part = File('${target.path}.part');
+    try {
+      await fetcher(
+        fileUrl(repoOf(setting), npuImageRemote),
+        part,
+        onProgress: (int received, int total) {
+          if (total > 0) onProgress?.call(received / total);
+        },
+      );
+      if (target.existsSync()) target.deleteSync();
+      part.renameSync(target.path);
+      Logger.Inst().log('look: the full-precision picture half for the NPU is here (${target.lengthSync()} bytes)', className, 'downloadNpuFile', LogTypes.booruHandlerInfo);
+      _dropRunner();
+      return true;
+    } catch (e) {
+      Logger.Inst().log('look: the picture half for the NPU could not be fetched: $e', className, 'downloadNpuFile', LogTypes.exception);
+      try {
+        if (part.existsSync()) part.deleteSync();
+      } catch (_) {}
+      return false;
+    }
+  }
 
   static String repoOf(String setting) => LookPreset.byId(setting)?.repo ?? setting.trim();
 
@@ -705,7 +759,13 @@ class LookModelHandler {
       final String dir = dirFor(_settings.lookModel);
       _tokenizer ??= ClipTokenizer.fromJsonText(await File('$dir$tokenizerFileName').readAsString());
       _openThreads = ModelTasks.threads(ModelKind.look, use);
-      _runner = runnerFactory('$dir$imageFileName', '$dir$textFileName');
+      // r87: on the NPU, the full-precision picture half when it is there
+      // (without it the int8 one runs on the CPU, and the log says why).
+      final bool npu = ModelTasks.runOn(ModelKind.look) == ModelAccelerator.npu;
+      if (npu && !hasNpuFile) {
+        Logger.Inst().log('look: the NPU needs the full-precision picture half (Settings -> Models); the CPU until then', className, '_load', LogTypes.booruHandlerInfo);
+      }
+      _runner = runnerFactory(npu && hasNpuFile ? npuImagePath : '$dir$imageFileName', '$dir$textFileName');
     } catch (e) {
       _loading = null;
       rethrow;

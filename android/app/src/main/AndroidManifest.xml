@@ -34,6 +34,11 @@
         android:enableOnBackInvokedCallback="true"
         android:usesCleartextTraffic="true"
         android:networkSecurityConfig="@xml/network_security_config">
+
+        <!-- r87: the NPU (Qualcomm QNN, HTP). The DSP's RPC library is a system
+             library; since Android 12 an app may only load one it declares.
+             Not required: phones without it run the models on the CPU. -->
+        <uses-native-library android:name="libcdsprpc.so" android:required="false" />
         <activity
             android:name=".MainActivity"
             android:launchMode="singleInstance"

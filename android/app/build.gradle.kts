@@ -117,6 +117,16 @@ android {
             // possibly increases install and startup time
             // not used on play store builds
             useLegacyPackaging = dartEnvVars["LS_IS_STORE"] != "true"
+            // r87: Qualcomm's QNN runtime (the NPU) also carries its GPU backend
+            // and the old DSP one, which the app never asks for. The HTP (NPU)
+            // libraries of every generation stay, and its compiler (QnnHtpPrepare),
+            // which compiles a model for the NPU on the phone.
+            excludes += setOf(
+                "**/libQnnGpu.so",
+                "**/libQnnDsp.so",
+                "**/libQnnDspV66Skel.so",
+                "**/libQnnDspV66Stub.so",
+            )
         }
     }
 

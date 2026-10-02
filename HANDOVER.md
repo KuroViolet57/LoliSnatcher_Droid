@@ -31,11 +31,11 @@ older chronological build log, kept verbatim as history.
   Never push elsewhere; force-push is blocked.
 - **Version:** `2.6.0+5211` in `pubspec.yaml`, mirrored in
   `lib/src/data/constants.dart` (`updateInfo`). Builds are told apart by
-  `Constants.buildCodename` (`'r86-decode-run-on'` now), shown in About. Bump the
+  `Constants.buildCodename` (`'r87-npu'` now, on branch `claude/r87-npu`), shown in About. Bump the
   codename every build: `rNN-<two words>`.
 - **Build counter:** rounds are numbered r21, r22, … r80. Each build gets a
   numbered folder on the K: drive (§2): r80 used **109** and **110**, r81
-  **111**, r82 **112**, r83 **113**, r84 **114**, r85 **115**, r86 **116**; the next build uses **117**. **103** is Grok's ("exp flutter 347") - never
+  **111**, r82 **112**, r83 **113**, r84 **114**, r85 **115**, r86 **116**, r87 **117** (branch `claude/r87-npu`); the next build uses **118**. **103** is Grok's ("exp flutter 347") - never
   reuse a number.
 - **The user** talks in voice notes and logs; expects one build per request
   round, checked on a Samsung phone. They cannot see tool output — only the
@@ -3060,6 +3060,53 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   identity. SourceLinks.sites gained idolcomplex.com (60).
 - **Tests:** `model_pictures_test`, `model_run_on_test`,
   `sankaku_links_test`; `models_page_test`'s view is taller.
+
+### 4.66 The NPU (r87, build 117, branch `claude/r87-npu`)
+
+- **Branch:** the user approved the package change on a branch of its own so
+  it can be dropped; `claude/experimental-doujin` stays at r86 (bbb97fbb).
+  Merge or drop after the phone test.
+- **Package:** `third_party/flutter_onnxruntime` (copy of 1.8.5, wired in
+  with `dependency_overrides`; LOLISNATCHER_PATCH.md says how to undo) uses
+  `com.microsoft.onnxruntime:onnxruntime-android-qnn:1.23.0` - the same ORT
+  and Java API as before - which brings `com.qualcomm.qti:qnn-runtime:2.37.1`.
+  The plugin passes `providerOptions` (per provider), `sessionConfig`
+  (addConfigEntry) and `symbolicDims` (setSymbolicDimensionValue; `'*'`
+  reads the free input dims' names with a plain probe session,
+  `TensorInfo.getDimensionNames()`).
+- **APK:** 45.5 -> 93.9 MB (arm64). Qualcomm's libraries: libQnnHtpPrepare
+  (the on-phone compiler, 28 MB in the APK), one HTP skel/stub per
+  generation (v68 v69 v73 v75 v79), libQnnHtp, libQnnSystem. The GPU and
+  old DSP backends are excluded in `android/app/build.gradle.kts`.
+- **Android setup (all generic, from the QNN-on-Android write-ups):**
+  `<uses-native-library libcdsprpc.so required=false>` in the manifest;
+  `ADSP_LIBRARY_PATH` = nativeLibraryDir + vendor paths, set in
+  MainActivity.onCreate before super; native libraries extracted
+  (`useLegacyPackaging`, already on for non-store builds).
+- **Choice:** `ModelAccelerator.npu`, offered for the looks model and the
+  tagger (`ModelAccelerator.choicesFor`; the text model's inputs change
+  length). Options: `qnnHtpOptions` (backend_path libQnnHtp.so,
+  enable_htp_fp16_precision 1, htp_performance_mode high_performance).
+- **Compile once (`npuAttempts`, onnx_options.dart):** without a compiled
+  copy: the whole model with `session.disable_cpu_ep_fallback=1`, writing
+  `<model>.npu-<bytes>-whole.onnx` (`ep.context_enable`, embed mode 1,
+  symbolicDims `*`=1); then a mix writing `-mixed`. With a copy: open it.
+  A copy that fails is deleted and the model compiled again. Labels "NPU" /
+  "NPU + CPU"; refused -> "CPU xN (NPU refused)".
+- **Looks model:** the NPU runs the picture half only from the
+  full-precision `onnx/vision_model.onnx` (S0 45,543,630 / S2 143,020,962
+  bytes), fetched to `vision_model_npu.onnx` after a prompt on the Models
+  page (`LookModelHandler.downloadNpuFile`); the int8 file and the text half
+  stay on the CPU (`OnnxLookRunner.acceleratorFor`). Vectors from the
+  fp16-run picture half sit next to int8 ones under the same model key.
+- **XNNPACK:** its own pool gets the thread count, the session 1 thread,
+  `session.intra_op.allow_spinning=0`.
+- **Not verified here:** anything on the phone - the NPU opening, compile
+  times, the speed-up, the DSP loading. The log lines to read: `OnnxSession`
+  "opened on the NPU ... compiled and kept / from the compiled copy" or
+  "refused", and the tagger's "(NPU, ...)".
+- **Tests:** `npu_test` (plugin options, Android guards, options per choice,
+  attempts, choices per model, the looks prompt).
 
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 

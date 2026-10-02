@@ -40,11 +40,27 @@ import java.util.concurrent.Executors
 
 class MainActivity: FlutterFragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        setDspLibraryPath()
         super.onCreate(savedInstanceState)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             // https://stackoverflow.com/questions/49190381/fullscreen-app-with-displaycutout
             window.attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+    }
+
+    // r87: the NPU (Qualcomm QNN, HTP). The DSP-side loader looks for its
+    // libraries (libQnnHtpV75Skel.so and the like, shipped in this app's
+    // native library folder) only on the paths in ADSP_LIBRARY_PATH; it is set
+    // before the engine starts, so before any model opens. The vendor paths
+    // stay after ours.
+    private fun setDspLibraryPath() {
+        try {
+            val own = applicationInfo.nativeLibraryDir
+            val vendor = "/odm/lib/rfsa/adsp;/vendor/lib/rfsa/adsp;/vendor/dsp/cdsp;/system/lib/rfsa/adsp;/system/vendor/lib/rfsa/adsp;/dsp"
+            android.system.Os.setenv("ADSP_LIBRARY_PATH", "$own;$vendor", true)
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Error setting ADSP_LIBRARY_PATH", e)
         }
     }
 

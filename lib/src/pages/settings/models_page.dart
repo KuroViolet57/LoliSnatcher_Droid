@@ -60,11 +60,25 @@ class ModelsPage extends StatefulWidget {
   static Future<List<String>> _defaultAvailableProviders() async =>
       [for (final OrtProvider p in await OnnxRuntime().getAvailableProviders()) p.name];
 
+  /// r87: the looks model's full-precision picture half (the NPU's): there
+  /// yet, its size, and fetching it; replaced in tests.
+  static bool Function() lookNpuReady = _defaultLookNpuReady;
+  static int? Function() lookNpuBytes = _defaultLookNpuBytes;
+  static Future<bool> Function(void Function(double progress) progress) downloadLookNpu = _defaultDownloadLookNpu;
+
+  static bool _defaultLookNpuReady() => LookModelHandler.maybe?.hasNpuFile ?? false;
+  static int? _defaultLookNpuBytes() => LookModelHandler.maybe?.npuImageBytes;
+  static Future<bool> _defaultDownloadLookNpu(void Function(double progress) progress) async =>
+      await LookModelHandler.maybe?.downloadNpuFile(onProgress: progress) ?? false;
+
   static void resetForTests() {
     threadsChanged = _defaultThreadsChanged;
     vectorUsage = _defaultVectorUsage;
     applyVectorSpace = _defaultApplyVectorSpace;
     availableProviders = _defaultAvailableProviders;
+    lookNpuReady = _defaultLookNpuReady;
+    lookNpuBytes = _defaultLookNpuBytes;
+    downloadLookNpu = _defaultDownloadLookNpu;
   }
 
   @override
@@ -86,6 +100,18 @@ class _ModelsPageState extends State<ModelsPage> {
     unawaited(ModelTimings.instance.ensureLoaded().then((_) {
       if (mounted) setState(() {});
     }));
+    // r87: a change made elsewhere (a download that finished) is shown.
+    ModelTasks.revision.addListener(_onRevision);
+  }
+
+  void _onRevision() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    ModelTasks.revision.removeListener(_onRevision);
+    super.dispose();
   }
 
   Future<void> _loadUsage() async {
@@ -218,16 +244,64 @@ class _ModelsPageState extends State<ModelsPage> {
         "ONNX Runtime's own code on the phone's processor, with the thread counts below. Works with every model and is how the app ran "
         'before r86. More threads finish sooner but warm the phone and can make scrolling stutter.',
     ModelAccelerator.xnnpack:
-        "Google's CPU library, often quicker than the default for convolutions and big matrix sums - mostly the tagger. In this build its share "
-        'runs on one thread of its own (the plugin cannot give it more; the NPU build will), the rest on the threads below, so here it may be '
-        'slower than the CPU. The text and looks models are int8 files, which it barely helps.',
+        "Google's CPU library, often quicker than the default for convolutions and big matrix sums - mostly the tagger. It runs its share on "
+        'the thread counts below (its own pool, as ONNX Runtime recommends). The text and looks models are int8 files, which it barely helps.',
     ModelAccelerator.nnapi:
         "Android's route to the phone's GPU or NPU, through the chip maker's driver. Android 15 marked it as old, but it still works. The "
         'driver takes the parts it can, at full precision, and the CPU does the rest; the int8 text and looks models fall back to the CPU almost '
         'entirely. Opening the model takes longer while the driver prepares it. Worth a try on the tagger.',
+    ModelAccelerator.npu:
+        "The phone's NPU (the Snapdragon's Hexagon), through Qualcomm's QNN library: the model runs at 16-bit precision on hardware made for "
+        'it - usually many times faster than the CPU, and far cooler. The first opening compiles the model for the NPU (seconds, up to about a '
+        'minute for the tagger) and keeps the compiled copy next to the model, so later openings are quick. Parts the NPU cannot run stay on '
+        'the CPU (the log says "NPU + CPU"); if it refuses the model, the CPU runs it. The looks model needs its full-precision picture half '
+        'for this, fetched when you pick it; its words stay on the CPU.',
   };
 
+  static String _mbOf(int bytes) => '${(bytes / 1048576).toStringAsFixed(1)} MB';
+
+  /// r87: the NPU for the looks model needs its full-precision picture half.
+  Future<bool> _npuFileReady() async {
+    if (ModelsPage.lookNpuReady()) return true;
+    final int? bytes = ModelsPage.lookNpuBytes();
+    final bool? go = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        title: const Text('The NPU needs another file'),
+        content: Text(
+          'The NPU runs the full-precision picture half of the looks model '
+          '(${bytes == null ? 'its size is not known for this model' : _mbOf(bytes)}); the 8-bit one the app has uses steps the NPU does not have. '
+          'Download it now?',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Download')),
+        ],
+      ),
+    );
+    if (go != true || !mounted) return false;
+    final ValueNotifier<double> progress = ValueNotifier(0);
+    unawaited(
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext ctx) => AlertDialog(
+          title: const Text('Downloading the picture half'),
+          content: ValueListenableBuilder<double>(
+            valueListenable: progress,
+            builder: (_, double v, _) => LinearProgressIndicator(value: v > 0 ? v : null),
+          ),
+        ),
+      ),
+    );
+    final bool ok = await ModelsPage.downloadLookNpu((double v) => progress.value = v);
+    if (mounted) Navigator.of(context).pop();
+    progress.dispose();
+    return ok;
+  }
+
   Future<void> _setRunOn(ModelKind model, ModelAccelerator a) async {
+    if (model == ModelKind.look && a == ModelAccelerator.npu && !await _npuFileReady()) return;
     await ModelTasks.setRunOn(model, a);
     ModelsPage.threadsChanged(model);
     if (mounted) setState(() {});
@@ -250,7 +324,7 @@ class _ModelsPageState extends State<ModelsPage> {
                 title: 'Run on: ${_names[model]!}',
                 intro: 'What the ${_names[model]!.toLowerCase()} runs on. Times are the model alone (not the picture preparation), as this phone measured them.',
                 choices: () => [
-                  for (final ModelAccelerator a in ModelAccelerator.values)
+                  for (final ModelAccelerator a in ModelAccelerator.choicesFor(model))
                     ExplainChoice(
                       name: a == ModelAccelerator.cpu ? '${a.label} (as before)' : a.label,
                       text: _runOnText[a]!,
@@ -263,7 +337,8 @@ class _ModelsPageState extends State<ModelsPage> {
                 ],
                 footer:
                     'A new choice is used the next time the model opens; an idle model is closed at once. When a choice refuses the model, '
-                    'the CPU runs it and the log says so ("refused").',
+                    'the CPU runs it and the log says so ("refused").'
+                    '${model == ModelKind.text ? " The NPU is not offered here: the text model's inputs change length with every text, and the NPU needs fixed sizes." : ''}',
                 note: () async {
                   try {
                     final List<String> names = [...await ModelsPage.availableProviders()]..sort();
@@ -283,7 +358,7 @@ class _ModelsPageState extends State<ModelsPage> {
           SegmentedButton<ModelAccelerator>(
             key: ValueKey('model-runon-${model.name}'),
             segments: [
-              for (final ModelAccelerator a in ModelAccelerator.values) ButtonSegment<ModelAccelerator>(value: a, label: Text(a.label)),
+              for (final ModelAccelerator a in ModelAccelerator.choicesFor(model)) ButtonSegment<ModelAccelerator>(value: a, label: Text(a.label)),
             ],
             selected: {now},
             showSelectedIcon: false,
