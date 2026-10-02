@@ -730,7 +730,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
       case .open:
         return () async {
           // url to html encoded
-          final String url = Uri.encodeFull(item.postURL);
+          final String url = Uri.encodeFull(LinkedMediaResolver.browserAddress(item.postURL));
           unawaited(
             launchUrlString(
               url,
@@ -956,7 +956,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
           return;
         }
 
-        shareTextAction(item.postURL);
+        shareTextAction(LinkedMediaResolver.browserAddress(item.postURL));
         break;
       case .postUrlWithTags:
         if (item.postURL.isEmpty) {
@@ -972,9 +972,9 @@ class _HideableAppBarState extends State<HideableAppBar> {
 
         final tags = await showSelectTagsDialog(context, item.tagsList, forItem: item);
         if (tags.isNotEmpty) {
-          shareTextAction('${item.postURL} \n ${tags.join(' ')}');
+          shareTextAction('${LinkedMediaResolver.browserAddress(item.postURL)} \n ${tags.join(' ')}');
         } else {
-          shareTextAction(item.postURL);
+          shareTextAction(LinkedMediaResolver.browserAddress(item.postURL));
         }
         break;
       case .fileUrl:
@@ -1303,7 +1303,7 @@ class _HideableAppBarState extends State<HideableAppBar> {
                     ),
                     onTap: () {
                       Navigator.of(context).pop();
-                      shareTextAction(item.postURL);
+                      shareTextAction(LinkedMediaResolver.browserAddress(item.postURL));
                     },
                     leading: const Icon(CupertinoIcons.link),
                     title: Text(context.loc.viewer.appBar.postURL),
@@ -1322,9 +1322,9 @@ class _HideableAppBarState extends State<HideableAppBar> {
                       Navigator.of(context).pop();
                       final tags = await showSelectTagsDialog(context, item.tagsList, forItem: item);
                       if (tags.isNotEmpty) {
-                        shareTextAction('${item.postURL} \n ${tags.join(' ')}');
+                        shareTextAction('${LinkedMediaResolver.browserAddress(item.postURL)} \n ${tags.join(' ')}');
                       } else {
-                        shareTextAction(item.postURL);
+                        shareTextAction(LinkedMediaResolver.browserAddress(item.postURL));
                       }
                     },
                     leading: const Stack(

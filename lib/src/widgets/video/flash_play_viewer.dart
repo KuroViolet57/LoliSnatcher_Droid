@@ -5,6 +5,7 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/boorus/linked_media.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/pages/flash_player_page.dart';
 import 'package:lolisnatcher/src/widgets/thumbnail/thumbnail.dart';
@@ -113,7 +114,7 @@ class _FlashPlayViewerState extends State<FlashPlayViewer> {
                 const SizedBox(height: 8),
                 Text('Plays in the app through Ruffle', style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurface.withValues(alpha: 0.7))),
                 TextButton.icon(
-                  onPressed: () => launchUrlString(widget.item.postURL, mode: LaunchMode.externalApplication),
+                  onPressed: () => launchUrlString(LinkedMediaResolver.browserAddress(widget.item.postURL), mode: LaunchMode.externalApplication),
                   icon: const Icon(Symbols.public_rounded, size: 18),
                   label: const Text('Open post in browser'),
                 ),

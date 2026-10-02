@@ -49,7 +49,8 @@ void main() {
   });
 
   Future<void> open(WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1200, 9000);
+    // r86: taller for the Picture decoding and Run on rows.
+    tester.view.physicalSize = const Size(1200, 14000);
     tester.view.devicePixelRatio = 2;
     addTearDown(tester.view.reset);
     await tester.pumpWidget(const MaterialApp(home: ModelsPage()));

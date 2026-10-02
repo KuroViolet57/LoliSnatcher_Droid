@@ -79,7 +79,10 @@ class IncomingLink {
       case BooruType.Moebooru:
         return path == '/post' || path == '/post/index' ? _tags(q['tags'] ?? '') : null;
       case BooruType.Sankaku || BooruType.IdolSankaku:
-        return (path.isEmpty || path == '/posts' || path == '/post/index') && q.containsKey('tags') ? _tags(q['tags']!) : null;
+        // r86: `/?tags=` is the sites' own search (open-search.xml), behind
+        // an optional language like `/en/`.
+        final bool listing = RegExp(r'^(?:/[a-z]{2}(?:-[a-zA-Z]{2,4})?)?(?:/posts|/post/index)?$').hasMatch(path);
+        return listing && q.containsKey('tags') ? _tags(q['tags']!) : null;
       case BooruType.Shimmie:
         if (path == '/post/list') return '';
         final RegExpMatch? m = RegExp(r'^/post/list/([^/]+)(?:/\d+)?$').firstMatch(path);

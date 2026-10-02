@@ -16,6 +16,7 @@ import 'package:lolisnatcher/src/data/model_tasks.dart';
 import 'package:lolisnatcher/src/handlers/recommender/clip_tokenizer.dart';
 import 'package:lolisnatcher/src/handlers/recommender/encoder_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/onnx_look_runner.dart';
+import 'package:lolisnatcher/src/handlers/recommender/model_pictures.dart';
 import 'package:lolisnatcher/src/handlers/recommender/pixel_tags.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
@@ -118,7 +119,6 @@ typedef LookFetcher = Future<void> Function(String url, File to, {void Function(
 typedef LookRunnerFactory = LookRunner Function(String imageModelPath, String textModelPath);
 typedef ThumbnailFetcher = Future<Uint8List?> Function(BooruItem item, Booru? booru);
 
-Float32List _prepareEntry((Uint8List, int, List<double>?, List<double>?) args) => LookModelHandler.prepareImage(args.$1, args.$2, mean: args.$3, std: args.$4);
 
 class LookModelHandler {
   static LookModelHandler get instance => GetIt.instance<LookModelHandler>();
@@ -473,7 +473,8 @@ class LookModelHandler {
   /// session's threads when this call opens it.
   Future<Float32List> imageVector(Uint8List bytes, {ModelUse use = ModelUse.waiting}) async {
     if (!isReady) throw StateError('No looks model downloaded (Settings → Recommendations → Looks model).');
-    final Float32List tensor = await compute(_prepareEntry, (bytes, _inputSize, _mean, _std));
+    // r86: decoded by the phone at twice the model's size (or as before).
+    final Float32List tensor = (await ModelPictures.forLooks(bytes, _inputSize, mean: _mean, std: _std)).tensor;
     Float32List out;
     _inFlight++;
     try {
@@ -635,6 +636,12 @@ class LookModelHandler {
       throw FormatException('could not decode the image ($e)');
     }
     if (decoded == null) throw const FormatException('could not decode the image');
+    return imageFromPicture(decoded, size, mean: mean, std: std);
+  }
+
+  /// r86: the same from a picture already decoded (by the phone, its short
+  /// side at twice [size]: ModelPictures).
+  static Float32List imageFromPicture(img.Image decoded, int size, {List<double>? mean, List<double>? std}) {
     img.Image src = decoded.format == img.Format.uint8 ? decoded : decoded.convert(format: img.Format.uint8);
     final int short = math.min(src.width, src.height);
     if (short != size) {

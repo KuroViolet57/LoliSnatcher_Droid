@@ -301,10 +301,60 @@ class LinkedMediaResolver {
 
   static String _site(String host) => host.toLowerCase().replaceFirst(RegExp(r'^www\.'), '');
 
+  /// r86: Sankaku's sites, checked live on 2026-10-02: the site is
+  /// www.sankakucomplex.com and sankaku.app (chan.sankakucomplex.com now
+  /// leads to a login page); a source made from any of them is stored under
+  /// its API address, sankakuapi.com (BooruEdit, SankakuHandler.apiBaseFor).
+  static const Set<String> sankakuSites = {
+    'sankakucomplex.com',
+    'www.sankakucomplex.com',
+    'chan.sankakucomplex.com',
+    'beta.sankakucomplex.com',
+    'capi-v2.sankakucomplex.com',
+    'sankaku.app',
+    'www.sankaku.app',
+    'sankakuapi.com',
+  };
+
+  /// r86: Idol moved from idol.sankakucomplex.com to www.idolcomplex.com
+  /// (same paths); its sources are stored under iapi.sankakucomplex.com.
+  static const Set<String> idolSites = {'idolcomplex.com', 'www.idolcomplex.com', 'idol.sankakucomplex.com', 'iapi.sankakucomplex.com'};
+
+  /// The hosts [booru]'s links are on: its own address, and for a Sankaku or
+  /// Idol source on their official API, their sites too. A self-hosted
+  /// mirror keeps only its own.
+  static Set<String> siteHosts(Booru booru) {
+    final String own = (Uri.tryParse(booru.baseURL ?? '')?.host ?? '').toLowerCase();
+    if (own.isEmpty) return const {};
+    if (booru.type == BooruType.Sankaku && sankakuSites.contains(own)) return {own, ...sankakuSites};
+    if (booru.type == BooruType.IdolSankaku && idolSites.contains(own)) return {own, ...idolSites};
+    return {own};
+  }
+
   /// [uri] is on [booru]'s site.
   static bool sameSite(Booru booru, Uri uri) {
-    final String own = _site(Uri.tryParse(booru.baseURL ?? '')?.host ?? '');
-    return own.isNotEmpty && own == _site(uri.host);
+    final String host = _site(uri.host);
+    return host.isNotEmpty && siteHosts(booru).any((h) => _site(h) == host);
+  }
+
+  /// r86: the address that opens a post in a browser. Sankaku's post links
+  /// (`chan.sankakucomplex.com/post/show/<id>`) now lead to a login page, and
+  /// Idol's moved; the site shows the post at `/posts/<id>`. Everything else
+  /// is left as it is - the stored address stays the post's identity
+  /// (favourites, downloads), only the browser gets this one.
+  static String browserAddress(String postURL) {
+    final Uri? uri = Uri.tryParse(postURL);
+    if (uri == null || !uri.hasScheme) return postURL;
+    final String? id = RegExp(r'^/post/show/(\d+)').firstMatch(uri.path)?.group(1);
+    if (id == null) return postURL;
+    switch (uri.host.toLowerCase()) {
+      case 'chan.sankakucomplex.com' || 'beta.sankakucomplex.com':
+        return 'https://www.sankakucomplex.com/posts/$id';
+      case 'idol.sankakucomplex.com':
+        return 'https://www.idolcomplex.com/posts/$id';
+      default:
+        return postURL;
+    }
   }
 
   /// The post id in [uri] for [booru]'s engine, or null when it is not a post.
@@ -322,8 +372,11 @@ class LinkedMediaResolver {
         return path(r'^/(?:images/)?(\d+)/?$');
       case BooruType.Shimmie:
         return path(r'^/post/view/(\d+)');
-      case BooruType.Moebooru || BooruType.Sankaku || BooruType.IdolSankaku:
+      case BooruType.Moebooru:
         return path(r'^/post/show/(\d+)');
+      case BooruType.Sankaku || BooruType.IdolSankaku:
+        // r86: the site's router answers both, behind an optional language.
+        return path(r'^(?:/[a-z]{2}(?:-[a-zA-Z]{2,4})?)?/(?:post/show|posts)/(\d+)/?$');
       default:
         return null;
     }

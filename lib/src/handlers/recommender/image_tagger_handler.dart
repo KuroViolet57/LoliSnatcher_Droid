@@ -10,6 +10,7 @@ import 'package:get_it/get_it.dart';
 import 'package:image/image.dart' as img;
 
 import 'package:lolisnatcher/src/data/model_tasks.dart';
+import 'package:lolisnatcher/src/handlers/recommender/model_pictures.dart';
 import 'package:lolisnatcher/src/handlers/recommender/onnx_tag_runner.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
@@ -169,7 +170,6 @@ typedef TagRunnerFactory = TagRunner Function(String modelPath, int threads);
 /// are background work.
 typedef TaggerUse = ModelUse;
 
-Float32List _prepareEntry((Uint8List, int) args) => ImageTaggerHandler.prepareTensor(args.$1, args.$2);
 
 class ImageTaggerHandler {
   static ImageTaggerHandler get instance => GetIt.instance<ImageTaggerHandler>();
@@ -499,8 +499,12 @@ class ImageTaggerHandler {
     _inFlight++;
     final Stopwatch sw = Stopwatch()..start();
     final Float32List tensor;
+    final PictureDecoder decoder;
     try {
-      tensor = await compute(_prepareEntry, (bytes, _inputSize));
+      // r86: decoded by the phone at twice the model's size (or as before).
+      final ({Float32List tensor, PictureDecoder used}) prepared = await ModelPictures.forTagger(bytes, _inputSize);
+      tensor = prepared.tensor;
+      decoder = prepared.used;
     } catch (_) {
       _inFlight--;
       rethrow;
@@ -527,7 +531,7 @@ class ImageTaggerHandler {
     final TaggerResult r = interpret(probs, _rows ?? const [], decodeMs: decodeMs, modelMs: modelMs, provider: provider);
     PerfTrace.instance.event('model.tagger', 'decode $decodeMs ms, model $modelMs ms');
     Logger.Inst().log(
-      'tagger: ${r.general.length} general, ${r.characters.length} characters, rating ${r.rating} ${r.ratingConfidence.toStringAsFixed(2)}; decode $decodeMs ms, model $modelMs ms ($provider, ${use.name})',
+      'tagger: ${r.general.length} general, ${r.characters.length} characters, rating ${r.rating} ${r.ratingConfidence.toStringAsFixed(2)}; decode $decodeMs ms (${decoder.name}), model $modelMs ms ($provider, ${use.name})',
       className,
       'tag',
       LogTypes.booruHandlerInfo,
@@ -644,6 +648,12 @@ class ImageTaggerHandler {
       throw FormatException('could not decode the image ($e)');
     }
     if (decoded == null) throw const FormatException('could not decode the image');
+    return tensorFromImage(decoded, size);
+  }
+
+  /// r86: the same from a picture already decoded (by the phone, at twice
+  /// [size]: ModelPictures).
+  static Float32List tensorFromImage(img.Image decoded, int size) {
     final img.Image src = decoded.format == img.Format.uint8 ? decoded : decoded.convert(format: img.Format.uint8);
     final int w = src.width;
     final int h = src.height;

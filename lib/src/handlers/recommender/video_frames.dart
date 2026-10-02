@@ -15,6 +15,7 @@ import 'package:lolisnatcher/src/data/model_tasks.dart';
 import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/image_tagger_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/look_model_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/model_pictures.dart';
 import 'package:lolisnatcher/src/handlers/recommender/model_work.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -398,7 +399,8 @@ class VideoFrames {
     }
     final Uint8List raw = file.readAsBytesSync();
     _delete(path);
-    final Uint8List? small = await compute(shrinkJpeg, (raw, maxSide));
+    // r86: shrunk by the phone while decoding (or as before).
+    final Uint8List? small = await ModelPictures.shrinkFrame(raw, maxSide, dartShrink: shrinkJpeg);
     if (small == null) {
       _failed(k, 'the frame could not be read');
       return null;

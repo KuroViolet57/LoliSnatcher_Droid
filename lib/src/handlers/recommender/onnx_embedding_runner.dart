@@ -2,7 +2,10 @@ import 'dart:typed_data';
 
 import 'package:flutter_onnxruntime/flutter_onnxruntime.dart';
 
+import 'package:lolisnatcher/src/data/model_tasks.dart';
 import 'package:lolisnatcher/src/handlers/recommender/encoder_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/model_timings.dart';
+import 'package:lolisnatcher/src/handlers/recommender/onnx_options.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 
 /// The real runner: one ONNX Runtime session over the downloaded model.
@@ -13,7 +16,9 @@ import 'package:lolisnatcher/src/utils/logger.dart';
 /// `[batch, length, dim]` (or an already pooled `[batch, dim]`, which the
 /// handler recognises by its size).
 class OnnxEmbeddingRunner implements EmbeddingRunner {
-  OnnxEmbeddingRunner(this.modelPath, {required this.dim, required this.wantsTokenTypeIds, int? threads}) : threads = threads ?? defaultThreads;
+  OnnxEmbeddingRunner(this.modelPath, {required this.dim, required this.wantsTokenTypeIds, int? threads, ModelAccelerator? accelerator})
+    : threads = threads ?? defaultThreads,
+      accelerator = accelerator ?? savedAccelerator(ModelKind.text);
 
   /// r77: one thread (no count was set before, so ORT used every core - 8
   /// on an 8-core phone). With one thread ORT builds no pool and nothing spins.
@@ -21,7 +26,16 @@ class OnnxEmbeddingRunner implements EmbeddingRunner {
 
   final int threads;
 
-  OrtSessionOptions get options => OrtSessionOptions(intraOpNumThreads: threads);
+  /// r86: what the model runs on (Settings → Models → Run on).
+  final ModelAccelerator accelerator;
+
+  OrtSessionOptions get options => onnxSessionOptions(threads: threads, accelerator: accelerator);
+
+  ModelAccelerator _used = ModelAccelerator.cpu;
+  String _provider = '';
+
+  /// How the log names what it runs on ("CPU x2", "NNAPI x2").
+  String get provider => _provider.isEmpty ? '${accelerator.label} x$threads' : _provider;
 
   final String modelPath;
 
@@ -40,14 +54,12 @@ class OnnxEmbeddingRunner implements EmbeddingRunner {
 
   Future<OrtSession> _openNow() async {
     try {
-      try {
-        return _session = await OnnxRuntime().createSession(modelPath, options: options);
-      } catch (e) {
-        // Like the tagger's and the looks model's runners: a thread count the
-        // runtime refuses falls back to its defaults, and says so.
-        Logger.Inst().log('encoder: could not open the model with $threads thread(s) ($e); default options', 'OnnxEmbeddingRunner', '_openNow', LogTypes.booruHandlerInfo);
-        return _session = await OnnxRuntime().createSession(modelPath);
-      }
+      // A choice or a thread count the runtime refuses falls back (the CPU,
+      // then its defaults), and says so - like the other two runners.
+      final OpenedSession o = await openOnnxSession(modelPath, model: ModelKind.text, threads: threads, accelerator: accelerator, who: 'encoder');
+      _used = o.used;
+      _provider = o.provider;
+      return _session = o.session;
     } catch (_) {
       _opening = null;
       rethrow;
@@ -82,7 +94,9 @@ class OnnxEmbeddingRunner implements EmbeddingRunner {
             Logger.Inst().log('encoder input "$name" is not one this app knows; left unset', 'OnnxEmbeddingRunner', 'run', LogTypes.booruHandlerInfo);
         }
       }
+      final Stopwatch sw = Stopwatch()..start();
       final Map<String, OrtValue> outputs = await session.run(inputs);
+      ModelTimings.instance.recordRun(ModelKind.text, _used, sw.elapsedMilliseconds);
       try {
         final OrtValue value = outputs['last_hidden_state'] ?? outputs['token_embeddings'] ?? outputs.values.first;
         final List<dynamic> raw = await value.asFlattenedList();

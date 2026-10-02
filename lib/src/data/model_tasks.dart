@@ -47,6 +47,61 @@ enum FrameMode {
   }
 }
 
+/// r86: what a model runs on (Settings → Recommendations → Models → Run on).
+/// The three the app's ONNX Runtime build (onnxruntime-android 1.23) has;
+/// [cpu] is the behaviour before r86.
+enum ModelAccelerator {
+  /// ONNX Runtime's own CPU code, on the model's thread counts.
+  cpu,
+
+  /// Google's XNNPACK CPU library for the operations it knows, the CPU for
+  /// the rest.
+  xnnpack,
+
+  /// Android's Neural Networks API: the phone maker's driver decides
+  /// between its GPU, NPU and CPU; the CPU for what it does not take.
+  nnapi;
+
+  String get label => switch (this) {
+    ModelAccelerator.cpu => 'CPU',
+    ModelAccelerator.xnnpack => 'XNNPACK',
+    ModelAccelerator.nnapi => 'NNAPI',
+  };
+
+  /// A stored value; anything unknown reads as [cpu].
+  static ModelAccelerator parse(Object? value) {
+    for (final ModelAccelerator a in ModelAccelerator.values) {
+      if (a.name == value) return a;
+    }
+    return ModelAccelerator.cpu;
+  }
+}
+
+/// r86: who decodes the pictures the looks model and the tagger read (and
+/// the frames of playing videos).
+enum PictureDecoder {
+  /// The phone's own decoders through Flutter's engine, shrinking the
+  /// picture while decoding to twice what the model needs.
+  phone,
+
+  /// The pure-Dart `image` package at full size, the behaviour before r86;
+  /// also the fallback for a file the phone cannot read.
+  dart;
+
+  String get label => switch (this) {
+    PictureDecoder.phone => 'The phone',
+    PictureDecoder.dart => 'As before',
+  };
+
+  /// A stored value; anything unknown reads as [phone].
+  static PictureDecoder parse(Object? value) {
+    for (final PictureDecoder d in PictureDecoder.values) {
+      if (d.name == value) return d;
+    }
+    return PictureDecoder.phone;
+  }
+}
+
 /// One job a model does, with its own switch in Settings → Recommendations
 /// → Models (r80).
 class ModelTask {
@@ -322,6 +377,41 @@ class ModelTasks {
       _settings.modelThreads[key] = n;
     }
     await _changed();
+  }
+
+  // ── run on (r86) ──
+
+  static PictureDecoder get pictureDecoder => _settings.pictureDecoder;
+
+  static Future<void> setPictureDecoder(PictureDecoder decoder) async {
+    _settings.pictureDecoder = decoder;
+    await _changed();
+  }
+
+  /// What [model] opens on: the saved choice, or the CPU.
+  static ModelAccelerator runOn(ModelKind model) => ModelAccelerator.parse(_settings.modelRunOn[model.name]);
+
+  static Future<void> setRunOn(ModelKind model, ModelAccelerator accelerator) async {
+    if (accelerator == ModelAccelerator.cpu) {
+      _settings.modelRunOn.remove(model.name);
+    } else {
+      _settings.modelRunOn[model.name] = accelerator.name;
+    }
+    await _changed();
+  }
+
+  /// Only the models and choices this build knows; the CPU is not stored.
+  static Map<String, String> parseRunOn(dynamic raw) {
+    final Set<String> models = {for (final ModelKind m in ModelKind.values) m.name};
+    final Map<String, String> out = {};
+    if (raw is Map) {
+      raw.forEach((key, value) {
+        if (key is! String || !models.contains(key) || value is! String) return;
+        final ModelAccelerator a = ModelAccelerator.parse(value);
+        if (a != ModelAccelerator.cpu && a.name == value) out[key] = value;
+      });
+    }
+    return out;
   }
 
   /// Only the counts this build knows, and only whole numbers of 1 or more.

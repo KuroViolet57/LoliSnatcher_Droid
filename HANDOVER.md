@@ -31,11 +31,11 @@ older chronological build log, kept verbatim as history.
   Never push elsewhere; force-push is blocked.
 - **Version:** `2.6.0+5211` in `pubspec.yaml`, mirrored in
   `lib/src/data/constants.dart` (`updateInfo`). Builds are told apart by
-  `Constants.buildCodename` (`'r85-links-filters'` now), shown in About. Bump the
+  `Constants.buildCodename` (`'r86-decode-run-on'` now), shown in About. Bump the
   codename every build: `rNN-<two words>`.
 - **Build counter:** rounds are numbered r21, r22, … r80. Each build gets a
   numbered folder on the K: drive (§2): r80 used **109** and **110**, r81
-  **111**, r82 **112**, r83 **113**, r84 **114**, r85 **115**; the next build uses **116**. **103** is Grok's ("exp flutter 347") - never
+  **111**, r82 **112**, r83 **113**, r84 **114**, r85 **115**, r86 **116**; the next build uses **117**. **103** is Grok's ("exp flutter 347") - never
   reuse a number.
 - **The user** talks in voice notes and logs; expects one build per request
   round, checked on a Samsung phone. They cannot see tool output — only the
@@ -3013,6 +3013,53 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   adapter, the exported text checked).
 - **Not verified here:** Link Sheet on the phone, the referrer guard, the
   Android "Open by default" list.
+
+### 4.65 Picture decoding by the phone; Run on per model; Sankaku links (r86, build 116)
+
+- **Explain buttons (user rule 2026-10-02):** every new option gets an info
+  button whose window explains the choices, their advantages and the
+  timings this phone measured: `widgets/common/explain_button.dart`
+  (`ExplainButton`, `ExplainChoice`; content built when the window opens).
+- **Picture decoding (`handlers/recommender/model_pictures.dart`):** the
+  setting `pictureDecoder` (`PictureDecoder.phone` default, `dart` = before
+  r86; the user chose this change). `ModelPictures.decodeOnPhone` uses
+  `ui.ImageDescriptor.instantiateCodec(targetWidth/Height)` (root isolate;
+  never upscales) to twice the model's size - long side for the tagger,
+  short side for the looks model - then `ImageTaggerHandler.tensorFromImage`
+  / `LookModelHandler.imageFromPicture` (the old preparation, split from the
+  Dart decode) run in `compute`. A file the phone cannot read (TGA, ...)
+  falls back to the old path; video frames use `shrinkFrame` (512 px JPEG).
+  The tagger's log line names the decoder ("decode N ms (phone)").
+- **Run on (`ModelAccelerator` in `data/model_tasks.dart`):** cpu (default,
+  options exactly as before: no providers), xnnpack ([XNNPACK, CPU]), nnapi
+  ([NNAPI, CPU]) via `onnxSessionOptions`; stored per phone in
+  `modelRunOn` (deviceSpecificSettings; only non-CPU), set on the Models
+  page (`model-runon-<model>` + explain). The three runners open through
+  `openOnnxSession` (handlers/recommender/onnx_options.dart): the choice,
+  else the CPU with the threads ("NNAPI refused" in the log and the
+  provider label), else ORT defaults. `savedAccelerator` falls back to the
+  CPU when settings are not loaded. The plugin (flutter_onnxruntime 1.8.5)
+  passes no provider options: XNNPACK's own pool is 1 thread, NNAPI uses
+  default flags (fp32, its CPU fallback on).
+- **Timings (`ModelTimings`, `model_timings.json` in the config folder):**
+  per model + accelerator: runs (session.run only) and openings; per
+  decoder: the whole preparation. Shown by the explain windows.
+- **Sankaku (checked live 2026-10-02):** chan.sankakucomplex.com redirects
+  to an OIDC login; www.sankakucomplex.com and sankaku.app are the same
+  React app, router `/:lang(en|ja)?/:path(post/show|posts)/:id`,
+  open-search `/?tags=`; `sankakuapi.com/posts?tags=id:N` finds post N.
+  Idol moved to www.idolcomplex.com (idol.sankakucomplex.com 301s there);
+  iapi.sankakucomplex.com (the Idol handler's API) now redirects anonymous
+  calls to a login - the Idol source may not load (not looked into).
+  `LinkedMediaResolver.siteHosts` adds those sites to a Sankaku/Idol
+  source on its official API (a mirror keeps its own host); `sameSite`,
+  `SourceLinks.coverage` and the search parser use it. `browserAddress`
+  turns `chan|beta.sankakucomplex.com/post/show/N` into
+  `www.sankakucomplex.com/posts/N` (Idol: www.idolcomplex.com) for Open in
+  browser and Share only (5 call sites); stored post URLs stay the
+  identity. SourceLinks.sites gained idolcomplex.com (60).
+- **Tests:** `model_pictures_test`, `model_run_on_test`,
+  `sankaku_links_test`; `models_page_test`'s view is taller.
 
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 

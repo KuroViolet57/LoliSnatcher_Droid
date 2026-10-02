@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
+import 'package:lolisnatcher/src/boorus/linked_media.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -46,6 +47,7 @@ class SourceLinks {
     // Sankaku
     'sankakucomplex.com',
     'sankaku.app',
+    'idolcomplex.com',
     // Shimmie
     'paheal.net',
     'whyneko.com',
@@ -109,9 +111,11 @@ class SourceLinks {
     for (final Booru b in boorus) {
       final BooruType? type = b.type;
       if (type == null || !BooruType.saveable.contains(type) || type.isLocalDb) continue;
-      final String host = Uri.tryParse(b.baseURL ?? '')?.host ?? '';
-      if (host.isEmpty) continue;
-      (covers(host) ? covered : uncovered).add(b);
+      // r86: a source's site hosts, not only its stored address (Sankaku's
+      // is its API).
+      final Set<String> hosts = LinkedMediaResolver.siteHosts(b);
+      if (hosts.isEmpty) continue;
+      (hosts.any(covers) ? covered : uncovered).add(b);
     }
     return (covered: covered, uncovered: uncovered);
   }

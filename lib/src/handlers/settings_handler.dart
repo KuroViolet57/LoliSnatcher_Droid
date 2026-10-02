@@ -270,6 +270,11 @@ class SettingsHandler {
   bool aiModelsOff = false;
   final Map<String, bool> modelTasks = {};
   final Map<String, int> modelThreads = {};
+  // r86: what each model runs on (ModelAccelerator by model name; only the
+  // ones moved off the CPU are stored) - this phone's hardware, not restored
+  // onto another one - and who decodes the models' pictures.
+  final Map<String, String> modelRunOn = {};
+  PictureDecoder pictureDecoder = PictureDecoder.phone;
   // r80: where captures (a trace report, a source capture) are written;
   // '' = a "captures" folder inside the download folder.
   String capturesPath = '';
@@ -435,6 +440,7 @@ class SettingsHandler {
     'isDebug',
     // r80: cores and folders belong to this phone.
     'modelThreads',
+    'modelRunOn',
     'capturesPath',
     'earlierDownloadFolders',
     'desktopListsDrag',
@@ -816,6 +822,11 @@ class SettingsHandler {
       'type': 'stringFromList',
       'default': 'playing',
       'options': ['playing', 'reaction', 'off'],
+    },
+    'pictureDecoder': {
+      'type': 'stringFromList',
+      'default': 'phone',
+      'options': ['phone', 'dart'],
     },
     'framesOtherTabs': {
       'type': 'stringFromList',
@@ -1490,6 +1501,8 @@ class SettingsHandler {
         return aiModelsOff;
       case 'framesForYou':
         return framesForYou.name;
+      case 'pictureDecoder':
+        return pictureDecoder.name;
       case 'framesOtherTabs':
         return framesOtherTabs.name;
       case 'rememberLooks':
@@ -1821,6 +1834,9 @@ class SettingsHandler {
       case 'aiModelsOff':
         aiModelsOff = validatedValue;
         break;
+      case 'pictureDecoder':
+        pictureDecoder = PictureDecoder.parse(validatedValue);
+        break;
       case 'framesForYou':
         framesForYou = FrameMode.parse(validatedValue);
         break;
@@ -2147,6 +2163,7 @@ class SettingsHandler {
     // r80: Settings → Models, written next to the declared settings.
     json['modelTasks'] = Map<String, bool>.from(modelTasks);
     json['modelThreads'] = Map<String, int>.from(modelThreads);
+    json['modelRunOn'] = Map<String, String>.from(modelRunOn);
     json['earlierDownloadFolders'] = List<String>.from(earlierDownloadFolders);
 
     // Add version info
@@ -2274,6 +2291,9 @@ class SettingsHandler {
     modelThreads
       ..clear()
       ..addAll(ModelTasks.parseThreads(json['modelThreads']));
+    modelRunOn
+      ..clear()
+      ..addAll(ModelTasks.parseRunOn(json['modelRunOn']));
     earlierDownloadFolders.clear();
     final dynamic earlierFolders = json['earlierDownloadFolders'];
     if (earlierFolders is List) {

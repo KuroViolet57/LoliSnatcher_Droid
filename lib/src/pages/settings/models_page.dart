@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'package:flutter_onnxruntime/flutter_onnxruntime.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:lolisnatcher/src/data/model_tasks.dart';
@@ -9,8 +10,10 @@ import 'package:lolisnatcher/src/handlers/database_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/encoder_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/image_tagger_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/look_model_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/model_timings.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
+import 'package:lolisnatcher/src/widgets/common/explain_button.dart';
 import 'package:lolisnatcher/src/widgets/common/settings_widgets.dart';
 
 /// r80: Settings → Recommendations → Models. Every job of the three models
@@ -51,10 +54,17 @@ class ModelsPage extends StatefulWidget {
     if (smaller) await db.compactVectors();
   }
 
+  /// r86: the providers this build's ONNX Runtime has; replaced in tests.
+  static Future<List<String>> Function() availableProviders = _defaultAvailableProviders;
+
+  static Future<List<String>> _defaultAvailableProviders() async =>
+      [for (final OrtProvider p in await OnnxRuntime().getAvailableProviders()) p.name];
+
   static void resetForTests() {
     threadsChanged = _defaultThreadsChanged;
     vectorUsage = _defaultVectorUsage;
     applyVectorSpace = _defaultApplyVectorSpace;
+    availableProviders = _defaultAvailableProviders;
   }
 
   @override
@@ -72,6 +82,10 @@ class _ModelsPageState extends State<ModelsPage> {
   void initState() {
     super.initState();
     unawaited(_loadUsage());
+    // r86: the timings the explain windows show.
+    unawaited(ModelTimings.instance.ensureLoaded().then((_) {
+      if (mounted) setState(() {});
+    }));
   }
 
   Future<void> _loadUsage() async {
@@ -191,6 +205,147 @@ class _ModelsPageState extends State<ModelsPage> {
             tooltip: 'One thread more',
             onPressed: n < ModelTasks.cores ? () => _setThreads(model, use, n + 1) : null,
             icon: const Icon(Symbols.add_rounded),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── r86: run on, picture decoding ──
+
+  static const Map<ModelAccelerator, String> _runOnText = {
+    ModelAccelerator.cpu:
+        "ONNX Runtime's own code on the phone's processor, with the thread counts below. Works with every model and is how the app ran "
+        'before r86. More threads finish sooner but warm the phone and can make scrolling stutter.',
+    ModelAccelerator.xnnpack:
+        "Google's CPU library, often quicker than the default for convolutions and big matrix sums - mostly the tagger. In this build its share "
+        'runs on one thread of its own (the plugin cannot give it more; the NPU build will), the rest on the threads below, so here it may be '
+        'slower than the CPU. The text and looks models are int8 files, which it barely helps.',
+    ModelAccelerator.nnapi:
+        "Android's route to the phone's GPU or NPU, through the chip maker's driver. Android 15 marked it as old, but it still works. The "
+        'driver takes the parts it can, at full precision, and the CPU does the rest; the int8 text and looks models fall back to the CPU almost '
+        'entirely. Opening the model takes longer while the driver prepares it. Worth a try on the tagger.',
+  };
+
+  Future<void> _setRunOn(ModelKind model, ModelAccelerator a) async {
+    await ModelTasks.setRunOn(model, a);
+    ModelsPage.threadsChanged(model);
+    if (mounted) setState(() {});
+  }
+
+  Widget _runOn(ModelKind model) {
+    final ThemeData theme = Theme.of(context);
+    final ModelAccelerator now = ModelTasks.runOn(model);
+    return Padding(
+      key: ValueKey('model-runon-${model.name}-row'),
+      padding: const EdgeInsets.fromLTRB(18, 8, 8, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Expanded(child: Text('Run on', style: TextStyle(fontWeight: FontWeight.w600))),
+              ExplainButton(
+                key: ValueKey('model-runon-${model.name}-explain'),
+                title: 'Run on: ${_names[model]!}',
+                intro: 'What the ${_names[model]!.toLowerCase()} runs on. Times are the model alone (not the picture preparation), as this phone measured them.',
+                choices: () => [
+                  for (final ModelAccelerator a in ModelAccelerator.values)
+                    ExplainChoice(
+                      name: a == ModelAccelerator.cpu ? '${a.label} (as before)' : a.label,
+                      text: _runOnText[a]!,
+                      timing: [
+                        ModelTimings.words(ModelTimings.instance.run(model, a), unit: 'run'),
+                        if (ModelTimings.instance.open(model, a) != null)
+                          'Opening the model: ${ModelTimings.instance.open(model, a)!.averageMs} ms on average.',
+                      ].join(' '),
+                    ),
+                ],
+                footer:
+                    'A new choice is used the next time the model opens; an idle model is closed at once. When a choice refuses the model, '
+                    'the CPU runs it and the log says so ("refused").',
+                note: () async {
+                  try {
+                    final List<String> names = [...await ModelsPage.availableProviders()]..sort();
+                    return 'Available in this build: ${names.join(', ')}.';
+                  } catch (_) {
+                    return null;
+                  }
+                },
+              ),
+            ],
+          ),
+          Text(
+            'The CPU is how it ran before. Applies the next time the model opens.',
+            style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurface.withValues(alpha: 0.6)),
+          ),
+          const SizedBox(height: 8),
+          SegmentedButton<ModelAccelerator>(
+            key: ValueKey('model-runon-${model.name}'),
+            segments: [
+              for (final ModelAccelerator a in ModelAccelerator.values) ButtonSegment<ModelAccelerator>(value: a, label: Text(a.label)),
+            ],
+            selected: {now},
+            showSelectedIcon: false,
+            onSelectionChanged: (Set<ModelAccelerator> s) => _setRunOn(model, s.first),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static const Map<PictureDecoder, String> _decoderText = {
+    PictureDecoder.phone:
+        "Android's own decoders (through Flutter's engine) shrink the picture while decoding it, to twice what the model needs; the app then "
+        'pads, crops and resizes it as before. Much faster on big files and lighter on memory. What the model sees differs very slightly from '
+        'before, so a picture read again may get a slightly different look or tag scores.',
+    PictureDecoder.dart:
+        "The app's own decoder, written in Dart: it reads the whole file at full size before shrinking it - about 1 s for a 4 MB picture on "
+        "this phone (log of 2 October). Exactly what earlier builds did. Also used for any file the phone cannot read; the tagger's log line "
+        'names the decoder used.',
+  };
+
+  Widget _pictureDecoder() {
+    final ThemeData theme = Theme.of(context);
+    return Padding(
+      key: const ValueKey('picture-decoder-row'),
+      padding: const EdgeInsets.fromLTRB(18, 8, 8, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Expanded(child: Text('Picture decoding', style: TextStyle(fontWeight: FontWeight.w600))),
+              ExplainButton(
+                key: const ValueKey('picture-decoder-explain'),
+                title: 'Picture decoding',
+                intro:
+                    'Who turns a picture file into the pixels the looks model and the tagger read (and the frames of playing videos). '
+                    'Times are the whole preparation of one picture, as this phone measured them.',
+                choices: () => [
+                  for (final PictureDecoder d in PictureDecoder.values)
+                    ExplainChoice(
+                      name: d.label,
+                      text: _decoderText[d]!,
+                      timing: ModelTimings.words(ModelTimings.instance.decode(d), unit: 'picture'),
+                    ),
+                ],
+              ),
+            ],
+          ),
+          Text(
+            'For the looks model, the tagger and video frames. The phone is new in r86; As before is how it worked until then.',
+            style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurface.withValues(alpha: 0.6)),
+          ),
+          const SizedBox(height: 8),
+          SegmentedButton<PictureDecoder>(
+            key: const ValueKey('picture-decoder'),
+            segments: [
+              for (final PictureDecoder d in PictureDecoder.values) ButtonSegment<PictureDecoder>(value: d, label: Text(d.label)),
+            ],
+            selected: {ModelTasks.pictureDecoder},
+            showSelectedIcon: false,
+            onSelectionChanged: (Set<PictureDecoder> s) => _run(() => ModelTasks.setPictureDecoder(s.first)),
           ),
         ],
       ),
@@ -322,6 +477,8 @@ class _ModelsPageState extends State<ModelsPage> {
         ),
       _threads(model, ModelUse.waiting),
       _threads(model, ModelUse.background),
+      // r86: what the model runs on.
+      _runOn(model),
     ];
   }
 
@@ -349,6 +506,8 @@ class _ModelsPageState extends State<ModelsPage> {
             subtitle: const Text('Nothing is loaded or run: the recommender goes by tags alone. The switches below are kept for when you turn this off again.'),
             leadingIcon: const Icon(Symbols.power_settings_new_rounded),
           ),
+          // r86: who decodes the models' pictures.
+          _pictureDecoder(),
           for (final ModelKind m in ModelKind.values) ..._model(m),
           ..._vectors(),
         ],

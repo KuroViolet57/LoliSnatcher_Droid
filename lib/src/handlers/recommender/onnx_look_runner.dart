@@ -2,7 +2,10 @@ import 'dart:typed_data';
 
 import 'package:flutter_onnxruntime/flutter_onnxruntime.dart';
 
+import 'package:lolisnatcher/src/data/model_tasks.dart';
 import 'package:lolisnatcher/src/handlers/recommender/look_model_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/model_timings.dart';
+import 'package:lolisnatcher/src/handlers/recommender/onnx_options.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 
 /// The real runner: one ONNX Runtime session per half of the looks model.
@@ -13,7 +16,9 @@ import 'package:lolisnatcher/src/utils/logger.dart';
 /// vector. The sessions' own input names are used, so another CLIP export
 /// works too; the first output is taken either way.
 class OnnxLookRunner implements LookRunner {
-  OnnxLookRunner(this.imagePath, this.textPath, {int? threads}) : threads = threads ?? defaultThreads;
+  OnnxLookRunner(this.imagePath, this.textPath, {int? threads, ModelAccelerator? accelerator})
+    : threads = threads ?? defaultThreads,
+      accelerator = accelerator ?? savedAccelerator(ModelKind.look);
 
   /// r77: one thread for everyone (was half the cores): with one thread ORT
   /// builds no thread pool, so nothing spins next to the screen and the video.
@@ -23,7 +28,13 @@ class OnnxLookRunner implements LookRunner {
   final String textPath;
   final int threads;
 
-  OrtSessionOptions get options => OrtSessionOptions(intraOpNumThreads: threads);
+  /// r86: what the model runs on (Settings → Models → Run on).
+  final ModelAccelerator accelerator;
+
+  OrtSessionOptions get options => onnxSessionOptions(threads: threads, accelerator: accelerator);
+
+  /// What the picture half really opened on (the CPU when the choice was refused).
+  ModelAccelerator _used = ModelAccelerator.cpu;
 
   OrtSession? _image;
   OrtSession? _text;
@@ -35,16 +46,16 @@ class OnnxLookRunner implements LookRunner {
   String get provider => _provider;
 
   Future<OrtSession> _open(String path, {required bool image}) async {
-    OrtSession s;
-    try {
-      s = await OnnxRuntime().createSession(path, options: options);
-      _provider = 'CPU x$threads';
-    } catch (e) {
-      Logger.Inst().log('look: could not open ${image ? 'the picture' : 'the text'} half with $threads threads ($e); default options', 'OnnxLookRunner', '_open', LogTypes.booruHandlerInfo);
-      s = await OnnxRuntime().createSession(path);
-      _provider = 'CPU';
-    }
-    return s;
+    final OpenedSession o = await openOnnxSession(
+      path,
+      model: ModelKind.look,
+      threads: threads,
+      accelerator: accelerator,
+      who: image ? 'look (picture half)' : 'look (text half)',
+    );
+    if (image) _used = o.used;
+    _provider = o.provider;
+    return o.session;
   }
 
   Future<OrtSession> _imageSession() => _openingImage ??= _open(imagePath, image: true).then((s) => _image = s).catchError((Object e) {
@@ -78,7 +89,10 @@ class OnnxLookRunner implements LookRunner {
     final String name = session.inputNames.isNotEmpty ? session.inputNames.first : 'pixel_values';
     final OrtValue input = await OrtValue.fromList(nchw, [1, 3, size, size]);
     try {
-      return await _first(await session.run({name: input}));
+      final Stopwatch sw = Stopwatch()..start();
+      final Map<String, OrtValue> outputs = await session.run({name: input});
+      ModelTimings.instance.recordRun(ModelKind.look, _used, sw.elapsedMilliseconds);
+      return await _first(outputs);
     } finally {
       await input.dispose();
     }

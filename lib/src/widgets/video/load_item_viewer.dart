@@ -7,6 +7,7 @@ import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/boorus/linked_media.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/widgets/thumbnail/thumbnail.dart';
 
@@ -140,7 +141,7 @@ class _LoadItemViewerState extends State<LoadItemViewer> {
                   ElevatedButton.icon(
                     onPressed: () {
                       launchUrlString(
-                        widget.item.postURL,
+                        LinkedMediaResolver.browserAddress(widget.item.postURL),
                         mode: LaunchMode.externalApplication,
                       );
                     },

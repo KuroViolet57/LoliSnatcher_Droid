@@ -582,7 +582,7 @@ class EncoderHandler {
       await _ensureLoaded(use);
       final WordPieceTokenizer tokenizer = _tokenizer!;
       final EmbeddingRunner runner = _runner!;
-      if (runner is OnnxEmbeddingRunner) cpu = 'CPU x${runner.threads}';
+      if (runner is OnnxEmbeddingRunner) cpu = runner.provider;
       for (int start = 0; start < missing.length; start += _batch) {
         final List<int> chunk = missing.sublist(start, math.min(start + _batch, missing.length));
         final List<TokenizedText> encoded = [for (final int i in chunk) tokenizer.encode(texts[i], maxLength: _maxLen)];
