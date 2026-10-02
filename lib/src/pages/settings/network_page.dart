@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 import 'package:lolisnatcher/src/data/booru.dart';
@@ -138,7 +140,7 @@ class _NetworkPageState extends State<NetworkPage> {
                 pasteable: true,
                 drawBottomBorder: false,
                 trailingIcon: IconButton(
-                  icon: const Icon(Icons.help_outline),
+                  icon: const Icon(Symbols.help_rounded),
                   onPressed: () {
                     showDialog(
                       context: context,
@@ -168,7 +170,7 @@ class _NetworkPageState extends State<NetworkPage> {
               const SettingsButton(name: '', enabled: false),
               SettingsButton(
                 name: context.loc.settings.network.cookieCleaner,
-                icon: const Icon(Icons.cookie_rounded),
+                icon: const Icon(Symbols.cookie_rounded),
               ),
               SettingsBooruDropdown(
                 value: selectedBooru,
@@ -237,7 +239,7 @@ class _NetworkPageState extends State<NetworkPage> {
                     ? context.loc.settings.network.clearCookiesFor(booruName: selectedBooru!.name!)
                     : context.loc.settings.network.clearCookies,
                 icon: const Icon(
-                  Icons.delete_forever,
+                  Symbols.delete_forever_rounded,
                   color: Colors.red,
                 ),
                 action: () async {

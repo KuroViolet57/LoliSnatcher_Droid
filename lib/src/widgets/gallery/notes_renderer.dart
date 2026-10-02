@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:dio/dio.dart';
 import 'package:get/get.dart';
 import 'package:preload_page_view/preload_page_view.dart';
@@ -267,7 +269,7 @@ class _NotesRendererState extends State<NotesRenderer> {
                                 ),
                               ),
                               Icon(
-                                Icons.note_add,
+                                Symbols.note_add_rounded,
                                 size: 18,
                                 color: Theme.of(context).colorScheme.secondary,
                               ),
@@ -361,7 +363,7 @@ class _NoteBuildState extends State<NoteBuild> {
           const SizedBox(width: 8),
           IconButton(
             icon: Icon(
-              isColored ? Icons.color_lens : Icons.color_lens_outlined,
+              isColored ? Symbols.color_lens_rounded : Symbols.color_lens_rounded,
               size: 24,
             ),
             onPressed: () {

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/creator_info.dart';
@@ -65,6 +66,16 @@ class RedGifsHandler extends BooruHandler {
           MetaTagValue(name: 'Top', value: 'top'),
           MetaTagValue(name: 'Latest', value: 'latest'),
         ],
+      ),
+      MetaTagWithValues(
+        name: 'Type',
+        keyName: 'type',
+        values: [MetaTagValue(name: 'Gifs (videos)', value: 'gifs'), MetaTagValue(name: 'Images', value: 'images')],
+      ),
+      MetaTagWithValues(
+        name: 'Verified creators',
+        keyName: 'verified',
+        values: [MetaTagValue(name: 'Only verified', value: 'yes')],
       ),
     ];
   }
@@ -186,6 +197,10 @@ class RedGifsHandler extends BooruHandler {
     final List<String> tags = [];
     for (final term in terms) {
       final lower = term.toLowerCase();
+      if (lower.startsWith('type:') || lower.startsWith('verified:')) {
+        // r71: search options, not tags (see makeURL).
+        continue;
+      }
       if (lower.startsWith('sort:') || lower.startsWith('order:')) {
         final value = lower.split(':').last;
         if (['trending', 'top', 'latest'].contains(value)) {
@@ -208,6 +223,15 @@ class RedGifsHandler extends BooruHandler {
         .where((e) => e.isNotEmpty && e != 'nsfw')
         .toList();
 
+    // r71: type=g (gifs) / i (images) on the search, creator and niche
+    // endpoints and verified=y on the search, checked live 2026-09-17.
+    final String? mediaType = switch (_prefixValue(tags, 'type')?.toLowerCase()) {
+      'gifs' || 'gif' || 'videos' || 'video' => 'g',
+      'images' || 'image' || 'photos' || 'photo' => 'i',
+      _ => null,
+    };
+    final bool verifiedOnly = _prefixValue(tags, 'verified')?.toLowerCase() == 'yes';
+
     // A `niche:id` term routes to a curated RedGifs niche feed, e.g.
     // `niche:just-boobs`. Browse the catalogue at redgifs.com/niches.
     final String? niche = _prefixValue(tags, 'niche');
@@ -217,6 +241,7 @@ class RedGifsHandler extends BooruHandler {
           'order': _nicheOrder(parts.order),
           'count': limit.toString(),
           'page': pageNum.toString(),
+          'type': ?mediaType,
         },
       ).toString();
     }
@@ -231,6 +256,7 @@ class RedGifsHandler extends BooruHandler {
           'order': _userOrder(parts.order),
           'count': limit.toString(),
           'page': pageNum.toString(),
+          'type': ?mediaType,
         },
       ).toString();
     }
@@ -243,6 +269,8 @@ class RedGifsHandler extends BooruHandler {
         'order': parts.order,
         'count': limit.toString(),
         'page': pageNum.toString(),
+        'type': ?mediaType,
+        if (verifiedOnly) 'verified': 'y',
       },
     ).toString();
   }
@@ -262,7 +290,9 @@ class RedGifsHandler extends BooruHandler {
     }
   }
 
-  // The niche feed accepts trending/oldest/latest/best/hot — NOT `top`.
+  // The niche feed accepts hot/oldest/latest/best. r83: it refuses
+  // `trending` now ("Bad sorting order", checked live 2026-10-01, though the
+  // message lists it), so the Trending chip asks for `hot`.
   String _nicheOrder(String order) {
     switch (order) {
       case 'top':
@@ -270,7 +300,7 @@ class RedGifsHandler extends BooruHandler {
       case 'latest':
         return 'latest';
       default:
-        return 'trending';
+        return 'hot';
     }
   }
 
@@ -466,29 +496,37 @@ class RedGifsHandler extends BooruHandler {
   static List<Map<String, dynamic>>? _nichesCache;
   static Future<List<Map<String, dynamic>>>? _nichesFuture;
 
+  /// r83: RedGifs pages the niche list 100 at a time at most ("Invalid page
+  /// size" above that, checked live 2026-10-01: 1,821 niches, 19 pages).
+  static const int nichePageSize = 100;
+
+  /// A safety cap on the pages read.
+  static const int maxNichePages = 40;
+
+  /// Test seam: one page of the niche list (null = the live API).
+  @visibleForTesting
+  static Future<Map<String, dynamic>?> Function(int page, int count)? nichePage;
+
+  @visibleForTesting
+  static void resetNichesForTests() {
+    _nichesCache = null;
+    _nichesFuture = null;
+    nichePage = null;
+  }
+
   Future<List<Map<String, dynamic>>> _ensureNiches() {
     if (_nichesCache != null) return Future.value(_nichesCache);
     return _nichesFuture ??= _fetchAllNiches().whenComplete(() => _nichesFuture = null);
   }
 
+  /// The whole niche list: the first page says how many there are, the
+  /// rest are read four at a time. A page that fails is left out; the first
+  /// failing fails the list (the suggestions say nothing, as before).
   Future<List<Map<String, dynamic>>> _fetchAllNiches() async {
-    await _ensureToken();
+    final Future<Map<String, dynamic>?> Function(int page, int count) fetch = nichePage ?? _nichePageLive;
     final List<Map<String, dynamic>> all = [];
-    int page = 1;
-    int pages = 1;
-    // The API caps `count` server-side (returns `pages` accordingly), so read
-    // the real page count from each response. Hard cap as a safety net.
-    while (page <= pages && page <= 25) {
-      final response = await DioNetwork.get(
-        '$_apiBase/v2/niches',
-        queryParameters: {'count': '1000', 'page': page.toString()},
-        headers: getHeaders(),
-      );
-      final data = response.data;
-      if (data is! Map) break;
-      pages = int.tryParse(data['pages']?.toString() ?? '1') ?? 1;
-      final List list = (data['niches'] as List?) ?? [];
-      if (list.isEmpty) break;
+    void take(Map<String, dynamic>? data) {
+      final List list = (data?['niches'] as List?) ?? const [];
       for (final n in list) {
         if (n is Map && n['id'] != null) {
           all.add({
@@ -498,11 +536,39 @@ class RedGifsHandler extends BooruHandler {
           });
         }
       }
-      page++;
+    }
+
+    final Map<String, dynamic>? first = await fetch(1, nichePageSize);
+    take(first);
+    final int pages = (int.tryParse(first?['pages']?.toString() ?? '1') ?? 1).clamp(1, maxNichePages);
+    Future<Map<String, dynamic>?> page(int p) async {
+      try {
+        return await fetch(p, nichePageSize);
+      } catch (e) {
+        Logger.Inst().log('niche list page $p failed: $e', className, '_fetchAllNiches', LogTypes.booruHandlerFetchFailed);
+        return null;
+      }
+    }
+
+    for (int start = 2; start <= pages; start += 4) {
+      final int end = start + 3 < pages ? start + 3 : pages;
+      final List<Map<String, dynamic>?> got = await Future.wait([for (int p = start; p <= end; p++) page(p)]);
+      got.forEach(take);
     }
     all.sort((a, b) => (b['gifs'] as int).compareTo(a['gifs'] as int));
     if (all.isNotEmpty) _nichesCache = all;
     return all;
+  }
+
+  Future<Map<String, dynamic>?> _nichePageLive(int page, int count) async {
+    await _ensureToken();
+    final response = await DioNetwork.get(
+      '$_apiBase/v2/niches',
+      queryParameters: {'count': count.toString(), 'page': page.toString()},
+      headers: getHeaders(),
+    );
+    final data = response.data;
+    return data is Map ? Map<String, dynamic>.from(data) : null;
   }
 
   @override

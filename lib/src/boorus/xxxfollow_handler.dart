@@ -32,6 +32,13 @@ import 'package:lolisnatcher/src/utils/tools.dart';
 class XXXFollowHandler extends BooruHandler {
   XXXFollowHandler(super.booru, super.limit);
 
+  // Reads neither field (audited): the fields are hidden on the edit page.
+  @override
+  bool get usesUserId => false;
+  @override
+  bool get usesApiKey => false;
+
+
   static const String _root = 'https://www.xxxfollow.com';
   static const String _api = '$_root/api/v1';
 

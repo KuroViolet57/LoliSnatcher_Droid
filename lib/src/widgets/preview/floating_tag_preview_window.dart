@@ -3,19 +3,26 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:get/get.dart' hide ContextExt;
 import 'package:scroll_to_index/scroll_to_index.dart';
 
+import 'package:lolisnatcher/src/utils/navigation_trace.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/handlers/floating_preview_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/pages/gallery_view_page.dart';
+import 'package:lolisnatcher/src/pages/doujin_detail_page.dart';
+import 'package:lolisnatcher/src/pages/tag_hub_page.dart';
 import 'package:lolisnatcher/src/utils/extensions.dart';
 import 'package:lolisnatcher/src/utils/tag_alias_resolver.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 import 'package:lolisnatcher/src/widgets/common/kaomoji.dart';
+import 'package:lolisnatcher/src/widgets/gallery/tag_view.dart';
 import 'package:lolisnatcher/src/widgets/image/booru_favicon.dart';
 import 'package:lolisnatcher/src/widgets/thumbnail/thumbnail_card_build.dart';
 
@@ -176,6 +183,7 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
     bool retry = false,
   }) async {
     if (refresh || tab == null) {
+      _autoPagesFetched = 0;
       tab = SearchTab(
         selectedBooru,
         null,
@@ -251,12 +259,19 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _fillIfNotScrollable());
   }
 
+  // Bounded auto-pagination: some boorus return thin or even EMPTY early
+  // pages for rare tags (the old empty-guard here made the window claim
+  // "nothing found" when page 2 had the posts).
+  int _autoPagesFetched = 0;
+
   void _fillIfNotScrollable() {
     if (!mounted || loading || isLastPage || errorString.isNotEmpty) return;
-    if (tab == null || tab!.booruHandler.filteredFetched.isEmpty) return;
-    if (!scrollController.hasClients) return;
-    final pos = scrollController.position;
-    if (pos.maxScrollExtent <= 0) {
+    if (tab == null) return;
+    final int count = tab!.booruHandler.filteredFetched.length;
+    final bool notScrollable =
+        !scrollController.hasClients || scrollController.position.maxScrollExtent <= 0;
+    if ((count < 10 || notScrollable) && _autoPagesFetched < 4) {
+      _autoPagesFetched++;
       loadPreview();
     }
   }
@@ -350,6 +365,7 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
       _effectiveTag,
       customBooru: selectedBooru,
       addMode: addMode,
+      group: SearchHandler.inheritGroup,
     );
     FlashElements.showSnackbar(
       context: context,
@@ -358,7 +374,7 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
       duration: const Duration(seconds: 2),
       title: Text(context.loc.tagView.addedNewTab, style: const TextStyle(fontSize: 20)),
       content: Text(_effectiveTag, style: const TextStyle(fontSize: 16)),
-      leadingIcon: Icons.fiber_new,
+      leadingIcon: Symbols.fiber_new_rounded,
       sideColor: Colors.green,
     );
   }
@@ -378,6 +394,8 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
     ViewerHandler.instance.addViewer(viewerKey);
     await Navigator.of(context).push(
       PageRouteBuilder(
+        // r77: named like the feed's viewer, so its close is logged too.
+        settings: const RouteSettings(name: ViewerCloseObserver.viewerRoute),
         pageBuilder: (_, _, _) => GalleryViewPage(
           key: viewerKey,
           tab: tab!,
@@ -448,10 +466,17 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
                 Column(
                   children: [
                     _buildTitleBar(context, screen),
-                    _buildBooruRow(context),
-                    _buildSearchRow(context),
-                    if (_aliasNote != null) _buildAliasBanner(context),
-                    Expanded(child: _buildGrid(context, rect.width)),
+                    // Doujin detail windows host the detail page (with its
+                    // own navigator, so Read stays inside the window) — no
+                    // search chrome, it's a single fixed gallery.
+                    if (isDoujinDetailWindow)
+                      Expanded(child: _buildDoujinDetail(context))
+                    else ...[
+                      _buildBooruRow(context),
+                      _buildSearchRow(context),
+                      if (_aliasNote != null) _buildAliasBanner(context),
+                      Expanded(child: _buildGrid(context, rect.width)),
+                    ],
                   ],
                 ),
                 // In-window booru picker — floats above the grid so it can't
@@ -476,7 +501,7 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
                       alignment: Alignment.bottomRight,
                       padding: const EdgeInsets.all(6),
                       child: Icon(
-                        Icons.south_east,
+                        Symbols.south_east_rounded,
                         size: 16,
                         color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
                       ),
@@ -488,6 +513,36 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
           ),
         ),
       ],
+    );
+  }
+
+  bool get isDoujinDetailWindow => widget.entry.doujinItem != null;
+
+  /// Doujin detail windows: once the `id:<n>` search delivers the gallery, a
+  /// NESTED navigator hosts the detail page — so its pushes (the reader,
+  /// most importantly) render inside the window instead of over the app.
+  /// Insets are zeroed: the window floats mid-screen, system bars don't
+  /// apply to it.
+  Widget _buildDoujinDetail(BuildContext context) {
+    final t = tab;
+    if (t == null || t.booruHandler.filteredFetched.isEmpty) {
+      if (errorString.isNotEmpty) return _buildError(context);
+      return const Center(child: CircularProgressIndicator());
+    }
+    return MediaQuery(
+      data: MediaQuery.of(context).copyWith(
+        padding: EdgeInsets.zero,
+        viewPadding: EdgeInsets.zero,
+        viewInsets: EdgeInsets.zero,
+      ),
+      child: ClipRect(
+        child: Navigator(
+          onGenerateRoute: (settings) => MaterialPageRoute(
+            settings: settings,
+            builder: (_) => DoujinDetailPage(tab: t, index: 0),
+          ),
+        ),
+      ),
     );
   }
 
@@ -510,14 +565,18 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
         child: Row(
           children: [
             Icon(
-              Icons.drag_indicator,
+              Symbols.drag_indicator_rounded,
               size: 18,
               color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
             ),
             const SizedBox(width: 6),
             Expanded(
               child: Text(
-                widget.entry.tag,
+                isDoujinDetailWindow
+                    ? (widget.entry.doujinItem!.description ?? '')
+                          .split('\n')
+                          .firstWhere((l) => l.trim().isNotEmpty, orElse: () => widget.entry.tag)
+                    : widget.entry.tag,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontWeight: FontWeight.w600),
@@ -526,13 +585,13 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
             IconButton(
               visualDensity: VisualDensity.compact,
               tooltip: 'Minimize',
-              icon: const Icon(Icons.remove, size: 20),
+              icon: const Icon(Symbols.remove_rounded, size: 20),
               onPressed: () => setState(() => minimized = true),
             ),
             IconButton(
               visualDensity: VisualDensity.compact,
               tooltip: context.loc.close,
-              icon: const Icon(Icons.close, size: 20),
+              icon: const Icon(Symbols.close_rounded, size: 20),
               onPressed: () => FloatingPreviewHandler.instance.close(widget.entry),
             ),
           ],
@@ -568,7 +627,7 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
                         style: const TextStyle(fontWeight: FontWeight.w500),
                       ),
                     ),
-                    const Icon(Icons.arrow_drop_down),
+                    const Icon(Symbols.arrow_drop_down_rounded),
                   ],
                 ),
               ),
@@ -589,11 +648,14 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
                 ),
               );
             }),
+          // Hidden when the site has no animated-content tags at all (see
+          // BooruHandler.animatedPreviewFilters / SiteProfile).
+          if (_animatedFilters.isNotEmpty)
           IconButton(
             visualDensity: VisualDensity.compact,
             tooltip: _animatedButtonTooltip,
             icon: Icon(
-              _activeAnimatedFilter == null ? Icons.movie_outlined : Icons.movie,
+              _activeAnimatedFilter == null ? Symbols.movie_rounded : Symbols.movie_rounded,
               size: 20,
               color: _activeAnimatedFilter == null ? null : theme.colorScheme.secondary,
             ),
@@ -602,8 +664,41 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
           IconButton(
             visualDensity: VisualDensity.compact,
             tooltip: 'Open in a new tab',
-            icon: const Icon(Icons.fiber_new, size: 20),
+            icon: const Icon(Symbols.fiber_new_rounded, size: 20),
             onPressed: _openInNewTab,
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            tooltip: 'Open in group',
+            icon: const Icon(Symbols.create_new_folder_rounded, size: 20),
+            onPressed: () async {
+              // Duck the window while the sheet is open — the root overlay
+              // sits above navigator sheets, which buried the picker.
+              final handler = FloatingPreviewHandler.instance;
+              handler.pushSuppress();
+              try {
+                await showOpenTagInGroupSheet(context, _effectiveTag, selectedBooru);
+              } finally {
+                handler.popSuppress();
+              }
+            },
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            tooltip: 'Tag hub',
+            icon: const Icon(Symbols.hub_rounded, size: 20),
+            onPressed: () {
+              // The window's Offstage logic parks it while the hub page is on
+              // top and restores it (state intact) when the page pops.
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => TagHubPage(
+                    tag: widget.entry.tag,
+                    originBooru: widget.entry.booru,
+                  ),
+                ),
+              );
+            },
           ),
           const SizedBox(width: 4),
         ],
@@ -624,7 +719,7 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
       ),
       child: Row(
         children: [
-          Icon(Icons.sync_alt, size: 15, color: theme.colorScheme.onSecondaryContainer),
+          Icon(Symbols.sync_alt_rounded, size: 15, color: theme.colorScheme.onSecondaryContainer),
           const SizedBox(width: 6),
           Expanded(
             child: Text(
@@ -657,7 +752,7 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
             contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             hintText: 'Add tags to this preview…',
             hintStyle: TextStyle(fontSize: 13, color: theme.colorScheme.onSurface.withValues(alpha: 0.5)),
-            prefixIcon: const Icon(Icons.search, size: 18),
+            prefixIcon: const Icon(Symbols.search_rounded, size: 18),
             prefixIconConstraints: const BoxConstraints(minWidth: 34, minHeight: 34),
             suffixIcon: ValueListenableBuilder(
               valueListenable: extraTagsController,
@@ -665,7 +760,7 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
                 if (value.text.isEmpty) return const SizedBox.shrink();
                 return IconButton(
                   visualDensity: VisualDensity.compact,
-                  icon: const Icon(Icons.clear, size: 16),
+                  icon: const Icon(Symbols.clear_rounded, size: 16),
                   onPressed: () {
                     extraTagsController.clear();
                     _applyExtraTags();
@@ -722,7 +817,7 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
                           const Spacer(),
                           IconButton(
                             visualDensity: VisualDensity.compact,
-                            icon: const Icon(Icons.close, size: 20),
+                            icon: const Icon(Symbols.close_rounded, size: 20),
                             onPressed: () => setState(() => booruPickerOpen = false),
                           ),
                         ],
@@ -740,7 +835,7 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
                             decoration: InputDecoration(
                               isDense: true,
                               hintText: 'Filter boorus…',
-                              prefixIcon: const Icon(Icons.search, size: 18),
+                              prefixIcon: const Icon(Symbols.search_rounded, size: 18),
                               contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                               border: OutlineInputBorder(borderRadius: BorderRadius.circular(20)),
                             ),
@@ -761,7 +856,7 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
                                 b.type?.name ?? '',
                                 style: const TextStyle(fontSize: 11),
                               ),
-                              trailing: b == selectedBooru ? const Icon(Icons.check, size: 18) : null,
+                              trailing: b == selectedBooru ? const Icon(Symbols.check_rounded, size: 18) : null,
                               onTap: () => _pickBooru(b),
                             ),
                         ],
@@ -778,6 +873,11 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
   }
 
   bool _booruMatchesFilter(Booru b) {
+    // Stay in the window's own DOMAIN: a window opened from a doujin tag must
+    // not be switchable to a booru (and vice versa) — the two have different
+    // tag vocabularies and are separate systems, the same rule the
+    // "find this post elsewhere" candidates follow.
+    if (!DoujinDataHandler.sameDomain(b, widget.entry.booru)) return false;
     final String q = booruFilterController.text.trim().toLowerCase();
     if (q.isEmpty) return true;
     return (b.name?.toLowerCase().contains(q) ?? false) || (b.type?.name.toLowerCase().contains(q) ?? false);
@@ -895,7 +995,7 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.error_outline, size: 26),
+          const Icon(Symbols.error_rounded, size: 26),
           const SizedBox(height: 6),
           Text(
             context.loc.tagView.failedToLoadPreviewPage,
@@ -952,7 +1052,7 @@ class _FloatingTagPreviewWindowState extends State<FloatingTagPreviewWindow> {
                       right: 8,
                       bottom: 8,
                       child: Icon(
-                        Icons.open_in_full,
+                        Symbols.open_in_full_rounded,
                         size: 12,
                         color: theme.colorScheme.onSecondaryContainer.withValues(alpha: 0.7),
                       ),

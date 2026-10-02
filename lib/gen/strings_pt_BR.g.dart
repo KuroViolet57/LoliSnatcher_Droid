@@ -190,28 +190,28 @@ class TranslationsPtBr extends Translations with BaseTranslations<AppLocale, Tra
   @override
   String get downloads => TranslationOverrides.string(_root.$meta, 'downloads', {}) ?? 'Baixados';
   @override
-  late final _TranslationsValidationErrorsPtBr validationErrors = _TranslationsValidationErrorsPtBr._(_root);
+  late final _Translations$validationErrors$pt_BR validationErrors = _Translations$validationErrors$pt_BR._(_root);
   @override
-  late final _TranslationsInitPtBr init = _TranslationsInitPtBr._(_root);
+  late final _Translations$init$pt_BR init = _Translations$init$pt_BR._(_root);
   @override
-  late final _TranslationsPermissionsPtBr permissions = _TranslationsPermissionsPtBr._(_root);
+  late final _Translations$permissions$pt_BR permissions = _Translations$permissions$pt_BR._(_root);
   @override
-  late final _TranslationsAuthenticationPtBr authentication = _TranslationsAuthenticationPtBr._(_root);
+  late final _Translations$authentication$pt_BR authentication = _Translations$authentication$pt_BR._(_root);
   @override
-  late final _TranslationsSearchHandlerPtBr searchHandler = _TranslationsSearchHandlerPtBr._(_root);
+  late final _Translations$searchHandler$pt_BR searchHandler = _Translations$searchHandler$pt_BR._(_root);
   @override
-  late final _TranslationsSnatcherPtBr snatcher = _TranslationsSnatcherPtBr._(_root);
+  late final _Translations$snatcher$pt_BR snatcher = _Translations$snatcher$pt_BR._(_root);
   @override
-  late final _TranslationsMultibooruPtBr multibooru = _TranslationsMultibooruPtBr._(_root);
+  late final _Translations$multibooru$pt_BR multibooru = _Translations$multibooru$pt_BR._(_root);
   @override
-  late final _TranslationsHydrusPtBr hydrus = _TranslationsHydrusPtBr._(_root);
+  late final _Translations$hydrus$pt_BR hydrus = _Translations$hydrus$pt_BR._(_root);
   @override
-  late final _TranslationsTabsPtBr tabs = _TranslationsTabsPtBr._(_root);
+  late final _Translations$tabs$pt_BR tabs = _Translations$tabs$pt_BR._(_root);
 }
 
 // Path: validationErrors
-class _TranslationsValidationErrorsPtBr extends TranslationsValidationErrorsEn {
-  _TranslationsValidationErrorsPtBr._(TranslationsPtBr root) : this._root = root, super.internal(root);
+class _Translations$validationErrors$pt_BR extends Translations$validationErrors$en {
+  _Translations$validationErrors$pt_BR._(TranslationsPtBr root) : this._root = root, super.internal(root);
 
   final TranslationsPtBr _root; // ignore: unused_field
 
@@ -252,8 +252,8 @@ class _TranslationsValidationErrorsPtBr extends TranslationsValidationErrorsEn {
 }
 
 // Path: init
-class _TranslationsInitPtBr extends TranslationsInitEn {
-  _TranslationsInitPtBr._(TranslationsPtBr root) : this._root = root, super.internal(root);
+class _Translations$init$pt_BR extends Translations$init$en {
+  _Translations$init$pt_BR._(TranslationsPtBr root) : this._root = root, super.internal(root);
 
   final TranslationsPtBr _root; // ignore: unused_field
 
@@ -273,8 +273,8 @@ class _TranslationsInitPtBr extends TranslationsInitEn {
 }
 
 // Path: permissions
-class _TranslationsPermissionsPtBr extends TranslationsPermissionsEn {
-  _TranslationsPermissionsPtBr._(TranslationsPtBr root) : this._root = root, super.internal(root);
+class _Translations$permissions$pt_BR extends Translations$permissions$en {
+  _Translations$permissions$pt_BR._(TranslationsPtBr root) : this._root = root, super.internal(root);
 
   final TranslationsPtBr _root; // ignore: unused_field
 
@@ -304,8 +304,8 @@ class _TranslationsPermissionsPtBr extends TranslationsPermissionsEn {
 }
 
 // Path: authentication
-class _TranslationsAuthenticationPtBr extends TranslationsAuthenticationEn {
-  _TranslationsAuthenticationPtBr._(TranslationsPtBr root) : this._root = root, super.internal(root);
+class _Translations$authentication$pt_BR extends Translations$authentication$en {
+  _Translations$authentication$pt_BR._(TranslationsPtBr root) : this._root = root, super.internal(root);
 
   final TranslationsPtBr _root; // ignore: unused_field
 
@@ -326,8 +326,8 @@ class _TranslationsAuthenticationPtBr extends TranslationsAuthenticationEn {
 }
 
 // Path: searchHandler
-class _TranslationsSearchHandlerPtBr extends TranslationsSearchHandlerEn {
-  _TranslationsSearchHandlerPtBr._(TranslationsPtBr root) : this._root = root, super.internal(root);
+class _Translations$searchHandler$pt_BR extends Translations$searchHandler$en {
+  _Translations$searchHandler$pt_BR._(TranslationsPtBr root) : this._root = root, super.internal(root);
 
   final TranslationsPtBr _root; // ignore: unused_field
 
@@ -397,8 +397,8 @@ class _TranslationsSearchHandlerPtBr extends TranslationsSearchHandlerEn {
 }
 
 // Path: snatcher
-class _TranslationsSnatcherPtBr extends TranslationsSnatcherEn {
-  _TranslationsSnatcherPtBr._(TranslationsPtBr root) : this._root = root, super.internal(root);
+class _Translations$snatcher$pt_BR extends Translations$snatcher$en {
+  _Translations$snatcher$pt_BR._(TranslationsPtBr root) : this._root = root, super.internal(root);
 
   final TranslationsPtBr _root; // ignore: unused_field
 
@@ -492,8 +492,8 @@ class _TranslationsSnatcherPtBr extends TranslationsSnatcherEn {
 }
 
 // Path: multibooru
-class _TranslationsMultibooruPtBr extends TranslationsMultibooruEn {
-  _TranslationsMultibooruPtBr._(TranslationsPtBr root) : this._root = root, super.internal(root);
+class _Translations$multibooru$pt_BR extends Translations$multibooru$en {
+  _Translations$multibooru$pt_BR._(TranslationsPtBr root) : this._root = root, super.internal(root);
 
   final TranslationsPtBr _root; // ignore: unused_field
 
@@ -516,8 +516,8 @@ class _TranslationsMultibooruPtBr extends TranslationsMultibooruEn {
 }
 
 // Path: hydrus
-class _TranslationsHydrusPtBr extends TranslationsHydrusEn {
-  _TranslationsHydrusPtBr._(TranslationsPtBr root) : this._root = root, super.internal(root);
+class _Translations$hydrus$pt_BR extends Translations$hydrus$en {
+  _Translations$hydrus$pt_BR._(TranslationsPtBr root) : this._root = root, super.internal(root);
 
   final TranslationsPtBr _root; // ignore: unused_field
 
@@ -535,8 +535,8 @@ class _TranslationsHydrusPtBr extends TranslationsHydrusEn {
 }
 
 // Path: tabs
-class _TranslationsTabsPtBr extends TranslationsTabsEn {
-  _TranslationsTabsPtBr._(TranslationsPtBr root) : this._root = root, super.internal(root);
+class _Translations$tabs$pt_BR extends Translations$tabs$en {
+  _Translations$tabs$pt_BR._(TranslationsPtBr root) : this._root = root, super.internal(root);
 
   final TranslationsPtBr _root; // ignore: unused_field
 

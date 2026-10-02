@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:lolisnatcher/src/data/settings/app_alias.dart';
 import 'package:lolisnatcher/src/handlers/local_auth_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
@@ -65,7 +67,7 @@ class _PrivacyPageState extends State<PrivacyPage> {
           ),
           ElevatedButton.icon(
             onPressed: () => Navigator.of(context).pop(true),
-            icon: const Icon(Icons.restart_alt),
+            icon: const Icon(Symbols.restart_alt_rounded),
             label: Text(context.loc.settings.privacy.restartNow),
           ),
         ],

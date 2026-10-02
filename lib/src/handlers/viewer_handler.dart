@@ -34,6 +34,17 @@ class ViewerHandler {
 
   final RxList<GlobalKey> activeViewers = RxList([]);
 
+  /// How deep viewers may stack before the covered one stops rendering its
+  /// media (gallery_view_page's isViewerTooDeep).
+  ///
+  /// Keep at 1. This is ALSO what pauses playback: covering a viewer unmounts
+  /// its media widget, which disposes the player — there is no explicit
+  /// pause-on-cover anywhere, and the saved-position hand-off below exists to
+  /// restore where you were on the way back. Raising it leaves the covered
+  /// video playing (audio included) underneath whatever you opened on top.
+  /// Nested viewers that push their own route (post-file carousel, tag
+  /// preview, waterfall) do NOT need this raised: isViewerTooDeep is internal
+  /// to GalleryViewPage and doesn't gate them.
   static const int maxActiveViewers = 1;
 
   void addViewer(GlobalKey key) {
@@ -46,6 +57,14 @@ class ViewerHandler {
 
   void removeViewer(GlobalKey key) {
     activeViewers.remove(key);
+    if (activeViewers.isEmpty) {
+      // Whole viewer stack closed — parked video positions and manual-pause
+      // marks are only meant to live within one viewing session (nested
+      // round-trips, swiping between posts). A fresh open starts clean:
+      // position 0, autoplay back to normal.
+      _savedVideoPositions.clear();
+      _manuallyPaused.clear();
+    }
   }
 
   int indexOfViewer(GlobalKey key) {
@@ -89,6 +108,75 @@ class ViewerHandler {
   }
 
   final RxBool displayAppbar = true.obs; // is viewer toolbar visible
+
+  // Current extent of the bottom info sheet (0 = closed). Mirrored from the
+  // gallery page so overlays (e.g. video controls) can tell whether the Flow
+  // peek bar is actually on screen: it only shows while the chrome is visible
+  // AND the sheet is closed.
+  final RxDouble infoSheetExtent = 0.0.obs;
+
+  /// r77: the viewer that is on screen right now (no page, dialog or sheet
+  /// route over it), or null. Each viewer claims it when its route becomes
+  /// the top one and gives it back when covered or closed - only the owner
+  /// can give it back, so a nested viewer closing after its parent took over
+  /// again cannot clear the parent's claim.
+  Object? _onScreen;
+
+  bool get viewerOnScreen => _onScreen != null;
+
+  void claimScreen(Object viewer) => _onScreen = viewer;
+
+  void releaseScreen(Object viewer) {
+    if (identical(_onScreen, viewer)) _onScreen = null;
+  }
+
+  bool get isPeekBarVisible => displayAppbar.value && infoSheetExtent.value < 0.06;
+
+  // ── manual pause tracking ────────────────────────────────────────────────
+  // URLs of videos the USER paused via the controls. While the
+  // "don't auto-resume manually paused videos" setting is on, the players'
+  // auto-play paths skip these (e.g. returning from a nested viewer /
+  // preview window won't restart a video you paused). Pressing play clears
+  // the mark, and the whole set is wiped when the viewer stack closes (see
+  // removeViewer) — reopening a post later autoplays as normal.
+  final Set<String> _manuallyPaused = {};
+
+  void markManualPause(String? url) {
+    if (url != null && url.isNotEmpty) _manuallyPaused.add(url);
+  }
+
+  void clearManualPause(String? url) {
+    if (url != null) _manuallyPaused.remove(url);
+  }
+
+  bool isManuallyPaused(String? url) => url != null && _manuallyPaused.contains(url);
+
+  // ── nested-viewer position hand-off ──────────────────────────────────────
+  // Opening a nested viewer unmounts the covered viewer's media widget
+  // entirely (maxActiveViewers guard), destroying its player and with it the
+  // playback position. The disposing player parks its position here; the
+  // widget re-created on return picks it up and seeks back, so the video is
+  // exactly where it was left. Entries are consumed on take and the whole map
+  // is wiped when the viewer stack closes, so a later fresh open of the same
+  // video still starts at the beginning.
+  final Map<String, Duration> _savedVideoPositions = {};
+
+  void saveVideoPosition(String? url, Duration? position) {
+    if (url == null || url.isEmpty || position == null || position <= Duration.zero) {
+      return;
+    }
+    _savedVideoPositions[url] = position;
+  }
+
+  Duration? takeVideoPosition(String? url) {
+    if (url == null) return null;
+    return _savedVideoPositions.remove(url);
+  }
+
+  // Bumped by the soft-refresh button and by the 403-probe after a captcha
+  // solve; failed thumbnails listen and retry themselves with the fresh
+  // session instead of staying stuck on their error tile.
+  final RxInt mediaRefreshEpoch = 0.obs;
   final RxBool isZoomed = false.obs; // is current item zoomed in
   final RxBool isLoaded = false.obs; // is current item loaded
   final RxBool isStopped = false.obs; // is current item stopped

@@ -1,6 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
@@ -72,7 +74,7 @@ class _BooruPageState extends State<BooruPage> {
           context.loc.settings.booru.booruConfigLinkCopied,
           style: const TextStyle(fontSize: 20),
         ),
-        leadingIcon: Icons.share,
+        leadingIcon: Symbols.share_rounded,
         leadingIconColor: Colors.green,
         sideColor: Colors.green,
       );
@@ -110,7 +112,7 @@ class _BooruPageState extends State<BooruPage> {
   Widget addButton() {
     return SettingsButton(
       name: context.loc.settings.booru.addBooru,
-      icon: const Icon(Icons.add),
+      icon: const Icon(Symbols.add_rounded),
       page: () => BooruEdit(Booru('New', null, '', '', '')),
     );
   }
@@ -128,7 +130,7 @@ class _BooruPageState extends State<BooruPage> {
       },
       title: context.loc.settings.booru.addedBoorus,
       trailingIcon: IconButton(
-        icon: const Icon(Icons.help_outline),
+        icon: const Icon(Symbols.help_rounded),
         onPressed: () {
           showDialog(
             context: context,
@@ -153,7 +155,7 @@ class _BooruPageState extends State<BooruPage> {
 
     return SettingsButton(
       name: context.loc.settings.booru.shareBooru,
-      icon: const Icon(Icons.share),
+      icon: const Icon(Symbols.share_rounded),
       action: () {
         showDialog(
           context: context,
@@ -170,14 +172,14 @@ class _BooruPageState extends State<BooruPage> {
               actionButtons: [
                 const CancelButton(withIcon: true),
                 ElevatedButton.icon(
-                  icon: const Icon(Icons.cancel_outlined),
+                  icon: const Icon(Symbols.cancel_rounded),
                   label: Text(context.loc.no),
                   onPressed: () {
                     copyBooruLink(false);
                   },
                 ),
                 ElevatedButton.icon(
-                  icon: const Icon(Icons.check_circle_outline_rounded),
+                  icon: const Icon(Symbols.check_circle_outline_rounded),
                   label: Text(context.loc.yes),
                   onPressed: () {
                     copyBooruLink(true);
@@ -190,7 +192,7 @@ class _BooruPageState extends State<BooruPage> {
       },
       trailingIcon: Platform.isAndroid
           ? IconButton(
-              icon: const Icon(Icons.help_outline),
+              icon: const Icon(Symbols.help_rounded),
               onPressed: () {
                 showDialog(
                   context: context,
@@ -225,7 +227,7 @@ class _BooruPageState extends State<BooruPage> {
 
     return SettingsButton(
       name: context.loc.settings.booru.editBooru,
-      icon: const Icon(Icons.edit),
+      icon: const Icon(Symbols.edit_rounded),
       // do nothing if no selected or selected "Favourites/Dowloads"
       // TODO update all tabs with old booru with a new one
       // TODO if you open edit after already editing - it will open old instance + possible exception due to old data
@@ -242,7 +244,7 @@ class _BooruPageState extends State<BooruPage> {
 
     return SettingsButton(
       name: context.loc.settings.booru.deleteBooru,
-      icon: Icon(Icons.delete_forever, color: Theme.of(context).colorScheme.error),
+      icon: Icon(Symbols.delete_forever_rounded, color: Theme.of(context).colorScheme.error),
       action: () {
         // do nothing if no selected or selected "Favourites/Downloads" or there are tabs with it
         if (selectedBooru == null) {
@@ -252,7 +254,7 @@ class _BooruPageState extends State<BooruPage> {
               context.loc.settings.booru.noBooruSelected,
               style: const TextStyle(fontSize: 20),
             ),
-            leadingIcon: Icons.warning_amber,
+            leadingIcon: Symbols.warning_amber_rounded,
             leadingIconColor: Colors.red,
             sideColor: Colors.red,
           );
@@ -274,7 +276,7 @@ class _BooruPageState extends State<BooruPage> {
               context.loc.settings.booru.removeRelatedTabsFirst,
               style: const TextStyle(fontSize: 16),
             ),
-            leadingIcon: Icons.warning_amber,
+            leadingIcon: Symbols.warning_amber_rounded,
             leadingIconColor: Colors.red,
             sideColor: Colors.red,
           );
@@ -311,7 +313,7 @@ class _BooruPageState extends State<BooruPage> {
                           context.loc.settings.booru.booruDeleted,
                           style: const TextStyle(fontSize: 20),
                         ),
-                        leadingIcon: Icons.delete_forever,
+                        leadingIcon: Symbols.delete_forever_rounded,
                         leadingIconColor: Colors.red,
                         sideColor: Colors.yellow,
                       );
@@ -331,7 +333,7 @@ class _BooruPageState extends State<BooruPage> {
                           context.loc.settings.booru.deleteBooruError,
                           style: const TextStyle(fontSize: 16),
                         ),
-                        leadingIcon: Icons.warning_amber,
+                        leadingIcon: Symbols.warning_amber_rounded,
                         leadingIconColor: Colors.red,
                         sideColor: Colors.red,
                       );
@@ -341,7 +343,7 @@ class _BooruPageState extends State<BooruPage> {
                     Navigator.of(context).pop(true);
                   },
                   label: Text(context.loc.settings.booru.deleteBooru),
-                  icon: const Icon(Icons.delete_forever),
+                  icon: const Icon(Symbols.delete_forever_rounded),
                 ),
               ],
             );
@@ -357,7 +359,7 @@ class _BooruPageState extends State<BooruPage> {
       return SettingsButton(
         name: context.loc.settings.webview.openWebview,
         subtitle: Text(context.loc.settings.webview.openWebviewTip),
-        icon: const Icon(Icons.public),
+        icon: const Icon(Symbols.public_rounded),
         page: () => InAppWebviewView(initialUrl: selectedBooru!.baseURL!),
       );
     } else {
@@ -368,7 +370,7 @@ class _BooruPageState extends State<BooruPage> {
   Widget addFromClipboardButton() {
     return SettingsButton(
       name: context.loc.settings.booru.importBooru,
-      icon: const Icon(Icons.paste),
+      icon: const Icon(Symbols.content_paste_rounded),
       action: () async {
         final ClipboardData? cdata = await Clipboard.getData(Clipboard.kTextPlain);
         final String url = cdata?.text ?? '';
@@ -403,7 +405,7 @@ class _BooruPageState extends State<BooruPage> {
                 context.loc.settings.booru.onlyLSURLsSupported,
                 style: const TextStyle(fontSize: 16),
               ),
-              leadingIcon: Icons.warning_amber,
+              leadingIcon: Symbols.warning_amber_rounded,
               leadingIconColor: Colors.red,
               sideColor: Colors.red,
             );
@@ -415,7 +417,7 @@ class _BooruPageState extends State<BooruPage> {
               context.loc.clipboardIsEmpty,
               style: const TextStyle(fontSize: 20),
             ),
-            leadingIcon: Icons.warning_amber,
+            leadingIcon: Symbols.warning_amber_rounded,
             leadingIconColor: Colors.red,
             sideColor: Colors.red,
           );
@@ -564,7 +566,7 @@ Future<bool?> askToChangePrefBooru(
             ElevatedButton.icon(
               icon: Row(
                 children: [
-                  const Icon(Icons.cancel_outlined),
+                  const Icon(Symbols.cancel_rounded),
                   const SizedBox(width: 4),
                   BooruFavicon(initBooru),
                 ],
@@ -577,7 +579,7 @@ Future<bool?> askToChangePrefBooru(
             ElevatedButton.icon(
               icon: Row(
                 children: [
-                  const Icon(Icons.check_circle_outline_rounded),
+                  const Icon(Symbols.check_circle_outline_rounded),
                   const SizedBox(width: 4),
                   BooruFavicon(selectedBooru),
                 ],

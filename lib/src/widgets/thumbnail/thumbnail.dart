@@ -6,6 +6,8 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:dio/dio.dart';
 
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
@@ -13,16 +15,25 @@ import 'package:lolisnatcher/src/boorus/idol_sankaku_handler.dart';
 import 'package:lolisnatcher/src/boorus/sankaku_handler.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/data/modular_ui.dart';
+import 'package:lolisnatcher/src/handlers/doujin_cover_aspect_handler.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 import 'package:lolisnatcher/src/handlers/database_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/recommender_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/utils/debouncer.dart';
+import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/extensions.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 import 'package:lolisnatcher/src/widgets/common/thumbnail_loading.dart';
 import 'package:lolisnatcher/src/widgets/image/custom_network_image.dart';
+import 'package:lolisnatcher/src/widgets/image/sprite_tile_image.dart';
 import 'package:lolisnatcher/src/widgets/preview/shimmer_builder.dart';
+import 'package:lolisnatcher/src/widgets/thumbnail/thumbnail_decode_box.dart';
+import 'package:lolisnatcher/src/widgets/thumbnail/thumbnail_reveal.dart';
 
 class Thumbnail extends StatefulWidget {
   const Thumbnail({
@@ -30,6 +41,7 @@ class Thumbnail extends StatefulWidget {
     required this.booru,
     this.isStandalone = false,
     this.useHero = true,
+    this.fitOverride,
     super.key,
   });
 
@@ -39,6 +51,10 @@ class Thumbnail extends StatefulWidget {
   /// set to true when used in a list
   final bool isStandalone;
   final bool useHero;
+
+  /// Overrides the standalone/embedded fit choice — doujin cards use it to
+  /// show the whole cover (contain) instead of cropping.
+  final BoxFit? fitOverride;
 
   @override
   State<Thumbnail> createState() => _ThumbnailState();
@@ -54,6 +70,11 @@ class _ThumbnailState extends State<Thumbnail> {
   final ValueNotifier<bool> isFailed = ValueNotifier(false);
   final ValueNotifier<bool> isLoaded = ValueNotifier(false);
   final ValueNotifier<bool> isLoadedExtra = ValueNotifier(false);
+
+  /// r56: how long the pictures fade in; zero for one already shown this
+  /// session or answered from the memory cache (see [ThumbnailReveal]).
+  Duration mainFade = const Duration(milliseconds: 300);
+  Duration extraFade = const Duration(milliseconds: 200);
   final ValueNotifier<bool> failedRendering = ValueNotifier(false);
   final ValueNotifier<String?> errorCode = ValueNotifier(null);
   CancelToken? mainCancelToken, extraCancelToken, loadItemCancelToken;
@@ -73,17 +94,38 @@ class _ThumbnailState extends State<Thumbnail> {
 
   bool isBlurred = true;
 
+  /// r69: a doujin cover or page tile. Decoded for the box it fills rather
+  /// than the app-wide preview shape, and upscaled bicubic: sites serve small
+  /// covers (e-hentai: 250 px) that are drawn 1.6-2.8x larger than they are.
+  late final bool isDoujinCover = DoujinDataHandler.isDoujinBooru(widget.booru);
+
+  StreamSubscription<int>? _refreshEpochSub;
+
   @override
   void initState() {
     super.initState();
 
-    currentUrl = widget.item.thumbnailURL;
+    currentUrl = widget.item.displayThumbnailURL;
+    // Built means on screen or at its edge: only such an item can be judged
+    // "shown and passed over" by a recommendation surface.
+    RecommenderHandler.maybe?.onRendered(widget.item);
+
+    // Soft refresh / post-captcha retry: when the media refresh epoch bumps,
+    // failed thumbnails reload themselves with the current session.
+    _refreshEpochSub = ViewerHandler.instance.mediaRefreshEpoch.listen((_) {
+      if (!mounted) return;
+      if (isFailed.value || errorCode.value != null || failedRendering.value) {
+        restartedCount = 0;
+        restartLoading();
+      }
+    });
   }
 
   @override
   void didUpdateWidget(Thumbnail oldWidget) {
     // force redraw on tab change
     if (oldWidget.item != widget.item) {
+      RecommenderHandler.maybe?.onRendered(widget.item);
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         await restartLoading();
       });
@@ -100,9 +142,15 @@ class _ThumbnailState extends State<Thumbnail> {
     } else {
       extraCancelToken ??= CancelToken();
     }
-    final String url = isMain ? thumbURL : widget.item.thumbnailURL;
+    final String url = isMain ? thumbURL : widget.item.displayThumbnailURL;
+    final SpriteTile? tile = SpriteTile.parse(url);
     final bool isAvif = url.contains('.avif');
-    final ImageProvider provider = isAvif
+    final ImageProvider provider = tile != null
+        // A page's tile of its gallery's sprite strip (e-hentai): the strip
+        // is fetched once with the source's media headers, this tile cut
+        // from it.
+        ? SpriteTileImage.network(tile, booru: widget.booru, withCache: settingsHandler.thumbnailCache)
+        : isAvif
         ? CustomNetworkAvifImage(
             url,
             cancelToken: isMain ? mainCancelToken : extraCancelToken,
@@ -123,6 +171,9 @@ class _ThumbnailState extends State<Thumbnail> {
               }
             },
             withCaptchaCheck: withCaptchaCheck,
+            // Sources that publish a spare CDN put it here, so the loader
+            // falls back to it instead of showing a broken cover.
+            fallbackUrls: widget.item.sources ?? const [],
           )
         : CustomNetworkImage(
             url,
@@ -144,6 +195,9 @@ class _ThumbnailState extends State<Thumbnail> {
               }
             },
             withCaptchaCheck: withCaptchaCheck,
+            // Sources that publish a spare CDN put it here, so the loader
+            // falls back to it instead of showing a broken cover.
+            fallbackUrls: widget.item.sources ?? const [],
           );
 
     // on desktop devicePixelRatio is not working?
@@ -169,44 +223,17 @@ class _ThumbnailState extends State<Thumbnail> {
       return;
     }
 
-    final double widthLimit = constraints.maxWidth * MediaQuery.devicePixelRatioOf(context);
-    double thumbRatio = 1;
     final bool hasSizeData = widget.item.fileHeight != null && widget.item.fileWidth != null;
-
-    if (!widget.isStandalone) {
-      thumbWidth = widthLimit;
-      return;
-    }
-
-    switch (settingsHandler.previewDisplay) {
-      case .rectangle:
-        thumbRatio = 16 / 9;
-        thumbWidth = widthLimit;
-        thumbHeight = widthLimit * thumbRatio;
-        break;
-
-      case .staggered:
-        if (hasSizeData) {
-          thumbRatio = widget.item.fileAspectRatio!;
-          if (thumbRatio < 1) {
-            // vertical image - resize to width
-            thumbWidth = widthLimit;
-          } else {
-            // horizontal image - resize to height
-            thumbHeight = widthLimit * thumbRatio;
-          }
-        } else {
-          thumbRatio = 16 / 9;
-          thumbWidth = widthLimit;
-          thumbHeight = widthLimit * thumbRatio;
-        }
-        break;
-
-      case .square:
-        thumbWidth = widthLimit;
-        thumbHeight = widthLimit;
-        break;
-    }
+    final ({double? width, double? height}) box = ThumbnailDecodeBox.of(
+      constraints: constraints,
+      devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+      mode: settingsHandler.previewDisplay,
+      isStandalone: widget.isStandalone,
+      isCover: isDoujinCover,
+      aspectRatio: hasSizeData ? widget.item.fileAspectRatio : null,
+    );
+    thumbWidth = box.width;
+    thumbHeight = box.height;
   }
 
   void onBytesAdded(int receivedNew, int? totalNew) {
@@ -214,9 +241,25 @@ class _ThumbnailState extends State<Thumbnail> {
     total.value = totalNew ?? 0;
   }
 
+  /// A page tile whose strip could not be fetched or cut (strip links expire
+  /// within days) shows the item's stored cover instead of an error, and
+  /// never retries the dead link; the source forgets the block, so a later
+  /// visit reads a fresh strip. True when that is what happened.
+  bool _fellBackFromTile() {
+    if (widget.item.transientThumbnailURL == null || SpriteTile.parse(thumbURL) == null) return false;
+    widget.item.transientThumbnailURL = null;
+    BooruHandlerFactory.mediaHandlerFor(widget.booru)?.forgetPageThumbnail(widget.item);
+    currentUrl = widget.item.displayThumbnailURL;
+    restartedCount = 0;
+    restartLoading();
+    return true;
+  }
+
   void onError(Object error) {
     if (error is DioException && CancelToken.isCancel(error)) {
       //
+    } else if (_fellBackFromTile()) {
+      // The cover is loading in the tile's place.
     } else {
       final int retryLimit = (kDebugMode || settingsHandler.shitDevice) ? 4 : 8;
 
@@ -234,6 +277,12 @@ class _ThumbnailState extends State<Thumbnail> {
         isFailed.value = true;
         if (error is DioException) {
           errorCode.value = error.response?.statusCode?.toString();
+          // 403 on a thumbnail usually means the site's session/Cloudflare
+          // cookie died — probe once so the captcha webview can open, then
+          // retry every failed thumb.
+          if (error.response?.statusCode == 403) {
+            unawaited(_probeSessionAfter403());
+          }
         } else {
           errorCode.value = null;
         }
@@ -260,13 +309,17 @@ class _ThumbnailState extends State<Thumbnail> {
             widget.item.mediaType.value.isNeedToLoadItem) ||
         (!widget.isStandalone && widget.item.fileURL == widget.item.sampleURL);
     thumbURL = isThumbQuality == true
-        ? widget.item.thumbnailURL
-        : (!isSampleGif || isGifSampleNotAllowed ? widget.item.sampleURL : widget.item.thumbnailURL);
-    thumbFolder = (isThumbQuality == true || thumbURL == widget.item.thumbnailURL) ? 'thumbnails' : 'samples';
+        ? widget.item.displayThumbnailURL
+        : (!isSampleGif || isGifSampleNotAllowed ? widget.item.sampleURL : widget.item.displayThumbnailURL);
+    thumbFolder = (isThumbQuality == true || thumbURL == widget.item.displayThumbnailURL) ? 'thumbnails' : 'samples';
 
     // delay loading a little to improve performance when scrolling fast, ignore delay if it's a standalone widget (i.e. not in a list)
     debounceLoading = Timer(
-      Duration(milliseconds: widget.isStandalone ? 200 : 0),
+      ThumbnailReveal.delayFor(
+        isStandalone: widget.isStandalone,
+        instant: ModularUi.isOn(ModularUi.gridSeenThumbnailsAtOnce),
+        url: thumbURL,
+      ),
       () => startDownloading(withCaptchaCheck: withCaptchaCheck),
     );
     return;
@@ -285,17 +338,36 @@ class _ThumbnailState extends State<Thumbnail> {
     mainImageStream = mainProvider.value!.resolve(ImageConfiguration.empty);
     mainImageListener = ImageStreamListener(
       (imageInfo, syncCall) {
+        mainFade = ThumbnailReveal.fadeFor(
+          normal: const Duration(milliseconds: 300),
+          instant: ModularUi.isOn(ModularUi.gridSeenThumbnailsAtOnce),
+          seenBefore: ThumbnailReveal.seen(thumbURL),
+          syncCall: syncCall,
+        );
+        ThumbnailReveal.remember(thumbURL);
         isLoaded.value = true;
+        // The cover's real aspect ratio, from the bytes the source served.
+        // Doujin listings mostly carry no dimensions, so this is the only
+        // place "adapt" can learn how tall to make the card.
+        if (!widget.item.isHidden) {
+          DoujinCoverAspects.instance.record(
+            widget.item.displayThumbnailURL,
+            imageInfo.image.width,
+            imageInfo.image.height,
+          );
+        }
       },
       onChunk: (event) {
         onBytesAdded(event.cumulativeBytesLoaded, event.expectedTotalBytes);
       },
       onError: (e, s) {
-        if (e is! DioException) {
+        // A tile that will not cut is a dead strip, not a corrupt file of
+        // this item's: it falls back to the cover in onError instead.
+        if (e is! DioException && SpriteTile.parse(thumbURL) == null) {
           failedRendering.value = true;
         }
         Logger.Inst().log(
-          'Error loading thumbnail: ${widget.item.sampleURL} ${widget.item.thumbnailURL}',
+          'Error loading thumbnail: ${widget.item.sampleURL} ${widget.item.displayThumbnailURL}',
           'Thumbnail',
           'build',
           LogTypes.imageLoadingError,
@@ -312,6 +384,13 @@ class _ThumbnailState extends State<Thumbnail> {
       extraImageStream = extraProvider.value!.resolve(ImageConfiguration.empty);
       extraImageListener = ImageStreamListener(
         (imageInfo, syncCall) {
+          extraFade = ThumbnailReveal.fadeFor(
+            normal: const Duration(milliseconds: 200),
+            instant: ModularUi.isOn(ModularUi.gridSeenThumbnailsAtOnce),
+            seenBefore: ThumbnailReveal.seen(widget.item.displayThumbnailURL),
+            syncCall: syncCall,
+          );
+          ThumbnailReveal.remember(widget.item.displayThumbnailURL);
           isLoadedExtra.value = true;
         },
         onError: (e, s) {
@@ -329,6 +408,42 @@ class _ThumbnailState extends State<Thumbnail> {
       );
       extraImageStream!.addListener(extraImageListener!);
     }
+  }
+
+  // Global (all thumbnails share it) cooldown so a page full of 403 tiles
+  // fires exactly one probe, not fifty.
+  static int _lastSessionProbeAt = 0;
+
+  Future<void> _probeSessionAfter403() async {
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    if (now - _lastSessionProbeAt < 60000) return;
+    _lastSessionProbeAt = now;
+
+    // The probe runs through the captcha interceptor: if the host is serving
+    // a challenge, the solve webview opens and the request is replayed with
+    // the fresh cookies once it's done.
+    try {
+      final headers = await Tools.getFileCustomHeaders(
+        widget.booru,
+        item: widget.item,
+        checkForReferer: true,
+      );
+      await DioNetwork.get(
+        thumbURL,
+        headers: headers,
+        customInterceptor: (dio) => DioNetwork.captchaInterceptor(
+          dio,
+          customUserAgent: Tools.browserUserAgent,
+        ),
+      );
+    } catch (_) {
+      return;
+    }
+    if (!mounted) return;
+
+    // Probe succeeded (challenge solved or transient) — let every failed
+    // thumbnail retry with the fresh session.
+    ViewerHandler.instance.mediaRefreshEpoch.value++;
   }
 
   Future<void> restartLoading({bool withItemLoad = false}) async {
@@ -385,12 +500,17 @@ class _ThumbnailState extends State<Thumbnail> {
         case CustomNetworkAvifImage _:
           await provider.deleteCacheFile();
           break;
+        case SpriteTileImage _:
+          // A strip that will not decode is dropped whole; its tiles refetch it.
+          await provider.deleteCacheFile();
+          break;
       }
     }
   }
 
   @override
   void dispose() {
+    _refreshEpochSub?.cancel();
     disposables();
     super.dispose();
   }
@@ -441,8 +561,8 @@ class _ThumbnailState extends State<Thumbnail> {
             selectThumbProvider();
           }
 
-          if (currentUrl != widget.item.thumbnailURL) {
-            currentUrl = widget.item.thumbnailURL;
+          if (currentUrl != widget.item.displayThumbnailURL) {
+            currentUrl = widget.item.displayThumbnailURL;
             restartLoading();
           }
         });
@@ -478,7 +598,7 @@ class _ThumbnailState extends State<Thumbnail> {
                   return AnimatedOpacity(
                     // fade in image
                     opacity: (!widget.isStandalone || isLoadedExtra) ? 1 : 0,
-                    duration: const Duration(milliseconds: 200),
+                    duration: extraFade,
                     child: child,
                   );
                 },
@@ -497,15 +617,15 @@ class _ThumbnailState extends State<Thumbnail> {
                       if (extraProvider != null) {
                         child = Image(
                           image: extraProvider,
-                          fit: widget.isStandalone ? BoxFit.cover : BoxFit.contain,
+                          fit: widget.fitOverride ?? (widget.isStandalone ? BoxFit.cover : BoxFit.contain),
                           isAntiAlias: true,
-                          filterQuality: FilterQuality.medium,
+                          filterQuality: (isDoujinCover && !settingsHandler.shitDevice) ? FilterQuality.high : FilterQuality.medium,
                           width: double.infinity,
                           height: double.infinity,
                           errorBuilder: (BuildContext context, Object exception, StackTrace? stackTrace) {
                             if (widget.isStandalone) {
                               return Icon(
-                                Icons.broken_image,
+                                Symbols.broken_image_rounded,
                                 size: 30,
                                 color: Colors.yellow.withValues(alpha: 0.5),
                               );
@@ -531,7 +651,7 @@ class _ThumbnailState extends State<Thumbnail> {
                 return AnimatedOpacity(
                   // fade in image
                   opacity: (settingsHandler.shitDevice || !widget.isStandalone || isLoaded) ? 1 : 0,
-                  duration: const Duration(milliseconds: 300),
+                  duration: mainFade,
                   child: child,
                 );
               },
@@ -559,15 +679,15 @@ class _ThumbnailState extends State<Thumbnail> {
                       if (mainProvider != null) {
                         child = Image(
                           image: mainProvider,
-                          fit: widget.isStandalone ? BoxFit.cover : BoxFit.contain,
+                          fit: widget.fitOverride ?? (widget.isStandalone ? BoxFit.cover : BoxFit.contain),
                           isAntiAlias: true,
-                          filterQuality: FilterQuality.medium,
+                          filterQuality: (isDoujinCover && !settingsHandler.shitDevice) ? FilterQuality.high : FilterQuality.medium,
                           width: double.infinity,
                           height: double.infinity,
                           errorBuilder: (BuildContext context, Object exception, StackTrace? stackTrace) {
                             if (widget.isStandalone) {
                               return Icon(
-                                Icons.broken_image,
+                                Symbols.broken_image_rounded,
                                 size: 30,
                                 color: Colors.white.withValues(alpha: 0.5),
                               );
@@ -649,12 +769,12 @@ class _ThumbnailState extends State<Thumbnail> {
                         spacing: 4,
                         children: isFavOrDlsOrHasLoad
                             ? const [
-                                Icon(Icons.download),
+                                Icon(Symbols.download_rounded),
                                 Text('/', style: TextStyle(fontSize: 20)),
-                                Icon(Icons.refresh),
+                                Icon(Symbols.refresh_rounded),
                               ]
                             : const [
-                                Icon(Icons.refresh),
+                                Icon(Symbols.refresh_rounded),
                               ],
                       ),
                       restartAction: () async {

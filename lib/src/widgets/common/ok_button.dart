@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 class OkButton extends StatelessWidget {
   const OkButton({
     this.action,
@@ -33,7 +35,7 @@ class OkButton extends StatelessWidget {
             Navigator.of(context).pop(returnData);
           }
         },
-        icon: const Icon(Icons.check),
+        icon: const Icon(Symbols.check_rounded),
         label: Text(label),
       );
     }

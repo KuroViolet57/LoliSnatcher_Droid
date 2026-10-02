@@ -48,12 +48,83 @@ class MainActivity: FlutterFragmentActivity() {
         }
     }
 
+    // r85: with Settings -> Links on, the app is a handler for its sources' sites.
+    // A web link the app itself sends out ("Open in browser") can then come
+    // straight back to it - so one this app sent goes on to the browser and
+    // never reaches app_links.
+    override fun onNewIntent(intent: Intent) {
+        if (isOwnWebLink(intent)) {
+            intent.data?.let { openInBrowser(it) }
+            return
+        }
+        super.onNewIntent(intent)
+    }
+
+    private fun isOwnWebLink(intent: Intent): Boolean {
+        if (intent.action != Intent.ACTION_VIEW) return false
+        val link = intent.data ?: return false
+        if (link.scheme != "http" && link.scheme != "https") return false
+        if (link.host?.endsWith("loli.snatcher") == true) return false
+        // getReferrer() names the sender of a new intent only after setIntent();
+        // the activity's intent is put back as it was either way.
+        val previous = getIntent()
+        setIntent(intent)
+        val own = referrer?.host == packageName
+        setIntent(previous)
+        return own
+    }
+
+    // The manifest's ".SourceLinks", named from this class's own package.
+    private fun sourceLinksComponent() =
+        ComponentName(packageName, MainActivity::class.java.name.substringBeforeLast('.') + ".SourceLinks")
+
+    private fun openInBrowser(link: Uri) {
+        val view = Intent(Intent.ACTION_VIEW, link)
+            .addCategory(Intent.CATEGORY_BROWSABLE)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        try {
+            val probe = Intent(Intent.ACTION_VIEW, Uri.fromParts("http", "", "")).addCategory(Intent.CATEGORY_BROWSABLE)
+            val browser = packageManager.resolveActivity(probe, PackageManager.MATCH_DEFAULT_ONLY)?.activityInfo?.packageName
+            if (browser != null && browser != "android" && browser != packageName) {
+                startActivity(view.setPackage(browser))
+                return
+            }
+            // No default browser: Android's chooser, without this app in it.
+            val chooser = Intent.createChooser(view, null)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                chooser.putExtra(
+                    Intent.EXTRA_EXCLUDE_COMPONENTS,
+                    arrayOf(sourceLinksComponent(), ComponentName(packageName, MainActivity::class.java.name)),
+                )
+            }
+            startActivity(chooser)
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Error handing a link to the browser", e)
+        }
+    }
+
+    private fun setSourceLinks(enabled: Boolean): Boolean {
+        return try {
+            packageManager.setComponentEnabledSetting(
+                sourceLinksComponent(),
+                if (enabled) PackageManager.COMPONENT_ENABLED_STATE_ENABLED else PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                PackageManager.DONT_KILL_APP,
+            )
+            true
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Error switching the source links", e)
+            false
+        }
+    }
+
     private val SERVICES_CHANNEL = "com.noaisu.loliSnatcher/services"
     private val VOLUME_CHANNEL = "com.noaisu.loliSnatcher/volume"
     private var volumeSink: EventChannel.EventSink? = null
     private var isSinkingVolume: Boolean = false
     private var SAFUri: String? = ""
     private var methodResult: MethodChannel.Result? = null
+    // r77: the request code of our own folder/file pickers (see onActivityResult).
+    private val SAF_REQUEST = 4273
 
     private val activeFiles = mutableMapOf<Uri, OutputStream?>()
 
@@ -284,6 +355,54 @@ class MainActivity: FlutterFragmentActivity() {
                             result.error("INVALID_ARGUMENT", "URI or fileName is null", null)
                         }
                     }
+                    // Doujin downloads: one folder per book under the SAF root.
+                    // r83: what a picked folder holds at its top, and whether the
+                    // app still holds its access - for the Downloads log.
+                    "probeSafFolder" -> {
+                        val uri = call.argument<String>("uri")
+                        if (uri != null) {
+                            Executors.newSingleThreadExecutor().execute {
+                                val probe = probeSafFolder(uri)
+                                runOnUiThread { result.success(probe) }
+                            }
+                        } else {
+                            result.error("INVALID_ARGUMENT", "URI is null", null)
+                        }
+                    }
+                    "listSafDirectory" -> {
+                        val uri = call.argument<String>("uri")
+                        if (uri != null) {
+                            Executors.newSingleThreadExecutor().execute {
+                                val entries = listSafDirectory(uri)
+                                runOnUiThread { result.success(entries) }
+                            }
+                        } else {
+                            result.error("INVALID_ARGUMENT", "URI is null", null)
+                        }
+                    }
+                    "getOrCreateSafDirectory" -> {
+                        val uri = call.argument<String>("uri")
+                        val name = call.argument<String>("name")
+                        if (uri != null && name != null) {
+                            Executors.newSingleThreadExecutor().execute {
+                                val created = getOrCreateSafDirectory(uri, name)
+                                runOnUiThread { result.success(created) }
+                            }
+                        } else {
+                            result.error("INVALID_ARGUMENT", "URI or name is null", null)
+                        }
+                    }
+                    "deleteSafTree" -> {
+                        val uri = call.argument<String>("uri")
+                        if (uri != null) {
+                            Executors.newSingleThreadExecutor().execute {
+                                val deleted = deleteSafTree(uri)
+                                runOnUiThread { result.success(deleted) }
+                            }
+                        } else {
+                            result.error("INVALID_ARGUMENT", "URI is null", null)
+                        }
+                    }
                     "createFileStream" -> {
                         val fileName = call.argument<String>("fileName")
                         val mediaType = call.argument<String>("mediaType")
@@ -411,6 +530,11 @@ class MainActivity: FlutterFragmentActivity() {
                             } catch (ignored: Throwable) {
                             }
                         }
+                        // r85: answered, so a caller that awaits it goes on.
+                        result.success(null)
+                    }
+                    "setSourceLinks" -> {
+                        result.success(setSourceLinks(call.argument<Boolean>("enabled") ?: false))
                     }
                     "restartApp" -> {
                         restartApp()
@@ -458,7 +582,7 @@ class MainActivity: FlutterFragmentActivity() {
                     Intent.FLAG_GRANT_WRITE_URI_PERMISSION
         }
         
-        startActivityForResult(intent, 1)
+        startActivityForResult(intent, SAF_REQUEST)
     }
 
     private fun requestTemporaryDirectoryAccess() {
@@ -467,7 +591,7 @@ class MainActivity: FlutterFragmentActivity() {
             flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
         }
 
-        startActivityForResult(intent, 1)
+        startActivityForResult(intent, SAF_REQUEST)
     }
 
     private fun requestImageAccess() {
@@ -484,12 +608,19 @@ class MainActivity: FlutterFragmentActivity() {
                     Intent.FLAG_GRANT_WRITE_URI_PERMISSION
         }
 
-        startActivityForResult(intent, 1)
+        startActivityForResult(intent, SAF_REQUEST)
     }
 
     @RequiresApi(Build.VERSION_CODES.KITKAT)
     override fun onActivityResult(requestCode: Int, resultCode: Int, resultData: Intent?) {
         super.onActivityResult(requestCode, resultCode, resultData)
+        // r77: only our own folder/file requests are answered here. Every other
+        // result (the image picker's, a share's) is the plugins' business, and
+        // answering it on the stale reply of an earlier folder request made
+        // Flutter throw "Reply already submitted" and could crash the app.
+        if (requestCode != SAF_REQUEST) return
+        val reply = methodResult ?: return
+        methodResult = null
 
         if (resultCode == Activity.RESULT_OK && resultData?.data != null) {
             val uri = resultData.data
@@ -499,16 +630,16 @@ class MainActivity: FlutterFragmentActivity() {
                 SAFUri = uri.toString()
                 try {
                     contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-                    methodResult?.success(uri.toString())
+                    reply.success(uri.toString())
                 } catch (e: SecurityException) {
                     Log.e("MainActivity", "Failed to take persistable URI permission", e)
-                    methodResult?.error("PERMISSION_ERROR", "Failed to take persistable URI permission", null)
+                    reply.error("PERMISSION_ERROR", "Failed to take persistable URI permission", null)
                 }
             } else {
-                methodResult?.error("INVALID_URI", "URI is null", null)
+                reply.error("INVALID_URI", "URI is null", null)
             }
         } else {
-            methodResult?.error("RESULT_ERROR", "Invalid result or data", null)
+            reply.error("RESULT_ERROR", "Invalid result or data", null)
         }
     }
 
@@ -637,6 +768,134 @@ class MainActivity: FlutterFragmentActivity() {
         } catch (e: Exception) {
             Log.e("MainActivity", "Error listing SAF files: $uriString", e)
             emptyList()
+        }
+    }
+
+    // A tree URI (the picked root) or a document-in-tree URI (a folder made by
+    // getOrCreateSafDirectory) both resolve to their OWN children here; the
+    // older listFileNames always resolves to the root's.
+    private fun childDocumentId(uri: Uri): String {
+        return if (DocumentsContract.isDocumentUri(applicationContext, uri)) {
+            DocumentsContract.getDocumentId(uri)
+        } else {
+            DocumentsContract.getTreeDocumentId(uri)
+        }
+    }
+
+    // One query per directory: name, mime, size, modified and a usable URI per child.
+    private fun listSafDirectory(uriString: String): List<Map<String, Any?>> {
+        val uri = Uri.parse(uriString)
+        if (uri == Uri.EMPTY) return emptyList()
+        return try {
+            val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(uri, childDocumentId(uri))
+            val entries = mutableListOf<Map<String, Any?>>()
+            contentResolver.query(
+                childrenUri,
+                arrayOf(
+                    DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                    DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                    DocumentsContract.Document.COLUMN_MIME_TYPE,
+                    DocumentsContract.Document.COLUMN_SIZE,
+                    DocumentsContract.Document.COLUMN_LAST_MODIFIED
+                ),
+                null, null, null
+            )?.use { cursor ->
+                while (cursor.moveToNext()) {
+                    val docId = cursor.getString(0)
+                    val mime = cursor.getString(2) ?: ""
+                    entries.add(
+                        mapOf(
+                            "name" to (cursor.getString(1) ?: ""),
+                            "uri" to DocumentsContract.buildDocumentUriUsingTree(uri, docId).toString(),
+                            "isDir" to (mime == DocumentsContract.Document.MIME_TYPE_DIR),
+                            "mime" to mime,
+                            "size" to (if (cursor.isNull(3)) 0L else cursor.getLong(3)),
+                            "modified" to (if (cursor.isNull(4)) 0L else cursor.getLong(4))
+                        )
+                    )
+                }
+            }
+            entries
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Error listing SAF directory: $uriString", e)
+            emptyList()
+        }
+    }
+
+    private fun probeSafFolder(uriString: String): Map<String, Any?> {
+        val uri = Uri.parse(uriString)
+        val access = try {
+            contentResolver.persistedUriPermissions.any { it.uri == uri && it.isReadPermission }
+        } catch (e: Exception) {
+            false
+        }
+        var files = 0
+        var dirs = 0
+        val sampleFiles = mutableListOf<String>()
+        val sampleDirs = mutableListOf<String>()
+        var error: String? = null
+        try {
+            val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(uri, childDocumentId(uri))
+            val cursor = contentResolver.query(
+                childrenUri,
+                arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_MIME_TYPE),
+                null, null, null
+            )
+            if (cursor == null) {
+                error = "the folder answered nothing"
+            } else {
+                cursor.use { c ->
+                    while (c.moveToNext()) {
+                        val name = c.getString(0) ?: ""
+                        if (c.getString(1) == DocumentsContract.Document.MIME_TYPE_DIR) {
+                            dirs++
+                            if (sampleDirs.size < 5) sampleDirs.add(name)
+                        } else {
+                            files++
+                            if (sampleFiles.size < 5) sampleFiles.add(name)
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            error = e.javaClass.simpleName + ": " + (e.message ?: "")
+        }
+        return mapOf(
+            "access" to access,
+            "files" to files,
+            "dirs" to dirs,
+            "sampleFiles" to sampleFiles,
+            "sampleDirs" to sampleDirs,
+            "error" to error
+        )
+    }
+
+    private fun getOrCreateSafDirectory(uriString: String, name: String): String? {
+        val uri = Uri.parse(uriString)
+        if (uri == Uri.EMPTY) return null
+        val dir = DocumentFile.fromTreeUri(applicationContext, uri) ?: return null
+        return try {
+            val existing = dir.findFile(name)
+            if (existing != null) {
+                if (existing.isDirectory) existing.uri.toString() else null
+            } else {
+                dir.createDirectory(name)?.uri?.toString()
+            }
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Error creating SAF directory: $name in $uriString", e)
+            null
+        }
+    }
+
+    private fun deleteSafTree(uriString: String): Boolean {
+        val uri = Uri.parse(uriString)
+        if (uri == Uri.EMPTY) return false
+        val doc = DocumentFile.fromTreeUri(applicationContext, uri) ?: return false
+        return try {
+            doc.delete()
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Error deleting SAF tree: $uriString", e)
+            false
         }
     }
 

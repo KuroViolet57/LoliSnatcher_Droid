@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 
 import 'package:dio/dio.dart';
@@ -15,6 +17,8 @@ import 'package:lolisnatcher/src/data/tag_suggestion.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
+import 'package:lolisnatcher/src/handlers/tag_catalog_source.dart';
+import 'package:lolisnatcher/src/handlers/search_history_store.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/tag_handler.dart';
 import 'package:lolisnatcher/src/utils/extensions.dart';
@@ -146,7 +150,13 @@ class QueryEditorController {
         );
 
         if (metaTag != null) {
-          if (metaTag.hasAutoComplete) {
+          final Booru? booru = currentBooru;
+          final List<TagSuggestion>? fromCatalog = booru == null
+              ? null
+              : await TagCatalogSource.suggestFromCatalog(handler, booru, suggestionTextControllerRawInput);
+          if (fromCatalog != null) {
+            suggestedTags = fromCatalog;
+          } else if (metaTag.hasAutoComplete) {
             suggestedTags = await metaTag.getAutoComplete(suggestionTextControllerRawInput);
             suggestedTags.sort((a, b) => a.tag.compareTo(b.tag));
           } else {
@@ -185,7 +195,7 @@ class QueryEditorController {
               onUpdate();
 
               for (final tag in suggestedTags.where((t) => !t.type.isNone)) {
-                unawaited(tagHandler.addTagsWithType([tag.tag], tag.type));
+                handler.addTagsWithType([tag.tag], tag.type);
               }
             },
           );
@@ -196,17 +206,17 @@ class QueryEditorController {
             return TagSuggestion(
               tag: tag,
               type: tagHandler.getTag(tag).tagType,
-              icon: const Icon(Icons.archive),
+              icon: const Icon(Symbols.archive_rounded),
             );
           }).toList();
 
           final historySearch =
-              (await settingsHandler.dbHandler.getSearchHistoryByInput(suggestionTextControllerRawInput, 10))
+              (await SearchHistoryStore.byInput(suggestionTextControllerRawInput, 10, forBooru: currentBooru))
                   .map((tag) {
                     return TagSuggestion(
                       tag: tag,
                       type: tagHandler.getTag(tag).tagType,
-                      icon: const Icon(Icons.history),
+                      icon: const Icon(Symbols.history_rounded),
                     );
                   })
                   .where(
@@ -361,7 +371,7 @@ class QueryEditorKeyboardActions extends StatelessWidget {
                         child: Padding(
                           padding: EdgeInsets.only(bottom: isKbVisible ? 0 : 20),
                           child: Icon(
-                            Icons.paste,
+                            Symbols.content_paste_rounded,
                             color: context.theme.colorScheme.onSecondary,
                           ),
                         ),
@@ -373,7 +383,7 @@ class QueryEditorKeyboardActions extends StatelessWidget {
                         child: Padding(
                           padding: EdgeInsets.only(bottom: isKbVisible ? 0 : 20),
                           child: Icon(
-                            Icons.keyboard_hide,
+                            Symbols.keyboard_hide_rounded,
                             color: context.theme.colorScheme.onSecondary,
                           ),
                         ),
@@ -389,7 +399,7 @@ class QueryEditorKeyboardActions extends StatelessWidget {
                             child: Padding(
                               padding: EdgeInsets.only(bottom: isKbVisible ? 0 : 20),
                               child: Icon(
-                                suggestionTextControllerRawInput.isEmpty ? Icons.search : Icons.add_rounded,
+                                suggestionTextControllerRawInput.isEmpty ? Symbols.search_rounded : Symbols.add_rounded,
                                 color: context.theme.colorScheme.onSecondary,
                               ),
                             ),

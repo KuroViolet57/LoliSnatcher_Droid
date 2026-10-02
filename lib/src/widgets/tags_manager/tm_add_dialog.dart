@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -56,7 +58,7 @@ class _TagsManagerAddDialogState extends State<TagsManagerAddDialog> {
         ),
         ElevatedButton.icon(
           label: Text(context.loc.tagsManager.add),
-          icon: const Icon(Icons.add),
+          icon: const Icon(Symbols.add_rounded),
           onPressed: () {
             final String tagName = _controller.text.trim();
             if (tagName.isNotEmpty) {

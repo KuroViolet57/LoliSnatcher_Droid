@@ -3,12 +3,17 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:flutter_html/flutter_html.dart';
 import 'package:get/get.dart';
 
+import 'package:lolisnatcher/src/data/hidden_by_filters.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/pages/settings/tags_filters_page.dart';
 import 'package:lolisnatcher/src/widgets/common/html.dart';
+import 'package:lolisnatcher/src/widgets/common/settings_widgets.dart';
 
 class WaterfallErrorButtons extends StatefulWidget {
   const WaterfallErrorButtons({
@@ -81,6 +86,18 @@ class _WaterfallErrorButtonsState extends State<WaterfallErrorButtons> {
     }
   }
 
+  /// r85: a page that showed nothing is not retried - the next one is read.
+  void loadNextPage() {
+    unawaited(searchHandler.runSearch());
+    if (isCollapsed) {
+      toggleCollapsed();
+    }
+  }
+
+  void openFilters() {
+    SettingsPageOpen(context: context, page: (_) => const TagsFiltersPage()).open();
+  }
+
   void restartTimerRetrySearch() {
     stopTimer();
     startTimer();
@@ -99,6 +116,15 @@ class _WaterfallErrorButtonsState extends State<WaterfallErrorButtons> {
     super.dispose();
   }
 
+  String? _emptyNote() {
+    try {
+      final String? note = searchHandler.currentBooruHandler.emptyNote;
+      return note == null || note.isEmpty ? null : note;
+    } catch (_) {
+      return null;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Obx(() {
@@ -107,16 +133,25 @@ class _WaterfallErrorButtonsState extends State<WaterfallErrorButtons> {
       final bool isEmpty = searchHandler.currentFetched.isEmpty;
       final bool isLoading = searchHandler.isLoading.value;
       final bool hasError = searchHandler.errorString.isNotEmpty;
+      // r85: posts were loaded, the filters hid every one of them.
+      final int loaded = searchHandler.tabs.isEmpty ? 0 : searchHandler.currentBooruHandler.fetched.length;
+      final String hiddenSummary = loaded == 0 ? '' : HiddenByFilters.summary(searchHandler.currentBooruHandler.hiddenBy);
+      final String? note = _emptyNote();
 
       String title = '', subtitle = '';
-      Widget icon = const Icon(Icons.refresh);
+      Widget icon = const Icon(Symbols.refresh_rounded);
       VoidCallback onTap = retrySearch;
       bool showSubtitle = true;
       bool htmlSubtitle = false;
       if (isLastPage) {
-        if (isEmpty) {
+        if (isEmpty && loaded > 0) {
+          title = HiddenByFilters.title(loaded);
+          subtitle = '${hiddenSummary.isEmpty ? '' : '$hiddenSummary\n'}Settings → Filters';
+          onTap = openFilters;
+        } else if (isEmpty) {
           title = context.loc.preview.error.noResults;
-          subtitle = context.loc.preview.error.noResultsSubtitle;
+          // r82: a source that knows why it is empty says so.
+          subtitle = note ?? context.loc.preview.error.noResultsSubtitle;
         } else {
           title = context.loc.preview.error.reachedEnd;
           subtitle = context.loc.preview.error.reachedEndSubtitle(pageNum: pageNum);
@@ -146,6 +181,12 @@ class _WaterfallErrorButtonsState extends State<WaterfallErrorButtons> {
           title = context.loc.preview.error.errorLoadingPage(pageNum: pageNum);
           subtitle = errorFormatted;
           htmlSubtitle = true;
+        } else if (isEmpty && (loaded > 0 || note != null)) {
+          // r85: before, this said "Error, no results loaded" and its tap
+          // read the same page again.
+          title = loaded > 0 ? HiddenByFilters.title(loaded) : 'Nothing to show on this page';
+          subtitle = '${loaded > 0 ? hiddenSummary : note}\nTap to load the next page';
+          onTap = loadNextPage;
         } else if (isEmpty) {
           title = context.loc.preview.error.errorNoResultsLoaded;
           subtitle = context.loc.preview.error.tapToRetry;
@@ -210,7 +251,7 @@ class _WaterfallErrorButtonsState extends State<WaterfallErrorButtons> {
                         IconButton(
                           onPressed: toggleCollapsed,
                           iconSize: 28,
-                          icon: const Icon(Icons.arrow_drop_up),
+                          icon: const Icon(Symbols.arrow_drop_up_rounded),
                         ),
                       ],
                     ),
@@ -308,7 +349,7 @@ class _WaterfallErrorButtonsState extends State<WaterfallErrorButtons> {
                     IconButton(
                       onPressed: toggleCollapsed,
                       iconSize: 28,
-                      icon: const Icon(Icons.arrow_drop_down),
+                      icon: const Icon(Symbols.arrow_drop_down_rounded),
                     ),
                     const SizedBox(width: 8),
                   ],

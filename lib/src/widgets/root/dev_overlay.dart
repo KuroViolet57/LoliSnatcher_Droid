@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -161,7 +163,7 @@ class __DevOverlayContentState extends State<DevOverlayContent> {
                         });
                       },
                       child: buildButton(
-                        isOpen ? Icons.close : Icons.add,
+                        isOpen ? Symbols.close_rounded : Symbols.add_rounded,
                         isOpen ? 'Close' : '',
                         () => setState(() {
                           isOpen = !isOpen;
@@ -176,7 +178,7 @@ class __DevOverlayContentState extends State<DevOverlayContent> {
                     ),
                     if (isOpen) ...[
                       buildButton(
-                        Icons.settings,
+                        Symbols.settings_rounded,
                         'Settings',
                         () {
                           Navigator.of(NavigationHandler.instance.navContext).push(
@@ -195,7 +197,7 @@ class __DevOverlayContentState extends State<DevOverlayContent> {
                       ),
                       //
                       buildButton(
-                        Icons.developer_board,
+                        Symbols.developer_board_rounded,
                         'Network',
                         () {
                           settingsHandler.alice.showInspector();
@@ -203,7 +205,7 @@ class __DevOverlayContentState extends State<DevOverlayContent> {
                       ),
                       //
                       buildButton(
-                        Icons.print,
+                        Symbols.print_rounded,
                         'Logger',
                         () {
                           Navigator.of(NavigationHandler.instance.navContext).push(
@@ -216,7 +218,7 @@ class __DevOverlayContentState extends State<DevOverlayContent> {
                       //
                       if (kDebugMode)
                         buildButton(
-                          Icons.deblur,
+                          Symbols.deblur_rounded,
                           settingsHandler.blurImages.value ? 'Unblur' : 'Blur',
                           () {
                             settingsHandler.blurImages.value = !settingsHandler.blurImages.value;

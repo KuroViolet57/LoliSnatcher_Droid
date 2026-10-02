@@ -11,6 +11,20 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
 
+    <!-- r85: which app is the default browser (MainActivity.openInBrowser). -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="http" />
+        </intent>
+    </queries>
+
     <application
         android:name="${applicationName}"
         android:label="LoliSnatcher"
@@ -45,6 +59,10 @@
               <data android:scheme="https" />
               <data android:host="www.loli.snatcher" />
             </intent-filter>
+            <!-- r85: app_links routes every incoming link (openAppLink); since
+                 Flutter 3.27 Flutter's own handler is on by default and would
+                 push a source link's path as a route. -->
+            <meta-data android:name="flutter_deeplinking_enabled" android:value="false" />
         </activity>
 
         <!-- Activity aliases for changing app display name in launcher -->
@@ -148,6 +166,147 @@
               android:name="android.support.FILE_PROVIDER_PATHS"
               android:resource="@xml/provider_paths" />
         </provider>
+
+        <!-- r85: links to the sites the app has sources for (Settings -> Links,
+             lib/src/services/source_links.dart - test/source_links_test.dart
+             keeps the two lists equal). Off until switched on there. Not
+             verified: the sites are not ours, so Android and link apps such
+             as Link Sheet offer the app; they never make it the default. -->
+        <activity-alias
+            android:name=".SourceLinks"
+            android:targetActivity=".MainActivity"
+            android:label="LoliSnatcher"
+            android:icon="@mipmap/ic_launcher"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:scheme="http" />
+                <data android:host="donmai.us" />
+                <data android:host="*.donmai.us" />
+                <data android:host="aibooru.online" />
+                <data android:host="*.aibooru.online" />
+                <data android:host="gelbooru.com" />
+                <data android:host="*.gelbooru.com" />
+                <data android:host="safebooru.org" />
+                <data android:host="*.safebooru.org" />
+                <data android:host="rule34.xxx" />
+                <data android:host="*.rule34.xxx" />
+                <data android:host="realbooru.com" />
+                <data android:host="*.realbooru.com" />
+                <data android:host="xbooru.com" />
+                <data android:host="*.xbooru.com" />
+                <data android:host="tbib.org" />
+                <data android:host="*.tbib.org" />
+                <data android:host="hypnohub.net" />
+                <data android:host="*.hypnohub.net" />
+                <data android:host="booru.org" />
+                <data android:host="*.booru.org" />
+                <data android:host="bakemono.app" />
+                <data android:host="*.bakemono.app" />
+                <data android:host="e621.net" />
+                <data android:host="*.e621.net" />
+                <data android:host="e926.net" />
+                <data android:host="*.e926.net" />
+                <data android:host="yande.re" />
+                <data android:host="*.yande.re" />
+                <data android:host="konachan.com" />
+                <data android:host="*.konachan.com" />
+                <data android:host="konachan.net" />
+                <data android:host="*.konachan.net" />
+                <data android:host="sankakucomplex.com" />
+                <data android:host="*.sankakucomplex.com" />
+                <data android:host="sankaku.app" />
+                <data android:host="*.sankaku.app" />
+                <data android:host="idolcomplex.com" />
+                <data android:host="*.idolcomplex.com" />
+                <data android:host="paheal.net" />
+                <data android:host="*.paheal.net" />
+                <data android:host="whyneko.com" />
+                <data android:host="*.whyneko.com" />
+                <data android:host="derpibooru.org" />
+                <data android:host="*.derpibooru.org" />
+                <data android:host="furbooru.org" />
+                <data android:host="*.furbooru.org" />
+                <data android:host="twibooru.org" />
+                <data android:host="*.twibooru.org" />
+                <data android:host="rainbooru.org" />
+                <data android:host="*.rainbooru.org" />
+                <data android:host="rule34.us" />
+                <data android:host="*.rule34.us" />
+                <data android:host="rule34hentai.net" />
+                <data android:host="*.rule34hentai.net" />
+                <data android:host="rule34.world" />
+                <data android:host="*.rule34.world" />
+                <data android:host="animazone34.com" />
+                <data android:host="*.animazone34.com" />
+                <data android:host="rule34vault.com" />
+                <data android:host="*.rule34vault.com" />
+                <data android:host="rule34.dev" />
+                <data android:host="*.rule34.dev" />
+                <data android:host="agn.ph" />
+                <data android:host="*.agn.ph" />
+                <data android:host="nozomi.la" />
+                <data android:host="*.nozomi.la" />
+                <data android:host="inkbunny.net" />
+                <data android:host="*.inkbunny.net" />
+                <data android:host="nyanpals.com" />
+                <data android:host="*.nyanpals.com" />
+                <data android:host="wildcritters.ws" />
+                <data android:host="*.wildcritters.ws" />
+                <data android:host="furaffinity.net" />
+                <data android:host="*.furaffinity.net" />
+                <data android:host="civitai.com" />
+                <data android:host="*.civitai.com" />
+                <data android:host="redgifs.com" />
+                <data android:host="*.redgifs.com" />
+                <data android:host="rule34video.com" />
+                <data android:host="*.rule34video.com" />
+                <data android:host="hanime1.me" />
+                <data android:host="*.hanime1.me" />
+                <data android:host="kusowanka.com" />
+                <data android:host="*.kusowanka.com" />
+                <data android:host="tik.porn" />
+                <data android:host="*.tik.porn" />
+                <data android:host="xxxtik.com" />
+                <data android:host="*.xxxtik.com" />
+                <data android:host="xxxfollow.com" />
+                <data android:host="*.xxxfollow.com" />
+                <data android:host="kemono.cr" />
+                <data android:host="*.kemono.cr" />
+                <data android:host="kemono.su" />
+                <data android:host="*.kemono.su" />
+                <data android:host="kemono.party" />
+                <data android:host="*.kemono.party" />
+                <data android:host="pawchive.pw" />
+                <data android:host="*.pawchive.pw" />
+                <data android:host="nhentai.net" />
+                <data android:host="*.nhentai.net" />
+                <data android:host="e-hentai.org" />
+                <data android:host="*.e-hentai.org" />
+                <data android:host="exhentai.org" />
+                <data android:host="*.exhentai.org" />
+                <data android:host="hitomi.la" />
+                <data android:host="*.hitomi.la" />
+                <data android:host="eahentai.com" />
+                <data android:host="*.eahentai.com" />
+                <data android:host="hentaipaw.com" />
+                <data android:host="*.hentaipaw.com" />
+                <data android:host="niyaniya.moe" />
+                <data android:host="*.niyaniya.moe" />
+                <data android:host="shupogaki.moe" />
+                <data android:host="*.shupogaki.moe" />
+                <data android:host="hdoujin.org" />
+                <data android:host="*.hdoujin.org" />
+                <data android:host="asmhentai.com" />
+                <data android:host="*.asmhentai.com" />
+                <data android:host="hentalk.pw" />
+                <data android:host="*.hentalk.pw" />
+            </intent-filter>
+        </activity-alias>
 
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

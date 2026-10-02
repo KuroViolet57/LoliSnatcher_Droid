@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:extended_image/extended_image.dart';
 
 import 'package:lolisnatcher/src/data/booru.dart';
@@ -131,7 +133,7 @@ class _GifViewerState extends State<GifViewer> {
   @override
   Widget build(BuildContext context) {
     if (_failedHeaders) {
-      return const Center(child: Icon(Icons.broken_image, size: 48));
+      return const Center(child: Icon(Symbols.broken_image_rounded, size: 48));
     }
     if (_headers == null) {
       return const Center(child: CircularProgressIndicator());
@@ -168,7 +170,7 @@ class _GifViewerState extends State<GifViewer> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.broken_image, size: 48),
+                    Icon(Symbols.broken_image_rounded, size: 48),
                     SizedBox(height: 8),
                     Text('Tap to retry'),
                   ],

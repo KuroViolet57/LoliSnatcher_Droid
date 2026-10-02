@@ -1,6 +1,8 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:url_launcher/url_launcher_string.dart';
 
 import 'package:lolisnatcher/src/utils/text_parser/comment_parser.dart';
@@ -493,7 +495,7 @@ class _ParsedTextState extends State<ParsedText> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
-                          Icons.visibility_off_rounded,
+                          Symbols.visibility_off_rounded,
                           size: (baseStyle?.fontSize ?? 14) * 0.9,
                           color: theme.colorScheme.onSurfaceVariant,
                         ),

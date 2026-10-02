@@ -3,15 +3,19 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 
 import 'package:lolisnatcher/src/data/settings/image_quality.dart';
 import 'package:lolisnatcher/src/data/settings/video_cache_mode.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/services/download_folders.dart';
 import 'package:lolisnatcher/src/services/image_writer.dart';
 import 'package:lolisnatcher/src/services/image_writer_isolate.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
+import 'package:lolisnatcher/src/widgets/common/downloads_check.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 import 'package:lolisnatcher/src/widgets/common/settings_widgets.dart';
 
@@ -134,12 +138,96 @@ class _SaveCachePageState extends State<SaveCachePage> {
     settingsHandler.videoCacheMode = videoCacheMode;
     settingsHandler.cacheDuration = cacheDuration;
     settingsHandler.cacheSize = int.parse(cacheSizeController.text);
-    settingsHandler.extPathOverride = extPathOverride;
+    // r82: through DownloadFolders, so the folder left is remembered and
+    // the new one's file list is read at once.
+    if (extPathOverride != settingsHandler.extPathOverride) await DownloadFolders.change(extPathOverride);
     settingsHandler.snatchMode = snatchMode;
     settingsHandler.downloadNotifications = downloadNotifications;
     settingsHandler.snatchOnFavourite = snatchOnFavourite;
     settingsHandler.favouriteOnSnatch = favouriteOnSnatch;
     await settingsHandler.saveSettings(restate: false);
+  }
+
+  /// r82: Settings → Save & cache → Earlier download folders.
+  List<Widget> _earlierFolders(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final List<String> folders = List<String>.of(DownloadFolders.earlier);
+    return [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 2),
+        child: Text('Earlier download folders', style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+      ),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+        child: Text(
+          'The Downloads list and the doujin downloads also look here for files saved before you changed the folder. '
+          'New downloads always go to the folder above; nothing is moved or written here.',
+          style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurface.withValues(alpha: 0.6)),
+        ),
+      ),
+      if (folders.isEmpty)
+        Padding(
+          key: const ValueKey('earlier-folders-none'),
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+          child: Text('None yet. A folder you change away from is added here.', style: theme.textTheme.bodySmall),
+        ),
+      for (final String folder in folders)
+        ListTile(
+          key: ValueKey('earlier-folder-$folder'),
+          dense: true,
+          leading: const Icon(Symbols.folder_open_rounded),
+          title: Text(DownloadFolders.describe(folder)),
+          trailing: IconButton(
+            key: ValueKey('earlier-folder-remove-$folder'),
+            tooltip: 'Stop looking here',
+            icon: const Icon(Symbols.close_rounded),
+            onPressed: () async {
+              await DownloadFolders.removeEarlier(folder);
+              if (mounted) setState(() {});
+            },
+          ),
+        ),
+      SettingsButton(
+        key: const ValueKey('earlier-folder-add'),
+        name: 'Add a folder you used before',
+        icon: const Icon(Symbols.create_new_folder_rounded),
+        action: _addEarlierFolder,
+      ),
+      // r84: it used to sit in a drawer panel the app no longer shows.
+      SettingsButton(
+        key: const ValueKey('downloads-check'),
+        name: 'Check downloads against disk',
+        subtitle: const Text('Finds downloads whose file is in none of these folders, and offers to forget them'),
+        icon: const Icon(Symbols.fact_check_rounded),
+        action: () => DownloadsCheck.run(context),
+      ),
+    ];
+  }
+
+  Future<void> _addEarlierFolder() async {
+    if (!Platform.isAndroid) {
+      FlashElements.showSnackbar(
+        context: context,
+        title: Text(context.loc.settings.cache.notAvailableForPlatform),
+        leadingIcon: Symbols.error_rounded,
+      );
+      return;
+    }
+    final String picked = await ServiceHandler.getSAFDirectoryAccess();
+    if (picked.isEmpty || !mounted) return;
+    final bool added = await DownloadFolders.addEarlier(picked);
+    if (!mounted) return;
+    setState(() {});
+    FlashElements.showSnackbar(
+      context: context,
+      title: Text(added ? 'Folder added' : 'Already there'),
+      content: Text(
+        added
+            ? 'The Downloads list looks in ${DownloadFolders.describe(picked)} too. Tap the Downloads tab to load it again.'
+            : 'That folder is the current download folder or already in the list.',
+      ),
+      leadingIcon: added ? Symbols.check_rounded : Symbols.info_rounded,
+    );
   }
 
   void setPath(String path) {
@@ -175,7 +263,7 @@ class _SaveCachePageState extends State<SaveCachePage> {
 
     return SettingsButton(
       name: '$label: $text',
-      icon: isLoading ? const CircularProgressIndicator() : Icon(allowedToClear ? Icons.delete_forever : null),
+      icon: isLoading ? const CircularProgressIndicator() : Icon(allowedToClear ? Symbols.delete_forever_rounded : null),
       action: () async {
         if (allowedToClear) {
           FlashElements.showSnackbar(
@@ -190,7 +278,7 @@ class _SaveCachePageState extends State<SaveCachePage> {
               context.loc.settings.cache.clearedCacheType(type: label),
               style: const TextStyle(fontSize: 16),
             ),
-            leadingIcon: Icons.delete_forever,
+            leadingIcon: Symbols.delete_forever_rounded,
             leadingIconColor: Colors.red,
             leadingIconSize: 40,
             sideColor: Colors.yellow,
@@ -266,9 +354,9 @@ class _SaveCachePageState extends State<SaveCachePage> {
                 },
                 trailingIcon: const Row(
                   children: [
-                    Icon(Icons.favorite, color: Colors.red),
-                    Icon(Icons.arrow_right_alt_rounded),
-                    Icon(Icons.save),
+                    Icon(Symbols.favorite_rounded, color: Colors.red),
+                    Icon(Symbols.arrow_right_alt_rounded),
+                    Icon(Symbols.save_rounded),
                   ],
                 ),
                 title: context.loc.settings.cache.snatchItemsOnFavouriting,
@@ -282,9 +370,9 @@ class _SaveCachePageState extends State<SaveCachePage> {
                 },
                 trailingIcon: const Row(
                   children: [
-                    Icon(Icons.save),
-                    Icon(Icons.arrow_right_alt_rounded),
-                    Icon(Icons.favorite, color: Colors.red),
+                    Icon(Symbols.save_rounded),
+                    Icon(Symbols.arrow_right_alt_rounded),
+                    Icon(Symbols.favorite_rounded, color: Colors.red),
                   ],
                 ),
                 title: context.loc.settings.cache.favouriteItemsOnSnatching,
@@ -307,14 +395,18 @@ class _SaveCachePageState extends State<SaveCachePage> {
                 subtitle: extPathOverride.isEmpty
                     ? null
                     : Text(context.loc.settings.cache.currentPath(path: extPathOverride)),
-                icon: const Icon(Icons.folder_outlined),
+                icon: const Icon(Symbols.folder_rounded),
                 action: () async {
                   //String url = await ServiceHandler.setExtDir();
 
                   if (Platform.isAndroid) {
                     final String newPath = await ServiceHandler.setExtDir();
+                    // r82: a cancelled picker keeps the folder (it used to
+                    // reset it to the default); a new one is applied at once.
+                    if (newPath.isEmpty) return;
+                    await DownloadFolders.change(newPath);
                     extPathOverride = newPath;
-                    setState(() {});
+                    if (mounted) setState(() {});
                     // TODO Store uri in settings and make another button so can set seetings dir and pictures dir
                   } else {
                     // TODO need to update dir picker to work on desktop
@@ -347,7 +439,7 @@ class _SaveCachePageState extends State<SaveCachePage> {
                         context.loc.settings.cache.notAvailableForPlatform,
                         style: const TextStyle(fontSize: 16),
                       ),
-                      leadingIcon: Icons.error_outline,
+                      leadingIcon: Symbols.error_rounded,
                       leadingIconColor: Colors.red,
                       sideColor: Colors.red,
                     );
@@ -357,13 +449,17 @@ class _SaveCachePageState extends State<SaveCachePage> {
               if (extPathOverride.isNotEmpty)
                 SettingsButton(
                   name: context.loc.settings.cache.resetStorageDirectory,
-                  icon: const Icon(Icons.refresh),
-                  action: () {
+                  icon: const Icon(Symbols.refresh_rounded),
+                  action: () async {
+                    await DownloadFolders.change('');
+                    if (!mounted) return;
                     setState(() {
                       extPathOverride = '';
                     });
                   },
                 ),
+              // r82: the folders used before, still looked in.
+              ..._earlierFolders(context),
               const SettingsButton(name: '', enabled: false),
               SettingsToggle(
                 value: thumbnailCache,
@@ -394,7 +490,7 @@ class _SaveCachePageState extends State<SaveCachePage> {
                 title: context.loc.settings.cache.videoCacheMode,
                 itemTitleBuilder: (e) => e?.locName ?? '',
                 trailingIcon: IconButton(
-                  icon: const Icon(Icons.help_outline),
+                  icon: const Icon(Symbols.help_rounded),
                   onPressed: () {
                     showDialog(
                       context: context,
@@ -452,7 +548,7 @@ class _SaveCachePageState extends State<SaveCachePage> {
               SettingsButton(
                 name: context.loc.settings.cache.clearAllCache,
                 icon: Icon(
-                  Icons.delete_forever,
+                  Symbols.delete_forever_rounded,
                   color: Theme.of(context).colorScheme.error,
                 ),
                 action: () async {
@@ -476,7 +572,7 @@ class _SaveCachePageState extends State<SaveCachePage> {
                         ),
                       ],
                     ),
-                    leadingIcon: Icons.delete_forever,
+                    leadingIcon: Symbols.delete_forever_rounded,
                     leadingIconColor: Colors.red,
                     leadingIconSize: 40,
                     sideColor: Colors.yellow,

@@ -3,6 +3,8 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:fading_edge_scrollview/fading_edge_scrollview.dart';
 import 'package:get/get.dart' hide ContextExt, FirstWhereOrNullExt;
 import 'package:lolisnatcher/src/widgets/desktop/desktop_scroll.dart';
@@ -244,9 +246,7 @@ class _MainSearchBarState extends State<MainSearchBar> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                searchHandler.currentTab.tags.isEmpty
-                    ? '(no tags)'
-                    : searchHandler.currentTab.tags,
+                searchHandler.currentTab.tags.isEmpty ? '(no tags)' : searchHandler.currentTab.tags,
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
@@ -321,73 +321,83 @@ class _MainSearchBarState extends State<MainSearchBar> {
                     Expanded(
                       child: Listener(
                         onPointerSignal: (event) => desktopPointerScroll(scrollController, event),
-                        child: FadingEdgeScrollView.fromScrollView(
-                          child: ListView(
-                            controller: scrollController,
-                            scrollDirection: Axis.horizontal,
-                            // scrollconfig allows to control physics outside of the widget
-                            physics: tags.isEmpty
-                                ? const NeverScrollableScrollPhysics()
-                                : ScrollConfiguration.of(context).getScrollPhysics(context),
-                            padding: const EdgeInsets.fromLTRB(8, 6, 60, 6),
-                            children: [
-                              if (tags.isEmpty)
-                                Center(
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                                    child: Text(
-                                      context.loc.search,
-                                      style: context.theme.textTheme.bodyLarge?.copyWith(
-                                        color: context.theme.colorScheme.onSurface.withValues(alpha: 0.5),
-                                        fontSize: 16,
-                                        height: 1,
+                        // shrinkWrap + Align: the list only occupies the width
+                        // its chips need, so taps on the empty space to the
+                        // right reach the surrounding InkWell (a tap handler
+                        // behind a scrollable loses the gesture arena there).
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: FadingEdgeScrollView.fromScrollView(
+                            child: ListView(
+                              controller: scrollController,
+                              scrollDirection: Axis.horizontal,
+                              shrinkWrap: true,
+                              // scrollconfig allows to control physics outside of the widget
+                              physics: tags.isEmpty
+                                  ? const NeverScrollableScrollPhysics()
+                                  : ScrollConfiguration.of(context).getScrollPhysics(context),
+                              padding: const EdgeInsets.fromLTRB(8, 6, 60, 6),
+                              children: [
+                                if (tags.isEmpty)
+                                  Center(
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                                      child: Text(
+                                        context.loc.search,
+                                        style: context.theme.textTheme.bodyLarge?.copyWith(
+                                          color: context.theme.colorScheme.onSurface.withValues(alpha: 0.5),
+                                          fontSize: 16,
+                                          height: 1,
+                                        ),
                                       ),
                                     ),
                                   ),
-                                ),
-                              //
-                              for (int i = 0; i < tags.length; i++)
-                                AutoScrollTag(
-                                  key: Key('${tags[i]}-$i-$currentTabId'),
-                                  controller: scrollController,
-                                  index: i,
-                                  child: Padding(
-                                    padding: (i < tags.length - 1) ? const EdgeInsets.only(right: 8) : EdgeInsets.zero,
-                                    child: Stack(
-                                      children: [
-                                        MainSearchTagChip(
-                                          tag: tags[i],
-                                          tab: searchHandler.currentTab,
-                                          onTap: () => widget.onChipTap(tags[i], i),
-                                          onLongTap: widget.onChipLongTap == null
-                                              ? null
-                                              : () => widget.onChipLongTap!(tags[i], i),
-                                          onDeleteTap: widget.onChipDeleteTap == null
-                                              ? null
-                                              : () => widget.onChipDeleteTap!(tags[i], i),
-                                          canDelete: widget.selectedTagIndex != i,
-                                          isSelected: widget.selectedTag == tags[i] || widget.selectedTagIndex == i,
-                                        ),
-                                        if (widget.selectedTag == tags[i] || widget.selectedTagIndex == i)
-                                          Positioned.fill(
-                                            child: TransparentPointer(
-                                              child: DecoratedBox(
-                                                decoration: BoxDecoration(
-                                                  color: Colors.transparent,
-                                                  borderRadius: BorderRadius.circular(12),
-                                                  border: Border.all(
-                                                    color: context.theme.colorScheme.secondary,
-                                                    width: 2,
+                                //
+                                for (int i = 0; i < tags.length; i++)
+                                  AutoScrollTag(
+                                    key: Key('${tags[i]}-$i-$currentTabId'),
+                                    controller: scrollController,
+                                    index: i,
+                                    child: Padding(
+                                      padding: (i < tags.length - 1)
+                                          ? const EdgeInsets.only(right: 8)
+                                          : EdgeInsets.zero,
+                                      child: Stack(
+                                        children: [
+                                          MainSearchTagChip(
+                                            tag: tags[i],
+                                            tab: searchHandler.currentTab,
+                                            onTap: () => widget.onChipTap(tags[i], i),
+                                            onLongTap: widget.onChipLongTap == null
+                                                ? null
+                                                : () => widget.onChipLongTap!(tags[i], i),
+                                            onDeleteTap: widget.onChipDeleteTap == null
+                                                ? null
+                                                : () => widget.onChipDeleteTap!(tags[i], i),
+                                            canDelete: widget.selectedTagIndex != i,
+                                            isSelected: widget.selectedTag == tags[i] || widget.selectedTagIndex == i,
+                                          ),
+                                          if (widget.selectedTag == tags[i] || widget.selectedTagIndex == i)
+                                            Positioned.fill(
+                                              child: TransparentPointer(
+                                                child: DecoratedBox(
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.transparent,
+                                                    borderRadius: BorderRadius.circular(12),
+                                                    border: Border.all(
+                                                      color: context.theme.colorScheme.secondary,
+                                                      width: 2,
+                                                    ),
                                                   ),
                                                 ),
                                               ),
                                             ),
-                                          ),
-                                      ],
+                                        ],
+                                      ),
                                     ),
                                   ),
-                                ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -405,7 +415,7 @@ class _MainSearchBarState extends State<MainSearchBar> {
                                 child: const Padding(
                                   padding: EdgeInsets.symmetric(horizontal: 10),
                                   child: Icon(
-                                    Icons.close_rounded,
+                                    Symbols.close_rounded,
                                     size: 24,
                                   ),
                                 ),
@@ -428,7 +438,7 @@ class _MainSearchBarState extends State<MainSearchBar> {
                               child: const Padding(
                                 padding: EdgeInsets.symmetric(horizontal: 10),
                                 child: Icon(
-                                  Icons.refresh,
+                                  Symbols.refresh_rounded,
                                   size: 24,
                                 ),
                               ),
@@ -448,7 +458,7 @@ class _MainSearchBarState extends State<MainSearchBar> {
                         child: const Padding(
                           padding: EdgeInsets.symmetric(horizontal: 10),
                           child: Icon(
-                            Icons.bookmark_add_outlined,
+                            Symbols.bookmark_add_rounded,
                             size: 24,
                           ),
                         ),
@@ -464,7 +474,7 @@ class _MainSearchBarState extends State<MainSearchBar> {
                         child: const Padding(
                           padding: EdgeInsets.symmetric(horizontal: 10),
                           child: Icon(
-                            Icons.search_rounded,
+                            Symbols.search_rounded,
                             size: 24,
                           ),
                         ),

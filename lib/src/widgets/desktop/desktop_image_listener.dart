@@ -4,9 +4,14 @@ import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:get/get.dart';
 
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/boorus/mergebooru_handler.dart';
+import 'package:lolisnatcher/src/handlers/booru_handler.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/database_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -169,7 +174,7 @@ class _DesktopImageListenerState extends State<DesktopImageListener> {
                         false,
                       );
                     },
-                    child: const Icon(Icons.save),
+                    child: const Icon(Symbols.save_rounded),
                   ),
                 ),
                 Container(
@@ -178,6 +183,21 @@ class _DesktopImageListenerState extends State<DesktopImageListener> {
                   margin: const EdgeInsets.fromLTRB(10, 0, 10, 10),
                   child: FloatingActionButton(
                     onPressed: () {
+                      // Doujin items go through the one doujin favourite path
+                      // (doujin store + site sync), never the booru DB.
+                      if (searchHandler.currentTab.booruHandler.hasReader ||
+                          DoujinDataHandler.isDoujinItem(item)) {
+                        // In a merge tab, sync through the item's real
+                        // sub-handler (the Merge handler can't reach the
+                        // site account and has no host).
+                        BooruHandler syncHandler = searchHandler.currentTab.booruHandler;
+                        final h = syncHandler;
+                        if (!h.hasReader && h is MergebooruHandler) {
+                          syncHandler = h.subHandlerForItem(item) ?? h;
+                        }
+                        DoujinDataHandler.instance.toggleFavouriteSynced(item, syncHandler);
+                        return;
+                      }
                       if (item.isFavourite.value != null) {
                         item.isFavourite.toggle();
                         settingsHandler.dbHandler.updateBooruItem(item, BooruUpdateMode.local);
@@ -186,8 +206,8 @@ class _DesktopImageListenerState extends State<DesktopImageListener> {
                     child: Obx(
                       () => Icon(
                         item.isFavourite.value == true
-                            ? Icons.favorite
-                            : (item.isFavourite.value == false ? Icons.favorite_border : CupertinoIcons.heart_slash),
+                            ? Symbols.favorite_rounded
+                            : (item.isFavourite.value == false ? Symbols.favorite_border_rounded : CupertinoIcons.heart_slash),
                       ),
                     ),
                   ),
@@ -226,7 +246,7 @@ class _DesktopImageListenerState extends State<DesktopImageListener> {
                                     onPressed: () {
                                       Navigator.of(context).pop();
                                     },
-                                    child: const Icon(Icons.fullscreen_exit),
+                                    child: const Icon(Symbols.fullscreen_exit_rounded),
                                   ),
                                 ),
                               ),
@@ -239,7 +259,7 @@ class _DesktopImageListenerState extends State<DesktopImageListener> {
                       updateState();
                       unawaited(delayedZoomReset());
                     },
-                    child: const Icon(Icons.fullscreen),
+                    child: const Icon(Symbols.fullscreen_rounded),
                   ),
                 ),
               ],

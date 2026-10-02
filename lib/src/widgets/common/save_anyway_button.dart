@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:lolisnatcher/gen/strings.g.dart';
 
 class SaveAnywayButton extends StatelessWidget {
@@ -29,7 +31,7 @@ class SaveAnywayButton extends StatelessWidget {
         ),
         onPressed: onTap,
         onLongPress: onLongTap,
-        icon: const Icon(Icons.refresh),
+        icon: const Icon(Symbols.refresh_rounded),
         label: Text(context.loc.mobileHome.saveAnyway),
       );
     }

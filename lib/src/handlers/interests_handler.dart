@@ -1,12 +1,21 @@
 import 'dart:async';
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
+
 import 'package:get_it/get_it.dart';
 
+import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
+import 'package:lolisnatcher/src/data/tag_type.dart';
+import 'package:lolisnatcher/src/handlers/recommender/recommender_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/rewards.dart';
+import 'package:lolisnatcher/src/handlers/tag_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
+import 'package:lolisnatcher/src/utils/post_similarity.dart';
 
 /// Local behaviour tracker feeding the "For You" recommender.
 ///
@@ -37,6 +46,18 @@ class InterestsHandler {
 
   final Map<String, double> _pending = {};
   Timer? _flushTimer;
+
+  /// Signals waiting to be written, for tests that check the door held.
+  @visibleForTesting
+  Map<String, double> get pendingSignals => Map.unmodifiable(_pending);
+
+  /// The guard at the door. This profile is the BOORU taste profile; doujin
+  /// activity has its own world and must never reach it, whichever caller
+  /// forgot to check. Judged per item (post URL host) so merge tabs mixing
+  /// both worlds stay separated, and per source for the string-only signals.
+  static bool _refuses(BooruItem item) => DoujinDataHandler.isDoujinItem(item);
+
+  static bool _refusesSource(Booru? booru) => DoujinDataHandler.isDoujinBooru(booru);
 
   bool get _enabled {
     final s = SettingsHandler.instance;
@@ -104,7 +125,14 @@ class InterestsHandler {
   //
 
   /// Post was on screen in the viewer for [dwell]. Ignores flick-throughs.
+  ///
+  /// r33: every entry point here also feeds the recommender, which keeps its
+  /// own wall between the worlds; doujin favourites, collections and
+  /// downloads report from the doujin side, so only views and searches are
+  /// forwarded for both worlds.
   void onItemViewed(BooruItem item, Duration dwell) {
+    RecommenderHandler.maybe?.onEvent(item, InteractionKind.view, value: dwell.inMilliseconds / 1000);
+    if (_refuses(item)) return;
     if (dwell.inMilliseconds < 1500) return;
     final double seconds = min(dwell.inMilliseconds / 1000, 30);
     final double weight = 0.2 + (seconds / 30) * 1.3;
@@ -112,28 +140,45 @@ class InterestsHandler {
   }
 
   void onItemFavourited(BooruItem item, {required bool nowFavourite}) {
+    if (_refuses(item)) return;
+    RecommenderHandler.maybe?.onEvent(item, nowFavourite ? InteractionKind.favourite : InteractionKind.unfavourite);
     _add(item.tagsList.map((t) => t.fullString), nowFavourite ? 6 : -3);
   }
 
   void onItemsSnatched(List<BooruItem> items) {
-    for (final item in items.take(20)) {
+    for (final item in items.where((i) => !_refuses(i)).take(20)) {
+      RecommenderHandler.maybe?.onEvent(item, InteractionKind.snatch);
       _add(item.tagsList.map((t) => t.fullString), 4);
     }
   }
 
   void onItemsCollected(List<BooruItem> items) {
-    for (final item in items.take(20)) {
+    for (final item in items.where((i) => !_refuses(i)).take(20)) {
+      RecommenderHandler.maybe?.onEvent(item, InteractionKind.collect);
       _add(item.tagsList.map((t) => t.fullString), 5);
     }
   }
 
-  void onSearch(String query) {
+  /// [booru] is the source searched; a doujin source is refused here even
+  /// when the caller did not check.
+  void onSearch(String query, {Booru? booru}) {
+    RecommenderHandler.maybe?.onQuery(query, booru, InteractionKind.search);
+    if (_refusesSource(booru)) return;
     final tags = query.split(' ').where(isMeaningfulTag).take(5);
     _add(tags, 2);
   }
 
-  void onTagPreviewOpened(String tag) {
+  void onTagPreviewOpened(String tag, {Booru? booru}) {
+    RecommenderHandler.maybe?.onQuery(tag, booru, InteractionKind.tagPreview);
+    if (_refusesSource(booru)) return;
     _add(tag.split(' '), 1.5);
+  }
+
+  /// A video watched through (r34): as loud a yes as a download.
+  void onVideoCompleted(BooruItem item) {
+    RecommenderHandler.maybe?.onEvent(item, InteractionKind.videoComplete);
+    if (_refuses(item)) return;
+    _add(item.tagsList.map((t) => t.fullString), 4);
   }
 
   //
@@ -161,6 +206,16 @@ class InterestsHandler {
   /// general tags as fallback.
   static List<String> seedTagsFromItem(BooruItem item, {int limit = 3}) {
     final List<String> picked = [];
+
+    // Tag types come from the app-wide store when the booru sent none —
+    // shimmie-family sites type nothing, and without this every
+    // character/artist/copyright pick below fails and the seed degrades to
+    // whatever generic tag happens to be listed first ("3d, blender").
+    TagType typeOf(Tag t) {
+      if (t.tagType != TagType.none) return t.tagType;
+      return TagHandler.instance.getTag(t.fullString).tagType;
+    }
+
     void pick(bool Function(Tag) test, int cap) {
       int taken = 0;
       for (final t in item.tagsList) {
@@ -174,11 +229,34 @@ class InterestsHandler {
       }
     }
 
-    pick((t) => t.tagType.isCharacter, 2);
-    pick((t) => t.tagType.isArtist, 1);
-    pick((t) => t.tagType.isCopyright, 1);
+    pick((t) => typeOf(t).isCharacter, 2);
+    pick((t) => typeOf(t).isArtist, 1);
+    pick((t) => typeOf(t).isCopyright, 1);
     if (picked.isEmpty) {
-      pick((t) => isMeaningfulTag(t.fullString), 2);
+      // Nothing typed anywhere: seed with the most DISTINCTIVE tags rather
+      // than the first meaningful ones. Medium/format tags match half the
+      // booru and recommend nothing in particular; the booru's own tag
+      // counts (when the handler reports them) are the best rarity signal,
+      // otherwise fall back to name specificity.
+      final List<Tag> candidates = item.tagsList.where((t) {
+        final String name = t.fullString.trim();
+        if (name.isEmpty || !isMeaningfulTag(name)) return false;
+        if (typeOf(t) == TagType.meta) return false;
+        return !kGenericMediumTags.contains(normalizeTagName(name));
+      }).toList()
+        ..sort((a, b) {
+          final int ca = a.count > 0 ? a.count : 1 << 30;
+          final int cb = b.count > 0 ? b.count : 1 << 30;
+          if (ca != cb) return ca.compareTo(cb);
+          int spec(Tag t) => (t.fullString.contains('(') ? 2 : 0) + (t.fullString.contains('_') ? 1 : 0);
+          final int bySpec = spec(b).compareTo(spec(a));
+          if (bySpec != 0) return bySpec;
+          return b.fullString.length.compareTo(a.fullString.length);
+        });
+      for (final t in candidates.take(2)) {
+        if (picked.length >= limit) break;
+        picked.add(t.fullString.trim());
+      }
     }
     return picked;
   }

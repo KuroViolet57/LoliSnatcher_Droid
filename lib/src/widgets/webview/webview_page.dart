@@ -1,10 +1,14 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:lolisnatcher/src/handlers/furaffinity_session_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 
 import 'package:lolisnatcher/src/utils/tools.dart';
@@ -14,6 +18,65 @@ import 'package:lolisnatcher/src/widgets/webview/webview_navigation_menu.dart';
 WebViewEnvironment? webViewEnvironment;
 Map<String, List<Cookie>> globalWindowsCookies = {};
 
+/// Hosts a locked-down webview may navigate to.
+///
+/// Kept as a pure top-level function so the rule can be tested against the
+/// exact ad hosts seen in the wild rather than by eye.
+bool isWebviewNavigationAllowed(
+  String url, {
+  required String initialUrl,
+  List<String> allowedHosts = const [],
+}) {
+  final Uri? uri = Uri.tryParse(url);
+  final String host = uri?.host.toLowerCase() ?? '';
+  if (host.isEmpty) {
+    // about:blank and data: are the page's own scaffolding, not a navigation.
+    return uri?.scheme == 'about' || uri?.scheme == 'data';
+  }
+  // A challenge cannot run without Cloudflare.
+  if (host == 'challenges.cloudflare.com' || host.endsWith('.cloudflare.com')) {
+    return true;
+  }
+  final List<String> allowed = [
+    ...allowedHosts,
+    if (allowedHosts.isEmpty) Uri.tryParse(initialUrl)?.host ?? '',
+  ].where((e) => e.isNotEmpty).map((e) => e.toLowerCase()).toList();
+
+  for (final String a in allowed) {
+    if (host == a || host.endsWith('.$a')) return true;
+  }
+  return false;
+}
+
+/// Main-frame navigation policy for the solver window.
+///
+/// Everything with no host — `about:`, `blob:`, `data:`, `javascript:` — is
+/// allowed: those are the page's own scaffolding and Cloudflare's challenge
+/// frames, never an interstitial. `intent://` and other app schemes are
+/// refused because they leave the app. An off-list host is refused because it
+/// replaces the page the person is trying to complete.
+bool isMainFrameNavigationAllowed(
+  String url, {
+  required String initialUrl,
+  required List<String> allowedHosts,
+}) {
+  final Uri? uri = Uri.tryParse(url);
+  if (uri == null) return false;
+  final String scheme = uri.scheme.toLowerCase();
+  if (scheme == 'intent' || scheme == 'market') return false;
+  final String host = uri.host.toLowerCase();
+  if (host.isEmpty) return true;
+  if (host == 'challenges.cloudflare.com' || host.endsWith('.cloudflare.com')) return true;
+  final List<String> allowed = [
+    ...allowedHosts,
+    Uri.tryParse(initialUrl)?.host ?? '',
+  ].where((e) => e.isNotEmpty).map((e) => e.toLowerCase()).toList();
+  for (final String a in allowed) {
+    if (host == a || host.endsWith('.$a')) return true;
+  }
+  return false;
+}
+
 class InAppWebviewView extends StatefulWidget {
   const InAppWebviewView({
     required this.initialUrl,
@@ -21,6 +84,12 @@ class InAppWebviewView extends StatefulWidget {
     this.title,
     this.subtitle,
     this.onLoadStop,
+    this.onResourceLoaded,
+    this.blockPopupsAndAds = false,
+    this.allowedHosts = const [],
+    this.onWebViewReady,
+    this.initialUserScripts = const [],
+    this.restrictMainFrameHosts,
     super.key,
   });
 
@@ -29,6 +98,38 @@ class InAppWebviewView extends StatefulWidget {
   final String? title;
   final String? subtitle;
   final void Function(BuildContext context, InAppWebViewController controller, WebUri? url)? onLoadStop;
+
+  /// Every URL the page asks for, as the webview sees it. The source-capture
+  /// tool uses this to discover that a site has an API at all — a front end
+  /// calling `/api/…` is the only evidence of one from the outside.
+  final void Function(String url)? onResourceLoaded;
+
+  /// Refuse pop-ups, new windows, and navigations away from [allowedHosts].
+  ///
+  /// Some sources monetise with interstitials that replace the page the moment
+  /// you touch it. When the page is there to be USED — completing a challenge,
+  /// say — letting an ad take it over means the task can never be finished.
+  final bool blockPopupsAndAds;
+
+  /// Called once the controller exists, before anything has loaded, so a caller
+  /// can register JavaScript handlers the injected scripts will post back to.
+  final void Function(InAppWebViewController controller)? onWebViewReady;
+
+  /// Scripts injected at document start, before the page's own bundle runs.
+  final List<UserScript> initialUserScripts;
+
+  /// When set, only MAIN-frame navigations are held to this host list; a
+  /// navigation that would replace the whole page with something off-site is
+  /// refused, and nothing else is touched. Sub-frames load freely — including
+  /// `blob:` and `about:srcdoc` frames, which Cloudflare's Turnstile needs and
+  /// which the broader [blockPopupsAndAds] filter starved. Pop-ups are left
+  /// at their defaults. This is the solver-window policy.
+  final List<String>? restrictMainFrameHosts;
+
+  /// Hosts the page may navigate to when [blockPopupsAndAds] is on. Cloudflare's
+  /// challenge host is always allowed, since a challenge cannot run without it.
+  /// Empty means "the initial URL's host and its subdomains".
+  final List<String> allowedHosts;
 
   @override
   State<InAppWebviewView> createState() => _InAppWebviewViewState();
@@ -44,9 +145,21 @@ class _InAppWebviewViewState extends State<InAppWebviewView> {
   int loadingPercentage = 0;
   bool hideSubtitle = false;
 
+  /// False while a FurAffinity page waits for the account to be put in
+  /// the jar (r41: without it the page was a guest visit).
+  bool sessionReady = true;
+
   @override
   void initState() {
     super.initState();
+
+    final FurAffinitySessionHandler furAffinity = FurAffinitySessionHandler.instance;
+    if (furAffinity.webViewNeedsSession(widget.initialUrl)) {
+      sessionReady = false;
+      furAffinity.prepareWebView(widget.initialUrl).whenComplete(() {
+        if (mounted) setState(() => sessionReady = true);
+      });
+    }
 
     settings = InAppWebViewSettings(
       userAgent: widget.userAgent ?? Tools.browserUserAgent,
@@ -57,7 +170,9 @@ class _InAppWebviewViewState extends State<InAppWebviewView> {
       allowsInlineMediaPlayback: true,
       useShouldInterceptAjaxRequest: false,
       thirdPartyCookiesEnabled: true,
-      javaScriptCanOpenWindowsAutomatically: true,
+      javaScriptCanOpenWindowsAutomatically: !widget.blockPopupsAndAds,
+      supportMultipleWindows: !widget.blockPopupsAndAds,
+      useShouldOverrideUrlLoading: widget.blockPopupsAndAds || widget.restrictMainFrameHosts != null,
     );
 
     if (Platform.isAndroid || Platform.isIOS) {
@@ -79,6 +194,12 @@ class _InAppWebviewViewState extends State<InAppWebviewView> {
       );
     }
   }
+
+  bool isNavigationAllowed(String url) => isWebviewNavigationAllowed(
+    url,
+    initialUrl: widget.initialUrl,
+    allowedHosts: widget.allowedHosts,
+  );
 
   Future<void> saveCookiesOnWidnows(
     InAppWebViewController controller,
@@ -106,6 +227,9 @@ class _InAppWebviewViewState extends State<InAppWebviewView> {
 
   @override
   void dispose() {
+    if (FurAffinitySessionHandler.isSiteUrl(widget.initialUrl)) {
+      FurAffinitySessionHandler.instance.syncAfterWebView().ignore();
+    }
     pullToRefreshController?.dispose();
     controller.future.then((controller) => controller.dispose());
     super.dispose();
@@ -123,16 +247,51 @@ class _InAppWebviewViewState extends State<InAppWebviewView> {
       ),
       body: Stack(
         children: [
-          if (Tools.isOnPlatformWithWebviewSupport)
+          if (Tools.isOnPlatformWithWebviewSupport && sessionReady)
             InAppWebView(
               initialUrlRequest: URLRequest(url: WebUri(widget.initialUrl)),
               initialSettings: settings,
               pullToRefreshController: pullToRefreshController,
               webViewEnvironment: webViewEnvironment,
+              initialUserScripts: UnmodifiableListView(widget.initialUserScripts),
               onWebViewCreated: (webViewController) {
                 controller.complete(webViewController);
+                widget.onWebViewReady?.call(webViewController);
                 // webViewController.clearCache();
               },
+              // The solver too: an ad's window.open replaced the whole solver
+              // page with hentai4fap.com in a log (2026-09-02 12:58), so the
+              // check could not be completed. Turnstile never opens a window.
+              onCreateWindow: (widget.blockPopupsAndAds || widget.restrictMainFrameHosts != null)
+                  ? (controller, createWindowAction) async {
+                      // Refuse it outright: returning false tells the webview
+                      // not to open the window at all.
+                      return false;
+                    }
+                  : null,
+              shouldOverrideUrlLoading: (widget.blockPopupsAndAds || widget.restrictMainFrameHosts != null)
+                  ? (controller, action) async {
+                      final String? url = action.request.url?.toString();
+                      if (widget.restrictMainFrameHosts != null) {
+                        // Solver policy: judge the main frame only.
+                        if (!action.isForMainFrame) return NavigationActionPolicy.ALLOW;
+                        if (url == null || url.isEmpty) return NavigationActionPolicy.ALLOW;
+                        return isMainFrameNavigationAllowed(
+                          url,
+                          initialUrl: widget.initialUrl,
+                          allowedHosts: widget.restrictMainFrameHosts!,
+                        )
+                            ? NavigationActionPolicy.ALLOW
+                            : NavigationActionPolicy.CANCEL;
+                      }
+                      if (url == null || url.isEmpty) {
+                        return NavigationActionPolicy.CANCEL;
+                      }
+                      return isNavigationAllowed(url)
+                          ? NavigationActionPolicy.ALLOW
+                          : NavigationActionPolicy.CANCEL;
+                    }
+                  : null,
               onLoadStart: (controller, url) {
                 setState(() {
                   loadingPercentage = 0;
@@ -144,6 +303,7 @@ class _InAppWebviewViewState extends State<InAppWebviewView> {
                 });
               },
               onLoadResource: (controller, res) {
+                widget.onResourceLoaded?.call(res.url?.toString() ?? '');
                 setState(() {
                   loadingPercentage = 100;
                 });
@@ -218,7 +378,7 @@ class _InAppWebviewViewState extends State<InAppWebviewView> {
                     ),
                     IconButton(
                       iconSize: 22,
-                      icon: const Icon(Icons.close),
+                      icon: const Icon(Symbols.close_rounded),
                       onPressed: () {
                         setState(() {
                           hideSubtitle = true;
@@ -264,7 +424,7 @@ class _InAppWebviewViewState extends State<InAppWebviewView> {
                     ),
                     IconButton(
                       iconSize: 22,
-                      icon: const Icon(Icons.close),
+                      icon: const Icon(Symbols.close_rounded),
                       onPressed: () {
                         setState(() {
                           hideSubtitle = true;
@@ -281,7 +441,7 @@ class _InAppWebviewViewState extends State<InAppWebviewView> {
               bottom: MediaQuery.paddingOf(context).bottom + 20,
               right: 20,
               child: IconButton.filled(
-                icon: const Icon(Icons.info_outline),
+                icon: const Icon(Symbols.info_rounded),
                 onPressed: () {
                   setState(() {
                     hideSubtitle = false;

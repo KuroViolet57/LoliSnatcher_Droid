@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -316,7 +318,7 @@ class _AddNewTabDialogState extends State<AddNewTabDialog> {
                   ElevatedButton.icon(
                     onPressed: addNewTab,
                     label: Text(context.loc.tabs.add),
-                    icon: const Icon(Icons.add_circle_outline),
+                    icon: const Icon(Symbols.add_circle_rounded),
                   ),
                 ],
               ),

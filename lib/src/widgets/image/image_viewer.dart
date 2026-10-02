@@ -8,6 +8,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import 'package:dio/dio.dart';
+import 'package:lolisnatcher/src/data/modular_ui.dart';
 import 'package:lolisnatcher/src/utils/extensions.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:photo_view/photo_view.dart';
@@ -15,12 +16,14 @@ import 'package:image/image.dart' as img;
 
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/services/image_writer.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
+import 'package:lolisnatcher/src/utils/media_size_cap.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 import 'package:lolisnatcher/src/widgets/common/media_loading.dart';
 import 'package:lolisnatcher/src/widgets/image/custom_network_image.dart';
@@ -157,6 +160,11 @@ class ImageViewerState extends State<ImageViewer> {
     if (error is DioException && CancelToken.isCancel(error)) {
       //
     } else {
+      BooruHandlerFactory.onMediaErrorFor(
+        widget.booru,
+        useFullImage ? widget.booruItem.fileURL : widget.booruItem.sampleURL,
+        error,
+      );
       if (error is DioException) {
         stopLoading(
           reason: .error,
@@ -229,8 +237,8 @@ class ImageViewerState extends State<ImageViewer> {
         stopLoading(
           reason: .hidden,
           details: settingsHandler
-              .parseTagsList(
-                widget.booruItem.tagsList,
+              .parseTagsListForItem(
+                widget.booruItem,
                 isCapped: true,
               )
               .hiddenTags
@@ -238,6 +246,15 @@ class ImageViewerState extends State<ImageViewer> {
         );
         return;
       }
+    }
+
+    // A source that knows its media host is down from this network says so
+    // now, instead of the viewer spinning until the connect timeout.
+    final String plannedUrl = useFullImage ? widget.booruItem.fileURL : widget.booruItem.sampleURL;
+    final String? outage = BooruHandlerFactory.mediaOutageNoticeFor(widget.booru, plannedUrl);
+    if (outage != null) {
+      stopLoading(reason: .error, title: 'File host unreachable', details: outage);
+      return;
     }
 
     isStopped.value = false;
@@ -349,6 +366,10 @@ class ImageViewerState extends State<ImageViewer> {
               checkForReferer: true,
             ),
             withCache: settingsHandler.mediaCache,
+            // Bounds the wait for headers and each gap between chunks (dio 5's
+            // receiveTimeout), not the whole download: a host that answers
+            // nothing ends in a named error with a retry instead of a spinner.
+            receiveTimeout: const Duration(seconds: 60),
             cacheFolder: imageFolder,
             fileNameExtras: widget.booruItem.fileNameExtras,
             onError: onError,
@@ -366,6 +387,10 @@ class ImageViewerState extends State<ImageViewer> {
               checkForReferer: true,
             ),
             withCache: settingsHandler.mediaCache,
+            // Bounds the wait for headers and each gap between chunks (dio 5's
+            // receiveTimeout), not the whole download: a host that answers
+            // nothing ends in a named error with a retry instead of a spinner.
+            receiveTimeout: const Duration(seconds: 60),
             cacheFolder: imageFolder,
             fileNameExtras: widget.booruItem.fileNameExtras,
             onError: onError,
@@ -385,6 +410,9 @@ class ImageViewerState extends State<ImageViewer> {
       provider = ResizeImage(
         provider,
         width: widthLimit,
+        // r57: bound the height too, so a very tall picture cannot decode into
+        // hundreds of MB - the width limit alone never caught those.
+        height: ModularUi.isOn(ModularUi.imageCap4k) ? MediaSizeCap.imageLongEdge : null,
         policy: ResizeImagePolicy.fit,
         allowUpscaling: false,
       );
@@ -513,6 +541,10 @@ class ImageViewerState extends State<ImageViewer> {
     if (blockPreloadState.isTooBig) {
       blockPreloadState = .ignore;
     }
+    await BooruHandlerFactory.beforeMediaRetryFor(
+      widget.booru,
+      useFullImage ? widget.booruItem.fileURL : widget.booruItem.sampleURL,
+    );
 
     isStopped.value = false;
     WidgetsBinding.instance.addPostFrameCallback((_) {

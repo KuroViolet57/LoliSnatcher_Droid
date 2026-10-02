@@ -2,8 +2,11 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 
+import 'package:lolisnatcher/src/utils/perf_trace.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/widgets/common/html.dart';
@@ -50,6 +53,7 @@ class SettingsButton extends StatelessWidget {
   bool get interactive => action != null || page != null;
 
   void onTapAction(BuildContext context) {
+    PerfTrace.instance.event('ui.button', name);
     if (action != null) {
       action?.call();
     } else if (page != null) {
@@ -59,34 +63,50 @@ class SettingsButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // An empty, disabled button is the pages' spacer: since the settings
+    // became cards it drew a blank card (r39).
+    if (name.isEmpty && !enabled && icon == null && subtitle == null && page == null && action == null) {
+      return const SizedBox(height: 10);
+    }
     if (iconOnly) {
-      return GestureDetector(
-        onLongPress: onLongPress == null ? null : () => {onLongPress!()},
-        child: IconButton(
-          icon: icon ?? const Icon(null),
-          onPressed: interactive ? () => onTapAction(context) : null,
+      // One InkResponse for both gestures — an IconButton inside a
+      // GestureDetector swallows the ancestor's long press (its own ink tap
+      // recognizer is innermost in the gesture arena).
+      return InkResponse(
+        onTap: interactive ? () => onTapAction(context) : null,
+        onLongPress: onLongPress == null ? null : () => onLongPress!(),
+        radius: 24,
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: icon ?? const Icon(null),
         ),
       );
     }
 
-    return Material(
-      color: Colors.transparent,
-      child: ListTile(
-        leading: icon,
-        title: useHtml ? LoliHtml(name) : Text(name),
-        subtitle: subtitle,
-        trailing: trailingIcon,
-        enabled: enabled,
-        dense: dense,
-        onTap: interactive ? () => onTapAction(context) : null,
-        onLongPress: onLongPress,
-        shape: Border(
-          // draw top border when item is in the middle of other items, but they are not listtile
-          top: drawTopBorder ? BorderSide(color: Theme.of(context).dividerColor, width: borderWidth) : BorderSide.none,
-          // draw bottom border when item is among other listtiles, but not when it's the last one
-          bottom: drawBottomBorder
-              ? BorderSide(color: Theme.of(context).dividerColor, width: borderWidth)
-              : BorderSide.none,
+    final theme = Theme.of(context);
+    final BorderRadius radius = BorderRadius.circular(13);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+      child: Material(
+        color: theme.colorScheme.surfaceContainer,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: radius,
+          side: BorderSide(color: theme.colorScheme.outlineVariant),
+        ),
+        child: ListTile(
+          leading: icon,
+          title: useHtml ? LoliHtml(name) : Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
+          subtitle: subtitle,
+          trailing: trailingIcon ??
+              (page != null
+                  ? Icon(Symbols.chevron_right_rounded, color: theme.colorScheme.onSurfaceVariant)
+                  : null),
+          enabled: enabled,
+          dense: dense,
+          onTap: interactive ? () => onTapAction(context) : null,
+          onLongPress: onLongPress,
+          shape: RoundedRectangleBorder(borderRadius: radius),
         ),
       ),
     );
@@ -221,55 +241,58 @@ class SettingsToggle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: ListTile(
-        enabled: enabled,
-        title: Row(
-          children: [
-            if (leadingIcon != null)
+    final theme = Theme.of(context);
+    final BorderRadius radius = BorderRadius.circular(13);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+      child: Material(
+        color: theme.colorScheme.surfaceContainer,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: radius,
+          side: BorderSide(color: theme.colorScheme.outlineVariant),
+        ),
+        child: ListTile(
+          enabled: enabled,
+          title: Row(
+            children: [
+              if (leadingIcon != null)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: leadingIcon,
+                ),
+              Expanded(
+                child: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+              ),
+              const SizedBox(width: 4),
+              if (defaultValue != null && value != defaultValue)
+                Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: IconButton(
+                    icon: const Icon(Symbols.restore_rounded),
+                    onPressed: () {
+                      onChanged(defaultValue!);
+                    },
+                  ),
+                ),
+            ],
+          ),
+          subtitle: subtitle,
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
               Padding(
                 padding: const EdgeInsets.only(right: 8),
-                child: leadingIcon,
+                child: trailingIcon,
               ),
-            Expanded(
-              child: Text(title),
-            ),
-            const SizedBox(width: 4),
-            if (defaultValue != null && value != defaultValue)
-              Padding(
-                padding: const EdgeInsets.only(left: 8),
-                child: IconButton(
-                  icon: const Icon(Icons.restore),
-                  onPressed: () {
-                    onChanged(defaultValue!);
-                  },
-                ),
+              Switch(
+                value: value,
+                onChanged: enabled ? onChanged : null,
               ),
-          ],
-        ),
-        subtitle: subtitle,
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: trailingIcon,
-            ),
-            Switch(
-              value: value,
-              onChanged: enabled ? onChanged : null,
-            ),
-          ],
-        ),
-        onTap: () => onChanged(!value),
-        shape: Border(
-          // draw top border when item is in the middle of other items, but they are not listtile
-          top: drawTopBorder ? BorderSide(color: Theme.of(context).dividerColor, width: borderWidth) : BorderSide.none,
-          // draw bottom border when item is among other listtiles, but not when it's the last one
-          bottom: drawBottomBorder
-              ? BorderSide(color: Theme.of(context).dividerColor, width: borderWidth)
-              : BorderSide.none,
+            ],
+          ),
+          onTap: () => onChanged(!value),
+          shape: RoundedRectangleBorder(borderRadius: radius),
         ),
       ),
     );
@@ -312,45 +335,50 @@ class SettingsToggleTristate extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: ListTile(
-        title: Row(
-          children: [
-            if (leadingIcon != null)
-              Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: leadingIcon,
-              ),
-            Expanded(
-              child: Text(title),
-            ),
-            const SizedBox(width: 4),
-            if (defaultValue != null && value != defaultValue)
-              Padding(
-                padding: const EdgeInsets.only(left: 8),
-                child: IconButton(
-                  icon: const Icon(Icons.restore),
-                  onPressed: () {
-                    onChanged(defaultValue);
-                  },
+    final theme = Theme.of(context);
+    final BorderRadius radius = BorderRadius.circular(13);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+      child: Material(
+        color: theme.colorScheme.surfaceContainer,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: radius,
+          side: BorderSide(color: theme.colorScheme.outlineVariant),
+        ),
+        child: ListTile(
+          title: Row(
+            children: [
+              if (leadingIcon != null)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: leadingIcon,
                 ),
+              Expanded(
+                child: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
               ),
-            trailingIcon ?? const SizedBox(width: 8),
-          ],
-        ),
-        subtitle: subtitle,
-        trailing: Checkbox(
-          value: value,
-          tristate: true,
-          onChanged: (_) => _onChangedToggle(),
-        ),
-        onTap: _onChangedToggle,
-        shape: Border(
-          top: drawTopBorder ? BorderSide(color: Theme.of(context).dividerColor, width: borderWidth) : BorderSide.none,
-          bottom: drawBottomBorder
-              ? BorderSide(color: Theme.of(context).dividerColor, width: borderWidth)
-              : BorderSide.none,
+              const SizedBox(width: 4),
+              if (defaultValue != null && value != defaultValue)
+                Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: IconButton(
+                    icon: const Icon(Symbols.restore_rounded),
+                    onPressed: () {
+                      onChanged(defaultValue);
+                    },
+                  ),
+                ),
+              trailingIcon ?? const SizedBox(width: 8),
+            ],
+          ),
+          subtitle: subtitle,
+          trailing: Checkbox(
+            value: value,
+            tristate: true,
+            onChanged: (_) => _onChangedToggle(),
+          ),
+          onTap: _onChangedToggle,
+          shape: RoundedRectangleBorder(borderRadius: radius),
         ),
       ),
     );
@@ -387,8 +415,17 @@ class SettingsSegmentedButton<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
+    final cardTheme = Theme.of(context);
+    final BorderRadius cardRadius = BorderRadius.circular(13);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+      child: Material(
+      color: cardTheme.colorScheme.surfaceContainer,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: cardRadius,
+        side: BorderSide(color: cardTheme.colorScheme.outlineVariant),
+      ),
       child: ListTile(
         title: Row(
           children: [
@@ -398,14 +435,14 @@ class SettingsSegmentedButton<T> extends StatelessWidget {
                 child: leadingIcon,
               ),
             Expanded(
-              child: Text(title),
+              child: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
             ),
             const SizedBox(width: 4),
             if (defaultValue != null && value != defaultValue)
               Padding(
                 padding: const EdgeInsets.only(left: 8),
                 child: IconButton(
-                  icon: const Icon(Icons.restore),
+                  icon: const Icon(Symbols.restore_rounded),
                   onPressed: () {
                     onChanged(defaultValue as T);
                   },
@@ -466,14 +503,8 @@ class SettingsSegmentedButton<T> extends StatelessWidget {
             ],
           ),
         ),
-        shape: Border(
-          // draw top border when item is in the middle of other items, but they are not listtile
-          top: drawTopBorder ? BorderSide(color: Theme.of(context).dividerColor, width: borderWidth) : BorderSide.none,
-          // draw bottom border when item is among other listtiles, but not when it's the last one
-          bottom: drawBottomBorder
-              ? BorderSide(color: Theme.of(context).dividerColor, width: borderWidth)
-              : BorderSide.none,
-        ),
+        shape: RoundedRectangleBorder(borderRadius: cardRadius),
+      ),
       ),
     );
   }
@@ -572,8 +603,17 @@ class SettingsDropdown<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
+    final cardTheme = Theme.of(context);
+    final BorderRadius cardRadius = BorderRadius.circular(13);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+      child: Material(
+      color: cardTheme.colorScheme.surfaceContainer,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: cardRadius,
+        side: BorderSide(color: cardTheme.colorScheme.outlineVariant),
+      ),
       child: ListTile(
         title: Column(
           mainAxisSize: MainAxisSize.min,
@@ -582,7 +622,7 @@ class SettingsDropdown<T> extends StatelessWidget {
             if (!titleAsLabel)
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
-                child: Text(title),
+                child: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
               ),
             LoliDropdown(
               value: value,
@@ -620,19 +660,13 @@ class SettingsDropdown<T> extends StatelessWidget {
             (onReset != null
                 ? IconButton(
                     onPressed: onReset,
-                    icon: const Icon(Icons.refresh_rounded),
+                    icon: const Icon(Symbols.refresh_rounded),
                   )
                 : null),
         dense: false,
         contentPadding: contentPadding,
-        shape: Border(
-          // draw top border when item is in the middle of other items, but they are not listtile
-          top: drawTopBorder ? BorderSide(color: Theme.of(context).dividerColor, width: borderWidth) : BorderSide.none,
-          // draw bottom border when item is among other listtiles, but not when it's the last one
-          bottom: drawBottomBorder
-              ? BorderSide(color: Theme.of(context).dividerColor, width: borderWidth)
-              : BorderSide.none,
-        ),
+        shape: RoundedRectangleBorder(borderRadius: cardRadius),
+      ),
       ),
     );
   }
@@ -802,54 +836,53 @@ class SettingsOptionsList<T> extends StatelessWidget {
             tileColor: index.isOdd ? oddItemColor : evenItemColor,
             leading: getItemLeading(value),
             title: Text(getItemTitle(value)),
-            trailing: isSelected ? const Icon(Icons.check, size: 24) : null,
+            trailing: isSelected ? const Icon(Symbols.check_rounded, size: 24) : null,
           ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: Column(
-        children: [
-          ListTile(
-            title: Text(title),
-            subtitle: subtitle,
-            trailing:
-                trailingIcon ??
-                (onReset != null
-                    ? IconButton(
-                        onPressed: onReset,
-                        icon: const Icon(Icons.refresh_rounded),
-                      )
-                    : null),
-            dense: false,
-            shape: Border(
-              top: drawTopBorder
-                  ? BorderSide(color: Theme.of(context).dividerColor, width: borderWidth)
-                  : BorderSide.none,
+    final cardTheme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+      child: Material(
+        color: cardTheme.colorScheme.surfaceContainer,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(13),
+          side: BorderSide(color: cardTheme.colorScheme.outlineVariant),
+        ),
+        child: Column(
+          children: [
+            ListTile(
+              title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+              subtitle: subtitle,
+              trailing:
+                  trailingIcon ??
+                  (onReset != null
+                      ? IconButton(
+                          onPressed: onReset,
+                          icon: const Icon(Symbols.refresh_rounded),
+                        )
+                      : null),
+              dense: false,
             ),
-          ),
-          ListTile(
-            title: Column(
-              children: [
-                for (final item in items)
-                  getItemWidget(
-                    context,
-                    item,
-                    value == item,
-                    items.indexOf(item),
-                  ),
-              ],
+            ListTile(
+              title: Column(
+                children: [
+                  for (final item in items)
+                    getItemWidget(
+                      context,
+                      item,
+                      value == item,
+                      items.indexOf(item),
+                    ),
+                ],
+              ),
             ),
-            shape: Border(
-              bottom: drawBottomBorder
-                  ? BorderSide(color: Theme.of(context).dividerColor, width: borderWidth)
-                  : BorderSide.none,
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1024,7 +1057,7 @@ class _SettingsTextInputState extends State<SettingsTextInput> {
           IconButton(
             key: const Key('reset-button'),
             icon: Icon(
-              Icons.refresh,
+              Symbols.refresh_rounded,
               color: Theme.of(context).colorScheme.onSurface,
             ),
             onPressed: () {
@@ -1035,18 +1068,18 @@ class _SettingsTextInputState extends State<SettingsTextInput> {
         if (widget.numberButtons && (isFocused || widget.alwaysShowNumberButtons))
           Container(
             key: const Key('number-button-down'),
-            child: buildNumberButton(stepNumberDown, Icons.remove),
+            child: buildNumberButton(stepNumberDown, Symbols.remove_rounded),
           ),
         if (widget.numberButtons && (isFocused || widget.alwaysShowNumberButtons))
           Container(
             key: const Key('number-button-up'),
-            child: buildNumberButton(stepNumberUp, Icons.add),
+            child: buildNumberButton(stepNumberUp, Symbols.add_rounded),
           ),
         if (widget.clearable && isFocused && widget.controller.text.isNotEmpty)
           IconButton(
             key: const Key('clear-button'),
             icon: Icon(
-              Icons.close_rounded,
+              Symbols.close_rounded,
               color: Theme.of(context).colorScheme.onSurface,
             ),
             onPressed: () {
@@ -1057,7 +1090,7 @@ class _SettingsTextInputState extends State<SettingsTextInput> {
         if (widget.copyable && isFocused)
           IconButton(
             key: const Key('copy-button'),
-            icon: Icon(Icons.copy, color: Theme.of(context).colorScheme.onSurface),
+            icon: Icon(Symbols.content_copy_rounded, color: Theme.of(context).colorScheme.onSurface),
             onPressed: () {
               Clipboard.setData(ClipboardData(text: widget.controller.text));
             },
@@ -1072,7 +1105,7 @@ class _SettingsTextInputState extends State<SettingsTextInput> {
 
               return IconButton(
                 key: const Key('paste-button'),
-                icon: Icon(Icons.paste, color: Theme.of(context).colorScheme.onSurface),
+                icon: Icon(Symbols.content_paste_rounded, color: Theme.of(context).colorScheme.onSurface),
                 onPressed: () async {
                   final data = snapshot.data?.text;
                   if (data?.isNotEmpty == true) {
@@ -1088,7 +1121,7 @@ class _SettingsTextInputState extends State<SettingsTextInput> {
           IconButton(
             key: const Key('obscure-button'),
             icon: Icon(
-              isObscured ? Icons.visibility : Icons.visibility_off,
+              isObscured ? Symbols.visibility_rounded : Symbols.visibility_off_rounded,
               color: Theme.of(context).colorScheme.onSurface,
             ),
             onPressed: toggleObscure,
@@ -1097,7 +1130,7 @@ class _SettingsTextInputState extends State<SettingsTextInput> {
           IconButton(
             key: const Key('submit-button'),
             icon: Icon(
-              widget.submitIcon ?? (widget.onSubmitted != null ? Icons.send : Icons.done),
+              widget.submitIcon ?? (widget.onSubmitted != null ? Symbols.send_rounded : Symbols.done_rounded),
               color: Theme.of(context).colorScheme.onSurface,
             ),
             onPressed: () {
@@ -1114,7 +1147,7 @@ class _SettingsTextInputState extends State<SettingsTextInput> {
         else if (!isFocused)
           IconButton(
             key: const Key('edit-button'),
-            icon: Icon(Icons.edit, color: Theme.of(context).colorScheme.onSurface),
+            icon: Icon(Symbols.edit_rounded, color: Theme.of(context).colorScheme.onSurface),
             onPressed: _focusNode.requestFocus,
           ),
       ],
@@ -1186,29 +1219,30 @@ class _SettingsTextInputState extends State<SettingsTextInput> {
       );
     }
 
-    return Material(
-      color: Colors.transparent,
-      child: ListTile(
-        title: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (!widget.titleAsLabel) Text(widget.title),
-            field,
-          ],
+    final theme = Theme.of(context);
+    final BorderRadius radius = BorderRadius.circular(13);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+      child: Material(
+        color: theme.colorScheme.surfaceContainer,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: radius,
+          side: BorderSide(color: theme.colorScheme.outlineVariant),
         ),
-        subtitle: widget.subtitle,
-        trailing: widget.trailingIcon,
-        dense: false,
-        shape: Border(
-          // draw top border when item is in the middle of other items, but they are not listtile
-          top: widget.drawTopBorder
-              ? BorderSide(color: Theme.of(context).dividerColor, width: borderWidth)
-              : BorderSide.none,
-          // draw bottom border when item is among other listtiles, but not when it's the last one
-          bottom: widget.drawBottomBorder
-              ? BorderSide(color: Theme.of(context).dividerColor, width: borderWidth)
-              : BorderSide.none,
+        child: ListTile(
+          title: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (!widget.titleAsLabel) Text(widget.title, style: const TextStyle(fontWeight: FontWeight.w600)),
+              field,
+            ],
+          ),
+          subtitle: widget.subtitle,
+          trailing: widget.trailingIcon,
+          dense: false,
+          shape: RoundedRectangleBorder(borderRadius: radius),
         ),
       ),
     );
@@ -1327,7 +1361,7 @@ class SettingsBottomSheet extends StatelessWidget {
                           Padding(
                             padding: const EdgeInsets.fromLTRB(0, 12, 16, 0),
                             child: IconButton(
-                              icon: const Icon(Icons.close_rounded),
+                              icon: const Icon(Symbols.close_rounded),
                               onPressed: () {
                                 Navigator.of(context).pop();
                               },

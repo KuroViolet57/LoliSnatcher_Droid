@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:get/get.dart';
 
 import 'package:lolisnatcher/src/data/booru.dart';
@@ -49,7 +51,7 @@ class MergeBooruToggleAndSelector extends StatelessWidget {
                       ),
                     ],
                   ),
-                  leadingIcon: Icons.error,
+                  leadingIcon: Symbols.error_rounded,
                   leadingIconColor: Colors.red,
                 );
               } else {

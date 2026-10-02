@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/utils/debouncer.dart';
@@ -211,7 +213,7 @@ class _MediaLoadingState extends State<MediaLoading> {
                   const SizedBox(height: 10),
                   ElevatedButton.icon(
                     icon: const Icon(
-                      Icons.play_arrow,
+                      Symbols.play_arrow_rounded,
                       size: 40,
                       color: Colors.blue,
                     ),
@@ -264,7 +266,7 @@ class _MediaLoadingState extends State<MediaLoading> {
                   if (percentDone < 1)
                     ElevatedButton.icon(
                       icon: Icon(
-                        Icons.stop,
+                        Symbols.stop_rounded,
                         size: 40,
                         color: Theme.of(context).colorScheme.error,
                       ),
@@ -373,7 +375,7 @@ class _MediaLoadingState extends State<MediaLoading> {
         const SizedBox(height: 10),
         ElevatedButton.icon(
           icon: const Icon(
-            Icons.play_arrow,
+            Symbols.play_arrow_rounded,
             size: 40,
             color: Colors.blue,
           ),
@@ -430,7 +432,7 @@ class _MediaLoadingState extends State<MediaLoading> {
           if (percentDone < 1)
             ElevatedButton.icon(
               icon: Icon(
-                Icons.stop,
+                Symbols.stop_rounded,
                 size: 40,
                 color: Theme.of(context).colorScheme.error,
               ),

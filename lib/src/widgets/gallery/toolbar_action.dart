@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:lolisnatcher/src/utils/perf_trace.dart';
+
 class ToolbarAction extends StatelessWidget {
   const ToolbarAction({
     required this.icon,
@@ -32,7 +34,12 @@ class ToolbarAction extends StatelessWidget {
             IconButton(
               icon: icon,
               color: onTap != null ? Colors.white : Theme.of(context).colorScheme.onSurface,
-              onPressed: onTap,
+              onPressed: onTap == null
+                  ? null
+                  : () {
+                      PerfTrace.instance.event('ui.toolbar', tooltip ?? 'action');
+                      onTap!();
+                    },
               tooltip: onLongTap != null ? null : tooltip,
             ),
             ?subIcon,

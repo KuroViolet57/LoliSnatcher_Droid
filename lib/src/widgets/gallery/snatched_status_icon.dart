@@ -2,9 +2,12 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/services/download_folders.dart';
 import 'package:lolisnatcher/src/services/image_writer.dart';
 import 'package:lolisnatcher/src/services/saf_file_cache.dart';
 import 'package:lolisnatcher/src/widgets/common/pulse_widget.dart';
@@ -41,14 +44,14 @@ class _SnatchedStatusIconState extends State<SnatchedStatusIcon> {
     });
 
     final String extPath = SettingsHandler.instance.extPathOverride;
+    final String fileName = ImageWriter().getFilename(widget.item, widget.booru);
     if (extPath.isNotEmpty) {
-      fileExists = await SAFFileCache.instance.existsFile(
-        extPath,
-        ImageWriter().getFilename(widget.item, widget.booru),
-      );
+      fileExists = await SAFFileCache.instance.existsFile(extPath, fileName);
     } else {
       fileExists = await File(await ImageWriter().getFilePath(widget.item, widget.booru)).exists();
     }
+    // r82: or in a download folder used before the current one.
+    if (!fileExists) fileExists = await DownloadFolders.earlierFolderWith(fileName) != null;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -78,7 +81,7 @@ class _SnatchedStatusIconState extends State<SnatchedStatusIcon> {
     return PulseWidget(
       enabled: running,
       child: Icon(
-        Icons.save_alt,
+        Symbols.save_alt_rounded,
         size: Theme.of(context).buttonTheme.height / 2.1,
         color: fileExists ? Colors.green : Colors.white,
       ),

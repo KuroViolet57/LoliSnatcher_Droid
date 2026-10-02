@@ -5,6 +5,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:get_it/get_it.dart';
 import 'package:local_auth/local_auth.dart';
 
@@ -96,14 +98,14 @@ class LocalAuthHandler {
           case LocalAuthExceptionCode.noBiometricHardware:
             FlashElements.showSnackbar(
               title: Text(context.loc.authentication.noBiometricHardwareAvailable),
-              leadingIcon: Icons.warning_amber,
+              leadingIcon: Symbols.warning_amber_rounded,
             );
             break;
           case LocalAuthExceptionCode.temporaryLockout:
           case LocalAuthExceptionCode.biometricLockout:
             FlashElements.showSnackbar(
               title: Text(context.loc.authentication.temporaryLockout),
-              leadingIcon: Icons.warning_amber,
+              leadingIcon: Symbols.warning_amber_rounded,
             );
             break;
           case LocalAuthExceptionCode.authInProgress:
@@ -114,7 +116,7 @@ class LocalAuthHandler {
           default:
             FlashElements.showSnackbar(
               title: Text(context.loc.authentication.somethingWentWrong(error: e.code.name)),
-              leadingIcon: Icons.warning_amber,
+              leadingIcon: Symbols.warning_amber_rounded,
             );
             break;
         }

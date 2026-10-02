@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:lolisnatcher/src/handlers/local_auth_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 
@@ -43,7 +45,7 @@ class LockScreenPage extends StatelessWidget {
                         child: const Padding(
                           padding: EdgeInsets.all(12),
                           child: Icon(
-                            Icons.fingerprint,
+                            Symbols.fingerprint_rounded,
                             size: 80,
                           ),
                         ),

@@ -69,6 +69,38 @@ class DioNetwork {
     return Duration(seconds: 1 << (attempt - 1));
   }
 
+  // ── shared HTTP client ────────────────────────────────────────────────
+  // Previously every request built a fresh Dio + HttpClient and closed it
+  // afterwards, throwing away the TCP connection AND the negotiated TLS
+  // session — so each request (search, thumbnail, video probe...) paid a
+  // full handshake, brutal on slow/keep-alive-friendly boorus. Now a single
+  // long-lived HttpClient is shared by every Dio: dart:io pools connections
+  // per host and reuses TLS sessions, so back-to-back requests to the same
+  // booru skip the handshake entirely. The client is NEVER closed per
+  // request (see the callers) — it lives for the app session.
+  static HttpClient? _sharedHttpClient;
+
+  static HttpClient get sharedHttpClient {
+    final existing = _sharedHttpClient;
+    if (existing != null) return existing;
+    final client = HttpClient()
+      // Keep idle connections warm long enough to be reused while scrolling a
+      // grid / paging a feed, without holding sockets open forever.
+      ..idleTimeout = const Duration(seconds: 20)
+      // A host that never completes the handshake used to leave the viewer on
+      // "loading" forever (no request on that path carried any timeout); with
+      // this it ends in a named connectionTimeout error with a retry.
+      ..connectionTimeout = const Duration(seconds: 30)
+      // Bound per-host sockets so a burst of thumbnails can't exhaust fds;
+      // dio queues beyond this and reuses as they free up.
+      ..maxConnectionsPerHost = 8
+      // Reads the live setting on each handshake, so toggling "allow
+      // self-signed" takes effect without rebuilding the client.
+      ..badCertificateCallback = (_, _, _) => SettingsHandler.instance.allowSelfSignedCerts;
+    _sharedHttpClient = client;
+    return client;
+  }
+
   static Dio getClient({
     String? baseUrl,
     bool skipLogging = false,
@@ -76,38 +108,21 @@ class DioNetwork {
     final dio = Dio();
 
     final settingsHandler = SettingsHandler.instance;
-    // final proxyType = ProxyType.fromName(settingsHandler.proxyType);
-    // if (settingsHandler.useHttp2 &&
-    //     (proxyType.isDirect || (proxyType.isSystem && systemProxyAddress.isEmpty) || getProxyConfigAddress().isEmpty)) {
-    //   // dio.httpClientAdapter = NativeAdapter();
-    //   dio.httpClientAdapter = Http2Adapter(
-    //     ConnectionManager(
-    //       idleTimeout: const Duration(seconds: 30),
-    //     ),
-    //   );
-    // }
 
     dio.options.baseUrl = baseUrl ?? '';
-    // dio.options.connectTimeout = Duration(seconds: 10);
-    // dio.options.receiveTimeout = Duration(seconds: 30);
-    // dio.options.sendTimeout = Duration(seconds: 10);
 
-    // Honour the "Allow self-signed certificates" setting on the actual Dio
-    // client. This is what lets a user-installed MITM CA (e.g. AdGuard HTTPS
-    // filtering, or a debugging proxy) work: dart:io's HttpClient uses its own
-    // trust store and ignores Android's user-CA config, so without this the
-    // handshake fails with CERTIFICATE_VERIFY_FAILED even though the user
-    // deliberately installed the filtering CA. The created HttpClient still
-    // inherits any global proxy override.
+    // Reuse the shared, connection-pooling HttpClient (see above). The
+    // adapter must NOT close it — closing would tear down every other Dio's
+    // pooled connections — so createHttpClient just hands back the singleton.
+    // NOTE: the returned Dio must never have close() called on it — its
+    // adapter's close() would close the shared HttpClient. Callers below drop
+    // the Dio (GC) instead of closing it.
     dio.httpClientAdapter = IOHttpClientAdapter(
-      createHttpClient: () {
-        final HttpClient client = HttpClient();
-        client.badCertificateCallback = (_, _, _) => settingsHandler.allowSelfSignedCerts;
-        return client;
-      },
+      createHttpClient: () => sharedHttpClient,
     );
 
     if (!skipLogging) {
+      dio.interceptors.add(Logger.requestDataInterceptor);
       dio.interceptors.add(Logger.dioInterceptor!);
       dio.interceptors.add(settingsHandler.alice.getDioInterceptor());
     }
@@ -132,7 +147,15 @@ class DioNetwork {
       throw Exception('Url parsing failed: $url');
     }
 
-    final String cleanUrl = temp.replace(queryParameters: {}).toString();
+    String cleanUrl = temp.replace(queryParameters: {}).toString();
+    // Uri.replace with an empty map leaves a dangling '?', and Dio then
+    // appends its own params AFTER it — every request went out as
+    // `path?&a=b`. Most servers shrug; Cloudflare's WAF documents
+    // "malformed data" as a block trigger, and hanime1.me's block page was
+    // reproduced with exactly such a URL.
+    if (cleanUrl.endsWith('?')) {
+      cleanUrl = cleanUrl.substring(0, cleanUrl.length - 1);
+    }
     final Map<String, dynamic> queryParams = {
       ...temp.queryParameters,
       ...?givenQueryParams,
@@ -159,11 +182,27 @@ class DioNetwork {
             return handler.next(response);
           }
 
+          // MERGE, never concatenate — and never join with a bare space.
+          // This used to build `'$oldCookie $newCookie'`, where both strings
+          // already held the whole jar. The result was every cookie sent two
+          // to four times over (7979 bytes in one user's log, with
+          // cf_clearance present twice), joined by spaces instead of `; ` so
+          // the header was malformed as well. A repeated clearance cookie
+          // reads as replay to a bot filter, which is a good way to be handed
+          // the very captcha this retry is trying to get past.
           final String oldCookie = response.requestOptions.headers['Cookie'] as String? ?? '';
           final String newCookie = await Tools.getCookies(response.requestOptions.uri.toString());
+          // Retire the stale clearance under its own name by KEY, not by
+          // substring: replaceAll('cf_clearance', …) also rewrites an
+          // existing cf_clearance_old into cf_clearance_old_old.
+          final Map<String, String> previous = Tools.parseCookieString(oldCookie);
+          final String? staleClearance = previous.remove('cf_clearance');
+          if (staleClearance != null) {
+            previous['cf_clearance_old'] = staleClearance;
+          }
           final headers = {
             ...response.requestOptions.headers,
-            'Cookie': '${oldCookie.replaceAll('cf_clearance', 'cf_clearance_old')} $newCookie'.trim(),
+            'Cookie': Tools.mergeCookieStrings([Tools.buildCookieString(previous), newCookie]),
             Tools.captchaCheckHeader: 'done',
           };
 
@@ -191,11 +230,27 @@ class DioNetwork {
             return handler.next(error);
           }
 
+          // MERGE, never concatenate — and never join with a bare space.
+          // This used to build `'$oldCookie $newCookie'`, where both strings
+          // already held the whole jar. The result was every cookie sent two
+          // to four times over (7979 bytes in one user's log, with
+          // cf_clearance present twice), joined by spaces instead of `; ` so
+          // the header was malformed as well. A repeated clearance cookie
+          // reads as replay to a bot filter, which is a good way to be handed
+          // the very captcha this retry is trying to get past.
           final String oldCookie = error.requestOptions.headers['Cookie'] as String? ?? '';
           final String newCookie = await Tools.getCookies(error.requestOptions.uri.toString());
+          // Retire the stale clearance under its own name by KEY, not by
+          // substring: replaceAll('cf_clearance', …) also rewrites an
+          // existing cf_clearance_old into cf_clearance_old_old.
+          final Map<String, String> previous = Tools.parseCookieString(oldCookie);
+          final String? staleClearance = previous.remove('cf_clearance');
+          if (staleClearance != null) {
+            previous['cf_clearance_old'] = staleClearance;
+          }
           final headers = {
             ...error.requestOptions.headers,
-            'Cookie': '${oldCookie.replaceAll('cf_clearance', 'cf_clearance_old')} $newCookie'.trim(),
+            'Cookie': Tools.mergeCookieStrings([Tools.buildCookieString(previous), newCookie]),
             Tools.captchaCheckHeader: 'done',
           };
 
@@ -225,11 +280,14 @@ class DioNetwork {
     client.interceptors.add(
       InterceptorsWrapper(
         onRequest: (RequestOptions options, RequestInterceptorHandler handler) async {
+          // Runs on EVERY request, and both sides carry the full jar, so
+          // concatenating here doubled the header before anything else even
+          // touched it. Merge by name instead (last value wins).
           final String oldCookie = options.headers['Cookie'] as String? ?? '';
           final String newCookie = await Tools.getCookies(options.uri.toString());
           final headers = {
             ...options.headers,
-            'Cookie': '$oldCookie $newCookie'.trim(),
+            'Cookie': Tools.mergeCookieStrings([oldCookie, newCookie]),
           };
           options.headers = headers;
           return handler.next(options);
@@ -292,7 +350,7 @@ class DioNetwork {
         onReceiveProgress: onReceiveProgress,
       ),
     );
-    client.close();
+    // Shared HttpClient — do NOT close (see getClient).
     return res;
   }
 
@@ -306,8 +364,12 @@ class DioNetwork {
     void Function(int, int)? onReceiveProgress,
     void Function(int, int)? onSendProgress,
     Dio Function(Dio)? customInterceptor,
+    // r69: a body that carries a password (a site login) stays out of the
+    // request inspector and the log; the caller logs the outcome itself.
+    bool skipLogging = false,
   }) async {
-    final client = customInterceptor != null ? customInterceptor(getClient()) : getClient();
+    final Dio base = getClient(skipLogging: skipLogging);
+    final client = customInterceptor != null ? customInterceptor(base) : base;
     final urlAndQuery = separateUrlAndQueryParams(url, queryParameters);
 
     final res = await _withTransientRetries(
@@ -322,7 +384,33 @@ class DioNetwork {
         onSendProgress: onSendProgress,
       ),
     );
-    client.close();
+    // Shared HttpClient — do NOT close (see getClient).
+    return res;
+  }
+
+  static Future<Response> delete(
+    String url, {
+    Object? data,
+    Map<String, dynamic>? queryParameters,
+    Options? options,
+    Map<String, dynamic>? headers = const {},
+    CancelToken? cancelToken,
+    Dio Function(Dio)? customInterceptor,
+  }) async {
+    final client = customInterceptor != null ? customInterceptor(getClient()) : getClient();
+    final urlAndQuery = separateUrlAndQueryParams(url, queryParameters);
+
+    final res = await _withTransientRetries(
+      cancelToken: cancelToken,
+      request: () => client.delete(
+        urlAndQuery['url'],
+        data: data,
+        queryParameters: urlAndQuery['query'],
+        options: mergeOptions(options, headers),
+        cancelToken: cancelToken,
+      ),
+    );
+    // Shared HttpClient — do NOT close (see getClient).
     return res;
   }
 
@@ -350,7 +438,7 @@ class DioNetwork {
         cancelToken: cancelToken,
       ),
     );
-    client.close();
+    // Shared HttpClient — do NOT close (see getClient).
     return res;
   }
 
@@ -379,7 +467,7 @@ class DioNetwork {
       onReceiveProgress: onReceiveProgress,
       deleteOnError: deleteOnError,
     );
-    client.close();
+    // Shared HttpClient — do NOT close (see getClient).
     return res;
   }
 
@@ -419,7 +507,8 @@ class DioNetwork {
       }
       rethrow;
     } finally {
-      client.close();
+      // Shared HttpClient — do NOT close it here; the response body stream is
+      // consumed after this block and closing would kill the connection.
     }
 
     response.headers = Headers.fromMap(response.data!.headers);

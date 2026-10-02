@@ -3,6 +3,8 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 
 import 'package:fading_edge_scrollview/fading_edge_scrollview.dart';
@@ -250,13 +252,15 @@ class _TagSearchQueryEditorPageState extends State<TagSearchQueryEditorPage> {
                   width: 6,
                   height: 24,
                   decoration: BoxDecoration(
-                    color: tagHandler.getTag(tag.tag).getColour(),
+                    // Domain-aware: the site's own type wins, and a doujin
+                    // source never reads the shared booru tag map.
+                    color: tagHandler.colourForDisplay(tag.tag, selectedBooru, ownType: tag.type),
                     borderRadius: BorderRadius.circular(5),
                   ),
                 ),
                 const SizedBox(width: 10),
                 Text(
-                  tagHandler.getTag(tag.tag).tagType.locName,
+                  tagHandler.typeForDisplay(tag.tag, selectedBooru, ownType: tag.type).locName,
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
@@ -268,7 +272,7 @@ class _TagSearchQueryEditorPageState extends State<TagSearchQueryEditorPage> {
             ListTile(
               title: Text(context.loc.add),
               leading: const Icon(
-                Icons.add_rounded,
+                Symbols.add_rounded,
                 color: Colors.green,
               ),
               onTap: () async {
@@ -279,7 +283,7 @@ class _TagSearchQueryEditorPageState extends State<TagSearchQueryEditorPage> {
             ListTile(
               title: Text(context.loc.exclude),
               leading: const Icon(
-                Icons.remove_rounded,
+                Symbols.remove_rounded,
                 color: Colors.red,
               ),
               onTap: () async {
@@ -297,7 +301,7 @@ class _TagSearchQueryEditorPageState extends State<TagSearchQueryEditorPage> {
               ),
             ListTile(
               title: Text(context.loc.copy),
-              leading: const Icon(Icons.copy),
+              leading: const Icon(Symbols.content_copy_rounded),
               onTap: () async {
                 final tagText = tag.tag;
 
@@ -307,7 +311,7 @@ class _TagSearchQueryEditorPageState extends State<TagSearchQueryEditorPage> {
                   title: Text(context.loc.copied, style: const TextStyle(fontSize: 20)),
                   content: Text(context.loc.searchBar.copiedTagToClipboard(tag: tagText)),
                   sideColor: Colors.green,
-                  leadingIcon: Icons.check,
+                  leadingIcon: Symbols.check_rounded,
                   leadingIconColor: Colors.green,
                   duration: const Duration(seconds: 2),
                 );
@@ -415,7 +419,7 @@ class _TagSearchQueryEditorPageState extends State<TagSearchQueryEditorPage> {
                                         mainAxisSize: MainAxisSize.min,
                                         mainAxisAlignment: MainAxisAlignment.center,
                                         children: [
-                                          const Icon(Icons.refresh),
+                                          const Icon(Symbols.refresh_rounded),
                                           const SizedBox(width: 8),
                                           Expanded(
                                             child: Text(
@@ -439,9 +443,18 @@ class _TagSearchQueryEditorPageState extends State<TagSearchQueryEditorPage> {
                               return SuggestionsMainContent(
                                 onMetatagSelect: onMetatagSelect,
                                 onTagTap: (tag) => onSuggestionTap(TagSuggestion(tag: tag)),
+                                onInsertTerm: (term) => onSuggestionTap(TagSuggestion(tag: term), raw: true),
+                                booru: selectedBooru,
                                 hideHistory: true,
                                 hidePopular: selectedBooru?.type?.isFavouritesOrDownloads == true,
                                 hidePinned: !widget.showPinnedTags,
+                                queryText: widget.allowMultipleTags ? () => tags.join(' ') : null,
+                                onQueryReplaced: widget.allowMultipleTags
+                                    ? (String q) {
+                                        tags = q.split(' ').where((t) => t.isNotEmpty).toList();
+                                        setState(() {});
+                                      }
+                                    : null,
                               );
                             }
 
@@ -468,7 +481,7 @@ class _TagSearchQueryEditorPageState extends State<TagSearchQueryEditorPage> {
                           }
 
                           final TagSuggestion tag = queryController.suggestedTags[index];
-                          final tagColor = tagHandler.getTag(tag.tag).getColour();
+                          final tagColor = tagHandler.colourForDisplay(tag.tag, selectedBooru, ownType: tag.type);
 
                           return Container(
                             height: kMinInteractiveDimension + (tag.hasDescription ? 8 : 0),
@@ -503,7 +516,7 @@ class _TagSearchQueryEditorPageState extends State<TagSearchQueryEditorPage> {
                                             MarqueeText(
                                               text: tag.tag.replaceAll('_', ' '),
                                               style: context.theme.textTheme.bodyLarge?.copyWith(
-                                                color: tagHandler.getTag(tag.tag).getColour(),
+                                                color: tagHandler.colourForDisplay(tag.tag, selectedBooru, ownType: tag.type),
                                                 fontWeight: FontWeight.w600,
                                               ),
                                             ),
@@ -650,9 +663,9 @@ class _TagSearchQueryEditorPageState extends State<TagSearchQueryEditorPage> {
                   showSubmitButton: (inputText) =>
                       !settingsHandler.showSearchbarQuickActions &&
                       (inputText.isNotEmpty || (widget.allowMultipleTags && tags.isNotEmpty)),
-                  submitIcon: widget.allowMultipleTags && tags.isNotEmpty ? Icons.check : null,
+                  submitIcon: widget.allowMultipleTags && tags.isNotEmpty ? Symbols.check_rounded : null,
                   prefixIcon: IconButton(
-                    icon: const Icon(Icons.arrow_back_rounded),
+                    icon: const Icon(Symbols.arrow_back_rounded),
                     onPressed: () => Navigator.of(context).pop(),
                   ),
                 ),
@@ -878,7 +891,7 @@ class _TagSearchBoxState extends State<TagSearchBox> {
                       if (widget.clearable && hasText && widget.enabled)
                         IconButton(
                           icon: Icon(
-                            Icons.close_rounded,
+                            Symbols.close_rounded,
                             color: Theme.of(context).colorScheme.onSurface,
                           ),
                           onPressed: _clear,
@@ -886,7 +899,7 @@ class _TagSearchBoxState extends State<TagSearchBox> {
                       //
                       IconButton(
                         icon: Icon(
-                          Icons.search,
+                          Symbols.search_rounded,
                           color: Theme.of(context).colorScheme.onSurface,
                         ),
                         onPressed: widget.enabled ? _openTagSearch : null,
@@ -915,7 +928,7 @@ class _TagSearchBoxState extends State<TagSearchBox> {
                           : Text(
                               _controller.text.replaceAll('_', ' '),
                               style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                color: tagHandler.getTag(_controller.text).getColour(),
+                                color: tagHandler.colourForDisplay(_controller.text, _selectedBooru),
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,

@@ -2,25 +2,39 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 
 import 'package:get/get.dart';
 import 'package:scroll_to_index/scroll_to_index.dart';
 
+import 'package:lolisnatcher/src/utils/perf_trace.dart';
+import 'package:lolisnatcher/src/data/modular_ui.dart';
+import 'package:lolisnatcher/src/widgets/preview/feed_scroll.dart';
+import 'package:lolisnatcher/src/widgets/preview/furaffinity_artist_header.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/pages/gallery_view_page.dart';
+import 'package:lolisnatcher/src/pages/doujin_detail_page.dart';
+import 'package:lolisnatcher/src/widgets/gallery/doujin_item_menu.dart';
+import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 import 'package:lolisnatcher/src/widgets/common/long_press_repeater.dart';
 import 'package:lolisnatcher/src/widgets/preview/grid_builder.dart';
+import 'package:lolisnatcher/src/widgets/preview/kemono_creator_header.dart';
 import 'package:lolisnatcher/src/widgets/preview/shimmer_builder.dart';
 import 'package:lolisnatcher/src/widgets/preview/staggered_builder.dart';
 import 'package:lolisnatcher/src/widgets/preview/discovery_strip.dart';
+import 'package:lolisnatcher/src/widgets/preview/doujin_tab_view.dart';
+import 'package:lolisnatcher/src/widgets/preview/tab_pill.dart';
 import 'package:lolisnatcher/src/widgets/preview/flow_tab_carousel.dart';
+import 'package:lolisnatcher/src/widgets/preview/media_filter_chips.dart';
 import 'package:lolisnatcher/src/widgets/preview/waterfall_bottom_bar.dart';
 import 'package:lolisnatcher/src/widgets/root/main_appbar.dart';
 
@@ -31,7 +45,7 @@ class WaterfallView extends StatefulWidget {
   State<WaterfallView> createState() => _WaterfallViewState();
 }
 
-class _WaterfallViewState extends State<WaterfallView> with RouteAware {
+class _WaterfallViewState extends State<WaterfallView> with RouteAware, TraceLifecycle {
   final SettingsHandler settingsHandler = SettingsHandler.instance;
   final SearchHandler searchHandler = SearchHandler.instance;
   final ViewerHandler viewerHandler = ViewerHandler.instance;
@@ -78,7 +92,7 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware {
       ),
     );
 
-    isStaggered = settingsHandler.previewDisplay.isStaggered && searchHandler.currentBooruHandler.hasSizeData;
+    isStaggered = _computeIsStaggered();
   }
 
   @override
@@ -136,7 +150,7 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware {
 
     // check if grid type changed when changing tab
     final bool newIsStaggered =
-        settingsHandler.previewDisplay.isStaggered && searchHandler.currentBooruHandler.hasSizeData;
+        _computeIsStaggered();
     if (isStaggered != newIsStaggered) {
       isStaggered = newIsStaggered;
       setState(() {});
@@ -242,7 +256,51 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware {
     }
   }
 
+  /// Staggered = cells sized by each item's aspect ratio. Also forced by
+  /// the doujin 'adapt' cover-display mode, which IS this behaviour.
+  ///
+  /// Adapt deliberately does NOT require a handler's `hasSizeData`. Only
+  /// nhentai and niyaniya report cover dimensions in their listings; every
+  /// other doujin source reports none, and gating on that is what made adapt
+  /// silently degrade to a fixed grid with letterboxed covers. A doujin cell
+  /// learns its cover's aspect from the decoded image instead
+  /// (DoujinCoverAspects), so it needs nothing from the API.
+  bool _computeIsStaggered() {
+    // r63: the list card lays out its own row, so the staggered grid (which
+    // gives cells no height) must step aside.
+    if (searchHandler.currentBooruHandler.hasReader &&
+        SourceSettingsHandler.instance.feedCardStyle(searchHandler.currentBooru) == 'list') {
+      return false;
+    }
+    final bool adaptCovers =
+        searchHandler.currentBooruHandler.hasReader &&
+        SourceSettingsHandler.instance.coverDisplay(searchHandler.currentBooru) == 'adapt';
+    if (adaptCovers) return true;
+    return settingsHandler.previewDisplay.isStaggered && searchHandler.currentBooruHandler.hasSizeData;
+  }
+
   Future<void> onTap(int index) async {
+    // Doujin sources: a card opens the DETAIL page (cover, tags, Related /
+    // Recommended, Pages, Read), not the image viewer — the viewer flow
+    // stays untouched for every other source.
+    if (searchHandler.currentBooruHandler.hasReader) {
+      if (!isActive.value) return;
+      isActive.value = false;
+      try {
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => DoujinDetailPage(
+              tab: searchHandler.currentTab,
+              index: index,
+            ),
+          ),
+        );
+      } finally {
+        isActive.value = true;
+      }
+      return;
+    }
+
     if (isMobile) {
       // protection from opening multiple viewers at once
       if (!isActive.value) {
@@ -260,6 +318,7 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware {
       ViewerHandler.instance.addViewer(viewerKey);
       await Navigator.of(context).push(
         PageRouteBuilder(
+          settings: const RouteSettings(name: 'viewer'),
           pageBuilder: (_, _, _) => GalleryViewPage(
             key: viewerKey,
             tab: searchHandler.currentTab,
@@ -319,12 +378,36 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware {
   }
 
   Future<void> onDoubleTap(int index) async {
-    await searchHandler.currentTab.toggleItemFavourite(index);
+    final tab = searchHandler.currentTab;
+    if (tab.booruHandler.hasReader) {
+      // Doujin cards: doujin store + account sync — the SAME path as the
+      // detail page heart, so a double-tap favourite reaches the site too.
+      final BooruItem item = searchHandler.currentFetched[index];
+      // A doujin For You card syncs with its own site's account, not the feed's.
+      final result = await DoujinDataHandler.instance.toggleFavouriteSynced(item, tab.booruHandler.handlerForItem(item));
+      if (result.syncAttempted && !result.syncOk && mounted) {
+        FlashElements.showSnackbar(
+          duration: const Duration(seconds: 3),
+          title: Text(result.message ?? 'Account sync failed', style: const TextStyle(fontSize: 16)),
+          sideColor: Colors.red,
+        );
+      }
+      return;
+    }
+    await tab.toggleItemFavourite(index);
   }
 
   Future<void> onLongPress(int index) async {
     final BooruItem item = searchHandler.currentFetched[index];
     await ServiceHandler.vibrate();
+
+    // Doujin feeds: long-press opens the item's context menu (the centered
+    // popup), not multi-select.
+    if (searchHandler.currentTab.booruHandler.hasReader) {
+      if (!mounted) return;
+      await showDoujinItemMenu(context, tab: searchHandler.currentTab, index: index);
+      return;
+    }
 
     if (searchHandler.currentSelected.contains(item)) {
       searchHandler.currentTab.selected.remove(item);
@@ -340,7 +423,7 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware {
       duration: const Duration(seconds: 2),
       title: Text(context.loc.mediaPreviews.copiedFileURL, style: const TextStyle(fontSize: 20)),
       content: Text(Uri.encodeFull(item.fileURL), style: const TextStyle(fontSize: 16)),
-      leadingIcon: Icons.copy,
+      leadingIcon: Symbols.content_copy_rounded,
       sideColor: Colors.green,
     );
   }
@@ -349,7 +432,7 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware {
   Widget build(BuildContext context) {
     // check if grid type changed when rebuilding the widget (must happen only on start and when saving settings)
     final bool newIsStaggered =
-        settingsHandler.previewDisplay.isStaggered && searchHandler.currentBooruHandler.hasSizeData;
+        _computeIsStaggered();
     if (isStaggered != newIsStaggered) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         isStaggered = newIsStaggered;
@@ -376,15 +459,16 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware {
       });
     }
 
-    return Stack(
+    final Widget feedView = Stack(
       alignment: Alignment.bottomCenter,
       children: [
         NotificationListener<ScrollNotification>(
           child: Scrollbar(
             controller: searchHandler.gridScrollController,
             interactive: true,
-            thickness: 8,
-            thumbVisibility: true,
+            // r66: Modular UI - off hides the thumb, the bar still scrolls.
+            thickness: ModularUi.isOn(ModularUi.feedScrollbar) ? 8 : 0,
+            thumbVisibility: ModularUi.isOn(ModularUi.feedScrollbar),
             scrollbarOrientation: settingsHandler.handSide.value.isLeft
                 ? ScrollbarOrientation.left
                 : ScrollbarOrientation.right,
@@ -449,6 +533,29 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware {
                           // Flow tab-card carousel: swipeable tab cards under the
                           // header (active tab = wide card, others peek, dashed +).
                           const SliverToBoxAdapter(child: FlowTabCarousel()),
+                          // Media-type filter chips for the local feeds
+                          // (Favourites / Downloads / Collections).
+                          if (searchHandler.currentTab.selectedBooru.value.type?.isLocalDb == true)
+                            SliverPadding(
+                              padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
+                              sliver: SliverToBoxAdapter(
+                                child: MediaFilterChips(
+                                  key: ValueKey('media-filter-${searchHandler.currentTabId}'),
+                                  tab: searchHandler.currentTab,
+                                ),
+                              ),
+                            ),
+                          // A kemono creator tab carries the creator's card
+                          // (banner, counts, favourite/announcements/DMs/tags)
+                          // above the grid. Empty everywhere else.
+                          SliverPadding(
+                            padding: const EdgeInsets.fromLTRB(10, 12, 10, 0),
+                            sliver: SliverToBoxAdapter(
+                              child: KemonoCreatorHeader(tab: searchHandler.currentTab),
+                            ),
+                          ),
+                          // A FurAffinity artist tab: the artist's card (r40).
+                          SliverToBoxAdapter(child: FurAffinityArtistHeader(tab: searchHandler.currentTab)),
                           // Discovery strip: creators + similar tags above the
                           // results, for any handler that populates them
                           // (xxxfollow, redgifs). No-op for the rest.
@@ -508,6 +615,15 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware {
                       );
                     }),
                   ),
+                  // r38, experimental: the tab pill, on the side the scroll
+                  // buttons leave free until it is moved (r40: hold and drag).
+                  if (settingsHandler.tabPill)
+                    Positioned.fill(
+                      child: TabPillHost(
+                        bottomInset: MediaQuery.viewPaddingOf(context).bottom + 120,
+                        alignLeft: !settingsHandler.scrollGridButtonsPosition.isLeft,
+                      ),
+                    ),
                   Positioned(
                     bottom: MediaQuery.viewPaddingOf(context).bottom + 120,
                     right: settingsHandler.scrollGridButtonsPosition.isRight
@@ -547,6 +663,11 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware {
             ),
           ),
           onNotification: (notif) {
+            // r66: a horizontal scroll inside a card (tag rows, a title, the
+            // tab cards) bubbles up here too, and one at its own end looks
+            // exactly like the feed near its bottom - so the next page was
+            // fetched while the user was only reading tags.
+            if (!FeedScroll.isFeedScroll(notif)) return false;
             if (notif is ScrollUpdateNotification || notif is OverscrollNotification) {
               searchHandler.sendToScrollStream(notif);
 
@@ -582,6 +703,18 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware {
         ),
       ],
     );
+
+    // A doujin tab IS its detail page — none of the feed chrome above
+    // applies, so the whole subtree is swapped out, not just the grid sliver.
+    return Obx(() {
+      if (searchHandler.tabs.isNotEmpty && searchHandler.currentTab.isDoujinDetail) {
+        return DoujinTabView(
+          key: ValueKey('doujin-tab-view-${searchHandler.currentTabId}'),
+          tab: searchHandler.currentTab,
+        );
+      }
+      return feedView;
+    });
   }
 }
 
@@ -646,7 +779,7 @@ class WaterfallScrollButtons extends StatelessWidget {
                   width: kMinInteractiveDimension,
                   height: kMinInteractiveDimension,
                   child: Icon(
-                    Icons.arrow_upward,
+                    Symbols.arrow_upward_rounded,
                     size: 30,
                     color: Theme.of(context).colorScheme.onPrimaryContainer.withValues(alpha: 0.5),
                   ),
@@ -664,7 +797,7 @@ class WaterfallScrollButtons extends StatelessWidget {
                   width: kMinInteractiveDimension,
                   height: kMinInteractiveDimension,
                   child: Icon(
-                    Icons.arrow_downward,
+                    Symbols.arrow_downward_rounded,
                     size: 30,
                     color: Theme.of(context).colorScheme.onPrimaryContainer.withValues(alpha: 0.5),
                   ),

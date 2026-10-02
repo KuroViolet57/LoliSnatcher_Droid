@@ -12,6 +12,13 @@ import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 class WebViewBrowserHandler extends BooruHandler {
   WebViewBrowserHandler(super.booru, super.limit);
 
+  // Reads neither field (audited): the fields are hidden on the edit page.
+  @override
+  bool get usesUserId => false;
+  @override
+  bool get usesApiKey => false;
+
+
   @override
   bool get hasTagSuggestions => false;
 

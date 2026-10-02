@@ -2,13 +2,23 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
+import 'package:get/get.dart' hide ContextExt, FirstWhereOrNullExt;
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
+import 'package:lolisnatcher/src/utils/perf_trace.dart';
+import 'package:lolisnatcher/src/widgets/video/player_pool_planner.dart';
+import 'package:lolisnatcher/src/widgets/video/media_kit_engine_options.dart';
+import 'package:lolisnatcher/src/widgets/video/video_surface_cap.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
+import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 
@@ -32,17 +42,77 @@ class MediaKitPlayerView extends StatefulWidget {
   final Booru booru;
   final bool isViewed;
 
+  /// Soft-refresh hook: drops idle pooled players and flags live ones so
+  /// every video reloads with freshly-read cookies (e.g. after re-solving a
+  /// Cloudflare challenge).
+  static void resetPool() => _MediaKitPlayerPool.instance.reset();
+
+  /// r77: a pooled player in use is playing right now (background model work
+  /// holds the image tagger while one does).
+  static bool anyPlaying() {
+    for (final _PooledPlayer e in _MediaKitPlayerPool.instance._slots) {
+      if (e.refCount > 0 && e.player.state.playing) return true;
+    }
+    return false;
+  }
+
+  /// r77: how long after a frame grab mpv's screenshot messages are taken as
+  /// its answer rather than as a player error. Generous: mpv may run a queued
+  /// screenshot after the frame service stopped waiting (3 s), and only
+  /// screenshots produce these two messages anyway.
+  static const Duration screenshotWindow = Duration(seconds: 15);
+
+  static final Stopwatch _mono = Stopwatch()..start();
+
+  /// A monotonic clock for grab times (a wall-clock correction must not move
+  /// them).
+  static Duration monoNow() => _mono.elapsed;
+
+  /// r77: [message] is mpv's answer to a frame grab on this player - exactly
+  /// "Taking screenshot failed." (nothing drawn yet) or "Error writing
+  /// screenshot!" - within [screenshotWindow] of [lastGrabAt]. Nothing else
+  /// is, even a message that mentions a screenshot.
+  static bool isScreenshotNoise(String message, {required Duration? lastGrabAt, required Duration now}) {
+    if (lastGrabAt == null) return false;
+    final Duration since = now - lastGrabAt;
+    if (since.isNegative || since > screenshotWindow) return false;
+    final String m = message.trim();
+    return m == 'Taking screenshot failed.' || m == 'Error writing screenshot!';
+  }
+
+  /// r77: the log line for a video left with dropped frames, from mpv's
+  /// `frame-drop-count` (the output skipped them) and
+  /// `decoder-frame-drop-count` (the decoder fell behind); null when none
+  /// were dropped or mpv did not say.
+  static String? droppedLine(String output, String decoder, String url) {
+    final int o = int.tryParse(output.trim()) ?? 0;
+    final int d = int.tryParse(decoder.trim()) ?? 0;
+    if (o <= 0 && d <= 0) return null;
+    return 'video: $o frames dropped by the output, $d by the decoder ($url)';
+  }
+
   @override
   State<MediaKitPlayerView> createState() => _MediaKitPlayerViewState();
 }
 
-class _MediaKitPlayerViewState extends State<MediaKitPlayerView> {
+class _MediaKitPlayerViewState extends State<MediaKitPlayerView> with TraceLifecycle {
   _PooledPlayer? _entry;
   String? _acquiredUrl;
 
   Timer? _initDebounce;
-  static const Duration _initDelay = Duration(milliseconds: 200);
   bool _initInProgress = false;
+
+  // Error-recovery probe: mpv does its own networking, so an expired
+  // Cloudflare session just makes the video silently fail — no captcha
+  // screen ever triggers. On a player error we probe the URL through Dio
+  // WITH the captcha interceptor (which pops the solve webview when the
+  // host is challenging), then rebuild the player with the fresh cookies.
+  StreamSubscription<String>? _errorProbeSub;
+  // r77: logs what mpv was doing when a video shows no picture 8 s in.
+  Timer? _pictureCheck;
+  // Per-URL cooldown so a genuinely broken file can't loop probe/retry.
+  static final Map<String, int> _lastProbeAt = {};
+  static const Duration _probeCooldown = Duration(minutes: 2);
 
   bool get _wantsPlayer => widget.isViewed || SettingsHandler.instance.preloadVideos;
 
@@ -72,7 +142,11 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> {
           // Always restart from the beginning when a video becomes the
           // active page — user expectation from the previous engine.
           _entry!.player.seek(Duration.zero);
-          if (SettingsHandler.instance.autoPlayEnabled) {
+          // r77: a preloaded player becoming the viewed one is watched too.
+          _watchForPicture(_entry!, widget.booruItem.fileURL);
+          if (SettingsHandler.instance.autoPlayEnabled &&
+              !(SettingsHandler.instance.respectManualPause &&
+                  ViewerHandler.instance.isManuallyPaused(widget.booruItem.fileURL))) {
             _entry!.player.play();
           }
         }
@@ -86,7 +160,7 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> {
 
   void _scheduleInit() {
     _initDebounce?.cancel();
-    _initDebounce = Timer(_initDelay, () {
+    _initDebounce = Timer(MediaKitEngineOptions.startDelay(SettingsHandler.instance), () {
       if (!mounted || !_wantsPlayer || _entry != null) return;
       _init();
     });
@@ -111,23 +185,28 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> {
       );
 
       if (!mounted || !_wantsPlayer) {
-        _MediaKitPlayerPool.instance.release(url);
+        _MediaKitPlayerPool.instance.release(entry);
         return;
       }
 
-      // Restart from beginning whenever this widget becomes the active view.
+      // Restart from beginning whenever this widget becomes the active view —
+      // unless a previous incarnation parked its position (nested-viewer
+      // cover), in which case resume exactly there.
       if (widget.isViewed) {
-        await entry.player.seek(Duration.zero);
+        final Duration? savedPosition = ViewerHandler.instance.takeVideoPosition(url);
+        await entry.player.seek(savedPosition ?? Duration.zero);
       }
       if (settings.startVideosMuted) {
         await entry.player.setVolume(0);
       }
-      if (widget.isViewed && settings.autoPlayEnabled) {
+      if (widget.isViewed &&
+          settings.autoPlayEnabled &&
+          !(settings.respectManualPause && ViewerHandler.instance.isManuallyPaused(url))) {
         await entry.player.play();
       }
 
       if (!mounted) {
-        _MediaKitPlayerPool.instance.release(url);
+        _MediaKitPlayerPool.instance.release(entry);
         return;
       }
 
@@ -136,12 +215,16 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> {
         _acquiredUrl = url;
       });
 
+      await _errorProbeSub?.cancel();
+      _errorProbeSub = entry.player.stream.error.listen(_onPlayerError);
+
       Logger.Inst().log(
-        'media_kit acquired ${entry.wasReused ? "(reused)" : "(new)"} for $url',
+        'media_kit acquired ${entry.wasReused ? "(reused)" : (entry.replaced ? "(new, replacing a broken player)" : "(new)")} for $url',
         'MediaKitPlayerView',
         '_init',
         LogTypes.booruItemLoad,
       );
+      _watchForPicture(entry, url);
     } catch (e, s) {
       Logger.Inst().log(
         'media_kit init threw for ${widget.booruItem.fileURL}: $e',
@@ -155,14 +238,118 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> {
     }
   }
 
+  /// r77: a video with no picture size 8 s after its player was handed out
+  /// is logged with mpv's state - idle, output, codec, cache - so a stalled
+  /// video says why in the user's log.
+  void _watchForPicture(_PooledPlayer entry, String url) {
+    _pictureCheck?.cancel();
+    _pictureCheck = Timer(const Duration(seconds: 8), () async {
+      if (!mounted || !identical(_entry, entry) || !widget.isViewed) return;
+      if ((entry.player.state.width ?? 0) > 0) return;
+      final platform = entry.player.platform;
+      if (platform is! NativePlayer) return;
+      Future<String> read(String name) async {
+        try {
+          return await platform.getProperty(name);
+        } catch (_) {
+          return '?';
+        }
+      }
+
+      final String line =
+          'video: no picture 8 s after start (idle ${await read('idle-active')}, output ${await read('current-vo')}, codec ${await read('video-codec')}, '
+          'waiting for cache ${await read('paused-for-cache')}, cached ${await read('demuxer-cache-duration')} s) ($url)';
+      PerfTrace.instance.event('video.nopicture', url);
+      Logger.Inst().log(line, 'MediaKitPlayerView', 'picture', LogTypes.booruItemLoad);
+    });
+  }
+
+  Future<void> _onPlayerError(String message) async {
+    // Only recover for the video the user is actually looking at.
+    if (!mounted || !widget.isViewed) return;
+
+    // r77: mpv's answer to a frame grab that came too early is not a playback
+    // problem - and it must not use up this video's recovery window below.
+    if (MediaKitPlayerView.isScreenshotNoise(message, lastGrabAt: _entry?.lastGrabAt, now: MediaKitPlayerView.monoNow())) return;
+    // r77: fullscreen shows this very player; rebuilding it underneath would
+    // leave fullscreen on a disposed player.
+    if ((_entry?.fullscreenHolds ?? 0) > 0) return;
+
+    // Decoder-level hiccups ('Could not open codec.' on some webm tracks)
+    // are NOT session/network problems — mpv usually plays the file anyway.
+    // Rebuilding on them swapped the player out from under the controls for
+    // nothing.
+    if (message.toLowerCase().contains('codec')) return;
+
+    final String url = widget.booruItem.fileURL;
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    if (now - (_lastProbeAt[url] ?? 0) < _probeCooldown.inMilliseconds) return;
+    _lastProbeAt[url] = now;
+
+    // Give playback a moment — if the stream starts anyway, the error was
+    // transient/partial and there is nothing to recover from.
+    await Future.delayed(const Duration(seconds: 2));
+    if (!mounted || !widget.isViewed) return;
+    final st = _entry?.player.state;
+    if (st != null && (st.playing || st.position > Duration.zero)) return;
+
+    Logger.Inst().log(
+      'probing after player error for $url ($message)',
+      'MediaKitPlayerView',
+      '_onPlayerError',
+      LogTypes.booruItemLoad,
+    );
+
+    // The probe request runs through the captcha interceptor: if the host is
+    // serving a Cloudflare challenge, the solve webview opens here and the
+    // request is replayed with the fresh cookies once it's done.
+    try {
+      final headers = await Tools.getFileCustomHeaders(
+        widget.booru,
+        item: widget.booruItem,
+        checkForReferer: true,
+      );
+      await DioNetwork.get(
+        url,
+        headers: {...headers, 'Range': 'bytes=0-0'},
+        customInterceptor: (dio) => DioNetwork.captchaInterceptor(
+          dio,
+          customUserAgent: Tools.browserUserAgent,
+        ),
+      );
+    } catch (_) {
+      // Probe failed outright — nothing more to do, keep the error state.
+      return;
+    }
+    if (!mounted) return;
+
+    // Probe succeeded (challenge solved or transient hiccup) — rebuild this
+    // player with freshly-read cookies.
+    _MediaKitPlayerPool.instance.markErrored(url);
+    _release();
+    _scheduleInit();
+  }
+
   void _release() {
+    _errorProbeSub?.cancel();
+    _errorProbeSub = null;
     _initDebounce?.cancel();
     _initDebounce = null;
     final url = _acquiredUrl;
+    final _PooledPlayer? entry = _entry;
+    // Released while still the viewed page = unmounted under the user
+    // (nested viewer cover), not swiped away — park the position so the
+    // re-created widget resumes instead of restarting.
+    if (entry != null && widget.isViewed) {
+      ViewerHandler.instance.saveVideoPosition(url, entry.player.state.position);
+    }
+    _pictureCheck?.cancel();
+    _pictureCheck = null;
     _entry = null;
     _acquiredUrl = null;
-    if (url != null) {
-      _MediaKitPlayerPool.instance.release(url);
+    // r77: by identity - during a replace two slots can hold the same address.
+    if (entry != null) {
+      _MediaKitPlayerPool.instance.release(entry);
     }
   }
 
@@ -185,11 +372,19 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> {
           fit: StackFit.expand,
           children: [
             Video(
+              // r77: a replaced player comes with its own controller; the
+              // video surface is rebuilt for it (media_kit_video's state does
+              // not rebind to a new controller).
+              key: ObjectKey(entry.controller),
               controller: entry.controller,
               fit: BoxFit.contain,
               controls: NoVideoControls,
             ),
-            _MediaKitControls(player: entry.player),
+            _MediaKitControls(
+              player: entry.player,
+              controller: entry.controller,
+              url: widget.booruItem.fileURL,
+            ),
           ],
         ),
       ),
@@ -197,8 +392,12 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> {
   }
 }
 
-/// Per-URL pooled player. Refcounted: many widgets *could* share the same URL,
+/// A pooled player slot. Refcounted: many widgets *could* share the same URL,
 /// though in practice the PageView gives each item a unique URL.
+///
+/// r64: the slot outlives the video it holds - [url] changes when a free slot
+/// is re-pointed at another file - so a swipe no longer destroys a decoder,
+/// a surface and a texture just to build them again.
 class _PooledPlayer {
   _PooledPlayer({
     required this.url,
@@ -206,24 +405,56 @@ class _PooledPlayer {
     required this.controller,
   });
 
-  final String url;
+  String url;
+
+  /// The engine settings this player was built with (see [PoolSlot.options]).
+  String options = '';
   final Player player;
   final VideoController controller;
   int refCount = 0;
   int lastUsedTick = 0;
   // Set per acquire() call so callers know whether they got a warm buffer.
   bool wasReused = false;
+  // Set when the player reported an error (network block, expired session
+  // cookie, ...). An errored entry is rebuilt with fresh headers on the next
+  // acquire instead of being reused broken.
+  bool hasError = false;
+  // Cancelled on evict/reset/dispose — the pool owns the lifecycle.
+  // ignore: cancel_subscriptions
+  StreamSubscription<String>? errorSub;
+  // r77: mpv's fatal messages (only error level reaches the error stream).
+  StreamSubscription<PlayerLog>? logSub;
+
+  /// r77: when a frame was last asked of this player (on
+  /// [MediaKitPlayerView.monoNow]'s clock); mpv's screenshot messages right
+  /// after it are not player errors.
+  Duration? lastGrabAt;
+
+  /// r77: fullscreen routes showing this player outside the widgets' counts;
+  /// while any does, the slot counts as in use.
+  int fullscreenHolds = 0;
+
+  /// r77: built to replace a player that broke on this video.
+  bool replaced = false;
+
+  void cancelSubs() {
+    errorSub?.cancel();
+    logSub?.cancel();
+  }
 }
 
-/// Global URL-keyed LRU pool. Survives widget disposal so scrolling back to a
-/// neighbour video resumes with its buffer intact instead of restarting the
-/// download. Capacity = [SettingsHandler.mediaKitMaxPlayers]. Idle (refCount==0)
-/// entries are evicted oldest-first when capacity is exceeded.
+/// Global pool of player slots. Survives widget disposal so scrolling back to
+/// a neighbour video resumes with its buffer intact instead of restarting the
+/// download. Capacity = [SettingsHandler.mediaKitMaxPlayers].
+///
+/// r64: at capacity the oldest idle slot is re-pointed at the new video
+/// ([PlayerPoolPlanner]) instead of being destroyed and rebuilt; only slots
+/// ABOVE the capacity are disposed, and only once nobody is watching them.
 class _MediaKitPlayerPool {
   _MediaKitPlayerPool._();
   static final _MediaKitPlayerPool instance = _MediaKitPlayerPool._();
 
-  final Map<String, _PooledPlayer> _entries = {};
+  final List<_PooledPlayer> _slots = [];
   int _tick = 0;
   bool _initialized = false;
 
@@ -233,19 +464,74 @@ class _MediaKitPlayerPool {
   }) async {
     if (!_initialized) {
       MediaKit.ensureInitialized();
+      // r59: tells our copy of media_kit_video how big the surface may be.
+      VideoSurfaceCap.install();
       _initialized = true;
     }
 
-    final existing = _entries[url];
-    if (existing != null) {
-      existing.refCount++;
-      existing.lastUsedTick = ++_tick;
-      existing.wasReused = true;
-      return existing;
+    final settings = SettingsHandler.instance;
+    final String options = _optionsSignature(settings);
+    _disposeStaleOptions(options);
+    final PoolPlan plan = PlayerPoolPlanner.plan(
+      slots: _slotStates(),
+      url: url,
+      capacity: settings.mediaKitMaxPlayers,
+    );
+
+    if (plan.action == PoolAction.reuse) {
+      final _PooledPlayer entry = _slots[plan.slot!];
+      entry.refCount++;
+      entry.lastUsedTick = ++_tick;
+      entry.wasReused = true;
+      PerfTrace.instance.event('video.reuse', url);
+      return entry;
     }
 
-    // Make room for the new entry up-front.
-    _evictIfNeeded(needSlot: true);
+    bool replacing = false;
+    if (plan.action == PoolAction.replace) {
+      // r77: the player that broke on this video is disposed; a new one opens
+      // it with the headers just read (re-opening it on the broken player was
+      // seen to leave the video without a picture).
+      final _PooledPlayer old = _slots.removeAt(plan.slot!);
+      PerfTrace.instance.event('video.replace', url);
+      Logger.Inst().log('media_kit: replacing a broken player for $url', '_MediaKitPlayerPool', 'acquire', LogTypes.booruItemLoad);
+      try {
+        old.cancelSubs();
+        unawaited(old.player.dispose());
+      } catch (_) {}
+      replacing = true;
+    }
+
+    if (plan.action == PoolAction.rebind) {
+      // r64: the same player opens another file. Its decoder, surface and
+      // texture stay; nothing is torn down mid-swipe. The playlist mode and
+      // the mpv cache properties were set when the slot was built and hold.
+      final _PooledPlayer entry = _slots[plan.slot!];
+      entry.url = url;
+      entry.hasError = false;
+      entry.wasReused = false;
+      entry.refCount = 1;
+      entry.lastUsedTick = ++_tick;
+      try {
+        // A re-pointed player must start like a fresh one: the long-press
+        // speed boost and the volume the last video was left at belong to
+        // that video, not this one.
+        await entry.player.setRate(1);
+        await entry.player.setVolume(100);
+        await entry.player.open(Media(url, httpHeaders: headers), play: false);
+      } catch (e, s) {
+        entry.hasError = true;
+        Logger.Inst().log(
+          'media_kit player rebind failed for $url: $e',
+          '_MediaKitPlayerPool',
+          'acquire',
+          LogTypes.exception,
+          s: s,
+        );
+      }
+      PerfTrace.instance.event('video.rebind', url);
+      return entry;
+    }
 
     final player = Player(
       configuration: const PlayerConfiguration(
@@ -253,7 +539,10 @@ class _MediaKitPlayerPool {
         logLevel: MPVLogLevel.error,
       ),
     );
-    final controller = VideoController(player);
+    final controller = VideoController(
+      player,
+      configuration: MediaKitEngineOptions.videoController(settings),
+    );
 
     await player.open(Media(url, httpHeaders: headers), play: false);
     // PlaylistMode.single => mpv loop-file=yes: loops THIS file in place
@@ -263,17 +552,16 @@ class _MediaKitPlayerPool {
     await player.setPlaylistMode(PlaylistMode.single);
 
     // Tune libmpv cache so we don't underrun mid-clip on jittery CDNs and so
-    // we keep enough back-buffer to seek-back without re-downloading.
+    // we keep enough back-buffer to seek-back without re-downloading. Disk
+    // cache sits next to the app files dir when SettingsHandler.path is set.
     try {
       final platform = player.platform;
       if (platform is NativePlayer) {
-        await platform.setProperty('cache', 'yes');
-        await platform.setProperty('cache-secs', '30');
-        await platform.setProperty('demuxer-readahead-secs', '20');
-        await platform.setProperty('demuxer-max-bytes', '67108864');
-        await platform.setProperty('demuxer-max-back-bytes', '33554432');
-        // Belt-and-suspenders: gapless in-place file loop at the mpv level.
-        await platform.setProperty('loop-file', 'inf');
+        final String path = settings.path.trim();
+        final String? cacheDir = path.isEmpty ? null : '${path}mpv_cache';
+        for (final entry in MediaKitEngineOptions.nativeProperties(cacheDir: cacheDir).entries) {
+          await platform.setProperty(entry.key, entry.value);
+        }
       }
     } catch (e, s) {
       Logger.Inst().log(
@@ -288,51 +576,178 @@ class _MediaKitPlayerPool {
     final entry = _PooledPlayer(url: url, player: player, controller: controller)
       ..refCount = 1
       ..lastUsedTick = ++_tick
-      ..wasReused = false;
-    _entries[url] = entry;
+      ..wasReused = false
+      ..replaced = replacing
+      ..options = options;
+    // Cancelled on evict/reset/dispose — the pool owns the lifecycle.
+    // ignore: cancel_subscriptions
+    entry.errorSub = player.stream.error.listen((message) {
+      // r77: a frame grab that came before mpv drew anything: not an error.
+      if (MediaKitPlayerView.isScreenshotNoise(message, lastGrabAt: entry.lastGrabAt, now: MediaKitPlayerView.monoNow())) {
+        Logger.Inst().log('look: mpv had no picture for a frame yet (${entry.url})', '_MediaKitPlayerPool', 'errorStream', LogTypes.booruHandlerInfo);
+        return;
+      }
+      // Codec grumbles aren't fatal (playback usually continues) — don't
+      // condemn the entry to a rebuild over them.
+      if (!message.toLowerCase().contains('codec')) {
+        entry.hasError = true;
+      }
+      // r77: the address this player shows now, not the one it was built for.
+      Logger.Inst().log(
+        'media_kit player error for ${entry.url}: $message',
+        '_MediaKitPlayerPool',
+        'errorStream',
+        LogTypes.booruItemLoad,
+      );
+    });
+    entry.logSub = player.stream.log.listen((PlayerLog l) {
+      if (l.level != 'fatal') return;
+      Logger.Inst().log('mpv fatal (${l.prefix}) for ${entry.url}: ${l.text.trim()}', '_MediaKitPlayerPool', 'log', LogTypes.booruItemLoad);
+    });
+    PerfTrace.instance.event('video.create', url);
+    _slots.add(entry);
+    _disposeOverflow();
     return entry;
   }
 
-  void release(String url) {
-    final entry = _entries[url];
-    if (entry == null) return;
+  List<PoolSlot> _slotStates() => [
+    for (final _PooledPlayer e in _slots)
+      PoolSlot(
+        url: e.url,
+        refCount: e.refCount,
+        lastUsedTick: e.lastUsedTick,
+        hasError: e.hasError,
+        options: e.options,
+      ),
+  ];
+
+  /// vo | hwdec | hardware acceleration, as the slot was built with.
+  static String _optionsSignature(SettingsHandler settings) =>
+      '${settings.altVideoPlayerVO.toJson()}|${settings.altVideoPlayerHWDEC.toJson()}|${settings.altVideoPlayerHwAccel}';
+
+  /// Drops idle players built before the engine settings changed, so the new
+  /// ones take effect on the next video instead of living on in a slot.
+  void _disposeStaleOptions(String options) {
+    final List<int> stale = PlayerPoolPlanner.staleOptions(slots: _slotStates(), options: options);
+    for (final int i in stale.reversed) {
+      final _PooledPlayer e = _slots.removeAt(i);
+      try {
+        e.cancelSubs();
+        e.player.dispose();
+      } catch (_) {}
+    }
+  }
+
+  void markErrored(String url) {
+    for (final _PooledPlayer e in _slots) {
+      if (e.url == url) e.hasError = true;
+    }
+  }
+
+  /// Drops every idle player and flags the in-use ones as errored, so all
+  /// videos rebuild with freshly-read cookies on their next acquire. Used by
+  /// the soft-refresh button after e.g. re-solving a Cloudflare challenge.
+  void reset() {
+    final List<_PooledPlayer> idle = _slots.where((e) => e.refCount <= 0).toList();
+    for (final _PooledPlayer e in idle) {
+      _slots.remove(e);
+      try {
+        e.cancelSubs();
+        e.player.dispose();
+      } catch (_) {}
+    }
+    for (final _PooledPlayer e in _slots) {
+      e.hasError = true;
+    }
+  }
+
+  /// r77: by identity, not by address - during a replace, or after an
+  /// errored slot stayed on screen, two slots can hold the same address.
+  void release(_PooledPlayer entry) {
+    if (!_slots.contains(entry)) return;
     if (entry.refCount > 0) entry.refCount--;
     entry.lastUsedTick = ++_tick;
     if (entry.refCount == 0) {
+      _logDropped(entry);
       // Idle but kept warm in the pool. Pause to free decode CPU; the buffer
-      // is preserved by libmpv until we evict.
+      // is preserved by libmpv until the slot is re-pointed.
       try {
         entry.player.pause();
       } catch (_) {}
     }
-    _evictIfNeeded();
+    _disposeOverflow();
   }
 
-  void _evictIfNeeded({bool needSlot = false}) {
-    final int max = SettingsHandler.instance.mediaKitMaxPlayers;
-    // When making room for a new entry, target capacity is `max - 1`.
-    final int target = needSlot ? max - 1 : max;
-    if (_entries.length <= target) return;
+  /// r77: fullscreen shows [player] outside the widgets' counts; while it
+  /// does, its slot is in use - never replaced, re-pointed or disposed.
+  void holdForFullscreen(Player player) {
+    for (final _PooledPlayer e in _slots) {
+      if (!identical(e.player, player)) continue;
+      e.refCount++;
+      e.fullscreenHolds++;
+    }
+  }
 
-    final evictable = _entries.values.where((e) => e.refCount == 0).toList()
-      ..sort((a, b) => a.lastUsedTick.compareTo(b.lastUsedTick));
-    int toEvict = _entries.length - target;
-    for (final e in evictable) {
-      if (toEvict <= 0) break;
-      _entries.remove(e.url);
+  void endFullscreenHold(Player player) {
+    for (final _PooledPlayer e in List<_PooledPlayer>.of(_slots)) {
+      if (!identical(e.player, player) || e.fullscreenHolds <= 0) continue;
+      e.fullscreenHolds--;
+      release(e);
+    }
+  }
+
+  /// r77: how many frames mpv dropped while this video played, read when it
+  /// is left - with the trace, it shows whether playback itself stuttered.
+  void _logDropped(_PooledPlayer entry) {
+    final platform = entry.player.platform;
+    if (platform is! NativePlayer || entry.player.state.position <= Duration.zero) return;
+    final String url = entry.url;
+    unawaited(() async {
       try {
+        final String output = await platform.getProperty('frame-drop-count');
+        final String decoder = await platform.getProperty('decoder-frame-drop-count');
+        final String? line = MediaKitPlayerView.droppedLine(output, decoder, url);
+        if (line == null) return;
+        PerfTrace.instance.event('video.drops', '$output/$decoder');
+        Logger.Inst().log(line, '_MediaKitPlayerPool', 'release', LogTypes.booruItemLoad);
+      } catch (_) {}
+    }());
+  }
+
+  /// Only slots ABOVE the pool's size are destroyed (r64): inside it, a slot
+  /// is re-pointed at the next video instead. A slot on screen is never
+  /// touched, so shrinking the setting takes effect as videos are released.
+  void _disposeOverflow() {
+    final List<int> gone = PlayerPoolPlanner.disposable(
+      slots: _slotStates(),
+      capacity: SettingsHandler.instance.mediaKitMaxPlayers,
+    );
+    for (final int i in gone.reversed) {
+      final _PooledPlayer e = _slots.removeAt(i);
+      PerfTrace.instance.event('video.dispose', e.url);
+      try {
+        e.cancelSubs();
         e.player.dispose();
       } catch (_) {}
-      toEvict--;
     }
   }
 }
 
 /// LoliControls-style overlay driven by a media_kit [Player]'s streams.
 class _MediaKitControls extends StatefulWidget {
-  const _MediaKitControls({required this.player});
+  const _MediaKitControls({
+    required this.player,
+    required this.controller,
+    required this.url,
+    this.isFullscreen = false,
+  });
 
   final Player player;
+  // Carried along so the fullscreen route can reuse the SAME VideoController
+  // (= same platform texture) instead of allocating a new one per entry.
+  final VideoController controller;
+  final String url;
+  final bool isFullscreen;
 
   @override
   State<_MediaKitControls> createState() => _MediaKitControlsState();
@@ -346,10 +761,23 @@ class _MediaKitControlsState extends State<_MediaKitControls> {
 
   bool _playing = false;
   bool _buffering = false;
+  // Debounced UI mirrors of the above: mpv pulses buffering=true and
+  // playing=false for a few ms at every loop-file loop point, and reflecting
+  // those raw pulses made loops visibly stutter (spinner + play icon flash).
+  // The UI only reacts when a state persists past the debounce window;
+  // user-initiated pauses stay instant via _userPaused.
+  bool _showBuffering = false;
+  bool _playingUi = false;
+  bool _userPaused = false;
+  Timer? _bufferingDebounce;
+  Timer? _pauseIconDebounce;
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
   Duration _buffer = Duration.zero;
   double _volume = 100;
+  // Last audible volume, so unmuting restores it instead of forcing 100
+  // (matters when the video started muted or at a custom level).
+  double _lastNonZeroVolume = 100;
 
   bool _fullscreen = false;
 
@@ -362,28 +790,92 @@ class _MediaKitControlsState extends State<_MediaKitControls> {
   Timer? _hideTimer;
   Timer? _seekFeedbackTimer;
 
+  // Long-press 2× speed (hold anywhere to fast-forward, release to resume).
+  // Rate is player-level state and pooled players stay warm, so every exit
+  // path (release, player swap, dispose) must restore 1×.
+  bool _speedBoosted = false;
+  static const double _boostRate = 2;
+
   @override
   void initState() {
     super.initState();
+    _bindPlayer();
+    _startHideTimer();
+  }
+
+  // (Re)binds this overlay to the current widget.player. Split out of
+  // initState because the hosting view can swap the underlying player in
+  // place (pool rebuild after an error) — without rebinding, the overlay
+  // kept dead subscriptions to the disposed player and froze (static seek
+  // bar, wrong play/pause icon) while the new player actually played.
+  void _bindPlayer() {
     final s = _p.state;
     _playing = s.playing;
+    _playingUi = s.playing;
     _buffering = s.buffering;
+    _showBuffering = false;
     _position = s.position;
     _duration = s.duration;
     _buffer = s.buffer;
     _volume = s.volume;
+    if (_volume > 0) _lastNonZeroVolume = _volume;
 
     _subs.addAll([
-      _p.stream.playing.listen((v) => _safe(() => _playing = v)),
-      _p.stream.buffering.listen((v) => _safe(() => _buffering = v)),
+      _p.stream.playing.listen((v) => _safe(() {
+            _playing = v;
+            if (v) {
+              _pauseIconDebounce?.cancel();
+              _playingUi = true;
+              _userPaused = false;
+            } else if (_userPaused) {
+              _playingUi = false;
+            } else {
+              _pauseIconDebounce?.cancel();
+              _pauseIconDebounce = Timer(const Duration(milliseconds: 300), () {
+                if (mounted && !_playing) setState(() => _playingUi = false);
+              });
+            }
+          })),
+      _p.stream.buffering.listen((v) => _safe(() {
+            _buffering = v;
+            if (v) {
+              _bufferingDebounce?.cancel();
+              _bufferingDebounce = Timer(const Duration(milliseconds: 350), () {
+                if (mounted && _buffering) setState(() => _showBuffering = true);
+              });
+            } else {
+              _bufferingDebounce?.cancel();
+              _showBuffering = false;
+            }
+          })),
       _p.stream.position.listen((v) => _safe(() {
             if (!_dragging) _position = v;
           })),
       _p.stream.duration.listen((v) => _safe(() => _duration = v)),
       _p.stream.buffer.listen((v) => _safe(() => _buffer = v)),
-      _p.stream.volume.listen((v) => _safe(() => _volume = v)),
+      _p.stream.volume.listen((v) => _safe(() {
+            _volume = v;
+            if (v > 0) _lastNonZeroVolume = v;
+          })),
     ]);
-    _startHideTimer();
+  }
+
+  @override
+  void didUpdateWidget(covariant _MediaKitControls oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.player != widget.player) {
+      if (_speedBoosted) {
+        _speedBoosted = false;
+        try {
+          oldWidget.player.setRate(1);
+        } catch (_) {}
+      }
+      for (final s in _subs) {
+        s.cancel();
+      }
+      _subs.clear();
+      _safe(_bindPlayer);
+    }
   }
 
   void _safe(VoidCallback fn) {
@@ -393,11 +885,18 @@ class _MediaKitControlsState extends State<_MediaKitControls> {
 
   @override
   void dispose() {
+    if (_speedBoosted) {
+      try {
+        widget.player.setRate(1);
+      } catch (_) {}
+    }
     for (final s in _subs) {
       s.cancel();
     }
     _hideTimer?.cancel();
     _seekFeedbackTimer?.cancel();
+    _bufferingDebounce?.cancel();
+    _pauseIconDebounce?.cancel();
     super.dispose();
   }
 
@@ -419,6 +918,18 @@ class _MediaKitControlsState extends State<_MediaKitControls> {
   }
 
   void _playPause() {
+    // Track USER intent before toggling: pausing marks the video so
+    // auto-play paths won't restart it; playing clears the mark. The pause
+    // icon reflects a user pause instantly (no debounce).
+    if (_playing) {
+      ViewerHandler.instance.markManualPause(widget.url);
+      _userPaused = true;
+      _playingUi = false;
+    } else {
+      ViewerHandler.instance.clearManualPause(widget.url);
+      _userPaused = false;
+      _playingUi = true;
+    }
     _p.playOrPause();
     _wake();
   }
@@ -430,6 +941,22 @@ class _MediaKitControlsState extends State<_MediaKitControls> {
   }
 
   void _onDoubleTapDown(TapDownDetails d) => _doubleTapInfo = d;
+
+  void _startSpeedBoost(LongPressStartDetails _) {
+    // Only meaningful while playing (2× on a paused frame does nothing).
+    if (!_playing || _speedBoosted) return;
+    _speedBoosted = true;
+    HapticFeedback.mediumImpact();
+    _p.setRate(_boostRate);
+    setState(() {});
+  }
+
+  void _endSpeedBoost() {
+    if (!_speedBoosted) return;
+    _speedBoosted = false;
+    _p.setRate(1);
+    if (mounted) setState(() {});
+  }
 
   void _onDoubleTap() {
     if (_doubleTapInfo == null) return;
@@ -494,8 +1021,35 @@ class _MediaKitControlsState extends State<_MediaKitControls> {
           onTap: _toggleControls,
           onDoubleTapDown: _onDoubleTapDown,
           onDoubleTap: _onDoubleTap,
+          onLongPressStart: _startSpeedBoost,
+          onLongPressEnd: (_) => _endSpeedBoost(),
+          onLongPressCancel: _endSpeedBoost,
         ),
-        if (_buffering && !_dragging)
+        if (_speedBoosted)
+          SafeArea(
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 16),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    color: Colors.black45,
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Symbols.fast_forward_rounded, color: Colors.white, size: 22),
+                        SizedBox(width: 6),
+                        Text('2×', style: TextStyle(color: Colors.white, fontSize: 16)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        if (_showBuffering && !_dragging)
           const Center(
             child: SizedBox(
               width: 48,
@@ -514,28 +1068,39 @@ class _MediaKitControlsState extends State<_MediaKitControls> {
         if (!_hidden)
           Center(
             child: AnimatedOpacity(
-              opacity: _playing ? 0 : 1,
+              opacity: _playingUi ? 0 : 1,
               duration: const Duration(milliseconds: 150),
               child: GestureDetector(
                 onTap: _playPause,
                 child: Container(
                   decoration: const BoxDecoration(color: Colors.black38, shape: BoxShape.circle),
                   padding: const EdgeInsets.all(12),
-                  child: const Icon(Icons.play_arrow, color: Colors.white, size: 48),
+                  child: const Icon(Symbols.play_arrow_rounded, color: Colors.white, size: 48),
                 ),
               ),
             ),
           ),
+        // While the viewer chrome is visible the Flow info peek bar overlays
+        // the bottom of the screen — lift the seek/controls above it.
         Positioned(
           left: 0,
           right: 0,
           bottom: 0,
-          child: AnimatedOpacity(
-            opacity: _hidden ? 0 : 1,
-            duration: const Duration(milliseconds: 200),
-            child: IgnorePointer(
-              ignoring: _hidden,
-              child: _buildBottomBar(accent),
+          child: Obx(
+            () => Padding(
+              padding: EdgeInsets.only(
+                bottom: ViewerHandler.instance.isPeekBarVisible
+                    ? 64 + MediaQuery.viewPaddingOf(context).bottom
+                    : 0,
+              ),
+              child: AnimatedOpacity(
+                opacity: _hidden ? 0 : 1,
+                duration: const Duration(milliseconds: 200),
+                child: IgnorePointer(
+                  ignoring: _hidden,
+                  child: _buildBottomBar(accent),
+                ),
+              ),
             ),
           ),
         ),
@@ -579,7 +1144,7 @@ class _MediaKitControlsState extends State<_MediaKitControls> {
             Row(
               children: [
                 IconButton(
-                  icon: Icon(_playing ? Icons.pause : Icons.play_arrow, color: Colors.white),
+                  icon: Icon(_playingUi ? Symbols.pause_rounded : Symbols.play_arrow_rounded, color: Colors.white),
                   onPressed: _playPause,
                 ),
                 Text(
@@ -588,14 +1153,17 @@ class _MediaKitControlsState extends State<_MediaKitControls> {
                 ),
                 const Spacer(),
                 IconButton(
-                  icon: Icon(muted ? Icons.volume_off : Icons.volume_up, color: Colors.white),
+                  icon: Icon(muted ? Symbols.volume_off_rounded : Symbols.volume_up_rounded, color: Colors.white),
                   onPressed: () {
-                    _p.setVolume(muted ? 100 : 0);
+                    _p.setVolume(muted ? _lastNonZeroVolume : 0);
                     _wake();
                   },
                 ),
                 IconButton(
-                  icon: Icon(_fullscreen ? Icons.fullscreen_exit : Icons.fullscreen, color: Colors.white),
+                  icon: Icon(
+                    (widget.isFullscreen || _fullscreen) ? Symbols.fullscreen_exit_rounded : Symbols.fullscreen_rounded,
+                    color: Colors.white,
+                  ),
                   onPressed: _toggleFullscreen,
                 ),
               ],
@@ -608,17 +1176,34 @@ class _MediaKitControlsState extends State<_MediaKitControls> {
 
   Future<void> _toggleFullscreen() async {
     _wake();
-    if (_fullscreen) {
+    // The controls instance living INSIDE the fullscreen route always pops —
+    // its local _fullscreen flag starts false, so without this check the
+    // button there stacked a second fullscreen route instead of leaving.
+    if (widget.isFullscreen || _fullscreen) {
       await Navigator.of(context).maybePop();
       return;
     }
     setState(() => _fullscreen = true);
+    // r77: the video is still what the user watches - frames go on reading it.
+    // The viewer under fullscreen gives the screen up when this route covers
+    // it and takes it back when it pops; this claim only lasts in between.
+    final Object fullscreenClaim = Object();
+    ViewerHandler.instance.claimScreen(fullscreenClaim);
+    // r77: the pool must not replace or dispose this player under fullscreen.
+    final Player held = _p;
+    _MediaKitPlayerPool.instance.holdForFullscreen(held);
     await Navigator.of(context).push(
       PageRouteBuilder(
         opaque: true,
-        pageBuilder: (_, _, _) => _FullscreenMediaKit(player: _p),
+        pageBuilder: (_, _, _) => _FullscreenMediaKit(
+          player: _p,
+          controller: widget.controller,
+          url: widget.url,
+        ),
       ),
     );
+    ViewerHandler.instance.releaseScreen(fullscreenClaim);
+    _MediaKitPlayerPool.instance.endFullscreenHold(held);
     if (mounted) setState(() => _fullscreen = false);
   }
 
@@ -632,26 +1217,21 @@ class _MediaKitControlsState extends State<_MediaKitControls> {
   }
 }
 
-/// Fullscreen route — shares the SAME player (no new decoder) and reuses the
-/// same controls overlay, so playback continues seamlessly and double-tap /
-/// scrubber all work in landscape.
-class _FullscreenMediaKit extends StatefulWidget {
-  const _FullscreenMediaKit({required this.player});
+/// Fullscreen route — shares the SAME player and VideoController (no new
+/// decoder, no new platform texture) and reuses the same controls overlay,
+/// so playback continues seamlessly and double-tap / scrubber all work in
+/// landscape. Creating a fresh VideoController here used to leak one
+/// texture per fullscreen entry (they only die with the pooled player).
+class _FullscreenMediaKit extends StatelessWidget {
+  const _FullscreenMediaKit({
+    required this.player,
+    required this.controller,
+    required this.url,
+  });
 
   final Player player;
-
-  @override
-  State<_FullscreenMediaKit> createState() => _FullscreenMediaKitState();
-}
-
-class _FullscreenMediaKitState extends State<_FullscreenMediaKit> {
-  late final VideoController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = VideoController(widget.player);
-  }
+  final VideoController controller;
+  final String url;
 
   @override
   Widget build(BuildContext context) {
@@ -662,13 +1242,18 @@ class _FullscreenMediaKitState extends State<_FullscreenMediaKit> {
           fit: StackFit.expand,
           children: [
             Video(
-              controller: _controller,
+              controller: controller,
               fit: BoxFit.contain,
               controls: NoVideoControls,
             ),
             // A second controls instance bound to the same player; fullscreen
-            // button here pops back.
-            _MediaKitControls(player: widget.player),
+            // button here pops back (isFullscreen).
+            _MediaKitControls(
+              player: player,
+              controller: controller,
+              url: url,
+              isFullscreen: true,
+            ),
           ],
         ),
       ),
@@ -692,7 +1277,7 @@ class _SeekFeedback extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(side < 0 ? Icons.fast_rewind : Icons.fast_forward, color: Colors.white, size: 28),
+            Icon(side < 0 ? Symbols.fast_rewind_rounded : Symbols.fast_forward_rounded, color: Colors.white, size: 28),
             const SizedBox(width: 8),
             Text('${seconds}s', style: const TextStyle(color: Colors.white, fontSize: 20)),
           ],
@@ -806,5 +1391,33 @@ class _ProgressBarState extends State<_ProgressBar> {
         );
       },
     );
+  }
+}
+
+/// r76: which pooled player is showing a video right now, for reading its
+/// frames (VideoFrames). Read-only: nothing here changes the pool or a
+/// player. [stillShowing] tells afterwards whether that player still holds
+/// the same video (the pool may re-point an idle player at another one).
+class MediaKitFrameSource {
+  const MediaKitFrameSource._();
+
+  /// r77: a frame is about to be asked of [player]; its screenshot messages
+  /// in the next few seconds are its answer, not a player error.
+  static void noteGrab(Player player) {
+    for (final _PooledPlayer e in _MediaKitPlayerPool.instance._slots) {
+      if (identical(e.player, player)) e.lastGrabAt = MediaKitPlayerView.monoNow();
+    }
+  }
+
+  static ({Player player, bool Function() stillShowing})? showing(String url) {
+    for (final _PooledPlayer e in _MediaKitPlayerPool.instance._slots) {
+      // r77: an idle pooled player (refCount 0) is paused off screen.
+      if (e.url != url || e.hasError || e.refCount <= 0) continue;
+      return (
+        player: e.player,
+        stillShowing: () => e.url == url && !e.hasError && _MediaKitPlayerPool.instance._slots.contains(e),
+      );
+    }
+    return null;
   }
 }

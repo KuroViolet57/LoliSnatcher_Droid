@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:lolisnatcher/src/utils/perf_trace.dart';
 import 'package:lolisnatcher/gen/strings.g.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/widgets/gallery/tag_view.dart';
@@ -40,7 +41,7 @@ class ItemInfoBottomSheet extends StatefulWidget {
   State<ItemInfoBottomSheet> createState() => _ItemInfoBottomSheetState();
 }
 
-class _ItemInfoBottomSheetState extends State<ItemInfoBottomSheet> {
+class _ItemInfoBottomSheetState extends State<ItemInfoBottomSheet> with TraceLifecycle {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);

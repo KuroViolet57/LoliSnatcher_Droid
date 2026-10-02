@@ -21,7 +21,9 @@ List<String> splitTagsClean(String? raw) {
 
 /// Drops the trailing `±HH:MM` timezone suffix from an ISO-ish date string,
 /// guarded so the substring math never throws on short or unexpected input.
-/// Returns null if the string can't be safely trimmed.
+/// Returns null if the string can't be safely trimmed. Used for POST dates;
+/// comment dates go to the comments dialog as the site sent them, because
+/// it parses ISO strings itself and turns the zone into local time (r71).
 String? safeIsoDateMinusTimezone(Object? raw) {
   if (raw == null) return null;
   final String s = raw.toString();

@@ -1,4 +1,7 @@
+import 'package:lolisnatcher/src/boorus/doujin/doujin_filters.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/data/comment_item.dart';
+import 'package:lolisnatcher/src/data/meta_tag.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_suggestion.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
@@ -90,6 +93,7 @@ class BooruOnRailsHandler extends BooruHandler {
         thumbnailURL: thumbURL,
         tagsList: currentTags.map(Tag.new).toList(),
         postURL: makePostURL(id),
+        hasComments: (int.tryParse(responseItem['comment_count']?.toString() ?? '') ?? 0) > 0,
         serverId: id,
         score: responseItem['score']?.toString(),
         sources: [responseItem['source_url']?.toString() ?? ''],
@@ -108,13 +112,124 @@ class BooruOnRailsHandler extends BooruHandler {
 
   @override
   String makeURL(String tags) {
-    final String formattedTags = formatTagsWithUnderscores(tags).replaceAll(' ', ',');
+    // r71: the sort field and direction (sf/sd; checked live 2026-09-17:
+    // sf=score and sf=random reorder /api/v3/search/posts) come as sf:/sd:
+    // terms from the Filters card; range terms (score.gte:100) are ordinary
+    // q terms, joined by commas like the rest.
+    String first(String key) {
+      final List<String> v = DoujinFilters.selected(tags, key);
+      return v.isEmpty ? '' : v.first;
+    }
+
+    final String sf = first('sf');
+    final String sd = first('sd');
+    final String words = DoujinFilters.strip(DoujinFilters.strip(tags, 'sf'), 'sd').trim();
+    final String formattedTags = formatTagsWithUnderscores(words.isEmpty ? '*' : words).replaceAll(' ', ',');
     final String limitStr = limit.toString();
     final String pageStr = pageNum.toString();
     final String apiKeyStr = booru.apiKey?.isNotEmpty == true ? 'key=${booru.apiKey}&' : '';
+    final String sort = '${sf.isEmpty ? '' : '&sf=$sf'}${sd.isEmpty ? '' : '&sd=$sd'}';
 
     // EXAMPLE: https://twibooru.org/api/v3/search/posts?q=*&perpage=10&page=1
-    return '${booru.baseURL}/api/v3/search/posts?${apiKeyStr}q=$formattedTags&perpage=$limitStr&page=$pageStr';
+    return '${booru.baseURL}/api/v3/search/posts?${apiKeyStr}q=$formattedTags&perpage=$limitStr&page=$pageStr$sort';
+  }
+
+  /// The site's sort fields and range terms (twibooru, 2026-09-17).
+  @override
+  DoujinFilterSpec get doujinFilters => const DoujinFilterSpec([
+    DoujinFilterGroup(
+      key: 'sf',
+      label: 'Sort',
+      defaultValue: '',
+      options: [
+        DoujinFilterOption('', 'Newest (site default)'),
+        DoujinFilterOption('score', 'Score'),
+        DoujinFilterOption('faves', 'Favorites'),
+        DoujinFilterOption('upvotes', 'Upvotes'),
+        DoujinFilterOption('comment_count', 'Comments'),
+        DoujinFilterOption('tag_count', 'Tag count'),
+        DoujinFilterOption('width', 'Width'),
+        DoujinFilterOption('height', 'Height'),
+        DoujinFilterOption('random', 'Random'),
+      ],
+    ),
+    DoujinFilterGroup(
+      key: 'sd',
+      label: 'Direction',
+      defaultValue: '',
+      options: [DoujinFilterOption('', 'Descending (default)'), DoujinFilterOption('asc', 'Ascending')],
+    ),
+    // The site's scale (2026-09-17): the top scores are around 200 and
+    // score.gte:100 matches 83 posts, so the steps stop at 100.
+    DoujinFilterGroup(
+      key: 'score.gte',
+      label: 'Score',
+      defaultValue: '',
+      options: [
+        DoujinFilterOption('', 'Any'),
+        DoujinFilterOption('10', '10+'),
+        DoujinFilterOption('25', '25+'),
+        DoujinFilterOption('50', '50+'),
+        DoujinFilterOption('100', '100+'),
+      ],
+    ),
+    DoujinFilterGroup(
+      key: 'faves.gte',
+      label: 'Favorites',
+      defaultValue: '',
+      options: [
+        DoujinFilterOption('', 'Any'),
+        DoujinFilterOption('10', '10+'),
+        DoujinFilterOption('25', '25+'),
+        DoujinFilterOption('50', '50+'),
+        DoujinFilterOption('100', '100+'),
+      ],
+    ),
+  ]);
+
+  /// The fields the site's search understands, for the query editor.
+  @override
+  List<MetaTag> availableMetaTags() => [
+    StringMetaTag(name: 'Uploader', keyName: 'uploader'),
+    StringMetaTag(name: 'ID', keyName: 'id'),
+    StringMetaTag(name: 'Score at least', keyName: 'score.gte'),
+    StringMetaTag(name: 'Favorites at least', keyName: 'faves.gte'),
+    StringMetaTag(name: 'Width at least', keyName: 'width.gte'),
+    StringMetaTag(name: 'Height at least', keyName: 'height.gte'),
+    StringMetaTag(name: 'Source URL contains', keyName: 'source_url'),
+    StringMetaTag(name: 'Description contains', keyName: 'description'),
+    StringMetaTag(name: 'SHA-512 hash', keyName: 'sha512_hash'),
+  ];
+
+  // r71: /api/v3/posts/<id>/comments - the whole thread in one answer,
+  // anonymous rows (checked live 2026-09-17).
+  @override
+  bool get hasCommentsSupport => true;
+
+  @override
+  String makeCommentsURL(String postID, int pageNum) {
+    // EXAMPLE: https://twibooru.org/api/v3/posts/3408660/comments
+    return pageNum > 0 ? '' : '${booru.baseURL}/api/v3/posts/$postID/comments';
+  }
+
+  @override
+  List parseCommentsList(dynamic response) {
+    final dynamic data = response.data;
+    if (data is Map && data['comments'] is List) return data['comments'] as List;
+    return const [];
+  }
+
+  @override
+  CommentItem? parseComment(dynamic responseItem, int index) {
+    final Map<String, dynamic> c = Map<String, dynamic>.from(responseItem as Map);
+    if (c['hidden_from_users'] == true) return null;
+    return CommentItem(
+      id: c['id']?.toString(),
+      content: c['body']?.toString(),
+      authorName: c['author']?.toString() ?? 'Anonymous',
+      createDate: c['created_at']?.toString(), // 2024-12-13T06:37:44.421Z, zone kept for the dialog
+      createDateFormat: 'iso',
+    );
   }
 
   @override

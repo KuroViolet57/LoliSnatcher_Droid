@@ -6,6 +6,8 @@ import 'package:flutter/foundation.dart';
 
 import 'package:dio/dio.dart';
 import 'package:html/parser.dart';
+import 'package:lolisnatcher/src/boorus/doujin/doujin_filters.dart';
+import 'package:lolisnatcher/src/boorus/booru_site_filters.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:xml/xml.dart';
 
@@ -17,6 +19,8 @@ import 'package:lolisnatcher/src/data/tag_suggestion.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_utils.dart';
+import 'package:lolisnatcher/src/handlers/booru_tag_catalog.dart';
+import 'package:lolisnatcher/src/handlers/tag_catalog_source.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
@@ -26,6 +30,19 @@ import 'package:lolisnatcher/src/utils/tools.dart';
 
 class GelbooruAlikesHandler extends BooruHandler {
   GelbooruAlikesHandler(super.booru, super.limit);
+
+  /// r45: the gelbooru engine's cheat sheet as Filters, in the site's rating words
+  /// (rule34.xxx adds aspectratio:).
+  @override
+  DoujinFilterSpec? get doujinFilters => BooruEngineFilters.gelbooru(
+    booruOrgRatings: !(booru.baseURL ?? '').contains('gelbooru.com'),
+    aspectRatio: (booru.baseURL ?? '').contains('rule34.xxx'),
+  );
+
+  /// Artists, characters, copyrights, meta and general tags from the site's
+  /// own count-ordered tag list (see GelbooruTagIndex).
+  @override
+  late final TagCatalogSource? tagCatalog = BooruTagCatalog.forHandler(this);
 
   @override
   bool get hasSizeData => true;
@@ -38,8 +55,7 @@ class GelbooruAlikesHandler extends BooruHandler {
   // between brace and tag. Verified against rule34.xxx API: without the
   // inner spaces the search returns zero posts.
   @override
-  String translateOrSyntax(String tags) =>
-      BooruHandler.orSyntaxBraced(tags, '(', ')', padInner: true);
+  String translateOrSyntax(String tags) => BooruHandler.orSyntaxBraced(tags, '(', ')', padInner: true);
 
   String get originalBaseUrl => booru.baseURL!;
 
@@ -277,12 +293,8 @@ class GelbooruAlikesHandler extends BooruHandler {
                       content: content.text.trim(),
                       authorName: header.querySelector('a')?.text.trim(),
                       postID: postID,
-                      score: scoreRegex.hasMatch(headerSecondRowText)
-                          ? int.tryParse(scoreRegex.firstMatch(headerSecondRowText)!.group(1)!)
-                          : null,
-                      createDate: timeRegex.hasMatch(headerSecondRowText)
-                          ? timeRegex.firstMatch(headerSecondRowText)!.group(1)!.trim()
-                          : null,
+                      score: scoreRegex.hasMatch(headerSecondRowText) ? int.tryParse(scoreRegex.firstMatch(headerSecondRowText)!.group(1)!) : null,
+                      createDate: timeRegex.hasMatch(headerSecondRowText) ? timeRegex.firstMatch(headerSecondRowText)!.group(1)!.trim() : null,
                       createDateFormat: 'yyyy-MM-dd HH:mm:ss',
                     ),
                   );
@@ -383,9 +395,9 @@ class GelbooruAlikesHandler extends BooruHandler {
     String cookieString = await Tools.getCookies(postUrl);
 
     final Map<String, String> headers = getHeaders();
-    if (headers['Cookie']?.isNotEmpty ?? false) {
-      cookieString += headers['Cookie']!;
-    }
+    // MERGE, never concatenate: both sources carry the whole jar, so adding
+    // one to the other sent every cookie twice (see Tools.mergeCookieStrings).
+    cookieString = Tools.mergeCookieStrings([cookieString, headers['Cookie'] ?? '']);
 
     Logger.Inst().log(
       '$baseURL: $cookieString',
@@ -455,9 +467,7 @@ class GelbooruAlikesHandler extends BooruHandler {
         }
 
         final uploaderElem = html.getElementById('stats')?.getElementsByTagName('a').firstOrNull;
-        if (uploaderElem != null &&
-            uploaderElem.attributes['href']?.isNotEmpty == true &&
-            uploaderElem.attributes['href'] != '#') {
+        if (uploaderElem != null && uploaderElem.attributes['href']?.isNotEmpty == true && uploaderElem.attributes['href'] != '#') {
           item.uploaderName = uploaderElem.text.trim();
         }
 
@@ -479,9 +489,8 @@ class GelbooruAlikesHandler extends BooruHandler {
   //
 
   @override
-  String? get metatagsCheatSheetLink => isR34xxx
-      ? 'https://rule34.xxx/index.php?page=help&topic=cheatsheet'
-      : 'https://gelbooru.com/index.php?page=help&topic=cheatsheet';
+  String? get metatagsCheatSheetLink =>
+      isR34xxx ? 'https://rule34.xxx/index.php?page=help&topic=cheatsheet' : 'https://gelbooru.com/index.php?page=help&topic=cheatsheet';
 
   @override
   List<MetaTag> availableMetaTags() {

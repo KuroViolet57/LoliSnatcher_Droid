@@ -4,23 +4,31 @@ import 'dart:math';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 
 import 'package:photo_view/photo_view.dart';
 import 'package:preload_page_view/preload_page_view.dart';
 
+import 'package:lolisnatcher/src/utils/navigation_trace.dart';
+import 'package:lolisnatcher/src/utils/perf_trace.dart';
+import 'package:lolisnatcher/src/widgets/video/flash_play_viewer.dart';
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
 import 'package:lolisnatcher/src/boorus/idol_sankaku_handler.dart';
 import 'package:lolisnatcher/src/boorus/sankaku_handler.dart';
 import 'package:get/get.dart' hide ContextExt, FirstWhereOrNullExt;
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
+import 'package:lolisnatcher/src/handlers/floating_preview_handler.dart';
 import 'package:lolisnatcher/src/handlers/tag_handler.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/handlers/interests_handler.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
+import 'package:lolisnatcher/src/handlers/post_files_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/snatch_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
@@ -62,7 +70,7 @@ class GalleryViewPage extends StatefulWidget {
   State<GalleryViewPage> createState() => _GalleryViewPageState();
 }
 
-class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
+class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware, TraceLifecycle {
   final SettingsHandler settingsHandler = SettingsHandler.instance;
   final SearchHandler searchHandler = SearchHandler.instance;
   final SnatchHandler snatchHandler = SnatchHandler.instance;
@@ -87,10 +95,22 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
 
   void _flushDwell() {
     final item = _dwellItem;
-    if (item != null) {
+    // Doujin items (however they reached the classic viewer) must not feed
+    // the booru taste profile — per item, so merge tabs are covered too.
+    if (item != null && !widget.tab.booruHandler.hasReader && !DoujinDataHandler.isDoujinItem(item)) {
       InterestsHandler.instance.onItemViewed(item, DateTime.now().difference(_dwellSince));
     }
     _dwellItem = null;
+  }
+
+  /// Sites where a post can hold several files only reveal the list on the
+  /// post's own page, so it is fetched HERE — when a post is actually opened,
+  /// never while the grid loads — and cached. The toolbar action appears by
+  /// itself once the list arrives and turns out to hold more than one file.
+  void _loadPostFiles(BooruItem item) {
+    final booru = widget.tab.booruHandler.booru;
+    if (!PostFilesHandler.instance.supports(booru)) return;
+    unawaited(PostFilesHandler.instance.ensureLoaded(item, booru));
   }
 
   void _startDwell(BooruItem item) {
@@ -111,9 +131,21 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
   // thirds": 1 => 1/3, 2 => 2/3, 3 => full. fraction = N/3.
   double get infoSheetOpenSize => (settingsHandler.bottomSheetSizeMultiplier / 3).clamp(0.2, 0.98);
 
+  void _mirrorSheetExtent() {
+    viewerHandler.infoSheetExtent.value = infoSheetExtent.value;
+  }
+
   @override
   void initState() {
     super.initState();
+    // r68: a post opened from the feed. 'viewer.swipe' is a swipe to the next
+    // post inside the viewer - the two used to be one and got misread.
+    PerfTrace.instance.event('viewer.open', '${widget.initialIndex}');
+
+    // Mirror the sheet extent into ViewerHandler so video-control overlays
+    // know whether the peek bar is actually visible.
+    viewerHandler.infoSheetExtent.value = 0;
+    infoSheetExtent.addListener(_mirrorSheetExtent);
 
     // pause all active videos to avoid performance and sound overlay issues
     viewerHandler.pauseAllVideos();
@@ -132,8 +164,9 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
       final item = widget.tab.booruHandler.filteredFetched[widget.initialIndex];
       viewerHandler.setCurrent(item);
       _startDwell(item);
+      _loadPostFiles(item);
       if (settingsHandler.dimSeenPosts) {
-        unawaited(searchHandler.markPostSeen(item));
+        unawaited(searchHandler.markPostSeen(item, tab: widget.tab));
       }
     } catch (e) {
       viewerHandler.dropCurrent();
@@ -158,16 +191,32 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
   @override
   void didPushNext() {
     isActive.value = false;
+    viewerHandler.releaseScreen(this);
   }
 
   @override
   void didPush() {
     isActive.value = true;
+    viewerHandler.claimScreen(this);
+  }
+
+  // r77: frames are read only while a viewer is really on screen; a closing
+  // viewer stops that the moment its route pops, not after its animation.
+  @override
+  void didPop() {
+    viewerHandler.releaseScreen(this);
   }
 
   @override
   void didPopNext() {
     isActive.value = true;
+    viewerHandler.claimScreen(this);
+
+    // A nested viewer (e.g. opened from a tag preview strip) shares the
+    // global sheet-extent mirror and resets it to 0 in its own initState —
+    // re-assert THIS viewer's actual sheet position so video controls don't
+    // lift for a peek bar that isn't there (sheet open ⇒ no peek bar).
+    viewerHandler.infoSheetExtent.value = infoSheetExtent.value;
 
     try {
       final item = widget.tab.booruHandler.filteredFetched[page.value];
@@ -193,6 +242,7 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
 
   @override
   void dispose() {
+    viewerHandler.releaseScreen(this);
     _flushDwell();
     if (widget.key is GlobalKey) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -201,6 +251,11 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
     }
     NavigationHandler.instance.routeObserver.unsubscribe(this);
     infoSheetController.dispose();
+    infoSheetExtent.removeListener(_mirrorSheetExtent);
+    // NOTE: deliberately NOT resetting viewerHandler.infoSheetExtent here — a
+    // nested viewer disposing after the outer one's didPopNext would clobber
+    // the outer viewer's just-restored sheet position. The next viewer's
+    // initState sets its own value.
     infoSheetExtent.dispose();
     volumeListener?.cancel();
     ServiceHandler.setVolumeButtons(!settingsHandler.useVolumeButtonsForScroll);
@@ -342,7 +397,7 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
               ServiceHandler.vibrate();
             }
           },
-          onDismissed: (_) => Navigator.of(context).pop(),
+          onDismissed: (_) => NavigationTrace.closing('swipe down', () => Navigator.of(context).pop()),
           child: ValueListenableBuilder(
             valueListenable: dismissProgress,
             builder: (context, dismissProgress, child) {
@@ -433,7 +488,7 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
                     } else if (event.physicalKey == PhysicalKeyboardKey.escape) {
                       // exit on escape if in focus
                       if (kbFocusNode.hasFocus) {
-                        Navigator.of(context).pop();
+                        NavigationTrace.closing('Escape key', () => Navigator.of(context).pop());
                       }
                     }
                   }
@@ -473,7 +528,7 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
 
                               final bool isFavsOrDls =
                                   widget.tab.booruHandler.booru.type?.isLocalDb == true ||
-                                  widget.tab.booruHandler.booru.type?.isForYou == true;
+                                  widget.tab.booruHandler.booru.type?.isRecommendationFeed == true;
                               Booru? possibleBooru;
                               if (isFavsOrDls) {
                                 final itemFileHost = Uri.tryParse(item.fileURL)?.host;
@@ -497,7 +552,7 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
                                           booruHost?.isNotEmpty == true &&
                                           itemFileHost! == booruHost!);
                                 });
-                                if (possibleBooru?.type?.isLocalDb == true || possibleBooru?.type?.isForYou == true) {
+                                if (possibleBooru?.type?.isLocalDb == true || possibleBooru?.type?.isRecommendationFeed == true) {
                                   possibleBooru = null;
                                 }
                               }
@@ -517,7 +572,16 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
                                   final bool useGifViewer = mediaType.isAnimation && settingsHandler.fastGifPlayback;
 
                                   late Widget itemWidget;
-                                  if (useGifViewer) {
+                                  // r48: a Flash post is its thumbnail and a Play button, never
+                                  // the loading card and the type guessing that end on
+                                  // "Failed to guess the file extension".
+                                  if (FlashPlayViewer.shouldShow(item)) {
+                                    itemWidget = FlashPlayViewer(
+                                      item: item,
+                                      handler: widget.tab.booruHandler,
+                                      key: item.key,
+                                    );
+                                  } else if (useGifViewer) {
                                     itemWidget = ValueListenableBuilder(
                                       valueListenable: page,
                                       builder: (_, pageVal, _) {
@@ -687,6 +751,7 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
                               );
                             },
                             onPageChanged: (int index) {
+                              PerfTrace.instance.event('viewer.swipe', '$index');
                               page.value = index;
                               widget.onPageChanged?.call(index);
                               ServiceHandler.disableSleep();
@@ -699,7 +764,10 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
                                   viewerHandler.setCurrent(item);
                                   _startDwell(item);
                                   if (settingsHandler.dimSeenPosts) {
-                                    unawaited(searchHandler.markPostSeen(item));
+                                    unawaited(searchHandler.markPostSeen(item, tab: widget.tab));
+                                  }
+                                  {
+                                    _loadPostFiles(item);
                                   }
                                 }
                               } catch (e) {
@@ -853,7 +921,12 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware {
               return PopScope(
                 canPop: extent <= 0.001,
                 onPopInvokedWithResult: (didPop, result) {
-                  if (!didPop) closeInfoSheet();
+                  // r77: a preview window shown on this page takes this Back
+                  // (it closes first; the sheet closes on the next one).
+                  // (The top page is this viewer when its Back runs; asking
+                  // ModalRoute.of here would rebuild on every route change.)
+                  final FloatingPreviewHandler previews = FloatingPreviewHandler.instance;
+                  if (!didPop && !previews.hasWindowFor(previews.topPageRoute)) closeInfoSheet();
                 },
                 child: child!,
               );
@@ -1038,9 +1111,13 @@ class _InfoPeekBar extends StatelessWidget {
         children: [
           Icon(icon, size: 15, color: fg),
           const SizedBox(width: 6),
-          Text(
-            label,
-            style: TextStyle(color: fg, fontSize: 12.5, fontWeight: FontWeight.w700),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: fg, fontSize: 12.5, fontWeight: FontWeight.w700),
+            ),
           ),
         ],
       ),
@@ -1085,20 +1162,20 @@ class _InfoPeekBar extends StatelessWidget {
                       Flexible(
                         child: _chip(
                           context,
-                          Icons.brush_outlined,
+                          Symbols.brush_rounded,
                           artist.replaceAll('_', ' '),
                           TagType.artist.getColour(),
                         ),
                       ),
                       const SizedBox(width: 8),
                     ],
-                    _chip(context, Icons.sell_outlined, '$tagCount tags', null),
+                    _chip(context, Symbols.sell_rounded, '$tagCount tags', null),
                     const Spacer(),
                     const Text(
                       'swipe up',
                       style: TextStyle(color: Color(0xFF8A80A0), fontSize: 11.5, fontWeight: FontWeight.w600),
                     ),
-                    const Icon(Icons.keyboard_arrow_up_rounded, size: 18, color: Color(0xFF8A80A0)),
+                    const Icon(Symbols.keyboard_arrow_up_rounded, size: 18, color: Color(0xFF8A80A0)),
                   ],
                 ),
               ],
@@ -1197,7 +1274,7 @@ class _ItemInfoDrawerState extends State<ItemInfoDrawer> {
                   ? SizedBox.expand(
                       child: OutlinedButton(
                         onPressed: viewerHandler.forceLoadCurrentItem,
-                        child: const Icon(Icons.refresh),
+                        child: const Icon(Symbols.refresh_rounded),
                       ),
                     )
                   : null,
@@ -1215,7 +1292,7 @@ class _ItemInfoDrawerState extends State<ItemInfoDrawer> {
               onLongPressCancel: toggleVisibility,
               child: OutlinedButton(
                 onPressed: toggleVisibility,
-                child: isVisible.value ? const Icon(Icons.remove_red_eye) : const Icon(Icons.remove_red_eye_outlined),
+                child: isVisible.value ? const Icon(Symbols.remove_red_eye_rounded) : const Icon(Symbols.remove_red_eye_rounded),
               ),
             );
           },
@@ -1231,8 +1308,8 @@ class _ItemInfoDrawerState extends State<ItemInfoDrawer> {
           child: OutlinedButton(
             onPressed: () => widget.pageController.jumpToPage(page.value - 1),
             child: settingsHandler.galleryScrollDirection.isVertical
-                ? const Icon(Icons.arrow_upward)
-                : const Icon(Icons.arrow_back),
+                ? const Icon(Symbols.arrow_upward_rounded)
+                : const Icon(Symbols.arrow_back_rounded),
           ),
         ),
       ),
@@ -1246,8 +1323,8 @@ class _ItemInfoDrawerState extends State<ItemInfoDrawer> {
           child: OutlinedButton(
             onPressed: () => widget.pageController.jumpToPage(page.value + 1),
             child: settingsHandler.galleryScrollDirection.isVertical
-                ? const Icon(Icons.arrow_downward)
-                : const Icon(Icons.arrow_forward),
+                ? const Icon(Symbols.arrow_downward_rounded)
+                : const Icon(Symbols.arrow_forward_rounded),
           ),
         ),
       ),

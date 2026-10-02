@@ -1,19 +1,28 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:dio/dio.dart';
 import 'package:get/get.dart';
 import 'package:get_it/get_it.dart';
 
+import 'package:lolisnatcher/src/handlers/doujin_download_handler.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 import 'package:lolisnatcher/src/handlers/interests_handler.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
+import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/services/image_writer.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 import 'package:lolisnatcher/src/widgets/thumbnail/thumbnail_build.dart';
+import 'package:lolisnatcher/src/utils/logger.dart';
+import 'package:lolisnatcher/src/boorus/doujin/ehentai_handler.dart';
 
 class SnatchHandler {
   SnatchHandler() {
@@ -184,6 +193,12 @@ class SnatchHandler {
         : '0/${item.booruItems.length}';
     current.value = item;
 
+    // A doujin book gets its own folder and page-numbered files; when the
+    // folder cannot be made the pages fall back to the root, as before.
+    final DoujinDownloadTarget? target = item.doujin == null
+        ? null
+        : await DoujinDownloadHandler.instance.prepare(item.doujin!);
+
     // writeMultipleFake(item.booruItems, item.booru, item.cooldown).listen(
     ImageWriter()
         .writeMultiple(
@@ -193,6 +208,8 @@ class SnatchHandler {
           onProgress,
           item.ignoreExists,
           onCancelTokenCreate,
+          dirOverride: target?.dir,
+          fileNameFor: target == null ? null : (page, i) => DoujinDownloadHandler.pageFileName(item.doujin!, page, i),
         )
         .listen(
           (Map<String, dynamic> data) {
@@ -201,6 +218,9 @@ class SnatchHandler {
             final List<BooruItem> failed = data['failed'] ?? [];
             final List<BooruItem> cancelled = data['cancelled'] ?? [];
             final bool isLastMessage = data['exists'] != null && data['failed'] != null && data['cancelled'] != null;
+            if (isLastMessage && target != null && item.doujin != null) {
+              unawaited(DoujinDownloadHandler.instance.writeManifest(target, item.doujin!));
+            }
 
             // last yield in stream will send fetch results counters
             // but show this message only when queue is empty => snatching is complete
@@ -245,7 +265,7 @@ class SnatchHandler {
                       const SizedBox(width: 8),
                     ],
                   ),
-                  leadingIcon: Icons.done_all,
+                  leadingIcon: Symbols.done_all_rounded,
                   sideColor: failed.isNotEmpty
                       ? Colors.red
                       : ((exists.isNotEmpty || cancelled.isNotEmpty) ? Colors.yellow : Colors.green),
@@ -277,7 +297,7 @@ class SnatchHandler {
                       if (queuedList.isNotEmpty) Text(context.loc.snatcher.startingNextQueueItem),
                     ],
                   ),
-                  leadingIcon: Icons.done_all,
+                  leadingIcon: Symbols.done_all_rounded,
                   sideColor: failed.isNotEmpty
                       ? Colors.red
                       : ((exists.isNotEmpty || cancelled.isNotEmpty) ? Colors.yellow : Colors.green),
@@ -334,16 +354,83 @@ class SnatchHandler {
     }
   }
 
-  void queue(
+  /// [doujin] describes the BOOK the pages belong to; with it the pages are
+  /// written into that book's own folder instead of loose in the root.
+  /// Pages a source serves one at a time (e-hentai) are placeholders until
+  /// opened; a download of the book fetches each page's real file first,
+  /// paced, then queues as usual. Pages the site refuses are left out and
+  /// logged rather than saved as their cover.
+  Future<void> _resolveThenQueue(
     List<BooruItem> booruItems,
     Booru booru,
     int cooldown,
     bool ignoreExists,
-  ) {
+    DoujinDownloadInfo doujin,
+  ) async {
+    final BooruHandler handler = BooruHandlerFactory().getBooruHandler([booru], null).booruHandler;
+    final List<BooruItem> ready = [];
+    for (final BooruItem item in booruItems) {
+      if (item.mediaType.value != MediaType.needToLoadItem) {
+        ready.add(item);
+        continue;
+      }
+      try {
+        final result = handler is EHentaiHandler
+            ? await handler.loadItem(item: item, withCapcthaCheck: true, bulk: true)
+            : await handler.loadItem(item: item, withCapcthaCheck: true);
+        if (!result.failed) {
+          ready.add(item);
+        } else {
+          Logger.Inst().log('page not resolved for download: ${item.postURL} — ${result.error}', 'SnatchHandler', '_resolveThenQueue', LogTypes.booruHandlerInfo);
+        }
+      } catch (e) {
+        Logger.Inst().log('page not resolved for download: ${item.postURL} — $e', 'SnatchHandler', '_resolveThenQueue', LogTypes.exception);
+      }
+      await Future.delayed(const Duration(milliseconds: 300));
+    }
+    if (ready.isEmpty) {
+      Logger.Inst().log('no page of this book could be resolved; nothing queued', 'SnatchHandler', '_resolveThenQueue', LogTypes.booruHandlerInfo);
+      return;
+    }
+    // The manifest must describe what is actually being saved.
+    queue(ready, booru, cooldown, ignoreExists, doujin: doujin.withMissing(ready));
+  }
+
+  void queue(
+    List<BooruItem> booruItems,
+    Booru booru,
+    int cooldown,
+    bool ignoreExists, {
+    DoujinDownloadInfo? doujin,
+  }) {
+    if (doujin != null && booruItems.any((i) => i.mediaType.value == MediaType.needToLoadItem)) {
+      unawaited(_resolveThenQueue(booruItems, booru, cooldown, ignoreExists, doujin));
+      return;
+    }
     if (booruItems.isNotEmpty) {
-      final SnatchItem item = SnatchItem(booruItems, cooldown, booru, ignoreExists);
+      final SnatchItem item = SnatchItem(booruItems, cooldown, booru, ignoreExists, doujin: doujin);
       queuedList.add(item);
-      InterestsHandler.instance.onItemsSnatched(booruItems);
+      // Doujin downloads must not feed the booru taste profile — checked per
+      // item so merge tabs mixing both worlds stay separated too.
+      if (!DoujinDataHandler.isDoujinBooru(booru)) {
+        final List<BooruItem> booruOnly = [
+          for (final i in booruItems)
+            if (!DoujinDataHandler.isDoujinItem(i)) i,
+        ];
+        if (booruOnly.isNotEmpty) {
+          InterestsHandler.instance.onItemsSnatched(booruOnly);
+        }
+      }
+
+      // "Hide snatched posts" is meant to apply when a feed LOADS, not to make
+      // a post vanish the instant you save it. Keep anything snatched now
+      // visible until the feed is actually reloaded (same rule as favourites).
+      final SearchHandler searchHandler = SearchHandler.instance;
+      if (searchHandler.tabs.isNotEmpty) {
+        for (final snatched in booruItems) {
+          searchHandler.currentTab.booruHandler.exemptFromLiveFilter(snatched);
+        }
+      }
 
       if (booruItems.length > 1) {
         if (SettingsHandler.instance.downloadNotifications) {
@@ -355,7 +442,7 @@ class SnatchHandler {
             ),
             position: FlashPosition.top,
             duration: const Duration(seconds: 2),
-            leadingIcon: Icons.info_outline,
+            leadingIcon: Symbols.info_rounded,
             sideColor: Colors.green,
           );
         }
@@ -369,7 +456,7 @@ class SnatchHandler {
             ),
             position: FlashPosition.top,
             duration: const Duration(seconds: 2),
-            leadingIcon: Icons.info_outline,
+            leadingIcon: Symbols.info_rounded,
             sideColor: Colors.green,
             content: Row(
               children: [
@@ -419,7 +506,7 @@ class SnatchHandler {
           Text(context.loc.snatcher.doNotCloseApp),
         ],
       ),
-      leadingIcon: Icons.warning_amber,
+      leadingIcon: Symbols.warning_amber_rounded,
       leadingIconColor: Colors.yellow,
       sideColor: Colors.yellow,
     );
@@ -444,8 +531,12 @@ class SnatchItem {
     this.booruItems,
     this.cooldown,
     this.booru,
-    this.ignoreExists,
-  );
+    this.ignoreExists, {
+    this.doujin,
+  });
+
+  /// Set for doujin pages: the book they belong to (own folder + manifest).
+  final DoujinDownloadInfo? doujin;
 
   final List<BooruItem> booruItems;
   final int cooldown;

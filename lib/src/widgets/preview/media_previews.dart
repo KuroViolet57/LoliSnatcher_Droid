@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:get/get.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
@@ -78,23 +80,23 @@ class _MediaPreviewsState extends State<MediaPreviews> {
                 ),
                 SettingsButton(
                   name: context.loc.mediaPreviews.addNewBooru,
-                  icon: const Icon(Icons.settings),
+                  icon: const Icon(Symbols.settings_rounded),
                   page: () => BooruEdit(Booru('New', null, '', '', '')),
                 ),
                 SettingsButton(
                   name: context.loc.mediaPreviews.help,
-                  icon: const Icon(Icons.help_center_outlined),
+                  icon: const Icon(Symbols.help_center_rounded),
                   action: () {
                     launchUrlString(
                       'https://github.com/NO-ob/LoliSnatcher_Droid/wiki',
                       mode: LaunchMode.externalApplication,
                     );
                   },
-                  trailingIcon: const Icon(Icons.exit_to_app),
+                  trailingIcon: const Icon(Symbols.exit_to_app_rounded),
                 ),
                 SettingsButton(
                   name: context.loc.mediaPreviews.settings,
-                  icon: const Icon(Icons.settings),
+                  icon: const Icon(Symbols.settings_rounded),
                   page: () => const SettingsPage(),
                 ),
               ],

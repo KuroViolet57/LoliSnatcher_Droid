@@ -190,20 +190,20 @@ class TranslationsZhCn extends Translations with BaseTranslations<AppLocale, Tra
   @override
   String get downloads => TranslationOverrides.string(_root.$meta, 'downloads', {}) ?? '下载';
   @override
-  late final _TranslationsValidationErrorsZhCn validationErrors = _TranslationsValidationErrorsZhCn._(_root);
+  late final _Translations$validationErrors$zh_CN validationErrors = _Translations$validationErrors$zh_CN._(_root);
   @override
-  late final _TranslationsInitZhCn init = _TranslationsInitZhCn._(_root);
+  late final _Translations$init$zh_CN init = _Translations$init$zh_CN._(_root);
   @override
-  late final _TranslationsPermissionsZhCn permissions = _TranslationsPermissionsZhCn._(_root);
+  late final _Translations$permissions$zh_CN permissions = _Translations$permissions$zh_CN._(_root);
   @override
-  late final _TranslationsAuthenticationZhCn authentication = _TranslationsAuthenticationZhCn._(_root);
+  late final _Translations$authentication$zh_CN authentication = _Translations$authentication$zh_CN._(_root);
   @override
-  late final _TranslationsSearchHandlerZhCn searchHandler = _TranslationsSearchHandlerZhCn._(_root);
+  late final _Translations$searchHandler$zh_CN searchHandler = _Translations$searchHandler$zh_CN._(_root);
 }
 
 // Path: validationErrors
-class _TranslationsValidationErrorsZhCn extends TranslationsValidationErrorsEn {
-  _TranslationsValidationErrorsZhCn._(TranslationsZhCn root) : this._root = root, super.internal(root);
+class _Translations$validationErrors$zh_CN extends Translations$validationErrors$en {
+  _Translations$validationErrors$zh_CN._(TranslationsZhCn root) : this._root = root, super.internal(root);
 
   final TranslationsZhCn _root; // ignore: unused_field
 
@@ -236,8 +236,8 @@ class _TranslationsValidationErrorsZhCn extends TranslationsValidationErrorsEn {
 }
 
 // Path: init
-class _TranslationsInitZhCn extends TranslationsInitEn {
-  _TranslationsInitZhCn._(TranslationsZhCn root) : this._root = root, super.internal(root);
+class _Translations$init$zh_CN extends Translations$init$en {
+  _Translations$init$zh_CN._(TranslationsZhCn root) : this._root = root, super.internal(root);
 
   final TranslationsZhCn _root; // ignore: unused_field
 
@@ -257,8 +257,8 @@ class _TranslationsInitZhCn extends TranslationsInitEn {
 }
 
 // Path: permissions
-class _TranslationsPermissionsZhCn extends TranslationsPermissionsEn {
-  _TranslationsPermissionsZhCn._(TranslationsZhCn root) : this._root = root, super.internal(root);
+class _Translations$permissions$zh_CN extends Translations$permissions$en {
+  _Translations$permissions$zh_CN._(TranslationsZhCn root) : this._root = root, super.internal(root);
 
   final TranslationsZhCn _root; // ignore: unused_field
 
@@ -284,8 +284,8 @@ class _TranslationsPermissionsZhCn extends TranslationsPermissionsEn {
 }
 
 // Path: authentication
-class _TranslationsAuthenticationZhCn extends TranslationsAuthenticationEn {
-  _TranslationsAuthenticationZhCn._(TranslationsZhCn root) : this._root = root, super.internal(root);
+class _Translations$authentication$zh_CN extends Translations$authentication$en {
+  _Translations$authentication$zh_CN._(TranslationsZhCn root) : this._root = root, super.internal(root);
 
   final TranslationsZhCn _root; // ignore: unused_field
 
@@ -304,8 +304,8 @@ class _TranslationsAuthenticationZhCn extends TranslationsAuthenticationEn {
 }
 
 // Path: searchHandler
-class _TranslationsSearchHandlerZhCn extends TranslationsSearchHandlerEn {
-  _TranslationsSearchHandlerZhCn._(TranslationsZhCn root) : this._root = root, super.internal(root);
+class _Translations$searchHandler$zh_CN extends Translations$searchHandler$en {
+  _Translations$searchHandler$zh_CN._(TranslationsZhCn root) : this._root = root, super.internal(root);
 
   final TranslationsZhCn _root; // ignore: unused_field
 

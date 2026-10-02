@@ -2,11 +2,14 @@ import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:permission_handler/permission_handler.dart';
 
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/services/download_folders.dart';
 import 'package:lolisnatcher/src/widgets/common/cancel_button.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 
@@ -69,13 +72,13 @@ Future<bool> showStorageNeedsUpdateDialog() async {
             const SizedBox(height: 24),
             ElevatedButton.icon(
               label: Text(context.loc.permissions.setDirectory),
-              icon: const Icon(Icons.settings),
+              icon: const Icon(Symbols.settings_rounded),
               onPressed: () async {
-                SettingsHandler.instance.extPathOverride = '';
                 if (Platform.isAndroid) {
                   final String newPath = await ServiceHandler.setExtDir();
-                  SettingsHandler.instance.extPathOverride = newPath;
-                  await SettingsHandler.instance.saveSettings(restate: false);
+                  // r82: the folder left is remembered; the new one's file
+                  // list is read at once ('' = the default folder, as before).
+                  await DownloadFolders.change(newPath);
                   Navigator.of(context).pop(true);
                 } else {
                   FlashElements.showSnackbar(
@@ -88,7 +91,7 @@ Future<bool> showStorageNeedsUpdateDialog() async {
                       context.loc.permissions.currentlyNotAvailableForThisPlatform,
                       style: const TextStyle(fontSize: 16),
                     ),
-                    leadingIcon: Icons.error_outline,
+                    leadingIcon: Symbols.error_rounded,
                     leadingIconColor: Colors.red,
                     sideColor: Colors.red,
                   );
@@ -99,14 +102,13 @@ Future<bool> showStorageNeedsUpdateDialog() async {
             const SizedBox(height: 20),
             ElevatedButton.icon(
               label: Text(context.loc.permissions.resetDirectory),
-              icon: const Icon(Icons.refresh),
+              icon: const Icon(Symbols.refresh_rounded),
               style: ElevatedButtonTheme.of(context).style!.copyWith(
                 backgroundColor: const WidgetStatePropertyAll(Colors.redAccent),
                 foregroundColor: const WidgetStatePropertyAll(Colors.white),
               ),
               onPressed: () async {
-                SettingsHandler.instance.extPathOverride = '';
-                await SettingsHandler.instance.saveSettings(restate: false);
+                await DownloadFolders.change('');
                 Navigator.of(context).pop(true);
               },
             ),

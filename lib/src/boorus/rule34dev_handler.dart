@@ -36,6 +36,13 @@ import 'package:lolisnatcher/src/utils/tools.dart';
 class Rule34DevHandler extends BooruHandler {
   Rule34DevHandler(super.booru, super.limit);
 
+  // Reads neither field (audited): the fields are hidden on the edit page.
+  @override
+  bool get usesUserId => false;
+  @override
+  bool get usesApiKey => false;
+
+
   static const String _appBase = 'https://app.rule34.dev';
 
   // Sources that the site's data route serves as distinct feeds. `r34`

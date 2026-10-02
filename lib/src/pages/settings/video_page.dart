@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:fvp/fvp.dart' as fvp;
 
 import 'package:lolisnatcher/src/data/settings/mpv_hardware_decoding.dart';
@@ -21,11 +23,13 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
   final SettingsHandler settingsHandler = SettingsHandler.instance;
 
   bool autoPlay = true;
+  bool respectManualPause = true;
   bool startVideosMuted = false;
   bool disableVideo = false;
   bool useBetterPlayer = false;
   bool useMediaKitPlayer = false;
   final TextEditingController mediaKitMaxPlayersController = TextEditingController();
+  final TextEditingController videoStartDelayController = TextEditingController();
   final TextEditingController betterPlayerCacheMbController = TextEditingController();
   final TextEditingController betterPlayerPerFileMbController = TextEditingController();
   bool altVideoPlayerHwAccel = true;
@@ -41,11 +45,13 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
     super.initState();
 
     autoPlay = settingsHandler.autoPlayEnabled;
+    respectManualPause = settingsHandler.respectManualPause;
     startVideosMuted = settingsHandler.startVideosMuted;
     disableVideo = settingsHandler.disableVideo;
     useBetterPlayer = settingsHandler.useBetterPlayer;
     useMediaKitPlayer = settingsHandler.useMediaKitPlayer;
     mediaKitMaxPlayersController.text = settingsHandler.mediaKitMaxPlayers.toString();
+    videoStartDelayController.text = settingsHandler.videoStartDelayMs.toString();
     betterPlayerCacheMbController.text = settingsHandler.betterPlayerCacheMb.toString();
     betterPlayerPerFileMbController.text = settingsHandler.betterPlayerPerFileMb.toString();
     videoBackendMode = settingsHandler.videoBackendMode;
@@ -57,12 +63,15 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
 
   Future<void> _onPopInvoked(_, _) async {
     settingsHandler.autoPlayEnabled = autoPlay;
+    settingsHandler.respectManualPause = respectManualPause;
     settingsHandler.startVideosMuted = startVideosMuted;
     settingsHandler.disableVideo = disableVideo;
     settingsHandler.useBetterPlayer = useBetterPlayer;
     settingsHandler.useMediaKitPlayer = useMediaKitPlayer;
     settingsHandler.mediaKitMaxPlayers =
         (int.tryParse(mediaKitMaxPlayersController.text) ?? 4).clamp(1, 20);
+    settingsHandler.videoStartDelayMs =
+        (int.tryParse(videoStartDelayController.text) ?? 333).clamp(0, 5000);
     settingsHandler.betterPlayerCacheMb =
         (int.tryParse(betterPlayerCacheMbController.text) ?? 500).clamp(0, 50000);
     settingsHandler.betterPlayerPerFileMb =
@@ -113,7 +122,7 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
                 },
                 title: context.loc.settings.video.disableVideos,
                 trailingIcon: IconButton(
-                  icon: const Icon(Icons.help_outline),
+                  icon: const Icon(Symbols.help_rounded),
                   onPressed: () {
                     showDialog(
                       context: context,
@@ -141,6 +150,18 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
                 title: context.loc.settings.video.autoplayVideos,
               ),
               SettingsToggle(
+                value: respectManualPause,
+                onChanged: (newValue) {
+                  setState(() {
+                    respectManualPause = newValue;
+                  });
+                },
+                title: 'Keep videos paused after manual pause',
+                subtitle: const Text(
+                  'A video you paused yourself stays paused when returning from previews, tag windows or other posts.',
+                ),
+              ),
+              SettingsToggle(
                 value: startVideosMuted,
                 onChanged: (newValue) {
                   setState(() {
@@ -153,7 +174,7 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
               const SettingsButton(name: '', enabled: false),
               SettingsButton(
                 name: context.loc.settings.video.experimental,
-                icon: const Icon(Icons.science),
+                icon: const Icon(Symbols.science_rounded),
               ),
               if (!SettingsHandler.isDesktopPlatform)
                 SettingsToggle(
@@ -164,7 +185,7 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
                     });
                   },
                   title: 'Use media_kit engine (experimental)',
-                  leadingIcon: const Icon(Icons.bolt),
+                  leadingIcon: const Icon(Symbols.bolt_rounded),
                   subtitle: const Text(
                     'A completely separate video engine built on media_kit (libmpv) instead of ExoPlayer. libmpv manages its own decoders with software fallback, so it sidesteps the hardware-decoder-exhaustion crashes that can happen when scrolling fast through many videos. Same custom controls (tap, double-tap to skip, scrubber, fullscreen). Takes precedence over better_player when both are on. Restart the viewer for changes to take effect.',
                   ),
@@ -182,6 +203,19 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
                     "How many recently-viewed videos to keep warm in memory. Scrolling back to a video that's still in the pool resumes with its buffer intact instead of restarting the download. Higher = smoother scrub-back but more RAM. libmpv has no MediaCodec limit, so values up to ~10 are safe on most devices. Default 4 (current + previous + next + one more).",
                   ),
                 ),
+              if (!SettingsHandler.isDesktopPlatform && useMediaKitPlayer)
+                SettingsTextInput(
+                  controller: videoStartDelayController,
+                  title: 'Video start delay (ms)',
+                  hintText: '333',
+                  inputType: TextInputType.number,
+                  numberStep: 50,
+                  numberButtons: true,
+                  resetText: () => '333',
+                  subtitle: const Text(
+                    'How long a video has to stay on screen before its player is built. Swipe past faster than this and no player is built at all, so flicking through a feed of videos stops creating and destroying decoders (42 created and 38 destroyed in 25 seconds of swiping, before this). Lower = videos start sooner; higher = flicking stays smoother. 0 starts them at once, as before. Default 333, a third of a second.',
+                  ),
+                ),
               if (!SettingsHandler.isDesktopPlatform)
                 SettingsToggle(
                   value: useBetterPlayer,
@@ -191,7 +225,7 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
                     });
                   },
                   title: 'Use better_player engine (experimental)',
-                  leadingIcon: const Icon(Icons.science_outlined),
+                  leadingIcon: const Icon(Symbols.science_rounded),
                   subtitle: const Text(
                     "Swaps the default video pipeline for better_player_plus, which exposes ExoPlayer's buffer and HTTP-cache tuning. Helps with the stall-buffer-stall cycle on jittery CDNs. Disables LoliControls-specific features (long-tap fast-forward) and the MPV fallback path while on. Restart the viewer for changes to take effect.",
                   ),
@@ -248,10 +282,10 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
 
               AnimatedSize(
                 duration: const Duration(milliseconds: 300),
-                child: (!videoBackendMode.isNormal || SettingsHandler.isDesktopPlatform)
+                child: (useMediaKitPlayer || !videoBackendMode.isNormal || SettingsHandler.isDesktopPlatform)
                     ? Column(
                         children: [
-                          if (videoBackendMode.isMpv) ...[
+                          if (videoBackendMode.isMpv || useMediaKitPlayer) ...[
                             Padding(
                               padding: const EdgeInsets.only(left: 16, right: 16, top: 8),
                               child: Text(
@@ -314,7 +348,7 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
                               '''Videos on some Boorus may not work correctly (i.e. endless loading) when using Stream video cache mode. In that case try using Cache mode. Otherwise player will retry with Cache mode automatically if video is in initial buffering state for 10+ seconds and video file size is less than 25mb''',
                             ),
                             trailingIcon: IconButton(
-                              icon: const Icon(Icons.help_outline),
+                              icon: const Icon(Symbols.help_rounded),
                               onPressed: () {
                                 showDialog(
                                   context: context,

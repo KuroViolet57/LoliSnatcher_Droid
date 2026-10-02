@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 
 import 'package:lolisnatcher/src/data/booru.dart';
@@ -99,7 +101,7 @@ class _SnatcherPageState extends State<SnatcherPage> {
             const SettingsButton(name: '', enabled: false),
             SettingsButton(
               name: context.loc.snatcher.snatchFiles,
-              icon: const Icon(Icons.download),
+              icon: const Icon(Symbols.download_rounded),
               action: () {
                 if (snatcherSleepController.text.isEmpty) {
                   snatcherSleepController.text = 0.toString();

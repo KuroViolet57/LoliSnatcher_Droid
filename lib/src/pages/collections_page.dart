@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:lolisnatcher/src/data/collection_info.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
@@ -83,7 +85,7 @@ class _CollectionsPageState extends State<CollectionsPage> {
         actions: [
           TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFE5766B)),
             onPressed: () => Navigator.of(context).pop(true),
             child: const Text('Delete'),
           ),
@@ -101,7 +103,7 @@ class _CollectionsPageState extends State<CollectionsPage> {
         context: context,
         duration: const Duration(seconds: 2),
         title: const Text('This collection is empty', style: TextStyle(fontSize: 18)),
-        leadingIcon: Icons.info_outline,
+        leadingIcon: Symbols.info_rounded,
         sideColor: Colors.blue,
       );
       return;
@@ -125,7 +127,7 @@ class _CollectionsPageState extends State<CollectionsPage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.open_in_new),
+              leading: const Icon(Symbols.open_in_new_rounded),
               title: const Text('Open'),
               onTap: () {
                 Navigator.of(context).pop();
@@ -133,7 +135,7 @@ class _CollectionsPageState extends State<CollectionsPage> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.drive_file_rename_outline),
+              leading: const Icon(Symbols.drive_file_rename_rounded),
               title: const Text('Rename'),
               onTap: () {
                 Navigator.of(context).pop();
@@ -141,7 +143,7 @@ class _CollectionsPageState extends State<CollectionsPage> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.delete_outline, color: Colors.red),
+              leading: const Icon(Symbols.delete_rounded, color: Color(0xFFE5766B)),
               title: const Text('Delete'),
               onTap: () {
                 Navigator.of(context).pop();
@@ -162,7 +164,7 @@ class _CollectionsPageState extends State<CollectionsPage> {
         actions: [
           if (collections.length > 1)
             PopupMenuButton<_CollSort>(
-              icon: const Icon(Icons.sort),
+              icon: const Icon(Symbols.sort_rounded),
               tooltip: 'Sort',
               initialValue: _sort,
               onSelected: (v) => setState(() {
@@ -176,7 +178,7 @@ class _CollectionsPageState extends State<CollectionsPage> {
               ],
             ),
           IconButton(
-            icon: const Icon(Icons.create_new_folder_outlined),
+            icon: const Icon(Symbols.create_new_folder_rounded),
             tooltip: 'New collection',
             onPressed: _create,
           ),
@@ -209,7 +211,7 @@ class _CollectionsPageState extends State<CollectionsPage> {
           ? null
           : FloatingActionButton.extended(
               onPressed: _create,
-              icon: const Icon(Icons.add),
+              icon: const Icon(Symbols.add_rounded),
               label: const Text('New'),
             ),
     );
@@ -223,7 +225,7 @@ class _CollectionsPageState extends State<CollectionsPage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.collections_bookmark_outlined, size: 64, color: theme.colorScheme.onSurface.withValues(alpha: 0.3)),
+            Icon(Symbols.collections_bookmark_rounded, size: 64, color: theme.colorScheme.onSurface.withValues(alpha: 0.3)),
             const SizedBox(height: 16),
             Text('No collections yet', style: theme.textTheme.titleMedium),
             const SizedBox(height: 8),
@@ -237,7 +239,7 @@ class _CollectionsPageState extends State<CollectionsPage> {
             const SizedBox(height: 20),
             FilledButton.icon(
               onPressed: _create,
-              icon: const Icon(Icons.add),
+              icon: const Icon(Symbols.add_rounded),
               label: const Text('Create collection'),
             ),
           ],
@@ -263,9 +265,12 @@ class _CollectionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Material(
-      color: theme.colorScheme.surfaceContainerHighest,
-      borderRadius: BorderRadius.circular(14),
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainer,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
@@ -286,7 +291,7 @@ class _CollectionCard extends StatelessWidget {
                       shape: const CircleBorder(),
                       child: IconButton(
                         visualDensity: VisualDensity.compact,
-                        icon: const Icon(Icons.more_vert, color: Colors.white, size: 20),
+                        icon: const Icon(Symbols.more_vert_rounded, color: Colors.white, size: 20),
                         onPressed: onMenu,
                       ),
                     ),
@@ -303,7 +308,7 @@ class _CollectionCard extends StatelessWidget {
                     info.name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.w600),
+                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5),
                   ),
                   const SizedBox(height: 2),
                   Text(

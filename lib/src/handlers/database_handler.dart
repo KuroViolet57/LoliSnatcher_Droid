@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
@@ -7,12 +8,17 @@ import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/data/booru_tag.dart';
 import 'package:lolisnatcher/src/data/collection_info.dart';
 import 'package:lolisnatcher/src/data/constants.dart';
 import 'package:lolisnatcher/src/data/history_item.dart';
 import 'package:lolisnatcher/src/data/pinned_tag.dart';
+import 'package:lolisnatcher/src/data/pinned_tag_visibility.dart';
 import 'package:lolisnatcher/src/data/saved_search.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
+import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/rewards.dart';
+import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 
@@ -63,6 +69,10 @@ class DBHandler {
       db = await databaseFactory.openDatabase('${path}store.db');
     }
     await updateTable();
+    await createCriticalIndexes();
+    // r81: the vectors in a database of their own.
+    await openVectors(path);
+    await purgeTagAliasMisses();
     await fixBooruItems(onStatusUpdate);
     await deleteUntracked();
     return true;
@@ -119,7 +129,8 @@ class DBHandler {
       'booruName TEXT, '
       'pinnedAt INTEGER NOT NULL, '
       'sortOrder INTEGER DEFAULT 0, '
-      'label TEXT '
+      'label TEXT, '
+      'title TEXT '
       ')',
     );
     await db?.execute(
@@ -133,6 +144,16 @@ class DBHandler {
     await db?.execute(
       'CREATE TABLE IF NOT EXISTS SeenPost ( '
       'postKey TEXT PRIMARY KEY, '
+      'viewedAt INTEGER NOT NULL '
+      ')',
+    );
+    // Viewing history: full serialized items so the History feed can render
+    // thumbnails and reopen posts without re-fetching. SeenPost stays the
+    // lightweight key set for grid dimming.
+    await db?.execute(
+      'CREATE TABLE IF NOT EXISTS ViewedPost ( '
+      'postKey TEXT PRIMARY KEY, '
+      'itemJson TEXT NOT NULL, '
       'viewedAt INTEGER NOT NULL '
       ')',
     );
@@ -156,6 +177,44 @@ class DBHandler {
       'updatedAt INTEGER NOT NULL '
       ')',
     );
+    // r33: the recommender's training log — one row per interaction that
+    // teaches the model (RecommenderHandler), with the item's feature hashes
+    // at the time, so the model can be rebuilt from the log alone. Never
+    // leaves the device.
+    await db?.execute(
+      'CREATE TABLE IF NOT EXISTS Interaction ( '
+      'id INTEGER PRIMARY KEY AUTOINCREMENT, '
+      'world TEXT NOT NULL, '
+      'itemKey TEXT NOT NULL, '
+      'host TEXT NOT NULL, '
+      'kind TEXT NOT NULL, '
+      'value REAL NOT NULL, '
+      'at INTEGER NOT NULL, '
+      'features TEXT NOT NULL '
+      ')',
+    );
+    // The names behind the feature hashes, so "what was learned" reads back
+    // as tags and artists rather than numbers.
+    await db?.execute(
+      'CREATE TABLE IF NOT EXISTS RecommenderFeature ( '
+      'world TEXT NOT NULL, '
+      'hash INTEGER NOT NULL, '
+      'name TEXT NOT NULL, '
+      'PRIMARY KEY (world, hash) '
+      ')',
+    );
+    // r34: an item's vector from the downloaded encoder, per model, so an
+    // item is read once. Never leaves the device.
+    await db?.execute(
+      'CREATE TABLE IF NOT EXISTS ItemEmbedding ( '
+      'itemKey TEXT NOT NULL, '
+      'model TEXT NOT NULL, '
+      'dim INTEGER NOT NULL, '
+      'vector BLOB NOT NULL, '
+      'at INTEGER NOT NULL, '
+      'PRIMARY KEY (itemKey, model) '
+      ')',
+    );
     // Cross-booru tag alias cache: how <sourceTag> is spelled on <booruKey>
     // (e.g. burnice_white -> burnice_white_(zenless_zone_zero) on gelbooru).
     // Resolved on demand against each booru's tag-autocomplete API. An empty
@@ -167,6 +226,51 @@ class DBHandler {
       'targetTag TEXT NOT NULL, '
       'updatedAt INTEGER NOT NULL, '
       'PRIMARY KEY (sourceTag, booruKey) '
+      ')',
+    );
+    // Per-booru tag snapshot: what a given SITE says its own tags are. The
+    // global Tag table stores one type per tag string for the whole app,
+    // which breaks down the moment two boorus disagree about the same string
+    // — so per-site truth lives here instead of overloading that column.
+    // `source`: 'api' (the site told us) | 'import' (a snapshot file).
+    // `namespace`: the site's own grouping (artist/circle/female/…), part of
+    // the key because a doujin site can file one name under two namespaces
+    // (hitomi: female:ahegao and male:ahegao). '' for booru snapshots.
+    // `sourceId`: the site's own id for the tag where its pages are keyed by
+    // id rather than name (hentaipaw: `/tags/14390`). Null elsewhere.
+    await db?.execute(
+      'CREATE TABLE IF NOT EXISTS BooruTag ( '
+      'booruKey TEXT NOT NULL, '
+      "namespace TEXT NOT NULL DEFAULT '', "
+      'name TEXT NOT NULL, '
+      'tagType TEXT NOT NULL, '
+      'count INTEGER NOT NULL DEFAULT 0, '
+      "source TEXT NOT NULL DEFAULT 'api', "
+      'updatedAt INTEGER NOT NULL, '
+      'sourceId TEXT, '
+      'PRIMARY KEY (booruKey, namespace, name) '
+      ')',
+    );
+    // Your hand-made corrections, and — by existing at all — the permanent
+    // exclusion list: a pair in here is never re-typed automatically again.
+    await db?.execute(
+      'CREATE TABLE IF NOT EXISTS BooruTagOverride ( '
+      'booruKey TEXT NOT NULL, '
+      'name TEXT NOT NULL, '
+      'tagType TEXT NOT NULL, '
+      "source TEXT NOT NULL DEFAULT 'manual', "
+      'updatedAt INTEGER NOT NULL, '
+      'PRIMARY KEY (booruKey, name) '
+      ')',
+    );
+    // Doujin reading positions, keyed on "host|galleryId" (see
+    // ReaderHandler.progressKey) so the key survives booru renames.
+    await db?.execute(
+      'CREATE TABLE IF NOT EXISTS ReaderProgress ( '
+      'galleryKey TEXT NOT NULL PRIMARY KEY, '
+      'page INTEGER NOT NULL, '
+      'totalPages INTEGER NOT NULL, '
+      'updatedAt INTEGER NOT NULL '
       ')',
     );
     // Collections / albums: named groups of posts. Membership is a join onto
@@ -188,6 +292,41 @@ class DBHandler {
       'PRIMARY KEY (collectionId, booruItemID) '
       ')',
     );
+    // kemono's creator index (see KemonoCreatorStore): every creator the
+    // site lists, so names, the Artists page and suggestions come from the
+    // phone. `seenAt` marks the refresh that last listed a row; rows a later
+    // refresh no longer lists are pruned by it.
+    await db?.execute(
+      'CREATE TABLE IF NOT EXISTS KemonoCreator ( '
+      'service TEXT NOT NULL, '
+      'id TEXT NOT NULL, '
+      'name TEXT NOT NULL, '
+      'indexed INTEGER NOT NULL DEFAULT 0, '
+      'updated INTEGER NOT NULL DEFAULT 0, '
+      'favorited INTEGER NOT NULL DEFAULT 0, '
+      'seenAt INTEGER NOT NULL, '
+      'PRIMARY KEY (service, id) '
+      ')',
+    );
+    // pawchive's index: same shape, its own table (same creator ids, another site).
+    await db?.execute(
+      'CREATE TABLE IF NOT EXISTS PawchiveCreator ( '
+      'service TEXT NOT NULL, '
+      'id TEXT NOT NULL, '
+      'name TEXT NOT NULL, '
+      'indexed INTEGER NOT NULL DEFAULT 0, '
+      'updated INTEGER NOT NULL DEFAULT 0, '
+      'favorited INTEGER NOT NULL DEFAULT 0, '
+      'seenAt INTEGER NOT NULL, '
+      'PRIMARY KEY (service, id) '
+      ')',
+    );
+    // r50: a pin's own name.
+    try {
+      if (!await columnExists('PinnedTag', 'title')) {
+        await db?.execute('ALTER TABLE PinnedTag ADD COLUMN title TEXT;');
+      }
+    } catch (_) {}
     try {
       if (!await columnExists('SearchHistory', 'isFavourite')) {
         await db?.execute('ALTER TABLE SearchHistory ADD COLUMN isFavourite INTEGER;');
@@ -197,6 +336,41 @@ class DBHandler {
       }
       if (!await columnExists('Tag', 'updatedAt')) {
         await db?.execute('ALTER TABLE Tag ADD COLUMN updatedAt INTEGER;');
+      }
+      // When a row was snatched. Downloads list by this, newest first: the
+      // row id is NOT the download order (a post favourited or collected
+      // earlier keeps its old id), which buried fresh downloads deep in the
+      // list. Null on rows snatched before this column existed.
+      if (!await columnExists('BooruItem', 'snatchedAt')) {
+        await db?.execute('ALTER TABLE BooruItem ADD COLUMN snatchedAt INTEGER;');
+      }
+      // BooruTag gained a namespace column IN ITS PRIMARY KEY; SQLite cannot
+      // alter a key, so the table is rebuilt once. Existing rows keep every
+      // value with an empty namespace.
+      if (await tableExists('BooruTag') && !await columnExists('BooruTag', 'namespace')) {
+        await db?.transaction((txn) async {
+          await txn.execute('ALTER TABLE BooruTag RENAME TO BooruTag_old');
+          await txn.execute(
+            'CREATE TABLE BooruTag ( '
+            'booruKey TEXT NOT NULL, '
+            "namespace TEXT NOT NULL DEFAULT '', "
+            'name TEXT NOT NULL, '
+            'tagType TEXT NOT NULL, '
+            'count INTEGER NOT NULL DEFAULT 0, '
+            "source TEXT NOT NULL DEFAULT 'api', "
+            'updatedAt INTEGER NOT NULL, '
+            'PRIMARY KEY (booruKey, namespace, name) '
+            ')',
+          );
+          await txn.execute(
+            'INSERT OR IGNORE INTO BooruTag(booruKey, namespace, name, tagType, count, source, updatedAt) '
+            "SELECT booruKey, '', name, tagType, count, source, updatedAt FROM BooruTag_old",
+          );
+          await txn.execute('DROP TABLE BooruTag_old');
+        });
+      }
+      if (await tableExists('BooruTag') && !await columnExists('BooruTag', 'sourceId')) {
+        await db?.execute('ALTER TABLE BooruTag ADD COLUMN sourceId TEXT;');
       }
     } catch (e, s) {
       Logger.Inst().log(
@@ -208,6 +382,14 @@ class DBHandler {
       );
     }
     return true;
+  }
+
+  Future<bool> tableExists(String tableName) async {
+    final List<Map<String, Object?>>? result = await db?.rawQuery(
+      "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name = ?",
+      [tableName],
+    );
+    return result != null && result.isNotEmpty && (result[0]['count'] ?? 0) == 1;
   }
 
   Future<bool> columnExists(String tableName, String columnName) async {
@@ -226,6 +408,40 @@ class DBHandler {
     await db?.execute('CREATE INDEX IF NOT EXISTS ImageTag_tagID_index ON ImageTag (tagID);');
     await db?.execute('CREATE INDEX IF NOT EXISTS ImageTag_booruItemID_index ON ImageTag (booruItemID);');
     return true;
+  }
+
+  // Small, always-worth-it indexes on hot lookup columns — created on every
+  // DB open regardless of the (heavy) ImageTag index toggle. Each of these
+  // columns was previously scanned linearly on very common queries.
+  Future<void> createCriticalIndexes() async {
+    // postURL: de-dup / favourite lookup, hit per fetched item and DB write.
+    await db?.execute('CREATE INDEX IF NOT EXISTS BooruItem_postURL_index ON BooruItem (postURL);');
+    // Tag.name: colour/type resolution, suggestions, id lookup.
+    await db?.execute('CREATE INDEX IF NOT EXISTS Tag_name_index ON Tag (name);');
+    // PinnedTag.tagName: pin scoping / follow lookups.
+    await db?.execute('CREATE INDEX IF NOT EXISTS PinnedTag_tagName_index ON PinnedTag (tagName);');
+    // Recency ordering for the History feed and the seen/viewed trims.
+    await db?.execute('CREATE INDEX IF NOT EXISTS ViewedPost_viewedAt_index ON ViewedPost (viewedAt);');
+    await db?.execute('CREATE INDEX IF NOT EXISTS SeenPost_viewedAt_index ON SeenPost (viewedAt);');
+    // The recommender replays and prunes its log per world, newest first.
+    await db?.execute('CREATE INDEX IF NOT EXISTS Interaction_world_at_index ON Interaction (world, at);');
+    // Tag browser: every query is "this booru, optionally this type, ordered
+    // by count" — without this it degrades into a full scan of a table that
+    // can hold a site's entire tag database.
+    await db?.execute(
+      'CREATE INDEX IF NOT EXISTS BooruTag_browse_index ON BooruTag (booruKey, tagType, count DESC);',
+    );
+    // Tag builder: "this source, this namespace, most used first".
+    await db?.execute(
+      'CREATE INDEX IF NOT EXISTS BooruTag_ns_index ON BooruTag (booruKey, namespace, count DESC);',
+    );
+    // kemono's creator index: name search, and the Artists page's sorts.
+    await db?.execute('CREATE INDEX IF NOT EXISTS KemonoCreator_name_index ON KemonoCreator (name COLLATE NOCASE);');
+    await db?.execute('CREATE INDEX IF NOT EXISTS KemonoCreator_updated_index ON KemonoCreator (updated DESC);');
+    await db?.execute('CREATE INDEX IF NOT EXISTS KemonoCreator_favorited_index ON KemonoCreator (favorited DESC);');
+    await db?.execute('CREATE INDEX IF NOT EXISTS PawchiveCreator_name_index ON PawchiveCreator (name COLLATE NOCASE);');
+    await db?.execute('CREATE INDEX IF NOT EXISTS PawchiveCreator_updated_index ON PawchiveCreator (updated DESC);');
+    await db?.execute('CREATE INDEX IF NOT EXISTS PawchiveCreator_favorited_index ON PawchiveCreator (favorited DESC);');
   }
 
   Future<bool> dropIndexes() async {
@@ -251,9 +467,16 @@ class DBHandler {
     );
     String? itemID = await getItemID(item.postURL);
     String resultStr = '';
+    // Doujin favourites live in the doujin store, never in store.db — a
+    // snatched doujin must not surface in the booru Favourites feed, and its
+    // tags must not seed the booru DB autocomplete. isSnatched IS shared
+    // (downloads are one system), so the row itself still gets written.
+    final bool isDoujin = DoujinDataHandler.isDoujinItem(item);
+    final int favouriteFlag = Tools.boolToInt(!isDoujin && item.isFavourite.value == true);
+    final int? snatchedAt = item.isSnatched.value == true ? DateTime.now().millisecondsSinceEpoch : null;
     if (itemID == null || itemID.isEmpty) {
       final result = await db?.rawInsert(
-        'INSERT INTO BooruItem(thumbnailURL, sampleURL, fileURL, postURL, mediaType, isSnatched, isFavourite) VALUES(?,?,?,?,?,?,?)',
+        'INSERT INTO BooruItem(thumbnailURL, sampleURL, fileURL, postURL, mediaType, isSnatched, isFavourite, snatchedAt) VALUES(?,?,?,?,?,?,?,?)',
         [
           item.thumbnailURL.replaceFirstMapped(RegExp('(?<!https?:)//'), (m) => '/'),
           item.sampleURL.replaceFirstMapped(RegExp('(?<!https?:)//'), (m) => '/'),
@@ -261,16 +484,26 @@ class DBHandler {
           item.postURL,
           item.mediaType.toJson(),
           Tools.boolToInt(item.isSnatched.value == true),
-          Tools.boolToInt(item.isFavourite.value == true),
+          favouriteFlag,
+          snatchedAt,
         ],
       );
       itemID = result?.toString();
-      await updateTags(item.tagsList.map((t) => t.fullString).toList(), itemID);
+      if (!isDoujin) {
+        await updateTags(item.tagsList.map((t) => t.fullString).toList(), itemID);
+      }
       resultStr = 'Inserted';
     } else if (mode == BooruUpdateMode.local) {
       await db?.rawUpdate(
-        'UPDATE BooruItem SET isSnatched = ?, isFavourite = ? WHERE id = ?',
-        [Tools.boolToInt(item.isSnatched.value == true), Tools.boolToInt(item.isFavourite.value == true), itemID],
+        'UPDATE BooruItem SET isSnatched = ?, isFavourite = ?, '
+        'snatchedAt = CASE WHEN ? = 1 THEN COALESCE(snatchedAt, ?) ELSE NULL END WHERE id = ?',
+        [
+          Tools.boolToInt(item.isSnatched.value == true),
+          favouriteFlag,
+          Tools.boolToInt(item.isSnatched.value == true),
+          DateTime.now().millisecondsSinceEpoch,
+          itemID,
+        ],
       );
       resultStr = 'Updated';
     } else if (mode == BooruUpdateMode.urlUpdate) {
@@ -300,9 +533,15 @@ class DBHandler {
       final int itemIndex = items.indexWhere((element) => element.postURL == item.postURL);
       String? itemID = (itemIDs.isNotEmpty && itemIndex != -1) ? itemIDs[itemIndex] : null;
 
+      // Same domain rule as updateBooruItem: doujin favourites and tags never
+      // reach store.db.
+      final bool isDoujin = DoujinDataHandler.isDoujinItem(item);
+      final int favouriteFlag = Tools.boolToInt(!isDoujin && item.isFavourite.value == true);
+      final int? snatchedAt = item.isSnatched.value == true ? DateTime.now().millisecondsSinceEpoch : null;
+
       if (itemID == null || itemID.isEmpty) {
         final result = await db?.rawInsert(
-          'INSERT INTO BooruItem(thumbnailURL, sampleURL, fileURL, postURL, mediaType, isSnatched, isFavourite) VALUES(?,?,?,?,?,?,?)',
+          'INSERT INTO BooruItem(thumbnailURL, sampleURL, fileURL, postURL, mediaType, isSnatched, isFavourite, snatchedAt) VALUES(?,?,?,?,?,?,?,?)',
           [
             item.thumbnailURL.replaceFirstMapped(RegExp('(?<!https?:)//'), (m) => '/'),
             item.sampleURL.replaceFirstMapped(RegExp('(?<!https?:)//'), (m) => '/'),
@@ -310,16 +549,26 @@ class DBHandler {
             item.postURL,
             item.mediaType.toJson(),
             Tools.boolToInt(item.isSnatched.value == true),
-            Tools.boolToInt(item.isFavourite.value == true),
+            favouriteFlag,
+            snatchedAt,
           ],
         );
         itemID = result?.toString();
-        await updateTags(item.tagsList.map((t) => t.fullString).toList(), itemID);
+        if (!isDoujin) {
+          await updateTags(item.tagsList.map((t) => t.fullString).toList(), itemID);
+        }
         saved++;
       } else if (mode == BooruUpdateMode.local) {
         await db?.rawUpdate(
-          'UPDATE BooruItem SET isSnatched = ?, isFavourite = ? WHERE id = ?',
-          [Tools.boolToInt(item.isSnatched.value == true), Tools.boolToInt(item.isFavourite.value == true), itemID],
+          'UPDATE BooruItem SET isSnatched = ?, isFavourite = ?, '
+          'snatchedAt = CASE WHEN ? = 1 THEN COALESCE(snatchedAt, ?) ELSE NULL END WHERE id = ?',
+          [
+            Tools.boolToInt(item.isSnatched.value == true),
+            favouriteFlag,
+            Tools.boolToInt(item.isSnatched.value == true),
+            DateTime.now().millisecondsSinceEpoch,
+            itemID,
+          ],
         );
       } else if (mode == BooruUpdateMode.urlUpdate) {
         await db?.rawUpdate(
@@ -547,7 +796,13 @@ class DBHandler {
     }
 
     // Ordering & Pagination
-    String orderByClause = 'bi.id ${order ?? (isReverseOrder ? 'ASC' : null) ?? 'DESC'}';
+    final String direction = order ?? (isReverseOrder ? 'ASC' : null) ?? 'DESC';
+    // Downloads: newest SNATCH first. The id is insertion order, and a row
+    // favourited or collected months ago keeps that old id when it is later
+    // snatched, which put fresh downloads hundreds of rows down the list.
+    String orderByClause = (isDownloads && collectionId == null)
+        ? 'COALESCE(bi.snatchedAt, 0) $direction, bi.id $direction'
+        : 'bi.id $direction';
     if (isRandomOrder) orderByClause = 'RANDOM()';
     sql.write('ORDER BY $orderByClause LIMIT ? OFFSET ?');
     args.add(limit);
@@ -664,6 +919,11 @@ class DBHandler {
     int added = 0;
     for (final BooruItem item in items) {
       String? itemID = await getItemID(item.postURL);
+      // Same domain rule as the other two BooruItem writers: a doujin row
+      // never carries a favourite flag or its tags into store.db. Callers
+      // split by domain before getting here, so this is a guard rail rather
+      // than a live path — but it is one careless caller away from mattering.
+      final bool isDoujin = DoujinDataHandler.isDoujinItem(item);
       if (itemID == null || itemID.isEmpty) {
         final result = await db?.rawInsert(
           'INSERT INTO BooruItem(thumbnailURL, sampleURL, fileURL, postURL, mediaType, isSnatched, isFavourite) VALUES(?,?,?,?,?,?,?)',
@@ -674,11 +934,13 @@ class DBHandler {
             item.postURL,
             item.mediaType.value.toJson(),
             Tools.boolToInt(item.isSnatched.value == true),
-            Tools.boolToInt(item.isFavourite.value == true),
+            Tools.boolToInt(!isDoujin && item.isFavourite.value == true),
           ],
         );
         itemID = result?.toString();
-        await updateTags(item.tagsList.map((t) => t.fullString).toList(), itemID);
+        if (!isDoujin) {
+          await updateTags(item.tagsList.map((t) => t.fullString).toList(), itemID);
+        }
       }
       if (itemID == null || itemID.isEmpty) continue;
       final int count = Sqflite.firstIntValue(
@@ -792,6 +1054,364 @@ class DBHandler {
     await db?.rawDelete('DELETE FROM TagSignal');
   }
 
+  // ── recommender log (r33) ──
+
+  /// One interaction that teaches the recommender; [features] are the item's
+  /// feature hashes at the time.
+  Future<void> addInteraction({
+    required String world,
+    required String itemKey,
+    required String host,
+    required String kind,
+    required double value,
+    required List<int> features,
+  }) async {
+    await db?.rawInsert(
+      'INSERT INTO Interaction(world, itemKey, host, kind, value, at, features) VALUES(?,?,?,?,?,?,?)',
+      [world, itemKey, host, kind, value, DateTime.now().millisecondsSinceEpoch, features.join(',')],
+    );
+  }
+
+  Future<int> countInteractions(String world) async {
+    final List? rows = await db?.rawQuery('SELECT COUNT(*) AS n FROM Interaction WHERE world = ?', [world]);
+    if (rows == null || rows.isEmpty) return 0;
+    return (rows.first['n'] as int?) ?? 0;
+  }
+
+  /// The newest [limit] interactions of [world], newest first.
+  Future<List<InteractionRow>> recentInteractions(String world, {int limit = 20000}) async {
+    final List? rows = await db?.rawQuery(
+      'SELECT id, world, itemKey, host, kind, value, at, features FROM Interaction WHERE world = ? ORDER BY at DESC, id DESC LIMIT ?',
+      [world, limit],
+    );
+    if (rows == null) return const [];
+    return [
+      for (final r in rows)
+        InteractionRow(
+          id: (r['id'] as int?) ?? 0,
+          world: r['world'].toString(),
+          itemKey: r['itemKey'].toString(),
+          host: r['host'].toString(),
+          kind: InteractionKind.fromName(r['kind'].toString()),
+          value: (r['value'] as num?)?.toDouble() ?? 0,
+          at: (r['at'] as int?) ?? 0,
+          features: [
+            for (final part in r['features'].toString().split(','))
+              if (int.tryParse(part) case final int h) h,
+          ],
+        ),
+    ];
+  }
+
+  /// Keeps the newest [keep] interactions of every world.
+  Future<void> pruneInteractions({int keep = 20000}) async {
+    final List? worlds = await db?.rawQuery('SELECT DISTINCT world FROM Interaction');
+    if (worlds == null) return;
+    for (final w in worlds) {
+      final String world = w['world'].toString();
+      await db?.rawDelete(
+        'DELETE FROM Interaction WHERE world = ? AND id NOT IN '
+        '(SELECT id FROM Interaction WHERE world = ? ORDER BY at DESC, id DESC LIMIT ?)',
+        [world, world, keep],
+      );
+    }
+  }
+
+  Future<void> clearInteractions(String world) async {
+    await db?.rawDelete('DELETE FROM Interaction WHERE world = ?', [world]);
+  }
+
+  Future<void> addFeatureNames(String world, Map<int, String> names) async {
+    final db = this.db;
+    if (db == null || names.isEmpty) return;
+    final batch = db.batch();
+    for (final entry in names.entries) {
+      batch.rawInsert('INSERT OR IGNORE INTO RecommenderFeature(world, hash, name) VALUES(?,?,?)', [world, entry.key, entry.value]);
+    }
+    await batch.commit(noResult: true);
+  }
+
+  Future<Map<int, String>> featureNames(String world, List<int> hashes) async {
+    if (hashes.isEmpty) return const {};
+    final Map<int, String> out = {};
+    // Chunked: SQLite caps the number of bound variables.
+    for (int start = 0; start < hashes.length; start += 500) {
+      final List<int> chunk = hashes.sublist(start, (start + 500).clamp(0, hashes.length));
+      final List? rows = await db?.rawQuery(
+        'SELECT hash, name FROM RecommenderFeature WHERE world = ? AND hash IN (${List.filled(chunk.length, '?').join(',')})',
+        [world, ...chunk],
+      );
+      for (final r in rows ?? const []) {
+        out[(r['hash'] as int?) ?? -1] = r['name'].toString();
+      }
+    }
+    return out;
+  }
+
+  Future<void> clearFeatureNames(String world) async {
+    await db?.rawDelete('DELETE FROM RecommenderFeature WHERE world = ?', [world]);
+  }
+
+  /// The item keys of every logged interaction of [kind] in [world]
+  /// (r34: what was marked "Not interested").
+  Future<List<String>> interactionKeys(String world, String kind) async {
+    final List? rows = await db?.rawQuery('SELECT DISTINCT itemKey FROM Interaction WHERE world = ? AND kind = ?', [world, kind]);
+    return [for (final r in rows ?? const []) r['itemKey'].toString()];
+  }
+
+  //
+  // r34: item embeddings. r81: in a database of their own (vectors.db).
+  //
+
+  /// r81: the vectors the text and looks models work out for posts live in
+  /// vectors.db beside store.db: it may grow to the space set for it
+  /// (Settings → Recommendations → Models) and is an item of its own in a
+  /// backup. Null until [openVectors]; the calls below then use [db], where
+  /// they lived before r81 (tests open only that one).
+  Database? vectorsDb;
+
+  static const String vectorsFileName = 'vectors.db';
+
+  /// Where the vector calls go.
+  Database? get vectorDatabase => vectorsDb ?? db;
+
+  /// r81: the vectors are kept within their space every this many writes.
+  static const int defaultPruneEvery = 200;
+  static int pruneEvery = defaultPruneEvery;
+
+  /// Test seam: the space in bytes, instead of the setting.
+  static int? spaceOverrideBytes;
+  int _putsSincePrune = 0;
+
+  /// A vector read this long after it was written (or last counted as
+  /// used) counts as used again: a write for every read would be too many.
+  static const Duration touchAfter = Duration(days: 1);
+
+  /// What a row takes besides its vector, key and model name (an estimate).
+  static const int rowOverhead = 24;
+
+  static const String _rowBytes = 'LENGTH(vector) + LENGTH(itemKey) + LENGTH(model) + $rowOverhead';
+
+  static Future<void> createVectorTable(Database db, {String schema = 'main'}) async {
+    await db.execute(
+      'CREATE TABLE IF NOT EXISTS $schema.ItemEmbedding ( '
+      'itemKey TEXT NOT NULL, '
+      'model TEXT NOT NULL, '
+      'dim INTEGER NOT NULL, '
+      'vector BLOB NOT NULL, '
+      'at INTEGER NOT NULL, '
+      'PRIMARY KEY (itemKey, model) '
+      ')',
+    );
+    await db.execute('CREATE INDEX IF NOT EXISTS $schema.ItemEmbedding_at ON ItemEmbedding(at)');
+  }
+
+  /// Opens vectors.db in [dir] (with a trailing separator). The vectors
+  /// store.db holds move there first: on the first start of r81, and after
+  /// a whole restore of an older backup, whose store.db still holds them.
+  Future<void> openVectors(String dir) async {
+    final String file = '$dir$vectorsFileName';
+    try {
+      await _moveVectorsOut(file);
+    } catch (e, s) {
+      Logger.Inst().log('vectors could not move out of store.db: $e', 'DBHandler', 'openVectors', LogTypes.exception, s: s);
+    }
+    try {
+      if (Platform.isAndroid || Platform.isIOS) {
+        vectorsDb = await openDatabase(
+          file,
+          version: 1,
+          singleInstance: false,
+          onConfigure: (Database d) async {
+            try {
+              await d.rawQuery('PRAGMA journal_mode=WAL;');
+            } catch (_) {}
+          },
+        );
+      } else {
+        vectorsDb = await databaseFactory.openDatabase(file);
+      }
+      await createVectorTable(vectorsDb!);
+    } catch (e, s) {
+      Logger.Inst().log('the vectors database could not be opened ($e); vectors stay in store.db', 'DBHandler', 'openVectors', LogTypes.exception, s: s);
+      vectorsDb = null;
+    }
+  }
+
+  Future<void> _moveVectorsOut(String file) async {
+    final Database? main = db;
+    if (main == null) return;
+    final List<Map<String, Object?>> table = await main.rawQuery("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'ItemEmbedding'");
+    if (table.isEmpty) return;
+    final int count = (await main.rawQuery('SELECT COUNT(*) AS n FROM ItemEmbedding')).first['n'] as int? ?? 0;
+    if (count == 0) return;
+    await main.execute('ATTACH DATABASE ? AS v', [file]);
+    try {
+      await createVectorTable(main, schema: 'v');
+      await main.transaction((Transaction txn) async {
+        // A vector already in vectors.db stays as it is.
+        await txn.execute(
+          'INSERT OR IGNORE INTO v.ItemEmbedding(itemKey, model, dim, vector, at) SELECT itemKey, model, dim, vector, at FROM main.ItemEmbedding',
+        );
+        await txn.execute('DELETE FROM main.ItemEmbedding');
+      });
+    } finally {
+      await main.execute('DETACH DATABASE v');
+    }
+    Logger.Inst().log('vectors: $count moved from store.db to $vectorsFileName', 'DBHandler', 'openVectors', LogTypes.booruHandlerInfo);
+  }
+
+  Future<void> closeVectors() async {
+    final Database? v = vectorsDb;
+    vectorsDb = null;
+    await v?.close();
+  }
+
+  Future<void> putEmbeddings(String model, Map<String, Float32List> vectors) async {
+    final Database? db = vectorDatabase;
+    if (db == null || vectors.isEmpty) return;
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    final batch = db.batch();
+    for (final entry in vectors.entries) {
+      final Float32List v = entry.value;
+      batch.rawInsert(
+        'INSERT OR REPLACE INTO ItemEmbedding(itemKey, model, dim, vector, at) VALUES(?,?,?,?,?)',
+        [entry.key, model, v.length, Uint8List.fromList(v.buffer.asUint8List(v.offsetInBytes, v.lengthInBytes)), now],
+      );
+    }
+    await batch.commit(noResult: true);
+    // r81: kept within their space here, whoever writes them.
+    _putsSincePrune += vectors.length;
+    if (_putsSincePrune >= pruneEvery) {
+      _putsSincePrune = 0;
+      await pruneEmbeddings();
+    }
+  }
+
+  /// r81: a vector read here counts as used (at most once a [touchAfter]),
+  /// so the ones For You and boards keep reading are the last to go.
+  Future<Map<String, Float32List>> getEmbeddings(String model, List<String> keys) async {
+    final Database? db = vectorDatabase;
+    if (keys.isEmpty || db == null) return const {};
+    final Map<String, Float32List> out = {};
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    final int stale = now - touchAfter.inMilliseconds;
+    for (int start = 0; start < keys.length; start += 400) {
+      final List<String> chunk = keys.sublist(start, (start + 400).clamp(0, keys.length));
+      final List rows = await db.rawQuery(
+        'SELECT itemKey, dim, vector, at FROM ItemEmbedding WHERE model = ? AND itemKey IN (${List.filled(chunk.length, '?').join(',')})',
+        [model, ...chunk],
+      );
+      final List<String> used = [];
+      for (final r in rows) {
+        final dynamic blob = r['vector'];
+        final int dim = (r['dim'] as int?) ?? 0;
+        if (blob is! List<int> || dim <= 0 || blob.length != dim * 4) continue;
+        // A copy of its own: the driver's bytes need not be 4-byte aligned.
+        final Uint8List bytes = Uint8List.fromList(blob);
+        final String key = r['itemKey'].toString();
+        out[key] = Float32List.view(bytes.buffer, 0, dim);
+        if (((r['at'] as int?) ?? 0) < stale) used.add(key);
+      }
+      if (used.isNotEmpty) {
+        try {
+          await db.rawUpdate(
+            'UPDATE ItemEmbedding SET at = ? WHERE model = ? AND itemKey IN (${List.filled(used.length, '?').join(',')})',
+            [now, model, ...used],
+          );
+        } catch (_) {
+          // A read never fails for want of marking the vectors used.
+        }
+      }
+    }
+    return out;
+  }
+
+  Future<void> clearEmbeddings(String model) async {
+    if (model.isEmpty) return;
+    await vectorDatabase?.rawDelete('DELETE FROM ItemEmbedding WHERE model = ?', [model]);
+  }
+
+  Future<int> countEmbeddings(String model) async {
+    final List? rows = await vectorDatabase?.rawQuery('SELECT COUNT(*) AS n FROM ItemEmbedding WHERE model = ?', [model]);
+    return (rows?.firstOrNull?['n'] as int?) ?? 0;
+  }
+
+  /// r81: what the vectors take, in bytes (their rows, estimated).
+  Future<int> vectorBytes() async {
+    final List? rows = await vectorDatabase?.rawQuery('SELECT COALESCE(SUM($_rowBytes), 0) AS b FROM ItemEmbedding');
+    return (rows?.firstOrNull?['b'] as int?) ?? 0;
+  }
+
+  /// r81: [vectorBytes] told apart: the looks model's rows are named
+  /// `look:<model>`, the text model's by the model alone.
+  Future<({int text, int looks})> vectorUsage() async {
+    final List? rows = await vectorDatabase?.rawQuery('SELECT model, COALESCE(SUM($_rowBytes), 0) AS b FROM ItemEmbedding GROUP BY model');
+    int text = 0;
+    int looks = 0;
+    for (final r in rows ?? const []) {
+      final int b = (r['b'] as int?) ?? 0;
+      if (r['model'].toString().startsWith('look:')) {
+        looks += b;
+      } else {
+        text += b;
+      }
+    }
+    return (text: text, looks: looks);
+  }
+
+  /// The vectors' file on disk, with its journal.
+  Future<int> vectorFileBytes(String dir) async {
+    int total = 0;
+    for (final String suffix in ['', '-wal']) {
+      final File f = File('$dir$vectorsFileName$suffix');
+      if (await f.exists()) total += await f.length();
+    }
+    return total;
+  }
+
+  /// r81: keeps the vectors within [maxBytes] (the setting when not given):
+  /// the least recently used go first, down to 90% so it does not run again
+  /// at the next write. Returns how many went.
+  Future<int> pruneEmbeddings({int? maxBytes}) async {
+    final Database? db = vectorDatabase;
+    if (db == null) return 0;
+    final int limit = maxBytes ?? spaceOverrideBytes ?? _settingBytes();
+    int bytes = await vectorBytes();
+    if (bytes <= limit) return 0;
+    final int target = (limit * 0.9).floor();
+    int dropped = 0;
+    for (int round = 0; round < 8 && bytes > target; round++) {
+      final int count = (await db.rawQuery('SELECT COUNT(*) AS n FROM ItemEmbedding')).first['n'] as int? ?? 0;
+      if (count == 0) break;
+      final int drop = ((bytes - target) / (bytes / count)).ceil().clamp(1, count);
+      dropped += await db.rawDelete('DELETE FROM ItemEmbedding WHERE rowid IN (SELECT rowid FROM ItemEmbedding ORDER BY at ASC LIMIT ?)', [drop]);
+      bytes = await vectorBytes();
+    }
+    if (dropped > 0) {
+      Logger.Inst().log('vectors: $dropped least used removed to stay within ${(limit / 1048576).toStringAsFixed(0)} MB', 'DBHandler', 'pruneEmbeddings', LogTypes.booruHandlerInfo);
+    }
+    return dropped;
+  }
+
+  static int _settingBytes() {
+    try {
+      return SettingsHandler.instance.vectorSpaceMb * 1048576;
+    } catch (_) {
+      return 250 * 1048576;
+    }
+  }
+
+  /// r81: gives the room of removed vectors back to the phone.
+  Future<void> compactVectors() async {
+    final Database? v = vectorsDb;
+    if (v == null) return;
+    await v.execute('VACUUM');
+    try {
+      await v.rawQuery('PRAGMA wal_checkpoint(TRUNCATE)');
+    } catch (_) {}
+  }
+
   //
   // Cross-booru tag alias cache
   //
@@ -805,13 +1425,29 @@ class DBHandler {
     if (rows == null || rows.isEmpty) return null;
     final int updatedAt = (rows.first['updatedAt'] as int?) ?? 0;
     final String target = rows.first['targetTag'].toString();
-    // Re-resolve misses after a week (the tag may have been created since);
-    // successful mappings are kept for a month.
-    final int ttlDays = target.isEmpty ? 7 : 30;
+    // Re-resolve misses after a day; successful mappings are kept for a
+    // month. Misses are deliberately short-lived: a "miss" can also be a
+    // request that failed, and a week of remembering that is a week of a
+    // booru silently refusing to translate anything.
+    final int ttlDays = target.isEmpty ? 1 : 30;
     if (DateTime.now().millisecondsSinceEpoch - updatedAt > ttlDays * Duration.millisecondsPerDay) {
       return null;
     }
     return target;
+  }
+
+  /// Drops cached "this tag does not exist here" rows on startup.
+  ///
+  /// Those rows were also written when a suggestion lookup FAILED (a 403, a
+  /// CAPTCHA, a rate-limit), which made cross-booru translation stay dead for
+  /// a week after a single bad moment. The resolver no longer stores a
+  /// negative it did not actually observe, but databases in the wild still
+  /// carry the old ones — and a miss costs one cheap request to re-derive, so
+  /// clearing them every launch is the safe side to err on.
+  Future<void> purgeTagAliasMisses() async {
+    try {
+      await db?.rawDelete("DELETE FROM TagAliasCache WHERE targetTag = ''");
+    } catch (_) {}
   }
 
   Future<void> setTagAlias(String sourceTag, String booruKey, String targetTag) async {
@@ -819,6 +1455,287 @@ class DBHandler {
       'INSERT OR REPLACE INTO TagAliasCache(sourceTag, booruKey, targetTag, updatedAt) VALUES(?,?,?,?)',
       [sourceTag.toLowerCase(), booruKey, targetTag, DateTime.now().millisecondsSinceEpoch],
     );
+  }
+
+  //
+  // Per-booru tag snapshot + corrections
+  //
+
+  Future<void> upsertBooruTags(String booruKey, List<BooruTagEntry> entries) async {
+    final db = this.db;
+    if (db == null || entries.isEmpty) return;
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    // One transaction for the whole page: a snapshot pull writes 100 rows at
+    // a time and each autocommit would otherwise be its own fsync.
+    await db.transaction((txn) async {
+      final batch = txn.batch();
+      for (final e in entries) {
+        final String source = e.origin == TagTypeOrigin.inferred ? 'import' : 'api';
+        final int stamp = e.updatedAt == 0 ? now : e.updatedAt;
+        batch.rawInsert(
+          'INSERT OR REPLACE INTO BooruTag(booruKey, namespace, name, tagType, count, source, updatedAt, sourceId) VALUES(?,?,?,?,?,?,?,?)',
+          [booruKey, e.namespace, e.name, e.tagType.name, e.count, source, stamp, e.sourceId],
+        );
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
+  Future<List<Map<String, Object?>>> queryBooruTags({
+    required String booruKey,
+    String? nameLike,
+    String? tagType,
+    String? namespace,
+    int limit = 60,
+    int offset = 0,
+  }) async {
+    final db = this.db;
+    if (db == null || booruKey.isEmpty) return const [];
+    final List<Object?> args = [booruKey];
+    final StringBuffer where = StringBuffer('booruKey = ?');
+    if (tagType != null) {
+      where.write(' AND tagType = ?');
+      args.add(tagType);
+    }
+    if (namespace != null) {
+      where.write(' AND namespace = ?');
+      args.add(namespace);
+    }
+    if (nameLike != null && nameLike.isNotEmpty) {
+      where.write(' AND name LIKE ?');
+      args.add('%$nameLike%');
+    }
+    args
+      ..add(limit)
+      ..add(offset);
+    return db.rawQuery(
+      'SELECT name, namespace, tagType, count, source, updatedAt, sourceId FROM BooruTag '
+      'WHERE $where ORDER BY count DESC, name ASC LIMIT ? OFFSET ?',
+      args,
+    );
+  }
+
+  Future<List<Map<String, Object?>>> getBooruTagsByNames(String booruKey, List<String> names) async {
+    final db = this.db;
+    if (db == null || booruKey.isEmpty || names.isEmpty) return const [];
+    final String placeholders = List.filled(names.length, '?').join(',');
+    return db.rawQuery(
+      'SELECT name, namespace, tagType, count, source, updatedAt, sourceId FROM BooruTag '
+      'WHERE booruKey = ? AND name IN ($placeholders)',
+      [booruKey, ...names],
+    );
+  }
+
+  /// The site's own id for one (namespace, name), when the snapshot holds it.
+  Future<String?> getBooruTagSourceId(String booruKey, String namespace, String name) async {
+    final db = this.db;
+    if (db == null || booruKey.isEmpty || name.isEmpty) return null;
+    final rows = await db.rawQuery(
+      'SELECT sourceId FROM BooruTag WHERE booruKey = ? AND namespace = ? AND name = ? LIMIT 1',
+      [booruKey, namespace, name],
+    );
+    if (rows.isEmpty) return null;
+    final String id = rows.first['sourceId']?.toString() ?? '';
+    return id.isEmpty ? null : id;
+  }
+
+  Future<int> countBooruTags(String booruKey, {String? tagType, String? namespace}) async {
+    final db = this.db;
+    if (db == null || booruKey.isEmpty) return 0;
+    final List<Object?> args = [booruKey];
+    String where = 'booruKey = ?';
+    if (tagType != null) {
+      where += ' AND tagType = ?';
+      args.add(tagType);
+    }
+    if (namespace != null) {
+      where += ' AND namespace = ?';
+      args.add(namespace);
+    }
+    final rows = await db.rawQuery('SELECT COUNT(*) AS c FROM BooruTag WHERE $where', args);
+    return int.tryParse(rows.first['c']?.toString() ?? '') ?? 0;
+  }
+
+  /// Rows per namespace for one source — what the tag builder's chips show.
+  Future<Map<String, int>> countBooruTagsByNamespace(String booruKey) async {
+    final db = this.db;
+    if (db == null || booruKey.isEmpty) return const {};
+    final rows = await db.rawQuery(
+      'SELECT namespace, COUNT(*) AS c FROM BooruTag WHERE booruKey = ? GROUP BY namespace',
+      [booruKey],
+    );
+    return {
+      for (final row in rows) row['namespace']?.toString() ?? '': int.tryParse(row['c']?.toString() ?? '') ?? 0,
+    };
+  }
+
+  /// Rows per type among the namespace-less rows â€” the tag builder's badges
+  /// on a classic booru, whose snapshot keeps the site's category in tagType.
+  Future<Map<String, int>> countBooruTagsByType(String booruKey) async {
+    final db = this.db;
+    if (db == null || booruKey.isEmpty) return const {};
+    final rows = await db.rawQuery(
+      "SELECT tagType, COUNT(*) AS c FROM BooruTag WHERE booruKey = ? AND namespace = '' GROUP BY tagType",
+      [booruKey],
+    );
+    return {
+      for (final row in rows) row['tagType']?.toString() ?? '': int.tryParse(row['c']?.toString() ?? '') ?? 0,
+    };
+  }
+
+  Future<void> deleteBooruTags(String booruKey, {String? namespace, String? tagType}) async {
+    final List<Object?> args = [booruKey];
+    String where = 'booruKey = ?';
+    if (namespace != null) {
+      where += ' AND namespace = ?';
+      args.add(namespace);
+    }
+    if (tagType != null) {
+      where += ' AND tagType = ?';
+      args.add(tagType);
+    }
+    await db?.rawDelete('DELETE FROM BooruTag WHERE $where', args);
+  }
+
+  //
+  // kemono creator index
+  //
+
+  /// Rows are `[service, id, name, indexed, updated, favorited]`.
+  static const Set<String> _creatorTables = {'KemonoCreator', 'PawchiveCreator'};
+
+  /// Only the two known creator tables: the name lands in SQL.
+  static String creatorTable(String table) => _creatorTables.contains(table) ? table : 'KemonoCreator';
+
+  Future<void> upsertKemonoCreators(List<List<Object?>> rows, int seenAt, {String table = 'KemonoCreator'}) async {
+    final db = this.db;
+    if (db == null || rows.isEmpty) return;
+    final String t = creatorTable(table);
+    await db.transaction((txn) async {
+      final batch = txn.batch();
+      for (final row in rows) {
+        batch.rawInsert(
+          'INSERT OR REPLACE INTO $t(service, id, name, indexed, updated, favorited, seenAt) VALUES(?,?,?,?,?,?,?)',
+          [...row, seenAt],
+        );
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
+  Future<int> pruneKemonoCreators({required int seenBefore, String table = 'KemonoCreator'}) async {
+    final db = this.db;
+    if (db == null) return 0;
+    return db.rawDelete('DELETE FROM ${creatorTable(table)} WHERE seenAt < ?', [seenBefore]);
+  }
+
+  Future<int> countKemonoCreators({String table = 'KemonoCreator'}) async {
+    final db = this.db;
+    if (db == null) return 0;
+    final rows = await db.rawQuery('SELECT COUNT(*) AS c FROM ${creatorTable(table)}');
+    return int.tryParse(rows.first['c']?.toString() ?? '') ?? 0;
+  }
+
+  static const Set<String> _kemonoSorts = {'favorited', 'updated', 'indexed', 'name'};
+
+  Future<List<Map<String, Object?>>> queryKemonoCreators({
+    String? nameLike,
+    Set<String>? services,
+    String orderBy = 'favorited',
+    Set<String>? keys,
+    int limit = 60,
+    int offset = 0,
+    String table = 'KemonoCreator',
+  }) async {
+    final db = this.db;
+    if (db == null) return const [];
+    final List<Object?> args = [];
+    final List<String> where = [];
+    if (nameLike != null && nameLike.isNotEmpty) {
+      where.add('name LIKE ? COLLATE NOCASE');
+      args.add('%$nameLike%');
+    }
+    if (services != null && services.isNotEmpty) {
+      where.add('service IN (${List.filled(services.length, '?').join(',')})');
+      args.addAll(services);
+    }
+    if (keys != null) {
+      if (keys.isEmpty) return const [];
+      where.add("(service || ':' || id) IN (${List.filled(keys.length, '?').join(',')})");
+      args.addAll(keys);
+    }
+    final String order = switch (_kemonoSorts.contains(orderBy) ? orderBy : 'favorited') {
+      'name' => 'name COLLATE NOCASE ASC',
+      'updated' => 'updated DESC',
+      'indexed' => 'indexed DESC',
+      _ => 'favorited DESC',
+    };
+    args
+      ..add(limit)
+      ..add(offset);
+    return db.rawQuery(
+      'SELECT service, id, name, indexed, updated, favorited FROM ${creatorTable(table)} '
+      '${where.isEmpty ? '' : 'WHERE ${where.join(' AND ')} '}'
+      'ORDER BY $order, name COLLATE NOCASE ASC LIMIT ? OFFSET ?',
+      args,
+    );
+  }
+
+  Future<List<Map<String, Object?>>> getKemonoCreatorsByKeys(List<({String service, String id})> pairs, {String table = 'KemonoCreator'}) async {
+    final db = this.db;
+    if (db == null || pairs.isEmpty) return const [];
+    final List<Map<String, Object?>> out = [];
+    for (int i = 0; i < pairs.length; i += 400) {
+      final slice = pairs.sublist(i, (i + 400).clamp(0, pairs.length));
+      final rows = await db.rawQuery(
+        'SELECT service, id, name, indexed, updated, favorited FROM ${creatorTable(table)} '
+        "WHERE (service || ':' || id) IN (${List.filled(slice.length, '?').join(',')})",
+        [for (final p in slice) '${p.service}:${p.id}'],
+      );
+      out.addAll(rows);
+    }
+    return out;
+  }
+
+  Future<List<Map<String, Object?>>> findKemonoCreatorsByName(String name, {int limit = 5, String table = 'KemonoCreator'}) async {
+    final db = this.db;
+    if (db == null || name.isEmpty) return const [];
+    return db.rawQuery(
+      'SELECT service, id, name, indexed, updated, favorited FROM ${creatorTable(table)} '
+      'WHERE name = ? COLLATE NOCASE ORDER BY favorited DESC LIMIT ?',
+      [name, limit],
+    );
+  }
+
+  Future<List<Map<String, Object?>>> getBooruTagOverrides({String? booruKey}) async {
+    final db = this.db;
+    if (db == null) return const [];
+    if (booruKey == null) {
+      return db.rawQuery('SELECT booruKey, name, tagType, source, updatedAt FROM BooruTagOverride');
+    }
+    return db.rawQuery(
+      'SELECT booruKey, name, tagType, source, updatedAt FROM BooruTagOverride WHERE booruKey = ?',
+      [booruKey],
+    );
+  }
+
+  Future<void> setBooruTagOverride(String booruKey, String name, String tagType, String source) async {
+    await db?.rawInsert(
+      'INSERT OR REPLACE INTO BooruTagOverride(booruKey, name, tagType, source, updatedAt) VALUES(?,?,?,?,?)',
+      [booruKey, name, tagType, source, DateTime.now().millisecondsSinceEpoch],
+    );
+  }
+
+  Future<void> deleteBooruTagOverride(String booruKey, String name) async {
+    await db?.rawDelete('DELETE FROM BooruTagOverride WHERE booruKey = ? AND name = ?', [booruKey, name]);
+  }
+
+  Future<void> deleteBooruTagOverrides(String? booruKey) async {
+    if (booruKey == null) {
+      await db?.rawDelete('DELETE FROM BooruTagOverride');
+    } else {
+      await db?.rawDelete('DELETE FROM BooruTagOverride WHERE booruKey = ?', [booruKey]);
+    }
   }
 
   Future<List<Tag>> getAllTags() async {
@@ -1226,6 +2143,26 @@ class DBHandler {
     return List.from(result.map(HistoryItem.fromMap));
   }
 
+  /// Like [getSearchHistoryByInput], but keeps each row's booru name so the
+  /// caller can drop rows belonging to another domain (doujin searches
+  /// recorded before they got their own store).
+  Future<List<({String searchText, String booruName})>> getSearchHistoryByInputWithBooru(
+    String queryStr,
+    int limit,
+  ) async {
+    final out = <({String searchText, String booruName})>[];
+    final result = await db?.rawQuery(
+      'SELECT DISTINCT searchText, booruName FROM SearchHistory WHERE lower(searchText) LIKE (?) LIMIT $limit',
+      ['${queryStr.toLowerCase()}%'],
+    );
+    if (result != null) {
+      for (final row in result) {
+        out.add((searchText: row['searchText'].toString(), booruName: row['booruName']?.toString() ?? ''));
+      }
+    }
+    return out;
+  }
+
   Future<List<String>> getSearchHistoryByInput(String queryStr, int limit) async {
     final List<String> tags = [];
     final result = await db?.rawQuery(
@@ -1349,6 +2286,155 @@ class DBHandler {
   }
 
   ///////
+  /// Viewing history (full items, newest first — powers the History feed)
+
+  // Cap so the table can't grow unbounded; trims oldest beyond this on insert.
+  static const int _viewedPostLimit = 5000;
+
+  Future<void> addViewedPost(String postKey, String itemJson) async {
+    if (postKey.isEmpty || itemJson.isEmpty) return;
+    // INSERT OR REPLACE so a re-view bumps the entry back to the top.
+    await db?.rawInsert(
+      'INSERT OR REPLACE INTO ViewedPost(postKey, itemJson, viewedAt) VALUES(?, ?, ?)',
+      [postKey, itemJson, DateTime.now().millisecondsSinceEpoch],
+    );
+    await db?.rawDelete(
+      'DELETE FROM ViewedPost WHERE postKey NOT IN '
+      '(SELECT postKey FROM ViewedPost ORDER BY viewedAt DESC LIMIT $_viewedPostLimit)',
+    );
+  }
+
+  // Builds the WHERE clause for a space-separated filter: every term must
+  // appear somewhere in the stored item JSON (tags, URLs, artist...). Crude
+  // but effective for a local history search.
+  (String, List<String>) _viewedPostFilter(String filter) {
+    final terms = filter.toLowerCase().split(' ').where((t) => t.trim().isNotEmpty).toList();
+    if (terms.isEmpty) return ('', const []);
+    final String where = 'WHERE ${List.filled(terms.length, 'LOWER(itemJson) LIKE ?').join(' AND ')}';
+    return (where, [for (final t in terms) '%$t%']);
+  }
+
+  // History rows use their own (de)serializer — BooruItem.fromMap is lossy
+  // (drops rating/score/sources and stringifies Tag maps into garbage).
+  static String serializeHistoryItem(BooruItem item) => jsonEncode({
+    'postURL': item.postURL,
+    'fileURL': item.fileURL,
+    'sampleURL': item.sampleURL,
+    'thumbnailURL': item.thumbnailURL,
+    'tags': [for (final t in item.tagsList) t.fullString],
+    'fileExt': item.fileExt,
+    'serverId': item.serverId,
+    'rating': item.rating,
+    'score': item.score,
+    'md5String': item.md5String,
+    'sources': item.sources,
+    'postDate': item.postDate,
+    'postDateFormat': item.postDateFormat,
+    'fileWidth': item.fileWidth,
+    'fileHeight': item.fileHeight,
+  });
+
+  static BooruItem? deserializeHistoryItem(String jsonStr) {
+    try {
+      final Map<String, dynamic> j = jsonDecode(jsonStr);
+      return BooruItem(
+        fileURL: j['fileURL']?.toString() ?? '',
+        sampleURL: j['sampleURL']?.toString() ?? '',
+        thumbnailURL: j['thumbnailURL']?.toString() ?? '',
+        postURL: j['postURL']?.toString() ?? '',
+        tagsList: [for (final t in (j['tags'] as List? ?? [])) Tag(t.toString())],
+        fileExt: j['fileExt']?.toString(),
+        serverId: j['serverId']?.toString(),
+        rating: j['rating']?.toString(),
+        score: j['score']?.toString(),
+        md5String: j['md5String']?.toString(),
+        sources: (j['sources'] as List?)?.map((e) => e.toString()).toList(),
+        postDate: j['postDate']?.toString(),
+        postDateFormat: j['postDateFormat']?.toString(),
+        fileWidth: double.tryParse(j['fileWidth']?.toString() ?? ''),
+        fileHeight: double.tryParse(j['fileHeight']?.toString() ?? ''),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<List<BooruItem>> getViewedPosts(String filter, int offset, int limit) async {
+    final (String where, List<String> args) = _viewedPostFilter(filter);
+    final rows = await db?.rawQuery(
+      'SELECT itemJson FROM ViewedPost $where ORDER BY viewedAt DESC LIMIT $limit OFFSET $offset',
+      args,
+    );
+    if (rows == null || rows.isEmpty) return [];
+    final List<BooruItem> items = [];
+    for (final row in rows) {
+      final BooruItem? item = deserializeHistoryItem(row['itemJson']!.toString());
+      // Skip rows that fail to deserialize (e.g. written by a newer build).
+      if (item != null && item.fileURL.isNotEmpty) {
+        items.add(item);
+      }
+    }
+    return items;
+  }
+
+  Future<int> countViewedPosts(String filter) async {
+    final (String where, List<String> args) = _viewedPostFilter(filter);
+    final rows = await db?.rawQuery('SELECT COUNT(*) as c FROM ViewedPost $where', args);
+    if (rows == null || rows.isEmpty) return 0;
+    return int.tryParse(rows.first['c']?.toString() ?? '') ?? 0;
+  }
+
+  Future<void> clearViewedPosts() async {
+    await db?.rawDelete('DELETE FROM ViewedPost');
+  }
+
+  /// Removes the History-feed row only. SeenPost (grid dimming) is left
+  /// alone: it's a per-post key set, not a history surface.
+  Future<void> deleteViewedPost(String postKey) async {
+    await db?.rawDelete('DELETE FROM ViewedPost WHERE postKey = ?', [postKey]);
+  }
+
+  ///////
+  /// Doujin migration helpers
+
+  /// Raw SELECT for the doujin migration planner; empty when the DB is off.
+  Future<List<Map<String, Object?>>> rawRows(String sql) async => (await db?.rawQuery(sql)) ?? const [];
+
+  Future<void> clearFavouriteFlag(List<int> itemIds) async {
+    if (itemIds.isEmpty) return;
+    // Chunked so huge favourite migrations don't overrun the SQL length cap.
+    for (int i = 0; i < itemIds.length; i += 500) {
+      final chunk = itemIds.sublist(i, i + 500 > itemIds.length ? itemIds.length : i + 500);
+      await db?.rawUpdate('UPDATE BooruItem SET isFavourite = 0 WHERE id IN (${chunk.join(',')})');
+    }
+  }
+
+  Future<void> removeCollectionItem(int collectionId, int booruItemId) async {
+    await db?.rawDelete(
+      'DELETE FROM CollectionItem WHERE collectionId = ? AND booruItemID = ?',
+      [collectionId, booruItemId],
+    );
+  }
+
+  ///////
+  /// Doujin reader progress
+
+  Future<Map<String, Object?>?> getReaderProgress(String galleryKey) async {
+    final List<Map<String, Object?>>? result = await db?.rawQuery(
+      'SELECT page, totalPages, updatedAt FROM ReaderProgress WHERE galleryKey = ?',
+      [galleryKey],
+    );
+    return (result?.isNotEmpty ?? false) ? result!.first : null;
+  }
+
+  Future<void> updateReaderProgress(String galleryKey, int page, int totalPages, int updatedAt) async {
+    await db?.rawInsert(
+      'INSERT OR REPLACE INTO ReaderProgress (galleryKey, page, totalPages, updatedAt) VALUES (?, ?, ?, ?)',
+      [galleryKey, page, totalPages, updatedAt],
+    );
+  }
+
+  ///////
   /// Pinned Tags methods
 
   /// Add a pinned tag (global or booru-specific)
@@ -1357,6 +2443,7 @@ class DBHandler {
     String? booruType,
     String? booruName,
     List<String> labels = const [],
+    String? title,
   }) async {
     // Check if already pinned with same scope
     final existing = await db?.rawQuery(
@@ -1370,8 +2457,8 @@ class DBHandler {
     final pinnedAt = DateTime.now().millisecondsSinceEpoch;
     final labelsString = labels.isNotEmpty ? labels.join(',') : null;
     final result = await db?.rawInsert(
-      'INSERT INTO PinnedTag(tagName, booruType, booruName, pinnedAt, sortOrder, label) VALUES(?, ?, ?, ?, ?, ?)',
-      [tagName, booruType, booruName, pinnedAt, 0, labelsString],
+      'INSERT INTO PinnedTag(tagName, booruType, booruName, pinnedAt, sortOrder, label, title) VALUES(?, ?, ?, ?, ?, ?, ?)',
+      [tagName, booruType, booruName, pinnedAt, 0, labelsString, title],
     );
     return result;
   }
@@ -1379,6 +2466,10 @@ class DBHandler {
   /// Remove a pinned tag by id
   Future<void> removePinnedTag(int id) async {
     await db?.rawDelete('DELETE FROM PinnedTag WHERE id = ?', [id]);
+    // r79: its hides go with it, or a new pin reusing the id is born hidden.
+    try {
+      PinnedTagVisibility.forgetId(id);
+    } catch (_) {}
   }
 
   /// Remove a pinned tag by tagName and scope
@@ -1463,6 +2554,14 @@ class DBHandler {
   Future<void> updatePinnedTagLabels(int id, List<String> labels) async {
     final labelsString = labels.join(',');
     await db?.rawUpdate('UPDATE PinnedTag SET label = ? WHERE id = ?', [labelsString, id]);
+  }
+
+  /// Edit a pin: its tags, its name and where it shows (r50).
+  Future<void> updatePinnedTag(int id, {required String tagName, String? title, String? booruType, String? booruName}) async {
+    await db?.rawUpdate(
+      'UPDATE PinnedTag SET tagName = ?, title = ?, booruType = ?, booruName = ? WHERE id = ?',
+      [tagName, title, booruType, booruName, id],
+    );
   }
 
   /// Get all unique labels from pinned tags (parses comma-separated labels)
@@ -1550,6 +2649,26 @@ class DBHandler {
   }
 
   /// Deletes booruItems which are no longer favourited or snatched
+  /// Drops the snatched flag from rows whose file is gone from disk (the
+  /// downloads reconciler's explicit "forget" action). Rows that are neither
+  /// favourited nor collected are then removed by [deleteUntracked]. Returns
+  /// how many rows were changed.
+  Future<int> clearSnatchedFlags(List<String> postURLs) async {
+    if (postURLs.isEmpty || db == null) return 0;
+    int changed = 0;
+    const int chunkSize = 500;
+    for (int i = 0; i < postURLs.length; i += chunkSize) {
+      final chunk = postURLs.sublist(i, min(postURLs.length, i + chunkSize));
+      final placeholders = List.filled(chunk.length, '?').join(',');
+      changed += await db!.rawUpdate(
+        'UPDATE BooruItem SET isSnatched = 0, snatchedAt = NULL WHERE postURL IN ($placeholders)',
+        chunk,
+      );
+    }
+    await deleteUntracked();
+    return changed;
+  }
+
   Future<bool> deleteUntracked() async {
     // Keep items that are favourited, snatched, OR held by a collection.
     final result = await db?.rawQuery(

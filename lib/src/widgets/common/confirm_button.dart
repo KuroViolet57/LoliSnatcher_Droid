@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:lolisnatcher/gen/strings.g.dart';
 
 class ConfirmButton extends StatelessWidget {
@@ -33,7 +35,7 @@ class ConfirmButton extends StatelessWidget {
             Navigator.of(context).pop(returnData);
           }
         },
-        icon: const Icon(Icons.check),
+        icon: const Icon(Symbols.check_rounded),
         label: Text(label ?? context.loc.confirm),
       );
     }

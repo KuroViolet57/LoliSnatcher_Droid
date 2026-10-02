@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -32,6 +34,7 @@ class ThumbnailBuild extends StatelessWidget {
     this.selectable = true,
     this.onSelected,
     this.simple = false,
+    this.fit,
     super.key,
   });
 
@@ -41,13 +44,16 @@ class ThumbnailBuild extends StatelessWidget {
   final bool selectable;
   final void Function()? onSelected;
   final bool simple;
+  final BoxFit? fit;
 
   @override
   Widget build(BuildContext context) {
     final SettingsHandler settingsHandler = SettingsHandler.instance;
 
     return ClipRRect(
-      borderRadius: BorderRadius.circular(4),
+      // Flow: grid media tiles are softly rounded (matches the blueprint's
+      // 14px card radius), not the old near-square 4px.
+      borderRadius: BorderRadius.circular(14),
       child: Stack(
         alignment: settingsHandler.previewDisplay.isSquare ? .center : .bottomCenter,
         children: [
@@ -78,7 +84,7 @@ class ThumbnailBuild extends StatelessWidget {
                             booruHost?.isNotEmpty == true &&
                             itemFileHost! == booruHost!);
                   });
-                  if (possibleBooru?.type?.isLocalDb == true || possibleBooru?.type?.isForYou == true) {
+                  if (possibleBooru?.type?.isLocalDb == true || possibleBooru?.type?.isRecommendationFeed == true) {
                     possibleBooru = null;
                   }
                 }
@@ -88,6 +94,7 @@ class ThumbnailBuild extends StatelessWidget {
                   booru: possibleBooru ?? handler.booru,
                   isStandalone: true,
                   useHero: selectable,
+                  fitOverride: fit,
                 );
               },
             ),
@@ -119,7 +126,7 @@ class ThumbnailBuild extends StatelessWidget {
                           title: Text(context.loc.copied, style: const TextStyle(fontSize: 20)),
                           content: Text(context.loc.common.booruItemCopiedToClipboard),
                           sideColor: Colors.green,
-                          leadingIcon: Icons.copy,
+                          leadingIcon: Symbols.content_copy_rounded,
                           leadingIconColor: Colors.white,
                           duration: const Duration(seconds: 2),
                         );
@@ -131,7 +138,7 @@ class ThumbnailBuild extends StatelessWidget {
                           borderRadius: const BorderRadius.only(bottomRight: Radius.circular(5)),
                         ),
                         child: const Icon(
-                          Icons.copy,
+                          Symbols.content_copy_rounded,
                           color: Colors.white,
                           size: 16,
                         ),
@@ -364,7 +371,7 @@ class ThumbnailBuild extends StatelessWidget {
                   ),
                   //
                   Flexible(
-                    child: _ThumbnailBottomRightIcons(item),
+                    child: _ThumbnailBottomRightIcons(item, handler),
                   ),
                 ],
               ),
@@ -378,17 +385,19 @@ class ThumbnailBuild extends StatelessWidget {
 class _ThumbnailBottomRightIcons extends StatelessWidget {
   const _ThumbnailBottomRightIcons(
     this.item,
+    this.handler,
   );
 
   final BooruItem item;
+  final BooruHandler handler;
 
   @override
   Widget build(BuildContext context) {
     final SettingsHandler settingsHandler = SettingsHandler.instance;
     final SnatchHandler snatchHandler = SnatchHandler.instance;
 
-    final tagsData = settingsHandler.parseTagsList(
-      item.tagsList,
+    final tagsData = settingsHandler.parseTagsListForItem(
+      item,
       isCapped: false,
     );
     final bool isSound = tagsData.soundTags.isNotEmpty;
@@ -397,7 +406,7 @@ class _ThumbnailBottomRightIcons extends StatelessWidget {
     final bool hasComments = item.hasComments == true;
 
     return Obx(() {
-      final IconData? itemIcon = Tools.getFileIcon(item.possibleMediaType.value ?? item.mediaType.value);
+      final IconData? itemIcon = handler.mediaIconFor(item) ?? Tools.getFileIcon(item.possibleMediaType.value ?? item.mediaType.value);
 
       final bool? isFav = item.isFavourite.value;
       final bool isFavOrMarked = isFav == true || tagsData.markedTags.isNotEmpty;
@@ -423,7 +432,7 @@ class _ThumbnailBottomRightIcons extends StatelessWidget {
       final bool isBottomRightEmpty = bottomRightAmount == 0;
 
       const snatchedIcon = Icon(
-        Icons.save_alt,
+        Symbols.save_alt_rounded,
         color: Colors.white,
         size: 14,
       );
@@ -461,7 +470,7 @@ class _ThumbnailBottomRightIcons extends StatelessWidget {
                           ),
                         )
                       : Icon(
-                          isFav == true ? Icons.favorite : Icons.star,
+                          isFav == true ? Symbols.favorite_rounded : Symbols.star_rounded,
                           color: isFav == true ? Colors.red : Colors.grey,
                           key: ValueKey<Color>(isFav == true ? Colors.red : Colors.grey),
                           size: 14,
@@ -490,19 +499,19 @@ class _ThumbnailBottomRightIcons extends StatelessWidget {
                 ),
               if (hasComments)
                 const Icon(
-                  Icons.comment,
+                  Symbols.comment_rounded,
                   color: Colors.white,
                   size: 14,
                 ),
               if (hasNotes)
                 const Icon(
-                  Icons.note_add,
+                  Symbols.note_add_rounded,
                   color: Colors.white,
                   size: 14,
                 ),
               if (isSound)
                 const Icon(
-                  Icons.volume_up_rounded,
+                  Symbols.volume_up_rounded,
                   color: Colors.white,
                   size: 14,
                 ),

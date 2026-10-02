@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 
+import 'package:material_symbols_icons/symbols.dart';
+
 import 'package:dio/dio.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/boorus/linked_media.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/widgets/thumbnail/thumbnail.dart';
 
@@ -120,7 +123,7 @@ class _LoadItemViewerState extends State<LoadItemViewer> {
                 else ...[
                   ElevatedButton.icon(
                     onPressed: initLoading,
-                    icon: const Icon(Icons.refresh),
+                    icon: const Icon(Symbols.refresh_rounded),
                     label: Text(context.loc.media.video.retry),
                   ),
                   const SizedBox(height: 10),
@@ -131,18 +134,18 @@ class _LoadItemViewerState extends State<LoadItemViewer> {
                         mode: LaunchMode.externalApplication,
                       );
                     },
-                    icon: const Icon(Icons.public),
+                    icon: const Icon(Symbols.public_rounded),
                     label: Text(context.loc.media.video.openFileInBrowser),
                   ),
                   const SizedBox(height: 10),
                   ElevatedButton.icon(
                     onPressed: () {
                       launchUrlString(
-                        widget.item.postURL,
+                        LinkedMediaResolver.browserAddress(widget.item.postURL),
                         mode: LaunchMode.externalApplication,
                       );
                     },
-                    icon: const Icon(Icons.public),
+                    icon: const Icon(Symbols.public_rounded),
                     label: Text(context.loc.media.video.openPostInBrowser),
                   ),
                 ],

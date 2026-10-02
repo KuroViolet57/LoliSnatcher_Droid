@@ -6,20 +6,41 @@ import 'package:html/dom.dart';
 import 'package:html/parser.dart';
 import 'package:xml/xml.dart';
 
+import 'package:lolisnatcher/src/boorus/doujin/doujin_filters.dart';
+import 'package:lolisnatcher/src/boorus/booru_site_filters.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
+import 'package:lolisnatcher/src/data/booru_tag.dart';
 import 'package:lolisnatcher/src/data/comment_item.dart';
 import 'package:lolisnatcher/src/data/meta_tag.dart';
 import 'package:lolisnatcher/src/data/note_item.dart';
+import 'package:lolisnatcher/src/data/site_profile.dart';
 import 'package:lolisnatcher/src/data/tag.dart';
 import 'package:lolisnatcher/src/data/tag_suggestion.dart';
 import 'package:lolisnatcher/src/data/tag_type.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_utils.dart';
+import 'package:lolisnatcher/src/handlers/booru_tag_catalog.dart';
+import 'package:lolisnatcher/src/handlers/booru_tag_store.dart';
+import 'package:lolisnatcher/src/handlers/post_files_handler.dart';
+import 'package:lolisnatcher/src/handlers/tag_catalog_source.dart';
+import 'package:lolisnatcher/src/handlers/tag_index_source.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 
 class GelbooruHandler extends BooruHandler {
   GelbooruHandler(super.booru, super.limit);
+
+  /// r45: the gelbooru engine's cheat sheet as Filters, in the site's rating words.
+  @override
+  DoujinFilterSpec? get doujinFilters => BooruEngineFilters.gelbooru(
+    booruOrgRatings: !(booru.baseURL ?? '').contains('gelbooru.com'),
+    aspectRatio: (booru.baseURL ?? '').contains('rule34.xxx'),
+  );
+
+  /// Artists, characters, copyrights, meta and general tags from the site's
+  /// own count-ordered tag list (see GelbooruTagIndex).
+  @override
+  late final TagCatalogSource? tagCatalog = BooruTagCatalog.forHandler(this);
 
   @override
   bool get hasSizeData => true;
@@ -70,10 +91,7 @@ class GelbooruHandler extends BooruHandler {
       // gelbooru returns xml response if request was denied for some reason
       // i.e. user hit a rate limit because he didn't include api key
       parsedResponse = XmlDocument.parse(response.data);
-      final String? errorMessage = (parsedResponse as XmlDocument)
-          .getElement('response')
-          ?.getAttribute('reason')
-          ?.toString();
+      final String? errorMessage = (parsedResponse as XmlDocument).getElement('response')?.getAttribute('reason')?.toString();
       if (errorMessage != null) {
         throw Exception(errorMessage);
       }
@@ -148,22 +166,89 @@ class GelbooruHandler extends BooruHandler {
   }
 
   String buildApiStr() {
-    final String apiKeyStr = booru.apiKey?.isNotEmpty == true
-        ? (booru.apiKey?.contains('api_key') == true ? booru.apiKey! : '&api_key=${booru.apiKey}')
-        : '';
-    final String userIdStr = booru.userID?.isNotEmpty == true
-        ? (apiKeyStr.contains('user_id') ? '' : '&user_id=${booru.userID}')
-        : '';
+    final String apiKeyStr = booru.apiKey?.isNotEmpty == true ? (booru.apiKey?.contains('api_key') == true ? booru.apiKey! : '&api_key=${booru.apiKey}') : '';
+    final String userIdStr = booru.userID?.isNotEmpty == true ? (apiKeyStr.contains('user_id') ? '' : '&user_id=${booru.userID}') : '';
 
     return '$apiKeyStr$userIdStr';
   }
 
   @override
   String makeURL(String tags) {
-    // EXAMPLE: https://gelbooru.com/index.php?page=dapi&s=post&q=index&tags=rating:general%20order:score&limit=20&pid=0&json=1
     final int cappedPage = max(0, pageNum);
 
-    return "${booru.baseURL}/index.php?page=dapi&s=post&q=index&tags=${tags.replaceAll(" ", "+")}&limit=$limit&pid=$cappedPage&json=1${buildApiStr()}";
+    // Hybrid fetch: the documented API is the default browse path (it returns
+    // several times more items per request), but some sites can't serve every
+    // query through it — e.g. bakemono's dapi silently ignores sort and source
+    // filters while its HTML listing honours both. The profile decides; when
+    // it hands back a URL we parse that page instead (see parseResponse).
+    if (!_listingDisabled) {
+      final String? listing = siteProfile?.listingUrl(booru, tags, cappedPage, limit);
+      if (listing != null) {
+        _listingTags = tags;
+        _usingListing = true;
+        return listing;
+      }
+    }
+    _usingListing = false;
+    _lastApiTags = tags;
+
+    // EXAMPLE: https://gelbooru.com/index.php?page=dapi&s=post&q=index&tags=rating:general%20order:score&limit=20&pid=0&json=1
+    return _apiUrl(tags, cappedPage);
+  }
+
+  String _apiUrl(String tags, int page) =>
+      "${booru.baseURL}/index.php?page=dapi&s=post&q=index&tags=${tags.replaceAll(" ", "+")}&limit=$limit&pid=$page&json=1${buildApiStr()}";
+
+  // Whether the CURRENT request went to the site's HTML listing.
+  bool _usingListing = false;
+  // Set when scraping breaks (markup shifted): stop using the listing for the
+  // rest of this handler's life and stay on the documented API.
+  bool _listingDisabled = false;
+  String _listingTags = '';
+  String _lastApiTags = '';
+
+  @override
+  FutureOr<List<BooruItem>> parseResponse(dynamic response) async {
+    if (!_usingListing) {
+      final List<BooruItem> items = await super.parseResponse(response);
+      // Backfill anything the API can't tell us (file counts for gallery
+      // posts) in the background — never block the page on it.
+      if (siteProfile != null) {
+        unawaited(PostFilesHandler.instance.enrichCounts(items, booru, _lastApiTags));
+      }
+      return items;
+    }
+
+    final SiteProfile? profile = siteProfile;
+    final List<BooruItem>? scraped = profile?.parseListing(response.data?.toString() ?? '', booru);
+    if (scraped != null) return scraped;
+
+    // Fail soft: never show an empty grid because a site changed its markup —
+    // log it, drop back to the API permanently, and serve this page from there.
+    Logger.Inst().log(
+      'listing scrape failed for ${booru.name} (${profile?.id}); falling back to the API',
+      className,
+      'parseResponse',
+      LogTypes.booruHandlerParseFailed,
+    );
+    _listingDisabled = true;
+    _usingListing = false;
+    try {
+      final apiResponse = await DioNetwork.get(
+        _apiUrl(_listingTags, max(0, pageNum)),
+        headers: getHeaders(),
+      );
+      return await super.parseResponse(apiResponse);
+    } catch (e, st) {
+      Logger.Inst().log(
+        'API fallback after listing failure also failed: $e',
+        className,
+        'parseResponse',
+        LogTypes.exception,
+        s: st,
+      );
+      return [];
+    }
   }
 
   // ----------------- Tag suggestions and tag handler stuff
@@ -178,6 +263,13 @@ class GelbooruHandler extends BooruHandler {
 
   @override
   String makeTagURL(String input) {
+    // Gelbooru-compatible sites don't all implement autocomplete2 — bakemono
+    // ignores the unknown page= and answers with the post index instead, so
+    // the suggestion parser silently received posts. Sites that differ say so
+    // through their profile.
+    final String? profileUrl = siteProfile?.tagSuggestionsUrl(booru, input);
+    if (profileUrl != null) return profileUrl;
+
     // EXAMPLE https://gelbooru.com/index.php?page=dapi&s=tag&q=index&name_pattern=nagat%25&limit=20&json=1
     return '${booru.baseURL}/index.php?page=autocomplete2&term=$input&type=tag_query&limit=20${buildApiStr()}'; // limit doesnt work
     // return '${booru.baseURL}/index.php?page=dapi&s=tag&q=index&name_pattern=$input%&limit=20&order=post_count&direction=desc&json=1$apiKeyStr$userIdStr'; // order doesnt work
@@ -199,15 +291,15 @@ class GelbooruHandler extends BooruHandler {
     // record tag data for future use
     final String rawTagType = (responseItem['category'] ?? responseItem['type'])?.toString() ?? '';
     TagType tagType = TagType.none;
-    if (rawTagType.isNotEmpty &&
-        (tagTypeMap.containsKey(rawTagType) || tagSuggestionsTypeMap.containsKey(rawTagType))) {
+    if (rawTagType.isNotEmpty && (tagTypeMap.containsKey(rawTagType) || tagSuggestionsTypeMap.containsKey(rawTagType))) {
       tagType = tagTypeMap[rawTagType] ?? tagSuggestionsTypeMap[rawTagType] ?? TagType.none;
     }
     addTagsWithType([tagStr], tagType);
     return TagSuggestion(
       tag: tagStr,
       type: tagType,
-      count: int.tryParse((responseItem['count'] ?? responseItem['post_count'])?.toString() ?? '0') ?? 0,
+      // Some sites only expose the count inside a display label.
+      count: siteProfile?.tagSuggestionCount(responseItem) ?? int.tryParse((responseItem['count'] ?? responseItem['post_count'])?.toString() ?? '0') ?? 0,
     );
   }
 
@@ -216,49 +308,88 @@ class GelbooruHandler extends BooruHandler {
 
   @override
   String makeDirectTagURL(List<String> tags) {
-    return "${booru.baseURL}/index.php?page=dapi&s=tag&q=index&names=${tags.join(" ")}&limit=100&json=1${buildApiStr()}";
+    // `name=` is singular and exact — see genTagObjects for why the old
+    // `names=` batch form is gone.
+    return '${booru.baseURL}/index.php?page=dapi&s=tag&q=index'
+        '&name=${Uri.encodeComponent(tags.isEmpty ? '' : tags.first)}&limit=1${buildApiStr()}';
   }
 
+  /// Resolves tag types against the site's own tag database.
+  ///
+  /// This used to issue one request with `&names=a b c&json=1` and parse
+  /// `response.data['tag']`. Both halves of that are wrong on the Gelbooru
+  /// 0.2 family, verified live against rule34.xxx and xbooru with valid
+  /// credentials:
+  ///   * `names=` is ignored completely — the site answers with the first
+  ///     page of its entire tag index, so the tags actually asked about were
+  ///     never in the response;
+  ///   * `json=1` is ignored too on rule34.xxx, which always replies XML, so
+  ///     the `['tag']` lookup threw on a String and the catch below swallowed
+  ///     it. Net effect: this method returned an empty list every time and no
+  ///     tag on those sites ever got a type from here.
+  ///
+  /// `name=` (singular) *is* honoured and returns exactly one authoritative
+  /// row, so types are resolved one tag at a time with bounded concurrency,
+  /// answers already in the per-booru snapshot are reused instead of being
+  /// re-requested, and everything learned is written back to that snapshot.
   @override
   Future<List<Tag>> genTagObjects(List<String> tags) async {
+    final TagIndexSource? source = TagIndexSource.forBooru(booru);
+    if (source == null) return [];
+
+    final List<String> wanted = [
+      for (final t in tags.map((t) => t.trim().toLowerCase()).toSet())
+        if (t.isNotEmpty) t,
+    ];
+    if (wanted.isEmpty) return [];
+
     final List<Tag> tagObjects = [];
-    Logger.Inst().log('Got tag list: $tags', className, 'genTagObjects', LogTypes.booruHandlerTagInfo);
-    final String url = makeDirectTagURL(tags);
-    Logger.Inst().log('DirectTagURL: $url', className, 'genTagObjects', LogTypes.booruHandlerTagInfo);
-    try {
-      final response = await DioNetwork.get(url, headers: getHeaders());
-      // 200 is the success http response code
-      if (response.statusCode == 200) {
-        final parsedResponse = (response.data['tag']) ?? [];
-        if (parsedResponse?.isNotEmpty ?? false) {
-          Logger.Inst().log(
-            'Tag response length: ${parsedResponse.length},Tag list length: ${tags.length}',
-            className,
-            'genTagObjects',
-            LogTypes.booruHandlerTagInfo,
-          );
-          for (int i = 0; i < parsedResponse.length; i++) {
-            final String fullString = parseFragment(parsedResponse.elementAt(i)['name']).text!;
-            final String typeKey = parsedResponse.elementAt(i)['type'].toString();
-            TagType tagType = TagType.none;
-            if (tagTypeMap.containsKey(typeKey)) {
-              tagType = tagTypeMap[typeKey] ?? TagType.none;
-            }
-            if (fullString.isNotEmpty) {
-              tagObjects.add(Tag(fullString, tagType: tagType));
-            }
-          }
-        }
+    final List<String> toFetch = [];
+
+    // Anything a previous snapshot pull already answered costs no request.
+    final Map<String, BooruTagEntry> known = await BooruTagStore.lookup(booru, wanted);
+    for (final name in wanted) {
+      final BooruTagEntry? hit = known[name];
+      if (hit != null) {
+        tagObjects.add(Tag(hit.name, tagType: hit.tagType, count: hit.count));
+      } else {
+        toFetch.add(name);
       }
-    } catch (e, s) {
-      Logger.Inst().log(
-        e.toString(),
-        className,
-        'genTagObjects',
-        LogTypes.exception,
-        s: s,
-      );
     }
+
+    // Politeness cap: the background queue re-feeds whatever is left over on
+    // its next pass, so this never turns a big post into a request storm.
+    const int concurrency = 3;
+    const int maxPerCall = 45;
+    final List<String> batchList = toFetch.take(maxPerCall).toList();
+    final List<BooruTagEntry> learned = [];
+
+    for (int i = 0; i < batchList.length; i += concurrency) {
+      final Iterable<String> batch = batchList.skip(i).take(concurrency);
+      final results = await Future.wait(
+        batch.map((name) async {
+          try {
+            return await source.exact(booru, name);
+          } catch (_) {
+            return null;
+          }
+        }),
+      );
+      for (final entry in results.whereType<BooruTagEntry>()) {
+        learned.add(entry);
+        tagObjects.add(Tag(entry.name, tagType: entry.tagType, count: entry.count));
+      }
+    }
+
+    if (learned.isNotEmpty) {
+      unawaited(BooruTagStore.record(booru, learned));
+    }
+    Logger.Inst().log(
+      'resolved ${tagObjects.length}/${wanted.length} tag types (${learned.length} fetched)',
+      className,
+      'genTagObjects',
+      LogTypes.booruHandlerTagInfo,
+    );
     return tagObjects;
   }
 
@@ -301,15 +432,11 @@ class GelbooruHandler extends BooruHandler {
     try {
       final Element avatarNode = responseItem[0];
       final List<String> avatarParts = avatarNode.outerHtml.split("url('");
-      final String? avatarUrl = avatarParts.length > 1
-          ? 'https://gelbooru.com/${avatarParts[1].split("')")[0]}'
-          : null;
+      final String? avatarUrl = avatarParts.length > 1 ? 'https://gelbooru.com/${avatarParts[1].split("')")[0]}' : null;
       final Element bodyNode = responseItem[1];
 
       final List<String>? dateParts = bodyNode.nodes.elementAtOrNull(2)?.text?.split('at ');
-      final String? createDate = (dateParts != null && dateParts.length > 1)
-          ? dateParts[1].split(' »')[0]
-          : null;
+      final String? createDate = (dateParts != null && dateParts.length > 1) ? dateParts[1].split(' »')[0] : null;
 
       return CommentItem(
         content: bodyNode.nodes.elementAtOrNull(5)?.text,
@@ -386,6 +513,11 @@ class GelbooruHandler extends BooruHandler {
 
   @override
   List<MetaTag> availableMetaTags() {
+    // The family list advertises sorts/filters most compatible sites don't
+    // implement; a profile replaces it with what the site really supports.
+    final List<MetaTag>? profileTags = siteProfile?.metaTags();
+    if (profileTags != null) return profileTags;
+
     return [
       DanbooruGelbooruRatingMetaTag(),
       SortMetaTag(

@@ -10,6 +10,7 @@ class PinnedTag {
     this.booruName,
     this.sortOrder = 0,
     this.labels = const [],
+    this.title,
   });
 
   PinnedTag.fromMap(Map<String, dynamic> map)
@@ -23,6 +24,7 @@ class PinnedTag {
       booruName = map['booruName'] as String?,
       pinnedAt = map['pinnedAt'] as int,
       sortOrder = map['sortOrder'] as int? ?? 0,
+      title = map['title'] as String?,
       labels = _parseLabels(map['label'] as String?);
 
   /// Parse comma-separated labels string into a list
@@ -38,6 +40,14 @@ class PinnedTag {
   final int pinnedAt;
   final int sortOrder;
   final List<String> labels;
+
+  /// The pin's own name (r50); null shows its tags.
+  final String? title;
+
+  String get displayName => (title ?? '').trim().isNotEmpty ? title!.trim() : tagName;
+
+  /// The tags the pin searches together.
+  List<String> get tags => tagName.split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
 
   /// Returns true if this is a global pin (not booru-specific)
   bool get isGlobal => booruName == null;
@@ -63,6 +73,7 @@ class PinnedTag {
       'pinnedAt': pinnedAt,
       'sortOrder': sortOrder,
       'label': labelsString,
+      'title': title,
     };
   }
 
@@ -81,6 +92,8 @@ class PinnedTag {
     List<String>? labels,
     bool clearBooru = false,
     bool clearLabels = false,
+    String? title,
+    bool clearTitle = false,
   }) {
     return PinnedTag(
       id: id ?? this.id,
@@ -90,6 +103,7 @@ class PinnedTag {
       pinnedAt: pinnedAt ?? this.pinnedAt,
       sortOrder: sortOrder ?? this.sortOrder,
       labels: clearLabels ? [] : (labels ?? this.labels),
+      title: clearTitle ? null : (title ?? this.title),
     );
   }
 }

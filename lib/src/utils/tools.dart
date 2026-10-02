@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -12,6 +15,7 @@ import 'package:lolisnatcher/src/boorus/sankaku_handler.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/constants.dart';
+import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/utils/extensions.dart';
@@ -75,17 +79,65 @@ class Tools {
       return Uri.parse(fileURL).queryParameters['file_ext'] ?? 'png';
     }
 
-    final int queryLastIndex = fileURL.lastIndexOf('?'); // if has GET query parameters
-    final int lastIndex = queryLastIndex != -1 ? queryLastIndex : fileURL.length;
-    final String fileExt = fileURL.substring(fileURL.lastIndexOf('.') + 1, lastIndex);
-    return fileExt;
+    // Look at the PATH only. A query string can carry its own dots and
+    // slashes — bakemono.app serves `/data/../<hash>.jpeg?f=cover.jpeg`, where
+    // searching the whole URL finds the dot inside the query, so the
+    // substring start lands past its end and throws RangeError, which killed
+    // parsing of every post on such a site.
+    final String path = _pathPart(fileURL);
+    final int dotIndex = path.lastIndexOf('.');
+    // A dot before the last slash belongs to the host or a directory, not to
+    // a file extension (e.g. `https://site.app/media/1234`).
+    if (dotIndex == -1 || dotIndex < path.lastIndexOf('/')) return '';
+    return path.substring(dotIndex + 1);
   }
 
   static String getFileName(String fileURL) {
-    final int queryLastIndex = fileURL.lastIndexOf('?'); // if has GET query parameters
-    final int lastIndex = queryLastIndex != -1 ? queryLastIndex : fileURL.length;
-    final String fileExt = fileURL.substring(fileURL.lastIndexOf('/') + 1, lastIndex);
-    return fileExt;
+    final String path = _pathPart(fileURL);
+    final int slashIndex = path.lastIndexOf('/');
+    return slashIndex == -1 ? path : path.substring(slashIndex + 1);
+  }
+
+  /// URL with any query string / fragment removed.
+  static String _pathPart(String url) {
+    int end = url.length;
+    for (final marker in ['?', '#']) {
+      final int i = url.indexOf(marker);
+      if (i != -1 && i < end) end = i;
+    }
+    return url.substring(0, end);
+  }
+
+  /// Parses a `a=1; b=2` cookie header into name -> value, last one winning.
+  static Map<String, String> parseCookieString(String cookies) {
+    final Map<String, String> out = {};
+    for (final part in cookies.split(';')) {
+      final String piece = part.trim();
+      if (piece.isEmpty) continue;
+      final int eq = piece.indexOf('=');
+      if (eq <= 0) continue;
+      out[piece.substring(0, eq).trim()] = piece.substring(eq + 1).trim();
+    }
+    return out;
+  }
+
+  static String buildCookieString(Map<String, String> cookies) =>
+      cookies.entries.map((e) => '${e.key}=${e.value}').join('; ');
+
+  /// Merges cookie header strings into one, later sources winning per name.
+  ///
+  /// Cookie headers were previously built by STRING CONCATENATION from two
+  /// sources that both already contained the full jar, so every request went
+  /// out with each cookie two or three times over — several KB of header with
+  /// `cf_clearance` repeated. A duplicated clearance cookie reads as replay
+  /// or tampering to Cloudflare, which is a very good way to be handed a
+  /// "Just a moment..." challenge on any IP it does not already trust.
+  static String mergeCookieStrings(Iterable<String> sources) {
+    final Map<String, String> merged = {};
+    for (final source in sources) {
+      merged.addAll(parseCookieString(source));
+    }
+    return buildCookieString(merged);
   }
 
   static String sanitize(String str, {String replacement = ''}) {
@@ -106,6 +158,20 @@ class Tools {
   }
 
   // unified http headers list generator for dio in thumb/media/video loaders
+  /// Whether the shared jar's cookies for a source's host may ride along on
+  /// its media requests. False where the files are served by third parties
+  /// (e-hentai's volunteer hath nodes) — see
+  /// `BooruHandler.sendsJarCookiesToMedia`. Pure, so it can be tested
+  /// without a cookie jar.
+  static bool attachesJarCookies(Booru? booru) {
+    if (booru == null) return true;
+    try {
+      return BooruHandlerFactory.mediaHandlerFor(booru)?.sendsJarCookiesToMedia ?? true;
+    } catch (_) {
+      return true;
+    }
+  }
+
   static Future<Map<String, String>> getFileCustomHeaders(
     Booru? booru, {
     BooruItem? item,
@@ -131,7 +197,11 @@ class Tools {
       headers['LS-IGNORE-REDIRECT'] = '1';
     }
 
-    if (!isTestMode) {
+    // The jar's cookies for this host ride along on every media request —
+    // which is wrong where the files are served by third parties (e-hentai's
+    // volunteer hath nodes). A source can refuse it; see
+    // BooruHandler.sendsJarCookiesToMedia.
+    if (!isTestMode && attachesJarCookies(booru)) {
       try {
         final cookiesStr = await getCookies(uri.toString());
         if (cookiesStr.isNotEmpty) {
@@ -162,21 +232,45 @@ class Tools {
       }
     }
 
+    // Whatever the source itself says its CDN needs.
+    //
+    // The cases above are a hardcoded list of hosts, which means a source not
+    // written into it silently loses its referer and every image 404s while the
+    // URLs stay perfectly correct. Asking the handler instead lets a source
+    // declare this once, next to the code that builds those URLs. Handler
+    // values win: they are specific to that source, the list above is not.
+    if (booru != null) {
+      try {
+        headers.addAll(BooruHandlerFactory.mediaHeadersFor(booru));
+      } catch (_) {}
+    }
+
     return headers;
   }
 
   static IconData? getFileIcon(MediaType? mediaType) {
     switch (mediaType) {
       case MediaType.image:
-        return null; // Icons.photo;
+        return null; // Symbols.photo_rounded;
       case MediaType.video:
         return CupertinoIcons.videocam_fill;
       case MediaType.animation:
         return CupertinoIcons.play_fill;
       case MediaType.notSupportedAnimation:
-        return Icons.play_disabled;
+        return Symbols.play_disabled_rounded;
       default:
         return CupertinoIcons.question;
+    }
+  }
+
+  /// On a tab switch (r39): decoded images are dropped only when the cache
+  /// is nearly full, and never the ones on screen. Clearing everything on
+  /// every switch made each return to a tab decode — and, with a slow
+  /// network, fetch — every thumbnail again.
+  static void trimMemoryCacheIfFull() {
+    final ImageCache cache = PaintingBinding.instance.imageCache;
+    if (cache.currentSizeBytes > cache.maximumSizeBytes * 0.8 || cache.currentSize > cache.maximumSize * 0.8) {
+      cache.clear();
     }
   }
 
@@ -252,6 +346,31 @@ class Tools {
     return deviceWebViewUserAgent ?? appUserAgent;
   }
 
+  /// The device's own user agent with every trace of "this is a WebView"
+  /// removed, so it reads as the Chrome build that is actually embedded.
+  ///
+  /// Some sites branch on this. niyaniya/Schale is the reason this exists: its
+  /// bundle runs `navigator.userAgent.includes("wv")` and, when true, skips
+  /// BOTH the Turnstile widget and the whole reader init — so the challenge
+  /// never appears and the reader sits on a spinner forever. Android's WebView
+  /// UA always carries `; wv`, so the app could never pass that test.
+  ///
+  /// Derived from the real device UA rather than hardcoded, so the model and
+  /// Chrome version stay honest — only the WebView markers go.
+  static String stripWebViewMarkers(String userAgent) {
+    return userAgent
+        // "Android 16; SM-S928B Build/BP4A...; wv)" -> "Android 16; SM-S928B)"
+        .replaceAll(RegExp(r'\s*Build/[^;)]+'), '')
+        .replaceAll(RegExp(r';\s*wv(?=[;)])', caseSensitive: false), '')
+        // WebView announces itself a second time as "Version/4.0".
+        .replaceAll(RegExp(r'\s*Version/\d+(\.\d+)*'), '')
+        .replaceAll(RegExp(r'\s{2,}'), ' ')
+        .trim();
+  }
+
+  /// [browserUserAgent] with the WebView markers removed.
+  static String get nonWebViewUserAgent => stripWebViewMarkers(browserUserAgent);
+
   static bool get isTestMode => Platform.environment.containsKey('FLUTTER_TEST');
 
   static bool get isOnPlatformWithWebviewSupport =>
@@ -264,6 +383,9 @@ class Tools {
       // TODO add multiple strings for each, then try to find as much as possible and decide if it's a captcha based on the ratio of found/total
       'booru.allthefallen.moe': ['processChallenge'],
       'derpibooru.org': ['derpi-challenge'],
+      // DDoS-Guard's JS challenge page references /.well-known/ddos-guard/;
+      // the site's own pages never mention it (checked 2026-09-06).
+      'rule34video.com': ['ddos-guard'],
     };
 
     final List<String>? stringsToFind = knownCaptchaStrings.entries
@@ -298,13 +420,18 @@ class Tools {
             hasCaptchaContent)) {
       // delete invalid cloudflare cookie
       final webUri = WebUri('${uri.scheme}://$host');
+      // Bounded for the same reason as the read: this sits on the response
+      // path of a failed request, and a wedged channel here would stall the
+      // very error handling meant to recover from it.
       final bool res =
           await CookieManager.instance(
             webViewEnvironment: webViewEnvironment,
-          ).deleteCookie(
-            url: webUri,
-            name: 'cf_clearance',
-          );
+          )
+              .deleteCookie(
+                url: webUri,
+                name: 'cf_clearance',
+              )
+              .timeout(cookieJarTimeout, onTimeout: () => false);
       if (!res) {
         Logger.Inst().log(
           'Failed to delete cookie',
@@ -316,7 +443,8 @@ class Tools {
       }
 
       captchaScreenActive = true;
-      await Navigator.push(
+      try {
+        await Navigator.push(
         NavigationHandler.instance.navContext,
         MaterialPageRoute(
           builder: (context) => InAppWebviewView(
@@ -353,7 +481,7 @@ class Tools {
                 final bool res = await showTimedLeaveDialog(
                   context,
                   title: context.loc.webview.captchaCompleted,
-                  icon: const Icon(Icons.thumb_up_alt_rounded),
+                  icon: const Icon(Symbols.thumb_up_alt_rounded),
                   duration: const Duration(seconds: 4),
                 );
                 if (res) Navigator.of(context).pop();
@@ -361,43 +489,132 @@ class Tools {
             },
           ),
         ),
-      );
-      captchaScreenActive = false;
+        );
+      } finally {
+        // MUST reset even when the push throws (e.g. challenge detected at
+        // app startup before the navigator is ready) — a stuck flag silently
+        // disabled every auto-captcha for the rest of the session.
+        captchaScreenActive = false;
+      }
       return true;
     }
     return false;
   }
 
-  static Future<String> getCookies(String uri) async {
-    String cookieString = '';
-    if (isOnPlatformWithWebviewSupport) {
-      try {
-        final CookieManager cookieManager = CookieManager.instance(webViewEnvironment: webViewEnvironment);
-        List<Cookie> cookies = [];
-        if (Platform.isWindows) {
-          cookies.addAll(globalWindowsCookies[WebUri(uri).host] ?? []);
-        } else {
-          cookies = await cookieManager.getCookies(url: WebUri(uri));
-        }
-        for (final Cookie cookie in cookies) {
-          cookieString += '${cookie.name}=${cookie.value}; ';
-        }
-      } catch (e, s) {
-        Logger.Inst().log(
-          e.toString(),
-          'Tools',
-          'getCookies',
-          LogTypes.exception,
-          s: s,
-        );
-      }
-    }
+  /// How long the WebView cookie jar gets to answer before a request goes out
+  /// without cookies.
+  ///
+  /// This call crosses a platform channel into the Android WebView's
+  /// CookieManager, and it runs on EVERY request from the Dio interceptor. It
+  /// used to have no timeout, so when the channel did not answer — which is
+  /// what happens after Android has reaped the WebView while the app sat in
+  /// the background — the await never returned and the request was never even
+  /// issued. No HTTP entry, no error, no timeout: a spinner forever, on every
+  /// new tab and every tag preview, until the app was restarted.
+  ///
+  /// A request with no cookie header may fail. A request that is never made
+  /// cannot do anything at all, so this bounds it and carries on.
+  static const Duration cookieJarTimeout = Duration(seconds: 5);
 
-    return cookieString.trim();
+  /// How long the jar is left alone after it did not answer (r39). The log of
+  /// 2026-09-15 03:10 had 6,848 requests wait out the timeout in 38 seconds —
+  /// thumbnails, favicons, pages — because every one asked a jar that had
+  /// stopped answering. One unanswered read now pauses it: requests go without
+  /// jar cookies until the pause ends, then the jar is asked again.
+  static const Duration cookieJarPause = Duration(seconds: 30);
+
+  @visibleForTesting
+  static Duration? cookieJarTimeoutOverride;
+  @visibleForTesting
+  static Duration? cookieJarPauseOverride;
+
+  /// Test seam: reads the jar for a URL (name -> value).
+  @visibleForTesting
+  static Future<Map<String, String>> Function(String uri)? cookieJarReaderOverride;
+
+  static DateTime? _cookieJarPausedUntil;
+
+  /// One read per host at a time: twenty thumbnails of one site share it.
+  static final Map<String, Future<Map<String, String>>> _cookieReads = {};
+
+  static bool get cookieJarPaused {
+    final DateTime? until = _cookieJarPausedUntil;
+    return until != null && DateTime.now().isBefore(until);
+  }
+
+  static void _pauseCookieJar() {
+    if (cookieJarPaused) return;
+    final Duration pause = cookieJarPauseOverride ?? cookieJarPause;
+    _cookieJarPausedUntil = DateTime.now().add(pause);
+    Logger.Inst().log(
+      'the cookie jar did not answer; requests go without its cookies for ${pause.inSeconds} s',
+      'Tools',
+      'getCookies',
+      LogTypes.booruHandlerInfo,
+    );
+  }
+
+  @visibleForTesting
+  static void resetCookieJarForTests() {
+    _cookieJarPausedUntil = null;
+    _cookieReads.clear();
+    cookieJarReaderOverride = null;
+    cookieJarTimeoutOverride = null;
+    cookieJarPauseOverride = null;
+  }
+
+  static Future<Map<String, String>> _readJar(String uri) async {
+    final CookieManager cookieManager = CookieManager.instance(webViewEnvironment: webViewEnvironment);
+    List<Cookie> cookies = [];
+    if (Platform.isWindows) {
+      cookies.addAll(globalWindowsCookies[WebUri(uri).host] ?? []);
+    } else {
+      cookies = await cookieManager.getCookies(url: WebUri(uri));
+    }
+    // Build through a map: the WebView jar can hold the SAME cookie name
+    // more than once (host vs domain scope, or Cloudflare rotating
+    // cf_clearance), and emitting both makes the header look like cookie
+    // replay to a bot filter.
+    final Map<String, String> jar = {};
+    for (final Cookie cookie in cookies) {
+      jar[cookie.name] = cookie.value;
+    }
+    return jar;
+  }
+
+  static Future<String> getCookies(String uri) async {
+    final Future<Map<String, String>> Function(String uri)? reader =
+        cookieJarReaderOverride ?? (isOnPlatformWithWebviewSupport ? _readJar : null);
+    if (reader == null || cookieJarPaused) return '';
+    final String host = Uri.tryParse(uri)?.host ?? uri;
+    try {
+      // A block body on purpose: an arrow returning remove()'s value would
+      // hand whenComplete the future being awaited — it would wait on itself.
+      final Map<String, String> jar = await (_cookieReads[host] ??= reader(uri)
+          .timeout(cookieJarTimeoutOverride ?? cookieJarTimeout)
+          .whenComplete(() {
+            _cookieReads.remove(host);
+          }));
+      return buildCookieString(jar).trim();
+    } on TimeoutException {
+      _pauseCookieJar();
+      return '';
+    } catch (e, s) {
+      Logger.Inst().log(
+        e.toString(),
+        'Tools',
+        'getCookies',
+        LogTypes.exception,
+        s: s,
+      );
+      return '';
+    }
   }
 
   static Future<bool> saveCookies(String uri, List<String> cookies) async {
     if (cookies.isEmpty) return true;
+    // A jar that stopped answering is not written to either (r39).
+    if (cookieJarPaused) return true;
 
     if (isOnPlatformWithWebviewSupport) {
       try {
@@ -436,17 +653,24 @@ class Tools {
           if (Platform.isWindows) {
             globalWindowsCookies[WebUri(uri).host]?.add(cookie);
           }
-          await cookieManager.setCookie(
-            url: WebUri(uri),
-            name: cookie.name,
-            value: cookie.value,
-            domain: cookie.domain,
-            path: cookie.path ?? '/',
-            expiresDate: cookie.expiresDate,
-            isSecure: cookie.isSecure,
-            isHttpOnly: cookie.isHttpOnly,
-          );
+          // Same channel, same risk: writing a cookie back must not be able to
+          // wedge the response interceptor either.
+          await cookieManager
+              .setCookie(
+                url: WebUri(uri),
+                name: cookie.name,
+                value: cookie.value,
+                domain: cookie.domain,
+                path: cookie.path ?? '/',
+                expiresDate: cookie.expiresDate,
+                isSecure: cookie.isSecure,
+                isHttpOnly: cookie.isHttpOnly,
+              )
+              .timeout(cookieJarTimeout);
         }
+        return true;
+      } on TimeoutException {
+        _pauseCookieJar();
         return true;
       } catch (e, s) {
         Logger.Inst().log(

@@ -1,6 +1,8 @@
 import 'dart:core';
 
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 import 'package:lolisnatcher/src/pages/settings/language_page.dart';
 
@@ -28,8 +30,8 @@ class AboutPage extends StatelessWidget {
             ),
             SettingsButton(
               name: context.loc.settings.about.appOnGitHub,
-              icon: const Icon(Icons.public),
-              trailingIcon: const Icon(Icons.exit_to_app),
+              icon: const Icon(Symbols.public_rounded),
+              trailingIcon: const Icon(Symbols.exit_to_app_rounded),
               action: () {
                 launchUrlString(
                   Constants.githubURL,
@@ -40,8 +42,8 @@ class AboutPage extends StatelessWidget {
             DiscordButton(overrideText: context.loc.visitOurDiscord),
             SettingsButton(
               name: '${context.loc.settings.about.contact}: ${Constants.email}',
-              icon: const Icon(Icons.email),
-              trailingIcon: const Icon(Icons.exit_to_app),
+              icon: const Icon(Symbols.email_rounded),
+              trailingIcon: const Icon(Symbols.exit_to_app_rounded),
               action: () {
                 launchUrlString(
                   'mailto:${Constants.email}',
@@ -58,7 +60,7 @@ class AboutPage extends StatelessWidget {
                   ),
                   content: Text(context.loc.settings.about.emailCopied),
                   sideColor: Colors.green,
-                  leadingIcon: Icons.check,
+                  leadingIcon: Symbols.check_rounded,
                   leadingIconColor: Colors.green,
                   duration: const Duration(seconds: 2),
                 );
@@ -73,8 +75,8 @@ class AboutPage extends StatelessWidget {
               ),
               SettingsButton(
                 name: 'Showers-U - Pixiv',
-                icon: const Icon(Icons.public),
-                trailingIcon: const Icon(Icons.exit_to_app),
+                icon: const Icon(Symbols.public_rounded),
+                trailingIcon: const Icon(Symbols.exit_to_app_rounded),
                 action: () {
                   launchUrlString(
                     'https://www.pixiv.net/en/users/28366691',
@@ -91,8 +93,8 @@ class AboutPage extends StatelessWidget {
             ),
             SettingsButton(
               name: 'NO-ob - Github',
-              icon: const Icon(Icons.public),
-              trailingIcon: const Icon(Icons.exit_to_app),
+              icon: const Icon(Symbols.public_rounded),
+              trailingIcon: const Icon(Symbols.exit_to_app_rounded),
               action: () {
                 launchUrlString(
                   'https://github.com/NO-ob',
@@ -102,8 +104,8 @@ class AboutPage extends StatelessWidget {
             ),
             SettingsButton(
               name: 'NANI-SORE - Github',
-              icon: const Icon(Icons.public),
-              trailingIcon: const Icon(Icons.exit_to_app),
+              icon: const Icon(Symbols.public_rounded),
+              trailingIcon: const Icon(Symbols.exit_to_app_rounded),
               action: () {
                 launchUrlString(
                   'https://github.com/NANI-SORE',
@@ -135,8 +137,8 @@ class AboutPage extends StatelessWidget {
             ),
             SettingsButton(
               name: context.loc.settings.about.releases,
-              icon: const Icon(Icons.public),
-              trailingIcon: const Icon(Icons.exit_to_app),
+              icon: const Icon(Symbols.public_rounded),
+              trailingIcon: const Icon(Symbols.exit_to_app_rounded),
               action: () {
                 launchUrlString(
                   'https://github.com/NO-ob/LoliSnatcher_Droid/releases',
@@ -146,7 +148,7 @@ class AboutPage extends StatelessWidget {
             ),
             SettingsButton(
               name: context.loc.settings.about.licenses,
-              icon: const Icon(Icons.document_scanner),
+              icon: const Icon(Symbols.document_scanner_rounded),
               action: () {
                 showLicensePage(
                   context: context,

@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 
+import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
 import 'package:lolisnatcher/src/data/booru_item.dart';
@@ -30,6 +33,27 @@ class _PostDetailsSheet extends StatelessWidget {
     return '$bytes B';
   }
 
+  /// Renders the raw postDate ("1749226703", ISO string, or a custom booru
+  /// pattern) as a readable local date instead of the raw value.
+  String _humanDate() {
+    final String raw = item.postDate ?? '';
+    if (raw.isEmpty) return '';
+    final String fmt = item.postDateFormat ?? '';
+    DateTime? date;
+    try {
+      if (fmt == 'unix') {
+        final int? secs = int.tryParse(raw);
+        if (secs != null) date = DateTime.fromMillisecondsSinceEpoch(secs * 1000);
+      } else if (fmt == 'iso' || fmt.isEmpty) {
+        date = DateTime.tryParse(raw);
+      } else {
+        date = DateFormat(fmt, 'en_US').parseLoose(raw);
+      }
+    } catch (_) {}
+    if (date == null) return raw;
+    return DateFormat('yyyy-MM-dd HH:mm').format(date.toLocal());
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -48,7 +72,7 @@ class _PostDetailsSheet extends StatelessWidget {
       ('Resolution', resolution, false),
       ('Size', _humanSize(item.fileSize), false),
       ('Type', item.fileExt?.toUpperCase(), false),
-      ('Posted', item.postDate, false),
+      ('Posted', _humanDate(), false),
       ('Uploader', item.uploaderName, false),
       ('Source', source, true),
       ('MD5', item.md5String, false),
@@ -76,7 +100,7 @@ class _PostDetailsSheet extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(18, 8, 8, 4),
             child: Row(
               children: [
-                Icon(Icons.info_outline, size: 18, color: theme.colorScheme.onSurface),
+                Icon(Symbols.info_rounded, size: 18, color: theme.colorScheme.onSurface),
                 const SizedBox(width: 8),
                 Text(
                   'Details',
@@ -88,7 +112,7 @@ class _PostDetailsSheet extends StatelessWidget {
                 ),
                 const Spacer(),
                 IconButton(
-                  icon: const Icon(Icons.close),
+                  icon: const Icon(Symbols.close_rounded),
                   onPressed: () => Navigator.of(context).pop(),
                 ),
               ],
@@ -122,7 +146,7 @@ class _PostDetailsSheet extends StatelessWidget {
                       duration: const Duration(seconds: 1),
                       title: Text('Copied $label', style: const TextStyle(fontSize: 16)),
                       content: Text(val, style: const TextStyle(fontSize: 14)),
-                      leadingIcon: Icons.copy,
+                      leadingIcon: Symbols.content_copy_rounded,
                       sideColor: Colors.green,
                     );
                   },
@@ -157,7 +181,7 @@ class _PostDetailsSheet extends StatelessWidget {
                         ),
                         const SizedBox(width: 8),
                         Icon(
-                          isLink ? Icons.open_in_new : Icons.copy,
+                          isLink ? Symbols.open_in_new_rounded : Symbols.content_copy_rounded,
                           size: 15,
                           color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
                         ),

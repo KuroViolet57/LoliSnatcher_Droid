@@ -48,6 +48,25 @@ class InkBunnyHandler extends BooruHandler {
           MetaTagValue(name: 'Random', value: 'random'),
         ],
       ),
+      MetaTagWithValues(
+        name: 'Type',
+        keyName: 'type',
+        values: [
+          MetaTagValue(name: 'Picture / pinup', value: 'picture'),
+          MetaTagValue(name: 'Sketch', value: 'sketch'),
+          MetaTagValue(name: 'Picture series', value: 'series'),
+          MetaTagValue(name: 'Comic', value: 'comic'),
+          MetaTagValue(name: 'Portfolio', value: 'portfolio'),
+          MetaTagValue(name: 'Video', value: 'video'),
+          MetaTagValue(name: 'Character sheet', value: 'charactersheet'),
+          MetaTagValue(name: 'Photography', value: 'photo'),
+        ],
+      ),
+      MetaTagWithValues(
+        name: 'Scraps',
+        keyName: 'scraps',
+        values: [MetaTagValue(name: 'No scraps', value: 'no'), MetaTagValue(name: 'Scraps only', value: 'only')],
+      ),
     ];
   }
 
@@ -271,12 +290,28 @@ class InkBunnyHandler extends BooruHandler {
   }
 
   // This will create a url for the http request
+  /// InkBunny's submission types (API docs), the ones the app can show, and
+  /// the words a `type:` term may use for them (r71).
+  static const List<int> supportedTypes = [1, 2, 3, 4, 5, 8, 9, 13, 14];
+  static const Map<String, List<int>> submissionTypes = {
+    'picture': [1],
+    'sketch': [2],
+    'series': [3],
+    'comic': [4],
+    'portfolio': [5],
+    'video': [8, 9],
+    'charactersheet': [13],
+    'photo': [14],
+  };
+
   @override
   String makeURL(String tags) {
     String order = '';
     String artist = '';
     String poolId = '';
     bool random = false;
+    final Set<int> types = {};
+    String scraps = '';
     final List<String> tagList = tags.split(' ');
     final List<String> textTags = [];
 
@@ -295,19 +330,26 @@ class InkBunnyHandler extends BooruHandler {
       } else if (tagList[i].contains('pool%3A')) {
         final parts = tagList[i].split('%3A');
         if (parts.length > 1) poolId = parts[1];
+      } else if (tagList[i].startsWith('type%3A') || tagList[i].startsWith('type:')) {
+        // r71: narrow the submission types (several type: terms add up).
+        types.addAll(submissionTypes[tagList[i].split(RegExp('%3A|:')).last.toLowerCase()] ?? const []);
+      } else if (tagList[i].startsWith('scraps%3A') || tagList[i].startsWith('scraps:')) {
+        scraps = tagList[i].split(RegExp('%3A|:')).last.toLowerCase();
       } else {
         textTags.add(tagList[i]);
       }
     }
 
     final String tagStr = textTags.join(',');
+    final String typeStr = (types.isEmpty ? supportedTypes : (types.toList()..sort())).join(',');
+    final String scrapsStr = scraps == 'only' || scraps == 'no' ? '&scraps=$scraps' : '';
 
     //Each search generates a results id, this is then needed to page through the results without running the search again every time because its faster,
     //You can go through the results without a results id like normal but this is how they show it on their api docs: https://wiki.inkbunny.net/wiki/API
     //I have removed the code that was using the results id before we will see how this is without using that.
 
     //The type variable filters by file type so we only fetch those that are supported by the app
-    return "${booru.baseURL}/api_search.php?output_mode=json&sid=$sessionToken&text=$tagStr${artist.isEmpty ? '' : '&username=$artist'}${poolId.isEmpty ? '' : '&pool_id=$poolId'}&get_rid=yes&type=1,2,3,4,5,8,9,13,14&random=${random ? "yes" : "no"}&submission_ids_only=yes${order.isEmpty ? '' : '&orderby=$order'}&page=$pageNum";
+    return "${booru.baseURL}/api_search.php?output_mode=json&sid=$sessionToken&text=$tagStr${artist.isEmpty ? '' : '&username=$artist'}${poolId.isEmpty ? '' : '&pool_id=$poolId'}&get_rid=yes&type=$typeStr$scrapsStr&random=${random ? "yes" : "no"}&submission_ids_only=yes${order.isEmpty ? '' : '&orderby=$order'}&page=$pageNum";
   }
 
   @override
