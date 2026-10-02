@@ -10,8 +10,10 @@ import 'package:lolisnatcher/src/handlers/recommender/look_model_handler.dart';
 import 'package:lolisnatcher/src/handlers/recommender/model_timings.dart';
 import 'package:lolisnatcher/src/handlers/recommender/onnx_look_runner.dart';
 import 'package:lolisnatcher/src/handlers/recommender/onnx_options.dart';
+import 'package:lolisnatcher/src/handlers/recommender/onnx_availability.dart';
 import 'package:lolisnatcher/src/handlers/recommender/onnx_tag_runner.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/pages/settings/model_page.dart';
 import 'package:lolisnatcher/src/pages/settings/models_page.dart';
 
 /// r87 (branch claude/r87-npu): the S24 Ultra's NPU (Snapdragon 8 Gen 3,
@@ -137,6 +139,8 @@ void main() {
         'ep.context_embed_mode': '1',
       });
       expect(a[0].options.symbolicDims, {'*': 1}, reason: 'the NPU needs fixed sizes: every free one is 1');
+      expect(a[0].options.providers, [OrtProvider.QNN], reason: 'r88: no CPU listed next to a forbidden CPU fallback');
+      expect(a[1].options.providers, [OrtProvider.QNN, OrtProvider.CPU]);
       expect(a[1].compileTo, '/m/model.onnx.npu-1234-mixed.onnx');
       expect(a[1].options.sessionConfig!.containsKey('session.disable_cpu_ep_fallback'), isFalse);
     });
@@ -177,23 +181,25 @@ void main() {
     });
   });
 
-  Future<void> openPage(WidgetTester tester) async {
+  Future<void> openModel(WidgetTester tester, ModelKind kind) async {
     tester.view.physicalSize = const Size(1200, 16000);
     tester.view.devicePixelRatio = 2;
     addTearDown(tester.view.reset);
-    await tester.pumpWidget(const MaterialApp(home: ModelsPage()));
+    await tester.pumpWidget(MaterialApp(home: ModelPage(kind: kind)));
     await tester.pump();
   }
 
   Finder segment(String model, String label) => find.descendant(of: find.byKey(ValueKey('model-runon-$model')), matching: find.text(label));
 
-  testWidgets('Models page: NPU for the looks model and the tagger, not for the text model', (tester) async {
-    ModelsPage.availableProviders = () async => ['CPU', 'NNAPI', 'QNN', 'XNNPACK'];
+  testWidgets("a model's page: NPU for the looks model and the tagger, not for the text model", (tester) async {
+    OnnxAvailability.setForTests({'CPU', 'NNAPI', 'QNN', 'XNNPACK'});
+    addTearDown(OnnxAvailability.resetForTests);
     ModelsPage.threadsChanged = (_) {};
-    await openPage(tester);
-    expect(segment('tagger', 'NPU'), findsOneWidget);
-    expect(segment('look', 'NPU'), findsOneWidget);
-    expect(segment('text', 'NPU'), findsNothing);
+    for (final (ModelKind kind, bool npu) in [(ModelKind.tagger, true), (ModelKind.look, true), (ModelKind.text, false)]) {
+      await openModel(tester, kind);
+      expect(segment(kind.name, 'NPU'), npu ? findsOneWidget : findsNothing, reason: kind.name);
+    }
+    await openModel(tester, ModelKind.tagger);
     await tester.tap(segment('tagger', 'NPU'));
     await tester.pump();
     expect(ModelTasks.runOn(ModelKind.tagger), ModelAccelerator.npu);
@@ -215,7 +221,9 @@ void main() {
       ready = true;
       return true;
     };
-    await openPage(tester);
+    OnnxAvailability.setForTests({'CPU', 'QNN'});
+    addTearDown(OnnxAvailability.resetForTests);
+    await openModel(tester, ModelKind.look);
     await tester.tap(segment('look', 'NPU'));
     await tester.pumpAndSettle();
     expect(find.textContaining('43.4 MB'), findsOneWidget);
@@ -232,5 +240,140 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Download'), findsNothing);
     expect(ModelTasks.runOn(ModelKind.look), ModelAccelerator.npu);
+  });
+
+  // ── r88 ──
+
+  group('r88: a failed NPU run hands the work to the CPU, never breaks the model', () {
+    test('the picture runs again on the CPU, and the failure is counted for that model', () async {
+      final List<String> ran = [];
+      final String out = await runGuarded<String>(
+        model: ModelKind.look,
+        used: ModelAccelerator.npu,
+        who: 'look (picture half)',
+        run: () async {
+          ran.add('npu');
+          throw Exception('QNN graph execute error. Error code: 6033');
+        },
+        onCpu: () async {
+          ran.add('cpu');
+          return 'vector';
+        },
+      );
+      expect(out, 'vector');
+      expect(ran, ['npu', 'cpu']);
+      expect(ModelTimings.instance.npuFailures(ModelKind.look)!.count, 1);
+      expect(ModelTimings.instance.npuFailures(ModelKind.look)!.reason, contains('6033'));
+    });
+
+    test('a failure on the CPU is a real failure (it is thrown)', () async {
+      Object? error;
+      try {
+        await runGuarded<String>(
+          model: ModelKind.tagger,
+          used: ModelAccelerator.cpu,
+          who: 'tagger',
+          run: () async => throw StateError('broken model'),
+          onCpu: () async => 'never',
+        );
+      } catch (e) {
+        error = e;
+      }
+      expect(error, isA<StateError>());
+      expect(ModelTimings.instance.npuFailures(ModelKind.tagger), isNull);
+    });
+
+    test('after two failures the model stays on the CPU until the NPU is picked again', () async {
+      await ModelTasks.setRunOn(ModelKind.look, ModelAccelerator.npu);
+      ModelTimings.instance.recordNpuFailure(ModelKind.look, 'timed out');
+      expect(savedAccelerator(ModelKind.look), ModelAccelerator.npu, reason: 'one failure: tried again at the next opening');
+      ModelTimings.instance.recordNpuFailure(ModelKind.look, 'timed out');
+      expect(savedAccelerator(ModelKind.look), ModelAccelerator.cpu);
+      expect(ModelTasks.runOn(ModelKind.look), ModelAccelerator.npu, reason: 'the choice itself is kept, and shown');
+      await ModelTasks.setRunOn(ModelKind.look, ModelAccelerator.cpu);
+      await ModelTasks.setRunOn(ModelKind.look, ModelAccelerator.npu);
+      expect(ModelTimings.instance.npuFailures(ModelKind.look), isNull, reason: 'picking it again starts over');
+      expect(savedAccelerator(ModelKind.look), ModelAccelerator.npu);
+    });
+  });
+
+  group("r88: an opening the NPU took no part of is the CPU's (emulator, 2026-10-03)", () {
+    late List<String> opened;
+    late List<String> closed;
+    late String model;
+
+    setUp(() {
+      opened = [];
+      closed = [];
+      model = '${tempDir.path}${Platform.pathSeparator}vision_model.onnx';
+      File(model).writeAsBytesSync(List<int>.filled(100, 1));
+      closeOrtSession = (s) async => closed.add(s.id);
+    });
+    tearDown(resetOnnxSeamsForTests);
+
+    OrtSession session(String id) => OrtSession.fromMap({'sessionId': id});
+
+    test('QNN cannot start: the mixed try opens with every part on the CPU and compiles nothing - so it is the CPU', () async {
+      // The emulator: "QNN SetupBackend failed"; ONNX Runtime still opened
+      // the mixed try, the CPU ran it all, and the timings said NPU.
+      createOrtSession = (path, options) async {
+        opened.add(path);
+        if (!(options?.providers ?? const [OrtProvider.CPU]).contains(OrtProvider.CPU)) throw Exception('QNN SetupBackend failed');
+        return session('s${opened.length}');
+      };
+      await ModelTasks.setRunOn(ModelKind.look, ModelAccelerator.npu);
+      final OpenedSession s = await openOnnxSession(model, model: ModelKind.look, threads: 1, accelerator: ModelAccelerator.npu, who: 'look');
+      expect(s.used, ModelAccelerator.cpu);
+      expect(s.provider, 'CPU x1 (NPU refused)');
+      expect(closed, ['s2'], reason: 'the mixed session, all on the CPU under the NPU name, is closed');
+      expect(ModelTimings.instance.open(ModelKind.look, ModelAccelerator.npu), isNull);
+      expect(ModelTimings.instance.open(ModelKind.look, ModelAccelerator.cpu), isNotNull);
+      // The emulator's card said "runs on NPU" for this: what was asked for
+      // and what it got is kept, so the pages can tell.
+      expect(actualAccelerator(ModelKind.look), (used: ModelAccelerator.cpu, refused: 'the NPU took no part of it'));
+    });
+
+    test('the NPU compiles: the copy is written and opened - the NPU', () async {
+      createOrtSession = (path, options) async {
+        opened.add(path);
+        if (!(options?.providers ?? const [OrtProvider.CPU]).contains(OrtProvider.CPU)) throw Exception('the NPU cannot run every part');
+        final String? to = options?.sessionConfig?['ep.context_file_path'];
+        if (to != null) File(to).writeAsBytesSync([1]);
+        return session('s${opened.length}');
+      };
+      await ModelTasks.setRunOn(ModelKind.look, ModelAccelerator.npu);
+      final OpenedSession s = await openOnnxSession(model, model: ModelKind.look, threads: 1, accelerator: ModelAccelerator.npu, who: 'look');
+      expect(s.used, ModelAccelerator.npu);
+      expect(s.provider, 'NPU + CPU');
+      expect(opened.last, '$model.npu-100-mixed.onnx', reason: 'switched to the compiled copy');
+      expect(closed, ['s2'], reason: 'the compiling session');
+      expect(ModelTimings.instance.open(ModelKind.look, ModelAccelerator.npu), isNotNull);
+      expect(actualAccelerator(ModelKind.look), (used: ModelAccelerator.npu, refused: null));
+    });
+
+    test('a refusal speaks for that choice only: picked again (or another), the choice is shown until the model opens', () async {
+      ModelTimings.instance.recordOpened(ModelKind.look, tried: ModelAccelerator.npu, used: ModelAccelerator.cpu, refused: 'x');
+      await ModelTasks.setRunOn(ModelKind.look, ModelAccelerator.cpu);
+      expect(actualAccelerator(ModelKind.look), (used: ModelAccelerator.cpu, refused: null));
+      await ModelTasks.setRunOn(ModelKind.look, ModelAccelerator.npu);
+      expect(actualAccelerator(ModelKind.look), (used: ModelAccelerator.npu, refused: null), reason: 'NPU picked again: a new try, shown as chosen');
+    });
+  });
+
+  group('r88: only what this build has is offered', () {
+    tearDown(OnnxAvailability.resetForTests);
+
+    test("the NPU build has no XNNPACK (log 2026-10-02: 'not supported in this build')", () async {
+      OnnxAvailability.setForTests({'CPU', 'QNN'});
+      expect(OnnxAvailability.choicesFor(ModelKind.tagger), [ModelAccelerator.cpu, ModelAccelerator.npu]);
+      expect(OnnxAvailability.choicesFor(ModelKind.text), [ModelAccelerator.cpu]);
+      await ModelTasks.setRunOn(ModelKind.text, ModelAccelerator.xnnpack);
+      expect(savedAccelerator(ModelKind.text), ModelAccelerator.cpu, reason: 'a stored choice the build lacks runs on the CPU');
+    });
+
+    test('before the build has been asked, every choice is offered', () {
+      OnnxAvailability.resetForTests();
+      expect(OnnxAvailability.choicesFor(ModelKind.tagger), ModelAccelerator.values);
+    });
   });
 }

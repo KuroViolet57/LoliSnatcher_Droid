@@ -12,6 +12,8 @@ import 'package:lolisnatcher/src/handlers/recommender/onnx_look_runner.dart';
 import 'package:lolisnatcher/src/handlers/recommender/onnx_options.dart';
 import 'package:lolisnatcher/src/handlers/recommender/onnx_tag_runner.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/onnx_availability.dart';
+import 'package:lolisnatcher/src/pages/settings/model_page.dart';
 import 'package:lolisnatcher/src/pages/settings/models_page.dart';
 
 /// r86: Settings → Recommendations → Models → "Run on", per model: the CPU
@@ -39,7 +41,7 @@ void main() {
     ModelTasks.save = () async {};
     ModelTasks.maxThreads = () => 8;
     ModelsPage.threadsChanged = reopened.add;
-    ModelsPage.availableProviders = () async => ['CPU', 'NNAPI', 'XNNPACK'];
+    OnnxAvailability.setForTests({'CPU', 'NNAPI', 'XNNPACK'});
     ModelTimings.instance.resetForTests(dir: '${tempDir.path}${Platform.pathSeparator}');
   });
 
@@ -47,6 +49,7 @@ void main() {
     ModelTasks.resetForTests();
     ModelsPage.resetForTests();
     ModelTimings.instance.resetForTests();
+    OnnxAvailability.resetForTests();
     SettingsHandler.instance.modelRunOn.clear();
     try {
       tempDir.deleteSync(recursive: true);
@@ -84,6 +87,20 @@ void main() {
     expect(OnnxEmbeddingRunner('model.onnx', dim: 384, wantsTokenTypeIds: false, threads: 1).options.providers, isNull);
   });
 
+  test('r88: timings per thread count, and the fastest measured', () {
+    final ModelTimings t = ModelTimings.instance;
+    t.recordRun(ModelKind.tagger, ModelAccelerator.cpu, 2642, threads: 2);
+    t.recordRun(ModelKind.tagger, ModelAccelerator.cpu, 1848, threads: 4);
+    t.recordRun(ModelKind.tagger, ModelAccelerator.npu, 150, threads: 2);
+    expect(t.run(ModelKind.tagger, ModelAccelerator.cpu, threads: 4)!.averageMs, 1848);
+    expect(t.run(ModelKind.tagger, ModelAccelerator.cpu, threads: 2)!.averageMs, 2642);
+    expect(t.run(ModelKind.tagger, ModelAccelerator.cpu)!.runs, 2, reason: 'the choice across thread counts');
+    expect(t.threadsMeasured(ModelKind.tagger, ModelAccelerator.cpu), [2, 4]);
+    final f = t.fastest(ModelKind.tagger)!;
+    expect((f.accelerator, f.averageMs), (ModelAccelerator.npu, 150));
+    expect(t.fastest(ModelKind.text), isNull);
+  });
+
   test('timings are kept per model and choice, per decoder, and across starts', () async {
     final ModelTimings t = ModelTimings.instance;
     t.recordRun(ModelKind.tagger, ModelAccelerator.nnapi, 100);
@@ -113,13 +130,22 @@ void main() {
     await tester.pump();
   }
 
-  testWidgets('Run on: a choice per model, applied at the next open, with an explain window and the timings', (tester) async {
+  Future<void> openModel(WidgetTester tester, ModelKind kind) async {
+    tester.view.physicalSize = const Size(1200, 12000);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(MaterialApp(home: ModelPage(kind: kind)));
+    await tester.pump();
+  }
+
+  testWidgets("Run on: a choice on each model's page, applied at the next open, with an explain window and the timings", (tester) async {
     ModelTimings.instance.recordRun(ModelKind.tagger, ModelAccelerator.nnapi, 200);
-    await openPage(tester);
     for (final ModelKind m in ModelKind.values) {
+      await openModel(tester, m);
       expect(find.byKey(ValueKey('model-runon-${m.name}')), findsOneWidget, reason: m.name);
       expect(find.byKey(ValueKey('model-runon-${m.name}-explain')), findsOneWidget, reason: m.name);
     }
+    await openModel(tester, ModelKind.tagger);
     await tester.tap(find.descendant(of: find.byKey(const ValueKey('model-runon-tagger')), matching: find.text('NNAPI')));
     await tester.pump();
     expect(ModelTasks.runOn(ModelKind.tagger), ModelAccelerator.nnapi);
@@ -149,7 +175,7 @@ void main() {
     await tester.pumpAndSettle();
     final Finder dialog = find.byType(Dialog);
     expect(find.descendant(of: dialog, matching: find.textContaining('979 ms per picture on average')), findsOneWidget);
-    expect(find.descendant(of: dialog, matching: find.textContaining('Not tried yet on this phone')), findsOneWidget);
+    expect(find.descendant(of: dialog, matching: find.textContaining('Not tried yet on this phone')), findsNWidgets(2), reason: 'r88: two untried of three');
     SettingsHandler.instance.pictureDecoder = PictureDecoder.phone;
   });
 }

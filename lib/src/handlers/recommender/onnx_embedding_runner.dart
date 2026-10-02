@@ -96,7 +96,7 @@ class OnnxEmbeddingRunner implements EmbeddingRunner {
       }
       final Stopwatch sw = Stopwatch()..start();
       final Map<String, OrtValue> outputs = await session.run(inputs);
-      ModelTimings.instance.recordRun(ModelKind.text, _used, sw.elapsedMilliseconds);
+      ModelTimings.instance.recordRun(ModelKind.text, _used, sw.elapsedMilliseconds, threads: threads);
       try {
         final OrtValue value = outputs['last_hidden_state'] ?? outputs['token_embeddings'] ?? outputs.values.first;
         final List<dynamic> raw = await value.asFlattenedList();

@@ -140,13 +140,14 @@ class _RecommendationsPageState extends State<RecommendationsPage> {
             leadingIcon: const Icon(Symbols.school_rounded),
           ),
           // r80: every job of every model, its threads, and all models off.
+          // r88: each model's download and switches live on its own page there.
           SettingsButton(
             key: const ValueKey('models-page'),
-            name: 'Models: jobs and threads',
+            name: 'Models',
             subtitle: Text(
               settingsHandler.aiModelsOff
                   ? 'All models are off.'
-                  : 'What each model does, switched on or off job by job, and how many threads it uses.',
+                  : 'The text model, the looks model and the image tagger: download, what they do, what they run on.',
             ),
             icon: const Icon(Symbols.tune_rounded),
             action: () async {
@@ -163,9 +164,6 @@ class _RecommendationsPageState extends State<RecommendationsPage> {
               ),
             ),
           for (final RecommenderWorld world in RecommenderWorld.values) _reportCard(context, world),
-          _EncoderSection(onChanged: _load),
-          const _LookSection(),
-          const _TaggerSection(),
           const _BoardsSection(),
         ],
       ),
@@ -297,16 +295,16 @@ class _FeatureList extends StatelessWidget {
 
 /// r34: the downloadable sentence encoder — which one, its state, the
 /// download and the switch that lets its vectors into the learner.
-class _EncoderSection extends StatefulWidget {
-  const _EncoderSection({required this.onChanged});
+class EncoderModelSection extends StatefulWidget {
+  const EncoderModelSection({required this.onChanged, super.key});
 
   final Future<void> Function() onChanged;
 
   @override
-  State<_EncoderSection> createState() => _EncoderSectionState();
+  State<EncoderModelSection> createState() => _EncoderModelSectionState();
 }
 
-class _EncoderSectionState extends State<_EncoderSection> {
+class _EncoderModelSectionState extends State<EncoderModelSection> {
   final SettingsHandler settings = SettingsHandler.instance;
   final TextEditingController custom = TextEditingController();
   late String choice;
@@ -499,14 +497,14 @@ class _EncoderSectionState extends State<_EncoderSection> {
 
 /// r75: the downloadable looks model — which one, its state, the download
 /// and the switch.
-class _LookSection extends StatefulWidget {
-  const _LookSection();
+class LookModelSection extends StatefulWidget {
+  const LookModelSection({super.key});
 
   @override
-  State<_LookSection> createState() => _LookSectionState();
+  State<LookModelSection> createState() => _LookModelSectionState();
 }
 
-class _LookSectionState extends State<_LookSection> {
+class _LookModelSectionState extends State<LookModelSection> {
   final SettingsHandler settings = SettingsHandler.instance;
   final TextEditingController custom = TextEditingController();
   late String choice;
@@ -685,20 +683,6 @@ class _LookSectionState extends State<_LookSection> {
                       ),
                       leadingIcon: const Icon(Symbols.visibility_rounded),
                     ),
-                    // r76: frames from the playing video.
-                    SettingsToggle(
-                      key: const ValueKey('look-video-frames-toggle'),
-                      value: settings.videoFrames,
-                      onChanged: (bool v) {
-                        setState(() => settings.videoFrames = v);
-                        settings.saveSettings(restate: false);
-                      },
-                      title: 'Read frames from playing videos',
-                      subtitle: const Text(
-                        'While a video plays in the media_kit player, a few pictures of what is on screen are read, and the video is judged by them instead of its preview picture: For You, Posts like this, boards and tagging your reactions. Off = the preview picture, as before.',
-                      ),
-                      leadingIcon: const Icon(Symbols.movie_rounded),
-                    ),
                   ],
                 );
               },
@@ -711,14 +695,14 @@ class _LookSectionState extends State<_LookSection> {
 
 /// r74: the downloadable image tagger — which one, its state, the download,
 /// Try it on a picture, and the two switches.
-class _TaggerSection extends StatefulWidget {
-  const _TaggerSection();
+class TaggerModelSection extends StatefulWidget {
+  const TaggerModelSection({super.key});
 
   @override
-  State<_TaggerSection> createState() => _TaggerSectionState();
+  State<TaggerModelSection> createState() => _TaggerModelSectionState();
 }
 
-class _TaggerSectionState extends State<_TaggerSection> {
+class _TaggerModelSectionState extends State<TaggerModelSection> {
   final SettingsHandler settings = SettingsHandler.instance;
   final TextEditingController custom = TextEditingController();
   late String choice;
@@ -1074,19 +1058,6 @@ class _TaggerSectionState extends State<_TaggerSection> {
                         ready ? 'Boards read their reference image with it. Off = the downloaded model is kept but not read.' : 'Takes effect once a tagger is downloaded.',
                       ),
                       leadingIcon: const Icon(Symbols.image_search_rounded),
-                    ),
-                    SettingsToggle(
-                      key: const ValueKey('tagger-reactions-toggle'),
-                      value: settings.taggerOnReactions,
-                      onChanged: (bool v) {
-                        setState(() => settings.taggerOnReactions = v);
-                        settings.saveSettings(restate: false);
-                      },
-                      title: 'Tag reactions with the picture',
-                      subtitle: const Text(
-                        "A favourite, a snatch, a collection, a finished video or Not interested on a booru post also reads its thumbnail (for a video, the preview frame the site chose), about a second each in the background. The tags join the site's tags for the learner. It does not change how a disliked post shares the blame between its tags.",
-                      ),
-                      leadingIcon: const Icon(Symbols.thumbs_up_down_rounded),
                     ),
                   ],
                 );

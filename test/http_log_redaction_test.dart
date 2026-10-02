@@ -4,6 +4,9 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:talker/talker.dart';
 
+import 'package:lolisnatcher/src/boorus/booru_type.dart';
+import 'package:lolisnatcher/src/data/booru.dart';
+import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/utils/log_redaction.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 
@@ -39,6 +42,9 @@ class _Adapter implements HttpClientAdapter {
 /// title) and every Set-Cookie in full - the app's own lines were already
 /// redacted, talker's Dio logger was not.
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  setUpAll(SettingsHandler.register);
+
   const String url = 'https://aibooru.online/posts.json?tags=tomboy&limit=20&page=1&login=someuser42&api_key=SECRETKEY0123456789';
 
   Future<String> exported(int status) async {
@@ -88,6 +94,41 @@ Headers: {
     expect(out, isNot(contains('UNKNOWNCOOKIE0123')));
     expect(out, contains('"content-type"'));
     expect(out, contains('application/json'));
+  });
+
+  test("r88: a source's default tags hide only what looks like a credential", () {
+    final settings = SettingsHandler.instance;
+    settings.booruList
+      ..clear()
+      ..addAll([
+        Booru('Plain', BooruType.Gelbooru, '', 'https://gelbooru.com', 'explicit'),
+        Booru('Keyed', BooruType.Gelbooru, '', 'https://rule34.xxx', 'api_key=KEYVALUE0123456789&user_id=7654321'),
+      ]);
+    addTearDown(settings.booruList.clear);
+    expect(
+      redactSecrets('tagger: rating explicit 0.98; explicitly added the CPU EP'),
+      'tagger: rating explicit 0.98; explicitly added the CPU EP',
+      reason: 'log 2026-10-02 showed "rating <redacted>"',
+    );
+    final String out = redactSecrets('defaults KEYVALUE0123456789 and 7654321');
+    expect(out, isNot(contains('KEYVALUE0123456789')));
+    expect(out, isNot(contains('7654321')));
+  });
+
+  test('r88: a bare secret in the default tags is still hidden; ordinary tags beside it are not', () {
+    // source_capture_test's guard (b1ec3dbf): installs put credentials in
+    // the default tags, sometimes without a name.
+    final settings = SettingsHandler.instance;
+    settings.booruList
+      ..clear()
+      ..addAll([
+        Booru('Bare', BooruType.Gelbooru, '', 'https://gelbooru.com', 'rating:explicit a1b2c3d4e5f6a7b8c9d0'),
+        Booru('Tags', BooruType.Danbooru, '', 'https://danbooru.donmai.us', 'rating:explicit -video order:score highres 1girl'),
+      ]);
+    addTearDown(settings.booruList.clear);
+    final String out = redactSecrets('GET /posts?tags=rating:explicit -video order:score highres 1girl key=a1b2c3d4e5f6a7b8c9d0');
+    expect(out, isNot(contains('a1b2c3d4e5f6a7b8c9d0')));
+    expect(out, contains('tags=rating:explicit -video order:score highres 1girl'));
   });
 
   test("a login cookie's pass_hash is hidden wherever it is spelled out", () {

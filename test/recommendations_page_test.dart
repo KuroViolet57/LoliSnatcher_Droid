@@ -20,6 +20,7 @@ import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
 import 'package:lolisnatcher/src/pages/foryou_page.dart';
 import 'package:lolisnatcher/src/pages/settings/models_page.dart';
+import 'package:lolisnatcher/src/pages/settings/model_page.dart';
 import 'package:lolisnatcher/src/pages/settings/recommendations_page.dart';
 import 'package:lolisnatcher/src/utils/picker_watch.dart';
 
@@ -143,7 +144,7 @@ void main() {
       };
     addTearDown(EncoderHandler.unregister);
     await warm(tester);
-    await tester.pumpWidget(const MaterialApp(home: RecommendationsPage()));
+    await tester.pumpWidget(const MaterialApp(home: ModelPage(kind: ModelKind.text)));
     await settle(tester);
     expect(find.byKey(const ValueKey('encoder-status')), findsOneWidget);
     expect(find.textContaining('No encoder'), findsOneWidget);
@@ -242,7 +243,7 @@ void main() {
       provider: 'CPU',
     );
     await warm(tester);
-    await tester.pumpWidget(const MaterialApp(home: RecommendationsPage()));
+    await tester.pumpWidget(const MaterialApp(home: ModelPage(kind: ModelKind.tagger)));
     await settle(tester);
     expect(find.byKey(const ValueKey('tagger-status')), findsOneWidget);
     expect(find.textContaining('No image tagger'), findsOneWidget);
@@ -271,7 +272,7 @@ void main() {
     await tester.tap(find.descendant(of: use, matching: find.byType(Switch)));
     await tester.pump();
     expect(SettingsHandler.instance.aiImageTagger, isTrue);
-    final Finder reactions = find.byKey(const ValueKey('tagger-reactions-toggle'));
+    final Finder reactions = find.byKey(const ValueKey('model-task-tagger.reactions'));
     await tester.tap(find.descendant(of: reactions, matching: find.byType(Switch)));
     await tester.pump();
     expect(SettingsHandler.instance.taggerOnReactions, isTrue);
@@ -322,18 +323,20 @@ void main() {
     tagger.runnerFactory = (String p, int threads) => _NoRunner();
     addTearDown(ImageTaggerHandler.unregister);
     await warm(tester);
-    await tester.pumpWidget(const MaterialApp(home: RecommendationsPage()));
+    await tester.pumpWidget(const MaterialApp(home: ModelPage(kind: ModelKind.tagger)));
     await settle(tester);
     expect(find.byKey(const ValueKey('tagger-try')), findsOneWidget);
-    expect(find.byKey(const ValueKey('models-page')), findsOneWidget);
 
     await ModelTasks.set(ModelTasks.taggerTryIt, false);
     await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pumpWidget(const MaterialApp(home: RecommendationsPage()));
+    await tester.pumpWidget(const MaterialApp(home: ModelPage(kind: ModelKind.tagger)));
     await settle(tester);
     expect(find.byKey(const ValueKey('tagger-try')), findsNothing);
     expect(find.byKey(const ValueKey('tagger-try-off')), findsOneWidget, reason: 'says where it was switched off');
 
+    await tester.pumpWidget(const MaterialApp(home: RecommendationsPage()));
+    await settle(tester);
+    expect(find.byKey(const ValueKey('models-page')), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('models-page')));
     await tester.pumpAndSettle();
     expect(find.byType(ModelsPage), findsOneWidget);
@@ -373,7 +376,7 @@ void main() {
       provider: 'CPU',
     );
     await warm(tester);
-    await tester.pumpWidget(const MaterialApp(home: RecommendationsPage()));
+    await tester.pumpWidget(const MaterialApp(home: ModelPage(kind: ModelKind.tagger)));
     await settle(tester);
     await tester.ensureVisible(find.byKey(const ValueKey('tagger-try')));
     final int keptWhenOpened = kept;
@@ -420,7 +423,7 @@ void main() {
     };
     RecommendationsPage.lostPick = () async => null;
     await warm(tester);
-    await tester.pumpWidget(const MaterialApp(home: RecommendationsPage()));
+    await tester.pumpWidget(const MaterialApp(home: ModelPage(kind: ModelKind.tagger)));
     await settle(tester);
     await tester.ensureVisible(find.byKey(const ValueKey('tagger-try')));
     // Nothing downloaded: the button is alive and says what is missing.
@@ -480,7 +483,7 @@ void main() {
       provider: 'CPU',
     );
     await warm(tester);
-    await tester.pumpWidget(const MaterialApp(home: RecommendationsPage()));
+    await tester.pumpWidget(const MaterialApp(home: ModelPage(kind: ModelKind.tagger)));
     await settle(tester);
     expect(asked, 1, reason: 'asked once, when the page opens');
     expect(find.textContaining('cat_ears'), findsOneWidget);
@@ -513,7 +516,7 @@ void main() {
       ..lookModel = ''
       ..aiLook = true;
     await warm(tester);
-    await tester.pumpWidget(const MaterialApp(home: RecommendationsPage()));
+    await tester.pumpWidget(const MaterialApp(home: ModelPage(kind: ModelKind.look)));
     await settle(tester);
     expect(find.byKey(const ValueKey('look-status')), findsOneWidget);
     expect(find.textContaining('No looks model'), findsOneWidget);
@@ -552,10 +555,13 @@ void main() {
     LookModelHandler.register();
     addTearDown(LookModelHandler.unregister);
     SettingsHandler.instance.videoFrames = true;
+    // r88: a job's switch is greyed while its model is off.
+    SettingsHandler.instance.aiLook = true;
+    addTearDown(() => SettingsHandler.instance.aiLook = false);
     await warm(tester);
-    await tester.pumpWidget(const MaterialApp(home: RecommendationsPage()));
+    await tester.pumpWidget(const MaterialApp(home: ModelPage(kind: ModelKind.look)));
     await settle(tester);
-    final Finder toggle = find.byKey(const ValueKey('look-video-frames-toggle'));
+    final Finder toggle = find.byKey(const ValueKey('model-task-look.frames'));
     expect(toggle, findsOneWidget);
     expect(find.textContaining('Read frames from playing videos'), findsOneWidget);
     await tester.tap(find.descendant(of: toggle, matching: find.byType(Switch)));

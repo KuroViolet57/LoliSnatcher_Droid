@@ -1,5 +1,17 @@
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 
+/// r88: a credential written as a parameter in a source's default tags
+/// (`api_key=…`, `user_id=…`, …); group 1 is its value.
+final RegExp _credentialParam = RegExp(
+  r'\b(?:api_?key|apiKey|login|user_?id|userId|pass_?hash|password|token|access_token|auth|key)\s*[=:]\s*([^&\s,;]+)',
+  caseSensitive: false,
+);
+
+/// r88: a default-tags word that looks like a key rather than a tag: long,
+/// letters and digits, and not a `name:value` or `name=value` tag.
+bool _looksLikeSecret(String word) =>
+    word.length >= 16 && !word.contains(':') && !word.contains('=') && word.contains(RegExp('[0-9]')) && word.contains(RegExp('[A-Za-z]'));
+
 /// Strips credentials out of anything on its way into a log or a capture.
 ///
 /// Logs get shared. A talker export sent to a developer carried this install's
@@ -121,12 +133,20 @@ String redactSecrets(String input, {List<String>? extraSecrets}) {
   final List<String> secrets = [...?extraSecrets];
   try {
     for (final booru in SettingsHandler.instance.booruList) {
-      // defTags is in here because a Booru's fifth positional field is
-      // defTags, and installs put credentials there for sites that take them
-      // as search parameters. Dropping it silently un-redacted them.
-      for (final value in [booru.apiKey, booru.userID, booru.defTags]) {
+      for (final value in [booru.apiKey, booru.userID]) {
         if (value != null && value.trim().length >= 4) secrets.add(value.trim());
       }
+      // defTags is in here because a Booru's fifth positional field is
+      // defTags, and installs put credentials there for sites that take them
+      // as search parameters. r88: only what looks like one - default tags
+      // such as "explicit" hid that word in every line of the log
+      // ("rating <redacted>", 2026-10-02). Named (`api_key=…`) or bare.
+      final String defTags = booru.defTags ?? '';
+      for (final RegExpMatch m in _credentialParam.allMatches(defTags)) {
+        final String value = m.group(1)!;
+        if (value.length >= 4) secrets.add(value);
+      }
+      secrets.addAll(defTags.split(RegExp(r'[\s&]+')).where(_looksLikeSecret));
     }
   } catch (_) {
     // Settings unavailable (tests, early startup); the rules above still apply.

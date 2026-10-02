@@ -56,6 +56,11 @@ class ModelPictures {
 
   static PictureDecoder get chosen => SettingsHandler.instance.pictureDecoder;
 
+  /// r88: how much bigger than the model's size the phone decodes: twice
+  /// for [PictureDecoder.phone] (the app's own resize finishes it), once for
+  /// [PictureDecoder.phoneFast] (nothing left to resize).
+  static int get _over => chosen == PictureDecoder.phoneFast ? 1 : 2;
+
   /// [bytes] decoded by the phone, its long side at most [longSide] (or its
   /// short side at most [shortSide]), never scaled up; null when the phone
   /// cannot read it.
@@ -92,11 +97,12 @@ class ModelPictures {
   /// decoder read it. Throws a FormatException for a file neither reads.
   static Future<({Float32List tensor, PictureDecoder used})> forTagger(Uint8List bytes, int size) async {
     final Stopwatch sw = Stopwatch()..start();
-    final RawPicture? raw = chosen == PictureDecoder.phone ? await decodeOnPhone(bytes, longSide: 2 * size) : null;
+    final PictureDecoder want = chosen;
+    final RawPicture? raw = want != PictureDecoder.dart ? await decodeOnPhone(bytes, longSide: _over * size) : null;
     final Float32List tensor = raw != null
         ? await compute(_taggerRaw, (raw.rgba, raw.width, raw.height, size))
         : await compute(_taggerBytes, (bytes, size));
-    final PictureDecoder used = raw != null ? PictureDecoder.phone : PictureDecoder.dart;
+    final PictureDecoder used = raw != null ? want : PictureDecoder.dart;
     ModelTimings.instance.recordDecode(used, sw.elapsedMilliseconds);
     return (tensor: tensor, used: used);
   }
@@ -110,11 +116,12 @@ class ModelPictures {
     List<double>? std,
   }) async {
     final Stopwatch sw = Stopwatch()..start();
-    final RawPicture? raw = chosen == PictureDecoder.phone ? await decodeOnPhone(bytes, shortSide: 2 * size) : null;
+    final PictureDecoder want = chosen;
+    final RawPicture? raw = want != PictureDecoder.dart ? await decodeOnPhone(bytes, shortSide: _over * size) : null;
     final Float32List tensor = raw != null
         ? await compute(_looksRaw, (raw.rgba, raw.width, raw.height, size, mean, std))
         : await compute(_looksBytes, (bytes, size, mean, std));
-    final PictureDecoder used = raw != null ? PictureDecoder.phone : PictureDecoder.dart;
+    final PictureDecoder used = raw != null ? want : PictureDecoder.dart;
     ModelTimings.instance.recordDecode(used, sw.elapsedMilliseconds);
     return (tensor: tensor, used: used);
   }
@@ -123,7 +130,7 @@ class ModelPictures {
   /// comes back as it is; null when it is not a picture
   /// (VideoFrames.shrinkJpeg's, by the chosen decoder).
   static Future<Uint8List?> shrinkFrame(Uint8List jpeg, int limit, {Uint8List? Function((Uint8List, int))? dartShrink}) async {
-    if (chosen == PictureDecoder.phone) {
+    if (chosen != PictureDecoder.dart) {
       final RawPicture? raw = await decodeOnPhone(jpeg, longSide: limit);
       if (raw != null) {
         if (math.max(raw.sourceWidth, raw.sourceHeight) <= limit) return jpeg;

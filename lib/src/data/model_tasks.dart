@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 
+import 'package:lolisnatcher/src/handlers/recommender/model_timings.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 
 /// Who is waiting for a model's answer (r79 for the tagger, r80 for all
@@ -94,12 +95,18 @@ enum PictureDecoder {
   /// picture while decoding to twice what the model needs.
   phone,
 
+  /// r88: the phone's decoders straight to the model's own size; the app
+  /// only pads or crops (no resize of its own) - the fastest, a little
+  /// further from what the models saw before.
+  phoneFast,
+
   /// The pure-Dart `image` package at full size, the behaviour before r86;
   /// also the fallback for a file the phone cannot read.
   dart;
 
   String get label => switch (this) {
     PictureDecoder.phone => 'The phone',
+    PictureDecoder.phoneFast => 'Straight to size',
     PictureDecoder.dart => 'As before',
   };
 
@@ -410,6 +417,10 @@ class ModelTasks {
     } else {
       _settings.modelRunOn[model.name] = accelerator.name;
     }
+    // r88: picking the NPU (again) gives it a fresh chance; any pick is a
+    // new try, so the last opening's refusal no longer speaks for it.
+    if (accelerator == ModelAccelerator.npu) ModelTimings.instance.clearNpuFailures(model);
+    ModelTimings.instance.forgetOpened(model);
     await _changed();
   }
 

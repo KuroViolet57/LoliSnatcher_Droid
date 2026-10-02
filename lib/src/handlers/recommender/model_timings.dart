@@ -53,21 +53,84 @@ class ModelTimings {
   @visibleForTesting
   void resetForTests({String? dir}) {
     _stats.clear();
+    _npuFailures.clear();
+    _lastOpened.clear();
     _dir = dir;
     _loaded = dir != null;
     _saving = null;
     _dirty = false;
   }
 
-  static String _runKey(ModelKind m, ModelAccelerator a) => 'run.${m.name}.${a.name}';
+  static String _runKey(ModelKind m, ModelAccelerator a, [int? threads]) => 'run.${m.name}.${a.name}${threads == null ? '' : '.x$threads'}';
   static String _openKey(ModelKind m, ModelAccelerator a) => 'open.${m.name}.${a.name}';
   static String _decodeKey(PictureDecoder d) => 'decode.${d.name}';
 
-  TimingStat? run(ModelKind m, ModelAccelerator a) => _stats[_runKey(m, a)];
+  /// The runs on [a]; with [threads], only those on that many threads (r88).
+  TimingStat? run(ModelKind m, ModelAccelerator a, {int? threads}) => _stats[_runKey(m, a, threads)];
+
+  /// r88: the thread counts [a] has been measured with, smallest first.
+  List<int> threadsMeasured(ModelKind m, ModelAccelerator a) {
+    final String prefix = '${_runKey(m, a)}.x';
+    return [
+      for (final String k in _stats.keys)
+        if (k.startsWith(prefix)) ?int.tryParse(k.substring(prefix.length)),
+    ]..sort();
+  }
+
+  /// r88: the fastest way [m] has run on this phone: the choice (and thread
+  /// count, when known) with the lowest average; null before any run.
+  ({ModelAccelerator accelerator, int? threads, int averageMs})? fastest(ModelKind m) {
+    ({ModelAccelerator accelerator, int? threads, int averageMs})? best;
+    for (final ModelAccelerator a in ModelAccelerator.values) {
+      final List<int> counts = threadsMeasured(m, a);
+      final List<(int?, TimingStat?)> rows = counts.isEmpty ? [(null, run(m, a))] : [for (final int c in counts) (c, run(m, a, threads: c))];
+      for (final (int? threads, TimingStat? s) in rows) {
+        if (s == null || s.runs == 0) continue;
+        if (best == null || s.averageMs < best.averageMs) best = (accelerator: a, threads: threads, averageMs: s.averageMs);
+      }
+    }
+    return best;
+  }
   TimingStat? open(ModelKind m, ModelAccelerator a) => _stats[_openKey(m, a)];
   TimingStat? decode(PictureDecoder d) => _stats[_decodeKey(d)];
 
-  void recordRun(ModelKind m, ModelAccelerator a, int ms) => _record(_runKey(m, a), ms);
+  void recordRun(ModelKind m, ModelAccelerator a, int ms, {int? threads}) {
+    _record(_runKey(m, a), ms);
+    if (threads != null) _record(_runKey(m, a, threads), ms);
+  }
+
+  // ── r88: NPU failures while running ──
+
+  final Map<ModelKind, ({int count, String reason})> _npuFailures = {};
+
+  /// How often the NPU failed while running [m] since it was last picked.
+  ({int count, String reason})? npuFailures(ModelKind m) => _npuFailures[m];
+
+  void recordNpuFailure(ModelKind m, String reason) {
+    final int count = (_npuFailures[m]?.count ?? 0) + 1;
+    _npuFailures[m] = (count: count, reason: reason.length > 300 ? '${reason.substring(0, 300)}…' : reason);
+    _dirty = true;
+    if (_loaded) unawaited(_save());
+  }
+
+  void clearNpuFailures(ModelKind m) {
+    if (_npuFailures.remove(m) == null) return;
+    _dirty = true;
+    if (_loaded) unawaited(_save());
+  }
+  // ── r88: the last opening, this run of the app ──
+
+  final Map<ModelKind, ({ModelAccelerator tried, ModelAccelerator used, String? refused})> _lastOpened = {};
+
+  /// What [m]'s last opening asked for, what it got, and why not.
+  ({ModelAccelerator tried, ModelAccelerator used, String? refused})? lastOpened(ModelKind m) => _lastOpened[m];
+
+  void recordOpened(ModelKind m, {required ModelAccelerator tried, required ModelAccelerator used, String? refused}) =>
+      _lastOpened[m] = (tried: tried, used: used, refused: refused);
+
+  /// A new pick is a new try.
+  void forgetOpened(ModelKind m) => _lastOpened.remove(m);
+
   void recordOpen(ModelKind m, ModelAccelerator a, int ms) => _record(_openKey(m, a), ms);
   void recordDecode(PictureDecoder d, int ms) => _record(_decodeKey(d), ms);
 
@@ -94,6 +157,12 @@ class ModelTimings {
         final dynamic raw = jsonDecode(await f.readAsString());
         if (raw is Map) {
           raw.forEach((key, value) {
+            if (key is String && key.startsWith('npuFailed.') && value is Map) {
+              final ModelKind? m = ModelKind.values.where((k) => 'npuFailed.${k.name}' == key).firstOrNull;
+              final dynamic count = value['count'], reason = value['reason'];
+              if (m != null && count is int && reason is String && !_npuFailures.containsKey(m)) _npuFailures[m] = (count: count, reason: reason);
+              return;
+            }
             final TimingStat? s = TimingStat.fromJson(value);
             if (key is! String || s == null) return;
             final TimingStat? now = _stats[key];
@@ -120,7 +189,13 @@ class ModelTimings {
         _dirty = false;
         try {
           final File f = File('${await _folder()}$fileName');
-          await f.writeAsString(jsonEncode({for (final e in _stats.entries) e.key: e.value.toJson()}), flush: true);
+          await f.writeAsString(
+            jsonEncode({
+              for (final e in _stats.entries) e.key: e.value.toJson(),
+              for (final e in _npuFailures.entries) 'npuFailed.${e.key.name}': {'count': e.value.count, 'reason': e.value.reason},
+            }),
+            flush: true,
+          );
         } catch (_) {}
       }
     }();

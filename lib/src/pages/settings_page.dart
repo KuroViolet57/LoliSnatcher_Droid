@@ -15,8 +15,10 @@ import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/pages/about_page.dart';
 import 'package:lolisnatcher/src/pages/loli_sync_page.dart';
 import 'package:lolisnatcher/src/pages/settings/doujin_settings_page.dart';
+import 'package:lolisnatcher/src/pages/settings/models_page.dart';
 import 'package:lolisnatcher/src/pages/settings/modular_ui_page.dart';
 import 'package:lolisnatcher/src/pages/settings/recommendations_page.dart';
+import 'package:lolisnatcher/src/pages/settings/accounts_page.dart';
 import 'package:lolisnatcher/src/pages/settings/backup_restore_page.dart';
 import 'package:lolisnatcher/src/pages/settings/booru_page.dart';
 import 'package:lolisnatcher/src/pages/settings/database_page.dart';
@@ -77,11 +79,19 @@ class SettingsPage extends StatelessWidget {
         body: Center(
           child: ListView(
             children: [
-              _sectionLabel(context, 'SEARCH'),
+              _sectionLabel(context, 'SOURCES'),
               SettingsButton(
                 name: context.loc.settings.booru.title,
                 icon: const Icon(Symbols.image_search_rounded),
                 page: () => const BooruPage(),
+              ),
+              // r88: the sign-ins (e-hentai, FurAffinity, RedGifs) in one place;
+              // each source's own settings still open them too.
+              SettingsButton(
+                name: 'Accounts',
+                subtitle: const Text('Sign-ins for e-hentai, FurAffinity and RedGifs'),
+                icon: const Icon(Symbols.account_circle_rounded),
+                page: () => const AccountsPage(),
               ),
               SettingsButton(
                 name: context.loc.settings.itemFilters.title,
@@ -95,23 +105,23 @@ class SettingsPage extends StatelessWidget {
                 icon: const Icon(Symbols.link_rounded),
                 page: () => const LinksPage(),
               ),
-              _sectionLabel(context, 'DOUJIN'),
               SettingsButton(
                 name: 'Doujin',
                 icon: const Icon(Symbols.menu_book_rounded),
                 page: () => const DoujinSettingsPage(),
               ),
+              _sectionLabel(context, 'RECOMMENDATIONS & AI'),
               SettingsButton(
                 name: 'Recommendations',
                 icon: const Icon(Symbols.auto_awesome_rounded),
                 page: () => const RecommendationsPage(),
               ),
-              _sectionLabel(context, 'MODULAR UI'),
+              // r88: the downloadable models, each with a page of its own.
               SettingsButton(
-                name: 'Modular UI',
-                subtitle: const Text('Show or hide parts of the interface'),
-                icon: const Icon(Symbols.toggle_on_rounded),
-                page: () => const ModularUiPage(),
+                name: 'Models',
+                subtitle: const Text('The text model, the looks model and the image tagger: what they do, what they run on'),
+                icon: const Icon(Symbols.memory_rounded),
+                page: () => const ModelsPage(),
               ),
               _sectionLabel(context, 'LOOK & FEEL'),
               SettingsButton(
@@ -120,10 +130,22 @@ class SettingsPage extends StatelessWidget {
                 page: () => const UserInterfacePage(),
               ),
               SettingsButton(
+                name: 'Modular UI',
+                subtitle: const Text('Show or hide parts of the interface'),
+                icon: const Icon(Symbols.toggle_on_rounded),
+                page: () => const ModularUiPage(),
+              ),
+              SettingsButton(
                 name: context.loc.settings.theme.title,
                 icon: const Icon(Symbols.palette_rounded),
                 page: () => const ThemePage(),
               ),
+              SettingsButton(
+                name: context.loc.settings.language.title,
+                icon: const Icon(Symbols.translate_rounded),
+                page: () => const LanguageSettingsPage(),
+              ),
+              _sectionLabel(context, 'VIEWING'),
               SettingsButton(
                 name: context.loc.settings.viewer.title,
                 icon: const Icon(Symbols.view_carousel_rounded),
@@ -134,7 +156,6 @@ class SettingsPage extends StatelessWidget {
                 icon: const Icon(Symbols.video_settings_rounded),
                 page: () => const VideoSettingsPage(),
               ),
-              _sectionLabel(context, 'SYSTEM'),
               SettingsButton(
                 name: context.loc.settings.performance.title,
                 icon: const Icon(
@@ -143,15 +164,11 @@ class SettingsPage extends StatelessWidget {
                 ),
                 page: () => const PerformancePage(),
               ),
+              _sectionLabel(context, 'DOWNLOADS & STORAGE'),
               SettingsButton(
                 name: context.loc.settings.cache.title,
                 icon: const Icon(Symbols.sd_storage_rounded),
                 page: () => const SaveCachePage(),
-              ),
-              SettingsButton(
-                name: context.loc.settings.network.title,
-                icon: const Icon(Symbols.wifi_rounded),
-                page: () => const NetworkPage(),
               ),
               SettingsButton(
                 name: context.loc.settings.database.title,
@@ -163,6 +180,12 @@ class SettingsPage extends StatelessWidget {
                 icon: const Icon(Symbols.restore_page_rounded),
                 page: () => const BackupRestorePage(),
               ),
+              _sectionLabel(context, 'SYSTEM'),
+              SettingsButton(
+                name: context.loc.settings.network.title,
+                icon: const Icon(Symbols.wifi_rounded),
+                page: () => const NetworkPage(),
+              ),
               SettingsButton(
                 name: context.loc.settings.privacy.title,
                 icon: const FaIcon(
@@ -171,12 +194,6 @@ class SettingsPage extends StatelessWidget {
                 ),
                 page: () => const PrivacyPage(),
               ),
-              SettingsButton(
-                name: context.loc.settings.language.title,
-                icon: const Icon(Symbols.translate_rounded),
-                page: () => const LanguageSettingsPage(),
-              ),
-              _sectionLabel(context, 'ABOUT'),
               SettingsButton(
                 name: context.loc.settings.sync.title,
                 icon: const Icon(Symbols.sync_rounded),
@@ -198,19 +215,6 @@ class SettingsPage extends StatelessWidget {
                         );
                       },
                 page: settingsHandler.dbEnabled ? () => const LoliSyncPage() : null,
-              ),
-              const DiscordButton(),
-              SettingsButton(
-                name: context.loc.settings.about.title,
-                icon: const Icon(Symbols.info_rounded),
-                page: () => const AboutPage(),
-              ),
-              SettingsButton(
-                name: context.loc.settings.checkForUpdates.title,
-                icon: const Icon(Symbols.update_rounded),
-                action: () {
-                  settingsHandler.checkUpdate(withMessage: true);
-                },
               ),
               if (Logger.viewController != null)
                 SettingsButton(
@@ -290,17 +294,6 @@ class SettingsPage extends StatelessWidget {
                     );
                   },
                 ),
-              SettingsButton(
-                name: context.loc.settings.help.title,
-                icon: const Icon(Symbols.help_center_rounded),
-                action: () {
-                  launchUrlString(
-                    Constants.wikiURL,
-                    mode: LaunchMode.externalApplication,
-                  );
-                },
-                trailingIcon: const Icon(Symbols.exit_to_app_rounded),
-              ),
               Obx(() {
                 if (settingsHandler.isDebug.value) {
                   return SettingsButton(
@@ -312,6 +305,31 @@ class SettingsPage extends StatelessWidget {
 
                 return const SizedBox.shrink();
               }),
+              _sectionLabel(context, 'ABOUT'),
+              SettingsButton(
+                name: context.loc.settings.about.title,
+                icon: const Icon(Symbols.info_rounded),
+                page: () => const AboutPage(),
+              ),
+              SettingsButton(
+                name: context.loc.settings.checkForUpdates.title,
+                icon: const Icon(Symbols.update_rounded),
+                action: () {
+                  settingsHandler.checkUpdate(withMessage: true);
+                },
+              ),
+              SettingsButton(
+                name: context.loc.settings.help.title,
+                icon: const Icon(Symbols.help_center_rounded),
+                action: () {
+                  launchUrlString(
+                    Constants.wikiURL,
+                    mode: LaunchMode.externalApplication,
+                  );
+                },
+                trailingIcon: const Icon(Symbols.exit_to_app_rounded),
+              ),
+              const DiscordButton(),
               const VersionButton(),
               const MascotImage(),
             ],

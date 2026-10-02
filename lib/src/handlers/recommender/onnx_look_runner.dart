@@ -44,6 +44,10 @@ class OnnxLookRunner implements LookRunner {
   /// What the picture half really opened on (the CPU when the choice was refused).
   ModelAccelerator _used = ModelAccelerator.cpu;
 
+  /// r88: set when the NPU failed while running the picture half: its next
+  /// opening in this runner is on the CPU.
+  bool _cpuAfterFailure = false;
+
   OrtSession? _image;
   OrtSession? _text;
   Future<OrtSession>? _openingImage;
@@ -58,7 +62,7 @@ class OnnxLookRunner implements LookRunner {
       path,
       model: ModelKind.look,
       threads: threads,
-      accelerator: acceleratorFor(image: image),
+      accelerator: image && _cpuAfterFailure ? ModelAccelerator.cpu : acceleratorFor(image: image),
       who: image ? 'look (picture half)' : 'look (text half)',
     );
     if (image) _used = o.used;
@@ -97,13 +101,34 @@ class OnnxLookRunner implements LookRunner {
     final String name = session.inputNames.isNotEmpty ? session.inputNames.first : 'pixel_values';
     final OrtValue input = await OrtValue.fromList(nchw, [1, 3, size, size]);
     try {
-      final Stopwatch sw = Stopwatch()..start();
-      final Map<String, OrtValue> outputs = await session.run({name: input});
-      ModelTimings.instance.recordRun(ModelKind.look, _used, sw.elapsedMilliseconds);
-      return await _first(outputs);
+      // r88: a failure on the NPU (QNN error 6033, log 2026-10-02) runs the
+      // same picture on the CPU instead of breaking the looks model.
+      return await runGuarded(
+        model: ModelKind.look,
+        used: _used,
+        who: 'look (picture half)',
+        run: () => _imageRun(session, name, input),
+        onCpu: () async {
+          _cpuAfterFailure = true;
+          final OrtSession? old = _image;
+          _image = null;
+          _openingImage = null;
+          await old?.close();
+          final OrtSession cpu = await _imageSession();
+          _provider = '$_provider (NPU failed)';
+          return _imageRun(cpu, cpu.inputNames.isNotEmpty ? cpu.inputNames.first : name, input);
+        },
+      );
     } finally {
       await input.dispose();
     }
+  }
+
+  Future<Float32List> _imageRun(OrtSession session, String name, OrtValue input) async {
+    final Stopwatch sw = Stopwatch()..start();
+    final Map<String, OrtValue> outputs = await session.run({name: input});
+    ModelTimings.instance.recordRun(ModelKind.look, _used, sw.elapsedMilliseconds, threads: threads);
+    return _first(outputs);
   }
 
   @override

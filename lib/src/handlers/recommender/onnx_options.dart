@@ -1,9 +1,12 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+
 import 'package:flutter_onnxruntime/flutter_onnxruntime.dart';
 
 import 'package:lolisnatcher/src/data/model_tasks.dart';
 import 'package:lolisnatcher/src/handlers/recommender/model_timings.dart';
+import 'package:lolisnatcher/src/handlers/recommender/onnx_availability.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 
 /// r87: Qualcomm's QNN on the HTP (the NPU), float models at 16-bit.
@@ -36,7 +39,9 @@ OrtSessionOptions onnxSessionOptions({required int threads, required ModelAccele
 
 OrtSessionOptions _npuOptions(int threads, {String? compileTo, bool cpuFallback = true}) => OrtSessionOptions(
   intraOpNumThreads: threads,
-  providers: const [OrtProvider.QNN, OrtProvider.CPU],
+  // r88: the whole-model try names only the NPU - the CPU listed next to a
+  // forbidden CPU fallback is a conflict ONNX Runtime refuses (log 2026-10-02).
+  providers: cpuFallback ? const [OrtProvider.QNN, OrtProvider.CPU] : const [OrtProvider.QNN],
   providerOptions: const {'QNN': qnnHtpOptions},
   sessionConfig: {
     if (!cpuFallback) 'session.disable_cpu_ep_fallback': '1',
@@ -82,13 +87,49 @@ List<NpuAttempt> npuAttempts(String modelPath, {required int modelBytes, require
   ];
 }
 
-/// r86: the saved Run on choice for [model]; the CPU when the settings
-/// cannot be read (a runner made before they load, or in a test).
+/// What [model] opens on: the saved Run on choice, unless this build lacks
+/// it (r88) or the NPU failed twice while running it since it was picked
+/// (r88); the CPU when the settings cannot be read (a runner made before
+/// they load, or in a test).
 ModelAccelerator savedAccelerator(ModelKind model) {
   try {
-    return ModelTasks.runOn(model);
+    final ModelAccelerator a = ModelTasks.runOn(model);
+    if (!OnnxAvailability.has(a)) return ModelAccelerator.cpu;
+    if (a == ModelAccelerator.npu && (ModelTimings.instance.npuFailures(model)?.count ?? 0) >= 2) return ModelAccelerator.cpu;
+    return a;
   } catch (_) {
     return ModelAccelerator.cpu;
+  }
+}
+
+/// r88: what [model] really runs on: [savedAccelerator], unless its last
+/// opening asked for that and got the CPU (`refused` says why). On the
+/// emulator the card said "runs on NPU" while the CPU did the work.
+({ModelAccelerator used, String? refused}) actualAccelerator(ModelKind model) {
+  final ModelAccelerator want = savedAccelerator(model);
+  final ({ModelAccelerator tried, ModelAccelerator used, String? refused})? last = ModelTimings.instance.lastOpened(model);
+  if (last != null && last.tried == want && last.used != want) return (used: last.used, refused: last.refused);
+  return (used: want, refused: null);
+}
+
+/// r88: one model run. When it fails on the NPU (the looks model timed out
+/// there - QNN error 6033, log 2026-10-02), the failure is counted for the
+/// model and the same input runs on the CPU ([onCpu]); a failure anywhere
+/// else is a real one and is thrown.
+Future<T> runGuarded<T>({
+  required ModelKind model,
+  required ModelAccelerator used,
+  required String who,
+  required Future<T> Function() run,
+  required Future<T> Function() onCpu,
+}) async {
+  try {
+    return await run();
+  } catch (e) {
+    if (used != ModelAccelerator.npu) rethrow;
+    ModelTimings.instance.recordNpuFailure(model, '$e');
+    _log('$who: the NPU failed while running ($e); this one on the CPU');
+    return onCpu();
   }
 }
 
@@ -97,6 +138,21 @@ ModelAccelerator savedAccelerator(ModelKind model) {
 typedef OpenedSession = ({OrtSession session, ModelAccelerator used, String provider});
 
 void _log(String line) => Logger.Inst().log(line, 'OnnxSession', 'open', LogTypes.booruHandlerInfo);
+
+Future<OrtSession> _createOrtSession(String path, OrtSessionOptions? options) => OnnxRuntime().createSession(path, options: options);
+Future<void> _closeOrtSession(OrtSession s) => s.close();
+
+/// Opens and closes ONNX Runtime sessions (tests stand in for the plugin).
+@visibleForTesting
+Future<OrtSession> Function(String path, OrtSessionOptions? options) createOrtSession = _createOrtSession;
+@visibleForTesting
+Future<void> Function(OrtSession s) closeOrtSession = _closeOrtSession;
+
+@visibleForTesting
+void resetOnnxSeamsForTests() {
+  createOrtSession = _createOrtSession;
+  closeOrtSession = _closeOrtSession;
+}
 
 void _delete(String path) {
   try {
@@ -120,12 +176,37 @@ Future<OpenedSession?> _openOnNpu(String path, {required ModelKind model, requir
     final NpuAttempt a = attempts[i];
     final Stopwatch sw = Stopwatch()..start();
     try {
-      final OrtSession s = await OnnxRuntime().createSession(a.path, options: a.options);
+      OrtSession s = await createOrtSession(a.path, a.options);
+      final String? copy = a.compileTo;
+      // r88: a compiling opening that leaves no compiled copy is one the NPU
+      // took no part of - QNN could not start ("QNN SetupBackend failed" on
+      // the emulator, 2026-10-03), ONNX Runtime gave every part to the CPU,
+      // and the timings said NPU. The NPU compiles whatever it takes.
+      if (copy != null && !File(copy).existsSync()) {
+        try {
+          await closeOrtSession(s);
+        } catch (_) {}
+        _log('$who: the NPU took no part of the model${a.whole ? '' : ' (every part went to the CPU)'}');
+        continue;
+      }
       ModelTimings.instance.recordOpen(model, ModelAccelerator.npu, sw.elapsedMilliseconds);
       _log(
         '$who: opened on the NPU${a.whole ? '' : ' (some parts on the CPU)'} in ${sw.elapsedMilliseconds} ms'
         '${a.compileTo != null ? ', compiled and kept' : ', from the compiled copy'}',
       );
+      // r88: right after compiling, the compiled copy is opened instead -
+      // the first run of the compiling session took 42 s on the phone, the
+      // first one from a copy under a second (log 2026-10-02).
+      if (copy != null) {
+        try {
+          final OrtSession fromCopy = await createOrtSession(copy, _npuOptions(threads));
+          await closeOrtSession(s);
+          s = fromCopy;
+          _log('$who: switched to the compiled copy');
+        } catch (e) {
+          _log('$who: the fresh compiled copy did not open ($e); keeping the compiling session');
+        }
+      }
       return (session: s, used: ModelAccelerator.npu, provider: a.whole ? 'NPU' : 'NPU + CPU');
     } catch (e) {
       if (a.compileTo != null) {
@@ -160,14 +241,18 @@ Future<OpenedSession> openOnnxSession(
   Object? refused;
   if (accelerator == ModelAccelerator.npu) {
     final OpenedSession? npu = await _openOnNpu(path, model: model, threads: threads, who: who);
-    if (npu != null) return npu;
+    if (npu != null) {
+      ModelTimings.instance.recordOpened(model, tried: accelerator, used: npu.used);
+      return npu;
+    }
     refused = 'the NPU took no part of it';
   } else {
     final Stopwatch sw = Stopwatch()..start();
     try {
-      final OrtSession s = await OnnxRuntime().createSession(path, options: onnxSessionOptions(threads: threads, accelerator: accelerator));
+      final OrtSession s = await createOrtSession(path, onnxSessionOptions(threads: threads, accelerator: accelerator));
       ModelTimings.instance.recordOpen(model, accelerator, sw.elapsedMilliseconds);
       if (accelerator != ModelAccelerator.cpu) _log('$who: opened on ${accelerator.label} in ${sw.elapsedMilliseconds} ms');
+      ModelTimings.instance.recordOpened(model, tried: accelerator, used: accelerator);
       return (session: s, used: accelerator, provider: '${accelerator.label} x$threads');
     } catch (e) {
       refused = e;
@@ -177,14 +262,16 @@ Future<OpenedSession> openOnnxSession(
     _log('$who: ${accelerator.label} refused the model ($refused); the CPU instead');
     try {
       final Stopwatch cpu = Stopwatch()..start();
-      final OrtSession s = await OnnxRuntime().createSession(path, options: onnxSessionOptions(threads: threads, accelerator: ModelAccelerator.cpu));
+      final OrtSession s = await createOrtSession(path, onnxSessionOptions(threads: threads, accelerator: ModelAccelerator.cpu));
       ModelTimings.instance.recordOpen(model, ModelAccelerator.cpu, cpu.elapsedMilliseconds);
+      ModelTimings.instance.recordOpened(model, tried: accelerator, used: ModelAccelerator.cpu, refused: '$refused');
       return (session: s, used: ModelAccelerator.cpu, provider: 'CPU x$threads (${accelerator.label} refused)');
     } catch (e) {
       refused = e;
     }
   }
   _log('$who: could not open the model with $threads thread(s) ($refused); default options');
-  final OrtSession s = await OnnxRuntime().createSession(path);
+  final OrtSession s = await createOrtSession(path, null);
+  ModelTimings.instance.recordOpened(model, tried: accelerator, used: ModelAccelerator.cpu, refused: accelerator == ModelAccelerator.cpu ? null : '$refused');
   return (session: s, used: ModelAccelerator.cpu, provider: 'CPU');
 }

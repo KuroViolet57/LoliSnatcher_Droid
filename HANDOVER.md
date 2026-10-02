@@ -31,11 +31,11 @@ older chronological build log, kept verbatim as history.
   Never push elsewhere; force-push is blocked.
 - **Version:** `2.6.0+5211` in `pubspec.yaml`, mirrored in
   `lib/src/data/constants.dart` (`updateInfo`). Builds are told apart by
-  `Constants.buildCodename` (`'r87-npu'` now, on branch `claude/r87-npu`), shown in About. Bump the
+  `Constants.buildCodename` (`'r88-settings-npu'` now, on branch `claude/r87-npu`), shown in About. Bump the
   codename every build: `rNN-<two words>`.
 - **Build counter:** rounds are numbered r21, r22, … r80. Each build gets a
   numbered folder on the K: drive (§2): r80 used **109** and **110**, r81
-  **111**, r82 **112**, r83 **113**, r84 **114**, r85 **115**, r86 **116**, r87 **117** (branch `claude/r87-npu`); the next build uses **118**. **103** is Grok's ("exp flutter 347") - never
+  **111**, r82 **112**, r83 **113**, r84 **114**, r85 **115**, r86 **116**, r87 **117**, r88 **118** (both on branch `claude/r87-npu`); the next build uses **119**. **103** is Grok's ("exp flutter 347") - never
   reuse a number.
 - **The user** talks in voice notes and logs; expects one build per request
   round, checked on a Samsung phone. They cannot see tool output — only the
@@ -3107,6 +3107,79 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   "refused", and the tagger's "(NPU, ...)".
 - **Tests:** `npu_test` (plugin options, Android guards, options per choice,
   attempts, choices per model, the looks prompt).
+
+### 4.67 Settings reorganised; the NPU made sturdy (r88, build 118, branch `claude/r87-npu`)
+
+- **Branch:** still `claude/r87-npu`; the user approved building r88 there
+  and merging it into `claude/experimental-doujin` after their phone test.
+- **From the 117 phone log (2026-10-02):** the looks model timed out on the
+  NPU (QNN 6033) and broke; the whole-model try always failed (CPU listed next
+  to a forbidden CPU fallback); XNNPACK "not supported in this build"; the
+  log hid the word "explicit" (a source's default tags were redacted whole).
+- **NPU (`onnx_options.dart`):**
+  - `_npuOptions(cpuFallback: false)` lists only QNN.
+  - `runGuarded`: a run that fails on the NPU is counted
+    (`ModelTimings.recordNpuFailure`, saved as `npuFailed.<model>`) and that
+    input runs on the CPU; after two, `savedAccelerator` gives the CPU until
+    NPU is picked again (`setRunOn` clears the count).
+  - `_openOnNpu`: after a compile, the compiled copy is opened instead of the
+    compiling session (the first run of a compiling session took 42 s).
+  - A compiling opening that leaves no compiled copy means the NPU took no
+    part (QNN could not start; ONNX Runtime says "Unable to compile any
+    nodes" and gives every part to the CPU). Seen on the emulator, where the
+    runs were being counted as the NPU's. Now the session is closed and the
+    CPU opens it ("CPU xN (NPU refused)").
+  - `ModelTimings.recordOpened/lastOpened` (memory only) keep what each
+    opening asked for and got; `actualAccelerator(model)` is what the cards
+    and the model page show ("runs on CPU (NPU refused it)", with the
+    reason). Any `setRunOn` forgets it.
+  - Seams: `createOrtSession` / `closeOrtSession` / `resetOnnxSeamsForTests`.
+- **`OnnxAvailability`** (new): `getAvailableProviders()` once at startup
+  (`SettingsHandler.postInit`). Run on offers only what the build has (the
+  QNN build: CPU and QNN - no XNNPACK, no NNAPI, checked on the emulator); a
+  stored choice the build lacks runs on the CPU. Unknown = everything.
+- **Settings main screen:** SOURCES (Boorus & Search, Accounts, Filters,
+  Links, Doujin), RECOMMENDATIONS & AI (Recommendations, Models), LOOK & FEEL,
+  VIEWING, DOWNLOADS & STORAGE, SYSTEM, ABOUT (`settings_layout_test` checks
+  the order in the source).
+- **Accounts** (`accounts_page.dart`, new): the e-hentai and FurAffinity
+  sign-ins (their login pages) and RedGifs (opens the first RedGifs
+  source's editor, where its sign-in is). Correction for the record: the
+  sign-ins were never scattered over the Doujin/Recommendations pages; they
+  are per source. The page collects them anyway.
+- **Models** (`models_page.dart`): an overview - All models off, a card per
+  model (`model-card-<kind>`: downloaded, what it runs on, jobs on), Picture
+  decoding, Saved vectors. **`ModelPage(kind)`** (`model_page.dart`, new):
+  parts Model (the old `EncoderModelSection` / `LookModelSection` /
+  `TaggerModelSection`, now public in recommendations_page.dart), What it
+  does (every job once; the frames and reactions switches moved here from
+  the Recommendations page), Speed (Run on with its (i), the NPU notes,
+  thread counts each with an (i): what the number does, what it costs with
+  this device's core count, what is recommended, and the times measured per
+  thread count - `ModelTimings.recordRun(threads:)`, `threadsMeasured`).
+- **`SettingsPart`** (settings_widgets.dart): an uppercase part title with a
+  muted line; also used on Save & cache (Downloads, Download folders, Cache).
+- **Picture decoding:** a third choice `PictureDecoder.phoneFast` ("Straight
+  to size": the phone decodes straight to the model's size, no resize in
+  Dart; `_over` 1 instead of 2).
+- **Log redaction (`log_redaction.dart`):** a source's default tags are no
+  longer redacted whole. Hidden from them: `api_key=...`-style values
+  (`_credentialParam`) and bare words that look like keys (`_looksLikeSecret`:
+  16+ characters, letters and digits, no `:`/`=`). source_capture_test's
+  guard (a bare key in the default tags) failed on the first version of this
+  and holds now.
+- **Checked on the emulator (Claude_LoliTest, build 118):** every Settings
+  section; Accounts (states, the RedGifs note); Models overview; Picture
+  decoding (i); the looks page's parts, Run on (CPU, NPU only), its (i) with
+  "Available in this build: CPU, QNN", the thread (i) with "This phone has 6
+  cores"; NPU picked: the full-precision file prompt and download (43.4 MB),
+  QNN refusing, For You loading on the CPU, the card and page saying so.
+- **Not verified here:** the NPU itself (phone only): the looks model on the
+  NPU without 6033, the whole-model try, the compiled-copy switch.
+- **Emulator note:** 37.1.11 runs with `-wifi-user-mode-options ipv6=off
+  -network-user-mode-options ipv6=off` (from ImagePanelBuild's
+  start-emulator.ps1). uiautomator sees no Flutter labels (no accessibility
+  service), so drive it by screenshots.
 
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 

@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lolisnatcher/src/data/model_tasks.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/src/pages/settings/model_page.dart';
 import 'package:lolisnatcher/src/pages/settings/models_page.dart';
 
 /// r80: Settings → Recommendations → Models: every job of the three models
@@ -57,6 +58,15 @@ void main() {
     await tester.pump();
   }
 
+  /// r88: a model's jobs, frames and threads live on its own page.
+  Future<void> openModel(WidgetTester tester, ModelKind kind) async {
+    tester.view.physicalSize = const Size(1200, 14000);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(MaterialApp(home: ModelPage(kind: kind)));
+    await tester.pump();
+  }
+
   Switch switchOf(WidgetTester tester, String key) => tester.widget<Switch>(find.descendant(of: find.byKey(ValueKey(key)), matching: find.byType(Switch)));
 
   Future<void> flip(WidgetTester tester, String key) async {
@@ -64,40 +74,37 @@ void main() {
     await tester.pump();
   }
 
-  testWidgets('every job of every model has its switch; the frames and reaction switches are the ones from before', (tester) async {
-    await open(tester);
-    expect(find.byKey(const ValueKey('models-all-off')), findsOneWidget);
+  testWidgets("every job of every model has its switch, on the model's page; the frames and reaction switches are the ones from before", (tester) async {
     for (final ModelKind m in ModelKind.values) {
-      expect(find.byKey(ValueKey('model-use-${m.name}')), findsOneWidget, reason: m.name);
+      await openModel(tester, m);
+      for (final ModelTask t in ModelTasks.of(m)) {
+        expect(find.byKey(ValueKey('model-task-${t.key}')), findsOneWidget, reason: t.key);
+        expect(switchOf(tester, 'model-task-${t.key}').value, isTrue, reason: t.key);
+      }
     }
-    for (final ModelTask t in ModelTasks.all) {
-      expect(find.byKey(ValueKey('model-task-${t.key}')), findsOneWidget, reason: t.key);
-      expect(switchOf(tester, 'model-task-${t.key}').value, isTrue, reason: t.key);
-    }
-    expect(find.byKey(const ValueKey('model-task-look.frames')), findsOneWidget);
-    expect(find.byKey(const ValueKey('model-task-tagger.reactions')), findsOneWidget);
+    await openModel(tester, ModelKind.tagger);
+    await flip(tester, 'model-task-tagger.reactions');
+    expect(SettingsHandler.instance.taggerOnReactions, isTrue);
 
+    await openModel(tester, ModelKind.look);
+    saves = 0;
     await flip(tester, 'model-task-look.forYou');
     expect(ModelTasks.isOn(ModelTasks.lookForYou), isFalse);
     expect(switchOf(tester, 'model-task-look.forYou').value, isFalse);
     expect(saves, 1);
 
     await flip(tester, 'model-task-look.frames');
-    expect(SettingsHandler.instance.videoFrames, isFalse, reason: 'the same switch as in the Looks model section');
-    await flip(tester, 'model-task-tagger.reactions');
-    expect(SettingsHandler.instance.taggerOnReactions, isTrue);
-    await flip(tester, 'model-use-look');
-    expect(SettingsHandler.instance.aiLook, isFalse);
+    expect(SettingsHandler.instance.videoFrames, isFalse, reason: 'the switch "Read frames from playing videos"');
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
   testWidgets("thread counts: today's shown, changed one step at a time within 1 and the cores, applied to that model", (tester) async {
-    await open(tester);
     Text count(String key) => tester.widget<Text>(find.byKey(ValueKey(key)));
+    await openModel(tester, ModelKind.text);
+    expect(count('model-threads-text-background').data, '1');
+    await openModel(tester, ModelKind.tagger);
     expect(count('model-threads-tagger-waiting').data, '4');
     expect(count('model-threads-tagger-background').data, '2');
-    expect(count('model-threads-look-waiting').data, '1');
-    expect(count('model-threads-text-background').data, '1');
 
     await tester.tap(find.byKey(const ValueKey('model-threads-tagger-waiting-plus')));
     await tester.pump();
@@ -106,6 +113,8 @@ void main() {
     expect(reopened, [ModelKind.tagger], reason: 'the tagger picks the new count up now');
     expect(saves, 1);
 
+    await openModel(tester, ModelKind.look);
+    expect(count('model-threads-look-waiting').data, '1');
     final Finder minus = find.byKey(const ValueKey('model-threads-look-waiting-minus'));
     expect(tester.widget<IconButton>(minus).onPressed, isNull, reason: 'never below one');
     for (int i = 0; i < 9; i++) {
@@ -118,7 +127,7 @@ void main() {
   });
 
   testWidgets("r81: frames for For You and for other tabs start on 'While it plays'; another choice is stored", (tester) async {
-    await open(tester);
+    await openModel(tester, ModelKind.look);
     SegmentedButton<FrameMode> choice(String key) =>
         tester.widget<SegmentedButton<FrameMode>>(find.descendant(of: find.byKey(ValueKey(key)), matching: find.byType(SegmentedButton<FrameMode>)));
     expect(choice('frames-foryou').selected, {FrameMode.playing});
@@ -140,7 +149,7 @@ void main() {
   });
 
   testWidgets("r81: 'Remember the looks of posts you open' is off until switched on", (tester) async {
-    await open(tester);
+    await openModel(tester, ModelKind.look);
     expect(switchOf(tester, 'model-task-look.remember').value, isFalse);
     await flip(tester, 'model-task-look.remember');
     expect(SettingsHandler.instance.rememberLooks, isTrue);
@@ -177,13 +186,18 @@ void main() {
     await flip(tester, 'models-all-off');
     expect(SettingsHandler.instance.aiModelsOff, isTrue);
     expect(saves, 1);
-    for (final ModelTask t in ModelTasks.all) {
-      expect(ModelTasks.isOn(t), isFalse, reason: t.key);
-      expect(switchOf(tester, 'model-task-${t.key}').onChanged, isNull, reason: 'greyed: ${t.key}');
+    for (final ModelKind m in ModelKind.values) {
+      await openModel(tester, m);
+      for (final ModelTask t in ModelTasks.of(m)) {
+        expect(ModelTasks.isOn(t), isFalse, reason: t.key);
+        expect(switchOf(tester, 'model-task-${t.key}').onChanged, isNull, reason: 'greyed: ${t.key}');
+      }
     }
+    await open(tester);
     await flip(tester, 'models-all-off');
     expect(ModelTasks.isOn(ModelTasks.textLearning), isTrue);
     expect(ModelTasks.isOn(ModelTasks.textBoards), isFalse, reason: 'switched off before: still off');
+    await openModel(tester, ModelKind.text);
     expect(switchOf(tester, 'model-task-text.boards').value, isFalse);
     await tester.pumpWidget(const SizedBox.shrink());
   });

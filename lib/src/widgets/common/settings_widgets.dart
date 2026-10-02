@@ -17,6 +17,36 @@ import 'package:lolisnatcher/src/widgets/tabs/tab_booru_selector.dart';
 
 const double borderWidth = 1;
 
+/// r88: a part of a settings page with a clear title (and a line on what is
+/// in it), so a long page reads as a few named parts.
+class SettingsPart extends StatelessWidget {
+  const SettingsPart({required this.title, this.subtitle, super.key});
+
+  final String title;
+  final String? subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 26, 16, 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title.toUpperCase(),
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 1.1, color: theme.colorScheme.secondary),
+          ),
+          if (subtitle != null) ...[
+            const SizedBox(height: 4),
+            Text(subtitle!, style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurface.withValues(alpha: 0.65))),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class SettingsButton extends StatelessWidget {
   const SettingsButton({
     required this.name,

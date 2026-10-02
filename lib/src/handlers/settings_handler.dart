@@ -50,6 +50,7 @@ import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/secure_storage_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/onnx_availability.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/services/get_perms.dart';
 import 'package:lolisnatcher/src/services/saf_file_cache.dart';
@@ -826,7 +827,7 @@ class SettingsHandler {
     'pictureDecoder': {
       'type': 'stringFromList',
       'default': 'phone',
-      'options': ['phone', 'dart'],
+      'options': ['phone', 'phoneFast', 'dart'],
     },
     'framesOtherTabs': {
       'type': 'stringFromList',
@@ -3306,6 +3307,8 @@ class SettingsHandler {
     unawaited(DownloadsCheck.offerAfterRestore());
     // r85: the link entry follows the saved switch (Settings → Links).
     unawaited(SourceLinks.applySaved());
+    // r88: what this build of ONNX Runtime can run on (Run on offers only that).
+    unawaited(OnnxAvailability.load());
 
     isPostInit.value = true;
     postInitMessage.value = '';

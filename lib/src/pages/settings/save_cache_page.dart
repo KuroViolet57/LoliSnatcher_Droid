@@ -302,6 +302,12 @@ class _SaveCachePageState extends State<SaveCachePage> {
         body: Center(
           child: ListView(
             children: [
+              // r88: the page in three named parts.
+              const SettingsPart(
+                key: ValueKey('save-part-downloads'),
+                title: 'Downloads',
+                subtitle: 'How posts are saved: the quality, the pace, notifications, saving and favouriting together.',
+              ),
               SettingsOptionsList<ImageQuality>(
                 value: snatchMode,
                 items: ImageQuality.values,
@@ -390,6 +396,11 @@ class _SaveCachePageState extends State<SaveCachePage> {
                     ? null
                     : Text(context.loc.settings.cache.requiresCustomStorageDirectory),
               ),
+              const SettingsPart(
+                key: ValueKey('save-part-folders'),
+                title: 'Download folders',
+                subtitle: 'Where saved files go, the folders used before, and checking the list against them.',
+              ),
               SettingsButton(
                 name: context.loc.settings.cache.setStorageDirectory,
                 subtitle: extPathOverride.isEmpty
@@ -460,7 +471,11 @@ class _SaveCachePageState extends State<SaveCachePage> {
                 ),
               // r82: the folders used before, still looked in.
               ..._earlierFolders(context),
-              const SettingsButton(name: '', enabled: false),
+              const SettingsPart(
+                key: ValueKey('save-part-cache'),
+                title: 'Cache',
+                subtitle: 'Copies of previews and media kept on the phone so posts open faster next time; nothing here is a download.',
+              ),
               SettingsToggle(
                 value: thumbnailCache,
                 onChanged: (newValue) {

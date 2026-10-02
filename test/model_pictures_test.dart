@@ -92,6 +92,19 @@ void main() {
     expect(meanAbsDiff(before, r.tensor), lessThan(0.02), reason: 'on the 0-1 scale');
   });
 
+  testWidgets('r88: "Straight to size" decodes to the model\'s own size, with no resize in Dart', (tester) async {
+    SettingsHandler.instance.pictureDecoder = PictureDecoder.phoneFast;
+    final Uint8List bytes = png(1600, 1000);
+    final r = await tester.runAsync(() => ModelPictures.forTagger(bytes, 448));
+    expect(r!.used, PictureDecoder.phoneFast);
+    expect(meanAbsDiff(ImageTaggerHandler.prepareTensor(bytes, 448), r.tensor), lessThan(8.0), reason: 'a little further from before than "The phone"');
+    final l = await tester.runAsync(() => ModelPictures.forLooks(bytes, 256));
+    expect(l!.used, PictureDecoder.phoneFast);
+    expect(meanAbsDiff(LookModelHandler.prepareImage(bytes, 256), l.tensor), lessThan(0.04));
+    expect(SettingsHandler.instance.map['pictureDecoder']!['options'], ['phone', 'phoneFast', 'dart']);
+    expect(PictureDecoder.phoneFast.label, 'Straight to size');
+  });
+
   testWidgets('transparency still reads as white for the tagger', (tester) async {
     final img.Image clear = img.Image(width: 64, height: 64, numChannels: 4);
     final Uint8List bytes = img.encodePng(clear);

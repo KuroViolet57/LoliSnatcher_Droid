@@ -34,6 +34,10 @@ class OnnxTagRunner implements TagRunner {
 
   ModelAccelerator _used = ModelAccelerator.cpu;
 
+  /// r88: set when the NPU failed while running: this runner's next opening
+  /// is on the CPU (the next runner tries the NPU again, up to twice).
+  bool _cpuAfterFailure = false;
+
   OrtSession? _session;
   Future<OrtSession>? _opening;
   String _provider = '';
@@ -48,7 +52,13 @@ class OnnxTagRunner implements TagRunner {
 
   Future<OrtSession> _openNow() async {
     try {
-      final OpenedSession o = await openOnnxSession(modelPath, model: ModelKind.tagger, threads: threads, accelerator: accelerator, who: 'tagger');
+      final OpenedSession o = await openOnnxSession(
+        modelPath,
+        model: ModelKind.tagger,
+        threads: threads,
+        accelerator: _cpuAfterFailure ? ModelAccelerator.cpu : accelerator,
+        who: 'tagger',
+      );
       _session = o.session;
       _used = o.used;
       _provider = o.provider;
@@ -66,12 +76,29 @@ class OnnxTagRunner implements TagRunner {
   @override
   Future<Float32List> run(Float32List nhwc, int size) async {
     final OrtSession session = await _open();
+    // r88: a failure on the NPU runs the same picture on the CPU.
+    return runGuarded(
+      model: ModelKind.tagger,
+      used: _used,
+      who: 'tagger',
+      run: () => _runOn(session, nhwc, size),
+      onCpu: () async {
+        _cpuAfterFailure = true;
+        await close();
+        final OrtSession cpu = await _open();
+        _provider = '$_provider (NPU failed)';
+        return _runOn(cpu, nhwc, size);
+      },
+    );
+  }
+
+  Future<Float32List> _runOn(OrtSession session, Float32List nhwc, int size) async {
     final String name = _inputName ?? (session.inputNames.isNotEmpty ? session.inputNames.first : 'input');
     final OrtValue input = await OrtValue.fromList(nhwc, [1, size, size, 3]);
     try {
       final Stopwatch sw = Stopwatch()..start();
       final Map<String, OrtValue> outputs = await session.run({name: input});
-      ModelTimings.instance.recordRun(ModelKind.tagger, _used, sw.elapsedMilliseconds);
+      ModelTimings.instance.recordRun(ModelKind.tagger, _used, sw.elapsedMilliseconds, threads: threads);
       try {
         final List<dynamic> raw = await outputs.values.first.asFlattenedList();
         final Float32List out = Float32List(raw.length);
