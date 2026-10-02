@@ -31,11 +31,11 @@ older chronological build log, kept verbatim as history.
   Never push elsewhere; force-push is blocked.
 - **Version:** `2.6.0+5211` in `pubspec.yaml`, mirrored in
   `lib/src/data/constants.dart` (`updateInfo`). Builds are told apart by
-  `Constants.buildCodename` (`'r83-niches-folder-log'` now), shown in About. Bump the
+  `Constants.buildCodename` (`'r84-downloads-check'` now), shown in About. Bump the
   codename every build: `rNN-<two words>`.
 - **Build counter:** rounds are numbered r21, r22, … r80. Each build gets a
   numbered folder on the K: drive (§2): r80 used **109** and **110**, r81
-  **111**, r82 **112**, r83 **113**; the next build uses **114**. **103** is Grok's ("exp flutter 347") - never
+  **111**, r82 **112**, r83 **113**, r84 **114**; the next build uses **115**. **103** is Grok's ("exp flutter 347") - never
   reuse a number.
 - **The user** talks in voice notes and logs; expects one build per request
   round, checked on a Samsung phone. They cannot see tool output — only the
@@ -2897,6 +2897,46 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   differ from `ImageWriter.getFilename`).
 - **Tests:** three RedGifs tests in `booru_parity_test`, two in
   `download_folders_test` (the report lines, the per-folder counts).
+
+### 4.63 The downloads check where it can be reached; offered after a restore (r84, build 114)
+
+- **Cause of the empty / phantom Downloads (log 2026-10-02):** the Downloads
+  tab card counted 693 snatched rows, but the current folder
+  (`AppData/LsnatcherDonwloads`) holds 10 files, and `AppBackup/Lsnatcher`
+  is the backup folder, not a download folder. The rows came back with
+  store.db from backups after reinstalls: a backup carries the list of
+  downloads, not the files.
+- **The cure already existed but could not be reached:** "Check downloads
+  against disk" lived in `DDNavigationButtons` (`dd_selection_actions.dart`),
+  inside `DDControlPanel`, which nothing has shown since commit 28f6f458
+  (the drawer redesign, 2026-07-14).
+- **r84:** the check is `DownloadsCheck` (`widgets/common/downloads_check.dart`):
+  `run(context)` audits (`DownloadsReconciler.audit` with the doujin
+  exclusion), then says "All N media downloads have a file" (with where they
+  were found) or asks "M of N downloads have no file" → Keep / Forget M
+  (`forgetMissing`: only the snatched mark goes). It is in Settings → Save &
+  cache under Earlier download folders (key `downloads-check`); the orphaned
+  drawer button now calls it too.
+- **After a restore:** `BackupRunner._restoreWholeDatabase` writes
+  `<configDir>check-downloads-after-restore` (`BackupRunner.checkDownloadsMarker`)
+  after a successful copy; `SettingsHandler.postInit` calls
+  `DownloadsCheck.offerAfterRestore()`, which takes (deletes) the marker,
+  audits, logs `downloads after a restore: …`, and when some have no file
+  waits up to 10 s for the navigator's context and asks "Downloads restored
+  without their files". A failed DB copy or a Settings-only restore leaves no
+  marker.
+- **Seams:** `audit`, `forget`, `configDir`, `contextNow`, `whereFound`,
+  `say` (the snackbars - `FlashElements.showSnackbar` does nothing under
+  `Tools.isTestMode`, so tests record `say` instead), `resetForTests()`.
+- **Test gotcha:** the after-restore dialog is opened from `tester.runAsync`
+  (the marker is a real file), so its answer resolves on the real event
+  loop: after tapping Forget, the test runs
+  `tester.runAsync(() => Future.delayed(50 ms))` before checking. Without it
+  the test failed and the next one hung for the 10-minute widget-test limit.
+- **Known:** if a whole page of downloads has no file in any folder, paging
+  of the Downloads tab stops there until the check forgets them.
+- **Tests:** `downloads_check_test` (4), `backup_plan_test` (the marker after
+  a whole-DB restore; none after a failed one or a Settings-only one).
 
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 

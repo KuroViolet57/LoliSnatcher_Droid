@@ -15,6 +15,7 @@ import 'package:lolisnatcher/src/services/download_folders.dart';
 import 'package:lolisnatcher/src/services/image_writer.dart';
 import 'package:lolisnatcher/src/services/image_writer_isolate.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
+import 'package:lolisnatcher/src/widgets/common/downloads_check.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 import 'package:lolisnatcher/src/widgets/common/settings_widgets.dart';
 
@@ -191,6 +192,14 @@ class _SaveCachePageState extends State<SaveCachePage> {
         name: 'Add a folder you used before',
         icon: const Icon(Symbols.create_new_folder_rounded),
         action: _addEarlierFolder,
+      ),
+      // r84: it used to sit in a drawer panel the app no longer shows.
+      SettingsButton(
+        key: const ValueKey('downloads-check'),
+        name: 'Check downloads against disk',
+        subtitle: const Text('Finds downloads whose file is in none of these folders, and offers to forget them'),
+        icon: const Icon(Symbols.fact_check_rounded),
+        action: () => DownloadsCheck.run(context),
       ),
     ];
   }

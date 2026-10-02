@@ -57,6 +57,7 @@ import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/http_overrides.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
+import 'package:lolisnatcher/src/widgets/common/downloads_check.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
 import 'package:lolisnatcher/src/widgets/common/settings_widgets.dart';
 import 'package:lolisnatcher/src/widgets/video/media_kit_video_player.dart';
@@ -3269,6 +3270,8 @@ class SettingsHandler {
     }
 
     unawaited(checkUpdate(withMessage: false));
+    // r84: once after the whole database came back from a backup.
+    unawaited(DownloadsCheck.offerAfterRestore());
 
     isPostInit.value = true;
     postInitMessage.value = '';

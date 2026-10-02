@@ -217,6 +217,11 @@ class BackupRunner {
   final String configDir;
   final BackupHooks hooks;
 
+  /// r84: left in the config folder after the whole database came back: the
+  /// next start checks the downloads against the folders and offers to
+  /// forget the ones with no file (DownloadsCheck.offerAfterRestore).
+  static const String checkDownloadsMarker = 'check-downloads-after-restore';
+
   static final String _sep = Platform.pathSeparator;
 
   String get _recommenderDir => '${configDir}recommender$_sep';
@@ -396,6 +401,9 @@ class BackupRunner {
     }
     if (!await target.readToFile('store.db', File('${configDir}store.db'))) return 'the copy failed';
     hooks.rearmDoujinMigration();
+    try {
+      await File('$configDir$checkDownloadsMarker').writeAsString('restored', flush: true);
+    } catch (_) {}
     return null;
   }
 

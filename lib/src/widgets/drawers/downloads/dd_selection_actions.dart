@@ -5,14 +5,10 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:get/get.dart' hide FirstWhereOrNullExt;
 
 import 'package:lolisnatcher/gen/strings.g.dart';
-import 'package:lolisnatcher/src/boorus/downloads_handler.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/handlers/doujin_download_handler.dart';
-import 'package:lolisnatcher/src/handlers/downloads_reconciler.dart';
 import 'package:lolisnatcher/src/pages/doujin_downloads_page.dart';
 import 'package:lolisnatcher/src/pages/snatcher_page.dart';
-import 'package:lolisnatcher/src/services/download_folders.dart';
-import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
+import 'package:lolisnatcher/src/widgets/common/downloads_check.dart';
 import 'package:lolisnatcher/src/utils/extensions.dart';
 import 'package:lolisnatcher/src/widgets/collections/add_to_collection_sheet.dart';
 import 'package:lolisnatcher/src/widgets/common/settings_widgets.dart';
@@ -164,67 +160,6 @@ class DDNavigationButtons extends StatelessWidget {
     );
   }
 
-  Future<void> _auditDownloads(BuildContext context) async {
-    FlashElements.showSnackbar(
-      context: context,
-      title: const Text('Checking downloads against the folder…'),
-      duration: const Duration(seconds: 2),
-      sideColor: Colors.blue,
-    );
-    final reconciler = DownloadsReconciler.instance;
-    final result = await reconciler.audit(customConditions: DownloadsHandler.doujinExclusionConditions());
-    final String root = await DoujinDownloadHandler.instance.describeRoot();
-    // r83: where they were found - the current folder and each earlier one.
-    final String where = [
-      for (final MapEntry<String, int> e in reconciler.foundIn.entries)
-        '${e.value} in ${e.key.isEmpty ? 'the current folder' : DownloadFolders.describe(e.key)}',
-    ].join('\n');
-    if (!context.mounted) return;
-    if (result.problem != null) {
-      FlashElements.showSnackbar(
-        context: context,
-        title: const Text('Could not check the download folder'),
-        content: Text(result.problem!),
-        duration: const Duration(seconds: 4),
-        sideColor: Colors.red,
-      );
-      return;
-    }
-    if (result.missing == 0) {
-      FlashElements.showSnackbar(
-        context: context,
-        title: Text('All ${result.scanned} media downloads have a file'),
-        content: Text('Checked under $root${where.isEmpty ? '' : '\n$where'}${result.unknown > 0 ? '\n${result.unknown} could not be checked (no matching booru config).' : ''}'),
-        duration: const Duration(seconds: 4),
-        sideColor: Colors.green,
-      );
-      return;
-    }
-    final bool? forget = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('${result.missing} of ${result.scanned} downloads have no file'),
-        content: Text(
-          'Their files are not under\n$root\nnor in an earlier download folder (Settings → Save & cache).\n'
-          '${where.isEmpty ? '' : '\nFound:\n$where\n'}\n'
-          'Forgetting removes them from the Downloads list; the posts are not touched and can be saved again.'
-          '${result.unknown > 0 ? '\n\n${result.unknown} entries could not be checked (no matching booru config) and are left alone.' : ''}',
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Keep')),
-          TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: Text('Forget ${result.missing}')),
-        ],
-      ),
-    );
-    if (forget != true || !context.mounted) return;
-    final int changed = await reconciler.forgetMissing();
-    if (!context.mounted) return;
-    FlashElements.showSnackbar(
-      context: context,
-      title: Text('Forgot $changed entries'),
-      content: const Text('Reload the Downloads tab to see the list without them.'),
-      duration: const Duration(seconds: 3),
-      sideColor: Colors.green,
-    );
-  }
+  /// r84: the shared check (also in Settings → Save & cache).
+  Future<void> _auditDownloads(BuildContext context) => DownloadsCheck.run(context);
 }

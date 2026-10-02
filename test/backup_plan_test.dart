@@ -197,6 +197,15 @@ void main() {
       expect(File(p('store.db-shm')).existsSync(), isFalse);
       expect(calls, containsAllInOrder(['close database', 'rearm migration']));
       expect(r.needsRestart, isTrue);
+      expect(File(p(BackupRunner.checkDownloadsMarker)).existsSync(), isTrue, reason: 'r84: the next start checks the downloads against the folders');
+    });
+
+    test('r84: no download check is asked for when the whole database did not come back', () async {
+      final BackupResult r = await BackupRunner(configDir: config, hooks: hooks).restore({BackupItem.database}, _Memory());
+      expect(r.failures, isNotEmpty);
+      expect(File(p(BackupRunner.checkDownloadsMarker)).existsSync(), isFalse);
+      await BackupRunner(configDir: config, hooks: hooks).restore({BackupItem.settings}, _Memory()..files['settings.json'] = Uint8List.fromList(utf8.encode('{}')));
+      expect(File(p(BackupRunner.checkDownloadsMarker)).existsSync(), isFalse, reason: 'only a whole database brings the download marks back');
     });
   });
 
