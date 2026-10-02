@@ -642,6 +642,17 @@ class ServiceHandler {
     }
   }
 
+  /// r85: switches the manifest's `.SourceLinks` entry (Settings → Links).
+  static Future<bool> setSourceLinks(bool enabled) async {
+    if (!Platform.isAndroid) return false;
+    try {
+      return await platform.invokeMethod<bool>('setSourceLinks', {'enabled': enabled}) ?? false;
+    } catch (e, s) {
+      log(e, s: s);
+      return false;
+    }
+  }
+
   /// Sets the app launcher alias (Android only)
   /// Returns true if successful
   static Future<bool> setAppAlias(String alias) async {

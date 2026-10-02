@@ -18,6 +18,7 @@ import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/data/site_profile.dart';
 import 'package:lolisnatcher/src/data/comment_item.dart';
 import 'package:lolisnatcher/src/data/creator_info.dart';
+import 'package:lolisnatcher/src/data/hidden_by_filters.dart';
 import 'package:lolisnatcher/src/boorus/doujin/doujin_filters.dart';
 import 'package:lolisnatcher/src/data/meta_tag.dart';
 import 'package:lolisnatcher/src/data/note_item.dart';
@@ -128,10 +129,24 @@ abstract class BooruHandler {
 
   void exemptFromLiveFilter(BooruItem item) => liveFilterExemptions.add(exemptionKey(item));
 
+  /// r85: how many loaded posts the last [filterFetched] left out, and why
+  /// (the feed's banner says it when a whole page is hidden).
+  final Map<HiddenReason, int> hiddenBy = {};
+
   void filterFetched() {
     final SettingsHandler settingsHandler = SettingsHandler.instance;
 
     final List<BooruItem> itemsBeforeFilter = [...filteredFetched];
+    hiddenBy.clear();
+    void hide(HiddenReason reason) => hiddenBy[reason] = (hiddenBy[reason] ?? 0) + 1;
+
+    // r85: "Remove favourited / snatched items" are for the sites' feeds.
+    // Your own lists (Downloads, Favourites, Collections, History) show what
+    // they hold - with the first one on, the Downloads tab hid every download
+    // that is also a favourite.
+    final bool ownList = booru.type?.isLocalDb == true;
+    final bool filterFavourites = settingsHandler.filterFavourites && !ownList;
+    final bool filterSnatched = settingsHandler.filterSnatched && !ownList;
 
     // Doujin items use the doujin blacklist (SourceSettingsHandler) and are
     // NEVER touched by the booru hidden/marked filters — the two systems are
@@ -159,6 +174,7 @@ abstract class BooruHandler {
       if (itemIsDoujin) {
         final Set<String> doujinBlacklist = doujinBlacklistFor(item);
         if (doujinBlacklist.isNotEmpty && SourceSettingsHandler.matchesBlacklist(item, doujinBlacklist)) {
+          hide(HiddenReason.doujinBlacklist);
           continue;
         }
       } else {
@@ -166,16 +182,21 @@ abstract class BooruHandler {
         // rules as the removal.
         final bool hiddenHere = settingsHandler.isItemHiddenForBooru(item, booru);
         item.hiddenInSource = hiddenHere;
-        if (settingsHandler.filterHated && hiddenHere) continue;
+        if (settingsHandler.filterHated && hiddenHere) {
+          hide(HiddenReason.hiddenTags);
+          continue;
+        }
       }
 
       // isMarked reads the booru marked-tags list — a booru system, so it
       // must never hide doujin items (coinciding tag names included).
       if (!itemIsDoujin && settingsHandler.filterMarked && item.isMarked) {
+        hide(HiddenReason.marked);
         continue;
       }
 
       if (settingsHandler.filterAi && item.isAI) {
+        hide(HiddenReason.ai);
         continue;
       }
 
@@ -187,18 +208,21 @@ abstract class BooruHandler {
           'sound' => item.isSound,
           _ => true,
         };
-        if (!keep) continue;
+        if (!keep) {
+          hide(HiddenReason.mediaType);
+          continue;
+        }
       }
 
       final bool isExempt = liveFilterExemptions.contains(exemptionKey(item));
 
-      final bool filterFavourites = settingsHandler.filterFavourites && booru.type?.isFavourites != true;
       if (filterFavourites && item.isFavourite.value == true && !isExempt) {
+        hide(HiddenReason.favourited);
         continue;
       }
 
-      final bool filterSnatched = settingsHandler.filterSnatched && booru.type?.isDownloads != true;
       if (filterSnatched && item.isSnatched.value == true && !isExempt) {
+        hide(HiddenReason.snatched);
         continue;
       }
 
@@ -206,6 +230,7 @@ abstract class BooruHandler {
         (e) => e.fileURL == item.fileURL || (e.serverId != null && e.serverId == item.serverId),
       );
       if (isDuplicate) {
+        hide(HiddenReason.duplicate);
         continue;
       }
 

@@ -54,6 +54,7 @@ import 'package:lolisnatcher/src/pages/lockscreen_page.dart';
 import 'package:lolisnatcher/src/pages/mobile_home_page.dart';
 import 'package:lolisnatcher/src/pages/settings/booru_edit_page.dart';
 import 'package:lolisnatcher/src/services/image_writer.dart';
+import 'package:lolisnatcher/src/services/incoming_link.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/utils/navigation_trace.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
@@ -596,7 +597,13 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
         }
         await SettingsPageOpen(context: context, page: (_) => BooruEdit(booru)).open();
       }
+      return;
     }
+
+    // r85: a link to one of your sources, handed over by another app
+    // (Settings → Links): a post, a search, a doujin gallery or a page.
+    if (!mounted) return;
+    await IncomingLinks.open(context, url, settingsHandler.booruList);
   }
 
   @override

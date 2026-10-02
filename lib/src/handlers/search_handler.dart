@@ -1167,6 +1167,20 @@ class SearchHandler {
     }
   }
 
+  /// r85: the most pages one load of your own list reads while they show
+  /// nothing (every post hidden, or in Downloads every file gone).
+  static const int ownListPagesPerLoad = 10;
+
+  /// r85: your own lists (Downloads, Favourites, Collections, History) cost
+  /// no network, so a page that showed nothing is followed by the next one
+  /// at once. A site's feed reads one page per load, as before.
+  static bool ownListLoadsMore(BooruHandler handler, {required int visibleBefore, required int pages}) =>
+      handler.booru.type?.isLocalDb == true &&
+      !handler.locked &&
+      handler.errorString.isEmpty &&
+      handler.filteredFetched.length == visibleBefore &&
+      pages < ownListPagesPerLoad;
+
   Future<void> runSearch() async {
     final startTabId = currentTab.id;
     // do nothing if reached the end or detected an error
@@ -1174,25 +1188,36 @@ class SearchHandler {
       return;
     }
 
-    // if not last page - set loading state and increment page
-    if (!currentBooruHandler.locked) {
-      isLoading.value = true;
-      currentBooruHandler.pageNum++;
-      pageNum++;
-    }
+    final BooruHandler handler = currentBooruHandler;
+    for (int pages = 1; ; pages++) {
+      final int visibleBefore = handler.filteredFetched.length;
 
-    // fetch new items, but get results from booruHandler and not search itself
-    await currentBooruHandler.search(currentTab.tags, null);
-    // print('FINISHED SEARCH: ${booruhandler.filteredFetched.length}');
+      // if not last page - set loading state and increment page
+      if (!handler.locked) {
+        isLoading.value = true;
+        handler.pageNum++;
+        pageNum++;
+      }
 
-    // lock new loads if handler detected last page
-    // (previous filteredFetched length == current length)
-    if (currentBooruHandler.locked && !isLastPage.value) {
-      isLastPage.value = true;
-    }
+      // fetch new items, but get results from booruHandler and not search itself
+      await handler.search(currentTab.tags, null);
 
-    if (currentBooruHandler.errorString.isNotEmpty) {
-      errorString.value = currentBooruHandler.errorString;
+      // A tab switched to meanwhile already shows its own state
+      // (changeTabIndex), so only this tab's handler writes it.
+      final bool sameTab = currentTab.id == startTabId && identical(currentBooruHandler, handler);
+      if (sameTab) {
+        // lock new loads if handler detected last page
+        // (previous filteredFetched length == current length)
+        if (handler.locked && !isLastPage.value) {
+          isLastPage.value = true;
+        }
+
+        if (handler.errorString.isNotEmpty) {
+          errorString.value = handler.errorString;
+        }
+      }
+
+      if (!sameTab || !ownListLoadsMore(handler, visibleBefore: visibleBefore, pages: pages)) break;
     }
 
     // request total image count if not already loaded

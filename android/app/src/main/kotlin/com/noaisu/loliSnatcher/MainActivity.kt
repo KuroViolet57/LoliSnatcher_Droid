@@ -48,6 +48,75 @@ class MainActivity: FlutterFragmentActivity() {
         }
     }
 
+    // r85: with Settings -> Links on, the app is a handler for its sources' sites.
+    // A web link the app itself sends out ("Open in browser") can then come
+    // straight back to it - so one this app sent goes on to the browser and
+    // never reaches app_links.
+    override fun onNewIntent(intent: Intent) {
+        if (isOwnWebLink(intent)) {
+            intent.data?.let { openInBrowser(it) }
+            return
+        }
+        super.onNewIntent(intent)
+    }
+
+    private fun isOwnWebLink(intent: Intent): Boolean {
+        if (intent.action != Intent.ACTION_VIEW) return false
+        val link = intent.data ?: return false
+        if (link.scheme != "http" && link.scheme != "https") return false
+        if (link.host?.endsWith("loli.snatcher") == true) return false
+        // getReferrer() names the sender of a new intent only after setIntent();
+        // the activity's intent is put back as it was either way.
+        val previous = getIntent()
+        setIntent(intent)
+        val own = referrer?.host == packageName
+        setIntent(previous)
+        return own
+    }
+
+    // The manifest's ".SourceLinks", named from this class's own package.
+    private fun sourceLinksComponent() =
+        ComponentName(packageName, MainActivity::class.java.name.substringBeforeLast('.') + ".SourceLinks")
+
+    private fun openInBrowser(link: Uri) {
+        val view = Intent(Intent.ACTION_VIEW, link)
+            .addCategory(Intent.CATEGORY_BROWSABLE)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        try {
+            val probe = Intent(Intent.ACTION_VIEW, Uri.fromParts("http", "", "")).addCategory(Intent.CATEGORY_BROWSABLE)
+            val browser = packageManager.resolveActivity(probe, PackageManager.MATCH_DEFAULT_ONLY)?.activityInfo?.packageName
+            if (browser != null && browser != "android" && browser != packageName) {
+                startActivity(view.setPackage(browser))
+                return
+            }
+            // No default browser: Android's chooser, without this app in it.
+            val chooser = Intent.createChooser(view, null)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                chooser.putExtra(
+                    Intent.EXTRA_EXCLUDE_COMPONENTS,
+                    arrayOf(sourceLinksComponent(), ComponentName(packageName, MainActivity::class.java.name)),
+                )
+            }
+            startActivity(chooser)
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Error handing a link to the browser", e)
+        }
+    }
+
+    private fun setSourceLinks(enabled: Boolean): Boolean {
+        return try {
+            packageManager.setComponentEnabledSetting(
+                sourceLinksComponent(),
+                if (enabled) PackageManager.COMPONENT_ENABLED_STATE_ENABLED else PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                PackageManager.DONT_KILL_APP,
+            )
+            true
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Error switching the source links", e)
+            false
+        }
+    }
+
     private val SERVICES_CHANNEL = "com.noaisu.loliSnatcher/services"
     private val VOLUME_CHANNEL = "com.noaisu.loliSnatcher/volume"
     private var volumeSink: EventChannel.EventSink? = null
@@ -461,6 +530,11 @@ class MainActivity: FlutterFragmentActivity() {
                             } catch (ignored: Throwable) {
                             }
                         }
+                        // r85: answered, so a caller that awaits it goes on.
+                        result.success(null)
+                    }
+                    "setSourceLinks" -> {
+                        result.success(setSourceLinks(call.argument<Boolean>("enabled") ?: false))
                     }
                     "restartApp" -> {
                         restartApp()

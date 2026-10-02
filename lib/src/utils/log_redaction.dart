@@ -58,6 +58,8 @@ String redactSecrets(String input, {List<String>? extraSecrets}) {
     'ipb_pass_hash',
     'ipb_session_id',
     'igneous',
+    // r85: the Gelbooru-engine login cookie (rule34.xxx and others).
+    'pass_hash',
   ]) {
     out = out.replaceAllMapped(
       RegExp('(${RegExp.escape(name)}\\s*[=:]\\s*"?)[^;,"\\s&]+', caseSensitive: false),
@@ -90,6 +92,13 @@ String redactSecrets(String input, {List<String>? extraSecrets}) {
       (m) => '${m.group(1)}<redacted>${m.group(2)}',
     );
   }
+
+  // r85: response headers as the Dio logger prints them - one JSON array per
+  // header, every Set-Cookie in it a session for some site.
+  out = out.replaceAllMapped(
+    RegExp(r'("(?:set-)?cookie"\s*:\s*\[)[^\]]*(\])', caseSensitive: false),
+    (m) => '${m.group(1)}"<redacted>"${m.group(2)}',
+  );
 
   // A whole Cookie HEADER, to catch cookie names this list has never heard of.
   //

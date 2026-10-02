@@ -53,6 +53,7 @@ import 'package:lolisnatcher/src/handlers/secure_storage_handler.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/services/get_perms.dart';
 import 'package:lolisnatcher/src/services/saf_file_cache.dart';
+import 'package:lolisnatcher/src/services/source_links.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/http_overrides.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
@@ -310,6 +311,8 @@ class SettingsHandler {
   bool filterFavourites = false;
   bool filterSnatched = false;
   bool filterAi = false;
+  // r85: Settings → Links - links to your sources open in the app.
+  bool openSourceLinks = false;
   bool useVolumeButtonsForScroll = false;
   bool shitDevice = false;
   bool disableVideo = false;
@@ -899,6 +902,10 @@ class SettingsHandler {
       'default': false,
     },
     'filterAi': {
+      'type': 'bool',
+      'default': false,
+    },
+    'openSourceLinks': {
       'type': 'bool',
       'default': false,
     },
@@ -1525,6 +1532,8 @@ class SettingsHandler {
         return filterSnatched;
       case 'filterAi':
         return filterAi;
+      case 'openSourceLinks':
+        return openSourceLinks;
       case 'useVolumeButtonsForScroll':
         return useVolumeButtonsForScroll;
       case 'volumeButtonsScrollSpeed':
@@ -1877,6 +1886,9 @@ class SettingsHandler {
         break;
       case 'filterAi':
         filterAi = validatedValue;
+        break;
+      case 'openSourceLinks':
+        openSourceLinks = validatedValue;
         break;
       case 'useVolumeButtonsForScroll':
         useVolumeButtonsForScroll = validatedValue;
@@ -3272,6 +3284,8 @@ class SettingsHandler {
     unawaited(checkUpdate(withMessage: false));
     // r84: once after the whole database came back from a backup.
     unawaited(DownloadsCheck.offerAfterRestore());
+    // r85: the link entry follows the saved switch (Settings → Links).
+    unawaited(SourceLinks.applySaved());
 
     isPostInit.value = true;
     postInitMessage.value = '';

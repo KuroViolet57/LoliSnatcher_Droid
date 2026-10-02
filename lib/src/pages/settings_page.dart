@@ -23,6 +23,7 @@ import 'package:lolisnatcher/src/pages/settings/database_page.dart';
 import 'package:lolisnatcher/src/pages/settings/debug_page.dart';
 import 'package:lolisnatcher/src/pages/settings/gallery_page.dart';
 import 'package:lolisnatcher/src/pages/settings/language_page.dart';
+import 'package:lolisnatcher/src/pages/settings/links_page.dart';
 import 'package:lolisnatcher/src/pages/settings/logger_page.dart';
 import 'package:lolisnatcher/src/pages/settings/network_page.dart';
 import 'package:lolisnatcher/src/pages/settings/performance_page.dart';
@@ -86,6 +87,13 @@ class SettingsPage extends StatelessWidget {
                 name: context.loc.settings.itemFilters.title,
                 icon: const Icon(CupertinoIcons.tag),
                 page: () => const TagsFiltersPage(),
+              ),
+              // r85: open links to your sources in the app (Link Sheet).
+              SettingsButton(
+                name: 'Links',
+                subtitle: const Text('Open links to your sources in the app'),
+                icon: const Icon(Symbols.link_rounded),
+                page: () => const LinksPage(),
               ),
               _sectionLabel(context, 'DOUJIN'),
               SettingsButton(

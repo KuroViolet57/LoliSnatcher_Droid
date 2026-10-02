@@ -11,6 +11,7 @@ import 'package:dio/dio.dart';
 import 'package:lolisnatcher/src/widgets/common/compact_error_widget.dart';
 import 'package:lolisnatcher/src/utils/log_redaction.dart';
 import 'package:talker/talker.dart';
+import 'package:talker_dio_logger/dio_logs.dart';
 import 'package:talker_dio_logger/talker_dio_logger.dart';
 // ignore: implementation_imports
 import 'package:talker_flutter/src/controller/talker_view_controller.dart';
@@ -199,9 +200,11 @@ class Logger {
     },
   );
 
-  static TalkerDioLogger? get dioInterceptor => _talkerInstance != null
-      ? TalkerDioLogger(
-          talker: _talkerInstance,
+  static TalkerDioLogger? get dioInterceptor => _talkerInstance != null ? dioLoggerFor(_talkerInstance!) : null;
+
+  /// r85: talker's Dio logger, every line of it redacted ([RedactingDioLogger]).
+  static TalkerDioLogger dioLoggerFor(Talker talker) => RedactingDioLogger(
+          talker: talker,
           settings: const TalkerDioLoggerSettings(
             // The header dumps are where whole session cookies and bearer
             // tokens ended up; the body dump carried a login's password
@@ -216,8 +219,71 @@ class Logger {
             printResponseMessage: true,
             printErrorMessage: true,
           ),
-        )
-      : null;
+        );
+}
+
+/// r85: talker's Dio logger titles each line with the whole request address
+/// (query string and all) and prints response headers without hiding any,
+/// so an exported log carried an AiBooru login and API key and every
+/// Set-Cookie in clear. This one logs the same lines through [redactSecrets].
+class RedactingDioLogger extends TalkerDioLogger {
+  RedactingDioLogger({required Talker talker, super.settings}) : _out = talker, super(talker: talker);
+
+  final Talker _out;
+
+  @override
+  void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
+    if (settings.enabled && settings.printResponseTime) {
+      options.extra[TalkerDioLogger.kDioLogsTimeStampKey] = DateTime.now().millisecondsSinceEpoch;
+    }
+    handler.next(options);
+    if (!settings.enabled || !(settings.requestFilter?.call(options) ?? true)) return;
+    try {
+      _out.logCustom(_RedactedRequestLog(redactSecrets('${options.uri}'), requestOptions: options, settings: settings));
+    } catch (_) {}
+  }
+
+  @override
+  void onResponse(Response response, ResponseInterceptorHandler handler) {
+    handler.next(response);
+    if (!settings.enabled || !(settings.responseFilter?.call(response) ?? true)) return;
+    try {
+      _out.logCustom(_RedactedResponseLog(redactSecrets('${response.requestOptions.uri}'), response: response, settings: settings));
+    } catch (_) {}
+  }
+
+  @override
+  void onError(DioException err, ErrorInterceptorHandler handler) {
+    handler.next(err);
+    if (!settings.enabled || !(settings.errorFilter?.call(err) ?? true)) return;
+    try {
+      _out.logCustom(_RedactedErrorLog(redactSecrets('${err.requestOptions.uri}'), dioException: err, settings: settings));
+    } catch (_) {}
+  }
+}
+
+class _RedactedRequestLog extends DioRequestLog {
+  _RedactedRequestLog(super.message, {required super.requestOptions, required super.settings});
+
+  @override
+  String generateTextMessage({TimeFormat timeFormat = TimeFormat.timeAndSeconds}) =>
+      redactSecrets(super.generateTextMessage(timeFormat: timeFormat));
+}
+
+class _RedactedResponseLog extends DioResponseLog {
+  _RedactedResponseLog(super.message, {required super.response, required super.settings});
+
+  @override
+  String generateTextMessage({TimeFormat timeFormat = TimeFormat.timeAndSeconds}) =>
+      redactSecrets(super.generateTextMessage(timeFormat: timeFormat));
+}
+
+class _RedactedErrorLog extends DioErrorLog {
+  _RedactedErrorLog(super.title, {required super.dioException, required super.settings});
+
+  @override
+  String generateTextMessage({TimeFormat timeFormat = TimeFormat.timeAndSeconds}) =>
+      redactSecrets(super.generateTextMessage(timeFormat: timeFormat));
 }
 
 // TODO more types

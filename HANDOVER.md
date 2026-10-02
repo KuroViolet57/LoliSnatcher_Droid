@@ -31,11 +31,11 @@ older chronological build log, kept verbatim as history.
   Never push elsewhere; force-push is blocked.
 - **Version:** `2.6.0+5211` in `pubspec.yaml`, mirrored in
   `lib/src/data/constants.dart` (`updateInfo`). Builds are told apart by
-  `Constants.buildCodename` (`'r84-downloads-check'` now), shown in About. Bump the
+  `Constants.buildCodename` (`'r85-links-filters'` now), shown in About. Bump the
   codename every build: `rNN-<two words>`.
 - **Build counter:** rounds are numbered r21, r22, … r80. Each build gets a
   numbered folder on the K: drive (§2): r80 used **109** and **110**, r81
-  **111**, r82 **112**, r83 **113**, r84 **114**; the next build uses **115**. **103** is Grok's ("exp flutter 347") - never
+  **111**, r82 **112**, r83 **113**, r84 **114**, r85 **115**; the next build uses **116**. **103** is Grok's ("exp flutter 347") - never
   reuse a number.
 - **The user** talks in voice notes and logs; expects one build per request
   round, checked on a Samsung phone. They cannot see tool output — only the
@@ -2937,6 +2937,82 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   of the Downloads tab stops there until the check forgets them.
 - **Tests:** `downloads_check_test` (4), `backup_plan_test` (the marker after
   a whole-DB restore; none after a failed one or a Settings-only one).
+
+### 4.64 Own lists ignore the feed filters; source links open in the app; redacted HTTP log (r85, build 115)
+
+- **Why Downloads stayed empty after 114's check (log + screen recording
+  2026-10-02):** the check forgot 470 rows; 25 remained (7 with a file, 18
+  unchecked), yet the tab showed "Error, no results loaded" on "Pg 2". The
+  user's settings have `filterFavourites` on, and `BooruHandler.filterFetched`
+  exempted only the Favourites tab from it, so every download that is also a
+  favourite was hidden (222 of 695 in the 23 Sep backup). That banner text
+  means fetched is non-empty, filteredFetched empty, not locked.
+- **Filters:** `filterFetched` skips "Remove favourited" and "Remove snatched"
+  in every `isLocalDb` list (Downloads, Favourites, Collections, History);
+  hidden tags, marked, AI and the media chip still apply. It counts what it
+  hides in `BooruHandler.hiddenBy` (`HiddenReason`, `data/hidden_by_filters.dart`,
+  `HiddenByFilters.summary/title`).
+- **Paging:** `SearchHandler.runSearch` loops for own lists while a page adds
+  nothing visible (`ownListLoadsMore`, at most `ownListPagesPerLoad` = 10 per
+  load); site feeds still read one page per load (r39). It writes
+  isLastPage/errorString only while the same tab is current.
+  `DownloadsHandler` locks at `reachedEnd(rows < limit)` instead of "this page
+  added nothing", and its r82 note counts every download checked without a
+  file (`checkedWithoutFile`) and survives the empty last page. The waterfall
+  banner: fetched > 0 and nothing shown -> "Everything loaded (N) is hidden by
+  your filters" + the summary; not at the end, the tap reads the NEXT page
+  (`loadNextPage`; before, `retrySearch` re-read the same one); at the end it
+  opens Settings -> Filters. A Downloads emptyNote without fetched items gets
+  the same next-page tap.
+- **Source links (Settings -> Links, `pages/settings/links_page.dart`):**
+  Android cannot add link hosts at runtime, so the manifest has an
+  `activity-alias .SourceLinks` (disabled) with VIEW/BROWSABLE/DEFAULT, http
+  and https, and `host` + `*.host` for each of `SourceLinks.sites` (59, in
+  `services/source_links.dart`). Setting `openSourceLinks` (default false)
+  switches it through `setSourceLinks` (MainActivity,
+  setComponentEnabledSetting) and is re-applied in postInit
+  (`SourceLinks.applySaved`). Link Sheet lists an app only if its filter
+  names the host (`PackageIntentHandler.hasNonWildcardDataAuthority`, read
+  in LinkSheet's source), hence the named list. The page lists covered and
+  uncovered sources; its button is the existing `openLinkDefaults`, which now
+  answers (`result.success(null)`; before, an await on it never returned).
+- **Routing (`services/incoming_link.dart`):** `openAppLink` (main.dart)
+  keeps loli.snatcher config links, then `IncomingLinks.open`:
+  `IncomingLink.parse` -> doujin gallery (nhentai/asm/faccina `/g/<id>`,
+  niyaniya/hdoujin/e-hentai `/g/<id>/<key>`, eahentai `/a/<id>`, hitomi
+  `/<type>/...-<id>.html` -> `/galleries/<id>.html`, hentaipaw
+  `/articles/<id>`; exhentai.org and shupogaki.moe map to their sources) ->
+  a detail tab, switched to; a post (`LinkedMediaResolver.resolve`) ->
+  `LinkedMediaOpener.open` (viewer over the current page); a search page
+  (Danbooru/e621 `/posts?tags=`, Gelbooru family `page=post&s=list&tags=`
+  with `all` = everything, Moebooru `/post?tags=`, Sankaku `?tags=`, Shimmie
+  `/post/list/<tags>/<n>`, Philomena `/search?q=a, b c` -> `a b_c`, rule34.us
+  `r=posts/index&q=`) -> a new tab, switched to (the user's third exception
+  to "tabs never kidnap"); anything else -> LinkedMediaPage. Search addresses
+  checked live 2026-10-02 (Danbooru/AiBooru/rule34.xxx answer curl with 403).
+- **Flutter deep links:** `flutter_deeplinking_enabled=false` on MainActivity
+  (Flutter 3.27+ defaults it on, which would push a link's path as a route
+  next to app_links).
+- **Own links come back:** with the entry on, the app's own "Open in browser"
+  (launchUrlString, ~15 places) could resolve to the app. MainActivity
+  `onNewIntent` checks `getReferrer()` (after `setIntent`, then restores the
+  old intent): a web link this package sent goes to the default browser
+  (`resolveActivity` of a generic http intent, needs the new `<queries>`
+  block) or a chooser without the app; it never reaches app_links.
+- **HTTP log redaction:** talker_dio_logger 5.1.20 titles each line with the
+  full `options.uri` and never hides response headers, so the exported log
+  had an AiBooru login/api_key and every Set-Cookie in clear. `Logger.dioLoggerFor`
+  returns `RedactingDioLogger` (logger.dart), which logs `DioRequestLog` /
+  `DioResponseLog` / `DioErrorLog` subclasses whose `generateTextMessage` goes
+  through `redactSecrets`; that gained a rule for `"set-cookie": [ ... ]`
+  arrays and the `pass_hash` cookie.
+- **Tests:** `own_lists_filters_test`, `own_list_paging_test` (real
+  runSearch with a fake paged handler; the banner's tap), `incoming_link_test`,
+  `source_links_test` (manifest == list, every known site covered, the
+  switch, the page), `http_log_redaction_test` (a Dio request through a fake
+  adapter, the exported text checked).
+- **Not verified here:** Link Sheet on the phone, the referrer guard, the
+  Android "Open by default" list.
 
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 
