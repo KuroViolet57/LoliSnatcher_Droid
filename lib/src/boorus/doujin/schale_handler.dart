@@ -87,6 +87,12 @@ class SchaleHandler extends BooruHandler with DoujinListingTagBackfill, DoujinNa
   /// Live domain per configured base, learned from the site's own redirect.
   static final Map<String, String> _resolvedDomains = {};
 
+  @visibleForTesting
+  static void rememberResolvedDomainForTests(String base, String site) => _resolvedDomains[base] = site;
+
+  @visibleForTesting
+  static void forgetResolvedDomainsForTests() => _resolvedDomains.clear();
+
   /// The mirror actually in use: the configured base until [resolveDomain]
   /// has run, the redirect target after. Referer and Origin derive from this,
   /// so a base of shupogaki.moe no longer sends headers naming niyaniya. The
@@ -216,7 +222,14 @@ class SchaleHandler extends BooruHandler with DoujinListingTagBackfill, DoujinNa
   static bool ownsPost(String postURL) {
     final String host = (Uri.tryParse(postURL)?.host ?? '').toLowerCase();
     if (host.isEmpty) return false;
-    if (const {'niyaniya.moe', 'shupogaki.moe', 'hdoujin.org'}.contains(host)) return true;
+    // r89 (recheck): their subdomains too (SchaleNetwork.forSite takes
+    // *.hdoujin.org), and a mirror the site redirected to.
+    for (final String known in const ['niyaniya.moe', 'shupogaki.moe', 'hdoujin.org']) {
+      if (host == known || host.endsWith('.$known')) return true;
+    }
+    for (final String site in _resolvedDomains.values) {
+      if ((Uri.tryParse(site)?.host ?? '').toLowerCase() == host) return true;
+    }
     try {
       for (final b in SettingsHandler.instance.booruList) {
         if ((b.type == BooruType.NiyaNiya || b.type == BooruType.HDoujin) && (Uri.tryParse(b.baseURL ?? '')?.host ?? '').toLowerCase() == host) {

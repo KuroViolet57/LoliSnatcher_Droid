@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -289,6 +290,12 @@ void main() {
     expect(line(), findsNothing);
     expect(find.textContaining('so it runs on the CPU now'), findsOneWidget);
     expect(find.byKey(const ValueKey('model-npu-recompile-look')), findsOneWidget, reason: 'the way out of "CPU now" stays offered');
+
+    // recheck: a build without QNN offers no Compile again (it runs on the CPU).
+    OnnxAvailability.setForTests({'CPU'});
+    await openModel(tester, ModelKind.look);
+    expect(find.byKey(const ValueKey('model-npu-recompile-look')), findsNothing);
+    OnnxAvailability.setForTests({'CPU', 'QNN'});
 
     // The CPU chosen: no NPU line.
     await ModelTasks.setRunOn(ModelKind.look, ModelAccelerator.cpu);
@@ -649,6 +656,30 @@ void main() {
         onCpu: () async => 'cpu',
       );
       expect(asked, hasLength(2));
+    });
+
+    test('recheck: a native log that never answers does not hold the run', () async {
+      readNativeLog = (DateTime since) => Completer<List<String>>().future;
+      nativeLogTimeout = const Duration(milliseconds: 50);
+      final OpenedSession s = await openOnnxSession(model, model: ModelKind.look, threads: 1, accelerator: ModelAccelerator.npu, who: 'look');
+      final String out = await runGuarded<String>(
+        model: ModelKind.look,
+        used: s.used,
+        copy: s.npuCopy,
+        sessionId: s.session.id,
+        who: 'look (picture half)',
+        run: () async => throw Exception('QNN graph execute error. Error code: 6033'),
+        onCpu: () async => 'cpu',
+      ).timeout(const Duration(seconds: 2));
+      expect(out, 'cpu');
+    });
+
+    test('recheck: two loads at once read the saved timings once (runs were doubled)', () async {
+      final String cfg = '${tempDir.path}${Platform.pathSeparator}';
+      File('$cfg${ModelTimings.fileName}').writeAsStringSync('{"run.look.cpu":{"runs":3,"totalMs":600,"lastMs":200}}');
+      ModelTimings.instance.resetForTests(dir: cfg, loaded: false);
+      await Future.wait([ModelTimings.instance.ensureLoaded(), ModelTimings.instance.ensureLoaded()]);
+      expect(ModelTimings.instance.run(ModelKind.look, ModelAccelerator.cpu)!.runs, 3);
     });
 
     test('opened from a copy, the failure count is kept', () async {

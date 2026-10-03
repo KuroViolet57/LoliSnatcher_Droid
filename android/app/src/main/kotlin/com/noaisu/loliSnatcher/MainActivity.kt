@@ -599,7 +599,7 @@ class MainActivity: FlutterFragmentActivity() {
                         Executors.newSingleThreadExecutor().execute {
                             val lines = try {
                                 readNativeLog(since)
-                            } catch (e: Exception) {
+                            } catch (e: Throwable) {
                                 listOf("could not read the log: ${e.message}")
                             }
                             runOnUiThread { result.success(lines) }

@@ -57,6 +57,7 @@ class ModelTimings {
     _lastOpened.clear();
     _dir = dir;
     _loaded = loaded ?? dir != null;
+    _loading = null;
     _saving = null;
     _dirty = false;
   }
@@ -177,8 +178,12 @@ class ModelTimings {
     if (_dirty) unawaited(_save());
   }
 
+  /// r89 (recheck): one load, however many ask at once (startup, a model
+  /// opening, a page) - a second load added the saved runs again.
+  Future<void>? _loading;
+
   Future<void> ensureLoaded() async {
-    if (!_loaded) await load();
+    if (!_loaded) await (_loading ??= load());
   }
 
   /// One write at a time; a change during a write is written after it.

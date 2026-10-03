@@ -3222,6 +3222,44 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   Run on (i) text.
 - **Not verified here:** the NPU (phone only): whether the whole S2 picture
   half compiles and runs; the tagger's whole try.
+- **Fresh review (6 agents: 3 lenses, each checked by a skeptic) and the
+  fixes (a9d87534):** ModelTimings is loaded at startup and awaited in
+  `openOnnxSession` (it loaded only with a Models page, so the fresh-compile
+  clear came back from disk and two saved failures did not keep the CPU);
+  the two-failure rule is applied there too. A recompile after a copy that
+  does not open keeps the whole-failed mark and does not clear the count.
+  `runGuarded` counts and marks only QNN failures (a closed session says
+  INVALID_SESSION), once per session (`sessionId`, `_failedSessions`); the
+  runners' onCpu: only the first closes, a second joins the CPU opening. The
+  looks idle timer no longer closes under a run (`_inFlight`, as the tagger
+  r79) and `_runEnded` re-arms it. `staleNpuFiles` clears nothing for size 0.
+  Page: the copy line only when `actualAccelerator` is the NPU; "Compile
+  again" (`model-npu-recompile-<kind>`, `deleteNpuCopies`, clears the count,
+  `threadsChanged`) with its (i) whenever NPU is chosen; picking NPU again
+  deletes the whole-failed mark (`forgetNpuWholeFailure`). Thumbnails:
+  `SchaleHandler.ownsPost` (niyaniya.moe, shupogaki.moe, hdoujin.org, a
+  configured NiyaNiya/HDoujin host) keeps the spare in lists and mixed feeds.
+- **Recheck (3 agents, all "ship") and its follow-ups:** `ensureLoaded`
+  shares one load (`_loading`; two loads doubled the saved runs); the native
+  log read has a 3 s limit (`nativeLogTimeout`) and Kotlin catches Throwable;
+  Compile again only when the build has QNN; `ownsPost` also takes
+  subdomains and the site's redirect target (`_resolvedDomains`). Saved
+  lists (Favourites, History) keep no `sources` (`BooruItem.fromDBRow`), so
+  the Schale spare reaches merged tabs and the doujin For You only.
+- **Native log diagnostic:** after a failed NPU try or run,
+  `MainActivity.readNativeLog` (logcat -d --pid=self -T <epoch>, tags
+  onnxruntime/Qnn*/adsprpc/cdsprpc/fastrpc only) -> `ServiceHandler.readNativeLog`
+  -> the app log as "ONNX Runtime and QNN said". Checked on the emulator:
+  the QNN_BACKEND_ERROR_CANNOT_INITIALIZE lines arrive, no flutter lines.
+  On the phone the whole try's ERROR line "Unsupported nodes in QNN EP: …"
+  (qnn_execution_provider.cc:1059, v1.23.0) should name what the NPU refuses.
+- **Research (2 agents + synthesis):** 6033 under ORT is a DSP-side failure
+  (ORT passes no signal); ORT 1.23's QNN EP has no Erf builder, and the
+  Xenova export writes GELU with Erf - likely why the S2 picture half splits
+  into 53+ QNN graphs and why the whole try will fail. Next options (not
+  built): fuse GELU (ORT's own GeluFusion via an optimized-model save, or
+  FusionGelu offline), one app-wide NPU lock, retry 6033 once, or ORT
+  1.24.1+ (QNN GELU fusion; needs the user's yes - no-upgrade rule).
 - **Android MCP server:** still "adb not found" after the Claude restart;
   the emulator is driven with adb + screenshots.
 

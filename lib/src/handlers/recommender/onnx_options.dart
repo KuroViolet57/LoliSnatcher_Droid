@@ -289,8 +289,17 @@ Future<List<String>> _defaultReadNativeLog(DateTime since) async {
 @visibleForTesting
 Future<List<String>> Function(DateTime since) readNativeLog = _defaultReadNativeLog;
 
+/// r89 (recheck): how long a log read may take before the run goes on.
+@visibleForTesting
+Duration nativeLogTimeout = const Duration(seconds: 3);
+
 Future<void> _nativeLogSince(DateTime since, String who) async {
-  final List<String> lines = await readNativeLog(since.subtract(const Duration(seconds: 1)));
+  List<String> lines;
+  try {
+    lines = await readNativeLog(since.subtract(const Duration(seconds: 1))).timeout(nativeLogTimeout, onTimeout: () => const []);
+  } catch (_) {
+    lines = const [];
+  }
   if (lines.isEmpty) return;
   final List<String> last = lines.length > 60 ? lines.sublist(lines.length - 60) : lines;
   _log('$who: ONNX Runtime and QNN said (${last.length} of ${lines.length} lines):\n${last.join('\n')}');
@@ -311,6 +320,7 @@ void resetOnnxSeamsForTests() {
   closeOrtSession = _closeOrtSession;
   readNativeLog = _defaultReadNativeLog;
   onnxLog = _defaultLog;
+  nativeLogTimeout = const Duration(seconds: 3);
   _failedSessions.clear();
 }
 

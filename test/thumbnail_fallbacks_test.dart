@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
+import 'package:lolisnatcher/src/boorus/doujin/schale_handler.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
@@ -95,6 +96,16 @@ void main() {
       expect(BooruHandlerFactory.thumbnailFallbacksFor(feed, item(e621Sources)), isEmpty, reason: '${host.name}: a booru post');
       expect(BooruHandlerFactory.thumbnailFallbacksFor(feed, schale('https://niyaniya.moe.evil.example/g/1/k')), isEmpty, reason: 'a lookalike host');
     }
+  });
+
+  test("recheck: the site's own redirect target and its subdomains count too", () {
+    addTearDown(SchaleHandler.forgetResolvedDomainsForTests);
+    SchaleHandler.rememberResolvedDomainForTests('https://niyaniya.moe', 'https://next-mirror.example');
+    expect(SchaleHandler.ownsPost('https://next-mirror.example/g/1/k'), isTrue, reason: 'a mirror the site redirected to');
+    expect(SchaleHandler.ownsPost('https://www.hdoujin.org/g/1/k'), isTrue);
+    expect(SchaleHandler.ownsPost('https://cdn.shupogaki.moe/g/1/k'), isTrue);
+    expect(SchaleHandler.ownsPost('https://evilhdoujin.org/g/1/k'), isFalse, reason: 'a lookalike, not a subdomain');
+    expect(SchaleHandler.ownsPost('https://e621.net/posts/1'), isFalse);
   });
 
   group('the loader skips a spare it cannot use instead of failing the thumbnail', () {

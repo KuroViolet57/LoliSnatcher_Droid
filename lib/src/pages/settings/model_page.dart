@@ -240,8 +240,8 @@ class _ModelPageState extends State<ModelPage> {
   Future<void> _setRunOn(ModelAccelerator a) async {
     if (kind == ModelKind.look && a == ModelAccelerator.npu && !await _npuFileReady()) return;
     await ModelTasks.setRunOn(kind, a);
-    // r89 (review): picking NPU (again) is a new try - the whole model first,
-    // even where it failed before.
+    // r89 (review): picking NPU (again) forgets that the whole model failed;
+    // an existing mixed copy is still used (Compile again starts over).
     if (a == ModelAccelerator.npu) {
       final String? file = ModelsPage.npuModelPath(kind);
       if (file != null) forgetNpuWholeFailure(file);
@@ -282,7 +282,7 @@ class _ModelPageState extends State<ModelPage> {
     // r89 (review): the copy line only when the model really opens on the
     // NPU - not with two failures, a build without QNN, or a refusal (their
     // notes say so); Compile again whenever NPU is chosen - it is the way out.
-    final String? npuFile = chosen == ModelAccelerator.npu ? ModelsPage.npuModelPath(kind) : null;
+    final String? npuFile = chosen == ModelAccelerator.npu && OnnxAvailability.has(ModelAccelerator.npu) ? ModelsPage.npuModelPath(kind) : null;
     final bool onNpu = actualAccelerator(kind).used == ModelAccelerator.npu;
     return Padding(
       key: ValueKey('model-runon-${kind.name}-row'),
