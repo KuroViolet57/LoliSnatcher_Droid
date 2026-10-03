@@ -168,11 +168,7 @@ mixin _NetworkImageLoaderMixin {
     // because its main mirrors intermittently drop requests. The loader used to
     // give up on the first error, so that spare was carried all the way into
     // the item and then never used, and a flaky mirror read as a broken source.
-    final List<Uri> candidates = [
-      resolved,
-      for (final fallback in fallbackUrls)
-        if (fallback.isNotEmpty && fallback != url) Uri.base.resolve(fallback),
-    ];
+    final List<Uri> candidates = thumbnailCandidates(resolved, url, fallbackUrls);
 
     Future<Response<dynamic>> attempt(Uri uri) {
       void onReceiveProgress(int count, int total) {
@@ -651,3 +647,14 @@ class CustomNetworkAvifImage extends ImageProvider<custom_network_image.CustomNe
   @override
   String toString() => '${objectRuntimeType(this, 'CustomNetworkAvifImage')}("$url", scale: $scale)';
 }
+
+/// r89: the addresses an image is loaded from, in order: [resolved], then
+/// each spare in [fallbacks] that is a web address and not [url] itself.
+/// A spare that does not parse is left out instead of failing the image -
+/// e621's dead-link marker "-http://…" did (phone log 2026-10-03).
+List<Uri> thumbnailCandidates(Uri resolved, String url, List<String> fallbacks) => [
+  resolved,
+  for (final String fallback in fallbacks)
+    if (fallback.isNotEmpty && fallback != url)
+      if (Uri.tryParse(fallback) case final Uri u when (u.isScheme('http') || u.isScheme('https')) && u.host.isNotEmpty) u,
+];

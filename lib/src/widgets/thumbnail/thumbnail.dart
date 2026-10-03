@@ -171,9 +171,9 @@ class _ThumbnailState extends State<Thumbnail> {
               }
             },
             withCaptchaCheck: withCaptchaCheck,
-            // Sources that publish a spare CDN put it here, so the loader
-            // falls back to it instead of showing a broken cover.
-            fallbackUrls: widget.item.sources ?? const [],
+            // r89: only a source's own spare server (niyaniya/HDoujin) - a
+            // booru post's `sources` are the artist's links.
+            fallbackUrls: BooruHandlerFactory.thumbnailFallbacksFor(widget.booru, widget.item),
           )
         : CustomNetworkImage(
             url,
@@ -195,9 +195,8 @@ class _ThumbnailState extends State<Thumbnail> {
               }
             },
             withCaptchaCheck: withCaptchaCheck,
-            // Sources that publish a spare CDN put it here, so the loader
-            // falls back to it instead of showing a broken cover.
-            fallbackUrls: widget.item.sources ?? const [],
+            // r89: only a source's own spare server (niyaniya/HDoujin).
+            fallbackUrls: BooruHandlerFactory.thumbnailFallbacksFor(widget.booru, widget.item),
           );
 
     // on desktop devicePixelRatio is not working?

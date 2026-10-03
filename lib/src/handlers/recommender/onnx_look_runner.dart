@@ -48,6 +48,9 @@ class OnnxLookRunner implements LookRunner {
   /// opening in this runner is on the CPU.
   bool _cpuAfterFailure = false;
 
+  /// r89: the compiled copy behind the picture half's NPU session.
+  String? _npuCopy;
+
   OrtSession? _image;
   OrtSession? _text;
   Future<OrtSession>? _openingImage;
@@ -65,7 +68,10 @@ class OnnxLookRunner implements LookRunner {
       accelerator: image && _cpuAfterFailure ? ModelAccelerator.cpu : acceleratorFor(image: image),
       who: image ? 'look (picture half)' : 'look (text half)',
     );
-    if (image) _used = o.used;
+    if (image) {
+      _used = o.used;
+      _npuCopy = o.npuCopy;
+    }
     _provider = o.provider;
     return o.session;
   }
@@ -106,6 +112,7 @@ class OnnxLookRunner implements LookRunner {
       return await runGuarded(
         model: ModelKind.look,
         used: _used,
+        copy: _npuCopy,
         who: 'look (picture half)',
         run: () => _imageRun(session, name, input),
         onCpu: () async {

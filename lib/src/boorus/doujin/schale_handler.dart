@@ -203,6 +203,11 @@ class SchaleHandler extends BooruHandler with DoujinListingTagBackfill, DoujinNa
   @override
   Map<String, String> getMediaHeaders() => {'Referer': '$_site/', 'Origin': _site};
 
+  /// The second image server this source publishes with every thumbnail
+  /// (`thumbnails.fallback`), kept in the item's `sources`.
+  @override
+  List<String> thumbnailFallbacks(BooruItem item) => item.sources ?? const [];
+
   @override
   String validateTags(String tags) => tags.trim();
 

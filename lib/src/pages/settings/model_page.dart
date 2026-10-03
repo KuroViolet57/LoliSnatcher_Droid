@@ -170,12 +170,28 @@ class _ModelPageState extends State<ModelPage> {
     ModelAccelerator.npu:
         "The phone's NPU (the Snapdragon's Hexagon), through Qualcomm's QNN library: the model runs at 16-bit precision on hardware made for "
         'it - many times faster than the CPU and far cooler (the tagger: about 150 ms a picture on your phone, against 1.8 s on 4 CPU threads). '
-        'The first opening compiles the model and keeps the compiled copy, so later openings take under a second. Parts the NPU cannot run '
-        'stay on the CPU ("NPU + CPU" in the log). If it fails while running, that picture is read on the CPU; after two failures the model '
-        'stays on the CPU until you pick NPU again. The looks model needs its full-precision picture half for this, fetched when you pick it.',
+        'The first opening compiles the model and keeps the compiled copy, so later openings take under a second: the whole model when the '
+        'NPU can take all of it ("NPU" in the log), else a copy that leaves the parts it cannot run to the CPU ("NPU + CPU") - the line '
+        'under Run on says which. If it fails while running, that picture is read on the CPU; a whole-model copy that fails is replaced by '
+        'the other kind at the next opening, and after two failures the model stays on the CPU until you pick NPU again. The looks model '
+        'needs its full-precision picture half for this, fetched when you pick it.',
   };
 
   static String _mbOf(int bytes) => '${(bytes / 1048576).toStringAsFixed(1)} MB';
+
+  static const List<String> _months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  /// r89: which compiled NPU copy the model has (npuCopyState), one line.
+  String _npuCopyWords(String modelPath) {
+    final ({bool? whole, DateTime? compiled, bool wholeFailed}) state = npuCopyState(modelPath);
+    final DateTime? at = state.compiled;
+    final String when = at == null ? '' : ' (compiled ${at.day} ${_months[at.month - 1]})';
+    return switch (state.whole) {
+      true => 'On the NPU: the whole model$when.',
+      false => 'On the NPU: some parts on the CPU$when${state.wholeFailed ? ' - the whole model failed here' : ''}.',
+      null => 'Not compiled yet: the next opening compiles it for the NPU (seconds to a minute), the whole model first.',
+    };
+  }
 
   /// r87: the NPU for the looks model needs its full-precision picture half.
   Future<bool> _npuFileReady() async {
@@ -242,6 +258,7 @@ class _ModelPageState extends State<ModelPage> {
     final ModelAccelerator selected = choices.contains(chosen) ? chosen : ModelAccelerator.cpu;
     final ({int count, String reason})? failed = ModelTimings.instance.npuFailures(kind);
     final String? refused = actualAccelerator(kind).refused;
+    final String? npuFile = chosen == ModelAccelerator.npu ? ModelsPage.npuModelPath(kind) : null;
     return Padding(
       key: ValueKey('model-runon-${kind.name}-row'),
       padding: const EdgeInsets.fromLTRB(18, 8, 8, 8),
@@ -291,6 +308,11 @@ class _ModelPageState extends State<ModelPage> {
               padding: const EdgeInsets.only(top: 6),
               child: Text('${chosen.label} was chosen, but this build does not have it: the CPU runs the model.', style: _muted),
             ),
+          if (chosen == ModelAccelerator.npu && npuFile != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(_npuCopyWords(npuFile), key: ValueKey('model-npu-copy-${kind.name}'), style: _muted),
+            ),
           if (refused != null)
             Padding(
               key: ValueKey('model-${chosen.name}-refused-${kind.name}'),
@@ -308,7 +330,7 @@ class _ModelPageState extends State<ModelPage> {
               child: Text(
                 'The NPU failed ${failed.count == 1 ? 'once' : '${failed.count} times'} while running this model'
                 '${failed.count >= 2 ? ', so it runs on the CPU now. Tap CPU, then NPU, to give it another chance.' : '; the picture was read on the CPU.'}'
-                '\n${failed.reason}',
+                '\n${npuErrorWords(failed.reason)}',
                 style: _muted.copyWith(color: Colors.orange),
               ),
             ),

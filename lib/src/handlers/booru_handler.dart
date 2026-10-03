@@ -1188,6 +1188,14 @@ abstract class BooruHandler {
   /// genuinely confusing failure to diagnose.
   Map<String, String> getMediaHeaders() => const {};
 
+  /// r89: spare addresses for [item]'s thumbnail, tried when the first one
+  /// fails - for a source that publishes a second image server with every
+  /// post (niyaniya/HDoujin). Empty for every other source: a post's
+  /// `sources` are the artist's links there, not thumbnails (since a15067f0
+  /// they were tried as spares, and e621's dead-link marker "-http://…"
+  /// failed the thumbnail before its real address was asked; log 2026-10-03).
+  List<String> thumbnailFallbacks(BooruItem item) => const [];
+
   /// Text for the viewer to show INSTEAD of loading [url], when the source
   /// knows its media host is down from this network (kemono's file hosts).
   /// Null = load as usual.

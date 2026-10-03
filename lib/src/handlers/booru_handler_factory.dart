@@ -53,6 +53,7 @@ import 'package:lolisnatcher/src/boorus/kusowanka_handler.dart';
 import 'package:lolisnatcher/src/boorus/tikporn_handler.dart';
 import 'package:lolisnatcher/src/boorus/xxxtik_handler.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
+import 'package:lolisnatcher/src/data/booru_item.dart';
 import 'package:lolisnatcher/src/handlers/booru_handler.dart';
 import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 import 'package:lolisnatcher/src/boorus/doujin/ehentai_handler.dart';
@@ -107,6 +108,16 @@ class BooruHandlerFactory {
   static void onMediaErrorFor(Booru booru, String url, Object error) => mediaHandlerFor(booru)?.onMediaError(url, error);
 
   static Future<void> beforeMediaRetryFor(Booru booru, String url) async => mediaHandlerFor(booru)?.beforeMediaRetry(url);
+
+  /// r89: the spare thumbnail addresses [booru]'s own handler publishes for
+  /// [item] (BooruHandler.thumbnailFallbacks) - web addresses only.
+  static List<String> thumbnailFallbacksFor(Booru booru, BooruItem item) {
+    final List<String> spares = mediaHandlerFor(booru)?.thumbnailFallbacks(item) ?? const [];
+    return [
+      for (final String s in spares)
+        if (Uri.tryParse(s.trim()) case final Uri u when (u.isScheme('http') || u.isScheme('https')) && u.host.isNotEmpty) s.trim(),
+    ];
+  }
 
   @visibleForTesting
   static void clearMediaHeaderCache() {

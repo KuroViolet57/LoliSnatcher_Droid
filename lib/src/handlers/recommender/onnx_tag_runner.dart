@@ -38,6 +38,9 @@ class OnnxTagRunner implements TagRunner {
   /// is on the CPU (the next runner tries the NPU again, up to twice).
   bool _cpuAfterFailure = false;
 
+  /// r89: the compiled copy behind an NPU session (see runGuarded).
+  String? _npuCopy;
+
   OrtSession? _session;
   Future<OrtSession>? _opening;
   String _provider = '';
@@ -62,6 +65,7 @@ class OnnxTagRunner implements TagRunner {
       _session = o.session;
       _used = o.used;
       _provider = o.provider;
+      _npuCopy = o.npuCopy;
       try {
         final List<Map<String, dynamic>> inputs = await _session!.getInputInfo();
         if (inputs.isNotEmpty) _inputName = inputs.first['name']?.toString();
@@ -80,6 +84,7 @@ class OnnxTagRunner implements TagRunner {
     return runGuarded(
       model: ModelKind.tagger,
       used: _used,
+      copy: _npuCopy,
       who: 'tagger',
       run: () => _runOn(session, nhwc, size),
       onCpu: () async {

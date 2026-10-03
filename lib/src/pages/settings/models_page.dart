@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 
@@ -61,6 +62,27 @@ class ModelsPage extends StatefulWidget {
   static int? Function() lookNpuBytes = _defaultLookNpuBytes;
   static Future<bool> Function(void Function(double progress) progress) downloadLookNpu = _defaultDownloadLookNpu;
 
+  /// r89: the file a model opens on the NPU (the looks model's
+  /// full-precision picture half, the tagger's model), for the line under
+  /// Run on that says which compiled copy it has; null for the text model or
+  /// when the file is not there.
+  static String? Function(ModelKind kind) npuModelPath = _defaultNpuModelPath;
+
+  static String? _defaultNpuModelPath(ModelKind kind) {
+    final String? path = switch (kind) {
+      ModelKind.look => LookModelHandler.maybe?.npuImagePath,
+      ModelKind.tagger => ImageTaggerHandler.maybe == null
+          ? null
+          : '${ImageTaggerHandler.instance.dirFor(SettingsHandler.instance.imageTaggerModel)}${ImageTaggerHandler.modelFileName}',
+      ModelKind.text => null,
+    };
+    try {
+      return path != null && File(path).existsSync() ? path : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   static bool _defaultLookNpuReady() => LookModelHandler.maybe?.hasNpuFile ?? false;
   static int? _defaultLookNpuBytes() => LookModelHandler.maybe?.npuImageBytes;
   static Future<bool> _defaultDownloadLookNpu(void Function(double progress) progress) async =>
@@ -73,6 +95,7 @@ class ModelsPage extends StatefulWidget {
     lookNpuReady = _defaultLookNpuReady;
     lookNpuBytes = _defaultLookNpuBytes;
     downloadLookNpu = _defaultDownloadLookNpu;
+    npuModelPath = _defaultNpuModelPath;
   }
 
   static const Map<ModelKind, String> names = {
