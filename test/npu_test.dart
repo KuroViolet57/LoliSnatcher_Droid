@@ -263,8 +263,13 @@ void main() {
     expect(text(), startsWith('On the NPU: the whole model'));
 
     File('$model.npu2-100-whole.onnx').deleteSync();
-    File('$model.npu2-100-mixed.onnx').writeAsBytesSync([1]);
     File(npuWholeFailedMarker(model, 100)).writeAsBytesSync(const []);
+    await openModel(tester, ModelKind.look);
+    expect(text(), startsWith('Not compiled yet'));
+    expect(text(), contains('some parts on the CPU'), reason: 'the whole model failed here: the next compile is the mixed kind');
+    expect(text(), isNot(contains('the whole model first')));
+
+    File('$model.npu2-100-mixed.onnx').writeAsBytesSync([1]);
     await openModel(tester, ModelKind.look);
     expect(text(), startsWith('On the NPU: some parts on the CPU'));
     expect(text(), contains('the whole model failed here'));
@@ -278,10 +283,49 @@ void main() {
     expect(find.descendant(of: note, matching: find.textContaining('QNN error 6033 (the NPU timed out) in part 107 of the model')), findsOneWidget);
     expect(find.descendant(of: note, matching: find.textContaining('PlatformException')), findsNothing, reason: 'the whole text stays in the log');
 
+    // review: two failures - the model runs on the CPU, so no NPU line.
+    ModelTimings.instance.recordNpuFailure(ModelKind.look, 'QNN graph execute error. Error code: 6033');
+    await openModel(tester, ModelKind.look);
+    expect(line(), findsNothing);
+    expect(find.textContaining('so it runs on the CPU now'), findsOneWidget);
+    expect(find.byKey(const ValueKey('model-npu-recompile-look')), findsOneWidget, reason: 'the way out of "CPU now" stays offered');
+
     // The CPU chosen: no NPU line.
     await ModelTasks.setRunOn(ModelKind.look, ModelAccelerator.cpu);
     await openModel(tester, ModelKind.look);
     expect(line(), findsNothing);
+  });
+
+  testWidgets('review: picking NPU again forgets that the whole model failed; Compile again starts over, with its (i)', (tester) async {
+    final String model = '${tempDir.path}${Platform.pathSeparator}model.onnx';
+    File(model).writeAsBytesSync(List<int>.filled(100, 1));
+    final List<ModelKind> reopened = [];
+    ModelsPage.threadsChanged = reopened.add;
+    ModelsPage.npuModelPath = (ModelKind kind) => kind == ModelKind.tagger ? model : null;
+    OnnxAvailability.setForTests({'CPU', 'QNN'});
+    addTearDown(OnnxAvailability.resetForTests);
+
+    File(npuWholeFailedMarker(model, 100)).writeAsBytesSync(const []);
+    await openModel(tester, ModelKind.tagger);
+    await tester.tap(segment('tagger', 'NPU'));
+    await tester.pumpAndSettle();
+    expect(File(npuWholeFailedMarker(model, 100)).existsSync(), isFalse, reason: 'a new pick is a new try: the whole model first again');
+
+    File('$model.npu2-100-mixed.onnx').writeAsBytesSync([1]);
+    File('$model.npu-100-mixed.onnx').writeAsBytesSync([1]);
+    File(npuWholeFailedMarker(model, 100)).writeAsBytesSync(const []);
+    ModelTimings.instance.recordNpuFailure(ModelKind.tagger, 'QNN graph execute error. Error code: 6033');
+    await openModel(tester, ModelKind.tagger);
+    expect(find.byKey(const ValueKey('model-npu-recompile-tagger-explain')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('model-npu-recompile-tagger')));
+    await tester.pumpAndSettle();
+    for (final String f in ['$model.npu2-100-mixed.onnx', '$model.npu-100-mixed.onnx', npuWholeFailedMarker(model, 100)]) {
+      expect(File(f).existsSync(), isFalse, reason: f);
+    }
+    expect(File(model).existsSync(), isTrue, reason: 'the model itself stays');
+    expect(ModelTimings.instance.npuFailures(ModelKind.tagger), isNull);
+    expect(reopened, contains(ModelKind.tagger), reason: 'the open session is closed, so the next use compiles');
+    expect(tester.widget<Text>(find.byKey(const ValueKey('model-npu-copy-tagger'))).data, startsWith('Not compiled yet'));
   });
 
   // ── r88 ──
@@ -424,6 +468,10 @@ void main() {
       expect(npuWholeFailedMarker('/m/model.onnx', 1234), '/m/model.onnx.npu2-1234-whole.failed');
     });
 
+    test('review: an unknown size (the model unreadable) clears nothing', () {
+      expect(staleNpuFiles('/m/model.onnx', 0, ['/m/model.onnx.npu2-1234-whole.onnx', '/m/model.onnx.npu-1234-mixed.onnx']), isEmpty);
+    });
+
     test("old and other-size copies next to the model are cleared; this size's copies and mark stay", () {
       const String m = '/m/model.onnx';
       expect(
@@ -479,6 +527,128 @@ void main() {
       expect(File('$model.npu-100-mixed.onnx').existsSync(), isFalse, reason: "build 117's copy is gone");
       expect(File('$model.npu2-100-whole.onnx').existsSync(), isTrue);
       expect(ModelTimings.instance.npuFailures(ModelKind.look), isNull, reason: 'a new copy gets a fresh chance');
+    });
+
+    test('a copy that does not open is compiled again, but its failures stay counted (no fresh chance for a broken copy)', () async {
+      File('$model.npu2-100-whole.onnx').writeAsBytesSync([1]);
+      ModelTimings.instance.recordNpuFailure(ModelKind.look, 'x');
+      final Future<OrtSession> Function(String, OrtSessionOptions?) compiles = createOrtSession;
+      createOrtSession = (path, options) async {
+        if (path == '$model.npu2-100-whole.onnx' && opened.where((p) => p == path).isEmpty) {
+          opened.add(path);
+          throw Exception('cannot load the context binary');
+        }
+        return compiles(path, options);
+      };
+      final OpenedSession s = await openOnnxSession(model, model: ModelKind.look, threads: 1, accelerator: ModelAccelerator.npu, who: 'look');
+      expect(s.used, ModelAccelerator.npu);
+      expect(ModelTimings.instance.npuFailures(ModelKind.look)!.count, 1);
+    });
+
+    test('review: the saved count is read before the opening decides - a fresh compile clears it for good', () async {
+      final String cfg = '${tempDir.path}${Platform.pathSeparator}';
+      File('$cfg${ModelTimings.fileName}').writeAsStringSync('{"npuFailed.look":{"count":1,"reason":"QNN graph execute error. Error code: 6033"}}');
+      ModelTimings.instance.resetForTests(dir: cfg, loaded: false);
+      final OpenedSession s = await openOnnxSession(model, model: ModelKind.look, threads: 1, accelerator: ModelAccelerator.npu, who: 'look');
+      expect(s.used, ModelAccelerator.npu);
+      expect(ModelTimings.instance.npuFailures(ModelKind.look), isNull);
+      await ModelTimings.instance.saveNow();
+      expect(File('$cfg${ModelTimings.fileName}').readAsStringSync(), isNot(contains('npuFailed.look')), reason: 'not added back from the file');
+    });
+
+    test('review: two saved failures keep the model on the CPU even before a Models page was opened', () async {
+      final String cfg = '${tempDir.path}${Platform.pathSeparator}';
+      File('$cfg${ModelTimings.fileName}').writeAsStringSync('{"npuFailed.look":{"count":2,"reason":"6033"}}');
+      ModelTimings.instance.resetForTests(dir: cfg, loaded: false);
+      final OpenedSession s = await openOnnxSession(model, model: ModelKind.look, threads: 1, accelerator: ModelAccelerator.npu, who: 'look');
+      expect(s.used, ModelAccelerator.cpu);
+      expect(opened, [model]);
+      expect(File('$model.npu2-100-whole.onnx').existsSync(), isFalse, reason: 'no NPU compile');
+    });
+
+    test('review: a copy that does not open is compiled again - the mixed kind when the whole model failed here', () async {
+      File('$model.npu2-100-mixed.onnx').writeAsBytesSync([1]);
+      File(npuWholeFailedMarker(model, 100)).writeAsBytesSync(const []);
+      final Future<OrtSession> Function(String, OrtSessionOptions?) compiles = createOrtSession;
+      createOrtSession = (path, options) async {
+        if (path == '$model.npu2-100-mixed.onnx' && opened.where((p) => p == path).isEmpty) {
+          opened.add(path);
+          throw Exception('cannot load the context binary');
+        }
+        return compiles(path, options);
+      };
+      final OpenedSession s = await openOnnxSession(model, model: ModelKind.look, threads: 1, accelerator: ModelAccelerator.npu, who: 'look');
+      expect(s.provider, 'NPU + CPU');
+      expect(File('$model.npu2-100-whole.onnx').existsSync(), isFalse, reason: 'the whole model is not compiled again');
+    });
+
+    test('review: only a QNN failure is counted and marks the whole copy; a closed session is neither', () async {
+      final OpenedSession s = await openOnnxSession(model, model: ModelKind.look, threads: 1, accelerator: ModelAccelerator.npu, who: 'look');
+      final String out = await runGuarded<String>(
+        model: ModelKind.look,
+        used: s.used,
+        copy: s.npuCopy,
+        sessionId: s.session.id,
+        who: 'look (picture half)',
+        run: () async => throw Exception('PlatformException(INVALID_SESSION, Session not found, null, null)'),
+        onCpu: () async => 'cpu',
+      );
+      expect(out, 'cpu');
+      expect(File('$model.npu2-100-whole.onnx').existsSync(), isTrue);
+      expect(File(npuWholeFailedMarker(model, 100)).existsSync(), isFalse);
+      expect(ModelTimings.instance.npuFailures(ModelKind.look), isNull);
+    });
+
+    test('review: two runs failing on one session count once', () async {
+      File('$model.npu2-100-mixed.onnx').writeAsBytesSync([1]);
+      final OpenedSession s = await openOnnxSession(model, model: ModelKind.look, threads: 1, accelerator: ModelAccelerator.npu, who: 'look');
+      for (int i = 0; i < 2; i++) {
+        await runGuarded<String>(
+          model: ModelKind.look,
+          used: s.used,
+          copy: s.npuCopy,
+          sessionId: s.session.id,
+          who: 'look (picture half)',
+          run: () async => throw Exception('QNN graph execute error. Error code: 6033'),
+          onCpu: () async => 'cpu',
+        );
+      }
+      expect(ModelTimings.instance.npuFailures(ModelKind.look)!.count, 1);
+    });
+
+    test("review: ONNX Runtime's own lines (the native log) go into the app log after a failed NPU try and a failed run", () async {
+      final List<DateTime> asked = [];
+      final List<String> logged = [];
+      readNativeLog = (DateTime since) async {
+        asked.add(since);
+        return ['10-04 01:00:00.000 E/onnxruntime( 123): Unsupported nodes in QNN EP: /blocks.0/mlp/Erf'];
+      };
+      onnxLog = logged.add;
+      final Future<OrtSession> Function(String, OrtSessionOptions?) compiles = createOrtSession;
+      createOrtSession = (path, options) async {
+        if (options?.sessionConfig?['session.disable_cpu_ep_fallback'] == '1') {
+          opened.add(path);
+          throw Exception('This session contains graph nodes that are assigned to the default CPU EP');
+        }
+        return compiles(path, options);
+      };
+      final DateTime before = DateTime.now();
+      final OpenedSession s = await openOnnxSession(model, model: ModelKind.look, threads: 1, accelerator: ModelAccelerator.npu, who: 'look');
+      expect(s.provider, 'NPU + CPU');
+      expect(asked, hasLength(1));
+      expect(asked.single.isAfter(before.add(const Duration(seconds: 1))), isFalse);
+      expect(logged.where((l) => l.contains('Unsupported nodes in QNN EP: /blocks.0/mlp/Erf')), hasLength(1));
+
+      await runGuarded<String>(
+        model: ModelKind.look,
+        used: s.used,
+        copy: s.npuCopy,
+        sessionId: s.session.id,
+        who: 'look (picture half)',
+        run: () async => throw Exception('QNN graph execute error. Error code: 6033'),
+        onCpu: () async => 'cpu',
+      );
+      expect(asked, hasLength(2));
     });
 
     test('opened from a copy, the failure count is kept', () async {
@@ -547,6 +717,15 @@ void main() {
 
     test('the code, what it means, and the part of the model', () {
       expect(npuErrorWords(phone), 'QNN error 6033 (the NPU timed out) in part 107 of the model');
+    });
+
+    test('review: without a QNN code, the status message or the message itself', () {
+      expect(
+        npuErrorWords('PlatformException(INFERENCE_ERROR, Error code - ORT_FAIL - message: Non-zero status code returned while running Foo node. Status Message: the graph broke, null)'),
+        'the graph broke',
+      );
+      expect(npuErrorWords('PlatformException(ORT_ERROR, Error code - ORT_INVALID_ARGUMENT - message: Conflicting session configuration, null)'), 'Conflicting session configuration');
+      expect(npuErrorWords('Error code: 99999999999999999999999 in QNN_1_2 node'), startsWith('QNN error 99999999999999999999999'), reason: 'no crash on a huge number');
     });
 
     test('without a code: the first line, kept short', () {

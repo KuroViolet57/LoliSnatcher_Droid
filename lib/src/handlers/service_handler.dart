@@ -469,6 +469,15 @@ class ServiceHandler {
     }
   }
 
+  /// r89: ONNX Runtime's and QNN's own lines from this app's Android log
+  /// since [since] - only those tags, never the app's own lines (they can
+  /// carry addresses). Empty off Android or when the log cannot be read.
+  static Future<List<String>> readNativeLog(DateTime since) async {
+    if (!Platform.isAndroid) return const [];
+    final List<dynamic>? lines = await platform.invokeMethod<List<dynamic>>('readNativeLog', {'sinceMs': since.millisecondsSinceEpoch});
+    return [for (final l in lines ?? const []) '$l'];
+  }
+
   static Future<void> emptyCache() async {
     try {
       if (Platform.isAndroid) {

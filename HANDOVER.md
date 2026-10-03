@@ -31,11 +31,11 @@ older chronological build log, kept verbatim as history.
   Never push elsewhere; force-push is blocked.
 - **Version:** `2.6.0+5211` in `pubspec.yaml`, mirrored in
   `lib/src/data/constants.dart` (`updateInfo`). Builds are told apart by
-  `Constants.buildCodename` (`'r88-settings-npu'` now, on branch `claude/r87-npu`), shown in About. Bump the
+  `Constants.buildCodename` (`'r89-npu-thumbs'` now, on branch `claude/r87-npu`), shown in About. Bump the
   codename every build: `rNN-<two words>`.
 - **Build counter:** rounds are numbered r21, r22, … r80. Each build gets a
   numbered folder on the K: drive (§2): r80 used **109** and **110**, r81
-  **111**, r82 **112**, r83 **113**, r84 **114**, r85 **115**, r86 **116**, r87 **117**, r88 **118** (both on branch `claude/r87-npu`); the next build uses **119**. **103** is Grok's ("exp flutter 347") - never
+  **111**, r82 **112**, r83 **113**, r84 **114**, r85 **115**, r86 **116**, r87 **117**, r88 **118**, r89 **119** (all on branch `claude/r87-npu`); the next build uses **120**. **103** is Grok's ("exp flutter 347") - never
   reuse a number.
 - **The user** talks in voice notes and logs; expects one build per request
   round, checked on a Samsung phone. They cannot see tool output — only the
@@ -3180,6 +3180,50 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   -network-user-mode-options ipv6=off` (from ImagePanelBuild's
   start-emulator.ps1). uiautomator sees no Flutter labels (no accessibility
   service), so drive it by screenshots.
+
+### 4.68 One fresh NPU compile, whole model first; thumbnails skip source links (r89, build 119, branch `claude/r87-npu`)
+
+- **From the 2026-10-03 phone log (build 118):** the tagger runs on the NPU
+  at ~150 ms. The looks model (S2, 143,020,962-byte fp32 picture half) failed
+  on its first NPU run with QNN 6033 (`QNN_GRAPH_ERROR_TIMED_OUT`, QnnGraph.h;
+  ONNX Runtime passes no signal, so the HTP reports it itself) in part
+  `QNN_…_107` - the same part as on 2026-10-02. Both models' compiled copies
+  were made by build 117, whose whole-model try always failed on the config
+  conflict, so both were the mixed kind and r88 opened them as they were:
+  the whole try had never run on the phone.
+- **Copies (`onnx_options.dart`):** named `<model>.npu2-<bytes>-whole|mixed.onnx`
+  so each model compiles once more, whole first. `staleNpuFiles` (at every
+  NPU opening) deletes build 117's `<model>.npu-…` files and npu2 files of
+  another size. A whole copy that fails while running is deleted and leaves
+  `npuWholeFailedMarker` (`<model>.npu2-<bytes>-whole.failed`); `npuAttempts`
+  then compiles the mixed kind only. A failing mixed copy is kept. A fresh
+  compile clears the NPU failure count, except when it replaces a copy that
+  would not open. `OpenedSession.npuCopy` -> the runners -> `runGuarded(copy:)`.
+- **Page:** under Run on (NPU chosen) a line from `npuCopyState`
+  (`model-npu-copy-<kind>`): "On the NPU: the whole model (compiled 4 Oct)",
+  "some parts on the CPU (…) - the whole model failed here", or "Not compiled
+  yet …". `ModelsPage.npuModelPath` (seam): the looks model's
+  `npuImagePath`, the tagger's `dirFor(imageTaggerModel)` + `model.onnx`.
+  The orange note uses `npuErrorWords` ("QNN error 6033 (the NPU timed out)
+  in part 107 of the model"; codes 1002/6031/6033 from the QNN headers).
+- **Thumbnails:** since a15067f0 (2026-08-30) a thumbnail passed
+  `item.sources` as spare addresses; only `SchaleHandler` (niyaniya, HDoujin)
+  puts a spare server there - elsewhere they are the artist's links, and
+  e621's dead-link marker `-http://…` made `Uri.base.resolve` throw before
+  the real preview was requested (the same thumbnail failed 9 times). Now
+  `BooruHandler.thumbnailFallbacks(item)` (empty; Schale overrides) via
+  `BooruHandlerFactory.thumbnailFallbacksFor` (http/https only), and
+  `thumbnailCandidates` in custom_network_image.dart skips anything that is
+  not a web address.
+- **Checked on the emulator (build 119):** e621 post 6732377 - thumbnail
+  "ERROR Tap to retry" on 118, loads on 119; fake `vision_model_npu.onnx.npu-
+  45543630-mixed.onnx` and `.npu2-111-mixed.onnx` (app uid, app_data_file
+  label) deleted at the looks model's NPU opening; the Speed line and the
+  Run on (i) text.
+- **Not verified here:** the NPU (phone only): whether the whole S2 picture
+  half compiles and runs; the tagger's whole try.
+- **Android MCP server:** still "adb not found" after the Claude restart;
+  the emulator is driven with adb + screenshots.
 
 ## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
 

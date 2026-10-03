@@ -85,13 +85,18 @@ class OnnxTagRunner implements TagRunner {
       model: ModelKind.tagger,
       used: _used,
       copy: _npuCopy,
+      sessionId: session.id,
       who: 'tagger',
       run: () => _runOn(session, nhwc, size),
       onCpu: () async {
-        _cpuAfterFailure = true;
-        await close();
+        // r89 (review): a second run that failed on the same session joins
+        // the CPU opening the first one started instead of closing it.
+        if (!_cpuAfterFailure) {
+          _cpuAfterFailure = true;
+          await close();
+        }
         final OrtSession cpu = await _open();
-        _provider = '$_provider (NPU failed)';
+        if (!_provider.endsWith('(NPU failed)')) _provider = '$_provider (NPU failed)';
         return _runOn(cpu, nhwc, size);
       },
     );

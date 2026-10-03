@@ -470,6 +470,9 @@ class LookModelHandler {
     if (_inFlight == 0 && _closeWhenIdle) {
       _closeWhenIdle = false;
       unawaited(close());
+    } else if (_inFlight == 0 && _runner != null && _idle == null) {
+      // r89 (review): the idle time ran out during the run (see _touch).
+      _touch();
     }
   }
 
@@ -783,7 +786,10 @@ class LookModelHandler {
     _idle?.cancel();
     _idle = Timer(idleClose, () {
       _idle = null;
-      if (_runner == null) return;
+      // r89 (review): never under a run (as the tagger, r79) - a closed
+      // session fails the run, and on the NPU that counted as an NPU failure.
+      // The run re-arms the timer when it ends.
+      if (_runner == null || _inFlight > 0) return;
       Logger.Inst().log('look: sessions closed (idle)', className, '_touch', LogTypes.booruHandlerInfo);
       unawaited(close());
     });

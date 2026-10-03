@@ -173,7 +173,8 @@ class _ModelPageState extends State<ModelPage> {
         'The first opening compiles the model and keeps the compiled copy, so later openings take under a second: the whole model when the '
         'NPU can take all of it ("NPU" in the log), else a copy that leaves the parts it cannot run to the CPU ("NPU + CPU") - the line '
         'under Run on says which. If it fails while running, that picture is read on the CPU; a whole-model copy that fails is replaced by '
-        'the other kind at the next opening, and after two failures the model stays on the CPU until you pick NPU again. The looks model '
+        'the other kind at the next opening, and after two failures of the same compiled copy the model stays on the CPU until you pick '
+        'NPU again (or Compile again). The looks model '
         'needs its full-precision picture half for this, fetched when you pick it.',
   };
 
@@ -189,6 +190,9 @@ class _ModelPageState extends State<ModelPage> {
     return switch (state.whole) {
       true => 'On the NPU: the whole model$when.',
       false => 'On the NPU: some parts on the CPU$when${state.wholeFailed ? ' - the whole model failed here' : ''}.',
+      null when state.wholeFailed =>
+        'Not compiled yet: the next opening compiles it for the NPU (seconds to a minute), with some parts on the CPU - the whole '
+            'model failed here.',
       null => 'Not compiled yet: the next opening compiles it for the NPU (seconds to a minute), the whole model first.',
     };
   }
@@ -236,6 +240,23 @@ class _ModelPageState extends State<ModelPage> {
   Future<void> _setRunOn(ModelAccelerator a) async {
     if (kind == ModelKind.look && a == ModelAccelerator.npu && !await _npuFileReady()) return;
     await ModelTasks.setRunOn(kind, a);
+    // r89 (review): picking NPU (again) is a new try - the whole model first,
+    // even where it failed before.
+    if (a == ModelAccelerator.npu) {
+      final String? file = ModelsPage.npuModelPath(kind);
+      if (file != null) forgetNpuWholeFailure(file);
+    }
+    ModelsPage.threadsChanged(kind);
+    _refresh();
+  }
+
+  /// r89 (review): every compiled NPU copy of this model and its marks go,
+  /// the failures are forgotten, and the open session is closed, so the next
+  /// use compiles again - the whole model first.
+  void _compileAgain(String modelPath) {
+    deleteNpuCopies(modelPath);
+    ModelTimings.instance.clearNpuFailures(kind);
+    ModelTimings.instance.forgetOpened(kind);
     ModelsPage.threadsChanged(kind);
     _refresh();
   }
@@ -248,7 +269,7 @@ class _ModelPageState extends State<ModelPage> {
   String? _fastestWords() {
     final f = ModelTimings.instance.fastest(kind);
     if (f == null) return null;
-    return 'Fastest on this phone so far: ${f.accelerator.label}${f.threads == null ? '' : ' with ${f.threads} threads'}, '
+    return 'Fastest on this phone so far: ${f.accelerator.label}${f.threads == null ? '' : ' with ${f.threads} thread${f.threads == 1 ? '' : 's'}'}, '
         '${f.averageMs} ms per run - recommended unless it heats the phone or fails.';
   }
 
@@ -258,7 +279,11 @@ class _ModelPageState extends State<ModelPage> {
     final ModelAccelerator selected = choices.contains(chosen) ? chosen : ModelAccelerator.cpu;
     final ({int count, String reason})? failed = ModelTimings.instance.npuFailures(kind);
     final String? refused = actualAccelerator(kind).refused;
+    // r89 (review): the copy line only when the model really opens on the
+    // NPU - not with two failures, a build without QNN, or a refusal (their
+    // notes say so); Compile again whenever NPU is chosen - it is the way out.
     final String? npuFile = chosen == ModelAccelerator.npu ? ModelsPage.npuModelPath(kind) : null;
+    final bool onNpu = actualAccelerator(kind).used == ModelAccelerator.npu;
     return Padding(
       key: ValueKey('model-runon-${kind.name}-row'),
       padding: const EdgeInsets.fromLTRB(18, 8, 8, 8),
@@ -308,11 +333,47 @@ class _ModelPageState extends State<ModelPage> {
               padding: const EdgeInsets.only(top: 6),
               child: Text('${chosen.label} was chosen, but this build does not have it: the CPU runs the model.', style: _muted),
             ),
-          if (chosen == ModelAccelerator.npu && npuFile != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text(_npuCopyWords(npuFile), key: ValueKey('model-npu-copy-${kind.name}'), style: _muted),
+          if (npuFile != null) ...[
+            if (onNpu)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(_npuCopyWords(npuFile), key: ValueKey('model-npu-copy-${kind.name}'), style: _muted),
+              ),
+            Row(
+              children: [
+                TextButton.icon(
+                  key: ValueKey('model-npu-recompile-${kind.name}'),
+                  onPressed: () => _compileAgain(npuFile),
+                  icon: const Icon(Symbols.refresh),
+                  label: const Text('Compile again'),
+                ),
+                ExplainButton(
+                  key: ValueKey('model-npu-recompile-${kind.name}-explain'),
+                  title: 'Compile again: $name',
+                  choices: () => const [
+                    ExplainChoice(
+                      name: 'What it does',
+                      text:
+                          "Deletes this model's compiled NPU copies (also ones left by older builds) and forgets its NPU failures. The next "
+                          'time the model is used, the NPU compiles it again - the whole model first, then the kind with some parts on the CPU.',
+                    ),
+                    ExplainChoice(
+                      name: 'When to use it',
+                      text:
+                          'After the NPU misbehaved (the orange notes), after an app update that changed the NPU library, or to try the '
+                          'whole model again. Picking CPU and then NPU also gives the NPU a fresh chance, but keeps the compiled copy.',
+                    ),
+                    ExplainChoice(
+                      name: 'What it costs',
+                      text:
+                          'One compile at the next use: seconds to a minute (6 to 21 s on your phone on 2 October), and a slower first '
+                          'picture. Nothing else is lost - your vectors, tags and settings stay.',
+                    ),
+                  ],
+                ),
+              ],
             ),
+          ],
           if (refused != null)
             Padding(
               key: ValueKey('model-${chosen.name}-refused-${kind.name}'),

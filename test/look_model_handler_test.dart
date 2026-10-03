@@ -353,6 +353,29 @@ void main() {
     expect(fourth[1], isNotNull);
   });
 
+  test('review r89: the idle close never lands under a run - it waits for the run to end, like the tagger', () async {
+    final LookModelHandler h = await ready();
+    h.idleClose = const Duration(milliseconds: 40);
+    await h.imageVector(rgb([
+      [
+        [1, 2, 3],
+      ],
+    ]));
+    runner.gate = Completer<void>();
+    final Future<Float32List> slow = h.imageVector(rgb([
+      [
+        [1, 2, 3],
+      ],
+    ]));
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    expect(runner.closedDuringRun, isFalse);
+    expect(runner.closed, isFalse);
+    runner.gate!.complete();
+    await slow;
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    expect(runner.closed, isTrue, reason: 'closed once idle');
+  });
+
   test('the session closes after the idle time and opens again; a runner failure is shown until a refresh; the switch', () async {
     final LookModelHandler h = await ready();
     h.idleClose = const Duration(milliseconds: 40);

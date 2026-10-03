@@ -51,12 +51,12 @@ class ModelTimings {
   static const String fileName = 'model_timings.json';
 
   @visibleForTesting
-  void resetForTests({String? dir}) {
+  void resetForTests({String? dir, bool? loaded}) {
     _stats.clear();
     _npuFailures.clear();
     _lastOpened.clear();
     _dir = dir;
-    _loaded = dir != null;
+    _loaded = loaded ?? dir != null;
     _saving = null;
     _dirty = false;
   }

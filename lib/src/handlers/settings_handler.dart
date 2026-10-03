@@ -50,6 +50,7 @@ import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
 import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
 import 'package:lolisnatcher/src/handlers/search_handler.dart';
 import 'package:lolisnatcher/src/handlers/secure_storage_handler.dart';
+import 'package:lolisnatcher/src/handlers/recommender/model_timings.dart';
 import 'package:lolisnatcher/src/handlers/recommender/onnx_availability.dart';
 import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/services/get_perms.dart';
@@ -3309,6 +3310,9 @@ class SettingsHandler {
     unawaited(SourceLinks.applySaved());
     // r88: what this build of ONNX Runtime can run on (Run on offers only that).
     unawaited(OnnxAvailability.load());
+    // r89 (review): the NPU failure counts from the last runs, before a model
+    // opens (they used to load only with a Models page).
+    unawaited(ModelTimings.instance.ensureLoaded());
 
     isPostInit.value = true;
     postInitMessage.value = '';

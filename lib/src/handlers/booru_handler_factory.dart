@@ -111,8 +111,13 @@ class BooruHandlerFactory {
 
   /// r89: the spare thumbnail addresses [booru]'s own handler publishes for
   /// [item] (BooruHandler.thumbnailFallbacks) - web addresses only.
+  ///
+  /// r89 (review): in lists and mixed feeds (Favourites, History, merged
+  /// tabs, the doujin For You) the booru is not the item's own source; a post
+  /// on a Schale network still brings its spare.
   static List<String> thumbnailFallbacksFor(Booru booru, BooruItem item) {
-    final List<String> spares = mediaHandlerFor(booru)?.thumbnailFallbacks(item) ?? const [];
+    List<String> spares = mediaHandlerFor(booru)?.thumbnailFallbacks(item) ?? const [];
+    if (spares.isEmpty && SchaleHandler.ownsPost(item.postURL)) spares = item.sources ?? const [];
     return [
       for (final String s in spares)
         if (Uri.tryParse(s.trim()) case final Uri u when (u.isScheme('http') || u.isScheme('https')) && u.host.isNotEmpty) s.trim(),

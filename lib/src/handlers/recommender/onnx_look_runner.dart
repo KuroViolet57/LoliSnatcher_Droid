@@ -113,16 +113,21 @@ class OnnxLookRunner implements LookRunner {
         model: ModelKind.look,
         used: _used,
         copy: _npuCopy,
+        sessionId: session.id,
         who: 'look (picture half)',
         run: () => _imageRun(session, name, input),
         onCpu: () async {
-          _cpuAfterFailure = true;
-          final OrtSession? old = _image;
-          _image = null;
-          _openingImage = null;
-          await old?.close();
+          // r89 (review): a second run that failed on the same session joins
+          // the CPU opening the first one started instead of closing it.
+          if (!_cpuAfterFailure) {
+            _cpuAfterFailure = true;
+            final OrtSession? old = _image;
+            _image = null;
+            _openingImage = null;
+            await old?.close();
+          }
           final OrtSession cpu = await _imageSession();
-          _provider = '$_provider (NPU failed)';
+          if (!_provider.endsWith('(NPU failed)')) _provider = '$_provider (NPU failed)';
           return _imageRun(cpu, cpu.inputNames.isNotEmpty ? cpu.inputNames.first : name, input);
         },
       );

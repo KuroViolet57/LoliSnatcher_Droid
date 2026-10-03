@@ -134,6 +134,28 @@ class MainActivity: FlutterFragmentActivity() {
     }
 
     private val SERVICES_CHANNEL = "com.noaisu.loliSnatcher/services"
+
+    /**
+     * r89: this process's own Android log since [sinceMs], only the tags of ONNX Runtime and
+     * Qualcomm's DSP/NPU libraries - never the app's own lines (flutter), which can carry
+     * addresses. An app may read its own process's log without any permission.
+     */
+    private fun readNativeLog(sinceMs: Long): List<String> {
+        val args = mutableListOf("logcat", "-d", "-v", "time", "--pid=${android.os.Process.myPid()}")
+        if (sinceMs > 0) args += listOf("-T", String.format(Locale.US, "%d.%03d", sinceMs / 1000, sinceMs % 1000))
+        args += listOf("onnxruntime:V", "QnnDsp:V", "QnnHtp:V", "QNN:V", "adsprpc:V", "cdsprpc:V", "fastrpc:V", "*:S")
+        val process = ProcessBuilder(args).redirectErrorStream(true).start()
+        val lines = ArrayDeque<String>()
+        process.inputStream.bufferedReader().useLines { seq ->
+            seq.forEach { line ->
+                if (line.isBlank() || line.startsWith("-----")) return@forEach
+                lines.addLast(if (line.length > 600) line.substring(0, 600) else line)
+                if (lines.size > 400) lines.removeFirst()
+            }
+        }
+        process.waitFor()
+        return lines.toList()
+    }
     private val VOLUME_CHANNEL = "com.noaisu.loliSnatcher/volume"
     private var volumeSink: EventChannel.EventSink? = null
     private var isSinkingVolume: Boolean = false
@@ -570,6 +592,18 @@ class MainActivity: FlutterFragmentActivity() {
                     }
                     "getAvailableAliases" -> {
                         result.success(getAvailableAliases())
+                    }
+                    // r89: ONNX Runtime's / QNN's own lines (why the NPU refused or failed).
+                    "readNativeLog" -> {
+                        val since = call.argument<Number>("sinceMs")?.toLong() ?: 0L
+                        Executors.newSingleThreadExecutor().execute {
+                            val lines = try {
+                                readNativeLog(since)
+                            } catch (e: Exception) {
+                                listOf("could not read the log: ${e.message}")
+                            }
+                            runOnUiThread { result.success(lines) }
+                        }
                     }
                     else -> result.notImplemented()
                 }

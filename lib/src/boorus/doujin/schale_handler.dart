@@ -26,6 +26,7 @@ import 'package:lolisnatcher/src/utils/logger.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/boorus/doujin/schale_network.dart';
 import 'package:lolisnatcher/src/boorus/booru_type.dart';
+import 'package:lolisnatcher/src/handlers/settings_handler.dart';
 
 /// niyaniya.moe — the Schale Network JSON API.
 ///
@@ -207,6 +208,24 @@ class SchaleHandler extends BooruHandler with DoujinListingTagBackfill, DoujinNa
   /// (`thumbnails.fallback`), kept in the item's `sources`.
   @override
   List<String> thumbnailFallbacks(BooruItem item) => item.sources ?? const [];
+
+  /// r89 (review): [postURL] is a post on a Schale network - niyaniya and its
+  /// mirror shupogaki.moe, hdoujin, or a configured NiyaNiya/HDoujin site -
+  /// so its `sources` hold the spare image server. Posts carry the resolved
+  /// site, which need not be the configured one.
+  static bool ownsPost(String postURL) {
+    final String host = (Uri.tryParse(postURL)?.host ?? '').toLowerCase();
+    if (host.isEmpty) return false;
+    if (const {'niyaniya.moe', 'shupogaki.moe', 'hdoujin.org'}.contains(host)) return true;
+    try {
+      for (final b in SettingsHandler.instance.booruList) {
+        if ((b.type == BooruType.NiyaNiya || b.type == BooruType.HDoujin) && (Uri.tryParse(b.baseURL ?? '')?.host ?? '').toLowerCase() == host) {
+          return true;
+        }
+      }
+    } catch (_) {}
+    return false;
+  }
 
   @override
   String validateTags(String tags) => tags.trim();

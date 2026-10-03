@@ -80,6 +80,23 @@ void main() {
     }
   });
 
+  test('review: a niyaniya/HDoujin post keeps its spare wherever it is shown - lists, merged tabs, the doujin For You', () {
+    // Schale posts carry the resolved site (a mirror such as shupogaki.moe),
+    // not always the configured one.
+    SettingsHandler.instance.booruList.add(Booru('hd', BooruType.HDoujin, '', 'https://hdoujin.example', ''));
+    addTearDown(SettingsHandler.instance.booruList.clear);
+    final List<String> spare = ['https://spare.example/t/1.webp'];
+    BooruItem schale(String postURL) => item(spare)..postURL = postURL;
+    for (final BooruType host in [BooruType.ForYouDoujin, BooruType.Merge, BooruType.Favourites, BooruType.Downloads]) {
+      final Booru feed = booru(host, '');
+      expect(BooruHandlerFactory.thumbnailFallbacksFor(feed, schale('https://shupogaki.moe/g/1/k')), spare, reason: '${host.name}: mirror');
+      expect(BooruHandlerFactory.thumbnailFallbacksFor(feed, schale('https://niyaniya.moe/g/1/k')), spare, reason: '${host.name}: niyaniya');
+      expect(BooruHandlerFactory.thumbnailFallbacksFor(feed, schale('https://hdoujin.example/g/1/k')), spare, reason: '${host.name}: a configured HDoujin site');
+      expect(BooruHandlerFactory.thumbnailFallbacksFor(feed, item(e621Sources)), isEmpty, reason: '${host.name}: a booru post');
+      expect(BooruHandlerFactory.thumbnailFallbacksFor(feed, schale('https://niyaniya.moe.evil.example/g/1/k')), isEmpty, reason: 'a lookalike host');
+    }
+  });
+
   group('the loader skips a spare it cannot use instead of failing the thumbnail', () {
     final Uri primary = Uri.parse('https://static1.e621.net/data/preview/6f/14/6f1441fe2e2c7e53fd6d09435fe0b2fb.jpg');
 

@@ -7,6 +7,7 @@ import 'package:flutter_onnxruntime/flutter_onnxruntime.dart';
 import 'package:lolisnatcher/src/data/model_tasks.dart';
 import 'package:lolisnatcher/src/handlers/recommender/model_timings.dart';
 import 'package:lolisnatcher/src/handlers/recommender/onnx_availability.dart';
+import 'package:lolisnatcher/src/handlers/service_handler.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
 
 /// r87: Qualcomm's QNN on the HTP (the NPU), float models at 16-bit.
@@ -105,6 +106,9 @@ String npuWholeFailedMarker(String modelPath, int bytes) => '$modelPath.npu2-$by
 /// 117's copies (`npu-…`, which are never opened again) and copies or marks
 /// for another size of the model (another download).
 List<String> staleNpuFiles(String modelPath, int bytes, Iterable<String> siblings) {
+  // An unknown size (the model could not be read) would make every copy look
+  // like another size's.
+  if (bytes <= 0) return const [];
   final String legacy = '$modelPath.npu-';
   final String any = '$modelPath.npu2-';
   final String mine = '$modelPath.npu2-$bytes-';
@@ -112,6 +116,23 @@ List<String> staleNpuFiles(String modelPath, int bytes, Iterable<String> sibling
     for (final String s in siblings)
       if (s.startsWith(legacy) || (s.startsWith(any) && !s.startsWith(mine))) s,
   ];
+}
+
+/// r89 (review): Compile again - every NPU copy and mark beside
+/// [modelPath] (build 117's, this size's, other sizes'); the model stays.
+void deleteNpuCopies(String modelPath) {
+  try {
+    for (final FileSystemEntity e in File(modelPath).parent.listSync()) {
+      if (e.path.startsWith('$modelPath.npu-') || e.path.startsWith('$modelPath.npu2-')) _delete(e.path);
+    }
+  } catch (_) {}
+}
+
+/// r89 (review): NPU picked again - a new try, the whole model first again.
+void forgetNpuWholeFailure(String modelPath) {
+  try {
+    _delete(npuWholeFailedMarker(modelPath, File(modelPath).lengthSync()));
+  } catch (_) {}
 }
 
 /// r89: the NPU copy beside [modelPath], for the Speed part: the whole model
@@ -146,13 +167,20 @@ const Map<int, String> _qnnErrors = {
 /// stays in the log. The phone's looks model: "QNN error 6033 (the NPU timed
 /// out) in part 107 of the model".
 String npuErrorWords(String reason) {
+  String short(String s) => s.length > 120 ? '${s.substring(0, 120)}…' : s;
   final String? code = RegExp(r'Error code: (\d+)').firstMatch(reason)?.group(1);
   if (code == null) {
-    final String first = reason.split('\n').first.trim();
-    return first.length > 120 ? '${first.substring(0, 120)}…' : first;
+    // ONNX Runtime's own errors: what follows "Status Message:" or the last
+    // "message:", up to the plugin's ", null" or the line end.
+    final RegExpMatch? said =
+        RegExp(r'Status Message: ([^\n]+?)(?:, null|\)?$)', multiLine: true).firstMatch(reason) ??
+        RegExp(r'message: ([^\n]+?)(?:, null|\)?$)', multiLine: true).allMatches(reason).lastOrNull;
+    if (said != null) return short(said.group(1)!.trim());
+    return short(reason.split('\n').first.trim());
   }
   final String? part = RegExp(r'QNN_\d+_(\d+) node').firstMatch(reason)?.group(1);
-  final String? meaning = _qnnErrors[int.parse(code)];
+  final int? number = int.tryParse(code);
+  final String? meaning = number == null ? null : _qnnErrors[number];
   return 'QNN error $code${meaning != null ? ' ($meaning)' : ''}${part != null ? ' in part $part of the model' : ''}';
 }
 
@@ -190,6 +218,11 @@ ModelAccelerator savedAccelerator(ModelKind model) {
 /// A whole-model copy that fails is deleted and marked, so the model's next
 /// opening compiles the mixed kind; a mixed copy is kept - compiling again
 /// would build the same one.
+///
+/// r89 (review): only a QNN failure counts and marks (a session closed under
+/// a run says INVALID_SESSION, not QNN), once per session ([sessionId]: two
+/// runs queued on it fail together), and ONNX Runtime's own lines about it
+/// go into the log (readNativeLog).
 Future<T> runGuarded<T>({
   required ModelKind model,
   required ModelAccelerator used,
@@ -197,13 +230,22 @@ Future<T> runGuarded<T>({
   required Future<T> Function() run,
   required Future<T> Function() onCpu,
   String? copy,
+  String? sessionId,
 }) async {
+  final DateTime started = DateTime.now();
   try {
     return await run();
   } catch (e) {
     if (used != ModelAccelerator.npu) rethrow;
+    final bool qnn = '$e'.contains('QNN');
+    final bool first = sessionId == null || _failedSessions.add(sessionId);
+    if (!qnn || !first) {
+      _log('$who: ${qnn ? 'the NPU failed again on the same session' : 'the NPU session stopped ($e)'}; this one on the CPU');
+      return onCpu();
+    }
     ModelTimings.instance.recordNpuFailure(model, '$e');
     _log('$who: the NPU failed while running ($e); this one on the CPU');
+    await _nativeLogSince(started, who);
     if (copy != null && copy.endsWith('-whole.onnx')) {
       _delete(copy);
       try {
@@ -221,7 +263,38 @@ Future<T> runGuarded<T>({
 /// [runGuarded]); null otherwise.
 typedef OpenedSession = ({OrtSession session, ModelAccelerator used, String provider, String? npuCopy});
 
-void _log(String line) => Logger.Inst().log(line, 'OnnxSession', 'open', LogTypes.booruHandlerInfo);
+void _defaultLog(String line) => Logger.Inst().log(line, 'OnnxSession', 'open', LogTypes.booruHandlerInfo);
+
+/// Where the lines below go (tests read them).
+@visibleForTesting
+void Function(String line) onnxLog = _defaultLog;
+
+void _log(String line) => onnxLog(line);
+
+/// r89 (review): sessions whose failure was counted (a second run queued on
+/// the same session fails with it).
+final Set<String> _failedSessions = {};
+
+Future<List<String>> _defaultReadNativeLog(DateTime since) async {
+  try {
+    return await ServiceHandler.readNativeLog(since);
+  } catch (_) {
+    return const [];
+  }
+}
+
+/// r89 (review): ONNX Runtime's and QNN's own lines from this app's Android
+/// log since `since` (only theirs - never the app's own lines). Why the NPU
+/// refused or failed is only there ("Unsupported nodes in QNN EP: …").
+@visibleForTesting
+Future<List<String>> Function(DateTime since) readNativeLog = _defaultReadNativeLog;
+
+Future<void> _nativeLogSince(DateTime since, String who) async {
+  final List<String> lines = await readNativeLog(since.subtract(const Duration(seconds: 1)));
+  if (lines.isEmpty) return;
+  final List<String> last = lines.length > 60 ? lines.sublist(lines.length - 60) : lines;
+  _log('$who: ONNX Runtime and QNN said (${last.length} of ${lines.length} lines):\n${last.join('\n')}');
+}
 
 Future<OrtSession> _createOrtSession(String path, OrtSessionOptions? options) => OnnxRuntime().createSession(path, options: options);
 Future<void> _closeOrtSession(OrtSession s) => s.close();
@@ -236,6 +309,9 @@ Future<void> Function(OrtSession s) closeOrtSession = _closeOrtSession;
 void resetOnnxSeamsForTests() {
   createOrtSession = _createOrtSession;
   closeOrtSession = _closeOrtSession;
+  readNativeLog = _defaultReadNativeLog;
+  onnxLog = _defaultLog;
+  _failedSessions.clear();
 }
 
 void _delete(String path) {
@@ -254,6 +330,8 @@ Future<OpenedSession?> _openOnNpu(String path, {required ModelKind model, requir
   } catch (_) {
     bytes = 0;
   }
+  final DateTime started = DateTime.now();
+  bool trouble = false;
   // r89: build 117's copies and other sizes' copies go (a mixed S2 copy is
   // tens of MB).
   try {
@@ -279,6 +357,7 @@ Future<OpenedSession?> _openOnNpu(String path, {required ModelKind model, requir
           await closeOrtSession(s);
         } catch (_) {}
         _log('$who: the NPU took no part of the model${a.whole ? '' : ' (every part went to the CPU)'}');
+        trouble = true;
         continue;
       }
       ModelTimings.instance.recordOpen(model, ModelAccelerator.npu, sw.elapsedMilliseconds);
@@ -287,8 +366,9 @@ Future<OpenedSession?> _openOnNpu(String path, {required ModelKind model, requir
         '${a.compileTo != null ? ', compiled and kept' : ', from the compiled copy'}',
       );
       // r89: a new copy gets a fresh chance - the failures counted were the
-      // old copy's.
-      if (copy != null) ModelTimings.instance.clearNpuFailures(model);
+      // old copy's. Not when it replaces a copy that would not open: the
+      // same copy again, and a broken one must not hide its failures.
+      if (copy != null && !recompiled) ModelTimings.instance.clearNpuFailures(model);
       // r88: right after compiling, the compiled copy is opened instead -
       // the first run of the compiling session took 42 s on the phone, the
       // first one from a copy under a second (log 2026-10-02).
@@ -302,8 +382,10 @@ Future<OpenedSession?> _openOnNpu(String path, {required ModelKind model, requir
           _log('$who: the fresh compiled copy did not open ($e); keeping the compiling session');
         }
       }
+      if (trouble) await _nativeLogSince(started, who);
       return (session: s, used: ModelAccelerator.npu, provider: a.whole ? 'NPU' : 'NPU + CPU', npuCopy: copy ?? a.path);
     } catch (e) {
+      trouble = true;
       if (a.compileTo != null) {
         _delete(a.compileTo!);
         _log('$who: the NPU ${a.whole ? 'cannot run the whole model' : 'refused the model'} ($e)');
@@ -314,12 +396,16 @@ Future<OpenedSession?> _openOnNpu(String path, {required ModelKind model, requir
         _log('$who: the compiled copy did not open ($e); compiling again');
         if (!recompiled) {
           recompiled = true;
-          attempts = npuAttempts(path, modelBytes: bytes, threads: threads, exists: (_) => false);
+          // r89 (review): the copies count as gone; a whole model that
+          // failed here still does.
+          final String failedMark = npuWholeFailedMarker(path, bytes);
+          attempts = npuAttempts(path, modelBytes: bytes, threads: threads, exists: (p) => p == failedMark && File(p).existsSync());
           i = -1;
         }
       }
     }
   }
+  await _nativeLogSince(started, who);
   return null;
 }
 
@@ -334,39 +420,48 @@ Future<OpenedSession> openOnnxSession(
   required String who,
 }) async {
   Object? refused;
-  if (accelerator == ModelAccelerator.npu) {
+  ModelAccelerator use = accelerator;
+  // r89 (review): the saved failure counts are read before anything is
+  // decided - they used to load only with a Models page, so a fresh compile's
+  // clear was undone and two saved failures did not keep the CPU.
+  await ModelTimings.instance.ensureLoaded();
+  if (use == ModelAccelerator.npu && (ModelTimings.instance.npuFailures(model)?.count ?? 0) >= 2) {
+    _log('$who: the NPU failed twice with this model; the CPU until NPU is picked again');
+    use = ModelAccelerator.cpu;
+  }
+  if (use == ModelAccelerator.npu) {
     final OpenedSession? npu = await _openOnNpu(path, model: model, threads: threads, who: who);
     if (npu != null) {
-      ModelTimings.instance.recordOpened(model, tried: accelerator, used: npu.used);
+      ModelTimings.instance.recordOpened(model, tried: use, used: npu.used);
       return npu;
     }
     refused = 'the NPU took no part of it';
   } else {
     final Stopwatch sw = Stopwatch()..start();
     try {
-      final OrtSession s = await createOrtSession(path, onnxSessionOptions(threads: threads, accelerator: accelerator));
-      ModelTimings.instance.recordOpen(model, accelerator, sw.elapsedMilliseconds);
-      if (accelerator != ModelAccelerator.cpu) _log('$who: opened on ${accelerator.label} in ${sw.elapsedMilliseconds} ms');
-      ModelTimings.instance.recordOpened(model, tried: accelerator, used: accelerator);
-      return (session: s, used: accelerator, provider: '${accelerator.label} x$threads', npuCopy: null);
+      final OrtSession s = await createOrtSession(path, onnxSessionOptions(threads: threads, accelerator: use));
+      ModelTimings.instance.recordOpen(model, use, sw.elapsedMilliseconds);
+      if (use != ModelAccelerator.cpu) _log('$who: opened on ${use.label} in ${sw.elapsedMilliseconds} ms');
+      ModelTimings.instance.recordOpened(model, tried: use, used: use);
+      return (session: s, used: use, provider: '${use.label} x$threads', npuCopy: null);
     } catch (e) {
       refused = e;
     }
   }
-  if (accelerator != ModelAccelerator.cpu) {
-    _log('$who: ${accelerator.label} refused the model ($refused); the CPU instead');
+  if (use != ModelAccelerator.cpu) {
+    _log('$who: ${use.label} refused the model ($refused); the CPU instead');
     try {
       final Stopwatch cpu = Stopwatch()..start();
       final OrtSession s = await createOrtSession(path, onnxSessionOptions(threads: threads, accelerator: ModelAccelerator.cpu));
       ModelTimings.instance.recordOpen(model, ModelAccelerator.cpu, cpu.elapsedMilliseconds);
-      ModelTimings.instance.recordOpened(model, tried: accelerator, used: ModelAccelerator.cpu, refused: '$refused');
-      return (session: s, used: ModelAccelerator.cpu, provider: 'CPU x$threads (${accelerator.label} refused)', npuCopy: null);
+      ModelTimings.instance.recordOpened(model, tried: use, used: ModelAccelerator.cpu, refused: '$refused');
+      return (session: s, used: ModelAccelerator.cpu, provider: 'CPU x$threads (${use.label} refused)', npuCopy: null);
     } catch (e) {
       refused = e;
     }
   }
   _log('$who: could not open the model with $threads thread(s) ($refused); default options');
   final OrtSession s = await createOrtSession(path, null);
-  ModelTimings.instance.recordOpened(model, tried: accelerator, used: ModelAccelerator.cpu, refused: accelerator == ModelAccelerator.cpu ? null : '$refused');
+  ModelTimings.instance.recordOpened(model, tried: use, used: ModelAccelerator.cpu, refused: use == ModelAccelerator.cpu ? null : '$refused');
   return (session: s, used: ModelAccelerator.cpu, provider: 'CPU', npuCopy: null);
 }
