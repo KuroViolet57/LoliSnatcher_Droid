@@ -2396,7 +2396,10 @@ class SettingsHandler {
     if (setMissingKeys) {
       // find all keys that are missing in the file and set them to default values
       map.forEach((key, value) {
-        if (!json.keys.contains(key)) {
+        // The lists read above already got their defaults; their declared
+        // defaults are strings, which setByString cannot assign.
+        if (!json.keys.contains(key) &&
+            !['buttonOrder', 'disabledButtons', 'hiddenTags', 'markedTags'].contains(key)) {
           if (map[key] != null) {
             setByString(key, map[key]!['default']);
           }

@@ -80,6 +80,16 @@ void main() {
       expect(s.earlierDownloadFolders, ['content://tree/old']);
     });
 
+    test('a settings file without buttonOrder still sets every other missing key to its default', () async {
+      s.cacheDuration = const Duration(hours: 1);
+      s.flowSkinApplied.value = false;
+      await s.loadFromJSON('{}', true);
+      expect(s.buttonOrder, GalleryButton.values);
+      expect(s.disabledButtons, isEmpty);
+      expect(s.cacheDuration, Duration.zero, reason: 'a key declared after buttonOrder');
+      expect(s.flowSkinApplied.value, isTrue, reason: 'the one-time Flow migration ran');
+    });
+
     test('a fresh install keeps the theme chosen in its first session at the next start', () async {
       expect(File('${s.path}settings.json').existsSync(), isFalse);
       await s.loadSettings(); // first start: no file yet
