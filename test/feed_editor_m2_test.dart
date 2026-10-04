@@ -264,6 +264,50 @@ void main() {
     });
   });
 
+  testWidgets('feed card: right after the last file of a download batch it builds without a RangeError', (tester) async {
+    final BooruItem item = BooruItem(
+      fileURL: 'https://img.invalid/1.jpg',
+      sampleURL: 'https://img.invalid/1.jpg',
+      thumbnailURL: 'https://img.invalid/1-t.jpg',
+      tagsList: [Tag('cats')],
+      postURL: 'https://gelbooru.com/1',
+    );
+    final EmptyHandler handler = EmptyHandler(gelbooru, 20)..fetched.add(item);
+    final SnatchHandler snatch = SnatchHandler.instance;
+    addTearDown(() {
+      snatch.current.value = null;
+      snatch.queueProgress.value = 0;
+      snatch.total.value = 0;
+    });
+    // The last file is done: the counter is past the end and the batch is
+    // not cleared yet (that waits for the download stream to close).
+    snatch.current.value = SnatchItem([item], 0, gelbooru, false);
+    snatch.queueProgress.value = 1;
+    snatch.total.value = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 148,
+              height: 220,
+              child: ThumbnailCardBuild(
+                index: 0,
+                item: item,
+                handler: handler,
+                scrollController: AutoScrollController(),
+                selectable: false,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(tester.takeException(), isNull);
+  });
+
   test("thumbnail item reload works with the caller's cancel token instead of cancelling it", () async {
     final CancelToken token = CancelToken();
     await tryToLoadAndUpdateItem(
