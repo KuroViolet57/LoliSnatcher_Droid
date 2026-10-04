@@ -230,6 +230,21 @@ void main() {
       expect(asked.any((q) => q.contains('female:')), isTrue, reason: asked.join(' | '));
     });
 
+    test('1.0 (M2): the first page starts somewhere random among the sources, not always at the first one', () async {
+      // Three doujin sources, two seeds: which seed nhentai is asked first
+      // depends on where the rotation starts (0 -> parody:aaa, else parody:bbb).
+      final Set<String> firstAsked = {};
+      for (int i = 0; i < 24 && firstAsked.length < 2; i++) {
+        fakes.clear();
+        final DoujinForYouHandler h = DoujinForYouHandler(SettingsHandler.instance.ensureForYouDoujinBooru(), 20);
+        await h.search('seed:parody:aaa seed:parody:bbb', null);
+        expect(h.sources.length, 3);
+        final String q = fakes['https://nhentai.net']!.queries.first;
+        firstAsked.add(q.contains('aaa') ? 'aaa' : 'bbb');
+      }
+      expect(firstAsked, {'aaa', 'bbb'}, reason: 'the first page always started at the first source');
+    });
+
     test('a source that answered a short page and then a long one loses nothing of the long one (review)', () async {
       SettingsHandler.instance.booruList
         ..clear()
