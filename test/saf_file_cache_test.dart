@@ -31,8 +31,8 @@ void main() {
     final Completer<void> oldAsked = Completer<void>();
     messenger.setMockMethodCallHandler(ServiceHandler.platform, (MethodCall call) async {
       switch (call.method) {
-        case 'testSAF':
-          return 'ok';
+        case 'hasSafAccess':
+          return true;
         case 'listFileNames':
           final String uri = (call.arguments as Map)['uri'] as String;
           if (uri == 'content://tree/old') {
@@ -73,7 +73,7 @@ void main() {
 
   test('a listing that finishes for the folder still in use fills the cache', () async {
     messenger.setMockMethodCallHandler(ServiceHandler.platform, (MethodCall call) async {
-      if (call.method == 'testSAF') return 'ok';
+      if (call.method == 'hasSafAccess') return true;
       if (call.method == 'listFileNames') return <String>['a.jpg', 'b.mp4'];
       return null;
     });
@@ -82,5 +82,28 @@ void main() {
     expect(SAFFileCache.instance.isPopulated, isTrue);
     expect(SAFFileCache.instance.fileNames, {'a.jpg', 'b.mp4'});
     expect(await SAFFileCache.instance.existsFile('content://tree/only', 'a.jpg'), isTrue);
+  });
+
+  test('1.0: the warm-up asks for the grant only - no picker, no test file - and lists nothing without one', () async {
+    final List<String> asked = [];
+    bool granted = false;
+    messenger.setMockMethodCallHandler(ServiceHandler.platform, (MethodCall call) async {
+      asked.add(call.method);
+      if (call.method == 'hasSafAccess') return granted;
+      if (call.method == 'listFileNames') return <String>['a.jpg'];
+      if (call.method == 'testSAF') return 'ok';
+      return null;
+    });
+    SettingsHandler.instance.extPathOverride = 'content://tree/lost';
+
+    await SAFFileCache.instance.populate('content://tree/lost');
+    expect(asked, ['hasSafAccess'], reason: 'testSAF opens the folder picker without a grant and writes a test file with one');
+    expect(SAFFileCache.instance.isPopulated, isFalse);
+
+    asked.clear();
+    granted = true;
+    await SAFFileCache.instance.populate('content://tree/lost');
+    expect(asked, ['hasSafAccess', 'listFileNames']);
+    expect(SAFFileCache.instance.fileNames, {'a.jpg'});
   });
 }

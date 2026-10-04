@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:lolisnatcher/core/platform/service_handler.dart';
-import 'package:lolisnatcher/core/platform/get_perms.dart';
 
 class SAFFileCache {
   SAFFileCache._();
@@ -34,7 +33,12 @@ class SAFFileCache {
 
   Future<void> populate(String safUri) async {
     // skip if can't get access to saf folder for some reason
-    if (_isPopulating || !await checkStorageAvailability()) {
+    // 1.0: asks Android whether the grant exists (hasSafAccess). The old check
+    // (testSAF) opened the folder picker when there was no grant - at app start,
+    // unasked - and otherwise wrote and deleted a test file in the download
+    // folder on the main thread at every start. Downloads still go through
+    // setPermissions, which offers the picker when the folder is gone.
+    if (_isPopulating || !await ServiceHandler.hasSafAccess(safUri)) {
       await _populateCompleter?.future;
       return;
     }

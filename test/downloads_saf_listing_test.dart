@@ -41,6 +41,8 @@ void main() {
       switch (call.method) {
         case 'testSAF':
           return 'ok';
+        case 'hasSafAccess': // 1.0: the cache warm-up asks for the grant only
+          return true;
         case 'listFileNames':
           return names;
       }
