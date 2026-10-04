@@ -598,6 +598,8 @@ class VideoViewerState extends State<VideoViewer> {
       final toAwait = List<Future<void>>.from(_pendingDispose);
       _pendingDispose.clear();
       await Future.wait(toAwait);
+      // Swiped away while the old player was being torn down.
+      if (!mounted) return;
     }
 
     registerVideoBackendForCurrentAttempt();
@@ -619,6 +621,14 @@ class VideoViewerState extends State<VideoViewer> {
         videoPlayerOptions: Platform.isAndroid ? VideoPlayerOptions(mixWithOthers: true) : null,
         httpHeaders: await _customHeaders(),
       );
+    }
+    // Swiped away while the headers were read: nothing would ever dispose
+    // this controller, and the context below is gone.
+    if (!mounted) {
+      final VideoPlayerController? orphan = videoController.value;
+      videoController.value = null;
+      unawaited(orphan?.dispose());
+      return;
     }
     // mixWithOthers: true, allows to not interrupt audio sources from other apps
     videoController.value!.addListener(updateVideoState);
