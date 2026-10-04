@@ -77,7 +77,7 @@ class LoliSync {
       try {
         Logger.Inst().log('request to update settings recieved', 'LoliSync', 'storeSettings', LogTypes.loliSyncInfo);
         final String content = await utf8.decoder.bind(req).join(); /*2*/
-        await settingsHandler.loadFromJSON(content, false);
+        await settingsHandler.loadFromJSON(withOwnDeviceSettings(content, settingsHandler), false);
         req.response.statusCode = 200;
         req.response.write('Settings Sent');
         return 'Settings Saved';
@@ -98,6 +98,23 @@ class LoliSync {
       req.response.write('Invalid Query');
       return 'Invalid Query';
     }
+  }
+
+  /// 1.0: the sender leaves its device-specific settings out, and
+  /// loadFromJSON empties these three when they are missing: this phone's
+  /// own values go in their place.
+  static String withOwnDeviceSettings(String content, SettingsHandler settingsHandler) {
+    Object? json;
+    try {
+      json = jsonDecode(content);
+    } catch (_) {
+      return content;
+    }
+    if (json is! Map<String, dynamic>) return content;
+    json.putIfAbsent('modelThreads', () => Map<String, int>.from(settingsHandler.modelThreads));
+    json.putIfAbsent('modelRunOn', () => Map<String, String>.from(settingsHandler.modelRunOn));
+    json.putIfAbsent('earlierDownloadFolders', () => List<String>.from(settingsHandler.earlierDownloadFolders));
+    return jsonEncode(json);
   }
 
   Future<String> storeBooruBatch(dynamic req, SettingsHandler settingsHandler) async {
