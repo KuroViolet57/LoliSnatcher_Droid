@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -15,7 +16,9 @@ import 'package:lolisnatcher/core/storage/tag_handler.dart';
 import 'package:lolisnatcher/core/utils/tools.dart';
 import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
 import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/models/booru_item.dart';
 import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/sources/booru/agnph_handler.dart';
 import 'package:lolisnatcher/sources/booru/civitai_handler.dart';
 import 'package:lolisnatcher/sources/booru/ink_bunny_handler.dart';
 import 'package:lolisnatcher/sources/tube/redgifs_handler.dart';
@@ -173,6 +176,78 @@ void main() {
     final String logged = [for (final e in Logger.talker.history.skip(before)) e.generateTextMessage()].join('\n');
     expect(logged, contains('api_search.php'), reason: 'the requests are still logged');
     expect(logged, isNot(contains(sid)));
+  });
+
+  test('AGNPH: the tags fetched later land on their own post when a post before them was skipped', () async {
+    String post(String id, {bool withFile = true}) =>
+        '<post><id>$id</id>${withFile ? '<file_url>https://media.invalid/$id.png</file_url>' : ''}'
+        '<preview_url>https://media.invalid/$id-s.png</preview_url><thumbnail_url>https://media.invalid/$id-t.png</thumbnail_url>'
+        '<width>10</width><height>10</height><rating>s</rating><fav_count>1</fav_count><source></source>'
+        '<md5>m$id</md5><created_at>1600000000</created_at></post>';
+    routes['/gallery/post/show/'] = (r) {
+      final String id = r.uri.pathSegments.where((s) => s.isNotEmpty).last;
+      return answer(r, '<post><tags>tag_$id</tags><artist>artist$id</artist></post>', type: ContentType('text', 'xml'));
+    };
+    routes['/gallery/post/'] = (r) => answer(
+      r,
+      '<posts count="3">${post('1', withFile: false)}${post('2')}${post('3')}</posts>',
+      type: ContentType('text', 'xml'),
+    );
+    final AGNPHHandler h = AGNPHHandler(Booru('AGNPH', BooruType.AGNPH, '', base, ''), 20);
+
+    await h.search('sylveon', null);
+
+    expect(h.fetched.map((i) => i.serverId), ['2', '3']);
+    final BooruItem two = h.fetched[0];
+    final BooruItem three = h.fetched[1];
+    final DateTime until = DateTime.now().add(const Duration(seconds: 5));
+    while (DateTime.now().isBefore(until) && (two.tagsList.isEmpty || three.tagsList.isEmpty)) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+    expect(two.tagsList.map((t) => t.fullString), contains('tag_2'));
+    expect(three.tagsList.map((t) => t.fullString), contains('tag_3'));
+    expect(three.tagsList.map((t) => t.fullString), isNot(contains('tag_2')));
+  });
+
+  test('AGNPH: the blacklist judges a post again once its tags arrive', () async {
+    String post(String id) =>
+        '<post><id>$id</id><file_url>https://media.invalid/$id.png</file_url>'
+        '<preview_url>https://media.invalid/$id-s.png</preview_url><thumbnail_url>https://media.invalid/$id-t.png</thumbnail_url>'
+        '<width>10</width><height>10</height><rating>s</rating><fav_count>1</fav_count><source></source>'
+        '<md5>m$id</md5><created_at>1600000000</created_at></post>';
+    // The tags answer only after the page is on screen, as on a slow line.
+    final Completer<void> release = Completer<void>();
+    routes['/gallery/post/show/'] = (r) async {
+      await release.future;
+      final String id = r.uri.pathSegments.where((s) => s.isNotEmpty).last;
+      await answer(r, '<post><tags>tag_$id</tags><artist>artist$id</artist></post>', type: ContentType('text', 'xml'));
+    };
+    routes['/gallery/post/'] = (r) => answer(r, '<posts count="2">${post('2')}${post('3')}</posts>', type: ContentType('text', 'xml'));
+    final SettingsHandler settings = SettingsHandler.instance;
+    final bool filterHated = settings.filterHated;
+    settings
+      ..filterHated = true
+      ..hiddenTags.add('tag_3')
+      ..invalidateBlacklistCache();
+    addTearDown(() {
+      settings
+        ..filterHated = filterHated
+        ..hiddenTags.remove('tag_3')
+        ..invalidateBlacklistCache();
+    });
+    final AGNPHHandler h = AGNPHHandler(Booru('AGNPH', BooruType.AGNPH, '', base, ''), 20);
+
+    await h.search('sylveon', null);
+
+    expect(h.filteredFetched.map((i) => i.serverId), ['2', '3'], reason: 'no tags yet, nothing to judge');
+    release.complete();
+    final BooruItem two = h.fetched[0];
+    final BooruItem three = h.fetched[1];
+    final DateTime until = DateTime.now().add(const Duration(seconds: 5));
+    while (DateTime.now().isBefore(until) && (two.tagsList.isEmpty || three.tagsList.isEmpty)) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+    expect(h.filteredFetched.map((i) => i.serverId), ['2']);
   });
 
   test('RedGifs: a user token the API rejects is set aside for the session, not wiped from the source', () async {

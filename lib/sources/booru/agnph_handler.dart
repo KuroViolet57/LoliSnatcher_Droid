@@ -73,8 +73,9 @@ class AGNPHHandler extends BooruHandler {
         postDateFormat: 'unix', // when timezone support added: "EEE MMM dd HH:mm:ss Z yyyy",
       );
 
-      final int newIndex = fetched.length + index;
-      getTagsLater(postID, newIndex);
+      // The item itself, not a position in fetched: a skipped post (no
+      // file_url) shifted every later index onto the next post's tags.
+      getTagsLater(postID, item);
 
       return item;
     } else {
@@ -82,7 +83,7 @@ class AGNPHHandler extends BooruHandler {
     }
   }
 
-  Future<void> getTagsLater(String postID, int fetchedIndex) async {
+  Future<void> getTagsLater(String postID, BooruItem item) async {
     try {
       final response = await DioNetwork.get(
         '${booru.baseURL}/gallery/post/show/$postID/?api=xml',
@@ -98,7 +99,10 @@ class AGNPHHandler extends BooruHandler {
           final String artist = post.getElement('artist')?.innerText ?? '';
           tagStr = "artist:$artist ${tagStr.replaceAll(artist, "")}";
         }
-        fetched.elementAt(fetchedIndex).tagsList = tagStr.split(' ').map(Tag.new).toList();
+        item.tagsList = tagStr.split(' ').map(Tag.new).toList();
+        // The feed was filtered while the post had no tags yet: judge it
+        // again now (blacklist, marked, AI) or those filters never see AGNPH.
+        if (fetched.contains(item)) filterFetched();
       } else {
         Logger.Inst().log(
           'AGNPHHandler failed to get post',
