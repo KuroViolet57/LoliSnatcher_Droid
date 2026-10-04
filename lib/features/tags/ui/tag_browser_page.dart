@@ -74,6 +74,10 @@ class _TagBrowserPageState extends State<TagBrowserPage> {
   final List<BooruTagEntry> _rows = [];
   int _offset = 0;
   bool _loading = false;
+
+  /// Bumped by every [_reset]: a page read that started for an older list
+  /// (another query, filter or booru) is dropped when it lands.
+  int _listGeneration = 0;
   bool _isLastPage = false;
   String _error = '';
 
@@ -193,11 +197,14 @@ class _TagBrowserPageState extends State<TagBrowserPage> {
   }
 
   void _reset() {
+    _listGeneration++;
     setState(() {
       _rows.clear();
       _offset = 0;
       _isLastPage = false;
       _error = '';
+      // A read still in flight belongs to the old list; the new one starts now.
+      _loading = false;
     });
     _refreshSnapshotSize();
     _loadMore();
@@ -224,6 +231,7 @@ class _TagBrowserPageState extends State<TagBrowserPage> {
 
   Future<void> _loadMore() async {
     if (_loading || _isLastPage) return;
+    final int generation = _listGeneration;
     setState(() {
       _loading = true;
       _error = '';
@@ -271,7 +279,7 @@ class _TagBrowserPageState extends State<TagBrowserPage> {
         }
       }
 
-      if (!mounted) return;
+      if (!mounted || generation != _listGeneration) return;
       setState(() {
         _rows.addAll(got);
         _offset += got.length;
@@ -279,7 +287,7 @@ class _TagBrowserPageState extends State<TagBrowserPage> {
         _loading = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || generation != _listGeneration) return;
       setState(() {
         _error = e.toString();
         _loading = false;

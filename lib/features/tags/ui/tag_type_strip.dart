@@ -197,16 +197,24 @@ class _TagCatalogPickerSheetState extends State<TagCatalogPickerSheet> {
     }
   }
 
+  /// Bumped by every [_reset]: a page read that started for an older list
+  /// (another filter text, or before a shard landed) is dropped when it lands.
+  int _listGeneration = 0;
+
   Future<void> _reset() async {
+    _listGeneration++;
     _offset = 0;
     _lastPage = false;
     _rows.clear();
+    // A read still in flight belongs to the old list; the new one starts now.
+    _loading = false;
     _total = await BooruTagStore.countNamespace(widget.booru, widget.namespace);
     await _loadMore();
   }
 
   Future<void> _loadMore() async {
     if (_loading || _lastPage) return;
+    final int generation = _listGeneration;
     setState(() => _loading = true);
     final got = await BooruTagStore.browseNamespace(
       widget.booru,
@@ -215,7 +223,7 @@ class _TagCatalogPickerSheetState extends State<TagCatalogPickerSheet> {
       limit: _pageSize,
       offset: _offset,
     );
-    if (!mounted) return;
+    if (!mounted || generation != _listGeneration) return;
     setState(() {
       _rows.addAll(got);
       _offset += got.length;
