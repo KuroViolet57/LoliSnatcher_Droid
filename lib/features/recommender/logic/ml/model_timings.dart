@@ -206,6 +206,9 @@ class ModelTimings {
     }();
     await _saving;
     _saving = null;
+    // A change that came after the loop's last check, while [_saving] was
+    // still set, returned without writing: it is written now.
+    if (_dirty) unawaited(_save());
   }
 
   @visibleForTesting
