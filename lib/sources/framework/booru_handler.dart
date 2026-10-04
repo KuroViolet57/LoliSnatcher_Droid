@@ -226,8 +226,12 @@ abstract class BooruHandler {
         continue;
       }
 
+      // The same id is the same post only on the same site: a merge feed or
+      // a Downloads list can hold post 12345 of two different sites.
       final bool isDuplicate = filteredItems.any(
-        (e) => e.fileURL == item.fileURL || (e.serverId != null && e.serverId == item.serverId),
+        (e) =>
+            e.fileURL == item.fileURL ||
+            (e.serverId != null && e.serverId == item.serverId && Uri.tryParse(e.postURL)?.host == Uri.tryParse(item.postURL)?.host),
       );
       if (isDuplicate) {
         hide(HiddenReason.duplicate);

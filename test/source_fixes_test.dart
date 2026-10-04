@@ -171,6 +171,29 @@ void main() {
       }
     });
 
+    test('two different posts with the same id from two sites are both shown; one site twice is a duplicate', () {
+      final BooruHandler h = handlerFor(gelbooru);
+      h.fetched.addAll([
+        item('12345'),
+        item('12345', host: 'danbooru.donmai.us'),
+        item('777'),
+        // The same gelbooru post again, its file on another server.
+        BooruItem(
+          fileURL: 'https://img2.gelbooru.com/images/777.png',
+          sampleURL: 'https://img2.gelbooru.com/samples/777.png',
+          thumbnailURL: 'https://img2.gelbooru.com/thumbs/777.png',
+          tagsList: [Tag('solo')],
+          postURL: 'https://gelbooru.com/index.php?page=post&s=view&id=777',
+          serverId: '777',
+        ),
+      ]);
+
+      h.filterFetched();
+
+      expect(h.filteredFetched.map((i) => Uri.parse(i.postURL).host), ['gelbooru.com', 'danbooru.donmai.us', 'gelbooru.com']);
+      expect(h.filteredFetched.map((i) => i.serverId), ['12345', '12345', '777']);
+    });
+
     test('merge: a post without an md5 is not taken for a copy of every other post without one', () {
       final MergebooruHandler merge = MergebooruHandler(Booru('Merge', BooruType.Merge, '', '', ''), 20);
       final List<BooruItem> pageOne = [item('1', host: 'nozomi.la')];
