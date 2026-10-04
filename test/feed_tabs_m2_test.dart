@@ -21,6 +21,16 @@ import 'package:lolisnatcher/core/storage/tag_handler.dart';
 import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
 import 'package:lolisnatcher/features/recommender/logic/interests_handler.dart';
 
+/// Keeps the searches written to the booru search history.
+class _HistoryDb extends DBHandler {
+  final List<String> recorded = [];
+
+  @override
+  Future<void> updateSearchHistory(String searchText, String? booruType, String? booruName) async {
+    recorded.add(searchText);
+  }
+}
+
 /// 1.0 M2 (feed): the tab list keeps its current tab, its groups and its
 /// tabs through moves, removals, merges, replaces, restores and page jumps.
 void main() {
@@ -337,6 +347,47 @@ void main() {
     expect(sh().currentTab.selectedBooru.value.name, 'nhentai');
     expect(sh().currentTab.tags, 'glasses');
     await settle(tester);
+  });
+
+  testWidgets('pull to refresh is not a new search for the history or the taste profile', (tester) async {
+    await pumpApp(tester);
+    final SettingsHandler settings = SettingsHandler.instance;
+    final DBHandler realDb = settings.dbHandler;
+    final bool dbEnabled = settings.dbEnabled;
+    final bool tracking = settings.enableInterestTracking;
+    final bool history = settings.searchHistoryEnabled;
+    final _HistoryDb db = _HistoryDb();
+    settings
+      ..dbHandler = db
+      ..dbEnabled = true
+      ..enableInterestTracking = true
+      ..searchHistoryEnabled = true;
+    addTearDown(() {
+      settings
+        ..dbHandler = realDb
+        ..dbEnabled = dbEnabled
+        ..enableInterestTracking = tracking
+        ..searchHistoryEnabled = history;
+    });
+    InterestsHandler.register();
+    settings.booruList.add(gelbooru);
+    sh().tabs.add(loaded('cats'));
+    select(0);
+
+    await sh().searchAction('cats', null, isRefresh: true);
+    await tester.pump();
+    expect(InterestsHandler.instance.pendingSignals, isEmpty);
+    expect(db.recorded, isEmpty);
+
+    // The same query typed and searched again is still a search.
+    await sh().searchAction('cats', null);
+    await tester.pump();
+    expect(InterestsHandler.instance.pendingSignals.keys, ['cats']);
+    expect(db.recorded, ['cats']);
+
+    await settle(tester);
+    // The taste profile writes its signals 10 s later.
+    await tester.pump(const Duration(seconds: 11));
   });
 
   group('removeTagFromSearch removes whole tags only', () {

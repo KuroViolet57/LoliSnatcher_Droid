@@ -652,7 +652,9 @@ class SearchHandler {
   }
 
   // runs search on current tab
-  Future<void> searchAction(String text, Booru? newBooru) async {
+  // [isRefresh]: the same query again (pull to refresh), which is not a new
+  // search for the search history or the taste profile.
+  Future<void> searchAction(String text, Booru? newBooru, {bool isRefresh = false}) async {
     final SettingsHandler settingsHandler = SettingsHandler.instance;
 
     // Remove extra spaces
@@ -667,7 +669,8 @@ class SearchHandler {
             ? currentBooru
             : (settingsHandler.booruList.isNotEmpty ? settingsHandler.booruList[0] : null));
     final BooruType? actionType = actionBooru?.type;
-    if (actionBooru != null &&
+    if (!isRefresh &&
+        actionBooru != null &&
         text.isNotEmpty &&
         actionType?.isLocalDb != true &&
         actionType?.isRecommendationFeed != true &&
@@ -724,7 +727,7 @@ class SearchHandler {
     changeTabIndex(currentIndex, ignoreSameIndexCheck: true);
 
     // write to history (doujin searches never reach the booru history table)
-    if (text != '' && isPlainSearch(text)) {
+    if (!isRefresh && text != '' && isPlainSearch(text)) {
       unawaited(SearchHistoryStore.record(text, newBooru ?? currentBooru));
     }
   }

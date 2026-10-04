@@ -478,9 +478,11 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware, TraceLif
               edgeOffset: MediaQuery.paddingOf(context).top + MainAppBar.height,
               strokeWidth: 4,
               color: Theme.of(context).colorScheme.secondary,
+              // The same search again: not a new search for the history or For You.
               onRefresh: () => searchHandler.searchAction(
                 searchHandler.currentTab.tags,
                 null,
+                isRefresh: true,
               ),
               child: Stack(
                 children: [
