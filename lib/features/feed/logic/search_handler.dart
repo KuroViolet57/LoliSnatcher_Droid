@@ -32,6 +32,7 @@ import 'package:lolisnatcher/features/feed/logic/search_history_store.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/features/downloads/logic/snatch_handler.dart';
 import 'package:lolisnatcher/core/logging/logger.dart';
+import 'package:lolisnatcher/features/feed/logic/tab_backup_gate.dart';
 import 'package:lolisnatcher/core/utils/tools.dart';
 import 'package:lolisnatcher/core/ui/flash_elements.dart';
 
@@ -1322,6 +1323,45 @@ class SearchHandler {
   // keeps track of the last time tabs were backupped
   DateTime lastBackupTime = DateTime.now();
 
+  /// 1.0: lets [backupTabs] skip an unchanged tab list (see [TabBackupGate]).
+  final TabBackupGate _backupGate = TabBackupGate();
+
+  @visibleForTesting
+  void resetBackupGate() => _backupGate.reset();
+
+  /// What decides the next backup: every field TabBackup writes per tab, the
+  /// current tab, and what decides between writing and clearing the row
+  /// (the default source and tags, and the first tab's source).
+  int _backupSignature() {
+    final SettingsHandler settingsHandler = SettingsHandler.instance;
+    final int tabsSignature = TabBackupGate.signatureOf(
+      tabs.map(
+        (tab) => TabBackupFields(
+          tags: tab.tags,
+          booru: tab.selectedBooru.value.name ?? 'unknown',
+          id: tab.id,
+          group: tab.groupName,
+          poolId: tab.poolId,
+          poolName: tab.poolName,
+          doujinPostURL: tab.doujinPostURL,
+          doujinTitle: tab.doujinTitle,
+          doujinThumb: tab.doujinThumb,
+          secondaryBoorus: tab.secondaryBoorus.value?.map((b) => b.name ?? 'unknown').toList() ?? const [],
+          tagOverrides: tab.tagOverrides,
+          inheritMainTags: tab.inheritMainTags,
+        ),
+      ),
+      currentIndex,
+    );
+    return Object.hash(
+      tabsSignature,
+      settingsHandler.prefBooru,
+      settingsHandler.defTags,
+      settingsHandler.booruList.isNotEmpty,
+      tabs.isEmpty ? null : tabs[0].booruHandler.booru.name,
+    );
+  }
+
   @Deprecated('Switched to new json format. Remove this after a few versions')
   Future<void> restoreTabsLegacy(String? result) async {
     final SettingsHandler settingsHandler = SettingsHandler.instance;
@@ -1855,6 +1895,13 @@ class SearchHandler {
       return;
     }
 
+    // 1.0: every 30 s this encoded every tab and rewrote the row even when
+    // nothing had changed - a hitch on the UI thread with thousands of tabs.
+    final int signature = _backupSignature();
+    if (!_backupGate.shouldWrite(signature)) {
+      return;
+    }
+
     final String? backupString = generateBackupJson();
     final SettingsHandler settingsHandler = SettingsHandler.instance;
     // print('backupString: $backupString');
@@ -1863,6 +1910,7 @@ class SearchHandler {
     } else {
       await settingsHandler.dbHandler.clearTabRestore();
     }
+    _backupGate.written(signature);
 
     lastBackupTime = DateTime.now();
   }
