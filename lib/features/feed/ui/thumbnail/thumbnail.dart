@@ -333,6 +333,9 @@ class _ThumbnailState extends State<Thumbnail> {
       true,
       withCaptchaCheck: withCaptchaCheck,
     );
+    // Disposed while the headers were read: disposables() already ran, so a
+    // listener added now would never be removed.
+    if (!mounted) return;
     mainImageStream?.removeListener(mainImageListener!);
     mainImageStream = mainProvider.value!.resolve(ImageConfiguration.empty);
     mainImageListener = ImageStreamListener(
@@ -379,6 +382,7 @@ class _ThumbnailState extends State<Thumbnail> {
 
     if (useExtra) {
       extraProvider.value = await getImageProvider(false);
+      if (!mounted) return;
       extraImageStream?.removeListener(extraImageListener!);
       extraImageStream = extraProvider.value!.resolve(ImageConfiguration.empty);
       extraImageListener = ImageStreamListener(
@@ -465,10 +469,13 @@ class _ThumbnailState extends State<Thumbnail> {
 
     bool? updateRes;
     if (withItemLoad) {
+      // Kept on the state so disposables() cancels it when the cell goes away.
+      loadItemCancelToken = CancelToken();
       updateRes = await tryToLoadAndUpdateItem(
         widget.item,
         loadItemCancelToken,
       );
+      if (!mounted) return;
     }
 
     selectThumbProvider(
@@ -837,14 +844,15 @@ Future<bool?> tryToLoadAndUpdateItem(
           (itemFileHost?.isNotEmpty == true && booruHost?.isNotEmpty == true && itemFileHost! == booruHost!);
     });
 
-    cancelToken?.cancel();
-    cancelToken = CancelToken();
+    // The request runs with the caller's token, so the caller can cancel it
+    // (a thumbnail that went away); without one it gets its own.
+    final CancelToken token = cancelToken ?? CancelToken();
     if (possibleBooru != null) {
       final handler = BooruHandlerFactory().getBooruHandler([possibleBooru], null).booruHandler;
       if (handler.hasLoadItemSupport) {
         final result = await handler.loadItem(
           item: item,
-          cancelToken: cancelToken,
+          cancelToken: token,
           withCapcthaCheck: true,
         );
 

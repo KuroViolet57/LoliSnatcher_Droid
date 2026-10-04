@@ -10,6 +10,7 @@ import 'package:lolisnatcher/models/booru.dart';
 import 'package:lolisnatcher/models/booru_item.dart';
 import 'package:lolisnatcher/features/recommender/logic/interests_handler.dart';
 import 'package:lolisnatcher/features/doujin/logic/doujin_data_handler.dart';
+import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
 import 'package:lolisnatcher/core/ui/navigation_handler.dart';
 import 'package:lolisnatcher/core/logging/logger.dart';
 import 'package:lolisnatcher/features/tags/ui/floating_tag_preview_window.dart';
@@ -144,10 +145,13 @@ class FloatingPreviewHandler extends ChangeNotifier {
   }) {
     final Route<dynamic>? page = _pageFor(owner);
     if (page == null && owner != null) return;
+    // The gallery key rides along for the sources that need it (HDoujin,
+    // niyaniya, e-hentai), as when the book opens in a new tab.
+    final String idQuery = SearchTab.doujinIdQuery(item);
     entries.removeWhere((e) => e.ownerRoute == page);
     entries.add(
       FloatingPreviewEntry(
-        tag: 'id:${item.serverId}',
+        tag: idQuery.isEmpty ? 'id:${item.serverId}' : idQuery,
         booru: booru,
         ownerRoute: page,
         doujinItem: item,

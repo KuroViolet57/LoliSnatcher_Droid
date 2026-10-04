@@ -478,9 +478,11 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware, TraceLif
               edgeOffset: MediaQuery.paddingOf(context).top + MainAppBar.height,
               strokeWidth: 4,
               color: Theme.of(context).colorScheme.secondary,
+              // The same search again: not a new search for the history or For You.
               onRefresh: () => searchHandler.searchAction(
                 searchHandler.currentTab.tags,
                 null,
+                isRefresh: true,
               ),
               child: Stack(
                 children: [
@@ -512,6 +514,9 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware, TraceLif
                             final bool screenNotFilled = pos.extentBefore == 0 && pos.extentAfter == 0;
                             if (screenNotFilled) {
                               await Future.delayed(const Duration(milliseconds: 500));
+                              // Another rebuild's callback (or the scroll
+                              // listener) may have started the next page meanwhile.
+                              if (searchHandler.isLoading.value) return;
                               unawaited(searchHandler.runSearch());
                             }
                           }

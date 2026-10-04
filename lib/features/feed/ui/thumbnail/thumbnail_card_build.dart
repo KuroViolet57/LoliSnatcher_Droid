@@ -229,7 +229,13 @@ class ThumbnailCardBuild extends StatelessWidget {
                   final queueProgress = snatchHandler.queueProgress.value;
                   final total = snatchHandler.total.value;
 
-                  final bool isCurrentlyBeingSnatched = current?.booruItems[queueProgress] == item && total != 0;
+                  // queueProgress reaches booruItems.length after the last
+                  // file, before the queue item is cleared: no item then.
+                  final bool isCurrentlyBeingSnatched =
+                      total != 0 &&
+                      current != null &&
+                      queueProgress < current.booruItems.length &&
+                      current.booruItems[queueProgress] == item;
 
                   if (isCurrentlyBeingSnatched) {
                     return AnimatedProgressIndicator(

@@ -339,18 +339,29 @@ class SearchHandler {
       );
 
       final SettingsHandler settingsHandler = SettingsHandler.instance;
-      final String defaultText = currentBooru.defTags?.isNotEmpty == true
-          ? currentBooru.defTags!
+      // Every tab is gone, so the current tab's source is read from the tab
+      // kept above (currentBooru would read an empty list).
+      final Booru booru = curTab.selectedBooru.value;
+      final String defaultText = booru.defTags?.isNotEmpty == true
+          ? booru.defTags!
           : settingsHandler.defTags;
       searchTextController.text = defaultText;
 
-      final SearchTab newTab = SearchTab(currentBooru, null, defaultText);
-      tabs.value[0] = newTab;
+      final SearchTab newTab = SearchTab(booru, null, defaultText);
+      if (tabs.value.isEmpty) {
+        tabs.value.add(newTab);
+      } else {
+        tabs.value[0] = newTab;
+      }
       changeTabIndex(0);
     } else {
       final newIndex = tabs.value.indexWhere((t) => t.id == curTab.id);
       changeTabIndex(newIndex == -1 ? total - 1 : newIndex);
     }
+
+    // The list was changed in place: tell its listeners (tab pill, tab
+    // cards, tab count) once the current index points into it again.
+    tabs.value = [...tabs];
   }
 
   void moveTab(int fromIndex, int toIndex) {
@@ -371,10 +382,10 @@ class SearchHandler {
     if (fromIndex == currentIndex) {
       // if the current tab is moved, change the current tab index
       changeTabIndex(toIndex);
-    } else if (toIndex == currentIndex) {
-      // if moved into the place of the current tab, bump index of current tab
+    } else if (toIndex == currentIndex && fromIndex > currentIndex) {
+      // if a later tab moved into the place of the current tab, bump index of current tab
       changeTabIndex(toIndex + 1);
-    } else if (fromIndex < currentIndex && toIndex > currentIndex) {
+    } else if (fromIndex < currentIndex && toIndex >= currentIndex) {
       // if tab was before current tab and is moved after current tab, current tab is -1
       changeTabIndex(currentIndex - 1);
     } else if (fromIndex > currentIndex && toIndex < currentIndex) {
@@ -430,11 +441,13 @@ class SearchHandler {
 
   void removeTagFromSearch(String tag) {
     if (tag.isNotEmpty) {
-      searchTextController.text = searchTextController.text
-          .replaceAll(RegExp(r'(?:-|~)?\d+#(?:-|~)?' + tag.regexpEscape()), '')
-          .replaceAll('-$tag', '')
-          .replaceAll('~$tag', '')
-          .replaceAll(tag, '');
+      // Whole tags only (`blue` leaves `blue_eyes` and `navy-blue` alone),
+      // with their -, ~ and N# forms. A tag ends at a space, or at a comma
+      // in Hydrus' comma-separated queries.
+      searchTextController.text = searchTextController.text.replaceAll(
+        RegExp(r'(?<=^|\s|,)(?:(?:-|~)?\d+#)?(?:-|~)?' + tag.regexpEscape() + r'(?=$|\s|,)'),
+        '',
+      );
     }
   }
 
@@ -512,12 +525,22 @@ class SearchHandler {
 
   // recreate current tab with custom starting page number
   void changeCurrentTabPageNumber(int newPageNum) {
+    // The same tab on another page: it keeps its overrides, its pool and its
+    // doujin identity, and stays in its group.
     final SearchTab newTab = SearchTab(
       currentBooru,
       currentSecondaryBoorus.value,
       currentTab.tags,
       tabId: currentTab.id,
+      tagOverrides: Map<String, String>.from(currentTab.tagOverrides),
+      inheritMainTags: Map<String, bool>.from(currentTab.inheritMainTags),
+      poolId: currentTab.poolId,
+      poolName: currentTab.poolName,
+      doujinPostURL: currentTab.doujinPostURL,
+      doujinTitle: currentTab.doujinTitle,
+      doujinThumb: currentTab.doujinThumb,
     );
+    newTab.groupName = currentTab.groupName;
     newTab.booruHandler.pageNum = newPageNum;
     pageNum.value = newPageNum;
     tabs[currentIndex] = newTab;
@@ -629,7 +652,9 @@ class SearchHandler {
   }
 
   // runs search on current tab
-  Future<void> searchAction(String text, Booru? newBooru) async {
+  // [isRefresh]: the same query again (pull to refresh), which is not a new
+  // search for the search history or the taste profile.
+  Future<void> searchAction(String text, Booru? newBooru, {bool isRefresh = false}) async {
     final SettingsHandler settingsHandler = SettingsHandler.instance;
 
     // Remove extra spaces
@@ -637,9 +662,16 @@ class SearchHandler {
 
     // Record the search as a taste signal (skip virtual/local feeds AND
     // doujin sources — doujin activity must not feed the booru For You).
-    final Booru actionBooru = newBooru ?? currentBooru;
-    final BooruType? actionType = actionBooru.type;
-    if (text.isNotEmpty &&
+    // With no tab yet, the search opens one on the first source (below).
+    final Booru? actionBooru =
+        newBooru ??
+        (tabs.isNotEmpty
+            ? currentBooru
+            : (settingsHandler.booruList.isNotEmpty ? settingsHandler.booruList[0] : null));
+    final BooruType? actionType = actionBooru?.type;
+    if (!isRefresh &&
+        actionBooru != null &&
+        text.isNotEmpty &&
         actionType?.isLocalDb != true &&
         actionType?.isRecommendationFeed != true &&
         !DoujinDataHandler.isDoujinBooru(actionBooru) &&
@@ -652,14 +684,14 @@ class SearchHandler {
 
     // set new tab data
     if (tabs.isEmpty) {
-      if (settingsHandler.booruList.isNotEmpty) {
-        final SearchTab newTab = SearchTab(
-          settingsHandler.booruList[0],
-          currentSecondaryBoorus.value,
-          text,
-        );
-        tabs.add(newTab);
-      }
+      // No source to open a tab on: nothing to search.
+      if (actionBooru == null) return;
+      final SearchTab newTab = SearchTab(
+        actionBooru,
+        null, // no current tab to take merge sources from
+        text,
+      );
+      tabs.add(newTab);
     } else {
       // Preserve per-booru tag overrides + inherit flags across the tab swap
       // so the user's search-bar tap doesn't wipe edits they made.
@@ -695,7 +727,7 @@ class SearchHandler {
     changeTabIndex(currentIndex, ignoreSameIndexCheck: true);
 
     // write to history (doujin searches never reach the booru history table)
-    if (text != '' && isPlainSearch(text)) {
+    if (!isRefresh && text != '' && isPlainSearch(text)) {
       unawaited(SearchHistoryStore.record(text, newBooru ?? currentBooru));
     }
   }
@@ -1114,6 +1146,8 @@ class SearchHandler {
       tagOverrides: carriedOverrides,
       inheritMainTags: carriedInherit,
     );
+    // Toggling merge sources keeps the tab in its group.
+    newTab.groupName = currentTab.groupName;
     tabs[currentIndex] = newTab;
 
     // run search
@@ -1435,9 +1469,6 @@ class SearchHandler {
     final List<SearchTab> restoredGlobals = [];
     int newIndex = 0;
 
-    // reset current tab index to avoid exceptions when tab list length is different
-    changeTabIndex(0, switchOnly: true);
-
     for (final List<String> booruAndTags in splitInput) {
       // check for parsing errors
       final bool isEntryValid = booruAndTags.length > 1 && booruAndTags[0].isNotEmpty;
@@ -1452,15 +1483,21 @@ class SearchHandler {
           final SearchTab newTab = SearchTab(findBooru, null, booruAndTags[1]);
           restoredGlobals.add(newTab);
 
-          if (booruAndTags[2] == 'selected') {
+          if (booruAndTags.length > 2 && booruAndTags[2] == 'selected') {
             final int index = splitInput.indexWhere((si) => si == booruAndTags);
             newIndex = index;
           }
         }
       }
     }
-    tabs.value = restoredGlobals;
-    changeTabIndex(newIndex);
+    // None of them can open here: keep this device's tabs (an empty tab
+    // list breaks every screen that shows the current tab).
+    if (restoredGlobals.isNotEmpty) {
+      // reset current tab index to avoid exceptions when tab list length is different
+      changeTabIndex(0, switchOnly: true);
+      tabs.value = restoredGlobals;
+      changeTabIndex(newIndex);
+    }
 
     final context = NavigationHandler.instance.navContext;
     FlashElements.showSnackbar(
@@ -1503,8 +1540,8 @@ class SearchHandler {
         // get index of selected tab
         // newSelectedIndex == 0 check is to ensure that the first tab with selected:true is used
         if (newSelectedIndex == 0 && tabBackup.selected) {
-          final int index = tabBackups.indexWhere((tb) => tb == tabBackup);
-          newSelectedIndex = index;
+          // An index into the restored tabs: an entry that failed to parse is skipped.
+          newSelectedIndex = restoredTabs.length - 1;
         }
       } catch (e, s) {
         Logger.Inst().log(
@@ -1578,11 +1615,15 @@ class SearchHandler {
 
       // add only if there are not already the same tab in the list and booru is available on this device
       if (newTab.selectedBooru.value.name != null &&
-          tabs.any(
+          !tabs.any(
             (tab) =>
                 tab.selectedBooru.value.name == newTab.selectedBooru.value.name &&
-                tab.secondaryBoorus.value?.map((t) => t.name).toList() ==
-                    newTab.secondaryBoorus.value?.map((t) => t.name).toList() &&
+                // No merge sources reads as null on a restored tab and as []
+                // on one whose sources were all switched off: the same tab.
+                listEquals(
+                  (tab.secondaryBoorus.value ?? const <Booru>[]).map((t) => t.name).toList(),
+                  (newTab.secondaryBoorus.value ?? const <Booru>[]).map((t) => t.name).toList(),
+                ) &&
                 tab.tags == newTab.tags,
           )) {
         restoredTabs.add(newTab);
@@ -1607,22 +1648,25 @@ class SearchHandler {
     final List<SearchTab> restoredTabs = [];
     int newSelectedIndex = 0;
 
-    // reset current tab index to avoid exceptions when tab list length is different
-    changeTabIndex(0, switchOnly: true);
-
     for (final tabBackup in tabBackups) {
       final newTab = parseTabFromBackup(tabBackup);
       if (newTab.selectedBooru.value.name != null) {
         restoredTabs.add(newTab);
 
         if (newSelectedIndex == 0 && tabBackup.selected) {
-          final int index = tabBackups.indexWhere((tb) => tb == tabBackup);
-          newSelectedIndex = index;
+          // An index into the restored tabs: tabs of sources missing here are skipped.
+          newSelectedIndex = restoredTabs.length - 1;
         }
       }
     }
-    tabs.value = restoredTabs;
-    changeTabIndex(newSelectedIndex);
+    // None of them can open here: keep this device's tabs (an empty tab
+    // list breaks every screen that shows the current tab).
+    if (restoredTabs.isNotEmpty) {
+      // reset current tab index to avoid exceptions when tab list length is different
+      changeTabIndex(0, switchOnly: true);
+      tabs.value = restoredTabs;
+      changeTabIndex(newSelectedIndex);
+    }
 
     final context = NavigationHandler.instance.navContext;
     FlashElements.showSnackbar(

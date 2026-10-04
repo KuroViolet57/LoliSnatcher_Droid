@@ -415,9 +415,15 @@ class _ThumbnailBottomRightIcons extends StatelessWidget {
 
       final bool isInQueueToBeSnatched =
           snatchHandler.current.value?.booruItems.any((booruItem) => booruItem == item) == true;
+      // queueProgress reaches booruItems.length after the last file, before
+      // the queue item is cleared: no item then.
+      final List<BooruItem>? queueItems = snatchHandler.current.value?.booruItems;
+      final int queueProgress = snatchHandler.queueProgress.value;
       final bool isCurrentlyBeingSnatched =
-          snatchHandler.current.value?.booruItems[snatchHandler.queueProgress.value] == item &&
-          snatchHandler.total.value != 0;
+          snatchHandler.total.value != 0 &&
+          queueItems != null &&
+          queueProgress < queueItems.length &&
+          queueItems[queueProgress] == item;
 
       int bottomRightAmount = 0;
       if (isFavOrMarked) bottomRightAmount += 1;

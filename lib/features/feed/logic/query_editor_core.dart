@@ -144,6 +144,11 @@ class QueryEditorController {
         cancelToken?.cancel();
         onUpdate();
 
+        // The text this lookup answers. If the user typed on meanwhile, its
+        // answer is dropped instead of replacing the newer one.
+        final String input = suggestionTextControllerRawInput;
+        bool isStale() => suggestionTextControllerRawInput != input;
+
         final metaTags = handler.availableMetaTags();
         final MetaTag? metaTag = metaTags.firstWhereOrNull(
           (p) => p.keyParser(suggestionTextControllerRawInput) != null,
@@ -154,10 +159,13 @@ class QueryEditorController {
           final List<TagSuggestion>? fromCatalog = booru == null
               ? null
               : await TagCatalogSource.suggestFromCatalog(handler, booru, suggestionTextControllerRawInput);
+          if (isStale()) return;
           if (fromCatalog != null) {
             suggestedTags = fromCatalog;
           } else if (metaTag.hasAutoComplete) {
-            suggestedTags = await metaTag.getAutoComplete(suggestionTextControllerRawInput);
+            final List<TagSuggestion> autoComplete = await metaTag.getAutoComplete(suggestionTextControllerRawInput);
+            if (isStale()) return;
+            suggestedTags = autoComplete;
             suggestedTags.sort((a, b) => a.tag.compareTo(b.tag));
           } else {
             suggestedTags.clear();
@@ -224,6 +232,7 @@ class QueryEditorController {
                         !databaseSearch.any((dbtag) => dbtag.tag.trim().toLowerCase() == htag.tag.trim().toLowerCase()),
                   )
                   .toList();
+          if (isStale()) return;
 
           loading = false;
           failed = false;
