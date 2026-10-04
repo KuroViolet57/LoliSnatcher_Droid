@@ -1350,7 +1350,9 @@ class _BooruEditState extends State<BooruEdit> {
       }
 
       for (int i = 0; i < settingsHandler.booruList.length; i++) {
-        if (settingsHandler.booruList[i].baseURL == booruURLController.text) {
+        // The booru being edited, found by its URL before the edit (a changed
+        // URL used to leave the old config in place next to the new one).
+        if (settingsHandler.booruList[i].baseURL == widget.booru.baseURL) {
           final bool oldEditBooruExists =
               settingsHandler.booruList[i].baseURL == widget.booru.baseURL &&
               settingsHandler.booruList[i].name == widget.booru.name;
