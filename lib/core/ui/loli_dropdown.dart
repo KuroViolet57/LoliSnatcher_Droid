@@ -246,6 +246,11 @@ class _LoliDropdownBottomSheet<T> extends State<LoliDropdownBottomSheet<T>> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (widget.value != null) {
         final index = filteredItems.indexOf(widget.value as T);
+        // 1.0: a value that is not in the list (filtered out, a stale
+        // instance) has nothing to scroll to.
+        if (index == -1) {
+          return;
+        }
         if (_keys[index].currentContext != null) {
           Scrollable.ensureVisible(
             _keys[index].currentContext!,
@@ -261,6 +266,16 @@ class _LoliDropdownBottomSheet<T> extends State<LoliDropdownBottomSheet<T>> {
         }
       }
     });
+  }
+
+  @override
+  void dispose() {
+    searchController.dispose();
+    // A draggable sheet hands in its own controller, which it disposes.
+    if (widget.controller == null) {
+      scrollController.dispose();
+    }
+    super.dispose();
   }
 
   void onItemSelect(T item) {
