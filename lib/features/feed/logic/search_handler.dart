@@ -371,10 +371,10 @@ class SearchHandler {
     if (fromIndex == currentIndex) {
       // if the current tab is moved, change the current tab index
       changeTabIndex(toIndex);
-    } else if (toIndex == currentIndex) {
-      // if moved into the place of the current tab, bump index of current tab
+    } else if (toIndex == currentIndex && fromIndex > currentIndex) {
+      // if a later tab moved into the place of the current tab, bump index of current tab
       changeTabIndex(toIndex + 1);
-    } else if (fromIndex < currentIndex && toIndex > currentIndex) {
+    } else if (fromIndex < currentIndex && toIndex >= currentIndex) {
       // if tab was before current tab and is moved after current tab, current tab is -1
       changeTabIndex(currentIndex - 1);
     } else if (fromIndex > currentIndex && toIndex < currentIndex) {
