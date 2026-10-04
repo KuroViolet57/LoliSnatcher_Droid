@@ -41,13 +41,9 @@ core/utils/tools.dart -> sources/booru/sankaku_handler.dart
 core/utils/tools.dart -> sources/framework/booru_handler_factory.dart
 features/downloads/logic/snatch_handler.dart -> features/feed/ui/thumbnail/thumbnail_build.dart
 features/feed/logic/floating_preview_handler.dart -> features/tags/ui/floating_tag_preview_window.dart
-features/feed/ui/main_appbar.dart -> app/theme/theme_handler.dart
 features/links/logic/incoming_link.dart -> features/links/ui/linked_media_sheet.dart
 features/recommender/logic/video_frames.dart -> features/video/ui/media_kit_player_view.dart
-features/settings/ui/settings_page.dart -> app/drawers/mascot_image.dart
 features/sync/logic/loli_sync_handler.dart -> features/sync/ui/loli_sync_page.dart
-features/tabs/ui/flow_tab_carousel.dart -> app/theme/theme_handler.dart
-features/tabs/ui/tab_pill.dart -> app/theme/theme_handler.dart
 features/viewer/logic/viewer_handler.dart -> features/video/ui/video_viewer.dart
 features/viewer/logic/viewer_handler.dart -> features/viewer/ui/media/image_viewer.dart
 models/board.dart -> features/boards/logic/board_query.dart
@@ -67,7 +63,6 @@ models/settings/button_position.dart -> core/settings/settings_handler.dart
 models/settings/mpv_hardware_decoding.dart -> core/settings/settings_handler.dart
 models/settings/mpv_video_output.dart -> core/settings/settings_handler.dart
 models/settings/proxy_type.dart -> core/utils/extensions.dart
-models/settings/setting_definition.dart -> features/settings/ui/language_page.dart
 models/tag.dart -> core/constants.dart
 models/tag_type.dart -> core/settings/settings_handler.dart
 models/tag_type.dart -> core/ui/navigation_handler.dart

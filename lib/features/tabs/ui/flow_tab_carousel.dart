@@ -9,7 +9,7 @@ import 'package:lolisnatcher/models/booru.dart';
 import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
 import 'package:lolisnatcher/core/platform/service_handler.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
-import 'package:lolisnatcher/app/theme/theme_handler.dart';
+import 'package:lolisnatcher/core/ui/theme_handler.dart';
 import 'package:lolisnatcher/core/ui/settings_widgets.dart';
 import 'package:lolisnatcher/features/tabs/ui/add_new_tab_dialog.dart';
 import 'package:lolisnatcher/features/feed/ui/page_number_dialog.dart';

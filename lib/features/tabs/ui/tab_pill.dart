@@ -10,7 +10,7 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
 import 'package:lolisnatcher/core/platform/service_handler.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
-import 'package:lolisnatcher/app/theme/theme_handler.dart';
+import 'package:lolisnatcher/core/ui/theme_handler.dart';
 import 'package:lolisnatcher/core/ui/image/booru_favicon.dart';
 import 'package:lolisnatcher/core/ui/image/custom_network_image.dart';
 import 'package:lolisnatcher/features/tabs/ui/flow_tab_carousel.dart';

@@ -4,7 +4,7 @@ import 'package:get/get.dart';
 
 import 'package:lolisnatcher/models/theme_item.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
-import 'package:lolisnatcher/app/theme/theme_handler.dart';
+import 'package:lolisnatcher/core/ui/theme_handler.dart';
 
 class ThemeBuilder extends StatelessWidget {
   const ThemeBuilder({

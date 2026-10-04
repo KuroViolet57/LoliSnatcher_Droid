@@ -11,7 +11,7 @@ import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
 import 'package:lolisnatcher/core/platform/service_handler.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/features/downloads/logic/snatch_handler.dart';
-import 'package:lolisnatcher/app/theme/theme_handler.dart';
+import 'package:lolisnatcher/core/ui/theme_handler.dart';
 import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
 import 'package:lolisnatcher/core/utils/extensions.dart';
 import 'package:lolisnatcher/core/utils/tools.dart';

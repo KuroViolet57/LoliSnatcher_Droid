@@ -27,7 +27,7 @@ import 'package:lolisnatcher/features/settings/ui/settings_page.dart';
 import 'package:lolisnatcher/features/tags/ui/tag_browser_page.dart';
 import 'package:lolisnatcher/core/utils/tools.dart';
 import 'package:lolisnatcher/core/ui/buttons/cancel_button.dart';
-import 'package:lolisnatcher/app/drawers/mascot_image.dart';
+import 'package:lolisnatcher/core/ui/mascot_image.dart';
 import 'package:lolisnatcher/features/tabs/ui/multibooru_toggle.dart';
 import 'package:lolisnatcher/core/ui/settings_widgets.dart';
 import 'package:lolisnatcher/features/feed/ui/search/main_search_bar.dart';

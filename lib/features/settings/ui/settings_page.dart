@@ -40,7 +40,7 @@ import 'package:lolisnatcher/core/logging/logger.dart';
 import 'package:lolisnatcher/core/ui/buttons/cancel_button.dart';
 import 'package:lolisnatcher/features/settings/ui/discord_button.dart';
 import 'package:lolisnatcher/core/ui/flash_elements.dart';
-import 'package:lolisnatcher/app/drawers/mascot_image.dart';
+import 'package:lolisnatcher/core/ui/mascot_image.dart';
 import 'package:lolisnatcher/core/ui/settings_widgets.dart';
 
 class SettingsPage extends StatelessWidget {

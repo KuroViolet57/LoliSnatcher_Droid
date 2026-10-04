@@ -47,7 +47,7 @@ import 'package:lolisnatcher/models/settings/settings_enum.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/features/downloads/logic/snatch_handler.dart';
 import 'package:lolisnatcher/core/storage/tag_handler.dart';
-import 'package:lolisnatcher/app/theme/theme_handler.dart';
+import 'package:lolisnatcher/core/ui/theme_handler.dart';
 import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
 import 'package:lolisnatcher/app/shells/desktop/desktop_home_page.dart';
 import 'package:lolisnatcher/app/shells/init_home_page.dart';
