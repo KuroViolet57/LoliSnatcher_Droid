@@ -50,10 +50,10 @@ class KemonoSidebar extends StatefulWidget {
 class _KemonoSidebarState extends State<KemonoSidebar> {
   final SearchHandler searchHandler = SearchHandler.instance;
   final SettingsHandler settingsHandler = SettingsHandler.instance;
-  late final KemonoSite site = KemonoSite.of(widget.booru);
-  late final KemonoCreatorStore store = KemonoCreatorStore.forSite(site);
+  late KemonoSite site = KemonoSite.of(widget.booru);
+  late KemonoCreatorStore store = KemonoCreatorStore.forSite(site);
   final KemonoSessionHandler session = KemonoSessionHandler.instance;
-  late final KemonoFileHosts hosts = KemonoFileHosts.forSite(site);
+  late KemonoFileHosts hosts = KemonoFileHosts.forSite(site);
   Worker? _tabWorker;
 
   static const Color artists = Color(0xFFB9A0E8);
@@ -71,6 +71,25 @@ class _KemonoSidebarState extends State<KemonoSidebar> {
     _tabWorker = ever(searchHandler.index, (_) => _tick());
     DrawerRefresh.tick.addListener(_tick);
     session.revision.addListener(_tick);
+    store.state.addListener(_tick);
+    hosts.state.addListener(_tick);
+    hosts.running.addListener(_tick);
+    unawaited(store.ensureFresh());
+  }
+
+  /// The home page builds this sidebar without a key, so a switch to a tab
+  /// on the other kemono-style site reuses this State: follow the new site.
+  @override
+  void didUpdateWidget(KemonoSidebar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final KemonoSite next = KemonoSite.of(widget.booru);
+    if (next.id == site.id) return;
+    store.state.removeListener(_tick);
+    hosts.state.removeListener(_tick);
+    hosts.running.removeListener(_tick);
+    site = next;
+    store = KemonoCreatorStore.forSite(site);
+    hosts = KemonoFileHosts.forSite(site);
     store.state.addListener(_tick);
     hosts.state.addListener(_tick);
     hosts.running.addListener(_tick);
