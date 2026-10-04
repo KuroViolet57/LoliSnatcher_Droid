@@ -111,6 +111,10 @@ class SourceCaptureHandler {
   void start(String target) {
     _entries.clear();
     _seenResources.clear();
+    // 1.0: what an earlier recording saw is not in this one: its api calls
+    // were skipped as "seen" and its bodies as "already read".
+    _seenXhr.clear();
+    _fetchedUrls.clear();
     _totalChars = 0;
     _target = target;
     _startedAt = DateTime.now();
