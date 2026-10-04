@@ -96,6 +96,11 @@ void main() {
       expect(s.disabledButtons, [GalleryButton.share]);
     });
 
+    test('a decimal setting written as a whole number loads', () async {
+      await s.loadFromJSON(jsonEncode({'mousewheelScrollSpeed': 25}), false);
+      expect(s.mousewheelScrollSpeed, 25.0);
+    });
+
     test('a fresh install keeps the theme chosen in its first session at the next start', () async {
       expect(File('${s.path}settings.json').existsSync(), isFalse);
       await s.loadSettings(); // first start: no file yet

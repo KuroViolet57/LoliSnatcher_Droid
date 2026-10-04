@@ -1308,6 +1308,10 @@ class SettingsHandler {
             }
           }
 
+        case 'double':
+          // A whole number in the file (e.g. 25) is still a valid double.
+          return value is num ? value.toDouble() : value;
+
         // case 'stringList':
         default:
           return value;
