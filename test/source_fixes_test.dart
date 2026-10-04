@@ -20,6 +20,7 @@ import 'package:lolisnatcher/sources/framework/booru_handler.dart';
 import 'package:lolisnatcher/sources/framework/booru_handler_factory.dart';
 import 'package:lolisnatcher/sources/furaffinity/furaffinity_handler.dart';
 import 'package:lolisnatcher/sources/furaffinity/furaffinity_session_handler.dart';
+import 'package:lolisnatcher/sources/local/mergebooru_handler.dart';
 import 'package:lolisnatcher/sources/tube/rule34video_handler.dart';
 
 /// The favourite/snatched lookup, held open until the test lets it answer.
@@ -134,6 +135,14 @@ void main() {
         SettingsHandler.instance.dbHandler = original;
         await db.db?.close();
       }
+    });
+
+    test('merge: a post without an md5 is not taken for a copy of every other post without one', () {
+      final MergebooruHandler merge = MergebooruHandler(Booru('Merge', BooruType.Merge, '', '', ''), 20);
+      final List<BooruItem> pageOne = [item('1', host: 'nozomi.la')];
+
+      expect(merge.hashInFetched(pageOne, null, 'https://img.redgifs.com/images/2.png'), isFalse);
+      expect(merge.hashInFetched([item('1', md5: 'abc')], 'abc', 'https://img.other.com/images/9.png'), isTrue, reason: 'a real md5 match still is one');
     });
   });
 }

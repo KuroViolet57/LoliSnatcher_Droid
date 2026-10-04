@@ -263,6 +263,10 @@ class MergebooruHandler extends BooruHandler {
   }
 
   bool hashInFetched(List<BooruItem> fetched, String? hash, String fileURL) {
+    // No md5 is nothing to match: null == null took every md5-less post
+    // (Nozomi, RedGifs, kemono, FurAffinity...) for a copy of the ones on
+    // page 1, so page 2 onwards was empty for those sources.
+    if (hash == null) return false;
     for (int i = 0; i < fetched.length; i++) {
       if (fetched[i].md5String == hash) {
         Logger.Inst().log(
