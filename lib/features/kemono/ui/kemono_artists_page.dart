@@ -124,20 +124,40 @@ class _KemonoArtistsPageState extends State<KemonoArtistsPage> {
     }
   }
 
+  /// Bumped by every [_reset]: a load that ends under an older value was for
+  /// filters that are no longer on screen.
+  int _generation = 0;
+
   Future<void> _reset() async {
+    final int generation = ++_generation;
     _offset = 0;
     _lastPage = false;
     _rows.clear();
     _liveError = null;
+    // A load still running for the old filters would make _loadMore return
+    // at once (and then add ITS rows to this list); it sees the generation
+    // change when it ends and runs this reset again instead.
+    if (_loading) return;
     if (_mode != KemonoArtistsMode.all) {
       await _loadLive();
+      if (generation != _generation) return;
     }
     await _loadMore();
+  }
+
+  /// True when [generation] is no longer the filters on screen; the load
+  /// that asks drops its answer and the current filters are loaded instead.
+  bool _superseded(int generation) {
+    if (generation == _generation) return false;
+    _loading = false;
+    if (mounted) unawaited(_reset());
+    return true;
   }
 
   /// "Recent" and "Favourites" come from the site; the index fills in the
   /// favourites count and the filter/sort are applied on the phone.
   Future<void> _loadLive() async {
+    final int generation = _generation;
     setState(() => _loading = true);
     try {
       final List rows = _mode == KemonoArtistsMode.recent
@@ -150,6 +170,7 @@ class _KemonoArtistsPageState extends State<KemonoArtistsPage> {
       final Map<String, KemonoCreator> indexed = {
         for (final c in await _store.search('', limit: live.length + 1, onlyKeys: {for (final c in live) c.key})) c.key: c,
       };
+      if (_superseded(generation)) return;
       _live = [
         for (final c in live)
           KemonoCreator(
@@ -168,6 +189,7 @@ class _KemonoArtistsPageState extends State<KemonoArtistsPage> {
           ..addAll(_live.map((c) => c.key));
       }
     } catch (e) {
+      if (_superseded(generation)) return;
       _live = const [];
       _liveError = e.toString();
     }
@@ -192,6 +214,7 @@ class _KemonoArtistsPageState extends State<KemonoArtistsPage> {
 
   Future<void> _loadMore() async {
     if (_loading || _lastPage) return;
+    final int generation = _generation;
     setState(() => _loading = true);
     List<KemonoCreator> got;
     if (_mode == KemonoArtistsMode.all) {
@@ -207,6 +230,7 @@ class _KemonoArtistsPageState extends State<KemonoArtistsPage> {
       _lastPage = true;
     }
     if (!mounted) return;
+    if (_superseded(generation)) return;
     setState(() {
       _rows.addAll(got);
       _offset += got.length;

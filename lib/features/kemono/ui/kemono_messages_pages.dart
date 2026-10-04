@@ -80,25 +80,46 @@ class _KemonoDmsPageState extends State<KemonoDmsPage> {
     super.dispose();
   }
 
+  /// Bumped by every [_reset]: a load that ends under an older value was for
+  /// a search that is no longer on screen.
+  int _generation = 0;
+
   Future<void> _reset() async {
+    _generation++;
     _rows.clear();
     _offset = 0;
     _lastPage = false;
     _error = null;
+    // A page still loading for the old search would make _loadMore return at
+    // once (and then add ITS rows and offset to this search); it sees the
+    // generation change when it ends and runs this reset again instead.
+    if (_loading) return;
     await _loadMore();
+  }
+
+  /// True when [generation] is no longer the search on screen; the load that
+  /// asks drops its answer and the current search is loaded instead.
+  bool _superseded(int generation) {
+    if (generation == _generation) return false;
+    _loading = false;
+    if (mounted) unawaited(_reset());
+    return true;
   }
 
   Future<void> _loadMore() async {
     if (_loading || _lastPage) return;
+    final int generation = _generation;
     setState(() => _loading = true);
     try {
       List raw;
       if (widget.creator != null) {
         raw = await KemonoApi.creatorDms(widget.creator!.service, widget.creator!.id, booru: widget.booru);
+        if (_superseded(generation)) return;
         _count = raw.length;
         _lastPage = true;
       } else {
         final page = await KemonoApi.dms(offset: _offset, q: _query.text.trim(), booru: widget.booru);
+        if (_superseded(generation)) return;
         raw = page.rows;
         _count = page.count;
         _offset += 50;
@@ -109,8 +130,10 @@ class _KemonoDmsPageState extends State<KemonoDmsPage> {
           if (r is Map) ?KemonoMessage.fromJson(r),
       ];
       await KemonoCreatorStore.forSite(KemonoSite.of(widget.booru)).warmNames([for (final m in got) (service: m.service, id: m.user)]);
+      if (_superseded(generation)) return;
       _rows.addAll(got);
     } catch (e) {
+      if (_superseded(generation)) return;
       _error = e.toString();
       _lastPage = true;
     }
