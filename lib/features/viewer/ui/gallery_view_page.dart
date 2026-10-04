@@ -1080,6 +1080,20 @@ class _SwipeUpListenerState extends State<_SwipeUpListener> {
   }
 }
 
+/// The tag the viewer's peek bar names as [item]'s artist. The app-wide tag
+/// store is a booru store: a doujin item's tags carry their own site's type
+/// and the store is never consulted for them (HANDOVER 6.2).
+@visibleForTesting
+String? infoPeekBarArtistOf(BooruItem item) {
+  final th = TagHandler.instance;
+  final bool isDoujin = DoujinDataHandler.isDoujinItem(item);
+  for (final t in item.tagsList) {
+    final TagType type = isDoujin ? t.tagType : th.getTag(t.fullString).tagType;
+    if (type.isArtist) return t.fullString;
+  }
+  return null;
+}
+
 /// The collapsed "peek" bar at the bottom of the viewer: artist + tag-count
 /// chips and a swipe-up hint. Tapping it opens the info sheet.
 class _InfoPeekBar extends StatelessWidget {
@@ -1089,13 +1103,7 @@ class _InfoPeekBar extends StatelessWidget {
   final ValueNotifier<int> page;
   final VoidCallback onTap;
 
-  String? _artistOf(BooruItem item) {
-    final th = TagHandler.instance;
-    for (final t in item.tagsList) {
-      if (th.getTag(t.fullString).tagType.isArtist) return t.fullString;
-    }
-    return null;
-  }
+  String? _artistOf(BooruItem item) => infoPeekBarArtistOf(item);
 
   Widget _chip(BuildContext context, IconData icon, String label, Color? color) {
     final Color fg = color ?? const Color(0xFFDDD5EA);
