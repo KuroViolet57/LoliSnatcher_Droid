@@ -193,9 +193,54 @@ class SuggestionHandler extends BooruHandler {
 
   String _handlerKey(Booru b) => '${b.type?.name}|${b.name}|${b.baseURL}';
 
+  /// How a target's handler is made; replaced in tests.
+  @visibleForTesting
+  static BooruHandler Function(Booru booru, int limit)? handlerFactory;
+
   BooruHandler _handlerFor(Booru b) {
-    return _handlers[_handlerKey(b)] ??= (BooruHandlerFactory().getBooruHandler([b], limit).booruHandler
-      ..storeTagsGlobally = false);
+    final String key = _handlerKey(b);
+    final BooruHandler? known = _handlers[key];
+    if (known != null) return known;
+    final BooruHandler made = (handlerFactory?.call(b, limit) ?? BooruHandlerFactory().getBooruHandler([b], limit).booruHandler)
+      ..storeTagsGlobally = false;
+    _firstPages[key] = made.pageNum;
+    return _handlers[key] = made;
+  }
+
+  /// The page each target's handler started at, and the last page asked of
+  /// each (target, query): every facet query is paged on its own. One
+  /// running page per handler made the facets of a round ask pages 1, 2, 3...
+  /// of different queries (page 7 of a small character tag is empty).
+  final Map<String, int> _firstPages = {};
+  final Map<String, int> _pagesAsked = {};
+
+  /// One search at a time per sub-handler: a handler's search is not
+  /// re-entrant (its page, query and results are shared), so the facets
+  /// that land on one target take turns; targets still run in parallel.
+  final Map<BooruHandler, Future<void>> _lanes = {};
+
+  /// Runs [ask] in [handler]'s lane. The answer is given up (null) after
+  /// [timeout] counted from now, waiting included, so a round never waits
+  /// longer than before; a turn that comes after that is skipped, and the
+  /// lane always waits for a running search to end before the next starts.
+  Future<List<BooruItem>?> _inLane(BooruHandler handler, Future<List<BooruItem>> Function() ask, Duration timeout) {
+    final Completer<List<BooruItem>?> answer = Completer();
+    final Timer timer = Timer(timeout, () {
+      if (!answer.isCompleted) answer.complete(null);
+    });
+    final Future<void> turn = (_lanes[handler] ?? Future<void>.value()).then((_) async {
+      if (answer.isCompleted) return;
+      try {
+        final List<BooruItem> got = await ask();
+        if (!answer.isCompleted) answer.complete(got);
+      } catch (_) {
+        if (!answer.isCompleted) answer.complete(null);
+      } finally {
+        timer.cancel();
+      }
+    });
+    _lanes[handler] = turn.catchError((Object _) {});
+    return answer.future;
   }
 
   Future<T?> _bounded<T>(Future<T> Function() run, Duration timeout) async {
@@ -241,13 +286,18 @@ class SuggestionHandler extends BooruHandler {
         }
 
         final BooruHandler handler = _handlerFor(target);
-        handler.pageNum = handler.pageNum + 1;
-        handler.locked = false;
         final String finalQuery = withFilter(query);
-        final List<BooruItem>? got = await _bounded(
-          () async => (await handler.search(finalQuery, null)) as List<BooruItem>? ?? <BooruItem>[],
-          _searchTimeout,
-        );
+        final List<BooruItem>? got = await _inLane(handler, () async {
+          final String pageKey = '${_handlerKey(target)}|$finalQuery';
+          final int page = (_pagesAsked[pageKey] ?? _firstPages[_handlerKey(target)] ?? handler.pageNum) + 1;
+          _pagesAsked[pageKey] = page;
+          handler.pageNum = page;
+          handler.locked = false;
+          final List<BooruItem> all = (await handler.search(finalQuery, null)) as List<BooruItem>? ?? <BooruItem>[];
+          // Each sub-handler accumulates across pages; only the newly added
+          // tail belongs to this round (taken before the lane moves on).
+          return all.length > limit ? all.sublist(all.length - limit) : [...all];
+        }, _searchTimeout);
         if (got == null) {
           Logger.Inst().log(
             'suggestion facet $facet timed out on ${target.name}',
@@ -257,9 +307,7 @@ class SuggestionHandler extends BooruHandler {
           );
           return MapEntry(facet, <BooruItem>[]);
         }
-        // Each sub-handler accumulates across pages; only the newly added
-        // tail belongs to this round.
-        return MapEntry(facet, got.length > limit ? got.sublist(got.length - limit) : [...got]);
+        return MapEntry(facet, got);
       }());
     }
 
