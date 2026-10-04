@@ -338,8 +338,13 @@ class _MainAppState extends State<MainApp> {
                           Overlay(
                             initialEntries: [
                               OverlayEntry(
-                                builder: (_) => AppLifecycleOverlay(
-                                  shouldOverlay: settingsHandler.blurOnLeave.value,
+                                // 1.0: Obx, so a changed Blur on leave applies at once:
+                                // this entry is built once and the privacy page saves
+                                // without a restate.
+                                builder: (_) => Obx(
+                                  () => AppLifecycleOverlay(
+                                    shouldOverlay: settingsHandler.blurOnLeave.value,
+                                  ),
                                 ),
                               ),
                             ],
