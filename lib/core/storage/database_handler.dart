@@ -79,7 +79,11 @@ class DBHandler {
   }
 
   Future<bool> updateTable() async {
-    await db?.execute(
+    // 1.0: the CREATE TABLE IF NOT EXISTS statements go in one batch: one
+    // platform call at every start instead of one each (test/db_schema_test
+    // checks the schema is still exactly r89's).
+    final Batch? ddl = db?.batch();
+    ddl?.execute(
       'CREATE TABLE IF NOT EXISTS BooruItem '
       '(id INTEGER PRIMARY KEY, '
       'thumbnailURL TEXT, '
@@ -91,7 +95,7 @@ class DBHandler {
       'isFavourite INTEGER '
       ')',
     );
-    await db?.execute(
+    ddl?.execute(
       'CREATE TABLE IF NOT EXISTS Tag ( '
       'id INTEGER PRIMARY KEY, '
       'name TEXT '
@@ -99,13 +103,13 @@ class DBHandler {
       'updatedAt INTEGER '
       ')',
     );
-    await db?.execute(
+    ddl?.execute(
       'CREATE TABLE IF NOT EXISTS ImageTag ( '
       'tagID INTEGER, '
       'booruItemID INTEGER '
       ')',
     );
-    await db?.execute(
+    ddl?.execute(
       'CREATE TABLE IF NOT EXISTS SearchHistory ( '
       'id INTEGER PRIMARY KEY, '
       'booruType TEXT, '
@@ -115,13 +119,13 @@ class DBHandler {
       'timestamp TEXT DEFAULT CURRENT_TIMESTAMP '
       ')',
     );
-    await db?.execute(
+    ddl?.execute(
       'CREATE TABLE IF NOT EXISTS TabRestore ( '
       'id INTEGER PRIMARY KEY, '
       'restore TEXT '
       ')',
     );
-    await db?.execute(
+    ddl?.execute(
       'CREATE TABLE IF NOT EXISTS PinnedTag ( '
       'id INTEGER PRIMARY KEY, '
       'tagName TEXT NOT NULL, '
@@ -133,7 +137,7 @@ class DBHandler {
       'title TEXT '
       ')',
     );
-    await db?.execute(
+    ddl?.execute(
       'CREATE TABLE IF NOT EXISTS SavedSearch ( '
       'id INTEGER PRIMARY KEY, '
       'name TEXT, '
@@ -141,7 +145,7 @@ class DBHandler {
       'createdAt INTEGER NOT NULL '
       ')',
     );
-    await db?.execute(
+    ddl?.execute(
       'CREATE TABLE IF NOT EXISTS SeenPost ( '
       'postKey TEXT PRIMARY KEY, '
       'viewedAt INTEGER NOT NULL '
@@ -150,14 +154,14 @@ class DBHandler {
     // Viewing history: full serialized items so the History feed can render
     // thumbnails and reopen posts without re-fetching. SeenPost stays the
     // lightweight key set for grid dimming.
-    await db?.execute(
+    ddl?.execute(
       'CREATE TABLE IF NOT EXISTS ViewedPost ( '
       'postKey TEXT PRIMARY KEY, '
       'itemJson TEXT NOT NULL, '
       'viewedAt INTEGER NOT NULL '
       ')',
     );
-    await db?.execute(
+    ddl?.execute(
       'CREATE TABLE IF NOT EXISTS TabVisitHistory ( '
       'id INTEGER PRIMARY KEY, '
       'tabId TEXT, '
@@ -170,7 +174,7 @@ class DBHandler {
     // Behaviour signals for the local "For You" recommender: one row per tag
     // with an accumulated, time-decayed interest score. Written by
     // InterestsHandler; never leaves the device.
-    await db?.execute(
+    ddl?.execute(
       'CREATE TABLE IF NOT EXISTS TagSignal ( '
       'name TEXT PRIMARY KEY, '
       'score REAL NOT NULL, '
@@ -181,7 +185,7 @@ class DBHandler {
     // teaches the model (RecommenderHandler), with the item's feature hashes
     // at the time, so the model can be rebuilt from the log alone. Never
     // leaves the device.
-    await db?.execute(
+    ddl?.execute(
       'CREATE TABLE IF NOT EXISTS Interaction ( '
       'id INTEGER PRIMARY KEY AUTOINCREMENT, '
       'world TEXT NOT NULL, '
@@ -195,7 +199,7 @@ class DBHandler {
     );
     // The names behind the feature hashes, so "what was learned" reads back
     // as tags and artists rather than numbers.
-    await db?.execute(
+    ddl?.execute(
       'CREATE TABLE IF NOT EXISTS RecommenderFeature ( '
       'world TEXT NOT NULL, '
       'hash INTEGER NOT NULL, '
@@ -205,7 +209,7 @@ class DBHandler {
     );
     // r34: an item's vector from the downloaded encoder, per model, so an
     // item is read once. Never leaves the device.
-    await db?.execute(
+    ddl?.execute(
       'CREATE TABLE IF NOT EXISTS ItemEmbedding ( '
       'itemKey TEXT NOT NULL, '
       'model TEXT NOT NULL, '
@@ -219,7 +223,7 @@ class DBHandler {
     // (e.g. burnice_white -> burnice_white_(zenless_zone_zero) on gelbooru).
     // Resolved on demand against each booru's tag-autocomplete API. An empty
     // targetTag records a confirmed miss so it isn't retried constantly.
-    await db?.execute(
+    ddl?.execute(
       'CREATE TABLE IF NOT EXISTS TagAliasCache ( '
       'sourceTag TEXT NOT NULL, '
       'booruKey TEXT NOT NULL, '
@@ -238,7 +242,7 @@ class DBHandler {
     // (hitomi: female:ahegao and male:ahegao). '' for booru snapshots.
     // `sourceId`: the site's own id for the tag where its pages are keyed by
     // id rather than name (hentaipaw: `/tags/14390`). Null elsewhere.
-    await db?.execute(
+    ddl?.execute(
       'CREATE TABLE IF NOT EXISTS BooruTag ( '
       'booruKey TEXT NOT NULL, '
       "namespace TEXT NOT NULL DEFAULT '', "
@@ -253,7 +257,7 @@ class DBHandler {
     );
     // Your hand-made corrections, and — by existing at all — the permanent
     // exclusion list: a pair in here is never re-typed automatically again.
-    await db?.execute(
+    ddl?.execute(
       'CREATE TABLE IF NOT EXISTS BooruTagOverride ( '
       'booruKey TEXT NOT NULL, '
       'name TEXT NOT NULL, '
@@ -265,7 +269,7 @@ class DBHandler {
     );
     // Doujin reading positions, keyed on "host|galleryId" (see
     // ReaderHandler.progressKey) so the key survives booru renames.
-    await db?.execute(
+    ddl?.execute(
       'CREATE TABLE IF NOT EXISTS ReaderProgress ( '
       'galleryKey TEXT NOT NULL PRIMARY KEY, '
       'page INTEGER NOT NULL, '
@@ -276,7 +280,7 @@ class DBHandler {
     // Collections / albums: named groups of posts. Membership is a join onto
     // the shared BooruItem table so in-collection tag search reuses the same
     // index; the items are protected from deleteUntracked below.
-    await db?.execute(
+    ddl?.execute(
       'CREATE TABLE IF NOT EXISTS Collection ( '
       'id INTEGER PRIMARY KEY, '
       'name TEXT NOT NULL, '
@@ -284,7 +288,7 @@ class DBHandler {
       'sortOrder INTEGER DEFAULT 0 '
       ')',
     );
-    await db?.execute(
+    ddl?.execute(
       'CREATE TABLE IF NOT EXISTS CollectionItem ( '
       'collectionId INTEGER NOT NULL, '
       'booruItemID INTEGER NOT NULL, '
@@ -296,7 +300,7 @@ class DBHandler {
     // site lists, so names, the Artists page and suggestions come from the
     // phone. `seenAt` marks the refresh that last listed a row; rows a later
     // refresh no longer lists are pruned by it.
-    await db?.execute(
+    ddl?.execute(
       'CREATE TABLE IF NOT EXISTS KemonoCreator ( '
       'service TEXT NOT NULL, '
       'id TEXT NOT NULL, '
@@ -309,7 +313,7 @@ class DBHandler {
       ')',
     );
     // pawchive's index: same shape, its own table (same creator ids, another site).
-    await db?.execute(
+    ddl?.execute(
       'CREATE TABLE IF NOT EXISTS PawchiveCreator ( '
       'service TEXT NOT NULL, '
       'id TEXT NOT NULL, '
@@ -321,6 +325,7 @@ class DBHandler {
       'PRIMARY KEY (service, id) '
       ')',
     );
+    await ddl?.commit(noResult: true);
     // r50: a pin's own name.
     try {
       if (!await columnExists('PinnedTag', 'title')) {
@@ -414,34 +419,37 @@ class DBHandler {
   // DB open regardless of the (heavy) ImageTag index toggle. Each of these
   // columns was previously scanned linearly on very common queries.
   Future<void> createCriticalIndexes() async {
+    // 1.0: one batch, one platform call (see updateTable).
+    final Batch? indexes = db?.batch();
     // postURL: de-dup / favourite lookup, hit per fetched item and DB write.
-    await db?.execute('CREATE INDEX IF NOT EXISTS BooruItem_postURL_index ON BooruItem (postURL);');
+    indexes?.execute('CREATE INDEX IF NOT EXISTS BooruItem_postURL_index ON BooruItem (postURL);');
     // Tag.name: colour/type resolution, suggestions, id lookup.
-    await db?.execute('CREATE INDEX IF NOT EXISTS Tag_name_index ON Tag (name);');
+    indexes?.execute('CREATE INDEX IF NOT EXISTS Tag_name_index ON Tag (name);');
     // PinnedTag.tagName: pin scoping / follow lookups.
-    await db?.execute('CREATE INDEX IF NOT EXISTS PinnedTag_tagName_index ON PinnedTag (tagName);');
+    indexes?.execute('CREATE INDEX IF NOT EXISTS PinnedTag_tagName_index ON PinnedTag (tagName);');
     // Recency ordering for the History feed and the seen/viewed trims.
-    await db?.execute('CREATE INDEX IF NOT EXISTS ViewedPost_viewedAt_index ON ViewedPost (viewedAt);');
-    await db?.execute('CREATE INDEX IF NOT EXISTS SeenPost_viewedAt_index ON SeenPost (viewedAt);');
+    indexes?.execute('CREATE INDEX IF NOT EXISTS ViewedPost_viewedAt_index ON ViewedPost (viewedAt);');
+    indexes?.execute('CREATE INDEX IF NOT EXISTS SeenPost_viewedAt_index ON SeenPost (viewedAt);');
     // The recommender replays and prunes its log per world, newest first.
-    await db?.execute('CREATE INDEX IF NOT EXISTS Interaction_world_at_index ON Interaction (world, at);');
+    indexes?.execute('CREATE INDEX IF NOT EXISTS Interaction_world_at_index ON Interaction (world, at);');
     // Tag browser: every query is "this booru, optionally this type, ordered
     // by count" — without this it degrades into a full scan of a table that
     // can hold a site's entire tag database.
-    await db?.execute(
+    indexes?.execute(
       'CREATE INDEX IF NOT EXISTS BooruTag_browse_index ON BooruTag (booruKey, tagType, count DESC);',
     );
     // Tag builder: "this source, this namespace, most used first".
-    await db?.execute(
+    indexes?.execute(
       'CREATE INDEX IF NOT EXISTS BooruTag_ns_index ON BooruTag (booruKey, namespace, count DESC);',
     );
     // kemono's creator index: name search, and the Artists page's sorts.
-    await db?.execute('CREATE INDEX IF NOT EXISTS KemonoCreator_name_index ON KemonoCreator (name COLLATE NOCASE);');
-    await db?.execute('CREATE INDEX IF NOT EXISTS KemonoCreator_updated_index ON KemonoCreator (updated DESC);');
-    await db?.execute('CREATE INDEX IF NOT EXISTS KemonoCreator_favorited_index ON KemonoCreator (favorited DESC);');
-    await db?.execute('CREATE INDEX IF NOT EXISTS PawchiveCreator_name_index ON PawchiveCreator (name COLLATE NOCASE);');
-    await db?.execute('CREATE INDEX IF NOT EXISTS PawchiveCreator_updated_index ON PawchiveCreator (updated DESC);');
-    await db?.execute('CREATE INDEX IF NOT EXISTS PawchiveCreator_favorited_index ON PawchiveCreator (favorited DESC);');
+    indexes?.execute('CREATE INDEX IF NOT EXISTS KemonoCreator_name_index ON KemonoCreator (name COLLATE NOCASE);');
+    indexes?.execute('CREATE INDEX IF NOT EXISTS KemonoCreator_updated_index ON KemonoCreator (updated DESC);');
+    indexes?.execute('CREATE INDEX IF NOT EXISTS KemonoCreator_favorited_index ON KemonoCreator (favorited DESC);');
+    indexes?.execute('CREATE INDEX IF NOT EXISTS PawchiveCreator_name_index ON PawchiveCreator (name COLLATE NOCASE);');
+    indexes?.execute('CREATE INDEX IF NOT EXISTS PawchiveCreator_updated_index ON PawchiveCreator (updated DESC);');
+    indexes?.execute('CREATE INDEX IF NOT EXISTS PawchiveCreator_favorited_index ON PawchiveCreator (favorited DESC);');
+    await indexes?.commit(noResult: true);
   }
 
   Future<bool> dropIndexes() async {
