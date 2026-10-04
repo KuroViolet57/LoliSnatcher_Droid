@@ -131,6 +131,19 @@ void main() {
     expect(s.cacheDuration, const Duration(seconds: 7200));
   });
 
+  testWidgets('Viewer: resetting the toolbar order puts every button back, and that is what is saved', (tester) async {
+    s.buttonOrder = [...GalleryButton.values.reversed];
+    s.disabledButtons = [GalleryButton.share];
+    await open(tester, const GalleryPage());
+    final Finder tile = find.ancestor(of: find.text('Toolbar buttons order'), matching: find.byType(ExpansionTile));
+    await tester.tap(find.descendant(of: tile, matching: find.byIcon(Symbols.refresh_rounded)));
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    await leave(tester);
+    expect(s.buttonOrder, GalleryButton.values);
+    expect(s.disabledButtons, isEmpty);
+  });
+
   /// Long-press Save (debug: no network test), confirm, and give the file
   /// work real time until [done] holds (or long enough that it never will).
   Future<void> saveBooru(WidgetTester tester, bool Function() done) async {

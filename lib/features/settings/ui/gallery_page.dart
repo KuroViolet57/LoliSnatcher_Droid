@@ -425,10 +425,15 @@ class _GalleryPageState extends State<GalleryPage> {
                         ),
                         onPressed: () {
                           setState(() {
+                            // The declared defaults are the buttons' names; these lists hold buttons.
                             buttonOrder.clear();
-                            buttonOrder.addAll(settingsHandler.map['buttonOrder']!['default']);
+                            buttonOrder.addAll(
+                              List<String>.from(settingsHandler.map['buttonOrder']!['default']).map(GalleryButton.fromString).nonNulls,
+                            );
                             disabledButtons.clear();
-                            disabledButtons.addAll(settingsHandler.map['disabledButtons']!['default']);
+                            disabledButtons.addAll(
+                              List<String>.from(settingsHandler.map['disabledButtons']!['default']).map(GalleryButton.fromString).nonNulls,
+                            );
                           });
                         },
                       ),
