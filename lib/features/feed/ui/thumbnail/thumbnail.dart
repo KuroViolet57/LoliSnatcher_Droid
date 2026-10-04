@@ -333,6 +333,9 @@ class _ThumbnailState extends State<Thumbnail> {
       true,
       withCaptchaCheck: withCaptchaCheck,
     );
+    // Disposed while the headers were read: disposables() already ran, so a
+    // listener added now would never be removed.
+    if (!mounted) return;
     mainImageStream?.removeListener(mainImageListener!);
     mainImageStream = mainProvider.value!.resolve(ImageConfiguration.empty);
     mainImageListener = ImageStreamListener(
@@ -379,6 +382,7 @@ class _ThumbnailState extends State<Thumbnail> {
 
     if (useExtra) {
       extraProvider.value = await getImageProvider(false);
+      if (!mounted) return;
       extraImageStream?.removeListener(extraImageListener!);
       extraImageStream = extraProvider.value!.resolve(ImageConfiguration.empty);
       extraImageListener = ImageStreamListener(
