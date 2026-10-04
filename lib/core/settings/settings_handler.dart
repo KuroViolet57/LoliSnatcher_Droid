@@ -2238,7 +2238,8 @@ class SettingsHandler {
         ];
 
         final disableableButtons = [...GalleryButton.disableable];
-        for (final button in tempDisabledButtons) {
+        // Over a copy: removing from the list being iterated threw.
+        for (final button in [...tempDisabledButtons]) {
           if (disableableButtons.any((e) => e == button)) {
             // do nothing
           } else {

@@ -90,6 +90,12 @@ void main() {
       expect(s.flowSkinApplied.value, isTrue, reason: 'the one-time Flow migration ran');
     });
 
+    test('a disabled button that cannot be disabled is dropped; the others are kept', () async {
+      s.disabledButtons = [GalleryButton.snatch];
+      await s.loadFromJSON(jsonEncode({'disabledButtons': ['info', 'share']}), false);
+      expect(s.disabledButtons, [GalleryButton.share]);
+    });
+
     test('a fresh install keeps the theme chosen in its first session at the next start', () async {
       expect(File('${s.path}settings.json').existsSync(), isFalse);
       await s.loadSettings(); // first start: no file yet
