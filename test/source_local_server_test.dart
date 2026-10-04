@@ -16,6 +16,7 @@ import 'package:lolisnatcher/core/utils/tools.dart';
 import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
 import 'package:lolisnatcher/models/booru.dart';
 import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/sources/booru/civitai_handler.dart';
 import 'package:lolisnatcher/sources/booru/ink_bunny_handler.dart';
 import 'package:lolisnatcher/sources/tube/redgifs_handler.dart';
 
@@ -201,5 +202,45 @@ void main() {
     expect(auth, ['Bearer $token']);
     expect(redgifs.apiKey, token, reason: 'a backup or a save of the source must not write an empty key');
     expect(await h.isSignedIn(), isFalse, reason: 'this session goes on as a guest');
+  });
+
+  test('Civitai: a page whose every item a -tag excludes does not end the feed', () async {
+    Map<String, dynamic> image(int id, String tag) => {
+      'id': id,
+      'url': 'https://image.invalid/key/uuid-$id/original=true/$id.jpeg',
+      'type': 'image',
+      'width': 10,
+      'height': 10,
+      'tags': [
+        {'name': tag, 'id': id},
+      ],
+      'username': 'someone',
+      'stats': {'likeCount': 1},
+    };
+    routes['/api/v1/images'] = (r) {
+      final String cursor = r.uri.queryParameters['cursor'] ?? '';
+      return switch (cursor) {
+        '' => answer(r, {
+          'items': [image(1, 'skip me'), image(2, 'skip me')],
+          'metadata': {'nextCursor': 'c2'},
+        }),
+        'c2' => answer(r, {
+          'items': [image(3, 'keep'), image(4, 'keep')],
+          'metadata': {'nextCursor': 'c3'},
+        }),
+        _ => answer(r, {
+          'items': [image(5, 'keep')],
+          'metadata': {'nextCursor': ''},
+        }),
+      };
+    };
+    final CivitaiHandler h = CivitaiHandler(Booru('Civitai', BooruType.Civitai, '', base, ''), 20);
+    // SearchHandler.runSearch counts the first page up from the factory's -1.
+    h.pageNum = 0;
+
+    await h.search('-skip_me', null);
+
+    expect(h.fetched.map((i) => i.serverId), ['3', '4']);
+    expect(h.locked, isFalse);
   });
 }
