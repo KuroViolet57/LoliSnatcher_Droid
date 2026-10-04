@@ -3349,7 +3349,6 @@ class SettingsHandler {
       }
       StartupTimeline.mark('sources');
       await externalAction();
-      StartupTimeline.mark('migrations');
     } catch (e, s) {
       postInitMessage.value = loc.errorExclamation;
       Logger.Inst().log(
