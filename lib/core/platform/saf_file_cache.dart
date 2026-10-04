@@ -15,6 +15,11 @@ class SAFFileCache {
   bool _isPopulating = false;
   Completer<void>? _populateCompleter;
 
+  /// 1.0: moved on by [invalidate]. A listing started before it (the
+  /// download folder changed while the start of the app listed the old one)
+  /// must not fill the cache with the old folder's names.
+  int _generation = 0;
+
   Future<bool> existsFile(String safUri, String fileName) async {
     bool result;
 
@@ -36,9 +41,11 @@ class SAFFileCache {
     _isPopulating = true;
     _populateCompleter = Completer<void>();
 
+    final int generation = _generation;
     try {
       _cachedUri = safUri;
       final names = await ServiceHandler.listFileNamesFromSAFDirectory(safUri);
+      if (generation != _generation) return;
       _fileNames.clear();
       _fileNames.addAll(names);
       _isPopulated = true;
@@ -63,6 +70,7 @@ class SAFFileCache {
   }
 
   void invalidate() {
+    _generation++;
     _fileNames.clear();
     _isPopulated = false;
     _cachedUri = '';

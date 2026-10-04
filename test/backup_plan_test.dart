@@ -52,16 +52,21 @@ void main() {
 
   String p(String name) => '$config$name';
 
-  BackupHooks makeHooks({Database? Function()? liveDatabase, Database? Function()? liveVectors}) => BackupHooks(
+  BackupHooks makeHooks({
+    Database? Function()? liveDatabase,
+    Database? Function()? liveVectors,
+    void Function()? reloadStores,
+    void Function()? rearmDoujinMigration,
+  }) => BackupHooks(
     sourcesJson: () => '[{"name":"rule34xxx"}]',
     restoreSources: (String json) async => calls.add('sources $json'),
     tagTypesJson: () => '[{"name":"tag_a"}]',
     restoreTagTypes: (String json) async => calls.add('tag types $json'),
-    reloadStores: () => calls.add('reload stores'),
+    reloadStores: reloadStores ?? () => calls.add('reload stores'),
     stopRecommenderWrites: () => calls.add('recommender stops writing'),
     checkpointDatabase: () async => calls.add('checkpoint'),
     closeDatabase: () async => calls.add('close database'),
-    rearmDoujinMigration: () => calls.add('rearm migration'),
+    rearmDoujinMigration: rearmDoujinMigration ?? () => calls.add('rearm migration'),
     boardPicturesDir: () => '${config}boards${Platform.pathSeparator}',
     liveDatabase: liveDatabase ?? () => null,
     checkpointVectors: () async => calls.add('vectors checkpoint'),
@@ -206,6 +211,31 @@ void main() {
       expect(File(p(BackupRunner.checkDownloadsMarker)).existsSync(), isFalse);
       await BackupRunner(configDir: config, hooks: hooks).restore({BackupItem.settings}, _Memory()..files['settings.json'] = Uint8List.fromList(utf8.encode('{}')));
       expect(File(p(BackupRunner.checkDownloadsMarker)).existsSync(), isFalse, reason: 'only a whole database brings the download marks back');
+    });
+
+    test('1.0: the doujin library restored with the whole database is not written over by the migration re-arm', () async {
+      // As in the app: a reload reads doujinData.json into the store's memory,
+      // and the re-arm saves the store's memory back to doujinData.json.
+      File(p('doujinData.json')).writeAsStringSync('{"doujin":"before the restore"}');
+      String memory = File(p('doujinData.json')).readAsStringSync();
+      final BackupHooks real = makeHooks(
+        reloadStores: () {
+          calls.add('reload stores');
+          memory = File(p('doujinData.json')).readAsStringSync();
+        },
+        rearmDoujinMigration: () {
+          calls.add('rearm migration');
+          File(p('doujinData.json')).writeAsStringSync(memory);
+        },
+      );
+      final _Memory target = _Memory()
+        ..files['doujinData.json'] = Uint8List.fromList(utf8.encode('{"doujin":"restored"}'))
+        ..files['store.db'] = Uint8List.fromList([8, 8, 8]);
+      final BackupResult r = await BackupRunner(configDir: config, hooks: real).restore({BackupItem.doujinLibrary, BackupItem.database}, target);
+      expect(r.failures, isEmpty);
+      expect(File(p('doujinData.json')).readAsStringSync(), '{"doujin":"restored"}');
+      expect(calls.where((String c) => c == 'reload stores'), hasLength(1), reason: 'the stores read their files once');
+      expect(r.needsRestart, isTrue);
     });
   });
 

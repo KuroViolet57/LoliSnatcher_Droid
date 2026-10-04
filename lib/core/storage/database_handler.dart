@@ -603,17 +603,23 @@ class DBHandler {
   }
 
   Future<List<String>> getItemIDs(List<String> postURLs) async {
-    final List? result = await db?.rawQuery(
-      "SELECT id, postURL FROM BooruItem WHERE postURL IN (${List.generate(postURLs.length, (_) => '?').join(',')})",
-      postURLs,
-    );
-
     final List<String> ids = List.generate(postURLs.length, (index) => '');
-    if (result != null && result.isNotEmpty) {
-      for (final Map<String, dynamic> item in result) {
-        final int postIndex = postURLs.indexOf(item['postURL']);
-        if (postIndex != -1) {
-          ids[postIndex] = item['id'].toString();
+    // 1.0: in chunks - SQLite before 3.32 (Android before 11) takes at most
+    // 999 values in one statement, and a bigger selection threw.
+    const int chunkSize = 500;
+    for (int start = 0; start < postURLs.length; start += chunkSize) {
+      final List<String> chunk = postURLs.sublist(start, min(postURLs.length, start + chunkSize));
+      final List? result = await db?.rawQuery(
+        "SELECT id, postURL FROM BooruItem WHERE postURL IN (${List.generate(chunk.length, (_) => '?').join(',')})",
+        chunk,
+      );
+
+      if (result != null && result.isNotEmpty) {
+        for (final Map<String, dynamic> item in result) {
+          final int postIndex = postURLs.indexOf(item['postURL']);
+          if (postIndex != -1) {
+            ids[postIndex] = item['id'].toString();
+          }
         }
       }
     }
@@ -675,6 +681,7 @@ class DBHandler {
     final List<String> orTags = [];
     final List<String> excludeTags = [];
     String siteQuery = '';
+    String siteTerm = '';
     bool isRandomOrder = false;
     bool isReverseOrder = false;
 
@@ -683,8 +690,10 @@ class DBHandler {
       if (lowerTag.startsWith('site:') || lowerTag.startsWith('-site:')) {
         final isExclude = lowerTag.startsWith('-site:');
         final term = tag.replaceAll(RegExp('^-?site:', caseSensitive: false), '');
-        siteQuery =
-            "(bi.postURL ${isExclude ? 'NOT' : ''} LIKE '%$term%' OR bi.fileURL ${isExclude ? 'NOT' : ''} LIKE '%$term%') ";
+        // 1.0: the term is bound, not written into the SQL (a quote broke the
+        // query, and any SQL typed here ran).
+        siteQuery = "(bi.postURL ${isExclude ? 'NOT' : ''} LIKE ? OR bi.fileURL ${isExclude ? 'NOT' : ''} LIKE ?) ";
+        siteTerm = term;
       } else if (lowerTag == 'sort:random') {
         isRandomOrder = true;
       } else if (lowerTag == 'sort:reverse') {
@@ -723,7 +732,10 @@ class DBHandler {
     whereClauses.add(_baseTrackFilter(isDownloads: isDownloads, collectionId: collectionId));
 
     // B. Site Filter
-    if (siteQuery.isNotEmpty) whereClauses.add(siteQuery);
+    if (siteQuery.isNotEmpty) {
+      whereClauses.add(siteQuery);
+      args.addAll(['%$siteTerm%', '%$siteTerm%']);
+    }
 
     // C. Custom Conditions
     if (customConditions.isNotEmpty) {
@@ -1518,12 +1530,21 @@ class DBHandler {
   Future<List<Map<String, Object?>>> getBooruTagsByNames(String booruKey, List<String> names) async {
     final db = this.db;
     if (db == null || booruKey.isEmpty || names.isEmpty) return const [];
-    final String placeholders = List.filled(names.length, '?').join(',');
-    return db.rawQuery(
-      'SELECT name, namespace, tagType, count, source, updatedAt, sourceId FROM BooruTag '
-      'WHERE booruKey = ? AND name IN ($placeholders)',
-      [booruKey, ...names],
-    );
+    // 1.0: in chunks (at most 999 values in one statement on older Android).
+    const int chunkSize = 500;
+    final List<Map<String, Object?>> rows = [];
+    for (int start = 0; start < names.length; start += chunkSize) {
+      final List<String> chunk = names.sublist(start, min(names.length, start + chunkSize));
+      final String placeholders = List.filled(chunk.length, '?').join(',');
+      rows.addAll(
+        await db.rawQuery(
+          'SELECT name, namespace, tagType, count, source, updatedAt, sourceId FROM BooruTag '
+          'WHERE booruKey = ? AND name IN ($placeholders)',
+          [booruKey, ...chunk],
+        ),
+      );
+    }
+    return rows;
   }
 
   /// The site's own id for one (namespace, name), when the snapshot holds it.
@@ -1767,6 +1788,7 @@ class DBHandler {
     final List<String> orTags = [];
     final List<String> excludeTags = [];
     String siteQuery = '';
+    String siteTerm = '';
 
     for (final tag in rawTags) {
       final lowerTag = tag.toLowerCase();
@@ -1774,8 +1796,8 @@ class DBHandler {
       if (lowerTag.startsWith('site:') || lowerTag.startsWith('-site:')) {
         final isExclude = lowerTag.startsWith('-site:');
         final term = tag.replaceAll(RegExp('^-?site:', caseSensitive: false), '');
-        siteQuery =
-            "(bi.postURL ${isExclude ? 'NOT' : ''} LIKE '%$term%' OR bi.fileURL ${isExclude ? 'NOT' : ''} LIKE '%$term%')";
+        siteQuery = "(bi.postURL ${isExclude ? 'NOT' : ''} LIKE ? OR bi.fileURL ${isExclude ? 'NOT' : ''} LIKE ?)";
+        siteTerm = term;
       } else if (lowerTag == 'sort:random' || lowerTag == 'sort:reverse') {
         // do nothing
       } else {
@@ -1811,7 +1833,10 @@ class DBHandler {
     whereClauses.add(_baseTrackFilter(isDownloads: isDownloads, collectionId: collectionId));
 
     // B. Site Filter
-    if (siteQuery.isNotEmpty) whereClauses.add(siteQuery);
+    if (siteQuery.isNotEmpty) {
+      whereClauses.add(siteQuery);
+      args.addAll(['%$siteTerm%', '%$siteTerm%']);
+    }
 
     // C. Custom Conditions
     if (customConditions.isNotEmpty) {
@@ -2613,37 +2638,55 @@ class DBHandler {
   Future<List<List<bool>>> getMultipleTrackedValues(List<BooruItem> items) async {
     final List<List<bool>> values = [];
 
-    final List<String> queryParts = [];
-    final List<String> queryArgs = [];
-    for (final BooruItem item in items) {
-      if (item.fileURL.contains('sankakucomplex.com') ||
-          item.fileURL.contains('rule34.xxx') ||
-          item.fileURL.contains('paheal.net')) {
-        // compare by post url, not file url (for example: r34xxx changes urls based on country)
-        // TODO merge them by type? i.e. - (postURL in [] OR fileURL in [])
-        queryParts.add('postURL = ?');
-        queryArgs.add(item.postURL);
-      } else {
-        queryParts.add('fileURL = ?');
-        queryArgs.add(item.fileURL);
+    // compare by post url, not file url (for example: r34xxx changes urls based on country)
+    // TODO merge them by type? i.e. - (postURL in [] OR fileURL in [])
+    bool byPostURL(BooruItem item) =>
+        item.fileURL.contains('sankakucomplex.com') ||
+        item.fileURL.contains('rule34.xxx') ||
+        item.fileURL.contains('paheal.net');
+
+    // 1.0: in chunks - at most 999 values in one statement on older Android,
+    // and an OR chain at most 1000 deep.
+    const int chunkSize = 500;
+    final List<Map<String, dynamic>> result = [];
+    for (int start = 0; start < items.length; start += chunkSize) {
+      final List<String> queryParts = [];
+      final List<String> queryArgs = [];
+      for (final BooruItem item in items.sublist(start, min(items.length, start + chunkSize))) {
+        if (byPostURL(item)) {
+          queryParts.add('postURL = ?');
+          queryArgs.add(item.postURL);
+        } else {
+          queryParts.add('fileURL = ?');
+          queryArgs.add(item.fileURL);
+        }
       }
+
+      // DateTime startTime = DateTime.now();
+      final List<Map<String, Object?>>? rows = await db?.rawQuery(
+        "SELECT fileURL, postURL, isFavourite, isSnatched FROM BooruItem WHERE ${queryParts.join(' OR ')};",
+        queryArgs,
+      );
+      // print("Query took ${DateTime.now().difference(startTime).inMilliseconds}ms"); // performance test
+      if (rows == null) return values;
+      result.addAll(rows);
     }
 
-    // DateTime startTime = DateTime.now();
-    final List? result = await db?.rawQuery(
-      "SELECT fileURL, postURL, isFavourite, isSnatched FROM BooruItem WHERE ${queryParts.join(' OR ')};",
-      queryArgs,
-    );
-    // print("Query took ${DateTime.now().difference(startTime).inMilliseconds}ms"); // performance test
-
-    if (result != null) {
-      for (final BooruItem item in items) {
-        final res = result.firstWhere(
-          (el) => el['postURL'].toString() == item.postURL,
-          orElse: () => {'isSnatched': 0, 'isFavourite': 0},
-        );
-        values.add([Tools.intToBool(res['isSnatched']), Tools.intToBool(res['isFavourite'])]);
-      }
+    for (final BooruItem item in items) {
+      // 1.0: the row with the same post address first, as before; a row
+      // looked up by its file and stored with another post address (http,
+      // an older address format) no longer reads as not favourited and not
+      // downloaded.
+      final res = result.firstWhere(
+        (el) => el['postURL'].toString() == item.postURL,
+        orElse: () => byPostURL(item)
+            ? {'isSnatched': 0, 'isFavourite': 0}
+            : result.firstWhere(
+                (el) => el['fileURL'].toString() == item.fileURL,
+                orElse: () => {'isSnatched': 0, 'isFavourite': 0},
+              ),
+      );
+      values.add([Tools.intToBool(res['isSnatched']), Tools.intToBool(res['isFavourite'])]);
     }
     return values;
   }
@@ -2823,9 +2866,13 @@ class DBHandler {
 
         await db?.transaction((txn) async {
           final ids = emptyTags.map((e) => e['id']! as int).toList();
-          final placeholders = List.filled(ids.length, '?').join(',');
-          await txn.rawDelete('DELETE FROM ImageTag WHERE tagID IN ($placeholders)', ids);
-          await txn.rawDelete('DELETE FROM Tag WHERE id IN ($placeholders)', ids);
+          // 1.0: in chunks (at most 999 values in one statement on older Android).
+          for (int start = 0; start < ids.length; start += 500) {
+            final chunk = ids.sublist(start, min(ids.length, start + 500));
+            final placeholders = List.filled(chunk.length, '?').join(',');
+            await txn.rawDelete('DELETE FROM ImageTag WHERE tagID IN ($placeholders)', chunk);
+            await txn.rawDelete('DELETE FROM Tag WHERE id IN ($placeholders)', chunk);
+          }
         });
       }
 

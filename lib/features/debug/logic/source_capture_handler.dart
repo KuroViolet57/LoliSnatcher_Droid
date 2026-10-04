@@ -111,6 +111,10 @@ class SourceCaptureHandler {
   void start(String target) {
     _entries.clear();
     _seenResources.clear();
+    // 1.0: what an earlier recording saw is not in this one: its api calls
+    // were skipped as "seen" and its bodies as "already read".
+    _seenXhr.clear();
+    _fetchedUrls.clear();
     _totalChars = 0;
     _target = target;
     _startedAt = DateTime.now();
@@ -258,6 +262,8 @@ class SourceCaptureHandler {
   Future<CaptureEntry?> fetchBodyInPage(String url) async {
     final InAppWebViewController? controller = _liveController;
     if (controller == null || url.isEmpty) return null;
+    // 1.0: bodies count toward the session cap like pages do.
+    if (_totalChars >= maxTotalChars) return null;
     try {
       final raw = await controller.evaluateJavascript(source: fetchScript(url));
       final result = parseFetchResult(raw);
@@ -359,6 +365,8 @@ class SourceCaptureHandler {
     String? body,
   }) {
     if (!_recording || url.isEmpty) return;
+    // 1.0: api bodies count toward the session cap like pages do.
+    if (_totalChars >= maxTotalChars) return;
     if (!_seenXhr.add('$method $url')) return;
     final ({String body, int? from}) capped = _cap(redact(body ?? ''));
     _add(
@@ -400,6 +408,13 @@ class SourceCaptureHandler {
   /// which is why the in-page path is tried first.
   Future<CaptureEntry?> fetchBody(String url) async {
     if (url.isEmpty) return null;
+    // 1.0: a body already read (in the page, as it loaded) is not fetched
+    // again: with the browser closed this goes through Dio, which a
+    // protected site refuses, and each url got a second entry.
+    for (final CaptureEntry e in _entries) {
+      if (e.kind == CaptureKind.fetch && e.url == url && e.status != null) return e;
+    }
+    if (_totalChars >= maxTotalChars) return null;
     final CaptureEntry? inPage = await fetchBodyInPage(url);
     if (inPage != null) return inPage;
     try {

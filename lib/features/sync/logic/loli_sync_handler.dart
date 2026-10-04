@@ -77,7 +77,7 @@ class LoliSync {
       try {
         Logger.Inst().log('request to update settings recieved', 'LoliSync', 'storeSettings', LogTypes.loliSyncInfo);
         final String content = await utf8.decoder.bind(req).join(); /*2*/
-        await settingsHandler.loadFromJSON(content, false);
+        await settingsHandler.loadFromJSON(withOwnDeviceSettings(content, settingsHandler), false);
         req.response.statusCode = 200;
         req.response.write('Settings Sent');
         return 'Settings Saved';
@@ -98,6 +98,23 @@ class LoliSync {
       req.response.write('Invalid Query');
       return 'Invalid Query';
     }
+  }
+
+  /// 1.0: the sender leaves its device-specific settings out, and
+  /// loadFromJSON empties these three when they are missing: this phone's
+  /// own values go in their place.
+  static String withOwnDeviceSettings(String content, SettingsHandler settingsHandler) {
+    Object? json;
+    try {
+      json = jsonDecode(content);
+    } catch (_) {
+      return content;
+    }
+    if (json is! Map<String, dynamic>) return content;
+    json.putIfAbsent('modelThreads', () => Map<String, int>.from(settingsHandler.modelThreads));
+    json.putIfAbsent('modelRunOn', () => Map<String, String>.from(settingsHandler.modelRunOn));
+    json.putIfAbsent('earlierDownloadFolders', () => List<String>.from(settingsHandler.earlierDownloadFolders));
+    return jsonEncode(json);
   }
 
   Future<String> storeBooruBatch(dynamic req, SettingsHandler settingsHandler) async {
@@ -132,7 +149,9 @@ class LoliSync {
           req.response.write(totalResult);
 
           final int lastIndex = offset + size;
-          if (lastIndex == amount - 1) {
+          // 1.0: the last batch ends AT the amount (offset + size), never one
+          // before it, so this line never showed.
+          if (lastIndex >= amount) {
             return 'Favourites Synced';
           } else {
             return '$offset-$lastIndex / $amount - $totalResult';
@@ -361,62 +380,75 @@ class LoliSync {
   Future<String> sendBooruBatch(List<BooruItem> items, int count, int offset) async {
     final int lastIndex = offset + items.length;
     Logger.Inst().log('Sending batch $offset-$lastIndex / $count', 'LoliSync', 'sendBooruItem', LogTypes.loliSyncInfo);
+    final HttpClient client = HttpClient();
     final HttpClientRequest request =
-        await HttpClient().post(ip, port, '/lolisync/boorubatch?amount=$count&offset=$offset&size=${items.length}')
+        await client.post(ip, port, '/lolisync/boorubatch?amount=$count&offset=$offset&size=${items.length}')
           ..headers.contentType = ContentType.json
           ..write(jsonEncode(items.map((e) => e.toJson()).toList()));
     final HttpClientResponse response = await request.close();
+    // 1.0: the client goes once the answer has been read (it kept its
+    // socket until the idle timeout, one per request of a sync).
+    client.close();
     final String responseStr = await utf8.decoder.bind(response).join();
     return responseStr;
   }
 
   Future<String> sendBooruItem(BooruItem item, int favouritesCount, int current) async {
     Logger.Inst().log('Sending item $current / $favouritesCount', 'LoliSync', 'sendBooruItem', LogTypes.loliSyncInfo);
+    final HttpClient client = HttpClient();
     final HttpClientRequest request =
-        await HttpClient().post(ip, port, '/lolisync/booruitem?amount=$favouritesCount&current=$current')
+        await client.post(ip, port, '/lolisync/booruitem?amount=$favouritesCount&current=$current')
           ..headers.contentType = ContentType.json
           ..write(jsonEncode(item.toJson())); /*3*/
     final HttpClientResponse response = await request.close();
+    client.close();
     final String responseStr = await utf8.decoder.bind(response).join();
     return responseStr;
   }
 
   Future<String> sendSettings(Map settingsJSON) async {
     Logger.Inst().log('Sending settings $settingsJSON', 'LoliSync', 'sendSettings', LogTypes.loliSyncInfo);
-    final HttpClientRequest request = await HttpClient().post(ip, port, '/lolisync/settings')
+    final HttpClient client = HttpClient();
+    final HttpClientRequest request = await client.post(ip, port, '/lolisync/settings')
       ..headers.contentType = ContentType.json
       ..write(jsonEncode(settingsJSON));
     final HttpClientResponse response = await request.close();
+    client.close();
     final String responseStr = await utf8.decoder.bind(response).join();
     return responseStr;
   }
 
   Future<String> sendBooru(Booru booru, int booruCount, int current) async {
     Logger.Inst().log('Sending item $current / $booruCount', 'LoliSync', 'sendBooru', LogTypes.loliSyncInfo);
+    final HttpClient client = HttpClient();
     final HttpClientRequest request =
-        await HttpClient().post(ip, port, '/lolisync/booru?amount=$booruCount&current=$current')
+        await client.post(ip, port, '/lolisync/booru?amount=$booruCount&current=$current')
           ..headers.contentType = ContentType.json
           ..write(jsonEncode(booru.toJson()));
     final HttpClientResponse response = await request.close();
+    client.close();
     final String responseStr = await utf8.decoder.bind(response).join();
     return responseStr;
   }
 
   Future<String> sendTabs(String? tabsString, String mode) async {
     Logger.Inst().log('Sending tabs $tabsString', 'LoliSync', 'sendTabs', LogTypes.loliSyncInfo);
-    final HttpClientRequest request = await HttpClient().post(ip, port, '/lolisync/tabs?mode=$mode')
+    final HttpClient client = HttpClient();
+    final HttpClientRequest request = await client.post(ip, port, '/lolisync/tabs?mode=$mode')
       ..headers.contentType = ContentType.json
       ..write(
         jsonEncode({'tabs': tabsString}),
       );
     final HttpClientResponse response = await request.close();
+    client.close();
     final String responseStr = await utf8.decoder.bind(response).join();
     return responseStr;
   }
 
   Future<String> sendTags(List<Tag> tagList, String mode) async {
     Logger.Inst().log('Sending tags: ${tagList.length}', 'LoliSync', 'sendTags', LogTypes.loliSyncInfo);
-    final HttpClientRequest request = await HttpClient().post(ip, port, '/lolisync/tags?mode=$mode')
+    final HttpClient client = HttpClient();
+    final HttpClientRequest request = await client.post(ip, port, '/lolisync/tags?mode=$mode')
       ..headers.contentType = ContentType.json
       ..write(
         jsonEncode(
@@ -424,6 +456,7 @@ class LoliSync {
         ),
       );
     final HttpClientResponse response = await request.close();
+    client.close();
     final String responseStr = await utf8.decoder.bind(response).join();
     return responseStr;
   }
@@ -433,8 +466,10 @@ class LoliSync {
     Logger.Inst().log('Sending test', 'LoliSync', 'sendTest', LogTypes.loliSyncInfo);
     final context = NavigationHandler.instance.navContext;
     try {
-      final HttpClientRequest request = await HttpClient().post(ip, port, '/lolisync/test');
+      final HttpClient client = HttpClient();
+      final HttpClientRequest request = await client.post(ip, port, '/lolisync/test');
       final HttpClientResponse response = await request.close();
+      client.close();
       if (response.statusCode != 200) {
         FlashElements.showSnackbar(
           title: Text(
@@ -489,8 +524,10 @@ class LoliSync {
   Future<String> sendSyncComplete() async {
     Logger.Inst().log('Sending sync complete', 'LoliSync', 'sendSyncComplete', LogTypes.loliSyncInfo);
     try {
-      final HttpClientRequest request = await HttpClient().post(ip, port, '/lolisync/complete');
+      final HttpClient client = HttpClient();
+      final HttpClientRequest request = await client.post(ip, port, '/lolisync/complete');
       final HttpClientResponse response = await request.close();
+      client.close();
       return response.statusCode.toString();
     } catch (e, s) {
       Logger.Inst().log(
@@ -567,12 +604,13 @@ class LoliSync {
 
                 final String resp = await sendBooruBatch(fetched, count, offset);
                 final int updatedCount = offset + fetched.length;
-                yield '$offset-$updatedCount / $updatedCount - $resp';
+                // 1.0: out of the total, not out of itself ("0-100 / 100").
+                yield '$offset-$updatedCount / $count - $resp';
               }
             }
-            yield 'Favourites sent';
+            yield isSnatched ? 'Snatched sent' : 'Favourites sent';
           } else {
-            yield 'No Favourites';
+            yield isSnatched ? 'No Snatched' : 'No Favourites';
           }
           break;
         case 'Favourites':

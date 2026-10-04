@@ -447,7 +447,11 @@ class DriveBackup {
         req.headers.contentLength = body.length;
         req.add(body);
       }
-      return await req.close();
+      final HttpClientResponse res = await req.close();
+      // 1.0: the answer can still be read; the client goes once it has been
+      // (it kept its socket until the idle timeout, one per call).
+      client.close();
+      return res;
     } catch (_) {
       client.close();
       rethrow;
@@ -624,30 +628,56 @@ class DriveBackup {
       if (token == null) return const [];
       final String? parent = folderId ?? await _ensureFolder(token);
       if (parent == null) return const [];
-      final Uri query = Uri.parse('$_api/files').replace(
-        queryParameters: {
-          'q': "'${quoted(parent)}' in parents and trashed = false",
-          'fields': 'files(id,name,modifiedTime,size)',
-          'orderBy': 'modifiedTime desc',
-          'pageSize': '200',
-        },
-      );
-      final HttpClientResponse res = await _send('GET', query, token: token);
-      final String text = await res.transform(utf8.decoder).join();
-      if (res.statusCode != 200) return const [];
-      final List files = (jsonDecode(text) as Map)['files'] as List? ?? const [];
+      final List<Map<dynamic, dynamic>> files = await allPages((String? pageToken) async {
+        final Uri query = Uri.parse('$_api/files').replace(
+          queryParameters: {
+            'q': "'${quoted(parent)}' in parents and trashed = false",
+            'fields': 'nextPageToken,files(id,name,modifiedTime,size)',
+            'orderBy': 'modifiedTime desc',
+            'pageSize': '200',
+            'pageToken': ?pageToken,
+          },
+        );
+        final HttpClientResponse res = await _send('GET', query, token: token);
+        final String text = await res.transform(utf8.decoder).join();
+        if (res.statusCode != 200) return null;
+        return jsonDecode(text) as Map;
+      });
       return [
         for (final f in files)
-          if (f is Map)
-            DriveFile(
-              id: f['id'].toString(),
-              name: f['name'].toString(),
-              modifiedTime: DateTime.tryParse(f['modifiedTime']?.toString() ?? ''),
-              size: int.tryParse(f['size']?.toString() ?? ''),
-            ),
+          DriveFile(
+            id: f['id'].toString(),
+            name: f['name'].toString(),
+            modifiedTime: DateTime.tryParse(f['modifiedTime']?.toString() ?? ''),
+            size: int.tryParse(f['size']?.toString() ?? ''),
+          ),
       ];
     } catch (_) {
       return const [];
     }
+  }
+
+  /// 1.0: every file of a listing. Drive answers [list] 200 files at a time
+  /// with a nextPageToken for the rest; [page] fetches one answer (null when
+  /// it failed). A failed later page keeps the files already listed.
+  @visibleForTesting
+  static Future<List<Map<dynamic, dynamic>>> allPages(Future<Map<dynamic, dynamic>?> Function(String? pageToken) page) async {
+    final List<Map<dynamic, dynamic>> files = [];
+    final Set<String> asked = {};
+    String? token;
+    do {
+      Map<dynamic, dynamic>? body;
+      try {
+        body = await page(token);
+      } catch (_) {
+        body = null;
+      }
+      if (body == null) break;
+      for (final f in body['files'] as List? ?? const []) {
+        if (f is Map) files.add(f);
+      }
+      token = body['nextPageToken']?.toString();
+    } while (token != null && token.isNotEmpty && asked.add(token));
+    return files;
   }
 }
