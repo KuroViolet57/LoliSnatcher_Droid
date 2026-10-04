@@ -236,4 +236,20 @@ void main() {
     });
   });
 
+  testWidgets('restoreTabsNew: the selected tab stays selected when an earlier entry fails to parse', (tester) async {
+    await pumpApp(tester);
+    // A config this device cannot build a handler for: parsing its tab throws.
+    final Booru broken = Booru('broken', BooruType.Gelbooru, null, null, null);
+    SettingsHandler.instance.booruList.addAll([hdoujin, broken]);
+    final String backup = jsonEncode([
+      TabBackup(tags: 'x', booru: 'broken').toJson(),
+      doujinBackup('1'),
+      doujinBackup('2', selected: true),
+      doujinBackup('3'),
+    ]);
+    await tester.runAsync(() => sh().restoreTabsNew(backup));
+    expect(sh().tabs.map((t) => t.tags).toList(), ['id:1', 'id:2', 'id:3']);
+    expect(sh().currentTab.tags, 'id:2');
+  });
+
 }

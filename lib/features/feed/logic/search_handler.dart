@@ -1517,8 +1517,8 @@ class SearchHandler {
         // get index of selected tab
         // newSelectedIndex == 0 check is to ensure that the first tab with selected:true is used
         if (newSelectedIndex == 0 && tabBackup.selected) {
-          final int index = tabBackups.indexWhere((tb) => tb == tabBackup);
-          newSelectedIndex = index;
+          // An index into the restored tabs: an entry that failed to parse is skipped.
+          newSelectedIndex = restoredTabs.length - 1;
         }
       } catch (e, s) {
         Logger.Inst().log(
