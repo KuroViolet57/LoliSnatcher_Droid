@@ -144,6 +144,19 @@ void main() {
     expect(s.disabledButtons, isEmpty);
   });
 
+  testWidgets('Boorus: an empty items-per-page field keeps the stored limit and the page still saves', (tester) async {
+    s.itemLimit = 42;
+    // The default-tags editor reads the current tab.
+    SearchHandler.instance.tabs.add(SearchTab(Booru('other', BooruType.Gelbooru, '', 'https://other.example', ''), null, ''));
+    await open(tester, const BooruPage());
+    await tester.enterText(field('42'), '');
+    await tester.pump();
+    await leave(tester);
+    expect(tester.takeException(), isNull);
+    expect(s.itemLimit, 42);
+    expect(await saved(tester), isTrue, reason: 'the page saved on exit');
+  });
+
   /// Long-press Save (debug: no network test), confirm, and give the file
   /// work real time until [done] holds (or long enough that it never will).
   Future<void> saveBooru(WidgetTester tester, bool Function() done) async {

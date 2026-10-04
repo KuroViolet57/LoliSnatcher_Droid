@@ -85,6 +85,11 @@ class _BooruPageState extends State<BooruPage> {
 
   Future<void> _onPopInvoked(_, _) async {
     settingsHandler.defTags = defaultTagsController.text;
+    // An empty field keeps the stored limit instead of throwing and skipping
+    // the rest of this page's save.
+    if (int.tryParse(limitController.text) == null) {
+      limitController.text = settingsHandler.itemLimit.toString();
+    }
     if (int.parse(limitController.text) > 100) {
       limitController.text = '100';
     } else if (int.parse(limitController.text) < 10) {
