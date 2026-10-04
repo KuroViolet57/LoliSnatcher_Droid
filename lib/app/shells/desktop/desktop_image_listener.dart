@@ -92,7 +92,7 @@ class _DesktopImageListenerState extends State<DesktopImageListener> {
           key: item.key,
         ),
       );
-    } else if (item.mediaType.value.isNeedToGuess && searchHandler.currentBooruHandler.hasLoadItemSupport) {
+    } else if (item.mediaType.value.isNeedToLoadItem && searchHandler.currentBooruHandler.hasLoadItemSupport) {
       return Obx(
         () => LoadItemViewer(
           item: item,

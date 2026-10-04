@@ -222,7 +222,7 @@ class InnerDrawerState extends State<InnerDrawer> with SingleTickerProviderState
 
   void _updateWidth(double screenWidth) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final RenderBox? box = _drawerKey.currentContext!.findRenderObject() as RenderBox?;
+      final RenderBox? box = _drawerKey.currentContext?.findRenderObject() as RenderBox?;
       if (mounted && box != null && box.hasSize && box.size.width > 300) {
         _width = box.size.width;
         _screenWidth = screenWidth;

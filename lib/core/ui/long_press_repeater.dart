@@ -61,7 +61,7 @@ class _LongPressRepeaterState extends State<LongPressRepeater> {
     super.dispose();
   }
 
-  Future<void> runAction() async {
+  Future<void> runAction({bool first = true}) async {
     if (mounted) {
       await Future.delayed(
         Duration(
@@ -69,6 +69,11 @@ class _LongPressRepeaterState extends State<LongPressRepeater> {
           milliseconds: (widget.fasterAfter > 0 && repeatCount > widget.fasterAfter) ? widget.fastTick : widget.tick,
         ),
       );
+      // 1.0: a press that ended while this tick waited does not act again
+      // (onStop has run). The first action of a press still happens.
+      if (!first && !active) {
+        return;
+      }
       await widget.onStart();
       if (repeatCount > 0) {
         await ServiceHandler.vibrate(duration: 2);
@@ -76,7 +81,7 @@ class _LongPressRepeaterState extends State<LongPressRepeater> {
       repeatCount++;
 
       if (active) {
-        unawaited(runAction());
+        unawaited(runAction(first: false));
       }
     }
   }

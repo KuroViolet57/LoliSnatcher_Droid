@@ -1008,6 +1008,11 @@ class _SettingsTextInputState extends State<SettingsTextInput> {
   bool isFocused = false, isObscured = false;
   late final FocusNode _focusNode;
 
+  /// 1.0: the clipboard read that decides whether Paste shows, made once per
+  /// focus. Read on every build, every keystroke read the clipboard again
+  /// (Android 12+ shows its "pasted from your clipboard" toast each time).
+  Future<ClipboardData?>? _clipboardRead;
+
   @override
   void initState() {
     super.initState();
@@ -1021,6 +1026,7 @@ class _SettingsTextInputState extends State<SettingsTextInput> {
 
   void focusListener() {
     isFocused = _focusNode.hasFocus;
+    _clipboardRead = null;
     setState(() {});
   }
 
@@ -1127,7 +1133,7 @@ class _SettingsTextInputState extends State<SettingsTextInput> {
           ),
         if (widget.pasteable && isFocused)
           FutureBuilder(
-            future: Clipboard.getData(Clipboard.kTextPlain),
+            future: _clipboardRead ??= Clipboard.getData(Clipboard.kTextPlain),
             builder: (context, snapshot) {
               if (!snapshot.hasData) {
                 return const SizedBox.shrink();
@@ -1137,7 +1143,9 @@ class _SettingsTextInputState extends State<SettingsTextInput> {
                 key: const Key('paste-button'),
                 icon: Icon(Symbols.content_paste_rounded, color: Theme.of(context).colorScheme.onSurface),
                 onPressed: () async {
-                  final data = snapshot.data?.text;
+                  // What is on the clipboard now, not at focus time.
+                  final data = (await Clipboard.getData(Clipboard.kTextPlain))?.text;
+                  if (!mounted) return;
                   if (data?.isNotEmpty == true) {
                     widget.controller.text = data!;
                     onChangedCallback(widget.controller.text);

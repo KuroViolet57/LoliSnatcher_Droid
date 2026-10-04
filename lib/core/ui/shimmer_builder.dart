@@ -18,7 +18,7 @@ class ShimmerWrap extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
 
     return Shimmer(
-      enabled: true,
+      enabled: enabled,
       linearGradient: _shimmerGradient(
         Color.lerp(colorScheme.surface, colorScheme.onSurface, 0.15)!,
         Color.lerp(colorScheme.onSurface, colorScheme.surface, 0.75)!,

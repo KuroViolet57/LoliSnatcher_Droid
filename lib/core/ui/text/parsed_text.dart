@@ -101,10 +101,33 @@ class _ParsedTextState extends State<ParsedText> {
   late List<ParsedTextSegment> _segments;
   final Set<int> _revealedSpoilers = {};
 
+  /// 1.0: the tap recognizers of the last build, disposed when the next build
+  /// replaces them and with the widget (they were never disposed).
+  final List<TapGestureRecognizer> _recognizers = [];
+
   @override
   void initState() {
     super.initState();
     _parseText();
+  }
+
+  @override
+  void dispose() {
+    _disposeRecognizers();
+    super.dispose();
+  }
+
+  void _disposeRecognizers() {
+    for (final TapGestureRecognizer recognizer in _recognizers) {
+      recognizer.dispose();
+    }
+    _recognizers.clear();
+  }
+
+  TapGestureRecognizer _tapRecognizer(VoidCallback onTap) {
+    final TapGestureRecognizer recognizer = TapGestureRecognizer()..onTap = onTap;
+    _recognizers.add(recognizer);
+    return recognizer;
   }
 
   @override
@@ -262,6 +285,7 @@ class _ParsedTextState extends State<ParsedText> {
     final theme = Theme.of(context);
     final defaultStyle = widget.style ?? theme.textTheme.bodyMedium;
 
+    _disposeRecognizers();
     final spans = _buildSpans(context, _segments, defaultStyle, 0);
 
     final textSpan = TextSpan(
@@ -317,7 +341,7 @@ class _ParsedTextState extends State<ParsedText> {
                     ]),
                     decorationColor: Colors.blue.shade300,
                   ),
-              recognizer: TapGestureRecognizer()..onTap = () => _onUrlTap(url),
+              recognizer: _tapRecognizer(() => _onUrlTap(url)),
             ),
           );
 
@@ -333,7 +357,7 @@ class _ParsedTextState extends State<ParsedText> {
                     color: theme.colorScheme.secondary,
                   ),
               recognizer: widget.onTagTap != null
-                  ? (TapGestureRecognizer()..onTap = () => widget.onTagTap!(tag))
+                  ? _tapRecognizer(() => widget.onTagTap!(tag))
                   : null,
             ),
           );
@@ -350,7 +374,7 @@ class _ParsedTextState extends State<ParsedText> {
                     fontWeight: FontWeight.bold,
                   ),
               recognizer: widget.onMentionTap != null
-                  ? (TapGestureRecognizer()..onTap = () => widget.onMentionTap!(username))
+                  ? _tapRecognizer(() => widget.onMentionTap!(username))
                   : null,
             ),
           );
@@ -367,7 +391,7 @@ class _ParsedTextState extends State<ParsedText> {
                     fontWeight: FontWeight.bold,
                   ),
               recognizer: widget.onMentionTap != null
-                  ? (TapGestureRecognizer()..onTap = () => widget.onMentionTap!(username))
+                  ? _tapRecognizer(() => widget.onMentionTap!(username))
                   : null,
             ),
           );
@@ -384,7 +408,7 @@ class _ParsedTextState extends State<ParsedText> {
                     fontWeight: FontWeight.bold,
                   ),
               recognizer: widget.onPostReferenceTap != null
-                  ? (TapGestureRecognizer()..onTap = () => widget.onPostReferenceTap!(postId))
+                  ? _tapRecognizer(() => widget.onPostReferenceTap!(postId))
                   : null,
             ),
           );

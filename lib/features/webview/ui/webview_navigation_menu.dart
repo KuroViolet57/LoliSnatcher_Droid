@@ -214,24 +214,31 @@ class _WebviewNavigationMenuState extends State<WebviewNavigationMenu> {
       builder: (context, controller) {
         return PopupMenuButton<_NavigationMenuOptions>(
           onSelected: (value) async {
+            // 1.0: the menu is there before the webview is (a FurAffinity
+            // page waiting for its session, no webview on this platform);
+            // without one there is nothing to act on.
+            final InAppWebViewController? webview = controller.data;
+            if (webview == null) {
+              return;
+            }
             switch (value) {
               case _NavigationMenuOptions.goToInitial:
-                await _onGoToInitial(controller.data!);
+                await _onGoToInitial(webview);
                 break;
               case _NavigationMenuOptions.enterCustomUrl:
-                await _onEnterCustomUrl(controller.data!);
+                await _onEnterCustomUrl(webview);
                 break;
               case _NavigationMenuOptions.listCookies:
-                await _onListCookies(controller.data!);
+                await _onListCookies(webview);
                 break;
               case _NavigationMenuOptions.clearCookies:
-                await _onClearCookies(controller.data!);
+                await _onClearCookies(webview);
                 break;
               case _NavigationMenuOptions.getFavicon:
-                await _onGetFavicon(controller.data!);
+                await _onGetFavicon(webview);
                 break;
               case _NavigationMenuOptions.copyUrl:
-                await _onCopyUrl(controller.data!);
+                await _onCopyUrl(webview);
                 break;
             }
           },
