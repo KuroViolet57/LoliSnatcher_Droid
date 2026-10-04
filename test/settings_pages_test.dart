@@ -262,4 +262,16 @@ void main() {
     expect(s.hiddenTagsForBooru('New'), isEmpty);
   });
 
+  testWidgets('Doujin global settings show the choice that applies while none is set', (tester) async {
+    tester.view.physicalSize = const Size(420, 8000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(TranslationProvider(child: MaterialApp(theme: theme, home: const SourceSettingsPage())));
+    await tester.pump();
+    bool selected(String label) => tester.widget<ChoiceChip>(find.widgetWithText(ChoiceChip, label)).selected;
+    expect(selected('Left-to-right'), isTrue);
+    expect(selected('Right-to-left'), isFalse);
+    expect(selected('Animated'), isTrue);
+  });
+
 }
