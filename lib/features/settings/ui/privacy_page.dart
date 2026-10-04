@@ -31,7 +31,9 @@ class _PrivacyPageState extends State<PrivacyPage> {
   void initState() {
     super.initState();
 
-    localAuthHandler.canCheckBiometrics().then((_) => setState(() {}));
+    localAuthHandler.canCheckBiometrics().then((_) {
+      if (mounted) setState(() {});
+    });
 
     blurOnLeave = settingsHandler.blurOnLeave.value;
     useLockscreen = settingsHandler.useLockscreen.value;
