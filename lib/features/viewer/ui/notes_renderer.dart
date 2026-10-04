@@ -135,12 +135,31 @@ class _NotesRendererState extends State<NotesRenderer> {
     if (cancelToken != null && !cancelToken!.isCancelled) {
       cancelToken!.cancel();
     }
-    cancelToken = CancelToken();
-    item.notes.value = await widget.handler.getNotes(
-      item.serverId!,
-      cancelToken: cancelToken,
+    final CancelToken token = CancelToken();
+    cancelToken = token;
+    final BooruItem notesItem = item;
+    final notes = await widget.handler.getNotes(
+      notesItem.serverId!,
+      cancelToken: token,
     );
-    cancelToken = null;
+    // A cancelled request (post changed, retry, page closed) answers with
+    // nothing; that is not the post's notes.
+    if (!token.isCancelled) {
+      notesItem.notes.value = notes;
+    }
+    if (identical(cancelToken, token)) {
+      cancelToken = null;
+    }
+
+    if (!identical(notesItem, item)) {
+      // The post changed during the load and itemListener's loadNotes
+      // returned at `loading`: load the post now on screen.
+      loading = false;
+      if (mounted) {
+        unawaited(loadNotes());
+      }
+      return;
+    }
 
     triggerCalculations();
 
@@ -239,6 +258,11 @@ class _NotesRendererState extends State<NotesRenderer> {
             if (!viewerHandler.isLoaded.value || !viewerHandler.showNotes.value || !currentItemHasNotes) {
               return const SizedBox.shrink();
             } else {
+              // item.notes can change outside loadNotes (the info panel's
+              // "Load notes"): keep the cached note widgets in step.
+              if (notesMap.length != item.notes.length) {
+                rebuildNotesMap();
+              }
               final scale = resizeScale * screenToImageRatio;
               final totalOffsetX = offsetX + viewOffsetX;
               final totalOffsetY = offsetY + viewOffsetY;
