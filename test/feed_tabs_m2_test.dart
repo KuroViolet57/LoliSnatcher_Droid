@@ -320,6 +320,25 @@ void main() {
     });
   });
 
+  testWidgets('searchAction with no tabs creates one instead of throwing', (tester) async {
+    await pumpApp(tester);
+    SettingsHandler.instance.booruList.add(nhentai);
+    await sh().searchAction('glasses', nhentai);
+    expect(sh().tabs, hasLength(1));
+    expect(sh().currentTab.tags, 'glasses');
+    await settle(tester);
+  });
+
+  testWidgets('searchAction with no tabs and no source given opens a tab on the first source', (tester) async {
+    await pumpApp(tester);
+    SettingsHandler.instance.booruList.addAll([nhentai, hdoujin]);
+    await sh().searchAction('glasses', null);
+    expect(sh().tabs, hasLength(1));
+    expect(sh().currentTab.selectedBooru.value.name, 'nhentai');
+    expect(sh().currentTab.tags, 'glasses');
+    await settle(tester);
+  });
+
   group('removeTagFromSearch removes whole tags only', () {
     List<String> removeFrom(String query, String tag) {
       sh().searchTextController.text = query;

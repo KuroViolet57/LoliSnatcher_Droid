@@ -660,9 +660,15 @@ class SearchHandler {
 
     // Record the search as a taste signal (skip virtual/local feeds AND
     // doujin sources — doujin activity must not feed the booru For You).
-    final Booru actionBooru = newBooru ?? currentBooru;
-    final BooruType? actionType = actionBooru.type;
-    if (text.isNotEmpty &&
+    // With no tab yet, the search opens one on the first source (below).
+    final Booru? actionBooru =
+        newBooru ??
+        (tabs.isNotEmpty
+            ? currentBooru
+            : (settingsHandler.booruList.isNotEmpty ? settingsHandler.booruList[0] : null));
+    final BooruType? actionType = actionBooru?.type;
+    if (actionBooru != null &&
+        text.isNotEmpty &&
         actionType?.isLocalDb != true &&
         actionType?.isRecommendationFeed != true &&
         !DoujinDataHandler.isDoujinBooru(actionBooru) &&
@@ -675,14 +681,14 @@ class SearchHandler {
 
     // set new tab data
     if (tabs.isEmpty) {
-      if (settingsHandler.booruList.isNotEmpty) {
-        final SearchTab newTab = SearchTab(
-          settingsHandler.booruList[0],
-          currentSecondaryBoorus.value,
-          text,
-        );
-        tabs.add(newTab);
-      }
+      // No source to open a tab on: nothing to search.
+      if (actionBooru == null) return;
+      final SearchTab newTab = SearchTab(
+        actionBooru,
+        null, // no current tab to take merge sources from
+        text,
+      );
+      tabs.add(newTab);
     } else {
       // Preserve per-booru tag overrides + inherit flags across the tab swap
       // so the user's search-bar tap doesn't wipe edits they made.
