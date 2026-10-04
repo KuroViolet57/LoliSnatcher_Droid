@@ -1465,7 +1465,9 @@ class _TabManagerPageState extends State<TabManagerPage> with TraceLifecycle {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (isRunStart) _groupHeader(context, groupName),
-              SizedBox(height: tabHeight, child: tabItem),
+              // The row's own height, as _ensureDisplayCache gave it (104
+              // for a doujin row, 80 otherwise).
+              SizedBox(height: TabRow.isDoujinTab(tab) ? TabManagerItem.doujinRowHeight : tabHeight, child: tabItem),
             ],
           ),
           Positioned.fill(

@@ -25,6 +25,7 @@ void main() {
 
   late Directory tempDir;
   final Booru gelbooru = Booru('gelbooru', BooruType.Gelbooru, '', 'https://gelbooru.com', '');
+  final Booru nhentai = Booru('nhentai', BooruType.NHentai, '', 'https://nhentai.net', '');
 
   // A tab with something fetched, so switching to it never starts a search.
   SearchTab searchTab(String query) {
@@ -38,6 +39,21 @@ void main() {
         postURL: 'https://gelbooru.com/$query',
       ),
     );
+    tab.booruHandler.filterFetched();
+    return tab;
+  }
+
+  SearchTab doujinTab(String id, String title) {
+    final SearchTab tab = SearchTab(nhentai, null, 'id:$id');
+    final BooruItem item = BooruItem(
+      fileURL: 'https://images.invalid/$id.png',
+      sampleURL: 'https://images.invalid/$id.png',
+      thumbnailURL: 'https://thumbs.invalid/$id.png',
+      tagsList: [Tag('vanilla')],
+      postURL: 'https://nhentai.net/g/$id/',
+      serverId: id,
+    )..description = title;
+    tab.booruHandler.fetched.add(item);
     tab.booruHandler.filterFetched();
     return tab;
   }
@@ -127,6 +143,27 @@ void main() {
       expect(dialogStillOpen, isFalse, reason: 'the dialog of a removed tab must not stay open');
       expect(SearchHandler.instance.tabs, [alpha, beta], reason: 'a second Remove must not close the current tab');
       expect(SearchHandler.instance.currentTab, alpha);
+    });
+
+    testWidgets('a doujin tab inside a group gets its full row height, as the list promises', (tester) async {
+      SettingsHandler.instance.booruList.add(nhentai);
+      final SearchTab first = doujinTab('1001', 'First Book');
+      final SearchTab second = doujinTab('1002', 'Second Book');
+      first.groupName = 'Books';
+      second.groupName = 'Books';
+      SearchHandler.instance.tabs.addAll([first, second]);
+      SearchHandler.instance.changeTabIndex(0);
+
+      await pumpManager(tester);
+
+      for (final SearchTab tab in [first, second]) {
+        final Finder row = find.descendant(
+          of: find.byKey(ValueKey('item-${tab.id}')),
+          matching: find.byType(TabManagerItem),
+        );
+        expect(row, findsOneWidget);
+        expect(tester.getSize(row).height, TabManagerItem.doujinRowHeight, reason: 'the extent given to the row (104), not a search row (80)');
+      }
     });
   });
 }
