@@ -377,6 +377,18 @@ class ServiceHandler {
     return result == 'ok';
   }
 
+  /// 1.0: does the app still hold a read+write grant for this SAF folder?
+  /// Asks Android's persisted grants only: unlike [testSAFPersistence] it
+  /// never opens the folder picker and writes no test file.
+  static Future<bool> hasSafAccess(String path) async {
+    try {
+      return await platform.invokeMethod('hasSafAccess', {'uri': path}) == true;
+    } catch (e) {
+      log(e);
+      return false;
+    }
+  }
+
   static Future<String> getDocumentsDir() async {
     String result = '';
     try {
