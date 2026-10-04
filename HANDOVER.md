@@ -30,7 +30,7 @@ older chronological build log, kept verbatim as history.
   history is on `claude/experimental-megabuild` (merged into this branch).
   Never push elsewhere; force-push is blocked.
 - **Version:** `2.6.0+5211` in `pubspec.yaml`, mirrored in
-  `lib/src/data/constants.dart` (`updateInfo`). Builds are told apart by
+  `lib/core/constants.dart` (`updateInfo`). Builds are told apart by
   `Constants.buildCodename` (`'r89-npu-thumbs'` now, on branch `claude/r87-npu`), shown in About. Bump the
   codename every build: `rNN-<two words>`.
 - **Build counter:** rounds are numbered r21, r22, … r80. Each build gets a
@@ -173,18 +173,25 @@ not survive a container reset, so rebuild it from the read if missing.
 
 ## 3. Layout of the app
 
+Since 1.0 (2026-10-04) the code is in layers and features; `docs/ARCHITECTURE.md` is the
+full map and the rule (models < core < sources < features/*/logic < features/*/ui < app,
+checked by `test/architecture_test.dart`).
+
 ```
 lib/main.dart                     runApp → MainApp → (init) InitHomePage → MobileHomePage / DesktopHomePage
-lib/src/boorus/                   one handler per source family (50 files) + boorus/doujin/ (13)
-lib/src/data/                     models: Booru, BooruItem, Tag/TagType, MetaTag, KemonoPost, SiteProfile, constants
-lib/src/data/site_profiles/       per-host deviations (bakemono, kemono)
-lib/src/handlers/                 singletons and services (43): settings, search, DB, doujin store, reader, tag store, …
-lib/src/pages/                    full screens (26) + pages/settings/ (24)
-lib/src/widgets/                  preview/ (feed), gallery/ (viewer chrome), drawers/, tabs/, image/, video/, webview/, root/, common/
-lib/src/services/                 image_writer (downloads), dio_downloader, drive_backup, saf_file_cache
-lib/src/utils/                    dio_network, logger + log_redaction, tools (UA, sanitize), html_parse, extensions
-test/                             50 offline test files + test/fixtures/ (43 captured bodies)
-scripts/drive_upload_build.py     Drive uploader (see §2)
+lib/models/                       Booru, BooruItem, Tag/TagType, MetaTag, settings enums …
+lib/core/                         logging, network (DioNetwork), platform (ServiceHandler), settings
+                                  (SettingsHandler, SourceSettingsHandler), storage (DBHandler, TagHandler),
+                                  generic ui, utils (Tools)
+lib/sources/                      framework/ (BooruHandler, factory, SiteProfile …), booru/, tube/,
+                                  furaffinity/, kemono/, doujin/<site>/ + doujin/common/, local/
+lib/features/<name>/{logic,ui}/   feed, tabs, viewer, video, doujin, tags, recommender, boards, downloads,
+                                  backup, sync, settings, accounts, debug, links, collections, history,
+                                  kemono, furaffinity, webview
+lib/app/                          shells (mobile/desktop/init), drawers, theme, routing, lock screen, overlays
+test/                             offline test files + test/fixtures/ (captured bodies)
+tool/                             deliver_build.py, flutterw.sh, side_by_side_clone.sh, measure_startup.sh,
+                                  restructure/ (move, split, layer report, docs generators)
 ```
 
 ### 3.1 Screens and navigation
@@ -212,7 +219,7 @@ scripts/drive_upload_build.py     Drive uploader (see §2)
   `booru_edit_page.dart` with per-type defaults and instructions, doujin
   settings, source settings, tags & filters, gallery, video, network, theme,
   backup/restore, database, debug with logger and source capture, …).
-- Routing helpers: `widgets/root/routing.dart`, `NavigationHandler`
+- Routing helpers: `app/routing.dart`, `NavigationHandler`
   (`navContext`), predictive back.
 
 ### 3.2 State conventions
@@ -221,18 +228,18 @@ scripts/drive_upload_build.py     Drive uploader (see §2)
   rebuild with `Obx`. Settings are `RxBool`/`RxString` fields in
   `settings_handler.dart`, persisted to `settings.json` by
   `saveSettings(restate:)`; add a field there + its json key + a settings row.
-- **Networking:** `DioNetwork` (`utils/dio_network.dart`) hands out Dio
+- **Networking:** `DioNetwork` (`core/network/dio_network.dart`) hands out Dio
   instances sharing one pooled `HttpClient`. **Never call `.close()` on a Dio
   from `getClient()`** — it kills the shared pool.
 - **One User-Agent invariant:** every request, WebView and media fetch uses
-  `Tools.browserUserAgent` (`utils/tools.dart`). Cloudflare ties cookies to
+  `Tools.browserUserAgent` (`core/utils/tools.dart`). Cloudflare ties cookies to
   the UA; mismatches were the cause of several "works in browser, 403 in app"
   rounds. Do not introduce another UA string.
 - **Headers:** `BooruHandler.getHeaders()` for API calls,
   `getMediaHeaders()` for image/video fetches (viewer, thumbnails, downloads
   all ask `BooruHandlerFactory.mediaHeadersFor(booru)`; `media_headers_test`
   guards the per-source table).
-- **Images:** `CustomNetworkImage` (`widgets/image/custom_network_image.dart`)
+- **Images:** `CustomNetworkImage` (`core/ui/image/custom_network_image.dart`)
   fetches through Dio into the cache folder; it validates JPEGs
   (`looksLikeJpeg` before `hasJpegEndMarker`, because some hosts serve WebP
   under `.jpeg`). Its `==` compares the `headers` map **by identity** — pass
@@ -247,7 +254,7 @@ scripts/drive_upload_build.py     Drive uploader (see §2)
 
 ## 4. Handlers and the capability surface
 
-`BooruHandler` (`handlers/booru_handler.dart`) is the base every source
+`BooruHandler` (`sources/framework/booru_handler.dart`) is the base every source
 extends. The factory (`booru_handler_factory.dart`) maps `BooruType` →
 handler and caches per-booru helpers (`mediaHandlerFor`, `mediaHeadersFor`,
 `mediaOutageNoticeFor`, `onMediaErrorFor`, `beforeMediaRetryFor`).
@@ -267,7 +274,7 @@ Override points, grouped:
 
 Per-source knowledge that is *not* a handler override lives in these layers:
 
-- **`SiteProfile`** (`data/site_profile.dart`, instances in
+- **`SiteProfile`** (`sources/framework/site_profile.dart`, instances in
   `data/site_profiles/`): per-HOST deviations from a handler family (bakemono
   is gelbooru-compatible but has its own autocomplete route and multi-file
   posts; kemono's profile tells `PostFilesHandler` how to read a post's
@@ -278,7 +285,7 @@ Per-source knowledge that is *not* a handler override lives in these layers:
   `parsePostFiles` via the profile, caches, sets `downloadFileName` per file
   (honoured by `ImageWriter.getFilename`). The viewer shows a burst badge and
   a toolbar action when `displayable(files)` has more than one.
-- **`PoolSource`** (`handlers/pool_source.dart`): per-site pool routes
+- **`PoolSource`** (`sources/booru/pools/pool_source.dart`): per-site pool routes
   (e621, Danbooru family, gelbooru HTML); `forBooru()` null = no pools entry.
 - **`TagIndexSource`** / **`BooruTagStore`** (§4.3).
 - **`ReaderHandler`**: per-post ordered page lists + `ReaderProgress` table.
@@ -306,7 +313,7 @@ Per-source knowledge that is *not* a handler override lives in these layers:
   both query editors (`TagBuilderBlock` in `main_search_query_editor_page.dart`;
   since r27 — before that the chips sat inside the Metatags card). One
   `TagCatalogChip` per namespace of `BooruHandler.tagCatalog`; tapping opens
-  `TagCatalogPickerSheet` (`widgets/preview/tag_type_strip.dart`), which lists
+  `TagCatalogPickerSheet` (`features/tags/ui/tag_type_strip.dart`), which lists
   the local snapshot most-used first, filter-as-you-type, and starts a paced,
   resumable pull through `TagCatalogPuller` when the namespace holds nothing.
   A picked row inserts `catalog.searchTerm(row)`. With the database off the
@@ -317,7 +324,7 @@ Per-source knowledge that is *not* a handler override lives in these layers:
   rows under the site's own namespace. A namespace is offered only if the
   site enumerates it AND the handler's search accepts the term `searchTerm`
   produces.
-- **Booru catalogs** (r27): `BooruTagCatalog` (`handlers/booru_tag_catalog.dart`)
+- **Booru catalogs** (r27): `BooruTagCatalog` (`sources/framework/tags/booru_tag_catalog.dart`)
   adapts the family's `TagIndexSource`. Namespaces are the site's tag
   categories (Artists, Characters, Copyrights, Species, Meta, Tags), each
   `byType` — read from the snapshot rows with an EMPTY namespace and that
@@ -575,7 +582,7 @@ the adversarial reviewer over a diff is the one agent that is always run.
 
 ### 4.6 Doujin browse filters and the doujin search window (r37)
 
-- **The model** (`boorus/doujin/doujin_filters.dart`): `DoujinFilterSpec`
+- **The model** (`sources/doujin/common/doujin_filters.dart`): `DoujinFilterSpec`
   = groups (`DoujinFilterGroup(key, label, options, multi, defaultValue)`),
   declared per source through `BooruHandler.doujinFilters` (null = none).
   A choice travels IN THE QUERY as the source's term (`sort:popular`,
@@ -610,7 +617,7 @@ the adversarial reviewer over a diff is the one agent that is always run.
 
 ### 4.7 The tab cards, the tab pill, the tab manager's doujin rows (r38)
 
-- **`FlowTabCarousel`** (`widgets/preview/flow_tab_carousel.dart`): every
+- **`FlowTabCarousel`** (`features/tabs/ui/flow_tab_carousel.dart`): every
   tab has a card (`KeyedSubtree` key `flow-card-<index>`); the active one
   is wide and the list jumps to `active × (peekWidth + gap)` (clamped to
   the scroll extent) when the active tab changes, so the earlier tabs are a
@@ -618,7 +625,7 @@ the adversarial reviewer over a diff is the one agent that is always run.
   tab's saved `doujinThumb`, else the first loaded item's thumbnail.
   `large: true` (taller cards, bigger covers) and `onPicked` are for the
   pill's sheet.
-- **`TabPill`** (`widgets/preview/tab_pill.dart`, setting `tabPill`, default
+- **`TabPill`** (`features/tabs/ui/tab_pill.dart`, setting `tabPill`, default
   off, Settings → User interface "Tab pill (experimental)"): a floating pill
   in the feed (`waterfall_view.dart`, at the scroll buttons' height on the
   other side) showing the tab's cover and "n/total"; tap →
@@ -681,7 +688,7 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   Every page is read from HTML behind Cloudflare with the browser
   User-Agent. Fixtures in `test/fixtures/furaffinity_*.html`, captured
   2026-09-15.
-- **Routes** (`lib/src/boorus/furaffinity_query.dart`): `''` browse,
+- **Routes** (`lib/sources/furaffinity/furaffinity_query.dart`): `''` browse,
   words go to `/search/` by GET with `mode=extended`, `user:`/`gallery:`/`artist:`,
   `scraps:`, `favorites:` (paged by the cursor in the "next" form, kept per
   query and page in the handler), `id:N`. Filter terms: `sort:`, `order:`,
@@ -697,7 +704,7 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   `furaffinity_session.json` and scrubbed from the jar. The Cookie header
   goes only on the handler's page requests; `sendsJarCookiesToMedia` is
   false. "Content filter" seeds the jar for a visit to `/controls/settings/`.
-- **Artist card** (`widgets/preview/furaffinity_artist_header.dart`), in the
+- **Artist card** (`features/furaffinity/ui/furaffinity_artist_header.dart`), in the
   waterfall after the kemono header: avatar and counts from `/user/name/`,
   Gallery/Scraps/Favorites chips, and Strips (three `TagContentPreview` rows).
 - **Generic hooks added:** `BooruHandler.mediaIconFor(item)` for the
@@ -739,7 +746,7 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   logged out) are cached as null for the session.
 - **Modular UI** (user rule 2026-09-15, see Part A): every UI part the user
   asks to remove becomes a switch in Settings → Modular UI
-  (`lib/src/data/modular_ui.dart`, `pages/settings/modular_ui_page.dart`).
+  (`lib/core/settings/modular_ui.dart`, `features/settings/ui/modular_ui_page.dart`).
   Values live in `SettingsHandler.modularUi`, written by `toJson` next to
   `hiddenTagsPerBooru` and read in `loadFromJSON`, so they load before the
   first screen and ride along in settings backups; only values differing
@@ -750,13 +757,13 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
 
 ### 4.11 FurAffinity's sidebar, post page, blocklist, account, Flash; the Drive link (r42)
 
-- **Sidebar** (`widgets/drawers/furaffinity_sidebar.dart`): the kemono look
+- **Sidebar** (`features/furaffinity/ui/furaffinity_sidebar.dart`): the kemono look
   (`FaSection`/`FaPill`), chosen in `mobile_home_page.dart` like
   `KemonoSidebar`, switched by `SettingsHandler.furAffinitySidebar` (the
   normal drawer's Quick access switches back). Browse / You (inbox, watched,
   favorites, gallery) / the tab's artist (gallery, scraps, favorites, folders,
   watch) / account (log in, blocklist import, content filter, log out).
-- **Post page** (`pages/furaffinity_post_page.dart`, opened from the viewer
+- **Post page** (`features/furaffinity/ui/furaffinity_post_page.dart`, opened from the viewer
   app bar and the tag view): picture, stats, description (`LoliHtml`), the
   submission page's mini gallery with Older/Newer, folders, keywords,
   comments, the site favourite. `fetchPage` is injectable for tests.
@@ -777,12 +784,12 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   `@filename gif`, forces extended mode; verified live that results are .gif
   files while "animation" also returns stills). Favourites sync through
   `hasSiteFavourites`/`setSiteFavourite`.
-- **Flash** (`pages/flash_player_page.dart`): a WebView page with the Ruffle
+- **Flash** (`features/viewer/ui/flash_player_page.dart`): a WebView page with the Ruffle
   script FurAffinity itself serves (`d.furaffinity.net/media/ruffle-0.2.0/`)
   and `player.load({url})`; the SWF host answers
   `access-control-allow-origin: *`. Flash pages have no `#submissionImg`:
   the file is `object#flash_embed[data]`, else the `/download/` link.
-- **Drive link** (`services/drive_backup.dart`): the device log showed the
+- **Drive link** (`features/backup/logic/drive_backup.dart`): the device log showed the
   token exchange failing with "Failed host lookup: oauth2.googleapis.com"
   while the browser was in front. The browser page now says "go back to the
   app"; the exchange waits for `AppLifecycleState.resumed`, tries three token
@@ -795,13 +802,13 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
 ### 4.12 Source settings for booru sources (r43)
 
 - **Page:** `SourceSettingsPage(booru:)` returns `BooruSourceSettingsView`
-  (`pages/settings/booru_source_settings_view.dart`) for any source without a
+  (`features/settings/ui/sources/booru_source_settings_view.dart`) for any source without a
   reader: account (edit page, or FurAffinity's login), "Always add to
   searches", "Default filters" (a `DoujinFiltersBlock` bound to the stored
   terms), hidden tags (count, `TagsFiltersPage`), About this site. The left
   drawer shows "<source> settings" for booru tabs (Modular UI
   `sidebar.sourceSettings`).
-- **Site filters** (`boorus/booru_site_filters.dart`):
+- **Site filters** (`sources/framework/booru_site_filters.dart`):
   `BooruHandler.siteFilters` is the handler's own `doujinFilters`, else
   `BooruSiteFilters.fromMetaTags(availableMetaTags())`: every
   `SortMetaTag`/`OrderMetaTag`/`rating` metatag with values becomes a single
@@ -864,7 +871,7 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
 
 ### 4.14 The Danbooru and Gelbooru engines' search help as filters (r45)
 
-- **Where:** `BooruEngineFilters` in `boorus/booru_site_filters.dart`;
+- **Where:** `BooruEngineFilters` in `sources/framework/booru_site_filters.dart`;
   `DanbooruHandler`, `GelbooruHandler` and `GelbooruAlikesHandler` return
   them as `doujinFilters`, so they replace r43's metatag-derived groups.
 - **Danbooru engine** (danbooru, AiBooru, AllTheFallen), from
@@ -942,7 +949,7 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
 - **Now:** `gallery_view_page.dart` checks `FlashPlayViewer.shouldShow(item)`
   first (Flash by the listing's `type:flash` or a `.swf` file, and not
   already an image/animation/video). `FlashPlayViewer`
-  (`widgets/video/flash_play_viewer.dart`) shows the thumbnail, a Play
+  (`features/viewer/ui/media/flash_play_viewer.dart`) shows the thumbnail, a Play
   button (`FlashPlayerPage.openFor`) and "Open post in browser", and reads
   the post page in the background (`loadItem`, cancelled on dispose) so the
   details and a download get the real `.swf`.
@@ -959,7 +966,7 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
 - **Why:** many FurAffinity "animated" posts are a still picture; the
   animation is behind a link in the description (often an e621 post, or a
   file such as an `.mp4`).
-- **Resolver** (`boorus/linked_media.dart`, pure): `LinkedMediaResolver.linksIn`
+- **Resolver** (`sources/framework/linked_media.dart`, pure): `LinkedMediaResolver.linksIn`
   reads the description's `href`s (http(s), relative ones made absolute,
   `/user/` links dropped, each once, in order); `resolve` makes each one a
   `LinkedMedia` of kind `media` (a video/animation file extension, even on a
@@ -967,11 +974,11 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   e621/Danbooru `/posts/N`, Gelbooru family `page=post&id=N`, FurAffinity
   `/view|full/N`, Philomena, Shimmie `/post/view/N`, Moebooru/Sankaku
   `/post/show/N`) or `page`. The search term is `id:N` (`id=N` on Shimmie).
-- **Opening** (`widgets/linked_media_sheet.dart`, `LinkedMediaOpener.open`):
+- **Opening** (`features/links/ui/linked_media_sheet.dart`, `LinkedMediaOpener.open`):
   a source post is searched by id in a standalone `SearchTab` and shown in
   `GalleryViewPage` pushed on top (the floating tag preview's pattern); not
   found → a snackbar and the link as a page. A file or a page opens in
-  `LinkedMediaPage` (`pages/linked_media_page.dart`): black full screen,
+  `LinkedMediaPage` (`features/links/ui/linked_media_page.dart`): black full screen,
   Reload and Open in browser; a file is played from `mediaHtml` (a
   `<video controls autoplay loop>` or an `<img>`, the address escaped).
 - **Where:** the FurAffinity post page's "Linked media" section under the
@@ -990,13 +997,13 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
 
 - **Types in preview tabs:** `BooruHandler.addTagsWithType` also fills
   `ownTagTypes` (kept when `storeTagsGlobally` is off: strips, the floating
-  preview, hub tabs). `TagTypeLookup.resolve` (`handlers/tag_type_lookup.dart`)
+  preview, hub tabs). `TagTypeLookup.resolve` (`features/tags/logic/tag_type_lookup.dart`)
   is the one answer: your correction → the handler's own parse → the shared
   store (not on doujin) → the tag's own type. `TagView.typeOfTag` delegates;
   "More from" also checks it.
 - **Hubs:** `showTagDialog(knownType:)` receives the row's type and passes it
   to `TagHubPage(knownType:)`, so an artist the shared store never stored
-  opens the Artist hub. `HubTagQuery.forBooru` (`utils/hub_tag_query.dart`)
+  opens the Artist hub. `HubTagQuery.forBooru` (`features/tags/logic/hub_tag_query.dart`)
   strips tag-type namespaces (`artist:` …) for other sources, except sites
   whose tags carry them (FurAffinity, Philomena, Civitai, Hanime1, InkBunny,
   Rule34Video, XXXTik).
@@ -1007,14 +1014,14 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   `cancelEverything` stops the run. The tag browser's Pull tag index uses them,
   so it fills the same lists as the tag builder's chips. Doujin catalogs keep
   their per-pull caps.
-- **Pinned tags:** `pages/pinned_tags_page.dart` (`PinnedTagsStore`: database
+- **Pinned tags:** `features/tags/ui/pinned_tags_page.dart` (`PinnedTagsStore`: database
   for boorus, the doujin store for doujin sources; `PinBuilderSheet`: chips,
   name, scope). `PinnedTag.title` (DB column `title`, added by migration),
   `displayName`, `tags`; `DBHandler.updatePinnedTag`. Follow pins are hidden.
   Quick access row behind Modular UI `sidebar.pinnedTags` (on).
 - **Top inset:** `main.dart` used to strip the top inset while the status
   bar is hidden, putting back arrows in Android's swipe-to-reveal edge.
-  `StatusBarInset.apply` (`utils/status_bar_inset.dart`) keeps it; Modular UI
+  `StatusBarInset.apply` (`app/status_bar_inset.dart`) keeps it; Modular UI
   `app.drawUnderHiddenStatusBar` (off) restores the old layout.
 - **Linked media:** `LinkedMediaResolver.unwrap` follows FurAffinity's
   `/externalurl/?q=`; `anchorsIn` keeps each link's words; rows show
@@ -1068,7 +1075,7 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   default filters (`BooruHandler.applySourceSettings` false for it), and
   `LinkedMediaOpener.showFetched` shows `fetched` when the filters emptied
   `filteredFetched`. Live check: `test/linked_media_live_test.dart`.
-- **Hidden pins:** `PinnedTagVisibility` (`data/pinned_tag_visibility.dart`),
+- **Hidden pins:** `PinnedTagVisibility` (`features/tags/logic/pinned_tag_visibility.dart`),
   keys `id:N` / `tag:x` in `SourceSettings.hiddenPins`; the pinned tags page's
   eye button; `PinnedTagsBlock` filters with `visible()`.
 - **Pin autocomplete:** `PinTagSuggestions.forBooru` (BooruTagStore.browse,
@@ -1077,7 +1084,7 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
 - **Keyboard:** `main.dart`'s page tree sits in an Overlay entry built once,
   so the hidden-status-bar MediaQuery made in the app builder froze the first
   frame's insets (no keyboard insets anywhere while the status bar is hidden).
-  `HiddenStatusBarInsets` (`utils/status_bar_inset.dart`) reads them where it
+  `HiddenStatusBarInsets` (`app/status_bar_inset.dart`) reads them where it
   is built.
 - **Video swipes:** `MediaKitPlayerView` was a black box until its player
   attached (a neighbour page attaches only once viewed unless preloadVideos).
@@ -1168,13 +1175,13 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
 
 - From the profiling (§4.23, §4.24), app code only, each behind a Modular UI
   switch that brings the old behaviour back.
-- **Seen thumbnails** (`widgets/thumbnail/thumbnail_reveal.dart`, switch
+- **Seen thumbnails** (`features/feed/logic/thumbnail_reveal.dart`, switch
   `grid.seenThumbnailsAtOnce`): a grid thumbnail waited 200 ms before loading
   and faded in over 300 ms (200 ms for the low-quality one under a sample)
   even when the picture was in memory. `ThumbnailReveal` remembers the last
   4000 thumbnail URLs shown this session: a remembered URL skips the wait,
   and a remembered one or a memory-cache answer (`syncCall`) skips the fade.
-- **Details on open** (`widgets/gallery/item_info_bottom_sheet.dart`, switch
+- **Details on open** (`features/viewer/ui/info/item_info_bottom_sheet.dart`, switch
   `viewer.detailsWhenInfoSheetOpens`): the bottom info sheet built a TagView
   for every post the viewer landed on while closed; TagView loads the post
   (`loadItem`) for sources with `shouldUpdateIteminTagView` (danbooru,
@@ -1190,12 +1197,12 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
 - **Why:** §4.23-§4.25. media_kit_video gives the Android surface the video's
   native size, so an 8K post (4320x7680) made Skia draws take 600-925 ms and
   the warm pool held ~2.1 GB of graphics memory (EGL mtrack 1.13 GB).
-- **`utils/media_size_cap.dart`** (pure, tested): `videoSurface` fits a video
+- **`core/utils/media_size_cap.dart`** (pure, tested): `videoSurface` fits a video
   inside the screen taken in its best orientation (a landscape video may be
   watched fullscreen sideways, so 1080p is left alone while 8K is cut down),
   keeps the shape, even pixels, never upscales; `imageDecodeSize` mirrors
   `ResizeImage(policy: fit, allowUpscaling: false)` with the 4K ceiling.
-- **`widgets/video/video_surface_cap.dart`:** there is no API for this on
+- **`features/video/logic/video_surface_cap.dart`:** there is no API for this on
   Android (`AndroidVideoController.setSize` throws; the width/height in
   `VideoControllerConfiguration` are read only by the desktop controller), so
   the app repeats media_kit's own call on its channel
@@ -1228,7 +1235,7 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   (`vo=null` -> `android-surface-size` -> `wid` -> `vo=gpu`) and re-seeks.
   Small videos survive it; anything that needed scaling never rendered (the
   thumbnail stayed) and the app turned sluggish. Reverted whole:
-  `widgets/video/video_surface_cap.dart`, the pool's `_startSurfaceCap`,
+  `features/video/logic/video_surface_cap.dart`, the pool's `_startSurfaceCap`,
   `stopCap`, `paramsSub`/`rectListener`, switch `viewer.videoCapToScreen`,
   `MediaSizeCap.videoSurface`. **Doing this properly needs a patched
   media_kit_video (a fork), which the user's no-package rule forbids.**
@@ -1256,7 +1263,7 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   capped size: no second resize, no new `wid`, no `widListener` rebuild — which
   is exactly what made r57 fail (§4.27).
 - **The app** installs the hook in `_MediaKitPlayerPool.acquire`'s init
-  (`widgets/video/video_surface_cap.dart`), reading the Modular UI switch
+  (`features/video/logic/video_surface_cap.dart`), reading the Modular UI switch
   `viewer.videoCapToScreen` per video, so turning it off works without a
   restart. The size comes from `MediaSizeCap.videoSurface`: the screen in its
   best orientation for that video (fullscreen landscape keeps 1080p intact),
@@ -1285,7 +1292,7 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
 
 ### 4.30 The link button stands alone; the tab history scrolls (r61)
 
-- **Visited tabs history** (`widgets/tabs/tab_selector.dart`): the dialog would
+- **Visited tabs history** (`features/tabs/ui/tab_selector.dart`): the dialog would
   not scroll. `SettingsDialog` already scrolls its content, and the inner
   `ListView` (shrinkWrap, built at full height) ate the drag without having
   anything to scroll. The list moved into `VisitedTabsHistoryList` with
@@ -1328,13 +1335,13 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   feedCardStyle`, resolved by `SourceSettingsHandler.feedCardStyle`, default
   `grid`), per source with the usual global layer. Asked for with a screen
   recording of another reader's list layout.
-- **`widgets/thumbnail/doujin_list_card.dart`:** one row per gallery - cover
+- **`features/doujin/ui/doujin_list_card.dart`:** one row per gallery - cover
   (116 px) on the left, then the title on a line that **scrolls sideways**
   (long titles are read, not truncated), the uploader, the tags in three rows
   inside a **horizontal scroller**, and a bottom row with the kind badge
   (Doujinshi / Western / Artist CG ...), the language code and the page count.
   Row height 176.
-- **`widgets/thumbnail/doujin_card_meta.dart`** holds what both card layouts
+- **`features/doujin/logic/doujin_card_meta.dart`** holds what both card layouts
   read (title, language, category, pages, which tags and in what order), for
   namespaced and plain tags alike; the page count comes from
   `item.fileCountHint`, which the doujin handlers set while parsing listings.
@@ -1347,7 +1354,7 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
 - **Idea from the user (via Grok):** treat players as a scarce resource and
   re-point them rather than destroy them. Measured before: 42
   `VideoOutputManager` creates and 38 disposes in 25 s of swiping.
-- **`widgets/video/player_pool_planner.dart`** (pure, tested) decides per
+- **`features/video/logic/player_pool_planner.dart`** (pure, tested) decides per
   acquire: **reuse** the slot already holding the URL, **create** while under
   `mediaKitMaxPlayers`, or **rebind** the oldest idle slot - `player.open()`
   on the same `Player`, so its decoder, Android surface and Flutter texture
@@ -1370,7 +1377,7 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
 - **Why:** measuring over USB with a profile build and the Dart VM service
   perturbed the app enough to invent freezes that were not there (§4.27 and
   the 2026-09-16 session). The app can measure itself in a release build.
-- **`utils/perf_trace.dart`:** `PerfTrace.instance.start()/stop()` listens to
+- **`core/logging/perf_trace.dart`:** `PerfTrace.instance.start()/stop()` listens to
   `SchedulerBinding.addTimingsCallback` - available in release - and records
   per frame the app's own work (`build`) and the drawing (`raster`), with
   medians, 95ths, worsts and the counts over 8.3 / 16.7 / 33.3 / 100 ms, plus
@@ -1391,12 +1398,12 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
 
 ### 4.35 The feed loads on its own scrolling only; list card height and shadow; tab manager title (r66)
 
-- **Next-page trigger** (`widgets/preview/waterfall_view.dart`): the feed's
+- **Next-page trigger** (`features/feed/ui/waterfall_view.dart`): the feed's
   `NotificationListener<ScrollNotification>` acted on every notification that
   bubbled up, including a horizontal scroll inside a card (the list card's tag
   rows and title, the tab cards), and one at its own end satisfied "near the
   bottom" - so pages were fetched while the user read tags. `FeedScroll.
-  isFeedScroll` (`widgets/preview/feed_scroll.dart`, tested) admits only depth
+  isFeedScroll` (`features/feed/ui/feed_scroll.dart`, tested) admits only depth
   0 and a vertical axis; the scroll stream that hides the bars gets the same
   filter.
 - **List card:** `SourceSettings.listCardHeight` (per source, 120-320, default
@@ -1417,7 +1424,7 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
 - **Asked for:** a capture that shows what the UI did and what triggered it -
   widgets created and destroyed, taps, swipes, drawers, scrolls, buttons - to
   find leaks and needless work without a cable.
-- **`utils/perf_trace.dart`:** `TraceLifecycle` (a mixin on `State`) reports
+- **`core/logging/perf_trace.dart`:** `TraceLifecycle` (a mixin on `State`) reports
   `widget.init` / `widget.dispose` with the state's type; `built(name)` counts
   rebuilds (counts only - a scroll rebuilds hundreds); `PerfTraceGestureLayer`
   at the root (in `main.dart`'s builder, inside `HiddenStatusBarInsets`)
@@ -1459,7 +1466,7 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   fit. New `SourceSettings.listCoverWidth` (72–240, default 116; resolver
   `listCoverWidth`), row "List cover width"; `GridBuilder` passes it. Column
   key `doujin-list-card-cover`.
-- **Thumbnail decode box** (`widgets/thumbnail/thumbnail_decode_box.dart`,
+- **Thumbnail decode box** (`features/feed/logic/thumbnail_decode_box.dart`,
   `ThumbnailDecodeBox.of`): a standalone doujin cover (`isDoujinCover =
   DoujinDataHandler.isDoujinBooru(booru)`) in a bounded box decodes for that
   box × `coverSlack` 1.5 (fit policy, never upscaled); everything else keeps
@@ -1483,8 +1490,8 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   (default true, e-hentai's Detail page row). `DoujinDetailPage._loadSharpCover`
   after `_load`; `_coverImage` stacks the sharp `Thumbnail` over the site cover
   (no blank while it loads); `bigCoverBox` takes the sharp size.
-- **eahentai (`boorus/doujin/eahentai_handler.dart`, `eahentai_query.dart`,
-  `handlers/eahentai_session_handler.dart`):** the site's JSON API, found in
+- **eahentai (`sources/doujin/eahentai/eahentai_handler.dart`, `eahentai_query.dart`,
+  `sources/doujin/eahentai/eahentai_session_handler.dart`):** the site's JSON API, found in
   its own scripts (`30amskxbf3cfb.js`: `getApiBaseUrl` = `/api/`) and
   fetched: `image/latest/?page&take` (`{items,totalPages,totalResults}`),
   `image/search/v2/?type=gallery|artist|character|parody|tag&q&take&page&orderby=date_desc|views_daily|views_weekly|views_monthly|views_alltime`,
@@ -1541,7 +1548,7 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   row per source: reader, catalog, suggestions, filter groups, metatags,
   comments, notes, site favourites, login, blacklist, variants, reader
   qualities, language/title support, content types, credential fields).
-- **Autocomplete:** `boorus/doujin/catalog_suggestions.dart` (mixin
+- **Autocomplete:** `sources/doujin/common/catalog_suggestions.dart` (mixin
   `CatalogSuggestions`: `hasTagSuggestions` true, `getTagSuggestions` from
   `BooruTagStore.browse` in the catalog's `searchTerm` spelling) on hitomi,
   asmhentai, hentaipaw, hentalk. e-hentai: `api.php` `tagsuggest`
@@ -1739,10 +1746,10 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
 
 ### 4.42 Boards: describe it or show a picture, the app searches the sources (r73)
 
-- **What:** a saved search (`data/board.dart` `Board`: name, description,
+- **What:** a saved search (`models/board.dart` `Board`: name, description,
   mustTags, excludeTags, sourceNames (empty = every eligible booru),
   imagePath (a copy under `boards/`), imageUrl) kept by
-  `handlers/boards_handler.dart` (`boards.json` beside the settings, with
+  `features/boards/logic/boards_handler.dart` (`boards.json` beside the settings, with
   `sauceNaoApiKey`; `revision` notifier; `importImageBytes/File`; a deleted
   board takes its image copy; `imageBooru` names the booru a post's image
   came from; `matches` / `matchedAt` / `matchedImage` cache the reverse-image
@@ -1753,7 +1760,7 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   virtual entries, excluded from the dropdown / detectable / saveable lists,
   `isRecommendationFeed` true) with the search string `board:<id>`, so tabs
   restore.
-- **Query understanding** (`handlers/board_query.dart`, `BoardQueryBuilder`):
+- **Query understanding** (`features/boards/logic/board_query.dart`, `BoardQueryBuilder`):
   `tokens` (lowercase words minus stop words) and `bigrams`; `deriveTags`
   scores candidates: an image match's names +4, an exact tag-list name +3,
   a name starting with the word +1.5, containing it +0.5, the site's own
@@ -1763,7 +1770,7 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   typed or in the site's spelling) and the exclusions. Seams: `storeLookup`
   (BooruTagStore.browse), `siteSuggest` (handler.getTagSuggestions),
   `embed` (EncoderHandler.embedText).
-- **Reverse image search** (`handlers/reverse_image_search.dart`): SauceNAO
+- **Reverse image search** (`features/boards/logic/reverse_image_search.dart`): SauceNAO
   `POST search.php` (`api_key`, `output_type=2`, `numres`, `db=999`, `file`
   upload or `url`) → `parseSauceNao` (header.status ≠ 0 → the site's
   message as an error; results ≥ 55 similarity; site + post id from the
@@ -1783,7 +1790,7 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   reverse image could not be reached from the PC (both browsers refuse
   danbooru by policy, curl meets Cloudflare) - out. iqdb.org stays the
   Find-elsewhere path.
-- **The feed** (`boorus/board_handler.dart`, `BoardHandler`): `_init` reads
+- **The feed** (`features/boards/logic/board_handler.dart`, `BoardHandler`): `_init` reads
   the board, builds one handler per source (max 8; `sourceFactory` seam),
   runs the image matcher unless the board holds fresh matches for the same
   image (then the cache answers and SauceNAO's quota is untouched; a fresh
@@ -1804,7 +1811,7 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   the post carries + jitter; `withoutDismissed`; exposures logged under
   surface `board`. Two empty rounds lock the feed (an error only when
   nothing was ever found).
-- **UI** (`pages/boards_page.dart`): `BoardsPage` (drawer → Boards, booru
+- **UI** (`features/boards/ui/boards_page.dart`): `BoardsPage` (drawer → Boards, booru
   tabs; list, New board, per-board menu Open / Edit / Duplicate / Delete;
   `opener` seam) and `BoardEditPage` (name, description, must / never tags,
   reference image: `image_picker` gallery pick copied under `boards/`, or
@@ -1859,7 +1866,7 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
 ### 4.43 Image tagger: tags from the pixels, as an optional download (r74)
 
 - **What:** an on-device booru tagger the user downloads from Hugging Face
-  (`handlers/recommender/image_tagger_handler.dart`, `ImageTaggerHandler`,
+  (`features/recommender/logic/ml/image_tagger_handler.dart`, `ImageTaggerHandler`,
   modelled on the encoder): the WD v3 taggers by SmilingWolf as presets
   (`TaggerPreset`: `wd-vit` 378,536,310 B (default), `wd-convnext`
   394,990,732 B, `wd-swinv2` 467,460,978 B; sizes from the Hugging Face API
@@ -1893,7 +1900,7 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   refresh; a picture that cannot be decoded is a `FormatException`. One log
   line per run: `tagger: N general, M characters, rating r p; decode X ms,
   model Y ms (provider)` — the S24 Ultra timing lives there.
-- **Boards** (`boorus/board_handler.dart`): `pixelTagger` / `pixelModelId`
+- **Boards** (`features/boards/logic/board_handler.dart`): `pixelTagger` / `pixelModelId`
   seams; `_init` reads the reference image through the tagger when one is
   enabled (`referenceImageBytes`, the reading shared with the reverse-image
   matcher), 30 s cap; `seedsFrom`: a character seeds at 4 (as a SauceNAO
@@ -1903,13 +1910,13 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   "Refresh image matches" (`clearMatches`), re-read for a new image or a
   new model; a failure is logged, not cached. With a tagger the "no reverse
   image search available" error is not raised: an image board needs no
-  SauceNAO key. Editor (`pages/boards_page.dart`): "Tags from the picture"
+  SauceNAO key. Editor (`features/boards/ui/boards_page.dart`): "Tags from the picture"
   (`board-tag-image`; `taggerReady` / `pixelTagger` seams) reads the picked
   file, the copy or the address into chips (`board-pixel-<tag>`, characters
   first, confidence shown); a tap appends the tag to Must-have once; without
   a tagger the row (`board-tag-hint`) says where to download one.
 - **Reactions** (`RecommenderHandler.onEvent`, `pixelTagsFor` seam,
-  `resetSeamsForTests`; `handlers/recommender/pixel_tags.dart`): with
+  `resetSeamsForTests`; `features/recommender/logic/pixel_tags.dart`): with
   `taggerOnReactions` on, a booru-world event whose reward weighs 2 or more
   (favourite, unfavourite, collect, snatch, videoComplete, Not interested)
   reads the post's thumbnail (the grid's cache through
@@ -1921,7 +1928,7 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   timeout leaves the site's tags alone. Log: `tagger: reaction <kind>, N tags
   from the picture, M new`. Honest limit: this does not change how a
   disliked post shares the blame between its tags (r75).
-- **Settings page** (`pages/settings/recommendations_page.dart`,
+- **Settings page** (`features/recommender/ui/recommendations_page.dart`,
   `_TaggerSection` between the encoder and Boards): presets
   (`tagger-preset-<id>`, `tagger-preset-custom`, `tagger-custom-repo`),
   Download / Cancel / Delete (`tagger-download`, `tagger-cancel`,
@@ -1955,7 +1962,7 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   visual similarity on device, the recommender explaining itself and taking
   corrections, tabs that never switch the user away, and the blank seeded
   tab. Report style: plain words, few blocks (the r74 report overwhelmed).
-- **Looks model** (`handlers/recommender/look_model_handler.dart`,
+- **Looks model** (`features/recommender/logic/ml/look_model_handler.dart`,
   `LookModelHandler`, modelled on the encoder): presets `LookPreset.s0`
   (Xenova/mobileclip_s0: `onnx/vision_model_quantized.onnx` 11,846,843 B +
   `onnx/text_model_quantized.onnx` 42,799,238 B) and `s2`
@@ -1980,7 +1987,7 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   120 s like the tagger; a runtime failure is an error status until a
   refresh. Settings `lookModel` ('' / preset id / repo), `aiLook` (true).
   Registered in `main.dart` beside the encoder and the tagger.
-- **CLIP tokenizer** (`handlers/recommender/clip_tokenizer.dart`,
+- **CLIP tokenizer** (`features/recommender/logic/ml/clip_tokenizer.dart`,
   `ClipTokenizer`): what a Hugging Face `tokenizer.json` of the CLIP family
   describes — whitespace collapsed, lowercase, the split regex
   (contractions, `\p{L}+`, one `\p{N}`, runs of anything else), the GPT-2
@@ -1993,7 +2000,7 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   re-implementation produced, validated on the known "a photo of a cat" =
   320 1125 539 320 2368); the cut keeps every merge on the paths taken, so
   the small file encodes those sentences exactly as the full one does.
-- **Boards by looks** (`boorus/board_handler.dart`): seams `referenceLook`,
+- **Boards by looks** (`features/boards/logic/board_handler.dart`): seams `referenceLook`,
   `lookText`, `lookItems`, `lookModelId`; `_init` puts the reference
   image's vector in `_refLook` (cached on the board as `Board.lookVector` +
   `lookImage` = `<imageKey>@<model>`, `hasFreshLook`, cleared by
@@ -2003,7 +2010,7 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   cosine — above the text-encoder term (10) and the derived-tag weights
   (3-4), so looks decide the order among tag matches; a failing model
   leaves the tags in charge.
-- **Posts like this** (`pages/boards_page.dart`, `widgets/gallery/tag_view.dart`):
+- **Posts like this** (`features/boards/ui/boards_page.dart`, `features/viewer/ui/info/tag_view.dart`):
   `BoardsPage.openSimilar(context, item, source)` makes a *hidden* board
   (`BoardEditPage.similarFromItem`: the post's image, its lead tags as the
   words, `Board.hidden = true`, name "Like: …"), copies the image through
@@ -2079,10 +2086,10 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   Plan approved through the user's checklist; they added the switch.
 - **Player (pooled media_kit viewer only, the user's setup):**
   `MediaKitFrameSource.showing(url)` at the end of
-  `widgets/video/media_kit_player_view.dart` is a read-only lookup in
+  `features/video/ui/media_kit_player_view.dart` is a read-only lookup in
   `_MediaKitPlayerPool._slots` (entry with that url and no error) returning
   `(player, stillShowing)`; nothing else in the player file changed.
-- **The grab** (`handlers/recommender/video_frames.dart`, `VideoFrames`,
+- **The grab** (`features/recommender/logic/video_frames.dart`, `VideoFrames`,
   GetIt, `register().attach()` in `main.dart` after `LookModelHandler`):
   mpv's `screenshot-to-file <tmp>/f<n>.jpg video` through
   `NativePlayer.command` (media_kit builds that argument list as
@@ -2150,7 +2157,7 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
 
 ### 4.46 The Suggested strip's new tab fills (r76, build 96)
 
-- **Cause:** `TagContentPreview` (in `widgets/gallery/tag_view.dart`) runs
+- **Cause:** `TagContentPreview` (in `features/viewer/ui/info/tag_view.dart`) runs
   the Suggested strip with a `SuggestionHandler` built around the post, and
   a placeholder tag "suggestions"; its "open in new tab" (and the long-press
   variant) passed `_effectiveTag` ("suggestions") to `addTabByString`, so
@@ -2189,7 +2196,7 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   `dispose`) whose learning step ran the encoder (no thread count = ORT default
   = every core), the looks model and, for favourites, the tagger (4 threads)
   right as the feed came back; frame grabs went on under other pages.
-- **`handlers/recommender/model_work.dart` (new):** `ActivityClock` (a global
+- **`features/recommender/logic/model_work.dart` (new):** `ActivityClock` (a global
   `pointerRouter` route, root scroll notifications in `PerfTraceGestureLayer`,
   page changes in `PerfTraceRouteObserver` incl. remove/replace) and
   `ModelWork`, a one-at-a-time queue: a step runs after `quiet` (1.5 s) without
@@ -2309,7 +2316,7 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   for `kDoubleTapTimeout`), and `FloatingPreviewHandler.open` bound the window
   to the top page - the feed. Nothing in the icon's path pops the viewer; the
   closer is still unknown. Back with a window open acted on the page under it.
-- **`widgets/gallery/tag_chip_shell.dart` (new):** `TagChipShell` = the chip's
+- **`features/tags/ui/tag_chip_shell.dart` (new):** `TagChipShell` = the chip's
   Material + a Stack of the body's `InkWell` (tap = menu, double tap =
   editor, hold = tab) and a `Positioned` preview zone
   (`previewZoneWidthFor()` = 11 + 16 + 8 + 2) over the icon the body draws:
@@ -2331,7 +2338,7 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   (exit prompt, drawer) stand down while `hasWindowFor` their route. Callers:
   the chip (`ModalRoute.of(context)`), the tag menu's Preview (the top page
   taken before the menu pops), the strip header's floating-window button.
-- **`utils/navigation_trace.dart` (new):** `ViewerCloseObserver` (in
+- **`core/logging/navigation_trace.dart` (new):** `ViewerCloseObserver` (in
   `navigatorObservers`) logs "viewer closed by: <app frames>" for the route
   named `viewer` (Flutter/dart frames dropped; "the system" when none);
   `BackGestureLogger` (added in `main()` before `runApp` - `handlePopRoute`
@@ -2379,7 +2386,7 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   `singleInstance` (always RESULT_CANCELED) is contradicted here: the SAF
   folder links in the user's settings came back to this same activity, and
   on the emulator GET_CONTENT worked - the launch mode is left as it is.
-- **`utils/photo_picker.dart` (new):** `PhotoPicker.useSystemPicker()` in
+- **`core/platform/photo_picker.dart` (new):** `PhotoPicker.useSystemPicker()` in
   `main()` sets `ImagePickerAndroid.useAndroidPhotoPicker` (PICK_IMAGES on
   Android 13+: the media library and the cloud provider, no other apps' file
   browsers); `systemPickerOn` for the log. image_picker's platform packages
@@ -2424,7 +2431,7 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   they are what keeps a 200 MP photo out of our own `img.decodeImage`
   (`image_tagger_handler.dart:584`), which decodes at full size in a compute
   isolate.
-- **`utils/picker_watch.dart` (new):** `PickerWatch.run<T>(pick, {onLate})`
+- **`core/platform/picker_watch.dart` (new):** `PickerWatch.run<T>(pick, {onLate})`
   returns a `PickResult<T>` (`picture | nothing | lost | failed`, `openMs`,
   `reason`). While the picker is in front the app is away and the wait is
   unbounded; on the first `resumed` after that, the answer is due within
@@ -2612,7 +2619,7 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   "Recommend more like this" move from full-width rows into the compact block
   with Favorite / Save / Collect / Details, icon + one word. "More from
   artist/uploader", the Suggested strip and the Tags block stay.
-- **`widgets/gallery/flow_action_grid.dart` (new):** `FlowActionTile` (the
+- **`features/viewer/ui/info/flow_action_grid.dart` (new):** `FlowActionTile` (the
   r74 tile, with the label in a scale-down `FittedBox`), `FlowActionGrid`
   (`shapeFor(n)`: n<=5 one row, else rows = ceil(n/5), columns =
   ceil(n/rows); the last row padded with empty `Expanded` slots so every tile
@@ -2666,7 +2673,7 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   threw right after the sign-in lost the whole update. Now the linked state
   is set first; the listing runs after it inside try/catch
   (`DriveBackup.list` is also wrapped whole).
-- **Core (UI-free, tested):** `lib/src/services/backup_plan.dart` -
+- **Core (UI-free, tested):** `lib/features/backup/logic/backup_plan.dart` -
   `BackupItem` (settings, sources, doujinLibrary, sourceSettings, bookmarks,
   boards, boardPictures, tagTypes, database, recommender), file names
   (`recommender.<file>`, `board-picture.<file>` prefixes for folders),
@@ -2677,7 +2684,7 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   memory dropped, no flush/keep until restart - otherwise the exit flush
   writes the old models over the restored ones). A whole-DB attempt forces a
   restart even when it failed (the DB was closed).
-- **Database parts:** `lib/src/services/db_parts.dart` - the backup's
+- **Database parts:** `lib/core/storage/db_parts.dart` - the backup's
   store.db is copied to `restore-parts.db`, ATTACHed, and per table the
   common columns are copied with `INSERT OR REPLACE`; the recommendation
   log (`Interaction`, `RecommenderFeature`, `TagSignal`) is DELETEd first
@@ -2690,7 +2697,7 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   dated by its newest file), `createSnapshot(name)` (unique name),
   `deleteSnapshot`, and `folderId` on `list/upload/download`. Query strings
   are escaped (`quoted`).
-- **App side:** `lib/src/services/backup_app.dart` - `appBackupHooks()`,
+- **App side:** `lib/features/backup/logic/backup_app.dart` - `appBackupHooks()`,
   `FolderBackupTarget` (SAF; every file passes through the cache's
   `backup/` scratch folder under its own name; an old copy is deleted first
   because SAF writes "name (1)"), `DriveBackupTarget`.
@@ -2724,7 +2731,7 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   the whole text once, then logs it in parts of at most 9,000 characters
   cut at a line end in the part's second half, each headed
   "<title> (part i/n)"; `Logger.splitParts` joins back to the input.
-- **`lib/src/services/capture_files.dart`:** `CaptureFiles.save(name, text)`
+- **`lib/features/debug/logic/capture_files.dart`:** `CaptureFiles.save(name, text)`
   writes to `capturesPath` (a SAF tree picked in Debug → Captures folder),
   else `getOrCreateSAFDirectory(extPathOverride, 'captures')`, else (no
   folder, or the folder refused) `<ext dir>/LoliSnatcher/captures/`
@@ -2739,9 +2746,9 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   (`source-capture-<host>-<stamp>.txt`); `saveToCaptures()` runs when the
   recording browser closes, after "Fetch the response bodies" and from the
   new "Save to the captures folder" button.
-- **Models page** (`lib/src/pages/settings/models_page.dart`, from the
+- **Models page** (`lib/features/recommender/ui/models_page.dart`, from the
   Recommendations page's "Models: jobs and threads"):
-  `lib/src/data/model_tasks.dart` holds `ModelUse` (waiting/background;
+  `lib/features/recommender/logic/model_tasks.dart` holds `ModelUse` (waiting/background;
   `TaggerUse` is now a typedef of it), `ModelKind`, the nine `ModelTask`s
   (text: learning, forYou, boards; look: learning, forYou, similar, boards;
   tagger: tryIt, boards) and the thread counts. Stored as `modelTasks`
@@ -2803,7 +2810,7 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   the learning. Found by the r77 reset test: awaiting before the
   generation capture let a step queued before a reset leak into the fresh
   model.
-- **Remember looks** (`lib/src/handlers/recommender/look_memory.dart`,
+- **Remember looks** (`lib/features/recommender/logic/look_memory.dart`,
   attached in main.dart; setting `rememberLooks`, off by default): leaving
   a post looked at for 2.5 s+ queues a ModelWork step
   `LookModelHandler.imageVectors([item], use: background)` - memory and the
@@ -2842,7 +2849,7 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   (and `get_perms`' dialog) assigned `extPathOverride` directly, so
   `SAFFileCache` (invalidated only in `setByString`) kept the old folder's
   names until a restart.
-- **`lib/src/services/download_folders.dart`:** `change(folder)` - the one
+- **`lib/features/downloads/logic/download_folders.dart`:** `change(folder)` - the one
   place a folder change goes through: records the folder left (the default
   resolves through `ServiceHandler.getPicturesDir`) at the front of the
   setting `earlierDownloadFolders` (device-specific, written next to the
@@ -2910,7 +2917,7 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   against disk" lived in `DDNavigationButtons` (`dd_selection_actions.dart`),
   inside `DDControlPanel`, which nothing has shown since commit 28f6f458
   (the drawer redesign, 2026-07-14).
-- **r84:** the check is `DownloadsCheck` (`widgets/common/downloads_check.dart`):
+- **r84:** the check is `DownloadsCheck` (`features/downloads/ui/downloads_check.dart`):
   `run(context)` audits (`DownloadsReconciler.audit` with the doujin
   exclusion), then says "All N media downloads have a file" (with where they
   were found) or asks "M of N downloads have no file" → Keep / Forget M
@@ -2950,7 +2957,7 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
 - **Filters:** `filterFetched` skips "Remove favourited" and "Remove snatched"
   in every `isLocalDb` list (Downloads, Favourites, Collections, History);
   hidden tags, marked, AI and the media chip still apply. It counts what it
-  hides in `BooruHandler.hiddenBy` (`HiddenReason`, `data/hidden_by_filters.dart`,
+  hides in `BooruHandler.hiddenBy` (`HiddenReason`, `models/hidden_by_filters.dart`,
   `HiddenByFilters.summary/title`).
 - **Paging:** `SearchHandler.runSearch` loops for own lists while a page adds
   nothing visible (`ownListLoadsMore`, at most `ownListPagesPerLoad` = 10 per
@@ -2964,11 +2971,11 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   (`loadNextPage`; before, `retrySearch` re-read the same one); at the end it
   opens Settings -> Filters. A Downloads emptyNote without fetched items gets
   the same next-page tap.
-- **Source links (Settings -> Links, `pages/settings/links_page.dart`):**
+- **Source links (Settings -> Links, `features/links/ui/links_page.dart`):**
   Android cannot add link hosts at runtime, so the manifest has an
   `activity-alias .SourceLinks` (disabled) with VIEW/BROWSABLE/DEFAULT, http
   and https, and `host` + `*.host` for each of `SourceLinks.sites` (59, in
-  `services/source_links.dart`). Setting `openSourceLinks` (default false)
+  `features/links/logic/source_links.dart`). Setting `openSourceLinks` (default false)
   switches it through `setSourceLinks` (MainActivity,
   setComponentEnabledSetting) and is re-applied in postInit
   (`SourceLinks.applySaved`). Link Sheet lists an app only if its filter
@@ -2976,7 +2983,7 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   in LinkSheet's source), hence the named list. The page lists covered and
   uncovered sources; its button is the existing `openLinkDefaults`, which now
   answers (`result.success(null)`; before, an await on it never returned).
-- **Routing (`services/incoming_link.dart`):** `openAppLink` (main.dart)
+- **Routing (`features/links/logic/incoming_link.dart`):** `openAppLink` (main.dart)
   keeps loli.snatcher config links, then `IncomingLinks.open`:
   `IncomingLink.parse` -> doujin gallery (nhentai/asm/faccina `/g/<id>`,
   niyaniya/hdoujin/e-hentai `/g/<id>/<key>`, eahentai `/a/<id>`, hitomi
@@ -3018,9 +3025,9 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
 
 - **Explain buttons (user rule 2026-10-02):** every new option gets an info
   button whose window explains the choices, their advantages and the
-  timings this phone measured: `widgets/common/explain_button.dart`
+  timings this phone measured: `core/ui/explain_button.dart`
   (`ExplainButton`, `ExplainChoice`; content built when the window opens).
-- **Picture decoding (`handlers/recommender/model_pictures.dart`):** the
+- **Picture decoding (`features/recommender/logic/ml/model_pictures.dart`):** the
   setting `pictureDecoder` (`PictureDecoder.phone` default, `dart` = before
   r86; the user chose this change). `ModelPictures.decodeOnPhone` uses
   `ui.ImageDescriptor.instantiateCodec(targetWidth/Height)` (root isolate;
@@ -3030,12 +3037,12 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
   Dart decode) run in `compute`. A file the phone cannot read (TGA, ...)
   falls back to the old path; video frames use `shrinkFrame` (512 px JPEG).
   The tagger's log line names the decoder ("decode N ms (phone)").
-- **Run on (`ModelAccelerator` in `data/model_tasks.dart`):** cpu (default,
+- **Run on (`ModelAccelerator` in `features/recommender/logic/model_tasks.dart`):** cpu (default,
   options exactly as before: no providers), xnnpack ([XNNPACK, CPU]), nnapi
   ([NNAPI, CPU]) via `onnxSessionOptions`; stored per phone in
   `modelRunOn` (deviceSpecificSettings; only non-CPU), set on the Models
   page (`model-runon-<model>` + explain). The three runners open through
-  `openOnnxSession` (handlers/recommender/onnx_options.dart): the choice,
+  `openOnnxSession` (features/recommender/logic/onnx/onnx_options.dart): the choice,
   else the CPU with the threads ("NNAPI refused" in the log and the
   provider label), else ORT defaults. `savedAccelerator` falls back to the
   CPU when settings are not loaded. The plugin (flutter_onnxruntime 1.8.5)
@@ -3263,7 +3270,7 @@ From the log of 2026-09-15 03:10 (about 10,000 error lines in 40 s):
 - **Android MCP server:** still "adb not found" after the Claude restart;
   the emulator is driven with adb + screenshots.
 
-## 5. Sources catalogue (`BooruType`, `boorus/booru_type.dart`)
+## 5. Sources catalogue (`BooruType`, `models/booru_type.dart`)
 
 Each type has an `isX` getter; `isKemono` is true for Kemono AND Pawchive.
 `booru_edit_page.dart` carries per-type default URL, favicon and the
@@ -3278,7 +3285,7 @@ World, Civitai (official API), WebView (browser tab), Autodetect.
 Bakemono.app rides on Gelbooru + `BakemonoProfile`.
 
 **Video / tube sources:** Hanime1 (`hanime1.me`, Chinese→English tag
-dictionary in `data/hanime_dictionary.dart`, domain fallback; since r29 the
+dictionary in `sources/tube/hanime_dictionary.dart`, domain fallback; since r29 the
 Tag builder lists the dictionary by group, §4.3), Kusowanka,
 TikPorn, XXXTik, XXXFollow (login), RedGifs (`redgifs_login_page`),
 Rule34Video (r28; `rule34video.com`, a KVS tube behind DDoS-Guard, no
@@ -3320,7 +3327,7 @@ tile and filmstrip cell. Tiles go to the SESSION-ONLY
 `BooruItem.transientThumbnailURL` (`displayThumbnailURL` is what `Thumbnail`
 and the filmstrip load; `thumbnailURL` stays the cover and is what the DB
 keeps) because strip links expire within days — a 4-day-old one answered
-404 on 2026-09-13. `SpriteTileImage` (`widgets/image/sprite_tile_image.dart`)
+404 on 2026-09-13. `SpriteTileImage` (`core/ui/image/sprite_tile_image.dart`)
 resolves the strip through the ordinary image cache once (one headers map
 per source, fixed timeouts, `fileNameExtras: ''`, so `CustomNetworkImage.==`
 holds across tiles) and cuts its rectangle in a completer that survives
@@ -3341,7 +3348,7 @@ header — read them before changing a handler.
 
 **Kemono-style:** Kemono (kemono.cr), Pawchive (pawchive.pw) — §7.
 
-`SchaleNetwork` (`boorus/doujin/schale_network.dart`) maps a configured site
+`SchaleNetwork` (`sources/doujin/schale/schale_network.dart`) maps a configured site
 to its API and auth hosts: hdoujin.org → `api.hdoujin.org` /
 `auth.hdoujin.org`, everything else → the Schale network. Clearance tokens
 are kept per network key, so niyaniya's check does not answer for hdoujin.
@@ -3393,7 +3400,7 @@ Doujin and booru personal data never mix. Concretely:
   assume a new surface leaks until a test says otherwise.
 
 ### 6.3 The doujin surfaces
-- **Cards** (`widgets/preview/doujin_tab_view.dart`, card widgets):
+- **Cards** (`features/doujin/ui/doujin_tab_view.dart`, card widgets):
   per-surface rendering (feed / strip / library), cover display modes
   fit / crop / **adapt** (adapt sizes the card to the decoded cover through
   `DoujinCoverAspectHandler`, because most sources send no dimensions),
@@ -3402,10 +3409,10 @@ Doujin and booru personal data never mix. Concretely:
   height capped at ~45–55 % of the viewport.
 - **Tabs:** a doujin tab is a real tab type — `SearchTab.doujinPostURL /
   doujinTitle / doujinThumb`, `isDoujinDetail`; backed up as `dp/dt/dth` in
-  `TabBackup`. The **mini tab manager** (`widgets/tabs/doujin_mini_tab_manager.dart`)
+  `TabBackup`. The **mini tab manager** (`features/tabs/ui/doujin_mini_tab_manager.dart`)
   is a swipe-in sidebar with the tab manager's full working set (drag zone
   widened twice on request; `doujin_edge_drag_test`).
-- **Detail page** (`pages/doujin_detail_page.dart`): cover + titles, meta
+- **Detail page** (`features/doujin/ui/detail/doujin_detail_page.dart`): cover + titles, meta
   row, Read / save / bookmark / favourite, tags grouped by the site's own
   namespaces (`doujin_tag_namespaces.dart` — tags are stored as bare names
   with `tagNamespace()` on the side; storing `artist:x` as the name broke
@@ -3413,7 +3420,7 @@ Doujin and booru personal data never mix. Concretely:
   (chapters & versions via `relatedVersionsQuery`), Recommended
   (`DoujinRecommendationEngine`, title + tags, works on BooruItem so one
   engine serves all sources; diversity + endless-count setting), pages grid.
-- **Reader** (`pages/doujin_reader_page.dart`): follows the **layout
+- **Reader** (`features/doujin/ui/reader/doujin_reader_page.dart`): follows the **layout
   contract** in its header — opaque MaterialPageRoute, no Scaffold slots, a
   Stack with Positioned bars, `ClipRect` around the page view, tap zones on
   their own layer, stock `InteractiveViewer`, filmstrip scrubber, per-source
@@ -3490,7 +3497,7 @@ behaviour failed; every round that started from a capture or a log worked.
 
 ## 7. Kemono-style sources (kemono.cr, pawchive.pw)
 
-- **`KemonoSite`** (`boorus/kemono_site.dart`) is the single description of
+- **`KemonoSite`** (`sources/kemono/kemono_site.dart`) is the single description of
   each site: hosts, Accept header, media headers, services, whether the
   detail is an envelope, which endpoints exist (`hasRandom/Popular/TagList/
   Dms/UpdatedArtists/ApiLogin/SearchCount`), min query length, creator DB
@@ -3527,7 +3534,7 @@ behaviour failed; every round that started from a capture or a log worked.
 - **API** (`kemono_api.dart`): `headersFor(site)`, `request` (401 → one
   re-login), `getJson`, `describeStatus`, `postDetail` cache (10 min / 50),
   `comments` (404 → empty).
-- **Session** (`handlers/kemono_session_handler.dart`): password stays in
+- **Session** (`sources/kemono/kemono_session_handler.dart`): password stays in
   the booru config `apiKey` like every source; the session cookie lives in
   `kemono_session.json` beside settings, keyed `'<site>|<username>'`
   (r24). `ensureLoaded` migrates pre-r24 bare-username keys to
@@ -3539,7 +3546,7 @@ behaviour failed; every round that started from a capture or a log worked.
   locally; Artists page (`kemono_artists_page.dart`) with service chips,
   favourites, updated list; `kemono_creator_header.dart` above a creator's
   feed.
-- **Post page** (`pages/kemono_post_page.dart`, toolbar action
+- **Post page** (`features/kemono/ui/kemono_post_page.dart`, toolbar action
   `Symbols.article_rounded` in `hideable_appbar.dart`, button in
   `tag_view.dart`): title, meta, content HTML (`LoliHtml`, `/data` links
   made absolute), embed, poll, pictures as full-width tiles (thumbnail
@@ -3548,7 +3555,7 @@ behaviour failed; every round that started from a capture or a log worked.
   prev/next. Pushed pages use `resizeToAvoidBottomInset: false` (the
   Samsung recorder hides the keyboard, so a "dead area" at the bottom was
   the inset). Holds ONE media-headers map (`_mediaHeaders`) — see §3.2.
-- **Sidebar** (`widgets/drawers/kemono_sidebar.dart`): replaces the
+- **Sidebar** (`features/kemono/ui/kemono_sidebar.dart`): replaces the
   downloads drawer on kemono-style tabs when `kemonoSidebar` is on;
   `Material` + `SafeArea` (without a Material ancestor text gets yellow
   underlines and InkWell throws), coloured stadium pills grouped ARTISTS /
@@ -3578,11 +3585,11 @@ behaviour failed; every round that started from a capture or a log worked.
   pawchive (`/account/login`) — result visibility for asmhentai and hentalk
   is an open item (the user could not tell whether login succeeded).
 - **eahentai (r69):** `POST /api/auth/login` (JSON) → bearer token in
-  `eahentai_session.json` (`handlers/eahentai_session_handler.dart`), shown
+  `eahentai_session.json` (`sources/doujin/eahentai/eahentai_session_handler.dart`), shown
   on its Source settings page with the site's own refusal text.
 - **API login:** kemono (`POST /api/v1/authentication/login` → `session`
   cookie).
-- **niyaniya / Schale clearance** (`handlers/schale_clearance_handler.dart`,
+- **niyaniya / Schale clearance** (`sources/doujin/schale/schale_clearance_handler.dart`,
   `schale_clearance.json`): reading needs a `crt` token the site gets by
   solving a Turnstile and POSTing to `auth.schale.network/clearance`, kept
   in `localStorage['clearance']`. The app uses **two windows** (the design
@@ -3597,13 +3604,13 @@ behaviour failed; every round that started from a capture or a log worked.
   **Still unverified end to end on the user's phone** — next log should show
   the trace lines. Tests: `schale_clearance_flow_test`, `schale_reader_test`,
   `doujin_niyaniya_test`.
-- **hentaipaw** (`handlers/origin_page_client.dart`): the plain client gets
+- **hentaipaw** (`core/network/origin_page_client.dart`): the plain client gets
   a WAF 403, so pages are fetched by a headless WebView parked on
   `robots.txt` of the site origin doing same-origin fetches with the
   engine's own headers/cookies. Sibling routes (artists/groups/parodies)
   still need a capture.
-- **e-hentai** (`handlers/ehentai_session_handler.dart`, `ehentai_session.json`;
-  the page is `pages/settings/ehentai_login_page.dart`): the forum login runs
+- **e-hentai** (`sources/doujin/ehentai/ehentai_session_handler.dart`, `ehentai_session.json`;
+  the page is `features/accounts/ui/ehentai_login_page.dart`): the forum login runs
   in a WebView (like JHenTai/EhViewer). The page copies `ipb_member_id` and
   `ipb_pass_hash` out of the cookie jar into its own file and DELETES them
   from the jar, then fetches exhentai.org once for `igneous` (`mystery` = the
@@ -3614,12 +3621,12 @@ behaviour failed; every round that started from a capture or a log worked.
   site requests only; `getMediaHeaders` sends a Referer and no cookie. The
   Source-settings buttons (site settings / My Tags / Watched) seed the jar
   for the visit and scrub it afterwards.
-- **Log redaction** (`utils/log_redaction.dart`) strips keys, cookies,
+- **Log redaction** (`core/logging/log_redaction.dart`) strips keys, cookies,
   passwords and session values from logs and captures; `log_redaction_test`.
 
 ## 9. Persistence
 
-**store.db** (`handlers/database_handler.dart`; DDL in `updateTable()` runs
+**store.db** (`core/storage/database_handler.dart`; DDL in `updateTable()` runs
 on every open, so adding a table/index there is enough):
 
 | Table | Owner / purpose |
@@ -3638,7 +3645,7 @@ on every open, so adding a table/index there is enough):
 `kemono_session.json`, `schale_clearance.json`, `kemono_creators.json` /
 `pawchive_creators.json` (index meta), `update.json`; the source-capture
 journal `source-capture-session.jsonl` in the cache dir. Backup/restore
-(`backup_restore_page.dart`) and the Drive backup (`services/drive_backup.dart`)
+(`backup_restore_page.dart`) and the Drive backup (`features/backup/logic/drive_backup.dart`)
 cover settings, boorus, the DB and the doujin files; restore re-arms the
 doujin migration.
 
