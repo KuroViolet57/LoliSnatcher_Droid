@@ -190,6 +190,34 @@ void main() {
     expect(marker, findsNothing);
   });
 
+  testWidgets("What's new names the installed version, not the one on the server", (tester) async {
+    s.updateInfo.value = const UpdateInfo(
+      versionName: '0.0.1',
+      buildNumber: 1,
+      title: 'old',
+      changelog: 'old',
+      isInStore: false,
+      isImportant: false,
+      storePackage: '',
+      githubURL: '',
+    );
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          navigatorKey: NavigationHandler.instance.navigatorKey,
+          theme: theme,
+          home: const Scaffold(body: SizedBox.shrink()),
+        ),
+      ),
+    );
+    s.showUpdate(true, isAfterUpdate: true);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    final String installed = '${Constants.updateInfo.versionName}+${Constants.updateInfo.buildNumber}';
+    expect(find.textContaining(installed), findsWidgets);
+    expect(find.textContaining('0.0.1+1'), findsNothing);
+  });
+
   /// Long-press Save (debug: no network test), confirm, and give the file
   /// work real time until [done] holds (or long enough that it never will).
   Future<void> saveBooru(WidgetTester tester, bool Function() done) async {
