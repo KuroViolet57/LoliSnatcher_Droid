@@ -77,6 +77,15 @@ class _HistoryListState extends State<HistoryList> {
     final bool storeAvailable = SearchHistoryStore.currentIsDoujin || settingsHandler.dbEnabled;
     history = (storeAvailable && settingsHandler.searchHistoryEnabled) ? await SearchHistoryStore.all() : [];
 
+    // The reload made new HistoryItem objects (compared by identity): point
+    // the selection at them, or the ticks vanish and the delete dialog looks
+    // up history.indexOf(old) == -1.
+    final Map<int, HistoryItem> byId = {for (final HistoryItem h in history) h.id: h};
+    selectedEntries = [
+      for (final HistoryItem s in selectedEntries)
+        if (byId[s.id] != null) byId[s.id]!,
+    ];
+
     history.sort(compareFavourites);
     filteredHistory = history;
     filterHistory();
