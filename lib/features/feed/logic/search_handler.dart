@@ -1589,11 +1589,15 @@ class SearchHandler {
 
       // add only if there are not already the same tab in the list and booru is available on this device
       if (newTab.selectedBooru.value.name != null &&
-          tabs.any(
+          !tabs.any(
             (tab) =>
                 tab.selectedBooru.value.name == newTab.selectedBooru.value.name &&
-                tab.secondaryBoorus.value?.map((t) => t.name).toList() ==
-                    newTab.secondaryBoorus.value?.map((t) => t.name).toList() &&
+                // No merge sources reads as null on a restored tab and as []
+                // on one whose sources were all switched off: the same tab.
+                listEquals(
+                  (tab.secondaryBoorus.value ?? const <Booru>[]).map((t) => t.name).toList(),
+                  (newTab.secondaryBoorus.value ?? const <Booru>[]).map((t) => t.name).toList(),
+                ) &&
                 tab.tags == newTab.tags,
           )) {
         restoredTabs.add(newTab);

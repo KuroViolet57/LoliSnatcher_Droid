@@ -174,4 +174,28 @@ void main() {
     });
   });
 
+  group('mergeTabs (LoliSync merge)', () {
+    testWidgets('adds the tabs this device does not have, and only those', (tester) async {
+      await pumpApp(tester);
+      SettingsHandler.instance.booruList.addAll([gelbooru, danbooru]);
+      final cats = loaded('cats');
+      final fish = SearchTab(gelbooru, [danbooru], 'fish');
+      // Merge sources all switched off: an empty list, not null.
+      final eels = SearchTab(gelbooru, const [], 'eels');
+      sh().tabs.addAll([cats, fish, eels]);
+      select(0);
+      final String incoming = jsonEncode([
+        TabBackup(tags: 'cats', booru: 'gelbooru').toJson(),
+        TabBackup(tags: 'dogs', booru: 'gelbooru').toJson(),
+        TabBackup(tags: 'fish', booru: 'gelbooru', secondaryBoorus: ['danbooru']).toJson(),
+        TabBackup(tags: 'birds', booru: 'gelbooru', secondaryBoorus: ['danbooru']).toJson(),
+        TabBackup(tags: 'eels', booru: 'gelbooru').toJson(),
+        TabBackup(tags: 'gone', booru: 'not on this device').toJson(),
+      ]);
+      sh().mergeTabs(incoming);
+      expect(sh().tabs.map((t) => t.tags).toList(), ['cats', 'fish', 'eels', 'dogs', 'birds']);
+      expect(sh().currentTab, same(cats));
+    });
+  });
+
 }
