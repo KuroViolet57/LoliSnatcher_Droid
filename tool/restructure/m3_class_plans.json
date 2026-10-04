@@ -1,0 +1,429 @@
+{
+ "lib/core/storage/database_handler.dart": {
+  "class": "DBHandler",
+  "parts": {
+   "schema": {
+    "extension": "DBSchema",
+    "doc": "The tables and indexes store.db must have; run on every open (dbConnect).",
+    "members": [
+     "updateTable",
+     "tableExists",
+     "columnExists",
+     "createIndexes",
+     "createCriticalIndexes",
+     "dropIndexes"
+    ]
+   },
+   "maintenance": {
+    "extension": "DBMaintenance",
+    "doc": "Repairs of old rows run at start and the delayed tag cleanup.",
+    "members": [
+     "fixBooruItems",
+     "convertGelbooruServers",
+     "fixR34XXXPostUrls",
+     "tagsCleanup"
+    ]
+   },
+   "booru_items": {
+    "extension": "DBBooruItems",
+    "doc": "Posts (BooruItem) and their favourite/snatched flags: the Favourites and Downloads lists, local search, tracked values.",
+    "members": [
+     "updateBooruItem",
+     "updateMultipleBooruItems",
+     "getItemID",
+     "getItemIDs",
+     "getSankakuItems",
+     "searchDB",
+     "_baseTrackFilter",
+     "searchDBCount",
+     "getFavouritesCount",
+     "getSnatchedCount",
+     "clearSnatched",
+     "clearFavourites",
+     "getTrackedValues",
+     "getMultipleTrackedValues",
+     "clearSnatchedFlags",
+     "deleteUntracked",
+     "deleteItem",
+     "rawRows",
+     "clearFavouriteFlag"
+    ]
+   },
+   "tags": {
+    "extension": "DBTags",
+    "doc": "The Tag table (types for colouring) and the ImageTag links of saved posts.",
+    "members": [
+     "getAllTags",
+     "updateTags",
+     "updateTagsFromObjects",
+     "getTagID",
+     "getTags",
+     "getTagsByUsageCount"
+    ]
+   },
+   "collections": {
+    "extension": "DBCollections",
+    "doc": "Booru collections (Collection, CollectionItem).",
+    "members": [
+     "createCollection",
+     "renameCollection",
+     "deleteCollection",
+     "getCollections",
+     "addItemsToCollection",
+     "removeItemsFromCollection",
+     "getCollectionsForItem",
+     "removeCollectionItem"
+    ]
+   },
+   "recommender_log": {
+    "extension": "DBRecommenderLog",
+    "doc": "What the recommender learns from: tag signals, interactions, feature names.",
+    "members": [
+     "addTagSignals",
+     "getTagSignals",
+     "deleteTagSignal",
+     "clearTagSignals",
+     "addInteraction",
+     "countInteractions",
+     "recentInteractions",
+     "pruneInteractions",
+     "clearInteractions",
+     "addFeatureNames",
+     "featureNames",
+     "clearFeatureNames",
+     "interactionKeys"
+    ]
+   },
+   "vectors": {
+    "extension": "DBVectors",
+    "doc": "The vectors database (vectors.db): text and looks embeddings, its space limit and pruning.",
+    "members": [
+     "vectorDatabase",
+     "openVectors",
+     "_moveVectorsOut",
+     "closeVectors",
+     "putEmbeddings",
+     "getEmbeddings",
+     "clearEmbeddings",
+     "countEmbeddings",
+     "vectorBytes",
+     "vectorUsage",
+     "vectorFileBytes",
+     "pruneEmbeddings",
+     "compactVectors"
+    ]
+   },
+   "booru_tags": {
+    "extension": "DBBooruTags",
+    "doc": "The tag builder's snapshot (BooruTag), your corrections (BooruTagOverride) and the cross-booru alias cache.",
+    "members": [
+     "getTagAlias",
+     "purgeTagAliasMisses",
+     "setTagAlias",
+     "upsertBooruTags",
+     "queryBooruTags",
+     "getBooruTagsByNames",
+     "getBooruTagSourceId",
+     "countBooruTags",
+     "countBooruTagsByNamespace",
+     "countBooruTagsByType",
+     "deleteBooruTags",
+     "getBooruTagOverrides",
+     "setBooruTagOverride",
+     "deleteBooruTagOverride",
+     "deleteBooruTagOverrides"
+    ]
+   },
+   "kemono_creators": {
+    "extension": "DBKemonoCreators",
+    "doc": "The kemono.cr / pawchive.pw creator indexes.",
+    "members": [
+     "upsertKemonoCreators",
+     "pruneKemonoCreators",
+     "countKemonoCreators",
+     "queryKemonoCreators",
+     "getKemonoCreatorsByKeys",
+     "findKemonoCreatorsByName"
+    ]
+   },
+   "history": {
+    "extension": "DBHistory",
+    "doc": "Tab backup, search history, saved searches, visited tabs, seen and viewed posts.",
+    "members": [
+     "addTabRestore",
+     "clearTabRestore",
+     "getTabRestore",
+     "removeTabRestore",
+     "updateSearchHistory",
+     "getSearchHistory",
+     "getLatestSearchHistory",
+     "getSearchHistoryByInputWithBooru",
+     "getSearchHistoryByInput",
+     "deleteFromSearchHistory",
+     "setFavouriteSearchHistory",
+     "addSavedSearch",
+     "getSavedSearches",
+     "deleteSavedSearch",
+     "renameSavedSearch",
+     "addTabVisit",
+     "getTabVisits",
+     "deleteTabVisit",
+     "clearTabVisits",
+     "trimTabVisits",
+     "getSeenPostKeys",
+     "addSeenPost",
+     "clearSeenPosts",
+     "addViewedPost",
+     "_viewedPostFilter",
+     "getViewedPosts",
+     "countViewedPosts",
+     "clearViewedPosts",
+     "deleteViewedPost"
+    ]
+   },
+   "pins_reader": {
+    "extension": "DBPinsAndReader",
+    "doc": "Pinned tags (follows are pins with a label) and doujin reading progress.",
+    "members": [
+     "getReaderProgress",
+     "updateReaderProgress",
+     "addPinnedTag",
+     "removePinnedTag",
+     "removePinnedTagByName",
+     "getPinnedTags",
+     "getAllPinnedTags",
+     "getPinnedTag",
+     "updatePinnedTagOrder",
+     "updatePinnedTagsOrder",
+     "updatePinnedTagLabels",
+     "updatePinnedTag",
+     "getPinnedTagLabels"
+    ]
+   }
+  }
+ },
+ "lib/core/settings/settings_handler.dart": {
+  "class": "SettingsHandler",
+  "parts": {
+   "schema": {
+    "extension": "SettingsSchema",
+    "doc": "The table of every saved setting (type, default, limits, options) and its validation.",
+    "members": [
+     "map",
+     "validateValue"
+    ]
+   },
+   "storage": {
+    "extension": "SettingsStorage",
+    "doc": "settings.json: reading, writing, the by-name accessors used by restore and LoliSync.",
+    "members": [
+     "loadSettings",
+     "checkForSettings",
+     "loadSettingsJson",
+     "getByString",
+     "setByString",
+     "toJson",
+     "loadFromJSON",
+     "saveSettings",
+     "setConfigDir"
+    ]
+   },
+   "boorus": {
+    "extension": "SettingsBoorus",
+    "doc": "The configured sources (boorus/*.json) and the app's own virtual sources.",
+    "members": [
+     "loadBoorus",
+     "ensureCollectionsBooru",
+     "ensureForYouBooru",
+     "ensureForYouDoujinBooru",
+     "ensureBoardsBooru",
+     "ensureHistoryBooru",
+     "sortBooruList",
+     "saveBooru",
+     "deleteBooru"
+    ]
+   },
+   "tag_filters": {
+    "extension": "SettingsTagFilters",
+    "doc": "Hidden and marked tags (global and per source), sound/AI tags, and the item checks built on them.",
+    "members": [
+     "parseTagsListForItem",
+     "parseTagsList",
+     "containsHidden",
+     "isItemHiddenGlobally",
+     "containsMarked",
+     "containsSound",
+     "containsAI",
+     "addTagToList",
+     "removeTagFromList",
+     "isTagHiddenForBooru",
+     "hiddenTagsForBooru",
+     "addTagToBooruHiddenList",
+     "removeTagFromBooruHiddenList",
+     "globalBlacklistLines",
+     "blacklistLinesForBooru",
+     "invalidateBlacklistCache",
+     "isItemHiddenForBooru",
+     "blacklistedTagTokens",
+     "cleanTagsList"
+    ]
+   },
+   "updates": {
+    "extension": "SettingsUpdates",
+    "doc": "The update check and the changelog page.",
+    "members": [
+     "checkUpdate",
+     "showLastVersionMessage",
+     "showUpdate"
+    ]
+   },
+   "startup": {
+    "extension": "SettingsStartup",
+    "doc": "The two startup phases: initialize (before the first frame) and postInit (database, sources, tags, tabs).",
+    "members": [
+     "loadDatabase",
+     "indexDatabase",
+     "setLocale",
+     "initialize",
+     "postInit"
+    ]
+   }
+  }
+ },
+ "lib/features/feed/logic/search_handler.dart": {
+  "class": "SearchHandler",
+  "parts": {
+   "tab_visits": {
+    "extension": "SearchTabVisits",
+    "doc": "The visited-tabs history (TabVisitHistory).",
+    "members": [
+     "recordTabVisit",
+     "_persistTabVisit",
+     "loadVisitedTabsHistory",
+     "clearVisitedTabsHistory"
+    ]
+   },
+   "tabs": {
+    "extension": "SearchTabs",
+    "doc": "Adding, removing, moving and switching tabs, and finding tabs by tag.",
+    "members": [
+     "addTabByString",
+     "removeTabAt",
+     "removeTabs",
+     "moveTab",
+     "getTabByIndex",
+     "getTabIndex",
+     "getItemIndex",
+     "changeTabIndex",
+     "changeCurrentTabPageNumber",
+     "hasTabWithTag",
+     "getTabsWithOnlyTag",
+     "getTabsWithOnlyTagDifferentBooru",
+     "getTabsContainingTag",
+     "currentIndex",
+     "currentTabId",
+     "total",
+     "currentTab",
+     "currentBooruHandler",
+     "currentBooru",
+     "currentSecondaryBoorus",
+     "currentSelected",
+     "currentFetched",
+     "defaultTabAddModeResolved",
+     "addNewTabRespectingSetting",
+     "applyBooruEdit"
+    ]
+   },
+   "query": {
+    "extension": "SearchQuery",
+    "doc": "The search text, the grid scroll stream and the volume-key stream.",
+    "members": [
+     "scrollStream",
+     "sendToScrollStream",
+     "addTagToSearch",
+     "searchTextControllerTags",
+     "removeTagFromSearch",
+     "volumeStream",
+     "setRootRestate"
+    ]
+   },
+   "paging": {
+    "extension": "SearchPaging",
+    "doc": "Running a search and loading pages (runSearch increments pageNum before the first fetch).",
+    "members": [
+     "searchCurrentTabUntilPageNumber",
+     "filterCurrentFetched",
+     "searchAction",
+     "runSearch",
+     "retrySearch",
+     "reset",
+     "mergeAction"
+    ]
+   },
+   "reactions": {
+    "extension": "SearchReactions",
+    "doc": "The search easter eggs (limited per app lifetime).",
+    "members": [
+     "getSearchReactionCount",
+     "incrementSearchReactionCount",
+     "canSendSearchReaction",
+     "searchReactions"
+    ]
+   },
+   "seen_posts": {
+    "extension": "SearchSeenPosts",
+    "doc": "Seen posts (dimmed in the feed); doujin items go to the doujin history.",
+    "members": [
+     "seenKeyFor",
+     "isPostSeen",
+     "loadSeenPosts",
+     "markPostSeen",
+     "clearSeenPosts"
+    ]
+   },
+   "saved_searches": {
+    "extension": "SearchSavedSearches",
+    "doc": "Saved searches.",
+    "members": [
+     "reloadSavedSearches",
+     "addCurrentTabAsSavedSearch",
+     "deleteSavedSearch",
+     "renameSavedSearch",
+     "openSavedSearch"
+    ]
+   },
+   "tab_groups": {
+    "extension": "SearchTabGroups",
+    "doc": "Tab groups.",
+    "members": [
+     "_snapInsertionIndex",
+     "tabGroupNames",
+     "tabsInGroup",
+     "renameTabGroup",
+     "dissolveTabGroup",
+     "compactGroupBlocks",
+     "moveTabsToGroup"
+    ]
+   },
+   "tab_backup": {
+    "extension": "SearchTabBackup",
+    "doc": "Tab backup and restore (TabRestore table; JSON and the legacy format).",
+    "members": [
+     "restoreTabsLegacy",
+     "mergeTabsLegacy",
+     "replaceTabsLegacy",
+     "restoreTabsNew",
+     "mergeTabsNew",
+     "replaceTabsNew",
+     "generateBackupJson",
+     "parseTabFromBackup",
+     "handleFavDlsNameChange",
+     "restoreTabs",
+     "mergeTabs",
+     "replaceTabs",
+     "backupTabs"
+    ]
+   }
+  }
+ }
+}
