@@ -869,8 +869,10 @@ class _TabManagerPageState extends State<TabManagerPage> with TraceLifecycle {
         sortingMode = TabSortingMode.alphabet;
       }
     }
+    // A dismissed sheet (result == null) changes nothing, the sort included.
     if (result == 'clear' ||
-        (loadedFilter == null &&
+        (result != null &&
+            loadedFilter == null &&
             booruFilter == null &&
             tagTypeFilter == null &&
             duplicateFilter == false &&

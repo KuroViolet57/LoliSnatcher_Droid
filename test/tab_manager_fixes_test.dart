@@ -4,6 +4,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:lolisnatcher/models/booru_type.dart';
 import 'package:lolisnatcher/models/booru.dart';
@@ -164,6 +165,41 @@ void main() {
         expect(row, findsOneWidget);
         expect(tester.getSize(row).height, TabManagerItem.doujinRowHeight, reason: 'the extent given to the row (104), not a search row (80)');
       }
+    });
+
+    testWidgets('dismissing the Filters sheet without a filter keeps the sort mode', (tester) async {
+      final SearchTab beta = searchTab('beta');
+      final SearchTab alpha = searchTab('alpha');
+      final SearchTab gamma = searchTab('gamma');
+      SearchHandler.instance.tabs.addAll([beta, alpha, gamma]);
+      SearchHandler.instance.changeTabIndex(0);
+
+      await pumpManager(tester);
+      double top(SearchTab tab) => tester.getTopLeft(find.byKey(ValueKey('item-${tab.id}'))).dy;
+
+      // Sort A-Z.
+      await tester.tap(find.byTooltip('Sort tabs'));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(top(alpha), lessThan(top(beta)));
+
+      // Open the filters and swipe the sheet away: nothing was asked for.
+      await tester.tap(find.byIcon(Symbols.filter_alt_rounded));
+      await tester.pump(const Duration(milliseconds: 600));
+      NavigationHandler.instance.navigatorKey.currentState!.pop();
+      await tester.pump(const Duration(milliseconds: 600));
+
+      // Anything that refreshes the list (here: the source view).
+      await tester.tap(find.text('All'));
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(top(alpha), lessThan(top(beta)), reason: 'still sorted A-Z after a dismissed sheet');
+
+      // Cycle the sort back to none so the session-wide saved state is clean.
+      for (int i = 0; i < 6; i++) {
+        await tester.tap(find.byTooltip('Sort tabs'));
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(top(beta), lessThan(top(alpha)), reason: 'open order again');
     });
   });
 }
