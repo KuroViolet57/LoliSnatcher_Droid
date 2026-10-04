@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import 'package:lolisnatcher/core/storage/booru_tag_store.dart';
 import 'package:lolisnatcher/sources/doujin/common/doujin_tag_namespaces.dart';
 import 'package:lolisnatcher/sources/doujin/nhentai/nhentai_handler.dart';
 import 'package:lolisnatcher/models/booru_tag.dart';
@@ -22,7 +23,13 @@ class NHentaiTagCatalog extends TagCatalogSource {
 
   static const String alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789';
 
-  final List<String> _queue = [];
+  /// The prefixes of the walk, per host. Shared by every instance: the puller
+  /// resumes a stopped walk by shard number, often through another handler's
+  /// catalog (the tag browser builds a new handler each time it opens), and a
+  /// queue of its own would be empty past shard 0.
+  static final Map<String, List<String>> _queues = {};
+
+  List<String> get _queue => _queues.putIfAbsent(BooruTagStore.keyFor(handler.booru), () => []);
 
   @override
   bool get sharedShards => true;
