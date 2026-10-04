@@ -17,10 +17,18 @@ tests, and when they pass rename the folder to "tested" with --mark-tested.
     python tool/deliver_build.py <token> "<descriptor>" <changelog.md> --no-build
         copies an APK already built (build/app/outputs/flutter-apk/app-arm64-v8a-release.apk)
 
+    python tool/deliver_build.py <token> "<descriptor>" <changelog.md> --both
+        (1.0) builds twice: the regular APK (updates the installed app in place)
+        and the side-by-side APK (--dart-define=LS_SIDE_BY_SIDE=true, package
+        com.noaisu.loliSnatcher.v1, launcher label "... 1.0"), and parks both:
+        <codename>-<version>.apk and <codename>-<version>-side-by-side.apk.
+        Every copy is checked against its source by SHA-256.
+
 The codename comes from lib/src/data/constants.dart (buildCodename), the
 version from the same file (versionName). The Flutter beta toolchain is put
 on PATH here so the script works from any shell.
 """
+import hashlib
 import os
 import re
 import shutil
@@ -46,10 +54,29 @@ def folder(token, descriptor, label):
     return os.path.join(DELIVERY_ROOT, f'{token}.apk ({descriptor} - {label})')
 
 
-def build():
+def sha256(path):
+    h = hashlib.sha256()
+    with open(path, 'rb') as f:
+        for chunk in iter(lambda: f.read(1 << 20), b''):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def copy_checked(src, dst):
+    shutil.copyfile(src, dst)
+    a, b = sha256(src), sha256(dst)
+    if a != b:
+        print(f'HASH MISMATCH copying {src} -> {dst}', flush=True)
+        sys.exit(4)
+    print(f'copied {os.path.basename(dst)} sha256={a[:16]}...', flush=True)
+
+
+def build(side_by_side=False):
     env = dict(os.environ)
     env['PATH'] = FLUTTER_BIN + os.pathsep + env.get('PATH', '')
     cmd = ['flutter', 'build', 'apk', '--release', '--split-per-abi', '--target-platform', 'android-arm64']
+    if side_by_side:
+        cmd.append('--dart-define=LS_SIDE_BY_SIDE=true')
     print('building:', ' '.join(cmd), flush=True)
     started = time.time()
     proc = subprocess.run(cmd, cwd=REPO, env=env, shell=True)
@@ -59,8 +86,11 @@ def build():
     print(f'build done in {time.time() - started:.0f}s', flush=True)
 
 
-def deliver(token, descriptor, changelog, do_build):
+def deliver(token, descriptor, changelog, do_build, both=False):
     codename, version = read_constants()
+    if both:
+        deliver_both(token, descriptor, changelog, codename, version)
+        return
     if do_build:
         build()
     if not os.path.exists(APK):
@@ -80,6 +110,23 @@ def deliver(token, descriptor, changelog, do_build):
     shutil.copyfile(changelog, os.path.join(target, 'changes.txt'))
     size = os.path.getsize(os.path.join(target, apk_name))
     print(f'delivered: {target}\\{apk_name} ({size / 1e6:.1f} MB) + changes.txt', flush=True)
+
+
+def deliver_both(token, descriptor, changelog, codename, version):
+    if not os.path.exists(changelog):
+        print('no changelog at', changelog)
+        sys.exit(2)
+    target = folder(token, descriptor, 'not tested')
+    if os.path.isdir(folder(token, descriptor, 'tested')):
+        print('a tested folder already exists')
+        sys.exit(3)
+    os.makedirs(target, exist_ok=True)
+    build(side_by_side=False)
+    copy_checked(APK, os.path.join(target, f'{codename}-{version}.apk'))
+    build(side_by_side=True)
+    copy_checked(APK, os.path.join(target, f'{codename}-{version}-side-by-side.apk'))
+    copy_checked(changelog, os.path.join(target, 'changes.txt'))
+    print(f'delivered both APKs + changes.txt to {target}', flush=True)
 
 
 def mark_tested(token, descriptor):
@@ -105,7 +152,7 @@ def main(argv):
         print(__doc__)
         sys.exit(1)
     changelog = rest[0]
-    deliver(token, descriptor, changelog, do_build='--no-build' not in rest)
+    deliver(token, descriptor, changelog, do_build='--no-build' not in rest, both='--both' in rest)
 
 
 if __name__ == '__main__':
