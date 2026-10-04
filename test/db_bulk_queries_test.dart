@@ -136,4 +136,45 @@ void main() {
       expect([for (final r in await db().rawQuery('SELECT name FROM Tag')) r['name']], ['kept']);
     });
   });
+
+  group('the feed badges', () {
+    test('a favourite found by its file is shown as favourited even when its stored post address differs', () async {
+      if (!dbReady) return;
+      // Favourited years ago over http; the site now links its posts over https.
+      await insertItem(
+        postURL: 'http://gelbooru.com/index.php?page=post&s=view&id=5',
+        fileURL: 'https://img.gelbooru.com/images/5.jpg',
+        favourite: 1,
+        snatched: 1,
+      );
+      final BooruItem fetched = item(postURL: 'https://gelbooru.com/index.php?page=post&s=view&id=5', fileURL: 'https://img.gelbooru.com/images/5.jpg');
+
+      expect(await SettingsHandler.instance.dbHandler.getMultipleTrackedValues([fetched]), [
+        [true, true],
+      ]);
+      expect(await SettingsHandler.instance.dbHandler.getTrackedValues(fetched), [true, true], reason: 'the single lookup agrees');
+    });
+
+    test('the row with the same post address wins over another row with the same file (a mirror of the site)', () async {
+      if (!dbReady) return;
+      // Favourited on danbooru; the same file was downloaded from a mirror.
+      await insertItem(postURL: 'https://safebooru.donmai.us/posts/7', fileURL: 'https://cdn.donmai.us/original/7.jpg', snatched: 1);
+      await insertItem(postURL: 'https://danbooru.donmai.us/posts/7', fileURL: 'https://cdn.donmai.us/original/7.jpg', favourite: 1);
+      final BooruItem onDanbooru = item(postURL: 'https://danbooru.donmai.us/posts/7', fileURL: 'https://cdn.donmai.us/original/7.jpg');
+      final BooruItem onMirror = item(postURL: 'https://safebooru.donmai.us/posts/7', fileURL: 'https://cdn.donmai.us/original/7.jpg');
+      expect(await SettingsHandler.instance.dbHandler.getMultipleTrackedValues([onDanbooru, onMirror]), [
+        [false, true],
+        [true, false],
+      ]);
+    });
+
+    test('sites matched by post address still are (rule34.xxx changes its file hosts by country)', () async {
+      if (!dbReady) return;
+      await insertItem(postURL: 'https://rule34.xxx/index.php?page=post&s=view&id=9', fileURL: 'https://wimg.rule34.xxx/images/9.jpg', favourite: 1);
+      final BooruItem fetched = item(postURL: 'https://rule34.xxx/index.php?page=post&s=view&id=9', fileURL: 'https://us.rule34.xxx/images/9.jpg');
+      expect(await SettingsHandler.instance.dbHandler.getMultipleTrackedValues([fetched]), [
+        [false, true],
+      ]);
+    });
+  });
 }

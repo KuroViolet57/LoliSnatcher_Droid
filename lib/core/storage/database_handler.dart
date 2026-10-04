@@ -2663,9 +2663,18 @@ class DBHandler {
     }
 
     for (final BooruItem item in items) {
+      // 1.0: the row with the same post address first, as before; a row
+      // looked up by its file and stored with another post address (http,
+      // an older address format) no longer reads as not favourited and not
+      // downloaded.
       final res = result.firstWhere(
         (el) => el['postURL'].toString() == item.postURL,
-        orElse: () => {'isSnatched': 0, 'isFavourite': 0},
+        orElse: () => byPostURL(item)
+            ? {'isSnatched': 0, 'isFavourite': 0}
+            : result.firstWhere(
+                (el) => el['fileURL'].toString() == item.fileURL,
+                orElse: () => {'isSnatched': 0, 'isFavourite': 0},
+              ),
       );
       values.add([Tools.intToBool(res['isSnatched']), Tools.intToBool(res['isFavourite'])]);
     }
