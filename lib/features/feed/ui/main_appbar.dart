@@ -219,9 +219,13 @@ class _MainAppBarState extends State<MainAppBar> {
             NavigationHandler.instance.bottomBarKey.currentState?.hide();
           }
         },
-        leading: settingsHandler.handSide.value.isLeft
-            ? menuButton(InnerDrawerDirection.start)
-            : snatcherButton(InnerDrawerDirection.start),
+        // Obx: a hand side change swaps the buttons at once (this bar is
+        // otherwise rebuilt only on a tab switch).
+        leading: Obx(
+          () => settingsHandler.handSide.value.isLeft
+              ? menuButton(InnerDrawerDirection.start)
+              : snatcherButton(InnerDrawerDirection.start),
+        ),
         title: const Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -245,10 +249,11 @@ class _MainAppBarState extends State<MainAppBar> {
               ),
         actions: [
           const NewTabButton(),
-          if (settingsHandler.handSide.value.isRight)
-            menuButton(InnerDrawerDirection.end)
-          else
-            snatcherButton(InnerDrawerDirection.end),
+          Obx(
+            () => settingsHandler.handSide.value.isRight
+                ? menuButton(InnerDrawerDirection.end)
+                : snatcherButton(InnerDrawerDirection.end),
+          ),
           // Rightmost: soft media refresh (fresh session, keeps tab state).
           refreshMediaButton(),
           const SizedBox(width: 8),

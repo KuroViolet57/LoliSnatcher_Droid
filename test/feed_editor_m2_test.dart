@@ -226,4 +226,21 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
   });
 
+  testWidgets('top bar: changing the hand side moves the menu button at once', (tester) async {
+    SettingsHandler.instance.booruList.add(gelbooru);
+    sh().tabs.add(loaded(gelbooru, 'cats'));
+    sh().index.value = 0;
+    SettingsHandler.instance.handSide.value = HandSide.left;
+    await tester.pumpWidget(app(const Scaffold(body: CustomScrollView(slivers: [MainAppBar()]))));
+    await tester.pump();
+    final double width = tester.getSize(find.byType(CustomScrollView)).width;
+    expect(tester.getCenter(find.byIcon(Symbols.menu_rounded)).dx, lessThan(width / 2));
+
+    SettingsHandler.instance.handSide.value = HandSide.right;
+    // The change reaches the bar's listeners, then the next frame builds it.
+    await tester.pump();
+    await tester.pump();
+    expect(tester.getCenter(find.byIcon(Symbols.menu_rounded)).dx, greaterThan(width / 2));
+  });
+
 }
