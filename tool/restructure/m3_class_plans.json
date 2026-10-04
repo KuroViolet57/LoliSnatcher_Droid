@@ -293,16 +293,6 @@
  "lib/features/feed/logic/search_handler.dart": {
   "class": "SearchHandler",
   "parts": {
-   "tab_visits": {
-    "extension": "SearchTabVisits",
-    "doc": "The visited-tabs history (TabVisitHistory).",
-    "members": [
-     "recordTabVisit",
-     "_persistTabVisit",
-     "loadVisitedTabsHistory",
-     "clearVisitedTabsHistory"
-    ]
-   },
    "tabs": {
     "extension": "SearchTabs",
     "doc": "Adding, removing, moving and switching tabs, and finding tabs by tag.",
@@ -405,7 +395,7 @@
      "moveTabsToGroup"
     ]
    },
-   "tab_backup": {
+   "backup_restore": {
     "extension": "SearchTabBackup",
     "doc": "Tab backup and restore (TabRestore table; JSON and the legacy format).",
     "members": [
@@ -422,6 +412,16 @@
      "mergeTabs",
      "replaceTabs",
      "backupTabs"
+    ]
+   },
+   "visit_history": {
+    "extension": "SearchTabVisits",
+    "doc": "The visited-tabs history (TabVisitHistory).",
+    "members": [
+     "recordTabVisit",
+     "_persistTabVisit",
+     "loadVisitedTabsHistory",
+     "clearVisitedTabsHistory"
     ]
    }
   }
