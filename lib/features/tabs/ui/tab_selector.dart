@@ -1562,9 +1562,15 @@ class _TabManagerPageState extends State<TabManagerPage> with TraceLifecycle {
             side: BorderSide(color: Theme.of(context).colorScheme.secondary),
           ),
           onTap: () {
-            selectedTabs.remove(tab);
-            searchHandler.removeTabAt(tabIndex: searchHandler.tabs.indexOf(tab));
-            getTabs();
+            // indexOf is -1 once the tab is gone, and removeTabAt(-1) closes
+            // the CURRENT tab: remove only a tab that is still open.
+            final int tabIndex = searchHandler.tabs.indexOf(tab);
+            if (tabIndex != -1) {
+              selectedTabs.remove(tab);
+              searchHandler.removeTabAt(tabIndex: tabIndex);
+              getTabs();
+            }
+            Navigator.of(context).pop();
           },
           leading: const Icon(Symbols.close_rounded, color: Colors.red),
           title: Text(context.loc.tabs.remove),
