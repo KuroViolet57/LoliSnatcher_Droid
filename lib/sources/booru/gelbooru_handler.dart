@@ -605,9 +605,11 @@ class GelbooruHandler extends BooruHandler {
           }
         }
 
-        item.thumbnailURL = item.thumbnailURL.replaceAll('(?<!https?:)//', '/');
-        item.sampleURL = item.sampleURL.replaceAll('(?<!https?:)//', '/');
-        item.fileURL = item.fileURL.replaceAll('(?<!https?:)//', '/');
+        // A RegExp: as a String the pattern was searched for literally and
+        // never found, so a '//' inside a path stayed.
+        item.thumbnailURL = item.thumbnailURL.replaceAll(RegExp('(?<!https?:)//'), '/');
+        item.sampleURL = item.sampleURL.replaceAll(RegExp('(?<!https?:)//'), '/');
+        item.fileURL = item.fileURL.replaceAll(RegExp('(?<!https?:)//'), '/');
 
         final sidebar = html.getElementById('tag-list');
         final copyrightTags = parseTagsFromGelbooruHtml(sidebar?.getElementsByClassName('tag-type-copyright'));

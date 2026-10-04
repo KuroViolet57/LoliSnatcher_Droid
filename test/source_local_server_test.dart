@@ -21,6 +21,7 @@ import 'package:lolisnatcher/models/booru_type.dart';
 import 'package:lolisnatcher/sources/booru/agnph_handler.dart';
 import 'package:lolisnatcher/sources/booru/civitai_handler.dart';
 import 'package:lolisnatcher/sources/booru/danbooru_handler.dart';
+import 'package:lolisnatcher/sources/booru/gelbooru_handler.dart';
 import 'package:lolisnatcher/sources/booru/ink_bunny_handler.dart';
 import 'package:lolisnatcher/sources/booru/r34hentai_handler.dart';
 import 'package:lolisnatcher/sources/tube/redgifs_handler.dart';
@@ -250,6 +251,30 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 20));
     }
     expect(h.filteredFetched.map((i) => i.serverId), ['2']);
+  });
+
+  test('Gelbooru: a post page whose file address has "//" inside its path is cleaned up', () async {
+    routes['/index.php'] = (r) => answer(
+      r,
+      '<html><body><img id="image" src="$base//images/ab/cd/1.png"></body></html>',
+      type: ContentType.html,
+    );
+    final GelbooruHandler h = GelbooruHandler(Booru('Gelbooru', BooruType.Gelbooru, '', base, ''), 20);
+    final BooruItem post = BooruItem(
+      fileURL: '$base/images/ab/cd/old.png',
+      sampleURL: '$base/samples/ab/cd/1.jpg',
+      thumbnailURL: '$base//thumbnails/ab/cd/1.jpg',
+      tagsList: const [],
+      postURL: '$base/index.php?page=post&s=view&id=1',
+      serverId: '1',
+    );
+
+    final result = await h.loadItem(item: post);
+
+    expect(result.failed, isFalse, reason: '${result.error}');
+    expect(post.fileURL, '$base/images/ab/cd/1.png');
+    expect(post.thumbnailURL, '$base/thumbnails/ab/cd/1.jpg');
+    expect(post.sampleURL, '$base/samples/ab/cd/1.jpg', reason: 'the // after the scheme stays');
   });
 
   test('rule34hentai: a login cookie whose value holds "=" is kept whole', () async {
