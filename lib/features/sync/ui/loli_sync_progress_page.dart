@@ -104,6 +104,20 @@ class _LoliSyncProgressPageState extends State<LoliSyncProgressPage> {
     }
   }
 
+  @override
+  void dispose() {
+    // 1.0: the page can go without the stop dialog (a popUntil, a reset):
+    // the receiving server must not keep taking writes from the network, the
+    // sync keep sending, or the screen stay awake.
+    if (widget.type == 'sender') {
+      loliSync.killSync();
+    } else {
+      loliSync.server?.close();
+    }
+    if (wakelocked) ServiceHandler.enableSleep();
+    super.dispose();
+  }
+
   void toggleWakelock() {
     if (wakelocked) {
       ServiceHandler.enableSleep();

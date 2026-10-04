@@ -38,6 +38,56 @@ class _Request extends Stream<List<int>> {
   }) => Stream<List<int>>.value(_bytes).listen(onData, onError: onError, onDone: onDone, cancelOnError: cancelOnError);
 }
 
+/// A sender's connection client that answers every request with 200 "ok"
+/// and remembers whether it was closed.
+class _SenderClient implements HttpClient {
+  bool closed = false;
+
+  @override
+  Future<HttpClientRequest> post(String host, int port, String path) async => _SenderRequest();
+
+  @override
+  void close({bool force = false}) => closed = true;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => null;
+}
+
+class _SenderRequest implements HttpClientRequest {
+  @override
+  final HttpHeaders headers = _SenderHeaders();
+
+  @override
+  void write(Object? object) {}
+
+  @override
+  Future<HttpClientResponse> close() async => _SenderResponse();
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => null;
+}
+
+class _SenderHeaders implements HttpHeaders {
+  @override
+  dynamic noSuchMethod(Invocation invocation) => null;
+}
+
+class _SenderResponse extends Stream<List<int>> implements HttpClientResponse {
+  @override
+  int get statusCode => 200;
+
+  @override
+  StreamSubscription<List<int>> listen(
+    void Function(List<int> event)? onData, {
+    Function? onError,
+    void Function()? onDone,
+    bool? cancelOnError,
+  }) => Stream<List<int>>.value(utf8.encode('ok')).listen(onData, onError: onError, onDone: onDone, cancelOnError: cancelOnError);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 /// LoliSync (Settings → LoliSync): one phone sends, the other receives.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -159,6 +209,28 @@ void main() {
       expect(lines, contains('0-100 / 150 - '));
       expect(lines, contains('100-150 / 150 - '));
       expect(lines, contains('Favourites sent'));
+    });
+
+    test('1.0: every request closes its connection client once the answer is read', () async {
+      if (!dbReady) return;
+      await SettingsHandler.instance.dbHandler.db!.rawInsert(
+        'INSERT INTO BooruItem(thumbnailURL, sampleURL, fileURL, postURL, mediaType, isSnatched, isFavourite) VALUES(?,?,?,?,?,?,?)',
+        [post(1).thumbnailURL, post(1).sampleURL, post(1).fileURL, post(1).postURL, 'image', 0, 1],
+      );
+      final List<_SenderClient> clients = [];
+
+      final List<String> lines = await HttpOverrides.runZoned(
+        () => LoliSync().startSync('127.0.0.1', '1', ['Favouritesv2', 'Settings'], 0, 0, TabsMode.merge, TagsMode.overwrite).toList(),
+        createHttpClient: (SecurityContext? context) {
+          final _SenderClient client = _SenderClient();
+          clients.add(client);
+          return client;
+        },
+      );
+
+      expect(lines, contains('0-1 / 1 - ok'), reason: 'the answer is still read after the client is closed');
+      expect(clients, hasLength(3), reason: 'the batch, the settings and the end of the sync');
+      expect(clients.where((c) => !c.closed), isEmpty, reason: 'each kept its socket until the idle timeout');
     });
 
     test('a snatched sync speaks of snatched items, not favourites', () async {
