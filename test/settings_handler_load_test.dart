@@ -120,5 +120,35 @@ void main() {
 
     File file() => File('${s.path}sourceSettings.json');
 
+    test('one entry with a value of the wrong type does not cost the other sources their settings', () {
+      file().writeAsStringSync(
+        jsonEncode({
+          'a.example': {'readingDirection': 'rtl'},
+          'b.example': {'preloadPages': 'five'},
+          'c.example': {'tagBlacklist': 'x'},
+        }),
+      );
+      SourceSettingsHandler.instance.update(d, (st) => st.readingDirection = 'vertical');
+
+      final Map<String, dynamic> saved = jsonDecode(file().readAsStringSync());
+      expect(saved['a.example'], {'readingDirection': 'rtl'});
+      expect(saved['b.example'], {'preloadPages': 'five'}, reason: 'kept as it was, not dropped');
+      expect(saved['c.example'], {'tagBlacklist': 'x'});
+      expect(saved['d.example'], {'readingDirection': 'vertical'});
+      expect(SourceSettingsHandler.instance.settingsFor(a).readingDirection, 'rtl');
+    });
+
+    test('an unreadable file is kept aside before the next change replaces it', () {
+      const String truncated = '{"a.example": {"readingDirection": "rt';
+      file().writeAsStringSync(truncated);
+      SourceSettingsHandler.instance.update(d, (st) => st.readingDirection = 'vertical');
+
+      final File kept = File('${s.path}sourceSettings.json.unreadable');
+      expect(kept.existsSync(), isTrue);
+      expect(kept.readAsStringSync(), truncated);
+      expect(jsonDecode(file().readAsStringSync()), {
+        'd.example': {'readingDirection': 'vertical'},
+      });
+    });
   });
 }
