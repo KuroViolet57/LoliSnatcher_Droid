@@ -21,6 +21,7 @@ import 'package:lolisnatcher/models/booru_type.dart';
 import 'package:lolisnatcher/sources/booru/agnph_handler.dart';
 import 'package:lolisnatcher/sources/booru/civitai_handler.dart';
 import 'package:lolisnatcher/sources/booru/ink_bunny_handler.dart';
+import 'package:lolisnatcher/sources/booru/r34hentai_handler.dart';
 import 'package:lolisnatcher/sources/tube/redgifs_handler.dart';
 
 /// The WebView cookie jar, as a list of what was written into it.
@@ -248,6 +249,26 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 20));
     }
     expect(h.filteredFetched.map((i) => i.serverId), ['2']);
+  });
+
+  test('rule34hentai: a login cookie whose value holds "=" is kept whole', () async {
+    jar.written.clear();
+    routes['/user_admin/login'] = (r) async {
+      r.response.headers
+        ..add('set-cookie', 'shm_user=someone; path=/')
+        ..add('set-cookie', 'shm_session=c2Vzc2lvbg==; path=/');
+      await answer(r, '<html></html>', type: ContentType.html);
+    };
+    final R34HentaiHandler h = R34HentaiHandler(Booru.withKey('rule34hentai', BooruType.R34Hentai, '', base, '', 'secret', 'someone'), 20);
+
+    expect(await h.signIn(), isTrue);
+
+    final List<String> sessions = [
+      for (final c in jar.written)
+        if (c.name == 'shm_session') c.value,
+    ];
+    expect(sessions, isNotEmpty);
+    expect(sessions, everyElement('c2Vzc2lvbg=='));
   });
 
   test('RedGifs: a user token the API rejects is set aside for the session, not wiped from the source', () async {
