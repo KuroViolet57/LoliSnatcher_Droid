@@ -105,4 +105,23 @@ void main() {
       );
     });
   });
+
+  group('Fetch the response bodies', () {
+    test('1.0: a body already read from the live page is not fetched again', () async {
+      final capture = SourceCaptureHandler.instance..start('https://hentaipaw.com');
+      capture.recordResource(api);
+      capture.attachController(_Page('{"items":[]}'));
+      await capture.fetchPendingBodies();
+      capture
+        ..detachController()
+        ..stop();
+      expect(capture.fetchCount, 1);
+
+      // The button, after the browser closed.
+      final CaptureEntry? again = await capture.fetchBody(api);
+
+      expect(capture.fetchCount, 1, reason: 'no second entry, and no FETCH FAILED line');
+      expect(again?.body, '{"items":[]}');
+    }, timeout: const Timeout(Duration(seconds: 30)));
+  });
 }

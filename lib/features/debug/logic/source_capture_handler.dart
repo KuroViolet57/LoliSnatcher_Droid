@@ -408,6 +408,12 @@ class SourceCaptureHandler {
   /// which is why the in-page path is tried first.
   Future<CaptureEntry?> fetchBody(String url) async {
     if (url.isEmpty) return null;
+    // 1.0: a body already read (in the page, as it loaded) is not fetched
+    // again: with the browser closed this goes through Dio, which a
+    // protected site refuses, and each url got a second entry.
+    for (final CaptureEntry e in _entries) {
+      if (e.kind == CaptureKind.fetch && e.url == url && e.status != null) return e;
+    }
     if (_totalChars >= maxTotalChars) return null;
     final CaptureEntry? inPage = await fetchBodyInPage(url);
     if (inPage != null) return inPage;
