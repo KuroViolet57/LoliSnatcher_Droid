@@ -48,9 +48,7 @@ void main() {
       File(golden).writeAsStringSync('$schema\n');
     }
     // Git may check the golden out with CRLF line endings on Windows.
-    expect(schema, File(golden).readAsStringSync().replaceAll('
-', '
-').trimRight());
+    expect(schema, File(golden).readAsStringSync().replaceAll('\r\n', '\n').trimRight());
   });
 
   test('running the statements again on an existing database changes nothing', () async {
