@@ -77,4 +77,32 @@ void main() {
       expect(capture.pendingResources, [api]);
     });
   });
+
+  group('the session cap', () {
+    test('1.0: api bodies count toward the 8 MB cap like pages do', () {
+      final capture = SourceCaptureHandler.instance..start('https://hentaipaw.com');
+      final String body = 'x' * SourceCaptureHandler.maxBodyChars;
+      for (int i = 0; i < 20; i++) {
+        capture.recordXhr(method: 'GET', url: 'https://hentaipaw.com/api/library?page=$i', status: 200, body: body);
+      }
+      expect(
+        capture.totalChars,
+        lessThanOrEqualTo(SourceCaptureHandler.maxTotalChars + SourceCaptureHandler.maxBodyChars),
+      );
+      expect(capture.totalChars, greaterThanOrEqualTo(SourceCaptureHandler.maxTotalChars), reason: 'filled up to the cap');
+    });
+
+    test('1.0: bodies read from the page count toward the cap too', () async {
+      final capture = SourceCaptureHandler.instance..start('https://hentaipaw.com');
+      final _Page page = _Page('y' * SourceCaptureHandler.maxBodyChars);
+      capture.attachController(page);
+      for (int i = 0; i < 20; i++) {
+        await capture.fetchBodyInPage('https://hentaipaw.com/api/gallery/$i');
+      }
+      expect(
+        capture.totalChars,
+        lessThanOrEqualTo(SourceCaptureHandler.maxTotalChars + SourceCaptureHandler.maxBodyChars),
+      );
+    });
+  });
 }

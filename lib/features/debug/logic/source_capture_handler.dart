@@ -262,6 +262,8 @@ class SourceCaptureHandler {
   Future<CaptureEntry?> fetchBodyInPage(String url) async {
     final InAppWebViewController? controller = _liveController;
     if (controller == null || url.isEmpty) return null;
+    // 1.0: bodies count toward the session cap like pages do.
+    if (_totalChars >= maxTotalChars) return null;
     try {
       final raw = await controller.evaluateJavascript(source: fetchScript(url));
       final result = parseFetchResult(raw);
@@ -363,6 +365,8 @@ class SourceCaptureHandler {
     String? body,
   }) {
     if (!_recording || url.isEmpty) return;
+    // 1.0: api bodies count toward the session cap like pages do.
+    if (_totalChars >= maxTotalChars) return;
     if (!_seenXhr.add('$method $url')) return;
     final ({String body, int? from}) capped = _cap(redact(body ?? ''));
     _add(
@@ -404,6 +408,7 @@ class SourceCaptureHandler {
   /// which is why the in-page path is tried first.
   Future<CaptureEntry?> fetchBody(String url) async {
     if (url.isEmpty) return null;
+    if (_totalChars >= maxTotalChars) return null;
     final CaptureEntry? inPage = await fetchBodyInPage(url);
     if (inPage != null) return inPage;
     try {
