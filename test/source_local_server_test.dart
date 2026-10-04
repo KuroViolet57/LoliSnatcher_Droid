@@ -2,11 +2,13 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:alice_lightweight/alice.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart'
     show HTTPCookieSameSitePolicy, InAppWebViewPlatform, PlatformCookieManager, PlatformCookieManagerCreationParams, PlatformInAppWebViewController, WebUri;
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lolisnatcher/core/logging/logger.dart';
+import 'package:lolisnatcher/core/network/dio_network.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/core/settings/source_settings_handler.dart';
 import 'package:lolisnatcher/core/storage/tag_handler.dart';
@@ -15,6 +17,7 @@ import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
 import 'package:lolisnatcher/models/booru.dart';
 import 'package:lolisnatcher/models/booru_type.dart';
 import 'package:lolisnatcher/sources/booru/ink_bunny_handler.dart';
+import 'package:lolisnatcher/sources/tube/redgifs_handler.dart';
 
 /// The WebView cookie jar, as a list of what was written into it.
 class _RecordingCookieManager extends PlatformCookieManager {
@@ -169,5 +172,34 @@ void main() {
     final String logged = [for (final e in Logger.talker.history.skip(before)) e.generateTextMessage()].join('\n');
     expect(logged, contains('api_search.php'), reason: 'the requests are still logged');
     expect(logged, isNot(contains(sid)));
+  });
+
+  test('RedGifs: a user token the API rejects is set aside for the session, not wiped from the source', () async {
+    String jwt(DateTime exp) {
+      final String payload = base64Url.encode(utf8.encode(jsonEncode({'exp': exp.millisecondsSinceEpoch ~/ 1000}))).replaceAll('=', '');
+      return 'eyJhbGciOiJIUzI1NiJ9.$payload.c2lnbmF0dXJl';
+    }
+
+    final String token = jwt(DateTime.now().add(const Duration(days: 1)));
+    final List<String?> auth = [];
+    routes['/v2/gifs/search'] = (r) async {
+      auth.add(r.headers.value('authorization'));
+      r.response.statusCode = HttpStatus.unauthorized;
+      await r.response.close();
+    };
+    // The fresh guest token comes from api.redgifs.com: that request is sent
+    // to this server as a proxy, which refuses the tunnel. Nothing leaves.
+    final HttpClient client = DioNetwork.sharedHttpClient;
+    client.findProxy = (Uri uri) => uri.host == 'api.redgifs.com' ? 'PROXY 127.0.0.1:${server.port}' : 'DIRECT';
+    addTearDown(() => client.findProxy = HttpClient.findProxyFromEnvironment);
+    final Booru redgifs = Booru.withKey('RedGifs', BooruType.RedGifs, '', base, '', token, '');
+    final RedGifsHandler h = RedGifsHandler(redgifs, 20);
+    expect(await h.isSignedIn(), isTrue);
+
+    await expectLater(h.fetchSearch(Uri.parse('$base/v2/gifs/search?search_text=cat'), 'cat'), throwsA(isA<DioException>()));
+
+    expect(auth, ['Bearer $token']);
+    expect(redgifs.apiKey, token, reason: 'a backup or a save of the source must not write an empty key');
+    expect(await h.isSignedIn(), isFalse, reason: 'this session goes on as a guest');
   });
 }
