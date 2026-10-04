@@ -638,6 +638,12 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
         // gathered doujin history write, go to disk before the app may die.
         unawaited(RecommenderHandler.maybe?.flush() ?? Future<void>.value());
         DoujinDataHandler.instance.flushPendingSave();
+        // 1.0: and the tabs opened or closed since the last 30 s backup, so a
+        // swipe-away or a reap does not bring back the old tab set. Inactive
+        // alone (the shade, a system prompt) is not leaving the app.
+        if (state != AppLifecycleState.inactive) {
+          unawaited(searchHandler.backupTabs());
+        }
         break;
       case AppLifecycleState.resumed:
         // check if app needs to be locked when user returns to the app
