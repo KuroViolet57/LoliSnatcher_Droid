@@ -481,12 +481,15 @@ class SnatchHandler {
   }
 
   Future searchSnatch(String tags, String amount, int cooldown, Booru booru) async {
-    int count = 0, limit;
+    int limit;
     BooruHandler booruHandler;
-    List<BooruItem> booruItems = [];
+    // 1.0: an emptied amount field asks for nothing (int.parse threw here,
+    // after the page had closed).
+    final int wanted = int.tryParse(amount.trim()) ?? 0;
+    if (wanted <= 0) return;
 
-    if (int.parse(amount) <= 100) {
-      limit = int.parse(amount);
+    if (wanted <= 100) {
+      limit = wanted;
     } else {
       limit = 100;
     }
@@ -511,14 +514,39 @@ class SnatchHandler {
       sideColor: Colors.yellow,
     );
 
-    while (count < int.parse(amount) && !booruHandler.locked) {
-      booruItems = await booruHandler.search(tags, null) ?? [];
-      booruItems = booruItems.where((e) => !e.isHidden).toList();
-      booruHandler.pageNum++;
-      count = booruItems.length;
-      // TODO error handling?
-    }
+    final List<BooruItem> booruItems = await pagesForSnatch(
+      wanted,
+      nextPage: () async {
+        final List<BooruItem> fetched = await booruHandler.search(tags, null) ?? [];
+        booruHandler.pageNum++;
+        return fetched;
+      },
+      locked: () => booruHandler.locked,
+    );
     queue(booruItems, booru, cooldown, false);
+  }
+
+  /// The batch snatcher's pages: asks for the next page while fewer than
+  /// [wanted] posts that are not hidden came in and the source has more.
+  @visibleForTesting
+  static Future<List<BooruItem>> pagesForSnatch(
+    int wanted, {
+    required Future<List<BooruItem>> Function() nextPage,
+    required bool Function() locked,
+  }) async {
+    List<BooruItem> visible = [];
+    int fetched = 0;
+    while (visible.length < wanted && !locked()) {
+      final List<BooruItem> all = await nextPage();
+      visible = all.where((e) => !e.isHidden).toList();
+      // 1.0: a failed request (no network, a 5xx, a 403) leaves the list as
+      // it was and does not lock the source; the batch asked for pages for
+      // ever.
+      if (all.length <= fetched) break;
+      fetched = all.length;
+    }
+    // 1.0: pages come whole; the amount asked for is what is queued.
+    return visible.take(wanted).toList();
   }
 
   void dispose() {
