@@ -78,6 +78,7 @@ class MediaKitVideoPlayer extends VideoPlayerPlatform {
     }
 
     _players.clear();
+    _completers.clear();
     _videoControllers.clear();
     _streamControllers.clear();
     _streamSubscriptions.clear();
@@ -94,6 +95,7 @@ class MediaKitVideoPlayer extends VideoPlayerPlatform {
     );
 
     _players.remove(textureId);
+    _completers.remove(textureId);
     _videoControllers.remove(textureId);
     _streamControllers.remove(textureId);
     _streamSubscriptions.remove(textureId);

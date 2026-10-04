@@ -817,7 +817,11 @@ class _LoliControlsState extends State<LoliControls> {
   }
 
   void _startHideTimer() {
+    // Restarted from places that do not cancel first (speed long-press, drag
+    // end): an overwritten timer was never cancelled, even in dispose.
+    _hideTimer?.cancel();
     _hideTimer = Timer(const Duration(seconds: 3), () {
+      if (!mounted) return;
       setState(() {
         _hideStuff = true;
       });

@@ -73,6 +73,8 @@ class _CommentsDialogState extends State<CommentsDialog> {
           widget.item.serverId!,
           page,
         );
+        // The dialog may have been closed while the comments loaded.
+        if (!mounted) return;
         if (fetched.isEmpty || comments.contains(fetched.first)) {
           isCompleted = true;
         }
@@ -412,6 +414,13 @@ class _CommentEntry extends StatelessWidget {
   final VoidCallback? onTap;
   final bool isSelected;
 
+  /// The first two letters of [name] in place of a missing avatar: a shorter
+  /// name is shown whole, an empty one like a missing one.
+  String _initials(String? name) {
+    if (name == null || name.isEmpty) return '?';
+    return name.length < 2 ? name : name.substring(0, 2);
+  }
+
   Widget scoreText(int? score) {
     if (score == null) {
       return const SizedBox.shrink();
@@ -580,10 +589,10 @@ class _CommentEntry extends StatelessWidget {
                                     fit: BoxFit.cover,
                                     filterQuality: FilterQuality.medium,
                                     errorBuilder: (context, url, error) {
-                                      return Center(child: Text(comment.authorName?.substring(0, 2) ?? '?'));
+                                      return Center(child: Text(_initials(comment.authorName)));
                                     },
                                   )
-                                : Center(child: Text(comment.authorName?.substring(0, 2) ?? '?')),
+                                : Center(child: Text(_initials(comment.authorName))),
                           ),
                         ),
                       ),
