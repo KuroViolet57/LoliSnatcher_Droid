@@ -65,7 +65,11 @@ class _KemonoCreatorHeaderBodyState extends State<_KemonoCreatorHeaderBody> {
   }
 
   Future<void> _load() async {
-    _indexed = await KemonoCreatorStore.forSite(KemonoSite.of(widget.booru)).get(widget.creator.service, widget.creator.id);
+    final ({String service, String id}) creator = widget.creator;
+    final KemonoCreator? indexed = await KemonoCreatorStore.forSite(KemonoSite.of(widget.booru)).get(creator.service, creator.id);
+    // Another creator took this header meanwhile; its own _load fills it.
+    if (mounted && widget.creator != creator) return;
+    _indexed = indexed;
     if (_signedIn) await widget.handler.loadFavouriteCreatorKeys();
     if (mounted) setState(() {});
   }

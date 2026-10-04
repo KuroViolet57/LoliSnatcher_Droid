@@ -9,10 +9,13 @@ import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/core/storage/database_handler.dart';
 import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
 import 'package:lolisnatcher/features/kemono/ui/kemono_artists_page.dart';
+import 'package:lolisnatcher/features/kemono/ui/kemono_creator_header.dart';
 import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
 import 'package:lolisnatcher/models/booru.dart';
 import 'package:lolisnatcher/models/booru_type.dart';
 import 'package:lolisnatcher/sources/kemono/kemono_creator_store.dart';
+import 'package:lolisnatcher/sources/kemono/kemono_handler.dart';
+import 'package:lolisnatcher/sources/kemono/kemono_query.dart';
 import 'package:lolisnatcher/sources/kemono/kemono_session_handler.dart';
 import 'package:lolisnatcher/sources/kemono/kemono_site.dart';
 
@@ -117,5 +120,37 @@ void main() {
 
     expect(find.text('New order'), findsOneWidget);
     expect(find.text('Old order'), findsNothing);
+  });
+
+  testWidgets('creator header: switching creators fast shows the creator on screen, not the one looked up last', (tester) async {
+    final KemonoHandler handler = KemonoHandler(kemono, 50)..current = KemonoQuery.parse('creator:patreon:1');
+    final SearchTab tab = SearchTab(kemono, null, 'creator:patreon:1', customHandler: handler);
+    final ValueNotifier<int> rebuild = ValueNotifier<int>(0);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: ValueListenableBuilder<int>(
+              valueListenable: rebuild,
+              builder: (_, _, _) => KemonoCreatorHeader(tab: tab),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    handler.current = KemonoQuery.parse('creator:patreon:2');
+    rebuild.value++;
+    await tester.pump();
+    expect(index.lookups.keys, ['1', '2']);
+
+    index.lookups['2']!.complete([_row('2', 'Second creator')]);
+    await tester.pump();
+    index.lookups['1']!.complete([_row('1', 'First creator')]);
+    await tester.pump();
+
+    expect(find.text('Second creator'), findsOneWidget);
+    expect(find.text('First creator'), findsNothing);
   });
 }
