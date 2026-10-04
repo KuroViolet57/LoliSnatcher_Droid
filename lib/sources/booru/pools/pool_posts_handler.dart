@@ -1,5 +1,8 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+
+import 'package:lolisnatcher/models/booru.dart';
 import 'package:lolisnatcher/models/booru_item.dart';
 import 'package:lolisnatcher/models/booru_pool.dart';
 import 'package:lolisnatcher/models/meta_tag.dart';
@@ -49,6 +52,13 @@ class PoolPostsHandler extends BooruHandler {
   // Safety net for the "fetch everything then reorder" path.
   static const int _maxMembersFetched = 1000;
 
+  /// Test seams: the pool's ordered member ids, and the handler one member
+  /// is looked up through by id.
+  @visibleForTesting
+  static Future<List<String>?> Function(Booru booru, BooruPool pool)? idsFor;
+  @visibleForTesting
+  static BooruHandler Function(Booru booru)? lookupHandlerFor;
+
   @override
   bool get hasSizeData => _delegate.hasSizeData;
 
@@ -68,7 +78,8 @@ class PoolPostsHandler extends BooruHandler {
     if (_resolved) return;
     _resolved = true;
     try {
-      _orderedIds = await _source?.fetchPostIds(booru, BooruPool(id: poolId, name: poolName ?? ''));
+      final BooruPool pool = BooruPool(id: poolId, name: poolName ?? '');
+      _orderedIds = await (idsFor?.call(booru, pool) ?? _source?.fetchPostIds(booru, pool));
     } catch (e, s) {
       Logger.Inst().log(
         'failed to resolve post ids for pool $poolId: $e',
@@ -109,7 +120,9 @@ class PoolPostsHandler extends BooruHandler {
       }
 
       if (pageItems.isEmpty) {
-        locked = true;
+        // A by-id page the site refused (rate limit, outage) set the error:
+        // the retry asks the same members again; it is not the end.
+        if (errorString.isEmpty) locked = true;
         return fetched;
       }
 
@@ -171,36 +184,55 @@ class PoolPostsHandler extends BooruHandler {
     return _allOrdered!.skip(start).take(limit).toList();
   }
 
+  /// Where the next by-id page starts in [_orderedIds]. Not fetched.length:
+  /// a member that could not be read adds nothing, and the next page then
+  /// asked the end of this one again.
+  int _idCursor = 0;
+
   /// Gelbooru family: no pool filter exists, so each member is fetched by id.
   /// Bounded concurrency keeps a big pool from opening 50 sockets at once.
   Future<List<BooruItem>> _pageById() async {
     final List<String>? ids = _orderedIds;
     if (ids == null || ids.isEmpty) return const [];
 
-    final int start = fetched.length;
-    if (start >= ids.length) return const [];
-    final List<String> slice = ids.skip(start).take(limit).toList();
-
     final List<BooruItem> out = [];
-    const int batchSize = 6;
-    for (int i = 0; i < slice.length; i += batchSize) {
-      final List<String> batch = slice.skip(i).take(batchSize).toList();
-      final results = await Future.wait(
-        batch.map((id) async {
-          // A fresh handler per request: they accumulate into `fetched`, and
-          // sharing one would interleave results from parallel calls.
-          final BooruHandler h = BooruHandlerFactory().getBooruHandler([booru], 1).booruHandler
-            ..storeTagsGlobally = false
-            ..pageNum = 0;
-          try {
-            final List<BooruItem> got = (await h.search('id:$id', null)) as List<BooruItem>? ?? const [];
-            return got.isEmpty ? null : got.first;
-          } catch (_) {
-            return null;
-          }
-        }),
-      );
-      out.addAll(results.whereType<BooruItem>());
+    // A slice of members the site no longer has (empty answers, no error)
+    // moves on to the next slice instead of ending the pool.
+    while (out.isEmpty && _idCursor < ids.length) {
+      final int start = _idCursor;
+      final List<String> slice = ids.skip(start).take(limit).toList();
+      String refused = '';
+
+      const int batchSize = 6;
+      for (int i = 0; i < slice.length; i += batchSize) {
+        final List<String> batch = slice.skip(i).take(batchSize).toList();
+        final results = await Future.wait(
+          batch.map((id) async {
+            // A fresh handler per request: they accumulate into `fetched`, and
+            // sharing one would interleave results from parallel calls.
+            final BooruHandler h = (lookupHandlerFor?.call(booru) ?? BooruHandlerFactory().getBooruHandler([booru], 1).booruHandler)
+              ..storeTagsGlobally = false
+              ..pageNum = 0;
+            try {
+              final List<BooruItem> got = (await h.search('id:$id', null)) as List<BooruItem>? ?? const [];
+              if (got.isEmpty && h.errorString.isNotEmpty) refused = h.errorString;
+              return got.isEmpty ? null : got.first;
+            } catch (e) {
+              refused = e.toString();
+              return null;
+            }
+          }),
+        );
+        out.addAll(results.whereType<BooruItem>());
+      }
+
+      if (out.isEmpty && refused.isNotEmpty) {
+        // Nothing read and the site said why: the same members are asked
+        // again on retry.
+        errorString = refused;
+        return const [];
+      }
+      _idCursor = start + slice.length;
     }
     return out;
   }
