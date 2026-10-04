@@ -12,7 +12,7 @@
 
     <application
         android:name="${applicationName}"
-        android:label="LoliSnatcher"
+        android:label="LoliSnatcher${appLabelSuffix}"
         android:icon="@mipmap/ic_launcher"
         android:requestLegacyExternalStorage="true"
         android:resizeableActivity="true"

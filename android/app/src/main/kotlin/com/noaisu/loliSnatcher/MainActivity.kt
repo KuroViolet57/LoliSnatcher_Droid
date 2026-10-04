@@ -1259,14 +1259,20 @@ class MainActivity: FlutterFragmentActivity() {
         "booru" to ".MainActivityAlias_Booru"
     )
 
+    // 1.0: the aliases are named under the code's namespace (the manifest's
+    // ".MainActivityAlias_X"), which differs from packageName in the store and
+    // side-by-side builds; "$packageName$alias" named a component that did not exist there.
+    private fun aliasComponent(alias: String) =
+        ComponentName(packageName, MainActivity::class.java.name.substringBeforeLast('.') + alias)
+
     private fun setAppAlias(alias: String): Boolean {
         val targetAlias = aliasMap[alias] ?: return false
         val pm = packageManager
 
         try {
             // Disable all aliases first
-            for ((_, aliasComponent) in aliasMap) {
-                val component = ComponentName(packageName, "$packageName$aliasComponent")
+            for ((_, aliasName) in aliasMap) {
+                val component = aliasComponent(aliasName)
                 pm.setComponentEnabledSetting(
                     component,
                     PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
@@ -1275,7 +1281,7 @@ class MainActivity: FlutterFragmentActivity() {
             }
 
             // Enable the selected alias
-            val component = ComponentName(packageName, "$packageName$targetAlias")
+            val component = aliasComponent(targetAlias)
             pm.setComponentEnabledSetting(
                 component,
                 PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
@@ -1292,7 +1298,7 @@ class MainActivity: FlutterFragmentActivity() {
     private fun getCurrentAlias(): String {
         val pm = packageManager
         for ((key, alias) in aliasMap) {
-            val component = ComponentName(packageName, "$packageName$alias")
+            val component = aliasComponent(alias)
             val state = pm.getComponentEnabledSetting(component)
             if (state == PackageManager.COMPONENT_ENABLED_STATE_ENABLED ||
                 (state == PackageManager.COMPONENT_ENABLED_STATE_DEFAULT && key == "loli_snatcher")) {

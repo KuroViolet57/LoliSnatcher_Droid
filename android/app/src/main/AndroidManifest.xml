@@ -27,7 +27,7 @@
 
     <application
         android:name="${applicationName}"
-        android:label="LoliSnatcher"
+        android:label="LoliSnatcher${appLabelSuffix}"
         android:icon="@mipmap/ic_launcher"
         android:requestLegacyExternalStorage="true"
         android:resizeableActivity="true"
@@ -74,7 +74,7 @@
         <activity-alias
             android:name=".MainActivityAlias_LoliSnatcher"
             android:targetActivity=".MainActivity"
-            android:label="LoliSnatcher"
+            android:label="LoliSnatcher${appLabelSuffix}"
             android:icon="@mipmap/ic_launcher"
             android:enabled="true"
             android:exported="true">
@@ -87,7 +87,7 @@
         <activity-alias
             android:name=".MainActivityAlias_LoliSnatcherSpaced"
             android:targetActivity=".MainActivity"
-            android:label="Loli Snatcher"
+            android:label="Loli Snatcher${appLabelSuffix}"
             android:icon="@mipmap/ic_launcher"
             android:enabled="false"
             android:exported="true">
@@ -100,7 +100,7 @@
         <activity-alias
             android:name=".MainActivityAlias_LoSn"
             android:targetActivity=".MainActivity"
-            android:label="LoSn"
+            android:label="LoSn${appLabelSuffix}"
             android:icon="@mipmap/ic_launcher"
             android:enabled="false"
             android:exported="true">
@@ -113,7 +113,7 @@
         <activity-alias
             android:name=".MainActivityAlias_LS"
             android:targetActivity=".MainActivity"
-            android:label="LS"
+            android:label="LS${appLabelSuffix}"
             android:icon="@mipmap/ic_launcher"
             android:enabled="false"
             android:exported="true">
@@ -126,7 +126,7 @@
         <activity-alias
             android:name=".MainActivityAlias_BooruSnatcher"
             android:targetActivity=".MainActivity"
-            android:label="BooruSnatcher"
+            android:label="BooruSnatcher${appLabelSuffix}"
             android:icon="@mipmap/ic_launcher"
             android:enabled="false"
             android:exported="true">
@@ -139,7 +139,7 @@
         <activity-alias
             android:name=".MainActivityAlias_BooruSnatcherSpaced"
             android:targetActivity=".MainActivity"
-            android:label="Booru Snatcher"
+            android:label="Booru Snatcher${appLabelSuffix}"
             android:icon="@mipmap/ic_launcher"
             android:enabled="false"
             android:exported="true">
@@ -152,7 +152,7 @@
         <activity-alias
             android:name=".MainActivityAlias_Booru"
             android:targetActivity=".MainActivity"
-            android:label="Booru"
+            android:label="Booru${appLabelSuffix}"
             android:icon="@mipmap/ic_launcher"
             android:enabled="false"
             android:exported="true">
@@ -180,7 +180,7 @@
         <activity-alias
             android:name=".SourceLinks"
             android:targetActivity=".MainActivity"
-            android:label="LoliSnatcher"
+            android:label="LoliSnatcher${appLabelSuffix}"
             android:icon="@mipmap/ic_launcher"
             android:enabled="false"
             android:exported="true">

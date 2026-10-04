@@ -43,11 +43,16 @@ if (project.hasProperty("dart-defines")) {
         }
 }
 println("LS_IS_STORE=${dartEnvVars["LS_IS_STORE"]}")
-val packageName = if (dartEnvVars["LS_IS_STORE"] == "true") {
+// 1.0: --dart-define=LS_SIDE_BY_SIDE=true builds an app that installs NEXT TO
+// the regular one (its own package id, data and launcher label "... 1.0"),
+// so both can run on one phone for comparison. Without it nothing changes.
+val sideBySide = dartEnvVars["LS_SIDE_BY_SIDE"] == "true"
+println("LS_SIDE_BY_SIDE=$sideBySide")
+val packageName = (if (dartEnvVars["LS_IS_STORE"] == "true") {
     "com.noaisu.play.loliSnatcher"
 } else {
     "com.noaisu.loliSnatcher"
-}
+}) + (if (sideBySide) ".v1" else "")
 println("packageName=$packageName")
 println("compileSdk=${flutter.compileSdkVersion}")
 println("ndkVersion=${flutter.ndkVersion}")
@@ -82,6 +87,8 @@ android {
         versionCode = flutterVersionCode.toInt()
         versionName = flutterVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // Appended to every launcher label in the manifests (empty normally).
+        manifestPlaceholders["appLabelSuffix"] = if (sideBySide) " 1.0" else ""
     }
 
     signingConfigs {
