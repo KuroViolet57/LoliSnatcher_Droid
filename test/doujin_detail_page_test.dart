@@ -18,6 +18,7 @@ import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/features/downloads/logic/snatch_handler.dart';
 import 'package:lolisnatcher/core/settings/source_settings_handler.dart';
+import 'package:lolisnatcher/core/storage/database_handler.dart';
 import 'package:lolisnatcher/core/storage/tag_handler.dart';
 import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
 import 'package:lolisnatcher/features/doujin/ui/detail/doujin_detail_page.dart';
@@ -316,4 +317,57 @@ void main() {
     expect(identical(tester.element(site), siteElement), isTrue, reason: 'the site cover was not rebuilt from scratch');
     await closeDetail(tester);
   });
+
+  /// 1.0 M2: after a restart the reading position lives only in store.db; the
+  /// Read button read the memory cache alone, which only the reader filled,
+  /// so it said "Read · N pages" for a half-read book.
+  testWidgets('the Read button offers to continue a book read before a restart', (tester) async {
+    final DBHandler before = SettingsHandler.instance.dbHandler;
+    SettingsHandler.instance.dbHandler = _ProgressDb({
+      'nhentai.net|7007': {'page': 4, 'totalPages': 20, 'updatedAt': 1},
+    });
+    addTearDown(() => SettingsHandler.instance.dbHandler = before);
+
+    final booru = nhentaiBooru();
+    final tab = SearchTab(booru, null, 'id:7007');
+    final item = BooruItem(
+      fileURL: 'https://images.invalid/7007.png',
+      sampleURL: 'https://images.invalid/7007.png',
+      thumbnailURL: 'https://thumbs.invalid/7007.png',
+      tagsList: [Tag('vanilla')],
+      postURL: 'https://nhentai.net/g/7007/',
+      serverId: '7007',
+    )..description = 'Half Read Book';
+    tab.booruHandler.fetched.add(item);
+    tab.booruHandler.filterFetched();
+    ReaderHandler.instance.registerBook(item, [
+      for (int i = 1; i <= 20; i++)
+        BooruItem(
+          fileURL: 'https://images.invalid/7007-p$i.png',
+          sampleURL: 'https://images.invalid/7007-p$i.png',
+          thumbnailURL: 'https://thumbs.invalid/7007-p$i.png',
+          tagsList: const [],
+          postURL: 'https://nhentai.net/g/7007/$i/',
+          serverId: '7007_p$i',
+        ),
+    ]);
+
+    await pumpDetail(tester, tab);
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('Continue · p.5'), findsOneWidget);
+    expect(find.text('Read · 20 pages'), findsNothing);
+    await closeDetail(tester);
+  });
+}
+
+/// store.db as it is after a restart: the progress row is there, nothing has
+/// read it yet this session.
+class _ProgressDb extends DBHandler {
+  _ProgressDb(this.rows);
+
+  final Map<String, Map<String, Object?>> rows;
+
+  @override
+  Future<Map<String, Object?>?> getReaderProgress(String galleryKey) async => rows[galleryKey];
 }

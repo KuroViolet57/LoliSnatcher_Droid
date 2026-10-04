@@ -113,6 +113,57 @@ void main() {
     expect(stale.tagsList, isEmpty);
   });
 
+  // 1.0 M2: afterParseResponse runs for EVERY page, and it used to start a new
+  // generation each time - so scrolling to page 2 before page 1's cards had
+  // their tags left them tagless for the session (no blacklist, no stars).
+  test('the next page of the same query does not abandon the earlier page', () async {
+    final handler = _FakeBackfillHandler(gate: true);
+    handler.currentTags = 'vanilla';
+    final page1 = [item('1'), item('2')];
+    // Page 1 of a new query: the base search records the query only after
+    // this returns.
+    await handler.afterParseResponse(page1);
+    await pumpEventQueue();
+    handler.prevTags = 'vanilla';
+
+    handler.gate = false;
+    final page2 = [item('3')];
+    await handler.afterParseResponse(page2);
+    await pumpEventQueue();
+    // One pass at a time, so a rate-limited source (niyaniya: one worker,
+    // 500 ms apart) keeps its pace: page 2 waits for page 1's pass.
+    expect(handler.requested, ['1', '2']);
+
+    handler.release();
+    await pumpEventQueue();
+
+    expect(page1.every((e) => e.tagsList.isNotEmpty), isTrue);
+    expect(page2.single.tagsList, isNotEmpty);
+    expect(handler.requested, ['1', '2', '3']);
+  });
+
+  test('a new query still abandons the old pass and starts at once', () async {
+    final handler = _FakeBackfillHandler(gate: true);
+    handler.currentTags = 'vanilla';
+    final stale = item('1');
+    await handler.afterParseResponse([stale]);
+    await pumpEventQueue();
+    handler.prevTags = 'vanilla';
+
+    // A different query: the base search empties the list for it.
+    handler.currentTags = 'glasses';
+    handler.fetched.clear();
+    handler.gate = false;
+    final fresh = item('9');
+    await handler.afterParseResponse([fresh]);
+    await pumpEventQueue();
+    expect(fresh.tagsList, isNotEmpty, reason: 'not queued behind the abandoned pass');
+
+    handler.release();
+    await pumpEventQueue();
+    expect(stale.tagsList, isEmpty);
+  });
+
   group('which sources need it', () {
     test('the two tag-less listings mix it in', () {
       expect(SchaleHandler(Booru('n', BooruType.NiyaNiya, '', 'https://niyaniya.moe', ''), 20),

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lolisnatcher/models/booru_type.dart';
@@ -212,6 +213,22 @@ void main() {
       expect(NHentaiTagCatalog.expand('a').first, 'aa');
       expect(NHentaiTagCatalog.expand('a').last, 'a ');
     });
+
+    // 1.0 M2: the puller keeps the resume point per host, but every handler
+    // builds its own catalog (the tag browser makes a new handler each time it
+    // opens). A walk stopped at shard N and resumed through another instance
+    // found an empty prefix queue, got null and was marked complete.
+    test('a walk resumed through another catalog instance continues the same queue', () async {
+      final Booru booru = b('n', BooruType.NHentai, 'https://nhentai.net');
+      final List<String> asked = [];
+      final first = _PrefixNHentai(booru, asked).tagCatalog;
+      expect(await first.shardAt('', 0), isNotNull);
+      expect(await first.shardAt('', 1), isNotNull);
+
+      final second = _PrefixNHentai(booru, asked).tagCatalog;
+      expect(await second.shardAt('', 2), isNotNull);
+      expect(asked, ['a', 'b', 'c']);
+    });
   });
 
   group('hentaipaw', () {
@@ -403,4 +420,20 @@ void main() {
       expect(keys(CivitaiHandler(b('c', BooruType.Civitai, 'https://civitai.com'), 20)), ['tag']);
     });
   });
+}
+
+/// nhentai's tag search answering one row per prefix, so a walk never expands
+/// and the prefixes asked show where it is.
+class _PrefixNHentai extends NHentaiHandler {
+  _PrefixNHentai(Booru booru, this.asked) : super(booru, 20);
+
+  final List<String> asked;
+
+  @override
+  Future<List<dynamic>> searchTagsRaw(String query, {int limit = 25, CancelToken? cancelToken}) async {
+    asked.add(query);
+    return [
+      {'id': asked.length, 'name': '${query}_tag', 'type': 'tag', 'count': 1},
+    ];
+  }
 }

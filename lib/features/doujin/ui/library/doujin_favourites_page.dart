@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
 import 'package:lolisnatcher/features/doujin/logic/doujin_data_handler.dart';
 import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
 import 'package:lolisnatcher/features/doujin/ui/library/doujin_library_pages.dart';
@@ -40,7 +41,10 @@ class _DoujinFavouritesPageState extends State<DoujinFavouritesPage> {
         : store.collectionById(store.lastBookmarkCollectionId) ?? store.collections.first;
     final List<DoujinEntry> bookmarks = [...?bookmarkCollection?.items]
       ..sort((a, b) => b.addedAt.compareTo(a.addedAt));
-    final bool hasKey = widget.booru.apiKey?.isNotEmpty ?? false;
+    // Only nhentai reads favorites:me. Elsewhere the key field holds a login
+    // password (asmhentai, hentalk, eahentai) and the query would be searched
+    // as words.
+    final bool hasKey = widget.booru.type == BooruType.NHentai && (widget.booru.apiKey?.isNotEmpty ?? false);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Doujin favourites')),
@@ -127,9 +131,9 @@ class _DoujinFavouritesPageState extends State<DoujinFavouritesPage> {
                   '${bookmark.booruHost} · ${DateFormat('dd MMM yyyy').format(DateTime.fromMillisecondsSinceEpoch(bookmark.addedAt))}',
                   style: const TextStyle(fontSize: 11.5),
                 ),
-                // id:<n> opens the exact gallery as its own tab; the detail
-                // page is then one tap on the card.
-                onTap: bookmark.serverId.isEmpty ? null : () => _openTab('id:${bookmark.serverId}'),
+                // The gallery's own source (the drawer may be on another),
+                // with its key: id:<n> alone misses on Schale and e-hentai.
+                onTap: bookmark.serverId.isEmpty ? null : () => openDoujinEntry(context, bookmark, fallback: widget.booru),
               ),
             ),
         ],

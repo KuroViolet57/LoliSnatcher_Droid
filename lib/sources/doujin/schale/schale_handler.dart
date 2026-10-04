@@ -575,6 +575,9 @@ class SchaleHandler extends BooruHandler with DoujinListingTagBackfill, DoujinNa
     return item == null ? [] : [item];
   }
 
+  @visibleForTesting
+  BooruItem? itemFromDetail(String id, String key, Map detail) => _itemFromDetail(id, key, detail);
+
   BooruItem? _itemFromDetail(String id, String key, Map detail) {
     final thumbs = detail['thumbnails'];
     if (thumbs is! Map) return null;
@@ -586,11 +589,9 @@ class SchaleHandler extends BooruHandler with DoujinListingTagBackfill, DoujinNa
       fileURL: '$base$mainPath',
       sampleURL: '$base$mainPath',
       thumbnailURL: '$base$mainPath',
-      tagsList: [
-        for (final t in detail['tags'] as List? ?? [])
-          if (t is Map && (t['name']?.toString().isNotEmpty ?? false))
-            Tag(t['name'].toString().replaceAll(' ', '_'), tagType: TagType.none),
-      ],
+      // The same bare, typed, namespaced tags the reader and the listing
+      // backfill build from this payload.
+      tagsList: tagsFromDetail(detail),
       postURL: '$_site/g/$id/$key',
       serverId: id,
     );

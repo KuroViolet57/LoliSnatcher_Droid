@@ -74,6 +74,8 @@ try {
         await client.run().timeout(timeout);
         final bool ok = await done.future.timeout(timeout, onTimeout: () {
           _log('timed out after ${timeout.inSeconds}s');
+          // Every caller is waiting on done.future, not on this timeout.
+          if (!done.isCompleted) done.complete(false);
           return false;
         });
         if (!ok) await dispose();

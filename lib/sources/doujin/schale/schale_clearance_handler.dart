@@ -386,6 +386,8 @@ try {
         await client.run().timeout(pageClientTimeout);
         final bool ok = await done.future.timeout(pageClientTimeout, onTimeout: () {
           _log('page client: timed out after ${pageClientTimeout.inSeconds}s');
+          // Every caller is waiting on done.future, not on this timeout.
+          if (!done.isCompleted) done.complete(false);
           return false;
         });
         if (!ok) await _disposePageClient();
@@ -538,6 +540,12 @@ try {
 
   bool _harvesting = false;
 
+  /// The harvest in progress and the network it reads for. A second gated
+  /// call for the same network waits for its answer instead of being told
+  /// there is no token while the first may be about to find one.
+  Future<String?>? _harvestRun;
+  String _harvestKey = '';
+
   /// Reads the site's stored clearance from a headless webview.
   ///
   /// Koharu's `getClearance()` with one difference: JavaScript and DOM
@@ -557,8 +565,15 @@ try {
     ensureLoaded();
     final String? have = tokenFor(siteUrl);
     if (have != null) return have;
-    if (_harvesting) return null;
+    if (_harvesting) {
+      final Future<String?>? running = _harvestRun;
+      return running != null && _harvestKey == keyFor(siteUrl) ? running : null;
+    }
     _harvesting = true;
+    final Completer<String?> run = Completer<String?>();
+    _harvestRun = run.future;
+    _harvestKey = keyFor(siteUrl);
+    String? harvested;
 
     final Completer<({String? token, String trace})> done = Completer();
     HeadlessInAppWebView? headless;
@@ -608,12 +623,15 @@ try {
       );
       final String? found = result.token;
       if (found != null) store(found, trace: result.trace, siteUrl: siteUrl);
+      harvested = found;
       return found;
     } catch (e, s) {
       Logger.Inst().log('harvest failed: $e', 'SchaleClearanceHandler', 'harvest', LogTypes.exception, s: s);
       return null;
     } finally {
       _harvesting = false;
+      _harvestRun = null;
+      if (!run.isCompleted) run.complete(harvested);
       try {
         await headless?.dispose();
       } catch (_) {}

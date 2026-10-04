@@ -39,14 +39,38 @@ mixin DoujinListingTagBackfill on BooruHandler {
   /// forth does not refetch them.
   final Map<String, List<Tag>> _tagCache = {};
 
-  /// Incremented on every new fetch so a backfill left over from a previous
+  /// Incremented on every new query so a backfill left over from a previous
   /// query stops writing into the list the user is now looking at.
   int _generation = 0;
+
+  /// The pass of the current generation, which the next page's pass waits
+  /// for: the earlier page's cards still get their tags, and a rate-limited
+  /// source still sees one pass at its own pace.
+  Future<void> _lastPass = Future<void>.value();
+  int _lastPassGeneration = -1;
 
   @override
   Future<void> afterParseResponse(List<BooruItem> newItems) async {
     await super.afterParseResponse(newItems);
-    unawaited(_backfill(newItems, ++_generation));
+    // The base search empties the list exactly when prevTags != currentTags,
+    // and records the query only after this returns: that is a new query.
+    // Another page of the same query joins the running pass instead of
+    // abandoning it.
+    if (prevTags != currentTags) ++_generation;
+    final int generation = _generation;
+    final Future<void> before = _lastPassGeneration == generation ? _lastPass : Future<void>.value();
+    final Future<void> pass = () async {
+      // Never throws: every pass catches its own failure below.
+      await before;
+      try {
+        await _backfill(newItems, generation);
+      } catch (e, s) {
+        Logger.Inst().log('tag backfill pass failed: $e', className, 'tagBackfill', LogTypes.booruHandlerRawFetched, s: s);
+      }
+    }();
+    _lastPass = pass;
+    _lastPassGeneration = generation;
+    unawaited(pass);
   }
 
   /// Runs one backfill pass directly, so the caching, cancellation and

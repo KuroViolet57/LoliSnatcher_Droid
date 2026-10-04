@@ -188,6 +188,13 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
     // renders correctly regardless of which feed the card came from.
     item.isFavourite.value = DoujinDataHandler.instance.isFavourite(item);
     _load();
+    // The Read button's "Continue · p.N" reads the progress cache, which only
+    // the reader filled - empty after a restart. Load it from store.db now.
+    unawaited(
+      ReaderHandler.instance.loadProgress(booru, item.serverId ?? item.postURL).then((_) {
+        if (mounted) setState(() {});
+      }),
+    );
   }
 
   @override
