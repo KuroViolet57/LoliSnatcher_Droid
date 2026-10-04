@@ -121,7 +121,7 @@ class ImageWriter {
             if (safPath != null) {
               await ServiceHandler.writeStreamToFileFromSAFDirectory(
                 safPath,
-                Uint8List.fromList(jsonEncode(item.toJson()).codeUnits),
+                jsonSidecarBytes(item),
               );
               await ServiceHandler.closeStreamToFileFromSAFDirectory(safPath);
             }
@@ -185,6 +185,12 @@ class ImageWriter {
     }
     return fileName;
   }
+
+  /// The bytes of the image data written next to a download in a picked
+  /// folder ("write image data to JSON on save"). 1.0: UTF-8; the UTF-16
+  /// code units kept only their low byte, so Japanese tags came out broken.
+  @visibleForTesting
+  static Uint8List jsonSidecarBytes(BooruItem item) => utf8.encode(jsonEncode(item.toJson()));
 
   String getFilename(
     BooruItem item,
