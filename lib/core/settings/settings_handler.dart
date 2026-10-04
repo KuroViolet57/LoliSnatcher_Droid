@@ -2291,17 +2291,25 @@ class SettingsHandler {
     modelTasks
       ..clear()
       ..addAll(ModelTasks.parse(json['modelTasks']));
-    modelThreads
-      ..clear()
-      ..addAll(ModelTasks.parseThreads(json['modelThreads']));
-    modelRunOn
-      ..clear()
-      ..addAll(ModelTasks.parseRunOn(json['modelRunOn']));
-    earlierDownloadFolders.clear();
-    final dynamic earlierFolders = json['earlierDownloadFolders'];
-    if (earlierFolders is List) {
-      for (final dynamic f in earlierFolders) {
-        if (f is String && f.isNotEmpty && !earlierDownloadFolders.contains(f)) earlierDownloadFolders.add(f);
+    // These three belong to this phone (deviceSpecificSettings): a LoliSync
+    // payload (setMissingKeys false) leaves them out and must not clear them.
+    if (setMissingKeys || json.containsKey('modelThreads')) {
+      modelThreads
+        ..clear()
+        ..addAll(ModelTasks.parseThreads(json['modelThreads']));
+    }
+    if (setMissingKeys || json.containsKey('modelRunOn')) {
+      modelRunOn
+        ..clear()
+        ..addAll(ModelTasks.parseRunOn(json['modelRunOn']));
+    }
+    if (setMissingKeys || json.containsKey('earlierDownloadFolders')) {
+      earlierDownloadFolders.clear();
+      final dynamic earlierFolders = json['earlierDownloadFolders'];
+      if (earlierFolders is List) {
+        for (final dynamic f in earlierFolders) {
+          if (f is String && f.isNotEmpty && !earlierDownloadFolders.contains(f)) earlierDownloadFolders.add(f);
+        }
       }
     }
 
