@@ -523,12 +523,22 @@ class SearchHandler {
 
   // recreate current tab with custom starting page number
   void changeCurrentTabPageNumber(int newPageNum) {
+    // The same tab on another page: it keeps its overrides, its pool and its
+    // doujin identity, and stays in its group.
     final SearchTab newTab = SearchTab(
       currentBooru,
       currentSecondaryBoorus.value,
       currentTab.tags,
       tabId: currentTab.id,
+      tagOverrides: Map<String, String>.from(currentTab.tagOverrides),
+      inheritMainTags: Map<String, bool>.from(currentTab.inheritMainTags),
+      poolId: currentTab.poolId,
+      poolName: currentTab.poolName,
+      doujinPostURL: currentTab.doujinPostURL,
+      doujinTitle: currentTab.doujinTitle,
+      doujinThumb: currentTab.doujinThumb,
     );
+    newTab.groupName = currentTab.groupName;
     newTab.booruHandler.pageNum = newPageNum;
     pageNum.value = newPageNum;
     tabs[currentIndex] = newTab;
@@ -1125,6 +1135,8 @@ class SearchHandler {
       tagOverrides: carriedOverrides,
       inheritMainTags: carriedInherit,
     );
+    // Toggling merge sources keeps the tab in its group.
+    newTab.groupName = currentTab.groupName;
     tabs[currentIndex] = newTab;
 
     // run search

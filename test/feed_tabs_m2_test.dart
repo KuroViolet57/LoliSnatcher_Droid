@@ -252,4 +252,72 @@ void main() {
     expect(sh().currentTab.tags, 'id:2');
   });
 
+  group('the page changer and the merge toggle keep the tab whole', () {
+    testWidgets('Jump to page keeps the group, the overrides, the id', (tester) async {
+      await pumpApp(tester);
+      SettingsHandler.instance.booruList.addAll([gelbooru, danbooru]);
+      final SearchTab tab = SearchTab(
+        gelbooru,
+        null,
+        'cats',
+        tagOverrides: {'danbooru': 'dogs'},
+        inheritMainTags: {'danbooru': false},
+      )..groupName = 'A';
+      sh().tabs.addAll([tab, loaded('b')..groupName = 'A']);
+      select(0);
+      sh().changeCurrentTabPageNumber(4);
+      final SearchTab now = sh().currentTab;
+      expect(now, isNot(same(tab)));
+      expect(now.id, tab.id);
+      expect(now.groupName, 'A');
+      expect(now.tagOverrides, {'danbooru': 'dogs'});
+      expect(now.inheritMainTags, {'danbooru': false});
+      await settle(tester);
+    });
+
+    testWidgets('Jump to page keeps a pool tab a pool tab', (tester) async {
+      await pumpApp(tester);
+      SettingsHandler.instance.booruList.add(gelbooru);
+      final SearchTab tab = SearchTab(gelbooru, null, 'pool: Comic', poolId: '7', poolName: 'Comic');
+      sh().tabs.add(tab);
+      select(0);
+      sh().changeCurrentTabPageNumber(2);
+      expect(sh().currentTab.isPool, isTrue);
+      expect(sh().currentTab.poolId, '7');
+      expect(sh().currentTab.poolName, 'Comic');
+      await settle(tester);
+    });
+
+    testWidgets('Jump to page keeps a doujin detail tab a detail tab', (tester) async {
+      await pumpApp(tester);
+      SettingsHandler.instance.booruList.add(hdoujin);
+      final SearchTab tab = SearchTab(
+        hdoujin,
+        null,
+        'id:225373',
+        doujinPostURL: 'https://hdoujin.org/g/225373/ada0292991b8',
+        doujinTitle: 'A Book',
+        doujinThumb: 'https://thumbs.invalid/225373.jpg',
+      );
+      sh().tabs.add(tab);
+      select(0);
+      sh().changeCurrentTabPageNumber(0);
+      expect(sh().currentTab.doujinPostURL, 'https://hdoujin.org/g/225373/ada0292991b8');
+      expect(sh().currentTab.doujinTitle, 'A Book');
+      expect(sh().currentTab.doujinThumb, 'https://thumbs.invalid/225373.jpg');
+      await settle(tester);
+    });
+
+    testWidgets('the merge toggle keeps the tab in its group', (tester) async {
+      await pumpApp(tester);
+      SettingsHandler.instance.booruList.addAll([gelbooru, danbooru]);
+      sh().tabs.addAll([loaded('a')..groupName = 'A', loaded('b')..groupName = 'A', loaded('c')..groupName = 'A']);
+      select(1);
+      sh().mergeAction([danbooru]);
+      expect(sh().currentTab.groupName, 'A', reason: 'a group is one contiguous block');
+      expect(sh().currentTab.secondaryBoorus.value?.map((b) => b.name), ['danbooru']);
+      await settle(tester);
+    });
+  });
+
 }
