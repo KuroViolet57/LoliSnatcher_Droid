@@ -16,6 +16,7 @@ import 'package:lolisnatcher/core/storage/tag_handler.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/core/logging/logger.dart';
 import 'package:lolisnatcher/features/recommender/logic/post_similarity.dart';
+import 'package:lolisnatcher/core/storage/database_handler.dart';
 
 /// Local behaviour tracker feeding the "For You" recommender.
 ///

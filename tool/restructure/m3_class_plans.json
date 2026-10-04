@@ -41,7 +41,6 @@
      "clearSnatched",
      "clearFavourites",
      "getTrackedValues",
-     "getMultipleTrackedValues",
      "clearSnatchedFlags",
      "deleteUntracked",
      "deleteItem",
@@ -57,7 +56,6 @@
      "updateTags",
      "updateTagsFromObjects",
      "getTagID",
-     "getTags",
      "getTagsByUsageCount"
     ]
    },
@@ -121,10 +119,8 @@
      "purgeTagAliasMisses",
      "setTagAlias",
      "upsertBooruTags",
-     "queryBooruTags",
      "getBooruTagsByNames",
      "getBooruTagSourceId",
-     "countBooruTags",
      "countBooruTagsByNamespace",
      "countBooruTagsByType",
      "deleteBooruTags",
@@ -141,8 +137,6 @@
      "upsertKemonoCreators",
      "pruneKemonoCreators",
      "countKemonoCreators",
-     "queryKemonoCreators",
-     "getKemonoCreatorsByKeys",
      "findKemonoCreatorsByName"
     ]
    },
@@ -150,14 +144,10 @@
     "extension": "DBHistory",
     "doc": "Tab backup, search history, saved searches, visited tabs, seen and viewed posts.",
     "members": [
-     "addTabRestore",
-     "clearTabRestore",
      "getTabRestore",
      "removeTabRestore",
-     "updateSearchHistory",
      "getSearchHistory",
      "getLatestSearchHistory",
-     "getSearchHistoryByInputWithBooru",
      "getSearchHistoryByInput",
      "deleteFromSearchHistory",
      "setFavouriteSearchHistory",
@@ -185,7 +175,6 @@
     "extension": "DBPinsAndReader",
     "doc": "Pinned tags (follows are pins with a label) and doujin reading progress.",
     "members": [
-     "getReaderProgress",
      "updateReaderProgress",
      "addPinnedTag",
      "removePinnedTag",
@@ -200,7 +189,20 @@
      "getPinnedTagLabels"
     ]
    }
-  }
+  },
+  "keptOnClass": [
+   "addTabRestore",
+   "clearTabRestore",
+   "countBooruTags",
+   "getKemonoCreatorsByKeys",
+   "getMultipleTrackedValues",
+   "getReaderProgress",
+   "getSearchHistoryByInputWithBooru",
+   "getTags",
+   "queryBooruTags",
+   "queryKemonoCreators",
+   "updateSearchHistory"
+  ]
  },
  "lib/core/settings/settings_handler.dart": {
   "class": "SettingsHandler",

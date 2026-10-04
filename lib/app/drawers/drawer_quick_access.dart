@@ -26,6 +26,7 @@ import 'package:lolisnatcher/features/settings/ui/sources/source_settings_page.d
 import 'package:lolisnatcher/features/tags/ui/tags_filters_page.dart';
 import 'package:lolisnatcher/app/drawers/drawer_row.dart';
 import 'package:lolisnatcher/features/history/ui/saved_searches/saved_searches_page.dart';
+import 'package:lolisnatcher/core/storage/database_handler.dart';
 
 /// The left ("Pinned tags") sidebar: pinned tags at the top (tap = add to the
 /// current search) and a Quick access section at the bottom (blacklists,

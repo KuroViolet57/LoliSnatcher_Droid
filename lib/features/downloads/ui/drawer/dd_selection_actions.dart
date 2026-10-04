@@ -13,6 +13,7 @@ import 'package:lolisnatcher/core/utils/extensions.dart';
 import 'package:lolisnatcher/features/collections/ui/add_to_collection_sheet.dart';
 import 'package:lolisnatcher/core/ui/settings_widgets.dart';
 import 'package:lolisnatcher/features/downloads/logic/dd_controller.dart';
+import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
 
 class DDSelectionActions extends StatelessWidget {
   const DDSelectionActions({

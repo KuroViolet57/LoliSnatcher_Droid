@@ -8,6 +8,7 @@ import 'package:lolisnatcher/models/tag_suggestion.dart';
 import 'package:lolisnatcher/sources/framework/booru_handler.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/core/logging/logger.dart';
+import 'package:lolisnatcher/core/storage/database_handler.dart';
 
 class FavouritesHandler extends BooruHandler {
   FavouritesHandler(super.booru, super.limit);

@@ -11,6 +11,7 @@ import 'package:lolisnatcher/core/storage/tag_handler.dart';
 import 'package:lolisnatcher/core/network/dio_network.dart';
 import 'package:lolisnatcher/core/logging/logger.dart';
 import 'package:lolisnatcher/core/utils/tools.dart';
+import 'package:lolisnatcher/core/storage/database_handler.dart';
 
 /// Per-booru tag knowledge: a local snapshot of what each site says its tags
 /// are, plus your own corrections on top.

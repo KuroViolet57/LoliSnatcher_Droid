@@ -65,6 +65,7 @@ import 'package:lolisnatcher/features/debug/ui/image_stats.dart';
 import 'package:lolisnatcher/app/scroll_physics.dart';
 import 'package:lolisnatcher/features/video/ui/media_kit_player_view.dart';
 import 'package:lolisnatcher/features/webview/ui/webview_page.dart';
+import 'package:lolisnatcher/core/storage/database_handler.dart';
 
 /// The WebView user agent being read (1.0); see main() and MainApp.initHandlers.
 Future<void>? _userAgentCapture;

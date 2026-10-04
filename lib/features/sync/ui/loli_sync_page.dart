@@ -16,6 +16,7 @@ import 'package:lolisnatcher/features/sync/ui/loli_sync_progress_page.dart';
 import 'package:lolisnatcher/core/utils/extensions.dart';
 import 'package:lolisnatcher/core/ui/flash_elements.dart';
 import 'package:lolisnatcher/core/ui/settings_widgets.dart';
+import 'package:lolisnatcher/core/storage/database_handler.dart';
 
 enum SyncSide {
   none,

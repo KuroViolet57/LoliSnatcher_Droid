@@ -3,6 +3,7 @@ import 'package:lolisnatcher/models/history_item.dart';
 import 'package:lolisnatcher/features/doujin/logic/doujin_data_handler.dart';
 import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/core/storage/database_handler.dart';
 
 /// Domain router for SEARCH history.
 ///

@@ -1,5 +1,6 @@
 import 'package:lolisnatcher/models/pinned_tag.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/core/storage/database_handler.dart';
 
 /// "Following" state for artists (and, in principle, any tag). Persisted as
 /// global pinned tags carrying the [followLabel] — so follows ride along in

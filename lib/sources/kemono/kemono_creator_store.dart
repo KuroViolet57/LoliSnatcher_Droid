@@ -12,6 +12,7 @@ import 'package:lolisnatcher/sources/kemono/kemono_creator.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/core/network/dio_network.dart';
 import 'package:lolisnatcher/core/logging/logger.dart';
+import 'package:lolisnatcher/core/storage/database_handler.dart';
 
 /// Progress of an index refresh.
 class KemonoIndexState {

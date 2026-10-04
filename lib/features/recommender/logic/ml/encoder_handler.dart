@@ -21,6 +21,7 @@ import 'package:lolisnatcher/features/recommender/logic/ml/wordpiece_tokenizer.d
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/core/logging/logger.dart';
 import 'package:lolisnatcher/core/logging/perf_trace.dart';
+import 'package:lolisnatcher/core/storage/database_handler.dart';
 
 /// A sentence encoder the user can download from Hugging Face (r34).
 ///

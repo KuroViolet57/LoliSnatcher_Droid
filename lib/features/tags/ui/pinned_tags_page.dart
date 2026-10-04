@@ -19,6 +19,7 @@ import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/core/storage/tag_handler.dart';
 import 'package:lolisnatcher/features/feed/ui/search/main_search_query_editor_page.dart' show doujinPinsAsPinnedTags;
+import 'package:lolisnatcher/core/storage/database_handler.dart';
 
 /// Tag suggestions for the pin builder.
 typedef PinTagSuggester = Future<List<TagSuggestion>> Function(String input);

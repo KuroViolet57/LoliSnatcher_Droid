@@ -184,6 +184,29 @@ def norm(t):
     return '\n'.join(l[indent:] for l in lines).strip()
 
 
+def overridden_members(cls):
+    """Names that a class extending/implementing [cls] defines, in lib/ and test/."""
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    rx = re.compile(r'\bclass\s+(\w+)(?:<[^>{]*>)?\s+(?:extends|implements|with)\s+[^{]*\b' + re.escape(cls) + r'\b[^{]*\{')
+    names = set()
+    for top in ('lib', 'test'):
+        for d, _, fs in os.walk(os.path.join(root, top)):
+            for f in fs:
+                if not f.endswith('.dart'):
+                    continue
+                src = open(os.path.join(d, f), encoding='utf-8', errors='replace', newline='').read()
+                if cls not in src:
+                    continue
+                for m in rx.finditer(src):
+                    sub = m.group(1)
+                    try:
+                        for c in members_of(src, sub)[3]:
+                            names.add(member_info(c.text, sub)[1])
+                    except (SystemExit, ValueError, AssertionError):
+                        pass
+    return names
+
+
 def members_of(src, class_name):
     b0, b1 = find_class_body(src, class_name)
     body = src[b0:b1]
@@ -209,6 +232,12 @@ def main():
     b0, b1, body, ms, tail = members_of(src, cls)
 
     info = [(m, *member_info(m.text, cls)) for m in ms]
+    # An extension member cannot be overridden: a subclass anywhere (lib or a
+    # test's fake) that redefines a planned member would silently stop being
+    # called. Refuse such a plan.
+    overridden = overridden_members(cls)
+    clash = sorted(n for spec in plan.values() for n in spec['members'] if n in overridden)
+    assert not clash, f'overridden by a subclass, keep them on the class: {clash}'
     owner = {}
     for part, spec in plan.items():
         for n in spec['members']:
@@ -252,8 +281,10 @@ def main():
     open(path, 'w', encoding='utf-8', newline='').write(new_src)
 
     # proof
-    before = collections.Counter(norm(m.text) for m in ms)
-    after = collections.Counter(norm(m.text) for m in members_of(new_src, cls)[3])
+    # Both sides drop `Cls.` before static names: the original may already be
+    # qualified somewhere, and the move qualifies the bare ones.
+    before = collections.Counter(norm(unqualify(m.text, statics, cls)) for m in ms)
+    after = collections.Counter(norm(unqualify(m.text, statics, cls)) for m in members_of(new_src, cls)[3])
     for p in plan:
         t = open(os.path.join(folder, f'{p}.dart'), encoding='utf-8', newline='').read()
         ext = plan[p]['extension']

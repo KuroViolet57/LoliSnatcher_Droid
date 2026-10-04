@@ -4,6 +4,7 @@ import 'package:lolisnatcher/models/booru.dart';
 import 'package:lolisnatcher/models/booru_item.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/core/logging/logger.dart';
+import 'package:lolisnatcher/core/storage/database_handler.dart';
 
 /// Saved reading position for one gallery.
 class ReaderProgress {

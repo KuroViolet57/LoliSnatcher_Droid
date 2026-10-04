@@ -13,6 +13,7 @@ import 'package:lolisnatcher/core/storage/tag_handler.dart';
 import 'package:lolisnatcher/core/ui/settings_widgets.dart';
 import 'package:lolisnatcher/features/viewer/ui/info/tag_view.dart';
 import 'package:lolisnatcher/core/ui/image/booru_favicon.dart';
+import 'package:lolisnatcher/core/storage/database_handler.dart';
 
 /// A dedicated page for any tag: how many matching posts are in your
 /// favourites, and a per-booru strip of the tag's content across every

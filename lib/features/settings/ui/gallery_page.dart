@@ -14,6 +14,7 @@ import 'package:lolisnatcher/core/platform/service_handler.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/core/ui/flash_elements.dart';
 import 'package:lolisnatcher/core/ui/settings_widgets.dart';
+import 'package:lolisnatcher/core/storage/database_handler.dart';
 
 class GalleryPage extends StatefulWidget {
   const GalleryPage({super.key});

@@ -17,6 +17,7 @@ import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/core/platform/get_perms.dart';
 import 'package:lolisnatcher/core/logging/logger.dart';
 import 'package:lolisnatcher/core/logging/startup_timeline.dart';
+import 'package:lolisnatcher/core/storage/database_handler.dart';
 
 class UntypedCollection {
   UntypedCollection(this.tags, this.cooldown, this.booru);

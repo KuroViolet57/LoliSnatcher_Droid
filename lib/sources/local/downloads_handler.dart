@@ -12,6 +12,7 @@ import 'package:lolisnatcher/features/downloads/logic/downloads_reconciler.dart'
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/features/downloads/logic/download_folders.dart';
 import 'package:lolisnatcher/core/logging/logger.dart';
+import 'package:lolisnatcher/core/storage/database_handler.dart';
 
 /// The MEDIA downloads feed: booru images and videos from store.db, each
 /// checked against the download folder before it is listed. Doujins are a

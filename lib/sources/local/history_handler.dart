@@ -3,6 +3,7 @@ import 'package:lolisnatcher/models/meta_tag.dart';
 import 'package:lolisnatcher/sources/framework/booru_handler.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/core/logging/logger.dart';
+import 'package:lolisnatcher/core/storage/database_handler.dart';
 
 /// Virtual booru over the viewing history (ViewedPost table): every post the
 /// user actually opened in the viewer, newest first. Search text filters the

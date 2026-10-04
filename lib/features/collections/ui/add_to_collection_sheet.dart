@@ -9,6 +9,7 @@ import 'package:lolisnatcher/features/doujin/logic/doujin_data_handler.dart';
 import 'package:lolisnatcher/features/recommender/logic/interests_handler.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/core/ui/flash_elements.dart';
+import 'package:lolisnatcher/core/storage/database_handler.dart';
 
 /// Bottom sheet to add/remove posts to/from collections.
 ///

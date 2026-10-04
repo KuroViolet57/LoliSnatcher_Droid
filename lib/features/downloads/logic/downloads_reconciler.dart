@@ -9,6 +9,7 @@ import 'package:lolisnatcher/features/downloads/logic/download_folders.dart';
 import 'package:lolisnatcher/features/downloads/logic/image_writer.dart';
 import 'package:lolisnatcher/core/platform/saf_file_cache.dart';
 import 'package:lolisnatcher/core/logging/logger.dart';
+import 'package:lolisnatcher/core/storage/database_handler.dart';
 
 /// Checks the Downloads list (rows in store.db with isSnatched = 1) against
 /// the files actually under the download root.

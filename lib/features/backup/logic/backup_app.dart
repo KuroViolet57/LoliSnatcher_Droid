@@ -17,6 +17,7 @@ import 'package:lolisnatcher/core/settings/source_settings_handler.dart';
 import 'package:lolisnatcher/core/storage/tag_handler.dart';
 import 'package:lolisnatcher/features/backup/logic/backup_plan.dart';
 import 'package:lolisnatcher/features/backup/logic/drive_backup.dart';
+import 'package:lolisnatcher/core/storage/database_handler.dart';
 
 /// r80: the backup's hooks into the running app.
 BackupHooks appBackupHooks() {

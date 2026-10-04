@@ -47,6 +47,11 @@ def fix_imports(log_path):
         m = rx.search(line)
         if m and m.group(2) in lib_of:
             f = m.group(3).replace('\\', '/')
+            # a part cannot import: the import goes to its library
+            src = open(os.path.join(ROOT, f), encoding='utf-8', newline='').read()
+            po = re.search(r"^part of '([^']+)';", src, re.M)
+            if po:
+                f = os.path.normpath(os.path.join(os.path.dirname(f), po.group(1))).replace('\\', '/')
             need.setdefault(f, set()).add(lib_of[m.group(2)])
     for f, libs in sorted(need.items()):
         path = os.path.join(ROOT, f)

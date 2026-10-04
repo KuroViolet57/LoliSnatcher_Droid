@@ -8,6 +8,7 @@ import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/core/utils/tools.dart';
 import 'package:lolisnatcher/features/collections/ui/add_to_collection_sheet.dart';
 import 'package:lolisnatcher/core/ui/flash_elements.dart';
+import 'package:lolisnatcher/core/storage/database_handler.dart';
 
 /// Browses saved-post collections (albums). Each card opens the collection as
 /// a tab powered by `CollectionsHandler` (so the full grid + viewer + search

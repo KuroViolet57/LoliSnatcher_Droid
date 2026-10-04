@@ -18,6 +18,7 @@ import 'package:lolisnatcher/features/recommender/logic/suggestion_engine.dart';
 import 'package:lolisnatcher/features/tags/logic/tag_alias_resolver.dart';
 // Multi-term facet queries ('3d mating_press') need the per-term resolver.
 import 'package:lolisnatcher/features/tags/logic/query_alias_resolver.dart' as query_resolver;
+import 'package:lolisnatcher/core/storage/database_handler.dart';
 
 /// "For You" recommender: a virtual booru that surfaces posts from the user's
 /// real boorus based on their taste profile (see [InterestsHandler]) or an
