@@ -58,6 +58,15 @@ class DeferredLearning {
     _write();
   }
 
+  /// A reset forgot [world]'s learning: what was kept for it goes too.
+  void forget(String world) {
+    if (_stopped) return;
+    _readFile();
+    final int before = _kept.length;
+    _kept.removeWhere((e) => e['world'] == world);
+    if (_kept.length != before) _write();
+  }
+
   /// Everything kept, oldest first. They are handed over once: the file is
   /// emptied, so a crash during the replay loses them rather than doubling
   /// them.
