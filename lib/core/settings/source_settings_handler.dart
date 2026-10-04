@@ -242,6 +242,10 @@ class SourceSettingsHandler {
   final Map<String, SourceSettings> _byHost = {};
   bool _loaded = false;
 
+  /// Entries of the file this build could not read: written back as they
+  /// were, so one bad value does not cost the other sources their settings.
+  final Map<String, dynamic> _unreadable = {};
+
   static String keyFor(Booru? booru) => Uri.tryParse(booru?.baseURL ?? '')?.host ?? (booru?.name ?? '');
 
   File get _file => File('${SettingsHandler.instance.path}sourceSettings.json');
@@ -249,25 +253,45 @@ class SourceSettingsHandler {
   void _ensureLoaded() {
     if (_loaded) return;
     _loaded = true;
+    String? text;
     try {
       final file = _file;
       if (!file.existsSync()) return;
-      final Map<String, dynamic> data = jsonDecode(file.readAsStringSync());
+      text = file.readAsStringSync();
+      final Map<String, dynamic> data = jsonDecode(text);
       for (final entry in data.entries) {
-        _byHost[entry.key] = SourceSettings.fromJson(entry.value as Map<String, dynamic>);
+        try {
+          _byHost[entry.key] = SourceSettings.fromJson(entry.value as Map<String, dynamic>);
+        } catch (e, s) {
+          _unreadable[entry.key] = entry.value;
+          Logger.Inst().log('failed to read source settings of ${entry.key}: $e', 'SourceSettingsHandler', '_ensureLoaded', LogTypes.exception, s: s);
+        }
       }
     } catch (e, s) {
       Logger.Inst().log('failed to load source settings: $e', 'SourceSettingsHandler', '_ensureLoaded', LogTypes.exception, s: s);
+      // The next change rewrites the file from what was read (nothing): keep
+      // the unreadable one aside first.
+      if (text != null) {
+        try {
+          File('${_file.path}.unreadable').writeAsStringSync(text);
+        } catch (_) {}
+      }
     }
   }
 
   void _save() {
     try {
       final Map<String, dynamic> data = {
+        for (final entry in _unreadable.entries)
+          if (_byHost[entry.key]?.isEmpty ?? true) entry.key: entry.value,
         for (final entry in _byHost.entries)
           if (!entry.value.isEmpty) entry.key: entry.value.toJson(),
       };
-      _file.writeAsStringSync(jsonEncode(data));
+      // Written next to it and renamed over it, so a kill mid-write cannot
+      // leave a cut-off file.
+      final File temp = File('${_file.path}.tmp');
+      temp.writeAsStringSync(jsonEncode(data));
+      temp.renameSync(_file.path);
     } catch (e, s) {
       Logger.Inst().log('failed to save source settings: $e', 'SourceSettingsHandler', '_save', LogTypes.exception, s: s);
     }
@@ -278,6 +302,7 @@ class SourceSettingsHandler {
   @visibleForTesting
   void resetForTests() {
     _byHost.clear();
+    _unreadable.clear();
     _loaded = false;
   }
 
@@ -285,6 +310,7 @@ class SourceSettingsHandler {
   /// backup restore replaces sourceSettings.json on disk.
   void reloadFromDisk() {
     _byHost.clear();
+    _unreadable.clear();
     _loaded = false;
     _ensureLoaded();
   }

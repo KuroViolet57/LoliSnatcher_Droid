@@ -122,7 +122,9 @@ class _GalleryPageState extends State<GalleryPage> {
     settingsHandler.disableVibration = disableVibration;
 
     settingsHandler.volumeButtonsScrollSpeed = (int.tryParse(scrollSpeedController.text) ?? 200).clamp(0, 1_000_000);
-    settingsHandler.galleryAutoScrollTime = (int.tryParse(galleryAutoScrollController.text) ?? 4000).clamp(100, 10000);
+    // The setting's own limits (100 ms .. 100 s): the field has no maximum and
+    // a longer time was silently cut to 10 s.
+    settingsHandler.galleryAutoScrollTime = (int.tryParse(galleryAutoScrollController.text) ?? 4000).clamp(100, 100000);
     settingsHandler.galleryAutoScrollVideoTime =
         (int.tryParse(galleryAutoScrollVideoController.text) ?? 10000).clamp(100, 600000);
 
@@ -425,10 +427,15 @@ class _GalleryPageState extends State<GalleryPage> {
                         ),
                         onPressed: () {
                           setState(() {
+                            // The declared defaults are the buttons' names; these lists hold buttons.
                             buttonOrder.clear();
-                            buttonOrder.addAll(settingsHandler.map['buttonOrder']!['default']);
+                            buttonOrder.addAll(
+                              List<String>.from(settingsHandler.map['buttonOrder']!['default']).map(GalleryButton.fromString).nonNulls,
+                            );
                             disabledButtons.clear();
-                            disabledButtons.addAll(settingsHandler.map['disabledButtons']!['default']);
+                            disabledButtons.addAll(
+                              List<String>.from(settingsHandler.map['disabledButtons']!['default']).map(GalleryButton.fromString).nonNulls,
+                            );
                           });
                         },
                       ),

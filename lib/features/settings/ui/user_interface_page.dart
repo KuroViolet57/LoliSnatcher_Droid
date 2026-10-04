@@ -114,7 +114,8 @@ class _UserInterfacePageState extends State<UserInterfacePage> {
     settingsHandler.scrollGridButtonsPosition = scrollGridButtonsPosition;
     settingsHandler.landscapeColumns = max(1, int.tryParse(columnsLandscapeController.text) ?? 6);
     settingsHandler.portraitColumns = max(1, int.tryParse(columnsPortraitController.text) ?? 3);
-    settingsHandler.mousewheelScrollSpeed = double.parse(mouseSpeedController.text);
+    // An empty field keeps the stored value instead of throwing before the save.
+    settingsHandler.mousewheelScrollSpeed = double.tryParse(mouseSpeedController.text) ?? settingsHandler.mousewheelScrollSpeed;
     await settingsHandler.saveSettings(restate: needThemeChange);
   }
 

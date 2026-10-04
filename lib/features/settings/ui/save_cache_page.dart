@@ -69,9 +69,11 @@ class _SaveCachePageState extends State<SaveCachePage> {
     snatchMode = settingsHandler.snatchMode;
     jsonWrite = settingsHandler.jsonWrite;
     cacheDuration = settingsHandler.cacheDuration;
-    cacheDurationSelected = settingsHandler.map['cacheDuration']!['options']!.firstWhere((dur) {
-      return dur['value'].inSeconds == cacheDuration.inSeconds;
-    });
+    // A stored time that is none of the choices (restored, synced) shows no
+    // choice and is kept as it is.
+    cacheDurationSelected = List<Map<String, dynamic>>.from(settingsHandler.map['cacheDuration']!['options']!)
+        .where((dur) => dur['value'].inSeconds == cacheDuration.inSeconds)
+        .firstOrNull;
     cacheSizeController.text = settingsHandler.cacheSize.toString();
     downloadNotifications = settingsHandler.downloadNotifications;
     snatchOnFavourite = settingsHandler.snatchOnFavourite;
@@ -103,7 +105,8 @@ class _SaveCachePageState extends State<SaveCachePage> {
 
     for (final _CacheType type in cacheTypesToGet) {
       final ReceivePort receivePort = ReceivePort();
-      isolate = await Isolate.spawn(_isolateEntry, receivePort.sendPort);
+      final Isolate spawned = await Isolate.spawn(_isolateEntry, receivePort.sendPort);
+      isolate = spawned;
 
       receivePort.listen((dynamic data) async {
         if (mounted) {
@@ -115,7 +118,14 @@ class _SaveCachePageState extends State<SaveCachePage> {
           } else {
             cacheStats.add(data);
             setState(() {});
+            // The stat is the last message: the port was left open before.
+            receivePort.close();
           }
+        } else {
+          // The page is gone: nobody will read the stat, and an isolate still
+          // waiting for its folder would wait forever.
+          receivePort.close();
+          spawned.kill(priority: Isolate.immediate);
         }
       });
     }
@@ -131,13 +141,15 @@ class _SaveCachePageState extends State<SaveCachePage> {
   }
 
   Future<void> _onPopInvoked(_, _) async {
-    settingsHandler.snatchCooldown = int.parse(snatchCooldownController.text);
+    // An empty field keeps the stored value instead of throwing and losing
+    // every other change on this page.
+    settingsHandler.snatchCooldown = int.tryParse(snatchCooldownController.text) ?? settingsHandler.snatchCooldown;
     settingsHandler.jsonWrite = jsonWrite;
     settingsHandler.mediaCache = mediaCache;
     settingsHandler.thumbnailCache = thumbnailCache;
     settingsHandler.videoCacheMode = videoCacheMode;
     settingsHandler.cacheDuration = cacheDuration;
-    settingsHandler.cacheSize = int.parse(cacheSizeController.text);
+    settingsHandler.cacheSize = int.tryParse(cacheSizeController.text) ?? settingsHandler.cacheSize;
     // r82: through DownloadFolders, so the folder left is remembered and
     // the new one's file list is read at once.
     if (extPathOverride != settingsHandler.extPathOverride) await DownloadFolders.change(extPathOverride);

@@ -413,7 +413,9 @@ class _SourceSettingsPageState extends State<SourceSettingsPage> {
     required T? inheritedValue,
     required void Function(T?) onChanged,
   }) {
-    final T? shown = layerValue ?? (isGlobal ? layerValue : inheritedValue);
+    // The global layer shows the default that applies when it is unset, as
+    // its switches do (no chip was selected there).
+    final T? shown = layerValue ?? inheritedValue;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       child: Column(
@@ -795,7 +797,8 @@ class _SourceSettingsPageState extends State<SourceSettingsPage> {
             subtitle: 'The Recommended strip keeps loading more as you scroll.',
             layerValue: layer.recommendedCount == null ? null : layer.recommendedCount == 0,
             inheritedValue: sourceSettings.recommendedCount(booru) == 0,
-            onChanged: (v) => _update((s) => s.recommendedCount = (v ?? false) ? 0 : 30),
+            // null is the marker's reset: back to inheriting, not 30.
+            onChanged: (v) => _update((s) => s.recommendedCount = v == null ? null : (v ? 0 : 30)),
           ),
           if (sourceSettings.recommendedCount(booru) != 0)
             _stepperRow(

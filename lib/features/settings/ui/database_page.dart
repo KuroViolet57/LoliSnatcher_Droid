@@ -753,7 +753,8 @@ class _DatabasePageState extends State<DatabasePage> {
                       trailingIcon: const Icon(Symbols.delete_forever_rounded),
                       drawTopBorder: true,
                       action: () {
-                        setState(purgeFailedSankakuItems);
+                        // It updates the page itself when done; setState must not get a Future.
+                        unawaited(purgeFailedSankakuItems());
                       },
                     ),
                     SettingsButton(

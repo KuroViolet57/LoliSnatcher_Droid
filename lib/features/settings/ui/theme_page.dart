@@ -120,7 +120,8 @@ class _ThemePageState extends State<ThemePage> {
       tag: 'theme_change',
       callback: () async {
         await _onPopInvoked(false, null, withRestate: withRestate);
-        setState(() {});
+        // The save can end after the page is closed.
+        if (mounted) setState(() {});
       },
       duration: const Duration(milliseconds: 500),
     );

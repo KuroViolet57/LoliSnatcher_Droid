@@ -56,7 +56,9 @@ class _EHentaiLoginPageState extends State<EHentaiLoginPage> {
     if (_done || _finishing) return;
     final Map<String, String> pairs = await EHentaiSessionHandler.instance.readJar();
     final parsed = EHentaiSessionHandler.fromCookiePairs(pairs);
-    if (parsed.memberId == null || parsed.passHash == null) return;
+    // The poll and onLoadStop can both be waiting on the jar: only the first
+    // one through finishes the login and pops.
+    if (_done || _finishing || parsed.memberId == null || parsed.passHash == null) return;
     _finishing = true;
     _poll?.cancel();
     final EHentaiSessionHandler session = EHentaiSessionHandler.instance;

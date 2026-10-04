@@ -66,7 +66,7 @@ class _LanguageDropdownState extends State<LanguageDropdown> {
     super.initState();
 
     LocaleSettings.instance.loadAllLocales().then((_) {
-      setState(() {});
+      if (mounted) setState(() {});
     });
 
     locale = settingsHandler.locale.value;
@@ -89,7 +89,7 @@ class _LanguageDropdownState extends State<LanguageDropdown> {
         await settingsHandler.loadBoorus();
         await settingsHandler.saveSettings(restate: false);
         unawaited(SearchHandler.instance.backupTabs());
-        setState(() {});
+        if (mounted) setState(() {});
       },
       title: context.loc.settings.language.title,
       itemBuilder: (e) => Row(
@@ -241,6 +241,13 @@ class _POEditorProgressWidgetState extends State<POEditorProgressWidget> {
     _fetchLanguages();
   }
 
+  // The request can finish after the page is closed: the fields are still
+  // set (an error is logged below), the rebuild happens only while mounted.
+  void _apply(VoidCallback fn) {
+    fn();
+    if (mounted) setState(() {});
+  }
+
   Future<void> _fetchLanguages() async {
     setState(() {
       _error = null;
@@ -263,7 +270,7 @@ class _POEditorProgressWidgetState extends State<POEditorProgressWidget> {
 
       final data = response.data;
       if (data['response']['status'] == 'success') {
-        setState(() {
+        _apply(() {
           _languages = data['result']['languages'];
           _isLoading = false;
         });
@@ -277,18 +284,18 @@ class _POEditorProgressWidgetState extends State<POEditorProgressWidget> {
           return aName.compareTo(bName);
         });
       } else {
-        setState(() {
+        _apply(() {
           _error = 'POEditor Error: ${data['response']['message']}';
           _isLoading = false;
         });
       }
     } on DioException catch (e) {
-      setState(() {
+      _apply(() {
         _error = 'Network Error: ${e.message}';
         _isLoading = false;
       });
     } catch (e) {
-      setState(() {
+      _apply(() {
         _error = 'An unexpected error occurred: $e';
         _isLoading = false;
       });

@@ -1308,6 +1308,10 @@ class SettingsHandler {
             }
           }
 
+        case 'double':
+          // A whole number in the file (e.g. 25) is still a valid double.
+          return value is num ? value.toDouble() : value;
+
         // case 'stringList':
         default:
           return value;
@@ -1336,6 +1340,9 @@ class SettingsHandler {
     if (await checkForSettings()) {
       await loadSettingsJson();
     } else {
+      // A fresh install already starts on the Flow defaults: mark the one-time
+      // migration done, or the next start would undo this session's theme.
+      flowSkinApplied.value = true;
       await saveSettings(restate: true);
     }
     return true;
@@ -2235,7 +2242,8 @@ class SettingsHandler {
         ];
 
         final disableableButtons = [...GalleryButton.disableable];
-        for (final button in tempDisabledButtons) {
+        // Over a copy: removing from the list being iterated threw.
+        for (final button in [...tempDisabledButtons]) {
           if (disableableButtons.any((e) => e == button)) {
             // do nothing
           } else {
@@ -2291,17 +2299,25 @@ class SettingsHandler {
     modelTasks
       ..clear()
       ..addAll(ModelTasks.parse(json['modelTasks']));
-    modelThreads
-      ..clear()
-      ..addAll(ModelTasks.parseThreads(json['modelThreads']));
-    modelRunOn
-      ..clear()
-      ..addAll(ModelTasks.parseRunOn(json['modelRunOn']));
-    earlierDownloadFolders.clear();
-    final dynamic earlierFolders = json['earlierDownloadFolders'];
-    if (earlierFolders is List) {
-      for (final dynamic f in earlierFolders) {
-        if (f is String && f.isNotEmpty && !earlierDownloadFolders.contains(f)) earlierDownloadFolders.add(f);
+    // These three belong to this phone (deviceSpecificSettings): a LoliSync
+    // payload (setMissingKeys false) leaves them out and must not clear them.
+    if (setMissingKeys || json.containsKey('modelThreads')) {
+      modelThreads
+        ..clear()
+        ..addAll(ModelTasks.parseThreads(json['modelThreads']));
+    }
+    if (setMissingKeys || json.containsKey('modelRunOn')) {
+      modelRunOn
+        ..clear()
+        ..addAll(ModelTasks.parseRunOn(json['modelRunOn']));
+    }
+    if (setMissingKeys || json.containsKey('earlierDownloadFolders')) {
+      earlierDownloadFolders.clear();
+      final dynamic earlierFolders = json['earlierDownloadFolders'];
+      if (earlierFolders is List) {
+        for (final dynamic f in earlierFolders) {
+          if (f is String && f.isNotEmpty && !earlierDownloadFolders.contains(f)) earlierDownloadFolders.add(f);
+        }
       }
     }
 
@@ -2385,7 +2401,10 @@ class SettingsHandler {
     if (setMissingKeys) {
       // find all keys that are missing in the file and set them to default values
       map.forEach((key, value) {
-        if (!json.keys.contains(key)) {
+        // The lists read above already got their defaults; their declared
+        // defaults are strings, which setByString cannot assign.
+        if (!json.keys.contains(key) &&
+            !['buttonOrder', 'disabledButtons', 'hiddenTags', 'markedTags'].contains(key)) {
           if (map[key] != null) {
             setByString(key, map[key]!['default']);
           }
@@ -2440,16 +2459,49 @@ class SettingsHandler {
   /// tells [loadSettings] to persist immediately so it never re-runs.
   bool _flowMigrationPending = false;
 
+  /// Numbers each save's copy of the settings in the order it was taken, and
+  /// the newest copy that reached settings.json.
+  int _saveSnapshot = 0;
+  int _savedSnapshot = 0;
+
   Future<bool> saveSettings({required bool restate}) async {
     await getStoragePermission();
     if (path == '') {
       await setConfigDir();
     }
     await Directory(path).create(recursive: true);
+    // Each save writes a file of its own and renames it over settings.json:
+    // a kill or an error mid-write leaves the previous file whole, and two
+    // saves at once no longer write into the same file together.
+    final String json = jsonEncode(toJson());
+    final int snapshot = ++_saveSnapshot;
     final File settingsFile = File('${path}settings.json');
-    final writer = settingsFile.openWrite();
-    writer.write(jsonEncode(toJson()));
+    final File tempFile = File('${path}settings.json.$snapshot.tmp');
+    final writer = tempFile.openWrite();
+    writer.write(json);
     await writer.close();
+    if (snapshot > _savedSnapshot) {
+      try {
+        // Synchronous, so no other save lands between the check and the rename.
+        tempFile.renameSync(settingsFile.path);
+        _savedSnapshot = snapshot;
+      } on FileSystemException {
+        // The rename was refused (a file another program holds open): write
+        // in place, as before.
+        _savedSnapshot = snapshot;
+        final inPlace = settingsFile.openWrite();
+        inPlace.write(json);
+        await inPlace.close();
+        try {
+          await tempFile.delete();
+        } catch (_) {}
+      }
+    } else {
+      // A save that read the settings later has already landed.
+      try {
+        await tempFile.delete();
+      } catch (_) {}
+    }
 
     if (restate) {
       final searchHandler = SearchHandler.instance;
@@ -2666,7 +2718,9 @@ class SettingsHandler {
 
   Future<bool> deleteBooru(Booru booru) async {
     final File booruFile = File('$boorusPath${booru.name}.json');
-    await booruFile.delete();
+    if (await booruFile.exists()) {
+      await booruFile.delete();
+    }
     if (prefBooru == booru.name) {
       prefBooru = '';
       await saveSettings(restate: true);
@@ -2856,6 +2910,17 @@ class SettingsHandler {
     if (set.isEmpty) hiddenTagsPerBooru.remove(booruName);
     invalidateBlacklistCache(booruName: booruName);
     saveSettings(restate: false);
+  }
+
+  /// The lines are keyed by booru name: a renamed booru (or one added as
+  /// 'New' on the booru editor) takes its lines to its saved name.
+  Future<void> moveBooruHiddenList(String fromName, String toName) async {
+    if (fromName.isEmpty || toName.isEmpty || fromName == toName) return;
+    final Set<String>? lines = hiddenTagsPerBooru.remove(fromName);
+    if (lines == null || lines.isEmpty) return;
+    hiddenTagsPerBooru.putIfAbsent(toName, () => <String>{}).addAll(lines);
+    invalidateBlacklistCache();
+    await saveSettings(restate: false);
   }
 
   // ─── Blacklist line cache ────────────────────────────────────────────────
@@ -3082,7 +3147,7 @@ class SettingsHandler {
         page: (_) => Scaffold(
           appBar: SettingsAppBar(
             title:
-                '${isDiffVersion ? loc.settings.checkForUpdates.updateAvailable : '${isAfterUpdate ? loc.settings.checkForUpdates.whatsNew : loc.settings.checkForUpdates.updateChangelog}:'} ${updateInfo.value!.versionName}+${updateInfo.value!.buildNumber}',
+                '${isDiffVersion ? loc.settings.checkForUpdates.updateAvailable : '${isAfterUpdate ? loc.settings.checkForUpdates.whatsNew : loc.settings.checkForUpdates.updateChangelog}:'} ${_updateInfo.versionName}+${_updateInfo.buildNumber}',
           ),
           body: SafeArea(
             child: Column(

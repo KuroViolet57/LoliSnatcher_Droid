@@ -51,7 +51,9 @@ class _FurAffinityLoginPageState extends State<FurAffinityLoginPage> {
     if (_done) return;
     final FurAffinitySessionHandler session = FurAffinitySessionHandler.instance;
     final parsed = FurAffinitySessionHandler.fromCookiePairs(await session.readJar());
-    if (parsed.a == null || parsed.b == null) return;
+    // The poll and onLoadStop can both be waiting on the jar: only the first
+    // one through stores the session and pops (a second pop closed the page below).
+    if (_done || parsed.a == null || parsed.b == null) return;
     _done = true;
     _poll?.cancel();
     session.store(a: parsed.a!, b: parsed.b!);
