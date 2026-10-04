@@ -1349,6 +1349,7 @@ class _BooruEditState extends State<BooruEdit> {
         return;
       }
 
+      bool replacedOld = false;
       for (int i = 0; i < settingsHandler.booruList.length; i++) {
         // The booru being edited, found by its URL before the edit (a changed
         // URL used to leave the old config in place next to the new one).
@@ -1360,11 +1361,18 @@ class _BooruEditState extends State<BooruEdit> {
             // remove the old config (same url and name as the start booru)
             settingsHandler.booruList.removeAt(i);
             await settingsHandler.deleteBooru(widget.booru);
+            replacedOld = true;
           }
         }
       }
 
       await settingsHandler.saveBooru(newBooru);
+      // Per-booru lines are keyed by name: a renamed booru takes its lines
+      // along, and a new one the lines added before its first save (a doujin
+      // source never uses booru lines, so they stay where they were).
+      if (replacedOld || (widget.booru.name == 'New' && !DoujinDataHandler.isDoujinBooru(newBooru))) {
+        await settingsHandler.moveBooruHiddenList(widget.booru.name ?? '', newBooru.name ?? '');
+      }
       // Open tabs built their handler from the OLD config; re-point them at
       // the saved one so a changed type/URL takes effect immediately instead
       // of only after an app restart.

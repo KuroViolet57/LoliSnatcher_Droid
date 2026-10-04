@@ -2866,6 +2866,17 @@ class SettingsHandler {
     saveSettings(restate: false);
   }
 
+  /// The lines are keyed by booru name: a renamed booru (or one added as
+  /// 'New' on the booru editor) takes its lines to its saved name.
+  Future<void> moveBooruHiddenList(String fromName, String toName) async {
+    if (fromName.isEmpty || toName.isEmpty || fromName == toName) return;
+    final Set<String>? lines = hiddenTagsPerBooru.remove(fromName);
+    if (lines == null || lines.isEmpty) return;
+    hiddenTagsPerBooru.putIfAbsent(toName, () => <String>{}).addAll(lines);
+    invalidateBlacklistCache();
+    await saveSettings(restate: false);
+  }
+
   // ─── Blacklist line cache ────────────────────────────────────────────────
   // Each entry in `hiddenTags` / `hiddenTagsPerBooru[name]` is treated as an
   // e621-style blacklist line. We cache the parsed form so filtering N items

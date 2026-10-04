@@ -154,4 +154,44 @@ void main() {
     expect(File('${s.boorusPath}Y.json').existsSync(), isTrue);
   });
 
+  testWidgets('a renamed booru keeps its own hidden lines', (tester) async {
+    final Booru x = Booru('X', BooruType.Gelbooru, '', 'https://a.example', '');
+    final Booru other = Booru('other', BooruType.Gelbooru, '', 'https://other.example', '');
+    await tester.runAsync(() => s.saveBooru(x, onlySave: true));
+    s.booruList.addAll([x, other]);
+    s.hiddenTagsPerBooru['X'] = {'male solo'};
+    s.isDebug.value = true;
+    SearchHandler.instance.tabs.add(SearchTab(other, null, 'tag'));
+
+    await open(tester, BooruEdit(x));
+    await tester.enterText(field('X'), 'Y');
+    await tester.pump();
+    await saveBooru(tester, () => s.booruList.any((b) => b.name == 'Y') && s.hiddenTagsForBooru('Y').isNotEmpty);
+
+    expect(s.booruList.map((b) => b.name), unorderedEquals(['Y', 'other']));
+    expect(s.hiddenTagsForBooru('Y'), {'male solo'});
+    expect(s.hiddenTagsForBooru('X'), isEmpty);
+  });
+
+  testWidgets('hidden lines added on "Add new booru" before saving belong to the saved booru', (tester) async {
+    final Booru other = Booru('other', BooruType.Gelbooru, '', 'https://other.example', '');
+    s.booruList.add(other);
+    // What the add page's per-booru editor stores before the first save.
+    s.hiddenTagsPerBooru['New'] = {'male solo'};
+    s.isDebug.value = true;
+    SearchHandler.instance.tabs.add(SearchTab(other, null, 'tag'));
+
+    await open(tester, BooruEdit(Booru('New', null, '', '', '')));
+    final Finder fields = find.byType(TextField);
+    await tester.enterText(fields.at(0), 'Z');
+    await tester.enterText(fields.at(1), 'https://z.example');
+    tester.widget<SettingsDropdown<BooruType>>(find.byType(SettingsDropdown<BooruType>)).onChanged!(BooruType.Gelbooru);
+    await tester.pump();
+    await saveBooru(tester, () => s.booruList.any((b) => b.name == 'Z') && s.hiddenTagsForBooru('Z').isNotEmpty);
+
+    expect(s.booruList.map((b) => b.name), unorderedEquals(['Z', 'other']));
+    expect(s.hiddenTagsForBooru('Z'), {'male solo'});
+    expect(s.hiddenTagsForBooru('New'), isEmpty);
+  });
+
 }
