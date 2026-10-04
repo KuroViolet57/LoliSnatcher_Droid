@@ -362,17 +362,21 @@ class _FurAffinitySidebarState extends State<FurAffinitySidebar> {
 
 /// The artists someone watches, a page of 200 at a time (r42).
 class FurAffinityWatchlistPage extends StatefulWidget {
-  const FurAffinityWatchlistPage({required this.booru, required this.username, super.key});
+  const FurAffinityWatchlistPage({required this.booru, required this.username, this.handler, super.key});
 
   final Booru booru;
   final String username;
+
+  /// Tests hand in a handler with canned pages.
+  @visibleForTesting
+  final FurAffinityHandler? handler;
 
   @override
   State<FurAffinityWatchlistPage> createState() => _FurAffinityWatchlistPageState();
 }
 
 class _FurAffinityWatchlistPageState extends State<FurAffinityWatchlistPage> {
-  late final FurAffinityHandler handler = FurAffinityHandler(widget.booru, FurAffinityHandler.pageSize);
+  late final FurAffinityHandler handler = widget.handler ?? FurAffinityHandler(widget.booru, FurAffinityHandler.pageSize);
   final List<FurAffinityWatchEntry> users = [];
   int page = 0;
   bool hasNext = true;
@@ -421,7 +425,9 @@ class _FurAffinityWatchlistPageState extends State<FurAffinityWatchlistPage> {
           Expanded(
             child: NotificationListener<ScrollNotification>(
               onNotification: (n) {
-                if (n.metrics.extentAfter < 600) unawaited(_more());
+                // After a failed page only a new scroll gesture tries again,
+                // not every notification of the same scroll (one request each).
+                if (n.metrics.extentAfter < 600 && (error == null || n is ScrollStartNotification)) unawaited(_more());
                 return false;
               },
               child: ListView.builder(
