@@ -217,6 +217,11 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
 
         bool isCancelled = false;
 
+        // The text this lookup answers. Once the page is closed, or the user
+        // typed on, its answer is dropped instead of replacing the newer one.
+        final String input = suggestionTextControllerCleanedInput;
+        bool isStale() => !mounted || suggestionTextControllerCleanedInput != input;
+
         final metaTags = searchHandler.currentBooruHandler.availableMetaTags();
         final MetaTag? metaTag = metaTags.firstWhereOrNull(
           (p) => p.keyParser(suggestionTextControllerCleanedInput) != null,
@@ -228,10 +233,13 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
             searchHandler.currentBooru,
             suggestionTextControllerCleanedInput,
           );
+          if (isStale()) return;
           if (fromCatalog != null) {
             suggestedTags = fromCatalog;
           } else if (metaTag.hasAutoComplete) {
-            suggestedTags = await metaTag.getAutoComplete(suggestionTextControllerCleanedInput);
+            final List<TagSuggestion> autoComplete = await metaTag.getAutoComplete(suggestionTextControllerCleanedInput);
+            if (isStale()) return;
+            suggestedTags = autoComplete;
             suggestedTags.sort((a, b) => a.tag.compareTo(b.tag));
           } else {
             suggestedTags.clear();
@@ -262,7 +270,9 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
                 failedMsg = e.statusCode?.toString() ?? e.message;
               }
 
-              setState(() {});
+              if (mounted) {
+                setState(() {});
+              }
             },
             (data) {
               loading = false;
@@ -307,6 +317,7 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
                         !databaseSearch.any((dbtag) => dbtag.tag.trim().toLowerCase() == htag.tag.trim().toLowerCase()),
                   )
                   .toList();
+          if (isStale()) return;
 
           loading = false;
           failed = false;
@@ -799,6 +810,8 @@ class _MainSearchQueryEditorPageState extends State<MainSearchQueryEditorPage> {
 
   @override
   void dispose() {
+    debounce?.cancel();
+    cancelToken?.cancel();
     searchHandler.searchTextController.removeListener(onSearchTextChanged);
     suggestionTextFocusNode.removeListener(suggestionTextFocusListener);
     suggestionTextFocusNode.dispose();
