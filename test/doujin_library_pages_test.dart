@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:get_it/get_it.dart';
 
 import 'package:lolisnatcher/models/booru_type.dart';
 import 'package:lolisnatcher/models/booru.dart';
@@ -18,15 +19,28 @@ import 'package:lolisnatcher/features/downloads/logic/snatch_handler.dart';
 import 'package:lolisnatcher/core/settings/source_settings_handler.dart';
 import 'package:lolisnatcher/core/storage/tag_handler.dart';
 import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
+import 'package:lolisnatcher/features/recommender/logic/recommender_handler.dart';
+import 'package:lolisnatcher/features/recommender/logic/rewards.dart';
+import 'package:lolisnatcher/sources/framework/booru_handler.dart';
 import 'package:lolisnatcher/sources/doujin/asmhentai/asmhentai_handler.dart';
 import 'package:lolisnatcher/sources/doujin/ehentai/ehentai_query.dart';
 import 'package:lolisnatcher/sources/doujin/hitomi/hitomi_handler.dart';
 import 'package:lolisnatcher/sources/doujin/nhentai/nhentai_handler.dart';
 
+/// Hears what the favourite path tells the recommender.
+class _RecordingRecommender extends RecommenderHandler {
+  final List<(String, InteractionKind)> events = [];
+
+  @override
+  Future<void> onEvent(BooruItem item, InteractionKind kind, {double value = 0, BooruHandler? handler, Map<String, String>? namespaces}) async {
+    events.add((item.postURL, kind));
+  }
+}
+
 /// 1.0 M2: the doujin library screens open tabs other code then has to read -
 /// a followed artist as a query every source understands, a bookmark on its
 /// own source with its gallery key, and the account favourites feed only where
-/// the source has one.
+/// the source has one. A favourite swiped away leaves like any unfavourite.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -126,6 +140,41 @@ void main() {
     final SearchTab tab = SearchHandler.instance.tabs.last;
     expect(tab.selectedBooru.value.baseURL, 'https://e-hentai.org');
     expect(tab.tags, 'id:123/abcdef0123');
+
+    await closePage(tester);
+  });
+
+  testWidgets('swiping a favourite away is an unfavourite: the recommender hears it, loaded cards lose the heart', (tester) async {
+    final Booru booru = nhentaiBooru();
+    SettingsHandler.instance.booruList.add(booru);
+    BooruItem gallery() => BooruItem(
+      fileURL: 'https://images.invalid/177013.png',
+      sampleURL: 'https://images.invalid/177013.png',
+      thumbnailURL: '',
+      tagsList: [Tag('vanilla')],
+      postURL: 'https://nhentai.net/g/177013/',
+      serverId: '177013',
+    )..description = 'Favourite Gallery';
+    DoujinDataHandler.instance.toggleFavourite(gallery(), booru);
+    // The same gallery's card, already loaded in an open tab.
+    final SearchTab tab = SearchTab(booru, null, 'vanilla');
+    final BooruItem card = gallery()..isFavourite.value = true;
+    tab.booruHandler.fetched.add(card);
+    SearchHandler.instance.tabs.add(tab);
+    final _RecordingRecommender recommender = _RecordingRecommender();
+    GetIt.instance.registerSingleton<RecommenderHandler>(recommender);
+    addTearDown(RecommenderHandler.unregister);
+
+    await pumpPage(tester, const DoujinFavouritesListPage());
+    await tester.drag(find.text('Favourite Gallery'), const Offset(-600, 0));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Favourite Gallery'), findsNothing);
+    expect(DoujinDataHandler.instance.favourites, isEmpty);
+    // The swipe used to drop the store entry and nothing else: no account
+    // sync, no unfavourite for the recommender, the loaded card still hearted.
+    expect(recommender.events, [('https://nhentai.net/g/177013/', InteractionKind.unfavourite)]);
+    expect(card.isFavourite.value, isFalse);
 
     await closePage(tester);
   });

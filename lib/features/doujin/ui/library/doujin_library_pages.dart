@@ -5,9 +5,15 @@ import 'package:intl/intl.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/models/booru_item.dart';
+import 'package:lolisnatcher/models/tag.dart';
+import 'package:lolisnatcher/sources/framework/booru_handler.dart';
+import 'package:lolisnatcher/sources/framework/booru_handler_factory.dart';
+import 'package:lolisnatcher/sources/doujin/common/doujin_tag_namespaces.dart';
 import 'package:lolisnatcher/features/doujin/logic/doujin_data_handler.dart';
 import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/core/ui/flash_elements.dart';
 import 'package:lolisnatcher/core/ui/image/custom_network_image.dart';
 
 /// The doujin-only library screens: favourites, history, collections,
@@ -98,6 +104,60 @@ Widget _entryTile(
   );
 }
 
+/// A favourite swiped off the list is an unfavourite like the heart's: it
+/// goes through [DoujinDataHandler.toggleFavouriteSynced], so the site account
+/// (nhentai key, eahentai login) and the recommender hear of it. The store
+/// entry goes before the first await, as the Dismissible needs.
+Future<void> _unfavouriteEntry(BuildContext context, DoujinEntry entry) async {
+  final DoujinDataHandler store = DoujinDataHandler.instance;
+  if (!store.favourites.containsKey(entry.postURL)) return;
+  final BooruItem item = BooruItem(
+    fileURL: '',
+    sampleURL: '',
+    thumbnailURL: entry.thumbnailURL,
+    // Bare names with their types, as the source's own items carry them.
+    tagsList: [
+      for (final String raw in entry.tags)
+        if (raw.indexOf(':') > 0)
+          Tag(raw.substring(raw.indexOf(':') + 1), tagType: doujinTagTypeFor(raw.substring(0, raw.indexOf(':'))))
+        else
+          Tag(raw),
+    ],
+    postURL: entry.postURL,
+    serverId: entry.serverId,
+    description: entry.title,
+  );
+  // Only the gallery's own source is told: another site's handler would
+  // unfavourite whatever gallery has the same id there.
+  BooruHandler? handler;
+  for (final Booru b in SettingsHandler.instance.booruList) {
+    if (DoujinDataHandler.isDoujinSource(b) && DoujinDataHandler.hostOf(b) == entry.booruHost) {
+      try {
+        handler = BooruHandlerFactory().getBooruHandler([b], null).booruHandler;
+      } catch (_) {}
+      break;
+    }
+  }
+  final synced = handler == null ? null : store.toggleFavouriteSynced(item, handler);
+  if (synced == null) store.toggleFavourite(item, null);
+  // Cards of it already loaded in open tabs lose their heart too.
+  for (final SearchTab tab in SearchHandler.instance.tabs) {
+    for (final BooruItem loaded in tab.booruHandler.fetched) {
+      if (loaded.postURL == entry.postURL) loaded.isFavourite.value = false;
+    }
+  }
+  if (synced == null) return;
+  final result = await synced;
+  if (result.syncAttempted && context.mounted) {
+    FlashElements.showSnackbar(
+      context: context,
+      title: Text(result.message ?? (result.syncOk ? 'Synced' : 'Sync failed')),
+      duration: const Duration(seconds: 2),
+      sideColor: result.syncOk ? Colors.green : Colors.red,
+    );
+  }
+}
+
 Widget _emptyNote(String text) => Padding(
   padding: const EdgeInsets.all(24),
   child: Center(child: Text(text, textAlign: TextAlign.center)),
@@ -128,10 +188,7 @@ class DoujinFavouritesListPage extends StatelessWidget {
                 context,
                 e,
                 fallback: booru,
-                onDelete: () {
-                  store.favourites.remove(e.postURL);
-                  store.save();
-                },
+                onDelete: () => _unfavouriteEntry(context, e),
               ),
           ],
         );
