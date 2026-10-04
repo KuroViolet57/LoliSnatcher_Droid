@@ -145,4 +145,38 @@ void main() {
       expect(merge.hashInFetched([item('1', md5: 'abc')], 'abc', 'https://img.other.com/images/9.png'), isTrue, reason: 'a real md5 match still is one');
     });
   });
+
+  group('Set-Cookie into the jar', () {
+    test('a value with "=" in it is kept whole (base64 padding)', () {
+      expect(Tools.parseSetCookie('sess=abc==; Path=/; Secure').value, 'abc==');
+      expect(Tools.parseSetCookie('token=a=b=c').value, 'a=b=c');
+      expect(Tools.parseSetCookie('sess=abc==; Path=/').name, 'sess');
+      expect(Tools.parseSetCookie('plain=value; path=/').value, 'value');
+    });
+
+    test('the attributes reach the jar: domain, path, expiry, secure, httponly', () {
+      final int expiry = DateTime.utc(2037, 10, 21, 7, 28).millisecondsSinceEpoch;
+      final full = Tools.parseSetCookie('sess=abc==; Path=/app; Domain=.site.example; Expires=Wed, 21 Oct 2037 07:28:00 GMT; Secure; HttpOnly');
+      expect(full.domain, '.site.example');
+      expect(full.path, '/app');
+      expect(full.expiresDate, expiry);
+      expect(full.isSecure, isTrue);
+      expect(full.isHttpOnly, isTrue);
+
+      expect(Tools.parseSetCookie('a=1; expires=Wed, 21-Oct-2037 07:28:00 GMT').expiresDate, expiry, reason: 'the dashed date servers send');
+      final int now = DateTime.now().millisecondsSinceEpoch;
+      expect(
+        Tools.parseSetCookie('a=1; Max-Age=3600; Expires=Wed, 21 Oct 2037 07:28:00 GMT').expiresDate,
+        inInclusiveRange(now + 3600 * 1000 - 5000, now + 3600 * 1000 + 5000),
+        reason: 'Max-Age wins over Expires',
+      );
+
+      final plain = Tools.parseSetCookie('plain=value');
+      expect(plain.domain, isNull, reason: 'host-only');
+      expect(plain.path, isNull, reason: 'saveCookies writes "/"');
+      expect(plain.expiresDate, isNull, reason: 'a session cookie');
+      expect(plain.isSecure, isFalse);
+      expect(plain.isHttpOnly, isFalse);
+    });
+  });
 }
