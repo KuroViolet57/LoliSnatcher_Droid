@@ -38,6 +38,12 @@ class DownloadsReconciler {
 
   static void _defaultLog(String line) => Logger.Inst().log(line, 'DownloadsReconciler', 'check', LogTypes.booruHandlerInfo);
 
+  /// 1.0: whether a picked folder is read through Android's folder access;
+  /// replaced in tests.
+  bool Function() isAndroid = _defaultIsAndroid;
+
+  static bool _defaultIsAndroid() => Platform.isAndroid;
+
   /// r83: folders already described in the log this run (a key per folder).
   final Set<String> _described = {};
 
@@ -49,6 +55,7 @@ class DownloadsReconciler {
 
   void resetForTests() {
     logLine = _defaultLog;
+    isAndroid = _defaultIsAndroid;
     _described.clear();
     foundIn.clear();
   }
@@ -75,6 +82,24 @@ class DownloadsReconciler {
         logLine('downloads: earlier folder "${DownloadFolders.describe(folder)}" could not be described: $e');
       }
     }
+  }
+
+  /// 1.0: the picked folder's listing answers a failure with no names, which
+  /// read as an empty folder: every download "missing", and Forget offered.
+  /// An empty listing is believed only when the folder, asked again, holds
+  /// no files and reports no error.
+  Future<bool> _listingFailed(String folder, List<BooruItem> items) async {
+    if (items.isEmpty || SAFFileCache.instance.fileNames.isNotEmpty) return false;
+    try {
+      final FolderProbe probe = await DownloadFolders.probe(folder);
+      if (probe.error == null && probe.files == 0) return false;
+      logLine('downloads: the current folder listed no files, but asked again: ${probe.describe()}');
+    } catch (e) {
+      logLine('downloads: the current folder listed no files and could not be asked again: $e');
+    }
+    // Listed again on the next check; until then each file is asked for.
+    SAFFileCache.instance.invalidate();
+    return true;
   }
 
   /// The row's booru — the writer's file name starts with its NAME, so the
@@ -106,11 +131,11 @@ class DownloadsReconciler {
     final writer = ImageWriter();
     await writer.setPaths();
     final String extPath = settings.extPathOverride;
-    final bool saf = Platform.isAndroid && extPath.isNotEmpty;
+    final bool saf = isAndroid() && extPath.isNotEmpty;
 
     if (saf) {
       if (!SAFFileCache.instance.isPopulated) await SAFFileCache.instance.populate(extPath);
-      if (!SAFFileCache.instance.isPopulated) {
+      if (!SAFFileCache.instance.isPopulated || await _listingFailed(extPath, items)) {
         storageProblem = 'the chosen storage folder could not be listed';
         return (present: items, missing: <BooruItem>[], unknown: items);
       }
