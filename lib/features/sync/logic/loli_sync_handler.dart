@@ -149,7 +149,9 @@ class LoliSync {
           req.response.write(totalResult);
 
           final int lastIndex = offset + size;
-          if (lastIndex == amount - 1) {
+          // 1.0: the last batch ends AT the amount (offset + size), never one
+          // before it, so this line never showed.
+          if (lastIndex >= amount) {
             return 'Favourites Synced';
           } else {
             return '$offset-$lastIndex / $amount - $totalResult';
@@ -584,12 +586,13 @@ class LoliSync {
 
                 final String resp = await sendBooruBatch(fetched, count, offset);
                 final int updatedCount = offset + fetched.length;
-                yield '$offset-$updatedCount / $updatedCount - $resp';
+                // 1.0: out of the total, not out of itself ("0-100 / 100").
+                yield '$offset-$updatedCount / $count - $resp';
               }
             }
-            yield 'Favourites sent';
+            yield isSnatched ? 'Snatched sent' : 'Favourites sent';
           } else {
-            yield 'No Favourites';
+            yield isSnatched ? 'No Snatched' : 'No Favourites';
           }
           break;
         case 'Favourites':

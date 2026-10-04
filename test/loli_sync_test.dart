@@ -114,5 +114,70 @@ void main() {
       expect(s.modelThreads, {'tagger.waiting': 6});
       expect(s.modelRunOn, {'text': 'xnnpack'});
     });
+
+    test('the last batch of a favourites sync says the favourites are synced', () async {
+      if (!dbReady) return;
+      final _Request req = _Request(
+        'POST',
+        '/lolisync/boorubatch?amount=150&offset=100&size=50',
+        jsonEncode([for (int i = 100; i < 150; i++) post(i).toJson()]),
+      );
+      final String result = await LoliSync().storeBooruBatch(req, SettingsHandler.instance);
+      expect(result, 'Favourites Synced');
+      expect(req.response.written.toString(), 'Added 50', reason: 'the answer to the sender is unchanged');
+    });
+
+    test('a batch before the last one says how far the sync is', () async {
+      if (!dbReady) return;
+      final _Request req = _Request(
+        'POST',
+        '/lolisync/boorubatch?amount=150&offset=0&size=100',
+        jsonEncode([for (int i = 0; i < 100; i++) post(i).toJson()]),
+      );
+      expect(await LoliSync().storeBooruBatch(req, SettingsHandler.instance), '0-100 / 150 - Added 100');
+    });
+  });
+
+  group('sending', () {
+    // Requests go nowhere here: the test binding answers every HttpClient
+    // request with an empty 400.
+    test('each batch line counts against the total, not against itself', () async {
+      if (!dbReady) return;
+      final batch = SettingsHandler.instance.dbHandler.db!.batch();
+      for (int i = 0; i < 150; i++) {
+        batch.rawInsert(
+          'INSERT INTO BooruItem(thumbnailURL, sampleURL, fileURL, postURL, mediaType, isSnatched, isFavourite) VALUES(?,?,?,?,?,?,?)',
+          [post(i).thumbnailURL, post(i).sampleURL, post(i).fileURL, post(i).postURL, 'image', 0, 1],
+        );
+      }
+      await batch.commit(noResult: true);
+
+      final List<String> lines = await LoliSync()
+          .startSync('127.0.0.1', '1', ['Favouritesv2'], 0, 0, TabsMode.merge, TagsMode.overwrite)
+          .toList();
+
+      expect(lines, contains('0-100 / 150 - '));
+      expect(lines, contains('100-150 / 150 - '));
+      expect(lines, contains('Favourites sent'));
+    });
+
+    test('a snatched sync speaks of snatched items, not favourites', () async {
+      if (!dbReady) return;
+      final List<String> empty = await LoliSync()
+          .startSync('127.0.0.1', '1', ['Snatched'], 0, 0, TabsMode.merge, TagsMode.overwrite)
+          .toList();
+      expect(empty, isNot(contains('No Favourites')));
+      expect(empty, contains('No Snatched'));
+
+      await SettingsHandler.instance.dbHandler.db!.rawInsert(
+        'INSERT INTO BooruItem(thumbnailURL, sampleURL, fileURL, postURL, mediaType, isSnatched, isFavourite) VALUES(?,?,?,?,?,?,?)',
+        [post(1).thumbnailURL, post(1).sampleURL, post(1).fileURL, post(1).postURL, 'image', 1, 0],
+      );
+      final List<String> one = await LoliSync()
+          .startSync('127.0.0.1', '1', ['Snatched'], 0, 0, TabsMode.merge, TagsMode.overwrite)
+          .toList();
+      expect(one, isNot(contains('Favourites sent')));
+      expect(one, contains('Snatched sent'));
+    });
   });
 }
