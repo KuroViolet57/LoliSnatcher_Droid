@@ -1446,9 +1446,6 @@ class SearchHandler {
     final List<SearchTab> restoredGlobals = [];
     int newIndex = 0;
 
-    // reset current tab index to avoid exceptions when tab list length is different
-    changeTabIndex(0, switchOnly: true);
-
     for (final List<String> booruAndTags in splitInput) {
       // check for parsing errors
       final bool isEntryValid = booruAndTags.length > 1 && booruAndTags[0].isNotEmpty;
@@ -1463,15 +1460,21 @@ class SearchHandler {
           final SearchTab newTab = SearchTab(findBooru, null, booruAndTags[1]);
           restoredGlobals.add(newTab);
 
-          if (booruAndTags[2] == 'selected') {
+          if (booruAndTags.length > 2 && booruAndTags[2] == 'selected') {
             final int index = splitInput.indexWhere((si) => si == booruAndTags);
             newIndex = index;
           }
         }
       }
     }
-    tabs.value = restoredGlobals;
-    changeTabIndex(newIndex);
+    // None of them can open here: keep this device's tabs (an empty tab
+    // list breaks every screen that shows the current tab).
+    if (restoredGlobals.isNotEmpty) {
+      // reset current tab index to avoid exceptions when tab list length is different
+      changeTabIndex(0, switchOnly: true);
+      tabs.value = restoredGlobals;
+      changeTabIndex(newIndex);
+    }
 
     final context = NavigationHandler.instance.navContext;
     FlashElements.showSnackbar(
@@ -1622,22 +1625,25 @@ class SearchHandler {
     final List<SearchTab> restoredTabs = [];
     int newSelectedIndex = 0;
 
-    // reset current tab index to avoid exceptions when tab list length is different
-    changeTabIndex(0, switchOnly: true);
-
     for (final tabBackup in tabBackups) {
       final newTab = parseTabFromBackup(tabBackup);
       if (newTab.selectedBooru.value.name != null) {
         restoredTabs.add(newTab);
 
         if (newSelectedIndex == 0 && tabBackup.selected) {
-          final int index = tabBackups.indexWhere((tb) => tb == tabBackup);
-          newSelectedIndex = index;
+          // An index into the restored tabs: tabs of sources missing here are skipped.
+          newSelectedIndex = restoredTabs.length - 1;
         }
       }
     }
-    tabs.value = restoredTabs;
-    changeTabIndex(newSelectedIndex);
+    // None of them can open here: keep this device's tabs (an empty tab
+    // list breaks every screen that shows the current tab).
+    if (restoredTabs.isNotEmpty) {
+      // reset current tab index to avoid exceptions when tab list length is different
+      changeTabIndex(0, switchOnly: true);
+      tabs.value = restoredTabs;
+      changeTabIndex(newSelectedIndex);
+    }
 
     final context = NavigationHandler.instance.navContext;
     FlashElements.showSnackbar(

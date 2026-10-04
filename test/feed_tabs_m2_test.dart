@@ -198,4 +198,42 @@ void main() {
     });
   });
 
+  group('replaceTabs (debug page, LoliSync replace)', () {
+    testWidgets('tabs whose sources are all missing here leave the current tabs in place', (tester) async {
+      await pumpApp(tester);
+      SettingsHandler.instance.booruList.add(gelbooru);
+      final a = loaded('a'), b = loaded('b');
+      sh().tabs.addAll([a, b]);
+      select(1);
+      sh().replaceTabs(jsonEncode([TabBackup(tags: 'x', booru: 'not on this device', selected: true).toJson()]));
+      expect(sh().tabs, [a, b]);
+      expect(sh().currentTab, same(b));
+    });
+
+    testWidgets('a legacy entry without the third part does not throw', (tester) async {
+      await pumpApp(tester);
+      SettingsHandler.instance.booruList.addAll([gelbooru, hdoujin]);
+      sh().tabs.add(loaded('a'));
+      select(0);
+      sh().replaceTabs('hdoujin|||id:1');
+      expect(sh().tabs.map((t) => t.tags).toList(), ['id:1']);
+      await settle(tester);
+    });
+
+    testWidgets('the selected tab stays selected when an earlier tab is skipped', (tester) async {
+      await pumpApp(tester);
+      SettingsHandler.instance.booruList.addAll([gelbooru, hdoujin]);
+      sh().tabs.add(loaded('a'));
+      select(0);
+      sh().replaceTabs(jsonEncode([
+        TabBackup(tags: 'x', booru: 'not on this device').toJson(),
+        doujinBackup('1'),
+        doujinBackup('2', selected: true),
+        doujinBackup('3'),
+      ]));
+      expect(sh().tabs.map((t) => t.tags).toList(), ['id:1', 'id:2', 'id:3']);
+      expect(sh().currentTab.tags, 'id:2');
+    });
+  });
+
 }
