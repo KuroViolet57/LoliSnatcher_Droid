@@ -133,13 +133,15 @@ class _SaveCachePageState extends State<SaveCachePage> {
   }
 
   Future<void> _onPopInvoked(_, _) async {
-    settingsHandler.snatchCooldown = int.parse(snatchCooldownController.text);
+    // An empty field keeps the stored value instead of throwing and losing
+    // every other change on this page.
+    settingsHandler.snatchCooldown = int.tryParse(snatchCooldownController.text) ?? settingsHandler.snatchCooldown;
     settingsHandler.jsonWrite = jsonWrite;
     settingsHandler.mediaCache = mediaCache;
     settingsHandler.thumbnailCache = thumbnailCache;
     settingsHandler.videoCacheMode = videoCacheMode;
     settingsHandler.cacheDuration = cacheDuration;
-    settingsHandler.cacheSize = int.parse(cacheSizeController.text);
+    settingsHandler.cacheSize = int.tryParse(cacheSizeController.text) ?? settingsHandler.cacheSize;
     // r82: through DownloadFolders, so the folder left is remembered and
     // the new one's file list is read at once.
     if (extPathOverride != settingsHandler.extPathOverride) await DownloadFolders.change(extPathOverride);

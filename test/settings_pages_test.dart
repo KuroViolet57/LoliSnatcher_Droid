@@ -131,6 +131,22 @@ void main() {
     expect(s.cacheDuration, const Duration(seconds: 7200));
   });
 
+  testWidgets('Save & cache: an empty snatch cooldown or cache size does not stop the other changes being saved', (tester) async {
+    s
+      ..snatchCooldown = 4321
+      ..cacheSize = 7
+      ..jsonWrite = false;
+    await open(tester, const SaveCachePage());
+    await tester.enterText(field('4321'), '');
+    await tester.enterText(field('7'), '');
+    await tester.pump();
+    await leave(tester);
+    expect(tester.takeException(), isNull);
+    expect(s.snatchCooldown, 4321, reason: 'an empty field keeps the stored value');
+    expect(s.cacheSize, 7);
+    expect(await saved(tester), isTrue, reason: 'the page saved on exit');
+  });
+
   testWidgets('Viewer: resetting the toolbar order puts every button back, and that is what is saved', (tester) async {
     s.buttonOrder = [...GalleryButton.values.reversed];
     s.disabledButtons = [GalleryButton.share];
