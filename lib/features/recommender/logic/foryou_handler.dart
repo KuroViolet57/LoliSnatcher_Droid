@@ -244,6 +244,36 @@ class ForYouHandler extends BooruHandler {
     }
   }
 
+  /// One search at a time per source handler: a handler's search is not
+  /// re-entrant (its page, query and results are shared). The history blend
+  /// asks up to nine facets over a few sources, so the facets that land on
+  /// one source take turns; sources still run in parallel.
+  final Map<BooruHandler, Future<void>> _lanes = {};
+
+  /// Runs [ask] in [handler]'s lane. The answer is given up (null) after
+  /// [timeout] counted from now, waiting included, so a page never waits
+  /// longer than before; a turn that comes after that is skipped, and the
+  /// lane always waits for a running search to end before the next starts.
+  Future<List<BooruItem>?> _inLane(BooruHandler handler, Future<List<BooruItem>> Function() ask, Duration timeout) {
+    final Completer<List<BooruItem>?> answer = Completer();
+    final Timer timer = Timer(timeout, () {
+      if (!answer.isCompleted) answer.complete(null);
+    });
+    final Future<void> turn = (_lanes[handler] ?? Future<void>.value()).then((_) async {
+      if (answer.isCompleted) return;
+      try {
+        final List<BooruItem> got = await ask();
+        if (!answer.isCompleted) answer.complete(got);
+      } catch (_) {
+        if (!answer.isCompleted) answer.complete(null);
+      } finally {
+        timer.cancel();
+      }
+    });
+    _lanes[handler] = turn.catchError((Object _) {});
+    return answer.future;
+  }
+
   Future<void> _init(String tags) async {
     // Re-derive the seed set when the query changes (same handler instance) —
     // otherwise editing the search did nothing and the old feed kept coming.
@@ -543,15 +573,16 @@ class ForYouHandler extends BooruHandler {
           );
           if (aliased != null && aliased.trim().isNotEmpty) query = aliased;
 
-          handler.pageNum = _sourceStartPages[j] + 1 + _feedPage;
-          handler.locked = false;
-          final List<BooruItem>? got = await _bounded(
-            () async => (await handler.search(withFilter(query), null)) as List<BooruItem>? ?? <BooruItem>[],
-            _searchTimeout,
-          );
-          if (got == null) return MapEntry(facet, <BooruItem>[]);
-          // Sub-handlers accumulate across pages; keep only this round's tail.
-          final List<BooruItem> tail = got.length > limit ? got.sublist(got.length - limit) : [...got];
+          final int page = _sourceStartPages[j] + 1 + _feedPage;
+          final List<BooruItem>? tail = await _inLane(handler, () async {
+            handler.pageNum = page;
+            handler.locked = false;
+            final List<BooruItem> got = (await handler.search(withFilter(query), null)) as List<BooruItem>? ?? <BooruItem>[];
+            // Sub-handlers accumulate across pages; keep only this round's
+            // tail (taken before the lane moves on).
+            return got.length > limit ? got.sublist(got.length - limit) : [...got];
+          }, _searchTimeout);
+          if (tail == null) return MapEntry(facet, <BooruItem>[]);
           return MapEntry(
             facet,
             tail.where((i) => !SearchHandler.instance.isPostSeen(i) && !_isDuplicate(i)).toList(),
@@ -563,6 +594,15 @@ class ForYouHandler extends BooruHandler {
     final Map<SuggestionFacet, List<BooruItem>> byFacet = {};
     for (final entry in await Future.wait(requests)) {
       byFacet.putIfAbsent(entry.key, () => []).addAll(entry.value);
+    }
+
+    // r34 (as the seed path and the Suggested strip): what the user marked
+    // "Not interested" leaves the candidates before the blend.
+    final RecommenderHandler? recommender = RecommenderHandler.maybe;
+    if (recommender != null) {
+      for (final SuggestionFacet facet in byFacet.keys.toList()) {
+        byFacet[facet] = await recommender.withoutDismissed(byFacet[facet]!);
+      }
     }
 
     final List<BooruItem> blended = SuggestionEngine.blend(
