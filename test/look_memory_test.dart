@@ -82,6 +82,27 @@ void main() {
     expect(remembered, [post('v', video: true).postURL]);
   });
 
+  test('1.0 (M2): a post left as the app goes away is remembered the next time it is left', () async {
+    // The real queue skips the step while the app is away (lite).
+    bool away = true;
+    memory.queue = (String label, Future<void> Function() step) async {
+      if (!away) await step();
+    };
+    await open(post('a'));
+    now = now.add(const Duration(seconds: 3));
+    await open(null);
+    expect(remembered, isEmpty, reason: 'nothing read while the app was away');
+    away = false;
+    await open(post('a'));
+    now = now.add(const Duration(seconds: 3));
+    await open(null);
+    expect(remembered, [post('a').postURL], reason: 'remembered the next time it is opened');
+    await open(post('a'));
+    now = now.add(const Duration(seconds: 3));
+    await open(null);
+    expect(remembered, [post('a').postURL], reason: 'and then once per run, as before');
+  });
+
   test('nothing with the switch or the looks model off, for a hidden post or a doujin item; a post once per run', () async {
     wanted = false;
     await open(post('a'));

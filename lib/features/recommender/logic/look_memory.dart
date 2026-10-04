@@ -84,7 +84,17 @@ class LookMemory {
     while (_asked.length > keepAsked) {
       _asked.remove(_asked.first);
     }
-    unawaited(queue('remember look', () => remember(item, booru)));
+    // A step skipped because the app went away read nothing: the post is
+    // asked for again the next time it is left.
+    bool ran = false;
+    unawaited(
+      queue('remember look', () {
+        ran = true;
+        return remember(item, booru);
+      }).whenComplete(() {
+        if (!ran) _asked.remove(key);
+      }),
+    );
   }
 
   // ── defaults ──
