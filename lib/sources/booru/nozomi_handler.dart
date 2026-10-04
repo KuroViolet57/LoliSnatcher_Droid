@@ -68,7 +68,8 @@ class NozomiHandler extends BooruHandler {
       return fetched;
     }
 
-    tags = translateOrSyntax(tags.trim());
+    // Source settings (default filters, always-add terms) as BooruHandler.search applies them.
+    tags = translateOrSyntax(sourceQuery(tags.trim()));
     if (prevTags != tags) {
       fetched.value = [];
       totalCount.value = 0;

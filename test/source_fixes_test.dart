@@ -20,6 +20,8 @@ import 'package:lolisnatcher/models/booru_tag.dart';
 import 'package:lolisnatcher/models/booru_type.dart';
 import 'package:lolisnatcher/models/tag.dart';
 import 'package:lolisnatcher/models/tag_type.dart';
+import 'package:lolisnatcher/sources/booru/hydrus_handler.dart';
+import 'package:lolisnatcher/sources/booru/nozomi_handler.dart';
 import 'package:lolisnatcher/sources/framework/booru_handler.dart';
 import 'package:lolisnatcher/sources/framework/booru_handler_factory.dart';
 import 'package:lolisnatcher/sources/furaffinity/furaffinity_handler.dart';
@@ -37,6 +39,34 @@ class _GatedDb extends DBHandler {
     return [
       for (final _ in items) [true, true],
     ];
+  }
+}
+
+class _Stop implements Exception {}
+
+/// Records what a search hands to the OR translation - the query after the
+/// source settings were applied - and stops before any request.
+class _NozomiProbe extends NozomiHandler {
+  _NozomiProbe(super.booru, super.limit);
+
+  String? asked;
+
+  @override
+  String translateOrSyntax(String tags) {
+    asked = tags;
+    throw _Stop();
+  }
+}
+
+class _HydrusProbe extends HydrusHandler {
+  _HydrusProbe(super.booru, super.limit);
+
+  String? asked;
+
+  @override
+  String translateOrSyntax(String tags) {
+    asked = tags;
+    throw _Stop();
   }
 }
 
@@ -181,6 +211,28 @@ void main() {
       expect(plain.expiresDate, isNull, reason: 'a session cookie');
       expect(plain.isSecure, isFalse);
       expect(plain.isHttpOnly, isFalse);
+    });
+  });
+
+  group('Source settings reach the handlers that search by themselves', () {
+    test('Nozomi: always-add terms are searched', () async {
+      final Booru nozomi = Booru('Nozomi', BooruType.Nozomi, '', 'https://nozomi.la', '');
+      SourceSettingsHandler.instance.update(nozomi, (s) => s.alwaysAdd = 'sort:popular');
+      final _NozomiProbe probe = _NozomiProbe(nozomi, 20);
+
+      await expectLater(probe.search('cat', null), throwsA(isA<_Stop>()));
+
+      expect(probe.asked, 'cat sort:popular');
+    });
+
+    test('Hydrus: always-add terms are searched', () async {
+      final Booru hydrus = Booru('Hydrus', BooruType.Hydrus, '', 'http://127.0.0.1:45869', '');
+      SourceSettingsHandler.instance.update(hydrus, (s) => s.alwaysAdd = 'system:inbox');
+      final _HydrusProbe probe = _HydrusProbe(hydrus, 20);
+
+      await expectLater(probe.search('cat', null), throwsA(isA<_Stop>()));
+
+      expect(probe.asked, 'cat system:inbox');
     });
   });
 
