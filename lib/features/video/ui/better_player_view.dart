@@ -57,6 +57,10 @@ class _BetterPlayerPool {
     _lru.remove(s);
   }
 
+  /// Whether a live controller other than [s]'s belongs to the page on screen.
+  static bool holdsViewedOtherThan(_BetterPlayerViewState s) =>
+      _lru.any((o) => !identical(o, s) && o.mounted && o.widget.isViewed);
+
   static void touch(_BetterPlayerViewState s) {
     if (!_lru.contains(s)) return;
     _lru.remove(s);
@@ -261,6 +265,11 @@ class _BetterPlayerViewState extends State<BetterPlayerView> {
     // evicted ExoPlayer's native release to actually settle — allocating a new
     // MediaCodec while the old one is mid-release is a common abort trigger.
     // (We're inside the gate, so nothing else is creating/disposing meanwhile.)
+    //
+    // A neighbour being preloaded never takes the decoder from the video on
+    // screen: with one slot that would black it out, and an evicted page only
+    // re-inits when its isViewed flips. It inits once it is swiped to.
+    if (!widget.isViewed && _BetterPlayerPool.holdsViewedOtherThan(this)) return;
     _BetterPlayerPool.makeRoomFor(this);
     await Future.delayed(const Duration(milliseconds: 300));
     if (!mounted || !_wantsPlayer || _controller != null) return;
