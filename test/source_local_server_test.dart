@@ -1,0 +1,173 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:alice_lightweight/alice.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart'
+    show HTTPCookieSameSitePolicy, InAppWebViewPlatform, PlatformCookieManager, PlatformCookieManagerCreationParams, PlatformInAppWebViewController, WebUri;
+import 'package:flutter_test/flutter_test.dart';
+
+import 'package:lolisnatcher/core/logging/logger.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/core/settings/source_settings_handler.dart';
+import 'package:lolisnatcher/core/storage/tag_handler.dart';
+import 'package:lolisnatcher/core/utils/tools.dart';
+import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/sources/booru/ink_bunny_handler.dart';
+
+/// The WebView cookie jar, as a list of what was written into it.
+class _RecordingCookieManager extends PlatformCookieManager {
+  _RecordingCookieManager() : super.implementation(const PlatformCookieManagerCreationParams());
+
+  final List<({String name, String value})> written = [];
+
+  @override
+  Future<bool> setCookie({
+    required WebUri url,
+    required String name,
+    required String value,
+    String path = '/',
+    String? domain,
+    int? expiresDate,
+    int? maxAge,
+    bool? isSecure,
+    bool? isHttpOnly,
+    HTTPCookieSameSitePolicy? sameSite,
+    PlatformInAppWebViewController? iosBelow11WebViewController,
+    PlatformInAppWebViewController? webViewController,
+  }) async {
+    written.add((name: name, value: value));
+    return true;
+  }
+}
+
+class _FakeWebViewPlatform extends InAppWebViewPlatform {
+  _FakeWebViewPlatform(this.cookies);
+
+  final _RecordingCookieManager cookies;
+
+  @override
+  PlatformCookieManager createPlatformCookieManager(PlatformCookieManagerCreationParams params) => cookies;
+}
+
+/// m2 (1.0): source bugs that only show over a real connection. Every
+/// request goes to a server on this machine's loopback address that answers
+/// like the site would; nothing leaves the PC.
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  final _RecordingCookieManager jar = _RecordingCookieManager();
+  InAppWebViewPlatform.instance = _FakeWebViewPlatform(jar);
+  // The test binding answers every request with a 400 of its own; these tests
+  // need the real client, talking only to the server below.
+  HttpOverrides.global = null;
+
+  late HttpServer server;
+  late String base;
+  late Directory tempDir;
+  final Map<String, Future<void> Function(HttpRequest request)> routes = {};
+  final List<Uri> seen = [];
+
+  Future<void> answer(HttpRequest request, Object body, {ContentType? type}) async {
+    request.response.headers.contentType = type ?? ContentType.json;
+    request.response.write(body is String ? body : jsonEncode(body));
+    await request.response.close();
+  }
+
+  setUpAll(() async {
+    server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    base = 'http://127.0.0.1:${server.port}';
+    server.listen((HttpRequest request) async {
+      seen.add(request.uri);
+      for (final MapEntry<String, Future<void> Function(HttpRequest)> route in routes.entries) {
+        if (request.uri.path.startsWith(route.key)) {
+          await route.value(request);
+          return;
+        }
+      }
+      request.response.statusCode = 404;
+      await request.response.close();
+    });
+  });
+
+  tearDownAll(() async {
+    await server.close(force: true);
+  });
+
+  setUp(() {
+    SettingsHandler.register();
+    ViewerHandler.register();
+    TagHandler.register();
+    tempDir = Directory.systemTemp.createTempSync('source_local_server_test');
+    SettingsHandler.instance
+      ..path = '${tempDir.path}${Platform.pathSeparator}'
+      ..alice = Alice();
+    SourceSettingsHandler.instance.resetForTests();
+    Logger.Inst();
+    // No WebView jar on a test host.
+    Tools.cookieJarReaderOverride = (String uri) async => const {};
+    routes.clear();
+    seen.clear();
+  });
+
+  tearDown(() {
+    Tools.resetCookieJarForTests();
+    SourceSettingsHandler.instance.resetForTests();
+    try {
+      tempDir.deleteSync(recursive: true);
+    } catch (_) {}
+  });
+
+  test("InkBunny: a signed-in session's id never reaches the log", () async {
+    const String sid = 'SIDVALUE0123456789abc';
+    routes['/api_login.php'] = (r) => answer(r, {'sid': sid, 'user_id': '0', 'ratingsmask': '11100'});
+    routes['/api_userrating.php'] = (r) => answer(r, {'sid': sid});
+    routes['/api_search.php'] = (r) => answer(r, {
+      'sid': sid,
+      'results_count_all': '1',
+      'pages_count': 1,
+      'submissions': [
+        {'submission_id': '10'},
+      ],
+    });
+    routes['/api_submissions.php'] = (r) => answer(r, {
+      'sid': sid,
+      'submissions': [
+        {
+          'submission_id': '10',
+          'username': 'someartist',
+          'keywords': [
+            {'keyword_name': 'red fox'},
+          ],
+          'pools': [],
+          'files': [
+            {
+              'file_url_screen': 'https://media.invalid/s.png',
+              'file_url_preview': 'https://media.invalid/p.png',
+              'file_url_full': 'https://media.invalid/f.png',
+              'full_size_x': '100',
+              'full_size_y': '100',
+              'screen_size_x': '50',
+              'screen_size_y': '50',
+              'preview_size_x': '10',
+              'preview_size_y': '10',
+              'full_file_md5': 'abc',
+            },
+          ],
+          'favorites_count': '3',
+          'create_datetime': '2026-01-01 10:00:00.123+00',
+          'rating_name': 'General',
+        },
+      ],
+    });
+    final Booru inkbunny = Booru('InkBunny', BooruType.InkBunny, '', base, '');
+    final int before = Logger.talker.history.length;
+
+    await InkBunnyHandler(inkbunny, 20).search('fox', null);
+
+    expect(seen.any((u) => u.queryParameters['sid'] == sid), isTrue, reason: 'the session was used');
+    final String logged = [for (final e in Logger.talker.history.skip(before)) e.generateTextMessage()].join('\n');
+    expect(logged, contains('api_search.php'), reason: 'the requests are still logged');
+    expect(logged, isNot(contains(sid)));
+  });
+}

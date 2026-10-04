@@ -92,8 +92,9 @@ class InkBunnyHandler extends BooruHandler {
       final Map<String, dynamic> parsedResponse = response.data;
       if (parsedResponse['sid'] != null) {
         sessionToken = parsedResponse['sid'].toString();
+        // Not the token itself: it is the account's session.
         Logger.Inst().log(
-          'Inkbunny session token found: $sessionToken',
+          'Inkbunny session token found',
           'InkBunnyHandler',
           'getSessionToken',
           LogTypes.booruHandlerInfo,

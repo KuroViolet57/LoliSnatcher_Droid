@@ -72,6 +72,9 @@ String redactSecrets(String input, {List<String>? extraSecrets}) {
     'igneous',
     // r85: the Gelbooru-engine login cookie (rule34.xxx and others).
     'pass_hash',
+    // 1.0: InkBunny's session id, a query parameter of every request and a
+    // field of every answer (`sid=…` in a URL, `sid: …` in a decoded map).
+    'sid',
   ]) {
     out = out.replaceAllMapped(
       RegExp('(${RegExp.escape(name)}\\s*[=:]\\s*"?)[^;,"\\s&]+', caseSensitive: false),
@@ -98,6 +101,8 @@ String redactSecrets(String input, {List<String>? extraSecrets}) {
     'login',
     'username',
     'email',
+    // 1.0: InkBunny's session id in a raw answer.
+    'sid',
   ]) {
     out = out.replaceAllMapped(
       RegExp('("${RegExp.escape(name)}"\\s*:\\s*")[^"]*(")'),

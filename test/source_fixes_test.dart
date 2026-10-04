@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:lolisnatcher/core/logging/log_redaction.dart';
 import 'package:lolisnatcher/core/logging/logger.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/core/settings/source_settings_handler.dart';
@@ -57,6 +58,18 @@ void main() {
       expect(logged, contains('www.furaffinity.net'), reason: 'the line is still written, for diagnosis');
       expect(logged, isNot(contains('FASESSIONA0123456789')));
       expect(logged, isNot(contains('FASESSIONB0123456789')));
+    });
+
+    test("InkBunny's session id is redacted in a URL, a decoded answer and a raw JSON body", () {
+      const String sid = 'SIDVALUE0123456789abc';
+      expect(redactSecrets('https://inkbunny.net/api_search.php?output_mode=json&sid=$sid&text=cat'), isNot(contains(sid)));
+      expect(redactSecrets('{sid: $sid, results_count_all: 3}'), isNot(contains(sid)));
+      expect(redactSecrets('{"sid":"$sid","results_count_all":"3"}'), isNot(contains(sid)));
+      expect(
+        redactSecrets('https://inkbunny.net/api_search.php?output_mode=json&sid=$sid&text=cat'),
+        contains('text=cat'),
+        reason: 'only the value goes',
+      );
     });
   });
 }
