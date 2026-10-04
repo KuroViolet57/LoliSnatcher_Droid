@@ -525,6 +525,14 @@ class _BoardEditPageState extends State<BoardEditPage> {
       }
     }
     final Board? existing = widget.board;
+    // The saved board's own copy of a picture it no longer uses (removed, or
+    // replaced under another name) goes now; nothing else would delete it.
+    final String previous = existing?.imagePath ?? '';
+    if (previous.isNotEmpty && previous != imagePath && previous.startsWith(store.imagesDir.path)) {
+      try {
+        File(previous).deleteSync();
+      } catch (_) {}
+    }
     final Board board = Board(
       id: id,
       name: typed.isNotEmpty ? typed : Board.nameFromDescription(desc),
@@ -535,10 +543,15 @@ class _BoardEditPageState extends State<BoardEditPage> {
       imagePath: imagePath,
       imageUrl: url,
       imageBooru: imageBooru,
-      // The cached matches stay; a changed image makes them stale by itself.
+      // The cached matches, picture tags and look stay; a changed image
+      // makes them stale by itself (each is keyed by the image it was made from).
       matches: existing?.matches,
       matchedAt: existing?.matchedAt,
       matchedImage: existing?.matchedImage ?? '',
+      pixelTags: existing?.pixelTags,
+      pixelImage: existing?.pixelImage ?? '',
+      lookVector: existing?.lookVector,
+      lookImage: existing?.lookImage ?? '',
       createdAt: existing?.createdAt,
     );
     final Board saved = await store.save(board);
