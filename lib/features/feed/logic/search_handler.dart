@@ -441,11 +441,13 @@ class SearchHandler {
 
   void removeTagFromSearch(String tag) {
     if (tag.isNotEmpty) {
-      searchTextController.text = searchTextController.text
-          .replaceAll(RegExp(r'(?:-|~)?\d+#(?:-|~)?' + tag.regexpEscape()), '')
-          .replaceAll('-$tag', '')
-          .replaceAll('~$tag', '')
-          .replaceAll(tag, '');
+      // Whole tags only (`blue` leaves `blue_eyes` and `navy-blue` alone),
+      // with their -, ~ and N# forms. A tag ends at a space, or at a comma
+      // in Hydrus' comma-separated queries.
+      searchTextController.text = searchTextController.text.replaceAll(
+        RegExp(r'(?<=^|\s|,)(?:(?:-|~)?\d+#)?(?:-|~)?' + tag.regexpEscape() + r'(?=$|\s|,)'),
+        '',
+      );
     }
   }
 

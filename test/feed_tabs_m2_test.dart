@@ -320,4 +320,42 @@ void main() {
     });
   });
 
+  group('removeTagFromSearch removes whole tags only', () {
+    List<String> removeFrom(String query, String tag) {
+      sh().searchTextController.text = query;
+      sh().removeTagFromSearch(tag);
+      return sh().searchTextControllerTags;
+    }
+
+    test('a tag that starts another tag', () {
+      expect(removeFrom('blue blue_eyes', 'blue'), ['blue_eyes']);
+      expect(removeFrom('cat category', 'cat'), ['category']);
+    });
+
+    test('a tag inside another tag', () {
+      expect(removeFrom('navy-blue blue', 'blue'), ['navy-blue']);
+      expect(removeFrom('sky_blue_eyes blue', 'blue'), ['sky_blue_eyes']);
+    });
+
+    test('its excluded, or-ed and numbered forms still go', () {
+      expect(removeFrom('a -blue b', 'blue'), ['a', 'b']);
+      expect(removeFrom('a ~blue b', 'blue'), ['a', 'b']);
+      expect(removeFrom('a 1#blue 2#-blue b', 'blue'), ['a', 'b']);
+    });
+
+    test('the chip passes the token with its prefix', () {
+      expect(removeFrom('-blue blue_eyes', '-blue'), ['blue_eyes']);
+      expect(removeFrom('~cat category', '~cat'), ['category']);
+    });
+
+    test('a comma-separated (Hydrus) query loses the tag between its commas', () {
+      sh().searchTextController.text = 'tag1, blue, blue_sky';
+      sh().removeTagFromSearch('blue');
+      expect(sh().searchTextController.text, 'tag1, , blue_sky');
+    });
+
+    test('a tag with regex characters', () {
+      expect(removeFrom('c++ c++_(lang) x', 'c++'), ['c++_(lang)', 'x']);
+    });
+  });
 }
