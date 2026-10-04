@@ -5,24 +5,24 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/data/booru_item.dart';
-import 'package:lolisnatcher/src/data/settings/preview_quality.dart';
-import 'package:lolisnatcher/src/data/tag.dart';
-import 'package:lolisnatcher/src/handlers/booru_handler.dart';
-import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
-import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
-import 'package:lolisnatcher/src/handlers/reader_handler.dart';
-import 'package:lolisnatcher/src/handlers/search_handler.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/handlers/snatch_handler.dart';
-import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
-import 'package:lolisnatcher/src/handlers/tag_handler.dart';
-import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
-import 'package:lolisnatcher/src/pages/doujin_detail_page.dart';
-import 'package:lolisnatcher/src/widgets/image/sprite_tile_image.dart';
-import 'package:lolisnatcher/src/widgets/thumbnail/thumbnail_build.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/models/booru_item.dart';
+import 'package:lolisnatcher/models/settings/preview_quality.dart';
+import 'package:lolisnatcher/models/tag.dart';
+import 'package:lolisnatcher/sources/framework/booru_handler.dart';
+import 'package:lolisnatcher/features/doujin/logic/doujin_data_handler.dart';
+import 'package:lolisnatcher/core/ui/navigation_handler.dart';
+import 'package:lolisnatcher/sources/framework/reader_handler.dart';
+import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/features/downloads/logic/snatch_handler.dart';
+import 'package:lolisnatcher/core/settings/source_settings_handler.dart';
+import 'package:lolisnatcher/core/storage/tag_handler.dart';
+import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
+import 'package:lolisnatcher/features/doujin/ui/detail/doujin_detail_page.dart';
+import 'package:lolisnatcher/core/ui/image/sprite_tile_image.dart';
+import 'package:lolisnatcher/features/feed/ui/thumbnail/thumbnail_build.dart';
 
 /// A source whose pages learn their thumbnail late, the way e-hentai's do
 /// (one strip per block of pages, read when a page of the block is shown).

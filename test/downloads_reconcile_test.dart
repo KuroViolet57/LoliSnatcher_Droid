@@ -2,13 +2,13 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
-import 'package:lolisnatcher/src/boorus/downloads_handler.dart';
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/data/booru_item.dart';
-import 'package:lolisnatcher/src/handlers/downloads_reconciler.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/services/image_writer.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/sources/local/downloads_handler.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/models/booru_item.dart';
+import 'package:lolisnatcher/features/downloads/logic/downloads_reconciler.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/features/downloads/logic/image_writer.dart';
 
 /// The media Downloads list: rows resolve back to the file the writer made,
 /// generic file names no longer collide, and doujin rows stay out.

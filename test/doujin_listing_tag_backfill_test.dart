@@ -3,20 +3,20 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
-import 'package:lolisnatcher/src/boorus/doujin/asmhentai_handler.dart';
-import 'package:lolisnatcher/src/boorus/doujin/doujin_listing_tag_backfill.dart';
-import 'package:lolisnatcher/src/boorus/doujin/eahentai_handler.dart';
-import 'package:lolisnatcher/src/boorus/doujin/faccina_handler.dart';
-import 'package:lolisnatcher/src/boorus/doujin/hitomi_handler.dart';
-import 'package:lolisnatcher/src/boorus/doujin/schale_handler.dart';
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/data/booru_item.dart';
-import 'package:lolisnatcher/src/data/tag.dart';
-import 'package:lolisnatcher/src/handlers/booru_handler.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
-import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/sources/doujin/asmhentai/asmhentai_handler.dart';
+import 'package:lolisnatcher/sources/doujin/common/doujin_listing_tag_backfill.dart';
+import 'package:lolisnatcher/sources/doujin/eahentai/eahentai_handler.dart';
+import 'package:lolisnatcher/sources/doujin/faccina/faccina_handler.dart';
+import 'package:lolisnatcher/sources/doujin/hitomi/hitomi_handler.dart';
+import 'package:lolisnatcher/sources/doujin/schale/schale_handler.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/models/booru_item.dart';
+import 'package:lolisnatcher/models/tag.dart';
+import 'package:lolisnatcher/sources/framework/booru_handler.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/core/settings/source_settings_handler.dart';
+import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
 
 /// Round 4: three of the six doujin sources list covers and titles but no
 /// tags. Without a backfill their grid cards would carry an empty tag strip

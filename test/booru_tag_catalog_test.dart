@@ -2,27 +2,27 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
-import 'package:lolisnatcher/src/boorus/danbooru_handler.dart';
-import 'package:lolisnatcher/src/boorus/e621_handler.dart';
-import 'package:lolisnatcher/src/boorus/gelbooru_alikes_handler.dart';
-import 'package:lolisnatcher/src/boorus/gelbooru_handler.dart';
-import 'package:lolisnatcher/src/boorus/hydrus_handler.dart';
-import 'package:lolisnatcher/src/boorus/idol_sankaku_handler.dart';
-import 'package:lolisnatcher/src/boorus/moebooru_handler.dart';
-import 'package:lolisnatcher/src/boorus/philomena_handler.dart';
-import 'package:lolisnatcher/src/boorus/realbooru_handler.dart';
-import 'package:lolisnatcher/src/boorus/sankaku_handler.dart';
-import 'package:lolisnatcher/src/boorus/shimmie_handler.dart';
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/data/booru_tag.dart';
-import 'package:lolisnatcher/src/data/tag_type.dart';
-import 'package:lolisnatcher/src/handlers/booru_handler.dart';
-import 'package:lolisnatcher/src/handlers/booru_tag_catalog.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/handlers/tag_catalog_source.dart';
-import 'package:lolisnatcher/src/handlers/tag_index_source.dart';
-import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/sources/booru/danbooru_handler.dart';
+import 'package:lolisnatcher/sources/booru/e621_handler.dart';
+import 'package:lolisnatcher/sources/booru/gelbooru_alikes_handler.dart';
+import 'package:lolisnatcher/sources/booru/gelbooru_handler.dart';
+import 'package:lolisnatcher/sources/booru/hydrus_handler.dart';
+import 'package:lolisnatcher/sources/booru/idol_sankaku_handler.dart';
+import 'package:lolisnatcher/sources/booru/moebooru_handler.dart';
+import 'package:lolisnatcher/sources/booru/philomena_handler.dart';
+import 'package:lolisnatcher/sources/booru/realbooru_handler.dart';
+import 'package:lolisnatcher/sources/booru/sankaku_handler.dart';
+import 'package:lolisnatcher/sources/booru/shimmie_handler.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/models/booru_tag.dart';
+import 'package:lolisnatcher/models/tag_type.dart';
+import 'package:lolisnatcher/sources/framework/booru_handler.dart';
+import 'package:lolisnatcher/sources/framework/tags/booru_tag_catalog.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/sources/framework/tags/tag_catalog_source.dart';
+import 'package:lolisnatcher/sources/framework/tags/tag_index_source.dart';
+import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
 
 /// A fake family: pages are made up, so the adapter's walk can be checked
 /// without a network. The last real page is one row short.

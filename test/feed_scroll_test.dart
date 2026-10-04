@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/widgets/preview/feed_scroll.dart';
+import 'package:lolisnatcher/features/feed/ui/feed_scroll.dart';
 
 /// r66: the feed loaded its next page whenever a scroll notification said
 /// "near the end" - but a horizontal scroll INSIDE a card (the tag rows, the

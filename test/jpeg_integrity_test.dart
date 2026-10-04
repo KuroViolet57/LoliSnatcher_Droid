@@ -4,7 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'dart:ui' as ui;
 
-import 'package:lolisnatcher/src/widgets/image/custom_network_image.dart';
+import 'package:lolisnatcher/core/ui/image/custom_network_image.dart';
 
 /// Round 6 item 1.
 ///

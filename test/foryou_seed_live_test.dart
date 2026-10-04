@@ -6,16 +6,16 @@ import 'dart:io';
 import 'package:alice_lightweight/alice.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
-import 'package:lolisnatcher/src/boorus/foryou_handler.dart';
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/data/booru_item.dart';
-import 'package:lolisnatcher/src/handlers/interests_handler.dart';
-import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
-import 'package:lolisnatcher/src/handlers/search_handler.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/handlers/tag_handler.dart';
-import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/features/recommender/logic/foryou_handler.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/models/booru_item.dart';
+import 'package:lolisnatcher/features/recommender/logic/interests_handler.dart';
+import 'package:lolisnatcher/core/ui/navigation_handler.dart';
+import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/core/storage/tag_handler.dart';
+import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
 
 /// r75, live: "Recommend more like this" seeds the For You feed with a
 /// post's character / artist / series tags. Against two real sources the

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/handlers/video_completion_tracker.dart';
+import 'package:lolisnatcher/features/video/logic/video_completion_tracker.dart';
 
 /// r34: watching a video through is a signal. The tracker says so exactly
 /// once per item, whether the player reports the last tenth or loops past

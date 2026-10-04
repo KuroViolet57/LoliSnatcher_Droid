@@ -6,17 +6,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
-import 'package:lolisnatcher/src/pages/flash_player_page.dart';
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
-import 'package:lolisnatcher/src/boorus/doujin/doujin_filters.dart';
-import 'package:lolisnatcher/src/boorus/furaffinity_handler.dart';
-import 'package:lolisnatcher/src/boorus/furaffinity_parser.dart';
-import 'package:lolisnatcher/src/boorus/furaffinity_tag_catalog.dart';
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/data/booru_item.dart';
-import 'package:lolisnatcher/src/handlers/furaffinity_session_handler.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/widgets/preview/main_search_query_editor_page.dart';
+import 'package:lolisnatcher/features/viewer/ui/flash_player_page.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/sources/doujin/common/doujin_filters.dart';
+import 'package:lolisnatcher/sources/furaffinity/furaffinity_handler.dart';
+import 'package:lolisnatcher/sources/furaffinity/furaffinity_parser.dart';
+import 'package:lolisnatcher/sources/furaffinity/furaffinity_tag_catalog.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/models/booru_item.dart';
+import 'package:lolisnatcher/sources/furaffinity/furaffinity_session_handler.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/features/feed/ui/search/main_search_query_editor_page.dart';
 
 /// r40: FurAffinity, read from its pages. Fixtures captured live on
 /// 2026-09-15: browse, search pages 1 and 2, ryan-the-fox's gallery,

@@ -8,11 +8,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/data/booru_item.dart';
-import 'package:lolisnatcher/src/data/model_tasks.dart';
-import 'package:lolisnatcher/src/handlers/recommender/look_model_handler.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/models/booru_item.dart';
+import 'package:lolisnatcher/features/recommender/logic/model_tasks.dart';
+import 'package:lolisnatcher/features/recommender/logic/ml/look_model_handler.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
 
 /// r75: the downloadable "looks" model (MobileCLIP ONNX): a picture or a
 /// sentence into one unit vector, so lookalikes sit close. The runner here

@@ -6,14 +6,14 @@ import 'package:flutter/painting.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
-import 'package:lolisnatcher/src/handlers/doujin_cover_aspect_handler.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
-import 'package:lolisnatcher/src/widgets/image/custom_network_image.dart';
-import 'package:lolisnatcher/src/widgets/image/sprite_tile_image.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/sources/framework/booru_handler_factory.dart';
+import 'package:lolisnatcher/features/doujin/logic/doujin_cover_aspect_handler.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
+import 'package:lolisnatcher/core/ui/image/custom_network_image.dart';
+import 'package:lolisnatcher/core/ui/image/sprite_tile_image.dart';
 
 /// r32: e-hentai serves page thumbnails as one sprite strip per block of 20
 /// pages. A tile is the strip's URL with a media fragment, `#xywh=x,y,w,h`,

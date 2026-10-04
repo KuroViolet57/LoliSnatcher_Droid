@@ -6,14 +6,14 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
-import 'package:lolisnatcher/src/handlers/search_handler.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
-import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
-import 'package:lolisnatcher/src/pages/doujin_favourite_tags_page.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/features/doujin/logic/doujin_data_handler.dart';
+import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/core/settings/source_settings_handler.dart';
+import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
+import 'package:lolisnatcher/features/doujin/ui/library/doujin_favourite_tags_page.dart';
 
 /// Round 3, item 2: the doujin drawer's "Favourite tags" screen lists ONLY
 /// tags starred in the DOUJIN star store — booru markedTags never appear —

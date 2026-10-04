@@ -3,22 +3,22 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/boorus/board_handler.dart';
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
-import 'package:lolisnatcher/src/data/board.dart';
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/data/booru_item.dart';
-import 'package:lolisnatcher/src/data/booru_tag.dart';
-import 'package:lolisnatcher/src/data/model_tasks.dart';
-import 'package:lolisnatcher/src/data/tag.dart';
-import 'package:lolisnatcher/src/data/tag_type.dart';
-import 'package:lolisnatcher/src/handlers/board_query.dart';
-import 'package:lolisnatcher/src/handlers/boards_handler.dart';
-import 'package:lolisnatcher/src/handlers/booru_handler.dart';
-import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
-import 'package:lolisnatcher/src/handlers/recommender/image_tagger_handler.dart';
-import 'package:lolisnatcher/src/handlers/reverse_image_search.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/features/boards/logic/board_handler.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/models/board.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/models/booru_item.dart';
+import 'package:lolisnatcher/models/booru_tag.dart';
+import 'package:lolisnatcher/features/recommender/logic/model_tasks.dart';
+import 'package:lolisnatcher/models/tag.dart';
+import 'package:lolisnatcher/models/tag_type.dart';
+import 'package:lolisnatcher/features/boards/logic/board_query.dart';
+import 'package:lolisnatcher/features/boards/logic/boards_handler.dart';
+import 'package:lolisnatcher/sources/framework/booru_handler.dart';
+import 'package:lolisnatcher/sources/framework/booru_handler_factory.dart';
+import 'package:lolisnatcher/features/recommender/logic/ml/image_tagger_handler.dart';
+import 'package:lolisnatcher/features/boards/logic/reverse_image_search.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
 
 /// r73: the board feed - a virtual booru that asks the board's sources for
 /// the must-have tags plus the tags derived from the description and the

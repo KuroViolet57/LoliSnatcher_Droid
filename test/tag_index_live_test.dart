@@ -8,19 +8,19 @@ import 'package:flutter/foundation.dart';
 import 'package:alice_lightweight/alice.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/data/booru_tag.dart';
-import 'package:lolisnatcher/src/data/tag_type.dart';
-import 'package:lolisnatcher/src/handlers/booru_handler.dart';
-import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
-import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/handlers/tag_catalog_source.dart';
-import 'package:lolisnatcher/src/handlers/tag_handler.dart';
-import 'package:lolisnatcher/src/handlers/tag_index_source.dart';
-import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
-import 'package:lolisnatcher/src/utils/logger.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/models/booru_tag.dart';
+import 'package:lolisnatcher/models/tag_type.dart';
+import 'package:lolisnatcher/sources/framework/booru_handler.dart';
+import 'package:lolisnatcher/sources/framework/booru_handler_factory.dart';
+import 'package:lolisnatcher/core/ui/navigation_handler.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/sources/framework/tags/tag_catalog_source.dart';
+import 'package:lolisnatcher/core/storage/tag_handler.dart';
+import 'package:lolisnatcher/sources/framework/tags/tag_index_source.dart';
+import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
+import 'package:lolisnatcher/core/logging/logger.dart';
 
 /// The tag builder's first page from each booru family, fetched from the
 /// LIVE sites — a report run, not part of the offline suite (see

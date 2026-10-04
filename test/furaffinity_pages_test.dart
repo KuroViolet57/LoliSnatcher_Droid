@@ -5,17 +5,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lolisnatcher/gen/strings.g.dart';
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/data/booru_item.dart';
-import 'package:lolisnatcher/src/data/tag.dart';
-import 'package:lolisnatcher/src/handlers/furaffinity_session_handler.dart';
-import 'package:lolisnatcher/src/handlers/search_handler.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/handlers/tag_handler.dart';
-import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
-import 'package:lolisnatcher/src/pages/furaffinity_post_page.dart';
-import 'package:lolisnatcher/src/widgets/drawers/furaffinity_sidebar.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/models/booru_item.dart';
+import 'package:lolisnatcher/models/tag.dart';
+import 'package:lolisnatcher/sources/furaffinity/furaffinity_session_handler.dart';
+import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/core/storage/tag_handler.dart';
+import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
+import 'package:lolisnatcher/features/furaffinity/ui/furaffinity_post_page.dart';
+import 'package:lolisnatcher/features/furaffinity/ui/furaffinity_sidebar.dart';
 
 /// r42: FurAffinity's own sidebar (with the switch back to the app's) and its
 /// post page (description, folders, keywords, comments, the gallery around it).

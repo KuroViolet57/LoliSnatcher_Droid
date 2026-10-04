@@ -6,26 +6,26 @@ import 'dart:io';
 import 'package:alice_lightweight/alice.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
-import 'package:lolisnatcher/src/boorus/doujin/asmhentai_handler.dart';
-import 'package:lolisnatcher/src/boorus/doujin/eahentai_handler.dart';
-import 'package:lolisnatcher/src/boorus/doujin/faccina_handler.dart';
-import 'package:lolisnatcher/src/boorus/doujin/hitomi_handler.dart';
-import 'package:lolisnatcher/src/boorus/doujin/schale_handler.dart';
-import 'package:lolisnatcher/src/boorus/nhentai_handler.dart';
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/data/booru_item.dart';
-import 'package:lolisnatcher/src/data/tag.dart';
-import 'package:lolisnatcher/src/handlers/booru_handler.dart';
-import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
-import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
-import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/handlers/tag_handler.dart';
-import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
-import 'package:lolisnatcher/src/utils/dio_network.dart';
-import 'package:lolisnatcher/src/utils/logger.dart';
-import 'package:lolisnatcher/src/boorus/doujin/ehentai_handler.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/sources/doujin/asmhentai/asmhentai_handler.dart';
+import 'package:lolisnatcher/sources/doujin/eahentai/eahentai_handler.dart';
+import 'package:lolisnatcher/sources/doujin/faccina/faccina_handler.dart';
+import 'package:lolisnatcher/sources/doujin/hitomi/hitomi_handler.dart';
+import 'package:lolisnatcher/sources/doujin/schale/schale_handler.dart';
+import 'package:lolisnatcher/sources/doujin/nhentai/nhentai_handler.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/models/booru_item.dart';
+import 'package:lolisnatcher/models/tag.dart';
+import 'package:lolisnatcher/sources/framework/booru_handler.dart';
+import 'package:lolisnatcher/sources/framework/booru_handler_factory.dart';
+import 'package:lolisnatcher/features/doujin/logic/doujin_data_handler.dart';
+import 'package:lolisnatcher/core/ui/navigation_handler.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/core/storage/tag_handler.dart';
+import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
+import 'package:lolisnatcher/core/network/dio_network.dart';
+import 'package:lolisnatcher/core/logging/logger.dart';
+import 'package:lolisnatcher/sources/doujin/ehentai/ehentai_handler.dart';
 
 /// The per-source parity walk, against the live sites.
 ///

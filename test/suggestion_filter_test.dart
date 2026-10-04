@@ -2,14 +2,14 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
-import 'package:lolisnatcher/src/boorus/foryou_handler.dart';
-import 'package:lolisnatcher/src/boorus/suggestion_handler.dart';
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/data/booru_item.dart';
-import 'package:lolisnatcher/src/data/tag.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/features/recommender/logic/foryou_handler.dart';
+import 'package:lolisnatcher/features/recommender/logic/suggestion_handler.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/models/booru_item.dart';
+import 'package:lolisnatcher/models/tag.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
 
 /// The Suggested strip and the Recommended feed both ignored every filter put
 /// on them: the strip's videos/GIFs toggle changed nothing, and a feed asked

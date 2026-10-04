@@ -3,14 +3,14 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:get_it/get_it.dart';
 
-import 'package:lolisnatcher/src/boorus/doujin/doujin_recommendation_engine.dart';
-import 'package:lolisnatcher/src/data/booru_item.dart';
-import 'package:lolisnatcher/src/data/tag.dart';
-import 'package:lolisnatcher/src/data/tag_type.dart';
-import 'package:lolisnatcher/src/handlers/booru_handler.dart';
-import 'package:lolisnatcher/src/handlers/recommender/item_features.dart';
-import 'package:lolisnatcher/src/handlers/recommender/recommender_handler.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/sources/doujin/common/doujin_recommendation_engine.dart';
+import 'package:lolisnatcher/models/booru_item.dart';
+import 'package:lolisnatcher/models/tag.dart';
+import 'package:lolisnatcher/models/tag_type.dart';
+import 'package:lolisnatcher/sources/framework/booru_handler.dart';
+import 'package:lolisnatcher/features/recommender/logic/item_features.dart';
+import 'package:lolisnatcher/features/recommender/logic/recommender_handler.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
 
 /// r33: the rule every recommendation surface follows — what it shows goes
 /// through the recommender's reranking and is reported as shown. One
@@ -51,12 +51,12 @@ void main() {
     // r34: a surface also leaves out what the user said they are not
     // interested in (`withoutDismissed`).
     const Map<String, List<String>> surfaces = {
-      'lib/src/boorus/foryou_handler.dart': ['RecommenderHandler.maybe?.rerank(', 'onExposed(', "'foryou'", 'withoutDismissed('],
-      'lib/src/boorus/suggestion_handler.dart': ['RecommenderHandler.maybe?.rerank(', 'onExposed(', "'suggested'", 'withoutDismissed('],
-      'lib/src/boorus/doujin_foryou_handler.dart': ['RecommenderHandler.maybe?.rerank(', 'onExposed(', "'foryou-doujin'", 'withoutDismissed('],
-      'lib/src/boorus/doujin/doujin_recommendation_engine.dart': ['RecommenderHandler.maybe?.scorer(', 'onExposed(', "'doujin-recommend'", 'withoutDismissed('],
+      'lib/features/recommender/logic/foryou_handler.dart': ['RecommenderHandler.maybe?.rerank(', 'onExposed(', "'foryou'", 'withoutDismissed('],
+      'lib/features/recommender/logic/suggestion_handler.dart': ['RecommenderHandler.maybe?.rerank(', 'onExposed(', "'suggested'", 'withoutDismissed('],
+      'lib/features/recommender/logic/doujin_foryou_handler.dart': ['RecommenderHandler.maybe?.rerank(', 'onExposed(', "'foryou-doujin'", 'withoutDismissed('],
+      'lib/sources/doujin/common/doujin_recommendation_engine.dart': ['RecommenderHandler.maybe?.scorer(', 'onExposed(', "'doujin-recommend'", 'withoutDismissed('],
       // nhentai ranks its own raw rows rather than through the engine.
-      'lib/src/boorus/nhentai_handler.dart': ['RecommenderHandler.maybe?.scorer(', 'onExposed(', 'DoujinRecommendationEngine.surface'],
+      'lib/sources/doujin/nhentai/nhentai_handler.dart': ['RecommenderHandler.maybe?.scorer(', 'onExposed(', 'DoujinRecommendationEngine.surface'],
     };
     for (final entry in surfaces.entries) {
       final String src = File(entry.key).readAsStringSync();
@@ -66,7 +66,8 @@ void main() {
     }
     // The doujin Recommended strip: every source ranks through the personal
     // variant, never the bare engine (which would skip taste and exposures).
-    final List<File> handlers = Directory('lib/src/boorus').listSync(recursive: true).whereType<File>().where((f) => f.path.endsWith('_handler.dart')).toList();
+    // 1.0: handlers live under lib/sources/ and lib/features/ (every *_handler.dart is checked).
+    final List<File> handlers = Directory('lib').listSync(recursive: true).whereType<File>().where((f) => f.path.endsWith('_handler.dart')).toList();
     expect(handlers, isNotEmpty);
     for (final File f in handlers) {
       final String src = f.readAsStringSync();

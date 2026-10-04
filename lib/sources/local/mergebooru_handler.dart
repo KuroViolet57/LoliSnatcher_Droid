@@ -1,0 +1,351 @@
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:crypto/crypto.dart';
+import 'package:dio/dio.dart';
+import 'package:fpdart/fpdart.dart';
+
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/models/booru_item.dart';
+import 'package:lolisnatcher/models/meta_tag.dart';
+import 'package:lolisnatcher/models/response_error.dart';
+import 'package:lolisnatcher/models/tag_suggestion.dart';
+import 'package:lolisnatcher/sources/framework/booru_handler.dart';
+import 'package:lolisnatcher/sources/framework/booru_handler_factory.dart';
+import 'package:lolisnatcher/core/utils/extensions.dart';
+import 'package:lolisnatcher/core/logging/logger.dart';
+
+class MergebooruHandler extends BooruHandler {
+  MergebooruHandler(super.booru, super.limit);
+
+  List<Booru> booruList = [];
+  List<BooruHandler> booruHandlers = [];
+  List<int> booruHandlerPageNums = [];
+
+  // Per-child tag override keyed by child booru name. Empty / missing entries
+  // fall back to the merge tab's main tag string. Lets the user fix the
+  // common case where the same character is tagged differently on each site.
+  Map<String, String> tagOverrides = {};
+
+  // Per-child "inherit main tags?" flag keyed by child booru name. Default is
+  // true (the override field is additive). When false, the override replaces
+  // the main tags entirely — useful when the main tag simply doesn't exist
+  // on that booru (e.g. "animated" vs "video").
+  Map<String, bool> inheritMainTags = {};
+
+  Map<int, ({Booru booru, List<BooruItem> items})> fetchedMap = {};
+
+  /// The sub-handler an item came from, matched by post URL host — used to
+  /// route doujin items (favourite sync etc.) to their real source handler.
+  BooruHandler? subHandlerForItem(BooruItem item) {
+    final String? host = Uri.tryParse(item.postURL)?.host;
+    if (host == null || host.isEmpty) return null;
+    for (final h in booruHandlers) {
+      if (Uri.tryParse(h.booru.baseURL ?? '')?.host == host) return h;
+    }
+    return null;
+  }
+
+  @override
+  bool get hasSizeData => booruHandlers.every((e) => e.hasSizeData);
+
+  @override
+  bool get hasTagSuggestions => booruHandlers.firstWhereOrNull((e) => e.hasTagSuggestions) != null;
+
+  @override
+  String? get metatagsCheatSheetLink =>
+      booruHandlers.firstWhereOrNull((e) => e.metatagsCheatSheetLink != null)?.metatagsCheatSheetLink;
+
+  @override
+  List<MetaTag> availableMetaTags() {
+    final List<MetaTag> tags = [];
+    for (int i = 0; i < booruHandlers.length; i++) {
+      final booruTags = booruHandlers[i].availableMetaTags();
+      for (final tag in booruTags) {
+        if (!tags.contains(tag)) {
+          final List<BooruHandler> boorusWhereTagExists = booruHandlers
+              .where((e) => e.availableMetaTags().any((t) => t.keyName == tag.keyName))
+              .toList();
+          final String combinedName =
+              '${tag.name} (${boorusWhereTagExists.map((e) => e.booru.name ?? '').where((e) => e.isNotEmpty).join(', ')})';
+          if (tag is MetaTagWithValues) {
+            final List<MetaTagValue> combinedValues = [];
+            for (final handler in boorusWhereTagExists) {
+              final tagWithValues =
+                  handler.availableMetaTags().firstWhereOrNull(
+                        (e) => e is MetaTagWithValues && e.keyName == tag.keyName,
+                      )
+                      as MetaTagWithValues?;
+              final values = tagWithValues?.values;
+              if (values != null) {
+                for (final v in values) {
+                  if (!combinedValues.any((e) => e.value == v.value)) {
+                    combinedValues.add(v);
+                  }
+                }
+              }
+            }
+
+            tags.add(
+              tag.copyWith(
+                name: combinedName,
+                values: combinedValues,
+              ),
+            );
+          } else {
+            tags.add(tag.copyWith(name: combinedName));
+          }
+        }
+      }
+    }
+
+    return tags;
+  }
+
+  String cleanBooruIndexesFromTags(String tags, int? currentIndex) => tags
+      .replaceAll(
+        currentIndex == null
+            ? ''
+            : RegExp(
+                '(?:-|~)?(?!'
+                '${currentIndex + 1}'
+                r')\d+#(?:-|~)?\S*',
+              ),
+        '',
+      )
+      .replaceAll('  ', ' ')
+      .replaceAll(RegExp(r'\d+#'), '')
+      .trim();
+
+  @override
+  Future search(String tags, int? pageNumCustom, {bool withCaptchaCheck = true}) async {
+    if (pageNumCustom != null) {
+      pageNum = pageNumCustom;
+    }
+    final Map<int, ({Booru booru, List<BooruItem> items})> tmpFetchedMap = {};
+    int fetchedMax = 0;
+    for (int i = 0; i < booruHandlers.length; i++) {
+      final String? overrideName = booruHandlers[i].booru.name;
+      final String override = (overrideName == null ? '' : tagOverrides[overrideName] ?? '').trim();
+      final bool inherit = overrideName == null ? true : (inheritMainTags[overrideName] ?? true);
+      final String baseTags;
+      if (override.isEmpty) {
+        baseTags = tags;
+      } else if (inherit) {
+        baseTags = tags.trim().isEmpty ? override : '${tags.trim()} $override';
+      } else {
+        baseTags = override;
+      }
+      final String currentTags = cleanBooruIndexesFromTags(baseTags, i);
+      Logger.Inst().log('TAGS FOR #$i are: $currentTags', 'MergeBooruHandler', 'Search', LogTypes.booruHandlerInfo);
+      booruHandlers[i].pageNum = pageNum + booruHandlerPageNums[i];
+      final List<BooruItem> tmpFetched = (await booruHandlers[i].search(currentTags, null)) ?? [];
+      tmpFetchedMap.addEntries([
+        MapEntry(
+          i,
+          (
+            booru: booruHandlers[i].booru,
+            items: tmpFetched,
+          ),
+        ),
+      ]);
+      fetchedMax += tmpFetched.length;
+    }
+    int innerFetchedOffset = 0;
+    int innerFetchedIndex = -1;
+    final List<BooruItem> newItems = [];
+    do {
+      innerFetchedIndex = (limit * pageNum) + innerFetchedOffset;
+      for (int i = 0; i < tmpFetchedMap.entries.length; i++) {
+        final items = tmpFetchedMap[i]!.items;
+
+        final booru = tmpFetchedMap[i]!.booru;
+        final bool isBooruWithoutMd5 = [
+          BooruType.Favourites,
+          BooruType.Downloads,
+          BooruType.BooruOnRails,
+          BooruType.Philomena,
+          BooruType.Rainbooru,
+          BooruType.Szurubooru,
+          BooruType.World,
+        ].any((t) => t == booru.type);
+
+        if (innerFetchedIndex < items.length) {
+          if (booru.type?.isGelbooruV1 == true) {
+            if (items[innerFetchedIndex].md5String != null) {
+              items[innerFetchedIndex].md5String = makeSha1Hash(items[innerFetchedIndex].md5String!);
+            }
+          }
+
+          if (isBooruWithoutMd5
+              ? !itemInFetched(
+                  fetched,
+                  items[innerFetchedIndex],
+                )
+              : !hashInFetched(
+                  fetched,
+                  items[innerFetchedIndex].md5String,
+                  items[innerFetchedIndex].fileURL,
+                )) {
+            newItems.add(items[innerFetchedIndex]);
+
+            if (fetchedMap[i] == null) {
+              fetchedMap.addEntries([
+                MapEntry(
+                  i,
+                  (
+                    booru: booruHandlers[i].booru,
+                    items: [],
+                  ),
+                ),
+              ]);
+            }
+            fetchedMap[i]!.items.add(items[innerFetchedIndex]);
+          } else {
+            Logger.Inst().log(
+              'Skipped because hash match: ${items[innerFetchedIndex].fileURL}',
+              'MergeBooruHandler',
+              'Search',
+              LogTypes.booruHandlerInfo,
+            );
+          }
+        } else {
+          Logger.Inst().log(
+            'not adding item from ${booruHandlers[i].booru.name}, length: ${items.length}, index: $innerFetchedIndex',
+            'MergeBooruHandler',
+            'Search',
+            LogTypes.booruHandlerInfo,
+          );
+          Logger.Inst().log(
+            'pageNum: $pageNum',
+            'MergeBooruHandler',
+            'Search',
+            LogTypes.booruHandlerInfo,
+          );
+          Logger.Inst().log(
+            'fetched: ${fetched.length}, fetchedMax: $fetchedMax',
+            'MergeBooruHandler',
+            'Search',
+            LogTypes.booruHandlerInfo,
+          );
+        }
+      }
+      innerFetchedOffset++;
+    } while ((fetched.length < fetchedMax) && innerFetchedIndex < fetchedMax);
+
+    await afterParseResponse(newItems);
+
+    locked = shouldLock();
+    return fetched;
+  }
+
+  bool shouldLock() {
+    int lockCount = 0;
+    for (int i = 0; i < booruHandlers.length; i++) {
+      if (booruHandlers[i].locked) {
+        lockCount++;
+      }
+    }
+    if (lockCount == booruHandlers.length) {
+      return true;
+    } else {
+      return false;
+    }
+  }
+
+  // GelbooruV1 uses a sha1 of an md5
+  String makeSha1Hash(String hash) {
+    final List<int> bytes = utf8.encode(hash);
+    final Digest digest = sha1.convert(bytes);
+    Logger.Inst().log('converting hash to sha1', 'MergeBooruHandler', 'makeSha1Hash', LogTypes.booruHandlerInfo);
+    return digest.toString();
+  }
+
+  bool hashInFetched(List<BooruItem> fetched, String? hash, String fileURL) {
+    for (int i = 0; i < fetched.length; i++) {
+      if (fetched[i].md5String == hash) {
+        Logger.Inst().log(
+          'hash match URL: $fileURL fetchedURL: ${fetched[i].fileURL}',
+          'MergeBooruHandler',
+          'hashInFetched',
+          LogTypes.booruHandlerInfo,
+        );
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool itemInFetched(List<BooruItem> fetched, BooruItem item) {
+    for (int i = 0; i < fetched.length; i++) {
+      if (fetched[i].fileURL == item.fileURL || fetched[i].postURL == item.postURL) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  void setupMerge(List<Booru> boorus) {
+    booruList.addAll(boorus);
+    for (final element in booruList) {
+      final factoryResults = BooruHandlerFactory().getBooruHandler([element], null);
+      booruHandlers.add(factoryResults.booruHandler);
+      booruHandlerPageNums.add(factoryResults.startingPage);
+      Logger.Inst().log(
+        'SETUP MERGE ADDING: ${element.name}',
+        'MergeBooruHandler',
+        'setupMerge',
+        LogTypes.booruHandlerInfo,
+      );
+    }
+  }
+
+  @override
+  Future<Either<ResponseError, List<TagSuggestion>>> getTagSuggestions(
+    String input, {
+    CancelToken? cancelToken,
+  }) async {
+    final regex = RegExp(r'(\d+)#\S*');
+    final matches = regex.allMatches(input).toList();
+
+    BooruHandler? selectedHandler;
+
+    try {
+      if (matches.isNotEmpty && !input.contains(' ')) {
+        final int matchedIndex = int.parse(matches[0].group(1)!);
+        // match handler if booru index is present (ignore if multiword query)
+        if (booruHandlers[matchedIndex - 1].hasTagSuggestions) {
+          selectedHandler = booruHandlers[matchedIndex - 1];
+        }
+      }
+    } catch (_) {
+      //
+    } finally {
+      // get first (if any) possible handler with tag suggestions if no match
+      selectedHandler ??= booruHandlers.firstWhereOrNull((e) => e.hasTagSuggestions);
+    }
+
+    final res = selectedHandler?.getTagSuggestions(
+      cleanBooruIndexesFromTags(input, null),
+      cancelToken: cancelToken,
+    );
+    if (res == null) {
+      return const Right([]);
+    } else {
+      return res;
+    }
+  }
+
+  @override
+  Future<void> searchCount(String input) async {
+    int result = 0;
+    for (int i = 0; i < booruHandlers.length; i++) {
+      final String currentTags = cleanBooruIndexesFromTags(input, i);
+      await booruHandlers[i].searchCount(currentTags);
+      result += booruHandlers[i].totalCount.value;
+    }
+    totalCount.value = result;
+    return;
+  }
+}

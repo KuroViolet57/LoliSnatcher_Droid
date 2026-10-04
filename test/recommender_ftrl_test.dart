@@ -5,8 +5,8 @@ import 'package:flutter/foundation.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/handlers/recommender/ftrl_model.dart';
-import 'package:lolisnatcher/src/handlers/recommender/item_features.dart';
+import 'package:lolisnatcher/features/recommender/logic/ftrl_model.dart';
+import 'package:lolisnatcher/features/recommender/logic/item_features.dart';
 
 /// r33: the on-device learner. A hashed-feature logistic regression trained
 /// online with FTRL-Proximal — it must learn a preference from a few dozen

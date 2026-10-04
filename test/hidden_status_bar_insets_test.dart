@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/data/modular_ui.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/utils/status_bar_inset.dart';
+import 'package:lolisnatcher/core/settings/modular_ui.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/app/status_bar_inset.dart';
 
 /// r52: with the status bar hidden, the keyboard covered bottom sheets. The
 /// app's page tree lives in an Overlay entry built once, so a MediaQuery made

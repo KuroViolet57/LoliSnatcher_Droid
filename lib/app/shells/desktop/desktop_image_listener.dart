@@ -1,0 +1,272 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
+
+import 'package:get/get.dart';
+
+import 'package:lolisnatcher/models/booru_item.dart';
+import 'package:lolisnatcher/sources/local/mergebooru_handler.dart';
+import 'package:lolisnatcher/sources/framework/booru_handler.dart';
+import 'package:lolisnatcher/features/doujin/logic/doujin_data_handler.dart';
+import 'package:lolisnatcher/core/storage/database_handler.dart';
+import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/features/downloads/logic/snatch_handler.dart';
+import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
+import 'package:lolisnatcher/features/viewer/ui/notes_renderer.dart';
+import 'package:lolisnatcher/features/viewer/ui/media/image_viewer.dart';
+import 'package:lolisnatcher/features/viewer/ui/media/guess_extension_viewer.dart';
+import 'package:lolisnatcher/features/viewer/ui/media/load_item_viewer.dart';
+import 'package:lolisnatcher/features/video/ui/video_viewer.dart';
+import 'package:lolisnatcher/features/video/ui/video_viewer_placeholder.dart';
+
+/// This class will listen for the value of viewedItem in searchtabs
+/// It will return an empty container if that item has no file URL.
+/// If the file url isn't empty it will return a current media widget for the fileURL
+///
+class DesktopImageListener extends StatefulWidget {
+  const DesktopImageListener(this.searchTab, {super.key});
+  final SearchTab searchTab;
+
+  @override
+  State<DesktopImageListener> createState() => _DesktopImageListenerState();
+}
+
+class _DesktopImageListenerState extends State<DesktopImageListener> {
+  final SettingsHandler settingsHandler = SettingsHandler.instance;
+  final SnatchHandler snatchHandler = SnatchHandler.instance;
+  final SearchHandler searchHandler = SearchHandler.instance;
+  final ViewerHandler viewerHandler = ViewerHandler.instance;
+
+  // TODO fix key duplicate exception when entering exiting fullscreen
+
+  //This function decides what media widget to return
+  Widget? getImageWidget(BooruItem? item) {
+    if (item == null) {
+      return null;
+    }
+
+    if (item.mediaType.value.isImageOrAnimation) {
+      return Obx(
+        () => ImageViewer(
+          item,
+          booru: searchHandler.currentBooru,
+          isViewed: ViewerHandler.instance.current.value?.key == item.key,
+          key: item.key,
+        ),
+      );
+    } else if (item.mediaType.value.isVideo) {
+      if (Platform.isAndroid || Platform.isIOS || Platform.isWindows || Platform.isLinux) {
+        return Obx(
+          () => VideoViewer(
+            item,
+            booru: searchHandler.currentBooru,
+            isViewed: ViewerHandler.instance.current.value?.key == item.key,
+            enableFullscreen: true,
+            key: item.key,
+          ),
+        );
+      } else {
+        return Obx(
+          () => VideoViewerPlaceholder(
+            item: item,
+            booru: searchHandler.currentBooru,
+            key: item.key,
+          ),
+        );
+      }
+    } else if (item.mediaType.value.isNeedToGuess) {
+      return Obx(
+        () => GuessExtensionViewer(
+          item: item,
+          booru: searchHandler.currentBooru,
+          onMediaTypeGuessed: (MediaType mediaType) {
+            item.mediaType.value = mediaType;
+            item.possibleMediaType.value = mediaType.isUnknown ? item.possibleMediaType.value : null;
+            updateState();
+          },
+          key: item.key,
+        ),
+      );
+    } else if (item.mediaType.value.isNeedToGuess && searchHandler.currentBooruHandler.hasLoadItemSupport) {
+      return Obx(
+        () => LoadItemViewer(
+          item: item,
+          handler: searchHandler.currentBooruHandler,
+          onItemLoaded: (newItem) {
+            final index = searchHandler.currentFetched.indexOf(newItem);
+            if (index != -1) {
+              searchHandler.currentFetched[index] = newItem;
+              updateState();
+            }
+          },
+          key: item.key,
+        ),
+      );
+    } else {
+      return Obx(
+        () => GuessExtensionViewer(
+          item: item,
+          booru: searchHandler.currentBooru,
+          onMediaTypeGuessed: (MediaType mediaType) {
+            item.mediaType.value = mediaType;
+            item.possibleMediaType.value = mediaType.isUnknown ? item.possibleMediaType.value : null;
+            updateState();
+          },
+        ),
+        key: item.key,
+      );
+      // return UnknownViewerPlaceholder(item: item, key: item.key,);
+    }
+  }
+
+  void updateState() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  Future<void> delayedZoomReset() async {
+    await Future.delayed(const Duration(milliseconds: 200));
+    viewerHandler.resetZoom();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Obx(() {
+      if (searchHandler.tabs.isEmpty) {
+        return const SizedBox.shrink();
+      }
+
+      final item = searchHandler.currentTab.itemWithKey(viewerHandler.current.value?.key);
+      final Widget? itemWidget = getImageWidget(item);
+      if (itemWidget == null || item == null) {
+        return const SizedBox.shrink();
+      }
+
+      return Stack(
+        children: [
+          if (!viewerHandler.isDesktopFullscreen.value) itemWidget,
+          if (!viewerHandler.isDesktopFullscreen.value)
+            NotesRenderer(
+              item: item,
+              handler: searchHandler.currentBooruHandler,
+              pageController: null,
+            ),
+          Container(
+            alignment: Alignment.topRight,
+            child: Column(
+              children: [
+                Container(
+                  width: 35,
+                  height: 35,
+                  margin: const EdgeInsets.all(10),
+                  child: FloatingActionButton(
+                    onPressed: () {
+                      snatchHandler.queue(
+                        [item],
+                        searchHandler.currentBooru,
+                        0,
+                        false,
+                      );
+                    },
+                    child: const Icon(Symbols.save_rounded),
+                  ),
+                ),
+                Container(
+                  width: 32,
+                  height: 32,
+                  margin: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+                  child: FloatingActionButton(
+                    onPressed: () {
+                      // Doujin items go through the one doujin favourite path
+                      // (doujin store + site sync), never the booru DB.
+                      if (searchHandler.currentTab.booruHandler.hasReader ||
+                          DoujinDataHandler.isDoujinItem(item)) {
+                        // In a merge tab, sync through the item's real
+                        // sub-handler (the Merge handler can't reach the
+                        // site account and has no host).
+                        BooruHandler syncHandler = searchHandler.currentTab.booruHandler;
+                        final h = syncHandler;
+                        if (!h.hasReader && h is MergebooruHandler) {
+                          syncHandler = h.subHandlerForItem(item) ?? h;
+                        }
+                        DoujinDataHandler.instance.toggleFavouriteSynced(item, syncHandler);
+                        return;
+                      }
+                      if (item.isFavourite.value != null) {
+                        item.isFavourite.toggle();
+                        settingsHandler.dbHandler.updateBooruItem(item, BooruUpdateMode.local);
+                      }
+                    },
+                    child: Obx(
+                      () => Icon(
+                        item.isFavourite.value == true
+                            ? Symbols.favorite_rounded
+                            : (item.isFavourite.value == false ? Symbols.favorite_border_rounded : CupertinoIcons.heart_slash),
+                      ),
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  width: 30,
+                  height: 30,
+                  child: FloatingActionButton(
+                    onPressed: () async {
+                      viewerHandler.isDesktopFullscreen.value = true;
+                      updateState();
+                      unawaited(delayedZoomReset());
+
+                      await showDialog(
+                        context: context,
+                        // transitionDuration: Duration(milliseconds: 200),
+                        barrierColor: Colors.black,
+                        builder: (BuildContext context) {
+                          return Stack(
+                            children: [
+                              Obx(
+                                () => viewerHandler.isDesktopFullscreen.value ? itemWidget : const SizedBox.shrink(),
+                              ),
+                              NotesRenderer(
+                                item: item,
+                                handler: searchHandler.currentBooruHandler,
+                                pageController: null,
+                              ),
+                              Container(
+                                padding: const EdgeInsets.all(10),
+                                alignment: Alignment.topRight,
+                                child: SizedBox(
+                                  width: 30,
+                                  height: 30,
+                                  child: FloatingActionButton(
+                                    onPressed: () {
+                                      Navigator.of(context).pop();
+                                    },
+                                    child: const Icon(Symbols.fullscreen_exit_rounded),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      );
+
+                      viewerHandler.isDesktopFullscreen.value = false;
+                      updateState();
+                      unawaited(delayedZoomReset());
+                    },
+                    child: const Icon(Symbols.fullscreen_rounded),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    });
+  }
+}

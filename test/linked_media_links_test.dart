@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
-import 'package:lolisnatcher/src/boorus/linked_media.dart';
-import 'package:lolisnatcher/src/data/booru.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/sources/framework/linked_media.dart';
+import 'package:lolisnatcher/models/booru.dart';
 
 /// r52: which links of a description are the post's media. The sample is the
 /// FurAffinity post from the user's recording: the voice actor's site sat

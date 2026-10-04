@@ -3,10 +3,10 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/data/board.dart';
-import 'package:lolisnatcher/src/handlers/boards_handler.dart';
-import 'package:lolisnatcher/src/handlers/reverse_image_search.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/models/board.dart';
+import 'package:lolisnatcher/features/boards/logic/boards_handler.dart';
+import 'package:lolisnatcher/features/boards/logic/reverse_image_search.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
 
 /// r73: boards - saved "find me posts like this" queries: a description, a
 /// reference image, must-have and excluded tags, the sources to ask. Kept in

@@ -1,0 +1,361 @@
+import 'dart:async';
+import 'dart:ui';
+
+import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
+
+import 'package:flutter_html/flutter_html.dart';
+import 'package:get/get.dart';
+
+import 'package:lolisnatcher/models/hidden_by_filters.dart';
+import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/features/tags/ui/tags_filters_page.dart';
+import 'package:lolisnatcher/core/ui/html.dart';
+import 'package:lolisnatcher/core/ui/settings_widgets.dart';
+
+class WaterfallErrorButtons extends StatefulWidget {
+  const WaterfallErrorButtons({
+    required this.animation,
+    required this.showSearchBar,
+    super.key,
+  });
+
+  final Animation<double> animation;
+  final bool showSearchBar;
+
+  @override
+  State<WaterfallErrorButtons> createState() => _WaterfallErrorButtonsState();
+}
+
+class _WaterfallErrorButtonsState extends State<WaterfallErrorButtons> {
+  final SearchHandler searchHandler = SearchHandler.instance;
+  final SettingsHandler settingsHandler = SettingsHandler.instance;
+
+  int _startedAt = 0;
+  Timer? checkInterval;
+  bool isCollapsed = false;
+
+  double get animValue => widget.showSearchBar ? widget.animation.value : 1;
+  double get reverseAnimValue => 1 - animValue;
+
+  @override
+  void initState() {
+    super.initState();
+
+    startTimer();
+    searchHandler.isLoading.addListener(loadingListener);
+  }
+
+  void updateState() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  void loadingListener() {
+    if (searchHandler.isLoading.value) {
+      startTimer();
+    } else {
+      stopTimer();
+    }
+  }
+
+  void startTimer() {
+    if (_startedAt == 0) {
+      _startedAt = DateTime.now().millisecondsSinceEpoch;
+      checkInterval?.cancel();
+      checkInterval = Timer.periodic(const Duration(seconds: 1), (timer) {
+        // force restate every second to refresh all timers/indicators, even when loading has stopped/slowed down
+        updateState();
+      });
+    }
+  }
+
+  void stopTimer() {
+    _startedAt = 0;
+    checkInterval?.cancel();
+    updateState();
+  }
+
+  void retrySearch() {
+    searchHandler.retrySearch();
+    if (isCollapsed) {
+      toggleCollapsed();
+    }
+  }
+
+  /// r85: a page that showed nothing is not retried - the next one is read.
+  void loadNextPage() {
+    unawaited(searchHandler.runSearch());
+    if (isCollapsed) {
+      toggleCollapsed();
+    }
+  }
+
+  void openFilters() {
+    SettingsPageOpen(context: context, page: (_) => const TagsFiltersPage()).open();
+  }
+
+  void restartTimerRetrySearch() {
+    stopTimer();
+    startTimer();
+    retrySearch();
+  }
+
+  void toggleCollapsed() {
+    isCollapsed = !isCollapsed;
+    updateState();
+  }
+
+  @override
+  void dispose() {
+    checkInterval?.cancel();
+    searchHandler.isLoading.removeListener(loadingListener);
+    super.dispose();
+  }
+
+  String? _emptyNote() {
+    try {
+      final String? note = searchHandler.currentBooruHandler.emptyNote;
+      return note == null || note.isEmpty ? null : note;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Obx(() {
+      final bool isLastPage = searchHandler.isLastPage.value;
+      final int pageNum = searchHandler.pageNum.value;
+      final bool isEmpty = searchHandler.currentFetched.isEmpty;
+      final bool isLoading = searchHandler.isLoading.value;
+      final bool hasError = searchHandler.errorString.isNotEmpty;
+      // r85: posts were loaded, the filters hid every one of them.
+      final int loaded = searchHandler.tabs.isEmpty ? 0 : searchHandler.currentBooruHandler.fetched.length;
+      final String hiddenSummary = loaded == 0 ? '' : HiddenByFilters.summary(searchHandler.currentBooruHandler.hiddenBy);
+      final String? note = _emptyNote();
+
+      String title = '', subtitle = '';
+      Widget icon = const Icon(Symbols.refresh_rounded);
+      VoidCallback onTap = retrySearch;
+      bool showSubtitle = true;
+      bool htmlSubtitle = false;
+      if (isLastPage) {
+        if (isEmpty && loaded > 0) {
+          title = HiddenByFilters.title(loaded);
+          subtitle = '${hiddenSummary.isEmpty ? '' : '$hiddenSummary\n'}Settings → Filters';
+          onTap = openFilters;
+        } else if (isEmpty) {
+          title = context.loc.preview.error.noResults;
+          // r82: a source that knows why it is empty says so.
+          subtitle = note ?? context.loc.preview.error.noResultsSubtitle;
+        } else {
+          title = context.loc.preview.error.reachedEnd;
+          subtitle = context.loc.preview.error.reachedEndSubtitle(pageNum: pageNum);
+        }
+      } else {
+        if (isLoading) {
+          final int nowMils = DateTime.now().millisecondsSinceEpoch;
+          final int sinceStart = _startedAt == 0 ? 0 : Duration(milliseconds: nowMils - _startedAt).inSeconds;
+          final bool isTakingTooLong = sinceStart > 5;
+          final String sinceStartText = sinceStart > 0
+              ? '${context.loc.preview.error.startedAgo(seconds: sinceStart)}${isTakingTooLong ? '\n${context.loc.preview.error.tapToRetryIfStuck}' : ''}'
+              : '';
+
+          title = context.loc.preview.error.loadingPage(pageNum: pageNum);
+          subtitle = sinceStartText;
+          showSubtitle = sinceStartText.isNotEmpty;
+          icon = const RepaintBoundary(
+            child: SizedBox(
+              width: 30,
+              height: 30,
+              child: CircularProgressIndicator(),
+            ),
+          );
+          onTap = restartTimerRetrySearch;
+        } else if (hasError) {
+          final String errorFormatted = '\n${searchHandler.errorString}\n${context.loc.preview.error.errorWithMessage}';
+          title = context.loc.preview.error.errorLoadingPage(pageNum: pageNum);
+          subtitle = errorFormatted;
+          htmlSubtitle = true;
+        } else if (isEmpty && (loaded > 0 || note != null)) {
+          // r85: before, this said "Error, no results loaded" and its tap
+          // read the same page again.
+          title = loaded > 0 ? HiddenByFilters.title(loaded) : 'Nothing to show on this page';
+          subtitle = '${loaded > 0 ? hiddenSummary : note}\nTap to load the next page';
+          onTap = loadNextPage;
+        } else if (isEmpty) {
+          title = context.loc.preview.error.errorNoResultsLoaded;
+          subtitle = context.loc.preview.error.tapToRetry;
+        } else {
+          // return const SizedBox.shrink();
+
+          // add a small container to avoid scrolling when swiping from the bottom of the screen (navigation gestures)
+          return AnimatedBuilder(
+            animation: widget.animation,
+            builder: (context, child) {
+              return Container(
+                height: MediaQuery.systemGestureInsetsOf(context).bottom,
+                color: Colors.transparent,
+              );
+            },
+          );
+        }
+      }
+
+      return AnimatedSwitcher(
+        duration: const Duration(milliseconds: 300),
+        switchInCurve: Curves.easeInOut,
+        switchOutCurve: Curves.easeInOut,
+        transitionBuilder: (child, animation) => ScaleTransition(scale: animation, child: child),
+        layoutBuilder: (currentChild, previousChildren) => Stack(
+          alignment: Alignment.bottomCenter,
+          children: <Widget>[
+            ...previousChildren,
+            ?currentChild,
+          ],
+        ),
+        child: isCollapsed
+            ? AnimatedBuilder(
+                key: const ValueKey('collapsed'),
+                animation: widget.animation,
+                builder: (context, child) {
+                  return Padding(
+                    padding: EdgeInsets.only(
+                      bottom: (animValue * MediaQuery.viewPaddingOf(context).bottom * 2) + 12,
+                    ),
+                    child: child,
+                  );
+                },
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.66),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: BackdropFilter(
+                    enabled: !settingsHandler.shitDevice,
+                    filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        IconButton(
+                          onPressed: onTap,
+                          iconSize: 28,
+                          icon: icon,
+                        ),
+                        IconButton(
+                          onPressed: toggleCollapsed,
+                          iconSize: 28,
+                          icon: const Icon(Symbols.arrow_drop_up_rounded),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              )
+            : AnimatedBuilder(
+                key: const ValueKey('detailed'),
+                animation: widget.animation,
+                builder: (context, child) {
+                  const double baseBorderRadius = 12;
+                  final double borderRadius = reverseAnimValue * baseBorderRadius;
+
+                  return AnimatedContainer(
+                    duration: const Duration(milliseconds: 100),
+                    clipBehavior: Clip.antiAlias,
+                    margin: EdgeInsets.only(bottom: reverseAnimValue * 12),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.66),
+                      borderRadius: BorderRadius.only(
+                        topLeft: const Radius.circular(baseBorderRadius),
+                        topRight: const Radius.circular(baseBorderRadius),
+                        bottomLeft: Radius.circular(borderRadius),
+                        bottomRight: Radius.circular(borderRadius),
+                      ),
+                    ),
+                    child: BackdropFilter(
+                      enabled: !settingsHandler.shitDevice,
+                      filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          borderRadius: BorderRadius.only(
+                            topLeft: const Radius.circular(baseBorderRadius),
+                            topRight: const Radius.circular(baseBorderRadius),
+                            bottomLeft: Radius.circular(borderRadius),
+                            bottomRight: Radius.circular(borderRadius),
+                          ),
+                          onTap: onTap,
+                          child: Padding(
+                            padding: EdgeInsets.only(
+                              top: 8,
+                              bottom: (animValue * MediaQuery.viewPaddingOf(context).bottom * 2) + 8,
+                            ),
+                            child: child,
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+                child: Row(
+                  children: [
+                    const SizedBox(width: 8),
+                    IconButton(
+                      onPressed: onTap,
+                      iconSize: 28,
+                      icon: icon,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: Text(title),
+                          ),
+                          AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 200),
+                            child: showSubtitle
+                                ? Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: htmlSubtitle
+                                        ? LoliHtml(
+                                            subtitle,
+                                            style: {
+                                              'p': Style(padding: HtmlPaddings(bottom: HtmlPadding(12))),
+                                            },
+                                          )
+                                        : Text(
+                                            subtitle,
+                                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                            ),
+                                          ),
+                                  )
+                                : const SizedBox.shrink(),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    IconButton(
+                      onPressed: toggleCollapsed,
+                      iconSize: 28,
+                      icon: const Icon(Symbols.arrow_drop_down_rounded),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                ),
+              ),
+      );
+    });
+  }
+}

@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/handlers/recommender/deferred_learning.dart';
+import 'package:lolisnatcher/features/recommender/logic/deferred_learning.dart';
 
 /// r78: a learning step still waiting when the app leaves the screen is kept
 /// on disk and learned in full next time, instead of being learned at once

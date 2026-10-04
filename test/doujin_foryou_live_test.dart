@@ -8,17 +8,17 @@ import 'package:flutter/foundation.dart';
 import 'package:alice_lightweight/alice.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
-import 'package:lolisnatcher/src/boorus/doujin_foryou_handler.dart';
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/data/booru_item.dart';
-import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
-import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
-import 'package:lolisnatcher/src/handlers/recommender/recommender_handler.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/handlers/tag_handler.dart';
-import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
-import 'package:lolisnatcher/src/utils/logger.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/features/recommender/logic/doujin_foryou_handler.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/models/booru_item.dart';
+import 'package:lolisnatcher/features/doujin/logic/doujin_data_handler.dart';
+import 'package:lolisnatcher/core/ui/navigation_handler.dart';
+import 'package:lolisnatcher/features/recommender/logic/recommender_handler.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/core/storage/tag_handler.dart';
+import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
+import 'package:lolisnatcher/core/logging/logger.dart';
 
 /// r33: the doujin For You against the LIVE sites (nhentai, e-hentai),
 /// through the real handlers — a report run, not part of the offline suite.

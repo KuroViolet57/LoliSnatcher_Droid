@@ -3,26 +3,26 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
-import 'package:lolisnatcher/src/boorus/doujin/asmhentai_handler.dart';
-import 'package:lolisnatcher/src/boorus/doujin/catalog_suggestions.dart';
-import 'package:lolisnatcher/src/boorus/doujin/eahentai_handler.dart';
-import 'package:lolisnatcher/src/boorus/doujin/eahentai_tag_catalog.dart';
-import 'package:lolisnatcher/src/boorus/doujin/ehentai_handler.dart';
-import 'package:lolisnatcher/src/boorus/doujin/faccina_handler.dart';
-import 'package:lolisnatcher/src/boorus/doujin/faccina_tag_catalog.dart';
-import 'package:lolisnatcher/src/boorus/doujin/hentaipaw_handler.dart';
-import 'package:lolisnatcher/src/boorus/doujin/hitomi_handler.dart';
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/data/booru_tag.dart';
-import 'package:lolisnatcher/src/data/tag_suggestion.dart';
-import 'package:lolisnatcher/src/data/tag_type.dart';
-import 'package:lolisnatcher/src/handlers/eahentai_session_handler.dart';
-import 'package:lolisnatcher/src/handlers/ehentai_session_handler.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
-import 'package:lolisnatcher/src/handlers/tag_catalog_source.dart';
-import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/sources/doujin/asmhentai/asmhentai_handler.dart';
+import 'package:lolisnatcher/sources/doujin/common/catalog_suggestions.dart';
+import 'package:lolisnatcher/sources/doujin/eahentai/eahentai_handler.dart';
+import 'package:lolisnatcher/sources/doujin/eahentai/eahentai_tag_catalog.dart';
+import 'package:lolisnatcher/sources/doujin/ehentai/ehentai_handler.dart';
+import 'package:lolisnatcher/sources/doujin/faccina/faccina_handler.dart';
+import 'package:lolisnatcher/sources/doujin/faccina/faccina_tag_catalog.dart';
+import 'package:lolisnatcher/sources/doujin/hentaipaw/hentaipaw_handler.dart';
+import 'package:lolisnatcher/sources/doujin/hitomi/hitomi_handler.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/models/booru_tag.dart';
+import 'package:lolisnatcher/models/tag_suggestion.dart';
+import 'package:lolisnatcher/models/tag_type.dart';
+import 'package:lolisnatcher/sources/doujin/eahentai/eahentai_session_handler.dart';
+import 'package:lolisnatcher/sources/doujin/ehentai/ehentai_session_handler.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/core/settings/source_settings_handler.dart';
+import 'package:lolisnatcher/sources/framework/tags/tag_catalog_source.dart';
+import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
 
 /// r70 parity sweep, the tag side: every doujin source gets a Tag builder and
 /// autocomplete. eahentai and hentalk had no builder at all; hitomi,

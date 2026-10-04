@@ -2,15 +2,15 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
-import 'package:lolisnatcher/src/boorus/doujin/doujin_tag_namespaces.dart';
-import 'package:lolisnatcher/src/boorus/doujin/faccina_handler.dart';
-import 'package:lolisnatcher/src/boorus/doujin/hitomi_handler.dart';
-import 'package:lolisnatcher/src/boorus/doujin/schale_handler.dart';
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/data/tag_type.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/sources/doujin/common/doujin_tag_namespaces.dart';
+import 'package:lolisnatcher/sources/doujin/faccina/faccina_handler.dart';
+import 'package:lolisnatcher/sources/doujin/hitomi/hitomi_handler.dart';
+import 'package:lolisnatcher/sources/doujin/schale/schale_handler.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/models/tag_type.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
 
 /// Round 4 fix 2: every new source was storing `artist:wakahi-chan` as the tag's
 /// own name. That put a raw prefix on every chip, and quietly broke three other

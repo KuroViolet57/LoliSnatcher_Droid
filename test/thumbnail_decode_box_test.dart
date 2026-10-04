@@ -2,8 +2,8 @@ import 'package:flutter/widgets.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/data/settings/preview_display_mode.dart';
-import 'package:lolisnatcher/src/widgets/thumbnail/thumbnail_decode_box.dart';
+import 'package:lolisnatcher/models/settings/preview_display_mode.dart';
+import 'package:lolisnatcher/features/feed/logic/thumbnail_decode_box.dart';
 
 /// r69: a thumbnail's decode size followed the app-wide preview SHAPE, not the
 /// box it is drawn in. With the default square shape a 450x629 doujin cover in

@@ -3,8 +3,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/data/model_tasks.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/features/recommender/logic/model_tasks.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
 
 /// r80: Settings → Recommendations → Models. Every job each model does has
 /// its own switch, each model has a thread count for work you wait on and

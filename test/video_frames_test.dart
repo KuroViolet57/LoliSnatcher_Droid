@@ -5,15 +5,15 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 
-import 'package:lolisnatcher/src/data/booru_item.dart';
-import 'package:lolisnatcher/src/data/model_tasks.dart';
-import 'package:lolisnatcher/src/data/settings/mpv_video_output.dart';
-import 'package:lolisnatcher/src/data/tag.dart';
-import 'package:lolisnatcher/src/handlers/recommender/look_model_handler.dart';
-import 'package:lolisnatcher/src/handlers/recommender/model_work.dart';
-import 'package:lolisnatcher/src/handlers/recommender/video_frames.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
+import 'package:lolisnatcher/models/booru_item.dart';
+import 'package:lolisnatcher/features/recommender/logic/model_tasks.dart';
+import 'package:lolisnatcher/models/settings/mpv_video_output.dart';
+import 'package:lolisnatcher/models/tag.dart';
+import 'package:lolisnatcher/features/recommender/logic/ml/look_model_handler.dart';
+import 'package:lolisnatcher/features/recommender/logic/model_work.dart';
+import 'package:lolisnatcher/features/recommender/logic/video_frames.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
 
 /// r76: frames from the playing video. While a video is the one on screen,
 /// mpv is asked (through media_kit's normal command call) to write the frame

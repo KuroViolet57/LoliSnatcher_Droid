@@ -2,18 +2,18 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
-import 'package:lolisnatcher/src/boorus/gelbooru_handler.dart';
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/data/tag.dart';
-import 'package:lolisnatcher/src/data/tag_type.dart';
-import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
-import 'package:lolisnatcher/src/handlers/search_handler.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/handlers/tag_handler.dart';
-import 'package:lolisnatcher/src/handlers/tag_type_lookup.dart';
-import 'package:lolisnatcher/src/pages/tag_hub_page.dart';
-import 'package:lolisnatcher/src/utils/hub_tag_query.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/sources/booru/gelbooru_handler.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/models/tag.dart';
+import 'package:lolisnatcher/models/tag_type.dart';
+import 'package:lolisnatcher/core/ui/navigation_handler.dart';
+import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/core/storage/tag_handler.dart';
+import 'package:lolisnatcher/features/tags/logic/tag_type_lookup.dart';
+import 'package:lolisnatcher/features/tags/ui/tag_hub_page.dart';
+import 'package:lolisnatcher/features/tags/logic/hub_tag_query.dart';
 
 /// r50: a tag's type as the post's own source reported it, even where the
 /// app-wide tag store is not written (a strip's preview tab, the floating

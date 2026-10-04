@@ -4,22 +4,22 @@ import 'package:flutter/material.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
-import 'package:lolisnatcher/src/boorus/furaffinity_handler.dart';
-import 'package:lolisnatcher/src/boorus/furaffinity_parser.dart';
-import 'package:lolisnatcher/src/boorus/linked_media.dart';
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/data/booru_item.dart';
-import 'package:lolisnatcher/src/data/modular_ui.dart';
-import 'package:lolisnatcher/src/data/tag.dart';
-import 'package:lolisnatcher/src/handlers/furaffinity_session_handler.dart';
-import 'package:lolisnatcher/src/handlers/search_handler.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/handlers/tag_handler.dart';
-import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
-import 'package:lolisnatcher/src/pages/furaffinity_post_page.dart';
-import 'package:lolisnatcher/src/pages/linked_media_page.dart';
-import 'package:lolisnatcher/src/widgets/linked_media_sheet.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/sources/furaffinity/furaffinity_handler.dart';
+import 'package:lolisnatcher/sources/furaffinity/furaffinity_parser.dart';
+import 'package:lolisnatcher/sources/framework/linked_media.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/models/booru_item.dart';
+import 'package:lolisnatcher/core/settings/modular_ui.dart';
+import 'package:lolisnatcher/models/tag.dart';
+import 'package:lolisnatcher/sources/furaffinity/furaffinity_session_handler.dart';
+import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/core/storage/tag_handler.dart';
+import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
+import 'package:lolisnatcher/features/furaffinity/ui/furaffinity_post_page.dart';
+import 'package:lolisnatcher/features/links/ui/linked_media_page.dart';
+import 'package:lolisnatcher/features/links/ui/linked_media_sheet.dart';
 
 /// r49: where the linked media shows — the post page's "Linked media"
 /// section and the viewer's link button on animated posts whose file is a

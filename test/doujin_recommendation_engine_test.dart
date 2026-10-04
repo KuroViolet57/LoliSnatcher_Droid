@@ -1,9 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/boorus/doujin/doujin_recommendation_engine.dart';
-import 'package:lolisnatcher/src/data/booru_item.dart';
-import 'package:lolisnatcher/src/data/tag.dart';
-import 'package:lolisnatcher/src/data/tag_type.dart';
+import 'package:lolisnatcher/sources/doujin/common/doujin_recommendation_engine.dart';
+import 'package:lolisnatcher/models/booru_item.dart';
+import 'package:lolisnatcher/models/tag.dart';
+import 'package:lolisnatcher/models/tag_type.dart';
 
 /// Round 4: Related and Recommended have to exist on EVERY doujin source,
 /// including the ones whose sites publish nothing of the kind. This engine

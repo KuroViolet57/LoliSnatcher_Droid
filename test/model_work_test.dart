@@ -3,11 +3,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/handlers/recommender/model_work.dart';
-import 'package:lolisnatcher/src/handlers/recommender/onnx_embedding_runner.dart';
-import 'package:lolisnatcher/src/handlers/recommender/onnx_look_runner.dart';
-import 'package:lolisnatcher/src/handlers/recommender/onnx_tag_runner.dart';
-import 'package:lolisnatcher/src/utils/perf_trace.dart';
+import 'package:lolisnatcher/features/recommender/logic/model_work.dart';
+import 'package:lolisnatcher/features/recommender/logic/onnx/onnx_embedding_runner.dart';
+import 'package:lolisnatcher/features/recommender/logic/onnx/onnx_look_runner.dart';
+import 'package:lolisnatcher/features/recommender/logic/onnx/onnx_tag_runner.dart';
+import 'package:lolisnatcher/core/logging/perf_trace.dart';
 
 /// r77: background model work (learning steps, a frame's looks run) waits for
 /// a quiet moment - no touch, scroll or page change for [ModelWork.quiet] -

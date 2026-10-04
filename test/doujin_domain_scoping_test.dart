@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/features/doujin/logic/doujin_data_handler.dart';
 
 /// Round 4, item 3: source switching stays inside one domain. Previewing a
 /// tag from a doujin source must offer only doujin sources, and from a booru

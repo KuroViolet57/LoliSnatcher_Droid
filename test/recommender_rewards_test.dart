@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/handlers/recommender/rewards.dart';
+import 'package:lolisnatcher/features/recommender/logic/rewards.dart';
 
 /// r33: what each interaction teaches the learner — a label and how much to
 /// trust it. A finished book or a favourite is worth several fleeting views;

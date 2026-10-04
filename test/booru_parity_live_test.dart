@@ -7,23 +7,23 @@ import 'package:flutter/foundation.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/boorus/booru_on_rails_handler.dart';
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
-import 'package:lolisnatcher/src/boorus/e621_handler.dart';
-import 'package:lolisnatcher/src/boorus/kusowanka_handler.dart';
-import 'package:lolisnatcher/src/boorus/moebooru_handler.dart';
-import 'package:lolisnatcher/src/boorus/philomena_handler.dart';
-import 'package:lolisnatcher/src/boorus/realbooru_handler.dart';
-import 'package:lolisnatcher/src/boorus/redgifs_handler.dart';
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/data/booru_item.dart';
-import 'package:lolisnatcher/src/data/comment_item.dart';
-import 'package:lolisnatcher/src/data/note_item.dart';
-import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/handlers/tag_handler.dart';
-import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
-import 'package:lolisnatcher/src/utils/logger.dart';
+import 'package:lolisnatcher/sources/booru/booru_on_rails_handler.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/sources/booru/e621_handler.dart';
+import 'package:lolisnatcher/sources/tube/kusowanka_handler.dart';
+import 'package:lolisnatcher/sources/booru/moebooru_handler.dart';
+import 'package:lolisnatcher/sources/booru/philomena_handler.dart';
+import 'package:lolisnatcher/sources/booru/realbooru_handler.dart';
+import 'package:lolisnatcher/sources/tube/redgifs_handler.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/models/booru_item.dart';
+import 'package:lolisnatcher/models/comment_item.dart';
+import 'package:lolisnatcher/models/note_item.dart';
+import 'package:lolisnatcher/core/ui/navigation_handler.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/core/storage/tag_handler.dart';
+import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
+import 'package:lolisnatcher/core/logging/logger.dart';
 
 /// r71 booru parity sweep against the LIVE sites, anonymous - a report run,
 /// not part of the offline suite.

@@ -4,14 +4,14 @@ import 'package:flutter/material.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/data/site_profiles/bakemono_profile.dart';
-import 'package:lolisnatcher/src/data/site_profiles/kemono_profile.dart';
-import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/pages/settings/links_page.dart';
-import 'package:lolisnatcher/src/services/source_links.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/sources/booru/bakemono_profile.dart';
+import 'package:lolisnatcher/sources/kemono/kemono_profile.dart';
+import 'package:lolisnatcher/features/doujin/logic/doujin_data_handler.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/features/links/ui/links_page.dart';
+import 'package:lolisnatcher/features/links/logic/source_links.dart';
 
 /// r85: Android cannot add link hosts to an app while it runs, so the sites
 /// the app opens are a list built in: the manifest's `.SourceLinks` entry,
@@ -75,7 +75,7 @@ void main() {
 
   group('the list of sites', () {
     test('every site the app knows is on it', () {
-      final String editPage = File('lib/src/pages/settings/booru_edit_page.dart').readAsStringSync();
+      final String editPage = File('lib/features/settings/ui/sources/booru_edit_page.dart').readAsStringSync();
       final Set<String> known = {
         for (final m in RegExp(r"booruURLController\.text = 'https?://([a-z0-9][a-z0-9.-]*\.[a-z]+)'").allMatches(editPage)) m.group(1)!,
         ...DoujinDataHandler.knownDoujinHosts,

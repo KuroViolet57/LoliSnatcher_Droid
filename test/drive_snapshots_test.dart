@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/services/drive_backup.dart';
+import 'package:lolisnatcher/features/backup/logic/drive_backup.dart';
 
 /// r80: Google Drive keeps named snapshots - a folder per backup inside the
 /// LoliSnatcher folder - instead of one set of files overwritten each time.

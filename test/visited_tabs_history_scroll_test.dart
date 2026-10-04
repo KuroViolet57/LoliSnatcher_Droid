@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/handlers/search_handler.dart';
-import 'package:lolisnatcher/src/widgets/tabs/tab_selector.dart';
+import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
+import 'package:lolisnatcher/features/tabs/ui/tab_selector.dart';
 
 /// r61: the tab manager's "Visited tabs history" would not scroll. Its list
 /// sits inside the dialog's own scroll view, and a scrollable inside a

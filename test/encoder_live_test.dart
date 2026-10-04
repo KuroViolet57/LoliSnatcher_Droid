@@ -6,9 +6,9 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/handlers/recommender/encoder_handler.dart';
-import 'package:lolisnatcher/src/handlers/recommender/wordpiece_tokenizer.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/features/recommender/logic/ml/encoder_handler.dart';
+import 'package:lolisnatcher/features/recommender/logic/ml/wordpiece_tokenizer.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
 
 /// r34, live: the English preset's vocabulary and tokenizer config come
 /// down from Hugging Face through the real fetcher, the Dart tokenizer reads

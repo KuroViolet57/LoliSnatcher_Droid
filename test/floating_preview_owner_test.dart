@@ -4,12 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:get_it/get_it.dart';
 
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/handlers/floating_preview_handler.dart';
-import 'package:lolisnatcher/src/handlers/interests_handler.dart';
-import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/features/feed/logic/floating_preview_handler.dart';
+import 'package:lolisnatcher/features/recommender/logic/interests_handler.dart';
+import 'package:lolisnatcher/core/ui/navigation_handler.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
 
 /// r77: on 19 Sep the viewer closed while a tag's preview icon was still
 /// waiting to react, and the preview window then opened on whatever page was

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/pages/doujin_detail_page.dart';
+import 'package:lolisnatcher/features/doujin/ui/detail/doujin_detail_page.dart';
 
 /// Round 4, item 1: the mini tab manager's drag strip. Flutter's ~20px
 /// default sits under Android's gesture handle and is unreachable one-handed,

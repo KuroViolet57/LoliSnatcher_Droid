@@ -4,14 +4,14 @@ import 'package:flutter/material.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/data/pinned_tag.dart';
-import 'package:lolisnatcher/src/data/pinned_tag_visibility.dart';
-import 'package:lolisnatcher/src/data/tag_suggestion.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
-import 'package:lolisnatcher/src/pages/pinned_tags_page.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/models/pinned_tag.dart';
+import 'package:lolisnatcher/features/tags/logic/pinned_tag_visibility.dart';
+import 'package:lolisnatcher/models/tag_suggestion.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/core/settings/source_settings_handler.dart';
+import 'package:lolisnatcher/features/tags/ui/pinned_tags_page.dart';
 
 class _MemStore extends PinnedTagsStore {
   final List<PinnedTag> pins = [];

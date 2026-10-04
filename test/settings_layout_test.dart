@@ -4,14 +4,14 @@ import 'package:flutter/material.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/data/model_tasks.dart';
-import 'package:lolisnatcher/src/handlers/recommender/model_timings.dart';
-import 'package:lolisnatcher/src/handlers/recommender/onnx_availability.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/pages/settings/accounts_page.dart';
-import 'package:lolisnatcher/src/pages/settings/model_page.dart';
-import 'package:lolisnatcher/src/pages/settings/models_page.dart';
-import 'package:lolisnatcher/src/pages/settings/recommendations_page.dart';
+import 'package:lolisnatcher/features/recommender/logic/model_tasks.dart';
+import 'package:lolisnatcher/features/recommender/logic/ml/model_timings.dart';
+import 'package:lolisnatcher/features/recommender/logic/onnx/onnx_availability.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/features/accounts/ui/accounts_page.dart';
+import 'package:lolisnatcher/features/recommender/ui/model_page.dart';
+import 'package:lolisnatcher/features/recommender/ui/models_page.dart';
+import 'package:lolisnatcher/features/recommender/ui/recommendations_page.dart';
 
 /// r88 (the user, 2026-10-02): settings were scattered - Recommendations
 /// sat under Doujin, a model's settings were split between the
@@ -50,7 +50,7 @@ void main() {
   });
 
   test('the main Settings screen: one home per thing, in this order', () {
-    final String src = File('lib/src/pages/settings_page.dart').readAsStringSync();
+    final String src = File('lib/features/settings/ui/settings_page.dart').readAsStringSync();
     final List<String> sections = [for (final m in RegExp(r"_sectionLabel\(context, '([^']+)'\)").allMatches(src)) m.group(1)!];
     expect(sections, ['SOURCES', 'RECOMMENDATIONS & AI', 'LOOK & FEEL', 'VIEWING', 'DOWNLOADS & STORAGE', 'SYSTEM', 'ABOUT']);
     int at(String s) {

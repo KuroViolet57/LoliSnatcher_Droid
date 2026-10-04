@@ -1,0 +1,359 @@
+import 'dart:convert';
+
+import 'package:flutter/material.dart';
+
+import 'package:equatable/equatable.dart';
+import 'package:get/get.dart';
+
+import 'package:lolisnatcher/models/note_item.dart';
+import 'package:lolisnatcher/models/tag.dart';
+import 'package:lolisnatcher/features/doujin/logic/doujin_data_handler.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/core/settings/source_settings_handler.dart';
+import 'package:lolisnatcher/core/utils/tools.dart';
+
+// ignore: must_be_immutable
+class BooruItem extends Equatable {
+  BooruItem({
+    required this.fileURL,
+    required this.sampleURL,
+    required this.thumbnailURL,
+    required this.tagsList,
+    required this.postURL,
+    this.fileExt,
+    this.fileNameExtras = '',
+    this.fileSize,
+    this.fileWidth,
+    this.fileHeight,
+    this.sampleWidth,
+    this.sampleHeight,
+    this.previewWidth,
+    this.previewHeight,
+    this.hasNotes,
+    this.hasComments,
+    this.serverId,
+    this.rating, // safe, explicit...
+    this.score,
+    this.uploaderId,
+    this.uploaderName,
+    this.description,
+    this.sources,
+    this.md5String,
+    this.postDate,
+    this.postDateFormat,
+    this.downloadFileName,
+  }) {
+    // Create a unique key for every loaded item, to later use them to read the state of their viewer
+    key = GlobalKey();
+
+    if (sampleURL.isEmpty || sampleURL == 'null') {
+      sampleURL = thumbnailURL;
+    }
+    fileExt = (fileExt ?? Tools.getFileExt(fileURL)).toLowerCase();
+
+    // Dimensions must be POSITIVE to give a usable ratio: some boorus report
+    // width="0" height="0" when they don't know the size (bakemono.app does),
+    // and 0/0 is NaN — which then propagates into thumbnail layout as a NaN
+    // aspect ratio. Leaving the ratio null lets the UI fall back properly.
+    if ((fileWidth ?? 0) > 0 && (fileHeight ?? 0) > 0) {
+      fileAspectRatio = fileWidth! / fileHeight!;
+    }
+    if ((sampleWidth ?? 0) > 0 && (sampleHeight ?? 0) > 0) {
+      sampleAspectRatio = sampleWidth! / sampleHeight!;
+    }
+    if ((previewWidth ?? 0) > 0 && (previewHeight ?? 0) > 0) {
+      previewAspectRatio = previewWidth! / previewHeight!;
+    }
+
+    mediaType = Rx<MediaType>(MediaType.fromExtension(fileExt));
+  }
+
+  late Key key;
+  String fileURL;
+  String sampleURL;
+  String thumbnailURL;
+  String postURL;
+  List<Tag> tagsList;
+  late Rx<MediaType> mediaType;
+  Rxn<MediaType> possibleMediaType = Rxn<MediaType>(null);
+  RxnBool isSnatched = RxnBool(null), isFavourite = RxnBool(null);
+  // Whether this post has been opened in the viewer before. Reactive so the
+  // grid cell dims live the moment you come back from viewing it. Persisted
+  // via the SeenPost table keyed by postURL.
+  RxBool isSeen = false.obs;
+  RxBool isNoScale = false.obs, toggleQuality = false.obs;
+  bool isUpdated = false;
+
+  /// Whether the source's blacklist rules hide this item (its own list, and
+  /// the global one unless the source ignores it), as the feed filter last
+  /// found (r44). Null until a feed filtered it.
+  bool? hiddenInSource;
+
+  String? fileExt;
+  String? serverId;
+
+  /// Number of files in this post, when the source can tell us (some sites
+  /// treat a post as a gallery). Transient display hint, not persisted.
+  ///
+  /// Reactive because it can arrive AFTER the grid cell is built — counts are
+  /// backfilled in the background for sites whose API omits them.
+  final Rxn<int> fileCountHint = Rxn<int>();
+
+  /// A thumbnail for this session only, never persisted: a doujin page's
+  /// tile of its gallery's sprite strip (e-hentai), whose strip links expire
+  /// within days. Widgets that show thumbnails read [displayThumbnailURL];
+  /// the database, backups and sync keep [thumbnailURL], the stable cover.
+  String? transientThumbnailURL;
+
+  /// What a thumbnail widget loads for this item.
+  String get displayThumbnailURL => transientThumbnailURL ?? thumbnailURL;
+  String? rating;
+  String? score;
+  String? uploaderId;
+  String? uploaderName;
+  String? description;
+  String? md5String;
+  String? postDate;
+  String? postDateFormat;
+  String fileNameExtras;
+
+  /// The name a download should get, when the site names the file itself
+  /// (kemono attachments); null = the app's own naming.
+  String? downloadFileName;
+  List<String>? sources;
+  RxList<NoteItem> notes = RxList([]);
+  bool? hasNotes, hasComments;
+  double? fileWidth;
+  double? fileHeight;
+  double? fileAspectRatio;
+  double? sampleWidth;
+  double? sampleHeight;
+  double? sampleAspectRatio;
+  double? previewWidth;
+  double? previewHeight;
+  double? previewAspectRatio;
+  int? fileSize;
+
+  bool get isLong {
+    return fileAspectRatio != null && fileAspectRatio! < 0.3;
+  }
+
+  /// Whether this item should be treated as blacklisted by every consumer of
+  /// the "hidden" state (blur overlay, pixelation, viewer stop screens,
+  /// snatch filtering). Domain-scoped per ITEM: doujin items check ONLY the
+  /// doujin blacklist (SourceSettingsHandler), everything else checks ONLY
+  /// the global e621-style booru blacklist. Doesn't honour per-booru scoping
+  /// (no booru context here); the actual item-filter path in
+  /// BooruHandler.filterFetched calls [SettingsHandler.isItemHiddenForBooru],
+  /// which does.
+  bool get isHidden {
+    if (DoujinDataHandler.isDoujinItem(this)) {
+      return SourceSettingsHandler.instance.isItemHiddenForDoujin(this);
+    }
+    // r44: a source ignoring the global blacklist used to still blur what
+    // only the global list hides; the feed's source-aware answer wins.
+    return hiddenInSource ?? SettingsHandler.instance.isItemHiddenGlobally(this);
+  }
+
+  /// Domain-scoped like [isHidden]: doujin items check the doujin starred-tag
+  /// store, everything else the booru markedTags list.
+  bool get isMarked {
+    if (DoujinDataHandler.isDoujinItem(this)) {
+      return DoujinDataHandler.instance.starredIn(tagsList.map((t) => t.fullString).toList()).isNotEmpty;
+    }
+    return SettingsHandler.instance.containsMarked(tagsList.map((t) => t.fullString).toList());
+  }
+
+  bool get isSound {
+    return SettingsHandler.instance.containsSound(tagsList.map((t) => t.fullString).toList());
+  }
+
+  bool get isAI {
+    return SettingsHandler.instance.containsAI(tagsList.map((t) => t.fullString).toList());
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'postURL': postURL,
+      'fileURL': fileURL,
+      'sampleURL': sampleURL,
+      'thumbnailURL': thumbnailURL,
+      'tags': tagsList,
+      'fileExt': fileExt,
+      'isFavourite': isFavourite.value,
+      'isSnatched': isSnatched.value,
+      'serverId': serverId,
+      'rating': rating,
+      'score': score,
+      'sources': sources,
+      'md5String': md5String,
+      'postDate': postDate,
+      'postDateFormat': postDateFormat,
+      'downloadFileName': downloadFileName,
+    };
+  }
+
+  @override
+  String toString() {
+    return jsonEncode(toJson());
+  }
+
+  @override
+  List<Object?> get props => [
+    key,
+    fileURL,
+    sampleURL,
+    thumbnailURL,
+    postURL,
+    tagsList,
+    mediaType,
+    possibleMediaType,
+    isSnatched,
+    isFavourite,
+    isNoScale,
+    toggleQuality,
+    isUpdated,
+    fileExt,
+    serverId,
+    rating,
+    score,
+    uploaderId,
+    uploaderName,
+    description,
+    md5String,
+    postDate,
+    postDateFormat,
+    fileNameExtras,
+    sources,
+    notes,
+    hasNotes,
+    hasComments,
+    fileWidth,
+    fileHeight,
+    fileAspectRatio,
+    sampleWidth,
+    sampleHeight,
+    sampleAspectRatio,
+    previewWidth,
+    previewHeight,
+    previewAspectRatio,
+    fileSize,
+  ];
+
+  static BooruItem fromJSON(String jsonString) {
+    final Map<String, dynamic> json = jsonDecode(jsonString);
+    return BooruItem.fromMap(json);
+  }
+
+  static BooruItem fromMap(Map<String, dynamic> json) {
+    final List<String> tags = [];
+    final List tagz = json['tags'];
+    for (int i = 0; i < tagz.length; i++) {
+      tags.add(tagz[i].toString());
+    }
+    //BooruItem(this.fileURL,this.sampleURL,this.thumbnailURL,this.tagsList,this.postURL,this.fileExt
+    final BooruItem item = BooruItem(
+      fileURL: json['fileURL'].toString(),
+      sampleURL: json['sampleURL'].toString(),
+      thumbnailURL: json['thumbnailURL'].toString(),
+      tagsList: tags.map(Tag.new).toList(),
+      postURL: json['postURL'].toString(),
+      // TODO stringify other options here
+    );
+    item.isFavourite.value = json['isFavourite'].toString() == 'true';
+    item.isSnatched.value = json['isSnatched'].toString() == 'true';
+    return item;
+  }
+
+  static BooruItem fromDBRow(dynamic row, List<String> tags) {
+    final BooruItem item = BooruItem(
+      fileURL: row['fileURL'].toString(),
+      sampleURL: row['sampleURL'].toString(),
+      thumbnailURL: row['thumbnailURL'].toString(),
+      // use custom separator to avoid conflicts with tags containing commas
+      fileExt: row['fileURL'].toString().contains('Hydrus-Client-API') ? 'extra' : null,
+      tagsList: tags.map(Tag.new).toList(),
+      postURL: row['postURL'].toString(),
+    );
+    item.isFavourite.value = Tools.intToBool(row['isFavourite']);
+    item.isSnatched.value = Tools.intToBool(row['isSnatched']);
+    return item;
+  }
+}
+
+enum MediaType {
+  image,
+  video,
+  animation,
+  notSupportedAnimation,
+  unknown,
+  needToGuess,
+  needToLoadItem
+  ;
+
+  bool get isImage {
+    return this == MediaType.image;
+  }
+
+  bool get isImageOrAnimation {
+    return this == MediaType.image || this == MediaType.animation || this == MediaType.notSupportedAnimation;
+  }
+
+  bool get isVideo {
+    return this == MediaType.video;
+  }
+
+  bool get isAnimation {
+    return this == MediaType.animation;
+  }
+
+  bool get isNotSupportedAnimation {
+    return this == MediaType.notSupportedAnimation;
+  }
+
+  bool get isUnknown {
+    return this == MediaType.unknown;
+  }
+
+  bool get isNeedToGuess {
+    return this == MediaType.needToGuess;
+  }
+
+  bool get isNeedToLoadItem {
+    return this == MediaType.needToLoadItem;
+  }
+
+  String toJson() {
+    return name.replaceAll(RegExp('(?<=[a-z])(?=[A-Z])'), '_').toLowerCase();
+  }
+
+  static MediaType fromExtension(String? ext) {
+    switch (ext) {
+      case 'jpg':
+      case 'jpeg':
+      case 'png':
+      case 'webp':
+      case 'avif':
+        return MediaType.image;
+
+      case 'mp4':
+      case 'webm':
+        return MediaType.video;
+
+      case 'gif':
+        return MediaType.animation;
+
+      case 'apng':
+        return MediaType.notSupportedAnimation;
+
+      case 'extra':
+        return MediaType.needToGuess;
+
+      case 'loadItem':
+        return MediaType.needToLoadItem;
+
+      default:
+        return MediaType.unknown;
+    }
+  }
+}

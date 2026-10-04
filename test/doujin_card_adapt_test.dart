@@ -5,24 +5,24 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:scroll_to_index/scroll_to_index.dart';
 
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
-import 'package:lolisnatcher/src/boorus/doujin/eahentai_handler.dart';
-import 'package:lolisnatcher/src/boorus/doujin/faccina_handler.dart';
-import 'package:lolisnatcher/src/boorus/doujin/hitomi_handler.dart';
-import 'package:lolisnatcher/src/boorus/doujin/schale_handler.dart';
-import 'package:lolisnatcher/src/boorus/nhentai_handler.dart';
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/data/booru_item.dart';
-import 'package:lolisnatcher/src/data/tag.dart';
-import 'package:lolisnatcher/src/handlers/booru_handler.dart';
-import 'package:lolisnatcher/src/handlers/doujin_cover_aspect_handler.dart';
-import 'package:lolisnatcher/src/handlers/search_handler.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/handlers/snatch_handler.dart';
-import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
-import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
-import 'package:lolisnatcher/src/widgets/thumbnail/thumbnail_build.dart';
-import 'package:lolisnatcher/src/widgets/thumbnail/thumbnail_card_build.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/sources/doujin/eahentai/eahentai_handler.dart';
+import 'package:lolisnatcher/sources/doujin/faccina/faccina_handler.dart';
+import 'package:lolisnatcher/sources/doujin/hitomi/hitomi_handler.dart';
+import 'package:lolisnatcher/sources/doujin/schale/schale_handler.dart';
+import 'package:lolisnatcher/sources/doujin/nhentai/nhentai_handler.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/models/booru_item.dart';
+import 'package:lolisnatcher/models/tag.dart';
+import 'package:lolisnatcher/sources/framework/booru_handler.dart';
+import 'package:lolisnatcher/features/doujin/logic/doujin_cover_aspect_handler.dart';
+import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/features/downloads/logic/snatch_handler.dart';
+import 'package:lolisnatcher/core/settings/source_settings_handler.dart';
+import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
+import 'package:lolisnatcher/features/feed/ui/thumbnail/thumbnail_build.dart';
+import 'package:lolisnatcher/features/feed/ui/thumbnail/thumbnail_card_build.dart';
 
 /// Round 6 item 4, second attempt.
 ///

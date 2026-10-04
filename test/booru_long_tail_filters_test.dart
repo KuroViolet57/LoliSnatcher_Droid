@@ -2,18 +2,18 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/boorus/booru_site_filters.dart';
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
-import 'package:lolisnatcher/src/boorus/civitai_handler.dart';
-import 'package:lolisnatcher/src/boorus/danbooru_handler.dart';
-import 'package:lolisnatcher/src/boorus/doujin/doujin_filters.dart';
-import 'package:lolisnatcher/src/boorus/hanime1_handler.dart';
-import 'package:lolisnatcher/src/boorus/philomena_handler.dart';
-import 'package:lolisnatcher/src/boorus/rule34dev_handler.dart';
-import 'package:lolisnatcher/src/boorus/sankaku_handler.dart';
-import 'package:lolisnatcher/src/boorus/worldxyz_handler.dart';
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/sources/framework/booru_site_filters.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/sources/booru/civitai_handler.dart';
+import 'package:lolisnatcher/sources/booru/danbooru_handler.dart';
+import 'package:lolisnatcher/sources/doujin/common/doujin_filters.dart';
+import 'package:lolisnatcher/sources/tube/hanime1_handler.dart';
+import 'package:lolisnatcher/sources/booru/philomena_handler.dart';
+import 'package:lolisnatcher/sources/booru/rule34dev_handler.dart';
+import 'package:lolisnatcher/sources/booru/sankaku_handler.dart';
+import 'package:lolisnatcher/sources/booru/worldxyz_handler.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
 
 /// r46: the long tail. Every fixed choice list a handler already declares (the
 /// site's own words, parsed by that handler) becomes a filter, not only sort,

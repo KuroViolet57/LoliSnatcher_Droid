@@ -1,0 +1,545 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
+
+import 'package:dio/dio.dart';
+import 'package:get/get.dart';
+import 'package:get_it/get_it.dart';
+
+import 'package:lolisnatcher/features/doujin/logic/doujin_download_handler.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/models/booru_item.dart';
+import 'package:lolisnatcher/sources/framework/booru_handler.dart';
+import 'package:lolisnatcher/sources/framework/booru_handler_factory.dart';
+import 'package:lolisnatcher/features/recommender/logic/interests_handler.dart';
+import 'package:lolisnatcher/features/doujin/logic/doujin_data_handler.dart';
+import 'package:lolisnatcher/core/ui/navigation_handler.dart';
+import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/features/downloads/logic/image_writer.dart';
+import 'package:lolisnatcher/core/ui/flash_elements.dart';
+import 'package:lolisnatcher/features/feed/ui/thumbnail/thumbnail_build.dart';
+import 'package:lolisnatcher/core/logging/logger.dart';
+import 'package:lolisnatcher/sources/doujin/ehentai/ehentai_handler.dart';
+
+class SnatchHandler {
+  SnatchHandler() {
+    queuedList.addListener(queuedListListener);
+  }
+
+  static SnatchHandler get instance => GetIt.instance<SnatchHandler>();
+
+  static SnatchHandler register() {
+    if (!GetIt.instance.isRegistered<SnatchHandler>()) {
+      GetIt.instance.registerSingleton(
+        SnatchHandler(),
+        dispose: (snatchHandler) => snatchHandler.dispose(),
+      );
+    }
+    return instance;
+  }
+
+  static void unregister() => GetIt.instance.unregister<SnatchHandler>();
+
+  final RxBool active = false.obs;
+  final RxString status = ''.obs;
+  final RxInt queueProgress = 0.obs;
+  final Rx<SnatchItem?> current = Rx<SnatchItem?>(null);
+  final RxInt received = 0.obs;
+  final RxInt total = 0.obs;
+
+  final RxList<({BooruItem item, Booru booru})> existsItems = RxList([]);
+  final RxList<({BooruItem item, Booru booru})> failedItems = RxList([]);
+  final RxList<({BooruItem item, Booru booru})> cancelledItems = RxList([]);
+  // Stops these lists from accumulating forever across long browsing
+  // sessions. 500 entries is more than any UI ever shows at once; older
+  // records drop off the head.
+  static const int _resultsListCap = 500;
+  void _capResults(RxList list) {
+    if (list.length > _resultsListCap) {
+      list.removeRange(0, list.length - _resultsListCap);
+    }
+  }
+
+  CancelToken? cancelToken;
+
+  double get currentProgress {
+    if (total.value == 0) return 0;
+    return received.value / total.value;
+  }
+
+  final RxList<SnatchItem> queuedList = RxList<SnatchItem>([]);
+
+  Stream<Map<String, int>> writeMultipleFake(List<BooruItem> items, Booru booru, int cooldown) async* {
+    int snatchedCounter = 0;
+    for (int i = 0; i < items.length; i++) {
+      await Future.delayed(const Duration(milliseconds: 2000), () async {});
+      snatchedCounter++;
+      yield {
+        'snatched': snatchedCounter,
+      };
+    }
+
+    yield {
+      'snatched': snatchedCounter,
+      'exists': 0,
+      'failed': 0,
+      'cancelled': 0,
+    };
+  }
+
+  void onProgress(int newReceived, int newTotal) {
+    received.value = newReceived;
+    total.value = newTotal;
+  }
+
+  void onRemoveRetryItem(
+    ({BooruItem item, Booru booru}) record,
+  ) {
+    existsItems.remove(record);
+    failedItems.remove(record);
+    cancelledItems.remove(record);
+  }
+
+  void onClearRetryableItems() {
+    existsItems.clear();
+    failedItems.clear();
+    cancelledItems.clear();
+  }
+
+  Future<void> onRetryAll({
+    required int cooldown,
+    bool ignoreExists = false,
+  }) async {
+    final itemsToRetry = [...existsItems, ...failedItems, ...cancelledItems];
+    final Set<Booru> uniqueBoorus = itemsToRetry.map((i) => i.booru).toSet();
+    final Map<Booru, List<BooruItem>> booruItemsMap = {};
+    booruItemsMap.addEntries(uniqueBoorus.map((b) => MapEntry(b, [])));
+    for (int i = 0; i < itemsToRetry.length; i++) {
+      final BooruItem item = itemsToRetry[i].item;
+      final Booru booru = itemsToRetry[i].booru;
+      final List<BooruItem> items = booruItemsMap[booru]!;
+      items.add(item);
+      booruItemsMap[booru] = items;
+    }
+
+    final List<SnatchItem> snatchItems = [];
+    await Future.wait(
+      booruItemsMap.entries.map((entry) async {
+        final booru = entry.key;
+        final items = entry.value;
+        final booruHandler = BooruHandlerFactory().getBooruHandler([booru], 10).booruHandler;
+        if (booruHandler.hasLoadItemSupport) {
+          try {
+            // refetch data only on smaller-ish batches, otherwise they will most likely rate limit the user
+            if (items.length <= 20) {
+              for (final item in items) {
+                await booruHandler.loadItem(
+                  item: item,
+                  withCapcthaCheck: true,
+                );
+                await Future.delayed(const Duration(milliseconds: 100));
+              }
+            }
+          } catch (_) {}
+        }
+
+        snatchItems.add(
+          SnatchItem(
+            items,
+            cooldown,
+            booru,
+            ignoreExists || items.any((i) => existsItems.any((e) => e.item == i)),
+          ),
+        );
+      }),
+    );
+
+    queuedList.addAll(snatchItems);
+
+    onClearRetryableItems();
+  }
+
+  void onRetryItem(
+    ({BooruItem item, Booru booru}) record, {
+    required int cooldown,
+    bool ignoreExists = false,
+  }) {
+    queuedList.add(
+      SnatchItem(
+        [record.item],
+        cooldown,
+        record.booru,
+        ignoreExists,
+      ),
+    );
+
+    onRemoveRetryItem(record);
+  }
+
+  void onCancel() {
+    cancelToken?.cancel();
+  }
+
+  void onCancelTokenCreate(CancelToken token) {
+    cancelToken = token;
+  }
+
+  Future snatch(SnatchItem item) async {
+    status.value = queuedList.isNotEmpty
+        ? '0/${item.booruItems.length}/${queuedList.length}'
+        : '0/${item.booruItems.length}';
+    current.value = item;
+
+    // A doujin book gets its own folder and page-numbered files; when the
+    // folder cannot be made the pages fall back to the root, as before.
+    final DoujinDownloadTarget? target = item.doujin == null
+        ? null
+        : await DoujinDownloadHandler.instance.prepare(item.doujin!);
+
+    // writeMultipleFake(item.booruItems, item.booru, item.cooldown).listen(
+    ImageWriter()
+        .writeMultiple(
+          item.booruItems,
+          item.booru,
+          item.cooldown,
+          onProgress,
+          item.ignoreExists,
+          onCancelTokenCreate,
+          dirOverride: target?.dir,
+          fileNameFor: target == null ? null : (page, i) => DoujinDownloadHandler.pageFileName(item.doujin!, page, i),
+        )
+        .listen(
+          (Map<String, dynamic> data) {
+            final int snatched = data['snatched']! as int;
+            final List<BooruItem> exists = data['exists'] ?? [];
+            final List<BooruItem> failed = data['failed'] ?? [];
+            final List<BooruItem> cancelled = data['cancelled'] ?? [];
+            final bool isLastMessage = data['exists'] != null && data['failed'] != null && data['cancelled'] != null;
+            if (isLastMessage && target != null && item.doujin != null) {
+              unawaited(DoujinDownloadHandler.instance.writeManifest(target, item.doujin!));
+            }
+
+            // last yield in stream will send fetch results counters
+            // but show this message only when queue is empty => snatching is complete
+            if (SettingsHandler.instance.downloadNotifications && isLastMessage) {
+              if (current.value!.booruItems.length == 1) {
+                final context = NavigationHandler.instance.navContext;
+                FlashElements.showSnackbar(
+                  duration: const Duration(seconds: 2),
+                  position: FlashPosition.top,
+                  title: Text(
+                    context.loc.snatcher.itemsSnatched,
+                    style: const TextStyle(fontSize: 20),
+                  ),
+                  content: Row(
+                    children: [
+                      if (exists.isNotEmpty || failed.isNotEmpty || cancelled.isNotEmpty || queuedList.isNotEmpty)
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (exists.isNotEmpty) Text(context.loc.snatcher.itemWasAlreadySnatched),
+                              if (failed.isNotEmpty) Text(context.loc.snatcher.failedToSnatchItem),
+                              if (cancelled.isNotEmpty) Text(context.loc.snatcher.itemWasCancelled),
+                              if (queuedList.isNotEmpty) Text(context.loc.snatcher.startingNextQueueItem),
+                            ],
+                          ),
+                        ),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        width: 64,
+                        height: 64,
+                        child: ThumbnailBuild(
+                          item: current.value!.booruItems.first,
+                          handler: BooruHandlerFactory().getBooruHandler(
+                            [current.value!.booru],
+                            null,
+                          ).booruHandler,
+                          selectable: false,
+                          simple: true,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                  ),
+                  leadingIcon: Symbols.done_all_rounded,
+                  sideColor: failed.isNotEmpty
+                      ? Colors.red
+                      : ((exists.isNotEmpty || cancelled.isNotEmpty) ? Colors.yellow : Colors.green),
+                );
+              } else {
+                final context = NavigationHandler.instance.navContext;
+                FlashElements.showSnackbar(
+                  duration: const Duration(seconds: 2),
+                  position: FlashPosition.top,
+                  title: Text(context.loc.snatcher.itemsSnatched, style: const TextStyle(fontSize: 20)),
+                  content: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        context.loc.snatcher.snatchedCount(count: queueProgress.value),
+                      ),
+                      if (exists.isNotEmpty)
+                        Text(
+                          context.loc.snatcher.filesAlreadySnatched(count: exists.length),
+                        ),
+                      if (failed.isNotEmpty)
+                        Text(
+                          context.loc.snatcher.failedToSnatchFiles(count: failed.length),
+                        ),
+                      if (cancelled.isNotEmpty)
+                        Text(
+                          context.loc.snatcher.cancelledFiles(count: cancelled.length),
+                        ),
+                      if (queuedList.isNotEmpty) Text(context.loc.snatcher.startingNextQueueItem),
+                    ],
+                  ),
+                  leadingIcon: Symbols.done_all_rounded,
+                  sideColor: failed.isNotEmpty
+                      ? Colors.red
+                      : ((exists.isNotEmpty || cancelled.isNotEmpty) ? Colors.yellow : Colors.green),
+                );
+              }
+            }
+
+            if (isLastMessage) {
+              existsItems.addAll(exists.map((e) => (booru: item.booru, item: e)));
+              failedItems.addAll(failed.map((e) => (booru: item.booru, item: e)));
+              cancelledItems.addAll(cancelled.map((e) => (booru: item.booru, item: e)));
+              _capResults(existsItems);
+              _capResults(failedItems);
+              _capResults(cancelledItems);
+            }
+
+            cancelToken = null;
+            status.value = queuedList.isNotEmpty
+                ? '$snatched/${item.booruItems.length}/${queuedList.length}'
+                : '$snatched/${item.booruItems.length}';
+            queueProgress.value = queueProgress.value + 1;
+            received.value = 0;
+            total.value = 0;
+          },
+          onDone: () {
+            cancelToken = null;
+            status.value = '';
+            current.value = null;
+            queueProgress.value = 0;
+            received.value = 0;
+            total.value = 0;
+
+            if (active.value) {
+              if (queuedList.isNotEmpty) {
+                snatch(queuedList.removeAt(0));
+              } else {
+                active.value = false;
+              }
+            }
+          },
+        );
+  }
+
+  void queuedListListener() {
+    trySnatch();
+  }
+
+  void trySnatch() {
+    if (!active.value && current.value == null) {
+      if (queuedList.isNotEmpty) {
+        active.value = true;
+        snatch(queuedList.removeAt(0));
+      }
+    }
+  }
+
+  /// [doujin] describes the BOOK the pages belong to; with it the pages are
+  /// written into that book's own folder instead of loose in the root.
+  /// Pages a source serves one at a time (e-hentai) are placeholders until
+  /// opened; a download of the book fetches each page's real file first,
+  /// paced, then queues as usual. Pages the site refuses are left out and
+  /// logged rather than saved as their cover.
+  Future<void> _resolveThenQueue(
+    List<BooruItem> booruItems,
+    Booru booru,
+    int cooldown,
+    bool ignoreExists,
+    DoujinDownloadInfo doujin,
+  ) async {
+    final BooruHandler handler = BooruHandlerFactory().getBooruHandler([booru], null).booruHandler;
+    final List<BooruItem> ready = [];
+    for (final BooruItem item in booruItems) {
+      if (item.mediaType.value != MediaType.needToLoadItem) {
+        ready.add(item);
+        continue;
+      }
+      try {
+        final result = handler is EHentaiHandler
+            ? await handler.loadItem(item: item, withCapcthaCheck: true, bulk: true)
+            : await handler.loadItem(item: item, withCapcthaCheck: true);
+        if (!result.failed) {
+          ready.add(item);
+        } else {
+          Logger.Inst().log('page not resolved for download: ${item.postURL} — ${result.error}', 'SnatchHandler', '_resolveThenQueue', LogTypes.booruHandlerInfo);
+        }
+      } catch (e) {
+        Logger.Inst().log('page not resolved for download: ${item.postURL} — $e', 'SnatchHandler', '_resolveThenQueue', LogTypes.exception);
+      }
+      await Future.delayed(const Duration(milliseconds: 300));
+    }
+    if (ready.isEmpty) {
+      Logger.Inst().log('no page of this book could be resolved; nothing queued', 'SnatchHandler', '_resolveThenQueue', LogTypes.booruHandlerInfo);
+      return;
+    }
+    // The manifest must describe what is actually being saved.
+    queue(ready, booru, cooldown, ignoreExists, doujin: doujin.withMissing(ready));
+  }
+
+  void queue(
+    List<BooruItem> booruItems,
+    Booru booru,
+    int cooldown,
+    bool ignoreExists, {
+    DoujinDownloadInfo? doujin,
+  }) {
+    if (doujin != null && booruItems.any((i) => i.mediaType.value == MediaType.needToLoadItem)) {
+      unawaited(_resolveThenQueue(booruItems, booru, cooldown, ignoreExists, doujin));
+      return;
+    }
+    if (booruItems.isNotEmpty) {
+      final SnatchItem item = SnatchItem(booruItems, cooldown, booru, ignoreExists, doujin: doujin);
+      queuedList.add(item);
+      // Doujin downloads must not feed the booru taste profile — checked per
+      // item so merge tabs mixing both worlds stay separated too.
+      if (!DoujinDataHandler.isDoujinBooru(booru)) {
+        final List<BooruItem> booruOnly = [
+          for (final i in booruItems)
+            if (!DoujinDataHandler.isDoujinItem(i)) i,
+        ];
+        if (booruOnly.isNotEmpty) {
+          InterestsHandler.instance.onItemsSnatched(booruOnly);
+        }
+      }
+
+      // "Hide snatched posts" is meant to apply when a feed LOADS, not to make
+      // a post vanish the instant you save it. Keep anything snatched now
+      // visible until the feed is actually reloaded (same rule as favourites).
+      final SearchHandler searchHandler = SearchHandler.instance;
+      if (searchHandler.tabs.isNotEmpty) {
+        for (final snatched in booruItems) {
+          searchHandler.currentTab.booruHandler.exemptFromLiveFilter(snatched);
+        }
+      }
+
+      if (booruItems.length > 1) {
+        if (SettingsHandler.instance.downloadNotifications) {
+          final context = NavigationHandler.instance.navContext;
+          FlashElements.showSnackbar(
+            title: Text(
+              context.loc.snatcher.addedItemsToQueue(count: booruItems.length),
+              style: const TextStyle(fontSize: 20),
+            ),
+            position: FlashPosition.top,
+            duration: const Duration(seconds: 2),
+            leadingIcon: Symbols.info_rounded,
+            sideColor: Colors.green,
+          );
+        }
+      } else {
+        if (SettingsHandler.instance.downloadNotifications) {
+          final context = NavigationHandler.instance.navContext;
+          FlashElements.showSnackbar(
+            title: Text(
+              context.loc.snatcher.addedItemToQueue,
+              style: const TextStyle(fontSize: 20),
+            ),
+            position: FlashPosition.top,
+            duration: const Duration(seconds: 2),
+            leadingIcon: Symbols.info_rounded,
+            sideColor: Colors.green,
+            content: Row(
+              children: [
+                const SizedBox(width: 8),
+                SizedBox(
+                  width: 64,
+                  height: 64,
+                  child: ThumbnailBuild(
+                    item: booruItems.first,
+                    handler: BooruHandlerFactory().getBooruHandler([booru], null).booruHandler,
+                    selectable: false,
+                    simple: true,
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  Future searchSnatch(String tags, String amount, int cooldown, Booru booru) async {
+    int count = 0, limit;
+    BooruHandler booruHandler;
+    List<BooruItem> booruItems = [];
+
+    if (int.parse(amount) <= 100) {
+      limit = int.parse(amount);
+    } else {
+      limit = 100;
+    }
+
+    final temp = BooruHandlerFactory().getBooruHandler([booru], limit);
+    booruHandler = temp.booruHandler;
+    booruHandler.pageNum = temp.startingPage;
+    booruHandler.pageNum++;
+
+    final context = NavigationHandler.instance.navContext;
+    FlashElements.showSnackbar(
+      title: Text(context.loc.snatcher.snatchingImages, style: const TextStyle(fontSize: 20)),
+      position: FlashPosition.top,
+      content: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(context.loc.snatcher.doNotCloseApp),
+        ],
+      ),
+      leadingIcon: Symbols.warning_amber_rounded,
+      leadingIconColor: Colors.yellow,
+      sideColor: Colors.yellow,
+    );
+
+    while (count < int.parse(amount) && !booruHandler.locked) {
+      booruItems = await booruHandler.search(tags, null) ?? [];
+      booruItems = booruItems.where((e) => !e.isHidden).toList();
+      booruHandler.pageNum++;
+      count = booruItems.length;
+      // TODO error handling?
+    }
+    queue(booruItems, booru, cooldown, false);
+  }
+
+  void dispose() {
+    queuedList.removeListener(queuedListListener);
+  }
+}
+
+class SnatchItem {
+  SnatchItem(
+    this.booruItems,
+    this.cooldown,
+    this.booru,
+    this.ignoreExists, {
+    this.doujin,
+  });
+
+  /// Set for doujin pages: the book they belong to (own folder + manifest).
+  final DoujinDownloadInfo? doujin;
+
+  final List<BooruItem> booruItems;
+  final int cooldown;
+  final Booru booru;
+  final bool ignoreExists;
+}

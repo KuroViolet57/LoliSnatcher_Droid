@@ -4,11 +4,11 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:talker/talker.dart';
 
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/utils/log_redaction.dart';
-import 'package:lolisnatcher/src/utils/logger.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/core/logging/log_redaction.dart';
+import 'package:lolisnatcher/core/logging/logger.dart';
 
 /// Answers every request itself: [status], a JSON body, and the cookies a
 /// Danbooru-engine site sets.

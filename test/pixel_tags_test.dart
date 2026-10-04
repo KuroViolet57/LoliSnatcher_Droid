@@ -2,11 +2,11 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/data/booru_item.dart';
-import 'package:lolisnatcher/src/handlers/recommender/image_tagger_handler.dart';
-import 'package:lolisnatcher/src/handlers/recommender/pixel_tags.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/models/booru_item.dart';
+import 'package:lolisnatcher/features/recommender/logic/ml/image_tagger_handler.dart';
+import 'package:lolisnatcher/features/recommender/logic/pixel_tags.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
 
 /// r76: "Tag reactions with the picture" reads a video's frames when the
 /// player gave some (the first, the middle and the last), merging their tags

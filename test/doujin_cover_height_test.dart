@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/pages/doujin_detail_page.dart';
+import 'package:lolisnatcher/features/doujin/ui/detail/doujin_detail_page.dart';
 
 /// Round 3, item 7: the big-cover header used to run at the image's own
 /// aspect ratio, so a portrait cover was nearly twice as tall as it was wide

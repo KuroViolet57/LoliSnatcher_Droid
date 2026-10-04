@@ -2,11 +2,11 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
-import 'package:lolisnatcher/src/boorus/linked_media.dart';
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/services/incoming_link.dart';
-import 'package:lolisnatcher/src/services/source_links.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/sources/framework/linked_media.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/features/links/logic/incoming_link.dart';
+import 'package:lolisnatcher/features/links/logic/source_links.dart';
 
 /// r86: a Sankaku source is stored under its API address (sankakuapi.com),
 /// so links to the site itself never matched it. The site, checked live on
@@ -77,10 +77,10 @@ void main() {
 
   test("every post's Open in browser and Share goes through the browser address", () {
     for (final String path in [
-      'lib/src/widgets/gallery/hideable_appbar.dart',
-      'lib/src/widgets/video/guess_extension_viewer.dart',
-      'lib/src/widgets/video/load_item_viewer.dart',
-      'lib/src/widgets/video/flash_play_viewer.dart',
+      'lib/features/viewer/ui/chrome/hideable_appbar.dart',
+      'lib/features/viewer/ui/media/guess_extension_viewer.dart',
+      'lib/features/viewer/ui/media/load_item_viewer.dart',
+      'lib/features/viewer/ui/media/flash_play_viewer.dart',
     ]) {
       final String source = File(path).readAsStringSync();
       expect(source, contains('LinkedMediaResolver.browserAddress('), reason: path);

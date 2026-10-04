@@ -1,0 +1,533 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
+
+import 'package:get/get.dart' hide FirstWhereOrNullExt;
+
+import 'package:lolisnatcher/core/settings/modular_ui.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/features/boards/ui/boards_page.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/core/platform/local_auth_handler.dart';
+import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/features/settings/ui/sources/source_settings_page.dart';
+import 'package:lolisnatcher/features/doujin/ui/library/doujin_downloads_page.dart';
+import 'package:lolisnatcher/features/doujin/ui/library/doujin_favourites_page.dart';
+import 'package:lolisnatcher/features/doujin/ui/library/doujin_favourite_tags_page.dart';
+import 'package:lolisnatcher/features/doujin/ui/library/doujin_library_pages.dart';
+import 'package:lolisnatcher/features/collections/ui/collections_page.dart';
+import 'package:lolisnatcher/features/recommender/ui/foryou_page.dart';
+import 'package:lolisnatcher/features/recommender/logic/item_features.dart';
+import 'package:lolisnatcher/sources/booru/pools/pool_source.dart';
+import 'package:lolisnatcher/features/feed/ui/pools_page.dart';
+import 'package:lolisnatcher/features/settings/ui/settings_page.dart';
+import 'package:lolisnatcher/features/tags/ui/tag_browser_page.dart';
+import 'package:lolisnatcher/core/utils/tools.dart';
+import 'package:lolisnatcher/core/ui/buttons/cancel_button.dart';
+import 'package:lolisnatcher/app/drawers/mascot_image.dart';
+import 'package:lolisnatcher/features/tabs/ui/multibooru_toggle.dart';
+import 'package:lolisnatcher/core/ui/settings_widgets.dart';
+import 'package:lolisnatcher/features/feed/ui/search/main_search_bar.dart';
+import 'package:lolisnatcher/features/history/ui/saved_searches/saved_search_tile.dart';
+import 'package:lolisnatcher/features/history/ui/saved_searches/saved_searches_page.dart';
+import 'package:lolisnatcher/features/tabs/ui/booru_switcher_sheet.dart';
+import 'package:lolisnatcher/core/ui/inner_drawer.dart';
+import 'package:lolisnatcher/core/ui/image/booru_favicon.dart';
+import 'package:lolisnatcher/features/webview/ui/webview_page.dart';
+
+class MainDrawer extends StatelessWidget {
+  const MainDrawer({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final SettingsHandler settingsHandler = SettingsHandler.instance;
+    final SearchHandler searchHandler = SearchHandler.instance;
+
+    Future<Booru?> showSelectWebviewBooruDialog(List<Booru> boorus) async {
+      return showDialog<Booru?>(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: Text(context.loc.mobileHome.selectBooruForWebview),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              spacing: 16,
+              children: [
+                SizedBox(
+                  width: MediaQuery.sizeOf(context).width,
+                  height: 52,
+                  child: SettingsBooruDropdown(
+                    value: null,
+                    items: boorus,
+                    onChanged: (Booru? newBooru) {
+                      if (newBooru == null) return;
+
+                      WidgetsBinding.instance.addPostFrameCallback((_) async {
+                        Navigator.of(context).pop(newBooru);
+                      });
+                    },
+                    title: context.loc.booru,
+                    contentPadding: EdgeInsets.zero,
+                    titleAsLabel: true,
+                    drawBottomBorder: false,
+                  ),
+                ),
+                //
+                const CancelButton(withIcon: true),
+              ],
+            ),
+          );
+        },
+      );
+    }
+
+    return Material(
+      color: Theme.of(context).colorScheme.surface,
+      child: SafeArea(
+        child: Column(
+          children: [
+            // Flow drawer header
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 14, 8, 2),
+              child: Row(
+                children: [
+                  Text(
+                    'Menu',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Symbols.close_rounded),
+                    onPressed: () {
+                      final state = SearchHandler.instance.mainDrawerKey.currentState;
+                      if (state is InnerDrawerState) state.close();
+                    },
+                  ),
+                ],
+              ),
+            ),
+            RepaintBoundary(
+              child: Obx(() {
+                if (settingsHandler.booruList.isNotEmpty && searchHandler.tabs.isNotEmpty) {
+                  return Container(
+                    height: MainSearchBar.height,
+                    margin: const EdgeInsets.fromLTRB(2, 4, 2, 12),
+                    child: const MainSearchBarWithActions('drawer'),
+                  );
+                } else {
+                  return const SizedBox.shrink();
+                }
+              }),
+            ),
+            // Flow current-booru card → opens the Switch booru sheet.
+            Obx(() {
+              if (settingsHandler.booruList.isEmpty || searchHandler.tabs.isEmpty) {
+                return const SizedBox.shrink();
+              }
+              final booru = searchHandler.currentBooru;
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(10, 2, 10, 6),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(14),
+                  onTap: () => showBooruSwitcherSheet(context),
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surfaceContainer,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+                    ),
+                    child: Row(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: SizedBox(width: 32, height: 32, child: BooruFavicon(booru, size: 32)),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                booru.name ?? '',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800),
+                              ),
+                              Text(
+                                'current booru · tap to switch',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Icon(Symbols.unfold_more_rounded, size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }),
+            Expanded(
+              child: ListView(
+                controller: ScrollController(),
+                clipBehavior: Clip.antiAlias,
+                children: [
+                  const SizedBox(height: 8),
+                  const MergeBooruToggleAndSelector(),
+                  Builder(
+                    builder: (context) {
+                      Booru? virtual(bool Function(BooruType) test) {
+                        for (final b in settingsHandler.booruList) {
+                          final t = b.type;
+                          if (t != null && test(t)) return b;
+                        }
+                        return null;
+                      }
+
+                      void openVirtual(Booru? b) {
+                        if (b == null) return;
+                        final state = searchHandler.mainDrawerKey.currentState;
+                        if (state is InnerDrawerState) state.close();
+                        searchHandler.addTabByString('', customBooru: b, switchToNew: true);
+                      }
+
+                      final bool isDoujinTab =
+                          searchHandler.tabs.isNotEmpty && searchHandler.currentBooruHandler.hasReader;
+                      final downloads = virtual((t) => t.isDownloads);
+                      final favourites = virtual((t) => t.isFavourites);
+                      return Column(
+                        children: [
+                          if (downloads != null)
+                            SettingsButton(
+                              name: 'Downloads',
+                              icon: const Icon(Symbols.download_rounded),
+                              action: () => openVirtual(downloads),
+                            ),
+                          // Redundant on doujin tabs: the doujin block below
+                          // has its own favourites entry (own store).
+                          if (favourites != null && !isDoujinTab)
+                            SettingsButton(
+                              name: 'Favourites',
+                              icon: const Icon(Symbols.favorite_rounded),
+                              action: () => openVirtual(favourites),
+                            ),
+                        ],
+                      );
+                    },
+                  ),
+                  ListenableBuilder(
+                    listenable: Listenable.merge([
+                      LocalAuthHandler.instance.deviceSupportsBiometrics,
+                      SettingsHandler.instance.useLockscreen,
+                    ]),
+                    builder: (_, child) {
+                      final deviceSupportsBiometrics = LocalAuthHandler.instance.deviceSupportsBiometrics.value;
+                      final useLockscreen = SettingsHandler.instance.useLockscreen.value;
+
+                      if (deviceSupportsBiometrics && useLockscreen) {
+                        return child!;
+                      }
+
+                      return const SizedBox.shrink();
+                    },
+                    child: SettingsButton(
+                      name: context.loc.mobileHome.lockApp,
+                      icon: const Icon(Symbols.lock_rounded),
+                      action: () => LocalAuthHandler.instance.lock(manually: true),
+                    ),
+                  ),
+                  // Doujin sources swap in their own quick access: favourites
+                  // & bookmarks, favourite tags, and a ONE-TAP shortcut to
+                  // this source's settings (no Booru-config crawl).
+                  Obx(() {
+                    if (settingsHandler.booruList.isEmpty ||
+                        searchHandler.tabs.isEmpty ||
+                        !searchHandler.currentBooruHandler.hasReader) {
+                      return const SizedBox.shrink();
+                    }
+                    final Booru doujinBooru = searchHandler.currentBooru;
+                    return Column(
+                      children: [
+                        SettingsButton(
+                          name: 'Doujin favourites & bookmarks',
+                          icon: const Icon(Symbols.bookmark_heart_rounded),
+                          page: () => DoujinFavouritesPage(booru: doujinBooru),
+                        ),
+                        SettingsButton(
+                          name: 'Doujin downloads',
+                          subtitle: const Text('Saved books on this device'),
+                          icon: const Icon(Symbols.menu_book_rounded),
+                          page: () => const DoujinDownloadsPage(),
+                        ),
+                        SettingsButton(
+                          name: 'Favourite tags',
+                          subtitle: const Text('Tags you starred, one tap from a search'),
+                          icon: const Icon(Symbols.star_rounded),
+                          page: () => DoujinFavouriteTagsPage(booru: doujinBooru),
+                        ),
+                        SettingsButton(
+                          name: '${doujinBooru.name ?? 'Source'} settings',
+                          icon: const Icon(Symbols.tune_rounded),
+                          page: () => SourceSettingsPage(booru: doujinBooru),
+                        ),
+                      ],
+                    );
+                  }),
+                  // r43: a booru source's own settings, one tap away (Modular UI).
+                  if (ModularUi.isOn(ModularUi.sidebarSourceSettings))
+                    Obx(() {
+                      if (settingsHandler.booruList.isEmpty || searchHandler.tabs.isEmpty) return const SizedBox.shrink();
+                      final handler = searchHandler.currentBooruHandler;
+                      final Booru current = searchHandler.currentBooru;
+                      final BooruType? type = current.type;
+                      if (handler.hasReader || type == null || type.isLocalDb || type.isRecommendationFeed || type.isMerge) {
+                        return const SizedBox.shrink();
+                      }
+                      return SettingsButton(
+                        name: '${current.name ?? 'Source'} settings',
+                        icon: const Icon(Symbols.tune_rounded),
+                        page: () => SourceSettingsPage(booru: current),
+                      );
+                    }),
+                  SettingsButton(
+                    name: context.loc.settings.title,
+                    icon: const Icon(Symbols.settings_rounded),
+                    page: () => const SettingsPage(),
+                  ),
+                  // For You: the booru taste engine on booru tabs, the doujin
+                  // one (r33) on doujin tabs. Two worlds, two feeds.
+                  Obx(() {
+                    final bool isDoujinTab =
+                        searchHandler.tabs.isNotEmpty && searchHandler.currentBooruHandler.hasReader;
+                    if (!isDoujinTab && !settingsHandler.dbEnabled) return const SizedBox.shrink();
+                    return SettingsButton(
+                      name: 'For You',
+                      icon: const Icon(Symbols.auto_awesome_rounded),
+                      page: () => ForYouPage(world: isDoujinTab ? RecommenderWorld.doujin : RecommenderWorld.booru),
+                    );
+                  }),
+                  // Boards (r73): saved "find me posts like this" searches
+                  // across the boorus - a description, a reference image,
+                  // must-have tags. Booru world only.
+                  Obx(() {
+                    final bool isDoujinTab =
+                        searchHandler.tabs.isNotEmpty && searchHandler.currentBooruHandler.hasReader;
+                    if (isDoujinTab) return const SizedBox.shrink();
+                    return SettingsButton(
+                      name: 'Boards',
+                      icon: const Icon(Symbols.dashboard_rounded),
+                      page: () => const BoardsPage(),
+                    );
+                  }),
+                  // Collections route to the store matching the tab's world.
+                  Obx(() {
+                    final bool isDoujinTab =
+                        searchHandler.tabs.isNotEmpty && searchHandler.currentBooruHandler.hasReader;
+                    if (isDoujinTab) {
+                      return SettingsButton(
+                        name: 'Collections',
+                        icon: const Icon(Symbols.collections_bookmark_rounded),
+                        page: () => DoujinCollectionsPage(booru: searchHandler.currentBooru),
+                      );
+                    }
+                    if (!settingsHandler.dbEnabled) return const SizedBox.shrink();
+                    return SettingsButton(
+                      name: 'Collections',
+                      icon: const Icon(Symbols.collections_bookmark_rounded),
+                      page: () => const CollectionsPage(),
+                    );
+                  }),
+                  // Pools are a PER-SITE capability, so this entry simply
+                  // doesn't exist on boorus without them rather than showing
+                  // up and failing (same shape as the webview button below).
+                  Obx(() {
+                    if (settingsHandler.booruList.isEmpty ||
+                        searchHandler.tabs.isEmpty ||
+                        !PoolSource.supports(searchHandler.currentBooru)) {
+                      return const SizedBox.shrink();
+                    }
+                    return SettingsButton(
+                      name: 'Pools',
+                      icon: const Icon(Symbols.collections_bookmark_rounded),
+                      page: () => const PoolsPage(),
+                    );
+                  }),
+                  // Even a booru with no browsable tag index still has
+                  // whatever the app collected while you browsed it. Hidden
+                  // on doujin tabs — their world navigates by tag chips and
+                  // the Favourite tags screen instead.
+                  Obx(() {
+                    final bool isDoujinTab =
+                        searchHandler.tabs.isNotEmpty && searchHandler.currentBooruHandler.hasReader;
+                    if (!settingsHandler.dbEnabled || settingsHandler.booruList.isEmpty || isDoujinTab) {
+                      return const SizedBox.shrink();
+                    }
+                    return SettingsButton(
+                      name: 'Tag browser',
+                      icon: const Icon(Symbols.sell_rounded),
+                      page: () => const TagBrowserPage(),
+                    );
+                  }),
+                  Obx(() {
+                    if (settingsHandler.booruList.isNotEmpty &&
+                        searchHandler.tabs.isNotEmpty &&
+                        Tools.isOnPlatformWithWebviewSupport) {
+                      final List<Booru> boorus = [
+                        searchHandler.currentBooru,
+                        ...searchHandler.currentSecondaryBoorus.value ?? <Booru>[],
+                      ].where((b) => b.baseURL?.isNotEmpty == true && BooruType.saveable.contains(b.type)).toList();
+
+                      if (boorus.isEmpty) return const SizedBox.shrink();
+
+                      return SettingsButton(
+                        name: context.loc.settings.webview.openWebview,
+                        icon: const Icon(Symbols.public_rounded),
+                        action: () async {
+                          final Booru? selectedBooru = boorus.length == 1
+                              ? boorus.first
+                              : await showSelectWebviewBooruDialog(boorus);
+                          if (selectedBooru == null) return;
+
+                          final String? url = selectedBooru.baseURL;
+                          final String userAgent = Tools.browserUserAgent;
+                          if (url == null || url.isEmpty) {
+                            return;
+                          }
+
+                          unawaited(
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (context) => InAppWebviewView(
+                                  initialUrl: url,
+                                  userAgent: userAgent,
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      );
+                    }
+
+                    return const SizedBox.shrink();
+                  }),
+                  // (The "update available" row was removed from the drawer
+                  // per user request — updates stay reachable via Settings →
+                  // Check for updates.)
+                  //
+                  if (SettingsHandler.isDesktopPlatform)
+                    SettingsButton(
+                      name: context.loc.closeTheApp,
+                      icon: const Icon(Symbols.exit_to_app_rounded),
+                      action: () async {
+                        // twice to trigger drawer close
+                        await Navigator.of(context).maybePop();
+                        await Future.delayed(const Duration(milliseconds: 400));
+                        await Navigator.of(context).maybePop();
+                      },
+                    ),
+                  //
+                  if (settingsHandler.enableDrawerMascot) const MascotImage(),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// Collapsed-by-default panel in the main drawer that lists saved searches.
+// Shows the first 5 entries and a "View all" button that opens the full
+// SavedSearchesPage. Only renders when there's at least one saved search.
+class SavedSearchesDrawerSection extends StatefulWidget {
+  const SavedSearchesDrawerSection({super.key});
+
+  @override
+  State<SavedSearchesDrawerSection> createState() => _SavedSearchesDrawerSectionState();
+}
+
+class _SavedSearchesDrawerSectionState extends State<SavedSearchesDrawerSection> {
+  bool _expanded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      SearchHandler.instance.reloadSavedSearches();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Obx(() {
+      final searchHandler = SearchHandler.instance;
+      final list = searchHandler.savedSearches;
+      final preview = list.take(5).toList(growable: false);
+      final theme = Theme.of(context);
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ListTile(
+            leading: const Icon(Symbols.bookmarks_rounded),
+            title: Text(
+              list.isEmpty ? 'Saved searches' : 'Saved searches (${list.length})',
+            ),
+            trailing: Icon(_expanded ? Symbols.expand_less_rounded : Symbols.expand_more_rounded),
+            onTap: () => setState(() => _expanded = !_expanded),
+          ),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 200),
+            alignment: Alignment.topCenter,
+            child: !_expanded
+                ? const SizedBox.shrink()
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (list.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 4, 20, 4),
+                          child: Text(
+                            'No saved searches yet. Tap the bookmark icon in the search bar to add the current query.',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        )
+                      else
+                        for (final entry in preview) SavedSearchTile(entry: entry),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Symbols.list_rounded),
+                          label: const Text('View all'),
+                          onPressed: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => const SavedSearchesPage(),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
+        ],
+      );
+    });
+  }
+}

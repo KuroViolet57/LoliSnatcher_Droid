@@ -4,9 +4,9 @@ import 'package:flutter/material.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/services/backup_plan.dart';
-import 'package:lolisnatcher/src/widgets/common/downloads_check.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/features/backup/logic/backup_plan.dart';
+import 'package:lolisnatcher/features/downloads/ui/downloads_check.dart';
 
 /// r84: "Check downloads against disk" - finds the Downloads entries whose
 /// file is in no download folder and forgets them on request. It was in a

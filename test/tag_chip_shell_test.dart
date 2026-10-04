@@ -2,7 +2,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/widgets/gallery/tag_chip_shell.dart';
+import 'package:lolisnatcher/features/tags/ui/tag_chip_shell.dart';
 
 /// r77: a tag chip's preview icon sat inside the chip's own gesture area,
 /// which also listens for double taps (the tag editor shortcut), so the icon

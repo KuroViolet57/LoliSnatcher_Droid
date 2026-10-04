@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:image_picker_android/image_picker_android.dart';
 import 'package:image_picker_platform_interface/image_picker_platform_interface.dart';
 
-import 'package:lolisnatcher/src/utils/photo_picker.dart';
+import 'package:lolisnatcher/core/platform/photo_picker.dart';
 
 /// r77: "Try it on a picture" did nothing on the phone (19 Sep); why is not
 /// proven. Android's own photo picker opened inside the app's task on the

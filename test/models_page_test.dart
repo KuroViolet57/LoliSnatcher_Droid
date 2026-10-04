@@ -4,10 +4,10 @@ import 'package:flutter/material.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/data/model_tasks.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/pages/settings/model_page.dart';
-import 'package:lolisnatcher/src/pages/settings/models_page.dart';
+import 'package:lolisnatcher/features/recommender/logic/model_tasks.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/features/recommender/ui/model_page.dart';
+import 'package:lolisnatcher/features/recommender/ui/models_page.dart';
 
 /// r80: Settings → Recommendations → Models: every job of the three models
 /// with its own switch, two thread counts per model, and one switch for all.

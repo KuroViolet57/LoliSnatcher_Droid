@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/widgets/video/media_kit_player_view.dart';
+import 'package:lolisnatcher/features/video/ui/media_kit_player_view.dart';
 
 /// r77: a frame grab that comes before mpv has drawn anything makes mpv say
 /// "Taking screenshot failed." at error level, and media_kit reports that as

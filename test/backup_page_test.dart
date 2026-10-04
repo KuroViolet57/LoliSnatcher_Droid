@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/pages/settings/backup_restore_page.dart';
-import 'package:lolisnatcher/src/services/backup_plan.dart';
-import 'package:lolisnatcher/src/services/drive_backup.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/features/backup/ui/backup_restore_page.dart';
+import 'package:lolisnatcher/features/backup/logic/backup_plan.dart';
+import 'package:lolisnatcher/features/backup/logic/drive_backup.dart';
 
 /// r80: Settings → Backup & restore, one list of what to carry, for a folder
 /// and for Google Drive alike.

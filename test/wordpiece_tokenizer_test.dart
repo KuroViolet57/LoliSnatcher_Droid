@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/handlers/recommender/wordpiece_tokenizer.dart';
+import 'package:lolisnatcher/features/recommender/logic/ml/wordpiece_tokenizer.dart';
 
 /// r34: the BERT WordPiece tokenizer in Dart — what the downloaded encoder
 /// reads. Mirrors HuggingFace's BertTokenizer: clean, split CJK ideographs

@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/handlers/recommender/clip_tokenizer.dart';
+import 'package:lolisnatcher/features/recommender/logic/ml/clip_tokenizer.dart';
 
 /// r75: the CLIP byte-pair tokenizer in Dart, checked against a fixture cut
 /// from the real MobileCLIP `tokenizer.json` (the vocab entries and merges

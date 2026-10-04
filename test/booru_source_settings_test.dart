@@ -5,22 +5,22 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lolisnatcher/gen/strings.g.dart';
-import 'package:lolisnatcher/src/boorus/booru_site_filters.dart';
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
-import 'package:lolisnatcher/src/boorus/danbooru_handler.dart';
-import 'package:lolisnatcher/src/boorus/doujin/doujin_filters.dart';
-import 'package:lolisnatcher/src/boorus/furaffinity_handler.dart';
-import 'package:lolisnatcher/src/boorus/gelbooru_handler.dart';
-import 'package:lolisnatcher/src/boorus/nhentai_handler.dart';
-import 'package:lolisnatcher/src/boorus/philomena_handler.dart';
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/data/modular_ui.dart';
-import 'package:lolisnatcher/src/handlers/search_handler.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
-import 'package:lolisnatcher/src/handlers/tag_handler.dart';
-import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
-import 'package:lolisnatcher/src/pages/settings/source_settings_page.dart';
+import 'package:lolisnatcher/sources/framework/booru_site_filters.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/sources/booru/danbooru_handler.dart';
+import 'package:lolisnatcher/sources/doujin/common/doujin_filters.dart';
+import 'package:lolisnatcher/sources/furaffinity/furaffinity_handler.dart';
+import 'package:lolisnatcher/sources/booru/gelbooru_handler.dart';
+import 'package:lolisnatcher/sources/doujin/nhentai/nhentai_handler.dart';
+import 'package:lolisnatcher/sources/booru/philomena_handler.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/core/settings/modular_ui.dart';
+import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/core/settings/source_settings_handler.dart';
+import 'package:lolisnatcher/core/storage/tag_handler.dart';
+import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
+import 'package:lolisnatcher/features/settings/ui/sources/source_settings_page.dart';
 
 /// r43: every booru source gets its own settings — its site's sort/order and
 /// rating filters (from the metatags its handler already declares, so each

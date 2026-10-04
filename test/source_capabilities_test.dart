@@ -2,28 +2,28 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/boorus/agnph_handler.dart';
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
-import 'package:lolisnatcher/src/boorus/doujin/asmhentai_handler.dart';
-import 'package:lolisnatcher/src/boorus/doujin/eahentai_handler.dart';
-import 'package:lolisnatcher/src/boorus/doujin/faccina_handler.dart';
-import 'package:lolisnatcher/src/boorus/doujin/hitomi_handler.dart';
-import 'package:lolisnatcher/src/boorus/doujin/schale_handler.dart';
-import 'package:lolisnatcher/src/boorus/gelbooru_handler.dart';
-import 'package:lolisnatcher/src/boorus/hydrus_handler.dart';
-import 'package:lolisnatcher/src/boorus/idol_sankaku_handler.dart';
-import 'package:lolisnatcher/src/boorus/kemono_handler.dart';
-import 'package:lolisnatcher/src/boorus/kusowanka_handler.dart';
-import 'package:lolisnatcher/src/boorus/nhentai_handler.dart';
-import 'package:lolisnatcher/src/boorus/rule34video_handler.dart';
-import 'package:lolisnatcher/src/boorus/tikporn_handler.dart';
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/handlers/booru_handler.dart';
-import 'package:lolisnatcher/src/handlers/doujin_data_handler.dart';
-import 'package:lolisnatcher/src/handlers/kemono_session_handler.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
-import 'package:lolisnatcher/src/boorus/doujin/ehentai_handler.dart';
+import 'package:lolisnatcher/sources/booru/agnph_handler.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/sources/doujin/asmhentai/asmhentai_handler.dart';
+import 'package:lolisnatcher/sources/doujin/eahentai/eahentai_handler.dart';
+import 'package:lolisnatcher/sources/doujin/faccina/faccina_handler.dart';
+import 'package:lolisnatcher/sources/doujin/hitomi/hitomi_handler.dart';
+import 'package:lolisnatcher/sources/doujin/schale/schale_handler.dart';
+import 'package:lolisnatcher/sources/booru/gelbooru_handler.dart';
+import 'package:lolisnatcher/sources/booru/hydrus_handler.dart';
+import 'package:lolisnatcher/sources/booru/idol_sankaku_handler.dart';
+import 'package:lolisnatcher/sources/kemono/kemono_handler.dart';
+import 'package:lolisnatcher/sources/tube/kusowanka_handler.dart';
+import 'package:lolisnatcher/sources/doujin/nhentai/nhentai_handler.dart';
+import 'package:lolisnatcher/sources/tube/rule34video_handler.dart';
+import 'package:lolisnatcher/sources/tube/tikporn_handler.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/sources/framework/booru_handler.dart';
+import 'package:lolisnatcher/features/doujin/logic/doujin_data_handler.dart';
+import 'package:lolisnatcher/sources/kemono/kemono_session_handler.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
+import 'package:lolisnatcher/sources/doujin/ehentai/ehentai_handler.dart';
 
 /// Settings are offered by CAPABILITY. Each fact below was read off the
 /// handler: which credential it sends, whether it has several page sizes,

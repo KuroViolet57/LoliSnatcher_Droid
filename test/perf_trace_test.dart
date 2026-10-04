@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/utils/perf_trace.dart';
+import 'package:lolisnatcher/core/logging/perf_trace.dart';
 
 /// r65: a recorder inside the app, so a slow moment can be looked at without a
 /// cable and a profile build. It counts frames the way the phone draws them

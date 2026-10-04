@@ -2,11 +2,11 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/handlers/source_capture_handler.dart';
-import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
-import 'package:lolisnatcher/src/services/capture_files.dart';
-import 'package:lolisnatcher/src/utils/logger.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/features/debug/logic/source_capture_handler.dart';
+import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
+import 'package:lolisnatcher/features/debug/logic/capture_files.dart';
+import 'package:lolisnatcher/core/logging/logger.dart';
 
 /// r80: a stopped capture is kept whole: the trace report in the log (in
 /// numbered parts, the log cuts an entry at 10,000 characters) and as a file

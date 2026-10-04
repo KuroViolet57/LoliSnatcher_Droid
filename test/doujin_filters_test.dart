@@ -4,18 +4,18 @@ import 'package:flutter/material.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
-import 'package:lolisnatcher/src/boorus/doujin/asmhentai_handler.dart';
-import 'package:lolisnatcher/src/boorus/doujin/doujin_filters.dart';
-import 'package:lolisnatcher/src/boorus/doujin/ehentai_handler.dart';
-import 'package:lolisnatcher/src/boorus/doujin/hentaipaw_handler.dart';
-import 'package:lolisnatcher/src/boorus/doujin/hitomi_handler.dart';
-import 'package:lolisnatcher/src/boorus/doujin/schale_handler.dart';
-import 'package:lolisnatcher/src/boorus/nhentai_handler.dart';
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
-import 'package:lolisnatcher/src/widgets/preview/main_search_query_editor_page.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/sources/doujin/asmhentai/asmhentai_handler.dart';
+import 'package:lolisnatcher/sources/doujin/common/doujin_filters.dart';
+import 'package:lolisnatcher/sources/doujin/ehentai/ehentai_handler.dart';
+import 'package:lolisnatcher/sources/doujin/hentaipaw/hentaipaw_handler.dart';
+import 'package:lolisnatcher/sources/doujin/hitomi/hitomi_handler.dart';
+import 'package:lolisnatcher/sources/doujin/schale/schale_handler.dart';
+import 'package:lolisnatcher/sources/doujin/nhentai/nhentai_handler.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/core/settings/source_settings_handler.dart';
+import 'package:lolisnatcher/features/feed/ui/search/main_search_query_editor_page.dart';
 
 /// r37: browse filters on the doujin sources — sort, category, language as
 /// checkmarks in the search window, carried in the query as the sources'

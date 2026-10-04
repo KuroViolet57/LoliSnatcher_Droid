@@ -4,14 +4,14 @@ import 'package:flutter/material.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
-import 'package:lolisnatcher/src/boorus/doujin/doujin_filters.dart';
-import 'package:lolisnatcher/src/boorus/r34us_handler.dart';
-import 'package:lolisnatcher/src/boorus/shimmie_handler.dart';
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
-import 'package:lolisnatcher/src/widgets/preview/main_search_query_editor_page.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/sources/doujin/common/doujin_filters.dart';
+import 'package:lolisnatcher/sources/booru/r34us_handler.dart';
+import 'package:lolisnatcher/sources/booru/shimmie_handler.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/core/settings/source_settings_handler.dart';
+import 'package:lolisnatcher/features/feed/ui/search/main_search_query_editor_page.dart';
 
 /// r47: the last sources with search options. rule34.paheal (Shimmie) writes
 /// some terms with `=` and `>` (`ext=webm`, `score>10`), so a filter group

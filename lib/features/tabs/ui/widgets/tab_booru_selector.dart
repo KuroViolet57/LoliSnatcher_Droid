@@ -1,0 +1,150 @@
+import 'package:flutter/material.dart';
+
+import 'package:get/get.dart';
+
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/core/ui/loli_dropdown.dart';
+import 'package:lolisnatcher/core/ui/text/marquee_text.dart';
+import 'package:lolisnatcher/core/ui/image/booru_favicon.dart';
+
+class TabBooruSelector extends StatelessWidget {
+  const TabBooruSelector({
+    super.key,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final SettingsHandler settingsHandler = SettingsHandler.instance;
+    final SearchHandler searchHandler = SearchHandler.instance;
+
+    return Obx(() {
+      // no boorus
+      if (settingsHandler.booruList.isEmpty) {
+        return Center(
+          child: Text(context.loc.tabs.addBoorusInSettings),
+        );
+      }
+
+      // no tabs
+      if (searchHandler.tabs.isEmpty) {
+        return const Center(
+          child: CircularProgressIndicator(),
+        );
+      }
+
+      Booru? selectedBooru = searchHandler.currentBooru;
+      // protection from exceptions when somehow selected booru is not on the list
+      if (!settingsHandler.booruList.contains(selectedBooru)) {
+        selectedBooru = null;
+      }
+
+      final bool isDesktop = settingsHandler.appMode.value.isDesktop;
+      final EdgeInsetsGeometry margin = isDesktop
+          ? const EdgeInsets.fromLTRB(2, 5, 2, 2)
+          : const EdgeInsets.fromLTRB(5, 8, 5, 8);
+
+      return Padding(
+        padding: margin,
+        child: LoliDropdown(
+          value: selectedBooru,
+          onChanged: (Booru? newValue) {
+            if (searchHandler.currentBooru != newValue) {
+              // if not already selected
+              searchHandler.searchAction(searchHandler.searchTextController.text, newValue);
+            }
+          },
+          expandableByScroll: true,
+          items: settingsHandler.booruList,
+          itemExtent: 54,
+          itemBuilder: (item) {
+            final bool isCurrent = selectedBooru == item;
+
+            if (item == null) {
+              return const SizedBox.shrink();
+            }
+
+            return Container(
+              padding: isDesktop ? const EdgeInsets.all(5) : const EdgeInsets.only(left: 16, right: 16),
+              height: 54,
+              decoration: isCurrent
+                  ? BoxDecoration(
+                      color: Theme.of(context).colorScheme.primaryContainer,
+                    )
+                  : null,
+              child: TabBooruSelectorItem(booru: item),
+            );
+          },
+          selectedItemBuilder: (value) {
+            if (value == null) {
+              return Text(context.loc.tabs.selectABooru);
+            }
+
+            return TabBooruSelectorItem(booru: value);
+          },
+          labelText: context.loc.booru,
+        ),
+      );
+    });
+  }
+}
+
+class TabBooruSelectorItem extends StatelessWidget {
+  const TabBooruSelectorItem({
+    required this.booru,
+    this.withFavicon = true,
+    this.compact = false,
+    this.extraText,
+    super.key,
+  });
+
+  final Booru booru;
+  final bool withFavicon;
+  final bool compact;
+  final String? extraText;
+
+  @override
+  Widget build(BuildContext context) {
+    final String name = ' ${booru.name}${extraText?.isNotEmpty == true ? extraText : ''}';
+    final String type = ' ${booru.type?.name ?? ''}';
+
+    final column = Column(
+      mainAxisSize: .min,
+      crossAxisAlignment: .start,
+      children: [
+        MarqueeText(
+          key: ValueKey('name-$name'),
+          text: name,
+          isExpanded: false,
+        ),
+        if (!compact) ...[
+          const SizedBox(height: 8),
+          MarqueeText(
+            key: ValueKey('type-$type'),
+            text: type,
+            style: DefaultTextStyle.of(context).style.copyWith(
+              fontSize: 12,
+              height: 1,
+              color: DefaultTextStyle.of(context).style.color?.withValues(alpha: 0.66),
+            ),
+            isExpanded: false,
+          ),
+        ],
+      ],
+    );
+
+    return Row(
+      mainAxisSize: compact ? .min : .max,
+      children: [
+        //Booru Icon
+        if (withFavicon) ...[
+          BooruFavicon(booru),
+          const SizedBox(width: 4),
+        ],
+        //Booru name
+        if (compact) column else Expanded(child: column),
+      ],
+    );
+  }
+}

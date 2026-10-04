@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/widgets/gallery/tag_view.dart';
+import 'package:lolisnatcher/features/viewer/ui/info/tag_view.dart';
 
 /// Round 4, item 2: the Related / Recommended strips. Moving the strip's
 /// open-in-new-tab action into the section header freed a row of vertical

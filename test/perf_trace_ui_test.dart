@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/utils/perf_trace.dart';
+import 'package:lolisnatcher/core/logging/perf_trace.dart';
 
 /// A widget that reports its own life to the trace, the way the app's heavy
 /// widgets do (r67).

@@ -1,11 +1,11 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/data/booru_tag.dart';
-import 'package:lolisnatcher/src/data/tag_type.dart';
-import 'package:lolisnatcher/src/handlers/tag_catalog_puller.dart';
-import 'package:lolisnatcher/src/handlers/tag_catalog_source.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/models/booru_tag.dart';
+import 'package:lolisnatcher/models/tag_type.dart';
+import 'package:lolisnatcher/features/tags/logic/tag_catalog_puller.dart';
+import 'package:lolisnatcher/sources/framework/tags/tag_catalog_source.dart';
 
 /// A source with in-memory shards; one shard can be made to throw.
 class _Fake extends TagCatalogSource {

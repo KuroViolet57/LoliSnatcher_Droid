@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/boorus/furaffinity_query.dart';
+import 'package:lolisnatcher/sources/furaffinity/furaffinity_query.dart';
 
 /// r40: FurAffinity has no content API; the source reads its pages. The query
 /// language maps what the app types onto those pages: browse, search (with the

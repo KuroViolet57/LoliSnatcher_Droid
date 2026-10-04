@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/widgets/image/booru_favicon.dart';
+import 'package:lolisnatcher/core/ui/image/booru_favicon.dart';
 
 /// Round 3, item 8: sites that don't serve a usable favicon.ico (nhentai
 /// answers it with a real 404) showed a red error tile everywhere their icon

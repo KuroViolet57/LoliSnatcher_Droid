@@ -7,10 +7,10 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 
-import 'package:lolisnatcher/src/handlers/recommender/image_tagger_handler.dart';
-import 'package:lolisnatcher/src/handlers/recommender/pixel_tags.dart';
-import 'package:lolisnatcher/src/data/model_tasks.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/features/recommender/logic/ml/image_tagger_handler.dart';
+import 'package:lolisnatcher/features/recommender/logic/pixel_tags.dart';
+import 'package:lolisnatcher/features/recommender/logic/model_tasks.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
 
 /// r74: the downloadable image tagger (WD v3 ONNX exports from Hugging
 /// Face). The runner here is a fake answering fixed probabilities over a

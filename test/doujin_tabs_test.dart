@@ -4,21 +4,21 @@ import 'package:flutter/material.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/data/booru_item.dart';
-import 'package:lolisnatcher/src/data/tag.dart';
-import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
-import 'package:lolisnatcher/src/handlers/search_handler.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/handlers/snatch_handler.dart';
-import 'package:lolisnatcher/src/handlers/source_settings_handler.dart';
-import 'package:lolisnatcher/src/handlers/tag_handler.dart';
-import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
-import 'package:lolisnatcher/src/widgets/preview/doujin_tab_view.dart';
-import 'package:lolisnatcher/src/widgets/tabs/doujin_mini_tab_manager.dart';
-import 'package:lolisnatcher/src/widgets/tabs/tab_row.dart';
-import 'package:lolisnatcher/src/widgets/tabs/tab_selector.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/models/booru_item.dart';
+import 'package:lolisnatcher/models/tag.dart';
+import 'package:lolisnatcher/core/ui/navigation_handler.dart';
+import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/features/downloads/logic/snatch_handler.dart';
+import 'package:lolisnatcher/core/settings/source_settings_handler.dart';
+import 'package:lolisnatcher/core/storage/tag_handler.dart';
+import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
+import 'package:lolisnatcher/features/doujin/ui/doujin_tab_view.dart';
+import 'package:lolisnatcher/features/tabs/ui/doujin_mini_tab_manager.dart';
+import 'package:lolisnatcher/features/tabs/ui/widgets/tab_row.dart';
+import 'package:lolisnatcher/features/tabs/ui/tab_selector.dart';
 import 'package:lolisnatcher/gen/strings.g.dart';
 
 /// Round 2, item 6: doujin tabs — a tab can BE a doujin (cover + title in the

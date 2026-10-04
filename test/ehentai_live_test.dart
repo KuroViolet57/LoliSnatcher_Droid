@@ -10,25 +10,25 @@ import 'package:alice_lightweight/alice.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/utils/dio_network.dart';
-import 'package:lolisnatcher/src/widgets/image/sprite_tile_image.dart';
+import 'package:lolisnatcher/core/network/dio_network.dart';
+import 'package:lolisnatcher/core/ui/image/sprite_tile_image.dart';
 
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
-import 'package:lolisnatcher/src/boorus/doujin/ehentai_handler.dart';
-import 'package:lolisnatcher/src/boorus/doujin/schale_handler.dart';
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/data/booru_item.dart';
-import 'package:lolisnatcher/src/handlers/navigation_handler.dart';
-import 'package:lolisnatcher/src/handlers/reader_handler.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/handlers/tag_handler.dart';
-import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
-import 'package:lolisnatcher/src/utils/logger.dart';
-import 'package:lolisnatcher/src/utils/tools.dart';
-import 'package:lolisnatcher/src/boorus/doujin/ehentai_tag_catalog.dart';
-import 'package:lolisnatcher/src/boorus/tikporn_handler.dart';
-import 'package:lolisnatcher/src/boorus/kusowanka_handler.dart';
-import 'package:lolisnatcher/src/boorus/civitai_handler.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/sources/doujin/ehentai/ehentai_handler.dart';
+import 'package:lolisnatcher/sources/doujin/schale/schale_handler.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/models/booru_item.dart';
+import 'package:lolisnatcher/core/ui/navigation_handler.dart';
+import 'package:lolisnatcher/sources/framework/reader_handler.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/core/storage/tag_handler.dart';
+import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
+import 'package:lolisnatcher/core/logging/logger.dart';
+import 'package:lolisnatcher/core/utils/tools.dart';
+import 'package:lolisnatcher/sources/doujin/ehentai/ehentai_tag_catalog.dart';
+import 'package:lolisnatcher/sources/tube/tikporn_handler.dart';
+import 'package:lolisnatcher/sources/tube/kusowanka_handler.dart';
+import 'package:lolisnatcher/sources/booru/civitai_handler.dart';
 
 /// e-hentai.org (anonymous) and hdoujin.org from the LIVE sites through the
 /// app's own client — a report run, not part of the offline suite. No

@@ -3,15 +3,15 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
-import 'package:lolisnatcher/src/boorus/downloads_handler.dart';
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/data/booru_item.dart';
-import 'package:lolisnatcher/src/handlers/doujin_download_handler.dart';
-import 'package:lolisnatcher/src/handlers/downloads_reconciler.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/services/download_folders.dart';
-import 'package:lolisnatcher/src/services/image_writer.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/sources/local/downloads_handler.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/models/booru_item.dart';
+import 'package:lolisnatcher/features/doujin/logic/doujin_download_handler.dart';
+import 'package:lolisnatcher/features/downloads/logic/downloads_reconciler.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/features/downloads/logic/download_folders.dart';
+import 'package:lolisnatcher/features/downloads/logic/image_writer.dart';
 
 /// r82: a download folder you move away from is remembered, and the
 /// Downloads list, the "downloaded" badge and the doujin downloads look for

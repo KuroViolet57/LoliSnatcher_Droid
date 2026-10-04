@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/handlers/booru_handler.dart';
-import 'package:lolisnatcher/src/utils/log_redaction.dart';
-import 'package:lolisnatcher/src/utils/logger.dart';
+import 'package:lolisnatcher/sources/framework/booru_handler.dart';
+import 'package:lolisnatcher/core/logging/log_redaction.dart';
+import 'package:lolisnatcher/core/logging/logger.dart';
 
 /// Two problems found in a talker log that was shared for an unrelated reason.
 ///

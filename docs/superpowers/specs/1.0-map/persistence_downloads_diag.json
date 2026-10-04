@@ -1,0 +1,1618 @@
+{
+ "subsystem": "persistence_downloads_diag",
+ "summary": "Persistence: DBHandler (database_handler.dart, 2,920 lines) is one class that owns store.db (24 tables: BooruItem/Tag/ImageTag for favourites, downloads and collections, plus search history, tab restore, pins, saved searches, seen/viewed posts, tab visits, TagSignal/Interaction/RecommenderFeature, BooruTag/BooruTagOverride/TagAliasCache, ReaderProgress, Kemono/PawchiveCreator) and, since r81, vectors.db (ItemEmbedding). SettingsHandler.dbHandler holds the single instance, and 39 files across pages, widgets, handlers and sources call it directly. dbConnect runs on every start: WAL, CREATE IF NOT EXISTS plus ALTER migrations, critical indexes, the vector move-out, the alias-miss purge, the gelbooru/r34 URL fixes and deleteUntracked. There are no schema versions.\nDoujin split: runDoujinMigrationIfNeeded (postInit) moves old doujin rows from store.db into doujinData.json once. A whole-DB restore runs it again. BookmarkHandler is now only a reader for the legacy bookmarks.json; main.dart folds it into the doujin bookmark collection.\nBackup: backup_plan.dart is UI-free and tested (BackupItem x11, BackupRunner, BackupTarget, BackupHooks; database restored last; whole DB forces a restart and writes the downloads-check marker). db_parts.dart restores selected tables through ATTACH. backup_app.dart binds the hooks to the live app and holds the SAF folder target and the Drive target. drive_backup.dart is a static OAuth loopback plus REST client (drive.file scope; snapshots are folders under 'LoliSnatcher').\nLoliSync: one LoliSync class is both an HttpServer receiver (endpoints /lolisync/*) and an HttpClient sender. The two pages drive it. The TabsMode/TagsMode enums live in the page file and the handler imports them.\nDownloads: SnatchHandler is a GetIt singleton queue with Rx state. Each queue item gets a fresh ImageWriter().writeMultiple, which streams progress. ImageWriter also owns the whole media-cache naming and cleanup that CustomNetworkImage and the video viewer use. Other pieces: DownloadFolders (current and earlier folders, probes), SAFFileCache (names in the picked SAF folder), DownloadsReconciler (checks DB rows against files across folders; audit/forget), get_perms (storage permission plus a 'no access' dialog), DioDownloader (video caching; half of it is dead isolate code). snatcher_page is the batch downloader; on mobile it is reachable only from the orphaned DDControlPanel.\nLinks: source_links (manifest alias host list + switch) and incoming_link (routes a link to a doujin tab, viewer, search tab or LinkedMediaPage).\nDiagnostics: Logger wraps talker, redacts every line and caps it at 10k characters, and installs the FlutterError/PlatformDispatcher/ErrorWidget hooks. log_redaction is shared with source capture and reads booru keys straight from SettingsHandler. RedactingDioLogger handles HTTP lines. PerfTrace records frames, events and widget lifecycles and also marks ModelWork's ActivityClock on routes and scrolls, so perf_trace and model_work import each other. NavigationTrace logs why the viewer closed and Back presses. CaptureFiles saves trace reports and source captures to SAF or folders. SourceCaptureHandler records webview pages, XHR and bodies into a jsonl journal. NotifyHandler is an empty placeholder.",
+ "features": [
+  {
+   "name": "Database on/off",
+   "navPath": "Settings -> Database -> Enable database",
+   "what": "When on, store.db is opened at start (WAL) and every DB-backed feature works. When off, a blank DBHandler makes every query a no-op, and LoliSync and the doujin migration are gated off.",
+   "files": [
+    "lib/src/handlers/database_handler.dart"
+   ],
+   "settingsKeys": [
+    "dbEnabled"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Heavy tag indexes toggle",
+   "navPath": "Settings -> Database -> Enable indexing (+ debug 'Create indexes' / 'Drop indexes' buttons)",
+   "what": "At postInit, createIndexes adds the ImageTag indexes, or dropIndexes removes them along with old BooruItem/Tag indexes. The init screen shows a status message.",
+   "files": [
+    "lib/src/handlers/database_handler.dart"
+   ],
+   "settingsKeys": [
+    "indexesEnabled"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Always-on critical indexes",
+   "navPath": "automatic (every DB open)",
+   "what": "Creates indexes on postURL, Tag.name, PinnedTag.tagName, ViewedPost/SeenPost viewedAt, Interaction(world,at), BooruTag browse/ns, and Kemono/Pawchive creator name/updated/favorited.",
+   "files": [
+    "lib/src/handlers/database_handler.dart"
+   ],
+   "storedIn": "store.db",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Schema creation and column migrations",
+   "navPath": "automatic (every start)",
+   "what": "CREATE TABLE IF NOT EXISTS for 24 tables. ALTERs add PinnedTag.title, SearchHistory.isFavourite, Tag.tagType/updatedAt, BooruItem.snatchedAt and BooruTag.sourceId; BooruTag is rebuilt once to put namespace in its primary key.",
+   "files": [
+    "lib/src/handlers/database_handler.dart"
+   ],
+   "storedIn": "store.db",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Startup URL fixes",
+   "navPath": "automatic (every start; status shown on the init screen, e.g. 'Gelbooru: n/N')",
+   "what": "Moves gelbooru imgN/video-cdnN rows to img2/video-cdn4, collapses double slashes, and rewrites api.rule34.xxx post URLs to rule34.xxx.",
+   "files": [
+    "lib/src/handlers/database_handler.dart"
+   ],
+   "storedIn": "store.db",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Cross-booru tag alias cache",
+   "navPath": "automatic (find elsewhere, tag preview translation)",
+   "what": "TagAliasCache keeps hits for 30 days and misses for 1 day. Every start purges cached misses.",
+   "files": [
+    "lib/src/handlers/database_handler.dart"
+   ],
+   "storedIn": "store.db TagAliasCache",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Untracked row cleanup",
+   "navPath": "automatic (after each item write, collection delete/remove, clear, start)",
+   "what": "Removes BooruItem rows that are not favourited, not snatched and in no collection, together with their ImageTag rows.",
+   "files": [
+    "lib/src/handlers/database_handler.dart"
+   ],
+   "storedIn": "store.db",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Tag table cleanup",
+   "navPath": "automatic (20 min after start, 1 min in debug)",
+   "what": "Deletes empty tags and merges duplicate tag names into the most-used id.",
+   "files": [
+    "lib/src/handlers/database_handler.dart"
+   ],
+   "storedIn": "store.db",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Favourite/snatched tracking per post",
+   "navPath": "automatic (favourite button, snatch, LoliSync receive)",
+   "what": "updateBooruItem/updateMultipleBooruItems in local, urlUpdate or sync mode, with snatchedAt stamping. Doujin items never get isFavourite or tags in store.db, though they do get the snatched row. URLs are normalised.",
+   "files": [
+    "lib/src/handlers/database_handler.dart"
+   ],
+   "storedIn": "store.db BooruItem/Tag/ImageTag",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Favourite/downloaded badges on fetched pages",
+   "navPath": "automatic (each feed page load)",
+   "what": "getMultipleTrackedValues reads isSnatched/isFavourite per new page, matching by fileURL, or by postURL for sankaku, rule34.xxx and paheal.",
+   "files": [
+    "lib/src/handlers/database_handler.dart"
+   ],
+   "storedIn": "store.db",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Local list search grammar",
+   "navPath": "Favourites / Downloads / Collections tabs -> search bar",
+   "what": "Supports AND tags, -exclude, ~OR, * wildcard, site:/-site:, sort:random and sort:reverse. Downloads list newest snatch first; the others by id. Counts come from searchDBCount; tag suggestions are ranked by usage count.",
+   "files": [
+    "lib/src/handlers/database_handler.dart"
+   ],
+   "storedIn": "store.db",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Clear snatched / favourites / search history",
+   "navPath": "Settings -> Database -> Clear snatched items / Clear favourited items / Clear search history",
+   "what": "Bulk-resets the flags, then sweeps untracked rows, or deletes every search history row.",
+   "files": [
+    "lib/src/handlers/database_handler.dart"
+   ],
+   "storedIn": "store.db",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Sankaku favourites URL update",
+   "navPath": "Settings -> Database -> Sankaku favourites update -> Update Sankaku URLs (skip / stop / purge failed / retry failed)",
+   "what": "getSankakuItems lists chan or idol rows, optionally by search; each is reloaded and saved in urlUpdate mode.",
+   "files": [
+    "lib/src/handlers/database_handler.dart"
+   ],
+   "storedIn": "store.db",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Collections (albums)",
+   "navPath": "Drawer -> Collections; post menu -> Add to collection sheet",
+   "what": "Create, rename, delete (sweeps untracked rows), list with item count and cover (newest added), add items (inserts missing rows without touching their flags), remove, and per-post membership.",
+   "files": [
+    "lib/src/handlers/database_handler.dart"
+   ],
+   "storedIn": "store.db Collection/CollectionItem",
+   "inBackup": "yes"
+  },
+  {
+   "name": "For You interest signals",
+   "navPath": "automatic; Settings -> Recommendations (delete one / clear)",
+   "what": "TagSignal scores decay with a 30-day half-life. Top-N reads over-fetch, then re-sort after decay.",
+   "files": [
+    "lib/src/handlers/database_handler.dart"
+   ],
+   "storedIn": "store.db TagSignal",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Recommender training log",
+   "navPath": "automatic",
+   "what": "Interaction rows per world with feature hashes, feature names, pruning to the newest 20,000 per world, Not-interested keys, and a per-world clear.",
+   "files": [
+    "lib/src/handlers/database_handler.dart"
+   ],
+   "storedIn": "store.db Interaction/RecommenderFeature",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Vector store (vectors.db)",
+   "navPath": "Settings -> Recommendations -> Models (vector space, usage)",
+   "what": "Stores vectors per model. A read touches the row (at most daily). Every 200 writes it prunes least-recently-used rows down to 90% of vectorSpaceMb (default 250 MB). Lowering the space runs VACUUM; usage is split into text and looks; rows still in store.db move over on start; per-model clear.",
+   "files": [
+    "lib/src/handlers/database_handler.dart"
+   ],
+   "settingsKeys": [
+    "vectorSpaceMb"
+   ],
+   "storedIn": "vectors.db ItemEmbedding",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Per-source tag snapshot and corrections",
+   "navPath": "Tag browser / tag builder / tag types",
+   "what": "BooruTag upserts run one transaction per page; queries and counts by namespace or type; site tag ids (hentaipaw); delete. BooruTagOverride holds manual corrections.",
+   "files": [
+    "lib/src/handlers/database_handler.dart"
+   ],
+   "storedIn": "store.db BooruTag/BooruTagOverride",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Kemono / Pawchive creator index",
+   "navPath": "Kemono-style tabs -> Artists page / name suggestions",
+   "what": "Upsert with seenAt, prune, count, query with sort/services/keys, lookup by keys and by name.",
+   "files": [
+    "lib/src/handlers/database_handler.dart"
+   ],
+   "storedIn": "store.db KemonoCreator/PawchiveCreator",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Tag DB autocomplete and tag types",
+   "navPath": "search box suggestions; tag type colours",
+   "what": "getTags prefix search, updateTagsFromObjects to store types, getAllTags on load.",
+   "files": [
+    "lib/src/handlers/database_handler.dart"
+   ],
+   "storedIn": "store.db Tag",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Tab session restore",
+   "navPath": "automatic (backup every 30 s; restore on start)",
+   "what": "Keeps one TabRestore row holding the tabs JSON.",
+   "files": [
+    "lib/src/handlers/database_handler.dart"
+   ],
+   "storedIn": "store.db TabRestore",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Search history",
+   "navPath": "Search box -> history / suggestions; history page favourite star",
+   "what": "Dedupes by text plus booru. Favourited entries survive the Constants.historyLimit cap. Favourite toggle, delete/clear, latest 20, prefix suggestions that carry the booru name for doujin/booru filtering.",
+   "files": [
+    "lib/src/handlers/database_handler.dart"
+   ],
+   "settingsKeys": [
+    "searchHistoryEnabled"
+   ],
+   "storedIn": "store.db SearchHistory",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Saved searches",
+   "navPath": "Search editor -> saved searches",
+   "what": "Add, list (newest first), rename and delete.",
+   "files": [
+    "lib/src/handlers/database_handler.dart"
+   ],
+   "storedIn": "store.db SavedSearch",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Visited tabs history",
+   "navPath": "Tab manager -> tab history",
+   "what": "Add a visit, list oldest first, delete per tab, clear, trim to the newest N.",
+   "files": [
+    "lib/src/handlers/database_handler.dart"
+   ],
+   "storedIn": "store.db TabVisitHistory",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Seen-post dimming",
+   "navPath": "automatic; Settings -> Gallery -> clear seen posts",
+   "what": "SeenPost key set, capped at 100,000 by trimming on each insert.",
+   "files": [
+    "lib/src/handlers/database_handler.dart"
+   ],
+   "storedIn": "store.db SeenPost",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Viewing History feed",
+   "navPath": "Drawer -> History",
+   "what": "Stores the full item JSON with its own serializer, capped at 5,000; a re-view bumps the item to the top. Term filter, count, clear and delete row.",
+   "files": [
+    "lib/src/handlers/database_handler.dart"
+   ],
+   "storedIn": "store.db ViewedPost",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Doujin reading progress",
+   "navPath": "Doujin detail -> Continue reading",
+   "what": "ReaderProgress keyed by host|galleryId.",
+   "files": [
+    "lib/src/handlers/database_handler.dart"
+   ],
+   "storedIn": "store.db ReaderProgress",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Pinned tags",
+   "navPath": "Pinned tags page; search editor pin menu",
+   "what": "Add global or source-scoped pins with a duplicate check. Removing a pin also forgets its hidden state. Remove by name, list per source, get (source pin first, then global), batch reorder, comma-separated labels, edit tags/title/scope (r50), list distinct labels.",
+   "files": [
+    "lib/src/handlers/database_handler.dart"
+   ],
+   "storedIn": "store.db PinnedTag",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Doujin store migration",
+   "navPath": "automatic (postInit, once; re-armed after a whole-database restore)",
+   "what": "Moves doujin favourites, history, source-scoped pins, saved searches (not merge ones) and collection members from store.db into doujinData.json. Store writes happen first, deletions second. Followed artists are not migrated. Counts are logged.",
+   "files": [
+    "lib/src/handlers/doujin_migration.dart"
+   ],
+   "storedIn": "doujinData.json (migrationDone)",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Legacy doujin bookmarks merge",
+   "navPath": "automatic (postInit)",
+   "what": "Reads bookmarks.json and folds it once into the doujin bookmark collection (DoujinDataHandler.mergeLegacyBookmarks). Reloaded after a restore.",
+   "files": [
+    "lib/src/handlers/bookmark_handler.dart"
+   ],
+   "storedIn": "bookmarks.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Backup checklist",
+   "navPath": "Settings -> Backup & restore -> item checklist (All / None)",
+   "what": "Eleven items: Settings, Sources, Doujin library, Source settings, Bookmarks, Boards, Board pictures, Tag types, Database, Vector cache, Recommendations, each with a description. An item with nothing on the device is skipped.",
+   "files": [
+    "lib/src/services/backup_plan.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Backup to folder",
+   "navPath": "Settings -> Backup & restore -> backup folder -> Back up",
+   "what": "Writes to the SAF folder. Each file goes through the cache/backup scratch folder under its own name, and the old copy is deleted first. The DB and vectors are checkpointed (WAL) before copying.",
+   "files": [
+    "lib/src/services/backup_app.dart",
+    "lib/src/services/backup_plan.dart"
+   ],
+   "settingsKeys": [
+    "backupPath"
+   ],
+   "storedIn": "settings.json (backupPath)",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Backup to Google Drive snapshot",
+   "navPath": "Settings -> Backup & restore -> Google Drive -> Back up",
+   "what": "Named snapshot folder (default 'yyyy-MM-dd HH.mm', numbered when the name is taken). Resumable upload in 256 KB flushes with a % status.",
+   "files": [
+    "lib/src/services/drive_backup.dart",
+    "lib/src/services/backup_app.dart"
+   ],
+   "storedIn": "Google Drive /LoliSnatcher/<snapshot>",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Restore from folder / Drive snapshot",
+   "navPath": "Settings -> Backup & restore -> Restore (folder) / Google Drive -> pick snapshot",
+   "what": "Item picker lists only items present. A database-mode dialog follows (whole/parts), then confirm and step status. Files are restored first and the DB last; the recommender is stopped before its files. A whole-DB attempt always needs a restart, and a successful one writes the downloads-check marker. The app restarts after 3 s when needed (not for tag types or vectors alone). Failures are listed.",
+   "files": [
+    "lib/src/services/backup_plan.dart",
+    "lib/src/services/backup_app.dart"
+   ],
+   "storedIn": "config folder files",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Database parts restore",
+   "navPath": "Settings -> Backup & restore -> Restore -> Database -> Parts",
+   "what": "Pulled tags are merged, the recommendation log and For You interests replaced, and an older backup's vector cache merged into vectors.db. Columns are intersected for older schemas; missing tables are logged.",
+   "files": [
+    "lib/src/services/db_parts.dart",
+    "lib/src/services/backup_plan.dart"
+   ],
+   "storedIn": "store.db / vectors.db",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Sources and tag types restore",
+   "navPath": "Settings -> Backup & restore -> Restore -> Sources / Tag types",
+   "what": "Only missing saveable sources are added (matched by base URL plus name) as boorus/<name>.json, then reloaded. Tag types load through TagHandler.loadFromJSON.",
+   "files": [
+    "lib/src/services/backup_app.dart"
+   ],
+   "storedIn": "boorus/*.json, tags.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Google Drive link",
+   "navPath": "Settings -> Backup & restore -> Google Drive (credentials, Link, Unlink, snapshot list with dates, delete snapshot)",
+   "what": "The user enters an OAuth client id/secret. Linking opens the consent page in the system browser with a loopback redirect (drive.file, offline + consent), shows a landing page, waits for the app to come back to the front, then exchanges the code against 3 token endpoints for 2 rounds; network errors get a friendly message. Snapshots are listed newest first, with old top-level files shown as 'Earlier backup'.",
+   "files": [
+    "lib/src/services/drive_backup.dart"
+   ],
+   "storedIn": "secure storage (driveClientId, driveClientSecret, driveRefreshToken)",
+   "inBackup": "no"
+  },
+  {
+   "name": "LoliSync entry",
+   "navPath": "Settings -> LoliSync",
+   "what": "Opens the sync page. With the DB off it shows an error snackbar instead.",
+   "files": [
+    "lib/src/pages/loli_sync_page.dart"
+   ],
+   "settingsKeys": [
+    "dbEnabled"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "LoliSync sender",
+   "navPath": "Settings -> LoliSync -> Send data to device",
+   "what": "IP and port fields, remembered when leaving the page. Toggles: Send favourites (batches of 100); a legacy per-item favourites toggle that appears after Send favourites is turned on 3 times; 'Sync favourites from' (±100, help); Send snatched history plus 'from' (help); Send settings (device-specific keys stripped); Send booru configs (saveable only); Send tabs with Merge/Replace (help); Send tags with Prefer type if none/Overwrite (help). Test connection (help, result snackbar) and Start sync (validation errors) round it out.",
+   "files": [
+    "lib/src/pages/loli_sync_page.dart",
+    "lib/src/handlers/loli_sync_handler.dart"
+   ],
+   "settingsKeys": [
+    "lastSyncIp",
+    "lastSyncPort"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "LoliSync receiver",
+   "navPath": "Settings -> LoliSync -> Receive data from device",
+   "what": "Shows this device's stats and a network interface picker (Auto/Localhost/each NIC) with the selected IP and server port (default 8080), then starts the server. Endpoints: boorubatch/booruitem (existing rows skipped), settings (loadFromJSON), booru (duplicates by name plus URL skipped), tabs (merge/replace), tags (overwrite/prefer type), test, complete.",
+   "files": [
+    "lib/src/pages/loli_sync_page.dart",
+    "lib/src/handlers/loli_sync_handler.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "LoliSync progress page",
+   "navPath": "LoliSync -> Start sync / Start receiver server",
+   "what": "Big icon, status line and the last 100 messages. Keep screen awake toggle on mobile. Back or the back arrow asks to stop syncing or stop the server. A 'server killed' snackbar appears.",
+   "files": [
+    "lib/src/pages/loli_sync_progress_page.dart",
+    "lib/src/handlers/loli_sync_handler.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Snatch (download) queue",
+   "navPath": "Viewer save button; feed selection save; desktop Save; doujin detail/reader/item menu; kemono post page; webview; Downloads drawer (pause/resume, cancel, retry, retry all, clear)",
+   "what": "Queues with a cooldown. 'Added to queue' snackbars (one item with a thumbnail, or a count) and a completion summary coloured by result, when notifications are on. Status shows x/y/z with per-file progress. Retry all refetches up to 20 items. Exists/failed/cancelled lists are capped at 500. Booru snatches teach interests. Snatched posts stay visible until the feed reloads. favouriteOnSnatch is applied by the callers.",
+   "files": [
+    "lib/src/handlers/snatch_handler.dart",
+    "lib/src/services/image_writer.dart"
+   ],
+   "settingsKeys": [
+    "snatchCooldown",
+    "downloadNotifications",
+    "snatchMode",
+    "favouriteOnSnatch"
+   ],
+   "storedIn": "memory only (queue lost on restart)",
+   "inBackup": "no"
+  },
+  {
+   "name": "Doujin book download",
+   "navPath": "Doujin detail / reader / item menu -> Download",
+   "what": "Pages go into the book's own folder with page-numbered files and a manifest. E-hentai placeholder pages are resolved first, 300 ms apart; unresolvable pages are skipped and logged.",
+   "files": [
+    "lib/src/handlers/snatch_handler.dart",
+    "lib/src/services/image_writer.dart"
+   ],
+   "storedIn": "download folder Doujin/<host>_<id>/",
+   "inBackup": "no"
+  },
+  {
+   "name": "Batch Snatcher page",
+   "navPath": "Desktop home -> Snatcher icon (on mobile only via DDControlPanel's navigation buttons, which nothing shows since the drawer redesign)",
+   "what": "Tags prefilled from the current tab (tag search box), amount (default itemLimit, ±10, min 10), delay in ms (default snatchCooldown, ±50, min 100) and a booru dropdown. 'Snatch files' fetches pages of up to 100, skips hidden posts and queues them, showing a 'do not close the app' snackbar. The storage permission is checked when the page opens.",
+   "files": [
+    "lib/src/pages/snatcher_page.dart",
+    "lib/src/handlers/snatch_handler.dart"
+   ],
+   "settingsKeys": [
+    "itemLimit",
+    "snatchCooldown"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Download file naming",
+   "navPath": "automatic",
+   "what": "A site-given name is used (kemono). Philomena/BooruOnRails: extras.ext. Hydrus: extras_md5.ext. yande.re/paheal: booru_md5. Otherwise booru_tail, where a tail with no identity of its own gets an md5 or directory-hash prefix. The reconciler, the downloaded badge and the earlier folders all match on these names.",
+   "files": [
+    "lib/src/services/image_writer.dart"
+   ],
+   "storedIn": "download folder",
+   "inBackup": "no"
+  },
+  {
+   "name": "Download write",
+   "navPath": "automatic (each queued file)",
+   "what": "Sample or original per snatchMode, custom headers plus referer. SAF stream write or a plain file; media scanner for plain files. Marks the row snatched in the DB, adds the name to SAFFileCache, and treats a file that already exists or a row already snatched as 'exists'.",
+   "files": [
+    "lib/src/services/image_writer.dart"
+   ],
+   "settingsKeys": [
+    "snatchMode",
+    "extPathOverride"
+   ],
+   "storedIn": "download folder + store.db",
+   "inBackup": "partial"
+  },
+  {
+   "name": "JSON sidecar on save",
+   "navPath": "Settings -> Save & cache -> Write image data to JSON on save",
+   "what": "Writes <name>.json with the item's data next to a download (Android 12+ with a custom folder; see bugs for the other cases).",
+   "files": [
+    "lib/src/services/image_writer.dart"
+   ],
+   "settingsKeys": [
+    "jsonWrite"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Media cache",
+   "navPath": "automatic; Settings -> Save & cache (cache stats, clear per type, cache duration, cache size)",
+   "what": "Per-type cache folders (thumbnails, samples, media, favicons, WebView) with a fixed file naming scheme; zero-byte files are dropped on read; delete one file or a folder. Stats are computed in an isolate. Cleanup runs at start and every 5 min: temp and zero-byte files always, stale files by cacheDuration, overflow by cacheSize (oldest first).",
+   "files": [
+    "lib/src/services/image_writer.dart",
+    "lib/src/services/image_writer_isolate.dart"
+   ],
+   "settingsKeys": [
+    "cacheDuration",
+    "cacheSize",
+    "thumbnailCache",
+    "mediaCache"
+   ],
+   "storedIn": "app cache dir",
+   "inBackup": "no"
+  },
+  {
+   "name": "Video caching download",
+   "navPath": "Viewer (video) when media cache is on and the mode is cache or stream+cache",
+   "what": "DioDownloader downloads the file into the media cache and plays it from there. A HEAD request gets the size. Cancelled on dispose.",
+   "files": [
+    "lib/src/services/dio_downloader.dart"
+   ],
+   "settingsKeys": [
+    "mediaCache",
+    "videoCacheMode"
+   ],
+   "storedIn": "app cache dir media/",
+   "inBackup": "no"
+  },
+  {
+   "name": "Drawer mascot image copy",
+   "navPath": "Settings -> Theme -> drawer mascot -> pick image",
+   "what": "Copies the picked SAF image to config/mascot.<ext>.",
+   "files": [
+    "lib/src/services/image_writer.dart"
+   ],
+   "settingsKeys": [
+    "drawerMascotPathOverride"
+   ],
+   "storedIn": "config folder mascot.<ext>",
+   "inBackup": "no"
+  },
+  {
+   "name": "Download folder change and earlier folders",
+   "navPath": "Settings -> Save & cache -> Set storage directory / Reset directory / Earlier download folders (add, remove)",
+   "what": "change() is the single path for a folder change: it records the folder left (newest first), refreshes SAFFileCache and saves. Add/remove are logged. Earlier folders are only read, never written.",
+   "files": [
+    "lib/src/services/download_folders.dart",
+    "lib/src/services/get_perms.dart"
+   ],
+   "settingsKeys": [
+    "extPathOverride",
+    "earlierDownloadFolders"
+   ],
+   "storedIn": "settings.json (device-specific)",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Downloads reconcile / check",
+   "navPath": "Downloads tab (automatic per page); Settings -> Save & cache -> Check downloads; drawer 'check against the folder'",
+   "what": "Sorts rows into present, missing or unknown, looking in earlier folders too. Logs one report per folder per run (files, folders, grant, samples) and the first missing name. Counts where files were found. Forget clears only the snatched mark. Reports a storage problem.",
+   "files": [
+    "lib/src/handlers/downloads_reconciler.dart",
+    "lib/src/services/download_folders.dart"
+   ],
+   "storedIn": "store.db (isSnatched)",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Storage permission and folder access dialog",
+   "navPath": "automatic at start and before saves; dialog 'No access to custom storage directory' (Set directory / Reset directory / Cancel)",
+   "what": "Asks for storage permission on Android <13 and iOS, and checks that the picked SAF folder is still accessible.",
+   "files": [
+    "lib/src/services/get_perms.dart"
+   ],
+   "settingsKeys": [
+    "extPathOverride"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "SAF file-name cache",
+   "navPath": "automatic (start, folder change, writes, deletes)",
+   "what": "Lists the picked folder's file names once and uses them for the downloaded badge and the reconciler.",
+   "files": [
+    "lib/src/services/saf_file_cache.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Open source links in the app",
+   "navPath": "Settings -> Links",
+   "what": "The switch turns the manifest .SourceLinks alias (60 hosts) on or off and is re-applied at start. The page lists covered and uncovered sources.",
+   "files": [
+    "lib/src/services/source_links.dart"
+   ],
+   "settingsKeys": [
+    "openSourceLinks"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Incoming link routing",
+   "navPath": "automatic (a link opened from another app)",
+   "what": "A doujin gallery opens a detail tab and switches to it; a post opens the viewer over the current page; a search page opens a new tab and switches to it; anything else opens LinkedMediaPage. Logged.",
+   "files": [
+    "lib/src/services/incoming_link.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Logger and log export",
+   "navPath": "Settings -> Logs (export; long-press opens the viewer); Settings -> Debug -> Logger",
+   "what": "Talker history of 10,000 items; every line is redacted and cut at 10,000 characters, and logParts splits long text. Flutter and platform errors are captured (Dio cancels ignored) and a compact error widget is shown. Dio request/response/error lines are redacted with headers hidden; request bodies get one redacted line of up to 2,200 characters.",
+   "files": [
+    "lib/src/utils/logger.dart",
+    "lib/src/utils/log_redaction.dart"
+   ],
+   "storedIn": "memory only (talker)",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Credential redaction",
+   "navPath": "automatic (logs, captures, export)",
+   "what": "Strips query keys, named cookies, JSON credential fields, Set-Cookie arrays, Cookie headers, Bearer/Key/Basic values, and every configured apiKey/userID or key-like defTags value.",
+   "files": [
+    "lib/src/utils/log_redaction.dart"
+   ],
+   "storedIn": "n/a",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Interaction trace recorder",
+   "navPath": "Settings -> Debug -> Record a trace / Stop recording · N frames",
+   "what": "Per-frame build and raster stats with percentiles, the 12 slowest frames, a 2,000-event timeline, widget build counts and lifecycles, taps/swipes/scrolls/fingers/cancels, and route pushes and pops. On stop the report is saved as a trace file, logged in parts and shown in a dialog with Copy.",
+   "files": [
+    "lib/src/utils/perf_trace.dart",
+    "lib/src/services/capture_files.dart"
+   ],
+   "storedIn": "captures folder trace-<stamp>.txt",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Captures folder",
+   "navPath": "Settings -> Debug -> Captures folder / Use the download folder for captures",
+   "what": "Trace reports and source captures go to the picked SAF tree, else the download folder's 'captures', else <ext>/LoliSnatcher/captures. A file with the same name is replaced.",
+   "files": [
+    "lib/src/services/capture_files.dart"
+   ],
+   "settingsKeys": [
+    "capturesPath"
+   ],
+   "storedIn": "settings.json (device-specific)",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Source capture",
+   "navPath": "Settings -> Debug -> Source capture (Open site and record, Fetch the response bodies, Captured so far, Save to the captures folder, Share the capture file, Copy the capture to clipboard, Discard the capture, Contents)",
+   "what": "A recording webview with the fetch/XHR hook captures page HTML, resource URLs and the page's own API calls with bodies, and fetches bodies in-page on each load stop. Everything is saved automatically when the browser closes. Share goes through cache/captures; Copy is capped at 256 KB and shortened when larger. An interrupted session is recovered from the journal.",
+   "files": [
+    "lib/src/handlers/source_capture_handler.dart",
+    "lib/src/services/capture_files.dart"
+   ],
+   "storedIn": "config/source-capture-session.jsonl",
+   "inBackup": "no"
+  },
+  {
+   "name": "Viewer close reasons and Back logging",
+   "navPath": "automatic",
+   "what": "Logs 'viewer closed by: <reason>' plus a viewer.close event, and 'Back pressed (system)' / 'Back gesture started'. popIfOnTop keeps dialog actions from popping the viewer; the tag breadcrumb stops at the viewer.",
+   "files": [
+    "lib/src/utils/navigation_trace.dart"
+   ],
+   "storedIn": "log",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Quiet-moment marking for model work",
+   "navPath": "automatic",
+   "what": "Route changes and scroll start/update mark ActivityClock even when no trace is recording, so background model work waits.",
+   "files": [
+    "lib/src/utils/perf_trace.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Slideshow progress ring",
+   "navPath": "Viewer -> auto-scroll (slideshow)",
+   "what": "Circular progress per slide, restarted with the slide's dwell time (longer for videos and GIFs).",
+   "files": [
+    "lib/src/utils/timed_progress_controller.dart"
+   ],
+   "settingsKeys": [
+    "galleryAutoScrollTime"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Notifications placeholder",
+   "navPath": "automatic (registered at start)",
+   "what": "NotifyHandler is registered and unregistered and does nothing else.",
+   "files": [
+    "lib/src/handlers/notify_handler.dart"
+   ],
+   "storedIn": "n/a",
+   "inBackup": "n/a"
+  }
+ ],
+ "fileHomes": [
+  {
+   "path": "lib/src/handlers/bookmark_handler.dart",
+   "newHome": "lib/features/doujin/logic/legacy_bookmarks.dart",
+   "role": "Reads legacy bookmarks.json (DoujinBookmark) for the one-time merge into the doujin bookmark collection; reloaded after a restore",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/handlers/database_handler.dart",
+   "newHome": "lib/core/storage/db/ (app_database.dart, schema.dart, maintenance.dart, repos/*.dart)",
+   "role": "store.db and vectors.db connection, schema/migrations and every table's queries",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/handlers/doujin_migration.dart",
+   "newHome": "lib/features/doujin/logic/doujin_store_migration.dart",
+   "role": "Pure planner plus DB applier moving pre-split doujin rows into doujinData.json once",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/handlers/loli_sync_handler.dart",
+   "newHome": "lib/features/sync/logic/loli_sync.dart (split into server and client)",
+   "role": "LoliSync LAN HttpServer receiver and HttpClient sender",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/pages/loli_sync_page.dart",
+   "newHome": "lib/features/sync/ui/loli_sync_page.dart (enums -> lib/models/sync_modes.dart)",
+   "role": "LoliSync side picker, sender form and receiver form; defines TabsMode/TagsMode/SyncSide",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/pages/loli_sync_progress_page.dart",
+   "newHome": "lib/features/sync/ui/loli_sync_progress_page.dart",
+   "role": "Progress/status page for a sync or server run with wakelock and stop dialog",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/services/backup_app.dart",
+   "newHome": "lib/features/backup/logic/backup_app.dart",
+   "role": "BackupHooks bound to the live app, SAF folder target, Drive target, scratch dir",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/services/backup_plan.dart",
+   "newHome": "lib/features/backup/logic/backup_plan.dart",
+   "role": "UI-free backup model and runner (items, file names, targets, hooks, restore order)",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/services/db_parts.dart",
+   "newHome": "lib/features/backup/logic/db_parts.dart",
+   "role": "Restores selected store.db tables via ATTACH (merge/replace, column intersection)",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/services/drive_backup.dart",
+   "newHome": "lib/features/backup/logic/drive_backup.dart (+ drive_auth.dart)",
+   "role": "Google Drive OAuth loopback flow and REST (snapshots, upload, download, list)",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/handlers/downloads_reconciler.dart",
+   "newHome": "lib/features/downloads/logic/downloads_reconciler.dart",
+   "role": "Checks snatched rows against files in the current and earlier folders; audit/forget; folder report",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/handlers/notify_handler.dart",
+   "newHome": "lib/core/platform/notify_handler.dart (or delete: empty placeholder)",
+   "role": "Empty GetIt singleton placeholder for native notifications",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/handlers/snatch_handler.dart",
+   "newHome": "lib/features/downloads/logic/snatch_queue.dart (+ lib/features/downloads/ui/snatch_notices.dart)",
+   "role": "Download queue (Rx state, retry lists, doujin book resolve, batch search snatch) plus its snackbars",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/handlers/source_capture_handler.dart",
+   "newHome": "lib/features/debug/logic/source_capture.dart (models -> lib/models/capture_entry.dart)",
+   "role": "Source capture recorder: entries, in-page fetch scripts, journal, bundle builders",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/pages/snatcher_page.dart",
+   "newHome": "lib/features/downloads/ui/snatcher_page.dart",
+   "role": "Batch downloader form (tags, amount, delay, booru)",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/services/capture_files.dart",
+   "newHome": "lib/features/debug/logic/capture_files.dart",
+   "role": "Saves trace reports and source captures to the captures folder (SAF / download folder / app folder)",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/services/dio_downloader.dart",
+   "newHome": "lib/core/network/dio_downloader.dart",
+   "role": "Cached media fetch for the video viewer (runRequest, runRequestSize); dead isolate variants",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/services/download_folders.dart",
+   "newHome": "lib/features/downloads/logic/download_folders.dart",
+   "role": "Current and earlier download folders, name listings, probe report, describe",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/services/get_perms.dart",
+   "newHome": "lib/core/platform/storage_permission.dart (+ lib/features/downloads/ui/storage_access_dialog.dart)",
+   "role": "Storage permission request, SAF persistence check, and the 'no access to folder' dialog",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/services/image_writer.dart",
+   "newHome": "lib/features/downloads/logic/image_writer.dart (+ lib/core/storage/media_cache.dart for cache paths and cleanup)",
+   "role": "Download writer and file naming, plus the whole media-cache path/naming/cleanup API and the mascot copy",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/services/image_writer_isolate.dart",
+   "newHome": "lib/core/storage/media_cache_stats.dart",
+   "role": "Isolate-safe copy of the cache naming; only getCacheStat is live (Save & cache page)",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/services/incoming_link.dart",
+   "newHome": "lib/features/links/logic/incoming_link.dart",
+   "role": "Parses a link from another app into doujin/post/search/other and routes it",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/services/saf_file_cache.dart",
+   "newHome": "lib/core/platform/saf_file_cache.dart",
+   "role": "In-memory set of file names in the picked SAF download folder",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/services/source_links.dart",
+   "newHome": "lib/features/links/logic/source_links.dart",
+   "role": "Manifest link host list, coverage of sources, switch applying the activity alias",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/utils/log_redaction.dart",
+   "newHome": "lib/core/logging/log_redaction.dart",
+   "role": "redactSecrets shared by the logger, the Dio logger, the log export and source capture",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/utils/logger.dart",
+   "newHome": "lib/core/logging/logger.dart (error hooks -> lib/app/bootstrap.dart)",
+   "role": "Talker wrapper, logParts, request-data line, RedactingDioLogger, LogTypes; installs global error hooks",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/utils/navigation_trace.dart",
+   "newHome": "lib/core/logging/navigation_trace.dart",
+   "role": "Viewer-close reason, system Back/gesture logging, popIfOnTop and breadcrumb predicates",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/utils/perf_trace.dart",
+   "newHome": "lib/core/logging/perf_trace.dart (+ lib/core/ui/perf_trace_gesture_layer.dart)",
+   "role": "Trace recorder plus route observer, lifecycle mixin and root gesture layer; marks ActivityClock",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/utils/timed_progress_controller.dart",
+   "newHome": "lib/core/utils/timed_progress_controller.dart",
+   "role": "Timer-driven progress stream for the viewer slideshow ring",
+   "layer": "core"
+  }
+ ],
+ "layerViolations": [
+  {
+   "file": "lib/src/handlers/loli_sync_handler.dart",
+   "line": 20,
+   "imports": "pages/loli_sync_page.dart (TabsMode, TagsMode); also material + widgets/common/flash_elements.dart (lines 6, 22)",
+   "reason": "Logic imports a page (cycle with loli_sync_page, which imports the handler) and builds snackbars itself (killServer, sendTest).",
+   "fix": "Move TabsMode/TagsMode/SyncSide to lib/models/sync_modes.dart (keep locName in a UI extension). Have killServer/sendTest return results and let the progress/sync pages show the snackbars."
+  },
+  {
+   "file": "lib/src/handlers/snatch_handler.dart",
+   "line": 22,
+   "imports": "widgets/common/flash_elements.dart, widgets/thumbnail/thumbnail_build.dart, material; boorus/doujin/ehentai_handler.dart (line 25)",
+   "reason": "Queue logic builds snackbars containing a thumbnail widget, and type-checks one specific source (EHentaiHandler) to pass bulk:true.",
+   "fix": "Add a SnatchNotifier interface implemented in features/downloads/ui (queued, done). Add a BooruHandler capability such as loadItemForDownload(item) that EHentaiHandler overrides."
+  },
+  {
+   "file": "lib/src/services/incoming_link.dart",
+   "line": 9,
+   "imports": "widgets/linked_media_sheet.dart (LinkedMediaOpener)",
+   "reason": "Link-parsing logic imports a UI sheet to open media.",
+   "fix": "Keep IncomingLink.parse pure in logic. Inject openMedia/openTab defaults from the app layer (they already are static seams)."
+  },
+  {
+   "file": "lib/src/services/get_perms.dart",
+   "line": 3,
+   "imports": "material, widgets/common/cancel_button.dart, widgets/common/flash_elements.dart, navigation_handler",
+   "reason": "A platform permission helper also contains an AlertDialog, yet settings_handler, tag_handler and saf_file_cache (core) import it.",
+   "fix": "Split getStoragePermission/checkStorageAvailability into core/platform/storage_permission.dart, and setPermissions/showStorageNeedsUpdateDialog into features/downloads/ui/storage_access_dialog.dart."
+  },
+  {
+   "file": "lib/src/services/saf_file_cache.dart",
+   "line": 4,
+   "imports": "services/get_perms.dart (UI file) and handlers/service_handler.dart, while service_handler.dart:11 imports saf_file_cache",
+   "reason": "core -> UI dependency plus an import cycle service_handler <-> saf_file_cache, and get_perms -> download_folders -> saf_file_cache -> get_perms.",
+   "fix": "Have SAFFileCache take an availability-check callback, and have ServiceHandler raise an onFileDeleted hook instead of importing the cache."
+  },
+  {
+   "file": "lib/src/utils/log_redaction.dart",
+   "line": 1,
+   "imports": "handlers/settings_handler.dart",
+   "reason": "Core logging reads booru credentials straight from the huge settings handler.",
+   "fix": "Add a static `List<String> Function() secretsProvider` set at bootstrap (settings registers it), cached until the booru list changes."
+  },
+  {
+   "file": "lib/src/utils/logger.dart",
+   "line": 11,
+   "imports": "widgets/common/compact_error_widget.dart",
+   "reason": "Logger.Inst() installs ErrorWidget.builder, FlutterError.onError and PlatformDispatcher.onError, which are bootstrap concerns, and pulls a widget into core.",
+   "fix": "Move the three hooks into app/bootstrap and move CompactErrorWidget to core/ui."
+  },
+  {
+   "file": "lib/src/utils/perf_trace.dart",
+   "line": 4,
+   "imports": "handlers/recommender/model_work.dart (ActivityClock); model_work.dart:8 imports perf_trace",
+   "reason": "Import cycle between a core utility and recommender feature logic. Activity marking hides inside the trace widgets.",
+   "fix": "Give core an ActivityClock (core/utils/activity_clock.dart) that ModelWork reads, or have PerfTrace expose onActivity listeners that ModelWork subscribes to."
+  },
+  {
+   "file": "lib/src/handlers/database_handler.dart",
+   "line": 19,
+   "imports": "handlers/doujin_data_handler.dart, handlers/recommender/rewards.dart (InteractionRow/InteractionKind), handlers/settings_handler.dart (vectorSpaceMb)",
+   "reason": "The storage layer depends on feature logic: the doujin predicate inside writers, recommender row models, settings.",
+   "fix": "Move InteractionRow/InteractionKind to lib/models. Inject `bool Function(BooruItem) isDoujinItem` and `int Function() vectorSpaceBytes` (static seams set at bootstrap)."
+  },
+  {
+   "file": "lib/src/handlers/database_handler.dart",
+   "line": 2471,
+   "imports": "data/pinned_tag_visibility.dart (which itself imports handlers/source_settings_handler.dart)",
+   "reason": "removePinnedTag reaches into a source-settings store from storage, and a model file imports a handler.",
+   "fix": "Have the pins repository return and let the caller (pins logic) call PinnedTagVisibility.forgetId. Move PinnedTagVisibility's store access into logic."
+  },
+  {
+   "file": "lib/src/services/image_writer.dart",
+   "line": 13,
+   "imports": "handlers/database_handler.dart, handlers/settings_handler.dart, utils/dio_network.dart",
+   "reason": "The cache-path half of ImageWriter is used by core UI (CustomNetworkImage, image_viewer, pixel_tags, DioDownloader) and drags download/DB logic with it.",
+   "fix": "Extract lib/core/storage/media_cache.dart (paths, names, cleanup, statically cached dirs) and keep write/getFilename/writeMultiple in features/downloads/logic."
+  },
+  {
+   "file": "lib/src/services/dio_downloader.dart",
+   "line": 8,
+   "imports": "services/image_writer.dart",
+   "reason": "A core network helper depends on the downloads feature's writer only for cache paths.",
+   "fix": "Depend on core/storage/media_cache.dart."
+  },
+  {
+   "file": "lib/src/handlers/source_capture_handler.dart",
+   "line": 6,
+   "imports": "package:flutter_inappwebview (InAppWebViewController)",
+   "reason": "Recorder logic holds a webview controller type.",
+   "fix": "Store a `Future<dynamic> Function(String js)` evaluator attached by the capture page."
+  },
+  {
+   "file": "lib/src/pages/loli_sync_page.dart",
+   "line": 26,
+   "imports": "(defines) TabsMode / TagsMode enums used by logic and by loli_sync_progress_page",
+   "reason": "Wire-protocol model enums live in a UI file.",
+   "fix": "lib/models/sync_modes.dart."
+  }
+ ],
+ "splits": [
+  {
+   "file": "lib/src/handlers/database_handler.dart",
+   "lines": 2920,
+   "proposal": "Keep `class DBHandler` as the facade, because 160 call sites in 39 files use settingsHandler.dbHandler.X. Compose it from mixins over a small base in one folder. db/app_database.dart (base): db, vectorsDb, vectorDatabase, dbConnect, closeDb, openVectors/_moveVectorsOut/closeVectors, tableExists/columnExists, deleteUntracked, deleteItem, rawRows. db/schema.dart: updateTable, createCriticalIndexes, createIndexes, dropIndexes, with a PRAGMA user_version so one-time steps stop running every start. db/maintenance.dart: fixBooruItems, convertGelbooruServers, fixR34XXXPostUrls, purgeTagAliasMisses, tagsCleanup. Repos as mixins: booru_items (updateBooruItem, updateMultipleBooruItems, getItemID(s), searchDB/searchDBCount + shared query builder, counts, clears, clearSnatchedFlags, tracked values, getSankakuItems, updateTags*, getTagID, getTags, getTagsByUsageCount, getAllTags, clearFavouriteFlag), collections (create/rename/delete/getCollections/add/remove/forItem/removeCollectionItem), recommender_log (TagSignal + Interaction + RecommenderFeature + decayedTagScore), vectors (put/get/prune/usage/compact/clear/count, createVectorTable static, pruneEvery/spaceOverrideBytes seams), tag_alias, booru_tags (BooruTag + overrides), kemono_creators, history (SearchHistory, TabRestore, SavedSearch, TabVisitHistory, SeenPost, ViewedPost + (de)serializeHistoryItem statics), pins, reader_progress.",
+   "risk": "deleteUntracked is called from items, collections and clears, so it must stay in the base. The static seams (pruneEvery, spaceOverrideBytes, defaultPruneEvery, createVectorTable, decayedTagScore, serialize/deserializeHistoryItem) are referenced by tests and other handlers under the DBHandler name, so keep them as static members of DBHandler (forward them). _putsSincePrune is instance state for the vectors mixin. The SQL must not change byte for byte in behaviour; in particular the Downloads ORDER BY, the doujin isFavourite rule and the Tag DDL quirk (missing commas fixed by later ALTERs)."
+  },
+  {
+   "file": "lib/src/handlers/source_capture_handler.dart",
+   "lines": 841,
+   "proposal": "models: CaptureKind, CaptureEntry -> lib/models/capture_entry.dart. capture/journal.dart: journalName, _journalQueue/journalFlushed, _resetJournal, _appendToJournal, _deleteJournal, hasRecoverableSession, restoreSession, _entryToJson/_entryFromJson. capture/fetch.dart: fetchScript, parseFetchResult, networkHookScript, bridgeName, attach/detachController, fetchBodyInPage, fetchPendingBodies, fetchBody, interestingResources/pendingResources. capture/bundle.dart: buildBundle, buildClipboardBundle, maxClipboardChars, isScriptOrMarkup, buildJson (dead), captureFileName, saveToCaptures, writeBundle. The core keeps entries, counters, start/stop/clear, record*, _cap, redact.",
+   "risk": "Every part reads and writes the private _entries/_totalChars/_seenResources/_seenXhr/_fetchedUrls/_target/_startedAt. Use `part` files or one class with extension methods in the same library. Tests call the static @visibleForTesting members by their current names (fetchScript, parseFetchResult, isScriptOrMarkup, redact, clearMemoryOnlyForTests, journalFlushed), so keep them on SourceCaptureHandler."
+  },
+  {
+   "file": "lib/src/pages/loli_sync_page.dart",
+   "lines": 726,
+   "proposal": "lib/models/sync_modes.dart: SyncSide, TabsMode, TagsMode (wire values), plus a UI extension for locName. ui/loli_sync_page.dart: state, select view, pop/save of lastSyncIp/Port. ui/loli_sync_sender_view.dart: sender ListView. ui/loli_sync_receiver_view.dart: receiver ListView. A shared _SyncHelpButton(title, lines) replaces the 6 inline help dialogs.",
+   "risk": "The sender and receiver views mutate State fields (toggles, controllers, favToggleCount, selectedInterface/Address) through setState, so pass a controller object or callbacks. The hidden legacy toggle (shown after 3 enables) and the wire strings 'Merge'/'Replace'/'Overwrite'/'PreferTypeIfNone' must stay."
+  },
+  {
+   "file": "lib/src/services/image_writer.dart",
+   "lines": 684,
+   "proposal": "core/storage/media_cache.dart: cacheRootPath (statically cached), writeCacheFromBytes, deleteFileFromCache, deleteCacheFolder, getCachePath, getCachePathString, cleanupCache + _cleanupCacheIsolate/_CacheCleanupConfig/_CacheFileEntry, cleanableFolders. core/utils/file_names.dart: parseThumbUrlToName, nameIsIdentifying, disambiguate, sanitizeName, shared with media_cache_stats (replacing the copy in image_writer_isolate). features/downloads/logic/image_writer.dart: write, writeMultiple, getFilename, snatchTail, getFilePath, setPaths for the download root. features/settings/logic: writeMascotImage.",
+   "risk": "snatchTail uses the private statics _nameIsIdentifying/_disambiguate, so they must become shared public helpers. Cache and download names must stay byte-identical or every existing cache entry and download stops matching (reconciler, badge, earlier folders). ImageWriter() is constructed per thumbnail, and long-lived instances cache `path`, so keep the API but make the dirs static. Tests: downloads_reconcile_test (snatchTail), kemono_test and download_folders_test (getFilename), doujin_download_layout_test."
+  },
+  {
+   "file": "lib/src/handlers/loli_sync_handler.dart",
+   "lines": 683,
+   "proposal": "logic/loli_sync_server.dart: startServer, store* (one `_handlePost(req, fn)` wrapper for the POST check, try/catch and 404). logic/loli_sync_client.dart: send* (one `_post(path, body)` with a shared HttpClient closed at the end), sendSyncComplete, startSync (one paging routine shared by Favouritesv2/Snatched/legacy Favourites). Snackbars move to the UI.",
+   "risk": "The progress page and the LoliSync page use one LoliSync instance holding ip/port/syncKilled/server for both sides. The wire protocol (paths, query params amount/offset/size/current/mode, JSON shapes, the order Settings->Booru->Tabs->Tags as chosen) must stay compatible with other installs and older versions."
+  },
+  {
+   "file": "lib/src/services/drive_backup.dart",
+   "lines": 653,
+   "proposal": "models: DriveFile, DriveSnapshot -> lib/models/drive_files.dart. logic/drive_auth.dart: credentials (clientId/secret/hasCredentials/isLinked/setCredentials/unlink), link, _landingPage/landingPageForTests, tokenEndpoints, exchange, friendlyError, waitForForeground, _postForm, _token. logic/drive_files.dart: snapshots/snapshotsFrom, createSnapshot, deleteSnapshot, uniqueName, defaultSnapshotName, quoted, _ensureFolder, _find, upload, download, list, _send (with paging and client close).",
+   "risk": "The private statics _accessToken/_accessExpiry/_folderId are shared by auth and REST (unlink clears all three), so they need one shared holder. Test-visible names exchange, landingPageForTests, snapshotsFrom, uniqueName, quoted, defaultSnapshotName and earlierBackupName must keep their DriveBackup.* spelling (drive_backup_link_test, drive_snapshots_test, backup_page_test seams)."
+  },
+  {
+   "file": "lib/src/services/dio_downloader.dart",
+   "lines": 589,
+   "proposal": "Delete the dead runRequestIsolate, runRequestDownload, start, writeToCache/readFileFromCache/readBytesFromCache, IsolateCacheConfig and isRedirectBroken, and create the ReceivePort lazily. Keep runRequest and runRequestSize (video_viewer), and move DioLoadException to core/network. That leaves about 250 lines.",
+   "risk": "video_viewer depends on the exact onEvent strings ('isFromCache', 'isFromNetwork', 'loaded', 'size') and on dispose() never closing the shared Dio client."
+  }
+ ],
+ "bugs": [
+  {
+   "file": "lib/src/services/backup_app.dart",
+   "line": 62,
+   "title": "Restoring Doujin library together with a whole Database loses the restored doujin library",
+   "scenario": "Restore from a backup with both 'Doujin library' and 'Database' (whole) ticked. doujinData.json is written first, then the database step calls rearmDoujinMigration, which saves the OLD in-memory doujin store over the restored file. The app restarts with the old favourites, collections, pins and history.",
+   "evidence": "backup_plan.dart restore order: doujinLibrary written at :378, database last -> _restoreWholeDatabase :403 hooks.rearmDoujinMigration(). backup_app.dart:65-67: `DoujinDataHandler.instance..ensureLoaded(); store.migrationDone = false; store.save();`. ensureLoaded is a no-op once loaded (doujin_data_handler.dart:400, loaded at startup by runDoujinMigrationIfNeeded), and save() writes exportJson() of memory (:469). reloadStores runs only after the loop (backup_plan.dart:334) and reads back the overwritten file.",
+   "confidence": "confirmed",
+   "severity": "data-loss"
+  },
+  {
+   "file": "lib/src/handlers/loli_sync_handler.dart",
+   "line": 80,
+   "title": "Receiving settings over LoliSync wipes the receiver's own device-specific earlier download folders, model threads and Run on choices",
+   "scenario": "Phone B runs the receiver and phone A sends Settings. B's earlierDownloadFolders, modelThreads and modelRunOn become empty and are saved when the LoliSync page is left. B's Downloads tab then stops finding files in its earlier folders, and the per-model thread and accelerator choices reset.",
+   "evidence": "The sender strips deviceSpecificSettings (loli_sync_handler.dart:630-632), which include modelThreads, modelRunOn and earlierDownloadFolders (settings_handler.dart:444-447). The receiver calls loadFromJSON(content, false) (:80), which unconditionally clears and refills from absent keys: settings_handler.dart:2294-2306 (modelThreads..clear()..addAll(parseThreads(null)), modelRunOn likewise, earlierDownloadFolders.clear()). loli_sync_page.dart:159 saveSettings on pop persists it.",
+   "confidence": "confirmed",
+   "severity": "data-loss"
+  },
+  {
+   "file": "lib/src/services/image_writer.dart",
+   "line": 124,
+   "title": "JSON sidecar written to a SAF folder corrupts non-Latin text",
+   "scenario": "Write image data to JSON on save, with a custom folder on Android 12+, for a post whose tags or title are Japanese. The .json gets the low byte of each UTF-16 code unit: mojibake or invalid JSON.",
+   "evidence": "`Uint8List.fromList(jsonEncode(item.toJson()).codeUnits)`. codeUnits are UTF-16 and Uint8List truncates each to 8 bits; it should be utf8.encode.",
+   "confidence": "confirmed",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/services/image_writer.dart",
+   "line": 111,
+   "title": "JSON sidecar setting silently does nothing on desktop and fails on Android <12 with a custom folder",
+   "scenario": "Desktop: the Save & cache toggle is enabled (save_cache_page.dart:393 enables it off Android) but neither branch runs, so no file is written. Android 11 with a SAF folder: File('content://…/name.json') throws (caught and logged); no sidecar.",
+   "evidence": "Branch 1 needs Android && extPathOverride set && SDK>=31; branch 2 needs Android && SDK<31 and uses File('$dir$fileNameWoutExt.json') with dir = the SAF URI when extPathOverride is set. There is no non-Android branch.",
+   "confidence": "confirmed",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/handlers/snatch_handler.dart",
+   "line": 514,
+   "title": "Batch Snatcher loops forever on failed requests, crashes on an empty amount, and queues more than asked",
+   "scenario": "(1) No network or a 5xx/403: search() sets errorString but never `locked`, so `while (count < amount && !locked)` requests page after page forever. (2) Amount field cleared: int.parse('') throws in the unawaited future after the page has popped, and nothing happens. (3) Amount 150 queues 200 posts (whole pages, never trimmed).",
+   "evidence": "booru_handler.dart:400-434: the non-200 and catch paths set errorString only; `locked` is set only when no new items arrive (:397). snatch_handler.dart:488/514 int.parse(amount); queue(booruItems…) at :521 passes the cumulative fetched list untrimmed.",
+   "confidence": "confirmed",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/handlers/source_capture_handler.dart",
+   "line": 111,
+   "title": "A second source capture silently drops the site's API calls",
+   "scenario": "Record a site, close the browser, then tap 'Open site and record' again without 'Discard'. Every fetch/XHR already seen in the first session (same method and URL) is not recorded, and resources fetched before are not fetched again.",
+   "evidence": "start() clears _entries, _seenResources and _totalChars but not _seenXhr or _fetchedUrls (only clear() at :130-131 does). recordXhr returns early on `!_seenXhr.add('$method $url')` (:362); pendingResources skip _fetchedUrls (:382).",
+   "confidence": "confirmed",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/handlers/source_capture_handler.dart",
+   "line": 354,
+   "title": "The 8 MB capture cap applies only to pages",
+   "scenario": "Browse a single-page app for a long time. Each xhr/fetch body (up to 512K characters each) and every resource is appended to memory and to the journal without limit, so memory and the config-folder journal grow unbounded.",
+   "evidence": "maxTotalChars is checked only in recordPage (:163). recordXhr, fetchBodyInPage, fetchBody and recordResource call _add directly.",
+   "confidence": "confirmed",
+   "severity": "leak"
+  },
+  {
+   "file": "lib/src/handlers/source_capture_handler.dart",
+   "line": 401,
+   "title": "'Fetch the response bodies' duplicates bodies and adds FETCH FAILED entries",
+   "scenario": "After browsing (bodies were already fetched in-page on each load stop), tap 'Fetch the response bodies'. The page loops over every interesting resource again. The webview is detached, so each goes through Dio, which on Cloudflare sites fails, and a second fetch entry ('FETCH FAILED: …') is added per URL. The bundle doubles and is noisy.",
+   "evidence": "source_capture_page.dart:171-184 iterates capture.interestingResources (all, not pendingResources) and calls fetchBody. fetchBody appends a new CaptureEntry every time (:432 / :443) with no dedup for the fetch kind. The controller is detached when the browser closes (source_capture_page.dart:150).",
+   "confidence": "confirmed",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/handlers/loli_sync_handler.dart",
+   "line": 134,
+   "title": "LoliSync status texts wrong: 'Favourites Synced' never shows; snatched sync says 'Favourites'",
+   "scenario": "Batch favourites sync: the receiver never shows 'Favourites Synced', because the last batch has offset+size == amount, never amount-1. The sender shows '0-100 / 100 - …' (updatedCount twice instead of the total), and the Snatched branch reports 'Favourites sent' / 'No Favourites'.",
+   "evidence": ":134 `lastIndex = offset + size; if (lastIndex == amount - 1)`; :570 `'$offset-$updatedCount / $updatedCount - $resp'`; :573/:575 shared texts for the Snatched case.",
+   "confidence": "confirmed",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/pages/loli_sync_progress_page.dart",
+   "line": 214,
+   "title": "Status history duplicates entries on every rebuild",
+   "scenario": "During a sync, toggle 'Keep screen awake'. setState rebuilds the StreamBuilder, and its builder calls addMessage(status) again, so the current line repeats in the history.",
+   "evidence": "addMessage(status) is called inside the StreamBuilder builder; toggleWakelock calls setState (:115).",
+   "confidence": "confirmed",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/pages/loli_sync_progress_page.dart",
+   "line": 44,
+   "title": "Receiver server, sockets and wakelock outlive the page; HttpClients never closed",
+   "scenario": "The progress route is removed without the stop dialog (a popUntil from elsewhere, or a route reset). There is no dispose, so the HttpServer stays bound on the port, keeps accepting LAN writes, and the wakelock stays on. Separately, every send creates a new HttpClient that is never closed (hundreds per favourites sync).",
+   "evidence": "_LoliSyncProgressPageState has no dispose(); only the dialog calls killServer/enableSleep (:140-145). loli_sync_handler.dart:365/376/386/397/407/419/436/492 `HttpClient().post(...)` with no close().",
+   "confidence": "plausible",
+   "severity": "leak"
+  },
+  {
+   "file": "lib/src/handlers/loli_sync_handler.dart",
+   "line": 39,
+   "title": "LoliSync receiver accepts unauthenticated writes from any device on the LAN",
+   "scenario": "While the receiver page is open, any host on the same Wi-Fi can POST /lolisync/settings, /booru or /tabs and overwrite settings, add sources or replace tabs.",
+   "evidence": "HttpServer.bind(ip, port), then `await for (req in server)` dispatching by path. There is no token or pairing.",
+   "confidence": "plausible",
+   "severity": "privacy"
+  },
+  {
+   "file": "lib/src/services/drive_backup.dart",
+   "line": 632,
+   "title": "Drive restore sees at most 200 files of a snapshot",
+   "scenario": "A snapshot holding many board pictures or recommender files (more than 200). list() returns only the first page, so DriveBackupTarget.names() misses files and their items are partly restored or reported absent. The 'Earlier backup' root listing also spends its 200 slots on snapshot folders.",
+   "evidence": "list(): 'pageSize': '200' with no nextPageToken handling. names() = list(folderId) (backup_app.dart:169), and restore picks recommender/board-picture files from names (backup_plan.dart:355-363).",
+   "confidence": "plausible",
+   "severity": "data-loss"
+  },
+  {
+   "file": "lib/src/services/backup_app.dart",
+   "line": 187,
+   "title": "Drive backup and restore hold whole files in memory (vectors.db up to 2 GB)",
+   "scenario": "Vector space set to 1-2 GB, then 'Vector cache' backed up to Drive: file.readAsBytes() loads it all, and upload() copies each 256 KB chunk with sublist, leading to OOM. A restore also downloads into a BytesBuilder.",
+   "evidence": "DriveBackupTarget.writeFile -> write(name, await file.readAsBytes()); readToFile -> read() -> DriveBackup.download builder.takeBytes(); drive_backup.dart:569 bytes.sublist per chunk.",
+   "confidence": "plausible",
+   "severity": "crash"
+  },
+  {
+   "file": "lib/src/services/drive_backup.dart",
+   "line": 441,
+   "title": "Drive REST calls leak an HttpClient each",
+   "scenario": "Every list, find, upload init and download creates an HttpClient that is closed only on exceptions; its sockets stay until the idle timeout.",
+   "evidence": "_send(): `final HttpClient client = HttpClient(); … return await req.close();` with client.close() only in catch.",
+   "confidence": "plausible",
+   "severity": "leak"
+  },
+  {
+   "file": "lib/src/services/image_writer.dart",
+   "line": 51,
+   "title": "Existence check never works for a SAF download folder, so a post is downloaded again as 'name (1)'",
+   "scenario": "With a custom SAF folder, a post whose row lost its snatched flag (Forget, DB restore, LoliSync, cleared snatched) is saved again. File('content://…'+name).exists() is always false, so it downloads again and SAF creates a duplicate.",
+   "evidence": "`final File image = File(dir + fileName); final bool fileExists = await image.exists();` where dir = extPathOverride (a content URI). SAFFileCache.existsFile exists but is not used here. DioNetwork.downloadCustom creates the file without checking (dio_network.dart:535).",
+   "confidence": "plausible",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/services/saf_file_cache.dart",
+   "line": 32,
+   "title": "Folder change during the startup listing leaves the cache populated with the old folder; the reconciler trusts it",
+   "scenario": "Right after start (a big SAF folder is still being listed), change the download folder. populate(new) returns early because _isPopulating is set; the old listing then sets _isPopulated with the old names. DownloadsReconciler.check uses fileNames without checking _cachedUri, so downloads are judged against the wrong folder and Forget can drop real marks.",
+   "evidence": "populate: `if (_isPopulating || …) { await _populateCompleter?.future; return; }`. invalidate() between the two runs does not cancel the old run, which sets `_isPopulated = true` (:44). downloads_reconciler.dart:112-133 checks isPopulated and SAFFileCache.instance.fileNames only.",
+   "confidence": "plausible",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/handlers/downloads_reconciler.dart",
+   "line": 112,
+   "title": "A SAF listing error looks like an empty folder, so every download is 'missing' and Forget is offered",
+   "scenario": "The SAF listing fails (HANDOVER 4.62: listFileNames turns every error into an empty list) while testSAF still passes. The cache is populated with 0 names, check() reports all rows missing, and DownloadsCheck offers 'Forget N'.",
+   "evidence": "saf_file_cache.dart:41-44 marks the cache populated with whatever list comes back. The reconciler does not distinguish an empty folder from a failed listing; FolderProbe/probeSafFolder exists but is used only for the log.",
+   "confidence": "plausible",
+   "severity": "data-loss"
+  },
+  {
+   "file": "lib/src/handlers/database_handler.dart",
+   "line": 686,
+   "title": "site: search term is interpolated into SQL",
+   "scenario": "In Favourites or Downloads, search `site:o'neil` and the query throws a SQL syntax error, so the list shows an error. Arbitrary SQL fragments typed in the local search box run.",
+   "evidence": "siteQuery = \"(bi.postURL … LIKE '%$term%' OR bi.fileURL … LIKE '%$term%')\" in searchDB (:686) and searchDBCount (:1777); term comes straight from the search text.",
+   "confidence": "confirmed",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/handlers/database_handler.dart",
+   "line": 2641,
+   "title": "Badge lookup matches rows by postURL after querying by fileURL",
+   "scenario": "A favourited gelbooru-family post whose stored postURL differs from the fetched one (http vs https, mirror host, changed post URL format) is found by fileURL but discarded by the postURL match, so the feed shows it as not favourited and not downloaded.",
+   "evidence": "The query uses `fileURL = ?` for most items (:2627) but the mapping does `result.firstWhere((el) => el['postURL'] == item.postURL, orElse: {0,0})`.",
+   "confidence": "plausible",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/handlers/database_handler.dart",
+   "line": 605,
+   "title": "Unchunked IN/OR lists can exceed SQLite's 999-variable limit on older Android",
+   "scenario": "Select and favourite more than 999 posts (updateMultipleBooruItems -> getItemIDs), or a very large page in getMultipleTrackedValues, on Android with SQLite below 3.32. 'too many SQL variables' aborts the whole operation.",
+   "evidence": "getItemIDs (:607), getMultipleTrackedValues (:2633), getBooruTagsByNames (:1521) and tagsCleanup empty-tag IN (:2826) bind one variable per element with no chunking. featureNames/getEmbeddings do chunk.",
+   "confidence": "plausible",
+   "severity": "crash"
+  },
+  {
+   "file": "lib/src/services/dio_downloader.dart",
+   "line": 356,
+   "title": "Video stays loading forever when the cache write fails",
+   "scenario": "The cache disk is full or not writable. writeCacheFromBytes returns null, onDoneFile is never called, no error is raised and dispose is never called, so the video viewer spins indefinitely.",
+   "evidence": "runRequest: `if (onDoneFile != null && tempFile != null) {...} else if (onDone != null) {...}`. video_viewer passes onDoneFile only (video_viewer.dart:150-168).",
+   "confidence": "plausible",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/pages/snatcher_page.dart",
+   "line": 15,
+   "title": "Batch Snatcher page unreachable on mobile",
+   "scenario": "On a phone there is no way to open the batch downloader. Its only mobile entry is DDNavigationButtons inside DDControlPanel, which nothing builds since commit 28f6f458 (HANDOVER 4.63).",
+   "evidence": "grep: SnatcherPage( only in dd_selection_actions.dart:122 (DDNavigationButtons, built only by dd_control_panel.dart:55) and desktop_home_page.dart:72; grep 'DDControlPanel(' finds only its own constructor.",
+   "confidence": "confirmed",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/utils/timed_progress_controller.dart",
+   "line": 56,
+   "title": "dispose closes the stream before cancelling timers",
+   "scenario": "Leave the viewer during a slideshow. A periodic tick that lands while `await _progressController.close()` is pending adds to a closed controller, and 'Bad state: Cannot add event after closing' is logged.",
+   "evidence": "dispose(): `await _cancelStreams(); _cancelTimers();`. _setProgressAndNotify adds unconditionally.",
+   "confidence": "plausible",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/pages/loli_sync_page.dart",
+   "line": 183,
+   "title": "snatchedSkipController never disposed",
+   "scenario": "Each visit to Settings -> LoliSync leaks a TextEditingController.",
+   "evidence": "dispose() disposes ip, port, favouritesSkip and startPort controllers, but not snatchedSkipController (declared :125).",
+   "confidence": "confirmed",
+   "severity": "leak"
+  }
+ ],
+ "fragile": [
+  {
+   "what": "Download and cache file names",
+   "where": "image_writer.dart getFilename/snatchTail/_nameIsIdentifying/_disambiguate/parseThumbUrlToName/sanitizeName; image_writer_isolate.dart copy",
+   "rule": "Keep them byte-identical. The reconciler, SnatchedStatusIcon, earlier folders, doujin scan and every existing cache entry match files by these names. ImageWriter and ImageWriterIsolate must produce the same cache names (the Save & cache stats use the isolate copy)."
+  },
+  {
+   "what": "DB schema, table names and file names",
+   "where": "database_handler.dart updateTable; db_parts.dart tables map; backup_plan.dart fileOf",
+   "rule": "Tables Interaction/RecommenderFeature/TagSignal, BooruTag/BooruTagOverride/TagAliasCache and ItemEmbedding are named in DbParts. store.db and vectors.db are backup file names. ItemEmbedding is moved from store.db to vectors.db on every start that finds rows (an older-backup restore relies on this). vectorDatabase falls back to db when vectors.db is not open (tests)."
+  },
+  {
+   "what": "Tag table DDL quirk",
+   "where": "database_handler.dart:95-101",
+   "rule": "CREATE TABLE Tag lacks commas, so tagType and updatedAt are added by the ALTERs that follow. Fresh installs depend on those ALTERs; do not drop them when 'fixing' the DDL."
+  },
+  {
+   "what": "Doujin/booru separation in DB writers",
+   "where": "database_handler.dart updateBooruItem, updateMultipleBooruItems, addItemsToCollection",
+   "rule": "A doujin item never gets isFavourite=1 or tags in store.db; isSnatched is shared. Guarded by test/doujin_separation_test.dart. The DoujinMigration planner/applier ordering (store first, deletes second; migrationDone only after an OPEN DB was inspected; merge saved searches and global pins stay booru-side) must stay."
+  },
+  {
+   "what": "Downloads ordering",
+   "where": "database_handler.dart searchDB orderByClause",
+   "rule": "Downloads (without collectionId) order by COALESCE(snatchedAt,0) then id; updates keep the first snatchedAt (COALESCE) and clear it when unsnatched. own_list_paging_test/downloads tests depend on this."
+  },
+  {
+   "what": "Backup restore order and restart rules",
+   "where": "backup_plan.dart restore/_restoreOne/_restoreWholeDatabase",
+   "rule": "Files first and the database last. stopRecommenderWrites runs before recommender files are written. A whole-DB attempt forces a restart even on failure (_dbClosed). Vectors and tag types alone need no restart. The checkDownloadsMarker file name 'check-downloads-after-restore' is read by DownloadsCheck.offerAfterRestore. File names and prefixes 'recommender.' and 'board-picture.' are the backup format, which older backups use too."
+  },
+  {
+   "what": "SAF write semantics",
+   "where": "backup_app.dart FolderBackupTarget._copyIn; capture_files.dart _toSaf",
+   "rule": "Delete an existing file before copying (SAF otherwise writes 'name (1)'). The native copyFileToSafDir names the target after the source file, so the scratch file must carry the target name. A restore is never copied straight into the config folder."
+  },
+  {
+   "what": "Drive OAuth contract",
+   "where": "drive_backup.dart link/_token/exchange",
+   "rule": "Keep scope drive.file, access_type=offline plus prompt=consent (otherwise no refresh token after the first link), and the loopback redirect in the system browser (WebView OAuth is refused). Wait for the foreground before the exchange (r42 background network cut). Try the three token endpoints for two rounds. Only the refresh token is stored (secure storage keys driveClientId/driveClientSecret/driveRefreshToken). Snapshots are folders under 'LoliSnatcher'; top-level files become 'Earlier backup' (deleteSnapshot refuses it)."
+  },
+  {
+   "what": "LoliSync wire protocol",
+   "where": "loli_sync_handler.dart, loli_sync_page.dart enums",
+   "rule": "Paths /lolisync/{boorubatch,booruitem,settings,booru,tabs,tags,test,complete}; query params amount/offset/size/current/mode; mode strings 'Merge'/'Replace'/'Overwrite'/'PreferTypeIfNone' (fromString also accepts lowercase); toSync keys 'Favourites','Favouritesv2','Snatched','Settings','Booru','Tabs','Tags','Test'. Must stay compatible with other installs, and the sender strips deviceSpecificSettings."
+  },
+  {
+   "what": "Logger and redaction invariants",
+   "where": "logger.dart log/logParts/requestDataLine/RedactingDioLogger; log_redaction.dart",
+   "rule": "Redact BEFORE truncating (10,000 per entry; logParts redacts the whole text once, then parts of ≤9,000 cut at a newline in the second half; splitParts joins back to the input). Use replaceAllMapped, never replaceAll with $1. The cookie-header lookbehind spares document.cookie. defTags secrets: only key-like words (r88, so 'explicit' is not redacted). The Dio logger hides cookie/set-cookie/authorization/x-api-key and does not print request/response bodies. FlutterError.onError ignores Dio cancels. Tests: log_redaction_test, http_log_redaction_test."
+  },
+  {
+   "what": "Navigation trace names and observer order",
+   "where": "navigation_trace.dart; main.dart",
+   "rule": "The viewer route must be named 'viewer' (ViewerCloseObserver.viewerRoute) and tag dialogs 'tagDialog/$tag'. BackGestureLogger.attach() must run before runApp (handlePopRoute stops at the first observer). closing() holds the reason only for the duration of the call. Do not go back to reading the caller from the stack (wrong in AOT builds, r79). navigation_trace_test."
+  },
+  {
+   "what": "PerfTrace gesture layer also drives model work",
+   "where": "perf_trace.dart PerfTraceGestureLayer._onScroll, PerfTraceRouteObserver",
+   "rule": "ActivityClock.mark() runs on every route change and scroll even when not recording, and ModelWork waits for quiet moments based on it. Do not make the layer conditional on recording or remove it from main.dart's builder. Event names (viewer.open/swipe/close, route.push/pop, ui.*, widget.*) and the 'viewer'/'post files' route names are what reports and the user read."
+  },
+  {
+   "what": "Source capture journal and file locations",
+   "where": "source_capture_handler.dart",
+   "rule": "The journal is config/source-capture-session.jsonl, append-only and chained writes (journalFlushed is awaited by tests). writeBundle must write under the CACHE dir (FileProvider exposes only cache-path). A capture file is named source-capture-<host>-<startedAt stamp>.txt so saving again replaces it."
+  },
+  {
+   "what": "Download folder changes go through one place",
+   "where": "download_folders.dart change(); get_perms dialog; save page",
+   "rule": "Any extPathOverride change must call DownloadFolders.change (remember the folder left, invalidate and repopulate SAFFileCache, save). earlierDownloadFolders and capturesPath are device-specific. MainActivity keeps persistable grants, so earlier SAF folders stay readable."
+  },
+  {
+   "what": "Shared Dio client",
+   "where": "dio_downloader.dart dispose; image_writer downloads",
+   "rule": "Never close a Dio from DioNetwork.getClient(): it is the app-wide pooled HttpClient. Cancel through CancelToken only."
+  },
+  {
+   "what": "Test seams (static function fields)",
+   "where": "DownloadFolders.defaultFolder/listNames/probe/onChanged/save; CaptureFiles.isAndroid/scratchDir/appFolder/makeSafDir/copyToSaf/existsInSaf/deleteInSaf; IncomingLinks.openTab/openMedia; SourceLinks.apply; DownloadsReconciler.logLine/resetForTests; NavigationTrace.log/now/windows; DBHandler.pruneEvery/spaceOverrideBytes/createVectorTable; BackupHooks; DriveBackup.exchange(post:)",
+   "rule": "Keep names and signatures (or update the tests in the same step): download_folders_test, capture_files_test, incoming_link_test, source_links_test, downloads_reconcile_test, navigation_trace_test, vector_store_test, encoder_handler_test, backup_plan_test, drive_backup_link_test."
+  },
+  {
+   "what": "Source links manifest list",
+   "where": "source_links.dart sites + AndroidManifest .SourceLinks alias",
+   "rule": "The manifest hosts (host and *.host) must equal SourceLinks.sites (source_links_test). openSourceLinks is re-applied in postInit (applySaved), because the alias state is not restored with settings."
+  },
+  {
+   "what": "Files that are not in the backup",
+   "where": "config folder",
+   "rule": "tab_pill.json (pill position), model_timings.json, *_session.json / schale_clearance.json (logins, probably excluded on purpose), mascot.<ext>, the source-capture journal and the Drive credentials in secure storage are not backup items. Keep this list in mind when adding stores (user rule: every new setting and its data goes into the backup)."
+  }
+ ],
+ "perf": [
+  {
+   "file": "lib/src/handlers/database_handler.dart",
+   "line": 2633,
+   "issue": "getMultipleTrackedValues runs `fileURL = ? OR …` for every fetched page, but no index on BooruItem.fileURL exists. createCriticalIndexes indexes only postURL, and dropIndexes (run when indexing is off) even drops BooruItem_fileURL_index.",
+   "impact": "A full scan of BooruItem per feed page on the sqflite thread. With thousands of favourites and downloads this delays every page's badges and the DB queries queued behind it.",
+   "safeFix": "Add `CREATE INDEX IF NOT EXISTS BooruItem_fileURL_index ON BooruItem(fileURL)` to createCriticalIndexes and remove it from dropIndexes. Optionally use IN (...) lists split by key kind, and a Map lookup instead of firstWhere per item."
+  },
+  {
+   "file": "lib/src/handlers/database_handler.dart",
+   "line": 523,
+   "issue": "updateBooruItem (every favourite toggle and every finished download) and updateMultipleBooruItems end with deleteUntracked(), a full scan with a NOT IN subquery.",
+   "impact": "Each tap and each file written costs a table scan; batch downloads multiply it.",
+   "safeFix": "After an update, only check the touched row (delete it when it is neither favourite, snatched nor collected). Keep the full sweep at start and in clears."
+  },
+  {
+   "file": "lib/src/handlers/database_handler.dart",
+   "line": 2278,
+   "issue": "addSeenPost trims on every insert: `DELETE … WHERE postKey NOT IN (SELECT … ORDER BY viewedAt DESC LIMIT 100000)`. addViewedPost does the same at 5,000.",
+   "impact": "Each post view sorts the whole SeenPost table (up to 100k rows) and holds the DB connection.",
+   "safeFix": "Trim every N inserts or only when COUNT(*) exceeds the cap by a margin; delete by `viewedAt < (SELECT viewedAt … LIMIT 1 OFFSET cap)`."
+  },
+  {
+   "file": "lib/src/handlers/database_handler.dart",
+   "line": 71,
+   "issue": "dbConnect runs on every start: fixBooruItems (leading-wildcard LIKE scans of three URL columns plus a postURL LIKE), deleteUntracked (full scan), _moveVectorsOut COUNT, purgeTagAliasMisses, and about 25 CREATE IF NOT EXISTS.",
+   "impact": "Startup time grows with DB size before the first feed loads.",
+   "safeFix": "Track one-time migrations with PRAGMA user_version (gelbooru/r34 URL fixes, BooruTag rebuild); run deleteUntracked deferred after first frame."
+  },
+  {
+   "file": "lib/src/utils/log_redaction.dart",
+   "line": 22,
+   "issue": "redactSecrets builds about 50 new RegExp objects per call (inside the loops) and walks booruList with defTags regexes, then runs a replaceAll per secret. It runs for every Logger.log line, each Dio log (twice: URI plus message) and the export.",
+   "impact": "Measurable CPU on every request and log line, on the UI isolate.",
+   "safeFix": "Precompile the patterns into static final lists. Cache the secret list and invalidate it when booruList changes (or via the injected secretsProvider)."
+  },
+  {
+   "file": "lib/src/services/image_writer.dart",
+   "line": 22,
+   "issue": "Every ImageWriter() constructor fires setPaths(), which calls ServiceHandler.getPicturesDir and getCacheDir: uncached platform-channel round-trips. CustomNetworkImage, image_viewer and pixel_tags construct one per image, and getCachePathString awaits setPaths again before the first call finishes.",
+   "impact": "Two to four method-channel calls per thumbnail load and per grid scroll.",
+   "safeFix": "Cache cacheRootPath and the default pictures dir in static fields (they never change at runtime). Read extPathOverride at call time instead of caching `path` per instance (which also fixes long-lived writers keeping an old folder)."
+  },
+  {
+   "file": "lib/src/services/image_writer.dart",
+   "line": 211,
+   "issue": "getFilename print()s on every call; DownloadsReconciler.check calls it for each row (500 per audit page).",
+   "impact": "Logcat spam and string work on large audits.",
+   "safeFix": "Remove the print, or route it through Logger at debug level."
+  },
+  {
+   "file": "lib/main.dart",
+   "line": 545,
+   "issue": "cleanupCache runs every 5 minutes (and at start) and walks the whole cache recursively with a stat per file, three passes.",
+   "impact": "Periodic I/O and battery on large caches (100k files) even when nothing changed.",
+   "safeFix": "Lengthen the interval (e.g. 30-60 min plus on pause), skip the size pass when the limit is 0, and merge the passes into one walk."
+  },
+  {
+   "file": "lib/src/services/dio_downloader.dart",
+   "line": 313,
+   "issue": "runRequest downloads a whole video with ResponseType.bytes into memory before writing it to the cache.",
+   "impact": "Large videos cause memory spikes (hundreds of MB) and GC jank while watching.",
+   "safeFix": "Stream to the cache file with Dio.download (what the dead runRequestDownload does) and call onDoneFile with the file."
+  },
+  {
+   "file": "lib/src/services/drive_backup.dart",
+   "line": 566,
+   "issue": "Upload copies each 256 KB chunk with bytes.sublist from a fully loaded file; download buffers the whole file.",
+   "impact": "Memory twice the file size for store.db or vectors.db backups.",
+   "safeFix": "Stream from the File (openRead) into the PUT and stream the GET into the target file."
+  },
+  {
+   "file": "lib/src/handlers/database_handler.dart",
+   "line": 527,
+   "issue": "updateMultipleBooruItems does items.indexWhere inside the loop (O(n²)), awaits a 1 ms delay per item, and for each new item calls updateTags: two queries per tag (getTagID plus insert), not batched.",
+   "impact": "A LoliSync batch of 100 items with 30 tags each runs about 6,000 sequential queries; multi-select favourites are slow.",
+   "safeFix": "Map postURL to id once. Batch the tag lookups with an IN query and the inserts with batch.commit inside one transaction."
+  },
+  {
+   "file": "lib/src/handlers/database_handler.dart",
+   "line": 803,
+   "issue": "The Downloads page orders by COALESCE(snatchedAt,0) with WHERE isSnatched=1 and has no supporting index; Favourites filter isFavourite=1 likewise.",
+   "impact": "A full scan plus sort per Downloads/Favourites page.",
+   "safeFix": "Add an index on BooruItem(isSnatched, snatchedAt) and BooruItem(isFavourite, id). The ORDER BY expression needs `snatchedAt` without COALESCE to use the index; test that the order stays the same."
+  },
+  {
+   "file": "lib/src/handlers/snatch_handler.dart",
+   "line": 203,
+   "issue": "ImageWriter.write calls ServiceHandler.getAndroidSDKVersion() up to 3 times per file (an uncached platform call), plus setPaths.",
+   "impact": "Small added latency per download.",
+   "safeFix": "Cache the SDK version statically in ServiceHandler."
+  },
+  {
+   "file": "lib/src/utils/perf_trace.dart",
+   "line": 257,
+   "issue": "Once the timeline is full, every event does _events.removeRange(0, …) on a 2,000-entry list.",
+   "impact": "O(n) work per tap, scroll or widget event while recording; slightly perturbs the measurement.",
+   "safeFix": "Use a ring buffer (ListQueue) with removeFirst."
+  }
+ ],
+ "deadCode": [
+  {
+   "file": "lib/src/handlers/notify_handler.dart",
+   "symbol": "NotifyHandler (whole class)",
+   "evidence": "grep NotifyHandler: only main.dart:111 register(), :157 field, :232 unregister(). The class has no methods beyond GetIt plumbing."
+  },
+  {
+   "file": "lib/src/services/dio_downloader.dart",
+   "symbol": "runRequestIsolate, runRequestDownload, start, writeToCache, readFileFromCache, readBytesFromCache, isRedirectBroken (always false), IsolateCacheConfig",
+   "evidence": "grep runRequest*: only video_viewer.dart:169 runRequest() and :183 runRequestSize(). IsolateCacheConfig and the static isolate entry points are referenced only inside dio_downloader.dart."
+  },
+  {
+   "file": "lib/src/services/image_writer_isolate.dart",
+   "symbol": "writeCacheFromBytes, readFileFromCache, readBytesFromCache, parseThumbUrlToName/_nameIsIdentifying/_disambiguate/sanitizeName",
+   "evidence": "grep ImageWriterIsolate: dio_downloader.dart:91/106/120 (dead isolate statics) and save_cache_page.dart:130 getCacheStat only."
+  },
+  {
+   "file": "lib/src/services/image_writer.dart",
+   "symbol": "ImageWriter.getCacheStat",
+   "evidence": "grep '.getCacheStat(': only save_cache_page.dart:130, which calls ImageWriterIsolate(...).getCacheStat."
+  },
+  {
+   "file": "lib/src/handlers/bookmark_handler.dart",
+   "symbol": "BookmarkHandler.toggle, isBookmarked, remove",
+   "evidence": "grep BookmarkHandler in lib: main.dart:182-184 (ensureLoaded, all) and backup_app.dart:46 (reloadFromDisk) only; no test references it."
+  },
+  {
+   "file": "lib/src/handlers/snatch_handler.dart",
+   "symbol": "writeMultipleFake",
+   "evidence": "grep writeMultipleFake: only its definition (:75) and a commented-out call (:202)."
+  },
+  {
+   "file": "lib/src/handlers/database_handler.dart",
+   "symbol": "removeTabRestore, getSearchHistoryByInput, updatePinnedTagOrder, getTrackedValues",
+   "evidence": "grep over lib/ and test/: only the definitions (:2068, :2166, :2540, :2591)."
+  },
+  {
+   "file": "lib/src/handlers/database_handler.dart",
+   "symbol": "countEmbeddings, closeVectors, vectorFileBytes (test-only)",
+   "evidence": "grep: encoder_handler_test.dart:389 countEmbeddings; vector_store_test.dart:47 closeVectors, :132/135 vectorFileBytes; no lib callers. Keep them as test seams or move them to a test helper."
+  },
+  {
+   "file": "lib/src/handlers/source_capture_handler.dart",
+   "symbol": "buildJson",
+   "evidence": "grep buildJson in lib/ and test/: only the definition at :827 (marked @visibleForTesting but unused)."
+  }
+ ],
+ "duplication": [
+  {
+   "where": "database_handler.dart searchDB (:659-842) and searchDBCount (:1755-1892)",
+   "what": "About 120 identical lines of tag parsing (site:, sort:, -, ~, *) and WHERE/JOIN/HAVING building.",
+   "consolidation": "One private `_LocalQuery _buildLocalQuery(tags, isDownloads, collectionId, customConditions)` returning sql parts and args, used by both (count wraps it)."
+  },
+  {
+   "where": "database_handler.dart updateBooruItem (:461), updateMultipleBooruItems (:527), addItemsToCollection (:917)",
+   "what": "The same INSERT INTO BooruItem with `replaceFirstMapped(RegExp('(?<!https?:)//'), …)` repeated nine times; the same doujin favourite rule; local/urlUpdate branches duplicated.",
+   "consolidation": "`_normalizeUrl(String)`, `_insertItem(item, {keepFlags})` and `_updateExisting(id, item, mode)`. updateBooruItem becomes updateMultipleBooruItems([item]) inside a transaction."
+  },
+  {
+   "where": "image_writer.dart (:554-625, :403) and image_writer_isolate.dart (:95-196)",
+   "what": "parseThumbUrlToName, _nameIsIdentifying, _disambiguate, sanitizeName and getCacheStat copied verbatim (they must stay in sync or the cache names diverge).",
+   "consolidation": "One pure top-level helper file (core/utils/file_names.dart) callable from isolates, plus one cache-stats function."
+  },
+  {
+   "where": "dio_downloader.dart runRequest / runRequestIsolate / runRequestDownload / runRequestSize",
+   "what": "Repeated cache lookup, response validation (redirect, isGoodResponse, empty body) and the catch/log/dispose block.",
+   "consolidation": "Delete the dead variants; extract `_validate(response, resolved)` and `_fail(e, s, where)`."
+  },
+  {
+   "where": "loli_sync_handler.dart store* (:75-341) and send* (:361-429)",
+   "what": "Each store method repeats the POST check, try, 404 'Invalid Query' and logging; each send method repeats HttpClient().post / write / close / decode.",
+   "consolidation": "`Future<String> _handlePost(HttpRequest req, Future<String> Function(String body) fn)` and `Future<String> _post(String path, Object body)` over one HttpClient."
+  },
+  {
+   "where": "loli_sync_handler.dart startSync 'Favouritesv2'/'Snatched' (:526) and 'Favourites' (:578)",
+   "what": "Two copies of the 100-per-page paging with skip.",
+   "consolidation": "`Stream<String> _sendPaged({isSnatched, perItem})`."
+  },
+  {
+   "where": "loli_sync_page.dart (:353-376, :405-428, :475-496, :524-545, :554-569)",
+   "what": "Five near-identical help dialogs and two near-identical skip inputs.",
+   "consolidation": "A `_SyncHelpButton(title, lines)` widget and a `_SkipInput(controller, title, max, help)` widget."
+  },
+  {
+   "where": "backup_app.dart FolderBackupTarget._copyIn (:129) and capture_files.dart _toSaf (:105)",
+   "what": "The same SAF 'stage in scratch, delete existing, copyFileToSafDir, clean scratch' sequence.",
+   "consolidation": "One `SafFiles.replace(safDir, name, File source, mime)` in core/platform."
+  },
+  {
+   "where": "drive_backup.dart snapshots (:344), _find (:498), list (:638)",
+   "what": "JSON files[] -> DriveFile parsing, error handling and query building repeated.",
+   "consolidation": "`_listFiles(query, fields, pageSize)` with paging, returning `List<Map>`, plus `DriveFile.fromJson`."
+  },
+  {
+   "where": "capture_files.dart stamp (:74), drive_backup.dart defaultSnapshotName (:284), backup_restore_page.dart _when (:233)",
+   "what": "Three hand-rolled date formatters with padLeft.",
+   "consolidation": "One core/utils date formatter with named formats."
+  },
+  {
+   "where": "database_handler.dart getSearchHistory (:2112) and getLatestSearchHistory (:2128); getPinnedTags/getAllPinnedTags; getFavouritesCount/getSnatchedCount",
+   "what": "Identical row-mapping and count code.",
+   "consolidation": "Shared private mappers (`_historyRows`, `_pinRows`, `_count(where)`)."
+  },
+  {
+   "where": "snatch_handler.dart snatch() completion snackbars (:228-305) and queue() snackbars (:435-479)",
+   "what": "Repeated FlashElements blocks with thumbnail rows.",
+   "consolidation": "Move to a UI SnatchNotices helper (also fixes the layer violation)."
+  }
+ ],
+ "tests": [
+  "test/backup_plan_test.dart",
+  "test/backup_page_test.dart",
+  "test/drive_snapshots_test.dart",
+  "test/drive_backup_link_test.dart",
+  "test/vector_store_test.dart",
+  "test/encoder_handler_test.dart",
+  "test/doujin_separation_test.dart",
+  "test/suggestion_query_test.dart",
+  "test/booru_tag_store_test.dart",
+  "test/recommender_handler_test.dart",
+  "test/download_folders_test.dart",
+  "test/downloads_reconcile_test.dart",
+  "test/downloads_check_test.dart",
+  "test/doujin_download_layout_test.dart",
+  "test/kemono_test.dart",
+  "test/own_list_paging_test.dart",
+  "test/capture_files_test.dart",
+  "test/source_capture_test.dart",
+  "test/source_capture_inpage_test.dart",
+  "test/log_redaction_test.dart",
+  "test/http_log_redaction_test.dart",
+  "test/navigation_trace_test.dart",
+  "test/perf_trace_test.dart",
+  "test/perf_trace_ui_test.dart",
+  "test/model_work_test.dart",
+  "test/incoming_link_test.dart",
+  "test/source_links_test.dart",
+  "test/sankaku_links_test.dart"
+ ]
+}

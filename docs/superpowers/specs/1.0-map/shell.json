@@ -1,0 +1,2025 @@
+{
+ "subsystem": "shell",
+ "summary": "The shell is everything between main() and the feature screens. main.dart runs a fixed startup sequence: CustomWidgetsBinding (wheel-speed scaling on Windows/Linux), image-cache sizing, sqflite FFI and WebView2 setup on desktop, Logger, capture of the WebView User-Agent (awaited before the first frame), registration of GetIt singletons (NavigationHandler, ViewerHandler, FloatingPreviewHandler, Interests, Recommender, Search, Snatch, Tag, Notify, SecureStorage), then SettingsHandler.initialize() (permission, settings.json, locale). After that it refreshes the model handlers (encoder, tagger, looks), attaches VideoFrames, LookMemory, ModelWork and BackGestureLogger, switches on the system photo picker, starts LocalAuthHandler, sets the system UI and calls runApp(TranslationProvider(MainApp)).\nMainApp (a GetX Obx over the theme settings) builds the light and dark ThemeData with ThemeHandler (Flow dark palette, Manrope as the 'System' font, dynamic colour). It wraps everything in DebuggingWidgets (FPS monitor, image-cache stats, high refresh rate, device-info log) and hosts MaterialApp with five navigator observers. MaterialApp.builder stacks three Overlays: content (inside HiddenStatusBarInsets + PerfTraceGestureLayer, and it also registers the debug DevOverlay), the blur-on-leave overlay, and the lock-screen overlay on top.\nDuring postInit, MainApp loads tags, restores tabs, runs the one-time doujin migration and merges the legacy bookmarks; InitHomePage shows the progress messages meanwhile. Home owns the periodic jobs (tab backup and tag save every 30 s, cache cleanup every 5 min, one DB tag cleanup after 20 min), deep links (loli.snatcher config links go to BooruEdit, other links to IncomingLinks) and the lifecycle hooks (auto-lock timers, recommender/doujin flush, dropping the headless Schale/HentaiPaw page clients on resume). It switches between InitHomePage, MobileHome and DesktopHome with an AnimatedSwitcher, and forces landscape when Desktop mode runs on a phone.\nMobileHome is a vendored InnerDrawer: the MainDrawer sits on the hand side, and the other side holds DownloadsDrawer, or the Kemono or FurAffinity sidebar on those sources. Its Back handling goes in this order: floating preview, then drawer, then the exit dialog. DesktopHome is a three-pane resizable layout with its own app bar.\nMainDrawer is the menu: search bar, booru switcher card, multibooru, quick entries, doujin block, source settings, For You, Boards, Collections, Pools, Tag browser, webview, lock, close app, mascot. MainAppBar is the feed's floating snap header (menu and pin buttons, tab pills, new tab, soft media reload). Its show/hide is driven through GlobalKeys held in NavigationHandler.\nwidgets/common mixes generic UI (FlashElements snackbars, Settings* card widgets, LoliDropdown sheets, the dialog buttons, Kaomoji, ParsedText, LoliHtml, progress widgets, InnerDrawer) with feature widgets placed there by accident (DownloadsCheck, MultibooruToggle, MediaLoading, ThumbnailLoading, MascotImage, DiscordButton). The webview folder holds the in-app browser page (navigation policy for ad blocking and the solver), its controls and menu, and the embedded browser used by WebView-type booru tabs. Its globals webViewEnvironment and globalWindowsCookies are imported by handlers, sources and utils.\nServiceHandler is the single MethodChannel ('com.noaisu.loliSnatcher/services') to MainActivity.kt: SAF, paths, share, wake lock, system UI, vibration, aliases, link toggles, native log. SecureStorageHandler keeps the Drive OAuth credentials and the 'changelog seen' build. Constants carries the URLs, user agents, build codename and UpdateInfo. Four files are dead (ScrollingText, DesktopTabs, ActiveTitle, ThemeBuilder), as are several classes and methods.",
+ "features": [
+  {
+   "name": "Startup sequence",
+   "navPath": "automatic",
+   "what": "Ordered bootstrap: binding, image cache 200 items/256 MB, desktop sqflite FFI + WebView2 env, Logger, WebView UA capture, GetIt handler registration, settings enum registry, SettingsHandler.initialize (permission, settings.json, locale), encoder/image-tagger/looks model refresh, VideoFrames/LookMemory/ModelWork/BackGestureLogger attach, system photo picker, LocalAuth, system UI visibility, runApp.",
+   "files": [
+    "lib/main.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Post-init loading screen",
+   "navPath": "automatic on launch",
+   "what": "Spinner + changing status text (setting up proxy, loading database, fixing data, loading boorus, loading tags, restoring tabs) until isPostInit; app bar shows the app alias name.",
+   "files": [
+    "lib/src/pages/init_home_page.dart",
+    "lib/main.dart"
+   ],
+   "settingsKeys": [
+    "appAlias"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "One-time doujin migration and legacy bookmark merge",
+   "navPath": "automatic during post-init",
+   "what": "runDoujinMigrationIfNeeded after tabs restore; BookmarkHandler entries folded into DoujinDataHandler bookmark collection once.",
+   "files": [
+    "lib/main.dart"
+   ],
+   "storedIn": "doujinData.json / bookmarks.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Image cache sizing and low-RAM tightening",
+   "navPath": "automatic",
+   "what": "PaintingBinding imageCache set to 200/256 MB at start, lowered to 60/64 MB when Android reports isLowRamDevice; device info logged.",
+   "files": [
+    "lib/main.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "High refresh rate",
+   "navPath": "automatic (Android)",
+   "what": "FlutterDisplayMode.setHighRefreshRate at start and on every metrics change; max FPS used by the FPS graph.",
+   "files": [
+    "lib/main.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Theme engine",
+   "navPath": "Settings -> Themes (Theme mode, Black background (AMOLED), Use dynamic color, Theme presets / custom primary+accent, Font)",
+   "what": "ThemeHandler builds light/dark ThemeData: Flow dark neutrals pinned on every dark path including dynamic colour, AMOLED black scaffold, 'System' font maps to Manrope via GoogleFonts, themed buttons/inputs/scrollbars/switches/dialogs/drawers; MainApp rebuilds MaterialApp on change.",
+   "files": [
+    "lib/main.dart",
+    "lib/src/handlers/theme_handler.dart",
+    "lib/src/data/theme_item.dart"
+   ],
+   "settingsKeys": [
+    "theme",
+    "customPrimaryColor",
+    "customAccentColor",
+    "themeMode",
+    "isAmoled",
+    "useDynamicColor",
+    "fontFamily"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "App display name in title",
+   "navPath": "Settings -> Privacy -> App display name",
+   "what": "MaterialApp title and init page title use appAlias.locName; launcher alias switched natively (ServiceHandler.setAppAlias) then app restart (ServiceHandler.restartApp).",
+   "files": [
+    "lib/main.dart",
+    "lib/src/pages/init_home_page.dart",
+    "lib/src/handlers/service_handler.dart"
+   ],
+   "settingsKeys": [
+    "appAlias"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Performance overlay",
+   "navPath": "Settings -> Debug -> Show performance graph",
+   "what": "MaterialApp.showPerformanceOverlay bound to showPerf.",
+   "files": [
+    "lib/main.dart"
+   ],
+   "settingsKeys": [
+    "showPerf"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "FPS graph",
+   "navPath": "Settings -> Debug -> Show FPS graph",
+   "what": "FPSMonitor overlay bottom-left with chart and text, max = display refresh rate.",
+   "files": [
+    "lib/main.dart"
+   ],
+   "settingsKeys": [
+    "showFps"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Image cache stats overlay",
+   "navPath": "Settings -> Debug -> Show image stats",
+   "what": "Ticker sampling imageCache live/pending/total/size/max every 500 ms, white box centre-left.",
+   "files": [
+    "lib/main.dart",
+    "lib/src/widgets/root/image_stats.dart"
+   ],
+   "settingsKeys": [
+    "showImageStats"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Debug mode and dev overlay",
+   "navPath": "Settings -> tap the Version row 6 times (long press to turn off)",
+   "what": "isDebug inserts a draggable semi-transparent floating panel (global overlay): Settings (long press -> Debug page), Network (Alice HTTP inspector), Logger (LoggerViewPage), Blur/Unblur images (debug builds only). Debug entry appears in Settings.",
+   "files": [
+    "lib/main.dart",
+    "lib/src/widgets/root/dev_overlay.dart"
+   ],
+   "settingsKeys": [
+    "isDebug"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Blur on leave",
+   "navPath": "Settings -> Privacy -> Blur on leave",
+   "what": "When the app is not resumed (inactive/hidden/paused) a 10-sigma backdrop blur with 50% scaffold tint covers the app (app switcher privacy).",
+   "files": [
+    "lib/main.dart"
+   ],
+   "settingsKeys": [
+    "blurOnLeave"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "App lock / lock screen",
+   "navPath": "Settings -> Privacy -> App lock (+ Auto lock after N seconds)",
+   "what": "Topmost overlay lock screen when locked: fingerprint button, tap anywhere to authenticate, automatic biometric/device-credential prompt 400 ms after showing, Back blocked, 'Dev unlock' button + testing message in debug/LS_IS_TESTING builds; relocks after the timeout when returning (ignores the 1 s after an unlock); snackbars for no hardware / lockout / other errors.",
+   "files": [
+    "lib/src/pages/lockscreen_page.dart",
+    "lib/src/handlers/local_auth_handler.dart",
+    "lib/main.dart"
+   ],
+   "settingsKeys": [
+    "useLockscreen",
+    "autoLockTimeout"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Lock app now",
+   "navPath": "Main drawer -> Lock app",
+   "what": "Visible only when App lock is on and the device supports biometrics; locks immediately (manual lock skips the auto prompt once).",
+   "files": [
+    "lib/src/widgets/drawers/main_drawer.dart",
+    "lib/src/handlers/local_auth_handler.dart"
+   ],
+   "settingsKeys": [
+    "useLockscreen"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Hide status bar",
+   "navPath": "Settings -> Interface -> Hide status bar",
+   "what": "Manual system UI mode with only the bottom overlay; if the user swipes the status bar in, it is re-hidden after 3 s (generation counter); immersiveSticky when the viewer hides chrome; status bar space kept by HiddenStatusBarInsets in MaterialApp.builder.",
+   "files": [
+    "lib/src/handlers/service_handler.dart",
+    "lib/main.dart"
+   ],
+   "settingsKeys": [
+    "hideStatusBar"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Predictive back page transition",
+   "navPath": "Settings -> Interface -> Predictive back gesture",
+   "what": "Android page transitions use CustomPredictiveBackPageTransitionsBuilder (shared-element style scale/translate/fade during gesture, FadeForwards otherwise) instead of Zoom.",
+   "files": [
+    "lib/src/widgets/root/predictive_back_transition.dart",
+    "lib/src/handlers/theme_handler.dart"
+   ],
+   "settingsKeys": [
+    "usePredictiveBack"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Mouse wheel scroll speed (desktop)",
+   "navPath": "Settings -> Interface -> Mouse wheel scroll modifier",
+   "what": "CustomWidgetsBinding rescales PointerScrollEvent deltas by mousewheelScrollSpeed/10 on Windows/Linux.",
+   "files": [
+    "lib/src/widgets/root/scroll_physics.dart",
+    "lib/main.dart"
+   ],
+   "settingsKeys": [
+    "mousewheelScrollSpeed"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Scroll behaviour",
+   "navPath": "automatic",
+   "what": "Clamping physics on Android/Fuchsia/Linux/Windows, bouncing on iOS/macOS; drag-to-scroll accepted from every pointer kind (mouse drag scroll); desktopPointerScroll helper scrolls horizontal lists with the wheel.",
+   "files": [
+    "lib/src/widgets/root/scroll_physics.dart",
+    "lib/src/widgets/desktop/desktop_scroll.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "App UI mode (mobile / desktop shell)",
+   "navPath": "Settings -> Interface -> App UI mode",
+   "what": "Home swaps MobileHome/DesktopHome (animated); desktop mode on a phone forces landscape orientations; snackbars, dropdown padding and SettingsPageOpen dialogs adapt.",
+   "files": [
+    "lib/main.dart",
+    "lib/src/pages/mobile_home_page.dart",
+    "lib/src/pages/desktop_home_page.dart"
+   ],
+   "settingsKeys": [
+    "appMode"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Hand side",
+   "navPath": "Settings -> Interface -> Hand side",
+   "what": "Puts the main menu drawer and the menu button on the left or right (pinned drawer/pin button on the other side); reverses dropdown sheet button order and alignment for left-handed.",
+   "files": [
+    "lib/src/pages/mobile_home_page.dart",
+    "lib/src/widgets/root/main_appbar.dart",
+    "lib/src/widgets/common/loli_dropdown.dart"
+   ],
+   "settingsKeys": [
+    "handSide"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Side drawers on the mobile home",
+   "navPath": "Feed -> swipe from a screen edge, or the menu / pin buttons in the top bar",
+   "what": "InnerDrawer with quadratic slide, half-width offset in portrait and none in landscape, 10 px rounded scaffold, tap scaffold to close. The pinned side shows the Kemono sidebar on kemono tabs (when kemonoSidebar is on) or the FurAffinity sidebar on FA tabs (when furAffinitySidebar is on), otherwise the Downloads/pinned drawer. Swipe is off on doujin detail tabs. Opening a drawer bumps DrawerRefresh and logs a ui.drawer trace event.",
+   "files": [
+    "lib/src/pages/mobile_home_page.dart",
+    "lib/src/widgets/common/inner_drawer.dart",
+    "lib/src/handlers/drawer_refresh.dart"
+   ],
+   "settingsKeys": [
+    "kemonoSidebar",
+    "furAffinitySidebar",
+    "handSide"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Home Back button",
+   "navPath": "Feed -> system Back",
+   "what": "A floating tag-preview window on the feed consumes Back first; else an open drawer closes; else 'Exit the app?' dialog (No/Yes) -> SystemNavigator.pop on Android.",
+   "files": [
+    "lib/src/pages/mobile_home_page.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Periodic tab backup and tag save",
+   "navPath": "automatic (every 30 s, 10 s in debug)",
+   "what": "searchHandler.backupTabs writes the tab restore JSON; tagHandler.saveTags unless a save is running.",
+   "files": [
+    "lib/main.dart"
+   ],
+   "storedIn": "store.db TabRestore / tags",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Media cache cleanup",
+   "navPath": "automatic (on start and every 5 min)",
+   "what": "ImageWriter.cleanupCache trims the media cache.",
+   "files": [
+    "lib/main.dart"
+   ],
+   "storedIn": "cache dir",
+   "inBackup": "no"
+  },
+  {
+   "name": "Deferred tag DB cleanup",
+   "navPath": "automatic (once, 20 min after start; 1 min in debug)",
+   "what": "dbHandler.tagsCleanup delayed to avoid DB lockups during early work.",
+   "files": [
+    "lib/main.dart"
+   ],
+   "storedIn": "store.db",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Shared booru config links",
+   "navPath": "Open a loli.snatcher link from another app",
+   "what": "Decodes Booru.fromLink; if the type is saveable opens BooruEdit pre-filled, renaming to '<name> (duplicate)' when the name exists.",
+   "files": [
+    "lib/main.dart"
+   ],
+   "storedIn": "memory only (saved via BooruEdit)",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Incoming source links",
+   "navPath": "Settings -> Links (switch), then open a source URL from another app",
+   "what": "Other deep links routed to IncomingLinks.open (post -> viewer, search -> tab, gallery -> page, else in-app page); initial link handled once after post-init.",
+   "files": [
+    "lib/main.dart"
+   ],
+   "storedIn": "settings.json (Links switch)",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Lifecycle hooks",
+   "navPath": "automatic",
+   "what": "Leaving: record leave time for auto-lock, flush recommender learning, flush pending doujin history save. Resuming: auto-lock check, drop headless Schale (niyaniya) and HentaiPaw page clients so stale sockets/DNS are not reused.",
+   "files": [
+    "lib/main.dart"
+   ],
+   "storedIn": "memory / recommender files / doujinData.json",
+   "inBackup": "partial"
+  },
+  {
+   "name": "Desktop home shell",
+   "navPath": "Settings -> Interface -> App UI mode -> Desktop",
+   "what": "App bar with search bar, booru selector, tab selector, tab buttons, Snatcher page button, Settings button, Save-selected button with count badge (storage permission, queue with cooldown, favourite-on-snatch, clears selection, 'no items selected' snackbar), 'Add boorus in settings' hint; body is resizable split: previews | tag view of current item, and the media pane.",
+   "files": [
+    "lib/src/pages/desktop_home_page.dart",
+    "lib/src/widgets/desktop/resizable_split_view.dart"
+   ],
+   "settingsKeys": [
+    "appMode",
+    "snatchCooldown",
+    "favouriteOnSnatch"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Desktop media pane",
+   "navPath": "Desktop mode -> select a post",
+   "what": "Shows image/video/guess-extension viewer for the current item with translation notes; floating Save (snatch), Favourite toggle (doujin items through DoujinDataHandler.toggleFavouriteSynced, merge tabs via the item's sub-handler; booru items via DB), Fullscreen dialog with exit button.",
+   "files": [
+    "lib/src/widgets/desktop/desktop_image_listener.dart"
+   ],
+   "storedIn": "store.db / doujinData.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "About page",
+   "navPath": "Settings -> About",
+   "what": "App description; App on GitHub; Discord (non-store); Contact email (tap opens mail, long press copies + snackbar); logo artist credit (non-store); developers; localizers with flags; releases link; licenses page.",
+   "files": [
+    "lib/src/pages/about_page.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Discord button",
+   "navPath": "Settings -> Discord; Settings -> About -> Visit our Discord",
+   "what": "Hidden in store builds; URL can be overridden by discord_url from the update JSON.",
+   "files": [
+    "lib/src/widgets/common/discord_button.dart"
+   ],
+   "settingsKeys": [
+    "discordURL (runtime)"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Booru switcher sheet",
+   "navPath": "Main drawer -> current booru card ('current booru · tap to switch'); also the query editor pill",
+   "what": "Bottom sheet 'Switch booru'/'Switch doujin source' listing only same-world sources (switchableBoorus via DoujinDataHandler.sameDomain), favicon, host or feed-kind subtitle, radio for active; tap re-runs the current search on that booru; 'Add booru config' opens BooruEdit.",
+   "files": [
+    "lib/src/widgets/booru/booru_switcher_sheet.dart",
+    "lib/src/widgets/drawers/main_drawer.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Main drawer header and search",
+   "navPath": "Main drawer",
+   "what": "'Menu' title with close button; MainSearchBarWithActions('drawer') when boorus and tabs exist.",
+   "files": [
+    "lib/src/widgets/drawers/main_drawer.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Multibooru mode",
+   "navPath": "Main drawer -> Multibooru mode",
+   "what": "Toggle (needs 2+ boorus, else error snackbar) opening a multiselect sheet of secondary boorus; when active shows the secondary booru selector and per-booru tag overrides.",
+   "files": [
+    "lib/src/widgets/common/multibooru_toggle.dart",
+    "lib/src/widgets/common/loli_dropdown.dart"
+   ],
+   "storedIn": "tab state (store.db TabRestore)",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Drawer quick entries Downloads / Favourites",
+   "navPath": "Main drawer -> Downloads / Favourites",
+   "what": "Open a new tab on the virtual Downloads/Favourites booru (switches to it, closes drawer); Favourites hidden on doujin tabs.",
+   "files": [
+    "lib/src/widgets/drawers/main_drawer.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Doujin quick access",
+   "navPath": "Main drawer (on a doujin tab)",
+   "what": "Doujin favourites & bookmarks, Doujin downloads, Favourite tags, '<source> settings' (one tap to SourceSettingsPage).",
+   "files": [
+    "lib/src/widgets/drawers/main_drawer.dart"
+   ],
+   "storedIn": "doujinData.json / sourceSettings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Booru source settings shortcut",
+   "navPath": "Main drawer -> '<source> settings' (switch: Settings -> Modular UI)",
+   "what": "For non-doujin, non-local, non-merge booru tabs, opens SourceSettingsPage; shown only when the Modular UI toggle sidebarSourceSettings is on (read at build).",
+   "files": [
+    "lib/src/widgets/drawers/main_drawer.dart"
+   ],
+   "settingsKeys": [
+    "modularUi.sidebarSourceSettings"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Drawer navigation entries",
+   "navPath": "Main drawer -> Settings / For You / Boards / Collections / Pools / Tag browser",
+   "what": "Settings; For You (booru world needs DB on, doujin world on doujin tabs); Boards (booru tabs only); Collections (doujin store on doujin tabs, booru DB otherwise); Pools only where PoolSource.supports; Tag browser when DB on and not doujin.",
+   "files": [
+    "lib/src/widgets/drawers/main_drawer.dart"
+   ],
+   "settingsKeys": [
+    "dbEnabled"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Open webview from drawer",
+   "navPath": "Main drawer -> Open webview",
+   "what": "For saveable boorus with a base URL (current + multibooru secondaries); picks a booru via dialog when several; opens InAppWebviewView with Tools.browserUserAgent.",
+   "files": [
+    "lib/src/widgets/drawers/main_drawer.dart",
+    "lib/src/widgets/webview/webview_page.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Close the app (desktop)",
+   "navPath": "Main drawer -> Close the app (desktop platforms)",
+   "what": "Pops twice with a 400 ms gap (closes drawer then app).",
+   "files": [
+    "lib/src/widgets/drawers/main_drawer.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Drawer mascot",
+   "navPath": "Settings -> Themes -> Enable drawer mascot (custom image picker)",
+   "what": "Image at the bottom of the main drawer and the Settings page; default asset or user file path.",
+   "files": [
+    "lib/src/widgets/common/mascot_image.dart",
+    "lib/src/widgets/drawers/main_drawer.dart"
+   ],
+   "settingsKeys": [
+    "enableDrawerMascot",
+    "drawerMascotPathOverride"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Feed top bar (MainAppBar)",
+   "navPath": "Feed (top)",
+   "what": "Floating snap header that hides/shows together with the bottom bar. Menu button: tap toggles the drawer; long press or right-click vibrates and scrolls the grid to the top. Pin button: toggles the pinned drawer, draws a snatch queue progress ring and a selected-items count badge. Also: tabs count pill, page indicator pill, New tab button, and 'Reload media (keeps your place)', which clears the image memory cache, resets the media_kit/better_player pools, bumps mediaRefreshEpoch, re-filters the list and shows a snackbar. 66% translucent background with a backdrop blur, solid in low performance mode.",
+   "files": [
+    "lib/src/widgets/root/main_appbar.dart",
+    "lib/src/widgets/root/custom_sliver_app_bar.dart",
+    "lib/src/widgets/root/custom_sliver_persistent_header.dart"
+   ],
+   "settingsKeys": [
+    "handSide",
+    "shitDevice"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "In-app webview page",
+   "navPath": "Main drawer -> Open webview; booru edit/captcha/source capture/FurAffinity settings",
+   "what": "Back (long press: history dialog), forward, reload; menu: navigate to initial URL, enter custom URL, list cookies, clear cookies, get favicon, copy URL; pull to refresh; progress bar; optional subtitle hint card with close/info toggle; debug-build cookie panel; popup/ad blocking with host allow-list; solver main-frame host restriction; FurAffinity session preparation before load and cookie sync after; Windows in-memory cookie mirror; onLoadStop (captcha auto-close) and onResourceLoaded (source capture) callbacks; 'not supported' text on platforms without webview.",
+   "files": [
+    "lib/src/widgets/webview/webview_page.dart",
+    "lib/src/widgets/webview/webview_navigation_controls.dart",
+    "lib/src/widgets/webview/webview_navigation_menu.dart"
+   ],
+   "storedIn": "webview cookie store / globalWindowsCookies (memory)",
+   "inBackup": "no"
+  },
+  {
+   "name": "WebView-type booru browser tab",
+   "navPath": "A tab on a WebView-type booru (feed area)",
+   "what": "Embedded browser replacing the grid: back, forward, reload, Home (search URL with {tags}/%s), host label, 'Grab media on this page' (JS DOM scan -> checkbox sheet -> Snatch N), 'Open in external browser'; downloads started in the page go to the snatcher queue; progress line; claims pan/scale gestures from the drawer.",
+   "files": [
+    "lib/src/widgets/webview/webview_browser_view.dart"
+   ],
+   "storedIn": "webview cache/cookies",
+   "inBackup": "no"
+  },
+  {
+   "name": "Snackbars (FlashElements)",
+   "navPath": "automatic",
+   "what": "Flow lilac snackbar with side strip, pulsing icon, close button, optional actions; unique-key dedupe; dialog variant; centred fixed bar on wide desktop; no-op in tests.",
+   "files": [
+    "lib/src/widgets/common/flash_elements.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Compact error widget",
+   "navPath": "automatic (replaces Flutter's error box)",
+   "what": "Small 'WIDGET ERROR' box with 'Copy details' (exception + stack) and 'Return' on desktop; installed as ErrorWidget.builder by Logger.",
+   "files": [
+    "lib/src/widgets/common/compact_error_widget.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Check downloads against disk",
+   "navPath": "Settings -> Save & cache -> Check downloads against disk; also offered automatically on the first start after a whole-database restore",
+   "what": "Audits media downloads vs current and earlier download folders, reports where found and unchecked count; dialog to forget entries without a file (Keep / Forget N).",
+   "files": [
+    "lib/src/widgets/common/downloads_check.dart"
+   ],
+   "storedIn": "store.db (isSnatched) + restore marker file in config dir",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Explain (info) buttons",
+   "navPath": "Settings -> Models / a model page (info icons)",
+   "what": "Dialog explaining choices, advantages and timings measured on this phone, built when opened, with optional async note.",
+   "files": [
+    "lib/src/widgets/common/explain_button.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Viewer loading overlay",
+   "navPath": "Viewer (while a file loads)",
+   "what": "After 1 s shows percent, loaded/total size, speed, ETA, seconds since start, Stop loading; stopped state shows reason (user/error/too big/hidden/video error) + Restart loading / Load anyway; vertical progress bars; Kanna loading gif option; simplified layout in low performance mode; moves lower for sample previews.",
+   "files": [
+    "lib/src/widgets/common/media_loading.dart"
+   ],
+   "settingsKeys": [
+    "loadingGif",
+    "shitDevice",
+    "previewMode"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Thumbnail loading/error overlay",
+   "navPath": "Feed thumbnails",
+   "what": "Thin vertical progress bars after 0.5 s for network loads; failed state 'ERROR / Tap to retry' with optional error code and custom icon/text.",
+   "files": [
+    "lib/src/widgets/common/thumbnail_loading.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Comment text rendering",
+   "navPath": "Viewer -> comments; Kemono post comments; Settings -> Debug -> text parser test page",
+   "what": "ParsedText: URLs (open externally, error snackbar), tags, mentions, 'X said', post references, quotes with author, greentext, spoilers (tap to reveal/hide), bold/italic/underline/strike, code, ruby; strips unknown HTML and repairs overlapping tags; selectable.",
+   "files": [
+    "lib/src/widgets/common/parsed_text.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "HTML rendering with internal links",
+   "navPath": "Booru edit instructions, FA/Kemono post descriptions, waterfall error help",
+   "what": "LoliHtml with zero margins and blue underlined links; launchable links open externally, others go to internalRouting ('settings', 'settings/booru').",
+   "files": [
+    "lib/src/widgets/common/html.dart",
+    "lib/src/widgets/root/routing.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Dropdown sheets",
+   "navPath": "Any settings dropdown / multiselect (e.g. Multibooru, Add new tab)",
+   "what": "Bottom-sheet pickers: optional search box, clearable (tap selected again or Clear), scroll to the selected item, draggable expanding sheet; multiselect with order numbers, Clear, Select all, OK (count); Return/Close buttons; left-handed button order.",
+   "files": [
+    "lib/src/widgets/common/loli_dropdown.dart"
+   ],
+   "settingsKeys": [
+    "handSide",
+    "appMode"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Settings card widgets",
+   "navPath": "All settings pages",
+   "what": "SettingsPart headers, card buttons (chevron for pages, html titles, icon-only mode with single InkResponse tap+long-press, empty disabled = 10 px gap), toggles with reset-to-default, tristate, segmented, dropdown, booru dropdown (search when >5), options list, text input (number steppers with long-press repeat, reset, clear, copy, paste, obscure, submit/edit), dialogs, bottom sheets, page dialog, marquee app bar; SettingsPageOpen opens pages as route, dialog (desktop >=550 px), or bottom sheet.",
+   "files": [
+    "lib/src/widgets/common/settings_widgets.dart"
+   ],
+   "settingsKeys": [
+    "appMode"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Dialog action buttons",
+   "navPath": "Dialogs app-wide",
+   "what": "Add, Cancel, Clear, Close, Confirm, Delete, OK (count), Retry, Return, Save anyway, Save, Skip buttons popping with return data or running an action, optional icons.",
+   "files": [
+    "lib/src/widgets/common/add_button.dart",
+    "lib/src/widgets/common/cancel_button.dart",
+    "lib/src/widgets/common/clear_button.dart",
+    "lib/src/widgets/common/close_dialog_button.dart",
+    "lib/src/widgets/common/confirm_button.dart",
+    "lib/src/widgets/common/delete_button.dart",
+    "lib/src/widgets/common/ok_button.dart",
+    "lib/src/widgets/common/retry_button.dart",
+    "lib/src/widgets/common/return_button.dart",
+    "lib/src/widgets/common/save_anyway_button.dart",
+    "lib/src/widgets/common/save_button.dart",
+    "lib/src/widgets/common/skip_button.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Kaomoji",
+   "navPath": "Empty states, snackbars, error screens",
+   "what": "Random/indexed kaomoji per category (Noto Sans), re-roll on long press or double tap, optional wave/rainbow animations, auto re-randomize, timed stop.",
+   "files": [
+    "lib/src/widgets/common/kaomoji.dart",
+    "lib/src/widgets/common/kaomoji_data.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Haptics",
+   "navPath": "Settings -> Interface -> Disable vibration",
+   "what": "ServiceHandler.vibrate used by long presses, repeaters, tab pill etc.; skipped when disabled.",
+   "files": [
+    "lib/src/handlers/service_handler.dart",
+    "lib/src/widgets/common/long_press_repeater.dart"
+   ],
+   "settingsKeys": [
+    "disableVibration"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Keep screen awake",
+   "navPath": "Settings -> Viewer -> Prevent device from sleeping",
+   "what": "Native disableSleep/enableSleep used by viewer, video controls, reader, sync.",
+   "files": [
+    "lib/src/handlers/service_handler.dart"
+   ],
+   "settingsKeys": [
+    "wakeLockEnabled"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Volume buttons",
+   "navPath": "Settings -> Viewer -> Use volume buttons for scrolling",
+   "what": "Native setVolumeButtons toggled by feed/viewer/video.",
+   "files": [
+    "lib/src/handlers/service_handler.dart"
+   ],
+   "settingsKeys": [
+    "useVolumeButtonsForScroll"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Native platform services",
+   "navPath": "automatic / various screens",
+   "what": "Media scanner, restart app, SDK version, storage paths (config/pictures/cache), SAF picker and file IO (streams, list, probe, create dir, delete tree, copy in/out), share text/file, IP list (LoliSync), slice tall images, write image, open link defaults, Links manifest toggle, ONNX/QNN native log reading.",
+   "files": [
+    "lib/src/handlers/service_handler.dart"
+   ],
+   "storedIn": "n/a",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Secure storage",
+   "navPath": "Settings -> Backup & restore -> Google Drive (client id/secret, link); Settings -> Debug -> clear secure storage",
+   "what": "Keychain/Keystore values: Drive OAuth client id/secret and refresh token, last build whose changelog was shown (shows What's new after an update).",
+   "files": [
+    "lib/src/handlers/secure_storage_handler.dart"
+   ],
+   "storedIn": "flutter_secure_storage",
+   "inBackup": "no"
+  },
+  {
+   "name": "Build/version info",
+   "navPath": "Settings -> Version row; Settings -> Check for updates",
+   "what": "Constants.buildCodename + updateInfo.versionName shown in the version row; built-in changelog shown as What's new; store package / GitHub URL for update buttons.",
+   "files": [
+    "lib/src/data/constants.dart",
+    "lib/src/data/update_info.dart"
+   ],
+   "storedIn": "code constants",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Navigation observers",
+   "navPath": "automatic",
+   "what": "Route subscriptions (feed/viewer), floating preview route tracking, Talker route log, PerfTrace route timeline, ViewerCloseObserver (why the viewer closed).",
+   "files": [
+    "lib/main.dart",
+    "lib/src/handlers/navigation_handler.dart"
+   ],
+   "storedIn": "logs",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Drawer refresh signal",
+   "navPath": "automatic (drawer open, doujin store writes)",
+   "what": "Static ValueNotifier tick that drawer sections listen to for re-reading counts/pins.",
+   "files": [
+    "lib/src/handlers/drawer_refresh.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Long-press repeat",
+   "navPath": "Viewer page-flip buttons (info drawer open), feed scroll buttons, comments next/previous, number steppers",
+   "what": "Repeats the action every tick (faster after N ticks) with a 2 ms vibration.",
+   "files": [
+    "lib/src/widgets/common/long_press_repeater.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Misc UI primitives",
+   "navPath": "various",
+   "what": "MarqueeText (shrink then scroll), DraggableOverflowText (ellipsis, drag to scroll; tag view source links), BorderedText, AnimatedProgressIndicator (circular/square/linear), RestartableProgressIndicator (slideshow timer), PulseWidget (snatched icon, page dialog), TransparentPointer (video controls, notes, search chips, tutorial), CustomScrollBarThumb (history, tags manager), DrawerRow/DrawerSectionLabel (quick access, kemono sidebar), ResizableSplitView.",
+   "files": [
+    "lib/src/widgets/common/marquee_text.dart",
+    "lib/src/widgets/common/draggable_overflow_text.dart",
+    "lib/src/widgets/common/bordered_text.dart",
+    "lib/src/widgets/common/animated_progress_indicator.dart",
+    "lib/src/widgets/common/restartable_progress_indicator.dart",
+    "lib/src/widgets/common/pulse_widget.dart",
+    "lib/src/widgets/common/transparent_pointer.dart",
+    "lib/src/widgets/common/custom_scroll_bar_thumb.dart",
+    "lib/src/widgets/drawers/drawer_row.dart",
+    "lib/src/widgets/desktop/resizable_split_view.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  }
+ ],
+ "fileHomes": [
+  {
+   "path": "lib/main.dart",
+   "newHome": "lib/main.dart (main() only) + lib/app/bootstrap.dart (startup order) + lib/app/main_app.dart (MainApp, overlay stack) + lib/app/debug_overlays.dart (DebuggingWidgets) + lib/app/home.dart (Home: timers, deep links, lifecycle, shell switch) + lib/app/overlays/blur_on_leave_overlay.dart",
+   "role": "Entry point, bootstrap sequence, MaterialApp, root overlays, Home shell switcher",
+   "layer": "app"
+  },
+  {
+   "path": "lib/src/data/constants.dart",
+   "newHome": "lib/core/constants.dart (URLs, UAs, limits) + lib/app/release.dart (buildCodename, updateInfo/changelog)",
+   "role": "App constants, user agents, build codename, built-in UpdateInfo",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/data/theme_item.dart",
+   "newHome": "lib/models/theme_item.dart",
+   "role": "Theme preset data (name, primary, accent)",
+   "layer": "models"
+  },
+  {
+   "path": "lib/src/data/update_info.dart",
+   "newHome": "lib/models/update_info.dart",
+   "role": "Update/changelog data class",
+   "layer": "models"
+  },
+  {
+   "path": "lib/src/handlers/drawer_refresh.dart",
+   "newHome": "lib/core/utils/drawer_refresh.dart",
+   "role": "Static ValueNotifier signal for drawer data reloads",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/handlers/local_auth_handler.dart",
+   "newHome": "lib/core/platform/local_auth.dart (biometric capability/authenticate, returns result codes) + lib/app/lock/app_lock.dart (lock state, timeout policy, snackbars)",
+   "role": "App lock state, biometrics, auto-lock timing",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/handlers/navigation_handler.dart",
+   "newHome": "lib/core/ui/navigator.dart (navigatorKey, navContext, routeObserver); feed keys -> lib/features/feed/ui/feed_chrome.dart",
+   "role": "Global navigator key/context, route observer, feed header/bottom-bar keys",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/handlers/secure_storage_handler.dart",
+   "newHome": "lib/core/platform/secure_storage.dart",
+   "role": "flutter_secure_storage wrapper + SecureStorageKey enum",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/handlers/service_handler.dart",
+   "newHome": "lib/core/platform/native/ (channel.dart, saf.dart, paths.dart, system_ui.dart, share.dart, device.dart, media.dart) with a ServiceHandler facade",
+   "role": "MethodChannel bridge to MainActivity.kt",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/handlers/theme_handler.dart",
+   "newHome": "lib/app/theme/theme_factory.dart; Flow color tokens -> lib/core/ui/flow_colors.dart",
+   "role": "Builds light/dark ThemeData, Flow palette tokens",
+   "layer": "app"
+  },
+  {
+   "path": "lib/src/pages/about_page.dart",
+   "newHome": "lib/features/settings/ui/about_page.dart",
+   "role": "About screen",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/pages/desktop_home_page.dart",
+   "newHome": "lib/app/shells/desktop/desktop_home.dart",
+   "role": "Desktop shell (app bar + 3 resizable panes) and DesktopTagListener",
+   "layer": "app"
+  },
+  {
+   "path": "lib/src/pages/init_home_page.dart",
+   "newHome": "lib/app/shells/init_home.dart",
+   "role": "Post-init loading screen",
+   "layer": "app"
+  },
+  {
+   "path": "lib/src/pages/lockscreen_page.dart",
+   "newHome": "lib/app/lock/lock_screen.dart",
+   "role": "Lock screen overlay",
+   "layer": "app"
+  },
+  {
+   "path": "lib/src/pages/mobile_home_page.dart",
+   "newHome": "lib/app/shells/mobile_home.dart",
+   "role": "Mobile shell: InnerDrawer, side drawer selection, Back handling",
+   "layer": "app"
+  },
+  {
+   "path": "lib/src/widgets/booru/booru_switcher_sheet.dart",
+   "newHome": "lib/features/tabs/ui/booru_switcher_sheet.dart (switchableBoorus -> lib/features/tabs/logic/switchable_sources.dart)",
+   "role": "Switch booru bottom sheet + same-world filter",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/common/add_button.dart",
+   "newHome": "lib/core/ui/buttons/dialog_buttons.dart",
+   "role": "Add dialog button",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/common/animated_progress_indicator.dart",
+   "newHome": "lib/core/ui/progress/animated_progress_indicator.dart",
+   "role": "Animated circular/square/linear progress painters",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/common/bordered_text.dart",
+   "newHome": "lib/core/ui/text/bordered_text.dart",
+   "role": "Stroked text",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/common/cancel_button.dart",
+   "newHome": "lib/core/ui/buttons/dialog_buttons.dart",
+   "role": "Cancel dialog button",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/common/clear_button.dart",
+   "newHome": "lib/core/ui/buttons/dialog_buttons.dart",
+   "role": "Clear dialog button",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/common/close_dialog_button.dart",
+   "newHome": "lib/core/ui/buttons/dialog_buttons.dart",
+   "role": "Close dialog button",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/common/compact_error_widget.dart",
+   "newHome": "lib/core/ui/compact_error_widget.dart",
+   "role": "Replacement ErrorWidget",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/common/confirm_button.dart",
+   "newHome": "lib/core/ui/buttons/dialog_buttons.dart",
+   "role": "Confirm dialog button",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/common/custom_scroll_bar_thumb.dart",
+   "newHome": "lib/core/ui/scroll_bar_thumb.dart",
+   "role": "Draggable scrollbar thumb with label",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/common/delete_button.dart",
+   "newHome": "lib/core/ui/buttons/dialog_buttons.dart",
+   "role": "Delete dialog button",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/common/discord_button.dart",
+   "newHome": "lib/features/settings/ui/discord_button.dart",
+   "role": "Discord link row (hidden in store builds)",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/common/downloads_check.dart",
+   "newHome": "lib/features/downloads/ui/downloads_check.dart (audit/forget defaults -> lib/features/downloads/logic/downloads_audit.dart)",
+   "role": "Check downloads against disk + post-restore offer",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/common/draggable_overflow_text.dart",
+   "newHome": "lib/core/ui/text/draggable_overflow_text.dart",
+   "role": "Ellipsis text that becomes draggable on overflow",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/common/explain_button.dart",
+   "newHome": "lib/core/ui/explain_button.dart",
+   "role": "Info button opening an explanation dialog",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/common/flash_elements.dart",
+   "newHome": "lib/core/ui/flash.dart",
+   "role": "Snackbar/flash service",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/common/html.dart",
+   "newHome": "lib/core/ui/html.dart (internal-link handler injected)",
+   "role": "HTML renderer with link handling",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/common/inner_drawer.dart",
+   "newHome": "lib/core/ui/inner_drawer.dart",
+   "role": "Vendored two-sided sliding drawer",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/common/kaomoji.dart",
+   "newHome": "lib/core/ui/kaomoji/kaomoji.dart",
+   "role": "Kaomoji widget with animations",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/common/kaomoji_data.dart",
+   "newHome": "lib/core/ui/kaomoji/kaomoji_data.dart",
+   "role": "Kaomoji categories and const data",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/common/loli_dropdown.dart",
+   "newHome": "lib/core/ui/dropdown/ (dropdown_field.dart, loli_dropdown.dart, loli_multiselect_dropdown.dart)",
+   "role": "Single and multi-select bottom-sheet dropdowns",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/common/long_press_repeater.dart",
+   "newHome": "lib/core/ui/long_press_repeater.dart",
+   "role": "Repeat action while long-pressing",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/common/marquee_text.dart",
+   "newHome": "lib/core/ui/text/marquee_text.dart",
+   "role": "Auto-shrink then marquee text",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/common/mascot_image.dart",
+   "newHome": "lib/features/settings/ui/mascot_image.dart",
+   "role": "Drawer/settings mascot image",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/common/media_loading.dart",
+   "newHome": "lib/features/viewer/ui/media_loading.dart (ViewerStopReason -> lib/models/viewer_stop_reason.dart)",
+   "role": "Viewer loading/stopped overlay",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/common/multibooru_toggle.dart",
+   "newHome": "lib/features/tabs/ui/multibooru_toggle.dart",
+   "role": "Multibooru mode toggle + secondary selector",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/common/ok_button.dart",
+   "newHome": "lib/core/ui/buttons/dialog_buttons.dart",
+   "role": "OK (count) dialog button",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/common/parsed_text.dart",
+   "newHome": "lib/core/ui/text/parsed_text.dart (+ parsed_text_preprocess.dart, parsed_text_spans.dart)",
+   "role": "Comment/BBCode text renderer",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/common/pulse_widget.dart",
+   "newHome": "lib/core/ui/pulse.dart",
+   "role": "Opacity pulse animation",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/common/restartable_progress_indicator.dart",
+   "newHome": "lib/core/ui/progress/restartable_progress_indicator.dart",
+   "role": "Progress bound to TimedProgressController",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/common/retry_button.dart",
+   "newHome": "lib/core/ui/buttons/dialog_buttons.dart",
+   "role": "Retry dialog button",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/common/return_button.dart",
+   "newHome": "lib/core/ui/buttons/dialog_buttons.dart",
+   "role": "Return dialog button",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/common/save_anyway_button.dart",
+   "newHome": "lib/core/ui/buttons/dialog_buttons.dart",
+   "role": "Save anyway dialog button",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/common/save_button.dart",
+   "newHome": "lib/core/ui/buttons/dialog_buttons.dart",
+   "role": "Save dialog button",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/common/scrolling_text.dart",
+   "newHome": "delete (dead code, no references)",
+   "role": "Unused character-scrolling text",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/common/settings_widgets.dart",
+   "newHome": "lib/core/ui/settings/ (settings_card.dart, settings_button.dart, settings_toggles.dart, settings_dropdown.dart, settings_text_input.dart, settings_dialogs.dart, settings_widgets.dart barrel) + lib/core/ui/page_open.dart (SettingsPageOpen) + lib/features/settings/ui/settings_booru_dropdown.dart",
+   "role": "Settings UI kit + page opener",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/common/skip_button.dart",
+   "newHome": "lib/core/ui/buttons/dialog_buttons.dart",
+   "role": "Skip dialog button",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/common/thumbnail_loading.dart",
+   "newHome": "lib/features/feed/ui/thumbnail_loading.dart",
+   "role": "Thumbnail progress / error overlay",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/common/transparent_pointer.dart",
+   "newHome": "lib/core/ui/transparent_pointer.dart",
+   "role": "Hit-test transparent wrapper",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/desktop/desktop_image_listener.dart",
+   "newHome": "lib/app/shells/desktop/desktop_media_pane.dart",
+   "role": "Desktop media pane with save/favourite/fullscreen",
+   "layer": "app"
+  },
+  {
+   "path": "lib/src/widgets/desktop/desktop_scroll.dart",
+   "newHome": "lib/core/ui/desktop_scroll.dart",
+   "role": "Mouse-wheel scroll helper",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/desktop/desktop_tabs.dart",
+   "newHome": "delete (dead; only a commented-out reference) or lib/app/shells/desktop/desktop_tabs.dart",
+   "role": "Experimental chrome-like tab strip",
+   "layer": "app"
+  },
+  {
+   "path": "lib/src/widgets/desktop/resizable_split_view.dart",
+   "newHome": "lib/core/ui/resizable_split_view.dart",
+   "role": "Two-pane draggable splitter",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/drawers/drawer_row.dart",
+   "newHome": "lib/core/ui/drawer_row.dart",
+   "role": "Drawer row + section label",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/drawers/main_drawer.dart",
+   "newHome": "lib/app/drawer/main_drawer.dart (SavedSearchesDrawerSection deleted)",
+   "role": "Main menu drawer",
+   "layer": "app"
+  },
+  {
+   "path": "lib/src/widgets/root/active_title.dart",
+   "newHome": "delete (dead code)",
+   "role": "Unused tab-selector app bar title",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/root/custom_sliver_app_bar.dart",
+   "newHome": "lib/core/ui/sliver/custom_sliver_app_bar.dart",
+   "role": "SliverAppBar copy passing headerKey",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/root/custom_sliver_persistent_header.dart",
+   "newHome": "lib/core/ui/sliver/custom_sliver_persistent_header.dart",
+   "role": "Persistent header copy with programmatic show/hide",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/root/dev_overlay.dart",
+   "newHome": "lib/app/overlays/dev_overlay.dart (OverlayScreen -> lib/app/overlays/overlay_screen.dart)",
+   "role": "Debug floating panel + overlay helper",
+   "layer": "app"
+  },
+  {
+   "path": "lib/src/widgets/root/image_stats.dart",
+   "newHome": "lib/features/debug/ui/image_stats.dart",
+   "role": "Image cache stats overlay",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/root/main_appbar.dart",
+   "newHome": "lib/features/feed/ui/main_app_bar.dart",
+   "role": "Feed floating header",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/root/predictive_back_transition.dart",
+   "newHome": "lib/core/ui/transitions/predictive_back.dart",
+   "role": "Predictive back page transitions",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/root/routing.dart",
+   "newHome": "lib/app/routing/internal_routes.dart",
+   "role": "Internal link router (settings, settings/booru)",
+   "layer": "app"
+  },
+  {
+   "path": "lib/src/widgets/root/scroll_physics.dart",
+   "newHome": "lib/app/scroll_behavior.dart (CustomWidgetsBinding -> lib/app/binding.dart)",
+   "role": "Scroll behaviour + wheel-speed binding",
+   "layer": "app"
+  },
+  {
+   "path": "lib/src/widgets/root/theme_builder.dart",
+   "newHome": "delete (dead code)",
+   "role": "Unused Theme wrapper",
+   "layer": "app"
+  },
+  {
+   "path": "lib/src/widgets/webview/webview_browser_view.dart",
+   "newHome": "lib/features/webview/ui/webview_browser_view.dart",
+   "role": "Embedded browser for WebView-type booru tabs",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/webview/webview_navigation_controls.dart",
+   "newHome": "lib/features/webview/ui/navigation_controls.dart",
+   "role": "Back/forward/reload + history dialog",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/webview/webview_navigation_menu.dart",
+   "newHome": "lib/features/webview/ui/navigation_menu.dart",
+   "role": "Webview overflow menu",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/webview/webview_page.dart",
+   "newHome": "lib/features/webview/ui/webview_page.dart; policies -> lib/features/webview/logic/navigation_policy.dart; globals webViewEnvironment/globalWindowsCookies -> lib/core/platform/webview_env.dart",
+   "role": "In-app webview page, navigation policies, webview globals",
+   "layer": "feature-ui"
+  }
+ ],
+ "layerViolations": [
+  {
+   "file": "lib/src/handlers/navigation_handler.dart",
+   "line": 5,
+   "imports": "widgets/preview/waterfall_bottom_bar.dart, widgets/root/custom_sliver_persistent_header.dart",
+   "reason": "Core navigation service holds GlobalKeys typed with feed widget States (WaterfallBottomBarState, CustomFloatingHeaderState).",
+   "fix": "Keep navigatorKey/navContext/routeObserver in core/ui/navigator.dart; move floatingHeaderKey/bottomBarKey into a feed-owned FeedChrome holder in features/feed/ui."
+  },
+  {
+   "file": "lib/src/handlers/local_auth_handler.dart",
+   "line": 16,
+   "imports": "widgets/common/flash_elements.dart (+ NavigationHandler.navContext.loc, material_symbols)",
+   "reason": "Auth logic shows snackbars and reads localization through a BuildContext.",
+   "fix": "Return an AuthOutcome enum from authenticate(); the lock screen (app layer) shows the snackbar; pass the localized reason string in."
+  },
+  {
+   "file": "lib/src/handlers/service_handler.dart",
+   "line": 10,
+   "imports": "handlers/settings_handler.dart",
+   "reason": "Platform bridge reads hideStatusBar, wakeLockEnabled, disableVibration from the settings store.",
+   "fix": "Take these as parameters (setSystemUiVisibility(visible, hideStatusBar:), disableSleep(enabled:), vibrate(enabled:)) or read a small core prefs interface."
+  },
+  {
+   "file": "lib/src/widgets/common/flash_elements.dart",
+   "line": 10,
+   "imports": "handlers/search_handler.dart",
+   "reason": "Generic snackbar imports the search handler only for the global 'uuid'.",
+   "fix": "Use const Uuid() locally or a core/utils/ids.dart."
+  },
+  {
+   "file": "lib/src/widgets/common/flash_elements.dart",
+   "line": 11,
+   "imports": "handlers/settings_handler.dart",
+   "reason": "Core UI reads appMode for desktop styling.",
+   "fix": "Pass isDesktop or read a core AppMode notifier set by the app layer."
+  },
+  {
+   "file": "lib/src/widgets/common/settings_widgets.dart",
+   "line": 16,
+   "imports": "widgets/tabs/tab_booru_selector.dart",
+   "reason": "Generic settings kit depends on a tabs feature widget (TabBooruSelectorItem) for SettingsBooruDropdown.",
+   "fix": "Move SettingsBooruDropdown to features/settings/ui/settings_booru_dropdown.dart."
+  },
+  {
+   "file": "lib/src/widgets/common/settings_widgets.dart",
+   "line": 11,
+   "imports": "handlers/settings_handler.dart",
+   "reason": "SettingsPageOpen and SettingsBooruDropdown read SettingsHandler (appMode, booruList).",
+   "fix": "Inject isDesktop/boorus; keep SettingsPageOpen in core/ui/page_open.dart with a core AppMode source."
+  },
+  {
+   "file": "lib/src/widgets/common/loli_dropdown.dart",
+   "line": 7,
+   "imports": "handlers/settings_handler.dart",
+   "reason": "Core dropdown reads handSide and appMode.",
+   "fix": "Constructor params or a core prefs notifier."
+  },
+  {
+   "file": "lib/src/widgets/common/html.dart",
+   "line": 6,
+   "imports": "widgets/root/routing.dart -> pages/settings_page.dart, pages/settings/booru_page.dart",
+   "reason": "Generic HTML widget transitively imports feature pages.",
+   "fix": "Core html takes an onInternalLink callback (or a core link-router registry) filled by app/routing/internal_routes.dart."
+  },
+  {
+   "file": "lib/src/widgets/common/media_loading.dart",
+   "line": 13,
+   "imports": "widgets/image/image_viewer.dart",
+   "reason": "Imports the viewer widget just for the ViewerStopReason enum; it is viewer UI living in common.",
+   "fix": "Move ViewerStopReason to lib/models/viewer_stop_reason.dart and MediaLoading to features/viewer/ui."
+  },
+  {
+   "file": "lib/src/widgets/common/multibooru_toggle.dart",
+   "line": 13,
+   "imports": "widgets/tabs/tab_booru_selector.dart, tab_per_booru_tag_overrides.dart, tab_secondary_booru_selector.dart, handlers/search_handler.dart",
+   "reason": "Feature (tabs) UI placed in the generic common folder.",
+   "fix": "Move to features/tabs/ui/multibooru_toggle.dart."
+  },
+  {
+   "file": "lib/src/widgets/common/downloads_check.dart",
+   "line": 8,
+   "imports": "boorus/downloads_handler.dart, handlers/downloads_reconciler.dart, services/backup_plan.dart, services/download_folders.dart",
+   "reason": "Downloads feature logic and dialog in the generic common folder.",
+   "fix": "features/downloads/logic/downloads_audit.dart + features/downloads/ui/downloads_check.dart; keep the test seams."
+  },
+  {
+   "file": "lib/src/handlers/furaffinity_session_handler.dart",
+   "line": 12,
+   "imports": "widgets/webview/webview_page.dart (webViewEnvironment)",
+   "reason": "Session logic imports a UI page file for a global; same for ehentai_session_handler.dart, schale_clearance_handler.dart, boorus/r34hentai_handler.dart (source), utils/tools.dart, pages/settings/network_page.dart (globalWindowsCookies).",
+   "fix": "Move webViewEnvironment and globalWindowsCookies to lib/core/platform/webview_env.dart."
+  },
+  {
+   "file": "lib/src/utils/tools.dart",
+   "line": 450,
+   "imports": "widgets/webview/webview_page.dart (pushes InAppWebviewView for captcha)",
+   "reason": "Utility code builds and pushes a UI page; schale_clearance_handler.dart:848 does the same.",
+   "fix": "A core WebviewLauncher callback registered by the app layer (or move captcha flow into features/webview/logic with a UI port)."
+  },
+  {
+   "file": "lib/src/handlers/settings_handler.dart",
+   "line": 3079,
+   "imports": "widgets/common/settings_widgets.dart, widgets/common/flash_elements.dart",
+   "reason": "Settings store builds the update/changelog page (SettingsPageOpen/Scaffold) and snackbars.",
+   "fix": "Move showUpdate/showLastVersionMessage UI to features/settings/ui/update_dialog.dart; handler exposes the UpdateInfo result."
+  },
+  {
+   "file": "lib/src/data/tag_type.dart",
+   "line": 2,
+   "imports": "handlers/navigation_handler.dart, handlers/settings_handler.dart",
+   "reason": "Model reads localization through NavigationHandler.navContext.",
+   "fix": "Use the slang global translations (loc without context) or move locName to a UI extension."
+  },
+  {
+   "file": "lib/src/handlers/search_handler.dart",
+   "line": 444,
+   "imports": "(holds mainDrawerKey GlobalKey whose state is InnerDrawerState)",
+   "reason": "Logic handler owns a UI key; MobileHome, MainAppBar and MainDrawer type-check it as InnerDrawerState.",
+   "fix": "Move to an app/shell controller (ShellDrawer.toggle/close) owned by the app layer."
+  },
+  {
+   "file": "lib/src/handlers/theme_handler.dart",
+   "line": 417,
+   "imports": "SettingsHandler.instance.usePredictiveBack (global read inside theme factory)",
+   "reason": "Theme factory reads a global setting non-reactively.",
+   "fix": "Pass usePredictiveBack as a constructor field from MainApp."
+  },
+  {
+   "file": "lib/src/widgets/common/mascot_image.dart",
+   "line": 5,
+   "imports": "handlers/settings_handler.dart",
+   "reason": "Common widget with settings knowledge (also discord_button.dart:8).",
+   "fix": "Move both to features/settings/ui."
+  },
+  {
+   "file": "lib/src/widgets/root/main_appbar.dart",
+   "line": 22,
+   "imports": "widgets/video/better_player_view.dart, widgets/video/media_kit_player_view.dart",
+   "reason": "Feed header calls static player pools to reset media.",
+   "fix": "A MediaRefresh service in features/video/logic invoked by the header."
+  }
+ ],
+ "splits": [
+  {
+   "file": "lib/main.dart",
+   "lines": 753,
+   "proposal": "lib/main.dart: main() calling bootstrap(). lib/app/bootstrap.dart: the ordered startup list (binding, image cache, FFI/WebView2, Logger, UA capture, handler registration, settings init, model refresh, attachments, LocalAuth, system UI, runApp). lib/app/main_app.dart: MainApp/_MainAppState (initHandlers postInit callback, overlay registration, theme Obx, MaterialApp + builder overlay stack). lib/app/debug_overlays.dart: DebuggingWidgets (FPS, image stats, refresh rate, device info). lib/app/home.dart: Home (timers, deep links, lifecycle, shell AnimatedSwitcher). lib/app/overlays/blur_on_leave_overlay.dart: AppLifecycleOverlay.",
+   "risk": "Low coupling between classes (no shared privates). Contracts to keep: searchHandler.setRootRestate(MainApp.updateState); alice.setNavigatorKey; registerGlobalOverlay is called from inside the OverlayEntry builder; overlay order; observer order; startup order (see fragile)."
+  },
+  {
+   "file": "lib/src/widgets/common/settings_widgets.dart",
+   "lines": 1533,
+   "proposal": "core/ui/settings/settings_card.dart: one shared card wrapper (Padding + surfaceContainer Material + outlineVariant border + 13 px radius) plus the title row with reset-to-default. settings_button.dart: SettingsPart, SettingsButton. settings_toggles.dart: SettingsToggle, SettingsToggleTristate, SettingsSegmentedButton. settings_dropdown.dart: SettingsDropdown, SettingsOptionsList. settings_text_input.dart: SettingsTextInput and its state. settings_dialogs.dart: SettingsDialog, SettingsBottomSheet, SettingsPageDialog, SettingsAppBar, borderWidth. core/ui/page_open.dart: SettingsPageOpen. features/settings/ui/settings_booru_dropdown.dart: SettingsBooruDropdown. Keep settings_widgets.dart as a barrel export so the 77 importers do not change.",
+   "risk": "77 importers, including settings_handler.dart (logic). borderWidth is exported to gallery_page and add_new_tab_dialog. SettingsPageOpen is used by logic (settings_handler.showUpdate, main.dart openAppLink). tab_cards_test checks the empty-button spacer. Visual parity: the card wrapper must stay pixel-identical."
+  },
+  {
+   "file": "lib/src/widgets/common/loli_dropdown.dart",
+   "lines": 801,
+   "proposal": "dropdown_field.dart: the InputDecorator, label and border block plus the InkWell overlay, shared by both dropdowns. loli_dropdown.dart: LoliDropdown, LoliDropdownBottomSheet. loli_multiselect_dropdown.dart: LoliMultiselectDropdown and its sheet. A shared showDropdownSheet(expandableByScroll) helper holds the DraggableScrollableSheet wrapper.",
+   "risk": "Both import the ClearButton/OkButton/ReturnButton widgets and read SettingsHandler handSide/appMode. LoliMultiselectDropdown(...).showDialog(context) is called directly as an API (multibooru_toggle, hideable_appbar)."
+  },
+  {
+   "file": "lib/src/widgets/common/parsed_text.dart",
+   "lines": 622,
+   "proposal": "parsed_text_preprocess.dart: pure functions stripUnknownHtml and fixOverlappingTags (testable, no State). parsed_text_spans.dart: a SpanBuilder class taking styles, callbacks, the revealed-spoiler set and the toggle callback, which builds the InlineSpans and owns and disposes the TapGestureRecognizers. parsed_text.dart: the widget and state.",
+   "risk": "_buildSpans reads widget.* styles/callbacks and _revealedSpoilers, and calls _toggleSpoiler (setState). Spoiler indices use globalIndex*1000 nesting, which must be kept."
+  },
+  {
+   "file": "lib/src/widgets/common/inner_drawer.dart",
+   "lines": 608,
+   "proposal": "inner_drawer_types.dart: the typedefs, InnerDrawerDirection, InnerDrawerAnimation and IDOffset. inner_drawer.dart: InnerDrawer and InnerDrawerState. Otherwise leave this vendored code alone.",
+   "risk": "InnerDrawerState is public and type-checked at 3 call sites (toggle/close). The local history entry and focus scope behaviour must not change."
+  },
+  {
+   "file": "lib/src/handlers/service_handler.dart",
+   "lines": 700,
+   "proposal": "native/channel.dart: the MethodChannel plus a generic _invoke<T>(method, args, fallback) with debug logging. saf.dart: SAF file IO. paths.dart: getExtDir, getConfigDir, getPicturesDir, getCacheDir, deleteDB. system_ui.dart: setSystemUiVisibility with its status-bar re-hide state, disable/enableSleep, setVolumeButtons. share.dart. device.dart: vibrate, SDK version, IP, app alias, link defaults, setSourceLinks, readNativeLog. media.dart: scanMedia, sliceImage, writeImage. A ServiceHandler facade delegates to these so the ~150 call sites do not change.",
+   "risk": "The static mutable status-bar state (_wantsHiddenStatusBar, _statusBarCallbackArmed, generation) must stay in one place. Method names must match MainActivity.kt. readNativeLog throws (onnx_options wraps it). The deleteFileFromSAFDirectory to SAFFileCache invalidation must stay."
+  },
+  {
+   "file": "lib/src/widgets/common/kaomoji_data.dart",
+   "lines": 1265,
+   "proposal": "Do not split: pure const data. Optionally move kaomoji_data.dart next to kaomoji.dart under core/ui/kaomoji.",
+   "risk": "None; keep it const (no asset loading)."
+  }
+ ],
+ "bugs": [
+  {
+   "file": "lib/src/widgets/common/settings_widgets.dart",
+   "line": 1128,
+   "title": "Pasteable text fields read the clipboard on every keystroke",
+   "scenario": "Focus any SettingsTextInput with pasteable:true (booru edit API key/user id, network proxy fields, tag filters, LoliSync IP) and type: each keystroke reads the clipboard again. On Android 12+ that shows the 'pasted from your clipboard' toast over and over, and reads whatever is on the clipboard (passwords from a password manager included).",
+   "evidence": "onChanged -> onChangedCallback -> setState (1041-1044) -> build -> buildSuffixIcons() -> `if (widget.pasteable && isFocused) FutureBuilder(future: Clipboard.getData(Clipboard.kTextPlain), ...)`. A new future is created on every build.",
+   "confidence": "confirmed",
+   "severity": "privacy"
+  },
+  {
+   "file": "lib/src/widgets/common/long_press_repeater.dart",
+   "line": 64,
+   "title": "One extra repeat fires after the long press is released",
+   "scenario": "Hold the viewer's next-page button (info drawer open, gallery_view_page.dart:1317) and release: the page moves one more time after the finger is lifted, and after onStop has already run. The same happens with the feed scroll buttons, comment navigation and number steppers.",
+   "evidence": "runAction(): `await Future.delayed(tick)` then `await widget.onStart()` with no `active` check after the delay. onLongPressEnd only sets active=false, so the pending iteration still calls onStart once.",
+   "confidence": "confirmed",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/widgets/desktop/desktop_image_listener.dart",
+   "line": 95,
+   "title": "LoadItemViewer branch can never be reached on desktop",
+   "scenario": "On desktop, an item whose media type must be guessed, on a handler with hasLoadItemSupport, always gets GuessExtensionViewer. LoadItemViewer (which fetches the item details first) is never used.",
+   "evidence": "Line 82 `else if (item.mediaType.value.isNeedToGuess)` returns before line 95 `else if (item.mediaType.value.isNeedToGuess && ...hasLoadItemSupport)`, which tests the same condition.",
+   "confidence": "confirmed",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/widgets/drawers/main_drawer.dart",
+   "line": 190,
+   "title": "The drawer's Downloads/Favourites rows do not follow tab or booru changes",
+   "scenario": "Open the drawer on a booru tab (Favourites shown), then switch to a doujin tab with the tab pill: Favourites stays, though it is meant to be hidden on doujin tabs. A Downloads/Favourites config added in Settings does not show up either, until something else rebuilds MainDrawer (theme or locale change, or a hand-side swap).",
+   "evidence": "The Builder reads searchHandler.tabs, currentBooruHandler.hasReader and settingsHandler.booruList outside any Obx. MobileHome passes `const MainDrawer()` (mobile_home_page.dart:167/170), so the Obx rebuild leaves the identical widget in place and MainDrawer.build does not run again.",
+   "confidence": "plausible",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/main.dart",
+   "line": 333,
+   "title": "Changing 'Blur on leave' has no effect until something rebuilds the whole app",
+   "scenario": "Settings -> Privacy -> turn on Blur on leave and go back, then switch apps: no blur, until a theme change, a settings save with restate:true, or a restart.",
+   "evidence": "The OverlayEntry builder reads `settingsHandler.blurOnLeave.value` only when MaterialApp.builder runs again. MainApp's Obx does not observe blurOnLeave, and privacy_page.dart:49 saves with `restate: false`, so rootRestate is never called.",
+   "confidence": "plausible",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/widgets/webview/webview_navigation_menu.dart",
+   "line": 219,
+   "title": "The webview menu fails on a null controller when no webview exists",
+   "scenario": "Open the webview page on Linux (no webview support), or open a FurAffinity page while its session is still being prepared, then pick any menu item: 'Null check operator used on a null value' is thrown and nothing happens.",
+   "evidence": "The menu is built even when the FutureBuilder has no data: `onSelected` calls `_onGoToInitial(controller.data!)` etc. The controller completer only completes in InAppWebView.onWebViewCreated, and webview_page.dart:250 builds InAppWebView only when the platform supports it and sessionReady is true.",
+   "confidence": "confirmed",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/widgets/common/loli_dropdown.dart",
+   "line": 248,
+   "title": "Scroll-to-selected throws when the current value is not in the list",
+   "scenario": "A SettingsDropdown or SettingsBooruDropdown whose value is filtered out, or is a stale Booru instance, opens its sheet: a RangeError(-1) is thrown in the post-frame callback and logged, and the list does not scroll to the selection.",
+   "evidence": "`final index = filteredItems.indexOf(widget.value as T); if (_keys[index].currentContext != null)`: there is no guard for index == -1.",
+   "confidence": "confirmed",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/main.dart",
+   "line": 641,
+   "title": "Every return from 'inactive' drops the headless Schale and HentaiPaw page clients",
+   "scenario": "Pull down the notification shade, use the biometric unlock prompt, or the system photo picker while a niyaniya or hentaipaw request goes through the headless page. On resume the page client is disposed mid-request, the call fails and falls back to Dio, which Cloudflare may refuse, and the next request has to restart the page.",
+   "evidence": "In didChangeAppLifecycleState, `resumed` always calls SchaleClearanceHandler.disposePageClient and HentaiPawHandler.pageClient.drop. The 'phone was away' intent is not checked (no minimum away time); inactive alone leads to resumed.",
+   "confidence": "plausible",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/main.dart",
+   "line": 592,
+   "title": "A malformed loli.snatcher config link fails silently with an uncaught exception",
+   "scenario": "Opening a loli.snatcher link with no '?', bad base64, or an unknown booru type throws inside a post-frame callback. The user gets no feedback; only an error log.",
+   "evidence": "openAppLink: `Booru.fromLink(url)` (booru.dart:37 `link.split('?')[1]`, base64Decode, jsonDecode), then `booru.type!.isSaveable`. There is no try/catch.",
+   "confidence": "confirmed",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/handlers/local_auth_handler.dart",
+   "line": 160,
+   "title": "After an auto-lock timeout the app content is briefly visible before the lock screen",
+   "scenario": "App lock on, Blur on leave off: return after the timeout. The feed shows for the 10 ms delay plus the awaited canCheckBiometrics platform call before isAuthenticated turns false.",
+   "evidence": "onReturn: `await Future.delayed(10ms)`, then lock(), which does `await canCheckBiometrics()` before `isAuthenticated.value = !shouldLock`. LockScreenPage only shows when the value is false.",
+   "confidence": "plausible",
+   "severity": "privacy"
+  },
+  {
+   "file": "lib/src/widgets/common/parsed_text.dart",
+   "line": 320,
+   "title": "Tap recognizers are created on every build and never disposed",
+   "scenario": "Comments with links, tags or mentions rebuild (spoiler toggle, theme change, scrolling back in) and each build leaks new TapGestureRecognizers.",
+   "evidence": "_buildSpans creates `TapGestureRecognizer()..onTap` at lines 320, 336, 353, 370 and 387. The state has no dispose that releases them.",
+   "confidence": "confirmed",
+   "severity": "leak"
+  },
+  {
+   "file": "lib/src/widgets/drawers/main_drawer.dart",
+   "line": 185,
+   "title": "A new ScrollController is created on every MainDrawer build",
+   "scenario": "Every rebuild of MainDrawer (theme or locale change) leaks the previous controller.",
+   "evidence": "`ListView(controller: ScrollController(), ...)` in a StatelessWidget's build, never disposed.",
+   "confidence": "confirmed",
+   "severity": "leak"
+  },
+  {
+   "file": "lib/src/widgets/common/loli_dropdown.dart",
+   "line": 231,
+   "title": "Dropdown sheet controllers are never disposed",
+   "scenario": "Each dropdown sheet that is opened leaks its TextEditingController, and its own ScrollController when not draggable.",
+   "evidence": "_LoliDropdownBottomSheet creates searchController and `scrollController = widget.controller ?? ScrollController()` and has no dispose override.",
+   "confidence": "confirmed",
+   "severity": "leak"
+  },
+  {
+   "file": "lib/src/widgets/root/main_appbar.dart",
+   "line": 222,
+   "title": "The top bar keeps the old hand side until the tab changes",
+   "scenario": "Settings -> Interface -> Hand side changed to Right, then back: the drawers swap sides (MobileHome Obx), but the top bar keeps the menu icon on the left. Tapping it opens the start side, which now holds the pinned drawer, until the next tab switch rebuilds the CustomScrollView.",
+   "evidence": "MainAppBar reads `settingsHandler.handSide.value` in build without Obx. It is `const MainAppBar()` in waterfall_view.dart:532 (rebuilt only via the tab-keyed CustomScrollView). user_interface_page saves with restate only when predictive back changed.",
+   "confidence": "plausible",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/pages/settings/network_page.dart",
+   "line": 185,
+   "title": "The Windows cookie mirror is read and cleared with the wrong key",
+   "scenario": "On Windows, the Settings -> Network cookie list, delete and clear for a booru never find the in-memory webview cookies.",
+   "evidence": "webview_page.dart:216-222 stores `globalWindowsCookies[uri.host]`, but network_page.dart:185/210/250 uses `globalWindowsCookies[selectedBooru!.baseURL!]` (a full URL).",
+   "confidence": "confirmed",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/widgets/common/inner_drawer.dart",
+   "line": 225,
+   "title": "The post-frame width update force-unwraps currentContext before checking mounted",
+   "scenario": "If the InnerDrawer is removed in the frame after a size or orientation change (for example a mobile-to-desktop switch, which also forces landscape), the callback throws a null-check error, which is logged.",
+   "evidence": "`_drawerKey.currentContext!.findRenderObject()` is evaluated before `if (mounted && box != null ...)`.",
+   "confidence": "plausible",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/widgets/webview/webview_navigation_controls.dart",
+   "line": 127,
+   "title": "The history dialog puts a ListView directly in AlertDialog content",
+   "scenario": "Long-press Back in the webview: AlertDialog's IntrinsicWidth asks the viewport for its intrinsic size. That asserts in debug builds and leaves the width to the dialog's minimum in release.",
+   "evidence": "`AlertDialog(content: ListView.builder(...))` with no sized wrapper.",
+   "confidence": "plausible",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/widgets/webview/webview_page.dart",
+   "line": 224,
+   "title": "setState is called after an await without a mounted check (Windows cookie mirror)",
+   "scenario": "On Windows, closing the webview while getCookies is pending causes a 'setState() called after dispose()' error.",
+   "evidence": "saveCookiesOnWidnows: `await CookieManager...getCookies(...)` then `setState(() {})` with no mounted check.",
+   "confidence": "plausible",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/widgets/desktop/desktop_image_listener.dart",
+   "line": 231,
+   "title": "Fullscreen reuses the same keyed viewer widget (duplicate GlobalKey)",
+   "scenario": "Desktop: enter or leave fullscreen. The same itemWidget (key: item.key) can be in the pane and in the dialog during the transition, which raises the duplicate-key exception the TODO at line 45 mentions.",
+   "evidence": "The dialog's Obx returns `itemWidget` while the pane hides it only via isDesktopFullscreen. A TODO at line 45 acknowledges this.",
+   "confidence": "plausible",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/widgets/webview/webview_page.dart",
+   "line": 305,
+   "title": "The progress bar disappears at the first subresource",
+   "scenario": "The webview progress bar hides as soon as any subresource finishes, while the page is still loading.",
+   "evidence": "onLoadResource sets `loadingPercentage = 100`, and the bar renders only `if (loadingPercentage < 100)`.",
+   "confidence": "plausible",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/widgets/webview/webview_browser_view.dart",
+   "line": 38,
+   "title": "The browser tab's ValueNotifiers are never disposed",
+   "scenario": "Each WebView-type booru tab view that is created leaks two ValueNotifiers.",
+   "evidence": "progress and currentUrl ValueNotifiers; the state has no dispose override.",
+   "confidence": "confirmed",
+   "severity": "leak"
+  }
+ ],
+ "fragile": [
+  {
+   "what": "Startup order",
+   "where": "lib/main.dart main()",
+   "rule": "Keep this order: CustomWidgetsBinding.ensureInitialized first; Logger.Inst before captureWebViewUserAgent; all handler register() calls and initSettingsEnumRegistry() before SettingsHandler.initialize(); Encoder/ImageTagger/LookModel register+refresh after settings (they need the model id and app path); LocalAuthHandler.register after settings (lock() reads useLockscreen); runApp last."
+  },
+  {
+   "what": "Post-init order",
+   "where": "lib/main.dart _MainAppState.initHandlers",
+   "rule": "Order: tagHandler.initialize, then searchHandler.restoreTabs (tag colours on the first render), then runDoujinMigrationIfNeeded, then BookmarkHandler.ensureLoaded + mergeLegacyBookmarks (one-time). SettingsHandler.postInit runs the proxy, video backend, DB and boorus setup before this callback, and checkUpdate, DownloadsCheck.offerAfterRestore, SourceLinks, ONNX availability and timings after it."
+  },
+  {
+   "what": "Root overlay stack",
+   "where": "lib/main.dart MaterialApp.builder",
+   "rule": "Three Overlays in order: content (registers OverlayScreen for the dev overlay), blur-on-leave, lock screen. The lock screen must stay topmost. HiddenStatusBarInsets must read insets inside the overlay entry (r50/r52): no MediaQuery is created in the builder, or the keyboard insets go stale."
+  },
+  {
+   "what": "Navigator observers and key",
+   "where": "lib/main.dart, lib/src/handlers/navigation_handler.dart",
+   "rule": "Keep NavigationHandler.navigatorKey as MaterialApp.navigatorKey and Alice's navigator key. Observers: routeObserver (feed and viewer subscribe), FloatingPreviewHandler.routeObserver, TalkerRouteObserver, PerfTraceRouteObserver, ViewerCloseObserver. Tests call NavigationHandler.register() and use navigatorKey (about 20 test files)."
+  },
+  {
+   "what": "Shell drawer key",
+   "where": "SearchHandler.mainDrawerKey; mobile_home_page.dart, main_appbar.dart, main_drawer.dart",
+   "rule": "mainDrawerKey must be the InnerDrawer key; three call sites check `state is InnerDrawerState` and call toggle/close."
+  },
+  {
+   "what": "Feed chrome keys",
+   "where": "NavigationHandler.floatingHeaderKey / bottomBarKey; main_appbar.dart, waterfall_view.dart",
+   "rule": "floatingHeaderKey is passed as CustomSliverAppBar.headerKey (programmatic show/hide via CustomFloatingHeaderState); bottomBarKey is the WaterfallBottomBar key; header visibility changes drive the bottom bar show/hide."
+  },
+  {
+   "what": "Vendored Flutter internals",
+   "where": "custom_sliver_app_bar.dart, custom_sliver_persistent_header.dart, predictive_back_transition.dart, inner_drawer.dart",
+   "rule": "These copy framework code (RenderSliverFloatingPersistentHeader snap API, FadeForwardsPageTransitionsBuilder.kTransitionMilliseconds). The app pins beta 3.42.0-0.4.pre; do not upgrade the engine (user rule) and do not 'clean up' their internals."
+  },
+  {
+   "what": "DrawerRefresh is a plain ValueNotifier",
+   "where": "lib/src/handlers/drawer_refresh.dart",
+   "rule": "Deliberately not Rx: listeners must survive GetX worker lifecycles. Bump it on drawer open (MobileHome innerDrawerCallback) and on every doujin store write (doujin_drawer_refresh_test)."
+  },
+  {
+   "what": "Same-world booru switching",
+   "where": "booru_switcher_sheet.dart switchableBoorus",
+   "rule": "Only DoujinDataHandler.sameDomain sources are offered (doujin/booru separation rule; booru_switcher_domain_test)."
+  },
+  {
+   "what": "Webview navigation policies",
+   "where": "webview_page.dart isWebviewNavigationAllowed / isMainFrameNavigationAllowed",
+   "rule": "The solver policy judges main-frame navigations only. blob:, about:srcdoc and data: frames must load (Turnstile needs them). *.cloudflare.com is always allowed; intent:// and market: are refused. schale_clearance_flow_test covers the main-frame rule; the ad-block rule has no test despite its comment."
+  },
+  {
+   "what": "One User-Agent",
+   "where": "webview_page.dart, webview_browser_view.dart, main.dart (Tools.captureWebViewUserAgent)",
+   "rule": "Webviews use Tools.browserUserAgent (captured device UA). Cloudflare ties cookies to the UA; do not add another UA string. The UA must be captured before the first request."
+  },
+  {
+   "what": "Webview globals",
+   "where": "webview_page.dart webViewEnvironment, globalWindowsCookies",
+   "rule": "webViewEnvironment must exist before any webview or CookieManager on Windows (created in main). globalWindowsCookies is keyed by host and read by Tools/r34hentai/network page; debug and network pages clear it together with the CookieManager."
+  },
+  {
+   "what": "FurAffinity webview session",
+   "where": "webview_page.dart initState/dispose",
+   "rule": "FA pages wait for prepareWebView (sessionReady) before building InAppWebView and call syncAfterWebView on dispose (r41: otherwise guest visits)."
+  },
+  {
+   "what": "Gesture arena pattern",
+   "where": "SettingsButton iconOnly, MainAppBar.menuButton, WebviewNavigationControls back button",
+   "rule": "Tap plus long press go on one InkResponse; nesting an IconButton in a GestureDetector loses the long press (documented regressions)."
+  },
+  {
+   "what": "SettingsButton spacer",
+   "where": "settings_widgets.dart SettingsButton.build",
+   "rule": "An empty name, disabled, no icon/subtitle/page/action renders SizedBox(height: 10), not a blank card (tab_cards_test, r39)."
+  },
+  {
+   "what": "DownloadsCheck test seams",
+   "where": "downloads_check.dart",
+   "rule": "Keep the static audit/forget/configDir/contextNow/whereFound/say seams and resetForTests (downloads_check_test). The post-restore offer consumes BackupRunner.checkDownloadsMarker once."
+  },
+  {
+   "what": "FlashElements in tests",
+   "where": "flash_elements.dart",
+   "rule": "showSnackbar returns early under Tools.isTestMode. The dedupe key defaults to the title Text data; isKeyUnique dismisses the earlier one and waits 300 ms."
+  },
+  {
+   "what": "ErrorWidget replacement",
+   "where": "utils/logger.dart:64 sets CompactErrorWidget.builder",
+   "rule": "Keep CompactErrorWidget.builder as a static tear-off; the default red box breaks layouts (10000x10000)."
+  },
+  {
+   "what": "Flow theme tokens",
+   "where": "theme_handler.dart",
+   "rule": "ThemeHandler.flow* static colours are used by tab_pill.dart and flow_tab_carousel.dart. Every dark path (dynamic colour and AMOLED included) must pin the Flow neutrals; 'System' font maps to Manrope."
+  },
+  {
+   "what": "MethodChannel contract",
+   "where": "service_handler.dart",
+   "rule": "The channel name 'com.noaisu.loliSnatcher/services' and every method name must match MainActivity.kt. readNativeLog throws on failure (callers wrap it). setSystemUiVisibility keeps static re-hide state with a generation counter."
+  },
+  {
+   "what": "SecureStorageKey names are storage keys",
+   "where": "secure_storage_handler.dart",
+   "rule": "Values are stored under key.name; renaming an enum value loses the Drive credentials or the changelog marker."
+  },
+  {
+   "what": "Release constants",
+   "where": "constants.dart",
+   "rule": "Bump buildCodename every build (rNN-<two words>); updateInfo versionName/buildNumber mirror pubspec. The version row shows '{codename}-{version}'; update checks compare buildNumber."
+  },
+  {
+   "what": "borderWidth export",
+   "where": "settings_widgets.dart:18",
+   "rule": "The top-level const borderWidth is used by gallery_page.dart and add_new_tab_dialog.dart; keep it exported from the barrel."
+  },
+  {
+   "what": "Lock screen semantics",
+   "where": "local_auth_handler.dart, lockscreen_page.dart",
+   "rule": "isAuthenticated null shows nothing; false shows the lock screen and auto-prompts. A manual lock skips the first automatic prompt (initial && manuallyLocked). Returning within 1 s of an unlock never relocks (the native prompt counts as a leave). PopScope canPop false."
+  },
+  {
+   "what": "Tab opening from the drawer",
+   "where": "main_drawer.dart openVirtual, booru switcher",
+   "rule": "Drawer Downloads/Favourites open with switchToNew: true (explicit user action, an allowed exception to 'tabs never kidnap'); content-originated tabs must stay in the background."
+  },
+  {
+   "what": "Modular UI read at build",
+   "where": "main_drawer.dart ModularUi.isOn(sidebarSourceSettings)",
+   "rule": "Modular UI removals are switches read when building, never built and then hidden (user rule)."
+  },
+  {
+   "what": "Periodic jobs",
+   "where": "lib/main.dart _HomeState.initState",
+   "rule": "backupTabs + saveTags every 30 s (10 s in debug); cache cleanup at start and every 5 min; tagsCleanup once after 20 min (1 min in debug) to avoid DB lockups at startup; localAuth.onReturn at launch."
+  }
+ ],
+ "perf": [
+  {
+   "file": "lib/main.dart",
+   "line": 100,
+   "issue": "`await Tools.captureWebViewUserAgent()` before settings and runApp. On Android, InAppWebViewController.getDefaultUserAgent initializes the WebView provider (loads Chromium) on the critical path.",
+   "impact": "Adds WebView init time to cold start before the first frame.",
+   "safeFix": "Start it unawaited at the top of main and run it alongside SettingsHandler.initialize. Await it before the first network request (start of postInit) or just before runApp."
+  },
+  {
+   "file": "lib/main.dart",
+   "line": 461,
+   "issue": "didChangeMetrics calls setMaxFPS on every metrics change: FlutterDisplayMode.setHighRefreshRate, FlutterDisplayMode.active, and a Logger line each time.",
+   "impact": "Every keyboard open/close animation frame and every rotation sends platform-channel calls and log writes from the UI isolate.",
+   "safeFix": "Only re-run when the display size or refresh rate actually changed (compare physical size), or debounce by 500 ms."
+  },
+  {
+   "file": "lib/src/handlers/theme_handler.dart",
+   "line": 232,
+   "issue": "textTheme() (a GoogleFonts.getFont lookup) runs about 14 times per ThemeData, and MainApp builds both lightTheme() and darkTheme() on every Obx run and every rootRestate.",
+   "impact": "Theme changes and the global restate after each saveSettings(restate:true) rebuild the whole MaterialApp tree with about 28 font lookups.",
+   "safeFix": "Compute textTheme once per ThemeHandler (late final) and memoize ThemeData by its inputs (theme, mode, amoled, font, dynamic schemes, predictive back)."
+  },
+  {
+   "file": "lib/main.dart",
+   "line": 536,
+   "issue": "A timer every 30 s runs searchHandler.backupTabs, which serializes every tab to JSON on the UI isolate and writes TabRestore even when nothing changed.",
+   "impact": "A periodic UI-thread hitch and a DB write with many tabs (the tests cover thousands).",
+   "safeFix": "Keep the last written JSON hash and skip unchanged backups, or mark dirty on tab changes. Keep the 30 s cadence."
+  },
+  {
+   "file": "lib/main.dart",
+   "line": 649,
+   "issue": "Home.build calls ServiceHandler.setSystemUiVisibility and SystemChrome.setPreferredOrientations on every rebuild.",
+   "impact": "Redundant platform calls on each Theme-dependent rebuild of Home.",
+   "safeFix": "Apply them once in initState and from an appMode listener (ever)."
+  },
+  {
+   "file": "lib/src/widgets/common/media_loading.dart",
+   "line": 96,
+   "issue": "A 500 ms periodic setState runs for every mounted, not-done MediaLoading, including preloaded neighbours that are not viewed (they compute and then return SizedBox).",
+   "impact": "Wasted rebuilds for each preloaded item while files load.",
+   "safeFix": "Tick only while widget.isViewed (start/stop the timer in didUpdateWidget)."
+  },
+  {
+   "file": "lib/src/widgets/common/pulse_widget.dart",
+   "line": 31,
+   "issue": "The animation controller is started (twice) even when enabled is false and runs forever.",
+   "impact": "A ticker per PulseWidget (snatched icons on thumbnails) keeps requesting frames.",
+   "safeFix": "Start the controller only when enabled; react to enabled changes in didUpdateWidget."
+  },
+  {
+   "file": "lib/src/widgets/webview/webview_page.dart",
+   "line": 305,
+   "issue": "onLoadResource, onProgressChanged and onUpdateVisitedHistory call setState on the whole page (Scaffold plus InAppWebView widget) for every subresource.",
+   "impact": "Hundreds of page rebuilds per load on heavy sites.",
+   "safeFix": "Hold loadingPercentage in a ValueNotifier and rebuild only the LinearProgressIndicator."
+  },
+  {
+   "file": "lib/src/widgets/common/settings_widgets.dart",
+   "line": 1129,
+   "issue": "Pasteable fields read the clipboard (platform call) on every rebuild while focused.",
+   "impact": "A platform channel call per keystroke, plus the Android clipboard toast.",
+   "safeFix": "Read the clipboard only when the paste button is pressed (render the button unconditionally)."
+  },
+  {
+   "file": "lib/src/pages/mobile_home_page.dart",
+   "line": 113,
+   "issue": "The Obx around InnerDrawer rebuilds the whole drawer, scaffold and a fresh pinnedSide() DownloadsDrawer/Sidebar widget on every tab or booru change.",
+   "impact": "The pinned drawer subtree rebuilds on each tab switch even when its side did not change.",
+   "safeFix": "Compute the side kind and memoize the widget (or key it) so DownloadsDrawer is rebuilt only when kemono/FA/hand side change."
+  },
+  {
+   "file": "lib/src/widgets/common/parsed_text.dart",
+   "line": 265,
+   "issue": "All spans and recognizers are rebuilt on every build.",
+   "impact": "GC churn and leaked recognizers in long comment lists.",
+   "safeFix": "Cache spans per (segments, revealed set, theme) and dispose old recognizers."
+  },
+  {
+   "file": "lib/src/widgets/common/loli_dropdown.dart",
+   "line": 323,
+   "issue": "For up to 500 items the sheet builds every row eagerly with a GlobalKey each.",
+   "impact": "Slow sheet opening for long lists (sources, fonts, languages).",
+   "safeFix": "Use ListView.builder with itemExtent and jump to index*itemExtent for scroll-to-selected, where an extent is known."
+  }
+ ],
+ "deadCode": [
+  {
+   "file": "lib/src/widgets/common/scrolling_text.dart",
+   "symbol": "ScrollingText",
+   "evidence": "Grep for ScrollingText across lib/ and test/ finds only its own file."
+  },
+  {
+   "file": "lib/src/widgets/desktop/desktop_tabs.dart",
+   "symbol": "DesktopTabs",
+   "evidence": "Only reference: commented-out line desktop_home_page.dart:42 '//     return const DesktopTabs();'."
+  },
+  {
+   "file": "lib/src/widgets/drawers/main_drawer.dart",
+   "symbol": "SavedSearchesDrawerSection",
+   "evidence": "Defined at main_drawer.dart:456; no other references in lib/ or test/."
+  },
+  {
+   "file": "lib/src/widgets/root/theme_builder.dart",
+   "symbol": "ThemeBuilder",
+   "evidence": "Grep finds only its own definition."
+  },
+  {
+   "file": "lib/src/widgets/root/active_title.dart",
+   "symbol": "ActiveTitle",
+   "evidence": "Grep finds only its own definition."
+  },
+  {
+   "file": "lib/src/widgets/root/predictive_back_transition.dart",
+   "symbol": "CustomPredictiveBackFullscreenPageTransitionsBuilder / _PredictiveBackFullscreenPageTransition",
+   "evidence": "Grep finds only the definitions (lines 54 and 395); theme_handler uses CustomPredictiveBackPageTransitionsBuilder only."
+  },
+  {
+   "file": "lib/src/widgets/common/custom_scroll_bar_thumb.dart",
+   "symbol": "_ArrowCustomPainter",
+   "evidence": "Marked '// ignore: unused_element'; only a commented-out usage."
+  },
+  {
+   "file": "lib/src/handlers/service_handler.dart",
+   "symbol": "getFilesByExt, getDocumentsDir, emptyCache, makeVidThumb, getCurrentAlias, getAvailableAliases",
+   "evidence": "No ServiceHandler.<name> call sites in lib/ (emptyCache only in a commented line, save_cache_page.dart:596)."
+  },
+  {
+   "file": "lib/src/handlers/secure_storage_handler.dart",
+   "symbol": "SecureStorageHandler.contains",
+   "evidence": "No call sites; drive_backup and settings_handler use read/write/delete only."
+  },
+  {
+   "file": "lib/src/handlers/theme_handler.dart",
+   "symbol": "ThemeHandler.getTheme",
+   "evidence": "Grep 'getTheme()' finds only the definition."
+  },
+  {
+   "file": "lib/src/widgets/root/dev_overlay.dart",
+   "symbol": "OverlayScreen.removeAll",
+   "evidence": "Grep '.removeAll()' has no OverlayScreen usage."
+  },
+  {
+   "file": "lib/src/widgets/desktop/desktop_image_listener.dart",
+   "symbol": "LoadItemViewer branch (lines 95-109)",
+   "evidence": "Unreachable: the preceding `else if (isNeedToGuess)` takes the same condition."
+  },
+  {
+   "file": "lib/src/widgets/common/kaomoji_data.dart",
+   "symbol": "KaomojiData.getAll, KaomojiData.count",
+   "evidence": "Referenced only in doc comments."
+  }
+ ],
+ "duplication": [
+  {
+   "where": "lib/src/widgets/common/{add,cancel,clear,close_dialog,confirm,delete,ok,retry,return,save_anyway,save,skip}_button.dart",
+   "what": "Twelve near-identical ElevatedButton wrappers (withIcon/plain variants, same text style, grey or red style, pop(returnData) or action).",
+   "consolidation": "One DialogButton(label, icon, style variant, action/returnData) in core/ui/buttons/dialog_buttons.dart; keep the 12 class names as thin const wrappers so the ~20 call sites do not change."
+  },
+  {
+   "where": "lib/src/widgets/common/settings_widgets.dart (SettingsButton, Toggle, ToggleTristate, SegmentedButton, Dropdown, OptionsList, TextInput)",
+   "what": "The same card wrapper (Padding 10/3 + surfaceContainer Material + outlineVariant side + 13 px radius + ListTile shape) and the same title row with reset-to-default IconButton, repeated 7 times.",
+   "consolidation": "SettingsCard(child) and SettingsTitleRow(title, leading, showReset, onReset) widgets."
+  },
+  {
+   "where": "lib/src/widgets/common/loli_dropdown.dart LoliDropdown vs LoliMultiselectDropdown",
+   "what": "About 90 duplicated lines: the InputDecorator/label/border build, the InkWell overlay, and showDialog with the DraggableScrollableSheet wrapper.",
+   "consolidation": "A shared _DropdownField and showDropdownSheet helper."
+  },
+  {
+   "where": "lib/src/widgets/common/media_loading.dart and thumbnail_loading.dart",
+   "what": "Identical total/received/startedAt ValueNotifier listener plumbing with a Debounce tag per item.",
+   "consolidation": "A ProgressNotifiersMixin (attach/detach, debounced restate)."
+  },
+  {
+   "where": "lib/src/widgets/common/media_loading.dart (shitDevice branch vs normal branch)",
+   "what": "The stopped-state children (reason, details, Restart/Load anyway button) are written twice.",
+   "consolidation": "An extracted _stoppedChildren(context) used by both branches."
+  },
+  {
+   "where": "lib/src/handlers/theme_handler.dart constructor vs setDynamicColors",
+   "what": "Same isDark/primaryIsDark/accentIsDark computation.",
+   "consolidation": "A private _recomputeBrightness() called from both."
+  },
+  {
+   "where": "lib/main.dart MainApp.build vs lib/src/widgets/root/theme_builder.dart",
+   "what": "Resolving the 'Custom' ThemeItem from customPrimaryColor/customAccentColor.",
+   "consolidation": "SettingsHandler.effectiveTheme getter (and delete the dead ThemeBuilder)."
+  },
+  {
+   "where": "mobile_home_page.dart _toggleDrawer, main_appbar.dart _toggleDrawer, main_drawer.dart close (x2)",
+   "what": "Same mainDrawerKey lookup + `is InnerDrawerState` + toggle/close.",
+   "consolidation": "A ShellDrawer.toggle([dir]) / ShellDrawer.close() helper in the app shell."
+  },
+  {
+   "where": "lib/src/widgets/drawers/main_drawer.dart (5 Obx blocks)",
+   "what": "`searchHandler.tabs.isNotEmpty && searchHandler.currentBooruHandler.hasReader` recomputed in each section.",
+   "consolidation": "SearchHandler.isDoujinTab getter; one Obx over the entry list."
+  },
+  {
+   "where": "lib/src/widgets/webview/webview_page.dart isWebviewNavigationAllowed vs isMainFrameNavigationAllowed",
+   "what": "Duplicated cloudflare check and host allow-list loop.",
+   "consolidation": "A shared _hostAllowed(host, allowedHosts, initialUrl) used by both (behaviour unchanged)."
+  },
+  {
+   "where": "lib/src/handlers/service_handler.dart (about 35 methods)",
+   "what": "try { invokeMethod } catch { log; return fallback } boilerplate.",
+   "consolidation": "A generic _invoke<T>(method, args, fallback) helper."
+  },
+  {
+   "where": "desktop_home_page.dart Save button badge vs main_appbar.dart snatcher badge",
+   "what": "The same selected-count circle badge.",
+   "consolidation": "A SelectionCountBadge widget."
+  },
+  {
+   "where": "lib/src/widgets/desktop/desktop_image_listener.dart lines 82-94 vs 110-122",
+   "what": "Two identical GuessExtensionViewer branches.",
+   "consolidation": "Drop the unreachable LoadItemViewer branch and merge into one."
+  }
+ ],
+ "tests": [
+  "test/booru_switcher_domain_test.dart",
+  "test/downloads_check_test.dart",
+  "test/schale_clearance_flow_test.dart",
+  "test/tab_cards_test.dart",
+  "test/doujin_drawer_refresh_test.dart",
+  "test/hidden_status_bar_insets_test.dart",
+  "test/status_bar_inset_test.dart",
+  "test/navigation_trace_test.dart",
+  "test/perf_trace_ui_test.dart",
+  "test/incoming_link_test.dart",
+  "test/modular_ui_test.dart",
+  "test/settings_layout_test.dart",
+  "test/drawer_landscape_test.dart"
+ ]
+}

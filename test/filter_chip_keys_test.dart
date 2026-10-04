@@ -4,31 +4,31 @@ import 'package:flutter/material.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/boorus/shimmie_handler.dart';
-import 'package:lolisnatcher/src/boorus/r34hentai_handler.dart';
-import 'package:lolisnatcher/src/boorus/r34us_handler.dart';
-import 'package:lolisnatcher/src/boorus/worldxyz_handler.dart';
-import 'package:lolisnatcher/src/boorus/sankaku_handler.dart';
-import 'package:lolisnatcher/src/boorus/rule34dev_handler.dart';
-import 'package:lolisnatcher/src/boorus/hanime1_handler.dart';
-import 'package:lolisnatcher/src/boorus/civitai_handler.dart';
-import 'package:lolisnatcher/src/boorus/booru_site_filters.dart';
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
-import 'package:lolisnatcher/src/boorus/booru_on_rails_handler.dart';
-import 'package:lolisnatcher/src/boorus/hydrus_handler.dart';
-import 'package:lolisnatcher/src/boorus/ink_bunny_handler.dart';
-import 'package:lolisnatcher/src/boorus/kusowanka_handler.dart';
-import 'package:lolisnatcher/src/boorus/moebooru_handler.dart';
-import 'package:lolisnatcher/src/boorus/realbooru_handler.dart';
-import 'package:lolisnatcher/src/boorus/redgifs_handler.dart';
-import 'package:lolisnatcher/src/boorus/szurubooru_handler.dart';
-import 'package:lolisnatcher/src/boorus/doujin/doujin_filters.dart';
-import 'package:lolisnatcher/src/boorus/e621_handler.dart';
-import 'package:lolisnatcher/src/boorus/furaffinity_handler.dart';
-import 'package:lolisnatcher/src/boorus/philomena_handler.dart';
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/widgets/preview/main_search_query_editor_page.dart';
+import 'package:lolisnatcher/sources/booru/shimmie_handler.dart';
+import 'package:lolisnatcher/sources/booru/r34hentai_handler.dart';
+import 'package:lolisnatcher/sources/booru/r34us_handler.dart';
+import 'package:lolisnatcher/sources/booru/worldxyz_handler.dart';
+import 'package:lolisnatcher/sources/booru/sankaku_handler.dart';
+import 'package:lolisnatcher/sources/booru/rule34dev_handler.dart';
+import 'package:lolisnatcher/sources/tube/hanime1_handler.dart';
+import 'package:lolisnatcher/sources/booru/civitai_handler.dart';
+import 'package:lolisnatcher/sources/framework/booru_site_filters.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/sources/booru/booru_on_rails_handler.dart';
+import 'package:lolisnatcher/sources/booru/hydrus_handler.dart';
+import 'package:lolisnatcher/sources/booru/ink_bunny_handler.dart';
+import 'package:lolisnatcher/sources/tube/kusowanka_handler.dart';
+import 'package:lolisnatcher/sources/booru/moebooru_handler.dart';
+import 'package:lolisnatcher/sources/booru/realbooru_handler.dart';
+import 'package:lolisnatcher/sources/tube/redgifs_handler.dart';
+import 'package:lolisnatcher/sources/booru/szurubooru_handler.dart';
+import 'package:lolisnatcher/sources/doujin/common/doujin_filters.dart';
+import 'package:lolisnatcher/sources/booru/e621_handler.dart';
+import 'package:lolisnatcher/sources/furaffinity/furaffinity_handler.dart';
+import 'package:lolisnatcher/sources/booru/philomena_handler.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/features/feed/ui/search/main_search_query_editor_page.dart';
 
 /// r45: every declared Filters card builds, one key per chip. danbooru's
 /// parent:/child: groups have a real `none` value next to the site default,

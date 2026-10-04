@@ -3,28 +3,28 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
-import 'package:lolisnatcher/src/boorus/kemono_api.dart';
-import 'package:lolisnatcher/src/boorus/kemono_handler.dart';
-import 'package:lolisnatcher/src/boorus/kemono_query.dart';
-import 'package:lolisnatcher/src/boorus/kemono_tag_catalog.dart';
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/data/booru_item.dart';
-import 'package:lolisnatcher/src/data/kemono_creator.dart';
-import 'package:lolisnatcher/src/data/kemono_post.dart';
-import 'package:lolisnatcher/src/data/site_profile.dart';
-import 'package:lolisnatcher/src/data/site_profiles/kemono_profile.dart';
-import 'package:lolisnatcher/src/data/tag_type.dart';
-import 'package:lolisnatcher/src/handlers/kemono_creator_store.dart';
-import 'package:lolisnatcher/src/handlers/booru_handler_factory.dart';
-import 'package:lolisnatcher/src/services/image_writer.dart';
-import 'package:lolisnatcher/src/handlers/post_files_handler.dart';
-import 'package:lolisnatcher/src/handlers/kemono_file_hosts.dart';
-import 'package:lolisnatcher/src/handlers/kemono_session_handler.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
-import 'package:lolisnatcher/src/pages/kemono_messages_pages.dart';
-import 'package:lolisnatcher/src/widgets/image/custom_network_image.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/sources/kemono/kemono_api.dart';
+import 'package:lolisnatcher/sources/kemono/kemono_handler.dart';
+import 'package:lolisnatcher/sources/kemono/kemono_query.dart';
+import 'package:lolisnatcher/sources/kemono/kemono_tag_catalog.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/models/booru_item.dart';
+import 'package:lolisnatcher/sources/kemono/kemono_creator.dart';
+import 'package:lolisnatcher/sources/kemono/kemono_post.dart';
+import 'package:lolisnatcher/sources/framework/site_profile.dart';
+import 'package:lolisnatcher/sources/kemono/kemono_profile.dart';
+import 'package:lolisnatcher/models/tag_type.dart';
+import 'package:lolisnatcher/sources/kemono/kemono_creator_store.dart';
+import 'package:lolisnatcher/sources/framework/booru_handler_factory.dart';
+import 'package:lolisnatcher/features/downloads/logic/image_writer.dart';
+import 'package:lolisnatcher/sources/framework/post_files_handler.dart';
+import 'package:lolisnatcher/sources/kemono/kemono_file_hosts.dart';
+import 'package:lolisnatcher/sources/kemono/kemono_session_handler.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
+import 'package:lolisnatcher/features/kemono/ui/kemono_messages_pages.dart';
+import 'package:lolisnatcher/core/ui/image/custom_network_image.dart';
 
 /// kemono.cr, against responses captured from the live API on 2026-09-04
 /// (test/fixtures/kemono_*.json).

@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/utils/picker_watch.dart';
+import 'package:lolisnatcher/core/platform/picker_watch.dart';
 
 /// r78: "Try it on a picture" could stop for good. If the picker's answer
 /// never arrived - which is what the app's old result handling could cause -

@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/services/drive_backup.dart';
+import 'package:lolisnatcher/features/backup/logic/drive_backup.dart';
 
 /// r42: linking Google Drive did nothing on the device. Google's consent
 /// worked, then the token exchange failed with "Failed host lookup:

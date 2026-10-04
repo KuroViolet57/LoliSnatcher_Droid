@@ -3,22 +3,22 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
-import 'package:lolisnatcher/src/boorus/kemono_api.dart';
-import 'package:lolisnatcher/src/boorus/kemono_handler.dart';
-import 'package:lolisnatcher/src/boorus/kemono_query.dart';
-import 'package:lolisnatcher/src/boorus/kemono_site.dart';
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/data/booru_item.dart';
-import 'package:lolisnatcher/src/data/kemono_creator.dart';
-import 'package:lolisnatcher/src/data/kemono_post.dart';
-import 'package:lolisnatcher/src/data/site_profile.dart';
-import 'package:lolisnatcher/src/data/site_profiles/kemono_profile.dart';
-import 'package:lolisnatcher/src/handlers/kemono_creator_store.dart';
-import 'package:lolisnatcher/src/handlers/kemono_file_hosts.dart';
-import 'package:lolisnatcher/src/handlers/kemono_session_handler.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/sources/kemono/kemono_api.dart';
+import 'package:lolisnatcher/sources/kemono/kemono_handler.dart';
+import 'package:lolisnatcher/sources/kemono/kemono_query.dart';
+import 'package:lolisnatcher/sources/kemono/kemono_site.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/models/booru_item.dart';
+import 'package:lolisnatcher/sources/kemono/kemono_creator.dart';
+import 'package:lolisnatcher/sources/kemono/kemono_post.dart';
+import 'package:lolisnatcher/sources/framework/site_profile.dart';
+import 'package:lolisnatcher/sources/kemono/kemono_profile.dart';
+import 'package:lolisnatcher/sources/kemono/kemono_creator_store.dart';
+import 'package:lolisnatcher/sources/kemono/kemono_file_hosts.dart';
+import 'package:lolisnatcher/sources/kemono/kemono_session_handler.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
 
 /// pawchive.pw — kemono's archive on the older API — through the same
 /// handler as kemono, with what the site lacks written down in [KemonoSite].

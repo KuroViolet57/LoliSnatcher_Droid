@@ -5,10 +5,10 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-import 'package:lolisnatcher/src/handlers/database_handler.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/services/backup_plan.dart';
-import 'package:lolisnatcher/src/services/db_parts.dart';
+import 'package:lolisnatcher/core/storage/database_handler.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/features/backup/logic/backup_plan.dart';
+import 'package:lolisnatcher/core/storage/db_parts.dart';
 
 /// A backup target in memory, standing in for a folder or a Drive snapshot.
 class _Memory implements BackupTarget {

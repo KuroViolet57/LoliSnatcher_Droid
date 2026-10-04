@@ -1,0 +1,125 @@
+import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
+import 'package:flutter/services.dart';
+
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/features/downloads/logic/snatch_handler.dart';
+import 'package:lolisnatcher/core/platform/get_perms.dart';
+import 'package:lolisnatcher/core/ui/settings_widgets.dart';
+import 'package:lolisnatcher/features/tags/ui/tag_search_query_editor_page.dart';
+
+/// This is the page which allows the user to batch download images
+class SnatcherPage extends StatefulWidget {
+  const SnatcherPage({super.key});
+
+  @override
+  State<SnatcherPage> createState() => _SnatcherPageState();
+}
+
+class _SnatcherPageState extends State<SnatcherPage> {
+  final SearchHandler searchHandler = SearchHandler.instance;
+  final SettingsHandler settingsHandler = SettingsHandler.instance;
+  final SnatchHandler snatchHandler = SnatchHandler.instance;
+
+  final snatcherTagsController = TextEditingController();
+  final snatcherAmountController = TextEditingController();
+  final snatcherSleepController = TextEditingController();
+
+  late Booru selectedBooru;
+
+  @override
+  void initState() {
+    super.initState();
+    setPermissions();
+    //If the user has searched tags on the main window they will be loaded into the tags field
+    snatcherTagsController.text = searchHandler.currentTab.tags;
+    snatcherAmountController.text = settingsHandler.itemLimit.toString();
+    selectedBooru = searchHandler.currentBooru;
+    snatcherSleepController.text = settingsHandler.snatchCooldown.toString();
+  }
+
+  @override
+  void dispose() {
+    snatcherTagsController.dispose();
+    snatcherAmountController.dispose();
+    snatcherSleepController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: SettingsAppBar(title: context.loc.snatcher.title),
+      resizeToAvoidBottomInset: true,
+      body: Center(
+        child: ListView(
+          children: [
+            TagSearchBox(
+              controller: snatcherTagsController,
+              title: context.loc.tags,
+              hintText: context.loc.snatcher.enterTags,
+              booru: selectedBooru,
+              allowMultipleTags: true,
+              clearable: true,
+            ),
+            SettingsTextInput(
+              controller: snatcherAmountController,
+              title: context.loc.snatcher.amount,
+              hintText: context.loc.snatcher.amountOfFilesToSnatch,
+              inputType: TextInputType.number,
+              inputFormatters: <TextInputFormatter>[FilteringTextInputFormatter.digitsOnly],
+              resetText: () => 10.toString(),
+              numberButtons: true,
+              numberStep: 10,
+              numberMin: 10,
+              numberMax: double.infinity,
+            ),
+            SettingsTextInput(
+              controller: snatcherSleepController,
+              title: context.loc.snatcher.delayInMs,
+              hintText: context.loc.snatcher.delayBetweenEachDownload,
+              inputType: TextInputType.number,
+              inputFormatters: <TextInputFormatter>[FilteringTextInputFormatter.digitsOnly],
+              resetText: () => settingsHandler.snatchCooldown.toString(),
+              numberButtons: true,
+              numberStep: 50,
+              numberMin: 100,
+              numberMax: double.infinity,
+            ),
+            SettingsBooruDropdown(
+              value: selectedBooru,
+              onChanged: (Booru? newValue) {
+                setState(() {
+                  selectedBooru = newValue!;
+                });
+              },
+              title: context.loc.booru,
+            ),
+            const SettingsButton(name: '', enabled: false),
+            SettingsButton(
+              name: context.loc.snatcher.snatchFiles,
+              icon: const Icon(Symbols.download_rounded),
+              action: () {
+                if (snatcherSleepController.text.isEmpty) {
+                  snatcherSleepController.text = 0.toString();
+                }
+
+                snatchHandler.searchSnatch(
+                  snatcherTagsController.text,
+                  snatcherAmountController.text,
+                  int.parse(snatcherSleepController.text),
+                  selectedBooru,
+                );
+
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

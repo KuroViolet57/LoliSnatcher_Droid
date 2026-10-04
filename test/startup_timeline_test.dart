@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/utils/startup_timeline.dart';
+import 'package:lolisnatcher/core/logging/startup_timeline.dart';
 
 void main() {
   late int now;

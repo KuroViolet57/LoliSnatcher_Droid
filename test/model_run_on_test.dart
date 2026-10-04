@@ -5,16 +5,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_onnxruntime/flutter_onnxruntime.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/data/model_tasks.dart';
-import 'package:lolisnatcher/src/handlers/recommender/model_timings.dart';
-import 'package:lolisnatcher/src/handlers/recommender/onnx_embedding_runner.dart';
-import 'package:lolisnatcher/src/handlers/recommender/onnx_look_runner.dart';
-import 'package:lolisnatcher/src/handlers/recommender/onnx_options.dart';
-import 'package:lolisnatcher/src/handlers/recommender/onnx_tag_runner.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/handlers/recommender/onnx_availability.dart';
-import 'package:lolisnatcher/src/pages/settings/model_page.dart';
-import 'package:lolisnatcher/src/pages/settings/models_page.dart';
+import 'package:lolisnatcher/features/recommender/logic/model_tasks.dart';
+import 'package:lolisnatcher/features/recommender/logic/ml/model_timings.dart';
+import 'package:lolisnatcher/features/recommender/logic/onnx/onnx_embedding_runner.dart';
+import 'package:lolisnatcher/features/recommender/logic/onnx/onnx_look_runner.dart';
+import 'package:lolisnatcher/features/recommender/logic/onnx/onnx_options.dart';
+import 'package:lolisnatcher/features/recommender/logic/onnx/onnx_tag_runner.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/features/recommender/logic/onnx/onnx_availability.dart';
+import 'package:lolisnatcher/features/recommender/ui/model_page.dart';
+import 'package:lolisnatcher/features/recommender/ui/models_page.dart';
 
 /// r86: Settings → Recommendations → Models → "Run on", per model: the CPU
 /// (ONNX Runtime's own code, as before), XNNPACK or NNAPI - the three the

@@ -2,8 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/data/settings/gallery_button.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/models/settings/gallery_button.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
 
 /// r61: the linked media button used to be the share button wearing a
 /// different hat, so turning the share button off in Settings → Viewer →

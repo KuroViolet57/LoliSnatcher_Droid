@@ -4,23 +4,23 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/boorus/booru_on_rails_handler.dart';
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
-import 'package:lolisnatcher/src/boorus/doujin/doujin_filters.dart';
-import 'package:lolisnatcher/src/boorus/e621_handler.dart';
-import 'package:lolisnatcher/src/boorus/hydrus_handler.dart';
-import 'package:lolisnatcher/src/boorus/ink_bunny_handler.dart';
-import 'package:lolisnatcher/src/boorus/kusowanka_handler.dart';
-import 'package:lolisnatcher/src/boorus/moebooru_handler.dart';
-import 'package:lolisnatcher/src/boorus/philomena_handler.dart';
-import 'package:lolisnatcher/src/boorus/realbooru_handler.dart';
-import 'package:lolisnatcher/src/boorus/redgifs_handler.dart';
-import 'package:lolisnatcher/src/boorus/szurubooru_handler.dart';
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/data/comment_item.dart';
-import 'package:lolisnatcher/src/data/meta_tag.dart';
-import 'package:lolisnatcher/src/data/note_item.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/sources/booru/booru_on_rails_handler.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/sources/doujin/common/doujin_filters.dart';
+import 'package:lolisnatcher/sources/booru/e621_handler.dart';
+import 'package:lolisnatcher/sources/booru/hydrus_handler.dart';
+import 'package:lolisnatcher/sources/booru/ink_bunny_handler.dart';
+import 'package:lolisnatcher/sources/tube/kusowanka_handler.dart';
+import 'package:lolisnatcher/sources/booru/moebooru_handler.dart';
+import 'package:lolisnatcher/sources/booru/philomena_handler.dart';
+import 'package:lolisnatcher/sources/booru/realbooru_handler.dart';
+import 'package:lolisnatcher/sources/tube/redgifs_handler.dart';
+import 'package:lolisnatcher/sources/booru/szurubooru_handler.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/models/comment_item.dart';
+import 'package:lolisnatcher/models/meta_tag.dart';
+import 'package:lolisnatcher/models/note_item.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
 
 /// r71 booru parity sweep: the thin booru sources get the base features of
 /// their family (metatags and filter chips, comments, notes) plus what each

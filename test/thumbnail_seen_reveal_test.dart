@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/data/modular_ui.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/widgets/thumbnail/thumbnail_reveal.dart';
+import 'package:lolisnatcher/core/settings/modular_ui.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/features/feed/logic/thumbnail_reveal.dart';
 
 /// r56: every grid thumbnail waited 200 ms before loading and then faded in
 /// over 300 ms, even when the picture was already in memory; in the profiling

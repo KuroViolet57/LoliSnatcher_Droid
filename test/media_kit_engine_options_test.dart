@@ -3,10 +3,10 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
-import 'package:lolisnatcher/src/data/settings/mpv_hardware_decoding.dart';
-import 'package:lolisnatcher/src/data/settings/mpv_video_output.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/widgets/video/media_kit_engine_options.dart';
+import 'package:lolisnatcher/models/settings/mpv_hardware_decoding.dart';
+import 'package:lolisnatcher/models/settings/mpv_video_output.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/features/video/logic/media_kit_engine_options.dart';
 
 /// The experimental media_kit gallery pool used to ignore Settings → Video
 /// hwdec/vo (those only hit the Chewie plugin path). These options are what

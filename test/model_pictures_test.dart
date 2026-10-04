@@ -4,11 +4,11 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 
-import 'package:lolisnatcher/src/data/model_tasks.dart';
-import 'package:lolisnatcher/src/handlers/recommender/image_tagger_handler.dart';
-import 'package:lolisnatcher/src/handlers/recommender/look_model_handler.dart';
-import 'package:lolisnatcher/src/handlers/recommender/model_pictures.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/features/recommender/logic/model_tasks.dart';
+import 'package:lolisnatcher/features/recommender/logic/ml/image_tagger_handler.dart';
+import 'package:lolisnatcher/features/recommender/logic/ml/look_model_handler.dart';
+import 'package:lolisnatcher/features/recommender/logic/ml/model_pictures.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
 
 /// r86: pictures for the models are decoded by the phone (Flutter's engine,
 /// Android's own decoders), shrunk while decoding to twice what the model

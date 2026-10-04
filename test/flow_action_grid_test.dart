@@ -4,9 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
-import 'package:lolisnatcher/src/data/modular_ui.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/widgets/gallery/flow_action_grid.dart';
+import 'package:lolisnatcher/core/settings/modular_ui.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/features/viewer/ui/info/flow_action_grid.dart';
 
 /// r79: in a post's info sheet, "Find this post elsewhere", "Find posts like
 /// this (new board)", Comments, "Posts like this" and "Recommend more like

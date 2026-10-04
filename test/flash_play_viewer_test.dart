@@ -5,15 +5,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lolisnatcher/gen/strings.g.dart';
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
-import 'package:lolisnatcher/src/boorus/furaffinity_handler.dart';
-import 'package:lolisnatcher/src/boorus/furaffinity_parser.dart';
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/data/booru_item.dart';
-import 'package:lolisnatcher/src/data/tag.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/pages/flash_player_page.dart';
-import 'package:lolisnatcher/src/widgets/video/flash_play_viewer.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/sources/furaffinity/furaffinity_handler.dart';
+import 'package:lolisnatcher/sources/furaffinity/furaffinity_parser.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/models/booru_item.dart';
+import 'package:lolisnatcher/models/tag.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/features/viewer/ui/flash_player_page.dart';
+import 'package:lolisnatcher/features/viewer/ui/media/flash_play_viewer.dart';
 
 /// r48: a Flash post in the viewer is its thumbnail and a Play button. Before,
 /// the viewer loaded the post ("Loading item data"), then tried to guess a

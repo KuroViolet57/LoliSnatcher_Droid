@@ -1,0 +1,1663 @@
+import 'dart:async';
+import 'dart:io';
+import 'dart:math';
+
+import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
+import 'package:flutter/services.dart';
+
+import 'package:dio/dio.dart';
+import 'package:external_video_player_launcher/external_video_player_launcher.dart';
+import 'package:get/get.dart';
+import 'package:preload_page_view/preload_page_view.dart';
+import 'package:url_launcher/url_launcher_string.dart';
+
+import 'package:lolisnatcher/sources/framework/linked_media.dart';
+import 'package:lolisnatcher/features/links/ui/linked_media_sheet.dart';
+import 'package:lolisnatcher/features/viewer/ui/flash_player_page.dart';
+import 'package:lolisnatcher/features/furaffinity/ui/furaffinity_post_page.dart';
+import 'package:lolisnatcher/sources/furaffinity/furaffinity_handler.dart';
+import 'package:lolisnatcher/sources/booru/hydrus_handler.dart';
+import 'package:lolisnatcher/sources/kemono/kemono_handler.dart';
+import 'package:lolisnatcher/models/settings/gallery_button.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/models/booru_item.dart';
+import 'package:lolisnatcher/models/tag.dart';
+import 'package:lolisnatcher/models/tag_type.dart';
+import 'package:lolisnatcher/features/feed/logic/floating_preview_handler.dart';
+import 'package:lolisnatcher/core/storage/database_handler.dart';
+import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
+import 'package:lolisnatcher/core/platform/service_handler.dart';
+import 'package:lolisnatcher/features/doujin/logic/doujin_data_handler.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/sources/framework/post_files_handler.dart';
+import 'package:lolisnatcher/sources/framework/reader_handler.dart';
+import 'package:lolisnatcher/sources/framework/site_profile.dart';
+import 'package:lolisnatcher/features/doujin/ui/reader/doujin_reader_page.dart';
+import 'package:lolisnatcher/features/kemono/ui/kemono_post_page.dart';
+import 'package:lolisnatcher/features/viewer/ui/post_files_page.dart';
+import 'package:lolisnatcher/features/recommender/logic/recommender_handler.dart';
+import 'package:lolisnatcher/features/downloads/logic/snatch_handler.dart';
+import 'package:lolisnatcher/core/storage/tag_handler.dart';
+import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
+import 'package:lolisnatcher/core/platform/get_perms.dart';
+import 'package:lolisnatcher/features/downloads/logic/image_writer.dart';
+import 'package:lolisnatcher/core/network/dio_network.dart';
+import 'package:lolisnatcher/core/logging/navigation_trace.dart';
+import 'package:lolisnatcher/core/utils/timed_progress_controller.dart';
+import 'package:lolisnatcher/core/utils/tools.dart';
+import 'package:lolisnatcher/core/ui/progress/animated_progress_indicator.dart';
+import 'package:lolisnatcher/core/ui/flash_elements.dart';
+import 'package:lolisnatcher/core/ui/loli_dropdown.dart';
+import 'package:lolisnatcher/core/ui/progress/restartable_progress_indicator.dart';
+import 'package:lolisnatcher/core/ui/settings_widgets.dart';
+import 'package:lolisnatcher/features/viewer/ui/chrome/image_search_dialog.dart';
+import 'package:lolisnatcher/features/downloads/ui/snatched_status_icon.dart';
+import 'package:lolisnatcher/features/viewer/ui/chrome/toolbar_action.dart';
+import 'package:lolisnatcher/features/feed/ui/thumbnail/thumbnail_build.dart';
+
+// TODO decouple share and autoscroll stuff into separate widgets
+
+class HideableAppBar extends StatefulWidget implements PreferredSizeWidget {
+  const HideableAppBar({
+    required this.tab,
+    required this.pageController,
+    this.canSelect = true,
+    this.readOnly = false,
+    this.onOpenDrawer,
+    super.key,
+  });
+
+  final SearchTab tab;
+  final PreloadPageController pageController;
+  final bool canSelect;
+  final bool readOnly;
+  final VoidCallback? onOpenDrawer;
+
+  double get defaultHeight => kToolbarHeight; // 56
+
+  @override
+  Size get preferredSize => Size.fromHeight(defaultHeight);
+
+  @override
+  State<HideableAppBar> createState() => _HideableAppBarState();
+}
+
+class _HideableAppBarState extends State<HideableAppBar> {
+  final SettingsHandler settingsHandler = SettingsHandler.instance;
+  final SnatchHandler snatchHandler = SnatchHandler.instance;
+  final ViewerHandler viewerHandler = ViewerHandler.instance;
+
+  final ValueNotifier<int> page = ValueNotifier(0);
+
+  ImageWriter imageWriter = ImageWriter();
+
+  BooruItem? sharedItem;
+  double shareProgress = 0;
+  int shareProgressLastTick = 0;
+  CancelToken? shareCancelToken;
+  bool isOnTop = true;
+
+  ////////// Auto Scroll Stuff ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  ///
+  ///
+  ///
+
+  bool autoScroll = false;
+  Timer? autoScrollTimer;
+  TimedProgressController? autoScrollProgressController;
+
+  // Dwell for the current slide: a longer time for video / GIF slides so they
+  // get to play, the normal time for still images.
+  Duration _dwellForCurrent() {
+    int ms = settingsHandler.galleryAutoScrollTime;
+    final int index = page.value;
+    if (index >= 0 && index < widget.tab.booruHandler.filteredFetched.length) {
+      final mediaType = widget.tab.booruHandler.filteredFetched[index].mediaType.value;
+      if (!mediaType.isImage) {
+        // videos + animations (gif/webp/mp4...) get the longer dwell
+        ms = settingsHandler.galleryAutoScrollVideoTime;
+      }
+    }
+    return Duration(milliseconds: ms);
+  }
+
+  // Self-rescheduling one-shot timer (not periodic), so each slide can dwell
+  // for a duration that depends on whether it's a still image or a video/GIF.
+  void setScrollTimer() {
+    final Duration dwell = _dwellForCurrent();
+    autoScrollProgressController?.restartWith(dwell);
+    autoScrollTimer?.cancel();
+    autoScrollTimer = Timer(dwell, () {
+      if (!autoScroll) return;
+      scrollToNextPage();
+      // scrollToNextPage may turn autoScroll off at the last page.
+      if (autoScroll) setScrollTimer();
+    });
+  }
+
+  void unsetScrollTimer() {
+    autoScrollTimer?.cancel();
+    autoScrollProgressController?.stop();
+  }
+
+  void autoScrollState(bool newState) {
+    final bool isNotLastPage = (page.value + 1) < widget.tab.booruHandler.filteredFetched.length;
+    if (autoScroll != newState) {
+      if (isNotLastPage) {
+        setState(() {
+          autoScroll = newState;
+        });
+        newState ? setScrollTimer() : unsetScrollTimer();
+      } else {
+        if (newState == true) {
+          FlashElements.showSnackbar(
+            context: context,
+            title: Text(context.loc.viewer.appBar.cantStartSlideshow, style: const TextStyle(fontSize: 20)),
+            content: Text(context.loc.viewer.appBar.reachedLastLoadedItem, style: const TextStyle(fontSize: 16)),
+            leadingIcon: Symbols.warning_amber_rounded,
+            leadingIconColor: Colors.red,
+            sideColor: Colors.red,
+          );
+        }
+        setState(() {
+          autoScroll = false;
+        });
+        unsetScrollTimer();
+      }
+    }
+  }
+
+  void pageListener() {
+    page.value = widget.pageController.page?.round() ?? 0;
+    if (autoScroll) {
+      if (autoScrollTimer?.isActive == true) {
+        // reset slideshow timer if user scrolled earlier
+        // TODO bug: progress animation lags for a few frames when scroll is automatic
+        unsetScrollTimer();
+        setScrollTimer();
+      }
+    }
+  }
+
+  void scrollToNextPage() {
+    // Slideshow advances through every media type; videos / GIFs simply get a
+    // longer dwell (see [_dwellForCurrent]) so they have time to play.
+    final int viewedIndex = page.value;
+    if (viewedIndex < (widget.tab.booruHandler.filteredFetched.length - 1)) {
+      if (autoScroll) {
+        widget.pageController.jumpToPage(viewedIndex + 1);
+      }
+    } else {
+      autoScrollState(false);
+    }
+  }
+
+  ////////// Auto Scroll Stuff END ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  ///
+  ///
+  ///
+  ////////// Toolbar Stuff ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+  List<Widget> getActions() {
+    final disabled = [...settingsHandler.disabledButtons];
+    final filteredButtonOrder = settingsHandler.buttonOrder.where((button) {
+      if (page.value == -1 || page.value >= widget.tab.booruHandler.filteredFetched.length) {
+        return false;
+      }
+
+      if (button.isInfo) {
+        // Info button should always be available (if onOpenDrawer is present)
+        return widget.onOpenDrawer != null;
+      }
+
+      if (disabled.contains(button)) {
+        return false;
+      }
+
+      final item = widget.tab.booruHandler.filteredFetched[page.value];
+      final bool isImage = item.mediaType.value.isImageOrAnimation;
+      final bool isVideo = item.mediaType.value.isVideo;
+
+      switch (button) {
+        case .snatch:
+          return !widget.readOnly;
+        case .favourite:
+          return settingsHandler.dbEnabled && !widget.readOnly;
+        case .reloadnoscale:
+          return isImage && !settingsHandler.disableImageScaling;
+        case .toggleQuality:
+          return isImage && item.sampleURL != item.fileURL;
+        case .select:
+          return widget.canSelect;
+        case .externalPlayer:
+          return isVideo && Platform.isAndroid;
+        case .imageSearch:
+          return isImage;
+        case .notInterested:
+          // r34: only where the item was recommended.
+          return widget.tab.booruHandler.booru.type?.isRecommendationFeed == true && !widget.readOnly;
+
+        //
+
+        case .linkedMedia:
+          // r61: a button of its own - it used to take the share button's
+          // place, so switching share off took the links away with it.
+          return LinkedMediaButton.offerFor(item);
+        case .share:
+        case .info:
+        case .open:
+        case .autoscroll:
+          return true;
+      }
+    }).toList();
+
+    final List<Widget> actions = [];
+    List<GalleryButton> overFlowList = [];
+    List<GalleryButton> buttonList = [];
+    // at least first 4 buttons will show on toolbar
+    final int listSplit = max(4, (MediaQuery.sizeOf(context).width / 100).floor());
+    if (listSplit < filteredButtonOrder.length) {
+      overFlowList = filteredButtonOrder.sublist(listSplit);
+      buttonList = filteredButtonOrder.sublist(0, listSplit);
+    } else {
+      buttonList = filteredButtonOrder;
+    }
+    for (final button in buttonList) {
+      actions.add(
+        ToolbarAction(
+          key: ValueKey(button.name),
+          icon: buttonIcon(button),
+          subIcon: buttonSubicon(button),
+          onTap: buttonClick(button),
+          onLongTap: buttonHold(button),
+          stackWidget: buttonStackWidget(button),
+          tooltip: buttonText(button),
+        ),
+      );
+    }
+
+    // Doujin sources: the post is a BOOK — its pages arrive with loadItem
+    // (see ReaderHandler), and this opens the reader on them.
+    actions.add(
+      Obx(() {
+        final BooruItem? item = page.value >= 0 && page.value < widget.tab.booruHandler.filteredFetched.length
+            ? widget.tab.booruHandler.filteredFetched[page.value]
+            : null;
+        final readerHandler = ReaderHandler.instance;
+        if (item == null || !widget.tab.booruHandler.hasReader || !readerHandler.hasBook(item)) {
+          return const SizedBox.shrink();
+        }
+        final int pageCount = readerHandler.pagesFor(item)!.length;
+        return ToolbarAction(
+          key: const ValueKey('doujin-reader'),
+          icon: const Icon(Symbols.menu_book_rounded),
+          tooltip: 'Read · $pageCount pages',
+          onTap: () => openDoujinReader(
+            context,
+            item: item,
+            booru: widget.tab.booruHandler.booru,
+          ),
+        );
+      }),
+    );
+
+    // Gallery posts: some sites hold several files behind one post, and the
+    // API only ever describes the cover. The file list is fetched lazily when
+    // a post is opened (see PostFilesHandler), so this action appears as soon
+    // as we know there is more than one file — and never otherwise.
+    actions.add(
+      Obx(() {
+        final BooruItem? item = page.value >= 0 && page.value < widget.tab.booruHandler.filteredFetched.length
+            ? widget.tab.booruHandler.filteredFetched[page.value]
+            : null;
+        final filesHandler = PostFilesHandler.instance;
+        if (item == null || !filesHandler.hasMultiple(item)) {
+          return const SizedBox.shrink();
+        }
+        final List<PostFile> files = filesHandler.cached(item)!;
+        return ToolbarAction(
+          key: const ValueKey('post-files'),
+          icon: const Icon(Symbols.burst_mode_rounded),
+          tooltip: '${files.length} files in this post',
+          onTap: () => openPostFilesOverlay(
+            context,
+            items: filesHandler.itemsFor(item, files),
+            booru: widget.tab.booruHandler.booru,
+          ),
+        );
+      }),
+    );
+
+    // FurAffinity (r42b): a Flash submission plays through Ruffle.
+    if (widget.tab.booruHandler is FurAffinityHandler) {
+      actions.add(
+        Obx(() {
+          final BooruItem? item = page.value >= 0 && page.value < widget.tab.booruHandler.filteredFetched.length
+              ? widget.tab.booruHandler.filteredFetched[page.value]
+              : null;
+          if (item == null || !FlashPlayerPage.isFlash(item)) return const SizedBox.shrink();
+          return ToolbarAction(
+            key: const ValueKey('furaffinity-flash'),
+            icon: const Icon(Symbols.play_circle_rounded),
+            tooltip: 'Play Flash',
+            onTap: () => FlashPlayerPage.openFor(context, widget.tab.booruHandler, item),
+          );
+        }),
+      );
+    }
+
+    // FurAffinity (r42): the submission page — description, gallery around
+    // it, folders, keywords, comments.
+    if (widget.tab.booruHandler is FurAffinityHandler) {
+      actions.add(
+        Obx(() {
+          final BooruItem? item = page.value >= 0 && page.value < widget.tab.booruHandler.filteredFetched.length
+              ? widget.tab.booruHandler.filteredFetched[page.value]
+              : null;
+          if (item == null) return const SizedBox.shrink();
+          return ToolbarAction(
+            key: const ValueKey('furaffinity-post'),
+            icon: const Icon(Symbols.article_rounded),
+            tooltip: 'Post page',
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => FurAffinityPostPage(booru: widget.tab.booruHandler.booru, item: item)),
+            ),
+          );
+        }),
+      );
+    }
+
+    // kemono: the post page — content, every file with its name, comments.
+    if (widget.tab.booruHandler is KemonoHandler) {
+      actions.add(
+        Obx(() {
+          final BooruItem? item = page.value >= 0 && page.value < widget.tab.booruHandler.filteredFetched.length
+              ? widget.tab.booruHandler.filteredFetched[page.value]
+              : null;
+          if (item == null) return const SizedBox.shrink();
+          return ToolbarAction(
+            key: const ValueKey('kemono-post'),
+            icon: const Icon(Symbols.article_rounded),
+            tooltip: 'Post page',
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => KemonoPostPage(booru: widget.tab.booruHandler.booru, item: item)),
+            ),
+          );
+        }),
+      );
+    }
+
+    // Debug - print current item info
+    // actions.add(IconButton(
+    //   icon: Icon(Symbols.developer_board_rounded),
+    //   color: Colors.white,
+    //   onPressed: () {
+    //     print(searchHandler.viewedItem.value.toJSON().toString());
+    //   },
+    // ));
+
+    // all buttons after that will be in overflow menu
+    if (overFlowList.isNotEmpty) {
+      final bool isAutoscrollOverflowed = overFlowList.indexWhere((btn) => btn.isAutoscroll) != -1;
+      final bool isSelectOverflowed = overFlowList.indexWhere((btn) => btn.isSelect) != -1;
+
+      final bool isSelected = widget.tab.selected.contains(
+        widget.tab.booruHandler.filteredFetched[page.value],
+      );
+
+      actions.add(
+        PopupMenuButton(
+          icon: Stack(
+            alignment: Alignment.center,
+            children: [
+              if (autoScroll && isAutoscrollOverflowed)
+                RestartableProgressIndicator(
+                  controller: autoScrollProgressController!,
+                ),
+              Row(
+                children: [
+                  if (isSelected && isSelectOverflowed)
+                    const Icon(
+                      Symbols.check_box_rounded,
+                      color: Colors.white,
+                      size: 18,
+                    ),
+                  const Icon(
+                    Symbols.more_vert_rounded,
+                    color: Colors.white,
+                  ),
+                ],
+              ),
+            ],
+          ),
+          color: Theme.of(context).colorScheme.surface,
+          itemBuilder: (BuildContext itemBuilder) => overFlowList.map(
+            (button) {
+              return PopupMenuItem(
+                padding: EdgeInsets.zero,
+                value: button,
+                child: SizedBox(
+                  width: double.infinity, // force button to take full width
+                  child: ListTile(
+                    onLongPress: buttonHold(button),
+                    onTap: () async {
+                      Navigator.of(context).pop(); // remove overflow menu
+                      await buttonClick(button)?.call();
+                    },
+                    leading: ToolbarAction(
+                      key: ValueKey(button.name),
+                      icon: buttonIcon(button),
+                      subIcon: buttonSubicon(button),
+                      stackWidget: buttonStackWidget(button),
+                    ),
+                    title: Text(buttonText(button)),
+                  ),
+                ),
+              );
+            },
+          ).toList(),
+        ),
+      );
+    }
+    return actions;
+  }
+
+  Widget buttonIcon(GalleryButton button) {
+    late IconData icon;
+
+    final item = widget.tab.booruHandler.filteredFetched[page.value];
+
+    switch (button) {
+      case .info:
+        icon = Symbols.info_rounded;
+        break;
+      case .open:
+        icon = Symbols.public_rounded;
+        break;
+      case .autoscroll:
+        icon = autoScroll ? Symbols.pause_rounded : Symbols.play_arrow_rounded;
+        break;
+      case .snatch:
+        icon = Symbols.save_rounded;
+        break;
+      case .notInterested:
+        icon = Symbols.thumb_down_rounded;
+        break;
+      case .favourite:
+        // icon = isFav == true ? Symbols.favorite_rounded : Symbols.favorite_border_rounded;
+        // early return to override with animated icon
+        return Obx(() {
+          if (page.value == -1 || widget.tab.booruHandler.filteredFetched.isEmpty) {
+            return const Icon(CupertinoIcons.heart_slash);
+          }
+
+          final bool? isFav = item.isFavourite.value;
+          // Material Symbols renders the same outline glyph for both states —
+          // the favourited state needs fill: 1 (variable font axis) + the
+          // accent tint to actually light up.
+          return AnimatedCrossFade(
+            duration: const Duration(milliseconds: 200),
+            crossFadeState: isFav == true ? CrossFadeState.showFirst : CrossFadeState.showSecond,
+            firstChild: const Icon(
+              Symbols.favorite_rounded,
+              fill: 1,
+              color: Color(0xFFF0708A),
+            ),
+            secondChild: Icon(
+              isFav == false ? Symbols.favorite_rounded : CupertinoIcons.heart_slash,
+            ),
+          );
+        });
+      case .share:
+        icon = Symbols.share_rounded;
+        break;
+      case .linkedMedia:
+        icon = Symbols.link_rounded;
+        break;
+      case .select:
+        return Obx(() {
+          final int selectedIndex = widget.tab.selected.indexOf(item);
+          final bool isSelected = selectedIndex != -1;
+
+          // early return to override custom widget
+          return Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                height: 24,
+                constraints: const BoxConstraints(
+                  minWidth: 20,
+                  minHeight: 24,
+                  maxHeight: 24,
+                ),
+                alignment: Alignment.center,
+                child: Center(
+                  child: isSelected
+                      ? Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 2),
+                          constraints: const BoxConstraints(
+                            minWidth: 20,
+                            maxHeight: 20,
+                          ),
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.secondary,
+                            borderRadius: const BorderRadius.all(Radius.circular(4)),
+                          ),
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 20),
+                            child: FittedBox(
+                              fit: BoxFit.contain,
+                              child: Text(
+                                (selectedIndex + 1).toString(),
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Theme.of(context).colorScheme.onSecondary,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ),
+                        )
+                      : const Icon(
+                          Symbols.check_box_outline_blank_rounded,
+                          size: 24,
+                        ),
+                ),
+              ),
+            ],
+          );
+        });
+      case .reloadnoscale:
+        icon = Symbols.refresh_rounded;
+        break;
+      case .toggleQuality:
+        final bool isHq = settingsHandler.galleryMode.isFullRes ? !item.toggleQuality.value : item.toggleQuality.value;
+        icon = isHq ? Symbols.high_quality_rounded : Symbols.high_quality_rounded;
+      case .externalPlayer:
+        icon = Symbols.exit_to_app_rounded;
+        break;
+      case .imageSearch:
+        icon = Symbols.image_search_rounded;
+        break;
+    }
+    return Icon(icon);
+  }
+
+  Widget buttonSubicon(GalleryButton button) {
+    final item = widget.tab.booruHandler.filteredFetched[page.value];
+
+    switch (button) {
+      case .snatch:
+        return Obx(() {
+          if (page.value == -1 || widget.tab.booruHandler.filteredFetched.isEmpty) {
+            return const SizedBox.shrink();
+          }
+
+          final booru = widget.tab.booruHandler.booru;
+
+          final bool isSnatched = item.isSnatched.value == true;
+          if (!isSnatched) {
+            return const SizedBox.shrink();
+          } else {
+            return Positioned(
+              right: 2,
+              bottom: 5,
+              child: SnatchedStatusIcon(item: item, booru: booru),
+            );
+          }
+        });
+
+      default:
+        return const SizedBox.shrink();
+    }
+  }
+
+  Widget? buttonStackWidget(GalleryButton button) {
+    switch (button) {
+      case .snatch:
+        if (page.value == -1 || widget.tab.booruHandler.filteredFetched.isEmpty) {
+          return null;
+        }
+
+        final item = widget.tab.booruHandler.filteredFetched[page.value];
+        return Obx(() {
+          final bool isBeingSnatched =
+              snatchHandler.current.value?.booruItems[snatchHandler.queueProgress.value] == item &&
+              snatchHandler.total.value != 0;
+
+          if (!isBeingSnatched) {
+            return const SizedBox.shrink();
+          }
+
+          return Padding(
+            padding: const EdgeInsets.all(2),
+            child: Obx(
+              () => AnimatedProgressIndicator(
+                value: snatchHandler.currentProgress,
+                animationDuration: const Duration(milliseconds: 50),
+                indicatorStyle: IndicatorStyle.circular,
+                valueColor: Theme.of(context).progressIndicatorTheme.color?.withValues(alpha: 0.66),
+                minHeight: 4,
+              ),
+            ),
+          );
+        });
+      case .autoscroll:
+        if (autoScroll) {
+          return RestartableProgressIndicator(
+            controller: autoScrollProgressController!,
+          );
+        }
+        break;
+      case .linkedMedia:
+        // Nothing stacked on it: the link button has no progress to show.
+        return null;
+      case .share:
+        if (sharedItem != null && shareProgress != 0) {
+          return AnimatedProgressIndicator(
+            value: shareProgress,
+            animationDuration: const Duration(milliseconds: 50),
+            indicatorStyle: IndicatorStyle.circular,
+            valueColor: Theme.of(context).progressIndicatorTheme.color?.withValues(alpha: 0.66),
+            minHeight: 4,
+          );
+        }
+        break;
+
+      //
+
+      case .favourite:
+      case .info:
+      case .select:
+      case .open:
+      case .reloadnoscale:
+      case .toggleQuality:
+      case .externalPlayer:
+      case .imageSearch:
+      case .notInterested:
+        break;
+    }
+    return null;
+  }
+
+  String buttonText(GalleryButton button) {
+    final String defaultLabel = button.locName;
+    late String label;
+
+    if (page.value == -1) {
+      return defaultLabel;
+    }
+
+    final item = widget.tab.booruHandler.filteredFetched[page.value];
+
+    switch (button) {
+      case .autoscroll:
+        label = '${autoScroll ? context.loc.viewer.appBar.pause : context.loc.viewer.appBar.start} $defaultLabel';
+        break;
+      case .favourite:
+        label = item.isFavourite.value == true ? context.loc.viewer.appBar.unfavourite : defaultLabel;
+        break;
+      case .select:
+        final bool isSelected = widget.tab.selected.contains(item);
+        label = isSelected ? context.loc.viewer.appBar.deselect : defaultLabel;
+        break;
+      case .reloadnoscale:
+        label = item.isNoScale.value ? context.loc.viewer.appBar.reloadWithScaling : defaultLabel;
+        break;
+      case .toggleQuality:
+        final bool isHq = settingsHandler.galleryMode.isFullRes ? !item.toggleQuality.value : item.toggleQuality.value;
+        label = isHq ? context.loc.viewer.appBar.loadSampleQuality : context.loc.viewer.appBar.loadHighQuality;
+        break;
+      default:
+        // use default text
+        label = defaultLabel;
+        break;
+    }
+    return label;
+  }
+
+  AsyncCallback? buttonClick(GalleryButton button) {
+    final item = widget.tab.booruHandler.filteredFetched[page.value];
+
+    switch (button) {
+      case .info:
+        return () async => widget.onOpenDrawer?.call();
+      case .open:
+        return () async {
+          // url to html encoded
+          final String url = Uri.encodeFull(LinkedMediaResolver.browserAddress(item.postURL));
+          unawaited(
+            launchUrlString(
+              url,
+              mode: LaunchMode.externalApplication,
+            ),
+          );
+        };
+      case .autoscroll:
+        return () async => autoScrollState(!autoScroll);
+      case .snatch:
+        return () async {
+          if (!await setPermissions()) return;
+
+          // call a function to save the currently viewed image when the save button is pressed
+          snatchHandler.queue(
+            [item],
+            widget.tab.booruHandler.booru,
+            settingsHandler.snatchCooldown,
+            false,
+          );
+          if (settingsHandler.favouriteOnSnatch) {
+            await widget.tab.toggleItemFavourite(
+              page.value,
+              forcedValue: true,
+              skipSnatching: true,
+            );
+          }
+          setState(() {});
+        };
+      case .favourite:
+        return () async {
+          await widget.tab.toggleItemFavourite(page.value);
+          setState(() {});
+
+          // set viewed item again in case favourites filter is enabled
+          WidgetsBinding.instance.addPostFrameCallback((_) async {
+            if (!mounted) return;
+            await Future.delayed(const Duration(seconds: 1));
+            viewerHandler.setCurrent(
+              widget.tab.booruHandler.filteredFetched[page.value],
+            );
+          });
+        };
+      case .share:
+        return () async => onShareClick();
+      case .linkedMedia:
+        return openLinkedMedia;
+      case .select:
+        return () async {
+          final bool isSelected = widget.tab.selected.contains(item);
+          if (isSelected) {
+            widget.tab.selected.remove(item);
+          } else {
+            widget.tab.selected.add(item);
+          }
+          setState(() {});
+        };
+      case .reloadnoscale:
+        return () async {
+          item.isNoScale.toggle();
+          setState(() {});
+        };
+      case .toggleQuality:
+        return () async {
+          item.toggleQuality.toggle();
+          setState(() {});
+        };
+      case .externalPlayer:
+        return () async => ExternalVideoPlayerLauncher.launchOtherPlayer(
+          item.fileURL,
+          MIME.video,
+          null,
+        );
+      case .imageSearch:
+        return () async => showImageSearchDialog(
+          context,
+          item.fileURL,
+        );
+      case .notInterested:
+        // r34: a loud no the learner keeps; the item leaves the feed and the
+        // viewer moves on to the next one.
+        return () async {
+          await RecommenderHandler.maybe?.dismiss(item);
+          widget.tab.booruHandler.fetched.remove(item);
+          widget.tab.booruHandler.filterFetched();
+          FlashElements.showSnackbar(
+            context: context,
+            title: const Text('Not interested', style: TextStyle(fontSize: 18)),
+            content: const Text('Gone from your recommendations; the model learned from it.', style: TextStyle(fontSize: 14)),
+            duration: const Duration(seconds: 2),
+            sideColor: Colors.orange,
+          );
+          if (!mounted) return;
+          // The list shrank under the viewer: nothing left closes it, a
+          // removed last item moves to the new last, otherwise the next
+          // item is now at this index and becomes the current one.
+          final List<BooruItem> left = widget.tab.booruHandler.filteredFetched;
+          if (left.isEmpty) {
+            NavigationTrace.closing('Not interested emptied the list', () => Navigator.of(context).pop());
+            return;
+          }
+          if (page.value >= left.length) {
+            page.value = left.length - 1;
+            widget.pageController.jumpToPage(page.value);
+          }
+          viewerHandler.setCurrent(left[page.value]);
+          setState(() {});
+        };
+    }
+  }
+
+  AsyncCallback? buttonHold(GalleryButton button) {
+    // TODO long press slideshow button to set the timer
+    switch (button) {
+      case .linkedMedia:
+        return openLinkedMedia;
+      case .share:
+        return () async {
+          await ServiceHandler.vibrate();
+          // Ignore share setting on long press
+          showShareDialog(showTip: false);
+        };
+      case .snatch:
+        return () async {
+          await showDialog(
+            context: context,
+            builder: (BuildContext context) {
+              final item = widget.tab.booruHandler.filteredFetched[page.value];
+
+              return SettingsDialog(
+                title: Text(context.loc.gallery.snatchQuestion),
+                content: Column(
+                  children: [
+                    SelectableText(item.fileURL),
+                    const SizedBox(height: 16),
+                    if (item.isSnatched.value != null)
+                      ListTile(
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          side: BorderSide(color: Theme.of(context).colorScheme.secondary),
+                        ),
+                        onTap: () async {
+                          item.isSnatched.value = !item.isSnatched.value!;
+                          await settingsHandler.dbHandler.updateBooruItem(item, BooruUpdateMode.local);
+                          // r79: only if the dialog is still open - after the
+                          // await a plain pop closed the viewer instead.
+                          if (context.mounted) NavigationTrace.popIfOnTop(context, 'the snatch dialog');
+                        },
+                        leading: item.isSnatched.value == true ? const Icon(Symbols.clear_rounded) : const Icon(Symbols.check_rounded),
+                        title: item.isSnatched.value == true
+                            ? Text(context.loc.viewer.appBar.dropSnatchedStatus)
+                            : Text(context.loc.viewer.appBar.setSnatchedStatus),
+                      ),
+                    //
+                    const SizedBox(height: 16),
+                    ListTile(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        side: BorderSide(color: Theme.of(context).colorScheme.secondary),
+                      ),
+                      onTap: () async {
+                        if (!await setPermissions()) return;
+
+                        snatchHandler.queue(
+                          [item],
+                          widget.tab.booruHandler.booru,
+                          settingsHandler.snatchCooldown,
+                          true,
+                        );
+                        if (settingsHandler.favouriteOnSnatch) {
+                          await widget.tab.toggleItemFavourite(
+                            page.value,
+                            forcedValue: true,
+                            skipSnatching: true,
+                          );
+                        }
+                        // r79: only if the dialog is still open.
+                        if (context.mounted) NavigationTrace.popIfOnTop(context, 'the snatch dialog');
+                      },
+                      leading: const Icon(Symbols.file_download_rounded),
+                      title: Text(
+                        '${context.loc.viewer.appBar.snatch} ${item.isSnatched.value == true ? context.loc.viewer.appBar.forced : ''}'
+                            .trim(),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          );
+        };
+
+      //
+
+      case .favourite:
+      case .info:
+      case .select:
+      case .open:
+      case .autoscroll:
+      case .reloadnoscale:
+      case .toggleQuality:
+      case .externalPlayer:
+      case .imageSearch:
+      case .notInterested:
+        return null;
+    }
+  }
+
+  Future<void> onShareClick() async {
+    final shareSetting = settingsHandler.shareAction;
+    final item = widget.tab.booruHandler.filteredFetched[page.value];
+
+    switch (shareSetting) {
+      case .postUrl:
+        if (item.postURL.isEmpty) {
+          FlashElements.showSnackbar(
+            context: context,
+            title: Text(context.loc.gallery.noPostUrl, style: const TextStyle(fontSize: 20)),
+            leadingIcon: Symbols.warning_amber_rounded,
+            leadingIconColor: Colors.red,
+            sideColor: Colors.red,
+          );
+          return;
+        }
+
+        shareTextAction(LinkedMediaResolver.browserAddress(item.postURL));
+        break;
+      case .postUrlWithTags:
+        if (item.postURL.isEmpty) {
+          FlashElements.showSnackbar(
+            context: context,
+            title: Text(context.loc.gallery.noPostUrl, style: const TextStyle(fontSize: 20)),
+            leadingIcon: Symbols.warning_amber_rounded,
+            leadingIconColor: Colors.red,
+            sideColor: Colors.red,
+          );
+          return;
+        }
+
+        final tags = await showSelectTagsDialog(context, item.tagsList, forItem: item);
+        if (tags.isNotEmpty) {
+          shareTextAction('${LinkedMediaResolver.browserAddress(item.postURL)} \n ${tags.join(' ')}');
+        } else {
+          shareTextAction(LinkedMediaResolver.browserAddress(item.postURL));
+        }
+        break;
+      case .fileUrl:
+        shareTextAction(item.fileURL);
+        break;
+      case .fileUrlWithTags:
+        final tags = await showSelectTagsDialog(context, item.tagsList, forItem: item);
+        if (tags.isNotEmpty) {
+          shareTextAction('${item.fileURL} \n ${tags.join(' ')}');
+        } else {
+          shareTextAction(item.fileURL);
+        }
+        break;
+      case .file:
+        await shareFileAction();
+        break;
+      case .fileWithTags:
+        final tags = await showSelectTagsDialog(context, item.tagsList, forItem: item);
+        if (tags.isNotEmpty) {
+          await shareFileAction(text: tags.join(' '));
+        } else {
+          await shareFileAction();
+        }
+        break;
+      case .hydrus:
+        await shareHydrusAction(item);
+        break;
+      case .ask:
+        showShareDialog();
+        break;
+    }
+  }
+
+  void shareTextAction(String text) {
+    if (SettingsHandler.isDesktopPlatform) {
+      Clipboard.setData(ClipboardData(text: Uri.encodeFull(text)));
+      FlashElements.showSnackbar(
+        context: context,
+        duration: const Duration(seconds: 2),
+        title: Text(context.loc.copiedToClipboard, style: const TextStyle(fontSize: 20)),
+        content: Text(Uri.encodeFull(text), style: const TextStyle(fontSize: 16)),
+        leadingIcon: Symbols.content_copy_rounded,
+        sideColor: Colors.green,
+      );
+    } else if (Platform.isAndroid) {
+      ServiceHandler.loadShareTextIntent(text);
+    }
+  }
+
+  Future<void> shareHydrusAction(BooruItem item) async {
+    if (settingsHandler.hasHydrus) {
+      final Booru? hydrus = settingsHandler.booruList.firstWhereOrNull((element) => element.type?.isHydrus == true);
+      if (hydrus == null) return;
+      final HydrusHandler hydrusHandler = HydrusHandler(hydrus, 10);
+
+      final res = await showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: Text(context.loc.viewer.appBar.hydrusShare),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(context.loc.viewer.appBar.whichUrlToShareToHydrus),
+                const SizedBox(height: 12),
+                ListTile(
+                  title: Text(context.loc.viewer.appBar.postURL),
+                  leading: const Icon(Symbols.arrow_forward_rounded),
+                  onTap: () {
+                    Navigator.of(context).pop('post');
+                  },
+                ),
+                ListTile(
+                  title: Text(context.loc.viewer.appBar.fileURL),
+                  leading: const Icon(Symbols.arrow_forward_rounded),
+                  onTap: () {
+                    Navigator.of(context).pop('file');
+                  },
+                ),
+                ListTile(
+                  title: Text(context.loc.cancel),
+                  leading: const Icon(Symbols.cancel_rounded),
+                  onTap: () {
+                    Navigator.of(context).pop();
+                  },
+                ),
+              ],
+            ),
+          );
+        },
+      );
+
+      if (res == null) {
+        return;
+      }
+
+      await hydrusHandler.addURL(item, usePostUrl: res == 'post');
+    } else {
+      FlashElements.showSnackbar(
+        context: context,
+        title: Text(context.loc.viewer.appBar.hydrusNotConfigured, style: const TextStyle(fontSize: 20)),
+      );
+    }
+  }
+
+  Future<void> shareFileAction({String? text}) async {
+    final BooruItem item = widget.tab.booruHandler.filteredFetched[page.value];
+
+    final bool alreadyLoading = sharedItem != null;
+    final bool alreadyLoadingSame = alreadyLoading && sharedItem == item;
+
+    if (alreadyLoading) {
+      final double thumbWidth = MediaQuery.sizeOf(context).shortestSide * (alreadyLoadingSame ? 0.3 : 0.2);
+      final double thumbHeight = thumbWidth / 9 * 16;
+
+      final dialogRes = await showDialog(
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: Text(context.loc.viewer.appBar.shareFile),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (alreadyLoadingSame)
+                  Text(context.loc.viewer.appBar.alreadyDownloadingThisFile)
+                else
+                  Text(
+                    context.loc.viewer.appBar.alreadyDownloadingFile,
+                  ),
+                const SizedBox(height: 10),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Column(
+                      children: [
+                        if (!alreadyLoadingSame) Text(context.loc.viewer.appBar.current),
+                        SizedBox(
+                          width: thumbWidth,
+                          height: thumbHeight,
+                          child: ThumbnailBuild(
+                            item: sharedItem!,
+                            handler: widget.tab.booruHandler,
+                            selectable: false,
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (!alreadyLoadingSame) ...[
+                      const SizedBox(width: 8),
+                      Icon(
+                        Symbols.arrow_forward_ios_rounded,
+                        size: 30,
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
+                      const SizedBox(width: 8),
+                      Column(
+                        children: [
+                          Text(context.loc.viewer.appBar.kNew),
+                          SizedBox(
+                            width: thumbWidth,
+                            height: thumbHeight,
+                            child: ThumbnailBuild(
+                              item: item,
+                              handler: widget.tab.booruHandler,
+                              selectable: false,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+            actions: [
+              if (!alreadyLoadingSame)
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.of(context).pop('new');
+                  },
+                  child: Text(context.loc.viewer.appBar.shareNew),
+                ),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.of(context).pop('abort');
+                },
+                child: Text(context.loc.viewer.appBar.abort),
+              ),
+            ],
+          );
+        },
+      );
+
+      if (dialogRes == 'new' || dialogRes == 'abort') {
+        shareCancelToken?.cancel();
+        shareProgress = 0;
+        sharedItem = null;
+        setState(() {});
+        await imageWriter.deleteFileFromCache(item.fileURL, 'media', fileNameExtras: item.fileNameExtras);
+      }
+
+      if (dialogRes == 'abort' || dialogRes == null) {
+        return;
+      }
+    }
+
+    String? path = await imageWriter.getCachePath(item.fileURL, 'media', fileNameExtras: item.fileNameExtras);
+
+    // TODO delete from cache after share window closes
+
+    if (path != null) {
+      if (Platform.isAndroid) {
+        // File is already in cache - share from there
+        await ServiceHandler.loadShareFileIntent(
+          path,
+          '${item.mediaType.value.isVideo ? 'video' : 'image'}/${item.fileExt!}',
+          text: text,
+        );
+      }
+    } else {
+      // File not in cache - load from network, share, delete from cache afterwards
+      FlashElements.showSnackbar(
+        context: context,
+        title: Text(context.loc.gallery.loadingFile, style: const TextStyle(fontSize: 20)),
+        content: Text(context.loc.gallery.loadingFileMessage, style: const TextStyle(fontSize: 16)),
+        overrideLeadingIconWidget: const SizedBox(
+          width: 50,
+          height: 50,
+          child: Padding(
+            padding: EdgeInsets.all(12),
+            child: CircularProgressIndicator(),
+          ),
+        ),
+        sideColor: Colors.yellow,
+      );
+
+      shareCancelToken?.cancel();
+      shareCancelToken = CancelToken();
+      shareProgress = 0;
+      sharedItem = item;
+
+      final String cacheFilePath = await imageWriter.getCachePathString(
+        item.fileURL,
+        'media',
+        clearName: true,
+        fileNameExtras: item.fileNameExtras,
+      );
+      await DioNetwork.download(
+        item.fileURL,
+        cacheFilePath,
+        cancelToken: shareCancelToken,
+        headers: await Tools.getFileCustomHeaders(
+          widget.tab.booruHandler.booru,
+          item: item,
+          checkForReferer: true,
+        ),
+        onReceiveProgress: (int received, int total) {
+          if (total != -1) {
+            shareProgress = received / total;
+            if ((DateTime.now().millisecondsSinceEpoch - shareProgressLastTick) > 100) {
+              setState(() {});
+              shareProgressLastTick = DateTime.now().millisecondsSinceEpoch;
+            }
+          }
+        },
+      );
+
+      final File cacheFile = File(
+        await imageWriter.getCachePath(item.fileURL, 'media', fileNameExtras: item.fileNameExtras) ?? '',
+      );
+      if (await cacheFile.exists()) {
+        path = cacheFile.path;
+        if (Platform.isAndroid) {
+          await ServiceHandler.loadShareFileIntent(
+            path,
+            '${item.mediaType.value.isVideo ? 'video' : 'image'}/${item.fileExt!}',
+            text: text,
+          );
+        }
+      } else {
+        FlashElements.showSnackbar(
+          context: context,
+          title: Text(context.loc.viewer.appBar.error, style: const TextStyle(fontSize: 20)),
+          content: Text(
+            context.loc.viewer.appBar.savingFileError,
+            style: const TextStyle(fontSize: 16),
+          ),
+          leadingIcon: Symbols.warning_amber_rounded,
+          leadingIconColor: Colors.red,
+          sideColor: Colors.red,
+        );
+      }
+
+      shareProgress = 0;
+      shareCancelToken = null;
+      sharedItem = null;
+      setState(() {});
+
+      // TODO: find a way to detect when share menu was closed, orherwise this is triggered immediately and file is deleted before sending to another app
+      // imageWriter.deleteFileFromCache(path, 'media');
+    }
+  }
+
+  void showShareDialog({bool showTip = true}) {
+    final item = widget.tab.booruHandler.filteredFetched[page.value];
+
+    // TODO change layout so the buttons set their width automatically, without padding stuff
+    showDialog(
+      context: context,
+      builder: (context) {
+        return SettingsDialog(
+          title: Text(context.loc.viewer.appBar.whatToShare),
+          contentItems: [
+            const SizedBox(height: 15),
+            Column(
+              children: [
+                if (item.postURL.isNotEmpty) ...[
+                  ListTile(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      side: BorderSide(
+                        color: Theme.of(context).colorScheme.secondary,
+                        width: settingsHandler.shareAction.isPostUrl ? 3 : 1,
+                      ),
+                    ),
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      shareTextAction(LinkedMediaResolver.browserAddress(item.postURL));
+                    },
+                    leading: const Icon(CupertinoIcons.link),
+                    title: Text(context.loc.viewer.appBar.postURL),
+                  ),
+
+                  const SizedBox(height: 15),
+                  ListTile(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      side: BorderSide(
+                        color: Theme.of(context).colorScheme.secondary,
+                        width: settingsHandler.shareAction.isPostUrlWithTags ? 3 : 1,
+                      ),
+                    ),
+                    onTap: () async {
+                      Navigator.of(context).pop();
+                      final tags = await showSelectTagsDialog(context, item.tagsList, forItem: item);
+                      if (tags.isNotEmpty) {
+                        shareTextAction('${LinkedMediaResolver.browserAddress(item.postURL)} \n ${tags.join(' ')}');
+                      } else {
+                        shareTextAction(LinkedMediaResolver.browserAddress(item.postURL));
+                      }
+                    },
+                    leading: const Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Icon(CupertinoIcons.link),
+                        Positioned(
+                          bottom: -10,
+                          right: -10,
+                          child: Icon(CupertinoIcons.tag, size: 14),
+                        ),
+                      ],
+                    ),
+                    title: Text(context.loc.viewer.appBar.postURLWithTags),
+                  ),
+                  const SizedBox(height: 15),
+                ],
+                ListTile(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    side: BorderSide(
+                      color: Theme.of(context).colorScheme.secondary,
+                      width: settingsHandler.shareAction.isFileUrl ? 3 : 1,
+                    ),
+                  ),
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    shareTextAction(item.fileURL);
+                  },
+                  leading: const Icon(CupertinoIcons.link),
+                  title: Text(context.loc.viewer.appBar.fileURL),
+                ),
+                const SizedBox(height: 15),
+                ListTile(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    side: BorderSide(
+                      color: Theme.of(context).colorScheme.secondary,
+                      width: settingsHandler.shareAction.isFileUrlWithTags ? 3 : 1,
+                    ),
+                  ),
+                  onTap: () async {
+                    Navigator.of(context).pop();
+                    final tags = await showSelectTagsDialog(context, item.tagsList, forItem: item);
+                    if (tags.isNotEmpty) {
+                      shareTextAction('${item.fileURL} \n ${tags.join(' ')}');
+                    } else {
+                      shareTextAction(item.fileURL);
+                    }
+                  },
+                  leading: const Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Icon(CupertinoIcons.link),
+                      Positioned(
+                        bottom: -10,
+                        right: -10,
+                        child: Icon(CupertinoIcons.tag, size: 14),
+                      ),
+                    ],
+                  ),
+                  title: Text(context.loc.viewer.appBar.fileURLWithTags),
+                ),
+                const SizedBox(height: 15),
+                ListTile(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    side: BorderSide(
+                      color: Theme.of(context).colorScheme.secondary,
+                      width: settingsHandler.shareAction.isFile ? 3 : 1,
+                    ),
+                  ),
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    shareFileAction();
+                  },
+                  leading: const Icon(Symbols.file_present_rounded),
+                  title: Text(context.loc.viewer.appBar.file),
+                ),
+                const SizedBox(height: 15),
+                ListTile(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    side: BorderSide(
+                      color: Theme.of(context).colorScheme.secondary,
+                      width: settingsHandler.shareAction.isFileWithTags ? 3 : 1,
+                    ),
+                  ),
+                  onTap: () async {
+                    Navigator.of(context).pop();
+                    final tags = await showSelectTagsDialog(context, item.tagsList, forItem: item);
+                    if (tags.isNotEmpty) {
+                      await shareFileAction(text: tags.join(' '));
+                    } else {
+                      await shareFileAction();
+                    }
+                  },
+                  leading: const Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Icon(Symbols.file_present_rounded),
+                      Positioned(
+                        bottom: -10,
+                        right: -10,
+                        child: Icon(CupertinoIcons.tag, size: 14),
+                      ),
+                    ],
+                  ),
+                  title: Text(context.loc.viewer.appBar.fileWithTags),
+                ),
+                const SizedBox(height: 15),
+                if (settingsHandler.hasHydrus && widget.tab.booruHandler.booru.type?.isHydrus != true)
+                  ListTile(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      side: BorderSide(
+                        color: Theme.of(context).colorScheme.secondary,
+                        width: settingsHandler.shareAction.isHydrus ? 3 : 1,
+                      ),
+                    ),
+                    onTap: () async {
+                      await shareHydrusAction(item);
+                      // r79: only if the dialog is still open.
+                      if (context.mounted) NavigationTrace.popIfOnTop(context, 'the share dialog');
+                    },
+                    leading: const Icon(Symbols.file_present_rounded),
+                    title: Text(context.loc.viewer.appBar.hydrus),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 15),
+            Text(showTip ? '[Tip]: You can set default action in settings' : ''),
+          ],
+        );
+      },
+    );
+  }
+
+  ////////// Toolbar Stuff END ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  ///
+  ///
+  ///
+
+  @override
+  void initState() {
+    super.initState();
+
+    isOnTop = settingsHandler.galleryBarPosition.isTop;
+
+    ServiceHandler.setSystemUiVisibility(!settingsHandler.autoHideImageBar);
+    viewerHandler.displayAppbar.value = !settingsHandler.autoHideImageBar;
+
+    viewerHandler.displayAppbar.addListener(appbarListener);
+    LinkedMediaStore.revision.addListener(linkedMediaListener);
+
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => pageListener(),
+    );
+    widget.pageController.addListener(pageListener);
+
+    autoScrollProgressController = TimedProgressController(
+      duration: Duration(milliseconds: settingsHandler.galleryAutoScrollTime),
+    );
+  }
+
+  /// r52: the linked media sheet of the post on screen.
+  Future<void> openLinkedMedia() async {
+    final BooruItem item = widget.tab.booruHandler.filteredFetched[page.value];
+    final handler = widget.tab.booruHandler;
+    final List<LinkedMedia> links =
+        LinkedMediaStore.linksFor(item.postURL) ??
+        (handler is FurAffinityHandler ? await LinkedMediaButton.linksFor(handler, item) : const <LinkedMedia>[]);
+    if (!mounted) return;
+    await LinkedMediaSheet.show(context, links, title: item.description);
+  }
+
+  /// A post's links became known: the share button's place may change.
+  void linkedMediaListener() {
+    if (mounted) setState(() {});
+  }
+
+  void appbarListener() {
+    ServiceHandler.setSystemUiVisibility(viewerHandler.displayAppbar.value);
+    setState(() {});
+  }
+
+  @override
+  void dispose() {
+    widget.pageController.removeListener(pageListener);
+    autoScrollProgressController?.dispose();
+    autoScrollTimer?.cancel();
+    viewerHandler.displayAppbar.removeListener(appbarListener);
+    LinkedMediaStore.revision.removeListener(linkedMediaListener);
+    ServiceHandler.setSystemUiVisibility(true);
+
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final double extraPadding = isOnTop ? 0 : MediaQuery.paddingOf(context).bottom;
+
+    return PopScope(
+      onPopInvokedWithResult: (bool didPop, _) {
+        // r77: a Back that only closes a preview window leaves the viewer (and
+        // a share in progress) alone.
+        final FloatingPreviewHandler previews = FloatingPreviewHandler.instance;
+        if (!didPop && previews.hasWindowFor(previews.topPageRoute)) return;
+        // clear currently loading item from cache to avoid creating broken files
+        // TODO move sharing download routine to somewhere in global context?
+        shareCancelToken?.cancel();
+        if (sharedItem != null) {
+          imageWriter.deleteFileFromCache(
+            sharedItem!.fileURL,
+            'media',
+            fileNameExtras: sharedItem!.fileNameExtras,
+          );
+        }
+      },
+      child: Material(
+        color: Colors.transparent,
+        elevation: 1,
+        clipBehavior: Clip.antiAlias,
+        shadowColor: Colors.black54,
+        surfaceTintColor: Colors.transparent,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.linear,
+          color: Colors.transparent,
+          height: viewerHandler.displayAppbar.value ? (isOnTop ? null : (widget.defaultHeight + extraPadding)) : 0,
+          padding: isOnTop ? null : EdgeInsets.only(bottom: extraPadding),
+          child: ListenableBuilder(
+            listenable: Listenable.merge([page, widget.tab.booruHandler.filteredFetched]),
+            builder: (context, _) {
+              final pageVal = page.value;
+              final fetched = widget.tab.booruHandler.filteredFetched.value;
+              final String formattedViewedIndex = (pageVal + 1).toString();
+              final String formattedTotal = fetched.length.toString();
+
+              return AppBar(
+                // toolbarHeight: widget.defaultHeight,
+                elevation: 0,
+                backgroundColor: Colors.transparent,
+                foregroundColor: Colors.white,
+                shadowColor: Colors.transparent,
+                surfaceTintColor: Colors.transparent,
+                leading: IconButton(
+                  // to ignore icon change
+                  icon: const Icon(Symbols.arrow_back_rounded, color: Colors.white),
+                  onPressed: () => NavigationTrace.closing('back arrow', () => Navigator.of(context).pop()),
+                ),
+                title: FittedBox(
+                  fit: BoxFit.fitWidth,
+                  child: Text(
+                    '$formattedViewedIndex/$formattedTotal',
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                ),
+                actions: getActions(),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+Future<List<String>> showSelectTagsDialog(
+  BuildContext context,
+  List<Tag> tags, {
+  /// The item those tags came from, when known — decides whether the shared
+  /// booru tag store may be consulted for their types.
+  BooruItem? forItem,
+}) async {
+  final bool isDoujin = forItem != null && DoujinDataHandler.isDoujinItem(forItem);
+  if (tags.isEmpty) return [];
+
+  tags = tags.where((t) => t.fullString.trim().isNotEmpty).toList();
+
+  final tagHandler = TagHandler.instance;
+
+  final Map<TagType, List<Tag>> tagMap = {
+    for (final type in TagType.values) type: [],
+  };
+  for (final t in tags) {
+    // Keep the item's OWN type when it has one (doujin tags always do), and
+    // never consult the shared booru tag store for a doujin item - that
+    // replaced its tags with a booru's classification of the same names.
+    final Tag tag = (t.tagType != TagType.none || isDoujin) ? t : tagHandler.getTag(t.fullString);
+    tagMap[tag.tagType]?.add(tag);
+  }
+  final List<Tag> items = tagMap.values.expand((i) => i).toList();
+
+  final List<Tag> selectedTags = [];
+  final res = await LoliMultiselectDropdown(
+    value: selectedTags,
+    onChanged: (value) {
+      selectedTags.clear();
+      selectedTags.addAll(value);
+    },
+    expandableByScroll: false,
+    items: items,
+    itemBuilder: (item) => Container(
+      padding: const EdgeInsets.only(
+        left: 16,
+        top: 8,
+        bottom: 8,
+      ),
+      constraints: const BoxConstraints(
+        minHeight: kMinInteractiveDimension,
+      ),
+      alignment: Alignment.centerLeft,
+      child: Builder(
+        builder: (context) {
+          final color = item.getColour();
+          return Text(
+            item.fullString,
+            style: TextStyle(
+              color: color,
+              backgroundColor: color?.withValues(alpha: 0.1),
+            ),
+          );
+        },
+      ),
+    ),
+    selectedItemBuilder: (items) => Text(items.join(', ')),
+    labelText: context.loc.viewer.appBar.selectTags,
+  ).showDialog(context);
+
+  if (res) {
+    return selectedTags.map((t) => t.fullString).toList();
+  }
+
+  return [];
+}

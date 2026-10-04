@@ -1,9 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
-import 'package:lolisnatcher/src/boorus/linked_media.dart';
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/pages/linked_media_page.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/sources/framework/linked_media.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/features/links/ui/linked_media_page.dart';
 
 /// r49: many FurAffinity "animated" posts are a still picture whose
 /// description links to the animation. Each link resolves to a post on one of

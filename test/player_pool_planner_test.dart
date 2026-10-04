@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/widgets/video/player_pool_planner.dart';
+import 'package:lolisnatcher/features/video/logic/player_pool_planner.dart';
 
 /// r64: video players are a scarce resource, so the pool stops destroying and
 /// building them while you swipe. It keeps a fixed set of slots and re-points

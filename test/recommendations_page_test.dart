@@ -9,20 +9,20 @@ import 'package:flutter/services.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/data/model_tasks.dart';
-import 'package:lolisnatcher/src/handlers/recommender/encoder_handler.dart';
-import 'package:lolisnatcher/src/handlers/recommender/image_tagger_handler.dart';
-import 'package:lolisnatcher/src/handlers/recommender/look_model_handler.dart';
-import 'package:lolisnatcher/src/handlers/recommender/item_features.dart';
-import 'package:lolisnatcher/src/handlers/recommender/recommender_handler.dart';
-import 'package:lolisnatcher/src/handlers/search_handler.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/handlers/viewer_handler.dart';
-import 'package:lolisnatcher/src/pages/foryou_page.dart';
-import 'package:lolisnatcher/src/pages/settings/models_page.dart';
-import 'package:lolisnatcher/src/pages/settings/model_page.dart';
-import 'package:lolisnatcher/src/pages/settings/recommendations_page.dart';
-import 'package:lolisnatcher/src/utils/picker_watch.dart';
+import 'package:lolisnatcher/features/recommender/logic/model_tasks.dart';
+import 'package:lolisnatcher/features/recommender/logic/ml/encoder_handler.dart';
+import 'package:lolisnatcher/features/recommender/logic/ml/image_tagger_handler.dart';
+import 'package:lolisnatcher/features/recommender/logic/ml/look_model_handler.dart';
+import 'package:lolisnatcher/features/recommender/logic/item_features.dart';
+import 'package:lolisnatcher/features/recommender/logic/recommender_handler.dart';
+import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
+import 'package:lolisnatcher/features/recommender/ui/foryou_page.dart';
+import 'package:lolisnatcher/features/recommender/ui/models_page.dart';
+import 'package:lolisnatcher/features/recommender/ui/model_page.dart';
+import 'package:lolisnatcher/features/recommender/ui/recommendations_page.dart';
+import 'package:lolisnatcher/core/platform/picker_watch.dart';
 
 /// r33: Settings → Recommendations holds the two switches, independent of
 /// each other; the For You page comes in a doujin flavour.

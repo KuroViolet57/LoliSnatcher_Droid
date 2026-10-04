@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/handlers/reverse_image_search.dart';
+import 'package:lolisnatcher/features/boards/logic/reverse_image_search.dart';
 
 /// r73: reverse image search for boards. SauceNAO (the user's own API key;
 /// the anonymous account may not use the API, checked 2026-09-18) answers a

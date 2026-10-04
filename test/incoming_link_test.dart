@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
-import 'package:lolisnatcher/src/boorus/linked_media.dart';
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/services/incoming_link.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/sources/framework/linked_media.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/features/links/logic/incoming_link.dart';
 
 /// r85: a link from another app (Link Sheet, a browser's "open with") to a
 /// site you have a source for opens in the app: a post in the viewer, a

@@ -3,7 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 
-import 'package:lolisnatcher/src/handlers/recommender/image_tagger_handler.dart';
+import 'package:lolisnatcher/features/recommender/logic/ml/image_tagger_handler.dart';
 
 /// r74: the picture as the WD taggers want it (the author's reference
 /// code): transparency onto white, padded to a square with white, resized

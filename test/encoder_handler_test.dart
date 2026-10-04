@@ -6,14 +6,14 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-import 'package:lolisnatcher/src/data/booru_item.dart';
-import 'package:lolisnatcher/src/data/model_tasks.dart';
-import 'package:lolisnatcher/src/data/tag.dart';
-import 'package:lolisnatcher/src/data/tag_type.dart';
-import 'package:lolisnatcher/src/handlers/database_handler.dart';
-import 'package:lolisnatcher/src/handlers/recommender/encoder_handler.dart';
-import 'package:lolisnatcher/src/handlers/recommender/item_features.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/models/booru_item.dart';
+import 'package:lolisnatcher/features/recommender/logic/model_tasks.dart';
+import 'package:lolisnatcher/models/tag.dart';
+import 'package:lolisnatcher/models/tag_type.dart';
+import 'package:lolisnatcher/core/storage/database_handler.dart';
+import 'package:lolisnatcher/features/recommender/logic/ml/encoder_handler.dart';
+import 'package:lolisnatcher/features/recommender/logic/item_features.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
 
 /// r34: the downloaded encoder — a Hugging Face ONNX sentence model kept
 /// beside the settings, run through a small runner, pooled into one vector

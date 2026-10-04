@@ -4,7 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-import 'package:lolisnatcher/src/handlers/database_handler.dart';
+import 'package:lolisnatcher/core/storage/database_handler.dart';
 
 /// r81: the vectors the text and looks models work out for posts live in a
 /// database of their own (vectors.db beside store.db), so a backup can take

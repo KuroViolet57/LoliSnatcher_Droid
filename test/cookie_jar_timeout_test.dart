@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/utils/tools.dart';
+import 'package:lolisnatcher/core/utils/tools.dart';
 
 /// The reported symptom: after the app sat in the background, every AIBooru
 /// request hung forever — posts, tag previews, and every newly opened tab —

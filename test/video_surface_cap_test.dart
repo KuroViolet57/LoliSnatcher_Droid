@@ -3,9 +3,9 @@ import 'dart:ui';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
-import 'package:lolisnatcher/src/data/modular_ui.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
-import 'package:lolisnatcher/src/widgets/video/video_surface_cap.dart';
+import 'package:lolisnatcher/core/settings/modular_ui.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/features/video/logic/video_surface_cap.dart';
 
 /// r59: our own copy of media_kit_video (third_party/media_kit_video) asks the
 /// app for the surface size before it sets it, in the one place it already

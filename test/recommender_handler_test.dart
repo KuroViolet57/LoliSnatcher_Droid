@@ -7,21 +7,21 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-import 'package:lolisnatcher/src/boorus/booru_type.dart';
-import 'package:lolisnatcher/src/data/booru.dart';
-import 'package:lolisnatcher/src/data/booru_item.dart';
-import 'package:lolisnatcher/src/data/model_tasks.dart';
-import 'package:lolisnatcher/src/data/tag.dart';
-import 'package:lolisnatcher/src/data/tag_type.dart';
-import 'package:lolisnatcher/src/handlers/interests_handler.dart';
-import 'package:lolisnatcher/src/handlers/recommender/encoder_handler.dart';
-import 'package:lolisnatcher/src/handlers/recommender/ftrl_model.dart';
-import 'package:lolisnatcher/src/handlers/recommender/item_features.dart';
-import 'package:lolisnatcher/src/handlers/recommender/deferred_learning.dart';
-import 'package:lolisnatcher/src/handlers/recommender/model_work.dart';
-import 'package:lolisnatcher/src/handlers/recommender/recommender_handler.dart';
-import 'package:lolisnatcher/src/handlers/recommender/rewards.dart';
-import 'package:lolisnatcher/src/handlers/settings_handler.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/models/booru_item.dart';
+import 'package:lolisnatcher/features/recommender/logic/model_tasks.dart';
+import 'package:lolisnatcher/models/tag.dart';
+import 'package:lolisnatcher/models/tag_type.dart';
+import 'package:lolisnatcher/features/recommender/logic/interests_handler.dart';
+import 'package:lolisnatcher/features/recommender/logic/ml/encoder_handler.dart';
+import 'package:lolisnatcher/features/recommender/logic/ftrl_model.dart';
+import 'package:lolisnatcher/features/recommender/logic/item_features.dart';
+import 'package:lolisnatcher/features/recommender/logic/deferred_learning.dart';
+import 'package:lolisnatcher/features/recommender/logic/model_work.dart';
+import 'package:lolisnatcher/features/recommender/logic/recommender_handler.dart';
+import 'package:lolisnatcher/features/recommender/logic/rewards.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
 
 /// r33: the recommender behind every surface. Events are logged and train
 /// the world's model at once; the two toggles are independent; the worlds

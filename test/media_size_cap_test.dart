@@ -2,7 +2,7 @@ import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/src/utils/media_size_cap.dart';
+import 'package:lolisnatcher/core/utils/media_size_cap.dart';
 
 /// r59: media_kit gives the Android video surface the video's native size, so
 /// an 8K post (4320x7680) made Skia draws take 600-925 ms and the warm players
