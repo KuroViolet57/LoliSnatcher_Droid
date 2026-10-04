@@ -187,8 +187,10 @@ class MainDrawer extends StatelessWidget {
                 children: [
                   const SizedBox(height: 8),
                   const MergeBooruToggleAndSelector(),
-                  Builder(
-                    builder: (context) {
+                  // Obx, not Builder: the drawer is a const widget that a tab
+                  // switch or a new Downloads/Favourites config never rebuilds.
+                  Obx(
+                    () {
                       Booru? virtual(bool Function(BooruType) test) {
                         for (final b in settingsHandler.booruList) {
                           final t = b.type;
