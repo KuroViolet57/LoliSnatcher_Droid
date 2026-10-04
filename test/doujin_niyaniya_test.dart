@@ -200,6 +200,32 @@ void main() {
 
       expect(tags, ['ahegao', 'shindol']);
     });
+
+    test('an id: item (favourites, history, Recommended source) carries the same tags as the reader', () {
+      final h = schaleHandler();
+      final BooruItem? item = h.itemFromDetail('42', 'k3y', {
+        'title': 'A Gallery',
+        'thumbnails': {
+          'base': 'https://cdn.invalid/',
+          'main': {'path': 'c/42.webp'},
+        },
+        'tags': [
+          {'name': 'Big Breasts', 'namespace': 9},
+          {'name': 'Asami Asami', 'namespace': 1},
+          {'name': 'Asami Asami', 'namespace': 1},
+        ],
+      });
+
+      // It used to keep the raw spelling with no type and no namespace
+      // ('Big_Breasts', 'Asami_Asami', TagType.none) until the detail page
+      // loaded: no sections, and not the form blacklists and stars compare.
+      expect(item!.tagsList.map((t) => (t.fullString, t.tagType)).toList(), [
+        ('big_breasts', TagType.none),
+        ('asami_asami', TagType.artist),
+      ]);
+      expect(h.tagNamespace('big_breasts'), 'female');
+      expect(h.tagNamespace('asami_asami'), 'artist');
+    });
   });
 
   group('query translation', () {
