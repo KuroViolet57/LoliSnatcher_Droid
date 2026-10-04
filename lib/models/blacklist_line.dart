@@ -203,7 +203,8 @@ enum _Op { eq, lt, gt, le, ge, range }
 
 class _MetaPred extends BlacklistPredicate {
   _MetaPred(this.key, String rawValue) {
-    final parsed = _parseNumericValue(rawValue);
+    // filesize takes kb/mb on every number (`>5mb`, `1mb..2mb`), in bytes.
+    final parsed = _parseNumericValue(rawValue, sizes: key == 'filesize');
     op = parsed.op;
     numValues = parsed.values;
     stringValue = rawValue.toLowerCase();
@@ -238,22 +239,9 @@ class _MetaPred extends BlacklistPredicate {
       case 'height':
         return _intCmp(ctx.height, op, numValues);
       case 'filesize':
-        return _intCmp(ctx.fileSize, op, _resolveFileSizeValues(numValues, stringValue));
+        return _intCmp(ctx.fileSize, op, numValues);
     }
     return false;
-  }
-
-  List<int> _resolveFileSizeValues(List<int> base, String raw) {
-    // Allow trailing `kb` / `mb` suffix on the original string.
-    final m = RegExp(r'^([<>=!.\d]+)(kb|mb)?$').firstMatch(raw);
-    if (m == null) return base;
-    final multiplier = switch (m.group(2)) {
-      'kb' => 1024,
-      'mb' => 1024 * 1024,
-      _ => 1,
-    };
-    if (multiplier == 1) return base;
-    return base.map((v) => v * multiplier).toList();
   }
 }
 
@@ -263,36 +251,51 @@ class _NumericParse {
   final List<int> values;
 }
 
-_NumericParse _parseNumericValue(String raw) {
+/// A size with an optional kb/mb unit (any case), in bytes: `5mb`, `200KB`,
+/// `1.5mb`, `1048576`.
+int? _parseSize(String raw) {
+  final m = RegExp(r'^(\d+(?:\.\d+)?)(kb|mb)?$', caseSensitive: false).firstMatch(raw.trim());
+  if (m == null) return null;
+  final int multiplier = switch (m.group(2)?.toLowerCase()) {
+    'kb' => 1024,
+    'mb' => 1024 * 1024,
+    _ => 1,
+  };
+  return (double.parse(m.group(1)!) * multiplier).round();
+}
+
+_NumericParse _parseNumericValue(String raw, {bool sizes = false}) {
+  int number(String s) => (sizes ? _parseSize(s) : int.tryParse(s)) ?? 0;
   // Range `a..b`
   final rangeIdx = raw.indexOf('..');
   if (rangeIdx > 0) {
-    final lo = int.tryParse(raw.substring(0, rangeIdx)) ?? 0;
-    final hi = int.tryParse(raw.substring(rangeIdx + 2)) ?? 0;
+    final lo = number(raw.substring(0, rangeIdx));
+    final hi = number(raw.substring(rangeIdx + 2));
     return _NumericParse(_Op.range, [lo, hi]);
   }
   // Operator prefixes
   if (raw.startsWith('>=')) {
-    return _NumericParse(_Op.ge, [int.tryParse(raw.substring(2)) ?? 0]);
+    return _NumericParse(_Op.ge, [number(raw.substring(2))]);
   }
   if (raw.startsWith('<=')) {
-    return _NumericParse(_Op.le, [int.tryParse(raw.substring(2)) ?? 0]);
+    return _NumericParse(_Op.le, [number(raw.substring(2))]);
   }
   if (raw.startsWith('=<')) {
-    return _NumericParse(_Op.le, [int.tryParse(raw.substring(2)) ?? 0]);
+    return _NumericParse(_Op.le, [number(raw.substring(2))]);
   }
   if (raw.startsWith('=>')) {
-    return _NumericParse(_Op.ge, [int.tryParse(raw.substring(2)) ?? 0]);
+    return _NumericParse(_Op.ge, [number(raw.substring(2))]);
   }
   if (raw.startsWith('>')) {
-    return _NumericParse(_Op.gt, [int.tryParse(raw.substring(1)) ?? 0]);
+    return _NumericParse(_Op.gt, [number(raw.substring(1))]);
   }
   if (raw.startsWith('<')) {
-    return _NumericParse(_Op.lt, [int.tryParse(raw.substring(1)) ?? 0]);
+    return _NumericParse(_Op.lt, [number(raw.substring(1))]);
   }
   if (raw.startsWith('=')) {
-    return _NumericParse(_Op.eq, [int.tryParse(raw.substring(1)) ?? 0]);
+    return _NumericParse(_Op.eq, [number(raw.substring(1))]);
   }
+  if (sizes) return _NumericParse(_Op.eq, [number(raw)]);
   // Strip unit suffix (kb/mb) before parsing the bare integer.
   final stripped = raw.replaceAll(RegExp(r'(kb|mb)$', caseSensitive: false), '');
   return _NumericParse(_Op.eq, [int.tryParse(stripped) ?? 0]);
