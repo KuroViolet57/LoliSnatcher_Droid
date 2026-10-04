@@ -264,4 +264,12 @@ void main() {
     });
   });
 
+  test("thumbnail item reload works with the caller's cancel token instead of cancelling it", () async {
+    final CancelToken token = CancelToken();
+    await tryToLoadAndUpdateItem(
+      BooruItem(fileURL: 'https://img.invalid/1.jpg', sampleURL: '', thumbnailURL: '', tagsList: [Tag('a')], postURL: 'https://unknown.invalid/1'),
+      token,
+    );
+    expect(token.isCancelled, isFalse, reason: 'the caller cancels it when the thumbnail goes away');
+  });
 }
