@@ -60,6 +60,10 @@ class TagCatalogPuller {
   final Set<String> _cancelled = {};
   final Set<String> _busyHosts = {};
 
+  /// Jobs waiting for their host: not [TagCatalogPullState.running] yet, so a
+  /// second tap meanwhile would otherwise queue the same walk twice.
+  final Set<String> _waiting = {};
+
   /// Test hook: where shards are written.
   Future<int> Function(Booru booru, List<BooruTagEntry> entries) recordFn = BooruTagStore.record;
 
@@ -84,14 +88,19 @@ class TagCatalogPuller {
   Future<void> pull(Booru booru, TagCatalogSource catalog, String namespace) async {
     final String key = keyFor(booru, catalog, namespace);
     final ValueNotifier<TagCatalogPullState> state = stateFor(booru, catalog, namespace);
-    if (state.value.running) return;
+    if (state.value.running || _waiting.contains(key)) return;
     _cancelled.remove(key);
 
     final String host = hostOf(booru);
     // Wait for the host's current job; the site sees one walk at a time.
-    while (_busyHosts.contains(host)) {
-      if (_cancelled.contains(key)) return;
-      await Future.delayed(const Duration(milliseconds: 200));
+    _waiting.add(key);
+    try {
+      while (_busyHosts.contains(host)) {
+        if (_cancelled.contains(key)) return;
+        await Future.delayed(const Duration(milliseconds: 200));
+      }
+    } finally {
+      _waiting.remove(key);
     }
     _busyHosts.add(host);
 
