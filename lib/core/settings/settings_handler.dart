@@ -2448,16 +2448,49 @@ class SettingsHandler {
   /// tells [loadSettings] to persist immediately so it never re-runs.
   bool _flowMigrationPending = false;
 
+  /// Numbers each save's copy of the settings in the order it was taken, and
+  /// the newest copy that reached settings.json.
+  int _saveSnapshot = 0;
+  int _savedSnapshot = 0;
+
   Future<bool> saveSettings({required bool restate}) async {
     await getStoragePermission();
     if (path == '') {
       await setConfigDir();
     }
     await Directory(path).create(recursive: true);
+    // Each save writes a file of its own and renames it over settings.json:
+    // a kill or an error mid-write leaves the previous file whole, and two
+    // saves at once no longer write into the same file together.
+    final String json = jsonEncode(toJson());
+    final int snapshot = ++_saveSnapshot;
     final File settingsFile = File('${path}settings.json');
-    final writer = settingsFile.openWrite();
-    writer.write(jsonEncode(toJson()));
+    final File tempFile = File('${path}settings.json.$snapshot.tmp');
+    final writer = tempFile.openWrite();
+    writer.write(json);
     await writer.close();
+    if (snapshot > _savedSnapshot) {
+      try {
+        // Synchronous, so no other save lands between the check and the rename.
+        tempFile.renameSync(settingsFile.path);
+        _savedSnapshot = snapshot;
+      } on FileSystemException {
+        // The rename was refused (a file another program holds open): write
+        // in place, as before.
+        _savedSnapshot = snapshot;
+        final inPlace = settingsFile.openWrite();
+        inPlace.write(json);
+        await inPlace.close();
+        try {
+          await tempFile.delete();
+        } catch (_) {}
+      }
+    } else {
+      // A save that read the settings later has already landed.
+      try {
+        await tempFile.delete();
+      } catch (_) {}
+    }
 
     if (restate) {
       final searchHandler = SearchHandler.instance;

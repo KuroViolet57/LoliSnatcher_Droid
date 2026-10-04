@@ -80,6 +80,38 @@ void main() {
       expect(s.earlierDownloadFolders, ['content://tree/old']);
     });
 
+    test('two saves at once leave a whole file holding the latest values', () async {
+      s.hiddenTags.addAll(List<String>.generate(20000, (i) => 'a_long_hidden_tag_number_$i'));
+      final Future<bool> first = s.saveSettings(restate: false);
+      await Directory(s.path).create(recursive: true);
+      s.hiddenTags.clear();
+      s.hiddenTags.add('only_this');
+      final Future<bool> second = s.saveSettings(restate: false);
+      await Future.wait([first, second]);
+
+      final String text = File('${s.path}settings.json').readAsStringSync();
+      final dynamic json = jsonDecode(text);
+      expect(json['hiddenTags'], ['only_this']);
+      expect(Directory(s.path).listSync().where((e) => e.path.endsWith('.tmp')), isEmpty, reason: 'no temp file left behind');
+    });
+
+    test('a save that fails half-way leaves the previous settings.json whole', () async {
+      s.hiddenTags.add('first');
+      await s.saveSettings(restate: false);
+      final String before = File('${s.path}settings.json').readAsStringSync();
+
+      // Stands in for a kill mid-save: the JSON cannot be written (NaN).
+      s.preloadSizeLimit = double.nan;
+      s.hiddenTags.add('second');
+      await expectLater(s.saveSettings(restate: false), throwsA(anything));
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      s.preloadSizeLimit = 0.2;
+
+      final String after = File('${s.path}settings.json').readAsStringSync();
+      expect(after, before, reason: 'not truncated by the failed save');
+      expect(jsonDecode(after)['hiddenTags'], ['first']);
+    });
+
   });
 
   group('sourceSettings.json', () {
