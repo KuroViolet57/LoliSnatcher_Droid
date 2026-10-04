@@ -1336,6 +1336,9 @@ class SettingsHandler {
     if (await checkForSettings()) {
       await loadSettingsJson();
     } else {
+      // A fresh install already starts on the Flow defaults: mark the one-time
+      // migration done, or the next start would undo this session's theme.
+      flowSkinApplied.value = true;
       await saveSettings(restate: true);
     }
     return true;

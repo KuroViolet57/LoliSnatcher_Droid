@@ -80,6 +80,18 @@ void main() {
       expect(s.earlierDownloadFolders, ['content://tree/old']);
     });
 
+    test('a fresh install keeps the theme chosen in its first session at the next start', () async {
+      expect(File('${s.path}settings.json').existsSync(), isFalse);
+      await s.loadSettings(); // first start: no file yet
+      s.theme.value = (s.map['theme']!['options'] as List<ThemeItem>).firstWhere((t) => t.name == 'Pink');
+      s.isAmoled.value = true;
+      await s.saveSettings(restate: false);
+
+      await s.loadSettings(); // second start
+      expect(s.theme.value.name, 'Pink');
+      expect(s.isAmoled.value, isTrue);
+    });
+
     test('two saves at once leave a whole file holding the latest values', () async {
       s.hiddenTags.addAll(List<String>.generate(20000, (i) => 'a_long_hidden_tag_number_$i'));
       final Future<bool> first = s.saveSettings(restate: false);
