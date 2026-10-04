@@ -38,6 +38,12 @@ class RedGifsHandler extends BooruHandler {
   static String? _token;
   static DateTime? _tokenExpiry;
 
+  // User tokens the API rejected (401, e.g. after an IP change), dropped for
+  // this session only. Clearing booru.apiKey instead emptied the SHARED Booru:
+  // a backup or a save of the source's edit page then wrote the empty key and
+  // the account was signed out for good.
+  static final Set<String> _rejectedUserTokens = {};
+
   @override
   bool get hasSizeData => true;
 
@@ -126,7 +132,7 @@ class RedGifsHandler extends BooruHandler {
 
   String? get _validUserToken {
     final String? t = booru.apiKey;
-    if (t == null || t.isEmpty) return null;
+    if (t == null || t.isEmpty || _rejectedUserTokens.contains(t)) return null;
     final DateTime? exp = decodeJwtExpiry(t);
     // Keep a small safety margin; expired/undecodable tokens fall back to guest.
     if (exp == null || exp.isBefore(DateTime.now().add(const Duration(minutes: 2)))) {
@@ -336,8 +342,10 @@ class RedGifsHandler extends BooruHandler {
       if (e.response?.statusCode == HttpStatus.unauthorized) {
         // A user token is IP/agent-bound; if it's the one being rejected, drop
         // it and continue on a fresh guest token rather than looping on 401s.
-        if (_validUserToken != null) {
-          booru.apiKey = '';
+        // For this session only; the stored key stays (see _rejectedUserTokens).
+        final String? rejected = _validUserToken;
+        if (rejected != null) {
+          _rejectedUserTokens.add(rejected);
         }
         final bool ok = await _ensureToken(force: true);
         if (ok) {

@@ -84,14 +84,18 @@ class GelbooruHandler extends BooruHandler {
 
   @override
   List parseListFromResponse(dynamic response) {
-    dynamic parsedResponse;
-    try {
-      parsedResponse = response.data;
-    } catch (e) {
-      // gelbooru returns xml response if request was denied for some reason
-      // i.e. user hit a rate limit because he didn't include api key
-      parsedResponse = XmlDocument.parse(response.data);
-      final String? errorMessage = (parsedResponse as XmlDocument).getElement('response')?.getAttribute('reason')?.toString();
+    final dynamic parsedResponse = response.data;
+    // gelbooru returns xml response if request was denied for some reason
+    // i.e. user hit a rate limit because he didn't include api key.
+    // (This sat in a catch around reading response.data, which never
+    // throws, so the user got a type error instead of the reason.)
+    if (parsedResponse is String) {
+      String? errorMessage;
+      try {
+        errorMessage = XmlDocument.parse(parsedResponse).getElement('response')?.getAttribute('reason')?.toString();
+      } catch (_) {
+        // Not XML: left to fail below, as before.
+      }
       if (errorMessage != null) {
         throw Exception(errorMessage);
       }
@@ -605,9 +609,11 @@ class GelbooruHandler extends BooruHandler {
           }
         }
 
-        item.thumbnailURL = item.thumbnailURL.replaceAll('(?<!https?:)//', '/');
-        item.sampleURL = item.sampleURL.replaceAll('(?<!https?:)//', '/');
-        item.fileURL = item.fileURL.replaceAll('(?<!https?:)//', '/');
+        // A RegExp: as a String the pattern was searched for literally and
+        // never found, so a '//' inside a path stayed.
+        item.thumbnailURL = item.thumbnailURL.replaceAll(RegExp('(?<!https?:)//'), '/');
+        item.sampleURL = item.sampleURL.replaceAll(RegExp('(?<!https?:)//'), '/');
+        item.fileURL = item.fileURL.replaceAll(RegExp('(?<!https?:)//'), '/');
 
         final sidebar = html.getElementById('tag-list');
         final copyrightTags = parseTagsFromGelbooruHtml(sidebar?.getElementsByClassName('tag-type-copyright'));

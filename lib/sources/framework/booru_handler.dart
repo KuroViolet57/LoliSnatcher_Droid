@@ -226,8 +226,12 @@ abstract class BooruHandler {
         continue;
       }
 
+      // The same id is the same post only on the same site: a merge feed or
+      // a Downloads list can hold post 12345 of two different sites.
       final bool isDuplicate = filteredItems.any(
-        (e) => e.fileURL == item.fileURL || (e.serverId != null && e.serverId == item.serverId),
+        (e) =>
+            e.fileURL == item.fileURL ||
+            (e.serverId != null && e.serverId == item.serverId && Uri.tryParse(e.postURL)?.host == Uri.tryParse(item.postURL)?.host),
       );
       if (isDuplicate) {
         hide(HiddenReason.duplicate);
@@ -1216,7 +1220,10 @@ abstract class BooruHandler {
     // one to the other sent every cookie twice (see Tools.mergeCookieStrings).
     cookieString = Tools.mergeCookieStrings([cookieString, headers['Cookie'] ?? '']);
 
-    Logger.Inst().log('${booru.baseURL}: $cookieString', className, 'getCookies', LogTypes.booruHandlerSearchURL);
+    // Names only: the values are sessions, some under names the redaction
+    // cannot know (FurAffinity's a and b), and a log gets shared.
+    final String names = Tools.parseCookieString(cookieString).keys.map((name) => '$name=<redacted>').join('; ');
+    Logger.Inst().log('${booru.baseURL}: $names', className, 'getCookies', LogTypes.booruHandlerSearchURL);
 
     return cookieString.trim();
   }
@@ -1379,12 +1386,16 @@ abstract class BooruHandler {
 
     final SettingsHandler settingsHandler = SettingsHandler.instance;
     if (settingsHandler.dbHandler.db != null && diff > 0) {
+      // The posts the values are read for, kept across the await: the feed
+      // can be reset and refilled meanwhile (a refresh), and indexing it
+      // afterwards threw a RangeError or flagged another query's posts.
+      final List<BooruItem> items = fetched.sublist(fetchedIndexes.first, fetchedIndexes.last);
       final List<List<bool>> valuesList = await settingsHandler.dbHandler.getMultipleTrackedValues(
-        fetched.sublist(fetchedIndexes.first, fetchedIndexes.last),
+        items,
       ); //.map((e) => e.fileURL).toList()
 
       valuesList.asMap().forEach((index, values) {
-        final BooruItem item = fetched[fetchedIndexes[index]];
+        final BooruItem item = items[index];
         item.isSnatched.value = values[0];
         // Doujin favourite state comes from the DOUJIN store, never the booru
         // DB (snatched stays DB-backed: downloads are one shared system).

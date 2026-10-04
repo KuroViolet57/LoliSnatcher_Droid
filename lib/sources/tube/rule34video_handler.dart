@@ -290,7 +290,10 @@ class Rule34VideoHandler extends BooruHandler {
   @override
   Future search(String tags, int? pageNumCustom, {bool withCaptchaCheck = true}) async {
     moreAfterWalk = false;
-    final String source = validateTags(translateOrSyntax(tags.trim()).trim());
+    // The query exactly as the base search will hand it to makeURL - with
+    // the Source settings' default filters and always-add terms - or
+    // makeURL re-parses it without the database (stored slugs lost).
+    final String source = validateTags(translateOrSyntax(sourceQuery(tags.trim())).trim());
     if (!_isCurrent(source) || current.needsResolution) {
       current = await resolveQuery(source);
     }

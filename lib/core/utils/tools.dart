@@ -611,6 +611,61 @@ class Tools {
     }
   }
 
+  /// One `Set-Cookie` header as [saveCookies] writes it into the jar.
+  @visibleForTesting
+  static Cookie parseSetCookie(String c) {
+    final List<String> pieces = c.split(';');
+
+    // The value is everything after the first '=': base64 values end in '='
+    // and the last '='-piece of `sess=abc==` is an empty string.
+    final String pair = pieces.first;
+    final int eq = pair.indexOf('=');
+    final name = (eq < 0 ? pair : pair.substring(0, eq)).trim();
+    final value = (eq < 0 ? pair : pair.substring(eq + 1)).trim();
+
+    // The attributes by lower-case name. Each piece keeps the space after its
+    // ';' (" Domain=.site.com"), which kept every attribute from matching:
+    // cookies went into the jar host-only, session-only and not secure.
+    final Map<String, String> attributes = {};
+    for (final String piece in pieces.skip(1)) {
+      final int i = piece.indexOf('=');
+      final String key = (i < 0 ? piece : piece.substring(0, i)).trim().toLowerCase();
+      if (key.isNotEmpty) attributes[key] = i < 0 ? '' : piece.substring(i + 1).trim();
+    }
+    String? attribute(String key) => (attributes[key]?.isNotEmpty ?? false) ? attributes[key] : null;
+
+    final domain = attribute('domain');
+    final path = attribute('path');
+    // Max-Age wins over Expires (RFC 6265 5.3); Expires is an HTTP date.
+    final int? maxAge = int.tryParse(attribute('max-age') ?? '');
+    final DateTime? expires = maxAge != null ? DateTime.now().add(Duration(seconds: maxAge)) : _parseCookieDate(attribute('expires'));
+    final isSecure = attributes.containsKey('secure');
+    final isHttpOnly = attributes.containsKey('httponly');
+
+    return Cookie(
+      name: name,
+      value: value,
+      domain: domain,
+      path: path,
+      expiresDate: expires?.millisecondsSinceEpoch,
+      isSecure: isSecure,
+      isHttpOnly: isHttpOnly,
+    );
+  }
+
+  /// A cookie's Expires: an HTTP date (`Wed, 21 Oct 2037 07:28:00 GMT`), the
+  /// dashed form many servers send (`Wed, 21-Oct-2037 07:28:00 GMT`), or an
+  /// ISO date; null when it is none of them.
+  static DateTime? _parseCookieDate(String? value) {
+    if (value == null) return null;
+    for (final String candidate in [value, value.replaceAll('-', ' ')]) {
+      try {
+        return HttpDate.parse(candidate);
+      } catch (_) {}
+    }
+    return DateTime.tryParse(value);
+  }
+
   static Future<bool> saveCookies(String uri, List<String> cookies) async {
     if (cookies.isEmpty) return true;
     // A jar that stopped answering is not written to either (r39).
@@ -622,29 +677,7 @@ class Tools {
         final List<Cookie?> parsedCookies = [];
         for (final c in cookies) {
           try {
-            final parts = c.split(';').map((p) => p.split('='));
-
-            final name = parts.first.first.trim();
-            final value = parts.first.last.trim();
-            final domain = parts.firstWhereOrNull((p) => p.first.toLowerCase() == 'domain')?.last.trim();
-            final path = parts.firstWhereOrNull((p) => p.first.toLowerCase() == 'path')?.last.trim();
-            final expires = DateTime.tryParse(
-              parts.firstWhereOrNull((p) => p.first.toLowerCase() == 'expires')?.last.trim() ?? '',
-            );
-            final isSecure = parts.firstWhereOrNull((p) => p.first.toLowerCase() == 'secure') != null;
-            final isHttpOnly = parts.firstWhereOrNull((p) => p.first.toLowerCase() == 'httponly') != null;
-
-            parsedCookies.add(
-              Cookie(
-                name: name,
-                value: value,
-                domain: domain,
-                path: path,
-                expiresDate: expires?.millisecondsSinceEpoch,
-                isSecure: isSecure,
-                isHttpOnly: isHttpOnly,
-              ),
-            );
+            parsedCookies.add(parseSetCookie(c));
           } catch (_) {}
         }
 

@@ -73,7 +73,8 @@ class HydrusHandler extends BooruHandler {
 
   @override
   Future search(String tags, int? pageNumCustom, {bool withCaptchaCheck = true}) async {
-    tags = translateOrSyntax(tags);
+    // Source settings (default filters, always-add terms) as BooruHandler.search applies them.
+    tags = translateOrSyntax(sourceQuery(tags));
     if (prevTags != tags) {
       fetched.value = [];
       prevTags = tags;

@@ -219,6 +219,44 @@ class CivitaiHandler extends BooruHandler {
 
   String _cursor = '';
 
+  /// API pages one search may look past when the `-tag` exclusions removed
+  /// every item of a page.
+  static const int maxExcludedPages = 3;
+
+  // The last page: items the API sent, and items left after the exclusions
+  // (-1 when it failed before parsing).
+  int _lastPageRaw = 0;
+  int _lastPageAdded = -1;
+
+  bool get _wholePageExcluded => _lastPageAdded == 0 && _lastPageRaw > 0 && _cursor.isNotEmpty && errorString.isEmpty;
+
+  /// The base locks the feed when a page added nothing, but a page the
+  /// exclusions emptied is not the end while the API gives a next cursor:
+  /// look further now (an empty grid has nothing to scroll), and leave the
+  /// feed open if the budget runs out.
+  @override
+  Future search(String tags, int? pageNumCustom, {bool withCaptchaCheck = true}) async {
+    _lastPageRaw = 0;
+    _lastPageAdded = -1;
+    await super.search(tags, pageNumCustom, withCaptchaCheck: withCaptchaCheck);
+    for (int hop = 0; hop < maxExcludedPages && _wholePageExcluded; hop++) {
+      // The empty page locked the feed; the next one decides again.
+      locked = false;
+      pageNum++;
+      _lastPageRaw = 0;
+      _lastPageAdded = -1;
+      await super.search(tags, null, withCaptchaCheck: withCaptchaCheck);
+    }
+    if (_wholePageExcluded) locked = false;
+    return fetched;
+  }
+
+  @override
+  Future<void> afterParseResponse(List<BooruItem> newItems) {
+    _lastPageAdded = newItems.length;
+    return super.afterParseResponse(newItems);
+  }
+
   @override
   String makeURL(String tags) {
     // Full URL construction happens in fetchSearch (needs async tag-id and
@@ -294,7 +332,9 @@ class CivitaiHandler extends BooruHandler {
   List parseListFromResponse(dynamic response) {
     final Map<String, dynamic> parsedResponse = response.data;
     _cursor = parsedResponse['metadata']?['nextCursor']?.toString() ?? '';
-    return (parsedResponse['items'] ?? []) as List;
+    final List items = (parsedResponse['items'] ?? []) as List;
+    _lastPageRaw = items.length;
+    return items;
   }
 
   // Rewrites an image-delivery URL's transform segment. Civitai URLs look like

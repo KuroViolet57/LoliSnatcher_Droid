@@ -347,7 +347,9 @@ class R34HentaiHandler extends ShimmieHandler {
     if (setCookies != null) {
       for (final cookie in setCookies) {
         final name = cookie.split(';')[0].split('=')[0];
-        final value = cookie.split(';')[0].split('=')[1];
+        // Everything after the first '=' (a value may hold '=' itself).
+        final String pair = cookie.split(';')[0];
+        final value = pair.substring(pair.indexOf('=') + 1);
 
         await cookieManager.setCookie(
           url: WebUri(booru.baseURL!),
