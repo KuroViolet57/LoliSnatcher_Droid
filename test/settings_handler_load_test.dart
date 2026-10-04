@@ -145,6 +145,12 @@ void main() {
       expect(jsonDecode(after)['hiddenTags'], ['first']);
     });
 
+    test('deleting a booru whose file is already gone still removes it from the list', () async {
+      final Booru gone = Booru('gone', BooruType.Gelbooru, '', 'https://gone.example', '');
+      s.booruList.add(gone);
+      await s.deleteBooru(gone);
+      expect(s.booruList, isNot(contains(gone)));
+    });
   });
 
   group('sourceSettings.json', () {

@@ -2718,7 +2718,9 @@ class SettingsHandler {
 
   Future<bool> deleteBooru(Booru booru) async {
     final File booruFile = File('$boorusPath${booru.name}.json');
-    await booruFile.delete();
+    if (await booruFile.exists()) {
+      await booruFile.delete();
+    }
     if (prefBooru == booru.name) {
       prefBooru = '';
       await saveSettings(restate: true);
