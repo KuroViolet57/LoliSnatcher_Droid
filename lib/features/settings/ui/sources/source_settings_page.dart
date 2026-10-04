@@ -795,7 +795,8 @@ class _SourceSettingsPageState extends State<SourceSettingsPage> {
             subtitle: 'The Recommended strip keeps loading more as you scroll.',
             layerValue: layer.recommendedCount == null ? null : layer.recommendedCount == 0,
             inheritedValue: sourceSettings.recommendedCount(booru) == 0,
-            onChanged: (v) => _update((s) => s.recommendedCount = (v ?? false) ? 0 : 30),
+            // null is the marker's reset: back to inheriting, not 30.
+            onChanged: (v) => _update((s) => s.recommendedCount = v == null ? null : (v ? 0 : 30)),
           ),
           if (sourceSettings.recommendedCount(booru) != 0)
             _stepperRow(

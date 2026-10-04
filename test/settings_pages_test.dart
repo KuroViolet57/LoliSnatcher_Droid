@@ -173,6 +173,23 @@ void main() {
     expect(await saved(tester), isTrue, reason: 'the page saved on exit');
   });
 
+  testWidgets("a doujin source's Endless recommendations override is reset by its marker", (tester) async {
+    final Booru nhentai = Booru('nhentai', BooruType.NHentai, '', 'https://nhentai.net', '');
+    s.booruList.add(nhentai);
+    SourceSettingsHandler.instance.update(nhentai, (st) => st.recommendedCount = 0);
+    tester.view.physicalSize = const Size(420, 8000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(TranslationProvider(child: MaterialApp(theme: theme, home: SourceSettingsPage(booru: nhentai))));
+    await tester.pump();
+    final Finder marker = find.text('Overridden for this source · tap to reset');
+    expect(marker, findsOneWidget);
+    await tester.tap(marker);
+    await tester.pump();
+    expect(SourceSettingsHandler.instance.settingsFor(nhentai).recommendedCount, isNull);
+    expect(marker, findsNothing);
+  });
+
   /// Long-press Save (debug: no network test), confirm, and give the file
   /// work real time until [done] holds (or long enough that it never will).
   Future<void> saveBooru(WidgetTester tester, bool Function() done) async {
