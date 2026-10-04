@@ -1,0 +1,406 @@
+{
+ "shell": {
+  "key": "shell",
+  "branch": "m2/shell",
+  "headSha": "899040a1",
+  "results": [
+   {
+    "title": "Pasteable text fields read the clipboard on every keystroke",
+    "file": "lib/core/ui/settings_widgets.dart",
+    "status": "fixed",
+    "commit": "d1844827",
+    "reason": "Confirmed: onChanged -> setState -> build -> FutureBuilder(future: Clipboard.getData(...)) made a new read per build (red test: 5 reads for focus + 4 keystrokes). The read that decides whether Paste shows is now cached per focus (_clipboardRead, reset in focusListener, made once by build via ??=). Paste reads the clipboard when pressed (with a mounted check), so it pastes what is there now instead of a snapshot that would go stale with the cache. Green: 1 read.",
+    "test": "test/settings_text_input_paste_test.dart: typing in a pasteable field does not read the clipboard again",
+    "userVisible": "Typing in an API key, proxy or IP field no longer makes Android show 'pasted from your clipboard' on every key."
+   },
+   {
+    "title": "After an auto-lock timeout the app content is briefly visible before the lock screen",
+    "file": "lib/core/platform/local_auth_handler.dart",
+    "status": "deferred",
+    "reason": "The window is real (onReturn awaits 10 ms, then lock() awaits canCheckBiometrics before isAuthenticated=false), but the 10 ms delay is what lets authenticate() set lastUnlockTime after the native biometric prompt returns, which keeps the contract 'returning within 1 s of an unlock never relocks'. Deciding synchronously on resume, or locking with the cached biometric flag before the platform call, risks relocking right after a fingerprint unlock or flashing the lock screen when biometrics were removed. The gap is a frame or two and only observable on the phone; the real fix (cover at leave time) changes when the lock screen appears, which is the user's call.",
+    "test": "",
+    "userVisible": "internal"
+   },
+   {
+    "title": "Tab changes from the last 30 s are lost when the app is killed",
+    "file": "lib/main.dart",
+    "status": "fixed",
+    "commit": "83a44da0",
+    "reason": "Confirmed: backupTabs ran only from the 30 s timer; the leave branch flushed the recommender and doujin store only. hidden/paused/detached now also call unawaited(searchHandler.backupTabs()) (still guarded by canBackup until restoreTabs has run). inactive alone (shade, system prompt) is excluded to avoid a DB write per shade pull. Concurrent calls only race SELECT/UPDATE on the single TabRestore row; the JSON is generated synchronously at call time, so the last write is the newest.",
+    "test": "none: the handler is _HomeState's; pumping Home starts ImageWriter.cleanupCache on the host's real %LOCALAPPDATA%\\LoliSnatcher\\cache (compute isolate) and needs every handler",
+    "userVisible": "Tabs opened or closed just before swiping the app away come back on the next start."
+   },
+   {
+    "title": "One extra repeat fires after the long press is released",
+    "file": "lib/core/ui/long_press_repeater.dart",
+    "status": "fixed",
+    "commit": "33f3c0d9",
+    "reason": "Confirmed (red: 4 actions for 3 held ticks). runAction takes {first}; after the delay a repeat returns when !active. The first action of a press is kept, so a long press released before the first tick still acts once exactly as before (guard test passes before and after). onStop is no longer followed by an onStart.",
+    "test": "test/long_press_repeater_test.dart: nothing repeats after the finger is lifted; a long press let go before the first tick still acts once, as before",
+    "userVisible": "Holding the viewer's page buttons or a number stepper and letting go no longer moves one extra step."
+   },
+   {
+    "title": "LoadItemViewer branch can never be reached on desktop",
+    "file": "lib/app/shells/desktop/desktop_image_listener.dart",
+    "status": "fixed",
+    "commit": "74292de5",
+    "reason": "Confirmed typo: the branch meant for LoadItemViewer tested isNeedToGuess again (dead), so needToLoadItem items fell to the else GuessExtensionViewer with no file URL. Now isNeedToLoadItem && hasLoadItemSupport, the same condition the phone viewer uses (gallery_view_page.dart). Red: GuessExtensionViewer; green: LoadItemViewer, loadItem called once.",
+    "test": "test/desktop_image_listener_test.dart: a post that needs its details loaded gets the loader, not the extension guesser",
+    "userVisible": "In desktop mode, posts whose details must be fetched first now load instead of failing to guess a file type."
+   },
+   {
+    "title": "Changing 'Blur on leave' has no effect until something rebuilds the whole app",
+    "file": "lib/main.dart",
+    "status": "fixed",
+    "commit": "011a3043",
+    "reason": "Confirmed: the blur OverlayEntry (Overlay initialEntries, built once) read blurOnLeave.value only when MaterialApp.builder reran; MainApp's Obx does not track reads in the builder (it runs later, outside the Obx), and privacy_page saves with restate:false. The entry builder now wraps AppLifecycleOverlay in Obx on blurOnLeave; the overlay still decides at the next lifecycle change from the new value. Overlay order (content, blur, lock screen topmost) unchanged.",
+    "test": "none: the entry lives in MainApp.build, which cannot be pumped without SettingsHandler.postInit (DB, proxy, video backend)",
+    "userVisible": "Turning Blur on leave on or off works right away, without restarting the app."
+   },
+   {
+    "title": "Every return from 'inactive' drops the headless Schale and HentaiPaw page clients",
+    "file": "lib/main.dart",
+    "status": "deferred",
+    "reason": "The code does dispose them on every resumed (inactive -> resumed included), but this is written as intended ('cheap to start again, so they go'). Adding a minimum away time is a design choice (what threshold) that touches the niyaniya clearance flow (user rule 4: manual solving, no silent retry) and can only be judged on the phone against the live sites.",
+    "test": "",
+    "userVisible": "internal"
+   },
+   {
+    "title": "Tap recognizers are created on every build and never disposed",
+    "file": "lib/core/ui/text/parsed_text.dart",
+    "status": "fixed",
+    "commit": "28b592d9",
+    "reason": "Confirmed (red: undisposed TapGestureRecognizers counted via FlutterMemoryAllocations). The five creation sites go through _tapRecognizer, which records them; build disposes the previous build's list before making new spans (all _buildSpans calls, nested and spoiler ones included, run inside build), and dispose() disposes the last ones. A link still opens after a rebuild (second test).",
+    "test": "test/parsed_text_recognizers_test.dart: every tap recognizer a comment makes is disposed; a link still opens after the comment rebuilt",
+    "userVisible": "internal"
+   },
+   {
+    "title": "Dropdown sheet controllers are never disposed",
+    "file": "lib/core/ui/loli_dropdown.dart",
+    "status": "fixed",
+    "commit": "dff26eb6",
+    "reason": "Confirmed: _LoliDropdownBottomSheet had no dispose. Added dispose(): searchController always, scrollController only when the sheet created it (widget.controller == null); a DraggableScrollableSheet's controller is left to its owner (test checks it stays usable).",
+    "test": "test/loli_dropdown_sheet_test.dart: closing the sheet disposes the controllers it made; a scroll controller handed in by a draggable sheet is not disposed by the sheet",
+    "userVisible": "internal"
+   },
+   {
+    "title": "The browser tab's ValueNotifiers are never disposed",
+    "file": "lib/features/webview/ui/webview_browser_view.dart",
+    "status": "fixed",
+    "commit": "efc8b46e",
+    "reason": "Confirmed: progress and currentUrl had no dispose. Added dispose() for both. The InAppWebView child is unmounted before this state (children first), so its callbacks stop; a late set on a disposed ValueNotifier is a no-op in release anyway.",
+    "test": "test/webview_browser_view_test.dart: closing the browser view disposes its notifiers",
+    "userVisible": "internal"
+   },
+   {
+    "title": "ShimmerWrap ignores `enabled`, so the shimmer ticker runs forever in low-performance mode",
+    "file": "lib/core/ui/shimmer_builder.dart",
+    "status": "fixed",
+    "commit": "05702b56",
+    "reason": "Confirmed: ShimmerWrap built Shimmer(enabled: true). Now passes enabled. Shimmer already starts on enabled, stops on a switch to disabled only when no ShimmerLoading child is active, and any loading child starts it (activateChild ignores enabled), so painting is unchanged: loading cards still shimmer under a disabled wrap (guard test). Only the idle ticker in low-performance mode and behind the viewer stops.",
+    "test": "test/shimmer_wrap_test.dart: a disabled ShimmerWrap does not run the shimmer animation; an enabled ShimmerWrap animates, and stops when it is switched off; a loading card still shimmers under a disabled wrap, as before",
+    "userVisible": "In low performance mode the feed no longer redraws a hidden shimmer every frame."
+   },
+   {
+    "title": "The webview menu fails on a null controller when no webview exists",
+    "file": "lib/features/webview/ui/webview_navigation_menu.dart",
+    "status": "fixed",
+    "commit": "28139f65",
+    "reason": "Confirmed (red: 'Null check operator used on a null value'). onSelected now reads controller.data once and returns when it is null; each case uses that value. The user saw nothing happen before and still does, minus the exception.",
+    "test": "test/webview_navigation_menu_test.dart: picking a menu item before the webview exists does not throw (fake InAppWebViewPlatform for the CookieManager field)",
+    "userVisible": "internal"
+   },
+   {
+    "title": "Scroll-to-selected throws when the current value is not in the list",
+    "file": "lib/core/ui/loli_dropdown.dart",
+    "status": "fixed",
+    "commit": "dff26eb6",
+    "reason": "Confirmed (red: RangeError -1). The post-frame callback returns when indexOf(value) == -1 (this also avoids the itemExtent branch jumping to a negative offset). Same commit as the dispose fix (same file).",
+    "test": "test/loli_dropdown_sheet_test.dart: a value that is not in the list opens the sheet without an error",
+    "userVisible": "internal"
+   },
+   {
+    "title": "A malformed loli.snatcher config link fails silently with an uncaught exception",
+    "file": "lib/main.dart",
+    "status": "fixed",
+    "commit": "f23d05f9",
+    "reason": "Confirmed: Booru.fromLink (split('?')[1], base64Decode, jsonDecode) and booru.type! could throw out of the post-frame callback. The parse is now caught and logged with the exception type only (a FormatException's text carries the payload) and the link ignored; an unknown type uses type?.isSaveable == true. No user message was added (that would be a new string); the user sees nothing, as before.",
+    "test": "none: openAppLink is on _HomeState (see the tabs backup item)",
+    "userVisible": "internal"
+   },
+   {
+    "title": "The post-frame width update force-unwraps currentContext before checking mounted",
+    "file": "lib/core/ui/inner_drawer.dart",
+    "status": "fixed",
+    "commit": "ad3e977b",
+    "reason": "Confirmed (red: null-check error when the drawer rebuilds for a new size and leaves the tree in the same frame). currentContext! -> currentContext?. so the existing `mounted && box != null` check skips it. No other change to the vendored drawer.",
+    "test": "test/inner_drawer_width_test.dart: a drawer removed in the frame its width changed does not throw",
+    "userVisible": "internal"
+   },
+   {
+    "title": "The history dialog puts a ListView directly in AlertDialog content",
+    "file": "lib/features/webview/ui/webview_navigation_controls.dart",
+    "status": "deferred",
+    "reason": "Real in debug (viewport intrinsic-width assert). In the user's release builds the intrinsic call returns 0 and the dialog renders at its 280 px minimum width, which works. The standard fix (SizedBox(width: double.maxFinite)) makes the release dialog full width: a visual change, not allowed in this release.",
+    "test": "",
+    "userVisible": "internal"
+   },
+   {
+    "title": "setState is called after an await without a mounted check (Windows cookie mirror)",
+    "file": "lib/features/webview/ui/webview_page.dart",
+    "status": "fixed",
+    "commit": "899040a1",
+    "reason": "Confirmed by trace: saveCookiesOnWidnows awaits getCookies then calls setState. Added `if (!mounted) return;` after the cookies are copied into globalWindowsCookies (that copy is kept).",
+    "test": "none: runs from a real webview's onLoadStop on Windows",
+    "userVisible": "internal"
+   },
+   {
+    "title": "Fullscreen reuses the same keyed viewer widget (duplicate GlobalKey)",
+    "file": "lib/app/shells/desktop/desktop_image_listener.dart",
+    "status": "deferred",
+    "reason": "Plausible but unproven: the same itemWidget (GlobalKey item.key) moves between the pane and the fullscreen dialog in the same frame, and the framework's GlobalKey reparenting may handle it. A safe fix means restructuring how fullscreen shows the viewer (larger change) and needs testing on a desktop build.",
+    "test": "",
+    "userVisible": "internal"
+   },
+   {
+    "title": "The progress bar disappears at the first subresource",
+    "file": "lib/features/webview/ui/webview_page.dart",
+    "status": "deferred",
+    "reason": "True by trace (onLoadResource sets loadingPercentage = 100, hiding the bar until the next onProgressChanged). Removing it changes what the user sees: the bar would stay up on pages that never finish loading (Cloudflare/challenge pages). Whether that is wanted needs the live sites and the user.",
+    "test": "",
+    "userVisible": "internal"
+   },
+   {
+    "title": "Found while fixing: a loli.snatcher link was written to the log with its credential payload",
+    "file": "lib/main.dart",
+    "status": "fixed",
+    "commit": "f23d05f9",
+    "reason": "openAppLink logged the whole incoming URL. A config link exported with sensitive data carries apiKey and userID as base64 JSON, which LogRedaction cannot see (it redacts plain values and only keys of sources already in this install). Only the part before '?' is logged for loli.snatcher links now; other links are logged as before. Same commit as the malformed-link fix (same function).",
+    "test": "none: openAppLink is on _HomeState",
+    "userVisible": "internal"
+   }
+  ],
+  "filesOutsideOwnership": [],
+  "testFilesRun": [
+   "test/settings_text_input_paste_test.dart",
+   "test/long_press_repeater_test.dart",
+   "test/desktop_image_listener_test.dart",
+   "test/parsed_text_recognizers_test.dart",
+   "test/loli_dropdown_sheet_test.dart",
+   "test/shimmer_wrap_test.dart",
+   "test/webview_navigation_menu_test.dart",
+   "test/webview_browser_view_test.dart",
+   "test/inner_drawer_width_test.dart",
+   "test/tab_cards_test.dart",
+   "test/schale_clearance_flow_test.dart",
+   "test/hidden_status_bar_insets_test.dart",
+   "test/architecture_test.dart"
+  ],
+  "notes": "I verified all 19 bugs. 14 commits on m2/shell, based on 1dbf5abf, with a clean tree. I fixed 14 of the listed bugs, plus one I found while working (it shares commit f23d05f9 with the malformed-link fix). 5 are deferred.\n\n**Tests:**\n- Every fix that has a test was seen failing for the expected reason first, then passing.\n- The final run of the 9 new test files plus tab_cards, schale_clearance_flow, hidden_status_bar_insets and architecture_test: 62 passed.\n- `flutterw analyze --no-pub` on all changed lib and test files: no issues.\n- Four fixes have no test because of where they live: the three in main.dart's _HomeState/MainApp, and the Windows cookie path in webview_page. Pumping Home starts the real cache cleanup on this PC's `%LOCALAPPDATA%\\LoliSnatcher\\cache`, so I did not do it.\n\n**Credential leak outside my files:** `lib/features/settings/ui/sources/booru_page.dart` line ~376 logs the whole clipboard text when importing a booru. That is the same leak I fixed in main.dart: a loli.snatcher config link carries the API key and user id as base64, which LogRedaction cannot see. The settings owner should log only `url.split('?').first`.\n\n**Things to know when merging:**\n- `test/webview_navigation_menu_test.dart` sets `InAppWebViewPlatform.instance` to a fake in setUpAll. That stays inside its own test isolate, but the setter cannot be reset to null.\n- New test files were written with LF endings; git normalises them on commit (autocrlf). Edited lib files keep CRLF: `git diff --stat` shows only the changed lines.\n- In main.dart I changed only three places: the blur OverlayEntry builder, openAppLink, and the leave branch of didChangeAppLifecycleState. Merges from other branches touching main.dart should only conflict there.\n- The tabs backup now also runs on hidden, paused and detached (not inactive). It still waits for canBackup, so the post-init order is unchanged.\n\n**Deferred and why:**\n- Lock-screen flash on return: the 10 ms delay protects the 'no relock within 1 s of an unlock' rule; needs the phone.\n- Schale/HentaiPaw page clients dropped on every resume: written as intended; changing it touches the niyaniya clearance flow and needs the live sites.\n- Webview history dialog width: the fix would visibly widen the dialog in release builds.\n- Desktop fullscreen GlobalKey: needs a restructure and a desktop test.\n- Webview progress bar hiding early: a visible change that needs the live sites to judge."
+ },
+ "viewer": {
+  "key": "viewer",
+  "branch": "m2/viewer",
+  "headSha": "50947b0559b63616dc276b87bff10b6ae777979a",
+  "results": [
+   {
+    "title": "Comment author names shorter than 2 characters crash the comment row",
+    "file": "lib/features/viewer/ui/comments_dialog.dart",
+    "status": "fixed",
+    "commit": "cdda4d7f",
+    "reason": "Confirmed: the avatar slot does authorName?.substring(0, 2), which throws a RangeError for a name shorter than two letters, and for an empty name too. A new _CommentEntry._initials() returns the whole name when it is shorter than 2 and '?' when it is empty (the same as a null name). Names of two or more letters show exactly as before.",
+    "test": "test/viewer_comments_dialog_test.dart: an author whose name is shorter than two letters gets a comment row, not an error (red: RangeError (end))",
+    "userVisible": "A comment from a one-letter or nameless author shows up again instead of an error box."
+   },
+   {
+    "title": "TagView calls setState after dispose when loadItem returns late",
+    "file": "lib/features/viewer/ui/info/tag_view.dart",
+    "status": "fixed",
+    "commit": "3c414916",
+    "reason": "Confirmed. The reloadItemData await and the post-frame parseSortGroupTags both called setState with no mounted check. I added only the mounted guards (if (!mounted) return) after the loadItem try/catch and after the cacheTabMatchData await. The r54 SettledCall delay stays out, because bringing it back changes when requests go out (see the deferred perf item). tag_view.dart holds literal NUL bytes, so I edited it byte-wise and it is still LF.",
+    "test": "test/viewer_tag_view_dispose_test.dart: an answer arriving after the panel is gone does not touch the gone panel (red: setState() called after dispose() from reloadItemData)",
+    "userVisible": "internal"
+   },
+   {
+    "title": "RangeError in notes overlay after 'Load notes' from the info panel",
+    "file": "lib/features/viewer/ui/notes_renderer.dart",
+    "status": "fixed",
+    "commit": "b3b19d3e",
+    "reason": "Confirmed. The Obx listens to item.notes, but notesMap is rebuilt only in loadNotes and doCalculations. When TagView writes item.notes directly, the build indexes notesMap[i] on an empty list. The build now calls rebuildNotesMap() whenever notesMap.length differs from item.notes.length.",
+    "test": "test/viewer_notes_renderer_test.dart: notes loaded from the info panel after the overlay's own load came back empty are drawn (red: RangeError (length))",
+    "userVisible": "Tapping 'Load notes' in the info panel draws the notes instead of breaking the overlay."
+   },
+   {
+    "title": "Notes of the next post never load when swiping during a notes fetch",
+    "file": "lib/features/viewer/ui/notes_renderer.dart",
+    "status": "fixed",
+    "commit": "b3b19d3e",
+    "reason": "Confirmed. itemListener's loadNotes returned at `if (loading)`. The cancelled request then wrote [] into the old post's notes, because the receiver is evaluated before the await, and the new post was never asked for. loadNotes now keeps the item and token it started with. A cancelled answer is not written. If the post changed during the load, loading is reset and loadNotes runs again for the post now on screen (only while mounted). The retry tap (cancel, 100 ms, loadNotes) and dispose behave as before.",
+    "test": "test/viewer_notes_renderer_test.dart: a post swiped to while the previous post's notes load gets its own notes (red: b never asked for)",
+    "userVisible": "Notes now appear on a post you swipe to while the previous post's notes were still loading."
+   },
+   {
+    "title": "media_kit engine never reports video completion to the recommender",
+    "file": "lib/features/video/ui/media_kit_player_view.dart",
+    "status": "deferred",
+    "reason": "The finding is accurate, but docs/FEATURES.md #61 and HANDOVER 4.x document the signal as 'Chewie and better_player only'. Adding it would start feeding a new videoComplete signal (+2, classic +4) into the For You model of the user's main engine, which is a behaviour change and the user's call. It would also mean subscribing to position/duration streams inside the fragile pooled player (release by identity, rebind, fullscreen hold), which needs checking on the phone.",
+    "test": "",
+    "userVisible": "internal"
+   },
+   {
+    "title": "better_player + preload videos: preloading a neighbour kills the visible video",
+    "file": "lib/features/video/ui/better_player_view.dart",
+    "status": "fixed",
+    "commit": "975a5d15",
+    "reason": "Confirmed. With isNear, the neighbours ±1 are built and _wantsPlayer is true when preloadVideos is on. makeRoomFor with _maxAlive=1 evicts the viewed controller, and the viewed page never re-inits because isViewed did not change. Fix: a page that is not viewed returns from _initInner before makeRoomFor when the pool already holds the viewed page's controller (new _BetterPlayerPool.holdsViewedOtherThan). It inits once it is swiped to. Evict-before-allocate and the _DecoderGate order are unchanged.",
+    "test": "Not testable off-device: BetterPlayerController needs the native ExoPlayer plugin and the pool is private.",
+    "userVisible": "With better_player and video preloading on, the video on screen no longer goes black when its neighbour preloads."
+   },
+   {
+    "title": "End-of-comments check compares by identity, so repeated pages are not detected",
+    "file": "lib/features/viewer/ui/comments_dialog.dart",
+    "status": "rejected",
+    "reason": "CommentItem (lib/models/comment_item.dart) extends Equatable, and its props are id, title, content, authorID, authorName, avatarUrl, score, postID, createDate and createDateFormat. So comments.contains(fetched.first) compares by value, and a repeated page is detected. The map read an older path that had no ==.",
+    "test": "",
+    "userVisible": "internal"
+   },
+   {
+    "title": "Tall-image tiling and the preload height limit never trigger with default settings",
+    "file": "lib/features/viewer/ui/media/image_viewer.dart",
+    "status": "deferred",
+    "reason": "True as described: with viewer.imageCap4k on, ResizeImage caps the decoded height at 3840, so the decoded image never reaches preloadHeight (16384) and tiling never runs. The r57 cap (HANDOVER 4.26) was added on purpose so tall pictures cannot decode into hundreds of MB. Letting tiling win again, for example by testing the source height, brings back that memory cost. Choosing between a sharp webtoon and the memory cap is the user's decision, and it needs testing on the phone.",
+    "test": "",
+    "userVisible": "internal"
+   },
+   {
+    "title": "Info drawer prev/next buttons jump out of range at the ends",
+    "file": "lib/features/viewer/ui/gallery_view_page.dart",
+    "status": "rejected",
+    "reason": "The reported failure cannot happen. jumpToPage(-1) does forcePixels(-width), but preload_page_view 0.2.0's _PagePosition.page clamps pixels to [minScrollExtent, maxScrollExtent] and to max(0, pixels) before dividing. The onPageChanged NotificationListener reports metrics.page!.round(), so it never sees -1 or a page past the last. filteredFetched[-1] and the dropCurrent() catch are never reached. Going past the end clamps to the last page the same way. What remains is a visual bounce (the position springs back), which is existing UI behaviour and left alone.",
+    "test": "",
+    "userVisible": "internal"
+   },
+   {
+    "title": "Info panel Save skips the storage permission and favourite-on-snatch",
+    "file": "lib/features/viewer/ui/info/tag_view.dart",
+    "status": "deferred",
+    "reason": "True: _snatchItem only queues. But the S key in gallery_view_page also skips setPermissions, and setPermissions opens platform permission and storage dialogs that need the phone. Favourite-on-snatch from the panel would add a new favourite write from this surface. TagView's favourite path has doujin routing (ownerTab lookup, DoujinDataHandler), so doing this safely means deciding the doujin case, which is the user's call. Left as designed for 1.0.",
+    "test": "",
+    "userVisible": "internal"
+   },
+   {
+    "title": "Comments setState after the page is closed",
+    "file": "lib/features/viewer/ui/comments_dialog.dart",
+    "status": "fixed",
+    "commit": "cdda4d7f",
+    "reason": "Confirmed. getComments called setState after awaiting handler.getComments with no mounted check. It now returns when the dialog is no longer mounted after the fetch.",
+    "test": "test/viewer_comments_dialog_test.dart: closing the dialog before the comments arrive does not touch the closed page (red: setState() called after dispose())",
+    "userVisible": "internal"
+   },
+   {
+    "title": "ImageViewer never disposes its PhotoView controllers or stream subscriptions",
+    "file": "lib/features/viewer/ui/media/image_viewer.dart",
+    "status": "rejected",
+    "reason": "Not a leak. PhotoViewController and PhotoViewScaleStateController (photo_view 410b4c26) are plain objects: broadcast StreamControllers plus ValueNotifiers, with no static registry, ticker or platform handle. Their only holders are the State and its PhotoView child, and the subscriptions are registered inside those same controllers. When the State is dropped the whole cycle is unreachable and the GC collects it. Adding dispose() would create a use-after-dispose path: the image listener schedules a post-frame resetZoom() that can run after dispose and set scaleState on a disposed notifier. That is a risk with no user-visible gain.",
+    "test": "",
+    "userVisible": "internal"
+   },
+   {
+    "title": "Controllers created by tag preview strips and panels are never disposed",
+    "file": "lib/features/viewer/ui/info/tag_view.dart",
+    "status": "rejected",
+    "reason": "Same as the ImageViewer item: AutoScrollController, ScrollController and ValueNotifier hold no global or native resource. ScrollableState.dispose detaches and disposes its ScrollPosition, so nothing outside the State or element references them, and they are collected with it. _TagPreviewsListDialog is a StatelessWidget dialog that rebuilds rarely. Missing dispose() calls here are hygiene with no user-visible or memory effect, and out of scope for a behaviour-preserving release.",
+    "test": "",
+    "userVisible": "internal"
+   },
+   {
+    "title": "Image download continues after the page is disposed during header lookup",
+    "file": "lib/features/viewer/ui/media/image_viewer.dart",
+    "status": "rejected",
+    "reason": "The evidence is wrong. In getImageProvider, `cancelToken?.cancel(); cancelToken = CancelToken();` runs before the await. The provider's `cancelToken: cancelToken` argument is evaluated, left to right, before `headers: await Tools.getFileCustomHeaders(...)`. So the provider holds the same token that dispose() -> disposables() cancels. CustomNetworkImage.downloadAndCache passes it to dio's downloadUri/getUri and rethrows on cancel, so an already-cancelled token aborts at once and no full download happens. A cache hit only reads the local file.",
+    "test": "",
+    "userVisible": "internal"
+   },
+   {
+    "title": "Chewie initPlayer uses context after awaits without a mounted check",
+    "file": "lib/features/video/ui/video_viewer.dart",
+    "status": "fixed",
+    "commit": "db929630",
+    "reason": "Confirmed. After `await Future.wait(_pendingDispose)` it re-registered the global video backend. After `await _customHeaders()` it created a VideoPlayerController that nothing would dispose, then threw at Theme.of(context). It now returns when !mounted after the pending-dispose await (before the backend registration). After the headers it disposes the just-created controller, which was never initialised, and returns. A mounted page runs exactly as before.",
+    "test": "Not testable off-device: the path needs the video_player platform and the media cache download.",
+    "userVisible": "internal"
+   },
+   {
+    "title": "MediaKitVideoPlayer leaks completers; init() modifies the map while iterating it",
+    "file": "lib/features/video/logic/media_kit_video_player.dart",
+    "status": "fixed",
+    "commit": "967e39d2",
+    "reason": "The completer leak was real: dispose() now removes _completers[textureId] and init() clears the map with the others. The completer is read only by _initialize() during create(). The ConcurrentModificationError half is not reachable, so I did not change it: video_player 2.11.1 calls init() only when VideoPlayerPlatform.instance changes, and registerWith() always installs a fresh, empty MediaKitVideoPlayer, so the loop always runs over an empty map.",
+    "test": "Not testable off-device: create() needs a native media_kit Player, and the maps are private.",
+    "userVisible": "internal"
+   },
+   {
+    "title": "Every swiped post fires a loadItem request from the always-built info sheet",
+    "file": "lib/features/viewer/ui/info/item_info_bottom_sheet.dart",
+    "status": "deferred",
+    "reason": "Accurate. The r54 fix (an 800 ms SettledCall delay before the first loadItem) was reverted in r55 on the user's explicit instruction to revert r54's code (HANDOVER 4.24). The r56 lazy-details alternative broke the info button and was reverted in r58 (4.27). Bringing a delay back changes when requests go out and needs the user's decision plus a rule34.xxx 429 check on the phone. The mounted-guard half of r54 is in commit 3c414916.",
+    "test": "",
+    "userVisible": "internal"
+   },
+   {
+    "title": "Orphaned hide timers call setState after dispose",
+    "file": "lib/features/video/ui/loli_controls.dart",
+    "status": "fixed",
+    "commit": "50d11da8",
+    "reason": "Confirmed. _startHideTimer overwrote _hideTimer without cancelling it: the speed long-press, the scrubber drag end and the post-sheet speed tap start a timer without a prior cancel. _dispose cancels only the latest one, so an orphan could call setState after dispose. It now cancels the previous timer first and skips the callback when unmounted. Controls still hide 3 s after the last start.",
+    "test": "Not tested: pure UI timing inside the Chewie controls, which needs a live VideoPlayerController.",
+    "userVisible": "internal"
+   },
+   {
+    "title": "Closing a nested viewer forces the system UI visible under a hidden outer viewer",
+    "file": "lib/features/viewer/ui/chrome/hideable_appbar.dart",
+    "status": "deferred",
+    "reason": "Plausible from the code (initState resets the global displayAppbar; dispose calls setSystemUiVisibility(true)). What should be restored depends on the viewer stacking contract (maxActiveViewers=1 unmounts covered media, plus HiddenStatusBarInsets). The effect is a platform status/nav-bar change that can only be checked on the phone. A wrong restore would hide or show the system bars for every viewer close.",
+    "test": "",
+    "userVisible": "internal"
+   },
+   {
+    "title": "Peek bar artist chip reads the shared booru tag store for doujin items",
+    "file": "lib/features/viewer/ui/gallery_view_page.dart",
+    "status": "fixed",
+    "commit": "50947b05",
+    "reason": "Confirmed. _artistOf classified every item's tags through TagHandler's booru-global store, which breaks the separation rule (the shared store is never consulted for doujin tags, HANDOVER 6.2). For a doujin item (DoujinDataHandler.isDoujinItem) the chip now uses the tag's own type; booru items read the store exactly as before. To make it testable, the lookup moved to a top-level @visibleForTesting infoPeekBarArtistOf(item), which the private _artistOf calls.",
+    "test": "test/viewer_peek_bar_artist_test.dart: a doujin item's artist comes from its own tags, never from a booru's classification (red: got 'vanilla')",
+    "userVisible": "For a doujin post in a mixed tab, the peek bar's artist chip shows the doujin's own artist, not a booru's guess."
+   },
+   {
+    "title": "Global mute / pause / extra-UI hide reach only Chewie viewers",
+    "file": "lib/features/viewer/logic/viewer_handler.dart",
+    "status": "deferred",
+    "reason": "Accurate: toggleMuteAllVideos, pauseAllVideos and hideExtraUi only match VideoViewer, and MediaKitPlayerView and BetterPlayerView never call addViewed. Wiring them in would pause, mute and hide the user's main media_kit player in new situations (opening a viewer, the long-press global mute). That is a behaviour change inside the fragile pooled player (refCount, fullscreen hold, rebind volume reset) and needs the phone.",
+    "test": "",
+    "userVisible": "internal"
+   },
+   {
+    "title": "Multi-file posts are not fetched on virtual feeds",
+    "file": "lib/features/viewer/ui/gallery_view_page.dart",
+    "status": "deferred",
+    "reason": "Accurate: _loadPostFiles checks the tab's (virtual) booru. Fixing it means resolving each item's real source booru (as TagView's checkForPossibleBooruHandler does) and then sending new post-page requests from Favourites, History and other virtual feeds. That adds network traffic to kemono and bakemono from surfaces that never made it, and needs a live-site check plus the user's decision.",
+    "test": "",
+    "userVisible": "internal"
+   }
+  ],
+  "filesOutsideOwnership": [],
+  "testFilesRun": [
+   "test/viewer_comments_dialog_test.dart",
+   "test/viewer_notes_renderer_test.dart",
+   "test/viewer_tag_view_dispose_test.dart",
+   "test/viewer_peek_bar_artist_test.dart",
+   "test/doujin_tag_chip_test.dart",
+   "test/suggestion_query_test.dart",
+   "test/doujin_strip_geometry_test.dart",
+   "test/architecture_test.dart"
+  ],
+  "notes": "1. Red, green and analyze.\n- All 6 new tests failed first, each for the reported reason. After the fixes, the 4 new files plus doujin_tag_chip, suggestion_query, doujin_strip_geometry and architecture tests passed: 24/24.\n- `flutter analyze --no-pub` on the 8 changed lib files and the 4 test files: the only findings were 3 unnecessary-import infos in my own test files. I removed those imports and the re-analyze reports no issues.\n\n2. Line endings.\n- lib/features/viewer/ui/info/tag_view.dart contains two literal NUL bytes (kOpenOutsideGroupSentinel / kOpenFromSentinel), so git treats it as binary (-text) and it is LF-only. I edited it byte-wise; its diff is 4 added lines.\n- The other lib files are still CRLF in the working tree. The cumulative diff from base is 498 insertions and 14 deletions, with no whole-file churn.\n\n3. New API: gallery_view_page.dart gains a top-level `@visibleForTesting String? infoPeekBarArtistOf(BooruItem)`, the seam for the peek-bar test. The private `_artistOf` now calls it.\n\n4. Something I saw but did not touch (native, needs the device): video_player calls `_videoPlayerPlatform.dispose(id)` on the CURRENT global VideoPlayerPlatform.instance. Every VideoViewer.initPlayer re-registers the platform (registerNative or a fresh MediaKitVideoPlayer for the MPV fallback). So a player created by one MediaKitVideoPlayer instance can have its dispose sent to a newer instance, or to AndroidVideoPlayer, and the native mpv player may never be released. Worth a device check: Chewie engine, normal backend mode with the MPV fallback triggered, then swipe between videos.\n\n5. Conflict risk: low. All edits are in my owned folders, and nothing outside them was touched."
+ }
+}
