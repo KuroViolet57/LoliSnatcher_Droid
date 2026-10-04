@@ -351,6 +351,8 @@ class _TagViewState extends State<TagView> with TraceLifecycle {
       } catch (e) {
         failedUpdate = true;
       }
+      // The post may answer after this panel is gone (swiped on, HANDOVER 4.23).
+      if (!mounted) return;
       loadingUpdate = false;
       setState(() {});
       WidgetsBinding.instance.addPostFrameCallback(
@@ -477,6 +479,8 @@ class _TagViewState extends State<TagView> with TraceLifecycle {
     if (updateCache) {
       await cacheTabMatchData();
     }
+    // Scheduled from a post-frame callback: the panel may be gone by now.
+    if (!mounted) return;
     setState(() {});
   }
 
