@@ -313,6 +313,13 @@ class BackupRunner {
       if (items.contains(BackupItem.database)) BackupItem.database,
     ];
     for (final BackupItem item in order) {
+      // 1.0: the stores read their restored files before the database: its
+      // doujin re-arm saves the doujin store's memory, which still held the
+      // library from before the restore.
+      if (item == BackupItem.database && stores) {
+        hooks.reloadStores();
+        stores = false;
+      }
       onStep?.call('Restoring ${BackupItems.labelOf(item)}…');
       try {
         final String? missing = await _restoreOne(item, target, names, db, parts);
