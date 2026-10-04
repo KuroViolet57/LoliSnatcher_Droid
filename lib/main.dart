@@ -66,6 +66,9 @@ import 'package:lolisnatcher/app/scroll_physics.dart';
 import 'package:lolisnatcher/features/video/ui/media_kit_player_view.dart';
 import 'package:lolisnatcher/features/webview/ui/webview_page.dart';
 
+/// The WebView user agent being read (1.0); see main() and MainApp.initHandlers.
+Future<void>? _userAgentCapture;
+
 void main() async {
   StartupTimeline.start();
   CustomWidgetsBinding.ensureInitialized();
@@ -100,8 +103,10 @@ void main() async {
   // Read the device's real WebView User-Agent up front so browser-facing
   // requests and the Cloudflare captcha webview share one legitimate UA
   // (see Tools.deviceWebViewUserAgent). Best-effort; safe to skip on failure.
-  await Tools.captureWebViewUserAgent();
-  StartupTimeline.mark('webview UA');
+  // 1.0: started here and awaited at the end of post-init, before the home
+  // screen and its first request: the ~55 ms it takes (the WebView starting)
+  // now overlaps settings, database and tags instead of delaying them.
+  _userAgentCapture = Tools.captureWebViewUserAgent();
 
   // load settings before first render to get theme data early
   NavigationHandler.register();
@@ -199,6 +204,12 @@ class _MainAppState extends State<MainApp> {
             addedAt: b.addedAt,
           ),
       ]);
+      StartupTimeline.mark('doujin migration');
+      // 1.0: every request uses the device's WebView user agent; it was read
+      // in parallel since main() and must be there before the home screen
+      // makes the first one.
+      await _userAgentCapture;
+      StartupTimeline.mark('webview UA');
     });
 
     settingsHandler.isDebug.addListener(devOverlayListener);
