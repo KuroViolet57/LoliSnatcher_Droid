@@ -81,4 +81,23 @@ void main() {
     expect(await listening(tester, port), isFalse, reason: 'it would keep taking settings, sources and tabs from the network');
     await waitFor(tester, () => false, rounds: 10);
   }, timeout: const Timeout(Duration(seconds: 60)));
+
+  testWidgets('1.0: a rebuild does not add the current status to the history again', (tester) async {
+    final int port = await freePort(tester);
+    await open(tester, port);
+    await waitFor(tester, () => find.textContaining('Server active at').evaluate().isNotEmpty);
+    final Socket sender = await send(tester, port, '/lolisync/test');
+    await waitFor(tester, () => find.text('Test').evaluate().isNotEmpty);
+    expect(find.text('Test'), findsOneWidget);
+
+    // Something rebuilds the page (the "Keep screen awake" switch does).
+    tester.element(find.byType(LoliSyncProgressPage)).markNeedsBuild();
+    await tester.pump();
+
+    expect(find.text('Test'), findsOneWidget, reason: 'shown as the status line, not repeated in the history');
+
+    await tester.runAsync(() async => sender.destroy());
+    await tester.pumpWidget(const SizedBox.shrink());
+    await waitFor(tester, () => false, rounds: 10);
+  }, timeout: const Timeout(Duration(seconds: 60)));
 }

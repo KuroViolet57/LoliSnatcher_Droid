@@ -50,6 +50,10 @@ class _LoliSyncProgressPageState extends State<LoliSyncProgressPage> {
   int maxHistoryLength = 100;
   bool wakelocked = false;
 
+  /// 1.0: the snapshot last put in the history. A rebuild (the "Keep screen
+  /// awake" switch) hands the builder the same one again.
+  AsyncSnapshot<String>? lastSnapshot;
+
   void addMessage(String message) {
     // add new message to history but limit it to X items
     if (message.startsWith('Server active at') &&
@@ -225,7 +229,10 @@ class _LoliSyncProgressPageState extends State<LoliSyncProgressPage> {
                     break;
                 }
               }
-              addMessage(status);
+              if (!identical(snapshot, lastSnapshot)) {
+                lastSnapshot = snapshot;
+                addMessage(status);
+              }
 
               return Center(
                 child: Column(
