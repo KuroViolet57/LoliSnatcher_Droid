@@ -322,4 +322,25 @@ void main() {
     expect(selected('Animated'), isTrue);
   });
 
+  testWidgets('importing a booru link from the clipboard does not log its key', (tester) async {
+    final Booru shared = Booru.withKey('Shared', BooruType.Gelbooru, '', 'https://shared.example', '', 'SECRETKEY', '4242');
+    final String link = shared.toLink(true);
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (MethodCall call) async {
+      if (call.method == 'Clipboard.getData') return <String, dynamic>{'text': link};
+      return null;
+    });
+    addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
+    SearchHandler.instance.tabs.add(SearchTab(Booru('other', BooruType.Gelbooru, '', 'https://other.example', ''), null, ''));
+    final int before = Logger.talker.history.length;
+
+    await open(tester, const BooruPage());
+    await tester.tap(find.text('Import Booru config from clipboard'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    final String logged = [for (final e in Logger.talker.history.skip(before)) e.message ?? ''].join('\n');
+    expect(logged, contains('https://www.loli.snatcher'));
+    expect(logged, isNot(contains(link.split('?')[1])));
+    expect(find.byType(BooruEdit), findsOneWidget, reason: 'the import still opens the editor');
+  });
 }

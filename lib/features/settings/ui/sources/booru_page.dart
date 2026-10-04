@@ -379,8 +379,10 @@ class _BooruPageState extends State<BooruPage> {
       action: () async {
         final ClipboardData? cdata = await Clipboard.getData(Clipboard.kTextPlain);
         final String url = cdata?.text ?? '';
+        // A config link carries the API key and user id as base64 after the
+        // '?', which the log redaction cannot see: log the address only.
         Logger.Inst().log(
-          url,
+          url.split('?').first,
           'BooruPage',
           'getBooruFromClipboard',
           LogTypes.settingsLoad,
