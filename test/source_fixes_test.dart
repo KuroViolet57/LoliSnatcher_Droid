@@ -7,6 +7,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:lolisnatcher/core/logging/log_redaction.dart';
 import 'package:lolisnatcher/core/logging/logger.dart';
+import 'package:lolisnatcher/core/network/dio_network.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/core/settings/source_settings_handler.dart';
 import 'package:lolisnatcher/core/storage/booru_tag_store.dart';
@@ -256,6 +257,16 @@ void main() {
       await expectLater(probe.search('cat', null), throwsA(isA<_Stop>()));
 
       expect(probe.asked, 'cat system:inbox');
+    });
+  });
+
+  group('requests keep the app user agent', () {
+    test('a request with no headers of its own still names the browser user agent', () {
+      expect(DioNetwork.mergeOptions(null, const {}).headers?['User-Agent'], Tools.browserUserAgent);
+      expect(DioNetwork.mergeOptions(null, null).headers?['User-Agent'], Tools.browserUserAgent, reason: 'unchanged');
+      final Map<String, dynamic>? own = DioNetwork.mergeOptions(null, {'User-Agent': 'own', 'Referer': 'r'}).headers;
+      expect(own?['User-Agent'], 'own', reason: 'a caller that sets headers keeps them');
+      expect(own?['Referer'], 'r');
     });
   });
 

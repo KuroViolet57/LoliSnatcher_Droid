@@ -309,6 +309,9 @@ class DanbooruHandler extends BooruHandler {
         queryParameters: {
           'search[id]': item.uploaderId,
         },
+        // Danbooru's own headers (its app user agent), like every other
+        // request to it; without them this went out as dart:io's "Dart/x".
+        headers: getHeaders(),
       );
       if (res.statusCode != HttpStatus.ok) return null;
 

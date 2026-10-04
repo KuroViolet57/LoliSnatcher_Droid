@@ -133,9 +133,14 @@ class DioNetwork {
 
   static Options mergeOptions(Options? options, Map<String, dynamic>? headers) {
     final usedOptions = options ?? defaultOptions;
+    final Map<String, dynamic>? given = headers ?? usedOptions.headers ?? defaultOptions.headers;
     return usedOptions.copyWith(
       headers: {
-        ...?headers ?? usedOptions.headers ?? defaultOptions.headers,
+        // A call without headers of its own passes the default empty map,
+        // which used to win over the defaults: the request went out as
+        // dart:io's "Dart/x" (one User-Agent rule, Tools.browserUserAgent).
+        if (given == null || given.isEmpty) 'User-Agent': Tools.browserUserAgent,
+        ...?given,
       },
     );
   }

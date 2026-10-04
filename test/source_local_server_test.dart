@@ -20,6 +20,7 @@ import 'package:lolisnatcher/models/booru_item.dart';
 import 'package:lolisnatcher/models/booru_type.dart';
 import 'package:lolisnatcher/sources/booru/agnph_handler.dart';
 import 'package:lolisnatcher/sources/booru/civitai_handler.dart';
+import 'package:lolisnatcher/sources/booru/danbooru_handler.dart';
 import 'package:lolisnatcher/sources/booru/ink_bunny_handler.dart';
 import 'package:lolisnatcher/sources/booru/r34hentai_handler.dart';
 import 'package:lolisnatcher/sources/tube/redgifs_handler.dart';
@@ -338,6 +339,29 @@ void main() {
 
     expect(h.fetched.map((i) => i.serverId), ['3', '4']);
     expect(h.locked, isFalse);
+  });
+
+  test('Danbooru: the uploader name lookup names the app, not dart:io', () async {
+    String? agent;
+    routes['/users.json'] = (r) {
+      agent = r.headers.value('user-agent');
+      return answer(r, [
+        {'id': 7, 'name': 'someone'},
+      ]);
+    };
+    final DanbooruHandler h = DanbooruHandler(Booru('Danbooru', BooruType.Danbooru, '', base, ''), 20);
+    final BooruItem post = BooruItem(
+      fileURL: 'https://media.invalid/1.png',
+      sampleURL: 'https://media.invalid/1.png',
+      thumbnailURL: 'https://media.invalid/1.png',
+      tagsList: const [],
+      postURL: '$base/posts/1',
+      serverId: '1',
+      uploaderId: '7',
+    );
+
+    expect(await h.getUploaderName(post), 'someone');
+    expect(agent, Tools.appUserAgent);
   });
 
   test('a download whose file cannot be created stops reading instead of pausing on a body it then throws on', () async {
