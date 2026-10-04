@@ -59,6 +59,7 @@ import 'package:lolisnatcher/src/services/source_links.dart';
 import 'package:lolisnatcher/src/utils/dio_network.dart';
 import 'package:lolisnatcher/src/utils/http_overrides.dart';
 import 'package:lolisnatcher/src/utils/logger.dart';
+import 'package:lolisnatcher/src/utils/startup_timeline.dart';
 import 'package:lolisnatcher/src/utils/tools.dart';
 import 'package:lolisnatcher/src/widgets/common/downloads_check.dart';
 import 'package:lolisnatcher/src/widgets/common/flash_elements.dart';
@@ -3270,16 +3271,20 @@ class SettingsHandler {
         }
       }
 
+      StartupTimeline.mark('proxy and player');
       postInitMessage.value = loc.init.loadingDatabase;
       await loadDatabase((newStatus) {
         postInitMessage.value = 'Fixing data in the database...\nThis may take some time\n$newStatus';
       });
       await indexDatabase();
+      StartupTimeline.mark('database');
       if (booruList.isEmpty) {
         postInitMessage.value = loc.init.loadingBoorus;
         await loadBoorus();
       }
+      StartupTimeline.mark('sources');
       await externalAction();
+      StartupTimeline.mark('migrations');
     } catch (e, s) {
       postInitMessage.value = loc.errorExclamation;
       Logger.Inst().log(

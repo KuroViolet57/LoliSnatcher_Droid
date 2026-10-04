@@ -19,6 +19,7 @@ import 'package:talker_flutter/talker_flutter.dart';
 
 import 'package:lolisnatcher/src/utils/photo_picker.dart';
 import 'package:lolisnatcher/src/utils/perf_trace.dart';
+import 'package:lolisnatcher/src/utils/startup_timeline.dart';
 import 'package:lolisnatcher/src/utils/status_bar_inset.dart';
 import 'package:lolisnatcher/src/data/booru.dart';
 import 'package:lolisnatcher/src/data/theme_item.dart';
@@ -66,7 +67,9 @@ import 'package:lolisnatcher/src/widgets/video/media_kit_player_view.dart';
 import 'package:lolisnatcher/src/widgets/webview/webview_page.dart';
 
 void main() async {
+  StartupTimeline.start();
   CustomWidgetsBinding.ensureInitialized();
+  StartupTimeline.mark('binding');
 
   // Default imageCache is 100 MB / 1000 images. For a booru client where a
   // single 4K JPEG can easily decode to 30+ MB of RGBA, that cache spills to
@@ -98,6 +101,7 @@ void main() async {
   // requests and the Cloudflare captcha webview share one legitimate UA
   // (see Tools.deviceWebViewUserAgent). Best-effort; safe to skip on failure.
   await Tools.captureWebViewUserAgent();
+  StartupTimeline.mark('webview UA');
 
   // load settings before first render to get theme data early
   NavigationHandler.register();
@@ -112,6 +116,7 @@ void main() async {
   SecureStorageHandler.register();
   initSettingsEnumRegistry();
   await SettingsHandler.register().initialize();
+  StartupTimeline.mark('settings');
   // r34: the downloaded encoder, if any, is found from its manifest once the
   // settings (its model id) and the app path are known.
   EncoderHandler.register();
@@ -137,6 +142,7 @@ void main() async {
   LocalAuthHandler.register();
 
   await ServiceHandler.setSystemUiVisibility(true);
+  StartupTimeline.mark('models and services');
 
   runApp(TranslationProvider(child: const MainApp()));
 }
@@ -172,8 +178,10 @@ class _MainAppState extends State<MainApp> {
       settingsHandler.postInitMessage.value = loc.init.loadingTags;
       // should init earlier than tabs so tags color properly on first render of search box
       await tagHandler.initialize();
+      StartupTimeline.mark('tags');
       settingsHandler.postInitMessage.value = loc.init.restoringTabs;
       await searchHandler.restoreTabs();
+      StartupTimeline.mark('tabs');
       // One-time move of doujin entries out of the shared booru stores into
       // doujinData.json; no-ops after the first successful run.
       await runDoujinMigrationIfNeeded();
@@ -675,6 +683,10 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
               }
 
               initDeepLinks();
+              // 1.0: the first frame of the home screen ends the startup timeline.
+              if (!StartupTimeline.isFinished) {
+                WidgetsBinding.instance.addPostFrameCallback((_) => StartupTimeline.finish('home'));
+              }
 
               if (settingsHandler.appMode.value.isMobile) {
                 return const MobileHome();
