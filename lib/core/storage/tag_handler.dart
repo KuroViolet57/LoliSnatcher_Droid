@@ -16,6 +16,7 @@ import 'package:lolisnatcher/features/doujin/logic/doujin_data_handler.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/core/platform/get_perms.dart';
 import 'package:lolisnatcher/core/logging/logger.dart';
+import 'package:lolisnatcher/core/logging/startup_timeline.dart';
 
 class UntypedCollection {
   UntypedCollection(this.tags, this.cooldown, this.booru);
@@ -272,6 +273,19 @@ class TagHandler {
     }
   }
 
+  /// What startup's loop of `await putTag(tag, useDB: false)` did, without an
+  /// await per tag (1.0): the map holds every tag ever typed (128k on a
+  /// long-used phone), and an await per row cost a microtask turn each.
+  void putTagsInMemory(Iterable<Tag> tags) {
+    for (final Tag tag in tags) {
+      tag.fullString = tag.fullString.trim().toLowerCase();
+      if (tag.fullString.isEmpty) {
+        continue;
+      }
+      _tagMap[tag.fullString] = tag;
+    }
+  }
+
   Future<void> initialize() async {
     if (SettingsHandler.instance.path.isNotEmpty) {
       await loadTags();
@@ -286,9 +300,8 @@ class TagHandler {
       final bool dbEnabled = SettingsHandler.instance.dbEnabled;
       if (dbEnabled) {
         final List<Tag> tags = await SettingsHandler.instance.dbHandler.getAllTags();
-        for (final Tag tag in tags) {
-          await putTag(tag, useDB: false, dbEnabled: dbEnabled);
-        }
+        StartupTimeline.mark('tags read');
+        putTagsInMemory(tags);
       } else {
         if (await checkForTagsFile()) {
           await loadTagsFile();
