@@ -47,6 +47,7 @@ class _FurAffinitySidebarState extends State<FurAffinitySidebar> {
   Worker? _tabWorker;
   bool? _watching;
   String _watchFor = '';
+  bool _watchChecking = false;
 
   void _tick() {
     if (mounted) setState(() {});
@@ -99,9 +100,15 @@ class _FurAffinitySidebarState extends State<FurAffinitySidebar> {
   Future<void> _checkWatch(String artist) async {
     _watchFor = artist;
     _watching = null;
+    _watchChecking = true;
     final link = await _handler.fetchWatchLink(artist);
     if (!mounted || _watchFor != artist) return;
-    setState(() => _watching = link?.watching);
+    // A failed page (or one without a watch button) answers null: the check
+    // is over all the same, so the pill must not stay on 'Checking'.
+    setState(() {
+      _watchChecking = false;
+      _watching = link?.watching;
+    });
   }
 
   Future<void> _toggleWatch(String artist) async {
@@ -258,10 +265,20 @@ class _FurAffinitySidebarState extends State<FurAffinitySidebar> {
                             FaPill(
                               icon: _watching == true ? Symbols.visibility_off_rounded : Symbols.visibility_rounded,
                               label: _watching == null ? 'Watch…' : (_watching! ? 'Unwatch' : 'Watch'),
-                              subtitle: _watching == null ? 'Checking' : (_watching! ? 'You watch this artist' : 'Get their new work in your inbox'),
+                              subtitle: _watching == null
+                                  ? (_watchChecking ? 'Checking' : 'Could not check · tap to try again')
+                                  : (_watching! ? 'You watch this artist' : 'Get their new work in your inbox'),
                               color: FurAffinitySidebar.artist,
-                              enabled: _watching != null,
-                              onTap: () => _toggleWatch(artist),
+                              enabled: _watching != null || !_watchChecking,
+                              onTap: () {
+                                // State unknown: check again (build starts it)
+                                // rather than toggle blind.
+                                if (_watching == null) {
+                                  setState(() => _watchFor = '');
+                                } else {
+                                  unawaited(_toggleWatch(artist));
+                                }
+                              },
                             ),
                         ],
                       ),
@@ -362,17 +379,21 @@ class _FurAffinitySidebarState extends State<FurAffinitySidebar> {
 
 /// The artists someone watches, a page of 200 at a time (r42).
 class FurAffinityWatchlistPage extends StatefulWidget {
-  const FurAffinityWatchlistPage({required this.booru, required this.username, super.key});
+  const FurAffinityWatchlistPage({required this.booru, required this.username, this.handler, super.key});
 
   final Booru booru;
   final String username;
+
+  /// Tests hand in a handler with canned pages.
+  @visibleForTesting
+  final FurAffinityHandler? handler;
 
   @override
   State<FurAffinityWatchlistPage> createState() => _FurAffinityWatchlistPageState();
 }
 
 class _FurAffinityWatchlistPageState extends State<FurAffinityWatchlistPage> {
-  late final FurAffinityHandler handler = FurAffinityHandler(widget.booru, FurAffinityHandler.pageSize);
+  late final FurAffinityHandler handler = widget.handler ?? FurAffinityHandler(widget.booru, FurAffinityHandler.pageSize);
   final List<FurAffinityWatchEntry> users = [];
   int page = 0;
   bool hasNext = true;
@@ -421,7 +442,9 @@ class _FurAffinityWatchlistPageState extends State<FurAffinityWatchlistPage> {
           Expanded(
             child: NotificationListener<ScrollNotification>(
               onNotification: (n) {
-                if (n.metrics.extentAfter < 600) unawaited(_more());
+                // After a failed page only a new scroll gesture tries again,
+                // not every notification of the same scroll (one request each).
+                if (n.metrics.extentAfter < 600 && (error == null || n is ScrollStartNotification)) unawaited(_more());
                 return false;
               },
               child: ListView.builder(

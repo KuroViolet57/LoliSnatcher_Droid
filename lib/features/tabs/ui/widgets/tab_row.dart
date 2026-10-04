@@ -94,7 +94,26 @@ class TabRow extends StatelessWidget {
         if (!isDoujin && tab.tags.trim().isNotEmpty) {
           if (filterText?.isNotEmpty == true) {
             final List<TextSpan> spans = [];
-            final List<String> split = tagText.split(filterText!);
+            // Matched like the manager filters: ignoring case and the spaces
+            // around the typed text; the tab's own spelling is shown.
+            final String needle = filterText!.trim().toLowerCase();
+            final String haystack = tagText.toLowerCase();
+            final List<String> split = [];
+            final List<String> matched = [];
+            if (needle.isEmpty || haystack.length != tagText.length) {
+              split.addAll(needle.isEmpty ? [tagText] : tagText.split(filterText!));
+              matched.addAll(List.filled(split.length - 1, filterText!));
+            } else {
+              int start = 0;
+              int at = haystack.indexOf(needle);
+              while (at != -1) {
+                split.add(tagText.substring(start, at));
+                matched.add(tagText.substring(at, at + needle.length));
+                start = at + needle.length;
+                at = haystack.indexOf(needle, start);
+              }
+              split.add(tagText.substring(start));
+            }
 
             for (int i = 0; i < split.length; i++) {
               final spanStyle = TextStyle(
@@ -113,7 +132,7 @@ class TabRow extends StatelessWidget {
               if (i < split.length - 1) {
                 spans.add(
                   TextSpan(
-                    text: filterText,
+                    text: matched[i],
                     style: spanStyle.copyWith(
                       color: Colors.green,
                       fontWeight: FontWeight.w900,

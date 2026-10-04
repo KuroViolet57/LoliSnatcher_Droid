@@ -113,7 +113,8 @@ class _DoujinMiniTabManagerState extends State<DoujinMiniTabManager> {
     if (index < 0) return;
     Navigator.of(context, rootNavigator: true).popUntil((route) => route.isFirst);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      searchHandler.changeTabIndex(index);
+      // A tap here is a visit, as in the full manager.
+      searchHandler.changeTabIndex(index, byUser: true);
     });
   }
 

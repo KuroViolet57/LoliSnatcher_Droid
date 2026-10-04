@@ -869,8 +869,10 @@ class _TabManagerPageState extends State<TabManagerPage> with TraceLifecycle {
         sortingMode = TabSortingMode.alphabet;
       }
     }
+    // A dismissed sheet (result == null) changes nothing, the sort included.
     if (result == 'clear' ||
-        (loadedFilter == null &&
+        (result != null &&
+            loadedFilter == null &&
             booruFilter == null &&
             tagTypeFilter == null &&
             duplicateFilter == false &&
@@ -1465,7 +1467,9 @@ class _TabManagerPageState extends State<TabManagerPage> with TraceLifecycle {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (isRunStart) _groupHeader(context, groupName),
-              SizedBox(height: tabHeight, child: tabItem),
+              // The row's own height, as _ensureDisplayCache gave it (104
+              // for a doujin row, 80 otherwise).
+              SizedBox(height: TabRow.isDoujinTab(tab) ? TabManagerItem.doujinRowHeight : tabHeight, child: tabItem),
             ],
           ),
           Positioned.fill(
@@ -1562,9 +1566,15 @@ class _TabManagerPageState extends State<TabManagerPage> with TraceLifecycle {
             side: BorderSide(color: Theme.of(context).colorScheme.secondary),
           ),
           onTap: () {
-            selectedTabs.remove(tab);
-            searchHandler.removeTabAt(tabIndex: searchHandler.tabs.indexOf(tab));
-            getTabs();
+            // indexOf is -1 once the tab is gone, and removeTabAt(-1) closes
+            // the CURRENT tab: remove only a tab that is still open.
+            final int tabIndex = searchHandler.tabs.indexOf(tab);
+            if (tabIndex != -1) {
+              selectedTabs.remove(tab);
+              searchHandler.removeTabAt(tabIndex: tabIndex);
+              getTabs();
+            }
+            Navigator.of(context).pop();
           },
           leading: const Icon(Symbols.close_rounded, color: Colors.red),
           title: Text(context.loc.tabs.remove),
