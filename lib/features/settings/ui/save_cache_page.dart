@@ -69,9 +69,11 @@ class _SaveCachePageState extends State<SaveCachePage> {
     snatchMode = settingsHandler.snatchMode;
     jsonWrite = settingsHandler.jsonWrite;
     cacheDuration = settingsHandler.cacheDuration;
-    cacheDurationSelected = settingsHandler.map['cacheDuration']!['options']!.firstWhere((dur) {
-      return dur['value'].inSeconds == cacheDuration.inSeconds;
-    });
+    // A stored time that is none of the choices (restored, synced) shows no
+    // choice and is kept as it is.
+    cacheDurationSelected = List<Map<String, dynamic>>.from(settingsHandler.map['cacheDuration']!['options']!)
+        .where((dur) => dur['value'].inSeconds == cacheDuration.inSeconds)
+        .firstOrNull;
     cacheSizeController.text = settingsHandler.cacheSize.toString();
     downloadNotifications = settingsHandler.downloadNotifications;
     snatchOnFavourite = settingsHandler.snatchOnFavourite;

@@ -122,6 +122,15 @@ void main() {
 
   Finder field(String text) => find.byWidgetPredicate((w) => w is TextField && w.controller?.text == text);
 
+  testWidgets('Save & cache opens with a cache time that is not one of the choices, and keeps it', (tester) async {
+    s.cacheDuration = const Duration(seconds: 7200);
+    await open(tester, const SaveCachePage());
+    expect(tester.takeException(), isNull);
+    expect(find.byType(SaveCachePage), findsOneWidget);
+    await leave(tester);
+    expect(s.cacheDuration, const Duration(seconds: 7200));
+  });
+
   /// Long-press Save (debug: no network test), confirm, and give the file
   /// work real time until [done] holds (or long enough that it never will).
   Future<void> saveBooru(WidgetTester tester, bool Function() done) async {
