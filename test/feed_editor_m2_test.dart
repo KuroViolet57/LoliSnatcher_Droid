@@ -196,4 +196,34 @@ void main() {
     });
   });
 
+  testWidgets('history card: an entry whose source is gone does not open a tab on an unknown source', (tester) async {
+    SettingsHandler.instance.dbEnabled = true;
+    SettingsHandler.instance.booruList.add(nhentai);
+    sh().tabs.add(loaded(nhentai, 'current'));
+    sh().index.value = 0;
+    // A doujin search made on a source that has since been removed.
+    DoujinDataHandler.instance.addSearchHistory('glasses', Booru('gone', BooruType.NHentai, '', 'https://gone.example', ''));
+
+    await tester.pumpWidget(app(const Scaffold(body: SingleChildScrollView(child: HistoryBlock()))));
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.tap(find.text('glasses'));
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.tap(find.text('Open in new tab'));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(sh().tabs, hasLength(1));
+    expect(sh().tabs.where((t) => t.selectedBooru.value.type == null), isEmpty);
+    // The sheet stays open over the notice: close it, let the notice run out.
+    NavigationHandler.instance.navigatorKey.currentState!.pop();
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pump();
+    expect(find.text('Open in new tab'), findsNothing, reason: 'the sheet is closed');
+    DoujinDataHandler.instance.resetForTests();
+    await tester.pumpWidget(app(const SizedBox()));
+    await tester.pump(const Duration(seconds: 1));
+  });
+
 }

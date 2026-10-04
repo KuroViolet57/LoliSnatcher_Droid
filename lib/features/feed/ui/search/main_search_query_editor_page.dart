@@ -2094,7 +2094,9 @@ class _HistoryBlockState extends State<HistoryBlock> {
                           ),
                         ),
                         item,
-                        booru,
+                        // A source that is gone (Booru.unknown) gets the
+                        // "unknown booru type" notice, not a tab on nothing.
+                        booru.name == null ? null : booru,
                       ),
                       label: Text(item.searchText),
                       onDeleted: item.isFavourite ? () {} : null,
