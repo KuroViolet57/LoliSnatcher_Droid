@@ -1,19 +1,39 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:lolisnatcher/core/logging/log_redaction.dart';
 import 'package:lolisnatcher/core/logging/logger.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/core/settings/source_settings_handler.dart';
+import 'package:lolisnatcher/core/storage/database_handler.dart';
 import 'package:lolisnatcher/core/storage/tag_handler.dart';
 import 'package:lolisnatcher/core/utils/tools.dart';
 import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
 import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/models/booru_item.dart';
 import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/models/tag.dart';
+import 'package:lolisnatcher/sources/framework/booru_handler.dart';
+import 'package:lolisnatcher/sources/framework/booru_handler_factory.dart';
 import 'package:lolisnatcher/sources/furaffinity/furaffinity_handler.dart';
 import 'package:lolisnatcher/sources/furaffinity/furaffinity_session_handler.dart';
 import 'package:lolisnatcher/sources/tube/rule34video_handler.dart';
+
+/// The favourite/snatched lookup, held open until the test lets it answer.
+class _GatedDb extends DBHandler {
+  final Completer<void> gate = Completer<void>();
+
+  @override
+  Future<List<List<bool>>> getMultipleTrackedValues(List<BooruItem> items) async {
+    await gate.future;
+    return [
+      for (final _ in items) [true, true],
+    ];
+  }
+}
 
 /// m2 (1.0): source-side bugs from the subsystem map, each pinned by the
 /// scenario that showed it.
@@ -21,6 +41,19 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   late Directory tempDir;
+  final Booru gelbooru = Booru('Gelbooru', BooruType.Gelbooru, '', 'https://gelbooru.com', '');
+
+  BooruItem item(String id, {String host = 'gelbooru.com', String? md5}) => BooruItem(
+    fileURL: 'https://img.$host/images/$id.png',
+    sampleURL: 'https://img.$host/samples/$id.png',
+    thumbnailURL: 'https://img.$host/thumbs/$id.png',
+    tagsList: [Tag('solo')],
+    postURL: 'https://$host/index.php?page=post&s=view&id=$id',
+    serverId: id,
+    md5String: md5,
+  );
+
+  BooruHandler handlerFor(Booru booru) => BooruHandlerFactory().getBooruHandler([booru], 20).booruHandler;
 
   setUp(() {
     SettingsHandler.register();
@@ -70,6 +103,37 @@ void main() {
         contains('text=cat'),
         reason: 'only the value goes',
       );
+    });
+  });
+
+  group('the feed', () {
+    test('a refresh while the favourite/snatched lookup runs: the flags land on the posts they were read for', () async {
+      final _GatedDb db = _GatedDb();
+      sqfliteFfiInit();
+      db.db = await databaseFactoryFfi.openDatabase(inMemoryDatabasePath);
+      final DBHandler original = SettingsHandler.instance.dbHandler;
+      SettingsHandler.instance.dbHandler = db;
+      try {
+        final BooruHandler h = handlerFor(gelbooru);
+        final BooruItem a = item('1');
+        final BooruItem b = item('2');
+        final Future<void> page = h.afterParseResponse([a, b]);
+        // The feed is reset and refilled by a new query meanwhile.
+        h.fetched.value = [];
+        final BooruItem c = item('3');
+        h.fetched.add(c);
+        db.gate.complete();
+
+        await page;
+
+        expect(a.isFavourite.value, isTrue);
+        expect(b.isSnatched.value, isTrue);
+        expect(c.isFavourite.value, isNot(isTrue), reason: "another query's post never gets these flags");
+        expect(c.isSnatched.value, isNot(isTrue));
+      } finally {
+        SettingsHandler.instance.dbHandler = original;
+        await db.db?.close();
+      }
     });
   });
 }

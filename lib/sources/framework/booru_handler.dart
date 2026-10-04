@@ -1382,12 +1382,16 @@ abstract class BooruHandler {
 
     final SettingsHandler settingsHandler = SettingsHandler.instance;
     if (settingsHandler.dbHandler.db != null && diff > 0) {
+      // The posts the values are read for, kept across the await: the feed
+      // can be reset and refilled meanwhile (a refresh), and indexing it
+      // afterwards threw a RangeError or flagged another query's posts.
+      final List<BooruItem> items = fetched.sublist(fetchedIndexes.first, fetchedIndexes.last);
       final List<List<bool>> valuesList = await settingsHandler.dbHandler.getMultipleTrackedValues(
-        fetched.sublist(fetchedIndexes.first, fetchedIndexes.last),
+        items,
       ); //.map((e) => e.fileURL).toList()
 
       valuesList.asMap().forEach((index, values) {
-        final BooruItem item = fetched[fetchedIndexes[index]];
+        final BooruItem item = items[index];
         item.isSnatched.value = values[0];
         // Doujin favourite state comes from the DOUJIN store, never the booru
         // DB (snatched stays DB-backed: downloads are one shared system).
