@@ -681,6 +681,7 @@ class DBHandler {
     final List<String> orTags = [];
     final List<String> excludeTags = [];
     String siteQuery = '';
+    String siteTerm = '';
     bool isRandomOrder = false;
     bool isReverseOrder = false;
 
@@ -689,8 +690,10 @@ class DBHandler {
       if (lowerTag.startsWith('site:') || lowerTag.startsWith('-site:')) {
         final isExclude = lowerTag.startsWith('-site:');
         final term = tag.replaceAll(RegExp('^-?site:', caseSensitive: false), '');
-        siteQuery =
-            "(bi.postURL ${isExclude ? 'NOT' : ''} LIKE '%$term%' OR bi.fileURL ${isExclude ? 'NOT' : ''} LIKE '%$term%') ";
+        // 1.0: the term is bound, not written into the SQL (a quote broke the
+        // query, and any SQL typed here ran).
+        siteQuery = "(bi.postURL ${isExclude ? 'NOT' : ''} LIKE ? OR bi.fileURL ${isExclude ? 'NOT' : ''} LIKE ?) ";
+        siteTerm = term;
       } else if (lowerTag == 'sort:random') {
         isRandomOrder = true;
       } else if (lowerTag == 'sort:reverse') {
@@ -729,7 +732,10 @@ class DBHandler {
     whereClauses.add(_baseTrackFilter(isDownloads: isDownloads, collectionId: collectionId));
 
     // B. Site Filter
-    if (siteQuery.isNotEmpty) whereClauses.add(siteQuery);
+    if (siteQuery.isNotEmpty) {
+      whereClauses.add(siteQuery);
+      args.addAll(['%$siteTerm%', '%$siteTerm%']);
+    }
 
     // C. Custom Conditions
     if (customConditions.isNotEmpty) {
@@ -1782,6 +1788,7 @@ class DBHandler {
     final List<String> orTags = [];
     final List<String> excludeTags = [];
     String siteQuery = '';
+    String siteTerm = '';
 
     for (final tag in rawTags) {
       final lowerTag = tag.toLowerCase();
@@ -1789,8 +1796,8 @@ class DBHandler {
       if (lowerTag.startsWith('site:') || lowerTag.startsWith('-site:')) {
         final isExclude = lowerTag.startsWith('-site:');
         final term = tag.replaceAll(RegExp('^-?site:', caseSensitive: false), '');
-        siteQuery =
-            "(bi.postURL ${isExclude ? 'NOT' : ''} LIKE '%$term%' OR bi.fileURL ${isExclude ? 'NOT' : ''} LIKE '%$term%')";
+        siteQuery = "(bi.postURL ${isExclude ? 'NOT' : ''} LIKE ? OR bi.fileURL ${isExclude ? 'NOT' : ''} LIKE ?)";
+        siteTerm = term;
       } else if (lowerTag == 'sort:random' || lowerTag == 'sort:reverse') {
         // do nothing
       } else {
@@ -1826,7 +1833,10 @@ class DBHandler {
     whereClauses.add(_baseTrackFilter(isDownloads: isDownloads, collectionId: collectionId));
 
     // B. Site Filter
-    if (siteQuery.isNotEmpty) whereClauses.add(siteQuery);
+    if (siteQuery.isNotEmpty) {
+      whereClauses.add(siteQuery);
+      args.addAll(['%$siteTerm%', '%$siteTerm%']);
+    }
 
     // C. Custom Conditions
     if (customConditions.isNotEmpty) {

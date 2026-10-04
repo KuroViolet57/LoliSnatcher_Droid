@@ -177,4 +177,27 @@ void main() {
       ]);
     });
   });
+
+  group('the local search box', () {
+    test('a site: term with a quote is a search, not broken SQL', () async {
+      if (!dbReady) return;
+      await insertItem(postURL: "https://example.com/o'neil/1", fileURL: "https://example.com/o'neil/1.jpg", favourite: 1);
+      await insertItem(postURL: 'https://example.com/other/2', fileURL: 'https://example.com/2.jpg', favourite: 1);
+      final handler = SettingsHandler.instance.dbHandler;
+
+      final List<BooruItem> found = await handler.searchDB("site:o'neil", '0', '10');
+      expect(found.map((i) => i.postURL), ["https://example.com/o'neil/1"]);
+      expect(await handler.searchDBCount("site:o'neil"), 1);
+      expect((await handler.searchDB("-site:o'neil", '0', '10')).map((i) => i.postURL), ['https://example.com/other/2']);
+    });
+
+    test('a site: term still matches part of the address, with other terms after it', () async {
+      if (!dbReady) return;
+      await insertItem(postURL: 'https://gelbooru.com/index.php?page=post&s=view&id=1', fileURL: 'https://img.gelbooru.com/1.jpg', favourite: 1);
+      await insertItem(postURL: 'https://danbooru.donmai.us/posts/2', fileURL: 'https://cdn.donmai.us/2.jpg', favourite: 1);
+      final handler = SettingsHandler.instance.dbHandler;
+      expect((await handler.searchDB('site:donmai', '0', '10')).map((i) => i.postURL), ['https://danbooru.donmai.us/posts/2']);
+      expect(await handler.searchDBCount('site:gelbooru sort:reverse'), 1);
+    });
+  });
 }
