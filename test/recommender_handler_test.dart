@@ -807,6 +807,91 @@ void main() {
       expect(File(r.fileFor(RecommenderWorld.booru)).existsSync(), isTrue);
     });
 
+    /// A new run of the app: the kept learning is read back from its file.
+    void newRunOfKept() {
+      final String Function() file = DeferredLearning.instance.fileFor;
+      DeferredLearning.instance.resetForTests();
+      DeferredLearning.instance.fileFor = file;
+    }
+
+    test('1.0 (M2): kept learning comes back with its real tags and their types, not the printed tag maps', () async {
+      if (!dbReady) return;
+      final r = RecommenderHandler.instance;
+      keptInItsOwnFile();
+      ModelWork.instance.away = () => true;
+      ActivityClock.instance.mark();
+      await r.onEvent(booruPost('alice'), InteractionKind.favourite);
+      await ModelWork.instance.drained();
+      expect(DeferredLearning.instance.waiting, 1);
+      newRunOfKept();
+      ModelWork.instance.away = () => false;
+      now = now.add(const Duration(seconds: 2));
+      await r.replayKept();
+      await ModelWork.instance.drained();
+      expect((await r.modelFor(RecommenderWorld.booru)).updates, 1);
+      final List<String> names = (await r.report(RecommenderWorld.booru, count: 100)).liked.map((e) => e.name).toList();
+      expect(names, containsAll(<String>['tag:alice', 'type:artist:alice', 'tag:red_hair', 'pair:alice|red_hair']));
+      expect(names.where((n) => n.contains('{') || n.contains('fullString')), isEmpty, reason: names.join(' | '));
+    });
+
+    test("1.0 (M2): Forget everything also drops the kept learning of that world, not the other world's", () async {
+      if (!dbReady) return;
+      final r = RecommenderHandler.instance;
+      keptInItsOwnFile();
+      ModelWork.instance.away = () => true;
+      ActivityClock.instance.mark();
+      await r.onEvent(booruPost('alice'), InteractionKind.favourite);
+      await r.onEvent(doujinGallery('carol'), InteractionKind.favourite);
+      await ModelWork.instance.drained();
+      expect(DeferredLearning.instance.waiting, 2);
+      await r.reset(RecommenderWorld.booru);
+      expect(DeferredLearning.instance.waiting, 1, reason: 'the doujin step stays');
+      newRunOfKept();
+      ModelWork.instance.away = () => false;
+      now = now.add(const Duration(seconds: 2));
+      await r.replayKept();
+      await ModelWork.instance.drained();
+      expect(await SettingsHandler.instance.dbHandler.countInteractions('booru'), 0);
+      expect((await r.modelFor(RecommenderWorld.booru)).updates, 0, reason: 'nothing from before the reset is learned');
+      expect(await SettingsHandler.instance.dbHandler.countInteractions('doujin'), 1);
+    });
+
+    test('1.0 (M2): a kept step already queued when the model is reset is dropped, not learned into the fresh model', () async {
+      if (!dbReady) return;
+      final r = RecommenderHandler.instance;
+      keptInItsOwnFile();
+      ModelWork.instance.away = () => true;
+      ActivityClock.instance.mark();
+      await r.onEvent(booruPost('alice'), InteractionKind.favourite);
+      await ModelWork.instance.drained();
+      newRunOfKept();
+      ModelWork.instance.away = () => false;
+      await r.modelFor(RecommenderWorld.booru);
+      // Queued behind a busy screen, then the reset.
+      ActivityClock.instance.mark();
+      await r.replayKept();
+      await r.reset(RecommenderWorld.booru);
+      now = now.add(const Duration(seconds: 2));
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      await ModelWork.instance.drained();
+      expect(await SettingsHandler.instance.dbHandler.countInteractions('booru'), 0);
+      expect((await r.modelFor(RecommenderWorld.booru)).updates, 0);
+    });
+
+    test('1.0 (M2): a step queued before the reset is not kept for the next run when the app leaves first', () async {
+      if (!dbReady) return;
+      final r = RecommenderHandler.instance;
+      keptInItsOwnFile();
+      await r.modelFor(RecommenderWorld.booru);
+      ActivityClock.instance.mark();
+      final Future<void> learned = r.onEvent(booruPost('erin'), InteractionKind.favourite);
+      await r.reset(RecommenderWorld.booru);
+      ModelWork.instance.away = () => true;
+      ModelWork.instance.didChangeAppLifecycleState(AppLifecycleState.paused);
+      await learned;
+      expect(DeferredLearning.instance.waiting, 0, reason: 'forgotten with the model it was meant for');
+    });
+
     test('exposures wait their turn behind a running step and never overlap it', () async {
       if (!dbReady) return;
       final Completer<void> gate = Completer<void>();

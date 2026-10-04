@@ -8,6 +8,7 @@ import 'package:get_it/get_it.dart';
 
 import 'package:lolisnatcher/models/booru.dart';
 import 'package:lolisnatcher/models/booru_item.dart';
+import 'package:lolisnatcher/models/tag.dart';
 import 'package:lolisnatcher/features/recommender/logic/model_tasks.dart';
 import 'package:lolisnatcher/sources/framework/booru_handler.dart';
 import 'package:lolisnatcher/core/storage/database_handler.dart';
@@ -488,16 +489,20 @@ class RecommenderHandler {
       },
       heavy: _wantsPixelTags(world, reward),
       // r78: if the app leaves before this ran, keep it for next time rather
-      // than learn it without the models - that cannot be undone.
-      defer: () => DeferredLearning.instance.keep(<String, dynamic>{
-        'v': 1,
-        'kind': kind.name,
-        'value': value,
-        'key': key,
-        'world': world.name,
-        'item': item.toJson(),
-        'ns': ?namespaces,
-      }),
+      // than learn it without the models - that cannot be undone. Not when
+      // the model was reset since: that learning was forgotten with it.
+      defer: () {
+        if ((_generation[world] ?? 0) != generation) return;
+        DeferredLearning.instance.keep(<String, dynamic>{
+          'v': 1,
+          'kind': kind.name,
+          'value': value,
+          'key': key,
+          'world': world.name,
+          'item': item.toJson(),
+          'ns': ?namespaces,
+        });
+      },
     );
   }
 
@@ -527,23 +532,52 @@ class RecommenderHandler {
         final double value = (e['value'] as num?)?.toDouble() ?? 0;
         final Reward? reward = rewardFor(kind, value: value);
         if (reward == null) continue;
-        final BooruItem item = BooruItem.fromMap(Map<String, dynamic>.from(e['item'] as Map));
+        final BooruItem item = _keptItem(Map<String, dynamic>.from(e['item'] as Map));
         final RecommenderWorld world = RecommenderWorld.values.byName(e['world'] as String);
         final String key = (e['key'] as String?) ?? keyOf(item);
         if (key.isEmpty) continue;
         final Map<String, String>? namespaces = (e['ns'] as Map?)?.map((k, v) => MapEntry(k.toString(), v.toString()));
+        // Like [onEvent]: a reset of the world while this waits drops it.
+        final int generation = _generation[world] ?? 0;
         unawaited(
           ModelWork.instance.run(
             'learn ${kind.name} (kept)',
-            (bool lite) => _learnEvent(item, kind, key, world, reward, value: value, namespaces: namespaces, lite: lite),
+            (bool lite) {
+              if ((_generation[world] ?? 0) != generation) return Future<void>.value();
+              return _learnEvent(item, kind, key, world, reward, value: value, namespaces: namespaces, lite: lite);
+            },
             heavy: _wantsPixelTags(world, reward),
-            defer: () => DeferredLearning.instance.keep(e),
+            defer: () {
+              if ((_generation[world] ?? 0) != generation) return;
+              DeferredLearning.instance.keep(e);
+            },
           ),
         );
       } catch (err, s) {
         Logger.Inst().log('recommender: a kept learning step could not be read: $err', className, 'replayKept', LogTypes.exception, s: s);
       }
     }
+  }
+
+  /// The item of a kept step, as [BooruItem.toJson] wrote it. Its tags are
+  /// [Tag]s (kept this run) or their JSON maps (read back from the file);
+  /// [BooruItem.fromMap] turned both into their printed form
+  /// ('{fullString: red_hair, ...}'), so the model learned junk features
+  /// instead of the post's tags. The extension and the score come back too.
+  static BooruItem _keptItem(Map<String, dynamic> json) {
+    final List<Tag> tags = [
+      for (final Object? t in (json['tags'] as List?) ?? const [])
+        if (t is Tag) t else if (t is Map) Tag.fromJson(Map<String, dynamic>.from(t)) else Tag(t.toString()),
+    ];
+    return BooruItem(
+      fileURL: json['fileURL'].toString(),
+      sampleURL: json['sampleURL'].toString(),
+      thumbnailURL: json['thumbnailURL'].toString(),
+      tagsList: tags,
+      postURL: json['postURL'].toString(),
+      fileExt: json['fileExt']?.toString(),
+      score: json['score']?.toString(),
+    );
   }
 
   /// The image tagger will read the picture for this reaction: the heaviest
@@ -1009,6 +1043,8 @@ class RecommenderHandler {
     _saveTimer?.cancel();
     _saveTimer = null;
     _generation[world] = (_generation[world] ?? 0) + 1;
+    // Learning kept from the last run for this world is forgotten too.
+    DeferredLearning.instance.forget(world.name);
     _dirty.remove(world);
     _models[world] = FtrlModel();
     _exposed.clear();

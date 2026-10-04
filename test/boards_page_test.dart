@@ -203,6 +203,46 @@ void main() {
     expect(store.boards.single.imagePath, isEmpty);
   });
 
+  testWidgets('1.0 (M2): Remove image on a saved board deletes its copy when the board is saved, not before', (tester) async {
+    final String path = await store.importImageBytes(img.encodePng(img.Image(width: 4, height: 4)), 'b1', ext: 'png');
+    await store.save(Board(id: 'b1', name: 'Pic', imagePath: path));
+    await tester.pumpWidget(MaterialApp(home: BoardEditPage(board: store.byId('b1'))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('board-image-remove')));
+    await tester.pumpAndSettle();
+    expect(File(path).existsSync(), isTrue, reason: 'nothing is deleted until Save');
+    await tester.tap(find.byKey(const ValueKey('board-save')));
+    await tester.pumpAndSettle();
+    expect(store.byId('b1')!.imagePath, isEmpty);
+    expect(File(path).existsSync(), isFalse, reason: 'the copy of a removed picture does not stay on disk');
+  });
+
+  testWidgets('1.0 (M2): saving a board in the editor keeps its picture-tag and look caches', (tester) async {
+    final String path = await store.importImageBytes(img.encodePng(img.Image(width: 4, height: 4)), 'b1', ext: 'png');
+    final Board cached = Board(
+      id: 'b1',
+      name: 'Pic',
+      imagePath: path,
+      pixelTags: const [(tag: 'cat_ears', weight: 0.9)],
+      pixelImage: 'file:$path@tagger',
+      lookVector: const [0.5, 0.25],
+      lookImage: 'file:$path@looks',
+    );
+    await store.save(cached);
+    await tester.pumpWidget(MaterialApp(home: BoardEditPage(board: store.byId('b1'))));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('board-name')), 'Renamed');
+    await tester.tap(find.byKey(const ValueKey('board-save')));
+    await tester.pumpAndSettle();
+    final Board saved = store.byId('b1')!;
+    expect(saved.name, 'Renamed');
+    expect(saved.imagePath, path);
+    expect(File(path).existsSync(), isTrue, reason: 'the picture did not change');
+    expect(saved.hasFreshPixelTags('tagger'), isTrue, reason: 'the tagger does not run again for the same picture');
+    expect(saved.pixelTags!.single.tag, 'cat_ears');
+    expect(saved.hasFreshLook('looks'), isTrue, reason: 'neither does the looks model');
+  });
+
   testWidgets('Duplicate copies a picked image under the new board\'s id', (tester) async {
     final String path = await store.importImageBytes([1, 2, 3], 'b1', ext: 'png');
     await store.save(Board(id: 'b1', name: 'Pic', imagePath: path));

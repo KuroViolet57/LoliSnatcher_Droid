@@ -46,7 +46,14 @@ class FollowedArtistsHandler {
 
   static Future<void> unfollow(String tagName) async {
     try {
-      await _settings.dbHandler.removePinnedTagByName(tagName);
+      // Only the follow rows: a plain pin of the same tag on every source is
+      // also a global pin with this name, and must stay. By id, so the
+      // row's hides are forgotten with it (PinnedTag ids are reused).
+      for (final PinnedTag p in await _settings.dbHandler.getAllPinnedTags()) {
+        if (p.isGlobal && p.tagName == tagName && isFollowPin(p)) {
+          await _settings.dbHandler.removePinnedTag(p.id);
+        }
+      }
     } catch (_) {}
   }
 

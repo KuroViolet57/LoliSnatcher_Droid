@@ -385,12 +385,14 @@ class DoujinForYouHandler extends BooruHandler {
   @override
   Future search(String tags, int? pageNumCustom, {bool withCaptchaCheck = true}) async {
     if (pageNumCustom != null) pageNum = pageNumCustom;
+    // The sources first: _init picks the rotation's start among them (on the
+    // first page it saw none and always started at the first source).
+    _refreshSources();
     try {
       await _init(tags);
     } catch (e, s) {
       Logger.Inst().log('doujin For You init failed: $e', 'DoujinForYouHandler', 'search', LogTypes.exception, s: s);
     }
-    _refreshSources();
     if (sources.isEmpty) {
       errorString = 'Add at least one doujin source to get recommendations.';
       locked = true;

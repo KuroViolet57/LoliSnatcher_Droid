@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lolisnatcher/models/booru_type.dart';
@@ -150,6 +152,24 @@ void main() {
     expect((overall.done, overall.running, overall.stored, overall.shard, overall.shards), (true, false, 10, 2, 2));
   });
 
+  test('1.0 (M2): a second tap while a pull waits for its host does not walk the namespace twice', () async {
+    final Booru other = Booru('d', BooruType.Hitomi, '', 'https://dup.example', '');
+    final Completer<void> gate = Completer<void>();
+    final _Gated cats = _Gated(gate);
+    for (final ns in cats.namespaces) {
+      puller.resetResume(other, cats, ns.key);
+    }
+    // The host is busy with the tag walk ...
+    final Future<void> busy = puller.pull(other, cats, 'tag');
+    await Future<void>.delayed(Duration.zero);
+    // ... while the artist chip is tapped twice.
+    final Future<void> first = puller.pull(other, cats, 'artist');
+    final Future<void> second = puller.pull(other, cats, 'artist');
+    gate.complete();
+    await Future.wait([busy, first, second]);
+    expect(cats.asked.where((a) => a.$1 == 'artist').toList(), [('artist', 0), ('artist', 1)], reason: 'one walk, not two');
+  });
+
   test('r50: pulling everything on a shared source is the one shared walk', () async {
     final Booru other = Booru('g', BooruType.Gelbooru, '', 'https://gel.example', '');
     final fake = _Fake(shared: true, total: 2);
@@ -178,5 +198,18 @@ class _Categories extends TagCatalogSource {
     if (shard >= (namespace == 'artist' ? 2 : 3)) return null;
     asked.add((namespace, shard));
     return [BooruTagEntry(name: '${namespace}_$shard', namespace: namespace, tagType: TagType.none), BooruTagEntry(name: '${namespace}_${shard}b', namespace: namespace, tagType: TagType.none)];
+  }
+}
+
+/// [_Categories] whose tag walk waits at a gate, keeping the host busy.
+class _Gated extends _Categories {
+  _Gated(this.gate);
+
+  final Completer<void> gate;
+
+  @override
+  Future<List<BooruTagEntry>?> shardAt(String namespace, int shard) async {
+    if (namespace == 'tag') await gate.future;
+    return super.shardAt(namespace, shard);
   }
 }
