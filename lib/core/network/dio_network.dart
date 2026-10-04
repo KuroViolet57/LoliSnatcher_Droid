@@ -552,9 +552,11 @@ class DioNetwork {
     }
 
     if (fileUri == null) {
-      completer.completeError(
-        DioMixin.assureDioException(Exception('Error creating saf file'), response.requestOptions),
-      );
+      // Nothing to write into: stop reading the response. This used to listen
+      // on anyway, pause at the first piece (the rest of the body piling up
+      // in memory) and throw on fileUri! from inside the stream.
+      unawaited(stream.listen(null).cancel());
+      throw DioMixin.assureDioException(Exception('Error creating saf file'), response.requestOptions);
     }
 
     late StreamSubscription subscription;
@@ -563,7 +565,7 @@ class DioNetwork {
         subscription.pause();
 
         // Write file asynchronously
-        asyncWrite = ServiceHandler.writeStreamToFileFromSAFDirectory(fileUri!, data)
+        asyncWrite = ServiceHandler.writeStreamToFileFromSAFDirectory(fileUri, data)
             .then((result) {
               if (!result) {
                 throw Exception('Did not write file bytes');
@@ -592,7 +594,7 @@ class DioNetwork {
         try {
           await asyncWrite;
           closed = true;
-          await ServiceHandler.closeStreamToFileFromSAFDirectory(fileUri!);
+          await ServiceHandler.closeStreamToFileFromSAFDirectory(fileUri);
           completer.complete(response);
         } catch (e) {
           completer.completeError(

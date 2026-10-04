@@ -339,4 +339,23 @@ void main() {
     expect(h.fetched.map((i) => i.serverId), ['3', '4']);
     expect(h.locked, isFalse);
   });
+
+  test('a download whose file cannot be created stops reading instead of pausing on a body it then throws on', () async {
+    routes['/file.png'] = (r) async {
+      r.response.headers.contentType = ContentType('image', 'png');
+      r.response.add(List<int>.filled(64 * 1024, 0));
+      await r.response.close();
+    };
+
+    // No platform side on a test host: the SAF file is never created. The old
+    // path listened on anyway, paused at the first piece (the rest of the body
+    // piling up in memory) and threw on `fileUri!` from inside the stream - an
+    // uncaught error, which fails this test.
+    await expectLater(
+      DioNetwork.downloadCustom('$base/file.png', 'content://tree/folder', 'file', 'png', 'image/png'),
+      throwsA(predicate((Object e) => e is DioException && '${e.error}'.contains('Error creating saf file'))),
+    );
+    // The body arrives meanwhile; an error thrown from inside the stream would surface here.
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+  });
 }
