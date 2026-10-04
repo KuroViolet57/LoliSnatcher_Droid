@@ -16,6 +16,21 @@ import 'package:lolisnatcher/core/storage/tag_handler.dart';
 import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
 import 'package:lolisnatcher/features/furaffinity/ui/furaffinity_sidebar.dart';
 
+/// Answers the watch check from a list (the last answer repeats).
+class _WatchProbe extends FurAffinityHandler {
+  _WatchProbe(Booru booru, this.answers) : super(booru, FurAffinityHandler.pageSize);
+
+  final List<({String path, bool watching})?> answers;
+  int calls = 0;
+
+  @override
+  Future<({String path, bool watching})?> fetchWatchLink(String username) async {
+    final ({String path, bool watching})? answer = answers[calls.clamp(0, answers.length - 1)];
+    calls++;
+    return answer;
+  }
+}
+
 /// A first watchlist page of 30 artists that says there is more; every later
 /// page fails.
 class _WatchlistProbe extends FurAffinityHandler {
@@ -58,6 +73,39 @@ void main() {
     try {
       tempDir.deleteSync(recursive: true);
     } catch (_) {}
+  });
+
+  testWidgets('the Watch pill leaves "Checking" when the check gets no answer, and a tap checks again', (tester) async {
+    FurAffinitySessionHandler.instance.store(a: 'AAA', b: 'BBB');
+    final _WatchProbe probe = _WatchProbe(fa, [null, (path: '/watch/someartist/', watching: false)]);
+    SearchHandler.instance.tabs.add(SearchTab(fa, null, 'user:someartist', customHandler: probe));
+    SearchHandler.instance.index.value = 0;
+
+    tester.view.physicalSize = const Size(420, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          home: Scaffold(body: FurAffinitySidebar(booru: fa, toggleDrawer: () {})),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(probe.calls, 1);
+    expect(find.text('Checking'), findsNothing, reason: 'the check is over: the page failed');
+    final Finder pill = find.ancestor(of: find.text('Watch…'), matching: find.byType(FaPill));
+    expect(tester.widget<FaPill>(pill).enabled, isTrue);
+
+    await tester.tap(pill);
+    await tester.pump();
+    await tester.pump();
+
+    expect(probe.calls, 2, reason: 'a tap on the unknown state checks again');
+    expect(find.text('Watch'), findsOneWidget);
+    expect(find.text('Get their new work in your inbox'), findsOneWidget);
   });
 
   testWidgets('watched artists: after a failed page one scroll gesture asks once, not once per scroll event', (tester) async {
