@@ -243,4 +243,25 @@ void main() {
     expect(tester.getCenter(find.byIcon(Symbols.menu_rounded)).dx, greaterThan(width / 2));
   });
 
+  group('doujin preview window', () {
+    BooruItem book(String id, String postURL) => BooruItem(
+      fileURL: 'https://img.invalid/$id.jpg',
+      sampleURL: '',
+      thumbnailURL: 'https://img.invalid/$id-t.jpg',
+      tagsList: [Tag('vanilla')],
+      postURL: postURL,
+      serverId: id,
+    );
+
+    test('a keyed source gets the gallery key with the id, like Open in new tab', () {
+      FloatingPreviewHandler.instance.openDoujinPreview(item: book('225373', 'https://hdoujin.org/g/225373/ada0292991b8'), booru: hdoujin);
+      expect(FloatingPreviewHandler.instance.entries.last.tag, 'id:225373/ada0292991b8');
+    });
+
+    test('a source that needs only the id keeps id:<n>', () {
+      FloatingPreviewHandler.instance.openDoujinPreview(item: book('1001', 'https://nhentai.net/g/1001/'), booru: nhentai);
+      expect(FloatingPreviewHandler.instance.entries.last.tag, 'id:1001');
+    });
+  });
+
 }
