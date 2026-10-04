@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -8,14 +9,17 @@ import 'package:lolisnatcher/core/logging/log_redaction.dart';
 import 'package:lolisnatcher/core/logging/logger.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/core/settings/source_settings_handler.dart';
+import 'package:lolisnatcher/core/storage/booru_tag_store.dart';
 import 'package:lolisnatcher/core/storage/database_handler.dart';
 import 'package:lolisnatcher/core/storage/tag_handler.dart';
 import 'package:lolisnatcher/core/utils/tools.dart';
 import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
 import 'package:lolisnatcher/models/booru.dart';
 import 'package:lolisnatcher/models/booru_item.dart';
+import 'package:lolisnatcher/models/booru_tag.dart';
 import 'package:lolisnatcher/models/booru_type.dart';
 import 'package:lolisnatcher/models/tag.dart';
+import 'package:lolisnatcher/models/tag_type.dart';
 import 'package:lolisnatcher/sources/framework/booru_handler.dart';
 import 'package:lolisnatcher/sources/framework/booru_handler_factory.dart';
 import 'package:lolisnatcher/sources/furaffinity/furaffinity_handler.dart';
@@ -177,6 +181,53 @@ void main() {
       expect(plain.expiresDate, isNull, reason: 'a session cookie');
       expect(plain.isSecure, isFalse);
       expect(plain.isHttpOnly, isFalse);
+    });
+  });
+
+  group('rule34video with Source settings', () {
+    late bool dbReady;
+
+    setUp(() async {
+      dbReady = false;
+      try {
+        sqfliteFfiInit();
+        databaseFactory = databaseFactoryFfi;
+        final db = SettingsHandler.instance.dbHandler;
+        db.db = await databaseFactory.openDatabase(inMemoryDatabasePath);
+        await db.updateTable();
+        await db.createCriticalIndexes();
+        SettingsHandler.instance.dbEnabled = true;
+        dbReady = true;
+      } catch (e) {
+        // ignore: avoid_print
+        print('sqlite unavailable on this test host: $e');
+      }
+    });
+
+    tearDown(() async {
+      try {
+        await SettingsHandler.instance.dbHandler.db?.close();
+      } catch (_) {}
+      SettingsHandler.instance.dbHandler.db = null;
+    });
+
+    test('an always-add term keeps the slug the index stored for an artist', () async {
+      if (!dbReady) return;
+      final Booru booru = Booru('rule34video', BooruType.Rule34Video, '', 'https://rule34video.com', '');
+      await BooruTagStore.record(booru, const [
+        BooruTagEntry(name: 'paranoiddroid', tagType: TagType.artist, namespace: 'artist', sourceId: 'paranoid-droid'),
+      ]);
+      SourceSettingsHandler.instance.update(booru, (s) => s.alwaysAdd = 'type:futa');
+      final List<String> asked = [];
+      final Rule34VideoHandler h = Rule34VideoHandler(booru, Rule34VideoHandler.pageSize)
+        ..listingFetch = (Uri uri) async {
+          asked.add(uri.toString());
+          return Response<dynamic>(requestOptions: RequestOptions(path: uri.toString()), statusCode: 200, data: '<html></html>');
+        };
+
+      await h.search('artist:paranoiddroid', null);
+
+      expect(asked.first, 'https://rule34video.com/models/paranoid-droid/?flag1=15');
     });
   });
 }
