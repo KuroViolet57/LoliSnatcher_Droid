@@ -105,7 +105,8 @@ class _SaveCachePageState extends State<SaveCachePage> {
 
     for (final _CacheType type in cacheTypesToGet) {
       final ReceivePort receivePort = ReceivePort();
-      isolate = await Isolate.spawn(_isolateEntry, receivePort.sendPort);
+      final Isolate spawned = await Isolate.spawn(_isolateEntry, receivePort.sendPort);
+      isolate = spawned;
 
       receivePort.listen((dynamic data) async {
         if (mounted) {
@@ -117,7 +118,14 @@ class _SaveCachePageState extends State<SaveCachePage> {
           } else {
             cacheStats.add(data);
             setState(() {});
+            // The stat is the last message: the port was left open before.
+            receivePort.close();
           }
+        } else {
+          // The page is gone: nobody will read the stat, and an isolate still
+          // waiting for its folder would wait forever.
+          receivePort.close();
+          spawned.kill(priority: Isolate.immediate);
         }
       });
     }
