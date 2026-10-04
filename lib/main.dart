@@ -599,11 +599,26 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
   }
 
   Future<void> openAppLink(String url) async {
-    Logger.Inst().log(url, 'AppLinks', 'openAppLink', LogTypes.settingsLoad);
+    // 1.0: a source config link carries the source's API key and user id as
+    // base64, which the log redaction cannot see: its payload stays out.
+    Logger.Inst().log(
+      url.contains('loli.snatcher') ? url.split('?').first : url,
+      'AppLinks',
+      'openAppLink',
+      LogTypes.settingsLoad,
+    );
 
     if (url.contains('loli.snatcher')) {
-      final Booru booru = Booru.fromLink(url);
-      if (booru.name != null && booru.name!.isNotEmpty && booru.type!.isSaveable) {
+      // 1.0: a link with no config, bad base64 or bad JSON threw out of this
+      // post-frame callback; it is logged (without the payload) and ignored.
+      final Booru booru;
+      try {
+        booru = Booru.fromLink(url);
+      } catch (e) {
+        Logger.Inst().log('Not a source config link (${e.runtimeType})', 'AppLinks', 'openAppLink', LogTypes.exception);
+        return;
+      }
+      if (booru.name != null && booru.name!.isNotEmpty && booru.type?.isSaveable == true) {
         if (settingsHandler.booruList.indexWhere((b) => b.name == booru.name) != -1) {
           // Rename config if its already in the list
           booru.name = '${booru.name!} (duplicate)';
