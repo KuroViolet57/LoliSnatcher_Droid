@@ -184,6 +184,7 @@ class _LoliSyncPageState extends State<LoliSyncPage> {
     ipController.dispose();
     portController.dispose();
     favouritesSkipController.dispose();
+    snatchedSkipController.dispose();
     startPortController.dispose();
 
     testSync.killSync();
