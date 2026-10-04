@@ -84,14 +84,18 @@ class GelbooruHandler extends BooruHandler {
 
   @override
   List parseListFromResponse(dynamic response) {
-    dynamic parsedResponse;
-    try {
-      parsedResponse = response.data;
-    } catch (e) {
-      // gelbooru returns xml response if request was denied for some reason
-      // i.e. user hit a rate limit because he didn't include api key
-      parsedResponse = XmlDocument.parse(response.data);
-      final String? errorMessage = (parsedResponse as XmlDocument).getElement('response')?.getAttribute('reason')?.toString();
+    final dynamic parsedResponse = response.data;
+    // gelbooru returns xml response if request was denied for some reason
+    // i.e. user hit a rate limit because he didn't include api key.
+    // (This sat in a catch around reading response.data, which never
+    // throws, so the user got a type error instead of the reason.)
+    if (parsedResponse is String) {
+      String? errorMessage;
+      try {
+        errorMessage = XmlDocument.parse(parsedResponse).getElement('response')?.getAttribute('reason')?.toString();
+      } catch (_) {
+        // Not XML: left to fail below, as before.
+      }
       if (errorMessage != null) {
         throw Exception(errorMessage);
       }

@@ -21,6 +21,7 @@ import 'package:lolisnatcher/models/booru_tag.dart';
 import 'package:lolisnatcher/models/booru_type.dart';
 import 'package:lolisnatcher/models/tag.dart';
 import 'package:lolisnatcher/models/tag_type.dart';
+import 'package:lolisnatcher/sources/booru/gelbooru_handler.dart';
 import 'package:lolisnatcher/sources/booru/hydrus_handler.dart';
 import 'package:lolisnatcher/sources/booru/nozomi_handler.dart';
 import 'package:lolisnatcher/sources/framework/booru_handler.dart';
@@ -267,6 +268,22 @@ void main() {
       final Map<String, dynamic>? own = DioNetwork.mergeOptions(null, {'User-Agent': 'own', 'Referer': 'r'}).headers;
       expect(own?['User-Agent'], 'own', reason: 'a caller that sets headers keeps them');
       expect(own?['Referer'], 'r');
+    });
+  });
+
+  group('Gelbooru', () {
+    test('an XML refusal is reported with its reason', () {
+      final GelbooruHandler h = GelbooruHandler(gelbooru, 20);
+      final Response<dynamic> refusal = Response<dynamic>(
+        requestOptions: RequestOptions(path: 'https://gelbooru.com/index.php?page=dapi&s=post&q=index&json=1'),
+        statusCode: 200,
+        data: '<?xml version="1.0" encoding="UTF-8"?><response success="false" reason="Search error: API limited due to abuse."/>',
+      );
+
+      expect(
+        () => h.parseListFromResponse(refusal),
+        throwsA(predicate((Object e) => e.toString().contains('API limited due to abuse'))),
+      );
     });
   });
 
