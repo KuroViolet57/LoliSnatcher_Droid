@@ -1,0 +1,121 @@
+{
+  "lib/features/viewer/ui/info/tag_view.dart": {
+    "tag_dialog": ["_BlacklistScope", "_pickBlacklistScope", "showTagDialog", "tagHiddenForHandler", "tagMarkedForHandler"],
+    "tab_group_picker": ["kOpenOutsideGroupSentinel", "kOpenFromSentinel", "pickTabGroupName", "showOpenTagInGroupSheet"],
+    "related_tabs_dialog": ["showRelatedTabsDialog", "_RelatedTabsDialog", "_RelatedTabsDialogState"],
+    "source_link_error_dialog": ["SourceLinkErrorDialog"],
+    "collapsible_related_preview": ["_CollapsibleRelatedPreview", "_CollapsibleRelatedPreviewState"],
+    "tag_content_preview": ["TagContentPreview", "_TagContentPreviewState", "_TagPreviewsListDialog"]
+  },
+  "lib/features/feed/ui/search/main_search_query_editor_page.dart": {
+    "suggestion_text": ["TagSuggestionText"],
+    "editor_source": ["_EditorSourceMixin"],
+    "metatags_block": ["AddMetatagBottomSheetResult", "AddMetatagBottomSheet", "MetatagsBlock", "_MetatagsBlockState", "showSingleDatePicker", "SingleDatePickerBottomSheet", "_SingleDatePickerBottomSheetState", "showRangeDatePicker", "RangeDatePickerBottomSheet", "_RangeDatePickerBottomSheetState"],
+    "suggestions_content": ["SuggestionsMainContent", "_SuggestionsMainContentState", "SearchSectionCard"],
+    "history_block": ["HistoryBlock", "_HistoryBlockState"],
+    "tag_builder_block": ["TagBuilderBlock", "_TagBuilderBlockState"],
+    "popular_tags_block": ["PopularTagsBlock", "_PopularTagsBlockState"],
+    "prefix_edit_dialog": ["_PrefixEditDialog"],
+    "pinned_tags_block": ["PinnedTagsBlock", "PinnedTagsSortMode", "_PinnedTagsBlockState"],
+    "pin_dialogs": ["PinTagDialogResult", "PinTagDialog", "_PinTagDialogState", "doujinPinsAsPinnedTags", "showPinTagDialog", "showUnpinTagDialog", "ManualPinTagDialogResult", "ManualPinTagDialog", "_ManualPinTagDialogState", "EditLabelsDialog", "_EditLabelsDialogState"],
+    "pinned_tags_manager": ["showPinnedTagsReorderDialog", "PinnedTagsReorderDialog", "_PinnedTagsReorderDialogState", "showPinnedTagsManagerDialog", "PinnedTagsManagerDialog", "_PinnedTagsManagerDialogState"],
+    "doujin_filters_block": ["DoujinFiltersBlock"]
+  },
+  "lib/features/feed/logic/search_handler.dart": {
+    "search_tab": ["SearchTab"],
+    "tab_backup": ["tabDivider", "decodeBackupString", "TabBackup"],
+    "tab_visit": ["TabVisit"],
+    "search_enums": ["HasTabWithTagResult", "TabAddMode", "SearchReaction"]
+  },
+  "lib/core/ui/settings_widgets.dart": {
+    "settings_buttons": ["SettingsPart", "SettingsButton", "SettingsPageOpen"],
+    "settings_toggles": ["SettingsToggle", "SettingsToggleTristate", "SettingsSegmentedButton"],
+    "settings_dropdowns": ["SettingsDropdown", "SettingsBooruDropdown", "SettingsOptionsList"],
+    "settings_text_input": ["SettingsTextInput", "_SettingsTextInputState"],
+    "settings_dialogs": ["SettingsDialog", "SettingsBottomSheet", "SettingsPageDialog", "SettingsAppBar"]
+  },
+  "lib/features/viewer/ui/gallery_view_page.dart": {
+    "swipe_up_listener": ["_SwipeUpListener", "_SwipeUpListenerState"],
+    "info_peek_bar": ["_InfoPeekBar"],
+    "item_info_drawer": ["ItemInfoDrawer", "_ItemInfoDrawerState"],
+    "page_physics": ["slidePageTransition", "_SnappyPageSpringPhysics"]
+  },
+  "lib/features/video/ui/media_kit_player_view.dart": {
+    "player_pool": ["_PooledPlayer", "_MediaKitPlayerPool", "MediaKitFrameSource"],
+    "controls": ["_MediaKitControls", "_MediaKitControlsState", "_FullscreenMediaKit", "_SeekFeedback", "_ProgressBar", "_ProgressBarState"]
+  },
+  "lib/features/video/ui/better_player_view.dart": {
+    "player_pool": ["_BetterPlayerPool", "_DecoderGate"],
+    "controls": ["_BetterControls", "_BetterControlsState", "_SeekFeedback", "_ProgressBar", "_ProgressBarState"]
+  },
+  "lib/features/tabs/ui/tab_selector.dart": {
+    "tab_selector_button": ["TabSelector"],
+    "tab_manager_item": ["TabManagerItem"],
+    "sorting": ["TabSortingMode", "TabSortingIcon"],
+    "visited_tabs_history": ["VisitedTabsHistoryList"]
+  },
+  "lib/features/settings/ui/theme_page.dart": {
+    "clippers": ["_SunClipper", "_MoonClipper", "_ThemeLeftClipper", "_ThemeRightClipper"],
+    "font_picker": ["_FontPickerSheet", "_FontPickerSheetState", "_CustomFontDialog", "_CustomFontDialogState"]
+  },
+  "lib/sources/framework/tags/tag_index_source.dart": {
+    "gelbooru_tag_index": ["GelbooruTagIndex"],
+    "danbooru_tag_index": ["DanbooruTagIndex"],
+    "e621_tag_index": ["E621TagIndex"],
+    "philomena_tag_index": ["PhilomenaTagIndex"],
+    "moebooru_tag_index": ["MoebooruTagIndex"],
+    "sankaku_tag_index": ["SankakuTagIndex"]
+  },
+  "lib/features/recommender/logic/ml/look_model_handler.dart": {
+    "look_types": ["LookPreset", "LookState", "LookStatus", "LookRunner", "LookFetcher", "LookRunnerFactory", "ThumbnailFetcher"]
+  },
+  "lib/core/ui/loli_dropdown.dart": {
+    "single_sheet": ["LoliDropdownBottomSheet", "_LoliDropdownBottomSheet"],
+    "multiselect": ["LoliMultiselectDropdown", "LoliMultiselectDropdownBottomSheet", "_LoliMultiselectDropdownBottomSheetState"]
+  },
+  "lib/features/doujin/logic/doujin_data_handler.dart": {
+    "doujin_records": ["DoujinEntry", "DoujinCollection", "DoujinPin", "DoujinSearchHistoryEntry", "DoujinSavedSearch", "DoujinFollow"]
+  },
+  "lib/features/settings/ui/sources/booru_edit_page.dart": {
+    "hydrus_access_key": ["_HydrusAccessKeyWidget"],
+    "per_booru_blacklist": ["_PerBooruBlacklistEditor", "_PerBooruBlacklistRow"]
+  },
+  "lib/features/recommender/ui/recommendations_page.dart": {
+    "feature_list": ["_FeatureList"],
+    "encoder_section": ["EncoderModelSection", "_EncoderModelSectionState"],
+    "look_section": ["LookModelSection", "_LookModelSectionState"],
+    "tagger_section": ["TaggerModelSection", "_TaggerModelSectionState"],
+    "boards_section": ["_BoardsSection", "_BoardsSectionState"]
+  },
+  "lib/features/viewer/ui/chrome/hideable_appbar.dart": {
+    "select_tags_dialog": ["showSelectTagsDialog"]
+  },
+  "lib/features/tags/ui/floating_tag_preview_window.dart": {
+    "overlay_stack": ["FloatingPreviewOverlayStack"]
+  },
+  "lib/features/tags/ui/tag_browser_page.dart": {
+    "tag_row_tile": ["_TagRowTile", "_DashedBorderPainter"]
+  },
+  "lib/features/video/ui/loli_controls.dart": {
+    "playback_speed_dialog": ["_PlaybackSpeedDialog", "_PlaybackSpeedDialogState"]
+  },
+  "lib/sources/doujin/hitomi/hitomi_handler.dart": {
+    "hitomi_gg": ["HitomiFormatException", "HitomiGg"],
+    "hitomi_index_node": ["HitomiIndexNode"]
+  },
+  "lib/features/recommender/logic/recommender_handler.dart": {
+    "recommender_report": ["RecommenderReport", "Explanation", "_Taste"]
+  },
+  "lib/features/tags/ui/tag_search_query_editor_page.dart": {
+    "tag_search_box": ["TagSearchBox", "_TagSearchBoxState"]
+  },
+  "lib/features/feed/ui/thumbnail/thumbnail.dart": {
+    "item_refresher": ["tryToLoadAndUpdateItem"]
+  },
+  "lib/features/feed/ui/waterfall_view.dart": {
+    "scroll_buttons": ["WaterfallScrollButtons"]
+  },
+  "lib/sources/doujin/ehentai/ehentai_handler.dart": {
+    "ehentai_gallery": ["EHentaiGallery"]
+  }
+}
