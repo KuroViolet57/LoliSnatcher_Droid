@@ -144,4 +144,34 @@ void main() {
     });
   });
 
+  group('removeTabs', () {
+    testWidgets('removing tabs after the current one tells the tab list listeners', (tester) async {
+      await pumpApp(tester);
+      final a = loaded('a'), b = loaded('b'), c = loaded('c'), d = loaded('d');
+      sh().tabs.addAll([a, b, c, d]);
+      select(0);
+      int notified = 0;
+      void listener() => notified++;
+      sh().tabs.addListener(listener);
+      sh().removeTabs([c, d]);
+      sh().tabs.removeListener(listener);
+      expect(sh().tabs, [a, b]);
+      expect(notified, greaterThan(0), reason: 'the tab pill, the carousel and the tab count listen to the list');
+      expect(sh().currentTab, same(a));
+    });
+
+    testWidgets('removing every tab leaves one default tab instead of throwing', (tester) async {
+      await pumpApp(tester);
+      SettingsHandler.instance.booruList.add(gelbooru);
+      final a = loaded('a'), b = loaded('b');
+      sh().tabs.addAll([a, b]);
+      select(1);
+      sh().removeTabs([a, b]);
+      expect(sh().tabs, hasLength(1));
+      expect(sh().currentTab.selectedBooru.value.name, 'gelbooru');
+      expect(sh().currentTab.tags, SettingsHandler.instance.defTags);
+      await settle(tester);
+    });
+  });
+
 }

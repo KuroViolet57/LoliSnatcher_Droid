@@ -339,18 +339,29 @@ class SearchHandler {
       );
 
       final SettingsHandler settingsHandler = SettingsHandler.instance;
-      final String defaultText = currentBooru.defTags?.isNotEmpty == true
-          ? currentBooru.defTags!
+      // Every tab is gone, so the current tab's source is read from the tab
+      // kept above (currentBooru would read an empty list).
+      final Booru booru = curTab.selectedBooru.value;
+      final String defaultText = booru.defTags?.isNotEmpty == true
+          ? booru.defTags!
           : settingsHandler.defTags;
       searchTextController.text = defaultText;
 
-      final SearchTab newTab = SearchTab(currentBooru, null, defaultText);
-      tabs.value[0] = newTab;
+      final SearchTab newTab = SearchTab(booru, null, defaultText);
+      if (tabs.value.isEmpty) {
+        tabs.value.add(newTab);
+      } else {
+        tabs.value[0] = newTab;
+      }
       changeTabIndex(0);
     } else {
       final newIndex = tabs.value.indexWhere((t) => t.id == curTab.id);
       changeTabIndex(newIndex == -1 ? total - 1 : newIndex);
     }
+
+    // The list was changed in place: tell its listeners (tab pill, tab
+    // cards, tab count) once the current index points into it again.
+    tabs.value = [...tabs];
   }
 
   void moveTab(int fromIndex, int toIndex) {
