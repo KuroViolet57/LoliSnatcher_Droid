@@ -262,6 +262,15 @@ void main() {
     expect(s.hiddenTagsForBooru('New'), isEmpty);
   });
 
+  testWidgets('Viewer: a slideshow time over 10 s is kept', (tester) async {
+    s.galleryAutoScrollTime = 4100;
+    await open(tester, const GalleryPage());
+    await tester.enterText(field('4100'), '30000');
+    await tester.pump();
+    await leave(tester);
+    expect(s.galleryAutoScrollTime, 30000);
+  });
+
   testWidgets('Doujin global settings show the choice that applies while none is set', (tester) async {
     tester.view.physicalSize = const Size(420, 8000);
     tester.view.devicePixelRatio = 1;
