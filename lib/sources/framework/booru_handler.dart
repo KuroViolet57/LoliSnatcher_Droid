@@ -1216,7 +1216,10 @@ abstract class BooruHandler {
     // one to the other sent every cookie twice (see Tools.mergeCookieStrings).
     cookieString = Tools.mergeCookieStrings([cookieString, headers['Cookie'] ?? '']);
 
-    Logger.Inst().log('${booru.baseURL}: $cookieString', className, 'getCookies', LogTypes.booruHandlerSearchURL);
+    // Names only: the values are sessions, some under names the redaction
+    // cannot know (FurAffinity's a and b), and a log gets shared.
+    final String names = Tools.parseCookieString(cookieString).keys.map((name) => '$name=<redacted>').join('; ');
+    Logger.Inst().log('${booru.baseURL}: $names', className, 'getCookies', LogTypes.booruHandlerSearchURL);
 
     return cookieString.trim();
   }
