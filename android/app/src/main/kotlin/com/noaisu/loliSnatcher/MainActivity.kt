@@ -512,12 +512,21 @@ class MainActivity: FlutterFragmentActivity() {
                             result.error("INVALID_ARGUMENT", "One or more arguments are null", null)
                         }
                     }
+                    // 1.0: does the app still hold a read+write grant for this folder?
+                    // Asks Android only: no picker, no test file (testSAF does both).
+                    "hasSafAccess" -> {
+                        val uri: String? = call.argument("uri")
+                        result.success(uri != null && hasSafAccess(uri))
+                    }
                     "testSAF" -> {
                         val uri: String? = call.argument("uri")
                         if (uri != null) {
                             val permissions =
                                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-                                        this.contentResolver.persistedUriPermissions.takeWhile { it.isReadPermission && it.isWritePermission }
+                                        // 1.0: was takeWhile, which stopped at the first grant without
+                                        // write access and so reported "no access" (and opened the picker)
+                                        // although a usable grant followed it.
+                                        this.contentResolver.persistedUriPermissions.filter { it.isReadPermission && it.isWritePermission }
                                     } else {
                                         emptyList()
                                     }
@@ -869,6 +878,15 @@ class MainActivity: FlutterFragmentActivity() {
         } catch (e: Exception) {
             Log.e("MainActivity", "Error listing SAF directory: $uriString", e)
             emptyList()
+        }
+    }
+
+    private fun hasSafAccess(uriString: String): Boolean {
+        val uri = Uri.parse(uriString)
+        return try {
+            contentResolver.persistedUriPermissions.any { it.uri == uri && it.isReadPermission && it.isWritePermission }
+        } catch (e: Exception) {
+            false
         }
     }
 
