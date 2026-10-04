@@ -93,4 +93,20 @@ void main() {
     expect(tester.takeException(), isNull, reason: 'the dialog must build (it threw a RangeError: history[-1])');
     expect(find.text('Delete history entries'), findsOneWidget);
   });
+
+  testWidgets('the count under the title takes the app bar text colour, not onPrimary', (tester) async {
+    const Color barText = Colors.white;
+    final ThemeData theme = ThemeData(
+      colorScheme: const ColorScheme.dark(primary: Color(0xFFFFE082), onPrimary: Colors.black),
+      appBarTheme: const AppBarTheme(
+        backgroundColor: Color(0xFF15151A),
+        foregroundColor: barText,
+        titleTextStyle: TextStyle(color: barText, fontSize: 19),
+      ),
+    );
+    await pumpHistory(tester, theme: theme);
+
+    final Text count = tester.widget<Text>(find.descendant(of: find.byType(AppBar), matching: find.text('2')));
+    expect(count.style?.color, barText, reason: 'black (onPrimary) on the dark bar was unreadable');
+  });
 }

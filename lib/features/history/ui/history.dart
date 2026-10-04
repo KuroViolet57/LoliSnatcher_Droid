@@ -621,8 +621,10 @@ class _HistoryListState extends State<HistoryList> {
           Text(context.loc.history.searchHistory),
           Text(
             '${filterSearchController.text.isEmpty ? history.length : '${filteredHistory.length}/${history.length}'}',
+            // Drawn on the app bar: the bar's text colour (as the tab
+            // manager's count, r66), not onPrimary (black on the dark bar).
             style: Theme.of(context).appBarTheme.titleTextStyle?.copyWith(
-              color: Theme.of(context).colorScheme.onPrimary,
+              color: Theme.of(context).appBarTheme.foregroundColor ?? Theme.of(context).colorScheme.onSurface,
               fontSize: 12,
               fontWeight: FontWeight.normal,
             ),
