@@ -41,6 +41,11 @@ void _openEntry(BuildContext context, DoujinEntry entry, {Booru? fallback}) {
   Navigator.of(context).popUntil((route) => route.isFirst);
 }
 
+/// [_openEntry] for the drawer's bookmark list (DoujinFavouritesPage): the
+/// entry opens on its own source, with its gallery key, as a doujin tab.
+void openDoujinEntry(BuildContext context, DoujinEntry entry, {Booru? fallback}) =>
+    _openEntry(context, entry, fallback: fallback);
+
 Widget _entryTile(
   BuildContext context,
   DoujinEntry entry, {
@@ -329,7 +334,10 @@ class DoujinFollowedPage extends StatelessWidget {
                 onTap: () {
                   final Booru? b = _booruForHost(f.booruHost, fallback: booru);
                   if (b == null) return;
-                  SearchHandler.instance.addTabByString('artist:"${f.tag}"', customBooru: b, switchToNew: true);
+                  // The app's own artist:<tag> form: each source turns the
+                  // underscores into its own spelling (quotes, spaces, slug).
+                  // A pre-quoted value came out doubled or underscored.
+                  SearchHandler.instance.addTabByString('artist:${f.tag}', customBooru: b, switchToNew: true);
                   Navigator.of(context).popUntil((route) => route.isFirst);
                 },
               ),
