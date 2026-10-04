@@ -47,7 +47,10 @@ void main() {
     if (Platform.environment['RECORD_DB_SCHEMA'] == '1') {
       File(golden).writeAsStringSync('$schema\n');
     }
-    expect(schema, File(golden).readAsStringSync().trimRight());
+    // Git may check the golden out with CRLF line endings on Windows.
+    expect(schema, File(golden).readAsStringSync().replaceAll('
+', '
+').trimRight());
   });
 
   test('running the statements again on an existing database changes nothing', () async {
