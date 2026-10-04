@@ -221,6 +221,8 @@ class _InAppWebviewViewState extends State<InAppWebviewView> {
 
       globalWindowsCookies[uri.host]!.addAll(cookies);
 
+      // 1.0: the page may have closed while the cookies were read.
+      if (!mounted) return;
       setState(() {});
     }
   }
