@@ -22,6 +22,7 @@ import 'package:lolisnatcher/features/recommender/logic/model_work.dart';
 import 'package:lolisnatcher/features/recommender/logic/recommender_handler.dart';
 import 'package:lolisnatcher/features/recommender/logic/rewards.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/core/storage/database_handler.dart';
 
 /// r33: the recommender behind every surface. Events are logged and train
 /// the world's model at once; the two toggles are independent; the worlds

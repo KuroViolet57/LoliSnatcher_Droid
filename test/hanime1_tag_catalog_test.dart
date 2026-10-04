@@ -14,6 +14,7 @@ import 'package:lolisnatcher/core/storage/booru_tag_store.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/sources/framework/tags/tag_catalog_source.dart';
 import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
+import 'package:lolisnatcher/core/storage/database_handler.dart';
 
 /// hanime1.me's Tag builder: the site enumerates its whole vocabulary in its
 /// search form (240 tags in seven groups, nine genres), and the app already

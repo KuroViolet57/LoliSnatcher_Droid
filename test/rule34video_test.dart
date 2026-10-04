@@ -21,6 +21,7 @@ import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/core/settings/source_settings_handler.dart';
 import 'package:lolisnatcher/core/storage/tag_handler.dart';
 import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
+import 'package:lolisnatcher/core/storage/database_handler.dart';
 
 /// rule34video.com, against pages captured from the live site on 2026-09-06
 /// (test/fixtures/rule34video_*.html: scripts other than the player data,

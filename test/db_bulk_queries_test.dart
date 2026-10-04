@@ -7,6 +7,7 @@ import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/core/storage/tag_handler.dart';
 import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
 import 'package:lolisnatcher/models/booru_item.dart';
+import 'package:lolisnatcher/core/storage/database_handler.dart';
 
 /// store.db queries that take a list: favourites and downloads in bulk, the
 /// feed's favourited/downloaded badges, the local search box.

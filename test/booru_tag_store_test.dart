@@ -11,6 +11,7 @@ import 'package:lolisnatcher/core/storage/booru_tag_store.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/sources/framework/tags/tag_catalog_source.dart';
 import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
+import 'package:lolisnatcher/core/storage/database_handler.dart';
 
 /// A catalog that only lists namespaces, for the badge counts.
 class _Catalog extends TagCatalogSource {

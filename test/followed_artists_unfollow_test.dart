@@ -6,6 +6,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:lolisnatcher/models/pinned_tag.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/features/tags/logic/followed_artists_handler.dart';
+import 'package:lolisnatcher/core/storage/database_handler.dart';
 
 /// 1.0 (M2): follows are global pins carrying the 'followed' label. Unfollow
 /// deleted every global pin with the tag's name, so a plain pin on every

@@ -12,6 +12,7 @@ import 'package:lolisnatcher/features/sync/logic/loli_sync_handler.dart';
 import 'package:lolisnatcher/features/sync/ui/loli_sync_page.dart';
 import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
 import 'package:lolisnatcher/models/booru_item.dart';
+import 'package:lolisnatcher/core/storage/database_handler.dart';
 
 /// The part of an HttpRequest the receiver reads: method, uri, body, response.
 class _Response {

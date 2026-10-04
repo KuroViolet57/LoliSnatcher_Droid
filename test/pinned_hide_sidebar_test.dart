@@ -17,6 +17,7 @@ import 'package:lolisnatcher/core/settings/source_settings_handler.dart';
 import 'package:lolisnatcher/core/storage/tag_handler.dart';
 import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
 import 'package:lolisnatcher/app/drawers/drawer_quick_access.dart';
+import 'package:lolisnatcher/core/storage/database_handler.dart';
 
 /// r79: a pin hidden on one source (the pins editor says "Hidden on
 /// rule34xxx") still showed in the left sidebar's Pinned tags while that

@@ -15,6 +15,7 @@ import 'package:lolisnatcher/core/settings/source_settings_handler.dart';
 import 'package:lolisnatcher/core/storage/tag_handler.dart';
 import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
 import 'package:lolisnatcher/app/drawers/drawer_quick_access.dart';
+import 'package:lolisnatcher/core/storage/database_handler.dart';
 
 /// r79: on an AYN Thor held sideways, the left sidebar did not scroll. It was
 /// one fixed column - the pinned tags got whatever height the Quick access

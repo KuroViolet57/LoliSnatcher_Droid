@@ -13,6 +13,7 @@ import 'package:lolisnatcher/models/booru_item.dart';
 import 'package:lolisnatcher/features/recommender/logic/model_tasks.dart';
 import 'package:lolisnatcher/features/recommender/logic/ml/look_model_handler.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/core/storage/database_handler.dart';
 
 /// r75: the downloadable "looks" model (MobileCLIP ONNX): a picture or a
 /// sentence into one unit vector, so lookalikes sit close. The runner here

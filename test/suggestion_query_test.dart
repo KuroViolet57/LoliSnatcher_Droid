@@ -15,6 +15,7 @@ import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/features/recommender/logic/suggestion_engine.dart';
 import 'package:lolisnatcher/core/storage/tag_handler.dart';
 import 'package:lolisnatcher/features/viewer/ui/info/tag_view.dart';
+import 'package:lolisnatcher/core/storage/database_handler.dart';
 
 /// r76 (build 96): the Suggested strip's "open in new tab" gave the new tab
 /// the placeholder word "suggestions", so the site was searched for that
