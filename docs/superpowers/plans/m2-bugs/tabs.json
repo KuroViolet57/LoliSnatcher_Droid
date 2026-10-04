@@ -1,0 +1,268 @@
+{
+ "bugs": [
+  {
+   "title": "Tab pill position is not in backup/restore",
+   "file": "lib/features/tabs/ui/tab_pill.dart",
+   "line": 166,
+   "scenario": "Back up and restore to a new phone: the dragged pill position is lost (user rule: every persisted setting is backed up).",
+   "evidence": "TabPillHost writes '${SettingsHandler.instance.path}tab_pill.json'. BackupItems.fileOf (services/backup_plan.dart) lists settings.json, boorus.json, doujinData.json, sourceSettings.json, bookmarks.json, boards.json, tags.json, store.db and vectors.db only.",
+   "severity": "data-loss",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Tab options 'Remove' leaves the dialog open; a second tap closes the CURRENT tab",
+   "file": "lib/features/tabs/ui/tab_selector.dart",
+   "line": 1564,
+   "scenario": "In the Tab manager, open a non-current tab's options and tap Remove: the tab is removed but the dialog stays. Tap Remove again: the current tab is closed instead.",
+   "evidence": "The onTap does selectedTabs.remove(tab); searchHandler.removeTabAt(tabIndex: searchHandler.tabs.indexOf(tab)); getTabs(); and never calls Navigator.pop. On the second tap indexOf returns -1, and search_handler.dart:264-265 treats `if (tabIndex == -1) tabIndex = currentIndex;`.",
+   "severity": "data-loss",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "History delete-confirm dialog throws a RangeError after the filter reloads the list",
+   "file": "lib/features/history/ui/history.dart",
+   "line": 548,
+   "scenario": "In Search history, tick an entry, type a character in the search field, then tap 'Delete 1 item'. The confirm dialog fails to build (error box).",
+   "evidence": "filterBuild onChanged calls getHistory() (line 423), which replaces `history` with new HistoryItem instances; HistoryItem has no == override. selectedEntries keeps the old instances, so the dialog's `history.indexOf(entry)` returns -1, and buildEntry(-1, false, false) evaluates history[-1].",
+   "severity": "crash",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Batch actions on selected grid items have no UI on mobile",
+   "file": "lib/app/drawers/downloads_drawer.dart",
+   "line": 21,
+   "scenario": "Select posts in the grid on a phone. The app bar pin button shows the selected count (main_appbar.dart:118), but the drawer it opens has no Snatch selected, Favourite / Unfavourite selected, Add to collection, Remove snatched status or Clear selection. The Collections empty state (collections_page.dart:233-236) still tells users to use 'Add to collection' in the downloads drawer.",
+   "evidence": "DownloadsDrawer builds only DrawerQuickAccess. DDSelectionActions and DDControlPanel are referenced only inside the dd_* cluster (grep). The only other batch UI is desktop_home_page.dart:105-118.",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Kemono sidebar keeps the first site's data after switching to a tab on the other kemono-style site",
+   "file": "lib/features/kemono/ui/kemono_sidebar.dart",
+   "line": 53,
+   "scenario": "With kemono.cr and pawchive both configured, open the sidebar on a kemono.cr tab, then switch to a pawchive tab. The sidebar shows the pawchive name, but its rows (Popular / Random / Tags / DMs), its creator-index status and the file-host checks still belong to kemono.cr.",
+   "evidence": "`late final KemonoSite site = KemonoSite.of(widget.booru)`, along with store and hosts, is fixed at first build, and there is no didUpdateWidget. mobile_home_page.dart:126 builds `KemonoSidebar(booru: current!, ...)` with no key, so Flutter reuses the State.",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "The drawer's Downloads/Favourites rows do not follow tab or booru changes",
+   "file": "lib/app/drawers/main_drawer.dart",
+   "line": 190,
+   "scenario": "Open the drawer on a booru tab (Favourites shown), then switch to a doujin tab with the tab pill: Favourites stays, though it is meant to be hidden on doujin tabs. A Downloads/Favourites config added in Settings does not show up either, until something else rebuilds MainDrawer (theme or locale change, or a hand-side swap).",
+   "evidence": "The Builder reads searchHandler.tabs, currentBooruHandler.hasReader and settingsHandler.booruList outside any Obx. MobileHome passes `const MainDrawer()` (mobile_home_page.dart:167/170), so the Obx rebuild leaves the identical widget in place and MainDrawer.build does not run again.",
+   "severity": "wrong-behaviour",
+   "confidence": "plausible"
+  },
+  {
+   "title": "A new ScrollController is created on every MainDrawer build",
+   "file": "lib/app/drawers/main_drawer.dart",
+   "line": 185,
+   "scenario": "Every rebuild of MainDrawer (theme or locale change) leaks the previous controller.",
+   "evidence": "`ListView(controller: ScrollController(), ...)` in a StatelessWidget's build, never disposed.",
+   "severity": "leak",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "ValueNotifier is never disposed",
+   "file": "lib/core/ui/timed_leave_dialog.dart",
+   "line": 49,
+   "scenario": "Each timed-leave dialog leaks one ValueNotifier.",
+   "evidence": "`ValueNotifier<int> secondsRemaining` is created in State; dispose() disposes only _controller.",
+   "severity": "leak",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Watched-artists page retries on every scroll event after a failure",
+   "file": "lib/features/furaffinity/ui/furaffinity_sidebar.dart",
+   "line": 424,
+   "scenario": "A failed watchlist page leaves hasNext=true; every ScrollNotification with extentAfter < 600 fires another request.",
+   "evidence": "_more() catches the error into `error`, but neither sets hasNext=false nor backs off; the NotificationListener calls `unawaited(_more())` on each notification.",
+   "severity": "perf",
+   "confidence": "plausible"
+  },
+  {
+   "title": "Doujin tabs inside a group render squashed with a gap in the Tab manager",
+   "file": "lib/features/tabs/ui/tab_selector.dart",
+   "line": 1468,
+   "scenario": "Put a doujin detail tab in a tab group. Its row's cover shrinks to about 58 px and a 24 px empty band appears below it inside the group frame.",
+   "evidence": "_ensureDisplayCache (line 527) gives the row doujinRowHeight=104 (+44 header), but itemBuilder wraps grouped rows in `SizedBox(height: tabHeight /*80*/, child: tabItem)`. TabManagerItem's doujin content needs 3+8+76+8+3=98 px.",
+   "severity": "minor",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Dismissing the Filters sheet resets the sort mode",
+   "file": "lib/features/tabs/ui/tab_selector.dart",
+   "line": 872,
+   "scenario": "Set sort A-Z, open Filters with no filter active, swipe the sheet away. The next refresh (typing, toggling the view) shows the default order and the sort button falls back to none.",
+   "evidence": "The reset block runs when `result == 'clear' || (all filters null/false)`, independent of result, and sets sortingMode = TabSortingMode.none. With result == null nothing persists or refreshes, so the change is applied silently at the next getTabs().",
+   "severity": "minor",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Doujin cover choice differs between the tab manager row and TabRow",
+   "file": "lib/features/tabs/ui/tab_selector.dart",
+   "line": 2384,
+   "scenario": "A doujin tab whose persisted doujinThumb differs from its fetched item's thumbnail shows one cover in the manager row and another in TabRow-based views (mini manager, desktop selector).",
+   "evidence": "TabManagerItem uses doujinThumb first, then filteredFetched.first.thumbnailURL. tab_row.dart:59-61 uses the fetched thumbnail first, then doujinThumb.",
+   "severity": "minor",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Filter highlight is case-sensitive while filtering is not",
+   "file": "lib/features/tabs/ui/widgets/tab_row.dart",
+   "line": 97,
+   "scenario": "Typing 'Cat' in the Tab manager filter lists the 'cat_ears' tabs but highlights nothing; a trailing space has the same effect.",
+   "evidence": "filterTabs lowercases and trims the text (tab_selector.dart:785); TabRow splits by the raw `filterText!` (`tagText.split(filterText!)`).",
+   "severity": "minor",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Mini tab manager switches are not recorded in the visited-tabs history",
+   "file": "lib/features/tabs/ui/doujin_mini_tab_manager.dart",
+   "line": 116,
+   "scenario": "Tap a tab in the doujin mini manager, then open Tab manager → Visited tabs history: the switch is missing. A tap in the full manager would have been recorded.",
+   "evidence": "_switchTo calls `searchHandler.changeTabIndex(index)` without byUser: true. The full manager (tab_selector.dart:1363) passes byUser: true, and recordTabVisit only runs when byUser is set.",
+   "severity": "minor",
+   "confidence": "plausible"
+  },
+  {
+   "title": "Watch state check runs from build and gets stuck on errors",
+   "file": "lib/features/furaffinity/ui/furaffinity_sidebar.dart",
+   "line": 143,
+   "scenario": "If fetchWatchLink throws (network or Cloudflare), the artist's Watch pill stays 'Checking' and disabled for that artist until the sidebar is rebuilt from scratch.",
+   "evidence": "build() calls unawaited(_checkWatch(artist)). _checkWatch sets _watchFor = artist before awaiting and has no try/catch, so it is never retried (the guard is artist != _watchFor) and the error goes unhandled.",
+   "severity": "minor",
+   "confidence": "plausible"
+  },
+  {
+   "title": "History title count uses onPrimary on the app bar",
+   "file": "lib/features/history/ui/history.dart",
+   "line": 616,
+   "scenario": "In dark themes the 'n' / 'filtered/total' count under 'Search history' can be unreadable. The same bug was fixed in the tab manager in r66.",
+   "evidence": "style: titleTextStyle.copyWith(color: Theme.of(context).colorScheme.onPrimary); tab_selector.dart:1928-1933 documents why onPrimary is wrong on the bar.",
+   "severity": "minor",
+   "confidence": "plausible"
+  },
+  {
+   "title": "Text controllers disposed while the dialog is still animating out",
+   "file": "lib/features/tabs/ui/tab_selector.dart",
+   "line": 1113,
+   "scenario": "Closing the group-name / rename prompt can log 'A TextEditingController was used after being disposed'.",
+   "evidence": "`controller.dispose()` runs immediately after `await showDialog` returns, while the dialog's exit transition still holds a TextField on that controller. Same pattern at doujin_mini_tab_manager.dart:183 and saved_search_tile.dart:175.",
+   "severity": "minor",
+   "confidence": "plausible"
+  },
+  {
+   "title": "Collection covers bypass the source media headers and the thumbnail cache",
+   "file": "lib/features/collections/ui/collections_page.dart",
+   "line": 352,
+   "scenario": "Covers from sources that need cookies or a specific Referer (mediaHeadersFor) show the letter fallback, and covers are re-downloaded on every visit.",
+   "evidence": "Uses Image.network(url, headers: {User-Agent, Referer: own origin}) instead of CustomNetworkImage with BooruHandlerFactory.mediaHeadersFor, which HANDOVER §3.2 says every media fetch should use.",
+   "severity": "minor",
+   "confidence": "plausible"
+  }
+ ],
+ "fragile": [
+  {
+   "what": "Tab manager row extents",
+   "where": "tab_selector.dart _ensureDisplayCache / itemBuilder / TabManagerItem.extentFor",
+   "rule": "itemExtentBuilder extents must equal the real row heights: 80 per row, 104 for a doujin row, +44 for a group run-start header, 44 for a collapsed group. Group frames are painted as overlays so heights stay exact. The cache is invalidated at the top of build(). HANDOVER rule: any list that jumps to an index must have fixed or builder-given extents."
+  },
+  {
+   "what": "Reorder only when display == real list",
+   "where": "tab_selector.dart:1495, 2137-2141",
+   "rule": "Drag is enabled only with select mode off, no filter (the source view counts), no sort and no collapsed group, so ReorderableListView indices map 1:1 to searchHandler.tabs. onReorderItem's newIndex is already adjusted for the removal; both managers rely on that."
+  },
+  {
+   "what": "Session-persisted manager state",
+   "where": "tab_selector.dart static _saved* fields and _collapsedGroups",
+   "rule": "Sort mode, filters, search text and collapsed groups survive closing and reopening the manager within one app run (a user request); they are not written to disk."
+  },
+  {
+   "what": "Visited-tab recording",
+   "where": "SearchHandler.changeTabIndex(byUser) from TabManagerPage, TabButtons, _openVisitedTab",
+   "rule": "Only user-initiated switches record visits. Reopening a closed visit reuses visit.tabId and adds the tab next to the active one (TabAddMode.next)."
+  },
+  {
+   "what": "VisitedTabsHistoryList must not scroll",
+   "where": "tab_selector.dart VisitedTabsHistoryList",
+   "rule": "shrinkWrap + NeverScrollableScrollPhysics, because the SettingsDialog scrolls (r61; visited_tabs_history_scroll_test)."
+  },
+  {
+   "what": "TabButtons add gesture",
+   "where": "tab_buttons.dart:95",
+   "rule": "Tap and long-press must live on the same InkResponse; a GestureDetector around an IconButton loses the long-press in the gesture arena."
+  },
+  {
+   "what": "Doujin vs booru separation",
+   "where": "drawer_quick_access.dart _load / _quickAccessRows, tab_selector tag-type filter, tab_row colouring, add_to_collection_sheet routing",
+   "rule": "Doujin tabs read only the doujin store (no booru pins or counts); the tag-type filter never matches doujin tabs; no booru tag colours on doujin boorus; collections are routed per item via DoujinDataHandler.isDoujinItem (doujin_separation_test, doujin_drawer_refresh_test)."
+  },
+  {
+   "what": "Pinned drawer content rules",
+   "where": "drawer_quick_access.dart:115-118",
+   "rule": "Follow pins (FollowedArtistsHandler.isFollowPin) are excluded, and PinnedTagVisibility.visible() hides pins hidden on the current source (r79; pinned_hide_sidebar_test). Refresh on DrawerRefresh.tick and after closing a page opened from it."
+  },
+  {
+   "what": "Pinned drawer layout",
+   "where": "drawer_quick_access.dart build",
+   "rule": "One CustomScrollView with SliverFillRemaining(hasScrollBody: false), so landscape scrolls and portrait keeps Quick access at the bottom (drawer_landscape_test)."
+  },
+  {
+   "what": "Modular UI switch",
+   "where": "drawer_quick_access.dart:468",
+   "rule": "The '<booru> pinned tags' row is gated by ModularUi.isOn(ModularUi.sidebarPinnedTags) inside an `if` where it is built (never built and then hidden)."
+  },
+  {
+   "what": "Sidebars need their own Material",
+   "where": "kemono_sidebar.dart, furaffinity_sidebar.dart, downloads_drawer.dart",
+   "rule": "InnerDrawer children have no Material ancestor; without one, text gets yellow underlines and InkWell throws."
+  },
+  {
+   "what": "Sidebar swap settings",
+   "where": "drawer_quick_access 'Use the … sidebar' rows, the sidebars' 'Use the app sidebar' rows, mobile_home_page.dart:122-129",
+   "rule": "kemonoSidebar / furAffinitySidebar are RxBool settings saved with saveSettings(restate:false); mobile_home_page picks the pinned side reactively."
+  },
+  {
+   "what": "Test keys",
+   "where": "doujin_mini_tab_manager.dart, furaffinity_sidebar.dart, tab_selector.dart",
+   "rule": "Keep 'mini-manager-new-tab', 'mini-manager-new-group', 'mini-manager-full', 'mini-manager-edge-handle', 'mini-tab-<id>', 'fa-sidebar-app', 'fa-folder-row-<id>', 'item-<tab.id>' (doujin_tabs_test, furaffinity_pages_test)."
+  },
+  {
+   "what": "Public class names used by tests and other features",
+   "where": "TabManagerPage, TabManagerItem (also tag_view.dart:3218), VisitedTabsHistoryList, TabRow, DoujinMiniTabManager, DrawerQuickAccess, FurAffinitySidebar, TabBooruSelectorItem (settings_widgets, multibooru_toggle)",
+   "rule": "A move needs re-exports or updated imports; TabManagerItem.extentFor/doujinRowHeight are asserted in tab_cards_test."
+  },
+  {
+   "what": "TabRow doujin rendering",
+   "where": "tab_row.dart",
+   "rule": "TabRow.isDoujinTab == tab.isDoujinDetail. The persisted doujinTitle/doujinThumb render before any fetch (doujin_tabs_test). doujinCoverHeight 0 means no inline cover (the manager draws its own)."
+  },
+  {
+   "what": "Paging semantics in the page changer",
+   "where": "page_number_dialog.dart:131,145",
+   "rule": "The entered page minus 1 becomes handler.pageNum, because runSearch increments before the first fetch (HANDOVER §3.2 paging rule)."
+  },
+  {
+   "what": "App bar title colour and height",
+   "where": "tab_selector.dart:1914-1933",
+   "rule": "r66: toolbarHeight 64 for the two-line title; the count uses appBarTheme.foregroundColor, not onPrimary."
+  },
+  {
+   "what": "Mini manager pops to the root before switching",
+   "where": "doujin_mini_tab_manager.dart _switchTo",
+   "rule": "popUntil(isFirst) on the root navigator, then changeTabIndex in a post-frame callback (the doujin detail route must be gone first)."
+  },
+  {
+   "what": "Per-booru overrides persistence",
+   "where": "tab_per_booru_tag_overrides.dart",
+   "rule": "Writes straight into SearchTab.tagOverrides / inheritMainTags (RxMap), keyed by booru name; empty overrides are removed and inherit=true is stored as absence. The rows are keyed '${tab.id}::${booru.name}' so a tab swap rebuilds the controllers."
+  },
+  {
+   "what": "Tab persistence cadence",
+   "where": "main.dart:536 backupTabs timer",
+   "rule": "Group, order and override changes made in these UIs reach TabRestore only through the 30 s backup timer; there is no explicit save."
+  }
+ ]
+}
