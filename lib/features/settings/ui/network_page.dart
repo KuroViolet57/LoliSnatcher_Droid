@@ -182,7 +182,7 @@ class _NetworkPageState extends State<NetworkPage> {
                       webViewEnvironment: webViewEnvironment,
                     ).getCookies(url: WebUri(selectedBooru!.baseURL!));
                     if (Platform.isWindows) {
-                      selectedBooruCookies.addAll(globalWindowsCookies[selectedBooru!.baseURL!] ?? []);
+                      selectedBooruCookies.addAll(globalWindowsCookies[WebUri(selectedBooru!.baseURL!).host] ?? []);
                     }
                   } else {
                     selectedBooruCookies = [];
@@ -207,7 +207,7 @@ class _NetworkPageState extends State<NetworkPage> {
                             url: WebUri(selectedBooru!.baseURL!),
                             name: cookie.name,
                           );
-                      globalWindowsCookies[selectedBooru!.baseURL!]?.remove(cookie);
+                      globalWindowsCookies[WebUri(selectedBooru!.baseURL!).host]?.remove(cookie);
 
                       if (!res) {
                         Logger.Inst().log(
@@ -247,7 +247,7 @@ class _NetworkPageState extends State<NetworkPage> {
                     final bool res = await CookieManager.instance(
                       webViewEnvironment: webViewEnvironment,
                     ).deleteCookies(url: WebUri(selectedBooru!.baseURL!));
-                    globalWindowsCookies[selectedBooru!.baseURL!]?.clear();
+                    globalWindowsCookies[WebUri(selectedBooru!.baseURL!).host]?.clear();
 
                     if (!res) {
                       Logger.Inst().log(
