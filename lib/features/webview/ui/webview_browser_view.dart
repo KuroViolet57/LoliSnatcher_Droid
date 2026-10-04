@@ -38,6 +38,13 @@ class _WebViewBrowserViewState extends State<WebViewBrowserView> {
   final ValueNotifier<int> progress = ValueNotifier(0);
   final ValueNotifier<String> currentUrl = ValueNotifier('');
 
+  @override
+  void dispose() {
+    progress.dispose();
+    currentUrl.dispose();
+    super.dispose();
+  }
+
   String get homeUrl => WebViewBrowserHandler.resolveUrl(
         widget.tab.selectedBooru.value.baseURL ?? '',
         widget.tab.tags,
