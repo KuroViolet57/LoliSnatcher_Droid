@@ -49,6 +49,11 @@ abstract class PoolSource {
     'realbooru.com',
     'xbooru.com',
     'booru.allthefallen.moe',
+    // Checked live 2026-10-05 with LoliSnatcher_Droid/1.0.0. e926.net answered
+    // 403 to that UA and to a browser UA, so it is not listed.
+    'e621.net',
+    'e6ai.net',
+    'danbooru.donmai.us',
   };
 
   /// The pool source for [booru], or null when the site has no pools.
@@ -149,7 +154,9 @@ class DanbooruPoolSource extends PoolSource {
   Future<List<BooruPool>> fetchPools(Booru booru, int page) async {
     final response = await DioNetwork.get(
       '${booru.baseURL}/pools.json?limit=$pageSize&page=${page + 1}${_creds(booru)}',
-      headers: {'User-Agent': Tools.browserUserAgent},
+      // The app UA is what danbooru.donmai.us accepted on 2026-10-05. A
+      // browser UA was refused (403) from the same machine.
+      headers: {'User-Agent': Tools.appUserAgent},
     );
     final data = response.data is String ? jsonDecode(response.data as String) : response.data;
     if (data is! List) return [];
