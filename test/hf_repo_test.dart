@@ -42,6 +42,12 @@ void main() {
     expect(HfRepo.listingUrl('openai-community/gpt2', 'main'), 'https://huggingface.co/api/models/openai-community/gpt2/revision/main');
     expect(HfRepo.listingUrl('openai-community/gpt2', sha), 'https://huggingface.co/api/models/openai-community/gpt2/revision/$sha');
     expect(HfRepo.listingUrl('openai-community/gpt2', '../secrets'), isNull);
+    expect(HfRepo.listingUrl('openai-community/gpt2', '..'), isNull);
+    expect(HfRepo.listingUrl('openai-community/gpt2', '.'), isNull);
+    final HfParseResult encoded = HfRepo.parse('https://huggingface.co/owner/model/tree/..%2Fsecrets');
+    expect(encoded.repo, isNull, reason: encoded.error);
+    final HfParseResult spaced = HfRepo.parse('https://huggingface.co/owner/model/tree/foo%20bar');
+    expect(spaced.repo, isNull, reason: spaced.error);
     expect(HfRepo.missingOnDiskMessage('files:gone'), startsWith('This model was imported from a folder.'));
     expect(HfRepo.missingOnDiskMessage('"files:gone"'), startsWith('This model was imported from a folder.'));
     expect(HfRepo.missingOnDiskMessage('owner/model'), 'The model files are missing; download again.');

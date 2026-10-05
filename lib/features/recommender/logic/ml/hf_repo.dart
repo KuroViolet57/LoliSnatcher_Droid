@@ -103,6 +103,11 @@ class HfRepo {
   static final RegExp _owner = RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$');
   static final RegExp _name = RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$');
   static final RegExp _revision = RegExp(r'^[A-Za-z0-9._-]{1,80}$');
+
+  /// A branch, tag or commit this app will put in a URL. `.` and `..` match
+  /// [_revision] and are still refused, because a URL parser treats them as
+  /// directories.
+  static bool _allowedRevision(String revision) => revision != '.' && revision != '..' && _revision.hasMatch(revision);
   static final RegExp _direct = RegExp(r'^([A-Za-z0-9][A-Za-z0-9._-]{0,80})/([A-Za-z0-9][A-Za-z0-9._-]{0,120})(?:@([A-Za-z0-9._-]{1,80}))?/?$');
   static final RegExp _httpUrl = RegExp(r'https?://[^\s<>)\]]+', caseSensitive: false);
   static final RegExp _bareHost = RegExp(r'(?:www\.)?(?:huggingface\.co|hf\.co)/[^\s<>)\]]+', caseSensitive: false);
@@ -158,7 +163,12 @@ class HfRepo {
     }
     String? revision;
     if (segments.length >= 4 && (segments[2] == 'tree' || segments[2] == 'blob' || segments[2] == 'resolve' || segments[2] == 'commit')) {
-      if (_revision.hasMatch(segments[3])) revision = segments[3];
+      // A segment that is not a branch, tag or commit must not become "no
+      // revision", because that lists the default branch.
+      if (!_allowedRevision(segments[3])) {
+        return const HfParseResult._(error: '$howTo That revision cannot be used.');
+      }
+      revision = segments[3];
     } else if (segments.length > 2) {
       return const HfParseResult._(error: '$howTo Use the repo page, not a file inside it.');
     }
@@ -236,7 +246,9 @@ class HfRepo {
   static String? listingUrl(String repoId, String? revision) {
     final String root = 'https://huggingface.co/api/models/$repoId';
     if (revision == null || revision.isEmpty) return root;
-    if (!_revision.hasMatch(revision)) return null;
+    // `.` and `..` match the revision pattern, then Uri.parse folds
+    // `/revision/..` back to the default-branch URL.
+    if (!_allowedRevision(revision)) return null;
     return '$root/revision/${Uri.encodeComponent(revision)}';
   }
 
