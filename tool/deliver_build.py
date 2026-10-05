@@ -24,7 +24,7 @@ tests, and when they pass rename the folder to "tested" with --mark-tested.
         <codename>-<version>.apk and <codename>-<version>-side-by-side.apk.
         Every copy is checked against its source by SHA-256.
 
-The codename comes from lib/src/data/constants.dart (buildCodename), the
+The codename comes from lib/core/constants.dart (buildCodename), the
 version from the same file (versionName). The Flutter beta toolchain is put
 on PATH here so the script works from any shell.
 """
@@ -40,7 +40,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FLUTTER_BIN = r'C:\Users\alexb\Documents\flutter\flutter-3.42-beta\bin'
 DELIVERY_ROOT = r'K:\My Drive\booruApk'
 APK = os.path.join(REPO, 'build', 'app', 'outputs', 'flutter-apk', 'app-arm64-v8a-release.apk')
-CONSTANTS = os.path.join(REPO, 'lib', 'src', 'data', 'constants.dart')
+CONSTANTS = os.path.join(REPO, 'lib', 'core', 'constants.dart')
 
 
 def read_constants():
