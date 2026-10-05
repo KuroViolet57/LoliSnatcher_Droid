@@ -44,11 +44,11 @@ class Constants {
   // Short 1-2 word codename describing this build's changes. Shown in the
   // settings version row and used for the uploaded APK name, following the
   // '{codename}-{version}' scheme.
-  static const String buildCodename = 'r89-npu-thumbs';
+  static const String buildCodename = 'v1.0-rebuild';
 
   // TODO don't forget to update on every new release
   static const UpdateInfo updateInfo = UpdateInfo(
-    versionName: '2.6.0',
+    versionName: '1.0.0',
     buildNumber: 5211,
     title: '2.5.0 - Localization, fonts, optimization, pinned tags and more',
     isInStore: true,
