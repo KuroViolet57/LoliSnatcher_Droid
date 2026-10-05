@@ -245,7 +245,23 @@ class Tools {
       } catch (_) {}
     }
 
+    // A WebView snatch has no source CDN rule. The page the file was grabbed
+    // from is the referer hotlink checks want. Other boorus keep the referer
+    // their own handler or the host list already set.
+    final String? pageReferer = _webViewPageReferer(booru, item);
+    if (pageReferer != null) {
+      headers['Referer'] = pageReferer;
+    }
+
     return headers;
+  }
+
+  static String? _webViewPageReferer(Booru? booru, BooruItem? item) {
+    if (booru?.type?.isWebView != true || item == null) return null;
+    final Uri? page = Uri.tryParse(item.postURL);
+    if (page == null || page.host.isEmpty) return null;
+    if (page.scheme != 'http' && page.scheme != 'https') return null;
+    return item.postURL;
   }
 
   static IconData? getFileIcon(MediaType? mediaType) {

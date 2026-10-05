@@ -45,6 +45,20 @@ class _WebViewBrowserViewState extends State<WebViewBrowserView> {
     super.dispose();
   }
 
+  @override
+  void didUpdateWidget(WebViewBrowserView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // A new search string recreates this view (its key includes the text).
+    // The same text on a new site URL keeps the key, so load that URL here.
+    final String previous = WebViewBrowserHandler.resolveUrl(
+      oldWidget.tab.selectedBooru.value.baseURL ?? '',
+      oldWidget.tab.tags,
+    );
+    if (WebViewBrowserHandler.shouldReload(previous, homeUrl)) {
+      controller?.loadUrl(urlRequest: URLRequest(url: WebUri(homeUrl)));
+    }
+  }
+
   String get homeUrl => WebViewBrowserHandler.resolveUrl(
         widget.tab.selectedBooru.value.baseURL ?? '',
         widget.tab.tags,
@@ -100,34 +114,8 @@ class _WebViewBrowserViewState extends State<WebViewBrowserView> {
 
   void _snatchUrl(String url) => _snatchUrls([url]);
 
-  // Injects JS that walks the DOM for real media: <video>/<source> srcs, large
-  // <img> srcs, and background-image urls. Lets the user snatch media off sites
-  // the app can't scrape via an API/handler.
-  static const String _collectMediaJs = r'''
-    (function () {
-      var out = {};
-      function add(u, kind) {
-        if (!u) return;
-        try { u = new URL(u, document.baseURI).href; } catch (e) { return; }
-        if (u.indexOf('http') !== 0) return;
-        if (u.indexOf('data:') === 0) return;
-        if (!out[u]) out[u] = kind;
-      }
-      document.querySelectorAll('video').forEach(function (v) {
-        add(v.currentSrc || v.src, 'video');
-        v.querySelectorAll('source').forEach(function (s) { add(s.src, 'video'); });
-      });
-      document.querySelectorAll('source').forEach(function (s) { add(s.src, 'video'); });
-      document.querySelectorAll('img').forEach(function (i) {
-        if ((i.naturalWidth || 0) >= 256 || (i.naturalHeight || 0) >= 256) add(i.currentSrc || i.src, 'image');
-      });
-      document.querySelectorAll('a').forEach(function (a) {
-        var h = a.href || '';
-        if (/\.(mp4|webm|m4v|mov|gif|jpg|jpeg|png|webp)(\?|$)/i.test(h)) add(h, 'link');
-      });
-      return JSON.stringify(Object.keys(out).map(function (u) { return { url: u, kind: out[u] }; }));
-    })();
-  ''';
+  // The script lives on the handler so a test can read what the page runs.
+  static const String _collectMediaJs = WebViewBrowserHandler.collectMediaJs;
 
   Future<void> _grabMedia() async {
     List<Map<String, String>> media = [];
