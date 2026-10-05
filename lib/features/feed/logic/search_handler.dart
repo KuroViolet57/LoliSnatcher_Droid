@@ -80,6 +80,11 @@ class SearchHandler {
 
   // search tabs list
   RxList<SearchTab> tabs = RxList<SearchTab>([]);
+
+  /// The tab last removed while another tab was still open, and where it sat.
+  /// One step. Closing the only tab resets that tab and clears this.
+  SearchTab? _undoTab;
+  int _undoIndex = 0;
   // current tab index
   RxInt index = 0.obs;
   RxnString tabId = RxnString(null);

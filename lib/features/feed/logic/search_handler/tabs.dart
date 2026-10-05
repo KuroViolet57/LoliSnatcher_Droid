@@ -109,6 +109,9 @@ extension SearchTabs on SearchHandler {
     }
 
     if (total > 1) {
+      // Keep the same tab object so a group, a selection, and the tab id survive.
+      final SearchTab closing = tabs[tabIndex];
+      final int closingIndex = tabIndex;
       if (tabIndex == currentIndex) {
         // if current tab is the one being removed
         if (currentIndex == total - 1) {
@@ -130,21 +133,44 @@ extension SearchTabs on SearchHandler {
         tabs.removeAt(tabIndex);
         changeTabIndex(currentIndex);
       }
-    } else {
-      // if there is only one tab, reset to default tags
-      final context = NavigationHandler.instance.navContext;
+      _undoTab = closing;
+      _undoIndex = closingIndex;
       FlashElements.showSnackbar(
-        title: Text(context.loc.searchHandler.removedLastTab, style: const TextStyle(fontSize: 20)),
-        content: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(context.loc.searchHandler.resettingSearchToDefaultTags),
-          ],
-        ),
-        leadingIcon: Symbols.warning_amber_rounded,
-        leadingIconColor: Colors.yellow,
-        sideColor: Colors.yellow,
+        title: const Text('Tab closed', style: TextStyle(fontSize: 20)),
+        content: Text(closing.tags, style: const TextStyle(fontSize: 16)),
+        leadingIcon: Icons.undo,
+        sideColor: Colors.lightBlue,
+        primaryActionBuilder: (context, controller) {
+          return TextButton(
+            onPressed: () {
+              controller.dismiss();
+              undoClosedTab();
+            },
+            child: const Text('Undo'),
+          );
+        },
       );
+    } else {
+      // A reset of the only tab is not an undo. Drop any older closed tab too.
+      _undoTab = null;
+      // if there is only one tab, reset to default tags.
+      // The snackbar reads the navigator. Tests have none, and the snackbar
+      // itself does nothing in test mode, so skip the lookup there.
+      if (!Tools.isTestMode) {
+        final context = NavigationHandler.instance.navContext;
+        FlashElements.showSnackbar(
+          title: Text(context.loc.searchHandler.removedLastTab, style: const TextStyle(fontSize: 20)),
+          content: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(context.loc.searchHandler.resettingSearchToDefaultTags),
+            ],
+          ),
+          leadingIcon: Symbols.warning_amber_rounded,
+          leadingIconColor: Colors.yellow,
+          sideColor: Colors.yellow,
+        );
+      }
 
       final SettingsHandler settingsHandler = SettingsHandler.instance;
       final String defaultText = currentBooru.defTags?.isNotEmpty == true
@@ -153,9 +179,26 @@ extension SearchTabs on SearchHandler {
       searchTextController.text = defaultText;
 
       final SearchTab newTab = SearchTab(currentBooru, null, defaultText);
+      // Tests have no network. A locked handler makes the reset skip the
+      // search that changeTabIndex would otherwise start.
+      if (Tools.isTestMode) {
+        newTab.booruHandler.locked = true;
+      }
       tabs[0] = newTab;
       changeTabIndex(0);
     }
+  }
+
+  /// Puts the last closed tab back. Does nothing after a last-tab reset, or
+  /// when undo was already used. The snackbar's Undo button calls this.
+  /// Tests call it directly, because snackbars do not show in test mode.
+  void undoClosedTab() {
+    final SearchTab? tab = _undoTab;
+    if (tab == null) return;
+    final int at = _undoIndex.clamp(0, tabs.length);
+    _undoTab = null;
+    tabs.insert(at, tab);
+    changeTabIndex(at);
   }
 
   void removeTabs(List<SearchTab> tabsToRemove) {
