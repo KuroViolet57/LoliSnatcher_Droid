@@ -41,9 +41,9 @@ class Constants {
   // useful to blur all images during dev to avoid seeing nsfw content, but still see that they are loading, [don't forget to undo before commit]
   static const bool blurImagesDefaultDev = false;
 
-  // Short 1-2 word codename describing this build's changes. Shown in the
-  // settings version row and used for the uploaded APK name, following the
-  // '{codename}-{version}' scheme.
+  // Short 1-2 word codename describing this build's changes. Shown on the
+  // settings version row and on About, and used for the uploaded APK name,
+  // following the '{codename}-{version}' scheme.
   static const String buildCodename = 'v1.0-rebuild';
 
   // TODO don't forget to update on every new release

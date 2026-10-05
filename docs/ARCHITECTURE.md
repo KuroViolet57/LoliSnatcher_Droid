@@ -7,7 +7,8 @@ rewritten, checked by `tool/restructure/move_files.py`). The old → new path of
 every file is in `tool/restructure/mapping_m1.json`.
 
 The release label is versionName `1.0.0`, versionCode `5211`, codename
-`v1.0-rebuild`. Settings → the version row shows `v1.0-rebuild-1.0.0`.
+`v1.0-rebuild`. Settings → the version row, and Settings → About, show
+`v1.0-rebuild-1.0.0`. The version row is also the debug unlock. About is not.
 `pubspec.yaml` is `1.0.0+5211`. The version code is the same as r89 so an
 in-place install can replace that build, and that build can be put back.
 

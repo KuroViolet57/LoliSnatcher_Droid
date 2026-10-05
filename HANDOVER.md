@@ -33,7 +33,9 @@ older chronological build log, kept verbatim as history.
   `lib/core/constants.dart` (`updateInfo`). `versionCode` stays 5211 so this
   build can replace r89 and r89 can be put back over it. The settings
   version row shows `Constants.buildCodename` (`'v1.0-rebuild'` on branch
-  `grok/1.0-continue`). Earlier rounds used `rNN-<two words>`.
+  `grok/1.0-continue`). Settings → About shows the same
+  `v1.0-rebuild-1.0.0` label and does not unlock debug. Earlier rounds used
+  `rNN-<two words>`.
 - **Build counter:** rounds are numbered r21, r22, … r80. Each build gets a
   numbered folder on the K: drive (§2): r80 used **109** and **110**, r81
   **111**, r82 **112**, r83 **113**, r84 **114**, r85 **115**, r86 **116**, r87 **117**, r88 **118**, r89 **119** (all on branch `claude/r87-npu`); the next build uses **120**. **103** is Grok's ("exp flutter 347") - never

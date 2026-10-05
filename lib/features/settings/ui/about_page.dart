@@ -28,6 +28,12 @@ class AboutPage extends StatelessWidget {
               margin: const EdgeInsets.fromLTRB(10, 10, 10, 10),
               child: Text(context.loc.settings.about.appDescription),
             ),
+            Container(
+              margin: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+              child: Text(
+                '${context.loc.settings.version}: ${Constants.buildCodename}-${Constants.updateInfo.versionName}',
+              ),
+            ),
             SettingsButton(
               name: context.loc.settings.about.appOnGitHub,
               icon: const Icon(Symbols.public_rounded),
@@ -153,6 +159,7 @@ class AboutPage extends StatelessWidget {
                 showLicensePage(
                   context: context,
                   applicationName: context.loc.appName,
+                  applicationVersion: '${Constants.buildCodename}-${Constants.updateInfo.versionName}',
                 );
               },
             ),
