@@ -68,6 +68,17 @@ void main() {
     expect(tags.getTag('beta').tagType, TagType.character);
   });
 
+  test('a bad row still tells the chips about the tags that were stored', () async {
+    final TagHandler tags = TagHandler.instance;
+    SettingsHandler.instance.dbEnabled = false;
+    var bumps = 0;
+    tags.typesChanged.addListener(() => bumps++);
+    final bool ok = await tags.loadFromJSON('[{"fullString":"alpha","tagType":"artist"},1]');
+    expect(ok, isFalse);
+    expect(bumps, 1);
+    expect(tags.getTag('alpha').tagType, TagType.artist);
+  });
+
   test("a source keeps the types it parsed for its own items, even when it does not write the app's store", () {
     final GelbooruHandler handler = GelbooruHandler(e621, 20)..storeTagsGlobally = false;
     handler.addTagsWithType(['Coel3D_(Modeler)'], TagType.contributor);

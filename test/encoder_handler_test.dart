@@ -472,6 +472,9 @@ void main() {
         EncoderState.ready,
         reason: 'Download again must not mark a folder import as failed',
       );
+      expect(await e.download('"files:quoted"'), isFalse);
+      expect(await e.download('\u200bfiles:hidden'), isFalse);
+      expect(e.status.value.state, EncoderState.ready, reason: 'quotes or a zero-width prefix are still a folder import');
     });
   });
 }

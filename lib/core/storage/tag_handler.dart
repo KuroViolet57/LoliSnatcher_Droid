@@ -354,11 +354,11 @@ class TagHandler {
     bool preferTagTypeIfNone = false,
     void Function(int progress, int total)? onProgress,
   }) async {
+    var wrote = false;
     try {
       final bool dbEnabled = SettingsHandler.instance.dbEnabled;
 
       final List jsonList = jsonDecode(jsonString);
-      var wrote = false;
       for (final Map<String, dynamic> rawTag in jsonList) {
         try {
           final Tag tagObject = Tag.fromJson(rawTag);
@@ -391,6 +391,7 @@ class TagHandler {
       if (wrote) typesChanged.value++;
       return true;
     } catch (e, s) {
+      if (wrote) typesChanged.value++;
       Logger.Inst().log(
         'Error loading tags from JSON: $e',
         'TagHandler',

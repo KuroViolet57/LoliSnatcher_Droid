@@ -33,4 +33,27 @@ void main() {
     expect(button.onPressed, isNull);
     expect(find.byKey(const ValueKey('encoder-import')), findsOneWidget);
   });
+
+  testWidgets('quotes around a folder id do not offer Download again', (tester) async {
+    tester.view.physicalSize = const Size(1080, 4000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    SettingsHandler.register();
+    SettingsHandler.instance
+      ..dbEnabled = false
+      ..encoderModel = '"files:wd-local"';
+    EncoderHandler.unregister();
+    EncoderHandler.register();
+    addTearDown(EncoderHandler.unregister);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: EncoderModelSection(onChanged: () async {})),
+      ),
+    );
+
+    expect(find.text('Imported from a folder'), findsOneWidget);
+    final FilledButton button = tester.widget<FilledButton>(find.byKey(const ValueKey('encoder-download')));
+    expect(button.onPressed, isNull);
+  });
 }

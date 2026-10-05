@@ -531,5 +531,7 @@ void main() {
     expect(t.status.value.state, TaggerState.ready);
     expect(await t.download(SettingsHandler.instance.imageTaggerModel), isFalse);
     expect(t.status.value.state, TaggerState.ready, reason: 'Download again must not mark a folder import as failed');
+    expect(await t.download('"files:quoted"'), isFalse);
+    expect(t.status.value.state, TaggerState.ready, reason: 'quotes around a folder id must not mark it failed');
   });
 }

@@ -89,6 +89,13 @@ class HfListing {
 class HfRepo {
   static const String howTo = 'A Hugging Face repo id looks like owner/model. A link to the repo page works too.';
 
+  /// True when [raw] is a folder import, including quotes or a zero-width
+  /// prefix that [parse] strips before it sees `files:`.
+  static bool isFolderImport(String raw) {
+    final String? error = parse(raw).error;
+    return error != null && error.startsWith('This model was imported from a folder.');
+  }
+
   static final RegExp _owner = RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$');
   static final RegExp _name = RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$');
   static final RegExp _revision = RegExp(r'^[A-Za-z0-9._-]{1,80}$');

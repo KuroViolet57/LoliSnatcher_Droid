@@ -250,6 +250,7 @@ class _TaggerModelSectionState extends State<TaggerModelSection> {
               builder: (context, status, _) {
                 final bool downloading = status.state == TaggerState.downloading;
                 final bool ready = status.state == TaggerState.ready;
+                final bool folderImport = HfRepo.isFolderImport(chosenSetting);
                 final TaggerPreset? preset = TaggerPreset.byId(choice);
                 final TaggerResult? r = tried;
                 return Column(
@@ -311,9 +312,9 @@ class _TaggerModelSectionState extends State<TaggerModelSection> {
                       children: [
                         FilledButton.icon(
                           key: const ValueKey('tagger-download'),
-                          onPressed: downloading || chosenSetting.isEmpty || chosenSetting.startsWith('files:') ? null : () => _download(tagger),
+                          onPressed: downloading || chosenSetting.isEmpty || folderImport ? null : () => _download(tagger),
                           icon: const Icon(Symbols.download_rounded),
-                          label: Text(chosenSetting.startsWith('files:') ? 'Imported from a folder' : (ready && settings.imageTaggerModel == chosenSetting ? 'Download again' : 'Download')),
+                          label: Text(folderImport ? 'Imported from a folder' : (ready && settings.imageTaggerModel == chosenSetting ? 'Download again' : 'Download')),
                         ),
                         OutlinedButton.icon(
                           key: const ValueKey('tagger-import'),

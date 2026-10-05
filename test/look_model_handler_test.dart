@@ -607,6 +607,8 @@ void main() {
     expect(h.status.value.state, LookState.ready);
     expect(await h.download(SettingsHandler.instance.lookModel), isFalse);
     expect(h.status.value.state, LookState.ready, reason: 'Download again must not mark a folder import as failed');
+    expect(await h.download('"files:quoted"'), isFalse);
+    expect(h.status.value.state, LookState.ready, reason: 'quotes around a folder id must not mark it failed');
     src.deleteSync(recursive: true);
   });
 }

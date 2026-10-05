@@ -118,6 +118,7 @@ class _LookModelSectionState extends State<LookModelSection> {
               builder: (context, status, _) {
                 final bool downloading = status.state == LookState.downloading;
                 final bool ready = status.state == LookState.ready;
+                final bool folderImport = HfRepo.isFolderImport(chosenSetting);
                 final LookPreset? preset = LookPreset.byId(choice);
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -178,9 +179,9 @@ class _LookModelSectionState extends State<LookModelSection> {
                       children: [
                         FilledButton.icon(
                           key: const ValueKey('look-download'),
-                          onPressed: downloading || chosenSetting.isEmpty || chosenSetting.startsWith('files:') ? null : () => _download(look),
+                          onPressed: downloading || chosenSetting.isEmpty || folderImport ? null : () => _download(look),
                           icon: const Icon(Symbols.download_rounded),
-                          label: Text(chosenSetting.startsWith('files:') ? 'Imported from a folder' : (ready && settings.lookModel == chosenSetting ? 'Download again' : 'Download')),
+                          label: Text(folderImport ? 'Imported from a folder' : (ready && settings.lookModel == chosenSetting ? 'Download again' : 'Download')),
                         ),
                         OutlinedButton.icon(
                           key: const ValueKey('look-import'),
