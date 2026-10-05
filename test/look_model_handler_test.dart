@@ -604,6 +604,9 @@ void main() {
     fetched.clear();
     expect(await h.downloadNpuFile(), isTrue);
     expect(fetched, isEmpty);
+    expect(h.status.value.state, LookState.ready);
+    expect(await h.download(SettingsHandler.instance.lookModel), isFalse);
+    expect(h.status.value.state, LookState.ready, reason: 'Download again must not mark a folder import as failed');
     src.deleteSync(recursive: true);
   });
 }

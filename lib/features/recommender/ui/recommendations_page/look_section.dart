@@ -178,9 +178,9 @@ class _LookModelSectionState extends State<LookModelSection> {
                       children: [
                         FilledButton.icon(
                           key: const ValueKey('look-download'),
-                          onPressed: downloading || chosenSetting.isEmpty ? null : () => _download(look),
+                          onPressed: downloading || chosenSetting.isEmpty || chosenSetting.startsWith('files:') ? null : () => _download(look),
                           icon: const Icon(Symbols.download_rounded),
-                          label: Text(ready && settings.lookModel == chosenSetting ? 'Download again' : 'Download'),
+                          label: Text(chosenSetting.startsWith('files:') ? 'Imported from a folder' : (ready && settings.lookModel == chosenSetting ? 'Download again' : 'Download')),
                         ),
                         OutlinedButton.icon(
                           key: const ValueKey('look-import'),

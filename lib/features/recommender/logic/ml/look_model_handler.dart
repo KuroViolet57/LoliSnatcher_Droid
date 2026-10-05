@@ -349,6 +349,9 @@ class LookModelHandler {
     try {
       final HfParseResult parsed = HfRepo.parse(setting);
       if (parsed.repo == null) {
+        // A folder import is already on disk. `files:` fails parse on purpose;
+        // writing an error here would make a ready model look broken until restart.
+        if (setting.startsWith('files:') && status.value.state == LookState.ready) return false;
         status.value = LookStatus(state: LookState.error, message: parsed.error ?? HfRepo.howTo);
         return false;
       }

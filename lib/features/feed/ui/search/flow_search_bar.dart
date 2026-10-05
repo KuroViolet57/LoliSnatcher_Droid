@@ -30,16 +30,21 @@ class FlowSearchBar extends StatefulWidget {
 class _FlowSearchBarState extends State<FlowSearchBar> {
   final SearchHandler searchHandler = SearchHandler.instance;
   final SettingsHandler settingsHandler = SettingsHandler.instance;
+  TagHandler? _types;
 
   @override
   void initState() {
     super.initState();
     searchHandler.searchTextController.addListener(_onChanged);
+    // Chip colours arrive in a batch after the query is already on screen.
+    _types = TagHandler.maybe;
+    _types?.typesChanged.addListener(_onChanged);
   }
 
   @override
   void dispose() {
     searchHandler.searchTextController.removeListener(_onChanged);
+    _types?.typesChanged.removeListener(_onChanged);
     super.dispose();
   }
 

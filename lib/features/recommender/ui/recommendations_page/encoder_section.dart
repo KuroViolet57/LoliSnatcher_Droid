@@ -181,9 +181,9 @@ class _EncoderModelSectionState extends State<EncoderModelSection> {
                       children: [
                         FilledButton.icon(
                           key: const ValueKey('encoder-download'),
-                          onPressed: downloading || chosenSetting.isEmpty ? null : () => _download(encoder),
+                          onPressed: downloading || chosenSetting.isEmpty || chosenSetting.startsWith('files:') ? null : () => _download(encoder),
                           icon: const Icon(Symbols.download_rounded),
-                          label: Text(ready && settings.encoderModel == chosenSetting ? 'Download again' : 'Download'),
+                          label: Text(chosenSetting.startsWith('files:') ? 'Imported from a folder' : (ready && settings.encoderModel == chosenSetting ? 'Download again' : 'Download')),
                         ),
                         OutlinedButton.icon(
                           key: const ValueKey('encoder-import'),

@@ -465,6 +465,13 @@ void main() {
       expect(ok, isTrue, reason: e.status.value.message);
       expect(SettingsHandler.instance.encoderModel, startsWith('files:'));
       expect(File('${e.dirFor(SettingsHandler.instance.encoderModel)}model.onnx').existsSync(), isTrue);
+      expect(e.status.value.state, EncoderState.ready);
+      expect(await e.download(SettingsHandler.instance.encoderModel), isFalse);
+      expect(
+        e.status.value.state,
+        EncoderState.ready,
+        reason: 'Download again must not mark a folder import as failed',
+      );
     });
   });
 }

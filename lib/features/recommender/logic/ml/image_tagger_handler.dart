@@ -420,6 +420,9 @@ class ImageTaggerHandler {
     try {
       final HfParseResult parsed = HfRepo.parse(setting);
       if (parsed.repo == null) {
+        // A folder import is already on disk. `files:` fails parse on purpose;
+        // writing an error here would make a ready model look broken until restart.
+        if (setting.startsWith('files:') && status.value.state == TaggerState.ready) return false;
         status.value = TaggerStatus(state: TaggerState.error, message: parsed.error ?? HfRepo.howTo);
         return false;
       }

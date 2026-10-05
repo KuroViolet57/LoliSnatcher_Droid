@@ -528,5 +528,8 @@ void main() {
     expect(SettingsHandler.instance.imageTaggerModel, startsWith('files:'));
     expect(File('${t.dirFor(SettingsHandler.instance.imageTaggerModel)}model.onnx').existsSync(), isTrue);
     expect(File('${t.dirFor(SettingsHandler.instance.imageTaggerModel)}selected_tags.csv').existsSync(), isTrue);
+    expect(t.status.value.state, TaggerState.ready);
+    expect(await t.download(SettingsHandler.instance.imageTaggerModel), isFalse);
+    expect(t.status.value.state, TaggerState.ready, reason: 'Download again must not mark a folder import as failed');
   });
 }

@@ -55,6 +55,19 @@ void main() {
     expect(tags.getTag('alpha').tagType, TagType.artist);
   });
 
+  test('a tag file notifies once for the whole file', () async {
+    final TagHandler tags = TagHandler.instance;
+    SettingsHandler.instance.dbEnabled = false;
+    var bumps = 0;
+    tags.typesChanged.addListener(() => bumps++);
+    final bool ok = await tags.loadFromJSON(
+      '[{"fullString":"alpha","tagType":"artist"},{"fullString":"beta","tagType":"character"},{"fullString":"gamma","tagType":"copyright"}]',
+    );
+    expect(ok, isTrue);
+    expect(bumps, 1);
+    expect(tags.getTag('beta').tagType, TagType.character);
+  });
+
   test("a source keeps the types it parsed for its own items, even when it does not write the app's store", () {
     final GelbooruHandler handler = GelbooruHandler(e621, 20)..storeTagsGlobally = false;
     handler.addTagsWithType(['Coel3D_(Modeler)'], TagType.contributor);

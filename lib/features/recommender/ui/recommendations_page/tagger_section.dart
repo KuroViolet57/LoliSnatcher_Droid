@@ -311,9 +311,9 @@ class _TaggerModelSectionState extends State<TaggerModelSection> {
                       children: [
                         FilledButton.icon(
                           key: const ValueKey('tagger-download'),
-                          onPressed: downloading || chosenSetting.isEmpty ? null : () => _download(tagger),
+                          onPressed: downloading || chosenSetting.isEmpty || chosenSetting.startsWith('files:') ? null : () => _download(tagger),
                           icon: const Icon(Symbols.download_rounded),
-                          label: Text(ready && settings.imageTaggerModel == chosenSetting ? 'Download again' : 'Download'),
+                          label: Text(chosenSetting.startsWith('files:') ? 'Imported from a folder' : (ready && settings.imageTaggerModel == chosenSetting ? 'Download again' : 'Download')),
                         ),
                         OutlinedButton.icon(
                           key: const ValueKey('tagger-import'),

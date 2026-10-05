@@ -124,7 +124,9 @@ class TagHandler {
     return colour == Colors.transparent ? null : colour;
   }
 
-  Future<void> putTag(
+  /// True when the map was written. False when the tag was empty or a `none`
+  /// type was refused because a real type was already stored.
+  Future<bool> putTag(
     Tag tag, {
     required bool dbEnabled,
     bool useDB = true,
@@ -133,7 +135,7 @@ class TagHandler {
   }) async {
     tag.fullString = tag.fullString.trim().toLowerCase();
     if (tag.fullString.isEmpty) {
-      return;
+      return false;
     }
     if (preferTypeIfNone && hasTag(tag.fullString)) {
       if (getTag(tag.fullString).tagType != TagType.none && tag.tagType == TagType.none) {
@@ -143,7 +145,7 @@ class TagHandler {
           'putTag',
           LogTypes.tagHandlerInfo,
         );
-        return;
+        return false;
       }
     }
     _tagMap[tag.fullString] = tag;
@@ -152,7 +154,7 @@ class TagHandler {
     if (dbEnabled && useDB) {
       await SettingsHandler.instance.dbHandler.updateTagsFromObjects([tag]);
     }
-    return;
+    return true;
   }
 
   void tryGetTagTypes() {
@@ -356,14 +358,17 @@ class TagHandler {
       final bool dbEnabled = SettingsHandler.instance.dbEnabled;
 
       final List jsonList = jsonDecode(jsonString);
+      var wrote = false;
       for (final Map<String, dynamic> rawTag in jsonList) {
         try {
           final Tag tagObject = Tag.fromJson(rawTag);
-          await putTag(
+          final bool stored = await putTag(
             tagObject,
             preferTypeIfNone: preferTagTypeIfNone,
             dbEnabled: dbEnabled,
+            notify: false,
           );
+          if (stored) wrote = true;
           if (onProgress != null) {
             onProgress(jsonList.indexOf(rawTag), jsonList.length);
           }
@@ -383,6 +388,7 @@ class TagHandler {
           );
         }
       }
+      if (wrote) typesChanged.value++;
       return true;
     } catch (e, s) {
       Logger.Inst().log(
