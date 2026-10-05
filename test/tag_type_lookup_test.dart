@@ -44,6 +44,17 @@ void main() {
     } catch (_) {}
   });
 
+  test('a batch of new types notifies once, and a repeat does not', () async {
+    final TagHandler tags = TagHandler.instance;
+    var bumps = 0;
+    tags.typesChanged.addListener(() => bumps++);
+    await tags.addTagsWithType(['alpha', 'beta', 'gamma'], TagType.artist);
+    expect(bumps, 1);
+    await tags.addTagsWithType(['alpha', 'beta', 'gamma'], TagType.artist);
+    expect(bumps, 1, reason: 'the types were already stored');
+    expect(tags.getTag('alpha').tagType, TagType.artist);
+  });
+
   test("a source keeps the types it parsed for its own items, even when it does not write the app's store", () {
     final GelbooruHandler handler = GelbooruHandler(e621, 20)..storeTagsGlobally = false;
     handler.addTagsWithType(['Coel3D_(Modeler)'], TagType.contributor);

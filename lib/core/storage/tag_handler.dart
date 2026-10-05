@@ -45,12 +45,18 @@ class TagHandler {
 
   static void unregister() => GetIt.instance.unregister<TagHandler>();
 
+  static TagHandler? get maybe => GetIt.instance.isRegistered<TagHandler>() ? instance : null;
+
   int prevLength = 0;
   final Map<String, Tag> _tagMap = {};
   Map<String, Tag> get tagMap => _tagMap; // TODO read only (or is it?)
 
   ValueNotifier<List<UntypedCollection>> untypedQueue = ValueNotifier([]);
   ValueNotifier<bool> tagFetchActive = ValueNotifier(false);
+
+  /// Bumps once per batch of tag types, so a chip list can repaint when the
+  /// colours arrive. Not once per tag.
+  final ValueNotifier<int> typesChanged = ValueNotifier(0);
   bool tagSaveActive = false;
 
   void queueListener() {
@@ -123,6 +129,7 @@ class TagHandler {
     required bool dbEnabled,
     bool useDB = true,
     bool preferTypeIfNone = false,
+    bool notify = true,
   }) async {
     tag.fullString = tag.fullString.trim().toLowerCase();
     if (tag.fullString.isEmpty) {
@@ -140,6 +147,7 @@ class TagHandler {
       }
     }
     _tagMap[tag.fullString] = tag;
+    if (notify) typesChanged.value++;
 
     if (dbEnabled && useDB) {
       await SettingsHandler.instance.dbHandler.updateTagsFromObjects([tag]);
@@ -206,6 +214,7 @@ class TagHandler {
               tag,
               dbEnabled: dbEnabled,
               preferTypeIfNone: true,
+              notify: false,
             );
 
             //TODO write tag to database
@@ -220,6 +229,7 @@ class TagHandler {
         'getTagTypes',
         LogTypes.tagHandlerInfo,
       );
+      if (tagCounter > 0) typesChanged.value++;
       tagFetchActive.value = false;
     }
     tryGetTagTypes();
@@ -238,6 +248,7 @@ class TagHandler {
   /// downgrade a typed tag back to none.
   Future<void> addTagsWithType(List<String> tags, TagType type) async {
     final dbEnabled = SettingsHandler.instance.dbEnabled;
+    var wrote = false;
 
     for (final String tag in tags) {
       final String lower = tag.trim().toLowerCase();
@@ -248,14 +259,17 @@ class TagHandler {
 
       if (type != TagType.none) {
         if (!exists || cachedType != type) {
-          await putTag(Tag(lower, tagType: type), dbEnabled: dbEnabled);
+          await putTag(Tag(lower, tagType: type), dbEnabled: dbEnabled, notify: false);
+          wrote = true;
         }
       } else {
         if (!exists) {
-          await putTag(Tag(lower, tagType: type), dbEnabled: dbEnabled);
+          await putTag(Tag(lower, tagType: type), dbEnabled: dbEnabled, notify: false);
+          wrote = true;
         }
       }
     }
+    if (wrote) typesChanged.value++;
   }
 
   void queue(List<String> untypedTags, Booru booru, int cooldown) {

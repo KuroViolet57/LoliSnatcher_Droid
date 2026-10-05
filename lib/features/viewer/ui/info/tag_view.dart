@@ -186,7 +186,7 @@ class _TagViewState extends State<TagView> with TraceLifecycle {
   // Cached so collapsing / re-expanding the "Related" tile doesn't re-derive
   // (and the preview widget's own state doesn't get torn down on the second
 
-  Timer? sortTimer;
+  TagHandler? _types;
 
   @override
   void initState() {
@@ -202,17 +202,17 @@ class _TagViewState extends State<TagView> with TraceLifecycle {
     WidgetsBinding.instance.addPostFrameCallback((_) => parseSortGroupTags());
     searchHandler.searchTextController.addListener(parseSortGroupTagsWithoutCache);
     searchFocusNode.addListener(searchFocusListener);
+    _types = TagHandler.maybe;
+    _types?.typesChanged.addListener(_onTypesChanged);
 
-    reloadItemData(initial: true).then((_) async {
-      await Future.delayed(const Duration(seconds: 3));
-      if (mounted) {
-        parseSortGroupTagsWithoutCache();
-        sortTimer = Timer.periodic(
-          const Duration(seconds: 5),
-          (_) => parseSortGroupTagsWithoutCache(),
-        );
-      }
+    reloadItemData(initial: true).then((_) {
+      if (mounted) parseSortGroupTagsWithoutCache();
     });
+  }
+
+  void _onTypesChanged() {
+    if (!mounted) return;
+    parseSortGroupTagsWithoutCache();
   }
 
   void checkForPossibleBooruHandler() {
@@ -289,16 +289,8 @@ class _TagViewState extends State<TagView> with TraceLifecycle {
         callback: () {
           WidgetsBinding.instance.addPostFrameCallback((_) => parseSortGroupTags());
           cancelToken?.cancel();
-          reloadItemData(initial: true).then((_) async {
-            await Future.delayed(const Duration(seconds: 3));
-            if (mounted) {
-              parseSortGroupTagsWithoutCache();
-              sortTimer?.cancel();
-              sortTimer = Timer.periodic(
-                const Duration(seconds: 5),
-                (_) => parseSortGroupTagsWithoutCache(),
-              );
-            }
+          reloadItemData(initial: true).then((_) {
+            if (mounted) parseSortGroupTagsWithoutCache();
           });
         },
       );
@@ -316,7 +308,7 @@ class _TagViewState extends State<TagView> with TraceLifecycle {
   @override
   void dispose() {
     cancelToken?.cancel();
-    sortTimer?.cancel();
+    _types?.typesChanged.removeListener(_onTypesChanged);
     searchHandler.searchTextController.removeListener(parseSortGroupTagsWithoutCache);
     searchController.dispose();
     searchFocusNode.removeListener(searchFocusListener);

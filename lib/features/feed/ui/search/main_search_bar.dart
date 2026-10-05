@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -10,6 +9,7 @@ import 'package:get/get.dart' hide ContextExt, FirstWhereOrNullExt;
 import 'package:lolisnatcher/core/ui/desktop_scroll.dart';
 import 'package:scroll_to_index/scroll_to_index.dart';
 
+import 'package:lolisnatcher/core/storage/tag_handler.dart';
 import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
 import 'package:lolisnatcher/core/platform/service_handler.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
@@ -159,7 +159,7 @@ class _MainSearchBarState extends State<MainSearchBar> {
   List<String> tags = [];
   String? currentTabId = '';
 
-  Timer? periodicUpdateTimer;
+  TagHandler? _types;
 
   @override
   void initState() {
@@ -170,13 +170,9 @@ class _MainSearchBarState extends State<MainSearchBar> {
     parseTags();
     currentTabId = searchHandler.currentTabId;
     searchHandler.searchTextController.addListener(onTextChanged);
-
-    // periodically update state, mostly to force re-render of chips in case their type data gets fetched later
-    // TODO cache tags type and compare for updates instead of this?
-    periodicUpdateTimer = Timer.periodic(
-      const Duration(seconds: 3),
-      (_) => onTextChanged(),
-    );
+    // Chip colours arrive in a batch after the text is already on screen.
+    _types = TagHandler.maybe;
+    _types?.typesChanged.addListener(onTextChanged);
   }
 
   void onTextChanged() {
@@ -218,7 +214,7 @@ class _MainSearchBarState extends State<MainSearchBar> {
 
   @override
   void dispose() {
-    periodicUpdateTimer?.cancel();
+    _types?.typesChanged.removeListener(onTextChanged);
     searchHandler.searchTextController.removeListener(onTextChanged);
     super.dispose();
   }
