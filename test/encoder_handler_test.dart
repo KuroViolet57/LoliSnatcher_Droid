@@ -424,7 +424,7 @@ void main() {
     test('sentence-transformers ONNX is model.onnx, small files first, not the quantized name', () async {
       final EncoderHandler e = EncoderHandler.instance;
       const String sha = '1110a243fdf4706b3f48f1d95db1a4f5529b4d41';
-      e.listing = (String repoId) async => const HfListing(
+      e.listing = (String repoId, {String? revision}) async => const HfListing(
         id: 'sentence-transformers/all-MiniLM-L6-v2',
         revision: sha,
         files: ['onnx/model.onnx', 'onnx/model_qint8_arm64.onnx', 'onnx/model_O1.onnx', 'vocab.txt', 'tokenizer_config.json', 'config.json'],
@@ -434,6 +434,26 @@ void main() {
       const String prefix = 'https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/$sha/';
       expect(fetched, ['${prefix}vocab.txt', '${prefix}tokenizer_config.json', '${prefix}config.json', '${prefix}onnx/model.onnx']);
       expect(SettingsHandler.instance.encoderModel, 'sentence-transformers/all-MiniLM-L6-v2');
+    });
+
+    test('owner/model@v1 lists that revision and downloads the commit that list named', () async {
+      final EncoderHandler e = EncoderHandler.instance;
+      const String sha = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+      String? seen;
+      e.listing = (String repoId, {String? revision}) async {
+        seen = revision;
+        expect(repoId, 'owner/model');
+        return const HfListing(
+          id: 'owner/model',
+          revision: sha,
+          files: ['onnx/model.onnx', 'vocab.txt', 'tokenizer_config.json', 'config.json'],
+        );
+      };
+      fetched.clear();
+      expect(await e.download('owner/model@v1'), isTrue, reason: e.status.value.message);
+      expect(seen, 'v1');
+      expect(fetched, contains('https://huggingface.co/owner/model/resolve/$sha/onnx/model.onnx'));
+      expect(fetched.any((String url) => url.contains('/resolve/v1/')), isFalse);
     });
 
     test('a folder with vocab.txt and model.onnx is imported and the setting starts with files:', () async {

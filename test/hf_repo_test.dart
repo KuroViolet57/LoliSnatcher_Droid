@@ -36,6 +36,17 @@ void main() {
     }
   });
 
+  test('a named revision is listed at /revision/, and the default branch is not', () {
+    const String sha = 'e7da7f221d5bf496a48136c0cd264e630fe9fcc8';
+    expect(HfRepo.listingUrl('openai-community/gpt2', null), 'https://huggingface.co/api/models/openai-community/gpt2');
+    expect(HfRepo.listingUrl('openai-community/gpt2', 'main'), 'https://huggingface.co/api/models/openai-community/gpt2/revision/main');
+    expect(HfRepo.listingUrl('openai-community/gpt2', sha), 'https://huggingface.co/api/models/openai-community/gpt2/revision/$sha');
+    expect(HfRepo.listingUrl('openai-community/gpt2', '../secrets'), isNull);
+    expect(HfRepo.missingOnDiskMessage('files:gone'), startsWith('This model was imported from a folder.'));
+    expect(HfRepo.missingOnDiskMessage('"files:gone"'), startsWith('This model was imported from a folder.'));
+    expect(HfRepo.missingOnDiskMessage('owner/model'), 'The model files are missing; download again.');
+  });
+
   test('resolve uses the commit the API named, not a hard-coded main', () {
     expect(
       HfRepo.resolveUrl('sentence-transformers/all-MiniLM-L6-v2', '1110a243fdf4706b3f48f1d95db1a4f5529b4d41', 'onnx/model.onnx'),

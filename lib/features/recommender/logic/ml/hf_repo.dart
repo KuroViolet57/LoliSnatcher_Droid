@@ -66,6 +66,10 @@ class HfFolderFile {
   final String uri;
 }
 
+/// How a model handler asks for a repo's file list. [revision] is the branch,
+/// tag or commit from the link, or null for the repo's default branch.
+typedef HfListingFetch = Future<HfListing> Function(String repoId, {String? revision});
+
 /// The file list Hugging Face returns for one repo.
 class HfListing {
   const HfListing({required this.id, required this.revision, required this.files, this.error});
@@ -214,12 +218,36 @@ class HfRepo {
     return out;
   }
 
-  /// `GET https://huggingface.co/api/models/<repo>`. The `id` is the canonical
-  /// casing, `sha` is the default revision, `siblings[].rfilename` is the file list.
-  static Future<HfListing> fetch(String repoId) async {
+  /// What to say when the configured model is not on disk. A folder import
+  /// cannot be downloaded; the sentence names Import from a folder.
+  static String missingOnDiskMessage(String setting) {
+    final String? error = parse(setting).error;
+    if (error != null && error.startsWith('This model was imported from a folder.')) return error;
+    return 'The model files are missing; download again.';
+  }
+
+  /// File list for [revision], or the repo's default branch when [revision]
+  /// is null. Probed 2026-10-05 against `openai-community/gpt2`:
+  /// `/api/models/<id>` is the default branch (sha `607a30d7…`, 26 files) and
+  /// `/api/models/<id>/revision/<rev>` is that commit (sha `e7da7f22…`, 15
+  /// files). A `?revision=` query is ignored. An unknown rev is HTTP 404
+  /// `{"error":"Invalid rev id: …"}`. Null when [revision] is not a branch,
+  /// tag or commit this app will put in a URL.
+  static String? listingUrl(String repoId, String? revision) {
+    final String root = 'https://huggingface.co/api/models/$repoId';
+    if (revision == null || revision.isEmpty) return root;
+    if (!_revision.hasMatch(revision)) return null;
+    return '$root/revision/${Uri.encodeComponent(revision)}';
+  }
+
+  /// `GET` [listingUrl]. The `id` is the canonical casing, `sha` is the
+  /// revision the file list was taken from, `siblings[].rfilename` is the files.
+  static Future<HfListing> fetch(String repoId, {String? revision}) async {
+    final String? url = listingUrl(repoId, revision);
+    if (url == null) return HfListing.failed('Hugging Face could not list $repoId at $revision.');
     final HttpClient client = HttpClient();
     try {
-      final HttpClientRequest request = await client.getUrl(Uri.parse('https://huggingface.co/api/models/$repoId')).timeout(const Duration(seconds: 30));
+      final HttpClientRequest request = await client.getUrl(Uri.parse(url)).timeout(const Duration(seconds: 30));
       request.headers.set(HttpHeaders.userAgentHeader, 'LoliSnatcher (model import)');
       final HttpClientResponse response = await request.close().timeout(const Duration(seconds: 30));
       final String body = await response.transform(utf8.decoder).join();
@@ -227,19 +255,22 @@ class HfRepo {
         return HfListing.failed('Hugging Face refused $repoId. The name may be wrong, or the repo is private or gated.');
       }
       if (response.statusCode != 200) {
-        return HfListing.failed('Hugging Face answered ${response.statusCode} for $repoId.');
+        final String where = revision == null || revision.isEmpty ? repoId : '$repoId at $revision';
+        return HfListing.failed('Hugging Face answered ${response.statusCode} for $where.');
       }
       final dynamic decoded = jsonDecode(body);
       if (decoded is! Map) return HfListing.failed('Hugging Face returned an unexpected file list for $repoId.');
       final String? apiId = decoded['id'] is String ? decoded['id'] as String : null;
       final HfRepoId? canonical = apiId == null ? null : parse(apiId).repo;
       final String id = canonical != null && canonical.revision == null ? canonical.id : repoId;
-      final String revision = decoded['sha'] is String && _revision.hasMatch(decoded['sha'] as String) ? decoded['sha'] as String : 'main';
+      // Named `sha`, not `revision`: a local with the parameter's name is in
+      // scope for the whole function and hides the revision we were asked for.
+      final String sha = decoded['sha'] is String && _revision.hasMatch(decoded['sha'] as String) ? decoded['sha'] as String : 'main';
       final List<String> files = [
         for (final dynamic sibling in (decoded['siblings'] as List? ?? const []))
           if (sibling is Map && sibling['rfilename'] is String && _safePath(sibling['rfilename'] as String)) sibling['rfilename'] as String,
       ];
-      return HfListing(id: id, revision: revision, files: files);
+      return HfListing(id: id, revision: sha, files: files);
     } catch (e) {
       return HfListing.failed('Could not read the file list for $repoId ($e).');
     } finally {

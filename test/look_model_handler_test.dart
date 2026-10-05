@@ -518,7 +518,7 @@ void main() {
   test('a custom CLIP repo keeps the full-precision name for later and does not download it yet', () async {
     final LookModelHandler h = LookModelHandler.instance;
     const String sha = 'abc123def456';
-    h.listing = (String repoId) async => const HfListing(
+    h.listing = (String repoId, {String? revision}) async => const HfListing(
       id: 'Xenova/mobileclip_s0',
       revision: sha,
       files: [
@@ -544,6 +544,26 @@ void main() {
     expect(h.hasNpuFile, isTrue);
   });
 
+  test('owner/model@v1 lists that revision and downloads the commit that list named', () async {
+    final LookModelHandler h = LookModelHandler.instance;
+    const String sha = 'dddddddddddddddddddddddddddddddddddddddd';
+    String? seen;
+    h.listing = (String repoId, {String? revision}) async {
+      seen = revision;
+      expect(repoId, 'owner/look');
+      return const HfListing(
+        id: 'owner/look',
+        revision: sha,
+        files: ['tokenizer.json', 'onnx/vision_model.onnx', 'onnx/text_model.onnx'],
+      );
+    };
+    fetched.clear();
+    expect(await h.download('https://huggingface.co/owner/look/tree/v1'), isTrue, reason: h.status.value.message);
+    expect(seen, 'v1');
+    expect(fetched, contains('https://huggingface.co/owner/look/resolve/$sha/onnx/vision_model.onnx'));
+    expect(fetched.any((String url) => url.contains('/resolve/v1/')), isFalse);
+  });
+
   test('a preset NPU download still asks for onnx/vision_model.onnx on main', () async {
     final LookModelHandler h = await ready();
     fetched.clear();
@@ -553,7 +573,7 @@ void main() {
 
   test('SigLIP is refused from config.json before the picture half is fetched', () async {
     final LookModelHandler h = LookModelHandler.instance;
-    h.listing = (String repoId) async => const HfListing(
+    h.listing = (String repoId, {String? revision}) async => const HfListing(
       id: 'Xenova/siglip-base-patch16-224',
       revision: 'main',
       files: ['config.json', 'tokenizer.json', 'onnx/vision_model_quantized.onnx', 'onnx/text_model_quantized.onnx'],

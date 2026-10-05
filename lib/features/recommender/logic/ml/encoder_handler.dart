@@ -164,7 +164,7 @@ class EncoderHandler {
   /// Preset downloads do not call [listing].
   EncoderFetcher fetcher = _dioFetch;
   RunnerFactory runnerFactory = _onnxRunner;
-  Future<HfListing> Function(String repoId) listing = HfRepo.fetch;
+  HfListingFetch listing = HfRepo.fetch;
 
   SettingsHandler get _settings => SettingsHandler.instance;
 
@@ -244,7 +244,10 @@ class EncoderHandler {
     final File model = File('${dir}model.onnx');
     final File vocab = File('${dir}vocab.txt');
     if (!manifest.existsSync() || !model.existsSync() || !vocab.existsSync()) {
-      _apply(const EncoderStatus(state: EncoderState.none, message: 'The model files are missing; download again.'), slug: '');
+      if (HfRepo.isFolderImport(setting)) {
+        Logger.Inst().log('encoder: folder import is missing its files ($setting)', className, 'refresh', LogTypes.booruHandlerInfo);
+      }
+      _apply(EncoderStatus(state: EncoderState.none, message: HfRepo.missingOnDiskMessage(setting)), slug: '');
       return;
     }
     try {
@@ -377,7 +380,7 @@ class EncoderHandler {
       status.value = EncoderStatus(state: EncoderState.downloading, repo: asked);
       final HfListing listed;
       try {
-        listed = await listing(asked);
+        listed = await listing(asked, revision: parsed.repo!.revision);
       } catch (e) {
         status.value = EncoderStatus(state: EncoderState.error, repo: asked, message: 'Could not read the file list ($e).');
         return false;
@@ -397,8 +400,9 @@ class EncoderHandler {
         return false;
       }
       final String repo = listed.id.isEmpty ? asked : listed.id;
-      final String? fromLink = parsed.repo!.revision;
-      final String revision = fromLink == null || fromLink == 'main' ? listed.revision : fromLink;
+      // The file list and the download are the same commit. fetch() asked
+      // the Hub for the link's revision, and [listed.revision] is that sha.
+      final String revision = listed.revision;
       Logger.Inst().log(
         'encoder: $repo @ $revision -> ${plan.files.map((HfPlannedFile f) => '${f.remote} as ${f.local}').join(', ')}',
         className,

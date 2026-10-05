@@ -69,7 +69,7 @@ class LookModelHandler {
   LookFetcher fetcher = _dioFetch;
   LookRunnerFactory runnerFactory = _onnxRunner;
   ThumbnailFetcher thumbnailFetcher = _defaultThumbnail;
-  Future<HfListing> Function(String repoId) listing = HfRepo.fetch;
+  HfListingFetch listing = HfRepo.fetch;
 
   SettingsHandler get _settings => SettingsHandler.instance;
 
@@ -202,7 +202,10 @@ class LookModelHandler {
     final File manifest = File('${dir}manifest.json');
     final bool complete = manifest.existsSync() && [imageFileName, textFileName, tokenizerFileName].every((f) => File('$dir$f').existsSync());
     if (!complete) {
-      _apply(const LookStatus(state: LookState.none, message: 'The model files are missing; download again.'), slug: '');
+      if (HfRepo.isFolderImport(setting)) {
+        Logger.Inst().log('look: folder import is missing its files ($setting)', className, 'refresh', LogTypes.booruHandlerInfo);
+      }
+      _apply(LookStatus(state: LookState.none, message: HfRepo.missingOnDiskMessage(setting)), slug: '');
       return;
     }
     try {
@@ -359,7 +362,7 @@ class LookModelHandler {
       status.value = LookStatus(state: LookState.downloading, repo: asked);
       final HfListing listed;
       try {
-        listed = await listing(asked);
+        listed = await listing(asked, revision: parsed.repo!.revision);
       } catch (e) {
         status.value = LookStatus(state: LookState.error, repo: asked, message: 'Could not read the file list ($e).');
         return false;
@@ -379,8 +382,9 @@ class LookModelHandler {
         return false;
       }
       final String repo = listed.id.isEmpty ? asked : listed.id;
-      final String? fromLink = parsed.repo!.revision;
-      final String revision = fromLink == null || fromLink == 'main' ? listed.revision : fromLink;
+      // The file list and the download are the same commit. fetch() asked
+      // the Hub for the link's revision, and [listed.revision] is that sha.
+      final String revision = listed.revision;
       Logger.Inst().log(
         'look: $repo @ $revision -> ${plan.files.map((HfPlannedFile f) => '${f.remote} as ${f.local}').join(', ')}'
         '${plan.npuRemote == null ? '' : ' (NPU later: ${plan.npuRemote})'}',

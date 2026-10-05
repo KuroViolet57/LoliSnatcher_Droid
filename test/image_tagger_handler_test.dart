@@ -481,8 +481,9 @@ void main() {
 
   test('a repo page link is fetched from the file list at the commit Hugging Face named', () async {
     final ImageTaggerHandler t = ImageTaggerHandler.instance;
-    t.listing = (String repoId) async {
+    t.listing = (String repoId, {String? revision}) async {
       expect(repoId, 'SmilingWolf/wd-vit-tagger-v3');
+      expect(revision, 'main');
       return const HfListing(
         id: 'SmilingWolf/wd-vit-tagger-v3',
         revision: '7f6b584d0bd3f55c4531f14ba3d4761b2bccdc0f',
@@ -496,10 +497,26 @@ void main() {
     expect(t.status.value.state, TaggerState.ready);
   });
 
+  test('owner/model@v1 lists that revision and downloads the commit that list named', () async {
+    final ImageTaggerHandler t = ImageTaggerHandler.instance;
+    const String sha = 'cccccccccccccccccccccccccccccccccccccccc';
+    String? seen;
+    t.listing = (String repoId, {String? revision}) async {
+      seen = revision;
+      expect(repoId, 'owner/tagger');
+      return const HfListing(id: 'owner/tagger', revision: sha, files: ['model.onnx', 'selected_tags.csv']);
+    };
+    fetched.clear();
+    expect(await t.download('owner/tagger@v1'), isTrue, reason: t.status.value.message);
+    expect(seen, 'v1');
+    expect(fetched, contains('https://huggingface.co/owner/tagger/resolve/$sha/model.onnx'));
+    expect(fetched.any((String url) => url.contains('/resolve/v1/')), isFalse);
+  });
+
   test('a folder of model.onnx and selected_tags.csv is imported without calling Hugging Face', () async {
     final ImageTaggerHandler t = ImageTaggerHandler.instance;
     var asked = false;
-    t.listing = (String repoId) async {
+    t.listing = (String repoId, {String? revision}) async {
       asked = true;
       return HfListing.failed('should not be called');
     };

@@ -1358,6 +1358,8 @@ class _BooruEditState extends State<BooruEdit> {
       }
 
       bool replacedOld = false;
+      final String previousName = widget.booru.name ?? '';
+      final bool wasPreferred = previousName.isNotEmpty && settingsHandler.prefBooru == previousName;
       for (int i = 0; i < settingsHandler.booruList.length; i++) {
         // The booru being edited, found by its URL before the edit (a changed
         // URL used to leave the old config in place next to the new one).
@@ -1375,6 +1377,19 @@ class _BooruEditState extends State<BooruEdit> {
       }
 
       await settingsHandler.saveBooru(newBooru);
+      // deleteBooru clears the preference when the edited site was the
+      // preferred one. A URL edit or a rename should keep that choice.
+      final String nextName = newBooru.name ?? '';
+      if (wasPreferred && nextName.isNotEmpty && settingsHandler.prefBooru != nextName) {
+        settingsHandler.prefBooru = nextName;
+        await settingsHandler.saveSettings(restate: true);
+        Logger.Inst().log(
+          'preferred booru followed an edit from $previousName to $nextName',
+          'BooruEdit',
+          'save',
+          LogTypes.booruHandlerInfo,
+        );
+      }
       // Per-booru lines are keyed by name: a renamed booru takes its lines
       // along, and a new one the lines added before its first save (a doujin
       // source never uses booru lines, so they stay where they were).

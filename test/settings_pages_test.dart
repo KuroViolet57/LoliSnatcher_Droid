@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -260,6 +261,82 @@ void main() {
     expect(s.booruList.map((b) => b.name), unorderedEquals(['Y', 'other']));
     expect(File('${s.boorusPath}X.json').existsSync(), isFalse, reason: 'the old config is gone');
     expect(File('${s.boorusPath}Y.json').existsSync(), isTrue);
+  });
+
+  void expectPreferred(String name) {
+    expect(s.prefBooru, name);
+    // Sync: a file read awaited in the test zone never completes.
+    final Map<String, dynamic> disk = jsonDecode(File('${s.path}settings.json').readAsStringSync()) as Map<String, dynamic>;
+    expect(disk['prefBooru'], name, reason: 'the preference is what the next launch reads');
+  }
+
+  /// True once the save has landed. Memory is updated a step before the file.
+  bool preferredOnDisk(String name) {
+    final File f = File('${s.path}settings.json');
+    if (!f.existsSync()) return false;
+    try {
+      final Map<String, dynamic> disk = jsonDecode(f.readAsStringSync()) as Map<String, dynamic>;
+      return s.prefBooru == name && disk['prefBooru'] == name;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  testWidgets('editing the preferred booru URL keeps it preferred', (tester) async {
+    final Booru x = Booru('X', BooruType.Gelbooru, '', 'https://a.example', '');
+    final Booru other = Booru('other', BooruType.Gelbooru, '', 'https://other.example', '');
+    await tester.runAsync(() => s.saveBooru(x, onlySave: true));
+    s.booruList.addAll([x, other]);
+    s.prefBooru = 'X';
+    s.isDebug.value = true;
+    SearchHandler.instance.tabs.add(SearchTab(other, null, 'tag'));
+
+    await open(tester, BooruEdit(x));
+    await tester.enterText(field('https://a.example'), 'https://b.example');
+    await tester.pump();
+    await saveBooru(tester, () => File('${s.boorusPath}X.json').existsSync() && preferredOnDisk('X'));
+
+    expect(s.booruList.map((b) => b.name), unorderedEquals(['X', 'other']));
+    final Booru saved = s.booruList.firstWhere((b) => b.name == 'X');
+    expect(saved.baseURL, 'https://b.example');
+    expectPreferred('X');
+  });
+
+  testWidgets('renaming the preferred booru moves the preference to the new name', (tester) async {
+    final Booru x = Booru('X', BooruType.Gelbooru, '', 'https://a.example', '');
+    final Booru other = Booru('other', BooruType.Gelbooru, '', 'https://other.example', '');
+    await tester.runAsync(() => s.saveBooru(x, onlySave: true));
+    s.booruList.addAll([x, other]);
+    s.prefBooru = 'X';
+    s.isDebug.value = true;
+    SearchHandler.instance.tabs.add(SearchTab(other, null, 'tag'));
+
+    await open(tester, BooruEdit(x));
+    await tester.enterText(field('X'), 'Y');
+    await tester.pump();
+    await saveBooru(tester, () => File('${s.boorusPath}Y.json').existsSync() && preferredOnDisk('Y'));
+
+    expect(s.booruList.map((b) => b.name), contains('Y'));
+    expectPreferred('Y');
+  });
+
+  testWidgets('editing a booru that is not preferred leaves the preference', (tester) async {
+    final Booru x = Booru('X', BooruType.Gelbooru, '', 'https://a.example', '');
+    final Booru other = Booru('other', BooruType.Gelbooru, '', 'https://other.example', '');
+    await tester.runAsync(() => s.saveBooru(x, onlySave: true));
+    await tester.runAsync(() => s.saveBooru(other, onlySave: true));
+    s.booruList.addAll([x, other]);
+    s.prefBooru = 'other';
+    await tester.runAsync(() => s.saveSettings(restate: false));
+    s.isDebug.value = true;
+    SearchHandler.instance.tabs.add(SearchTab(other, null, 'tag'));
+
+    await open(tester, BooruEdit(x));
+    await tester.enterText(field('https://a.example'), 'https://b.example');
+    await tester.pump();
+    await saveBooru(tester, () => s.booruList.any((b) => b.name == 'X' && b.baseURL == 'https://b.example'));
+
+    expectPreferred('other');
   });
 
   testWidgets('a renamed booru keeps its own hidden lines', (tester) async {

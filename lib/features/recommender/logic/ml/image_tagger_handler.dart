@@ -237,7 +237,7 @@ class ImageTaggerHandler {
   /// Preset downloads do not call [listing].
   TaggerFetcher fetcher = _dioFetch;
   TagRunnerFactory runnerFactory = _onnxRunner;
-  Future<HfListing> Function(String repoId) listing = HfRepo.fetch;
+  HfListingFetch listing = HfRepo.fetch;
 
   SettingsHandler get _settings => SettingsHandler.instance;
 
@@ -287,7 +287,10 @@ class ImageTaggerHandler {
     final File model = File('$dir$modelFileName');
     final File tags = File('$dir$tagsFileName');
     if (!manifest.existsSync() || !model.existsSync() || !tags.existsSync()) {
-      _apply(const TaggerStatus(state: TaggerState.none, message: 'The model files are missing; download again.'), slug: '');
+      if (HfRepo.isFolderImport(setting)) {
+        Logger.Inst().log('tagger: folder import is missing its files ($setting)', className, 'refresh', LogTypes.booruHandlerInfo);
+      }
+      _apply(TaggerStatus(state: TaggerState.none, message: HfRepo.missingOnDiskMessage(setting)), slug: '');
       return;
     }
     try {
@@ -430,7 +433,7 @@ class ImageTaggerHandler {
       status.value = TaggerStatus(state: TaggerState.downloading, repo: asked);
       final HfListing listed;
       try {
-        listed = await listing(asked);
+        listed = await listing(asked, revision: parsed.repo!.revision);
       } catch (e) {
         status.value = TaggerStatus(state: TaggerState.error, repo: asked, message: 'Could not read the file list ($e).');
         return false;
@@ -450,10 +453,9 @@ class ImageTaggerHandler {
         return false;
       }
       final String repo = listed.id.isEmpty ? asked : listed.id;
-      // A link that names main, or no revision, is pinned to the commit the
-      // file list was taken from. Any other revision in the link is kept.
-      final String? fromLink = parsed.repo!.revision;
-      final String revision = fromLink == null || fromLink == 'main' ? listed.revision : fromLink;
+      // The file list and the download are the same commit. fetch() asked
+      // the Hub for the link's revision, and [listed.revision] is that sha.
+      final String revision = listed.revision;
       Logger.Inst().log(
         'tagger: $repo @ $revision -> ${plan.files.map((HfPlannedFile f) => '${f.remote} as ${f.local}').join(', ')}',
         className,
