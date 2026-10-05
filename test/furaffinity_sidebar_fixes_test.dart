@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/gen/strings.g.dart';
 import 'package:lolisnatcher/models/booru_type.dart';
 import 'package:lolisnatcher/models/booru.dart';
 import 'package:lolisnatcher/sources/furaffinity/furaffinity_handler.dart';

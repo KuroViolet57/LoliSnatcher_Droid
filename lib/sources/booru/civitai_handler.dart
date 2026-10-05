@@ -296,7 +296,7 @@ class CivitaiHandler extends BooruHandler {
       final String? own = await _ownUsername();
       if (own == null) {
         throw Exception(
-          'civitai: artist:me needs a valid API key in this booru\'s config (could not resolve your username).',
+          "civitai: artist:me needs a valid API key in this booru's config (could not resolve your username).",
         );
       }
       parsed.params['username'] = own;

@@ -112,7 +112,7 @@ void main() {
     expect(fakes['two']!.queries, isNotEmpty);
   });
 
-  test('from:<host> puts the post\'s own site first among many sources; the term is not a seed', () async {
+  test("from:<host> puts the post's own site first among many sources; the term is not a seed", () async {
     SettingsHandler.instance.booruList.value = [b('one'), b('two'), b('three'), b('four'), b('five'), b('six')];
     for (final String name in ['one', 'two', 'three', 'four', 'five', 'six']) {
       fakes[name] = _FakeSource(b(name), 20)..answers = {'hatsune_miku': [['hatsune_miku', name]]};
@@ -122,7 +122,7 @@ void main() {
     final ForYouHandler h = ForYouHandler(forYou, 20);
     final List<BooruItem> items = List<BooruItem>.from(await h.search('from:six.example seed:hatsune_miku', null) as List);
     expect(items, isNotEmpty);
-    expect(fakes['six']!.queries, isNotEmpty, reason: 'the post\'s own site is asked on the first page');
+    expect(fakes['six']!.queries, isNotEmpty, reason: "the post's own site is asked on the first page");
     expect(fakes['six']!.queries.first, 'hatsune_miku', reason: 'the from: term is not searched for');
     expect(fakes['six']!.queries.first, isNot(contains('from:')));
   });

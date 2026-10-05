@@ -28,7 +28,7 @@ mixin CatalogSuggestions on BooruHandler {
   /// `namespace:partial` splits into the store's namespace column and the
   /// name; a bare word searches every namespace.
   static ({String? namespace, String query}) splitInput(String input) {
-    final String q = input.trim().replaceFirst(RegExp(r'^-'), '');
+    final String q = input.trim().replaceFirst(RegExp('^-'), '');
     final int colon = q.indexOf(':');
     if (colon <= 0) return (namespace: null, query: q.replaceAll(' ', '_'));
     return (namespace: q.substring(0, colon).toLowerCase(), query: q.substring(colon + 1).replaceAll(' ', '_'));

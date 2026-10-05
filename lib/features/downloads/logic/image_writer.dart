@@ -560,13 +560,13 @@ class ImageWriter {
   String parseThumbUrlToName(String thumbURL) {
     String result = '';
     if (thumbURL.contains('Hydrus-Client')) {
-      final match = RegExp(r'[?&](id|file_id|hash)=([^&]+)').firstMatch(thumbURL);
+      final match = RegExp('[?&](id|file_id|hash)=([^&]+)').firstMatch(thumbURL);
       if (match != null && match.group(2) != null) {
-        result = "hydrusThumb_${match.group(2)}";
+        result = 'hydrusThumb_${match.group(2)}';
       } else {
         final bytes = utf8.encode(thumbURL);
         final hash = md5.convert(bytes);
-        result = "hydrusThumb_$hash";
+        result = 'hydrusThumb_$hash';
       }
     } else {
       final int queryIndex = thumbURL.indexOf('?'); // Sankaku fix
@@ -610,8 +610,8 @@ class ImageWriter {
     final int dot = fileName.lastIndexOf('.');
     final String stem = dot > 0 ? fileName.substring(0, dot) : fileName;
     // A hash or an id: a run of 8+ alphanumerics containing at least a digit.
-    for (final match in RegExp(r'[A-Za-z0-9]{8,}').allMatches(stem)) {
-      if (RegExp(r'[0-9]').hasMatch(match.group(0)!)) return true;
+    for (final match in RegExp('[A-Za-z0-9]{8,}').allMatches(stem)) {
+      if (RegExp('[0-9]').hasMatch(match.group(0)!)) return true;
     }
     return false;
   }

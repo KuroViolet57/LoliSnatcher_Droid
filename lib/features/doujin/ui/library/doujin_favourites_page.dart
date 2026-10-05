@@ -84,7 +84,7 @@ class _DoujinFavouritesPageState extends State<DoujinFavouritesPage> {
           if (bookmarks.isEmpty)
             const Padding(
               padding: EdgeInsets.all(16),
-              child: Text('Nothing bookmarked yet — use the bookmark button on a doujin\'s detail page.'),
+              child: Text("Nothing bookmarked yet — use the bookmark button on a doujin's detail page."),
             ),
           for (final bookmark in bookmarks)
             Dismissible(

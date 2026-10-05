@@ -211,7 +211,7 @@ void main() {
       expect(CatalogSuggestions.splitInput('tag:beauty mark'), (namespace: 'tag', query: 'beauty_mark'));
       expect(CatalogSuggestions.splitInput('glasses'), (namespace: null, query: 'glasses'));
       expect(CatalogSuggestions.splitInput('-artist:x'), (namespace: 'artist', query: 'x'));
-      final List<TagSuggestion> out = CatalogSuggestions.suggestionsFrom(h.tagCatalog!, [
+      final List<TagSuggestion> out = CatalogSuggestions.suggestionsFrom(h.tagCatalog, [
         const BooruTagEntry(name: 'glasses', namespace: 'tag', tagType: TagType.none, count: 3),
         const BooruTagEntry(name: 'santa', namespace: 'artist', tagType: TagType.artist, count: 9),
       ]);

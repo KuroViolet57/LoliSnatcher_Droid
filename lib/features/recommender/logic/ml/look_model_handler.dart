@@ -540,7 +540,7 @@ class LookModelHandler {
       try {
         await _settings.dbHandler.putEmbeddings(storeKey, {key: v});
       } catch (e, s) {
-        Logger.Inst().log('storing a video\'s look vector failed: $e', className, 'putItemVector', LogTypes.exception, s: s);
+        Logger.Inst().log("storing a video's look vector failed: $e", className, 'putItemVector', LogTypes.exception, s: s);
       }
     }
   }

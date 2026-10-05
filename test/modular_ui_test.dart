@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:lolisnatcher/gen/strings.g.dart';
 import 'package:lolisnatcher/core/settings/modular_ui.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/features/settings/ui/modular_ui_page.dart';

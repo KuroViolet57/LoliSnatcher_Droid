@@ -35,6 +35,39 @@ class Board {
        createdAt = createdAt ?? DateTime.now(),
        updatedAt = updatedAt ?? createdAt ?? DateTime.now();
 
+  factory Board.fromJson(Map<String, dynamic> json) {
+    List<String> strings(dynamic v) => v is List ? [for (final e in v) e.toString()] : const <String>[];
+    DateTime? when(dynamic v) => v is num ? DateTime.fromMillisecondsSinceEpoch(v.toInt()) : null;
+    return Board(
+      id: json['id']?.toString() ?? '',
+      name: json['name']?.toString() ?? '',
+      description: json['description']?.toString() ?? '',
+      mustTags: strings(json['mustTags']),
+      excludeTags: strings(json['excludeTags']),
+      sourceNames: strings(json['sourceNames']),
+      imagePath: json['imagePath']?.toString() ?? '',
+      imageUrl: json['imageUrl']?.toString() ?? '',
+      imageBooru: json['imageBooru']?.toString() ?? '',
+      matches: json['matches'] is List
+          ? [for (final dynamic m in json['matches'] as List) if (m is Map) ReverseMatch.fromJson(Map<String, dynamic>.from(m))]
+          : null,
+      matchedAt: when(json['matchedAt']),
+      matchedImage: json['matchedImage']?.toString() ?? '',
+      pixelTags: json['pixelTags'] is List
+          ? [
+              for (final dynamic t in json['pixelTags'] as List)
+                if (t is Map && t['tag'] != null) (tag: t['tag'].toString(), weight: (t['weight'] as num?)?.toDouble() ?? 0),
+            ]
+          : null,
+      pixelImage: json['pixelImage']?.toString() ?? '',
+      hidden: json['hidden'] == true,
+      lookVector: json['lookVector'] is List ? [for (final dynamic x in json['lookVector'] as List) (x as num).toDouble()] : null,
+      lookImage: json['lookImage']?.toString() ?? '',
+      createdAt: when(json['createdAt']),
+      updatedAt: when(json['updatedAt']),
+    );
+  }
+
   final String id;
   final String name;
   final String description;
@@ -67,7 +100,7 @@ class Board {
   final String pixelImage;
 
   /// r75: a board made by "Posts like this": kept out of the list and
-  /// forgotten after [BoardsHandler.hiddenLifetime].
+  /// forgotten after BoardsHandler.hiddenLifetime.
   final bool hidden;
 
   /// r75: the reference image through the looks model, cached with the
@@ -186,37 +219,4 @@ class Board {
     'createdAt': createdAt.millisecondsSinceEpoch,
     'updatedAt': updatedAt.millisecondsSinceEpoch,
   };
-
-  factory Board.fromJson(Map<String, dynamic> json) {
-    List<String> strings(dynamic v) => v is List ? [for (final e in v) e.toString()] : const <String>[];
-    DateTime? when(dynamic v) => v is num ? DateTime.fromMillisecondsSinceEpoch(v.toInt()) : null;
-    return Board(
-      id: json['id']?.toString() ?? '',
-      name: json['name']?.toString() ?? '',
-      description: json['description']?.toString() ?? '',
-      mustTags: strings(json['mustTags']),
-      excludeTags: strings(json['excludeTags']),
-      sourceNames: strings(json['sourceNames']),
-      imagePath: json['imagePath']?.toString() ?? '',
-      imageUrl: json['imageUrl']?.toString() ?? '',
-      imageBooru: json['imageBooru']?.toString() ?? '',
-      matches: json['matches'] is List
-          ? [for (final dynamic m in json['matches'] as List) if (m is Map) ReverseMatch.fromJson(Map<String, dynamic>.from(m))]
-          : null,
-      matchedAt: when(json['matchedAt']),
-      matchedImage: json['matchedImage']?.toString() ?? '',
-      pixelTags: json['pixelTags'] is List
-          ? [
-              for (final dynamic t in json['pixelTags'] as List)
-                if (t is Map && t['tag'] != null) (tag: t['tag'].toString(), weight: (t['weight'] as num?)?.toDouble() ?? 0),
-            ]
-          : null,
-      pixelImage: json['pixelImage']?.toString() ?? '',
-      hidden: json['hidden'] == true,
-      lookVector: json['lookVector'] is List ? [for (final dynamic x in json['lookVector'] as List) (x as num).toDouble()] : null,
-      lookImage: json['lookImage']?.toString() ?? '',
-      createdAt: when(json['createdAt']),
-      updatedAt: when(json['updatedAt']),
-    );
-  }
 }

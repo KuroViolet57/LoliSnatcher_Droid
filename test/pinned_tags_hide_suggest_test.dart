@@ -23,11 +23,11 @@ class _MemStore extends PinnedTagsStore {
   Future<List<PinnedTag>> list() async => List.of(pins);
 
   @override
-  Future<void> add(String tags, {String? title, required bool global}) async =>
+  Future<void> add(String tags, {required bool global, String? title}) async =>
       pins.add(PinnedTag(id: pins.length + 1, tagName: tags, title: title, pinnedAt: 1));
 
   @override
-  Future<void> update(PinnedTag pin, String tags, {String? title, required bool global}) async {}
+  Future<void> update(PinnedTag pin, String tags, {required bool global, String? title}) async {}
 
   @override
   Future<void> remove(PinnedTag pin) async {}
@@ -91,7 +91,7 @@ void main() {
     final List<String> asked = [];
     Future<List<TagSuggestion>> suggest(String input) async {
       asked.add(input);
-      return input.contains('fo') ? [TagSuggestion(tag: 'fox_(species)')] : const [];
+      return input.contains('fo') ? [const TagSuggestion(tag: 'fox_(species)')] : const [];
     }
 
     await tester.pumpWidget(

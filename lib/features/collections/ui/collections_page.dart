@@ -231,7 +231,7 @@ class _CollectionsPageState extends State<CollectionsPage> {
             Text('No collections yet', style: theme.textTheme.titleMedium),
             const SizedBox(height: 8),
             Text(
-              'Group posts into albums. Add posts from a post\'s info panel '
+              "Group posts into albums. Add posts from a post's info panel "
               '("Add to collection"), or select several in the grid and use '
               '"Add to collection" in the downloads drawer.',
               textAlign: TextAlign.center,

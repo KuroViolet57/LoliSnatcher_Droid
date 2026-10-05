@@ -43,7 +43,7 @@ class _MemStore extends PinnedTagsStore {
   Future<List<PinnedTag>> list() async => List.of(pins);
 
   @override
-  Future<void> add(String tags, {String? title, required bool global}) async {
+  Future<void> add(String tags, {required bool global, String? title}) async {
     pins.add(
       PinnedTag(
         id: ++_id,
@@ -57,7 +57,7 @@ class _MemStore extends PinnedTagsStore {
   }
 
   @override
-  Future<void> update(PinnedTag pin, String tags, {String? title, required bool global}) async {
+  Future<void> update(PinnedTag pin, String tags, {required bool global, String? title}) async {
     final int i = pins.indexWhere((p) => p.id == pin.id);
     pins[i] = PinnedTag(
       id: pin.id,

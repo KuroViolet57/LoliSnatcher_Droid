@@ -109,7 +109,7 @@ void main() {
           yn(h.hasLoadItemSupport),
           yn(h.tagCatalog != null),
           yn(h.hasTagSuggestions),
-          f == null ? '.' : f.groups.map((g) => g.key).join('+'),
+          if (f == null) '.' else f.groups.map((g) => g.key).join('+'),
           '$metas',
           yn(h.hasCommentsSupport),
           yn(h.hasNotesSupport),

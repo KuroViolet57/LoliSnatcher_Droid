@@ -80,7 +80,7 @@ void main() async {
     expect(byTitle, isNotEmpty);
   }, timeout: const Timeout(Duration(minutes: 2)));
 
-  test('niyaniya: the doujinshi category browses the site\'s own list', () async {
+  test("niyaniya: the doujinshi category browses the site's own list", () async {
     final SchaleHandler h = SchaleHandler(of(BooruType.NiyaNiya, 'https://niyaniya.moe'), 25);
     final List<BooruItem> items = List<BooruItem>.from(await h.search('category:doujinshi', null));
     debugPrint('niyaniya cat=4: ${items.length} items, error "${h.errorString}", first ${items.firstOrNull?.description}');

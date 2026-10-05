@@ -22,7 +22,6 @@ import 'package:lolisnatcher/features/settings/ui/sources/booru_page.dart';
 import 'package:lolisnatcher/features/settings/ui/sources/source_settings_page.dart';
 import 'package:lolisnatcher/features/settings/ui/user_interface_page.dart';
 import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
-import 'package:lolisnatcher/gen/strings.g.dart';
 import 'package:lolisnatcher/models/booru.dart';
 import 'package:lolisnatcher/models/booru_type.dart';
 import 'package:lolisnatcher/models/settings/gallery_button.dart';

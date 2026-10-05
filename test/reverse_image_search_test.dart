@@ -39,7 +39,7 @@ void main() {
     ],
   };
 
-  test('SauceNAO: matches with site, post id, similarity and the match\'s own tags; weak ones dropped', () {
+  test("SauceNAO: matches with site, post id, similarity and the match's own tags; weak ones dropped", () {
     final List<ReverseMatch> m = ReverseImageSearch.parseSauceNao(sauceNao);
     expect(m, hasLength(2), reason: 'below the minimum similarity is noise');
     expect(m.first.site, 'danbooru');
@@ -53,7 +53,7 @@ void main() {
     expect(m[1].tags, ['someone']);
   });
 
-  test('SauceNAO: a negative status is a refusal with the site\'s message; a positive one is a partial answer that keeps its results; a weird body is an error', () {
+  test("SauceNAO: a negative status is a refusal with the site's message; a positive one is a partial answer that keeps its results; a weird body is an error", () {
     expect(
       () => ReverseImageSearch.parseSauceNao(const {'header': {'status': -1, 'message': 'The anonymous account type does not permit API usage.'}}),
       throwsA(predicate((e) => e.toString().contains('anonymous account'))),
@@ -73,7 +73,7 @@ void main() {
     FormData? form;
     ReverseImageSearch.poster = (String u, {Object? data, Map<String, String>? headers, Options? options}) async {
       url = u;
-      form = data as FormData;
+      form = data! as FormData;
       return Response(requestOptions: RequestOptions(), data: sauceNao);
     };
     final List<ReverseMatch> m = await ReverseImageSearch.sauceNao(apiKey: 'k1', imageBytes: [1, 2, 3], numres: 5);
@@ -97,7 +97,7 @@ void main() {
     FormData? form;
     ReverseImageSearch.poster = (String u, {Object? data, Map<String, String>? headers, Options? options}) async {
       url = u;
-      form = data as FormData;
+      form = data! as FormData;
       return Response(requestOptions: RequestOptions(), data: jsonDecode(File('test/fixtures/e621_iqdb.json').readAsStringSync()));
     };
     final List<ReverseMatch> m = await ReverseImageSearch.e621Iqdb(imageBytes: [1, 2, 3]);
@@ -128,7 +128,7 @@ void main() {
     expect(back.urls, m.urls);
   });
 
-  test('tag normalisation: the site\'s display names become booru tags', () {
+  test("tag normalisation: the site's display names become booru tags", () {
     expect(ReverseImageSearch.normaliseTag(' Sakamata Chloe '), 'sakamata_chloe');
     expect(ReverseImageSearch.splitNames('Sakamata Chloe, Ookami Mio'), ['sakamata_chloe', 'ookami_mio']);
     expect(ReverseImageSearch.splitNames(''), isEmpty);

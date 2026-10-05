@@ -37,9 +37,9 @@ abstract class PinnedTagsStore {
   /// The source's own pins and the global ones.
   Future<List<PinnedTag>> list();
 
-  Future<void> add(String tags, {String? title, required bool global});
+  Future<void> add(String tags, {required bool global, String? title});
 
-  Future<void> update(PinnedTag pin, String tags, {String? title, required bool global});
+  Future<void> update(PinnedTag pin, String tags, {required bool global, String? title});
 
   Future<void> remove(PinnedTag pin);
 
@@ -67,7 +67,7 @@ class _DbPinnedTagsStore extends PinnedTagsStore {
   }
 
   @override
-  Future<void> add(String tags, {String? title, required bool global}) async {
+  Future<void> add(String tags, {required bool global, String? title}) async {
     await SettingsHandler.instance.dbHandler.addPinnedTag(
       tags,
       booruType: global ? null : booru.type?.name,
@@ -77,7 +77,7 @@ class _DbPinnedTagsStore extends PinnedTagsStore {
   }
 
   @override
-  Future<void> update(PinnedTag pin, String tags, {String? title, required bool global}) =>
+  Future<void> update(PinnedTag pin, String tags, {required bool global, String? title}) =>
       SettingsHandler.instance.dbHandler.updatePinnedTag(
         pin.id,
         tagName: tags,
@@ -116,11 +116,11 @@ class _DoujinPinnedTagsStore extends PinnedTagsStore {
   ];
 
   @override
-  Future<void> add(String tags, {String? title, required bool global}) async =>
+  Future<void> add(String tags, {required bool global, String? title}) async =>
       DoujinDataHandler.instance.addPin(tags, booru, global: global);
 
   @override
-  Future<void> update(PinnedTag pin, String tags, {String? title, required bool global}) async {
+  Future<void> update(PinnedTag pin, String tags, {required bool global, String? title}) async {
     DoujinDataHandler.instance.removePin(pin.tagName, booru);
     DoujinDataHandler.instance.addPin(tags, booru, global: global);
   }
@@ -341,7 +341,7 @@ class _PinnedTagsPageState extends State<PinnedTagsPage> {
       appBar: AppBar(title: Text('${widget.booru.name ?? 'Source'} pinned tags')),
       floatingActionButton: FloatingActionButton.extended(
         key: const ValueKey('pinned-add'),
-        onPressed: () => _edit(),
+        onPressed: _edit,
         icon: const Icon(Symbols.add_rounded),
         label: const Text('New pin'),
       ),

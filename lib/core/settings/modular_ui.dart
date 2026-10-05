@@ -75,7 +75,7 @@ class ModularUi {
     key: 'sidebar.sourceSettings',
     area: leftSidebarArea,
     title: 'Source settings button',
-    description: "The \"<source> settings\" button for the current booru source, above Settings.",
+    description: 'The "<source> settings" button for the current booru source, above Settings.',
     defaultValue: true,
   );
 

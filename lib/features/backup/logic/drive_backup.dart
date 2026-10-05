@@ -243,7 +243,7 @@ class DriveBackup {
   static String friendlyError(Object e) {
     final String text = e.toString();
     if (e is SocketException || e is HandshakeException || e is TimeoutException) {
-      final String host = RegExp(r"lookup: '([^']+)'").firstMatch(text)?.group(1) ?? 'Google';
+      final String host = RegExp("lookup: '([^']+)'").firstMatch(text)?.group(1) ?? 'Google';
       return 'Could not reach $host. The browser can, so something on the phone blocks this app: '
           'data saver or battery limits for LoliSnatcher, a VPN, Private DNS or an ad blocker. '
           'Allow the app, then link again. ($text)';

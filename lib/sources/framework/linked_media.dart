@@ -42,7 +42,7 @@ class LinkedMedia {
   /// The words of the link in the description.
   final String text;
 
-  String get host => (Uri.tryParse(url)?.host ?? '').replaceFirst(RegExp('^www\\.'), '');
+  String get host => (Uri.tryParse(url)?.host ?? '').replaceFirst(RegExp(r'^www\.'), '');
 
   /// An animation file that shows as a picture (GIF), not a video.
   bool get isImage => LinkedMediaResolver.imageExtensions.contains(LinkedMediaResolver.extensionOf(url));
@@ -136,40 +136,40 @@ class LinkedMediaResolver {
   /// A profile, a shop or a personal site is not: the voice actor's site sat
   /// among the media links of the user's example (r52).
   static final List<(String, RegExp)> _mediaPages = [
-    ('youtube.com', RegExp(r'^/(watch|shorts/|live/|embed/)')),
-    ('youtu.be', RegExp(r'^/.+')),
+    ('youtube.com', RegExp('^/(watch|shorts/|live/|embed/)')),
+    ('youtu.be', RegExp('^/.+')),
     ('vimeo.com', RegExp(r'^/(\d+|video/\d+)')),
     for (final String site in ['x.com', 'twitter.com', 'fxtwitter.com', 'vxtwitter.com', 'fixupx.com'])
       (site, RegExp(r'^/[^/]+/status/\d+')),
-    ('bsky.app', RegExp(r'^/profile/[^/]+/post/')),
-    ('newgrounds.com', RegExp(r'^/(portal/view|art/view|audio/listen)/')),
-    ('redgifs.com', RegExp(r'^/(watch|ifr)/')),
-    ('gfycat.com', RegExp(r'^/.+')),
+    ('bsky.app', RegExp('^/profile/[^/]+/post/')),
+    ('newgrounds.com', RegExp('^/(portal/view|art/view|audio/listen)/')),
+    ('redgifs.com', RegExp('^/(watch|ifr)/')),
+    ('gfycat.com', RegExp('^/.+')),
     ('imgur.com', RegExp(r'^/(a/|gallery/|[A-Za-z0-9]{5,8}$)')),
     ('streamable.com', RegExp(r'^/[a-z0-9]+$')),
-    ('iwara.tv', RegExp(r'^/videos?/')),
-    ('rule34video.com', RegExp(r'^/videos?/')),
-    ('pornhub.com', RegExp(r'^/view_video')),
-    ('xvideos.com', RegExp(r'^/video')),
-    ('spankbang.com', RegExp(r'/video/')),
-    ('mega.nz', RegExp(r'^/(file|folder)/')),
-    ('drive.google.com', RegExp(r'^/(file/d/|open)')),
-    ('dropbox.com', RegExp(r'^/(s|scl)/')),
+    ('iwara.tv', RegExp('^/videos?/')),
+    ('rule34video.com', RegExp('^/videos?/')),
+    ('pornhub.com', RegExp('^/view_video')),
+    ('xvideos.com', RegExp('^/video')),
+    ('spankbang.com', RegExp('/video/')),
+    ('mega.nz', RegExp('^/(file|folder)/')),
+    ('drive.google.com', RegExp('^/(file/d/|open)')),
+    ('dropbox.com', RegExp('^/(s|scl)/')),
     ('tiktok.com', RegExp(r'/video/\d+')),
-    ('instagram.com', RegExp(r'^/(p|reel|reels|tv)/')),
-    ('tumblr.com', RegExp(r'/post/')),
-    ('deviantart.com', RegExp(r'/art/')),
+    ('instagram.com', RegExp('^/(p|reel|reels|tv)/')),
+    ('tumblr.com', RegExp('/post/')),
+    ('deviantart.com', RegExp('/art/')),
     ('inkbunny.net', RegExp(r'^/s/\d+')),
     ('weasyl.com', RegExp(r'/submissions?/\d+')),
     ('sofurry.com', RegExp(r'^/view/\d+')),
     ('itaku.ee', RegExp(r'^/(images|posts)/\d+')),
     ('pixiv.net', RegExp(r'^/(en/)?artworks/\d+')),
-    ('patreon.com', RegExp(r'^/posts/')),
+    ('patreon.com', RegExp('^/posts/')),
     ('twitch.tv', RegExp(r'^/(videos/\d+|[^/]+/clip/)')),
-    ('clips.twitch.tv', RegExp(r'^/.+')),
-    ('reddit.com', RegExp(r'/comments/')),
-    ('v.redd.it', RegExp(r'^/.+')),
-    ('catbox.moe', RegExp(r'^/.+')),
+    ('clips.twitch.tv', RegExp('^/.+')),
+    ('reddit.com', RegExp('/comments/')),
+    ('v.redd.it', RegExp('^/.+')),
+    ('catbox.moe', RegExp('^/.+')),
     ('e621.net', RegExp(r'^/(posts|pools)/\d+')),
     ('e926.net', RegExp(r'^/(posts|pools)/\d+')),
     ('furaffinity.net', RegExp(r'^/(view|full)/\d+')),
@@ -283,7 +283,7 @@ class LinkedMediaResolver {
     if (href.startsWith('/') && base != null) href = '${base.replaceAll(RegExp(r'/+$'), '')}$href';
     Uri? uri = Uri.tryParse(unwrap(href));
     if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https') || uri.host.isEmpty) return null;
-    if (RegExp(r'^/users?/').hasMatch(uri.path)) return null;
+    if (RegExp('^/users?/').hasMatch(uri.path)) return null;
     uri = Uri.tryParse(uri.toString().replaceAll(RegExp(r'[).,;:!]+$'), ''));
     return uri?.toString();
   }

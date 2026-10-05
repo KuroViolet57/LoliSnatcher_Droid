@@ -18,7 +18,6 @@ import 'package:lolisnatcher/sources/kemono/kemono_creator_store.dart';
 import 'package:lolisnatcher/sources/kemono/kemono_file_hosts.dart';
 import 'package:lolisnatcher/sources/kemono/kemono_session_handler.dart';
 import 'package:lolisnatcher/sources/kemono/kemono_site.dart';
-import 'package:lolisnatcher/gen/strings.g.dart';
 
 /// 1.0 M2 (tabs): the kemono sidebar follows the site of the tab it is opened on.
 void main() {
@@ -49,7 +48,7 @@ void main() {
     } catch (_) {}
   });
 
-  testWidgets('kemono sidebar: a tab on the other kemono-style site gets that site\'s rows and index', (tester) async {
+  testWidgets("kemono sidebar: a tab on the other kemono-style site gets that site's rows and index", (tester) async {
     final Booru kemono = Booru('kemono', BooruType.Kemono, '', 'https://kemono.cr', '');
     final Booru pawchive = Booru('pawchive', BooruType.Pawchive, '', 'https://pawchive.pw', '');
     KemonoSessionHandler.instance.resetForTests();

@@ -402,7 +402,7 @@ class Hanime1Handler extends BooruHandler {
           continue;
         }
 
-        final String? named = RegExp(r'[?&]query=([^&"]+)').firstMatch(href)?.group(1);
+        final String? named = RegExp('[?&]query=([^&"]+)').firstMatch(href)?.group(1);
         if (named == null) continue;
         final String zh = _decodeParam(named);
         if (zh.isEmpty) continue;

@@ -11,9 +11,9 @@ class ModularUiPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final List<String> areas = [
+    final List<String> areas = {
       for (final ModularUiToggle t in ModularUi.all) t.area,
-    ].toSet().toList();
+    }.toList();
     return Scaffold(
       appBar: AppBar(title: const Text('Modular UI')),
       body: ValueListenableBuilder<int>(

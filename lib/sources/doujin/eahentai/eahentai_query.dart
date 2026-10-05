@@ -197,7 +197,7 @@ class EaHentaiQuery {
 
     if (q.isEmpty) {
       if (type != null && type != 'all' && type != 'gallery') {
-        return EaHentaiRequest(
+        return const EaHentaiRequest(
           kind: EaHentaiRequestKind.search,
           url: '',
           error: 'type: needs something to search for - a word, or artist: / parody: / character: / tag:.',

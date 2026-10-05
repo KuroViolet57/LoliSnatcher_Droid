@@ -256,7 +256,7 @@ class BakemonoProfile extends SiteProfile {
     final String base = booru.baseURL ?? '';
     try {
       final match = RegExp(
-        r'<script[^>]*id="viewer-data"[^>]*>(.*?)</script>',
+        '<script[^>]*id="viewer-data"[^>]*>(.*?)</script>',
         dotAll: true,
       ).firstMatch(body);
       if (match == null) return null;

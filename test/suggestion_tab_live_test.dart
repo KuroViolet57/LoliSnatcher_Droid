@@ -92,6 +92,6 @@ void main() async {
     }
     // ignore: avoid_print
     print('$sharing of ${items.length} carry one of the facet tags');
-    expect(sharing, items.length, reason: 'every suggestion came from one of the post\'s facets');
+    expect(sharing, items.length, reason: "every suggestion came from one of the post's facets");
   }, timeout: const Timeout(Duration(minutes: 2)));
 }

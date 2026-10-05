@@ -107,7 +107,7 @@ class R34HentaiHandler extends ShimmieHandler {
   /// The Filters card's own terms (and a source's saved defaults, which
   /// compose the same way). They do not stop a Popular chip: the site's
   /// popular pages take no filters, so they are dropped there (r72 review).
-  static final RegExp chipTerm = RegExp(r'^(order=|content:|ext=|score[><=]|favorites[><=]|comments[><=])', caseSensitive: false);
+  static final RegExp chipTerm = RegExp('^(order=|content:|ext=|score[><=]|favorites[><=]|comments[><=])', caseSensitive: false);
 
   @override
   String makeURL(String tags) {

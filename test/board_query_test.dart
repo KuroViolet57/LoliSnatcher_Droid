@@ -78,7 +78,7 @@ void main() {
 
   test('deriveTags: the encoder pulls the candidates that read like the description ahead of lexical ties', () async {
     BoardQueryBuilder.storeLookup = (Booru booru, String query) async => switch (query) {
-      'red' => [BooruTagEntry(name: 'red_hair', tagType: TagType.none), BooruTagEntry(name: 'red_car', tagType: TagType.none)],
+      'red' => [const BooruTagEntry(name: 'red_hair', tagType: TagType.none), const BooruTagEntry(name: 'red_car', tagType: TagType.none)],
       _ => const <BooruTagEntry>[],
     };
     BoardQueryBuilder.siteSuggest = (handler, String word) async => const <String>[];
@@ -95,7 +95,7 @@ void main() {
   test('tokens: tilde and other punctuation split words; a prefix counts only at an underscore', () async {
     expect(BoardQueryBuilder.tokens('girl~ cat` dog'), ['girl', 'cat', 'dog']);
     BoardQueryBuilder.storeLookup = (Booru booru, String query) async => query == 'girl'
-        ? [BooruTagEntry(name: 'girls_und_panzer', tagType: TagType.none), BooruTagEntry(name: 'girl_on_top', tagType: TagType.none)]
+        ? [const BooruTagEntry(name: 'girls_und_panzer', tagType: TagType.none), const BooruTagEntry(name: 'girl_on_top', tagType: TagType.none)]
         : const [];
     BoardQueryBuilder.siteSuggest = (handler, String word) async => const <String>[];
     final List<WeightedTag> tags = await BoardQueryBuilder.deriveTags('girl', sources: [b('one')]);
@@ -105,7 +105,7 @@ void main() {
 
   test('candidate tags are embedded in one batch when the encoder offers it', () async {
     BoardQueryBuilder.storeLookup = (Booru booru, String query) async => query == 'red'
-        ? [BooruTagEntry(name: 'red_hair', tagType: TagType.none), BooruTagEntry(name: 'red_car', tagType: TagType.none)]
+        ? [const BooruTagEntry(name: 'red_hair', tagType: TagType.none), const BooruTagEntry(name: 'red_car', tagType: TagType.none)]
         : const [];
     BoardQueryBuilder.siteSuggest = (handler, String word) async => const <String>[];
     int batches = 0;
@@ -145,7 +145,7 @@ void main() {
   });
 
   test('deriveTags: must-have and excluded tags never come back as derived ones; nothing known -> empty', () async {
-    BoardQueryBuilder.storeLookup = (Booru booru, String query) async => query == 'animated' ? [BooruTagEntry(name: 'animated', tagType: TagType.none)] : const [];
+    BoardQueryBuilder.storeLookup = (Booru booru, String query) async => query == 'animated' ? [const BooruTagEntry(name: 'animated', tagType: TagType.none)] : const [];
     BoardQueryBuilder.siteSuggest = (handler, String word) async => const <String>[];
     final List<WeightedTag> tags = await BoardQueryBuilder.deriveTags('animated', sources: [b('one')], exclude: const {'animated'});
     expect(tags, isEmpty);

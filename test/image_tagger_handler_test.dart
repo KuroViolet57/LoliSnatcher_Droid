@@ -194,7 +194,7 @@ void main() {
     expect(t.modelId, 'smilingwolf__wd-vit-tagger-v3');
   });
 
-  test('the config names the input size; a missing config is not a failure (the preset\'s 448 stands)', () async {
+  test("the config names the input size; a missing config is not a failure (the preset's 448 stands)", () async {
     final ImageTaggerHandler t = ImageTaggerHandler.instance;
     configText = '{"pretrained_cfg": {"input_size": [3, 224, 224]}}';
     expect(await t.download('wd-convnext'), isTrue);
@@ -254,7 +254,7 @@ void main() {
     expect(again.status.value.state, TaggerState.none);
   });
 
-  test('tag(): the picture is decoded off the main isolate into the model\'s tensor; the answer is read by category and threshold', () async {
+  test("tag(): the picture is decoded off the main isolate into the model's tensor; the answer is read by category and threshold", () async {
     final ImageTaggerHandler t = ImageTaggerHandler.instance;
     expect(await t.download('wd-vit'), isTrue);
     final TaggerResult r = await t.tag(png());
@@ -459,7 +459,7 @@ void main() {
 
     await expectLater(t.tag(Uint8List.fromList([1, 2, 3])), throwsA(isA<FormatException>()));
     expect(runner.runs, 0);
-    expect(t.status.value.state, TaggerState.ready, reason: 'a bad picture is not the model\'s fault');
+    expect(t.status.value.state, TaggerState.ready, reason: "a bad picture is not the model's fault");
 
     runner = _FakeRunner(runner.probs, fail: true);
     await t.close();

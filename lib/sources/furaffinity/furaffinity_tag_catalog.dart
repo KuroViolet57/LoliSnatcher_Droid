@@ -48,9 +48,9 @@ class FurAffinityTagCatalog extends TagCatalogSource {
     final RegExpMatch? m = RegExp('<select[^>]*name="$select"[^>]*>(.*?)</select>', dotAll: true).firstMatch(html);
     if (m == null) return const [];
     final List<BooruTagEntry> out = [];
-    for (final RegExpMatch o in RegExp(r'<option[^>]*value="([^"]*)"[^>]*>([^<]*)').allMatches(m.group(1)!)) {
+    for (final RegExpMatch o in RegExp('<option[^>]*value="([^"]*)"[^>]*>([^<]*)').allMatches(m.group(1)!)) {
       final String id = o.group(1)!.trim();
-      final String label = html_parser.parseFragment(o.group(2)!).text?.trim() ?? '';
+      final String label = html_parser.parseFragment(o.group(2)).text?.trim() ?? '';
       if (id.isEmpty || id == '1' || label.isEmpty) continue;
       out.add(
         BooruTagEntry(

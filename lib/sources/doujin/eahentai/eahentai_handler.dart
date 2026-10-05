@@ -187,7 +187,7 @@ class EaHentaiHandler extends BooruHandler with DoujinNamespacedTags {
       return true;
     } catch (e) {
       loginMessage = 'eahentai login failed: $e';
-      Logger.Inst().log(loginMessage!, className, 'signIn', LogTypes.booruHandlerFetchFailed);
+      Logger.Inst().log(loginMessage, className, 'signIn', LogTypes.booruHandlerFetchFailed);
       return false;
     }
   }

@@ -421,7 +421,7 @@ void main() {
   group('r74: reactions tagged with the picture', () {
     tearDown(RecommenderHandler.resetSeamsForTests);
 
-    test('a strong reaction on a booru post carries the picture\'s tags as tag features; views, doujins and the switch off never ask', () async {
+    test("a strong reaction on a booru post carries the picture's tags as tag features; views, doujins and the switch off never ask", () async {
       if (!dbReady) return;
       final List<String> asked = [];
       RecommenderHandler.pixelTagsFor = (BooruItem item, handler) async {
@@ -444,7 +444,7 @@ void main() {
       expect(asked, hasLength(1));
     });
 
-    test('a tagger that fails still lets the reaction teach the site\'s tags', () async {
+    test("a tagger that fails still lets the reaction teach the site's tags", () async {
       if (!dbReady) return;
       RecommenderHandler.pixelTagsFor = (BooruItem item, handler) async => throw StateError('no model');
       SettingsHandler.instance.taggerOnReactions = true;

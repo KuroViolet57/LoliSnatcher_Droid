@@ -182,7 +182,7 @@ class FurAffinityParser {
     return u;
   }
 
-  static int _int(String s) => int.tryParse(s.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+  static int _int(String s) => int.tryParse(s.replaceAll(RegExp('[^0-9]'), '')) ?? 0;
 
   /// The site's own kind of submission as a tag: image, music, text, flash.
   static Tag typeTag(String type) => Tag('type:$type', tagType: TagType.meta);
@@ -528,7 +528,7 @@ class FurAffinityParser {
     if (img == null) return null;
     final String tag = img.group(0)!;
     final String? fromSrc = RegExp(r'src="[^"]*/([^/"]+)\.(?:gif|png|jpe?g)"').firstMatch(tag)?.group(1);
-    final String? name = fromSrc ?? RegExp(r'alt="([^"]+)"').firstMatch(tag)?.group(1);
+    final String? name = fromSrc ?? RegExp('alt="([^"]+)"').firstMatch(tag)?.group(1);
     return name?.trim().toLowerCase();
   }
 
@@ -548,7 +548,7 @@ class FurAffinityParser {
       );
     }
     bool hasNext = false;
-    for (final RegExpMatch f in RegExp(r'<form[^>]*action="/watchlist/[^"]*"[^>]*>(.*?)</form>', dotAll: true).allMatches(html)) {
+    for (final RegExpMatch f in RegExp('<form[^>]*action="/watchlist/[^"]*"[^>]*>(.*?)</form>', dotAll: true).allMatches(html)) {
       final String inner = f.group(1)!;
       if (RegExp(r'>\s*Next').hasMatch(inner) && !inner.contains('disabled')) hasNext = true;
     }

@@ -326,7 +326,7 @@ class EHentaiHandler extends BooruHandler with DoujinNamespacedTags {
   Future<Either<ResponseError, List<TagSuggestion>>> getTagSuggestions(String input, {CancelToken? cancelToken}) async {
     // The whole input: the suggestion box holds one term, and a tag has
     // spaces ("big breasts"); the site matches on the tag's own spelling.
-    final String text = input.trim().replaceAll('_', ' ').replaceFirst(RegExp(r'^-'), '').trim();
+    final String text = input.trim().replaceAll('_', ' ').replaceFirst(RegExp('^-'), '').trim();
     if (text.isEmpty) return const Right([]);
     try {
       final r = await _fetch(apiUrl, postJson: jsonEncode({'method': 'tagsuggest', 'text': text}), cancelToken: cancelToken);

@@ -248,7 +248,7 @@ class _DoujinDetailPageState extends State<DoujinDetailPage> {
   /// image (when it exists) fading in over it: a plain image, no shimmer, no
   /// progress ring, no retry overlay - a failure leaves the site cover as it
   /// is. Decoded for the box, with slack for the crop.
-  Widget _coverImage({BoxFit? fit, required double boxWidth}) {
+  Widget _coverImage({required double boxWidth, BoxFit? fit}) {
     final ImageProvider? sharp = _sharpProvider;
     return Stack(
       fit: StackFit.expand,

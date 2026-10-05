@@ -244,7 +244,7 @@ class XXXFollowHandler extends BooruHandler {
         : _nonEmpty(media['url']);
     if (fileURL == null) return null;
 
-    final String? sampleURL = isVideo ? (_nonEmpty(media['sd_url']) ?? fileURL) : fileURL;
+    final String sampleURL = isVideo ? (_nonEmpty(media['sd_url']) ?? fileURL) : fileURL;
     final String? thumbURL =
         _nonEmpty(media['thumb_url']) ?? _nonEmpty(media['start_url']) ?? _nonEmpty(media['blur_url']);
 
@@ -256,7 +256,7 @@ class XXXFollowHandler extends BooruHandler {
 
     return BooruItem(
       fileURL: fileURL,
-      sampleURL: sampleURL ?? fileURL,
+      sampleURL: sampleURL,
       thumbnailURL: thumbURL ?? fileURL,
       fileExt: Tools.getFileExt(fileURL),
       tagsList: const <Tag>[],

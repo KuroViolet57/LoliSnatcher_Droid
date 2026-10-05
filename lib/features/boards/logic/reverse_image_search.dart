@@ -11,13 +11,22 @@ import 'package:lolisnatcher/core/utils/tools.dart';
 class ReverseMatch {
   const ReverseMatch({
     required this.site,
-    this.postId,
-    required this.similarity,
+    required this.similarity, this.postId,
     this.urls = const [],
     this.tags = const [],
     this.thumbnail,
     this.alsoOn = const {},
   });
+
+  factory ReverseMatch.fromJson(Map<String, dynamic> json) => ReverseMatch(
+    site: json['site']?.toString() ?? 'other',
+    postId: json['postId']?.toString(),
+    similarity: (json['similarity'] as num?)?.toDouble() ?? 0,
+    urls: [for (final dynamic u in (json['urls'] as List?) ?? const []) u.toString()],
+    tags: [for (final dynamic t in (json['tags'] as List?) ?? const []) t.toString()],
+    thumbnail: json['thumbnail']?.toString(),
+    alsoOn: {for (final MapEntry<dynamic, dynamic> e in ((json['alsoOn'] as Map?) ?? const {}).entries) e.key.toString(): e.value.toString()},
+  );
 
   /// `danbooru`, `gelbooru`, `yandere`, `konachan`, `sankaku`, `e621`,
   /// `anime-pictures`, `idol`, or `other`.
@@ -40,16 +49,6 @@ class ReverseMatch {
     'thumbnail': thumbnail,
     'alsoOn': alsoOn,
   };
-
-  factory ReverseMatch.fromJson(Map<String, dynamic> json) => ReverseMatch(
-    site: json['site']?.toString() ?? 'other',
-    postId: json['postId']?.toString(),
-    similarity: (json['similarity'] as num?)?.toDouble() ?? 0,
-    urls: [for (final dynamic u in (json['urls'] as List?) ?? const []) u.toString()],
-    tags: [for (final dynamic t in (json['tags'] as List?) ?? const []) t.toString()],
-    thumbnail: json['thumbnail']?.toString(),
-    alsoOn: {for (final MapEntry<dynamic, dynamic> e in ((json['alsoOn'] as Map?) ?? const {}).entries) e.key.toString(): e.value.toString()},
-  );
 }
 
 typedef ReversePoster = Future<Response<dynamic>> Function(String url, {Object? data, Map<String, String>? headers, Options? options});

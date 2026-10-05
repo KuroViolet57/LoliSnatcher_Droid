@@ -16,7 +16,6 @@ import 'package:lolisnatcher/core/settings/source_settings_handler.dart';
 import 'package:lolisnatcher/core/storage/tag_handler.dart';
 import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
 import 'package:lolisnatcher/features/doujin/ui/doujin_tag_chip.dart';
-import 'package:lolisnatcher/gen/strings.g.dart';
 import 'package:lolisnatcher/features/viewer/ui/info/tag_view.dart';
 
 /// Round 2, item 5: doujin tag chips — the menu is a CENTERED popup, and the

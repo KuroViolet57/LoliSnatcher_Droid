@@ -66,7 +66,7 @@ void main() {
       for (final String t in siteTags.where((t) => !t.contains('_') || (!t.startsWith('u_') && !t.startsWith('c_') && !t.startsWith('t_') && !t.startsWith('s_')))) {
         expect(tags, contains(t), reason: 'keyword $t');
       }
-      expect(tags.any((t) => t.startsWith('u_')), isFalse, reason: 'the site\'s internal user tag is the artist tag instead');
+      expect(tags.any((t) => t.startsWith('u_')), isFalse, reason: "the site's internal user tag is the artist tag instead");
       expect(item.mediaType.value, MediaType.needToLoadItem, reason: 'the full file is on the submission page');
       expect(items.map((i) => i.serverId).toSet(), hasLength(48));
     });
@@ -79,7 +79,7 @@ void main() {
       expect(a.intersection(b), isEmpty);
     });
 
-    test("a gallery says when there is a next page; favorites hand over their cursor", () {
+    test('a gallery says when there is a next page; favorites hand over their cursor', () {
       expect(FurAffinityParser.galleryHasNext(fixture('furaffinity_gallery.html')), isTrue);
       expect(FurAffinityParser.galleryHasNext(fixture('furaffinity_view_image.html')), isFalse);
       expect(FurAffinityParser.favoritesCursor(fixture('furaffinity_favorites.html')), '1996020605');
@@ -270,7 +270,7 @@ void main() {
     const String avatar = '<img class="loggedin_user_avatar avatar" src="//a.furaffinity.net/1/kuroviolet.gif" alt="KuroViolet">';
 
     String loggedInBrowse({required String tags, String users = '', String hideTagless = '0'}) => fixture('furaffinity_browse.html').replaceFirst(
-      RegExp(r'<body[^>]*>'),
+      RegExp('<body[^>]*>'),
       '<body class="c-bodyColor" data-user-logged-in="1" data-tag-blocklist="$tags" data-user-blocklist="$users" data-tag-blocklist-hide-tagless="$hideTagless" data-tag-blocklist-nonce="n1">$avatar',
     );
 
@@ -296,7 +296,7 @@ void main() {
 
     test('hide untagged content: a submission without tags goes too', () {
       String html = loggedInBrowse(tags: 'zzzznothing', hideTagless: '1');
-      final RegExpMatch first = RegExp(r'data-tags="([^"]*)"').firstMatch(html)!;
+      final RegExpMatch first = RegExp('data-tags="([^"]*)"').firstMatch(html)!;
       html = html.replaceFirst(first.group(0)!, 'data-tags=""');
       expect(FurAffinityParser.listing(html).length, FurAffinityParser.listing(fixture('furaffinity_browse.html')).length - 1);
     });
@@ -355,7 +355,7 @@ void main() {
       expect(h.hasSiteFavourites, isTrue);
       final String keyword = FurAffinityParser.listing(fixture('furaffinity_browse.html'))[0].tagsList.map((t) => t.fullString).firstWhere((t) => !t.contains(':'));
       h.currentTags = 'inbox:';
-      final List parsed = h.parseListFromResponse(_Response(loggedInBrowse(tags: keyword) + '<a class="button standard more" href="/msg/submissions/new~66370000@72/">Next 72</a>')) as List;
+      final List parsed = h.parseListFromResponse(_Response('${loggedInBrowse(tags: keyword)}<a class="button standard more" href="/msg/submissions/new~66370000@72/">Next 72</a>')) as List;
       expect(parsed, isNotEmpty);
       expect(session.username, 'kuroviolet');
       expect(session.siteBlocklist!.tags, contains(keyword));

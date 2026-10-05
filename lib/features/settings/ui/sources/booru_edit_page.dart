@@ -616,7 +616,7 @@ class _BooruEditState extends State<BooruEdit> {
             'hold many files (the burst badge on a card; the files action in the '
             'viewer opens them all).<br><br>'
             '<b>Search:</b> plain words (3+ characters) search titles and text; '
-            '<i>tag:x</i> filters by the site\'s tags; <i>creator:name</i> or a '
+            "<i>tag:x</i> filters by the site's tags; <i>creator:name</i> or a "
             'card from the Artists page opens one creator; <i>popular:day</i> '
             '(week, month, recent), <i>random</i>. <i>service:patreon</i> filters '
             'on the phone — the site cannot.<br><br>'
@@ -663,7 +663,7 @@ class _BooruEditState extends State<BooruEdit> {
             'in the built-in reader (the book icon in the viewer, or the '
             '"Read" row in the post drawer). Your position in each book is '
             'remembered.<br><br>'
-            '<b>Search</b> uses the site\'s own syntax: plain words search '
+            "<b>Search</b> uses the site's own syntax: plain words search "
             'titles and tags, <i>tag:x</i>, <i>artist:x</i>, <i>parody:x</i>, '
             '<i>character:x</i>, <i>group:x</i>, <i>language:english</i>, '
             '<i>category:doujinshi</i>, <i>pages:&gt;20</i>, and <i>-tag:x</i> '
@@ -677,7 +677,7 @@ class _BooruEditState extends State<BooruEdit> {
         return '<b>Hanime1</b><br>Leave the URL as https://hanime1.me. A '
             'Chinese-language hentai video site — the app translates it for '
             'you.<br><br>'
-            '<b>Search in English.</b> The site\'s entire tag list is built '
+            "<b>Search in English.</b> The site's entire tag list is built "
             'into the app with English names, so type <i>creampie</i>, '
             '<i>ntr</i>, <i>chinese_subtitles</i>… and the matching Chinese '
             'tag is sent automatically. Autocomplete understands both '
@@ -689,7 +689,7 @@ class _BooruEditState extends State<BooruEdit> {
             '<i>artist:name</i>, and any other words search titles as free '
             'text.<br><br>'
             'Tags on posts show in English too (appearing after you open a '
-            'post — the site\'s grid carries none). Titles stay original with '
+            "post — the site's grid carries none). Titles stay original with "
             'a machine-translated English line added underneath when '
             'translation is reachable.';
       case BooruType.Kusowanka:
@@ -771,7 +771,7 @@ class _BooruEditState extends State<BooruEdit> {
             'The AI-generation gallery, via its official public API.<br><br>'
             'Put your Civitai <b>API key</b> (civitai.com → Account settings → '
             "API Keys) in the API key field — it unlocks your account's "
-            "browsing level and <i>artist:me</i> (your uploads).<br><br>"
+            'browsing level and <i>artist:me</i> (your uploads).<br><br>'
             'Search with plain tags, or use the chips: <i>sort:</i> (incl. '
             'Random), <i>period:</i>, <i>nsfw:</i> level, <i>type:</i> '
             'image/video, <i>basemodel:</i>, <i>artist:</i>name, '

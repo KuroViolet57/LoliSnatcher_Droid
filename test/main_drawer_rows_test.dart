@@ -18,7 +18,6 @@ import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/core/settings/source_settings_handler.dart';
 import 'package:lolisnatcher/core/storage/tag_handler.dart';
 import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
-import 'package:lolisnatcher/gen/strings.g.dart';
 
 /// The lock handler asks the platform for biometrics on creation; tests have
 /// no platform, so this one skips that.

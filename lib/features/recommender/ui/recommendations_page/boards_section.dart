@@ -52,7 +52,7 @@ class _BoardsSectionState extends State<_BoardsSection> {
             Text('Boards', style: theme.textTheme.titleMedium),
             const SizedBox(height: 4),
             Text(
-              'A board\'s reference image is looked up on SauceNAO, which needs your own API key (free: saucenao.com → Register → API). Without a key, image boards fall back to e621\'s own search and to the description.',
+              "A board's reference image is looked up on SauceNAO, which needs your own API key (free: saucenao.com → Register → API). Without a key, image boards fall back to e621's own search and to the description.",
               style: muted,
             ),
             const SizedBox(height: 12),

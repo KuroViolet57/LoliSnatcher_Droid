@@ -338,7 +338,7 @@ void main() {
         await tester.pump(const Duration(milliseconds: 300));
       }
 
-      expect(counting.events, isEmpty, reason: 'opening is the detail page\'s event, not the reader\'s');
+      expect(counting.events, isEmpty, reason: "opening is the detail page's event, not the reader's");
       await forward(); // page 2 of 4: half way
       expect(counting.events.where((e) => e.kind == InteractionKind.read).map((e) => e.value), [0.5]);
       await back();

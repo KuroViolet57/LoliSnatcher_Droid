@@ -18,7 +18,6 @@ import 'package:lolisnatcher/core/settings/source_settings_handler.dart';
 import 'package:lolisnatcher/core/storage/tag_handler.dart';
 import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
 import 'package:lolisnatcher/features/tabs/ui/tab_selector.dart';
-import 'package:lolisnatcher/gen/strings.g.dart';
 
 /// 1.0 M2 (tabs): the tab manager.
 void main() {

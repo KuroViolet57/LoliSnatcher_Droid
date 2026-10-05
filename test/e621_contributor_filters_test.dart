@@ -136,7 +136,7 @@ void main() {
     BooruItem item(String tag) =>
         BooruItem(fileURL: 'https://x.invalid/$tag.jpg', sampleURL: '', thumbnailURL: '', tagsList: [Tag(tag)], postURL: 'https://x.invalid/$tag');
 
-    test("a source that ignores the global blacklist does not blur what only the global list hides; its own list still does", () {
+    test('a source that ignores the global blacklist does not blur what only the global list hides; its own list still does', () {
       final SettingsHandler s = SettingsHandler.instance;
       s.hiddenTags.add('cat');
       s.invalidateBlacklistCache();

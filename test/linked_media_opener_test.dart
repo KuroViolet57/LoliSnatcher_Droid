@@ -55,7 +55,7 @@ void main() {
     final SearchTab tab = LinkedMediaOpener.prepareTab(
       LinkedMedia(url: post.url, kind: post.kind, booru: e621, postId: post.postId),
     );
-    final BooruItem item = BooruItem(fileURL: 'https://f.invalid/a.webm', sampleURL: '', thumbnailURL: '', tagsList: [], postURL: post.url);
+    final BooruItem item = BooruItem(fileURL: 'https://f.invalid/a.webm', sampleURL: '', thumbnailURL: '', tagsList: const [], postURL: post.url);
     tab.booruHandler.fetched.add(item);
     tab.booruHandler.filteredFetched.clear();
     LinkedMediaOpener.showFetched(tab.booruHandler);

@@ -130,13 +130,13 @@ class _BoardsPageState extends State<BoardsPage> {
       appBar: AppBar(title: const Text('Boards')),
       floatingActionButton: FloatingActionButton.extended(
         key: const ValueKey('boards-new'),
-        onPressed: () => _edit(),
+        onPressed: _edit,
         icon: const Icon(Symbols.add_rounded),
         label: const Text('New board'),
       ),
       body: ValueListenableBuilder<int>(
         valueListenable: store.revision,
-        builder: (context, _, __) {
+        builder: (context, _, _) {
           final List<Board> boards = store.visibleBoards;
           if (boards.isEmpty) {
             return const Padding(
@@ -217,7 +217,7 @@ class _BoardThumb extends StatelessWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(8),
         child: hasFile
-            ? Image.file(File(board.imagePath), fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Symbols.broken_image_rounded))
+            ? Image.file(File(board.imagePath), fit: BoxFit.cover, errorBuilder: (_, _, _) => const Icon(Symbols.broken_image_rounded))
             : Icon(board.imageUrl.isNotEmpty ? Symbols.image_search_rounded : Symbols.dashboard_rounded, size: 32),
       ),
     );
@@ -607,7 +607,7 @@ class _BoardEditPageState extends State<BoardEditPage> {
           Text('Reference image', style: theme.textTheme.titleSmall),
           const SizedBox(height: 4),
           Text(
-            'Found on SauceNAO (your API key, Settings → Recommendations → Boards) and e621\'s own search, and read by the downloaded tagger; exact matches come first, and what the match names (character, series, artist) and what the picture shows lead the search.',
+            "Found on SauceNAO (your API key, Settings → Recommendations → Boards) and e621's own search, and read by the downloaded tagger; exact matches come first, and what the match names (character, series, artist) and what the picture shows lead the search.",
             style: muted,
           ),
           const SizedBox(height: 8),
@@ -642,7 +642,7 @@ class _BoardEditPageState extends State<BoardEditPage> {
           TextField(
             key: const ValueKey('board-image-url'),
             controller: imageUrl,
-            decoration: const InputDecoration(labelText: 'Or an image address', hintText: 'https://…  (a post\'s image, a picked file wins over it)'),
+            decoration: const InputDecoration(labelText: 'Or an image address', hintText: "https://…  (a post's image, a picked file wins over it)"),
             onChanged: (_) => setState(() {}),
           ),
           const SizedBox(height: 12),

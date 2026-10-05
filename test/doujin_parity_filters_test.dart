@@ -120,9 +120,9 @@ void main() {
       expect(h().supportsLanguageFilter, isTrue);
       SourceSettingsHandler.instance.settingsFor(eh).languageFilter = 'english';
       final String url = (h()..pageNum = 0).makeURL('glasses');
-      expect(url, contains(Uri.encodeQueryComponent('language:"english"\$')));
+      expect(url, contains(Uri.encodeQueryComponent(r'language:"english"$')));
       final String explicit = (h()..pageNum = 0).makeURL('glasses language:japanese');
-      expect(explicit, contains(Uri.encodeQueryComponent('language:"japanese"\$')));
+      expect(explicit, contains(Uri.encodeQueryComponent(r'language:"japanese"$')));
       expect(explicit, isNot(contains('english')));
       expect((h()..pageNum = 0).makeURL('sort:toplist_yesterday'), isNot(contains('language')), reason: 'the toplists take no search');
     });

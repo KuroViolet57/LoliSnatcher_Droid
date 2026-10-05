@@ -80,7 +80,7 @@ void main() {
     expect(ModularUi.all, contains(ModularUi.viewerLinkedMedia));
   });
 
-  test("r52: loading a FurAffinity post remembers the media links of its description", () {
+  test('r52: loading a FurAffinity post remembers the media links of its description', () {
     LinkedMediaStore.resetForTests();
     SettingsHandler.instance.booruList.add(e621);
     const String marker = 'submission-description-text user-submitted-links">';

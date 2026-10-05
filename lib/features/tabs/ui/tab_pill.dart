@@ -216,8 +216,8 @@ class _TabPillHostState extends State<TabPillHost> {
   Offset _clamp(Offset p) {
     final Size s = _pillSize;
     return Offset(
-      p.dx.clamp(0.0, math.max(0.0, _area.width - s.width)),
-      p.dy.clamp(0.0, math.max(0.0, _area.height - s.height)),
+      p.dx.clamp(0.0, math.max(0, _area.width - s.width)),
+      p.dy.clamp(0.0, math.max(0, _area.height - s.height)),
     );
   }
 

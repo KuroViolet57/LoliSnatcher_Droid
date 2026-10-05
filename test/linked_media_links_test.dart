@@ -69,7 +69,7 @@ Watch: <a href="https://www.youtube.com/watch?v=abc123">YouTube</a> · <a href="
     expect(media('http://dshooves.live/'), isFalse);
   });
 
-  test('the store keeps each post\'s links and says when they change', () {
+  test("the store keeps each post's links and says when they change", () {
     LinkedMediaStore.resetForTests();
     int changes = 0;
     void listener() => changes++;

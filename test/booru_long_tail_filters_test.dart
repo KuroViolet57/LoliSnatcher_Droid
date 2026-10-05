@@ -39,7 +39,7 @@ void main() {
     } catch (_) {}
   });
 
-  test("Civitai: sort, period, NSFW level, media type and base model", () {
+  test('Civitai: sort, period, NSFW level, media type and base model', () {
     final DoujinFilterSpec spec = CivitaiHandler(b('Civitai', BooruType.Civitai, 'https://civitai.com'), 20).siteFilters!;
     expect(spec.groups.map((g) => g.key), containsAll(['sort', 'period', 'nsfw', 'type', 'basemodel']));
     expect(values(spec, 'nsfw'), containsAll(['', 'none', 'soft', 'mature', 'x', 'xxx', 'all']));
@@ -60,7 +60,7 @@ void main() {
     expect(values(sankaku, 'parent'), ['', 'any', 'none']);
   });
 
-  test("Hanime1: its genres", () {
+  test('Hanime1: its genres', () {
     final DoujinFilterSpec spec = Hanime1Handler(b('Hanime1', BooruType.Hanime1, 'https://hanime1.me'), 20).siteFilters!;
     expect(spec.group('genre')!.options.length, greaterThan(2));
   });

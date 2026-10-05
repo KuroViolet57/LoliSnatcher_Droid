@@ -11,12 +11,12 @@ import 'package:lolisnatcher/sources/framework/tags/tag_catalog_source.dart';
 
 /// A source with in-memory shards; one shard can be made to throw.
 class _Fake extends TagCatalogSource {
-  _Fake({this.shared = false, this.total, this.failAt, this.perShard = 3, this.open = false, this.perPull});
+  _Fake({this.shared = false, this.total, this.failAt, this.open = false, this.perPull});
 
   final bool shared;
   final int? total;
   final int? failAt;
-  final int perShard;
+  final int perShard = 3;
   final bool open;
   final int? perPull;
   final List<(String, int)> asked = [];
@@ -140,7 +140,7 @@ void main() {
     expect(more.asked, [('', 2), ('', 3)], reason: 'one job for every chip, resumed');
   });
 
-  test("r50: pulling everything walks each category to its end, and the overall state adds them up", () async {
+  test('r50: pulling everything walks each category to its end, and the overall state adds them up', () async {
     final Booru other = Booru('e', BooruType.e621, '', 'https://e621.example', '');
     final two = _Categories();
     for (final ns in two.namespaces) {

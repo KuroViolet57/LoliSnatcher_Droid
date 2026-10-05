@@ -127,7 +127,7 @@ void main() {
     expect(h.locked, isTrue);
   });
 
-  test('must-have tags are asked for in the site\'s own spelling and enforced on the answers; a site that lacks the tag is skipped', () async {
+  test("must-have tags are asked for in the site's own spelling and enforced on the answers; a site that lacks the tag is skipped", () async {
     BoardQueryBuilder.storeLookup = (Booru booru, String query) async => query == 'beach' ? [entry('beach')] : const [];
     final Board bd = await board(description: 'beach', must: ['animated'], sources: ['one', 'two']);
     final BoardHandler h = BoardHandler(boardBooru, 20);
@@ -135,7 +135,7 @@ void main() {
     fakes['two'] = _FakeSource(b('two'), 20)..answers = {'video': [['video', 'beach']]};
     final List<BooruItem> items = List<BooruItem>.from(await h.search('board:${bd.id}', null) as List);
     expect(fakes['one']!.queries.first, 'animated beach');
-    expect(fakes['two']!.queries.first, 'video beach', reason: 'the must-have tag in the site\'s spelling, then the derived tag');
+    expect(fakes['two']!.queries.first, 'video beach', reason: "the must-have tag in the site's spelling, then the derived tag");
     expect(items.map((i) => i.tagsList.map((t) => t.fullString).join(' ')), containsAll(['animated beach', 'video beach']));
     expect(items.map((i) => i.tagsList.map((t) => t.fullString).join(' ')), isNot(contains('beach solo')), reason: 'the site answered a post without the must-have tag');
     // A must-have tag no site knows: nothing is asked, the feed says why.
@@ -171,14 +171,14 @@ void main() {
     expect(fakes['one']!.queries.toSet().length, greaterThan(1), reason: 'the second page asks a different derived tag or a deeper page');
   });
 
-  test('ranking: the encoder puts posts that read like the description first; the reference image\'s exact match is pinned on top', () async {
+  test("ranking: the encoder puts posts that read like the description first; the reference image's exact match is pinned on top", () async {
     BoardQueryBuilder.storeLookup = (Booru booru, String query) async => query == 'beach' ? [entry('beach')] : const [];
     // Exact matches go to the site that owns the id, by host.
     final Booru gel = Booru('one', BooruType.Gelbooru, '', 'https://gelbooru.com', '');
     BoardHandler.allSources = () => [gel];
     final Board bd = await board(description: 'beach', sources: ['one'], imageUrl: 'https://x/ref.jpg');
     BoardHandler.imageMatcher = (Board board, List<Booru> sources) async => [
-      ReverseMatch(site: 'gelbooru', postId: '42', similarity: 95, tags: const ['sakamata_chloe']),
+      const ReverseMatch(site: 'gelbooru', postId: '42', similarity: 95, tags: ['sakamata_chloe']),
     ];
     fakes['one'] = _FakeSource(gel, 20)
       ..answers = {
@@ -199,7 +199,7 @@ void main() {
     expect(firstTags.first, 'sakamata_chloe beach exact', reason: 'the exact match comes first');
     expect(firstTags, containsAll(['beach near', 'beach far']));
     expect(firstTags.indexOf('beach near'), lessThan(firstTags.indexOf('beach far')), reason: 'the encoder ranks within the page');
-    expect(h.derivedTags.first.tag, 'sakamata_chloe', reason: 'the match\'s character leads the derived tags');
+    expect(h.derivedTags.first.tag, 'sakamata_chloe', reason: "the match's character leads the derived tags");
     expect(fakes['one']!.queries, contains('id:42'));
     expect(fakes['one']!.reentered, isFalse, reason: 'the exact match and the derived query must not overlap on one source');
   });
@@ -208,7 +208,7 @@ void main() {
     int calls = 0;
     BoardHandler.imageMatcher = (Board board, List<Booru> sources) async {
       calls++;
-      return [ReverseMatch(site: 'gelbooru', postId: '7', similarity: 90, tags: const ['x'])];
+      return [const ReverseMatch(site: 'gelbooru', postId: '7', similarity: 90, tags: ['x'])];
     };
     fakes['one'] = _FakeSource(b('one'), 20)..answers = {'id:7': [['x', 'seven']], 'x': [['x']]};
     final Board bd = await board(sources: ['one'], imageUrl: 'https://x/a.jpg');
@@ -325,7 +325,7 @@ void main() {
       };
     });
 
-    test('the tagger\'s tags seed the queries, strongest first, and are cached on the board with the image and the model', () async {
+    test("the tagger's tags seed the queries, strongest first, and are cached on the board with the image and the model", () async {
       final Board bd = await board(imageUrl: 'https://x.example/ref.jpg', sources: ['one', 'two']);
       fakes['one'] = _FakeSource(b('one'), 20)..answers = {'sakamata_chloe': [['sakamata_chloe', 'cat_ears']]};
       fakes['two'] = _FakeSource(b('two'), 20)..answers = {'cat_ears': [['cat_ears', 'beach']]};
@@ -511,7 +511,7 @@ void main() {
       expect(plain, hasLength(2));
     });
 
-    test('a board with words and no picture ranks by the words through the model\'s text side; a failing model leaves the tags in charge', () async {
+    test("a board with words and no picture ranks by the words through the model's text side; a failing model leaves the tags in charge", () async {
       BoardQueryBuilder.storeLookup = (Booru booru, String query) async => query == 'beach' ? [entry('beach')] : const [];
       final List<String> asked = [];
       BoardHandler.lookText = (String text) async {
@@ -523,7 +523,7 @@ void main() {
       final BoardHandler h = BoardHandler(boardBooru, 20);
       final List<BooruItem> items = List<BooruItem>.from(await h.search('board:${bd.id}', null) as List);
       expect(asked, ['beach']);
-      expect(items.first.tagsList.map((t) => t.fullString), contains('solo'), reason: 'the words\' vector [0,1] matches the non-lookalike item');
+      expect(items.first.tagsList.map((t) => t.fullString), contains('solo'), reason: "the words' vector [0,1] matches the non-lookalike item");
       BoardHandler.lookItems = (List<BooruItem> items, List<Booru> sources) async => throw StateError('model down');
       final Board other = await board(description: 'beach', sources: ['one']);
       final List<BooruItem> still = List<BooruItem>.from(await BoardHandler(boardBooru, 20).search('board:${other.id}', null) as List);

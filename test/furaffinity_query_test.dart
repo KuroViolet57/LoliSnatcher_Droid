@@ -87,7 +87,7 @@ void main() {
       expect(u.queryParameters['species'], '6017');
     });
 
-    test('every parameter and value the source sends is one the site\'s own search form has', () {
+    test("every parameter and value the source sends is one the site's own search form has", () {
       final String html = form();
       bool hasField(String name) => html.contains('name="$name"');
       bool hasOption(String name, String value) {

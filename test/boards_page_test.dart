@@ -145,7 +145,7 @@ void main() {
     expect(store.boards.single.id, isNotEmpty);
   });
 
-  testWidgets('a board from a post copies the image through the source\'s headers at creation; a failed copy keeps the address', (tester) async {
+  testWidgets("a board from a post copies the image through the source's headers at creation; a failed copy keeps the address", (tester) async {
     final List<String> asked = [];
     BoardEditPage.imageFetcher = (String url, String? booruName) async {
       asked.add('$url@$booruName');
@@ -243,7 +243,7 @@ void main() {
     expect(saved.hasFreshLook('looks'), isTrue, reason: 'neither does the looks model');
   });
 
-  testWidgets('Duplicate copies a picked image under the new board\'s id', (tester) async {
+  testWidgets("Duplicate copies a picked image under the new board's id", (tester) async {
     final String path = await store.importImageBytes([1, 2, 3], 'b1', ext: 'png');
     await store.save(Board(id: 'b1', name: 'Pic', imagePath: path));
     await tester.pumpWidget(const MaterialApp(home: BoardsPage()));
@@ -393,7 +393,7 @@ void main() {
     });
   });
 
-  group('r76: a video\'s frame instead of its preview picture', () {
+  group("r76: a video's frame instead of its preview picture", () {
     BooruItem videoPost() => BooruItem(
       fileURL: 'https://img.gelbooru.com/v/1.mp4',
       sampleURL: 'https://img.gelbooru.com/s/1.jpg',
@@ -402,7 +402,7 @@ void main() {
       postURL: 'https://gelbooru.com/p/1',
     );
 
-    testWidgets('Posts like this on a video: the board\'s picture is exactly the frame; nothing is downloaded', (tester) async {
+    testWidgets("Posts like this on a video: the board's picture is exactly the frame; nothing is downloaded", (tester) async {
       final Uint8List frame = Uint8List.fromList(List<int>.generate(64, (int i) => i));
       int fetches = 0;
       BoardsPage.videoFrame = (BooruItem item) async => frame;
@@ -430,7 +430,7 @@ void main() {
       BoardsPage.videoFrame = (BooruItem item) async => frame;
       BoardEditPage.frameCleanupDelay = const Duration(milliseconds: 10);
       final List<String> deleted = [];
-      BoardEditPage.deleteCopy = (String path) => deleted.add(path);
+      BoardEditPage.deleteCopy = deleted.add;
       BoardEditPage.imageFetcher = (String url, String? booruName) async => null;
       final List<(String, bool)> opened = [];
       BoardsPage.opener = (Board board, bool switchTo) => opened.add((board.id, switchTo));

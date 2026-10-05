@@ -37,14 +37,14 @@ class _RedGifsLoginPageState extends State<RedGifsLoginPage> {
 
   // Injected at document start: wrap fetch + XHR to stash any bearer token the
   // page sends. Idempotent (guards against double-injection on SPA nav).
-  static const String _hookScript = '''
+  static const String _hookScript = r'''
 (function(){
   if (window.__rgHooked) return; window.__rgHooked = true;
   window.__rg_bearer = null;
   function cap(h){
     try{
       if(!h) return;
-      var m = /Bearer\\s+([A-Za-z0-9._-]+)/.exec(String(h));
+      var m = /Bearer\s+([A-Za-z0-9._-]+)/.exec(String(h));
       if(m && m[1]) window.__rg_bearer = m[1];
     }catch(e){}
   }

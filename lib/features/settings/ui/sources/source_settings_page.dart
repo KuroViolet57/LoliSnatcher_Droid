@@ -55,12 +55,12 @@ class _SourceSettingsPageState extends State<SourceSettingsPage> {
   ];
 
   bool _offered(bool Function(BooruHandler h) supports) =>
-      _handler != null ? supports(_handler!) : _doujinHandlers.any(supports);
+      _handler != null ? supports(_handler) : _doujinHandlers.any(supports);
 
   /// Page sizes for the image-quality row: the source's own, or on the
   /// global layer the first configured source that has any.
   List<(String, String)> get _qualityOptions {
-    if (_handler != null) return _handler!.readerImageQualities;
+    if (_handler != null) return _handler.readerImageQualities;
     for (final h in _doujinHandlers) {
       if (h.readerImageQualities.isNotEmpty) return h.readerImageQualities;
     }
@@ -73,7 +73,7 @@ class _SourceSettingsPageState extends State<SourceSettingsPage> {
       if (h.readerImageQualities.isNotEmpty) h.booru.name ?? '',
   ].where((n) => n.isNotEmpty).join(', ');
 
-  bool get _usesLogin => _handler != null && _handler!.usesUserId && _handler!.usesApiKey;
+  bool get _usesLogin => _handler != null && _handler.usesUserId && _handler.usesApiKey;
 
   String get _accountTitle {
     final Booru b = widget.booru!;
@@ -487,10 +487,7 @@ class _SourceSettingsPageState extends State<SourceSettingsPage> {
 
   Widget _switchRow({
     required String title,
-    String? subtitle,
-    required bool? layerValue,
-    required bool inheritedValue,
-    required void Function(bool?) onChanged,
+    required bool? layerValue, required bool inheritedValue, required void Function(bool?) onChanged, String? subtitle,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -577,7 +574,7 @@ class _SourceSettingsPageState extends State<SourceSettingsPage> {
           //
           // Only where the handler reads a credential (nhentai: key; asmhentai,
           // eahentai, faccina: login). niyaniya and hitomi have neither.
-          if (!isGlobal && (_handler!.usesApiKey || _handler!.usesUserId)) ...[
+          if (!isGlobal && (_handler!.usesApiKey || _handler.usesUserId)) ...[
             _header('ACCOUNT'),
             ListTile(
               leading: Icon(_usesLogin ? Symbols.person_rounded : Symbols.key_rounded),

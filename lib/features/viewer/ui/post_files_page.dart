@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:lolisnatcher/sources/framework/post_files_handler.dart' show PostFilesHandler;
 
 import 'package:material_symbols_icons/symbols.dart';
 

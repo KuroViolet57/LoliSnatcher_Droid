@@ -86,7 +86,7 @@ void main() {
     expect(unknown.errorString, contains('week'));
   });
 
-  test('metatags: the site\'s typed search fields, sort and file type with their own dividers', () {
+  test("metatags: the site's typed search fields, sort and file type with their own dividers", () {
     final List<MetaTag> tags = h().availableMetaTags();
     expect(
       tags.map((m) => m.keyName),
@@ -104,7 +104,7 @@ void main() {
     expect(tags.map((m) => m.keyName), isNot(contains('tags')), reason: 'tags=N answers nothing on the site');
   });
 
-  test('autocomplete: the site\'s internal endpoint answers a tag -> count map (Map or raw text), case kept', () {
+  test("autocomplete: the site's internal endpoint answers a tag -> count map (Map or raw text), case kept", () {
     expect(h().hasTagSuggestions, isTrue);
     expect(h().makeTagURL('blon'), 'https://rule34hentai.net/api/internal/autocomplete?s=blon');
     final List rows = h().parseTagSuggestionsList(resp({'Blonde_Blazer': '50', 'bloney': '23'}));

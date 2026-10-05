@@ -94,7 +94,7 @@ class _FurAffinitySidebarState extends State<FurAffinitySidebar> {
 
   void _say(String title, [String? detail]) {
     if (!mounted) return;
-    FlashElements.showSnackbar(context: context, title: Text(title), content: Text(detail ?? ""));
+    FlashElements.showSnackbar(context: context, title: Text(title), content: Text(detail ?? ''));
   }
 
   Future<void> _checkWatch(String artist) async {
@@ -258,7 +258,7 @@ class _FurAffinitySidebarState extends State<FurAffinitySidebar> {
                               context,
                               handler: _handler,
                               username: artist,
-                              onOpen: (String term) => _openTab(term),
+                              onOpen: _openTab,
                             ),
                           ),
                           if (signedIn)
@@ -450,11 +450,12 @@ class _FurAffinityWatchlistPageState extends State<FurAffinityWatchlistPage> {
               child: ListView.builder(
                 itemCount: shown.length + (loading ? 1 : 0),
                 itemBuilder: (context, i) {
-                  if (i >= shown.length)
+                  if (i >= shown.length) {
                     return const Padding(
                       padding: EdgeInsets.all(16),
                       child: Center(child: CircularProgressIndicator()),
                     );
+                  }
                   final FurAffinityWatchEntry u = shown[i];
                   return ListTile(
                     leading: const Icon(Symbols.person_rounded),

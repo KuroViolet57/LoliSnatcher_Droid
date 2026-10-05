@@ -149,7 +149,7 @@ void main() {
     expect(SearchTab(e621, null, restored.tags).booruHandler, isA<SuggestionHandler>());
   });
 
-  test('the strip\'s new-tab query comes from the post it shows, not from the placeholder; other strips keep their tag', () {
+  test("the strip's new-tab query comes from the post it shows, not from the placeholder; other strips keep their tag", () {
     final BooruItem post = booruPost();
     expect(
       TagContentPreview.newTabQuery(effectiveTag: 'suggestions', suggestFor: post, filter: 'animated|video'),

@@ -21,10 +21,7 @@ class ClipTokenizer {
   ClipTokenizer({
     required Map<String, int> vocab,
     required List<String> merges,
-    this.eow = '</w>',
-    required this.bos,
-    required this.eos,
-    required this.unk,
+    required this.bos, required this.eos, required this.unk, this.eow = '</w>',
     this.maxLength = 77,
   }) : _vocab = vocab,
        _ranks = {for (int i = 0; i < merges.length; i++) merges[i]: i};

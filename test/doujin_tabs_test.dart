@@ -19,7 +19,6 @@ import 'package:lolisnatcher/features/doujin/ui/doujin_tab_view.dart';
 import 'package:lolisnatcher/features/tabs/ui/doujin_mini_tab_manager.dart';
 import 'package:lolisnatcher/features/tabs/ui/widgets/tab_row.dart';
 import 'package:lolisnatcher/features/tabs/ui/tab_selector.dart';
-import 'package:lolisnatcher/gen/strings.g.dart';
 
 /// Round 2, item 6: doujin tabs — a tab can BE a doujin (cover + title in the
 /// tab lists), and the mini tab manager sidebar works.
