@@ -144,7 +144,7 @@ class BooruItem extends Equatable {
   /// doujin blacklist (SourceSettingsHandler), everything else checks ONLY
   /// the global e621-style booru blacklist. Doesn't honour per-booru scoping
   /// (no booru context here); the actual item-filter path in
-  /// BooruHandler.filterFetched calls [SettingsHandler.isItemHiddenForBooru],
+  /// BooruHandler.filterFetched calls `SettingsHandler.isItemHiddenForBooru`,
   /// which does.
   bool get isHidden {
     if (DoujinDataHandler.isDoujinItem(this)) {

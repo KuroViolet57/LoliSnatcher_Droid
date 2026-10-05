@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -98,7 +99,8 @@ void main() {
         ),
       ),
     );
-    NavigationHandler.instance.navigatorKey.currentState!.push(MaterialPageRoute<void>(builder: (_) => page));
+    // The route's future completes when the page is popped, which is leave().
+    unawaited(NavigationHandler.instance.navigatorKey.currentState!.push(MaterialPageRoute<void>(builder: (_) => page)));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
   }

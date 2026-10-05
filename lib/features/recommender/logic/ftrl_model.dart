@@ -44,8 +44,8 @@ class FtrlModel {
     return -(z - sign * l1) / ((beta + math.sqrt(_n[i])) / alpha + l2);
   }
 
-  /// Probability that the user likes an item with [features]; 0.5 when the
-  /// model knows nothing about it. [values] (r34, the encoder's vector
+  /// Probability that the user likes an item with `features`; 0.5 when the
+  /// model knows nothing about it. `values` (r34, the encoder's vector
   /// components) give features a magnitude; absent, every feature is 1.
   /// r75: feature [i] at exactly [w]: the closed form solved for z at the
   /// feature's current n, so later updates keep working from there.

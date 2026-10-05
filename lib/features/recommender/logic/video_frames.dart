@@ -496,7 +496,7 @@ class VideoFrames {
 
   static void _log(String message) => Logger.Inst().log(message, className, 'frames', LogTypes.booruHandlerInfo);
 
-  /// A frame shrunk to [args.$2] px on its long side (JPEG); a small one
+  /// A frame shrunk to `args.$2` px on its long side (JPEG); a small one
   /// comes back as it is; null when it is not a picture.
   static Uint8List? shrinkJpeg((Uint8List, int) args) {
     final (Uint8List bytes, int limit) = args;

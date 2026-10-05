@@ -358,6 +358,9 @@ class _PinnedTagsPageState extends State<PinnedTagsPage> {
               padding: const EdgeInsets.only(bottom: 96),
               buildDefaultDragHandles: false,
               itemCount: pins.length,
+              // onReorderItem adjusts newIndex itself. _reorder already subtracts
+              // one when the pin moves down, so the old callback is the match.
+              // ignore: deprecated_member_use
               onReorder: _reorder,
               itemBuilder: (context, index) => _tile(theme, index),
             ),

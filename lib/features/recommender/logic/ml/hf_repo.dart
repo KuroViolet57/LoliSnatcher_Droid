@@ -70,6 +70,8 @@ class HfFolderFile {
 class HfListing {
   const HfListing({required this.id, required this.revision, required this.files, this.error});
 
+  factory HfListing.failed(String message) => HfListing(id: '', revision: 'main', files: const [], error: message);
+
   /// Canonical `owner/model` from the API, when the call worked.
   final String id;
 
@@ -80,8 +82,6 @@ class HfListing {
   final String? error;
 
   bool get ok => error == null;
-
-  factory HfListing.failed(String message) => HfListing(id: '', revision: 'main', files: const [], error: message);
 }
 
 /// Turns a typed repo, a Hugging Face link, or a folder listing into the
@@ -241,11 +241,15 @@ class HfRepo {
   }
 
   static bool _safePath(String file) {
+    // A raw string cannot end in a single backslash, which is the character.
+    // ignore: use_raw_strings
     if (file.isEmpty || file.startsWith('/') || file.startsWith('\\')) return false;
+    // ignore: use_raw_strings
     if (file.contains('\\') || file.split('/').any((String piece) => piece == '..' || piece == '.')) return false;
     return true;
   }
 
+  // ignore: use_raw_strings
   static bool _safeName(String name) => name.isNotEmpty && name != '.' && name != '..' && !name.contains('/') && !name.contains('\\') && !name.contains('..');
 
   static String? _pick(List<String> files, List<String> preferences, void Function(String listed) onSeveral) {
@@ -284,14 +288,14 @@ class HfRepo {
     String? several;
     String? onnx = _pick(files, const ['model.onnx'], (String listed) => several = listed);
     if (several != null) {
-      return HfPlan(error: 'Several copies of model.onnx: $several. Open the model\'s own folder.');
+      return HfPlan(error: "Several copies of model.onnx: $several. Open the model's own folder.");
     }
     if (onnx == null) {
       final List<String> any = [for (final String file in files) if (file.toLowerCase().endsWith('.onnx')) file];
       if (any.length == 1) {
         onnx = any.single;
       } else if (any.length > 1) {
-        return HfPlan(error: 'Several ONNX files and none is model.onnx: ${any.take(8).join(', ')}. Open the model\'s own folder.');
+        return HfPlan(error: "Several ONNX files and none is model.onnx: ${any.take(8).join(', ')}. Open the model's own folder.");
       }
     }
     if (onnx == null) {
@@ -327,7 +331,7 @@ class HfRepo {
       'onnx/model_qint8_arm64.onnx',
     ], (String listed) => several = listed);
     if (several != null) {
-      return HfPlan(error: 'Several copies of the text model: $several. Open the model\'s own folder.');
+      return HfPlan(error: "Several copies of the text model: $several. Open the model's own folder.");
     }
     if (model == null) {
       return HfPlan(
@@ -371,13 +375,13 @@ class HfRepo {
       'vision_model.onnx',
     ], (String listed) => several = listed);
     if (several != null) {
-      return HfPlan(error: 'Several copies of the picture half: $several. Open the model\'s own folder.');
+      return HfPlan(error: "Several copies of the picture half: $several. Open the model's own folder.");
     }
     final String? text = vision == null
         ? null
         : _pick(files, const ['onnx/text_model_quantized.onnx', 'text_model_quantized.onnx', 'onnx/text_model.onnx', 'text_model.onnx'], (String listed) => several = listed);
     if (several != null) {
-      return HfPlan(error: 'Several copies of the text half: $several. Open the model\'s own folder.');
+      return HfPlan(error: "Several copies of the text half: $several. Open the model's own folder.");
     }
     if (vision == null || text == null) {
       final bool combined = files.any((String file) => file == 'onnx/model.onnx' || file.endsWith('/model.onnx'));

@@ -86,6 +86,8 @@ void main() {
     const String marker = 'submission-description-text user-submitted-links">';
     final String html = fixture('furaffinity_view_folders.html').replaceFirst(
       marker,
+      // The page has no space between the post number and "Character".
+      // ignore: missing_whitespace_between_adjacent_strings
       '${marker}WEBM version with sound only: https://e621.net/posts/2197699Character(s): Mal0<br />'
           'Voice: <a class="auto_link" href="http://dshooves.live/">http://dshooves.live/</a> ',
     );

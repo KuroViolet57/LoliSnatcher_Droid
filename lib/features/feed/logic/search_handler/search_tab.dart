@@ -23,7 +23,10 @@ class SearchTab {
     this.doujinTitle,
     this.doujinThumb,
   }) : id = (tabId != null && tabId.isNotEmpty) ? tabId : uuid.v4() {
+    // Locals, not initializing formals: the null check below has to promote them.
+    // ignore: prefer_initializing_formals
     this.poolId = poolId;
+    // ignore: prefer_initializing_formals
     this.poolName = poolName;
     this.selectedBooru = selectedBooru.obs;
     this.secondaryBoorus = Rxn<List<Booru>?>(secondaryBoorus);

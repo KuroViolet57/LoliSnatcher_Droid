@@ -1,3 +1,8 @@
+// Help paragraphs are split across lines. A space is already inside a
+// literal wherever the sentence needs one. Joins that meet at a tag are HTML,
+// and inserting a space there would change the text the user reads.
+// ignore_for_file: missing_whitespace_between_adjacent_strings
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';

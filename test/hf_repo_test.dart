@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lolisnatcher/features/recommender/logic/ml/hf_repo.dart';
 
-/// File lists captured 2026-10-05 from https://huggingface.co/api/models/<repo>
+/// File lists captured 2026-10-05 from `https://huggingface.co/api/models/<repo>`
 /// (siblings[].rfilename). HEAD of resolve/main confirmed which names exist.
 void main() {
   test('a repo id, a trailing slash, and a Hugging Face link are the same repo', () {

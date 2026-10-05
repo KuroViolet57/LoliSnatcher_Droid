@@ -236,7 +236,10 @@ class DriveBackup {
         Logger.Inst().log('token address $url unreachable: $lastError', 'DriveBackup', 'exchange', LogTypes.exception);
       }
     }
-    throw lastError ?? const SocketException('Google could not be reached');
+    // Every caught failure above is already an Exception. Throw that object.
+    // A null means neither round reached Google at all.
+    if (lastError is Exception) throw lastError;
+    throw const SocketException('Google could not be reached');
   }
 
   /// What a failed link says to the person.

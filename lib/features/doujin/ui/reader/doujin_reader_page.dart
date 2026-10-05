@@ -877,6 +877,9 @@ class _ReaderPageSlideState extends State<_ReaderPageSlide> {
   }
 }
 
+/// True while a reader is opening, so a second tap cannot stack two.
+bool _readerOpening = false;
+
 /// Opens the reader for [item]'s registered book, resuming saved progress.
 ///
 /// Pushed as an ordinary opaque [MaterialPageRoute] — see the layout
@@ -884,8 +887,6 @@ class _ReaderPageSlideState extends State<_ReaderPageSlide> {
 /// nested viewer so the parent viewer's player stays paused
 /// (maxActiveViewers doubles as the pause mechanism). Re-entrancy guarded:
 /// a double-tap on a Read button must not stack two readers.
-bool _readerOpening = false;
-
 Future<void> openDoujinReader(
   BuildContext context, {
   required BooruItem item,

@@ -343,7 +343,7 @@ class _MediaKitPlayerPool {
 
 /// r76: which pooled player is showing a video right now, for reading its
 /// frames (VideoFrames). Read-only: nothing here changes the pool or a
-/// player. [stillShowing] tells afterwards whether that player still holds
+/// player. `stillShowing` tells afterwards whether that player still holds
 /// the same video (the pool may re-point an idle player at another one).
 class MediaKitFrameSource {
   const MediaKitFrameSource._();

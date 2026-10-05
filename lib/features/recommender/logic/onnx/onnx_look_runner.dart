@@ -78,12 +78,16 @@ class OnnxLookRunner implements LookRunner {
 
   Future<OrtSession> _imageSession() => _openingImage ??= _open(imagePath, image: true).then((s) => _image = s).catchError((Object e) {
     _openingImage = null;
-    throw e;
+    if (e is Exception) throw e;
+    if (e is Error) throw e;
+    throw StateError('$e');
   });
 
   Future<OrtSession> _textSession() => _openingText ??= _open(textPath, image: false).then((s) => _text = s).catchError((Object e) {
     _openingText = null;
-    throw e;
+    if (e is Exception) throw e;
+    if (e is Error) throw e;
+    throw StateError('$e');
   });
 
   static Future<Float32List> _first(Map<String, OrtValue> outputs) async {

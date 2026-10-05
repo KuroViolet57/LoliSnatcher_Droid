@@ -113,6 +113,8 @@ class PostFilesHandler {
         _failed.add(key);
         return const <PostFile>[];
       } finally {
+        // The removed value is this future. Awaiting it would wait on itself.
+        // ignore: unawaited_futures
         _inFlight.remove(key);
       }
     }();

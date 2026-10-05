@@ -80,10 +80,12 @@ class SuggestionHandler extends BooruHandler {
     }
   }
 
-  /// What the strip's loader needs from [item], as a tab query:
-  /// `suggest: c:<character> f:<series> a:<artist> t:<tag> s:<style>
-  /// [with:<filter>] [on:<source>] post:<address>`, in the order the
-  /// suggestion engine reads them, spaces and `%` escaped.
+  /// What the strip's loader needs from [item], as a tab query, in the order
+  /// the suggestion engine reads them. Spaces and `%` are escaped.
+  ///
+  /// ```
+  /// suggest: c:<character> f:<series> a:<artist> t:<tag> s:<style> [with:<filter>] [on:<source>] post:<address>
+  /// ```
   static String queryFor(BooruItem item, {String filter = '', List<Booru>? boorus}) {
     final List<String> terms = [queryMarker];
     for (final String c in SuggestionEngine.tagsOfType(item, TagType.character)) {

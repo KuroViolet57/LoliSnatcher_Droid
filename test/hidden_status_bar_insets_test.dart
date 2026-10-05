@@ -56,7 +56,7 @@ void main() {
     await tester.pump();
     expect(keyboard, 300);
 
-    ModularUi.set(ModularUi.appDrawUnderHiddenStatusBar, true);
+    await ModularUi.set(ModularUi.appDrawUnderHiddenStatusBar, true);
     await tester.pump();
     expect(top, 0, reason: 'the old full-height layout, switched on');
   });

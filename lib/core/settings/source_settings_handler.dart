@@ -511,7 +511,7 @@ class SourceSettingsHandler {
   /// URL host attribution — works in merge feeds too).
   Set<String> tagBlacklistForItem(BooruItem item) => tagBlacklist(DoujinDataHandler.doujinBooruForItem(item)).toSet();
 
-  /// Doujin counterpart of [SettingsHandler.isItemHiddenGlobally] — the ONLY
+  /// Doujin counterpart of `SettingsHandler.isItemHiddenGlobally` — the ONLY
   /// hidden-check doujin items may use. Booru blacklists never apply to
   /// doujin items and vice versa, even when tag names coincide.
   bool isItemHiddenForDoujin(BooruItem item) {

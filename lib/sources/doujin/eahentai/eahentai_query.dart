@@ -26,7 +26,7 @@ class EaHentaiRequest {
 ///       O: date_desc | views_daily | views_weekly | views_monthly | views_alltime
 ///   /api/image/popular/?page=P&take=N&orderby=O          the Popular section
 ///   /api/image/random/?take=N                            one page
-///   /api/image/album/<id>                                a gallery with its pages
+///   `/api/image/album/<id>`                              a gallery with its pages
 ///
 /// The app spells `sort:weekly`, `type:artist`, `filter:full_color`,
 /// `artist:name`, `parody:name`, `character:name`, `tag:name`, `random:`;
