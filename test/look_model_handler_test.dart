@@ -11,6 +11,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:lolisnatcher/models/booru.dart';
 import 'package:lolisnatcher/models/booru_item.dart';
 import 'package:lolisnatcher/features/recommender/logic/model_tasks.dart';
+import 'package:lolisnatcher/features/recommender/logic/ml/hf_repo.dart';
 import 'package:lolisnatcher/features/recommender/logic/ml/look_model_handler.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/core/storage/database_handler.dart';
@@ -512,5 +513,97 @@ void main() {
     expect(m[1], closeTo(0.70710678, 1e-6));
     expect(LookModelHandler.meanOf([Float32List.fromList([3, 4])]), [0.6000000238418579, 0.800000011920929]);
     expect(LookModelHandler.meanOf(const []), isEmpty);
+  });
+
+  test('a custom CLIP repo keeps the full-precision name for later and does not download it yet', () async {
+    final LookModelHandler h = LookModelHandler.instance;
+    const String sha = 'abc123def456';
+    h.listing = (String repoId) async => const HfListing(
+      id: 'Xenova/mobileclip_s0',
+      revision: sha,
+      files: [
+        'config.json',
+        'tokenizer.json',
+        'preprocessor_config.json',
+        'onnx/vision_model_quantized.onnx',
+        'onnx/text_model_quantized.onnx',
+        'onnx/vision_model.onnx',
+      ],
+    );
+    fetched.clear();
+    expect(await h.download('https://huggingface.co/Xenova/mobileclip_s0'), isTrue, reason: h.status.value.message);
+    expect(fetched.any((String url) => url.endsWith('/onnx/vision_model.onnx')), isFalse);
+    expect(fetched.first, contains('/resolve/$sha/config.json'));
+    expect(SettingsHandler.instance.lookModel, 'Xenova/mobileclip_s0');
+    final Map<String, dynamic> manifest = jsonDecode(File('${h.dirFor('Xenova/mobileclip_s0')}manifest.json').readAsStringSync()) as Map<String, dynamic>;
+    expect(manifest['npuRemote'], 'onnx/vision_model.onnx');
+    expect(manifest['revision'], sha);
+    fetched.clear();
+    expect(await h.downloadNpuFile(), isTrue);
+    expect(fetched, ['https://huggingface.co/Xenova/mobileclip_s0/resolve/$sha/onnx/vision_model.onnx']);
+    expect(h.hasNpuFile, isTrue);
+  });
+
+  test('a preset NPU download still asks for onnx/vision_model.onnx on main', () async {
+    final LookModelHandler h = await ready();
+    fetched.clear();
+    expect(await h.downloadNpuFile(), isTrue);
+    expect(fetched, ['https://huggingface.co/Xenova/mobileclip_s0/resolve/main/onnx/vision_model.onnx']);
+  });
+
+  test('SigLIP is refused from config.json before the picture half is fetched', () async {
+    final LookModelHandler h = LookModelHandler.instance;
+    h.listing = (String repoId) async => const HfListing(
+      id: 'Xenova/siglip-base-patch16-224',
+      revision: 'main',
+      files: ['config.json', 'tokenizer.json', 'onnx/vision_model_quantized.onnx', 'onnx/text_model_quantized.onnx'],
+    );
+    fetched.clear();
+    h.fetcher = (String url, File to, {void Function(int received, int total)? onProgress, CancelToken? cancelToken}) async {
+      fetched.add(url);
+      to.parent.createSync(recursive: true);
+      if (url.endsWith('config.json')) {
+        to.writeAsStringSync('{"model_type":"siglip"}');
+      } else if (url.endsWith('tokenizer.json')) {
+        to.writeAsStringSync(tokenizerText);
+      } else {
+        to.writeAsBytesSync(List<int>.filled(1000, 1));
+      }
+    };
+    expect(await h.download('Xenova/siglip-base-patch16-224'), isFalse);
+    expect(h.status.value.message.toLowerCase(), contains('siglip'));
+    expect(fetched.any((String url) => url.contains('vision')), isFalse);
+    expect(Directory(h.dirFor('Xenova/siglip-base-patch16-224')).existsSync(), isFalse);
+  });
+
+  test('a folder import copies the full-precision picture half and does not call Hugging Face for it', () async {
+    final LookModelHandler h = LookModelHandler.instance;
+    final Directory src = Directory.systemTemp.createTempSync('look-src');
+    final Directory onnx = Directory('${src.path}${Platform.pathSeparator}onnx')..createSync();
+    File('${onnx.path}${Platform.pathSeparator}vision_model_quantized.onnx').writeAsBytesSync(List<int>.filled(8, 1));
+    File('${onnx.path}${Platform.pathSeparator}text_model_quantized.onnx').writeAsBytesSync(List<int>.filled(8, 2));
+    File('${onnx.path}${Platform.pathSeparator}vision_model.onnx').writeAsBytesSync(List<int>.filled(8, 9));
+    File('${src.path}${Platform.pathSeparator}tokenizer.json').writeAsStringSync(tokenizerText);
+    final Map<String, String> files = {
+      'tokenizer.json': '${src.path}${Platform.pathSeparator}tokenizer.json',
+      'onnx/vision_model_quantized.onnx': '${onnx.path}${Platform.pathSeparator}vision_model_quantized.onnx',
+      'onnx/text_model_quantized.onnx': '${onnx.path}${Platform.pathSeparator}text_model_quantized.onnx',
+      'onnx/vision_model.onnx': '${onnx.path}${Platform.pathSeparator}vision_model.onnx',
+    };
+    final bool ok = await h.importLocal(
+      label: 'clip-local',
+      files: files,
+      copy: (String relative, File dest) async {
+        dest.parent.createSync(recursive: true);
+        File(files[relative]!).copySync(dest.path);
+      },
+    );
+    expect(ok, isTrue, reason: h.status.value.message);
+    expect(SettingsHandler.instance.lookModel, startsWith('files:'));
+    expect(h.hasNpuFile, isTrue);
+    fetched.clear();
+    expect(await h.downloadNpuFile(), isTrue);
+    expect(fetched, isEmpty);
+    src.deleteSync(recursive: true);
   });
 }

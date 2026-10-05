@@ -12,7 +12,10 @@ import 'package:lolisnatcher/features/recommender/logic/model_tasks.dart';
 import 'package:lolisnatcher/core/logging/logger.dart';
 import 'package:lolisnatcher/core/platform/photo_picker.dart';
 import 'package:lolisnatcher/core/platform/picker_watch.dart';
+import 'package:lolisnatcher/core/platform/service_handler.dart';
+import 'package:lolisnatcher/core/ui/explain_button.dart';
 import 'package:lolisnatcher/features/recommender/logic/ml/encoder_handler.dart';
+import 'package:lolisnatcher/features/recommender/logic/ml/hf_repo.dart';
 import 'package:lolisnatcher/features/recommender/logic/ml/image_tagger_handler.dart';
 import 'package:lolisnatcher/features/recommender/logic/ml/look_model_handler.dart';
 import 'package:lolisnatcher/features/recommender/logic/item_features.dart';
@@ -29,6 +32,92 @@ part 'recommendations_page/encoder_section.dart';
 part 'recommendations_page/look_section.dart';
 part 'recommendations_page/tagger_section.dart';
 part 'recommendations_page/boards_section.dart';
+
+/// How many child folders a model import reads. `onnx` is first.
+const int modelFolderReadCap = 40;
+
+/// The files in the folder the user picks, plus one directory level.
+/// Null when they cancel.
+Future<Map<String, String>?> pickModelFolder() async {
+  final String rootUri = await ServiceHandler.selectModelFolder();
+  if (rootUri.isEmpty) {
+    Logger.Inst().log('models: folder import cancelled', 'RecommendationsPage', 'pickModelFolder', LogTypes.booruHandlerInfo);
+    return null;
+  }
+  final List<Map<String, dynamic>> root = await ServiceHandler.listSAFDirectory(rootUri);
+  final List<HfFolderFile> rootFiles = [
+    for (final Map<String, dynamic> entry in root) HfFolderFile('${entry['name'] ?? ''}', entry['isDir'] == true, '${entry['uri'] ?? ''}'),
+  ];
+  final List<HfFolderFile> dirs = [for (final HfFolderFile file in rootFiles) if (file.isDir && file.name.isNotEmpty) file]..sort((HfFolderFile a, HfFolderFile b) {
+    final bool aOnnx = a.name.toLowerCase() == 'onnx';
+    final bool bOnnx = b.name.toLowerCase() == 'onnx';
+    if (aOnnx != bOnnx) return aOnnx ? -1 : 1;
+    return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+  });
+  if (dirs.length > modelFolderReadCap) {
+    Logger.Inst().log(
+      'models: folder has ${dirs.length} subfolders; reading $modelFolderReadCap (onnx first)',
+      'RecommendationsPage',
+      'pickModelFolder',
+      LogTypes.booruHandlerInfo,
+    );
+  }
+  final Map<String, List<HfFolderFile>> children = {};
+  for (final HfFolderFile dir in dirs.take(modelFolderReadCap)) {
+    final List<Map<String, dynamic>> listed = await ServiceHandler.listSAFDirectory(dir.uri);
+    children[dir.name] = [
+      for (final Map<String, dynamic> entry in listed) HfFolderFile('${entry['name'] ?? ''}', entry['isDir'] == true, '${entry['uri'] ?? ''}'),
+    ];
+  }
+  final Map<String, String> indexed = HfRepo.indexFolder(rootFiles, children);
+  Logger.Inst().log('models: folder listed ${indexed.length} files', 'RecommendationsPage', 'pickModelFolder', LogTypes.booruHandlerInfo);
+  return indexed;
+}
+
+Future<void> copyListedModelFile(Map<String, String> files, String relative, File dest) async {
+  final String uri = files[relative] ?? '';
+  if (uri.isEmpty) throw FormatException('Could not copy $relative: it is not in the folder.');
+  final bool copied = await ServiceHandler.copyContentUriToFile(uri, dest.path);
+  if (!copied) throw FormatException('Could not copy $relative.');
+}
+
+Future<void> runModelImport({
+  required BuildContext context,
+  required bool Function() stillMounted,
+  required void Function() refresh,
+  required String title,
+  required String Function() message,
+  required Future<bool> Function(Map<String, String> files) run,
+}) async {
+  final Map<String, String>? files;
+  try {
+    files = await pickModelFolder();
+  } catch (e, s) {
+    Logger.Inst().log('models: folder import failed: $e', 'RecommendationsPage', 'runModelImport', LogTypes.exception, s: s);
+    if (stillMounted()) {
+      FlashElements.showSnackbar(
+        context: context,
+        title: Text(title, style: const TextStyle(fontSize: 18)),
+        content: Text('$e', style: const TextStyle(fontSize: 14)),
+        duration: const Duration(seconds: 4),
+        sideColor: Colors.red,
+      );
+    }
+    return;
+  }
+  if (files == null) return;
+  final bool ok = await run(files);
+  if (!ok && stillMounted()) {
+    FlashElements.showSnackbar(
+      context: context,
+      title: Text(title, style: const TextStyle(fontSize: 18)),
+      content: Text(message(), style: const TextStyle(fontSize: 14)),
+      duration: const Duration(seconds: 5),
+      sideColor: Colors.red,
+    );
+  }
+  if (stillMounted()) refresh();
+}
 
 /// Settings → Recommendations (r33): the two switches of the on-device
 /// recommender, what each world's model has learned, and a way to forget it.

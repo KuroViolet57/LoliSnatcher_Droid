@@ -151,6 +151,8 @@ void main() {
     expect(find.byKey(const ValueKey('encoder-preset-english')), findsOneWidget);
     expect(find.byKey(const ValueKey('encoder-preset-multilingual')), findsOneWidget);
     expect(find.byKey(const ValueKey('encoder-preset-custom')), findsOneWidget);
+    expect(find.byKey(const ValueKey('encoder-import')), findsOneWidget);
+    expect(find.byKey(const ValueKey('encoder-import-explain')), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('encoder-preset-english')));
     await settle(tester);
     expect(find.textContaining('23 MB'), findsWidgets);
@@ -251,6 +253,8 @@ void main() {
     expect(find.byKey(const ValueKey('tagger-preset-wd-convnext')), findsOneWidget);
     expect(find.byKey(const ValueKey('tagger-preset-wd-swinv2')), findsOneWidget);
     expect(find.byKey(const ValueKey('tagger-preset-custom')), findsOneWidget);
+    expect(find.byKey(const ValueKey('tagger-import')), findsOneWidget);
+    expect(find.byKey(const ValueKey('tagger-import-explain')), findsOneWidget);
     expect(find.textContaining('379 MB'), findsWidgets);
     // r78: the button is never dead; before a download a tap says what is missing.
     expect(tester.widget<ButtonStyleButton>(find.byKey(const ValueKey('tagger-try'))).onPressed, isNotNull);
@@ -523,6 +527,8 @@ void main() {
     expect(find.byKey(const ValueKey('look-preset-s0')), findsOneWidget);
     expect(find.byKey(const ValueKey('look-preset-s2')), findsOneWidget);
     expect(find.byKey(const ValueKey('look-preset-custom')), findsOneWidget);
+    expect(find.byKey(const ValueKey('look-import')), findsOneWidget);
+    expect(find.byKey(const ValueKey('look-import-explain')), findsOneWidget);
     await tester.runAsync(() async {
       await tester.tap(find.byKey(const ValueKey('look-download')));
       await Future<void>.delayed(const Duration(milliseconds: 300));

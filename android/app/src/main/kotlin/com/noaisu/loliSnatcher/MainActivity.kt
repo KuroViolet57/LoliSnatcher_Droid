@@ -163,6 +163,9 @@ class MainActivity: FlutterFragmentActivity() {
     private var methodResult: MethodChannel.Result? = null
     // r77: the request code of our own folder/file pickers (see onActivityResult).
     private val SAF_REQUEST = 4273
+    // Model import: a read-only tree. Kept off SAF_REQUEST so a cancel is not
+    // reported as a permission error, and the persistable write grant is untouched.
+    private val MODEL_FOLDER_REQUEST = 4274
 
     private val activeFiles = mutableMapOf<Uri, OutputStream?>()
 
@@ -318,6 +321,10 @@ class MainActivity: FlutterFragmentActivity() {
                     "selectImage" -> {
                         methodResult = result
                         requestImageAccess()
+                    }
+                    "selectModelFolder" -> {
+                        methodResult = result
+                        requestModelFolder()
                     }
                     "getFileBytes" -> {
                         val uri = call.argument<String>("uri")
@@ -498,6 +505,20 @@ class MainActivity: FlutterFragmentActivity() {
                             result.error("INVALID_ARGUMENT", "One or more arguments are null", null)
                         }
                     }
+                    // Streams one content URI onto a file. Used for model files
+                    // that are too large to load into memory.
+                    "copyContentUriToFile" -> {
+                        val uri = call.argument<String>("uri")
+                        val destPath = call.argument<String>("destPath")
+                        if (uri != null && destPath != null) {
+                            Executors.newSingleThreadExecutor().execute {
+                                val success = copyContentUriToFile(uri, destPath)
+                                runOnUiThread { result.success(success) }
+                            }
+                        } else {
+                            result.error("INVALID_ARGUMENT", "URI or destPath is null", null)
+                        }
+                    }
                     "copyFileToSafDir" -> {
                         val sourcePath = call.argument<String>("sourcePath")
                         val fileName = call.argument<String>("fileName")
@@ -670,6 +691,15 @@ class MainActivity: FlutterFragmentActivity() {
         startActivityForResult(intent, SAF_REQUEST)
     }
 
+    // Read-only. A cancel answers "" so the Dart side can tell it from a failure.
+    private fun requestModelFolder() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+            flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                    Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+        }
+        startActivityForResult(intent, MODEL_FOLDER_REQUEST)
+    }
+
     @RequiresApi(Build.VERSION_CODES.KITKAT)
     override fun onActivityResult(requestCode: Int, resultCode: Int, resultData: Intent?) {
         super.onActivityResult(requestCode, resultCode, resultData)
@@ -677,6 +707,22 @@ class MainActivity: FlutterFragmentActivity() {
         // result (the image picker's, a share's) is the plugins' business, and
         // answering it on the stale reply of an earlier folder request made
         // Flutter throw "Reply already submitted" and could crash the app.
+        if (requestCode == MODEL_FOLDER_REQUEST) {
+            val reply = methodResult ?: return
+            methodResult = null
+            val uri = if (resultCode == Activity.RESULT_OK) resultData?.data else null
+            if (uri == null) {
+                reply.success("")
+                return
+            }
+            try {
+                contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (e: SecurityException) {
+                Log.w("MainActivity", "Model folder grant is for this session only", e)
+            }
+            reply.success(uri.toString())
+            return
+        }
         if (requestCode != SAF_REQUEST) return
         val reply = methodResult ?: return
         methodResult = null
@@ -1138,6 +1184,30 @@ class MainActivity: FlutterFragmentActivity() {
 
         outputStream.close()
         return true
+    }
+
+    // Copies [uriString] onto [destPath] in chunks. A failed copy deletes the part file.
+    private fun copyContentUriToFile(uriString: String, destPath: String): Boolean {
+        val uri = Uri.parse(uriString)
+        if (uri == Uri.EMPTY) return false
+        val dest = File(destPath)
+        dest.parentFile?.mkdirs()
+        val inputStream = try {
+            contentResolver.openInputStream(uri) ?: return false
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Error opening model file: $uriString", e)
+            return false
+        }
+        return try {
+            FileOutputStream(dest).use { output -> inputStream.copyTo(output) }
+            true
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Error copying model file to $destPath", e)
+            dest.delete()
+            false
+        } finally {
+            inputStream.close()
+        }
     }
 
     @Throws(IOException::class)

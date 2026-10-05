@@ -10,6 +10,7 @@ import 'package:get_it/get_it.dart';
 import 'package:image/image.dart' as img;
 
 import 'package:lolisnatcher/features/recommender/logic/model_tasks.dart';
+import 'package:lolisnatcher/features/recommender/logic/ml/hf_repo.dart';
 import 'package:lolisnatcher/features/recommender/logic/ml/model_pictures.dart';
 import 'package:lolisnatcher/features/recommender/logic/onnx/onnx_tag_runner.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
@@ -232,9 +233,11 @@ class ImageTaggerHandler {
 
   final ValueNotifier<TaggerStatus> status = ValueNotifier(TaggerStatus.none);
 
-  /// Test seams: how files come down, how the model runs.
+  /// Test seams: how files come down, how the model runs, how a repo's file list is read.
+  /// Preset downloads do not call [listing].
   TaggerFetcher fetcher = _dioFetch;
   TagRunnerFactory runnerFactory = _onnxRunner;
+  Future<HfListing> Function(String repoId) listing = HfRepo.fetch;
 
   SettingsHandler get _settings => SettingsHandler.instance;
 
@@ -320,6 +323,7 @@ class ImageTaggerHandler {
   /// Downloads [setting] (a preset id or a repo id) and makes it the model.
   Future<bool> download(String setting) async {
     if (_downloading != null) return false;
+    if (TaggerPreset.byId(setting) == null) return _downloadListed(setting);
     final String repo = repoOf(setting);
     if (repo.isEmpty || !repo.contains('/')) {
       status.value = const TaggerStatus(state: TaggerState.error, message: 'A Hugging Face repo id looks like owner/model.');
@@ -408,6 +412,191 @@ class ImageTaggerHandler {
       _downloading = null;
     }
   }
+
+  /// A repo id or a Hugging Face link. The file list decides which files to
+  /// fetch. Presets do not come through here.
+  Future<bool> _downloadListed(String setting) async {
+    final CancelToken cancel = _downloading = CancelToken();
+    try {
+      final HfParseResult parsed = HfRepo.parse(setting);
+      if (parsed.repo == null) {
+        status.value = TaggerStatus(state: TaggerState.error, message: parsed.error ?? HfRepo.howTo);
+        return false;
+      }
+      final String asked = parsed.repo!.id;
+      status.value = TaggerStatus(state: TaggerState.downloading, repo: asked);
+      final HfListing listed;
+      try {
+        listed = await listing(asked);
+      } catch (e) {
+        status.value = TaggerStatus(state: TaggerState.error, repo: asked, message: 'Could not read the file list ($e).');
+        return false;
+      }
+      if (cancel.isCancelled) {
+        status.value = const TaggerStatus(state: TaggerState.error, message: 'Download cancelled.');
+        return false;
+      }
+      if (!listed.ok) {
+        status.value = TaggerStatus(state: TaggerState.error, repo: asked, message: listed.error!);
+        return false;
+      }
+      final HfPlan plan = HfRepo.choose(HfKind.tagger, listed.files);
+      if (plan.error != null) {
+        Logger.Inst().log('tagger: $asked listed ${listed.files.length} files, none usable: ${plan.error}', className, 'download', LogTypes.booruHandlerInfo);
+        status.value = TaggerStatus(state: TaggerState.error, repo: listed.id.isEmpty ? asked : listed.id, message: plan.error!);
+        return false;
+      }
+      final String repo = listed.id.isEmpty ? asked : listed.id;
+      // A link that names main, or no revision, is pinned to the commit the
+      // file list was taken from. Any other revision in the link is kept.
+      final String? fromLink = parsed.repo!.revision;
+      final String revision = fromLink == null || fromLink == 'main' ? listed.revision : fromLink;
+      Logger.Inst().log(
+        'tagger: $repo @ $revision -> ${plan.files.map((HfPlannedFile f) => '${f.remote} as ${f.local}').join(', ')}',
+        className,
+        'download',
+        LogTypes.booruHandlerInfo,
+      );
+      return await _installTagger(
+        setting: repo,
+        repoLabel: repo,
+        plan: plan,
+        source: 'huggingface',
+        revision: revision,
+        cancel: cancel,
+        fetchOne: (HfPlannedFile file, File dest, void Function(int, int) onProgress) {
+          return fetcher(HfRepo.resolveUrl(repo, revision, file.remote), dest, cancelToken: cancel, onProgress: onProgress);
+        },
+      );
+    } finally {
+      _downloading = null;
+    }
+  }
+
+  /// Copies a folder of files the user already has into the same layout a download uses.
+  Future<bool> importLocal({required String label, required Map<String, String> files, required Future<void> Function(String relative, File dest) copy}) async {
+    if (_downloading != null) return false;
+    final CancelToken cancel = _downloading = CancelToken();
+    try {
+      final HfPlan plan = HfRepo.choose(HfKind.tagger, files.keys.toList());
+      final String name = label.trim().isEmpty ? HfRepo.labelFor(files.keys) : label.trim();
+      if (plan.error != null) {
+        Logger.Inst().log('tagger: folder $name is not a tagger (${files.length} files): ${plan.error}', className, 'importLocal', LogTypes.booruHandlerInfo);
+        status.value = TaggerStatus(state: TaggerState.error, message: plan.error!);
+        return false;
+      }
+      Logger.Inst().log('tagger: importing folder $name (${plan.files.map((HfPlannedFile f) => f.remote).join(', ')})', className, 'importLocal', LogTypes.booruHandlerInfo);
+      return await _installTagger(
+        setting: HfRepo.localSetting(name),
+        repoLabel: 'folder:$name',
+        plan: plan,
+        source: 'folder',
+        cancel: cancel,
+        fetchOne: (HfPlannedFile file, File dest, void Function(int, int) onProgress) async {
+          await copy(file.remote, dest);
+          onProgress(dest.existsSync() ? dest.lengthSync() : 0, 0);
+        },
+      );
+    } finally {
+      _downloading = null;
+    }
+  }
+
+  Future<bool> _installTagger({
+    required String setting,
+    required String repoLabel,
+    required HfPlan plan,
+    required String source,
+    required CancelToken cancel,
+    required Future<void> Function(HfPlannedFile file, File dest, void Function(int received, int total) onProgress) fetchOne,
+    String? revision,
+  }) async {
+    final String dir = dirFor(setting);
+    final String tmp = '${_settings.path}tagger${Platform.pathSeparator}.download-${slugOf(repoLabel)}${Platform.pathSeparator}';
+    status.value = TaggerStatus(state: TaggerState.downloading, repo: repoLabel);
+    try {
+      final Directory tmpDir = Directory(tmp);
+      if (tmpDir.existsSync()) tmpDir.deleteSync(recursive: true);
+      tmpDir.createSync(recursive: true);
+      int done = 0;
+      final int totalFiles = plan.files.length;
+      List<TagRow> rows = const [];
+      for (final HfPlannedFile file in plan.files) {
+        if (cancel.isCancelled) {
+          throw DioException(requestOptions: RequestOptions(), type: DioExceptionType.cancel);
+        }
+        final File dest = File('$tmp${file.local}');
+        try {
+          await fetchOne(file, dest, (int received, int total) {
+            final double progress = totalFiles == 0 ? 0 : ((done + (total > 0 ? received / total : 0)) / totalFiles).clamp(0, 1).toDouble();
+            status.value = TaggerStatus(state: TaggerState.downloading, repo: repoLabel, bytes: total, progress: progress);
+          });
+        } catch (e) {
+          if (cancel.isCancelled || (e is DioException && e.type == DioExceptionType.cancel)) rethrow;
+          if (!file.required) {
+            Logger.Inst().log('tagger: optional ${file.remote} skipped ($e)', className, 'download', LogTypes.booruHandlerInfo);
+            try {
+              if (dest.existsSync()) dest.deleteSync();
+            } catch (_) {}
+            done++;
+            continue;
+          }
+          if (e is FormatException) rethrow;
+          throw FormatException('Could not ${source == 'folder' ? 'copy' : 'download'} ${file.remote}: ${_why(e)}');
+        }
+        if (file.local == tagsFileName) {
+          rows = parseTagsCsv(dest.readAsStringSync());
+          if (rows.length < 5) {
+            throw const FormatException('selected_tags.csv is not a tag list (no name column, or too few rows).');
+          }
+        }
+        done++;
+      }
+      Map<String, dynamic> config = const {};
+      final File configFile = File('$tmp$configFileName');
+      if (configFile.existsSync()) config = _json(configFile);
+      final int inputSize = _inputSizeOf(config) ?? defaultInputSize;
+      final int bytes = File('$tmp$modelFileName').lengthSync();
+      File('${tmp}manifest.json').writeAsStringSync(
+        jsonEncode({
+          'repo': repoLabel,
+          'setting': setting,
+          'bytes': bytes,
+          'inputSize': inputSize,
+          'tagCount': rows.length,
+          'downloadedAt': DateTime.now().toIso8601String(),
+          'source': source,
+          'revision': ?revision,
+          'files': {for (final HfPlannedFile file in plan.files) file.local: file.remote},
+        }),
+      );
+      await close();
+      _apply(status.value, slug: '');
+      final Directory target = Directory(dir);
+      if (target.existsSync()) target.deleteSync(recursive: true);
+      tmpDir.renameSync(target.path.substring(0, target.path.length - 1));
+      _settings.imageTaggerModel = setting;
+      unawaited(_saveSetting());
+      await refresh();
+      Logger.Inst().log('tagger: $source $repoLabel ready (${rows.length} tags, $bytes bytes)', className, 'download', LogTypes.booruHandlerInfo);
+      return isReady;
+    } catch (e, s) {
+      final String why = e is DioException
+          ? (e.message ?? e.error?.toString() ?? e.type.name)
+          : e is FormatException
+          ? e.message
+          : '$e';
+      Logger.Inst().log('tagger $source of $repoLabel failed: $e', className, 'download', LogTypes.exception, s: s);
+      try {
+        final Directory tmpDir = Directory(tmp);
+        if (tmpDir.existsSync()) tmpDir.deleteSync(recursive: true);
+      } catch (_) {}
+      status.value = TaggerStatus(state: TaggerState.error, repo: repoLabel, message: cancel.isCancelled ? 'Download cancelled.' : why);
+      return false;
+    }
+  }
+
+  static String _why(Object e) => e is DioException ? (e.message ?? e.error?.toString() ?? e.type.name) : '$e';
 
   void cancelDownload() => _downloading?.cancel('cancelled by the user');
 

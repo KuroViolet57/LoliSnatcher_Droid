@@ -17,6 +17,7 @@ import 'package:lolisnatcher/models/tag_type.dart';
 import 'package:lolisnatcher/sources/framework/booru_handler.dart';
 import 'package:lolisnatcher/features/recommender/logic/item_features.dart';
 import 'package:lolisnatcher/features/recommender/logic/onnx/onnx_embedding_runner.dart';
+import 'package:lolisnatcher/features/recommender/logic/ml/hf_repo.dart';
 import 'package:lolisnatcher/features/recommender/logic/ml/wordpiece_tokenizer.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/core/logging/logger.dart';
@@ -159,9 +160,11 @@ class EncoderHandler {
 
   final ValueNotifier<EncoderStatus> status = ValueNotifier(EncoderStatus.none);
 
-  /// Test seams: how files come down, how the model runs.
+  /// Test seams: how files come down, how the model runs, how a repo's file list is read.
+  /// Preset downloads do not call [listing].
   EncoderFetcher fetcher = _dioFetch;
   RunnerFactory runnerFactory = _onnxRunner;
+  Future<HfListing> Function(String repoId) listing = HfRepo.fetch;
 
   SettingsHandler get _settings => SettingsHandler.instance;
 
@@ -282,6 +285,7 @@ class EncoderHandler {
   /// Downloads [setting] (a preset id or a repo id) and makes it the model.
   Future<bool> download(String setting) async {
     if (_downloading != null) return false;
+    if (EncoderPreset.byId(setting) == null) return _downloadListed(setting);
     final String repo = repoOf(setting);
     if (repo.isEmpty || !repo.contains('/')) {
       status.value = const EncoderStatus(state: EncoderState.error, message: 'A Hugging Face repo id looks like owner/model.');
@@ -355,6 +359,173 @@ class EncoderHandler {
       return false;
     } finally {
       _downloading = null;
+    }
+  }
+
+  Future<bool> _downloadListed(String setting) async {
+    final CancelToken cancel = _downloading = CancelToken();
+    try {
+      final HfParseResult parsed = HfRepo.parse(setting);
+      if (parsed.repo == null) {
+        status.value = EncoderStatus(state: EncoderState.error, message: parsed.error ?? HfRepo.howTo);
+        return false;
+      }
+      final String asked = parsed.repo!.id;
+      status.value = EncoderStatus(state: EncoderState.downloading, repo: asked);
+      final HfListing listed;
+      try {
+        listed = await listing(asked);
+      } catch (e) {
+        status.value = EncoderStatus(state: EncoderState.error, repo: asked, message: 'Could not read the file list ($e).');
+        return false;
+      }
+      if (cancel.isCancelled) {
+        status.value = const EncoderStatus(state: EncoderState.error, message: 'Download cancelled.');
+        return false;
+      }
+      if (!listed.ok) {
+        status.value = EncoderStatus(state: EncoderState.error, repo: asked, message: listed.error!);
+        return false;
+      }
+      final HfPlan plan = HfRepo.choose(HfKind.encoder, listed.files);
+      if (plan.error != null) {
+        Logger.Inst().log('encoder: $asked listed ${listed.files.length} files, none usable: ${plan.error}', className, 'download', LogTypes.booruHandlerInfo);
+        status.value = EncoderStatus(state: EncoderState.error, repo: listed.id.isEmpty ? asked : listed.id, message: plan.error!);
+        return false;
+      }
+      final String repo = listed.id.isEmpty ? asked : listed.id;
+      final String? fromLink = parsed.repo!.revision;
+      final String revision = fromLink == null || fromLink == 'main' ? listed.revision : fromLink;
+      Logger.Inst().log(
+        'encoder: $repo @ $revision -> ${plan.files.map((HfPlannedFile f) => '${f.remote} as ${f.local}').join(', ')}',
+        className,
+        'download',
+        LogTypes.booruHandlerInfo,
+      );
+      return await _installEncoder(
+        setting: repo,
+        repoLabel: repo,
+        plan: plan,
+        source: 'huggingface',
+        revision: revision,
+        cancel: cancel,
+        fetchOne: (HfPlannedFile file, File dest, void Function(int, int) onProgress) {
+          return fetcher(HfRepo.resolveUrl(repo, revision, file.remote), dest, cancelToken: cancel, onProgress: onProgress);
+        },
+      );
+    } finally {
+      _downloading = null;
+    }
+  }
+
+  Future<bool> importLocal({required String label, required Map<String, String> files, required Future<void> Function(String relative, File dest) copy}) async {
+    if (_downloading != null) return false;
+    final CancelToken cancel = _downloading = CancelToken();
+    try {
+      final HfPlan plan = HfRepo.choose(HfKind.encoder, files.keys.toList());
+      final String name = label.trim().isEmpty ? HfRepo.labelFor(files.keys) : label.trim();
+      if (plan.error != null) {
+        Logger.Inst().log('encoder: folder $name is not a text model (${files.length} files): ${plan.error}', className, 'importLocal', LogTypes.booruHandlerInfo);
+        status.value = EncoderStatus(state: EncoderState.error, message: plan.error!);
+        return false;
+      }
+      Logger.Inst().log('encoder: importing folder $name (${plan.files.map((HfPlannedFile f) => f.remote).join(', ')})', className, 'importLocal', LogTypes.booruHandlerInfo);
+      return await _installEncoder(
+        setting: HfRepo.localSetting(name),
+        repoLabel: 'folder:$name',
+        plan: plan,
+        source: 'folder',
+        cancel: cancel,
+        fetchOne: (HfPlannedFile file, File dest, void Function(int, int) onProgress) async {
+          await copy(file.remote, dest);
+          onProgress(dest.existsSync() ? dest.lengthSync() : 0, 0);
+        },
+      );
+    } finally {
+      _downloading = null;
+    }
+  }
+
+  Future<bool> _installEncoder({
+    required String setting,
+    required String repoLabel,
+    required HfPlan plan,
+    required String source,
+    required CancelToken cancel,
+    required Future<void> Function(HfPlannedFile file, File dest, void Function(int received, int total) onProgress) fetchOne,
+    String? revision,
+  }) async {
+    final String dir = dirFor(setting);
+    final String tmp = '${_settings.path}encoder${Platform.pathSeparator}.download-${slugOf(repoLabel)}${Platform.pathSeparator}';
+    status.value = EncoderStatus(state: EncoderState.downloading, repo: repoLabel);
+    try {
+      final Directory tmpDir = Directory(tmp);
+      if (tmpDir.existsSync()) tmpDir.deleteSync(recursive: true);
+      tmpDir.createSync(recursive: true);
+      int done = 0;
+      for (final HfPlannedFile file in plan.files) {
+        if (cancel.isCancelled) throw DioException(requestOptions: RequestOptions(), type: DioExceptionType.cancel);
+        final File dest = File('$tmp${file.local}');
+        try {
+          await fetchOne(file, dest, (int received, int total) {
+            final double progress = plan.files.isEmpty ? 0 : ((done + (total > 0 ? received / total : 0)) / plan.files.length).clamp(0, 1).toDouble();
+            status.value = EncoderStatus(state: EncoderState.downloading, repo: repoLabel, bytes: total, progress: progress);
+          });
+        } catch (e) {
+          if (cancel.isCancelled || (e is DioException && e.type == DioExceptionType.cancel)) rethrow;
+          if (!file.required) {
+            try {
+              if (dest.existsSync()) dest.deleteSync();
+            } catch (_) {}
+            done++;
+            continue;
+          }
+          if (e is FormatException) rethrow;
+          throw FormatException('Could not ${source == 'folder' ? 'copy' : 'download'} ${file.remote}: ${e is DioException ? (e.message ?? e.error?.toString() ?? e.type.name) : e}');
+        }
+        done++;
+      }
+      final Map<String, dynamic> config = _json(File('${tmp}config.json'));
+      final Map<String, dynamic> tokenizerConfig = _json(File('${tmp}tokenizer_config.json'));
+      final int dim = (config['hidden_size'] as num?)?.toInt() ?? (config['dim'] as num?)?.toInt() ?? 384;
+      final bool lowerCase = tokenizerConfig['do_lower_case'] as bool? ?? true;
+      final bool tokenTypeIds = config['model_type']?.toString() != 'distilbert';
+      final int maxLength = math.min(_maxLength, (tokenizerConfig['model_max_length'] as num?)?.toInt() ?? _maxLength);
+      final int bytes = File('${tmp}model.onnx').lengthSync();
+      File('${tmp}manifest.json').writeAsStringSync(
+        jsonEncode({
+          'repo': repoLabel,
+          'setting': setting,
+          'dim': dim,
+          'bytes': bytes,
+          'lowerCase': lowerCase,
+          'tokenTypeIds': tokenTypeIds,
+          'maxLength': maxLength,
+          'downloadedAt': DateTime.now().toIso8601String(),
+          'source': source,
+          'revision': ?revision,
+          'files': {for (final HfPlannedFile file in plan.files) file.local: file.remote},
+        }),
+      );
+      await close();
+      _apply(status.value, slug: '');
+      final Directory target = Directory(dir);
+      if (target.existsSync()) target.deleteSync(recursive: true);
+      tmpDir.renameSync(target.path.substring(0, target.path.length - 1));
+      _settings.encoderModel = setting;
+      unawaited(_settings.saveSettings(restate: false));
+      await refresh();
+      Logger.Inst().log('encoder: $source $repoLabel ready (dim $dim, $bytes bytes)', className, 'download', LogTypes.booruHandlerInfo);
+      return status.value.state == EncoderState.ready;
+    } catch (e, s) {
+      final String why = e is DioException ? (e.message ?? e.error?.toString() ?? e.type.name) : e is FormatException ? e.message : '$e';
+      Logger.Inst().log('encoder $source of $repoLabel failed: $e', className, 'download', LogTypes.exception, s: s);
+      try {
+        final Directory tmpDir = Directory(tmp);
+        if (tmpDir.existsSync()) tmpDir.deleteSync(recursive: true);
+      } catch (_) {}
+      status.value = EncoderStatus(state: EncoderState.error, repo: repoLabel, message: cancel.isCancelled ? 'Download cancelled.' : why);
+      return false;
     }
   }
 

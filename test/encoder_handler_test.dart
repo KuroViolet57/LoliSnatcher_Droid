@@ -12,6 +12,7 @@ import 'package:lolisnatcher/models/tag.dart';
 import 'package:lolisnatcher/models/tag_type.dart';
 import 'package:lolisnatcher/core/storage/database_handler.dart';
 import 'package:lolisnatcher/features/recommender/logic/ml/encoder_handler.dart';
+import 'package:lolisnatcher/features/recommender/logic/ml/hf_repo.dart';
 import 'package:lolisnatcher/features/recommender/logic/item_features.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
 
@@ -418,6 +419,52 @@ void main() {
       SettingsHandler.instance.aiEncoder = false;
       expect(await e.embedItems([post('alice')]), [null]);
       expect(runner.runs, 0);
+    });
+
+    test('sentence-transformers ONNX is model.onnx, small files first, not the quantized name', () async {
+      final EncoderHandler e = EncoderHandler.instance;
+      const String sha = '1110a243fdf4706b3f48f1d95db1a4f5529b4d41';
+      e.listing = (String repoId) async => const HfListing(
+        id: 'sentence-transformers/all-MiniLM-L6-v2',
+        revision: sha,
+        files: ['onnx/model.onnx', 'onnx/model_qint8_arm64.onnx', 'onnx/model_O1.onnx', 'vocab.txt', 'tokenizer_config.json', 'config.json'],
+      );
+      fetched.clear();
+      expect(await e.download('sentence-transformers/all-MiniLM-L6-v2'), isTrue, reason: e.status.value.message);
+      const String prefix = 'https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/$sha/';
+      expect(fetched, ['${prefix}vocab.txt', '${prefix}tokenizer_config.json', '${prefix}config.json', '${prefix}onnx/model.onnx']);
+      expect(SettingsHandler.instance.encoderModel, 'sentence-transformers/all-MiniLM-L6-v2');
+    });
+
+    test('a folder with vocab.txt and model.onnx is imported and the setting starts with files:', () async {
+      final EncoderHandler e = EncoderHandler.instance;
+      final Directory src = Directory.systemTemp.createTempSync('encoder-src');
+      addTearDown(() {
+        try {
+          src.deleteSync(recursive: true);
+        } catch (_) {}
+      });
+      final Map<String, String> files = {
+        'vocab.txt': '${src.path}${Platform.pathSeparator}vocab.txt',
+        'tokenizer_config.json': '${src.path}${Platform.pathSeparator}tokenizer_config.json',
+        'config.json': '${src.path}${Platform.pathSeparator}config.json',
+        'model.onnx': '${src.path}${Platform.pathSeparator}model.onnx',
+      };
+      File(files['vocab.txt']!).writeAsStringSync(vocab);
+      File(files['tokenizer_config.json']!).writeAsStringSync('{"do_lower_case": true, "model_max_length": 512}');
+      File(files['config.json']!).writeAsStringSync('{"hidden_size": 8, "model_type": "bert"}');
+      File(files['model.onnx']!).writeAsBytesSync(List<int>.filled(16, 3));
+      final bool ok = await e.importLocal(
+        label: 'local-encoder',
+        files: files,
+        copy: (String relative, File dest) async {
+          dest.parent.createSync(recursive: true);
+          File(files[relative]!).copySync(dest.path);
+        },
+      );
+      expect(ok, isTrue, reason: e.status.value.message);
+      expect(SettingsHandler.instance.encoderModel, startsWith('files:'));
+      expect(File('${e.dirFor(SettingsHandler.instance.encoderModel)}model.onnx').existsSync(), isTrue);
     });
   });
 }

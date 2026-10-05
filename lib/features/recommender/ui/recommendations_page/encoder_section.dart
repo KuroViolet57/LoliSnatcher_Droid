@@ -58,6 +58,7 @@ class _EncoderModelSectionState extends State<EncoderModelSection> {
     final String setting = chosenSetting;
     if (setting.isEmpty) return;
     final bool ok = await encoder.download(setting);
+    if (ok) _followSaved(settings.encoderModel);
     if (!ok && mounted) {
       FlashElements.showSnackbar(
         context: context,
@@ -69,6 +70,29 @@ class _EncoderModelSectionState extends State<EncoderModelSection> {
     }
     await widget.onChanged();
     if (mounted) setState(() {});
+  }
+
+  Future<void> _import(EncoderHandler encoder) async {
+    await runModelImport(
+      context: context,
+      stillMounted: () => mounted,
+      refresh: () {
+        _followSaved(settings.encoderModel);
+        if (mounted) setState(() {});
+      },
+      title: 'Text model import failed',
+      message: () => encoder.status.value.message,
+      run: (Map<String, String> files) => encoder.importLocal(label: '', files: files, copy: (String relative, File dest) => copyListedModelFile(files, relative, dest)),
+    );
+  }
+
+  void _followSaved(String saved) {
+    if (EncoderPreset.byId(saved) != null) {
+      choice = saved;
+    } else if (saved.isNotEmpty) {
+      choice = 'custom';
+      custom.text = saved;
+    }
   }
 
   @override
@@ -145,7 +169,7 @@ class _EncoderModelSectionState extends State<EncoderModelSection> {
                         enabled: !downloading,
                         decoration: const InputDecoration(
                           labelText: 'Hugging Face repo id',
-                          hintText: 'owner/model — needs onnx/model_quantized.onnx, vocab.txt (WordPiece), tokenizer_config.json, config.json',
+                          hintText: 'owner/model or a huggingface.co link — an ONNX file, vocab.txt (WordPiece), tokenizer_config.json, config.json',
                           isDense: true,
                         ),
                         onChanged: (_) => setState(() {}),
@@ -160,6 +184,29 @@ class _EncoderModelSectionState extends State<EncoderModelSection> {
                           onPressed: downloading || chosenSetting.isEmpty ? null : () => _download(encoder),
                           icon: const Icon(Symbols.download_rounded),
                           label: Text(ready && settings.encoderModel == chosenSetting ? 'Download again' : 'Download'),
+                        ),
+                        OutlinedButton.icon(
+                          key: const ValueKey('encoder-import'),
+                          onPressed: downloading ? null : () => _import(encoder),
+                          icon: const Icon(Symbols.folder_open_rounded),
+                          label: const Text('Import from a folder'),
+                        ),
+                        ExplainButton(
+                          key: const ValueKey('encoder-import-explain'),
+                          title: 'Bringing in a text model',
+                          intro: 'Presets are the two sentence models this app was built around. A custom repo has to be WordPiece, the same tokenizer those use.',
+                          choices: () => const [
+                            ExplainChoice(
+                              name: 'Hugging Face repo',
+                              text:
+                                  'Type owner/model, or paste the repo page. The app prefers onnx/model_quantized.onnx, then onnx/model.onnx. fp16, 4-bit and AVX builds are skipped. vocab.txt is required: a repo that only has tokenizer.json (SentencePiece) is refused before the model downloads.',
+                            ),
+                            ExplainChoice(
+                              name: 'Import from a folder',
+                              text: 'Pick a folder you already downloaded. The app reads that folder and one level inside it (the onnx folder first). Nothing is uploaded.',
+                            ),
+                          ],
+                          footer: 'A private or gated repo is refused. The message names the file that was missing.',
                         ),
                         if (ready)
                           OutlinedButton.icon(
@@ -176,7 +223,7 @@ class _EncoderModelSectionState extends State<EncoderModelSection> {
                           ),
                       ],
                     ),
-                    Text('Models come from huggingface.co; download over Wi-Fi.', style: muted),
+                    Text('Type owner/model or paste a repo link, or import a folder you already downloaded. Downloads come from huggingface.co; use Wi-Fi.', style: muted),
                     SettingsToggle(
                       key: const ValueKey('ai-encoder-toggle'),
                       value: settings.aiEncoder,

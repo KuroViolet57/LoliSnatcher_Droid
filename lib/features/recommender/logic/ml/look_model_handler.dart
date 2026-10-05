@@ -15,6 +15,7 @@ import 'package:lolisnatcher/models/booru_item.dart';
 import 'package:lolisnatcher/features/recommender/logic/model_tasks.dart';
 import 'package:lolisnatcher/features/recommender/logic/ml/clip_tokenizer.dart';
 import 'package:lolisnatcher/features/recommender/logic/ml/encoder_handler.dart';
+import 'package:lolisnatcher/features/recommender/logic/ml/hf_repo.dart';
 import 'package:lolisnatcher/features/recommender/logic/onnx/onnx_look_runner.dart';
 import 'package:lolisnatcher/features/recommender/logic/ml/model_pictures.dart';
 import 'package:lolisnatcher/features/recommender/logic/pixel_tags.dart';
@@ -64,9 +65,11 @@ class LookModelHandler {
   final ValueNotifier<LookStatus> status = ValueNotifier(LookStatus.none);
 
   /// Test seams: how files come down, how the model runs, how a thumbnail is read.
+  /// Preset downloads do not call [listing].
   LookFetcher fetcher = _dioFetch;
   LookRunnerFactory runnerFactory = _onnxRunner;
   ThumbnailFetcher thumbnailFetcher = _defaultThumbnail;
+  Future<HfListing> Function(String repoId) listing = HfRepo.fetch;
 
   SettingsHandler get _settings => SettingsHandler.instance;
 
@@ -106,14 +109,44 @@ class LookModelHandler {
   int? get npuImageBytes => LookPreset.byId(_settings.lookModel)?.npuImageBytes;
 
   /// Fetches the full-precision picture half; true when it is there.
+  /// A preset still asks for [npuImageRemote] on `main`. A custom repo uses
+  /// the `npuRemote` and `revision` stored in its manifest. A folder import
+  /// never calls Hugging Face.
   Future<bool> downloadNpuFile({void Function(double progress)? onProgress}) async {
     final String setting = _settings.lookModel;
     if (setting.isEmpty) return false;
     final File target = File(npuImagePath);
+    if (target.existsSync() && target.lengthSync() > 0) return true;
     final File part = File('${target.path}.part');
+    String remote = npuImageRemote;
+    String revision = 'main';
+    String source = '';
+    String repo = repoOf(setting);
+    try {
+      final File manifest = File('${dirFor(setting)}manifest.json');
+      if (manifest.existsSync()) {
+        final Map<String, dynamic> stored = jsonDecode(manifest.readAsStringSync()) as Map<String, dynamic>;
+        final String? named = stored['npuRemote'] as String?;
+        if (named != null && named.isNotEmpty) remote = named;
+        final String? namedRevision = stored['revision'] as String?;
+        if (namedRevision != null && namedRevision.isNotEmpty) revision = namedRevision;
+        source = stored['source'] as String? ?? '';
+        if (LookPreset.byId(setting) == null) {
+          final String listed = stored['repo'] as String? ?? repo;
+          if (!listed.startsWith('folder:') && listed.contains('/')) repo = listed;
+        }
+      }
+    } catch (e) {
+      Logger.Inst().log('look: NPU manifest unreadable, the preset file name stands ($e)', className, 'downloadNpuFile', LogTypes.booruHandlerInfo);
+    }
+    if (source == 'folder' || setting.startsWith('files:')) {
+      Logger.Inst().log('look: the imported folder has no full-precision picture half', className, 'downloadNpuFile', LogTypes.booruHandlerInfo);
+      return false;
+    }
+    final String url = revision == 'main' && remote == npuImageRemote ? fileUrl(repo, remote) : HfRepo.resolveUrl(repo, revision, remote);
     try {
       await fetcher(
-        fileUrl(repoOf(setting), npuImageRemote),
+        url,
         part,
         onProgress: (int received, int total) {
           if (total > 0) onProgress?.call(received / total);
@@ -211,6 +244,7 @@ class LookModelHandler {
   /// Downloads [setting] (a preset id or a repo id) and makes it the model.
   Future<bool> download(String setting) async {
     if (_downloading != null) return false;
+    if (LookPreset.byId(setting) == null) return _downloadListed(setting);
     final String repo = repoOf(setting);
     if (repo.isEmpty || !repo.contains('/')) {
       status.value = const LookStatus(state: LookState.error, message: 'A Hugging Face repo id looks like owner/model.');
@@ -307,6 +341,209 @@ class LookModelHandler {
       _downloading = null;
     }
   }
+
+  /// A repo id or a Hugging Face link. The file list decides which files to
+  /// fetch. Presets do not come through here.
+  Future<bool> _downloadListed(String setting) async {
+    final CancelToken cancel = _downloading = CancelToken();
+    try {
+      final HfParseResult parsed = HfRepo.parse(setting);
+      if (parsed.repo == null) {
+        status.value = LookStatus(state: LookState.error, message: parsed.error ?? HfRepo.howTo);
+        return false;
+      }
+      final String asked = parsed.repo!.id;
+      status.value = LookStatus(state: LookState.downloading, repo: asked);
+      final HfListing listed;
+      try {
+        listed = await listing(asked);
+      } catch (e) {
+        status.value = LookStatus(state: LookState.error, repo: asked, message: 'Could not read the file list ($e).');
+        return false;
+      }
+      if (cancel.isCancelled) {
+        status.value = const LookStatus(state: LookState.error, message: 'Download cancelled.');
+        return false;
+      }
+      if (!listed.ok) {
+        status.value = LookStatus(state: LookState.error, repo: asked, message: listed.error!);
+        return false;
+      }
+      final HfPlan plan = HfRepo.choose(HfKind.look, listed.files);
+      if (plan.error != null) {
+        Logger.Inst().log('look: $asked listed ${listed.files.length} files, none usable: ${plan.error}', className, 'download', LogTypes.booruHandlerInfo);
+        status.value = LookStatus(state: LookState.error, repo: listed.id.isEmpty ? asked : listed.id, message: plan.error!);
+        return false;
+      }
+      final String repo = listed.id.isEmpty ? asked : listed.id;
+      final String? fromLink = parsed.repo!.revision;
+      final String revision = fromLink == null || fromLink == 'main' ? listed.revision : fromLink;
+      Logger.Inst().log(
+        'look: $repo @ $revision -> ${plan.files.map((HfPlannedFile f) => '${f.remote} as ${f.local}').join(', ')}'
+        '${plan.npuRemote == null ? '' : ' (NPU later: ${plan.npuRemote})'}',
+        className,
+        'download',
+        LogTypes.booruHandlerInfo,
+      );
+      return await _installLook(
+        setting: repo,
+        repoLabel: repo,
+        plan: plan,
+        source: 'huggingface',
+        revision: revision,
+        cancel: cancel,
+        fetchOne: (HfPlannedFile file, File dest, void Function(int, int) onProgress) {
+          return fetcher(HfRepo.resolveUrl(repo, revision, file.remote), dest, cancelToken: cancel, onProgress: onProgress);
+        },
+      );
+    } finally {
+      _downloading = null;
+    }
+  }
+
+  /// Copies a folder of files the user already has. A full-precision picture
+  /// half sitting next to the quantized one is kept for the NPU button.
+  Future<bool> importLocal({required String label, required Map<String, String> files, required Future<void> Function(String relative, File dest) copy}) async {
+    if (_downloading != null) return false;
+    final CancelToken cancel = _downloading = CancelToken();
+    try {
+      final HfPlan chosen = HfRepo.choose(HfKind.look, files.keys.toList());
+      final String name = label.trim().isEmpty ? HfRepo.labelFor(files.keys) : label.trim();
+      if (chosen.error != null) {
+        Logger.Inst().log('look: folder $name is not a looks model (${files.length} files): ${chosen.error}', className, 'importLocal', LogTypes.booruHandlerInfo);
+        status.value = LookStatus(state: LookState.error, message: chosen.error!);
+        return false;
+      }
+      final HfPlan plan = HfPlan(
+        npuRemote: chosen.npuRemote,
+        files: [
+          ...chosen.files,
+          if (chosen.npuRemote != null) HfPlannedFile(remote: chosen.npuRemote!, local: npuImageFileName, required: false),
+        ],
+      );
+      Logger.Inst().log('look: importing folder $name (${plan.files.map((HfPlannedFile f) => f.remote).join(', ')})', className, 'importLocal', LogTypes.booruHandlerInfo);
+      return await _installLook(
+        setting: HfRepo.localSetting(name),
+        repoLabel: 'folder:$name',
+        plan: plan,
+        source: 'folder',
+        cancel: cancel,
+        fetchOne: (HfPlannedFile file, File dest, void Function(int, int) onProgress) async {
+          await copy(file.remote, dest);
+          onProgress(dest.existsSync() ? dest.lengthSync() : 0, 0);
+        },
+      );
+    } finally {
+      _downloading = null;
+    }
+  }
+
+  Future<bool> _installLook({
+    required String setting,
+    required String repoLabel,
+    required HfPlan plan,
+    required String source,
+    required CancelToken cancel,
+    required Future<void> Function(HfPlannedFile file, File dest, void Function(int received, int total) onProgress) fetchOne,
+    String? revision,
+  }) async {
+    final String dir = dirFor(setting);
+    final String tmp = '${_settings.path}look${Platform.pathSeparator}.download-${slugOf(repoLabel)}${Platform.pathSeparator}';
+    status.value = LookStatus(state: LookState.downloading, repo: repoLabel);
+    try {
+      final Directory tmpDir = Directory(tmp);
+      if (tmpDir.existsSync()) tmpDir.deleteSync(recursive: true);
+      tmpDir.createSync(recursive: true);
+      int done = 0;
+      final int totalFiles = plan.files.length;
+      for (final HfPlannedFile file in plan.files) {
+        if (cancel.isCancelled) throw DioException(requestOptions: RequestOptions(), type: DioExceptionType.cancel);
+        final File dest = File('$tmp${file.local}');
+        try {
+          await fetchOne(file, dest, (int received, int total) {
+            final double progress = totalFiles == 0 ? 0 : ((done + (total > 0 ? received / total : 0)) / totalFiles).clamp(0, 1).toDouble();
+            status.value = LookStatus(state: LookState.downloading, repo: repoLabel, bytes: total, progress: progress);
+          });
+        } catch (e) {
+          if (cancel.isCancelled || (e is DioException && e.type == DioExceptionType.cancel)) rethrow;
+          if (!file.required) {
+            Logger.Inst().log('look: optional ${file.remote} skipped ($e)', className, 'download', LogTypes.booruHandlerInfo);
+            try {
+              if (dest.existsSync()) dest.deleteSync();
+            } catch (_) {}
+            done++;
+            continue;
+          }
+          if (e is FormatException) rethrow;
+          throw FormatException('Could not ${source == 'folder' ? 'copy' : 'download'} ${file.remote}: ${_why(e)}');
+        }
+        if (file.local == 'config.json' && dest.existsSync()) {
+          final String type = (_json(dest)['model_type'] ?? '').toString().trim().toLowerCase();
+          if (type.isNotEmpty && type != 'clip') {
+            throw FormatException('This looks model is $type, and this app only runs CLIP. The picture half was not downloaded.');
+          }
+        }
+        if (file.local == tokenizerFileName) {
+          try {
+            ClipTokenizer.fromJsonText(dest.readAsStringSync());
+          } catch (e) {
+            throw FormatException('tokenizer.json is not a CLIP tokenizer ($e).');
+          }
+        }
+        done++;
+      }
+      Map<String, dynamic> pre = const {};
+      final File preFile = File('$tmp$preprocessorFileName');
+      if (preFile.existsSync()) pre = _json(preFile);
+      final int inputSize = _inputSizeOf(pre) ?? defaultInputSize;
+      final bool normalize = pre['do_normalize'] == true;
+      final List<double>? mean = normalize ? _doubles(pre['image_mean']) : null;
+      final List<double>? std = normalize ? _doubles(pre['image_std']) : null;
+      final int bytes = File('$tmp$imageFileName').lengthSync() + File('$tmp$textFileName').lengthSync();
+      final bool keepNpu = plan.npuRemote != null && (source != 'folder' || File('$tmp$npuImageFileName').existsSync());
+      File('${tmp}manifest.json').writeAsStringSync(
+        jsonEncode({
+          'repo': repoLabel,
+          'setting': setting,
+          'bytes': bytes,
+          'inputSize': inputSize,
+          'mean': mean,
+          'std': std,
+          'dim': 0,
+          'downloadedAt': DateTime.now().toIso8601String(),
+          'source': source,
+          'revision': ?revision,
+          if (keepNpu) 'npuRemote': plan.npuRemote,
+          'files': {for (final HfPlannedFile file in plan.files) if (File('$tmp${file.local}').existsSync()) file.local: file.remote},
+        }),
+      );
+      await close();
+      _apply(status.value, slug: '');
+      final Directory target = Directory(dir);
+      if (target.existsSync()) target.deleteSync(recursive: true);
+      tmpDir.renameSync(target.path.substring(0, target.path.length - 1));
+      _settings.lookModel = setting;
+      unawaited(_saveSetting());
+      await refresh();
+      Logger.Inst().log('look: $source $repoLabel ready ($bytes bytes)', className, 'download', LogTypes.booruHandlerInfo);
+      return isReady;
+    } catch (e, s) {
+      final String why = e is DioException
+          ? (e.message ?? e.error?.toString() ?? e.type.name)
+          : e is FormatException
+          ? e.message
+          : '$e';
+      Logger.Inst().log('look $source of $repoLabel failed: $e', className, 'download', LogTypes.exception, s: s);
+      try {
+        final Directory tmpDir = Directory(tmp);
+        if (tmpDir.existsSync()) tmpDir.deleteSync(recursive: true);
+      } catch (_) {}
+      status.value = LookStatus(state: LookState.error, repo: repoLabel, message: cancel.isCancelled ? 'Download cancelled.' : why);
+      return false;
+    }
+  }
+
+  static String _why(Object e) => e is DioException ? (e.message ?? e.error?.toString() ?? e.type.name) : '$e';
 
   void cancelDownload() => _downloading?.cancel('cancelled by the user');
 

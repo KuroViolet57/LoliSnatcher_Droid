@@ -57,6 +57,7 @@ class _LookModelSectionState extends State<LookModelSection> {
     final String setting = chosenSetting;
     if (setting.isEmpty) return;
     final bool ok = await look.download(setting);
+    if (ok) _followSaved(settings.lookModel);
     if (!ok && mounted) {
       FlashElements.showSnackbar(
         context: context,
@@ -67,6 +68,29 @@ class _LookModelSectionState extends State<LookModelSection> {
       );
     }
     if (mounted) setState(() {});
+  }
+
+  Future<void> _import(LookModelHandler look) async {
+    await runModelImport(
+      context: context,
+      stillMounted: () => mounted,
+      refresh: () {
+        _followSaved(settings.lookModel);
+        if (mounted) setState(() {});
+      },
+      title: 'Looks model import failed',
+      message: () => look.status.value.message,
+      run: (Map<String, String> files) => look.importLocal(label: '', files: files, copy: (String relative, File dest) => copyListedModelFile(files, relative, dest)),
+    );
+  }
+
+  void _followSaved(String saved) {
+    if (LookPreset.byId(saved) != null) {
+      choice = saved;
+    } else if (saved.isNotEmpty) {
+      choice = 'custom';
+      custom.text = saved;
+    }
   }
 
   @override
@@ -142,7 +166,7 @@ class _LookModelSectionState extends State<LookModelSection> {
                         enabled: !downloading,
                         decoration: const InputDecoration(
                           labelText: 'Hugging Face repo id',
-                          hintText: 'owner/model — a CLIP export with onnx/vision_model_quantized.onnx, onnx/text_model_quantized.onnx, tokenizer.json',
+                          hintText: 'owner/model or a huggingface.co link — CLIP vision and text ONNX files, plus tokenizer.json',
                           isDense: true,
                         ),
                         onChanged: (_) => setState(() {}),
@@ -158,6 +182,30 @@ class _LookModelSectionState extends State<LookModelSection> {
                           icon: const Icon(Symbols.download_rounded),
                           label: Text(ready && settings.lookModel == chosenSetting ? 'Download again' : 'Download'),
                         ),
+                        OutlinedButton.icon(
+                          key: const ValueKey('look-import'),
+                          onPressed: downloading ? null : () => _import(look),
+                          icon: const Icon(Symbols.folder_open_rounded),
+                          label: const Text('Import from a folder'),
+                        ),
+                        ExplainButton(
+                          key: const ValueKey('look-import-explain'),
+                          title: 'Bringing in a looks model',
+                          intro: 'Presets are the two MobileCLIP models. A custom repo has to be CLIP, split into a picture half and a text half.',
+                          choices: () => const [
+                            ExplainChoice(
+                              name: 'Hugging Face repo',
+                              text:
+                                  'Type owner/model, or paste the repo page. The app prefers the quantized vision and text ONNX files, then the full-precision ones. A single combined onnx/model.onnx is refused. If config.json says the model is not CLIP (SigLIP, for example), the picture half is not downloaded. The full-precision picture half, when the repo has one, is fetched later from Speed → Run on → NPU.',
+                            ),
+                            ExplainChoice(
+                              name: 'Import from a folder',
+                              text:
+                                  'Pick a folder you already downloaded. The app reads that folder and one level inside it. If both the quantized and the full-precision picture halves are there, the full-precision one is kept for the NPU.',
+                            ),
+                          ],
+                          footer: 'A private or gated repo is refused. The message names the file that was missing.',
+                        ),
                         if (ready)
                           OutlinedButton.icon(
                             key: const ValueKey('look-delete'),
@@ -172,7 +220,10 @@ class _LookModelSectionState extends State<LookModelSection> {
                           ),
                       ],
                     ),
-                    Text('Models come from huggingface.co; download over Wi-Fi. Thumbnails are read once and remembered.', style: muted),
+                    Text(
+                      'Type owner/model or paste a repo link, or import a folder you already downloaded. Downloads come from huggingface.co; use Wi-Fi. Thumbnails are read once and remembered.',
+                      style: muted,
+                    ),
                     SettingsToggle(
                       key: const ValueKey('ai-look-toggle'),
                       value: settings.aiLook,

@@ -117,6 +117,7 @@ class _TaggerModelSectionState extends State<TaggerModelSection> {
     final String setting = chosenSetting;
     if (setting.isEmpty) return;
     final bool ok = await tagger.download(setting);
+    if (ok) _followSaved(settings.imageTaggerModel, TaggerPreset.byId);
     if (!ok && mounted) {
       FlashElements.showSnackbar(
         context: context,
@@ -127,6 +128,29 @@ class _TaggerModelSectionState extends State<TaggerModelSection> {
       );
     }
     if (mounted) setState(() {});
+  }
+
+  Future<void> _import(ImageTaggerHandler tagger) async {
+    await runModelImport(
+      context: context,
+      stillMounted: () => mounted,
+      refresh: () {
+        _followSaved(settings.imageTaggerModel, TaggerPreset.byId);
+        if (mounted) setState(() {});
+      },
+      title: 'Image tagger import failed',
+      message: () => tagger.status.value.message,
+      run: (Map<String, String> files) => tagger.importLocal(label: '', files: files, copy: (String relative, File dest) => copyListedModelFile(files, relative, dest)),
+    );
+  }
+
+  void _followSaved(String saved, Object? Function(String id) known) {
+    if (known(saved) != null) {
+      choice = saved;
+    } else if (saved.isNotEmpty) {
+      choice = 'custom';
+      custom.text = saved;
+    }
   }
 
   Future<void> _tryIt() async {
@@ -275,7 +299,7 @@ class _TaggerModelSectionState extends State<TaggerModelSection> {
                         enabled: !downloading,
                         decoration: const InputDecoration(
                           labelText: 'Hugging Face repo id',
-                          hintText: 'owner/model — needs model.onnx (one picture in, one score per tag out) and selected_tags.csv',
+                          hintText: 'owner/model or a huggingface.co link — model.onnx and selected_tags.csv (tags.csv is accepted)',
                           isDense: true,
                         ),
                         onChanged: (_) => setState(() {}),
@@ -290,6 +314,30 @@ class _TaggerModelSectionState extends State<TaggerModelSection> {
                           onPressed: downloading || chosenSetting.isEmpty ? null : () => _download(tagger),
                           icon: const Icon(Symbols.download_rounded),
                           label: Text(ready && settings.imageTaggerModel == chosenSetting ? 'Download again' : 'Download'),
+                        ),
+                        OutlinedButton.icon(
+                          key: const ValueKey('tagger-import'),
+                          onPressed: downloading ? null : () => _import(tagger),
+                          icon: const Icon(Symbols.folder_open_rounded),
+                          label: const Text('Import from a folder'),
+                        ),
+                        ExplainButton(
+                          key: const ValueKey('tagger-import-explain'),
+                          title: 'Bringing in an image tagger',
+                          intro: 'Presets are the WD taggers this app was built around. Anything else has to be the same kind of file.',
+                          choices: () => const [
+                            ExplainChoice(
+                              name: 'Hugging Face repo',
+                              text:
+                                  'Type owner/model, or paste the repo page (huggingface.co or hf.co, including a /tree/ link). The app reads the file list and downloads model.onnx and selected_tags.csv. A tags.csv is saved under the name the app already opens. A link to one file, a GitHub link, or two links at once is refused.',
+                            ),
+                            ExplainChoice(
+                              name: 'Import from a folder',
+                              text:
+                                  'Pick a folder you already downloaded. The app reads that folder and one level inside it. Nothing is uploaded. The files stay on this phone.',
+                            ),
+                          ],
+                          footer: 'A private or gated repo is refused. The message names the file that was missing.',
                         ),
                         if (ready)
                           OutlinedButton.icon(
@@ -322,7 +370,10 @@ class _TaggerModelSectionState extends State<TaggerModelSection> {
                         ),
                       ],
                     ),
-                    Text('Models come from huggingface.co; download over Wi-Fi. The model is opened on first use and closed after two idle minutes.', style: muted),
+                    Text(
+                      'Type owner/model or paste a repo link, or import a folder you already downloaded. Downloads come from huggingface.co; use Wi-Fi. The model is opened on first use and closed after two idle minutes.',
+                      style: muted,
+                    ),
                     if (tryError.isNotEmpty || tryNote.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: 8),

@@ -7,6 +7,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 
+import 'package:lolisnatcher/features/recommender/logic/ml/hf_repo.dart';
 import 'package:lolisnatcher/features/recommender/logic/ml/image_tagger_handler.dart';
 import 'package:lolisnatcher/features/recommender/logic/pixel_tags.dart';
 import 'package:lolisnatcher/features/recommender/logic/model_tasks.dart';
@@ -476,5 +477,56 @@ void main() {
 
   test('tag() without a model is a StateError, not a crash', () async {
     await expectLater(ImageTaggerHandler.instance.tag(png()), throwsA(isA<StateError>()));
+  });
+
+  test('a repo page link is fetched from the file list at the commit Hugging Face named', () async {
+    final ImageTaggerHandler t = ImageTaggerHandler.instance;
+    t.listing = (String repoId) async {
+      expect(repoId, 'SmilingWolf/wd-vit-tagger-v3');
+      return const HfListing(
+        id: 'SmilingWolf/wd-vit-tagger-v3',
+        revision: '7f6b584d0bd3f55c4531f14ba3d4761b2bccdc0f',
+        files: ['config.json', 'model.onnx', 'selected_tags.csv'],
+      );
+    };
+    expect(await t.download('https://huggingface.co/SmilingWolf/wd-vit-tagger-v3/tree/main'), isTrue, reason: t.status.value.message);
+    const String prefix = 'https://huggingface.co/SmilingWolf/wd-vit-tagger-v3/resolve/7f6b584d0bd3f55c4531f14ba3d4761b2bccdc0f/';
+    expect(fetched, ['${prefix}selected_tags.csv', '${prefix}config.json', '${prefix}model.onnx']);
+    expect(SettingsHandler.instance.imageTaggerModel, 'SmilingWolf/wd-vit-tagger-v3');
+    expect(t.status.value.state, TaggerState.ready);
+  });
+
+  test('a folder of model.onnx and selected_tags.csv is imported without calling Hugging Face', () async {
+    final ImageTaggerHandler t = ImageTaggerHandler.instance;
+    var asked = false;
+    t.listing = (String repoId) async {
+      asked = true;
+      return HfListing.failed('should not be called');
+    };
+    final Directory src = Directory.systemTemp.createTempSync('tagger-src');
+    addTearDown(() {
+      try {
+        src.deleteSync(recursive: true);
+      } catch (_) {}
+    });
+    final Map<String, String> files = {
+      'model.onnx': '${src.path}${Platform.pathSeparator}model.onnx',
+      'selected_tags.csv': '${src.path}${Platform.pathSeparator}selected_tags.csv',
+    };
+    File(files['model.onnx']!).writeAsBytesSync(List<int>.filled(32, 1));
+    File(files['selected_tags.csv']!).writeAsStringSync(csv);
+    final bool ok = await t.importLocal(
+      label: 'wd-local',
+      files: files,
+      copy: (String relative, File dest) async {
+        dest.parent.createSync(recursive: true);
+        File(files[relative]!).copySync(dest.path);
+      },
+    );
+    expect(ok, isTrue, reason: t.status.value.message);
+    expect(asked, isFalse);
+    expect(SettingsHandler.instance.imageTaggerModel, startsWith('files:'));
+    expect(File('${t.dirFor(SettingsHandler.instance.imageTaggerModel)}model.onnx').existsSync(), isTrue);
+    expect(File('${t.dirFor(SettingsHandler.instance.imageTaggerModel)}selected_tags.csv').existsSync(), isTrue);
   });
 }

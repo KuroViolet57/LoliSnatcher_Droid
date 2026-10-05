@@ -315,6 +315,28 @@ class ServiceHandler {
     return result;
   }
 
+  /// A folder the user picked for a model import. Empty when they cancel.
+  static Future<String> selectModelFolder() async {
+    try {
+      final String? picked = await platform.invokeMethod('selectModelFolder');
+      log('model folder ${picked == null || picked.isEmpty ? 'cancelled' : 'picked'}');
+      return picked ?? '';
+    } catch (e) {
+      log(e);
+      return '';
+    }
+  }
+
+  /// Streams a content URI onto [destPath]. False when the copy fails.
+  static Future<bool> copyContentUriToFile(String uri, String destPath) async {
+    try {
+      return await platform.invokeMethod('copyContentUriToFile', {'uri': uri, 'destPath': destPath}) ?? false;
+    } catch (e) {
+      log(e);
+      return false;
+    }
+  }
+
   static Future<bool> copySafFileToDir(String safUri, String fileName, String targetPath) async {
     bool result = false;
     try {
