@@ -66,6 +66,9 @@ android {
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
+        // flutter_local_notifications 10+ needs desugaring even for a notice
+        // that is shown immediately.
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -82,6 +85,7 @@ android {
 
     defaultConfig {
         applicationId = packageName
+        multiDexEnabled = true
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutterVersionCode.toInt()
@@ -156,6 +160,7 @@ flutter {
 }
 
 dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
     implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.1.0")
     implementation("androidx.documentfile:documentfile:1.0.1")
 }

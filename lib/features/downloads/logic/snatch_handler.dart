@@ -22,6 +22,9 @@ import 'package:lolisnatcher/features/downloads/logic/image_writer.dart';
 import 'package:lolisnatcher/core/ui/flash_elements.dart';
 import 'package:lolisnatcher/features/feed/ui/thumbnail/thumbnail_build.dart';
 import 'package:lolisnatcher/core/logging/logger.dart';
+import 'package:lolisnatcher/core/platform/download_notice.dart';
+import 'package:lolisnatcher/core/platform/notify_handler.dart';
+import 'package:lolisnatcher/gen/strings.g.dart';
 import 'package:lolisnatcher/sources/doujin/ehentai/ehentai_handler.dart';
 
 class SnatchHandler {
@@ -224,6 +227,16 @@ class SnatchHandler {
 
             // last yield in stream will send fetch results counters
             // but show this message only when queue is empty => snatching is complete
+            _postFinishedNotice(
+              single: current.value!.booruItems.length == 1,
+              progress: queueProgress.value,
+              exists: exists.length,
+              failed: failed.length,
+              cancelled: cancelled.length,
+              moreQueued: queuedList.isNotEmpty,
+              enabled: SettingsHandler.instance.downloadNotifications,
+              isLastMessage: isLastMessage,
+            );
             if (SettingsHandler.instance.downloadNotifications && isLastMessage) {
               if (current.value!.booruItems.length == 1) {
                 final context = NavigationHandler.instance.navContext;
@@ -396,6 +409,65 @@ class SnatchHandler {
     queue(ready, booru, cooldown, ignoreExists, doujin: doujin.withMissing(ready));
   }
 
+  /// Phone notice for the queue. The snackbar still needs a navigator; this
+  /// posts the English text when that navigator is gone (app backgrounded
+  /// before the first frame, or already torn down).
+  void _postQueuedNotice(int count) {
+    final BuildContext? context = NavigationHandler.instance.navigatorKey.currentContext;
+    final String one = context == null ? 'Added item to snatch queue' : context.loc.snatcher.addedItemToQueue;
+    final String many = context == null
+        ? 'Added $count items to snatch queue'
+        : context.loc.snatcher.addedItemsToQueue(count: count);
+    final DownloadNotice? notice = noticeForQueued(
+      enabled: SettingsHandler.instance.downloadNotifications,
+      count: count,
+      oneTitle: one,
+      manyTitle: many,
+    );
+    if (notice != null) {
+      unawaited(NotifyHandler.instance.show(notice));
+    }
+  }
+
+  void _postFinishedNotice({
+    required bool single,
+    required int progress,
+    required int exists,
+    required int failed,
+    required int cancelled,
+    required bool moreQueued,
+    required bool enabled,
+    required bool isLastMessage,
+  }) {
+    final BuildContext? context = NavigationHandler.instance.navigatorKey.currentContext;
+    final String title = context == null ? 'Items snatched' : context.loc.snatcher.itemsSnatched;
+    final List<String> lines = [
+      if (!single) context == null ? 'Snatched: $progress items' : context.loc.snatcher.snatchedCount(count: progress),
+      if (exists > 0)
+        single
+            ? (context == null ? 'Item was already snatched before' : context.loc.snatcher.itemWasAlreadySnatched)
+            : (context == null ? '$exists files were already snatched' : context.loc.snatcher.filesAlreadySnatched(count: exists)),
+      if (failed > 0)
+        single
+            ? (context == null ? 'Failed to snatch the item' : context.loc.snatcher.failedToSnatchItem)
+            : (context == null ? 'Failed to snatch $failed files' : context.loc.snatcher.failedToSnatchFiles(count: failed)),
+      if (cancelled > 0)
+        single
+            ? (context == null ? 'Item was cancelled' : context.loc.snatcher.itemWasCancelled)
+            : (context == null ? 'Cancelled $cancelled files' : context.loc.snatcher.cancelledFiles(count: cancelled)),
+      if (moreQueued) context == null ? 'Starting next queue item…' : context.loc.snatcher.startingNextQueueItem,
+    ];
+    final DownloadNotice? notice = noticeForFinished(
+      enabled: enabled,
+      isLastMessage: isLastMessage,
+      title: title,
+      lines: lines,
+    );
+    if (notice != null) {
+      unawaited(NotifyHandler.instance.show(notice));
+    }
+  }
+
   void queue(
     List<BooruItem> booruItems,
     Booru booru,
@@ -432,6 +504,7 @@ class SnatchHandler {
         }
       }
 
+      _postQueuedNotice(booruItems.length);
       if (booruItems.length > 1) {
         if (SettingsHandler.instance.downloadNotifications) {
           final context = NavigationHandler.instance.navContext;

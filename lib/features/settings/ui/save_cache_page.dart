@@ -362,6 +362,9 @@ class _SaveCachePageState extends State<SaveCachePage> {
                   });
                 },
                 title: context.loc.settings.cache.showDownloadNotifications,
+                subtitle: const Text(
+                  'Also posts a silent phone notification when a snatch is queued and when it finishes, including in the background. Android asks once for permission. Sound for the Downloads channel can be turned on in system settings.',
+                ),
               ),
               SettingsToggle(
                 value: snatchOnFavourite,
