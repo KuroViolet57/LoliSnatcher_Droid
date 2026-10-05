@@ -42,6 +42,11 @@ class LocalAuthHandler {
   bool get isSupportedPlatform => Platform.isAndroid || Platform.isIOS || Platform.isWindows;
 
   Future<void> init() async {
+    // The overlay treats null as "show the feed". Settings are already loaded,
+    // so a lock that is on covers the feed before the biometric check returns.
+    if (SettingsHandler.instance.useLockscreen.value) {
+      isAuthenticated.value = false;
+    }
     await canCheckBiometrics();
     await lock();
   }
@@ -157,19 +162,27 @@ class LocalAuthHandler {
     lastLeaveTime ??= DateTime.now().millisecondsSinceEpoch;
   }
 
+  /// True when the user has been away longer than the lock timeout, and the
+  /// last unlock was long enough ago that the system auth screen's own
+  /// pause does not count as leaving.
+  bool lockIsDue() {
+    if (lastLeaveTime == null) return false;
+    final int leaveTimeoutMs = 1000 * SettingsHandler.instance.autoLockTimeout;
+    final int timeSinceLastLeave = DateTime.now().millisecondsSinceEpoch - (lastLeaveTime ?? 0);
+    const int unlockDelayMs = 1000;
+    final int timeSinceLastUnlock = DateTime.now().millisecondsSinceEpoch - (lastUnlockTime ?? 0);
+    return leaveTimeoutMs != 0 && timeSinceLastLeave > leaveTimeoutMs && timeSinceLastUnlock > unlockDelayMs;
+  }
+
   Future<void> onReturn() async {
     if (lastLeaveTime == null) {
       return;
     }
+    if (lockIsDue()) {
+      isAuthenticated.value = false;
+    }
     await Future.delayed(const Duration(milliseconds: 10));
-    final int leaveTimeoutMs = 1000 * SettingsHandler.instance.autoLockTimeout;
-    final int timeSinceLastLeave = DateTime.now().millisecondsSinceEpoch - (lastLeaveTime ?? 0);
-
-    const int unlockDelayMs = 1000;
-    final int timeSinceLastUnlock = DateTime.now().millisecondsSinceEpoch - (lastUnlockTime ?? 0);
-
-    // lock if leaveTimeoutMs passed since last leave and unlockDelayMs since last unlock (to avoid locking again because native auth screen is also considered a leave)
-    if (leaveTimeoutMs != 0 && timeSinceLastLeave > leaveTimeoutMs && timeSinceLastUnlock > unlockDelayMs) {
+    if (lockIsDue()) {
       await lock();
     }
   }
