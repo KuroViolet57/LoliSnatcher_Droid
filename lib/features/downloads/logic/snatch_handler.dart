@@ -22,6 +22,8 @@ import 'package:lolisnatcher/features/downloads/logic/image_writer.dart';
 import 'package:lolisnatcher/core/ui/flash_elements.dart';
 import 'package:lolisnatcher/features/feed/ui/thumbnail/thumbnail_build.dart';
 import 'package:lolisnatcher/core/logging/logger.dart';
+import 'package:lolisnatcher/core/utils/tools.dart';
+import 'package:lolisnatcher/features/downloads/logic/snatch_queue_journal.dart';
 import 'package:lolisnatcher/core/platform/download_notice.dart';
 import 'package:lolisnatcher/core/platform/notify_handler.dart';
 import 'package:lolisnatcher/gen/strings.g.dart';
@@ -161,6 +163,7 @@ class SnatchHandler {
     );
 
     queuedList.addAll(snatchItems);
+    _rememberQueue();
 
     onClearRetryableItems();
   }
@@ -178,6 +181,7 @@ class SnatchHandler {
         ignoreExists,
       ),
     );
+    _rememberQueue();
 
     onRemoveRetryItem(record);
   }
@@ -195,6 +199,7 @@ class SnatchHandler {
         ? '0/${item.booruItems.length}/${queuedList.length}'
         : '0/${item.booruItems.length}';
     current.value = item;
+    _rememberQueue();
 
     // A doujin book gets its own folder and page-numbered files; when the
     // folder cannot be made the pages fall back to the root, as before.
@@ -350,6 +355,7 @@ class SnatchHandler {
                 active.value = false;
               }
             }
+            _rememberQueue();
           },
         );
   }
@@ -482,6 +488,7 @@ class SnatchHandler {
     if (booruItems.isNotEmpty) {
       final SnatchItem item = SnatchItem(booruItems, cooldown, booru, ignoreExists, doujin: doujin);
       queuedList.add(item);
+      _rememberQueue();
       // Doujin downloads must not feed the booru taste profile — checked per
       // item so merge tabs mixing both worlds stay separated too.
       if (!DoujinDataHandler.isDoujinBooru(booru)) {
@@ -620,6 +627,59 @@ class SnatchHandler {
     }
     // 1.0: pages come whole; the amount asked for is what is queued.
     return visible.take(wanted).toList();
+  }
+
+  SnatchQueueJournal? _journal;
+  bool _restoring = false;
+
+  SnatchQueueJournal _queueJournal() => _journal ??= SnatchQueueJournal.forSettings();
+
+  /// Writes the in-progress batch and everything still waiting. Skipped in
+  /// tests and before the config directory exists.
+  void _rememberQueue() {
+    if (_restoring || Tools.isTestMode) return;
+    if (SettingsHandler.instance.path.isEmpty) return;
+    _queueJournal().save([
+      if (current.value != null) current.value!,
+      ...queuedList,
+    ]);
+  }
+
+  /// Puts an interrupted queue back. The batch that was in progress is queued
+  /// again; files already on disk are skipped when ignoreExists is set.
+  Future<void> restoreJournal() async {
+    if (Tools.isTestMode) return;
+    if (SettingsHandler.instance.path.isEmpty) return;
+    try {
+      final List<SnatchItem> pending = await _queueJournal().load(
+        lookup: (String name, String baseUrl) {
+          for (final Booru booru in SettingsHandler.instance.booruList) {
+            if ((booru.name ?? '') == name && (booru.baseURL ?? '') == baseUrl) return booru;
+          }
+          return null;
+        },
+      );
+      if (pending.isEmpty) return;
+      _restoring = true;
+      queuedList.addAll(pending);
+      _restoring = false;
+      _rememberQueue();
+      Logger.Inst().log(
+        'restored ${pending.length} snatch queue item(s)',
+        'SnatchHandler',
+        'restoreJournal',
+        LogTypes.settingsLoad,
+      );
+    } catch (e, s) {
+      _restoring = false;
+      Logger.Inst().log(
+        'snatch queue restore failed: $e',
+        'SnatchHandler',
+        'restoreJournal',
+        LogTypes.exception,
+        s: s,
+      );
+    }
   }
 
   void dispose() {

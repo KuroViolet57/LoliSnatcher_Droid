@@ -122,6 +122,7 @@ void main() async {
   SecureStorageHandler.register();
   initSettingsEnumRegistry();
   await SettingsHandler.register().initialize();
+  await SnatchHandler.instance.restoreJournal();
   StartupTimeline.mark('settings');
   // r34: the downloaded encoder, if any, is found from its manifest once the
   // settings (its model id) and the app path are known.
