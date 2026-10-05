@@ -21,6 +21,19 @@ class VideoCompletionTracker {
   /// re-created controller): the next low position is not a loop.
   void markResumed() => _last = 0;
 
+  /// Same as [update], but samples taken while the page is not the one on
+  /// screen are ignored. They must not count as a watch, and they must not
+  /// leave the tracker thinking a later restart is a loop.
+  bool noteIfViewed({
+    required bool isViewed,
+    required String key,
+    required Duration position,
+    required Duration duration,
+  }) {
+    if (!isViewed) return false;
+    return update(key: key, position: position, duration: duration);
+  }
+
   /// True exactly once per [key] when the video was watched through.
   bool update({required String key, required Duration position, required Duration duration}) {
     if (key != _key) {

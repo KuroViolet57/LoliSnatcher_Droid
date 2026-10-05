@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:lolisnatcher/features/video/logic/video_completion_tracker.dart';
@@ -34,6 +36,32 @@ void main() {
     expect(u.update(key: 'c', position: const Duration(seconds: 18), duration: total), isTrue, reason: 'still counts once it really gets there');
     u.markResumed();
     expect(u.update(key: 'c', position: const Duration(seconds: 19), duration: total), isFalse, reason: 'and never twice');
+  });
+
+  test('progress while the page is off screen does not count, and does not fake a loop when it comes on screen', () {
+    final VideoCompletionTracker t = VideoCompletionTracker();
+    const Duration total = Duration(seconds: 20);
+    expect(
+      t.noteIfViewed(isViewed: false, key: 'a', position: const Duration(seconds: 18), duration: total),
+      isFalse,
+    );
+    expect(
+      t.noteIfViewed(isViewed: true, key: 'a', position: const Duration(seconds: 1), duration: total),
+      isFalse,
+      reason: 'off-screen progress must not count as already watched',
+    );
+    expect(
+      t.noteIfViewed(isViewed: true, key: 'a', position: const Duration(seconds: 18), duration: total),
+      isTrue,
+    );
+  });
+
+  test('the media_kit view feeds its position into the tracker', () {
+    final String view = File('lib/features/video/ui/media_kit_player_view.dart').readAsStringSync();
+    expect(view, contains('stream.position.listen'));
+    expect(view, contains('noteIfViewed'));
+    expect(view, contains('markResumed'));
+    expect(view, contains('_positionSub?.cancel()'));
   });
 
   test('a new item starts fresh; an unknown duration teaches nothing', () {

@@ -11,8 +11,10 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
 import 'package:lolisnatcher/core/logging/perf_trace.dart';
+import 'package:lolisnatcher/features/recommender/logic/interests_handler.dart';
 import 'package:lolisnatcher/features/video/logic/player_pool_planner.dart';
 import 'package:lolisnatcher/features/video/logic/media_kit_engine_options.dart';
+import 'package:lolisnatcher/features/video/logic/video_completion_tracker.dart';
 import 'package:lolisnatcher/features/video/logic/video_surface_cap.dart';
 import 'package:lolisnatcher/models/booru.dart';
 import 'package:lolisnatcher/models/booru_item.dart';
@@ -111,6 +113,8 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> with TraceLifec
   // WITH the captcha interceptor (which pops the solve webview when the
   // host is challenging), then rebuild the player with the fresh cookies.
   StreamSubscription<String>? _errorProbeSub;
+  StreamSubscription<Duration>? _positionSub;
+  final VideoCompletionTracker _completion = VideoCompletionTracker();
   // r77: logs what mpv was doing when a video shows no picture 8 s in.
   Timer? _pictureCheck;
   // Per-URL cooldown so a genuinely broken file can't loop probe/retry.
@@ -144,6 +148,8 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> with TraceLifec
         } else {
           // Always restart from the beginning when a video becomes the
           // active page — user expectation from the previous engine.
+          // The restart is not a loop of the previous watch.
+          _completion.markResumed();
           _entry!.player.seek(Duration.zero);
           // r77: a preloaded player becoming the viewed one is watched too.
           _watchForPicture(_entry!, widget.booruItem.fileURL);
@@ -220,6 +226,8 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> with TraceLifec
 
       await _errorProbeSub?.cancel();
       _errorProbeSub = entry.player.stream.error.listen(_onPlayerError);
+      await _positionSub?.cancel();
+      _positionSub = entry.player.stream.position.listen(_onPlaybackPosition);
 
       Logger.Inst().log(
         'media_kit acquired ${entry.wasReused ? "(reused)" : (entry.replaced ? "(new, replacing a broken player)" : "(new)")} for $url',
@@ -265,6 +273,18 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> with TraceLifec
       PerfTrace.instance.event('video.nopicture', url);
       Logger.Inst().log(line, 'MediaKitPlayerView', 'picture', LogTypes.booruItemLoad);
     });
+  }
+
+  void _onPlaybackPosition(Duration position) {
+    final Duration duration = _entry?.player.state.duration ?? Duration.zero;
+    if (_completion.noteIfViewed(
+      isViewed: widget.isViewed,
+      key: widget.booruItem.fileURL,
+      position: position,
+      duration: duration,
+    )) {
+      InterestsHandler.instance.onVideoCompleted(widget.booruItem);
+    }
   }
 
   Future<void> _onPlayerError(String message) async {
@@ -336,6 +356,8 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> with TraceLifec
   void _release() {
     _errorProbeSub?.cancel();
     _errorProbeSub = null;
+    _positionSub?.cancel();
+    _positionSub = null;
     _initDebounce?.cancel();
     _initDebounce = null;
     final url = _acquiredUrl;
