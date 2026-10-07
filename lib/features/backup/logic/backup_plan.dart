@@ -23,6 +23,10 @@ enum BackupItem {
   /// r81: the vectors, in a database of their own (vectors.db).
   vectors,
   recommender,
+
+  /// Login cookies and tokens. Their own files, never settings.json.
+  /// Left unticked until the user includes it.
+  siteSessions,
 }
 
 class BackupItems {
@@ -46,6 +50,18 @@ class BackupItems {
     BackupItem.database: 'store.db',
     BackupItem.vectors: 'vectors.db',
   };
+
+  /// Session files. Exact names only, so a lookalike is not a login.
+  static const List<String> siteSessionFiles = [
+    'furaffinity_session.json',
+    'ehentai_session.json',
+    'eahentai_session.json',
+    'kemono_session.json',
+    'schale_clearance.json',
+  ];
+
+  /// What the checklist starts with. Site logins stay off until included.
+  static Set<BackupItem> initiallySelected() => BackupItem.values.toSet()..remove(BackupItem.siteSessions);
 
   static String labelOf(BackupItem item) {
     switch (item) {
@@ -71,6 +87,8 @@ class BackupItems {
         return 'Vector cache';
       case BackupItem.recommender:
         return 'Recommendations';
+      case BackupItem.siteSessions:
+        return 'Site logins';
     }
   }
 
@@ -98,6 +116,8 @@ class BackupItems {
         return 'What the text and looks models worked out for posts (vectors.db), so they are not read again. It can be large; a restore adds it to what is here.';
       case BackupItem.recommender:
         return 'What the recommender learned: its weights and your text and visual taste. With the same models on the other device, it recommends the same way.';
+      case BackupItem.siteSessions:
+        return 'Login cookies and tokens for FurAffinity, e-hentai, eahentai, Kemono and Schale. Kept in their own files, not inside settings.json. Left unticked until you include it.';
     }
   }
 
@@ -108,6 +128,7 @@ class BackupItems {
     }
     if (name.startsWith(recommenderPrefix) && name.length > recommenderPrefix.length) return BackupItem.recommender;
     if (name.startsWith(boardPicturePrefix) && name.length > boardPicturePrefix.length) return BackupItem.boardPictures;
+    if (siteSessionFiles.contains(name)) return BackupItem.siteSessions;
     return null;
   }
 
@@ -268,6 +289,15 @@ class BackupRunner {
         return _backupFolder(Directory(_recommenderDir), BackupItems.recommenderPrefix, target);
       case BackupItem.boardPictures:
         return _backupFolder(Directory(hooks.boardPicturesDir()), BackupItems.boardPicturePrefix, target);
+      case BackupItem.siteSessions:
+        bool any = false;
+        for (final String name in BackupItems.siteSessionFiles) {
+          final File f = File('$configDir$name');
+          if (!await f.exists()) continue;
+          await target.write(name, await f.readAsBytes());
+          any = true;
+        }
+        return any;
       case BackupItem.settings:
       case BackupItem.doujinLibrary:
       case BackupItem.sourceSettings:
@@ -368,6 +398,15 @@ class BackupRunner {
         final List<String> files = names.where((String n) => BackupItems.itemOf(n) == BackupItem.boardPictures).toList();
         if (files.isEmpty) return 'not in this backup';
         return _restoreFolder(files, BackupItems.boardPicturePrefix, Directory(hooks.boardPicturesDir()), target);
+      case BackupItem.siteSessions:
+        final List<String> sessions = names.where(BackupItems.siteSessionFiles.contains).toList();
+        if (sessions.isEmpty) return 'not in this backup';
+        for (final String name in sessions) {
+          final Uint8List? b = await target.read(name);
+          if (b == null) return '$name could not be read';
+          await File('$configDir$name').writeAsBytes(b, flush: true);
+        }
+        return null;
       case BackupItem.database:
         if (!names.contains('store.db')) return 'not in this backup';
         return db == DbRestore.whole ? _restoreWholeDatabase(target) : _restoreDatabaseParts(target, parts);

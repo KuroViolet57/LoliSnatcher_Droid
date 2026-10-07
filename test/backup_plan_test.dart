@@ -96,6 +96,24 @@ void main() {
       expect(BackupItem.values, contains(BackupItem.recommender));
     });
 
+    test('site logins are their own item, start unticked, and are not settings', () {
+      expect(
+        BackupItems.itemsIn(const [
+          'furaffinity_session.json',
+          'ehentai_session.json',
+          'eahentai_session.json',
+          'kemono_session.json',
+          'schale_clearance.json',
+        ]),
+        {BackupItem.siteSessions},
+      );
+      expect(BackupItems.itemOf('settings.json'), isNot(BackupItem.siteSessions));
+      expect(BackupItems.itemOf('ehentai_session.json.bak'), isNull);
+      expect(BackupItems.itemOf('not-ehentai_session.json'), isNull);
+      expect(BackupItems.initiallySelected(), isNot(contains(BackupItem.siteSessions)));
+      expect(BackupItems.describe(BackupItem.siteSessions), contains('settings.json'));
+    });
+
     test('the file names of a backup tell which items it holds - old backups included', () {
       expect(
         BackupItems.itemsIn(['settings.json', 'boorus.json', 'store.db', 'doujinData.json', 'tags.json']),
@@ -141,6 +159,24 @@ void main() {
       await BackupRunner(configDir: config, hooks: hooks).backup({BackupItem.database}, target);
       expect(calls.first, 'checkpoint');
       expect(target.files.keys, ['store.db']);
+    });
+
+    test('site logins copy only their files, and a restore leaves settings.json alone', () async {
+      File(p('settings.json')).writeAsStringSync('{"apiKey":"keep-me"}');
+      File(p('ehentai_session.json')).writeAsStringSync('{"cookie":"ipb_member_id=1"}');
+      File(p('kemono_session.json')).writeAsStringSync('{"token":"k"}');
+      final _Memory target = _Memory();
+      final BackupResult written = await BackupRunner(configDir: config, hooks: hooks).backup({BackupItem.siteSessions}, target);
+      expect(written.failures, isEmpty);
+      expect(target.files.keys.toSet(), {'ehentai_session.json', 'kemono_session.json'});
+      expect(utf8.decode(target.files['ehentai_session.json']!), contains('ipb_member_id'));
+
+      File(p('ehentai_session.json')).writeAsStringSync('old');
+      await BackupRunner(configDir: config, hooks: hooks).restore({BackupItem.siteSessions}, target);
+      expect(File(p('ehentai_session.json')).readAsStringSync(), contains('ipb_member_id'));
+      expect(File(p('kemono_session.json')).readAsStringSync(), '{"token":"k"}');
+      expect(File(p('settings.json')).readAsStringSync(), '{"apiKey":"keep-me"}');
+      expect(File(p('furaffinity_session.json')).existsSync(), isFalse);
     });
 
     test('an item with nothing on this device yet is skipped, not a failure', () async {

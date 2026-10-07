@@ -84,10 +84,11 @@ void main() {
     for (final BackupItem i in BackupItem.values) {
       final Finder tile = find.byKey(ValueKey('backup-item-${i.name}'));
       expect(tile, findsOneWidget, reason: i.name);
-      expect(tester.widget<CheckboxListTile>(tile).value, isTrue, reason: i.name);
+      final bool ticked = i != BackupItem.siteSessions;
+      expect(tester.widget<CheckboxListTile>(tile).value, ticked, reason: i.name);
     }
     final int all = BackupItem.values.length;
-    expect(find.text('$all of $all'), findsOneWidget);
+    expect(find.text('${all - 1} of $all'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('backup-none')));
     await tester.pump();

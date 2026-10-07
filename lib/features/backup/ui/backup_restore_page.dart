@@ -53,8 +53,8 @@ class _BackupRestorePageState extends State<BackupRestorePage> {
   final SettingsHandler settingsHandler = SettingsHandler.instance;
   String backupPath = '';
 
-  /// What a backup or a restore carries; everything to begin with.
-  final Set<BackupItem> selected = BackupItem.values.toSet();
+  /// What a backup or a restore carries. Site logins start unticked.
+  final Set<BackupItem> selected = BackupItems.initiallySelected();
 
   bool inProgress = false;
   String status = '';
