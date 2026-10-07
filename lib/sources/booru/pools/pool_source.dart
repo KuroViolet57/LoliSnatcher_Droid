@@ -49,8 +49,10 @@ abstract class PoolSource {
     'realbooru.com',
     'xbooru.com',
     'booru.allthefallen.moe',
-    // Checked live 2026-10-05 with LoliSnatcher_Droid/1.0.0. e926.net answered
-    // 403 to that UA and to a browser UA, so it is not listed.
+    // Checked live 2026-10-07 with LoliSnatcher_Droid/1.0.0, from headless
+    // Chrome and from curl. /pools.json returned a pool, and a member post
+    // answered 200 on e926.net. The 2026-10-05 403 did not reproduce.
+    'e926.net',
     'e621.net',
     'e6ai.net',
     'danbooru.donmai.us',
