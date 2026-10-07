@@ -441,6 +441,18 @@ class Translations$permissions$en {
   String get afterResetFilesWillBeSavedToDefaultDirectory =>
       TranslationOverrides.string(_root.$meta, 'permissions.afterResetFilesWillBeSavedToDefaultDirectory', {}) ??
       'Files will save to default directory after reset';
+
+  /// en: 'Storage permission is blocked'
+  String get storageBlockedTitle =>
+      TranslationOverrides.string(_root.$meta, 'permissions.storageBlockedTitle', {}) ?? 'Storage permission is blocked';
+
+  /// en: 'The system will not ask again. Saves stay blocked until storage is allowed in system settings.'
+  String get storageBlockedBody =>
+      TranslationOverrides.string(_root.$meta, 'permissions.storageBlockedBody', {}) ??
+      'The system will not ask again. Saves stay blocked until storage is allowed in system settings.';
+
+  /// en: 'Open settings'
+  String get openAppSettings => TranslationOverrides.string(_root.$meta, 'permissions.openAppSettings', {}) ?? 'Open settings';
 }
 
 // Path: authentication
@@ -5018,6 +5030,12 @@ extension on Translations {
           'permissions.afterResetFilesWillBeSavedToDefaultDirectory' =>
             TranslationOverrides.string(_root.$meta, 'permissions.afterResetFilesWillBeSavedToDefaultDirectory', {}) ??
                 'Files will save to default directory after reset',
+          'permissions.storageBlockedTitle' =>
+            TranslationOverrides.string(_root.$meta, 'permissions.storageBlockedTitle', {}) ?? 'Storage permission is blocked',
+          'permissions.storageBlockedBody' =>
+            TranslationOverrides.string(_root.$meta, 'permissions.storageBlockedBody', {}) ??
+                'The system will not ask again. Saves stay blocked until storage is allowed in system settings.',
+          'permissions.openAppSettings' => TranslationOverrides.string(_root.$meta, 'permissions.openAppSettings', {}) ?? 'Open settings',
           'authentication.pleaseAuthenticateToUseTheApp' =>
             TranslationOverrides.string(_root.$meta, 'authentication.pleaseAuthenticateToUseTheApp', {}) ?? 'Please authenticate to use the app',
           'authentication.noBiometricHardwareAvailable' =>
@@ -5776,6 +5794,9 @@ extension on Translations {
           'settings.video.backendMPVHelp' =>
             TranslationOverrides.string(_root.$meta, 'settings.video.backendMPVHelp', {}) ??
                 'Based on libmpv, has advanced settings which may help fix problems with some codecs/devices\n[MAY CAUSE CRASHES]',
+          _ => null,
+        } ??
+        switch (path) {
           'settings.video.backendMDKHelp' =>
             TranslationOverrides.string(_root.$meta, 'settings.video.backendMDKHelp', {}) ??
                 'Based on libmdk, may have better performance for some codecs/devices\n[MAY CAUSE CRASHES]',
@@ -5784,9 +5805,6 @@ extension on Translations {
                 'Try different values of \'MPV\' settings below if videos don\'t work correctly or give codec errors:',
           'settings.video.mpvUseHardwareAcceleration' =>
             TranslationOverrides.string(_root.$meta, 'settings.video.mpvUseHardwareAcceleration', {}) ?? 'MPV: use hardware acceleration',
-          _ => null,
-        } ??
-        switch (path) {
           'settings.video.mpvVO' => TranslationOverrides.string(_root.$meta, 'settings.video.mpvVO', {}) ?? 'MPV: VO',
           'settings.video.mpvHWDEC' => TranslationOverrides.string(_root.$meta, 'settings.video.mpvHWDEC', {}) ?? 'MPV: HWDEC',
           'settings.video.videoCacheMode' => TranslationOverrides.string(_root.$meta, 'settings.video.videoCacheMode', {}) ?? 'Video cache mode',
@@ -6707,12 +6725,12 @@ extension on Translations {
           'desktopHome.addBoorusInSettings' =>
             TranslationOverrides.string(_root.$meta, 'desktopHome.addBoorusInSettings', {}) ?? 'Add boorus in settings',
           'desktopHome.settings' => TranslationOverrides.string(_root.$meta, 'desktopHome.settings', {}) ?? 'Settings',
-          'desktopHome.save' => TranslationOverrides.string(_root.$meta, 'desktopHome.save', {}) ?? 'Save',
-          'desktopHome.noItemsSelected' => TranslationOverrides.string(_root.$meta, 'desktopHome.noItemsSelected', {}) ?? 'No items selected',
-          'galleryView.noItems' => TranslationOverrides.string(_root.$meta, 'galleryView.noItems', {}) ?? 'No items',
           _ => null,
         } ??
         switch (path) {
+          'desktopHome.save' => TranslationOverrides.string(_root.$meta, 'desktopHome.save', {}) ?? 'Save',
+          'desktopHome.noItemsSelected' => TranslationOverrides.string(_root.$meta, 'desktopHome.noItemsSelected', {}) ?? 'No items selected',
+          'galleryView.noItems' => TranslationOverrides.string(_root.$meta, 'galleryView.noItems', {}) ?? 'No items',
           'galleryView.noItemSelected' => TranslationOverrides.string(_root.$meta, 'galleryView.noItemSelected', {}) ?? 'No item selected',
           'galleryView.close' => TranslationOverrides.string(_root.$meta, 'galleryView.close', {}) ?? 'Close',
           'mediaPreviews.noBooruConfigsFound' =>

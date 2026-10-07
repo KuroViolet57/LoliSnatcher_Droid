@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 
 import 'package:material_symbols_icons/symbols.dart';
 
+import 'package:get_it/get_it.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import 'package:lolisnatcher/core/logging/logger.dart';
 import 'package:lolisnatcher/core/ui/navigation_handler.dart';
 import 'package:lolisnatcher/core/platform/service_handler.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
@@ -13,20 +15,100 @@ import 'package:lolisnatcher/features/downloads/logic/download_folders.dart';
 import 'package:lolisnatcher/core/ui/buttons/cancel_button.dart';
 import 'package:lolisnatcher/core/ui/flash_elements.dart';
 
-// TODO expand to have more control over permissions
-// TODO handle denied permissions with a dialog blocking further action, check everywhere getPerms is used
+/// True after [setPermissions] showed the system-settings dialog for a denial
+/// the OS will not ask again. Callers that also show a snackbar skip it.
+bool storageDenialExplained = false;
 
-/// This launches the permissions dialogue to get storage permissions from the user
-///
-/// it is called before every operation which would require writing to storage which is why its in its own function
-///
-/// The dialog will not show if the user has already accepted perms or android sdk is below 33
-Future<bool> getStoragePermission() async {
-  if ((Platform.isAndroid && await ServiceHandler.getAndroidSDKVersion() < 33) || Platform.isIOS) {
-    return Permission.storage.request().isGranted;
+/// A permanent denial, or an OS restriction, will not show the system request again.
+bool storageStatusNeedsSettings(PermissionStatus status) {
+  return status.isPermanentlyDenied || status.isRestricted;
+}
+
+BuildContext? storageDialogContext() {
+  if (!GetIt.instance.isRegistered<NavigationHandler>()) return null;
+  final BuildContext? context = NavigationHandler.instance.navigatorKey.currentContext;
+  if (context == null || !context.mounted) return null;
+  return context;
+}
+
+/// Null means this platform does not ask for the legacy storage permission
+/// (Android 13 and newer). The caller treats that as allowed.
+Future<PermissionStatus?> requestLegacyStorageStatus() async {
+  final bool legacy = (Platform.isAndroid && await ServiceHandler.getAndroidSDKVersion() < 33) || Platform.isIOS;
+  if (!legacy) return null;
+  return Permission.storage.request();
+}
+
+/// Granted, or not required, is true. Anything else blocks the save.
+/// [explain] is for the save gate. Settings and tag saves pass false.
+@visibleForTesting
+Future<bool> settleStorageAccess({
+  required PermissionStatus? status,
+  required bool explain,
+  BuildContext? context,
+  String title = '',
+  String body = '',
+  String openSettingsLabel = '',
+  String cancelLabel = '',
+  Future<bool> Function()? openSettings,
+}) async {
+  storageDenialExplained = false;
+  if (status == null || status.isGranted) return true;
+  if (explain && storageStatusNeedsSettings(status) && context != null && context.mounted) {
+    await showStoragePermissionBlockedDialog(
+      context,
+      title: title,
+      body: body,
+      openSettingsLabel: openSettingsLabel,
+      cancelLabel: cancelLabel,
+      openSettings: openSettings,
+    );
+    storageDenialExplained = true;
   }
-  return true;
-  // print(Platform.environment['HOME']);
+  return false;
+}
+
+@visibleForTesting
+Future<void> showStoragePermissionBlockedDialog(
+  BuildContext context, {
+  required String title,
+  required String body,
+  required String openSettingsLabel,
+  required String cancelLabel,
+  Future<bool> Function()? openSettings,
+}) {
+  return showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (BuildContext dialogContext) {
+      return AlertDialog(
+        title: Text(title),
+        content: Text(body),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: Text(cancelLabel),
+          ),
+          TextButton(
+            onPressed: () async {
+              await (openSettings ?? openAppSettings)();
+              if (dialogContext.mounted) Navigator.of(dialogContext).pop();
+            },
+            child: Text(openSettingsLabel),
+          ),
+        ],
+      );
+    },
+  );
+}
+
+/// This launches the permissions dialogue to get storage permissions from the user.
+///
+/// Settings, tag, and booru saves call this and do not explain a denial. Those
+/// files live in app-private storage. The save gate is [setPermissions].
+Future<bool> getStoragePermission() async {
+  final PermissionStatus? status = await requestLegacyStorageStatus();
+  return settleStorageAccess(status: status, explain: false);
 }
 
 Future<bool> checkStorageAvailability() async {
@@ -39,8 +121,30 @@ Future<bool> checkStorageAvailability() async {
 }
 
 Future<bool> setPermissions() async {
-  bool hasAccess = await getStoragePermission();
-  if (!hasAccess) return false;
+  final PermissionStatus? status = await requestLegacyStorageStatus();
+  final BuildContext? context = storageDialogContext();
+  bool hasAccess = context == null
+      ? await settleStorageAccess(status: status, explain: false)
+      : await settleStorageAccess(
+          status: status,
+          explain: true,
+          context: context,
+          title: context.loc.permissions.storageBlockedTitle,
+          body: context.loc.permissions.storageBlockedBody,
+          openSettingsLabel: context.loc.permissions.openAppSettings,
+          cancelLabel: context.loc.cancel,
+        );
+  if (!hasAccess) {
+    if (storageDenialExplained) {
+      Logger.Inst().log(
+        'Storage permission is blocked. Asked for system settings.',
+        'Permissions',
+        'setPermissions',
+        LogTypes.settingsError,
+      );
+    }
+    return false;
+  }
 
   hasAccess = await checkStorageAvailability();
   if (!hasAccess) hasAccess = await showStorageNeedsUpdateDialog();

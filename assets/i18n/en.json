@@ -108,7 +108,10 @@
         "setDirectory": "Set directory",
         "currentlyNotAvailableForThisPlatform": "Not available on this platform",
         "resetDirectory": "Reset directory",
-        "afterResetFilesWillBeSavedToDefaultDirectory": "Files will save to default directory after reset"
+        "afterResetFilesWillBeSavedToDefaultDirectory": "Files will save to default directory after reset",
+        "storageBlockedTitle": "Storage permission is blocked",
+        "storageBlockedBody": "The system will not ask again. Saves stay blocked until storage is allowed in system settings.",
+        "openAppSettings": "Open settings"
     },
     "authentication": {
         "pleaseAuthenticateToUseTheApp": "Please authenticate to use the app",

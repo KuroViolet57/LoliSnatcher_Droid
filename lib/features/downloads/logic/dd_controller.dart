@@ -42,6 +42,7 @@ class DownloadsDrawerController {
 
   Future<void> onStartSnatching(BuildContext context, bool isLongTap) async {
     if (!await setPermissions()) {
+      if (storageDenialExplained) return;
       FlashElements.showSnackbar(
         context: context,
         title: Text(
