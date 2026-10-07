@@ -17,6 +17,7 @@ import 'package:lolisnatcher/core/platform/service_handler.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/core/storage/tag_handler.dart';
 import 'package:lolisnatcher/core/ui/navigation_handler.dart';
+import 'package:lolisnatcher/features/sync/logic/sync_search_payload.dart';
 import 'package:lolisnatcher/features/sync/ui/loli_sync_page.dart';
 import 'package:lolisnatcher/core/logging/logger.dart';
 import 'package:lolisnatcher/core/ui/flash_elements.dart';
@@ -99,6 +100,12 @@ class LoliSync {
             break;
           case '/lolisync/tags':
             yield await storeTags(req, settingsHandler);
+            break;
+          case '/lolisync/searchhistory':
+            yield await storeSearchHistory(req, settingsHandler);
+            break;
+          case '/lolisync/savedsearches':
+            yield await storeSavedSearches(req, settingsHandler);
             break;
           case '/lolisync/test':
             yield 'Test';
@@ -399,6 +406,89 @@ class LoliSync {
     }
   }
 
+  Future<String> storeSearchHistory(dynamic req, SettingsHandler settingsHandler) async {
+    if (req.method != 'POST') {
+      req.response.statusCode = 404;
+      req.response.write('Invalid Query');
+      return 'Invalid Query';
+    }
+    try {
+      final String content = await utf8.decoder.bind(req).join();
+      final Object? decoded = jsonDecode(content);
+      if (decoded is! List) {
+        req.response.statusCode = 404;
+        req.response.write('Invalid Query');
+        return 'Invalid Query';
+      }
+      if (!settingsHandler.dbEnabled) {
+        req.response.statusCode = 200;
+        req.response.write('DB is disabled');
+        return 'DB is disabled';
+      }
+      final List<SyncHistoryRow> rows = [
+        for (final Object? entry in decoded)
+          if (SyncHistoryRow.fromJson(entry) case final SyncHistoryRow row) row,
+      ];
+      final HistoryMergeCounts counts = await applySyncedSearchHistory(settingsHandler.dbHandler, rows);
+      Logger.Inst().log(
+        'search history added ${counts.inserted} marked ${counts.upgraded} kept ${counts.skipped}',
+        'LoliSync',
+        'storeSearchHistory',
+        LogTypes.loliSyncInfo,
+      );
+      req.response.statusCode = 200;
+      req.response.write('Added ${counts.inserted}');
+      return 'Search history: added ${counts.inserted}, marked ${counts.upgraded}, kept ${counts.skipped}';
+    } catch (e, s) {
+      Logger.Inst().log(e.toString(), 'LoliSync', 'storeSearchHistory', LogTypes.exception, s: s);
+      req.response.statusCode = 404;
+      req.response.write('Invalid Query');
+      return 'Something went wrong $e';
+    }
+  }
+
+  Future<String> storeSavedSearches(dynamic req, SettingsHandler settingsHandler) async {
+    if (req.method != 'POST') {
+      req.response.statusCode = 404;
+      req.response.write('Invalid Query');
+      return 'Invalid Query';
+    }
+    try {
+      final String content = await utf8.decoder.bind(req).join();
+      final Object? decoded = jsonDecode(content);
+      if (decoded is! List) {
+        req.response.statusCode = 404;
+        req.response.write('Invalid Query');
+        return 'Invalid Query';
+      }
+      if (!settingsHandler.dbEnabled) {
+        req.response.statusCode = 200;
+        req.response.write('DB is disabled');
+        return 'DB is disabled';
+      }
+      final List<SyncSavedSearchRow> rows = [
+        for (final Object? entry in decoded)
+          if (SyncSavedSearchRow.fromJson(entry) case final SyncSavedSearchRow row) row,
+      ];
+      final SavedSearchMergeCounts counts = await applySyncedSavedSearches(settingsHandler.dbHandler, rows);
+      await SearchHandler.instance.reloadSavedSearches();
+      Logger.Inst().log(
+        'saved searches added ${counts.inserted} kept ${counts.skipped}',
+        'LoliSync',
+        'storeSavedSearches',
+        LogTypes.loliSyncInfo,
+      );
+      req.response.statusCode = 200;
+      req.response.write('Added ${counts.inserted}');
+      return 'Saved searches: added ${counts.inserted}, kept ${counts.skipped}';
+    } catch (e, s) {
+      Logger.Inst().log(e.toString(), 'LoliSync', 'storeSavedSearches', LogTypes.exception, s: s);
+      req.response.statusCode = 404;
+      req.response.write('Invalid Query');
+      return 'Something went wrong $e';
+    }
+  }
+
   Future<void> killServer() async {
     await server?.close();
     final context = NavigationHandler.instance.navContext;
@@ -500,6 +590,23 @@ class LoliSync {
     final String responseStr = await utf8.decoder.bind(response).join();
     return responseStr;
   }
+
+  Future<String> _sendJsonList(String path, List<Map<String, Object?>> rows, String logName) async {
+    Logger.Inst().log('Sending ${rows.length} $logName', 'LoliSync', logName, LogTypes.loliSyncInfo);
+    final HttpClient client = HttpClient();
+    final HttpClientRequest request = await client.post(ip, port, _path(path))
+      ..headers.contentType = ContentType.json
+      ..write(jsonEncode(rows));
+    final HttpClientResponse response = await request.close();
+    client.close();
+    return utf8.decoder.bind(response).join();
+  }
+
+  Future<String> sendSearchHistory(List<SyncHistoryRow> rows) =>
+      _sendJsonList('/lolisync/searchhistory', [for (final SyncHistoryRow row in rows) row.toJson()], 'sendSearchHistory');
+
+  Future<String> sendSavedSearches(List<SyncSavedSearchRow> rows) =>
+      _sendJsonList('/lolisync/savedsearches', [for (final SyncSavedSearchRow row in rows) row.toJson()], 'sendSavedSearches');
 
   // TODO add timeout
   Future<String> sendTest() async {
@@ -753,6 +860,40 @@ class LoliSync {
           yield 'Preparing tag data';
           final String resp = await sendTags(tagHandler.toList(), tagsMode.value);
           yield resp;
+          break;
+        case 'SearchHistory':
+          yield 'Sync Starting $address';
+          yield 'Preparing search history';
+          if (!settingsHandler.dbEnabled) {
+            yield 'DB is disabled';
+            break;
+          }
+          final List<SyncHistoryRow> historyRows = [
+            for (final item in await settingsHandler.dbHandler.getSearchHistory())
+              if (SyncHistoryRow.fromHistoryItem(item) case final SyncHistoryRow row) row,
+          ];
+          if (historyRows.isEmpty) {
+            yield 'No search history';
+          } else {
+            yield await sendSearchHistory(historyRows);
+          }
+          break;
+        case 'SavedSearches':
+          yield 'Sync Starting $address';
+          yield 'Preparing saved searches';
+          if (!settingsHandler.dbEnabled) {
+            yield 'DB is disabled';
+            break;
+          }
+          final List<SyncSavedSearchRow> savedRows = [
+            for (final entry in await settingsHandler.dbHandler.getSavedSearches())
+              if (SyncSavedSearchRow.fromSavedSearch(entry) case final SyncSavedSearchRow row) row,
+          ];
+          if (savedRows.isEmpty) {
+            yield 'No saved searches';
+          } else {
+            yield await sendSavedSearches(savedRows);
+          }
           break;
       }
     }

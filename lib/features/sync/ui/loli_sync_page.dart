@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
 
+import 'package:lolisnatcher/core/logging/logger.dart';
 import 'package:lolisnatcher/features/sync/logic/loli_sync_handler.dart';
 import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
 import 'package:lolisnatcher/core/platform/service_handler.dart';
@@ -141,11 +142,13 @@ class _LoliSyncPageState extends State<LoliSyncPage> {
       settings = false,
       booru = false,
       tabs = false,
-      tags = false;
+      tags = false,
+      searchHistory = false,
+      savedSearches = false;
   int favToggleCount = 0;
   TabsMode tabsMode = TabsMode.defaultValue;
   TagsMode tagsMode = TagsMode.defaultValue;
-  int? favCount, snatchedCount;
+  int? favCount, snatchedCount, historyCount, savedCount;
 
   List<NetworkInterface> ipList = [];
   List<String> ipListNames = ['Auto', 'Localhost'];
@@ -176,6 +179,7 @@ class _LoliSyncPageState extends State<LoliSyncPage> {
 
     getFavCount();
     getSnatchedCount();
+    getSearchListCounts();
     getIPList();
   }
 
@@ -204,6 +208,18 @@ class _LoliSyncPageState extends State<LoliSyncPage> {
 
   Future<void> getSnatchedCount() async {
     snatchedCount = await settingsHandler.dbHandler.getSnatchedCount();
+    updateState();
+  }
+
+  Future<void> getSearchListCounts() async {
+    try {
+      historyCount = (await settingsHandler.dbHandler.getSearchHistory()).length;
+      savedCount = (await settingsHandler.dbHandler.getSavedSearches()).length;
+    } catch (e, s) {
+      Logger.Inst().log(e.toString(), 'LoliSync', 'getSearchListCounts', LogTypes.exception, s: s);
+      historyCount = 0;
+      savedCount = 0;
+    }
     updateState();
   }
 
@@ -577,6 +593,34 @@ class _LoliSyncPageState extends State<LoliSyncPage> {
                 )
               : const SizedBox.shrink(),
         ),
+        SettingsToggle(
+          value: searchHistory,
+          onChanged: (bool newValue) {
+            setState(() {
+              searchHistory = newValue;
+            });
+          },
+          title: 'Send search history',
+          subtitle: Text(
+            'Searches you have typed on this phone: ${historyCount?.toString() ?? '...'}. '
+            'A search the other phone already has is left as it is. A favourite here marks that same search there. '
+            'This choice is not saved.',
+          ),
+        ),
+        SettingsToggle(
+          value: savedSearches,
+          onChanged: (bool newValue) {
+            setState(() {
+              savedSearches = newValue;
+            });
+          },
+          title: 'Send saved searches',
+          subtitle: Text(
+            'Booru bookmarks on this phone: ${savedCount?.toString() ?? '...'}. '
+            'One the other phone already has is left, including its name. '
+            'Doujin saved searches stay on the doujin list and are not sent. This choice is not saved.',
+          ),
+        ),
         const SettingsButton(name: '', enabled: false),
         SettingsButton(
           name: context.loc.settings.sync.testConnection,
@@ -606,7 +650,8 @@ class _LoliSyncPageState extends State<LoliSyncPage> {
           action: () async {
             final bool isAddressEntered = ipController.text.isNotEmpty && portController.text.isNotEmpty;
             final bool isCodeEntered = codeController.text.trim().isNotEmpty;
-            final bool isAnySyncSelected = favouritesv2 || favourites || snatched || settings || booru || tabs || tags;
+            final bool isAnySyncSelected =
+                favouritesv2 || favourites || snatched || settings || booru || tabs || tags || searchHistory || savedSearches;
             final bool syncAllowed = isAddressEntered && isCodeEntered && isAnySyncSelected;
 
             if (syncAllowed) {
@@ -628,6 +673,8 @@ class _LoliSyncPageState extends State<LoliSyncPage> {
                   tabsMode: tabsMode,
                   tags: tags,
                   tagsMode: tagsMode,
+                  searchHistory: searchHistory,
+                  savedSearches: savedSearches,
                 ),
               ).open();
               updateState();
@@ -673,6 +720,8 @@ class _LoliSyncPageState extends State<LoliSyncPage> {
               Text(context.loc.settings.sync.snatchedCount(count: snatchedCount?.toFormattedString() ?? '...')),
               Text(context.loc.settings.sync.configsCount(count: settingsHandler.booruList.length.toFormattedString())),
               Text(context.loc.settings.sync.tabsCount(count: searchHandler.total.toFormattedString())),
+              Text('Search history: ${historyCount?.toFormattedString() ?? '...'}'),
+              Text('Saved searches: ${savedCount?.toFormattedString() ?? '...'}'),
             ],
           ),
         ),

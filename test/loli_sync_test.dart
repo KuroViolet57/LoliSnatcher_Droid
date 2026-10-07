@@ -9,6 +9,8 @@ import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/core/storage/tag_handler.dart';
 import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
 import 'package:lolisnatcher/features/sync/logic/loli_sync_handler.dart';
+import 'package:lolisnatcher/features/sync/logic/sync_search_payload.dart';
+import 'package:lolisnatcher/models/saved_search.dart';
 import 'package:lolisnatcher/features/sync/ui/loli_sync_page.dart';
 import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
 import 'package:lolisnatcher/models/booru_item.dart';
@@ -216,6 +218,90 @@ void main() {
         jsonEncode([for (int i = 0; i < 100; i++) post(i).toJson()]),
       );
       expect(await LoliSync().storeBooruBatch(req, SettingsHandler.instance), '0-100 / 150 - Added 100');
+    });
+
+    test('search history and saved searches merge, and a second copy does not double', () async {
+      if (!dbReady) return;
+      final SettingsHandler s = SettingsHandler.instance;
+      final SavedSearch local = SavedSearch(
+        id: null,
+        name: 'mine',
+        tags: '1girl',
+        booru: 'Gelbooru',
+        createdAt: DateTime.utc(2026, 10, 1),
+      );
+      await s.dbHandler.addSavedSearch(local);
+      await s.dbHandler.insertSyncedSearchHistory(
+        searchText: 'cat',
+        booruType: 'Danbooru',
+        booruName: 'Main',
+        favourite: true,
+        timestamp: '2026-10-01 00:00:00',
+      );
+
+      final SavedSearch incoming = SavedSearch(
+        id: null,
+        name: 'theirs',
+        tags: '1girl',
+        booru: 'Gelbooru',
+        createdAt: DateTime.utc(2026, 10, 2),
+      );
+      final SavedSearch fresh = SavedSearch(
+        id: null,
+        name: '',
+        tags: '少女 🌸',
+        booru: 'Gelbooru',
+        secondaryBoorus: const ['B', 'A'],
+        createdAt: DateTime.utc(2026, 10, 3),
+      );
+      final String historyBody = jsonEncode([
+        const SyncHistoryRow(
+          searchText: 'cat',
+          booruType: 'Danbooru',
+          booruName: 'Main',
+          favourite: false,
+          timestamp: '2026-10-07 00:00:00',
+        ).toJson(),
+        const SyncHistoryRow(
+          searchText: '少女 🌸',
+          booruType: 'Danbooru',
+          booruName: 'Main',
+          favourite: true,
+          timestamp: '2026-10-07 01:00:00',
+        ).toJson(),
+        {'searchText': 'dropped', 'booruName': ''},
+      ]);
+      final String savedBody = jsonEncode([
+        SyncSavedSearchRow.fromSavedSearch(incoming)!.toJson(),
+        SyncSavedSearchRow.fromSavedSearch(fresh)!.toJson(),
+        {'name': 'bad', 'payload': 'not json'},
+      ]);
+
+      final String historyResult = await LoliSync().storeSearchHistory(_Request('POST', '/lolisync/searchhistory', historyBody), s);
+      final String savedResult = await LoliSync().storeSavedSearches(_Request('POST', '/lolisync/savedsearches', savedBody), s);
+      expect(historyResult, contains('added 1'));
+      expect(historyResult, contains('kept 1'));
+      expect(savedResult, contains('added 1'));
+      expect(savedResult, contains('kept 2'));
+
+      final history = await s.dbHandler.getSearchHistory();
+      expect(history.where((row) => row.searchText == 'cat'), hasLength(1));
+      expect(history.firstWhere((row) => row.searchText == 'cat').isFavourite, isTrue);
+      expect(history.any((row) => row.searchText == '少女 🌸'), isTrue);
+
+      final String again = await LoliSync().storeSearchHistory(_Request('POST', '/lolisync/searchhistory', historyBody), s);
+      expect(again, contains('added 0'));
+      expect((await s.dbHandler.getSearchHistory()).where((row) => row.searchText == '少女 🌸'), hasLength(1));
+
+      final saved = await s.dbHandler.getSavedSearches();
+      expect(saved.where((row) => row.tags == '1girl'), hasLength(1));
+      expect(saved.firstWhere((row) => row.tags == '1girl').name, 'mine');
+      expect(saved.any((row) => row.tags == '少女 🌸'), isTrue);
+      expect(saved.firstWhere((row) => row.tags == '少女 🌸').secondaryBoorus, ['B', 'A']);
+
+      s.dbEnabled = false;
+      expect(await LoliSync().storeSearchHistory(_Request('POST', '/lolisync/searchhistory', historyBody), s), 'DB is disabled');
+      expect(await LoliSync().storeSearchHistory(_Request('GET', '/lolisync/searchhistory', historyBody), s), 'Invalid Query');
     });
   });
 

@@ -1,5 +1,11 @@
 part of '../database_handler.dart';
 
+String _syncText(Object? value) {
+  if (value == null) return '';
+  final String text = value.toString();
+  return text == 'null' ? '' : text;
+}
+
 /// Tab backup, search history, saved searches, visited tabs, seen and viewed posts.
 extension DBHistory on DBHandler {
   Future<String?> getTabRestore() async {
@@ -103,6 +109,57 @@ extension DBHistory on DBHandler {
 
   Future<void> renameSavedSearch(int id, String name) async {
     await db?.rawUpdate('UPDATE SavedSearch SET name = ? WHERE id = ?', [name, id]);
+  }
+
+  /// Every history row, including ones the grouped history page hides.
+  /// A null booru type or name is an empty string so a sync can match it.
+  Future<List<({String searchText, String booruType, String booruName, bool favourite})>> listSearchHistoryKeys() async {
+    final rows = await db?.rawQuery('SELECT searchText, booruType, booruName, isFavourite FROM SearchHistory');
+    if (rows == null) return const [];
+    return [
+      for (final Map<String, Object?> row in rows)
+        (
+          searchText: row['searchText']?.toString() ?? '',
+          booruType: _syncText(row['booruType']),
+          booruName: _syncText(row['booruName']),
+          favourite: row['isFavourite']?.toString() == '1',
+        ),
+    ];
+  }
+
+  /// A row that arrived from another phone. The history cap is not applied
+  /// here; the next search the user types still applies it.
+  Future<void> insertSyncedSearchHistory({
+    required String searchText,
+    required String booruType,
+    required String booruName,
+    required bool favourite,
+    required String timestamp,
+  }) async {
+    final int flag = Tools.boolToInt(favourite);
+    if (timestamp.trim().isEmpty) {
+      await db?.rawInsert(
+        'INSERT INTO SearchHistory(searchText, booruType, booruName, isFavourite) VALUES(?,?,?,?)',
+        [searchText, booruType, booruName, flag],
+      );
+      return;
+    }
+    await db?.rawInsert(
+      'INSERT INTO SearchHistory(searchText, booruType, booruName, isFavourite, timestamp) VALUES(?,?,?,?,?)',
+      [searchText, booruType, booruName, flag, timestamp],
+    );
+  }
+
+  /// Marks every copy of this search. Does not clear a favourite.
+  Future<void> markSearchHistoryFavourite({
+    required String searchText,
+    required String booruType,
+    required String booruName,
+  }) async {
+    await db?.rawUpdate(
+      "UPDATE SearchHistory SET isFavourite = 1 WHERE searchText = ? AND ifnull(booruType, '') = ? AND ifnull(booruName, '') = ?",
+      [searchText, booruType, booruName],
+    );
   }
 
   ///////
