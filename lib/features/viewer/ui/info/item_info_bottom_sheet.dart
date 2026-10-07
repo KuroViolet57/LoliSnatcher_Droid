@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:lolisnatcher/core/logging/perf_trace.dart';
 import 'package:lolisnatcher/gen/strings.g.dart';
 import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
+import 'package:lolisnatcher/features/viewer/logic/info_sheet_body.dart';
 import 'package:lolisnatcher/features/viewer/ui/info/tag_view.dart';
 
 /// Boorusama-style bottom info sheet — replaces the right-side ItemInfoDrawer
@@ -75,31 +76,42 @@ class _ItemInfoBottomSheetState extends State<ItemInfoBottomSheet> with TraceLif
                         shape: const RoundedRectangleBorder(
                           borderRadius: BorderRadius.zero,
                         ),
-                        // Always render the TagView so the sheet's scroll
-                        // controller has clients. Without this the
-                        // DraggableScrollableController reports isAttached=false
-                        // and animateTo() silently does nothing.
-                        child: ValueListenableBuilder<int>(
-                          valueListenable: widget.currentPage,
-                          builder: (context, page, _) {
-                            final items = widget.tab.booruHandler.filteredFetched;
-                            if (items.isEmpty || page >= items.length) {
+                        // A shut sheet still needs a scrollable, or the
+                        // controller reports isAttached=false and animateTo()
+                        // does nothing. TagView loads the post on creation,
+                        // so it is built only after the sheet leaves 0.
+                        child: ValueListenableBuilder<double>(
+                          valueListenable: widget.extentNotifier,
+                          builder: (context, extent, _) {
+                            if (!infoSheetShowsTags(extent)) {
                               return ListView(
                                 controller: scrollController,
-                                children: [
-                                  const SizedBox(height: 80),
-                                  Center(child: Text(context.loc.galleryView.noItemSelected)),
-                                ],
+                                children: const [SizedBox(height: 80)],
                               );
                             }
-                            return TagView(
-                              // Key on the item so a swipe to a new post forces
-                              // a fresh TagView (belt-and-suspenders alongside
-                              // TagView's own didUpdateWidget).
-                              key: ValueKey(items[page].fileURL),
-                              item: items[page],
-                              handler: widget.tab.booruHandler,
-                              scrollController: scrollController,
+                            return ValueListenableBuilder<int>(
+                              valueListenable: widget.currentPage,
+                              builder: (context, page, _) {
+                                final items = widget.tab.booruHandler.filteredFetched;
+                                if (items.isEmpty || page >= items.length) {
+                                  return ListView(
+                                    controller: scrollController,
+                                    children: [
+                                      const SizedBox(height: 80),
+                                      Center(child: Text(context.loc.galleryView.noItemSelected)),
+                                    ],
+                                  );
+                                }
+                                return TagView(
+                                  // Key on the item so a swipe to a new post forces
+                                  // a fresh TagView (belt-and-suspenders alongside
+                                  // TagView's own didUpdateWidget).
+                                  key: ValueKey(items[page].fileURL),
+                                  item: items[page],
+                                  handler: widget.tab.booruHandler,
+                                  scrollController: scrollController,
+                                );
+                              },
                             );
                           },
                         ),
