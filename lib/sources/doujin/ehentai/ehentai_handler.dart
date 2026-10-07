@@ -32,6 +32,81 @@ import 'package:lolisnatcher/sources/framework/tags/tag_catalog_source.dart';
 
 part 'ehentai_handler/ehentai_gallery.dart';
 
+/// One account-favourite post. [url] is `gallerypopups.php?act=addfav` on
+/// e-hentai.org or exhentai.org. [fields] are EhViewer's `addFavorites`
+/// (seven332, Apache-2.0): `favcat` `0` or `favdel`, `favnote`, `submit` =
+/// `Apply Changes`, `update` = `1`.
+class EHentaiFavouriteForm {
+  const EHentaiFavouriteForm({required this.url, required this.fields});
+
+  final String url;
+  final Map<String, String> fields;
+}
+
+final RegExp _ehFavouriteGid = RegExp(r'^\d+$');
+final RegExp _ehFavouriteToken = RegExp(r'^[0-9a-f]+$', caseSensitive: false);
+final RegExp _ehFavouriteGalleryPath = RegExp(r'/g/(\d+)/([0-9a-f]+)/?', caseSensitive: false);
+const Set<String> _ehFavouriteHosts = {'e-hentai.org', 'exhentai.org', 'g.e-hentai.org'};
+
+/// Null when [site] is not this handler's own host, or the gid/token is not
+/// the shape the popup URL uses. A lookalike host must not get a post.
+EHentaiFavouriteForm? ehentaiFavouriteForm({
+  required String site,
+  required String gid,
+  required String token,
+  required bool wantFavourite,
+  String note = '',
+}) {
+  if (site != EHentaiHandler.defaultSite && site != EHentaiHandler.exSite) return null;
+  if (!_ehFavouriteGid.hasMatch(gid) || !_ehFavouriteToken.hasMatch(token)) return null;
+  return EHentaiFavouriteForm(
+    url: '$site/gallerypopups.php?gid=$gid&t=$token&act=addfav',
+    fields: {
+      'favcat': wantFavourite ? '0' : 'favdel',
+      'favnote': note,
+      'submit': 'Apply Changes',
+      'update': '1',
+    },
+  );
+}
+
+/// Gallery id and token from a post URL this source stored.
+/// A page view (`/s/<key>/<gid>-<n>`) has no token of its own; pass the one
+/// remembered from opening the gallery. Any other host returns null.
+({String gid, String token})? ehentaiFavouriteIdentity(String postUrl, {String? rememberedToken}) {
+  final Uri? uri = Uri.tryParse(postUrl);
+  if (uri == null || !uri.hasScheme) return null;
+  if (!_ehFavouriteHosts.contains(uri.host.toLowerCase())) return null;
+  final RegExpMatch? gallery = _ehFavouriteGalleryPath.firstMatch(uri.path);
+  if (gallery != null) return (gid: gallery.group(1)!, token: gallery.group(2)!);
+  final ({String key, String gid, int page})? page = EHentaiHandler.parsePageViewUrl(postUrl);
+  if (page == null) return null;
+  final String token = (rememberedToken ?? '').trim();
+  if (!_ehFavouriteToken.hasMatch(token)) return null;
+  return (gid: page.gid, token: token);
+}
+
+/// The note already written in the favourite popup, or null when that
+/// textarea is not on the page (a login bounce has none).
+String? ehentaiFavouriteNote(String html) {
+  final dom.Element? box = parse(html).querySelector('textarea[name="favnote"]');
+  if (box == null) return null;
+  return box.text;
+}
+
+/// EhViewer accepts the post unless the status is 400+, the body is
+/// kokomade, or the response is the sad-panda gif. This app also rejects
+/// the login bounce and a blank exhentai page, which that client reports
+/// through those same checks when the headers are present.
+bool ehentaiFavouriteAccepted({required int status, required String body, String? contentType, String finalUrl = ''}) {
+  if (status < 200 || status >= 400) return false;
+  if ((contentType ?? '').toLowerCase().startsWith('image/gif')) return false;
+  if (body.contains('https://exhentai.org/img/kokomade.jpg')) return false;
+  if (EHentaiHandler.looksLikeLoginBounce(finalUrl, body)) return false;
+  if (body.trim().isEmpty) return false;
+  return true;
+}
+
 /// e-hentai.org / exhentai.org — the galleries system, probed anonymously
 /// from the PC on 2026-09-09.
 ///
@@ -156,6 +231,15 @@ class EHentaiHandler extends BooruHandler with DoujinNamespacedTags {
   @visibleForTesting
   Future<({int status, String body, String finalUrl})> Function(String url, {String? postJson})? fetcher;
 
+  /// Test seam: the favourite popup, read before the post so an existing
+  /// note is sent back instead of being replaced with an empty one.
+  @visibleForTesting
+  Future<({int status, String body, String finalUrl})> Function(String url)? favouritePageFetcher;
+
+  /// Test seam: the favourite POST. Production uses [_postFavourite].
+  @visibleForTesting
+  Future<({int status, String body, String finalUrl, String? contentType})> Function(String url, Map<String, String> fields)? favouriteWriter;
+
   static String? tokenFor(String gid) => _tokens[gid];
 
   @visibleForTesting
@@ -265,6 +349,14 @@ class EHentaiHandler extends BooruHandler with DoujinNamespacedTags {
   String validateTags(String tags) => tags.trim();
   @override
   bool get hasAccountBlacklist => true;
+
+  /// The heart reaches the account only after Source settings → Log in.
+  /// Signed out, the doujin heart stays on the phone.
+  @override
+  bool get hasSiteFavourites => EHentaiSessionHandler.instance.isLoggedIn;
+
+  @override
+  String get siteFavouritesLoginHint => 'log in from Source settings to add this on e-hentai';
 
   /// r70: the per-source "Only show language" and "Title language" settings
   /// work here: the site searches `language:"x"$` and every gallery page
@@ -1054,6 +1146,26 @@ class EHentaiHandler extends BooruHandler with DoujinNamespacedTags {
     return (status: response.statusCode ?? 0, body: _bodyOf(response), finalUrl: response.realUri.toString());
   }
 
+  /// The favourite form, posted to this handler's own site. The body is
+  /// encoded here so a note that contains `&` stays one field.
+  Future<({int status, String body, String finalUrl, String? contentType})> _postFavourite(String url, Map<String, String> fields) async {
+    final String encoded = fields.entries
+        .map((MapEntry<String, String> e) => '${Uri.encodeQueryComponent(e.key)}=${Uri.encodeQueryComponent(e.value)}')
+        .join('&');
+    final Response response = await DioNetwork.post(
+      url,
+      data: encoded,
+      headers: {...getHeaders(), 'Content-Type': 'application/x-www-form-urlencoded', 'Origin': site},
+      options: Options(validateStatus: (_) => true),
+    );
+    return (
+      status: response.statusCode ?? 0,
+      body: _bodyOf(response),
+      finalUrl: response.realUri.toString(),
+      contentType: response.headers.value('content-type'),
+    );
+  }
+
   static String _bodyOf(Response response) {
     final data = response.data;
     if (data == null) return '';
@@ -1562,6 +1674,52 @@ class EHentaiHandler extends BooruHandler with DoujinNamespacedTags {
       }
     }
     return DoujinRecommendationEngine.rankPersonal(handler: this, source, candidates, count: limit, sourceArtist: artist);
+  }
+
+  // ── account favourites: the heart, once logged in ───────────────────
+
+  /// Adds the gallery to account folder 0, or removes it. The popup is read
+  /// first and its note is posted back unchanged. EA Hentai's bookmark API
+  /// is a different site and is not used here.
+  @override
+  Future<(bool, String)> setSiteFavourite(BooruItem item, bool value) async {
+    if (!EHentaiSessionHandler.instance.isLoggedIn) {
+      return (false, 'Log in from Source settings to sync e-hentai favourites.');
+    }
+    final ({String key, String gid, int page})? pageView = parsePageViewUrl(item.postURL);
+    final ({String gid, String token})? id = ehentaiFavouriteIdentity(item.postURL, rememberedToken: pageView == null ? null : tokenFor(pageView.gid));
+    if (id == null) {
+      return (false, 'This gallery has no token yet. Open it once, then try the heart again.');
+    }
+    final EHentaiFavouriteForm? probe = ehentaiFavouriteForm(site: site, gid: id.gid, token: id.token, wantFavourite: value);
+    if (probe == null) {
+      return (false, 'This gallery has no token yet. Open it once, then try the heart again.');
+    }
+    try {
+      var page = favouritePageFetcher != null ? await favouritePageFetcher!(probe.url) : await _fetch(probe.url);
+      if (favouritePageFetcher == null && page.status == 200 && page.body.contains('Content Warning') && !probe.url.contains('nw=')) {
+        final String warned = probe.url.contains('?') ? '${probe.url}&nw=always' : '${probe.url}?nw=always';
+        page = await _fetch(warned);
+      }
+      if (looksLikeLoginBounce(page.finalUrl, page.body)) {
+        return (false, 'e-hentai asked for a login again. Log in from Source settings.');
+      }
+      final String? note = ehentaiFavouriteNote(page.body);
+      if (note == null) return (false, 'e-hentai did not show the favourite form.');
+      final EHentaiFavouriteForm? form = ehentaiFavouriteForm(site: site, gid: id.gid, token: id.token, wantFavourite: value, note: note);
+      if (form == null) return (false, 'This gallery has no token yet. Open it once, then try the heart again.');
+      final posted = favouriteWriter != null ? await favouriteWriter!(form.url, form.fields) : await _postFavourite(form.url, form.fields);
+      Logger.Inst().log('favourite ${id.gid} ${value ? 'add' : 'remove'} -> ${posted.status}', className, 'setSiteFavourite', LogTypes.booruHandlerInfo);
+      if (!ehentaiFavouriteAccepted(status: posted.status, body: posted.body, contentType: posted.contentType, finalUrl: posted.finalUrl)) {
+        if (looksLikeLoginBounce(posted.finalUrl, posted.body)) {
+          return (false, 'e-hentai asked for a login again. Log in from Source settings.');
+        }
+        return (false, 'e-hentai did not accept the favourite (${posted.status}).');
+      }
+      return (true, value ? 'Added to your e-hentai favourites (category 0).' : 'Removed from your e-hentai favourites.');
+    } catch (e) {
+      return (false, 'e-hentai favourite failed: $e');
+    }
   }
 
   // ── My Tags → blacklist ──────────────────────────────────────────────
