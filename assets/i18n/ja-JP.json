@@ -575,7 +575,7 @@
             "volumeButtonsScrollSpeed": "ボリュームボタンでのスクロール速度",
             "slideshowDurationInMs": "スライドショー間隔 (ms)",
             "slideshow": "スライドショー",
-            "slideshowWIPNote": "[作業中] 動画/GIFは手動スクロールのみ",
+            "slideshowWIPNote": "動画とGIFは専用の長めのタイマーを使います。読み込み済みの最後の項目では、検索に続きがあるとき次のページを読み込みます。",
             "preventDeviceFromSleeping": "デバイスがスリープ状態にならないようにする",
             "viewerOpenCloseAnimation": "ビューアーの開閉アニメーション",
             "viewerPageChangeAnimation": "ビューアーページ変更アニメーション",

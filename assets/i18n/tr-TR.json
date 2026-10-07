@@ -566,7 +566,7 @@
             "volumeButtonsScrollSpeed": "Ses butonları kaydırma hızı",
             "slideshowDurationInMs": "Slayt gösterisi süresi (ms)",
             "slideshow": "Slayt gösterisi",
-            "slideshowWIPNote": "[Yapım Aşamasında] Videolar/GIF'ler: Sadece manuel kaydırma",
+            "slideshowWIPNote": "Videolar ve GIF'ler kendi daha uzun zamanlayıcılarını kullanır. Yüklenen son öğede, aramada devam varsa sonraki sayfa yüklenir.",
             "preventDeviceFromSleeping": "Cihazın uyku moduna geçmesini engelle",
             "viewerOpenCloseAnimation": "Görüntüleyici açılış/kapanış animasyonu",
             "viewerPageChangeAnimation": "Görüntüleyici sayfa değiştirme animasyonu",

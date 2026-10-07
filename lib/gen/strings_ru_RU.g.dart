@@ -2262,7 +2262,8 @@ class _Translations$settings$viewer$ru_RU extends Translations$settings$viewer$e
   String get slideshow => TranslationOverrides.string(_root.$meta, 'settings.viewer.slideshow', {}) ?? 'Слайдшоу';
   @override
   String get slideshowWIPNote =>
-      TranslationOverrides.string(_root.$meta, 'settings.viewer.slideshowWIPNote', {}) ?? '[WIP] Видео/гифки: только прокрутка вручную';
+      TranslationOverrides.string(_root.$meta, 'settings.viewer.slideshowWIPNote', {}) ??
+      'Видео и GIF используют свой более длинный таймер. На последнем загруженном элементе следующая страница загружается, если в поиске есть ещё.';
   @override
   String get preventDeviceFromSleeping =>
       TranslationOverrides.string(_root.$meta, 'settings.viewer.preventDeviceFromSleeping', {}) ?? 'Предотвратить переход устройства в спящий режим';
@@ -4741,7 +4742,8 @@ extension on TranslationsRuRu {
             TranslationOverrides.string(_root.$meta, 'settings.viewer.slideshowDurationInMs', {}) ?? 'Длительность слайдшоу (в мс)',
           'settings.viewer.slideshow' => TranslationOverrides.string(_root.$meta, 'settings.viewer.slideshow', {}) ?? 'Слайдшоу',
           'settings.viewer.slideshowWIPNote' =>
-            TranslationOverrides.string(_root.$meta, 'settings.viewer.slideshowWIPNote', {}) ?? '[WIP] Видео/гифки: только прокрутка вручную',
+            TranslationOverrides.string(_root.$meta, 'settings.viewer.slideshowWIPNote', {}) ??
+                'Видео и GIF используют свой более длинный таймер. На последнем загруженном элементе следующая страница загружается, если в поиске есть ещё.',
           'settings.viewer.preventDeviceFromSleeping' =>
             TranslationOverrides.string(_root.$meta, 'settings.viewer.preventDeviceFromSleeping', {}) ??
                 'Предотвратить переход устройства в спящий режим',

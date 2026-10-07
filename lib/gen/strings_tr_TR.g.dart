@@ -2230,7 +2230,7 @@ class _Translations$settings$viewer$tr_TR extends Translations$settings$viewer$e
   @override
   String get slideshowWIPNote =>
       TranslationOverrides.string(_root.$meta, 'settings.viewer.slideshowWIPNote', {}) ??
-      '[Yapım Aşamasında] Videolar/GIF\'ler: Sadece manuel kaydırma';
+      'Videolar ve GIF\'ler kendi daha uzun zamanlayıcılarını kullanır. Yüklenen son öğede, aramada devam varsa sonraki sayfa yüklenir.';
   @override
   String get preventDeviceFromSleeping =>
       TranslationOverrides.string(_root.$meta, 'settings.viewer.preventDeviceFromSleeping', {}) ?? 'Cihazın uyku moduna geçmesini engelle';
@@ -4692,7 +4692,7 @@ extension on TranslationsTrTr {
           'settings.viewer.slideshow' => TranslationOverrides.string(_root.$meta, 'settings.viewer.slideshow', {}) ?? 'Slayt gösterisi',
           'settings.viewer.slideshowWIPNote' =>
             TranslationOverrides.string(_root.$meta, 'settings.viewer.slideshowWIPNote', {}) ??
-                '[Yapım Aşamasında] Videolar/GIF\'ler: Sadece manuel kaydırma',
+                'Videolar ve GIF\'ler kendi daha uzun zamanlayıcılarını kullanır. Yüklenen son öğede, aramada devam varsa sonraki sayfa yüklenir.',
           'settings.viewer.preventDeviceFromSleeping' =>
             TranslationOverrides.string(_root.$meta, 'settings.viewer.preventDeviceFromSleeping', {}) ?? 'Cihazın uyku moduna geçmesini engelle',
           'settings.viewer.viewerOpenCloseAnimation' =>

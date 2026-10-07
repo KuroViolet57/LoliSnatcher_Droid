@@ -2138,7 +2138,9 @@ class _Translations$settings$viewer$ja_JP extends Translations$settings$viewer$e
   @override
   String get slideshow => TranslationOverrides.string(_root.$meta, 'settings.viewer.slideshow', {}) ?? 'スライドショー';
   @override
-  String get slideshowWIPNote => TranslationOverrides.string(_root.$meta, 'settings.viewer.slideshowWIPNote', {}) ?? '[作業中] 動画/GIFは手動スクロールのみ';
+  String get slideshowWIPNote =>
+      TranslationOverrides.string(_root.$meta, 'settings.viewer.slideshowWIPNote', {}) ??
+      '動画とGIFは専用の長めのタイマーを使います。読み込み済みの最後の項目では、検索に続きがあるとき次のページを読み込みます。';
   @override
   String get preventDeviceFromSleeping =>
       TranslationOverrides.string(_root.$meta, 'settings.viewer.preventDeviceFromSleeping', {}) ?? 'デバイスがスリープ状態にならないようにする';
@@ -4384,7 +4386,8 @@ extension on TranslationsJaJp {
             TranslationOverrides.string(_root.$meta, 'settings.viewer.slideshowDurationInMs', {}) ?? 'スライドショー間隔 (ms)',
           'settings.viewer.slideshow' => TranslationOverrides.string(_root.$meta, 'settings.viewer.slideshow', {}) ?? 'スライドショー',
           'settings.viewer.slideshowWIPNote' =>
-            TranslationOverrides.string(_root.$meta, 'settings.viewer.slideshowWIPNote', {}) ?? '[作業中] 動画/GIFは手動スクロールのみ',
+            TranslationOverrides.string(_root.$meta, 'settings.viewer.slideshowWIPNote', {}) ??
+                '動画とGIFは専用の長めのタイマーを使います。読み込み済みの最後の項目では、検索に続きがあるとき次のページを読み込みます。',
           'settings.viewer.preventDeviceFromSleeping' =>
             TranslationOverrides.string(_root.$meta, 'settings.viewer.preventDeviceFromSleeping', {}) ?? 'デバイスがスリープ状態にならないようにする',
           'settings.viewer.viewerOpenCloseAnimation' =>
