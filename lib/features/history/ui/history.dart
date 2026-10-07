@@ -429,7 +429,7 @@ class _HistoryListState extends State<HistoryList> {
               onlyInput: true,
               controller: filterSearchController,
               onChanged: (String? input) {
-                getHistory();
+                filterHistory();
               },
               title: context.loc.search,
               titleAsLabel: true,

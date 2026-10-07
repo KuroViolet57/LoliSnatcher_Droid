@@ -80,7 +80,6 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     expect(find.text('Delete 1 item'), findsOneWidget);
 
-    // Typing reloads the history (new HistoryItem objects).
     await tester.enterText(find.byType(TextField).first, 'v');
     for (int i = 0; i < 4; i++) {
       await tester.pump(const Duration(milliseconds: 100));
@@ -91,6 +90,31 @@ void main() {
 
     expect(tester.takeException(), isNull, reason: 'the dialog must build (it threw a RangeError: history[-1])');
     expect(find.text('Delete history entries'), findsOneWidget);
+  });
+
+  testWidgets('typing in the filter uses the list already loaded', (tester) async {
+    await pumpHistory(tester);
+    expect(find.text('vanilla'), findsWidgets);
+    expect(find.text('glasses'), findsWidgets);
+
+    DoujinDataHandler.instance.searchHistory.add(
+      DoujinSearchHistoryEntry(
+        id: 3,
+        query: 'vampire',
+        booruHost: 'nhentai.net',
+        at: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
+
+    await tester.enterText(find.byType(TextField).first, 'v');
+    for (int i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    expect(find.text('vanilla'), findsWidgets);
+    expect(find.text('vampire'), findsNothing, reason: 'a keystroke must not reload the store');
+    expect(find.text('glasses'), findsNothing);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
   });
 
   testWidgets('the count under the title takes the app bar text colour, not onPrimary', (tester) async {
