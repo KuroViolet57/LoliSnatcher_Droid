@@ -580,7 +580,7 @@ extension SettingsSchema on SettingsHandler {
     },
     'fastGifPlayback': {
       'type': 'bool',
-      'default': false,
+      'default': true,
     },
     'showSearchbarQuickActions': {
       'type': 'bool',

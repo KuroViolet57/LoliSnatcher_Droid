@@ -29,7 +29,7 @@ class _GalleryPageState extends State<GalleryPage> {
       showViewerTutorial = true,
       hideNotes = false,
       dimSeenPosts = false,
-      fastGifPlayback = false,
+      fastGifPlayback = true,
       allowRotation = false,
       loadingGif = false,
       useVolumeButtonsForScroll = false,
@@ -415,9 +415,9 @@ class _GalleryPageState extends State<GalleryPage> {
                 },
                 title: 'Fast GIF playback (experimental)',
                 subtitle: const Text(
-                  'Renders GIFs with the extended_image engine (decodes at screen resolution + its own '
-                  'cache) instead of the built-in viewer. Fixes slow / stuttery large GIFs. Turn off if a '
-                  'GIF looks wrong.',
+                  'Renders GIFs with the extended_image engine at screen width, and at twice that after '
+                  "you zoom. Full resolution stays behind Don't scale images. On when this settings file "
+                  'does not mention the switch. Turn off if a GIF looks wrong.',
                 ),
               ),
               SettingsToggle(

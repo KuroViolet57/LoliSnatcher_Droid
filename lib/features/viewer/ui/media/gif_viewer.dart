@@ -9,8 +9,10 @@ import 'package:photo_view/photo_view.dart';
 
 import 'package:lolisnatcher/models/booru.dart';
 import 'package:lolisnatcher/models/booru_item.dart';
+import 'package:lolisnatcher/core/logging/logger.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/core/utils/tools.dart';
+import 'package:lolisnatcher/features/viewer/logic/gif_decode_width.dart';
 import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
 
 /// Dedicated GIF renderer using extended_image (the same engine Boorusama
@@ -65,11 +67,31 @@ class GifViewerState extends State<GifViewer> {
   }
 
   void _onScaleStateChanged(PhotoViewScaleState scaleState) {
-    isZoomed.value =
+    final bool zoomed =
         scaleState == PhotoViewScaleState.zoomedIn ||
         scaleState == PhotoViewScaleState.covering ||
         scaleState == PhotoViewScaleState.originalSize;
-    viewerHandler.setZoomed(widget.key, isZoomed.value);
+    final bool changed = isZoomed.value != zoomed;
+    final bool opened = zoomed && !isZoomed.value;
+    isZoomed.value = zoomed;
+    viewerHandler.setZoomed(widget.key, zoomed);
+    // A width change needs a new decode. Full-file mode already uses every
+    // pixel, so a zoom there does not rebuild.
+    if (!changed || !mounted) return;
+    if (settingsHandler.disableImageScaling || widget.booruItem.isNoScale.value) return;
+    if (opened) {
+      Logger.Inst().log(
+        'GIF decode widened for a zoom',
+        'GifViewer',
+        '_onScaleStateChanged',
+        LogTypes.imageInfo,
+      );
+    }
+    // The scale stream can notify during the gesture that built this frame.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() {});
+    });
   }
 
   /// Same cover the still-image zoom button uses.
@@ -155,22 +177,18 @@ class GifViewerState extends State<GifViewer> {
         : ExtendedResizeImage.resizeIfNeeded(provider: base, cacheWidth: cacheWidth);
   }
 
-  // Decode the GIF at the screen's pixel width (capped to its own width so we
-  // never upscale). This is the actual speed lever — full-res GIF frames are
+  // Screen width at rest. Twice that after a zoom, capped to the file so we
+  // never upscale. Full-file frames stay behind Don't scale images: they are
   // what choke the UI isolate.
   int? _cacheWidthFor(BuildContext context) {
-    if (settingsHandler.disableImageScaling || widget.booruItem.isNoScale.value) {
-      return null;
-    }
-    final double dpr = MediaQuery.devicePixelRatioOf(context);
-    final double screenW = MediaQuery.sizeOf(context).width * dpr;
-    final double? srcW = widget.booruItem.fileWidth;
-    int target = screenW.round();
-    if (srcW != null && srcW > 0 && srcW < target) {
-      target = srcW.round();
-    }
-    // sane floor so a tiny viewport never decodes a 1px-wide GIF
-    return target < 64 ? 64 : target;
+    return gifDecodeWidth(
+      disableImageScaling: settingsHandler.disableImageScaling,
+      noScale: widget.booruItem.isNoScale.value,
+      zoomed: isZoomed.value,
+      screenWidthCss: MediaQuery.sizeOf(context).width,
+      devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+      fileWidth: widget.booruItem.fileWidth,
+    );
   }
 
   @override
@@ -195,9 +213,9 @@ class GifViewerState extends State<GifViewer> {
       scaleStateController: scaleController,
       enableRotation: settingsHandler.allowRotation,
       child: ExtendedImage(
-      // Key on the restart token so becoming-viewed forces a fresh decode
-      // (frame 0) rather than resuming the cached mid-animation completer.
-      key: ValueKey('gif-${widget.booruItem.fileURL}-$_restartToken'),
+      // Key on the restart token and the decode width so becoming-viewed, or
+      // a zoom, forces a fresh decode rather than resuming the old completer.
+      key: ValueKey('gif-${widget.booruItem.fileURL}-$_restartToken-${_cacheWidthFor(context)}'),
       image: _buildProvider(context),
       fit: BoxFit.contain,
       // Pinch and the zoom button belong to the PhotoView wrapper, the same

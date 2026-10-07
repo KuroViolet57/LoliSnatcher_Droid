@@ -363,8 +363,9 @@ class SettingsHandler {
   // Render .gif files with the extended_image engine (the same one Boorusama
   // uses) instead of Flutter's built-in Image widget. extended_image decodes
   // frames at display resolution and manages its own cache, which fixes the
-  // slow/stuttery full-res GIF playback.
-  bool fastGifPlayback = false;
+  // slow/stuttery full-res GIF playback. A settings file that omits the key
+  // starts on. A saved false stays off.
+  bool fastGifPlayback = true;
   bool showSearchbarQuickActions = false;
   bool autofocusSearchbar = true;
   bool expandDetails = false;
