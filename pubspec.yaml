@@ -133,6 +133,11 @@ dependency_overrides:
   # (third_party/flutter_onnxruntime/LOLISNATCHER_PATCH.md says how to undo it).
   flutter_onnxruntime:
     path: third_party/flutter_onnxruntime
+  # Screen wakelock for media_kit and better_player. 1.7.0's generated Kotlin
+  # has no package line, and Kotlin 2.2.20 rejects the default-package imports.
+  # 1.8.x needs Flutter >=3.44. See third_party/wakelock_plus/LOLISNATCHER_PATCH.md.
+  wakelock_plus:
+    path: third_party/wakelock_plus
 
 
 
