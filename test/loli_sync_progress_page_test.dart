@@ -86,7 +86,8 @@ void main() {
     final int port = await freePort(tester);
     await open(tester, port);
     await waitFor(tester, () => find.textContaining('Server active at').evaluate().isNotEmpty);
-    final Socket sender = await send(tester, port, '/lolisync/test');
+    final String code = tester.widget<Text>(find.textContaining('Server active at')).data!.split('Code ').last.trim();
+    final Socket sender = await send(tester, port, '/lolisync/test?code=${code.toLowerCase()}');
     await waitFor(tester, () => find.text('Test').evaluate().isNotEmpty);
     expect(find.text('Test'), findsOneWidget);
 
@@ -95,6 +96,21 @@ void main() {
     await tester.pump();
 
     expect(find.text('Test'), findsOneWidget, reason: 'shown as the status line, not repeated in the history');
+
+    await tester.runAsync(() async => sender.destroy());
+    await tester.pumpWidget(const SizedBox.shrink());
+    await waitFor(tester, () => false, rounds: 10);
+  }, timeout: const Timeout(Duration(seconds: 60)));
+
+  testWidgets('a request without the session code is rejected and does not store the test', (tester) async {
+    final int port = await freePort(tester);
+    await open(tester, port);
+    await waitFor(tester, () => find.textContaining('Server active at').evaluate().isNotEmpty);
+    final Socket sender = await send(tester, port, '/lolisync/test');
+    await waitFor(tester, () => find.textContaining('Rejected').evaluate().isNotEmpty);
+
+    expect(find.textContaining('Rejected /lolisync/test'), findsWidgets);
+    expect(find.text('Test'), findsNothing);
 
     await tester.runAsync(() async => sender.destroy());
     await tester.pumpWidget(const SizedBox.shrink());

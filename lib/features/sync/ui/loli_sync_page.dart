@@ -122,6 +122,9 @@ class _LoliSyncPageState extends State<LoliSyncPage> {
 
   final TextEditingController ipController = TextEditingController();
   final TextEditingController portController = TextEditingController();
+
+  /// Typed from the receiving phone. Not written to settings.
+  final TextEditingController codeController = TextEditingController();
   final TextEditingController favouritesSkipController = TextEditingController();
   final TextEditingController snatchedSkipController = TextEditingController();
   final TextEditingController startPortController = TextEditingController();
@@ -184,6 +187,7 @@ class _LoliSyncPageState extends State<LoliSyncPage> {
   void dispose() {
     ipController.dispose();
     portController.dispose();
+    codeController.dispose();
     favouritesSkipController.dispose();
     snatchedSkipController.dispose();
     startPortController.dispose();
@@ -203,6 +207,17 @@ class _LoliSyncPageState extends State<LoliSyncPage> {
     updateState();
   }
 
+  /// Empty when IP, port, and the session code are all filled.
+  String _missingAddressOrCode() {
+    if (ipController.text.isEmpty || portController.text.isEmpty) {
+      return context.loc.settings.sync.pleaseEnterIPAndPort;
+    }
+    if (codeController.text.trim().isEmpty) {
+      return context.loc.settings.sync.syncCodeRequired;
+    }
+    return '';
+  }
+
   Future<void> getIPList() async {
     final List<NetworkInterface> temp = await ServiceHandler.getIPList();
     ipList.addAll(temp);
@@ -211,14 +226,15 @@ class _LoliSyncPageState extends State<LoliSyncPage> {
   }
 
   Future<void> sendTestRequest() async {
-    if (ipController.text.isEmpty || portController.text.isEmpty) {
+    final String missing = _missingAddressOrCode();
+    if (missing.isNotEmpty) {
       FlashElements.showSnackbar(
         context: context,
         title: Text(context.loc.settings.sync.errorTitle, style: const TextStyle(fontSize: 20)),
         content: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(context.loc.settings.sync.pleaseEnterIPAndPort),
+            Text(missing),
           ],
         ),
         sideColor: Colors.red,
@@ -237,6 +253,7 @@ class _LoliSyncPageState extends State<LoliSyncPage> {
       0,
       TabsMode.merge,
       TagsMode.preferTypeIfNone,
+      code: codeController.text,
     );
     sub = stream.listen(
       (data) {
@@ -310,6 +327,18 @@ class _LoliSyncPageState extends State<LoliSyncPage> {
           inputFormatters: <TextInputFormatter>[FilteringTextInputFormatter.digitsOnly],
           clearable: true,
           pasteable: true,
+        ),
+        SettingsTextInput(
+          controller: codeController,
+          title: context.loc.settings.sync.syncCode,
+          hintText: context.loc.settings.sync.syncCodePlaceholder,
+          subtitle: Text(context.loc.settings.sync.syncCodeHelp),
+          inputFormatters: <TextInputFormatter>[FilteringTextInputFormatter.allow(RegExp('[A-Za-z0-9]'))],
+          clearable: true,
+          pasteable: true,
+          autocorrect: false,
+          enableSuggestions: false,
+          enableIMEPersonalizedLearning: false,
         ),
         SettingsToggle(
           value: favouritesv2,
@@ -576,8 +605,9 @@ class _LoliSyncPageState extends State<LoliSyncPage> {
           icon: const Icon(Symbols.send_to_mobile_rounded),
           action: () async {
             final bool isAddressEntered = ipController.text.isNotEmpty && portController.text.isNotEmpty;
+            final bool isCodeEntered = codeController.text.trim().isNotEmpty;
             final bool isAnySyncSelected = favouritesv2 || favourites || snatched || settings || booru || tabs || tags;
-            final bool syncAllowed = isAddressEntered && isAnySyncSelected;
+            final bool syncAllowed = isAddressEntered && isCodeEntered && isAnySyncSelected;
 
             if (syncAllowed) {
               await SettingsPageOpen(
@@ -586,6 +616,7 @@ class _LoliSyncPageState extends State<LoliSyncPage> {
                   type: 'sender',
                   ip: ipController.text,
                   port: portController.text,
+                  code: codeController.text,
                   favourites: favourites,
                   favouritesv2: favouritesv2,
                   favSkip: int.tryParse(favouritesSkipController.text) ?? 0,
@@ -604,6 +635,8 @@ class _LoliSyncPageState extends State<LoliSyncPage> {
               String errorString = '???';
               if (!isAddressEntered) {
                 errorString = context.loc.settings.sync.portAndIPCannotBeEmpty;
+              } else if (!isCodeEntered) {
+                errorString = context.loc.settings.sync.syncCodeRequired;
               } else if (!isAnySyncSelected) {
                 errorString = context.loc.settings.sync.nothingSelectedToSync;
               }
@@ -646,7 +679,7 @@ class _LoliSyncPageState extends State<LoliSyncPage> {
         Container(
           margin: const EdgeInsets.fromLTRB(10, 10, 10, 10),
           child: Text(
-            context.loc.settings.sync.receiverInstructions,
+            '${context.loc.settings.sync.receiverInstructions}\n${context.loc.settings.sync.syncCodeReceiverNote}',
           ),
         ),
         SettingsOptionsList(

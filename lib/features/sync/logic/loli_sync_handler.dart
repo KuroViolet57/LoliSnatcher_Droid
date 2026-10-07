@@ -25,6 +25,41 @@ class LoliSync {
   String ip = '127.0.0.1';
   int port = 8080;
 
+  /// The code for this server session. The receiver generates it. The sender
+  /// is given it by the page. It is not a setting and it is not logged.
+  String syncCode = '';
+
+  static const String _codeAlphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+  /// Test seam. Production draws 8 characters from [_codeAlphabet].
+  static String Function() codeFactory = _randomCode;
+
+  static String _randomCode() {
+    final Random random = Random.secure();
+    return List<String>.generate(8, (_) => _codeAlphabet[random.nextInt(_codeAlphabet.length)]).join();
+  }
+
+  static String pathWithCode(String path, String code) {
+    final String encoded = Uri.encodeQueryComponent(code);
+    return path.contains('?') ? '$path&code=$encoded' : '$path?code=$encoded';
+  }
+
+  static String serverActiveLine(String ip, int port, String code) => 'Server active at $ip:$port. Code $code';
+
+  String _path(String path) => pathWithCode(path, syncCode);
+
+  /// True when [req] was answered 403 and the caller must not store it.
+  /// A matching code is compared after trim and upper-case, so the typed
+  /// code does not have to match the receiver's capitals.
+  bool rejectUnlessCodeMatches(dynamic req) {
+    final String got = (req.uri.queryParameters['code'] ?? '').toString().trim().toUpperCase();
+    final String expected = syncCode.trim().toUpperCase();
+    if (expected.isNotEmpty && got == expected) return false;
+    req.response.statusCode = 403;
+    req.response.write(expected.isEmpty ? 'The sync code is missing.' : 'The sync code does not match.');
+    return true;
+  }
+
   HttpServer? server;
   bool syncKilled = false;
 
@@ -36,37 +71,42 @@ class LoliSync {
 
     ip = newIp;
     port = newPort;
+    syncCode = codeFactory();
     server = await HttpServer.bind(ip, port);
 
-    yield 'Server active at $ip:$port';
+    yield serverActiveLine(ip, port, syncCode);
     await for (final req in server!) {
       Logger.Inst().log(req.uri.path, 'LoliSync', 'startServer', LogTypes.loliSyncInfo);
-      switch (req.uri.path) {
-        case '/lolisync/boorubatch':
-          yield 'Received booru items batch';
-          yield await storeBooruBatch(req, settingsHandler);
-          break;
-        case '/lolisync/booruitem':
-          yield await storeBooruItem(req, settingsHandler);
-          break;
-        case '/lolisync/settings':
-          yield await storeSettings(req, settingsHandler);
-          break;
-        case '/lolisync/booru':
-          yield await storeBooru(req, settingsHandler);
-          break;
-        case '/lolisync/tabs':
-          yield await storeTabs(req, settingsHandler);
-          break;
-        case '/lolisync/tags':
-          yield await storeTags(req, settingsHandler);
-          break;
-        case '/lolisync/test':
-          yield 'Test';
-          break;
-        case '/lolisync/complete':
-          yield 'Sync Complete';
-          break;
+      if (rejectUnlessCodeMatches(req)) {
+        yield 'Rejected ${req.uri.path}';
+      } else {
+        switch (req.uri.path) {
+          case '/lolisync/boorubatch':
+            yield 'Received booru items batch';
+            yield await storeBooruBatch(req, settingsHandler);
+            break;
+          case '/lolisync/booruitem':
+            yield await storeBooruItem(req, settingsHandler);
+            break;
+          case '/lolisync/settings':
+            yield await storeSettings(req, settingsHandler);
+            break;
+          case '/lolisync/booru':
+            yield await storeBooru(req, settingsHandler);
+            break;
+          case '/lolisync/tabs':
+            yield await storeTabs(req, settingsHandler);
+            break;
+          case '/lolisync/tags':
+            yield await storeTags(req, settingsHandler);
+            break;
+          case '/lolisync/test':
+            yield 'Test';
+            break;
+          case '/lolisync/complete':
+            yield 'Sync Complete';
+            break;
+        }
       }
       await req.response.close();
     }
@@ -382,7 +422,7 @@ class LoliSync {
     Logger.Inst().log('Sending batch $offset-$lastIndex / $count', 'LoliSync', 'sendBooruItem', LogTypes.loliSyncInfo);
     final HttpClient client = HttpClient();
     final HttpClientRequest request =
-        await client.post(ip, port, '/lolisync/boorubatch?amount=$count&offset=$offset&size=${items.length}')
+        await client.post(ip, port, _path('/lolisync/boorubatch?amount=$count&offset=$offset&size=${items.length}'))
           ..headers.contentType = ContentType.json
           ..write(jsonEncode(items.map((e) => e.toJson()).toList()));
     final HttpClientResponse response = await request.close();
@@ -397,7 +437,7 @@ class LoliSync {
     Logger.Inst().log('Sending item $current / $favouritesCount', 'LoliSync', 'sendBooruItem', LogTypes.loliSyncInfo);
     final HttpClient client = HttpClient();
     final HttpClientRequest request =
-        await client.post(ip, port, '/lolisync/booruitem?amount=$favouritesCount&current=$current')
+        await client.post(ip, port, _path('/lolisync/booruitem?amount=$favouritesCount&current=$current'))
           ..headers.contentType = ContentType.json
           ..write(jsonEncode(item.toJson())); /*3*/
     final HttpClientResponse response = await request.close();
@@ -409,7 +449,7 @@ class LoliSync {
   Future<String> sendSettings(Map settingsJSON) async {
     Logger.Inst().log('Sending settings $settingsJSON', 'LoliSync', 'sendSettings', LogTypes.loliSyncInfo);
     final HttpClient client = HttpClient();
-    final HttpClientRequest request = await client.post(ip, port, '/lolisync/settings')
+    final HttpClientRequest request = await client.post(ip, port, _path('/lolisync/settings'))
       ..headers.contentType = ContentType.json
       ..write(jsonEncode(settingsJSON));
     final HttpClientResponse response = await request.close();
@@ -422,7 +462,7 @@ class LoliSync {
     Logger.Inst().log('Sending item $current / $booruCount', 'LoliSync', 'sendBooru', LogTypes.loliSyncInfo);
     final HttpClient client = HttpClient();
     final HttpClientRequest request =
-        await client.post(ip, port, '/lolisync/booru?amount=$booruCount&current=$current')
+        await client.post(ip, port, _path('/lolisync/booru?amount=$booruCount&current=$current'))
           ..headers.contentType = ContentType.json
           ..write(jsonEncode(booru.toJson()));
     final HttpClientResponse response = await request.close();
@@ -434,7 +474,7 @@ class LoliSync {
   Future<String> sendTabs(String? tabsString, String mode) async {
     Logger.Inst().log('Sending tabs $tabsString', 'LoliSync', 'sendTabs', LogTypes.loliSyncInfo);
     final HttpClient client = HttpClient();
-    final HttpClientRequest request = await client.post(ip, port, '/lolisync/tabs?mode=$mode')
+    final HttpClientRequest request = await client.post(ip, port, _path('/lolisync/tabs?mode=$mode'))
       ..headers.contentType = ContentType.json
       ..write(
         jsonEncode({'tabs': tabsString}),
@@ -448,7 +488,7 @@ class LoliSync {
   Future<String> sendTags(List<Tag> tagList, String mode) async {
     Logger.Inst().log('Sending tags: ${tagList.length}', 'LoliSync', 'sendTags', LogTypes.loliSyncInfo);
     final HttpClient client = HttpClient();
-    final HttpClientRequest request = await client.post(ip, port, '/lolisync/tags?mode=$mode')
+    final HttpClientRequest request = await client.post(ip, port, _path('/lolisync/tags?mode=$mode'))
       ..headers.contentType = ContentType.json
       ..write(
         jsonEncode(
@@ -467,7 +507,7 @@ class LoliSync {
     final context = NavigationHandler.instance.navContext;
     try {
       final HttpClient client = HttpClient();
-      final HttpClientRequest request = await client.post(ip, port, '/lolisync/test');
+      final HttpClientRequest request = await client.post(ip, port, _path('/lolisync/test'));
       final HttpClientResponse response = await request.close();
       client.close();
       if (response.statusCode != 200) {
@@ -525,7 +565,7 @@ class LoliSync {
     Logger.Inst().log('Sending sync complete', 'LoliSync', 'sendSyncComplete', LogTypes.loliSyncInfo);
     try {
       final HttpClient client = HttpClient();
-      final HttpClientRequest request = await client.post(ip, port, '/lolisync/complete');
+      final HttpClientRequest request = await client.post(ip, port, _path('/lolisync/complete'));
       final HttpClientResponse response = await request.close();
       client.close();
       return response.statusCode.toString();
@@ -548,13 +588,15 @@ class LoliSync {
     int favSkip,
     int snatchedSkip,
     TabsMode tabsMode,
-    TagsMode tagsMode,
-  ) async* {
+    TagsMode tagsMode, {
+    String code = '',
+  }) async* {
     final SettingsHandler settingsHandler = SettingsHandler.instance;
     final SearchHandler searchHandler = SearchHandler.instance;
     final TagHandler tagHandler = TagHandler.instance;
     ip = ipOverride;
     port = int.tryParse(portOverride) ?? 8080;
+    syncCode = code.trim().toUpperCase();
     final String address = '$ip:$port';
     syncKilled = false;
 

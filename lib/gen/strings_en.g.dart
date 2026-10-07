@@ -2819,7 +2819,8 @@ class Translations$settings$viewer$en {
 
   /// en: 'Videos and GIFs use their own longer timer. At the last loaded item, the next page loads when the search has more.'
   String get slideshowWIPNote =>
-      TranslationOverrides.string(_root.$meta, 'settings.viewer.slideshowWIPNote', {}) ?? 'Videos and GIFs use their own longer timer. At the last loaded item, the next page loads when the search has more.';
+      TranslationOverrides.string(_root.$meta, 'settings.viewer.slideshowWIPNote', {}) ??
+      'Videos and GIFs use their own longer timer. At the last loaded item, the next page loads when the search has more.';
 
   /// en: 'Prevent device from sleeping'
   String get preventDeviceFromSleeping =>
@@ -3834,6 +3835,22 @@ class Translations$settings$sync$en {
   /// en: 'Host Port (i.e. 7777)'
   String get portPlaceholder => TranslationOverrides.string(_root.$meta, 'settings.sync.portPlaceholder', {}) ?? 'Host Port (i.e. 7777)';
 
+  /// en: 'Sync code'
+  String get syncCode => TranslationOverrides.string(_root.$meta, 'settings.sync.syncCode', {}) ?? 'Sync code';
+
+  /// en: 'Code shown on the other phone'
+  String get syncCodePlaceholder =>
+      TranslationOverrides.string(_root.$meta, 'settings.sync.syncCodePlaceholder', {}) ?? 'Code shown on the other phone';
+
+  /// en: 'The other phone shows this code when its server starts. It changes every time that server starts, and it is not saved.'
+  String get syncCodeHelp =>
+      TranslationOverrides.string(_root.$meta, 'settings.sync.syncCodeHelp', {}) ??
+      'The other phone shows this code when its server starts. It changes every time that server starts, and it is not saved.';
+
+  /// en: 'Enter the code shown on the other phone.'
+  String get syncCodeRequired =>
+      TranslationOverrides.string(_root.$meta, 'settings.sync.syncCodeRequired', {}) ?? 'Enter the code shown on the other phone.';
+
   /// en: 'Send favourites'
   String get sendFavourites => TranslationOverrides.string(_root.$meta, 'settings.sync.sendFavourites', {}) ?? 'Send favourites';
 
@@ -3986,6 +4003,11 @@ class Translations$settings$sync$en {
   String get receiverInstructions =>
       TranslationOverrides.string(_root.$meta, 'settings.sync.receiverInstructions', {}) ??
       'Start server to receive data. Avoid public WiFi for security';
+
+  /// en: 'The next page shows a code. Type that code on the sending phone. It is not saved.'
+  String get syncCodeReceiverNote =>
+      TranslationOverrides.string(_root.$meta, 'settings.sync.syncCodeReceiverNote', {}) ??
+      'The next page shows a code. Type that code on the sending phone. It is not saved.';
 
   /// en: 'Available network interfaces'
   String get availableNetworkInterfaces =>
@@ -5688,7 +5710,8 @@ extension on Translations {
             TranslationOverrides.string(_root.$meta, 'settings.viewer.slideshowDurationInMs', {}) ?? 'Slideshow duration (in ms)',
           'settings.viewer.slideshow' => TranslationOverrides.string(_root.$meta, 'settings.viewer.slideshow', {}) ?? 'Slideshow',
           'settings.viewer.slideshowWIPNote' =>
-            TranslationOverrides.string(_root.$meta, 'settings.viewer.slideshowWIPNote', {}) ?? 'Videos and GIFs use their own longer timer. At the last loaded item, the next page loads when the search has more.',
+            TranslationOverrides.string(_root.$meta, 'settings.viewer.slideshowWIPNote', {}) ??
+                'Videos and GIFs use their own longer timer. At the last loaded item, the next page loads when the search has more.',
           'settings.viewer.preventDeviceFromSleeping' =>
             TranslationOverrides.string(_root.$meta, 'settings.viewer.preventDeviceFromSleeping', {}) ?? 'Prevent device from sleeping',
           'settings.viewer.viewerOpenCloseAnimation' =>
@@ -6249,6 +6272,14 @@ extension on Translations {
             TranslationOverrides.string(_root.$meta, 'settings.sync.ipAddressPlaceholder', {}) ?? 'Host IP Address (i.e. 192.168.1.1)',
           'settings.sync.port' => TranslationOverrides.string(_root.$meta, 'settings.sync.port', {}) ?? 'Port',
           'settings.sync.portPlaceholder' => TranslationOverrides.string(_root.$meta, 'settings.sync.portPlaceholder', {}) ?? 'Host Port (i.e. 7777)',
+          'settings.sync.syncCode' => TranslationOverrides.string(_root.$meta, 'settings.sync.syncCode', {}) ?? 'Sync code',
+          'settings.sync.syncCodePlaceholder' =>
+            TranslationOverrides.string(_root.$meta, 'settings.sync.syncCodePlaceholder', {}) ?? 'Code shown on the other phone',
+          'settings.sync.syncCodeHelp' =>
+            TranslationOverrides.string(_root.$meta, 'settings.sync.syncCodeHelp', {}) ??
+                'The other phone shows this code when its server starts. It changes every time that server starts, and it is not saved.',
+          'settings.sync.syncCodeRequired' =>
+            TranslationOverrides.string(_root.$meta, 'settings.sync.syncCodeRequired', {}) ?? 'Enter the code shown on the other phone.',
           'settings.sync.sendFavourites' => TranslationOverrides.string(_root.$meta, 'settings.sync.sendFavourites', {}) ?? 'Send favourites',
           'settings.sync.favouritesCount' =>
             ({required String count}) =>
@@ -6329,6 +6360,9 @@ extension on Translations {
           'settings.sync.receiverInstructions' =>
             TranslationOverrides.string(_root.$meta, 'settings.sync.receiverInstructions', {}) ??
                 'Start server to receive data. Avoid public WiFi for security',
+          'settings.sync.syncCodeReceiverNote' =>
+            TranslationOverrides.string(_root.$meta, 'settings.sync.syncCodeReceiverNote', {}) ??
+                'The next page shows a code. Type that code on the sending phone. It is not saved.',
           'settings.sync.availableNetworkInterfaces' =>
             TranslationOverrides.string(_root.$meta, 'settings.sync.availableNetworkInterfaces', {}) ?? 'Available network interfaces',
           'settings.sync.selectedInterfaceIP' =>
@@ -6676,15 +6710,15 @@ extension on Translations {
           'desktopHome.save' => TranslationOverrides.string(_root.$meta, 'desktopHome.save', {}) ?? 'Save',
           'desktopHome.noItemsSelected' => TranslationOverrides.string(_root.$meta, 'desktopHome.noItemsSelected', {}) ?? 'No items selected',
           'galleryView.noItems' => TranslationOverrides.string(_root.$meta, 'galleryView.noItems', {}) ?? 'No items',
+          _ => null,
+        } ??
+        switch (path) {
           'galleryView.noItemSelected' => TranslationOverrides.string(_root.$meta, 'galleryView.noItemSelected', {}) ?? 'No item selected',
           'galleryView.close' => TranslationOverrides.string(_root.$meta, 'galleryView.close', {}) ?? 'Close',
           'mediaPreviews.noBooruConfigsFound' =>
             TranslationOverrides.string(_root.$meta, 'mediaPreviews.noBooruConfigsFound', {}) ?? 'No booru configs found',
           'mediaPreviews.addNewBooru' => TranslationOverrides.string(_root.$meta, 'mediaPreviews.addNewBooru', {}) ?? 'Add new Booru',
           'mediaPreviews.help' => TranslationOverrides.string(_root.$meta, 'mediaPreviews.help', {}) ?? 'Help',
-          _ => null,
-        } ??
-        switch (path) {
           'mediaPreviews.settings' => TranslationOverrides.string(_root.$meta, 'mediaPreviews.settings', {}) ?? 'Settings',
           'mediaPreviews.restoringPreviousSession' =>
             TranslationOverrides.string(_root.$meta, 'mediaPreviews.restoringPreviousSession', {}) ?? 'Restoring previous session…',

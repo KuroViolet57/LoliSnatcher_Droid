@@ -178,6 +178,36 @@ void main() {
       expect(req.response.written.toString(), 'Added 50', reason: 'the answer to the sender is unchanged');
     });
 
+    test('a request without this session code is refused and nothing is stored', () {
+      final LoliSync sync = LoliSync()..syncCode = 'AB12CD34';
+      final SettingsHandler s = SettingsHandler.instance;
+      s.hiddenTags
+        ..clear()
+        ..add('kept');
+      final _Request missing = _Request('POST', '/lolisync/settings', jsonEncode({'hiddenTags': ['sent_tag']}));
+      final _Request wrong = _Request('POST', '/lolisync/settings?code=AB12CD35', jsonEncode({'hiddenTags': ['sent_tag']}));
+      final _Request right = _Request('POST', '/lolisync/settings?code=AB12CD34', jsonEncode({'hiddenTags': ['sent_tag']}));
+
+      expect(sync.rejectUnlessCodeMatches(missing), isTrue);
+      expect(sync.rejectUnlessCodeMatches(wrong), isTrue);
+      expect(missing.response.statusCode, 403);
+      expect(wrong.response.statusCode, 403);
+      expect(missing.response.written.toString(), contains('code'));
+      expect(sync.rejectUnlessCodeMatches(right), isFalse, reason: 'the matching code is allowed through to the store');
+      final _Request lower = _Request('POST', '/lolisync/settings?code=%20ab12cd34%20', jsonEncode({'hiddenTags': ['sent_tag']}));
+      expect(sync.rejectUnlessCodeMatches(lower), isFalse, reason: 'typing and spaces do not have to match the capitals');
+      final LoliSync blank = LoliSync();
+      final _Request any = _Request('POST', '/lolisync/settings?code=AB12CD34', jsonEncode({'hiddenTags': ['sent_tag']}));
+      expect(blank.rejectUnlessCodeMatches(any), isTrue);
+      expect(any.response.written.toString(), contains('missing'));
+      expect(s.hiddenTags, ['kept'], reason: 'a refused request does not reach storeSettings');
+      expect(SettingsHandler.instance.map.containsKey('syncCode'), isFalse);
+      expect(SettingsHandler.instance.map.containsKey('lastSyncCode'), isFalse);
+      expect(LoliSync.pathWithCode('/lolisync/settings', 'AB12CD34'), '/lolisync/settings?code=AB12CD34');
+      expect(LoliSync.pathWithCode('/lolisync/boorubatch?amount=1&offset=0&size=1', 'AB12CD34'), endsWith('&code=AB12CD34'));
+      expect(LoliSync.serverActiveLine('127.0.0.1', 8080, 'AB12CD34'), 'Server active at 127.0.0.1:8080. Code AB12CD34');
+    });
+
     test('a batch before the last one says how far the sync is', () async {
       if (!dbReady) return;
       final _Request req = _Request(

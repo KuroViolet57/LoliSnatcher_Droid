@@ -27,10 +27,14 @@ class LoliSyncProgressPage extends StatefulWidget {
     this.tabsMode = TabsMode.merge,
     this.tags = false,
     this.tagsMode = TagsMode.preferTypeIfNone,
+    this.code = '',
     super.key,
   });
 
   final String type, port;
+
+  /// The code shown on the receiving phone. The receiver generates its own.
+  final String code;
   final TabsMode tabsMode;
   final TagsMode tagsMode;
   final String? ip;
@@ -102,6 +106,7 @@ class _LoliSyncProgressPageState extends State<LoliSyncProgressPage> {
         widget.snatchedSkip,
         widget.tabsMode,
         widget.tagsMode,
+        code: widget.code,
       );
     } else {
       progressStream = loliSync.startServer(widget.ip, widget.port);
