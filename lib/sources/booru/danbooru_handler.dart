@@ -7,7 +7,6 @@ import 'package:html/parser.dart';
 import 'package:lolisnatcher/sources/doujin/common/doujin_filters.dart';
 import 'package:lolisnatcher/sources/framework/booru_site_filters.dart';
 import 'package:lolisnatcher/models/booru_item.dart';
-import 'package:lolisnatcher/models/booru_type.dart';
 import 'package:lolisnatcher/models/comment_item.dart';
 import 'package:lolisnatcher/models/meta_tag.dart';
 import 'package:lolisnatcher/models/note_item.dart';
@@ -58,14 +57,7 @@ class DanbooruHandler extends BooruHandler {
   bool get hasNotesSupport => true;
 
   @override
-  String sourceQuery(String tags) {
-    final String base = super.sourceQuery(tags);
-    if (booru.type != BooruType.Danbooru) return base;
-    final String? clause = remoteMediaClause(BooruType.Danbooru, mediaFilter);
-    if (clause == null || clause.isEmpty) return base;
-    final String trimmed = base.trim();
-    return trimmed.isEmpty ? clause : '$trimmed $clause';
-  }
+  String sourceQuery(String tags) => appendRemoteMediaClause(super.sourceQuery(tags), booru.type, mediaFilter);
 
   @override
   String validateTags(String tags) {

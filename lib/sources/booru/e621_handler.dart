@@ -8,6 +8,7 @@ import 'package:lolisnatcher/models/tag.dart';
 import 'package:lolisnatcher/models/tag_suggestion.dart';
 import 'package:lolisnatcher/models/tag_type.dart';
 import 'package:lolisnatcher/sources/framework/booru_handler.dart';
+import 'package:lolisnatcher/sources/framework/remote_media_query.dart';
 import 'package:lolisnatcher/sources/framework/booru_handler_utils.dart';
 import 'package:lolisnatcher/sources/framework/tags/booru_tag_catalog.dart';
 import 'package:lolisnatcher/sources/framework/tags/tag_catalog_source.dart';
@@ -26,6 +27,9 @@ class e621Handler extends BooruHandler {
   // together correctly (`( ~a ~b ) ( ~c ~d )`). Verified against the live API.
   @override
   String translateOrSyntax(String tags) => BooruHandler.orSyntaxPrefixTilde(tags, grouping: true);
+
+  @override
+  String sourceQuery(String tags) => appendRemoteMediaClause(super.sourceQuery(tags), booru.type, mediaFilter);
 
   @override
   bool get hasSizeData => true;

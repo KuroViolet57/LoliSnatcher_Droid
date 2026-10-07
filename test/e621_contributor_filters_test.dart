@@ -12,6 +12,7 @@ import 'package:lolisnatcher/models/tag.dart';
 import 'package:lolisnatcher/models/tag_type.dart';
 import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/core/settings/source_settings_handler.dart';
 import 'package:lolisnatcher/core/storage/tag_handler.dart';
 import 'package:lolisnatcher/sources/framework/tags/tag_index_source.dart';
 import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
@@ -53,6 +54,18 @@ void main() {
     try {
       tempDir.deleteSync(recursive: true);
     } catch (_) {}
+  });
+
+  test('a media chip appends its type clause after the query', () {
+    SourceSettingsHandler.instance.resetForTests();
+    expect(e621Handler(e621(), 20).sourceQuery('fox'), 'fox');
+    expect((e621Handler(e621(), 20)..mediaFilter = 'video').sourceQuery('fox'), 'fox type:mp4|type:webm');
+    expect(
+      (e621Handler(e621(), 20)..mediaFilter = 'image').sourceQuery('fox'),
+      'fox type:jpg|type:png|type:gif|type:webp',
+    );
+    expect((e621Handler(e621(), 20)..mediaFilter = 'sound').sourceQuery('fox'), 'fox');
+    SourceSettingsHandler.instance.resetForTests();
   });
 
   group('contributors and lore', () {
