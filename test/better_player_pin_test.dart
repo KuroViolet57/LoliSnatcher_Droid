@@ -36,7 +36,7 @@ void main() {
     expect(spec, contains('share_plus: ^13.3.1'));
     expect(spec, contains('chewie: ^1.13.0'));
     expect(spec, contains('video_player: ^2.11.1'));
-    expect(spec, contains('fvp: ^0.35.2'));
+    expect(spec, contains('fvp: ^0.39.0'));
     expect(spec, contains('google_fonts: ^8.0.2'));
 
     final String view = File('lib/features/video/ui/better_player_view.dart').readAsStringSync();
