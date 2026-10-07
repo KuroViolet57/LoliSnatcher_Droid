@@ -2817,9 +2817,9 @@ class Translations$settings$viewer$en {
   /// en: 'Slideshow'
   String get slideshow => TranslationOverrides.string(_root.$meta, 'settings.viewer.slideshow', {}) ?? 'Slideshow';
 
-  /// en: '[WIP] Videos/GIFs: manual scroll only'
+  /// en: 'Videos and GIFs use their own longer timer. At the last loaded item, the next page loads when the search has more.'
   String get slideshowWIPNote =>
-      TranslationOverrides.string(_root.$meta, 'settings.viewer.slideshowWIPNote', {}) ?? '[WIP] Videos/GIFs: manual scroll only';
+      TranslationOverrides.string(_root.$meta, 'settings.viewer.slideshowWIPNote', {}) ?? 'Videos and GIFs use their own longer timer. At the last loaded item, the next page loads when the search has more.';
 
   /// en: 'Prevent device from sleeping'
   String get preventDeviceFromSleeping =>
@@ -5688,7 +5688,7 @@ extension on Translations {
             TranslationOverrides.string(_root.$meta, 'settings.viewer.slideshowDurationInMs', {}) ?? 'Slideshow duration (in ms)',
           'settings.viewer.slideshow' => TranslationOverrides.string(_root.$meta, 'settings.viewer.slideshow', {}) ?? 'Slideshow',
           'settings.viewer.slideshowWIPNote' =>
-            TranslationOverrides.string(_root.$meta, 'settings.viewer.slideshowWIPNote', {}) ?? '[WIP] Videos/GIFs: manual scroll only',
+            TranslationOverrides.string(_root.$meta, 'settings.viewer.slideshowWIPNote', {}) ?? 'Videos and GIFs use their own longer timer. At the last loaded item, the next page loads when the search has more.',
           'settings.viewer.preventDeviceFromSleeping' =>
             TranslationOverrides.string(_root.$meta, 'settings.viewer.preventDeviceFromSleeping', {}) ?? 'Prevent device from sleeping',
           'settings.viewer.viewerOpenCloseAnimation' =>

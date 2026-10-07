@@ -575,7 +575,7 @@
             "volumeButtonsScrollSpeed": "Volume buttons scroll speed",
             "slideshowDurationInMs": "Slideshow duration (in ms)",
             "slideshow": "Slideshow",
-            "slideshowWIPNote": "[WIP] Videos/GIFs: manual scroll only",
+            "slideshowWIPNote": "Videos and GIFs use their own longer timer. At the last loaded item, the next page loads when the search has more.",
             "preventDeviceFromSleeping": "Prevent device from sleeping",
             "viewerOpenCloseAnimation": "Viewer open/close animation",
             "viewerPageChangeAnimation": "Viewer page change animation",

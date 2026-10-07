@@ -17,6 +17,7 @@ import 'package:url_launcher/url_launcher_string.dart';
 
 import 'package:lolisnatcher/sources/framework/linked_media.dart';
 import 'package:lolisnatcher/features/links/ui/linked_media_sheet.dart';
+import 'package:lolisnatcher/features/viewer/logic/slideshow_step.dart';
 import 'package:lolisnatcher/features/viewer/ui/flash_player_page.dart';
 import 'package:lolisnatcher/features/furaffinity/ui/furaffinity_post_page.dart';
 import 'package:lolisnatcher/sources/furaffinity/furaffinity_handler.dart';
@@ -112,6 +113,13 @@ class _HideableAppBarState extends State<HideableAppBar> {
   Timer? autoScrollTimer;
   TimedProgressController? autoScrollProgressController;
 
+  /// Bumped when the timer is cancelled, so a page load already in flight
+  /// does not jump after the user swipes or pauses.
+  int _slideshowGeneration = 0;
+
+  /// The slideshow's own jump must not be treated as a user swipe.
+  bool _slideshowJumping = false;
+
   // Dwell for the current slide: a longer time for video / GIF slides so they
   // get to play, the normal time for still images.
   Duration _dwellForCurrent() {
@@ -129,73 +137,119 @@ class _HideableAppBarState extends State<HideableAppBar> {
 
   // Self-rescheduling one-shot timer (not periodic), so each slide can dwell
   // for a duration that depends on whether it's a still image or a video/GIF.
+  bool _slideshowCanLoadMore() {
+    final SearchHandler search = SearchHandler.instance;
+    if (search.tabs.isEmpty) return false;
+    return !widget.tab.booruHandler.locked &&
+        !search.isLastPage.value &&
+        search.errorString.isEmpty &&
+        search.currentTab.id == widget.tab.id;
+  }
+
   void setScrollTimer() {
     final Duration dwell = _dwellForCurrent();
     autoScrollProgressController?.restartWith(dwell);
     autoScrollTimer?.cancel();
     autoScrollTimer = Timer(dwell, () {
       if (!autoScroll) return;
-      scrollToNextPage();
-      // scrollToNextPage may turn autoScroll off at the last page.
-      if (autoScroll) setScrollTimer();
+      unawaited(_onSlideshowTick());
     });
   }
 
   void unsetScrollTimer() {
+    _slideshowGeneration++;
     autoScrollTimer?.cancel();
     autoScrollProgressController?.stop();
   }
 
   void autoScrollState(bool newState) {
-    final bool isNotLastPage = (page.value + 1) < widget.tab.booruHandler.filteredFetched.length;
-    if (autoScroll != newState) {
-      if (isNotLastPage) {
-        setState(() {
-          autoScroll = newState;
-        });
-        newState ? setScrollTimer() : unsetScrollTimer();
-      } else {
-        if (newState == true) {
-          FlashElements.showSnackbar(
-            context: context,
-            title: Text(context.loc.viewer.appBar.cantStartSlideshow, style: const TextStyle(fontSize: 20)),
-            content: Text(context.loc.viewer.appBar.reachedLastLoadedItem, style: const TextStyle(fontSize: 16)),
-            leadingIcon: Symbols.warning_amber_rounded,
-            leadingIconColor: Colors.red,
-            sideColor: Colors.red,
-          );
-        }
-        setState(() {
-          autoScroll = false;
-        });
-        unsetScrollTimer();
-      }
+    if (autoScroll == newState) return;
+    if (!newState) {
+      setState(() {
+        autoScroll = false;
+      });
+      unsetScrollTimer();
+      return;
     }
+    final SlideshowStep step = slideshowStep(
+      index: page.value,
+      loaded: widget.tab.booruHandler.filteredFetched.length,
+      canLoadMore: _slideshowCanLoadMore(),
+    );
+    if (step == SlideshowStep.stop) {
+      FlashElements.showSnackbar(
+        context: context,
+        title: Text(context.loc.viewer.appBar.cantStartSlideshow, style: const TextStyle(fontSize: 20)),
+        content: Text(context.loc.viewer.appBar.reachedLastLoadedItem, style: const TextStyle(fontSize: 16)),
+        leadingIcon: Symbols.warning_amber_rounded,
+        leadingIconColor: Colors.red,
+        sideColor: Colors.red,
+      );
+      setState(() {
+        autoScroll = false;
+      });
+      unsetScrollTimer();
+      return;
+    }
+    setState(() {
+      autoScroll = true;
+    });
+    if (step == SlideshowStep.loadMore) {
+      unawaited(_loadAnotherPage());
+      return;
+    }
+    setScrollTimer();
   }
 
   void pageListener() {
     page.value = widget.pageController.page?.round() ?? 0;
-    if (autoScroll) {
-      if (autoScrollTimer?.isActive == true) {
-        // reset slideshow timer if user scrolled earlier
-        // TODO bug: progress animation lags for a few frames when scroll is automatic
-        unsetScrollTimer();
-        setScrollTimer();
-      }
+    if (!autoScroll || _slideshowJumping) return;
+    // A user swipe starts the dwell again. The slideshow's own jump sets
+    // [_slideshowJumping] so it does not cancel the load that caused it.
+    unsetScrollTimer();
+    setScrollTimer();
+  }
+
+  Future<void> _onSlideshowTick() async {
+    if (!mounted || !autoScroll) return;
+    final SlideshowStep step = slideshowStep(
+      index: page.value,
+      loaded: widget.tab.booruHandler.filteredFetched.length,
+      canLoadMore: _slideshowCanLoadMore(),
+    );
+    switch (step) {
+      case SlideshowStep.advance:
+        _jumpSlideshow(page.value + 1);
+        if (autoScroll) setScrollTimer();
+      case SlideshowStep.loadMore:
+        await _loadAnotherPage();
+      case SlideshowStep.stop:
+        autoScrollState(false);
     }
   }
 
-  void scrollToNextPage() {
-    // Slideshow advances through every media type; videos / GIFs simply get a
-    // longer dwell (see [_dwellForCurrent]) so they have time to play.
-    final int viewedIndex = page.value;
-    if (viewedIndex < (widget.tab.booruHandler.filteredFetched.length - 1)) {
-      if (autoScroll) {
-        widget.pageController.jumpToPage(viewedIndex + 1);
-      }
-    } else {
+  void _jumpSlideshow(int index) {
+    _slideshowJumping = true;
+    widget.pageController.jumpToPage(index);
+    _slideshowJumping = false;
+  }
+
+  Future<void> _loadAnotherPage() async {
+    final int generation = _slideshowGeneration;
+    final int before = widget.tab.booruHandler.filteredFetched.length;
+    final int from = page.value;
+    await SearchHandler.instance.runSearch();
+    if (!mounted || !autoScroll || generation != _slideshowGeneration) return;
+    final int after = widget.tab.booruHandler.filteredFetched.length;
+    if (after <= before || from + 1 >= after) {
       autoScrollState(false);
+      return;
     }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !autoScroll || generation != _slideshowGeneration) return;
+      _jumpSlideshow(from + 1);
+      if (autoScroll) setScrollTimer();
+    });
   }
 
   ////////// Auto Scroll Stuff END ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
