@@ -3,10 +3,12 @@ part of '../waterfall_view.dart';
 class WaterfallScrollButtons extends StatelessWidget {
   const WaterfallScrollButtons({
     required this.onTap,
+    this.onScrollStart,
     super.key,
   });
 
   final ValueChanged<bool> onTap;
+  final VoidCallback? onScrollStart;
 
   Future<void> pageScroll(bool forward) async {
     final scrollController = SearchHandler.instance.gridScrollController;
@@ -30,6 +32,7 @@ class WaterfallScrollButtons extends StatelessWidget {
         nextOffset = (scrollController.position.viewportDimension * 0.9) * (forward ? 1 : -1);
       }
 
+      onScrollStart?.call();
       await scrollController.animateTo(
         scrollController.offset + nextOffset,
         duration: const Duration(milliseconds: 300),

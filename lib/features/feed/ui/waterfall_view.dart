@@ -16,6 +16,8 @@ import 'package:lolisnatcher/features/furaffinity/ui/furaffinity_artist_header.d
 import 'package:lolisnatcher/models/booru_item.dart';
 import 'package:lolisnatcher/core/ui/navigation_handler.dart';
 import 'package:lolisnatcher/features/doujin/logic/doujin_data_handler.dart';
+import 'package:lolisnatcher/core/logging/logger.dart';
+import 'package:lolisnatcher/features/feed/logic/feed_cache_extent.dart';
 import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
 import 'package:lolisnatcher/core/platform/service_handler.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
@@ -66,6 +68,8 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware, TraceLif
 
   Timer? viewedItemCleanupTimer;
   int viewedItemCleanupCount = 0;
+  final FeedCacheWindow feedCache = FeedCacheWindow();
+  Timer? feedCacheTimer;
 
   @override
   void initState() {
@@ -195,9 +199,29 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware, TraceLif
     }
   }
 
+  void noteFeedPrefetch() {
+    final bool opened = feedCache.noteActivity(DateTime.now(), shitDevice: settingsHandler.shitDevice);
+    if (settingsHandler.shitDevice) return;
+    feedCacheTimer?.cancel();
+    final Duration wait = feedCache.remainingAt(DateTime.now()) + const Duration(milliseconds: 50);
+    feedCacheTimer = Timer(wait, () {
+      if (!mounted) return;
+      setState(() {});
+    });
+    if (!opened || !mounted) return;
+    Logger.Inst().log(
+      'Grid cache widened for a fling',
+      'WaterfallView',
+      'noteFeedPrefetch',
+      LogTypes.imageInfo,
+    );
+    setState(() {});
+  }
+
   @override
   void dispose() {
     viewedItemCleanupTimer?.cancel();
+    feedCacheTimer?.cancel();
     NavigationHandler.instance.routeObserver.unsubscribe(this);
     searchHandler.index.removeListener(tabIndexListener);
     searchHandler.tabId.removeListener(tabIdListener);
@@ -534,7 +558,10 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware, TraceLif
                                 parent: ScrollConfiguration.of(context).getScrollPhysics(context),
                               ),
                         shrinkWrap: false,
-                        cacheExtent: 300 * MediaQuery.devicePixelRatioOf(context),
+                        cacheExtent: feedCache.extent(
+                          devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+                          shitDevice: settingsHandler.shitDevice,
+                        ),
                         slivers: [
                           const MainAppBar(),
                           // Flow tab-card carousel: swipeable tab cards under the
@@ -651,6 +678,7 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware, TraceLif
                                 settingsHandler.appMode.value.isDesktop == true)
                             ? const SizedBox.shrink()
                             : WaterfallScrollButtons(
+                                onScrollStart: noteFeedPrefetch,
                                 onTap: (bool forward) {
                                   if (forward) {
                                     navigationHandler.floatingHeaderKey.currentState?.hide();
@@ -659,7 +687,7 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware, TraceLif
                                     navigationHandler.floatingHeaderKey.currentState?.show();
                                     navigationHandler.bottomBarKey.currentState?.show();
                                   }
-                                  // TODO increase cacheExtent (to load future thumbnails faster) for duration of scrolling + few seconds after + keep resetting timer if didn't exceed debounce between presses?
+                                  noteFeedPrefetch();
                                 },
                               ),
                       );
@@ -675,6 +703,9 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware, TraceLif
             // exactly like the feed near its bottom - so the next page was
             // fetched while the user was only reading tags.
             if (!FeedScroll.isFeedScroll(notif)) return false;
+            if (notif is ScrollUpdateNotification && notif.dragDetails == null && (notif.scrollDelta ?? 0) != 0) {
+              noteFeedPrefetch();
+            }
             if (notif is ScrollUpdateNotification || notif is OverscrollNotification) {
               searchHandler.sendToScrollStream(notif);
 
