@@ -515,6 +515,69 @@ class DriveBackup {
 
   // ───────────────────────── upload / download ─────────────────────────
 
+  /// How much of a file is read or written at once. A database stays on disk.
+  static const int uploadChunk = 256 * 1024;
+
+  /// Pieces of [file], each at most [chunk] bytes. An empty file yields nothing.
+  @visibleForTesting
+  static Stream<List<int>> fileChunks(File file, {int chunk = uploadChunk}) async* {
+    final RandomAccessFile handle = await file.open();
+    try {
+      while (true) {
+        final Uint8List piece = await handle.read(chunk);
+        if (piece.isEmpty) break;
+        yield piece;
+      }
+    } finally {
+      await handle.close();
+    }
+  }
+
+  static Stream<List<int>> _byteChunks(List<int> bytes) async* {
+    for (int offset = 0; offset < bytes.length; offset += uploadChunk) {
+      final int end = (offset + uploadChunk).clamp(0, bytes.length);
+      yield bytes.sublist(offset, end);
+    }
+  }
+
+  /// Adds every piece, reporting how far [total] has gone. Returns the count added.
+  @visibleForTesting
+  static Future<int> sendChunks(
+    Stream<List<int>> chunks,
+    void Function(List<int> chunk) add, {
+    required int total,
+    void Function(int sent, int total)? onProgress,
+    Future<void> Function()? flush,
+  }) async {
+    int sent = 0;
+    await for (final List<int> piece in chunks) {
+      add(piece);
+      sent += piece.length;
+      if (flush != null) await flush();
+      onProgress?.call(sent, total);
+    }
+    return sent;
+  }
+
+  /// Writes [bytes] as they arrive. A failure removes a half-written [to].
+  @visibleForTesting
+  static Future<void> writeByteStream(Stream<List<int>> bytes, File to) async {
+    Object? failed;
+    final IOSink sink = to.openWrite();
+    try {
+      await for (final List<int> piece in bytes) {
+        sink.add(piece);
+      }
+      await sink.flush();
+    } catch (e) {
+      failed = e;
+      rethrow;
+    } finally {
+      await sink.close();
+      if (failed != null && await to.exists()) await to.delete();
+    }
+  }
+
   /// Uploads (or replaces) one file in the app's Drive folder.
   ///
   /// Resumable rather than simple upload because `store.db` can run to tens
@@ -524,6 +587,31 @@ class DriveBackup {
     String name,
     List<int> bytes,
     String mimeType, {
+    void Function(int sent, int total)? onProgress,
+    String? folderId,
+  }) => _uploadStream(name, mimeType, bytes.length, _byteChunks(bytes), onProgress: onProgress, folderId: folderId);
+
+  /// The same upload, reading [file] in [uploadChunk] pieces.
+  static Future<String?> uploadFile(
+    String name,
+    File file,
+    String mimeType, {
+    void Function(int sent, int total)? onProgress,
+    String? folderId,
+  }) async => _uploadStream(
+    name,
+    mimeType,
+    await file.length(),
+    fileChunks(file),
+    onProgress: onProgress,
+    folderId: folderId,
+  );
+
+  static Future<String?> _uploadStream(
+    String name,
+    String mimeType,
+    int length,
+    Stream<List<int>> body, {
     void Function(int sent, int total)? onProgress,
     String? folderId,
   }) async {
@@ -553,7 +641,7 @@ class DriveBackup {
         headers: {
           'Content-Type': 'application/json; charset=UTF-8',
           'X-Upload-Content-Type': mimeType,
-          'X-Upload-Content-Length': bytes.length.toString(),
+          'X-Upload-Content-Length': length.toString(),
         },
         body: utf8.encode(jsonEncode(metadata)),
       );
@@ -562,21 +650,15 @@ class DriveBackup {
       if (location == null) return 'Drive refused the upload (HTTP ${init.statusCode}).';
 
       // One PUT for the whole body; chunking only pays off for retries, which
-      // are not worth the complexity for files this size.
+      // are not worth the complexity for files this size. The body is still
+      // read in pieces so the database is not a single list.
       final HttpClient client = HttpClient();
       try {
         final HttpClientRequest put = await client.putUrl(Uri.parse(location));
         put.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
         put.headers.contentType = ContentType.parse(mimeType);
-        put.headers.contentLength = bytes.length;
-
-        const int chunk = 256 * 1024;
-        for (int offset = 0; offset < bytes.length; offset += chunk) {
-          final int end = (offset + chunk).clamp(0, bytes.length);
-          put.add(bytes.sublist(offset, end));
-          await put.flush();
-          onProgress?.call(end, bytes.length);
-        }
+        put.headers.contentLength = length;
+        await sendChunks(body, put.add, total: length, onProgress: onProgress, flush: put.flush);
         final HttpClientResponse res = await put.close();
         await res.drain<void>();
         if (res.statusCode != 200 && res.statusCode != 201) {
@@ -618,6 +700,34 @@ class DriveBackup {
     } catch (e, s) {
       Logger.Inst().log('drive download failed: $e', 'DriveBackup', 'download', LogTypes.exception, s: s);
       return null;
+    }
+  }
+
+  /// The same download, written to [to] as the bytes arrive.
+  static Future<bool> downloadTo(String name, File to, {String? folderId}) async {
+    final String? token = await _token();
+    if (token == null) return false;
+    final String? parent = folderId ?? await _ensureFolder(token);
+    if (parent == null) return false;
+    final DriveFile? file = await _find(token, parent, name);
+    if (file == null) return false;
+
+    try {
+      final HttpClientResponse res = await _send(
+        'GET',
+        Uri.parse('$_api/files/${file.id}').replace(queryParameters: {'alt': 'media'}),
+        token: token,
+      );
+      if (res.statusCode != 200) {
+        await res.drain<void>();
+        return false;
+      }
+      await to.parent.create(recursive: true);
+      await writeByteStream(res, to);
+      return true;
+    } catch (e, s) {
+      Logger.Inst().log('drive download failed: $e', 'DriveBackup', 'downloadTo', LogTypes.exception, s: s);
+      return false;
     }
   }
 

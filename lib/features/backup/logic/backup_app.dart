@@ -158,10 +158,22 @@ class FolderBackupTarget implements BackupTarget {
 
 /// A snapshot folder on Google Drive.
 class DriveBackupTarget implements BackupTarget {
-  DriveBackupTarget(this.snapshot, {this.onProgress});
+  DriveBackupTarget(this.snapshot, {this.onProgress, this.uploadFile, this.downloadTo});
 
   final DriveSnapshot snapshot;
   final void Function(String name, int sent, int total)? onProgress;
+
+  /// Test seam. Production reads the file in pieces.
+  final Future<String?> Function(
+    String name,
+    File file,
+    String mime, {
+    void Function(int sent, int total)? onProgress,
+    String? folderId,
+  })? uploadFile;
+
+  /// Test seam. Production writes the download as it arrives.
+  final Future<bool> Function(String name, File to, {String? folderId})? downloadTo;
 
   @override
   String get label => 'Google Drive "${snapshot.name}"';
@@ -185,14 +197,18 @@ class DriveBackupTarget implements BackupTarget {
   Future<Uint8List?> read(String name) => DriveBackup.download(name, folderId: snapshot.id);
 
   @override
-  Future<void> writeFile(String name, File file) async => write(name, await file.readAsBytes());
+  Future<void> writeFile(String name, File file) async {
+    final String mime = BackupItems.mimeOf(name);
+    final void Function(int sent, int total) progress = (int sent, int total) => onProgress?.call(name, sent, total);
+    final String? error = uploadFile != null
+        ? await uploadFile!(name, file, mime, folderId: snapshot.id, onProgress: progress)
+        : await DriveBackup.uploadFile(name, file, mime, folderId: snapshot.id, onProgress: progress);
+    if (error != null) throw Exception(error);
+  }
 
   @override
   Future<bool> readToFile(String name, File to) async {
-    final Uint8List? bytes = await read(name);
-    if (bytes == null) return false;
-    await to.parent.create(recursive: true);
-    await to.writeAsBytes(bytes, flush: true);
-    return true;
+    if (downloadTo != null) return downloadTo!(name, to, folderId: snapshot.id);
+    return DriveBackup.downloadTo(name, to, folderId: snapshot.id);
   }
 }
