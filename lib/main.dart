@@ -101,6 +101,14 @@ void main() async {
 
   Logger.Inst();
 
+  // Manrope is the default face. Its files are in the app, and Settings →
+  // About → Licenses shows the SIL Open Font License. A different font from
+  // the picker can still download.
+  LicenseRegistry.addLicense(() async* {
+    final String license = await rootBundle.loadString('assets/google_fonts/OFL.txt');
+    yield LicenseEntryWithLineBreaks(const <String>['Manrope'], license);
+  });
+
   // Read the device's real WebView User-Agent up front so browser-facing
   // requests and the Cloudflare captcha webview share one legitimate UA
   // (see Tools.deviceWebViewUserAgent). Best-effort; safe to skip on failure.
