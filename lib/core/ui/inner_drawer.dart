@@ -127,7 +127,12 @@ class InnerDrawerState extends State<InnerDrawer> with SingleTickerProviderState
   @override
   void didUpdateWidget(InnerDrawer oldWidget) {
     super.didUpdateWidget(oldWidget);
-    _ensureHistoryEntry();
+    // A closed drawer is not a page. Adding the entry here made Navigator.canPop
+    // true after every home rebuild, so the predictive back gesture treated the
+    // screen edge as a page pop. The entry is added when the drawer finishes opening.
+    if (_controller.value < 0.5) {
+      _ensureHistoryEntry();
+    }
 
     bool needUpdate = false;
 
