@@ -31,6 +31,8 @@ import 'package:lolisnatcher/sources/tube/kusowanka_handler.dart';
 import 'package:lolisnatcher/sources/tube/kusowanka_tag_catalog.dart';
 import 'package:lolisnatcher/sources/booru/civitai_handler.dart';
 import 'package:lolisnatcher/sources/booru/civitai_tag_catalog.dart';
+import 'package:lolisnatcher/sources/booru/szurubooru_handler.dart';
+import 'package:lolisnatcher/sources/booru/szurubooru_tag_catalog.dart';
 import 'package:lolisnatcher/sources/framework/booru_handler_factory.dart';
 
 /// The tag builder's catalogs, parsed against pages and dumps captured from
@@ -331,6 +333,80 @@ void main() {
       expect(later.first.count, lessThan(rows.last.count), reason: 'a later page ranks below an earlier one');
     });
 
+    // Captured 2026-10-07 from https://snootbooru.com with LoliSnatcher_Droid/1.0.0.
+    // limit=150 on that host was HTTP 400: "Parameter 'limit' may not exceed 100."
+    // offset equal to total was HTTP 200 with results: [].
+    // Stock config.yaml.dist sets tags:list to rank regular. That host allows
+    // anonymous listing; GET /api/users/?limit=1 was 403 AuthError
+    // "Insufficient privileges to do this."
+    test('szurubooru walks this instance tag list, most-used first', () async {
+      final Booru booru = Booru.withKey('sz', BooruType.Szurubooru, '', 'https://booru.example', '', 'secret-token', 'alice');
+      final SzurubooruHandler handler = SzurubooruHandler(booru, 20);
+      final SzurubooruTagCatalog catalog = handler.tagCatalog! as SzurubooruTagCatalog;
+      expect(catalog.namespaces.map((n) => n.key), ['tag']);
+      expect(catalog.namespaces.single.maxShards, SzurubooruTagCatalog.pagesPerPull);
+      expect(
+        catalog.pageUrl(0),
+        'https://booru.example/api/tags/?offset=0&limit=100&query=sort%3Ausages&fields=names,category,usages',
+      );
+      expect(catalog.pageUrl(3), contains('offset=300'));
+
+      final List<BooruTagEntry> popular = SzurubooruTagCatalog.parsePage(jsonDecode(fixture('szurubooru_tags.json')))!;
+      expect(popular.map((e) => e.name), ['color', 'monochrome']);
+      expect(popular.first.count, 46174);
+      expect(popular.first.count, greaterThan(popular.last.count));
+      expect(popular.every((e) => e.namespace == 'tag'), isTrue);
+      expect(catalog.searchTerm(popular.first), 'color', reason: 'file_info is not a post-search prefix');
+
+      final List<BooruTagEntry> colon = SzurubooruTagCatalog.parsePage(jsonDecode(fixture('szurubooru_tags_colon.json')))!;
+      expect(colon.map((e) => e.name), ['>:v', 'By:Muun', 'Catrinvolador_:x']);
+      expect(catalog.searchTerm(colon[1]), r'By\:Muun', reason: 'a colon inside the name is escaped, and artist: is not added');
+      expect(handler.makeURL(catalog.searchTerm(colon[1])), contains(r'By\:Muun'));
+
+      // The page past the end, captured with offset=6768 and total=6768.
+      expect(
+        SzurubooruTagCatalog.parsePage(const {
+          'query': 'sort:usages',
+          'offset': 6768,
+          'limit': 2,
+          'total': 6768,
+          'results': <dynamic>[],
+        }),
+        isNull,
+      );
+
+      String? seenUrl;
+      Map<String, String>? seenHeaders;
+      catalog.fetcher = (String url, Map<String, String> headers) async {
+        seenUrl = url;
+        seenHeaders = headers;
+        return (status: 200, body: jsonDecode(fixture('szurubooru_tags.json')));
+      };
+      final List<BooruTagEntry>? got = await catalog.shardAt('tag', 0);
+      expect(seenUrl, catalog.pageUrl(0));
+      expect(seenHeaders, handler.getHeaders());
+      expect(seenHeaders!['Authorization'], 'Token ${base64Encode(utf8.encode('alice:secret-token'))}');
+      expect(got!.map((e) => e.name), ['color', 'monochrome']);
+
+      catalog.fetcher = (String url, Map<String, String> headers) async => (
+        status: 403,
+        body: const {
+          'name': 'AuthError',
+          'title': 'Authentication error',
+          'description': 'Insufficient privileges to do this.',
+        },
+      );
+      expect(
+        () => catalog.shardAt('tag', 1),
+        throwsA(
+          predicate<Object>(
+            (Object e) => e.toString().contains('403') && e.toString().contains('Insufficient privileges'),
+          ),
+        ),
+      );
+      expect(await catalog.shardAt('artist', 0), isNull, reason: 'only the tag namespace is listed');
+    });
+
     test("hdoujin reads its own network, not niyaniya's own", () {
       final catalog = SchaleHandler(b('hd', BooruType.HDoujin, 'https://hdoujin.org'), 20).tagCatalog as SchaleTagCatalog;
       expect(catalog.shardUrl(0), 'https://api.hdoujin.org/books/tags');
@@ -355,7 +431,6 @@ void main() {
       BooruType.InkBunny: 'the keyword endpoint answers prefixes, not a list',
       BooruType.IdolSankaku: 'not probed yet: iapi.sankakucomplex.com/tag/index.json (r32)',
       BooruType.Shimmie: 'not probed yet: instance-specific; paheal has an autocomplete route (r32)',
-      BooruType.Szurubooru: "not probed yet: /api/tags is paged, but the instance is the user's (r32)",
       BooruType.GelbooruV1: 'not probed yet: gelbooru 0.1 has no dapi (r32)',
       BooruType.R34Hentai: 'not probed yet: Cloudflare-fronted from here (r32)',
       BooruType.R34US: 'not probed yet: the alphabetic page looks script-driven (r32)',

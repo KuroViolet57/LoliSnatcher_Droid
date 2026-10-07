@@ -8,10 +8,16 @@ import 'package:lolisnatcher/models/meta_tag.dart';
 import 'package:lolisnatcher/models/tag.dart';
 import 'package:lolisnatcher/models/tag_suggestion.dart';
 import 'package:lolisnatcher/sources/framework/booru_handler.dart';
+import 'package:lolisnatcher/sources/framework/tags/tag_catalog_source.dart';
+import 'package:lolisnatcher/sources/booru/szurubooru_tag_catalog.dart';
 import 'package:lolisnatcher/core/utils/tools.dart';
 
 class SzurubooruHandler extends BooruHandler {
   SzurubooruHandler(super.booru, super.limit);
+
+  /// This instance's tag list. See [SzurubooruTagCatalog].
+  @override
+  late final TagCatalogSource? tagCatalog = SzurubooruTagCatalog(this);
 
   @override
   bool get hasTagSuggestions => true;
