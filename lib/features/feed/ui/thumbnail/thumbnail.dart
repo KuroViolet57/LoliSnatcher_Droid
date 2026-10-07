@@ -313,11 +313,20 @@ class _ThumbnailState extends State<Thumbnail> {
       fileUrl: widget.item.fileURL,
       sampleUrl: widget.item.sampleURL,
       thumbnailUrl: widget.item.displayThumbnailURL,
+      fileSize: widget.item.fileSize,
     );
     isThumbQuality = plan.thumbQuality;
     thumbURL = plan.url;
     thumbFolder = plan.folder;
     animateGifThumb = plan.animate;
+    if (plan.animate && plan.folder == 'media') {
+      Logger.Inst().log(
+        'GIF grid plays the file, ${widget.item.fileSize} bytes',
+        'Thumbnail',
+        'selectThumbProvider',
+        LogTypes.imageInfo,
+      );
+    }
 
     // delay loading a little to improve performance when scrolling fast, ignore delay if it's a standalone widget (i.e. not in a list)
     debounceLoading = Timer(

@@ -1,9 +1,17 @@
+/// Largest GIF file the grid will download when the sample is not its own
+/// smaller GIF. Checked against danbooru.donmai.us on 2026-10-07: a GIF's
+/// sample address is often the file itself, and those files were 260 KB,
+/// 840 KB, 1.6 MB, 7.9 MB, and 31 MB. Two mebibytes keeps the first three
+/// and leaves the last two as still thumbnails.
+const int gifGridFileBytes = 2 * 1024 * 1024;
+
 /// Which address a grid cell loads, and whether that picture may animate.
 ///
 /// GIF thumbnails need Don't scale images as well. ResizeImage keeps a single
-/// frame, so an allowed GIF sample is not resized. A hidden post, a video, a
-/// post that still needs its file address, and a sample that is the full file
-/// stay on the static thumbnail.
+/// frame, so an allowed GIF sample is not resized. A hidden post, a video, and
+/// a post that still needs its file address stay on the static thumbnail.
+/// A GIF file plays in the cell only when its size is known and within
+/// [gifGridFileBytes]. An unknown size stays still.
 class ThumbnailLoadPlan {
   const ThumbnailLoadPlan({
     required this.url,
@@ -18,8 +26,8 @@ class ThumbnailLoadPlan {
   final bool thumbQuality;
   final bool animate;
 
-  /// False only for the animated GIF sample. A normal sample still decodes
-  /// down to the cell.
+  /// False when the cell plays a GIF. A normal sample still decodes down to
+  /// the cell.
   final bool resize;
 }
 
@@ -36,23 +44,32 @@ ThumbnailLoadPlan planThumbnailLoad({
   required String fileUrl,
   required String sampleUrl,
   required String thumbnailUrl,
+  int? fileSize,
 }) {
   final bool sampleIsGif = sampleUrl.contains('.gif');
   final bool gifToggle = disableImageScaling && gifsAsThumbnails;
   final bool sameFileAndSample = !standalone && fileUrl == sampleUrl;
-  final bool animate =
-      isAnimation &&
-      gifToggle &&
-      !isHidden &&
-      sampleIsGif &&
-      !isVideo &&
-      !needsGuess &&
-      !needsLoadItem &&
-      !sameFileAndSample;
+  final bool allowed =
+      isAnimation && gifToggle && !isHidden && !isVideo && !needsGuess && !needsLoadItem;
+  final bool animate = allowed && sampleIsGif && !sameFileAndSample;
   if (animate) {
     return ThumbnailLoadPlan(
       url: sampleUrl,
       folder: 'samples',
+      thumbQuality: false,
+      animate: true,
+      resize: false,
+    );
+  }
+
+  // The sample is the file, or it is a still picture of a GIF file. Download
+  // that file only when the site told us the size and it is small enough.
+  final bool smallGifFile =
+      fileSize != null && fileSize > 0 && fileSize <= gifGridFileBytes && _pathEndsWithGif(fileUrl);
+  if (allowed && !previewIsThumbnail && smallGifFile && (sameFileAndSample || !sampleIsGif)) {
+    return ThumbnailLoadPlan(
+      url: fileUrl,
+      folder: 'media',
       thumbQuality: false,
       animate: true,
       resize: false,
@@ -72,6 +89,11 @@ ThumbnailLoadPlan planThumbnailLoad({
     animate: false,
     resize: true,
   );
+}
+
+bool _pathEndsWithGif(String url) {
+  final String path = url.split('?').first.split('#').first.toLowerCase();
+  return path.endsWith('.gif');
 }
 
 ThumbnailLoadPlan _staticThumb(String thumbnailUrl) {

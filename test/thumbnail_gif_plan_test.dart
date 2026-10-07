@@ -15,6 +15,7 @@ void main() {
     String fileUrl = 'https://cdn.example/file.png',
     String sampleUrl = 'https://cdn.example/sample.gif',
     String thumbnailUrl = 'https://cdn.example/thumb.jpg',
+    int? fileSize,
   }) {
     return planThumbnailLoad(
       previewIsThumbnail: previewIsThumbnail,
@@ -29,6 +30,7 @@ void main() {
       fileUrl: fileUrl,
       sampleUrl: sampleUrl,
       thumbnailUrl: thumbnailUrl,
+      fileSize: fileSize,
     );
   }
 
@@ -58,5 +60,75 @@ void main() {
     expect(still.url, 'https://cdn.example/sample.jpg');
     expect(still.animate, isFalse);
     expect(still.resize, isTrue, reason: 'a normal sample still decodes to the cell size');
+  });
+
+  test('a GIF file of at most 2 MiB plays when the sample is not a separate GIF', () {
+    const String gif = 'https://cdn.example/file.gif';
+    const String thumb = 'https://cdn.example/thumb.jpg';
+    const String jpgSample = 'https://cdn.example/sample.jpg';
+
+    final ThumbnailLoadPlan small = plan(
+      fileUrl: gif,
+      sampleUrl: gif,
+      standalone: false,
+      fileSize: 260100,
+    );
+    expect(small.animate, isTrue);
+    expect(small.url, gif);
+    expect(small.resize, isFalse);
+    expect(small.folder, 'media');
+
+    expect(
+      plan(fileUrl: gif, sampleUrl: gif, standalone: false, fileSize: 2 * 1024 * 1024).animate,
+      isTrue,
+      reason: '2 MiB is still inside the cap',
+    );
+    expect(
+      plan(fileUrl: gif, sampleUrl: gif, standalone: false, fileSize: 2 * 1024 * 1024 + 1).url,
+      thumb,
+      reason: 'a larger GIF stays a static thumbnail',
+    );
+    expect(
+      plan(fileUrl: gif, sampleUrl: gif, standalone: false).animate,
+      isFalse,
+      reason: 'an unknown size does not download the full file',
+    );
+
+    final ThumbnailLoadPlan stillSample = plan(
+      fileUrl: gif,
+      sampleUrl: jpgSample,
+      standalone: false,
+      fileSize: 839558,
+    );
+    expect(stillSample.url, gif);
+    expect(stillSample.animate, isTrue);
+    expect(stillSample.resize, isFalse);
+
+    expect(
+      plan(fileUrl: gif, sampleUrl: jpgSample, standalone: false).url,
+      jpgSample,
+      reason: 'unknown size keeps the still sample',
+    );
+    expect(
+      plan(fileUrl: gif, sampleUrl: gif, standalone: false, fileSize: 260100, isHidden: true).animate,
+      isFalse,
+    );
+    expect(
+      plan(fileUrl: gif, sampleUrl: gif, standalone: false, fileSize: 260100, previewIsThumbnail: true).url,
+      thumb,
+      reason: 'thumbnail preview mode does not download the full file',
+    );
+    expect(
+      plan(
+        fileUrl: 'https://cdn.example/file.gif?token=1',
+        sampleUrl: jpgSample,
+        fileSize: 1000,
+      ).url,
+      'https://cdn.example/file.gif?token=1',
+    );
+    expect(
+      plan(fileUrl: 'https://cdn.example/file.gifv', sampleUrl: jpgSample, fileSize: 1000).animate,
+      isFalse,
+    );
   });
 }
