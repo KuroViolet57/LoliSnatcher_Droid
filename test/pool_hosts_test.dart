@@ -15,13 +15,13 @@ import 'package:lolisnatcher/sources/booru/pools/pool_source.dart';
 /// Rechecked 2026-10-07 in headless Chrome and with curl. e926.net/pools.json
 /// returned 200 and a pool with post_ids for LoliSnatcher_Droid/1.0.0.
 /// posts/6498794.json on e926.net returned 200. The 2026-10-05 403 did not
-/// reproduce. gelbooru.com's show page marks members as
-/// `<span class="" id="pN">`, which this scraper does not read, so that host
-/// stays off.
+/// reproduce. gelbooru.com's list is the same 25-row HTML table. Its show
+/// page marks members as `<span class="" id="pN">`, which the scraper reads
+/// alongside rule34's `class="thumb"` span.
 void main() {
   Booru site(BooruType type, String url) => Booru(type.name, type, '', url, '');
 
-  test('e621, e6ai, e926 and danbooru.donmai.us have pools; lookalikes do not', () {
+  test('e621, e6ai, e926, danbooru and gelbooru.com have pools; lookalikes do not', () {
     expect(PoolSource.forBooru(site(BooruType.e621, 'https://e621.net')), isA<E621PoolSource>());
     expect(PoolSource.forBooru(site(BooruType.e621, 'https://www.e621.net/posts')), isA<E621PoolSource>());
     expect(PoolSource.forBooru(site(BooruType.e621, 'https://e6ai.net')), isA<E621PoolSource>());
@@ -33,7 +33,15 @@ void main() {
     expect(PoolSource.forBooru(site(BooruType.e621, 'https://e926.net.evil')), isNull);
     expect(PoolSource.forBooru(site(BooruType.e621, 'https://e621.net.evil')), isNull);
     expect(PoolSource.forBooru(site(BooruType.Danbooru, 'https://danbooru.donmai.us.evil')), isNull);
-    expect(PoolSource.forBooru(site(BooruType.Gelbooru, 'https://gelbooru.com')), isNull);
+    expect(
+      PoolSource.forBooru(site(BooruType.Gelbooru, 'https://gelbooru.com')),
+      isA<GelbooruHtmlPoolSource>(),
+    );
+    expect(
+      PoolSource.forBooru(site(BooruType.Gelbooru, 'https://www.gelbooru.com/index.php')),
+      isA<GelbooruHtmlPoolSource>(),
+    );
+    expect(PoolSource.forBooru(site(BooruType.Gelbooru, 'https://gelbooru.com.evil')), isNull);
     expect(
       PoolSource.forBooru(site(BooruType.Gelbooru, 'https://rule34.xxx')),
       isA<GelbooruHtmlPoolSource>(),

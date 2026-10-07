@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:html/dom.dart';
 import 'package:html/parser.dart' as html_parser;
 
 import 'package:lolisnatcher/models/booru_type.dart';
@@ -56,6 +57,9 @@ abstract class PoolSource {
     'e621.net',
     'e6ai.net',
     'danbooru.donmai.us',
+    // HTML list checked 2026-10-07. Show-page members are
+    // `<span class="" id="pN">`, not the rule34 `class="thumb"` span.
+    'gelbooru.com',
   };
 
   /// The pool source for [booru], or null when the site has no pools.
@@ -239,22 +243,38 @@ class GelbooruHtmlPoolSource extends PoolSource {
       '${booru.baseURL}/index.php?page=pool&s=list&pid=${page * pageSize}',
       headers: {'User-Agent': Tools.browserUserAgent},
     );
-    final doc = html_parser.parse(response.data?.toString() ?? '');
+    return poolsFromHtml(response.data?.toString() ?? '');
+  }
 
+  /// Rows from a pool list page. Rule34 is Name | Creator | Posts | Public.
+  /// gelbooru.com puts an icon link in the first cell and the name on a
+  /// later link in the same row.
+  static List<BooruPool> poolsFromHtml(String body) {
+    final doc = html_parser.parse(body);
     final List<BooruPool> pools = [];
     for (final row in doc.querySelectorAll('tr')) {
-      final link = row.querySelector('a[href*="s=show"]');
+      // The first s=show link on gelbooru.com is an empty icon. The name is
+      // the later link. On rule34 the first link already has the name.
+      Element? link;
+      for (final candidate in row.querySelectorAll('a[href*="s=show"]')) {
+        if (candidate.text.trim().isNotEmpty) {
+          link = candidate;
+          break;
+        }
+      }
       final String? href = link?.attributes['href'];
       if (link == null || href == null) continue;
       final match = RegExp(r'id=(\d+)').firstMatch(href);
       if (match == null) continue;
 
-      // Row layout: Name | Creator | Post count | Public
+      // rule34: Name | Creator | Posts | Public.
+      // gelbooru.com: icon | name and "Created by" | "N Images".
       final cells = row.querySelectorAll('td');
       String? creator;
       int? count;
       if (cells.length >= 3) {
-        creator = cells[1].text.trim();
+        final String profile = row.querySelector('a[href*="s=profile"]')?.text.trim() ?? '';
+        creator = profile.isNotEmpty ? profile : cells[1].text.trim();
         count = int.tryParse(RegExp(r'\d+').firstMatch(cells[2].text)?.group(0) ?? '');
       }
       pools.add(
@@ -269,16 +289,21 @@ class GelbooruHtmlPoolSource extends PoolSource {
     return pools;
   }
 
-  /// The pool page renders its posts in the same `<span class="thumb"
-  /// id="pNNN">` markup as a normal grid, in POOL ORDER.
+  /// Member ids in pool order. Rule34 uses `class="thumb"`. gelbooru.com
+  /// uses an empty class on the same `id="pN"` span.
+  static List<String> postIdsFromHtml(String body) {
+    return RegExp(r'<span class="(?:thumb)?" id="p(\d+)"').allMatches(body).map((m) => m.group(1)!).toList();
+  }
+
+  /// The pool page renders its posts as `<span class="thumb" id="pNNN">`,
+  /// in POOL ORDER.
   @override
   Future<List<String>?> fetchPostIds(Booru booru, BooruPool pool) async {
     final response = await DioNetwork.get(
       '${booru.baseURL}/index.php?page=pool&s=show&id=${pool.id}',
       headers: {'User-Agent': Tools.browserUserAgent},
     );
-    final String body = response.data?.toString() ?? '';
-    final ids = RegExp(r'<span class="thumb" id="p(\d+)"').allMatches(body).map((m) => m.group(1)!).toList();
+    final ids = postIdsFromHtml(response.data?.toString() ?? '');
     return ids.isEmpty ? null : ids;
   }
 
