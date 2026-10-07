@@ -11,6 +11,7 @@ import 'package:flutter/services.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:preload_page_view/preload_page_view.dart';
 
+import 'package:lolisnatcher/core/logging/logger.dart';
 import 'package:lolisnatcher/core/logging/navigation_trace.dart';
 import 'package:lolisnatcher/core/logging/perf_trace.dart';
 import 'package:lolisnatcher/features/viewer/ui/media/flash_play_viewer.dart';
@@ -835,7 +836,20 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware, Trac
                       },
                       child: GalleryButtons(pageController: controller),
                     ),
-                    const ViewerTutorial(),
+                    ViewerTutorial(
+                      shown: settingsHandler.showViewerTutorial,
+                      onDismiss: () {
+                        settingsHandler.showViewerTutorial = false;
+                        setState(() {});
+                        Logger.Inst().log(
+                          'viewer hint closed',
+                          'GalleryViewPage',
+                          'viewerTutorial',
+                          LogTypes.settingsLoad,
+                        );
+                        unawaited(settingsHandler.saveSettings(restate: false));
+                      },
+                    ),
                   ],
                 ),
               ),

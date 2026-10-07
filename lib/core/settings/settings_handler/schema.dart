@@ -402,6 +402,10 @@ extension SettingsSchema on SettingsHandler {
       'type': 'bool',
       'default': true,
     },
+    'showViewerTutorial': {
+      'type': 'bool',
+      'default': true,
+    },
     'bottomSheetSizeMultiplier': {
       'type': 'double',
       'default': 2.0,

@@ -147,6 +147,8 @@ extension SettingsStorage on SettingsHandler {
         return isDebug.value;
       case 'useBottomInfoSheet':
         return useBottomInfoSheet;
+      case 'showViewerTutorial':
+        return showViewerTutorial;
       case 'bottomSheetSizeMultiplier':
         return bottomSheetSizeMultiplier;
       case 'defaultTabAddMode':
@@ -489,6 +491,9 @@ extension SettingsStorage on SettingsHandler {
         break;
       case 'useBottomInfoSheet':
         useBottomInfoSheet = validatedValue;
+        break;
+      case 'showViewerTutorial':
+        showViewerTutorial = validatedValue;
         break;
       case 'bottomSheetSizeMultiplier':
         bottomSheetSizeMultiplier = (validatedValue as num).toDouble().clamp(0.5, 3.0);

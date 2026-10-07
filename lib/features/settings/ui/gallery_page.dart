@@ -26,6 +26,7 @@ class _GalleryPageState extends State<GalleryPage> {
   final SettingsHandler settingsHandler = SettingsHandler.instance;
 
   bool autoHideImageBar = false,
+      showViewerTutorial = true,
       hideNotes = false,
       dimSeenPosts = false,
       fastGifPlayback = false,
@@ -58,6 +59,7 @@ class _GalleryPageState extends State<GalleryPage> {
     super.initState();
 
     autoHideImageBar = settingsHandler.autoHideImageBar;
+    showViewerTutorial = settingsHandler.showViewerTutorial;
     galleryMode = settingsHandler.galleryMode;
     galleryBarPosition = settingsHandler.galleryBarPosition;
     buttonOrder = [...settingsHandler.buttonOrder];
@@ -102,6 +104,7 @@ class _GalleryPageState extends State<GalleryPage> {
 
   Future<void> _onPopInvoked(_, _) async {
     settingsHandler.autoHideImageBar = autoHideImageBar;
+    settingsHandler.showViewerTutorial = showViewerTutorial;
     settingsHandler.galleryMode = galleryMode;
     settingsHandler.galleryBarPosition = galleryBarPosition;
     settingsHandler.buttonOrder = [...buttonOrder];
@@ -297,6 +300,19 @@ class _GalleryPageState extends State<GalleryPage> {
                   });
                 },
                 title: context.loc.settings.viewer.hideToolbarWhenOpeningViewer,
+              ),
+              SettingsToggle(
+                value: showViewerTutorial,
+                defaultValue: true,
+                onChanged: (newValue) {
+                  setState(() {
+                    showViewerTutorial = newValue;
+                  });
+                },
+                title: 'Show viewer hints',
+                subtitle: const Text(
+                  'The first time you open a post, a hint explains tap, long-press, and double-tap. Close hides it until you turn this back on.',
+                ),
               ),
               SettingsToggle(
                 value: settingsHandler.expandDetails,
