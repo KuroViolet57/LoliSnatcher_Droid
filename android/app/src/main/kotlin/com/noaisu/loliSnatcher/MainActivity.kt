@@ -652,6 +652,8 @@ class MainActivity: FlutterFragmentActivity() {
                 volumeSink = null
             }
         })
+
+        VideoEngineBridge.install(this, flutterEngine)
     }
 
     private fun requestDirectoryAccess() {

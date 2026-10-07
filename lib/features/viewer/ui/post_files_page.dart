@@ -6,6 +6,7 @@ import 'package:lolisnatcher/sources/framework/post_files_handler.dart' show Pos
 import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/models/settings/video_engine_choice.dart';
 import 'package:lolisnatcher/models/booru_item.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
@@ -94,10 +95,9 @@ class _PostFilesPageState extends State<PostFilesPage> {
 
 /// Picks the same widget the main viewer would for this item.
 ///
-/// Deliberately mirrors gallery_view_page's selection (media_kit first when
-/// enabled, then better_player, then chewie, image otherwise) so a video slide
-/// runs through the very same player implementation, with its pool, saved
-/// positions and pause behaviour.
+/// [viewerVideoEngine] is the same choice the gallery uses, so a video slide
+/// runs through the same player, with its pool, saved positions and pause
+/// behaviour. Media3 and mpvlib stay on [VideoViewer] and its buttons.
 class _PostFileSlide extends StatelessWidget {
   const _PostFileSlide({
     required this.item,
@@ -119,19 +119,28 @@ class _PostFileSlide extends StatelessWidget {
       if (!canPlay) {
         return VideoViewerPlaceholder(item: item, booru: booru, key: item.key);
       }
-      if (settingsHandler.useMediaKitPlayer && Platform.isAndroid) {
-        return MediaKitPlayerView(item, booru: booru, isViewed: isViewed, key: item.key);
-      }
-      if (settingsHandler.useBetterPlayer && Platform.isAndroid) {
-        return BetterPlayerView(item, booru: booru, isViewed: isViewed, key: item.key);
-      }
-      return VideoViewer(
-        item,
-        booru: booru,
-        isViewed: isViewed,
-        enableFullscreen: true,
-        key: item.key,
+      final ViewerVideoEngine engine = viewerVideoEngine(
+        isAndroid: Platform.isAndroid,
+        choice: videoEngineChoiceFromString(settingsHandler.videoEngineChoice),
+        useMediaKitPlayer: settingsHandler.useMediaKitPlayer,
+        useBetterPlayer: settingsHandler.useBetterPlayer,
       );
+      switch (engine) {
+        case ViewerVideoEngine.mediaKit:
+          return MediaKitPlayerView(item, booru: booru, isViewed: isViewed, key: item.key);
+        case ViewerVideoEngine.betterPlayer:
+          return BetterPlayerView(item, booru: booru, isViewed: isViewed, key: item.key);
+        case ViewerVideoEngine.chewie:
+        case ViewerVideoEngine.media3:
+        case ViewerVideoEngine.mpvlib:
+          return VideoViewer(
+            item,
+            booru: booru,
+            isViewed: isViewed,
+            enableFullscreen: true,
+            key: item.key,
+          );
+      }
     }
 
     return ImageViewer(item, booru: booru, isViewed: isViewed, key: item.key);

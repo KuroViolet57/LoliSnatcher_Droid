@@ -279,6 +279,11 @@ extension SettingsSchema on SettingsHandler {
       'type': 'bool',
       'default': false,
     },
+    'videoEngineChoice': {
+      'type': 'stringFromList',
+      'default': 'off',
+      'options': ['off', 'media3', 'mpvlibVulkan', 'mpvlibOpengl'],
+    },
     'mediaKitMaxPlayers': {
       'type': 'int',
       'default': 4,

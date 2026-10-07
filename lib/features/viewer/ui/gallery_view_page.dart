@@ -24,6 +24,7 @@ import 'package:lolisnatcher/models/tag_type.dart';
 import 'package:lolisnatcher/features/feed/logic/floating_preview_handler.dart';
 import 'package:lolisnatcher/core/storage/tag_handler.dart';
 import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/models/settings/video_engine_choice.dart';
 import 'package:lolisnatcher/features/recommender/logic/interests_handler.dart';
 import 'package:lolisnatcher/features/doujin/logic/doujin_data_handler.dart';
 import 'package:lolisnatcher/core/ui/navigation_handler.dart';
@@ -621,31 +622,38 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware, Trac
                                         valueListenable: page,
                                         builder: (_, pageVal, _) {
                                           final usedBooru = possibleBooru ?? widget.tab.booruHandler.booru;
-                                          // Experimental media_kit (libmpv) path takes precedence.
-                                          if (settingsHandler.useMediaKitPlayer && Platform.isAndroid) {
-                                            return MediaKitPlayerView(
-                                              item,
-                                              booru: usedBooru,
-                                              isViewed: pageVal == index,
-                                              key: item.key,
-                                            );
-                                          }
-                                          // Experimental better_player_plus path; behind a setting.
-                                          if (settingsHandler.useBetterPlayer && Platform.isAndroid) {
-                                            return BetterPlayerView(
-                                              item,
-                                              booru: usedBooru,
-                                              isViewed: pageVal == index,
-                                              key: item.key,
-                                            );
-                                          }
-                                          return VideoViewer(
-                                            item,
-                                            booru: possibleBooru ?? widget.tab.booruHandler.booru,
-                                            isViewed: pageVal == index,
-                                            enableFullscreen: true,
-                                            key: item.key,
+                                          final ViewerVideoEngine engine = viewerVideoEngine(
+                                            isAndroid: Platform.isAndroid,
+                                            choice: videoEngineChoiceFromString(settingsHandler.videoEngineChoice),
+                                            useMediaKitPlayer: settingsHandler.useMediaKitPlayer,
+                                            useBetterPlayer: settingsHandler.useBetterPlayer,
                                           );
+                                          switch (engine) {
+                                            case ViewerVideoEngine.mediaKit:
+                                              return MediaKitPlayerView(
+                                                item,
+                                                booru: usedBooru,
+                                                isViewed: pageVal == index,
+                                                key: item.key,
+                                              );
+                                            case ViewerVideoEngine.betterPlayer:
+                                              return BetterPlayerView(
+                                                item,
+                                                booru: usedBooru,
+                                                isViewed: pageVal == index,
+                                                key: item.key,
+                                              );
+                                            case ViewerVideoEngine.chewie:
+                                            case ViewerVideoEngine.media3:
+                                            case ViewerVideoEngine.mpvlib:
+                                              return VideoViewer(
+                                                item,
+                                                booru: usedBooru,
+                                                isViewed: pageVal == index,
+                                                enableFullscreen: true,
+                                                key: item.key,
+                                              );
+                                          }
                                         },
                                       );
                                     } else {

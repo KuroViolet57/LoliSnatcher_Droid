@@ -7,6 +7,7 @@ import 'package:fvp/fvp.dart' as fvp;
 import 'package:lolisnatcher/models/settings/mpv_hardware_decoding.dart';
 import 'package:lolisnatcher/models/settings/mpv_video_output.dart';
 import 'package:lolisnatcher/models/settings/video_backend_mode.dart';
+import 'package:lolisnatcher/models/settings/video_engine_choice.dart';
 import 'package:lolisnatcher/models/settings/video_cache_mode.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/core/ui/settings_widgets.dart';
@@ -28,6 +29,7 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
   bool disableVideo = false;
   bool useBetterPlayer = false;
   bool useMediaKitPlayer = false;
+  String videoEngineChoice = 'off';
   final TextEditingController mediaKitMaxPlayersController = TextEditingController();
   final TextEditingController videoStartDelayController = TextEditingController();
   final TextEditingController betterPlayerCacheMbController = TextEditingController();
@@ -50,6 +52,7 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
     disableVideo = settingsHandler.disableVideo;
     useBetterPlayer = settingsHandler.useBetterPlayer;
     useMediaKitPlayer = settingsHandler.useMediaKitPlayer;
+    videoEngineChoice = settingsHandler.videoEngineChoice;
     mediaKitMaxPlayersController.text = settingsHandler.mediaKitMaxPlayers.toString();
     videoStartDelayController.text = settingsHandler.videoStartDelayMs.toString();
     betterPlayerCacheMbController.text = settingsHandler.betterPlayerCacheMb.toString();
@@ -68,6 +71,7 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
     settingsHandler.disableVideo = disableVideo;
     settingsHandler.useBetterPlayer = useBetterPlayer;
     settingsHandler.useMediaKitPlayer = useMediaKitPlayer;
+    settingsHandler.videoEngineChoice = videoEngineChoiceFromString(videoEngineChoice).name;
     settingsHandler.mediaKitMaxPlayers =
         (int.tryParse(mediaKitMaxPlayersController.text) ?? 4).clamp(1, 20);
     settingsHandler.videoStartDelayMs =
@@ -177,6 +181,32 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
                 icon: const Icon(Symbols.science_rounded),
               ),
               if (!SettingsHandler.isDesktopPlatform)
+                SettingsDropdown<String>(
+                  value: videoEngineChoice,
+                  items: const ['off', 'media3', 'mpvlibVulkan', 'mpvlibOpengl'],
+                  itemTitleBuilder: (item) => switch (item) {
+                    'media3' => 'Media3 ExoPlayer',
+                    'mpvlibVulkan' => 'mpvlib Vulkan',
+                    'mpvlibOpengl' => 'mpvlib OpenGL',
+                    _ => 'Off',
+                  },
+                  itemSubtitleBuilder: (item) => switch (item) {
+                    'media3' => 'ExoPlayer from Media3 1.11, with the same buttons as the default player.',
+                    'mpvlibVulkan' => 'mpvlibAndroid 1.1.1 built with Vulkan. Restart the app after choosing it.',
+                    'mpvlibOpengl' => 'mpvlibAndroid 1.1.1 built without Vulkan. Restart the app after choosing it.',
+                    _ => 'Keep the media_kit, better_player, and default player switches below.',
+                  },
+                  onChanged: (String? newValue) {
+                    setState(() {
+                      videoEngineChoice = newValue ?? 'off';
+                    });
+                  },
+                  title: 'Video engine',
+                  subtitle: const Text(
+                    'Media3 and either mpvlib build use the same buttons as the default player: tap, double-tap to skip, long-press to fast-forward, the scrubber, mute, and fullscreen. The viewer toolbar and the details sheet do not change. On Android this choice wins over the media_kit and better_player switches. Desktop ignores it. mpvlib Vulkan and mpvlib OpenGL cannot be loaded together with the current media_kit library, so leave Settings and fully restart the app before the new picture appears. Media3 starts as soon as you open a video again. Example: pick mpvlib Vulkan, leave this page, close the app, open it, then open a video.',
+                  ),
+                ),
+              if (!SettingsHandler.isDesktopPlatform)
                 SettingsToggle(
                   value: useMediaKitPlayer,
                   onChanged: (newValue) {
@@ -187,7 +217,7 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
                   title: 'Use media_kit engine (experimental)',
                   leadingIcon: const Icon(Symbols.bolt_rounded),
                   subtitle: const Text(
-                    'A completely separate video engine built on media_kit (libmpv) instead of ExoPlayer. libmpv manages its own decoders with software fallback, so it sidesteps the hardware-decoder-exhaustion crashes that can happen when scrolling fast through many videos. Same custom controls (tap, double-tap to skip, scrubber, fullscreen). Takes precedence over better_player when both are on. Restart the viewer for changes to take effect.',
+                    'A completely separate video engine built on media_kit (libmpv) instead of ExoPlayer. libmpv manages its own decoders with software fallback, so it sidesteps the hardware-decoder-exhaustion crashes that can happen when scrolling fast through many videos. Same custom controls (tap, double-tap to skip, scrubber, fullscreen). Takes precedence over better_player when both are on. The Video engine dropdown above wins over this switch. Restart the viewer for changes to take effect.',
                   ),
                 ),
               if (!SettingsHandler.isDesktopPlatform && useMediaKitPlayer)

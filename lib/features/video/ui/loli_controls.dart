@@ -2,7 +2,6 @@
 
 import 'dart:async';
 import 'dart:io';
-import 'dart:math' hide e;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -19,6 +18,7 @@ import 'package:video_player/video_player.dart';
 
 import 'package:lolisnatcher/core/platform/service_handler.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/features/video/logic/double_tap_skip.dart';
 import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
 import 'package:lolisnatcher/core/utils/extensions.dart';
 
@@ -937,57 +937,27 @@ class _LoliControlsState extends State<LoliControls> {
   void _doubleTapAction() {
     if (_doubleTapInfo == null || !controller.value.isInitialized || holdingDown) return;
 
-    // Detect on which side we tapped
-    final double screenWidth = MediaQuery.sizeOf(context).width;
-    final double screenMiddle = screenWidth / 2;
-    final double sidesLimit = screenWidth / 6;
-    final double tapPositionWidth = _doubleTapInfo!.localPosition.dx;
-    int tapSide;
+    final DoubleTapSkip skip = doubleTapSkip(
+      screenWidth: MediaQuery.sizeOf(context).width,
+      tapX: _doubleTapInfo!.localPosition.dx,
+      duration: controller.value.duration,
+      position: controller.value.position,
+    );
     bool isAtVideoEdge = false;
-    if (tapPositionWidth > (screenMiddle + sidesLimit)) {
-      tapSide = 1;
-    } else if (tapPositionWidth < (screenMiddle - sidesLimit)) {
-      tapSide = -1;
-    } else {
-      tapSide = 0;
-    }
-
-    // Decide how much we will skip depending on video length
-    final int videoDuration = controller.value.duration.inSeconds;
-    int skipSeconds;
-    if (videoDuration <= 5) {
-      skipSeconds = 0;
-    } else if (videoDuration <= 10) {
-      skipSeconds = 1;
-    } else if (videoDuration <= 60) {
-      skipSeconds = 5;
-    } else if (videoDuration <= 120) {
-      skipSeconds = 10;
-    } else {
-      skipSeconds = 10;
-    }
 
     longTapSpeedChangeDelayTimer?.cancel();
 
-    if (tapSide != 0 && skipSeconds != 0) {
-      final int videoPositionMillisecs = controller.value.position.inMilliseconds;
-      final int videoDurationMillisecs = controller.value.duration.inMilliseconds;
-      // Calculate new time with skip and limit it to range (0 to duration of video) (in milliseconds for accuracy)
-      final int newTime = min(
-        max(0, videoPositionMillisecs + (skipSeconds * 1000 * tapSide)),
-        videoDurationMillisecs,
-      );
-      // print(newTime);
-      // Skip set amount of seconds if we tapped on left/right third of the screen or play/pause if in the middle
-      controller.seekTo(Duration(milliseconds: newTime));
+    final Duration? newPosition = skip.newPosition;
+    if (newPosition != null) {
+      controller.seekTo(newPosition);
 
       setState(() {
         _doubleTapHideTimer?.cancel();
         doubleTapped = true;
-        if (videoDurationMillisecs == newTime) {
+        if (newPosition >= controller.value.duration && controller.value.duration > Duration.zero) {
           isAtVideoEdge = true;
           _doubleTapExtraMessage = 'End';
-        } else if (newTime == 0) {
+        } else if (newPosition == Duration.zero) {
           isAtVideoEdge = true;
           _doubleTapExtraMessage = 'Start';
         } else {
@@ -995,10 +965,10 @@ class _LoliControlsState extends State<LoliControls> {
         }
 
         // Add to last skip amount if it's still visible
-        _lastDoubleTapAmount = (tapSide == _lastDoubleTapSide && !isAtVideoEdge)
-            ? (_lastDoubleTapAmount + skipSeconds)
-            : skipSeconds;
-        _lastDoubleTapSide = tapSide;
+        _lastDoubleTapAmount = (skip.side == _lastDoubleTapSide && !isAtVideoEdge)
+            ? (_lastDoubleTapAmount + skip.skipSeconds)
+            : skip.skipSeconds;
+        _lastDoubleTapSide = skip.side;
       });
       _startDoubleTapTimer();
       _cancelAndRestartTimer();

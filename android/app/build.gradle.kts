@@ -1,4 +1,5 @@
 import com.android.build.gradle.internal.api.ApkVariantOutputImpl
+import org.gradle.api.tasks.Exec
 import java.io.FileInputStream
 import java.io.FileNotFoundException
 import java.util.Base64
@@ -153,6 +154,12 @@ android {
     buildFeatures {
         buildConfig = true
     }
+
+    // arm64 mpvlib libraries extracted by prepareMpvlib. They are assets, not
+    // jniLibs, so they do not collide with media_kit's libmpv.so.
+    sourceSets.named("main") {
+        assets.srcDir(rootProject.layout.projectDirectory.dir("../build/mpvlib-assets"))
+    }
 }
 
 flutter {
@@ -162,5 +169,25 @@ flutter {
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
     implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.1.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("androidx.documentfile:documentfile:1.0.1")
+    // Same Media3 version better_player_plus 1.4.1 already requests. No media3-ui:
+    // the picture is a Flutter texture under LoliControls.
+    implementation("androidx.media3:media3-exoplayer:1.11.0")
+    implementation("androidx.media3:media3-exoplayer-hls:1.11.0")
+    implementation("androidx.media3:media3-exoplayer-dash:1.11.0")
+    implementation("androidx.media3:media3-datasource:1.11.0")
+}
+
+val prepareMpvlib = tasks.register<Exec>("prepareMpvlib") {
+    val repoRoot = rootProject.projectDir.parentFile
+    val script = File(repoRoot, "tool/prepare_mpvlib.py")
+    commandLine("python", script.absolutePath)
+    workingDir = repoRoot
+    inputs.file(script)
+    outputs.dir(File(repoRoot, "build/mpvlib-assets"))
+}
+
+afterEvaluate {
+    tasks.named("preBuild").configure { dependsOn(prepareMpvlib) }
 }

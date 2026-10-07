@@ -17,10 +17,13 @@ import 'package:lolisnatcher/models/booru.dart';
 import 'package:lolisnatcher/models/booru_item.dart';
 import 'package:lolisnatcher/sources/framework/booru_handler_factory.dart';
 import 'package:lolisnatcher/models/settings/video_cache_mode.dart';
+import 'package:lolisnatcher/models/settings/video_engine_choice.dart';
 import 'package:lolisnatcher/features/recommender/logic/interests_handler.dart';
 import 'package:lolisnatcher/core/platform/local_auth_handler.dart';
 import 'package:lolisnatcher/core/platform/service_handler.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/features/video/logic/bridged_video_controller.dart';
+import 'package:lolisnatcher/features/video/logic/external_video_session.dart';
 import 'package:lolisnatcher/features/video/logic/video_completion_tracker.dart';
 import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
 import 'package:lolisnatcher/core/network/dio_downloader.dart';
@@ -84,6 +87,14 @@ class VideoViewerState extends State<VideoViewer> {
   bool useMpvFallbackBackend = false;
   bool attemptedMpvFallback = false;
   Timer? mpvWatchdogTimer;
+
+  // Media3 and mpvlib draw into this texture. The Chewie widget stays unmounted
+  // so video_player does not allocate a second picture.
+  int _playerGeneration = 0;
+  bool _externalSurface = false;
+  int? _externalTextureId;
+  bool _externalFullscreenOpen = false;
+  Route<void>? _externalFullscreenRoute;
 
   // Cached per-item HTTP headers. Computing this involves an awaited cookie
   // lookup, so we want exactly one call per video open, not three.
@@ -266,8 +277,16 @@ class VideoViewerState extends State<VideoViewer> {
   }
 
   // Only download/decode when this page is actually visible, unless the user
-  // has explicitly opted into eager neighbour preloading.
-  bool get _shouldLoadNow => widget.isViewed || settingsHandler.preloadVideos;
+  // has explicitly opted into eager neighbour preloading. mpvlib is one player
+  // for the whole process, so a neighbour must not open it.
+  bool get _shouldLoadNow {
+    if (Platform.isAndroid &&
+        videoEngineChoiceFromString(settingsHandler.videoEngineChoice).isMpvlib &&
+        !widget.isViewed) {
+      return false;
+    }
+    return widget.isViewed || settingsHandler.preloadVideos;
+  }
 
   @override
   void initState() {
@@ -323,6 +342,12 @@ class VideoViewerState extends State<VideoViewer> {
       } else {
         videoController.value?.pause();
         resetZoom();
+        // The next page's open replaces this process-wide player. Drop it
+        // now so coming back opens the right file again.
+        if (Platform.isAndroid && videoEngineChoiceFromString(settingsHandler.videoEngineChoice).isMpvlib) {
+          disposables();
+          updateState();
+        }
       }
     }
 
@@ -409,11 +434,19 @@ class VideoViewerState extends State<VideoViewer> {
   }
 
   void disposables() {
+    _playerGeneration++;
     mpvWatchdogTimer?.cancel();
     mpvWatchdogTimer = null;
+    _externalSurface = false;
+    _externalTextureId = null;
+    final bool popFullscreen = _externalFullscreenOpen;
+    final Route<void>? fullscreenRoute = _externalFullscreenRoute;
+    _externalFullscreenOpen = false;
+    _externalFullscreenRoute = null;
 
     final vc = videoController.value;
     final cc = chewieController.value;
+    cc?.removeListener(_onExternalChewieChanged);
     // Tearing down while still the viewed page = we're being unmounted under
     // the user (nested viewer cover / backend restart), not swiped away —
     // park the position so the next init resumes instead of starting over.
@@ -453,6 +486,10 @@ class VideoViewerState extends State<VideoViewer> {
     loadItemCancelToken = null;
 
     disposeClient();
+
+    if (popFullscreen && fullscreenRoute != null && fullscreenRoute.isActive && mounted) {
+      Navigator.of(context, rootNavigator: true).removeRoute(fullscreenRoute);
+    }
   }
 
   void resetBackendFallback() {
@@ -461,10 +498,11 @@ class VideoViewerState extends State<VideoViewer> {
   }
 
   bool get canFallbackToMpvBackend {
-    return Platform.isAndroid && settingsHandler.videoBackendMode.isNormal && !attemptedMpvFallback;
+    return !_externalSurface && Platform.isAndroid && settingsHandler.videoBackendMode.isNormal && !attemptedMpvFallback;
   }
 
   bool tryFallbackToMpvBackend(String? errorDescription) {
+    if (_externalSurface) return false;
     if (!canFallbackToMpvBackend) return false;
 
     attemptedMpvFallback = true;
@@ -602,6 +640,12 @@ class VideoViewerState extends State<VideoViewer> {
       if (!mounted) return;
     }
 
+    final VideoEngineChoice engineChoice = videoEngineChoiceFromString(settingsHandler.videoEngineChoice);
+    if (Platform.isAndroid && (engineChoice == VideoEngineChoice.media3 || engineChoice.isMpvlib)) {
+      await _initExternalPlayer(engineChoice);
+      return;
+    }
+
     registerVideoBackendForCurrentAttempt();
 
     // Remember which item this controller belongs to for the position
@@ -633,73 +677,7 @@ class VideoViewerState extends State<VideoViewer> {
     // mixWithOthers: true, allows to not interrupt audio sources from other apps
     videoController.value!.addListener(updateVideoState);
 
-    final Color accentColor = Theme.of(context).colorScheme.secondary;
-    final Color darkenedAceentColor = Color.lerp(accentColor, Colors.black, 0.5)!;
-
-    // Player wrapper to allow controls, looping...
-    chewieController.value = ChewieController(
-      videoPlayerController: videoController.value!,
-      // autoplay is disabled here, because videos started playing randomly, but videos will still autoplay when in view (see isViewed check later)
-      autoPlay: false,
-      allowedScreenSleep: false,
-      looping: true,
-      allowFullScreen: widget.enableFullscreen,
-      showControls: false,
-      showControlsOnInitialize: viewerHandler.displayAppbar.value,
-      progressIndicatorDelay: const Duration(milliseconds: 100),
-      customControls: null,
-      // customControls: SafeArea(child: LoliControls()),
-      // MaterialControls(),
-      // CupertinoControls(
-      //   backgroundColor: Color.fromRGBO(41, 41, 41, 0.7),
-      //   iconColor: Color.fromARGB(255, 200, 200, 200)
-      // ),
-      playbackSpeeds: const [
-        0.1,
-        0.25,
-        0.5,
-        0.75,
-        1,
-        1.25,
-        1.5,
-        1.75,
-        2,
-        3,
-        4,
-        6,
-        8,
-        12,
-        16,
-        32,
-      ],
-      materialProgressColors: ChewieProgressColors(
-        playedColor: accentColor,
-        handleColor: darkenedAceentColor,
-        bufferedColor: Colors.white.withValues(alpha: 0.66),
-        backgroundColor: Theme.of(context).disabledColor.withValues(alpha: 0.5),
-      ),
-      systemOverlaysOnEnterFullScreen: [],
-      systemOverlaysAfterFullScreen: SystemUiOverlay.values,
-      errorBuilder: (context, errorMessage) {
-        if (!tryFallbackToMpvBackend(errorMessage)) {
-          onError(Exception(errorMessage));
-        }
-
-        return Center(
-          child: Text(errorMessage, style: const TextStyle(color: Colors.white)),
-        );
-      },
-
-      routePageBuilder: fullscreenRoutePageBuilder,
-
-      // Specify this to allow any orientation in fullscreen, otherwise it will decide for itself based on video dimensions
-      // deviceOrientationsOnEnterFullScreen: [
-      //     DeviceOrientation.landscapeLeft,
-      //     DeviceOrientation.landscapeRight,
-      //     DeviceOrientation.portraitUp,
-      //     DeviceOrientation.portraitDown,
-      // ],
-    );
+    _mountChewieController();
 
     if (settingsHandler.startVideosMuted || viewerHandler.videoAutoMute) {
       await videoController.value?.setVolume(0);
@@ -880,7 +858,8 @@ class VideoViewerState extends State<VideoViewer> {
 
   @override
   Widget build(BuildContext context) {
-    final double aspectRatio = videoController.value?.value.aspectRatio ?? 16 / 9;
+    final double reportedAspect = videoController.value?.value.aspectRatio ?? (16 / 9);
+    final double aspectRatio = reportedAspect.isFinite && reportedAspect > 0 ? reportedAspect : 16 / 9;
     final screenSize = MediaQuery.sizeOf(context);
     final double screenRatio = screenSize.width / screenSize.height;
     final Size childSize = Size(
@@ -1001,7 +980,15 @@ class VideoViewerState extends State<VideoViewer> {
                                     return const Center(child: CircularProgressIndicator());
                                   }
                                 },
-                                child: Chewie(controller: chewieController.value!),
+                                child: _externalSurface
+                                    ? (_externalFullscreenOpen || _externalTextureId == null
+                                          ? const SizedBox.expand()
+                                          : SizedBox(
+                                              width: childSize.width,
+                                              height: childSize.height,
+                                              child: Texture(textureId: _externalTextureId!),
+                                            ))
+                                    : Chewie(controller: chewieController.value!),
                               ),
                             ),
                           ),
@@ -1050,5 +1037,195 @@ class VideoViewerState extends State<VideoViewer> {
         ],
       ),
     );
+  }
+
+  /// Same Chewie wrapper the default player uses, so LoliControls keeps its
+  /// speeds, colours, and fullscreen flag. Media3 and mpvlib do not mount the
+  /// Chewie picture widget.
+  void _mountChewieController() {
+    final Color accentColor = Theme.of(context).colorScheme.secondary;
+    final Color darkenedAceentColor = Color.lerp(accentColor, Colors.black, 0.5)!;
+    chewieController.value = ChewieController(
+      videoPlayerController: videoController.value!,
+      autoPlay: false,
+      allowedScreenSleep: false,
+      looping: true,
+      allowFullScreen: widget.enableFullscreen,
+      showControls: false,
+      showControlsOnInitialize: viewerHandler.displayAppbar.value,
+      progressIndicatorDelay: const Duration(milliseconds: 100),
+      customControls: null,
+      playbackSpeeds: const [
+        0.1,
+        0.25,
+        0.5,
+        0.75,
+        1,
+        1.25,
+        1.5,
+        1.75,
+        2,
+        3,
+        4,
+        6,
+        8,
+        12,
+        16,
+        32,
+      ],
+      materialProgressColors: ChewieProgressColors(
+        playedColor: accentColor,
+        handleColor: darkenedAceentColor,
+        bufferedColor: Colors.white.withValues(alpha: 0.66),
+        backgroundColor: Theme.of(context).disabledColor.withValues(alpha: 0.5),
+      ),
+      systemOverlaysOnEnterFullScreen: [],
+      systemOverlaysAfterFullScreen: SystemUiOverlay.values,
+      errorBuilder: (context, errorMessage) {
+        if (!tryFallbackToMpvBackend(errorMessage)) {
+          onError(Exception(errorMessage));
+        }
+        return Center(
+          child: Text(errorMessage, style: const TextStyle(color: Colors.white)),
+        );
+      },
+      routePageBuilder: fullscreenRoutePageBuilder,
+    );
+  }
+
+  Future<void> _initExternalPlayer(VideoEngineChoice choice) async {
+    final int generation = _playerGeneration;
+    _externalSurface = true;
+    debugPrint('video-engine: viewer ${choice.name}');
+    if (choice.isMpvlib) {
+      final String loaded = await loadedMpvlibVariant();
+      if (!mounted || generation != _playerGeneration) return;
+      final String wanted = mpvlibVariantFileText(choice);
+      if (loaded != wanted) {
+        debugPrint('video-engine: loaded $loaded wanted $wanted');
+        stopLoading(
+          reason: ViewerStopReason.videoError,
+          title: 'Restart the app to switch the mpvlib build',
+          details: 'This process loaded "$loaded". The setting asks for "$wanted".',
+        );
+        return;
+      }
+    }
+    if (!mounted || generation != _playerGeneration) return;
+
+    _positionKeyUrl = widget.booruItem.fileURL;
+    final String url = video != null ? video!.uri.toString() : widget.booruItem.fileURL;
+    try {
+      final ExternalVideoHandle handle = await openExternalVideo(
+        choice: choice,
+        url: url,
+        headers: await _customHeaders(),
+      );
+      if (!mounted || generation != _playerGeneration) {
+        await handle.controller.dispose();
+        return;
+      }
+      final BridgedVideoController bridged = handle.controller;
+      _externalTextureId = handle.textureId;
+      videoController.value = bridged;
+      bridged.addListener(updateVideoState);
+      _mountChewieController();
+      chewieController.value?.addListener(_onExternalChewieChanged);
+
+      if (settingsHandler.startVideosMuted || viewerHandler.videoAutoMute) {
+        await bridged.setVolume(0);
+      }
+      final Duration? savedPosition = viewerHandler.takeVideoPosition(widget.booruItem.fileURL);
+      if (savedPosition != null) {
+        await bridged.seekTo(savedPosition);
+      }
+      if (settingsHandler.autoPlayEnabled &&
+          !(settingsHandler.respectManualPause && viewerHandler.isManuallyPaused(widget.booruItem.fileURL))) {
+        await bridged.play();
+      }
+      forceCache.value = false;
+      updateState();
+    } catch (error, stack) {
+      debugPrint('video-engine: viewer open failed $error\n$stack');
+      if (!mounted || generation != _playerGeneration) return;
+      stopLoading(
+        reason: ViewerStopReason.videoError,
+        details: error.toString(),
+      );
+    }
+  }
+
+  void _onExternalChewieChanged() {
+    final ChewieController? chewie = chewieController.value;
+    if (chewie == null || !_externalSurface) return;
+    if (chewie.isFullScreen && !_externalFullscreenOpen) {
+      _externalFullscreenOpen = true;
+      updateState();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || chewieController.value != chewie || !chewie.isFullScreen) return;
+          unawaited(_pushExternalFullscreen(chewie));
+        });
+      });
+    } else if (!chewie.isFullScreen && _externalFullscreenOpen) {
+      final Route<void>? route = _externalFullscreenRoute;
+      _externalFullscreenOpen = false;
+      if (route != null && route.isActive) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (route.isActive && mounted) {
+            Navigator.of(context, rootNavigator: true).removeRoute(route);
+          }
+          if (mounted) updateState();
+        });
+      }
+    }
+  }
+
+  Future<void> _pushExternalFullscreen(ChewieController chewie) async {
+    final int? textureId = _externalTextureId;
+    if (!mounted || textureId == null || !chewie.isFullScreen) {
+      _externalFullscreenOpen = false;
+      return;
+    }
+    final Route<void> route = PageRouteBuilder<void>(
+      pageBuilder: (BuildContext routeContext, Animation<double> animation, Animation<double> secondary) {
+        return Scaffold(
+          backgroundColor: Colors.black,
+          resizeToAvoidBottomInset: false,
+          body: Stack(
+            fit: StackFit.expand,
+            children: [
+              ImageFiltered(
+                enabled: settingsHandler.blurImages.value,
+                imageFilter: ImageFilter.blur(
+                  sigmaX: 40,
+                  sigmaY: 40,
+                  tileMode: TileMode.decal,
+                ),
+                child: Center(child: Texture(textureId: textureId)),
+              ),
+              ChewieControllerProvider(
+                controller: chewie,
+                child: const TransparentPointer(
+                  child: SafeArea(
+                    top: false,
+                    child: LoliControls(),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    _externalFullscreenRoute = route;
+    await Navigator.of(context, rootNavigator: true).push<void>(route);
+    if (!mounted || chewieController.value != chewie) return;
+    _externalFullscreenRoute = null;
+    _externalFullscreenOpen = false;
+    if (chewie.isFullScreen) {
+      chewie.exitFullScreen();
+    }
+    updateState();
   }
 }

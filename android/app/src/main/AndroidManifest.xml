@@ -43,6 +43,15 @@
              library; since Android 12 an app may only load one it declares.
              Not required: phones without it run the models on the CPU. -->
         <uses-native-library android:name="libcdsprpc.so" android:required="false" />
+
+        <!-- Runs before Flutter plugins so a chosen mpvlib build is the libmpv
+             already in the process. authorities includes applicationId so the
+             side-by-side package does not collide. -->
+        <provider
+            android:name="com.noaisu.loliSnatcher.MpvlibPreloadProvider"
+            android:authorities="${applicationId}.mpvlibpreload"
+            android:exported="false"
+            android:initOrder="2147483647" />
         <activity
             android:name=".MainActivity"
             android:launchMode="singleInstance"

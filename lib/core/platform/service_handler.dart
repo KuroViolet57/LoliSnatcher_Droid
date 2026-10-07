@@ -29,6 +29,17 @@ class ServiceHandler {
   }
 
   static const platform = MethodChannel('com.noaisu.loliSnatcher/services');
+  static const videoEngine = MethodChannel('com.noaisu.loliSnatcher/video_engine');
+
+  /// Next process start reads this before plugins load libmpv.
+  /// A missing channel (tests, desktop) is ignored.
+  static Future<void> setMpvlibVariant(String variant) async {
+    try {
+      await videoEngine.invokeMethod('setMpvlibVariant', {'variant': variant});
+    } catch (e) {
+      log(e);
+    }
+  }
 
   static Future<void> callMediaScanner(String path) async {
     try {

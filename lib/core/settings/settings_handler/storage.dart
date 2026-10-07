@@ -38,7 +38,12 @@ extension SettingsStorage on SettingsHandler {
       _flowMigrationPending = false;
       await saveSettings(restate: false);
     }
+    await _writeMpvlibVariant();
     return;
+  }
+
+  Future<void> _writeMpvlibVariant() {
+    return ServiceHandler.setMpvlibVariant(mpvlibVariantFileText(videoEngineChoiceFromString(videoEngineChoice)));
   }
 
   dynamic getByString(String varName) {
@@ -95,6 +100,8 @@ extension SettingsStorage on SettingsHandler {
         return useBetterPlayer;
       case 'useMediaKitPlayer':
         return useMediaKitPlayer;
+      case 'videoEngineChoice':
+        return videoEngineChoice;
       case 'mediaKitMaxPlayers':
         return mediaKitMaxPlayers;
       case 'videoStartDelayMs':
@@ -415,6 +422,9 @@ extension SettingsStorage on SettingsHandler {
         break;
       case 'useMediaKitPlayer':
         useMediaKitPlayer = validatedValue;
+        break;
+      case 'videoEngineChoice':
+        videoEngineChoice = validatedValue;
         break;
       case 'mediaKitMaxPlayers':
         mediaKitMaxPlayers = (validatedValue as int).clamp(1, 20);
@@ -1135,6 +1145,7 @@ extension SettingsStorage on SettingsHandler {
         }),
       );
     }
+    await _writeMpvlibVariant();
     return true;
   }
 

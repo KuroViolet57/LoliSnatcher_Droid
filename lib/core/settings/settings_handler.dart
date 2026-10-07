@@ -41,6 +41,7 @@ import 'package:lolisnatcher/models/settings/scroll_direction.dart';
 import 'package:lolisnatcher/models/settings/share_action.dart';
 import 'package:lolisnatcher/models/settings/vertical_position.dart';
 import 'package:lolisnatcher/models/settings/video_backend_mode.dart';
+import 'package:lolisnatcher/models/settings/video_engine_choice.dart';
 import 'package:lolisnatcher/models/settings/video_cache_mode.dart';
 import 'package:lolisnatcher/models/theme_item.dart';
 import 'package:lolisnatcher/models/update_info.dart';
@@ -218,6 +219,9 @@ class SettingsHandler {
   // its own decoding (with software fallback). Takes precedence over
   // useBetterPlayer when both are on.
   bool useMediaKitPlayer = false;
+  // off keeps media_kit / better_player / Chewie. media3 and the two mpvlib
+  // builds use LoliControls and, on Android, win over those switches.
+  String videoEngineChoice = 'off';
   // How many media_kit (libmpv) players to keep warm in the LRU pool. More =
   // scrolling back to a recent video resumes instantly with its buffer
   // intact, at the cost of RAM. libmpv has no MediaCodec limit so this is
