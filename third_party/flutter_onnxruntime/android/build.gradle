@@ -69,10 +69,12 @@ android {
         testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
         testImplementation("org.mockito:mockito-core:5.0.0")
         implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
-        // LoliSnatcher: bundled QNN EP. 1.29.0's POM depends on
-        // com.qualcomm.qti:qnn-runtime:2.42.0. This is not the 2.50 plugin
-        // (com.qualcomm.qti:onnxruntime-android-qnn), which registers differently.
-        implementation 'com.microsoft.onnxruntime:onnxruntime-android-qnn:1.29.0'
+        // LoliSnatcher: Qualcomm plugin EP 2.6.0, validated against base
+        // onnxruntime-android 1.27.0 and qnn-runtime 2.50.0. Do not also
+        // depend on onnxruntime-android-qnn; that AAR ships the same Java package.
+        implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.27.0'
+        implementation 'com.qualcomm.qti:onnxruntime-android-qnn:2.6.0'
+        implementation 'com.qualcomm.qti:qnn-runtime:2.50.0'
     }
 
     testOptions {

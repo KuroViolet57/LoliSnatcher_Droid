@@ -18,11 +18,12 @@ import 'package:lolisnatcher/features/recommender/ui/model_page.dart';
 import 'package:lolisnatcher/features/recommender/ui/models_page.dart';
 
 /// r87 (branch claude/r87-npu): the S24 Ultra's NPU (Snapdragon 8 Gen 3,
-/// Hexagon HTP v75) through ONNX Runtime's QNN execution provider -
-/// Microsoft's onnxruntime-android-qnn 1.29.0, the same ONNX Runtime as
-/// before, with Qualcomm's qnn-runtime 2.42.0. The plugin is our own copy
-/// (third_party/flutter_onnxruntime) so it can pass the provider options,
-/// session config entries and fixed input sizes the NPU needs.
+/// Hexagon HTP v75) through ONNX Runtime's QNN execution provider.
+/// Qualcomm's plugin EP 2.6.0 (libonnxruntime_providers_qnn.so) registers
+/// onto base onnxruntime-android 1.27.0 and uses qnn-runtime 2.50.0.
+/// The plugin is our own copy (third_party/flutter_onnxruntime) so it can
+/// pass the provider options, session config entries and fixed input sizes
+/// the NPU needs.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -77,12 +78,21 @@ void main() {
       for (final String s in ['"providerOptions"', '"sessionConfig"', '"symbolicDims"', 'addConfigEntry(', 'setSymbolicDimensionValue(', 'getDimensionNames(']) {
         expect(kt, contains(s), reason: s);
       }
-      expect(kt, isNot(contains('addQnn(mapOf())')));
-      expect(kt, isNot(contains('addArmNN(')), reason: '1.29 dropped addArmNN');
+      expect(kt, contains('registerExecutionProviderLibrary('));
+      expect(kt, contains('addExecutionProvider('));
+      expect(kt, contains('libonnxruntime_providers_qnn.so'));
+      expect(kt, contains('QNNExecutionProvider'));
+      expect(kt, isNot(contains('addQnn(')), reason: 'the plugin EP does not use addQnn');
+      expect(kt, isNot(contains('addArmNN(')));
       expect(kt, isNot(contains('addXnnpack(mapOf())')));
       final String gradle = File('third_party/flutter_onnxruntime/android/build.gradle').readAsStringSync();
-      expect(gradle, contains("'com.microsoft.onnxruntime:onnxruntime-android-qnn:1.29.0'"));
+      expect(gradle, contains("'com.microsoft.onnxruntime:onnxruntime-android:1.27.0'"));
+      expect(gradle, contains("'com.qualcomm.qti:onnxruntime-android-qnn:2.6.0'"));
+      expect(gradle, contains("'com.qualcomm.qti:qnn-runtime:2.50.0'"));
+      expect(gradle, isNot(contains('onnxruntime-android-qnn:1.29.0')));
       expect(gradle, isNot(contains("'com.microsoft.onnxruntime:onnxruntime-android:1.23.0'")));
+      final String appManifest = File('android/app/src/main/AndroidManifest.xml').readAsStringSync();
+      expect(appManifest, contains('tools:overrideLibrary="ai.onnxruntime.qnnpluginep"'));
       final String pubspec = File('pubspec.yaml').readAsStringSync();
       expect(RegExp(r'flutter_onnxruntime:\s*\n\s*path: third_party/flutter_onnxruntime').hasMatch(pubspec), isTrue);
       expect(File('third_party/flutter_onnxruntime/LOLISNATCHER_PATCH.md').existsSync(), isTrue);

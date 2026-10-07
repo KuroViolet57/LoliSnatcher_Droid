@@ -10,6 +10,7 @@ import ai.onnxruntime.OnnxJavaType
 import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OnnxValue
 import ai.onnxruntime.OrtEnvironment
+import ai.onnxruntime.OrtEpDevice
 import ai.onnxruntime.OrtException
 import ai.onnxruntime.OrtLoggingLevel
 import ai.onnxruntime.OrtSession
@@ -138,6 +139,7 @@ class FlutterOnnxruntimePlugin : FlutterPlugin, MethodCallHandler {
      */
     private lateinit var channel: MethodChannel
     private lateinit var ortEnvironment: OrtEnvironment
+    private var nativeLibraryDir: String? = null
     private val sessions = ConcurrentHashMap<String, OrtSession>()
 
     // Store OrtValues (tensors) by ID
@@ -199,6 +201,36 @@ class FlutterOnnxruntimePlugin : FlutterPlugin, MethodCallHandler {
             )
         channel.setMethodCallHandler(this)
         ortEnvironment = OrtEnvironment.getEnvironment()
+        nativeLibraryDir = flutterPluginBinding.applicationContext.applicationInfo.nativeLibraryDir
+    }
+
+    /**
+     * Qualcomm's plugin EP (libonnxruntime_providers_qnn.so). Register it
+     * once on this environment. CPU and XNNPACK sessions never call this.
+     * Returns null after completing [result] when the library cannot be used.
+     */
+    private fun qnnPluginDevices(result: Result): List<OrtEpDevice>? {
+        val dir = nativeLibraryDir
+        if (dir.isNullOrEmpty()) {
+            result.error("QNN_PLUGIN", "Native library directory is not available", null)
+            return null
+        }
+        val path = File(dir, "libonnxruntime_providers_qnn.so")
+        if (!path.isFile) {
+            result.error("QNN_PLUGIN", "QNN plugin library missing at ${path.path}", null)
+            return null
+        }
+        fun devices() = ortEnvironment.epDevices.filter { it.epName == "QNNExecutionProvider" }
+        var found = devices()
+        if (found.isEmpty()) {
+            ortEnvironment.registerExecutionProviderLibrary("QNNExecutionProvider", path.path)
+            found = devices()
+        }
+        if (found.isEmpty()) {
+            result.error("QNN_PLUGIN", "QNN execution provider registered no device", null)
+            return null
+        }
+        return found
     }
 
     override fun onMethodCall(
@@ -289,8 +321,8 @@ class FlutterOnnxruntimePlugin : FlutterPlugin, MethodCallHandler {
                                 "ACL" -> {
                                     ortSessionOptions.addACL(true)
                                 }
-                                // onnxruntime-android-qnn 1.29 dropped addArmNN. ARM_NN
-                                // falls through to the unsupported-provider error.
+                                // ARM_NN is not in this ORT build. The name falls through
+                                // to the unsupported-provider error.
                                 "CORE_ML" -> {
                                     ortSessionOptions.addCoreML()
                                 }
@@ -313,8 +345,9 @@ class FlutterOnnxruntimePlugin : FlutterPlugin, MethodCallHandler {
                                     ortSessionOptions.addOpenVINO(deviceId.toString())
                                 }
                                 "QNN" -> {
-                                    // LoliSnatcher r87: backend_path, fp16 precision, ...
-                                    ortSessionOptions.addQnn(providerOptions["QNN"] ?: mapOf())
+                                    // LoliSnatcher: plugin EP, same option map (backend_path, fp16, ...).
+                                    val devices = qnnPluginDevices(result) ?: return
+                                    ortSessionOptions.addExecutionProvider(devices, providerOptions["QNN"] ?: mapOf())
                                 }
                                 "ROCM" -> {
                                     ortSessionOptions.addROCM(deviceId)
