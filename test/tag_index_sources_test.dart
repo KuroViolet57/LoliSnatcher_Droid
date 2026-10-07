@@ -168,6 +168,62 @@ void main() {
     });
   });
 
+  group('booru on rails', () {
+    const index = BooruOnRailsTagIndex();
+    final booru = b('twi', BooruType.BooruOnRails, 'https://twibooru.org');
+
+    test('names are stored underscored, and artist: is an artist', () {
+      // Captured from twibooru.org /api/v3/search/tags on 2026-10-07.
+      // Descriptions and alias lists were left out; the fields below are the
+      // ones the parser reads.
+      final rows = BooruOnRailsTagIndex.parseRows(fixture('twibooru_tags.json'));
+      expect(rows.map((r) => r.name), [
+        'derpibooru_import',
+        'safe',
+        'female',
+        'twilight_sparkle',
+        'pony',
+        'artist:cold-blooded-twilight',
+        'g4',
+        'fallout_equestria',
+        'oc',
+        'spoiler:my_little_pony:_tell_your_tale',
+        'artist_needed',
+      ]);
+      expect(rows.map((r) => r.tagType), [
+        TagType.meta,
+        TagType.meta,
+        TagType.none,
+        TagType.character,
+        TagType.species,
+        TagType.artist,
+        TagType.copyright,
+        TagType.copyright,
+        TagType.character,
+        TagType.meta,
+        TagType.meta,
+      ]);
+      expect(rows.every((r) => r.namespace.isEmpty), isTrue);
+      expect(rows[3].count, 435502);
+      expect(BooruOnRailsTagIndex.parseRows('{"tags":[]}'), isEmpty);
+      expect(BooruOnRailsTagIndex.typeOf('artist needed', 'error'), TagType.meta);
+    });
+
+    test('one query per chip, fifty a page, under the 250 cap', () {
+      expect(index.pageSize, 50);
+      expect(index.categoryQuery(TagType.artist, 0), 'q=artist%3A*&per_page=50&page=1');
+      expect(index.categoryQuery(TagType.character, 2), 'q=category%3Acharacter&per_page=50&page=3');
+      expect(index.categoryQuery(TagType.species, 0), 'q=category%3Aspecies&per_page=50&page=1');
+      expect(index.categoryQuery(TagType.copyright, 0), 'q=category%3Acontent-official&per_page=50&page=1');
+      expect(index.categoryQuery(TagType.none, 0), 'q=*&per_page=50&page=1');
+      expect(index.searchQuery('rai'), 'q=*rai*&per_page=50');
+      expect(index.searchQuery('twilight_sparkle'), 'q=twilight+sparkle&per_page=50');
+      expect(index.searchQuery('twilight sparkle'), 'q=twilight+sparkle&per_page=50');
+      expect(index.catalogNamespaces(booru).map((n) => n.key), ['artist', 'character', 'copyright', 'species', 'tag']);
+      expect(index.catalogDelay, greaterThanOrEqualTo(const Duration(seconds: 1)));
+    });
+  });
+
   group('moebooru', () {
     const index = MoebooruTagIndex();
     final booru = b('yandere', BooruType.Moebooru, 'https://yande.re');
@@ -198,10 +254,11 @@ void main() {
     });
   });
 
-  test('forBooru covers the six families and nothing else', () {
+  test('forBooru covers the indexed families and nothing else', () {
     expect(TagIndexSource.forBooru(b('r', BooruType.Realbooru, 'https://realbooru.com')), isA<GelbooruTagIndex>());
     expect(TagIndexSource.forBooru(b('m', BooruType.Moebooru, 'https://konachan.com')), isA<MoebooruTagIndex>());
     expect(TagIndexSource.forBooru(b('s', BooruType.Sankaku, 'https://chan.sankakucomplex.com')), isA<SankakuTagIndex>());
+    expect(TagIndexSource.forBooru(b('twi', BooruType.BooruOnRails, 'https://twibooru.org')), isA<BooruOnRailsTagIndex>());
     expect(TagIndexSource.forBooru(b('i', BooruType.IdolSankaku, 'https://idol.sankakucomplex.com')), isNull);
     expect(TagIndexSource.forBooru(b('sh', BooruType.Shimmie, 'https://rule34hentai.net')), isNull);
   });

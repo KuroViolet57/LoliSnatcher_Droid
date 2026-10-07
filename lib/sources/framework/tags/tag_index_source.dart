@@ -19,6 +19,7 @@ part 'tag_index_source/gelbooru_tag_index.dart';
 part 'tag_index_source/danbooru_tag_index.dart';
 part 'tag_index_source/e621_tag_index.dart';
 part 'tag_index_source/philomena_tag_index.dart';
+part 'tag_index_source/booru_on_rails_tag_index.dart';
 part 'tag_index_source/moebooru_tag_index.dart';
 part 'tag_index_source/sankaku_tag_index.dart';
 
@@ -191,6 +192,7 @@ abstract class TagIndexSource {
       BooruType.Danbooru => const DanbooruTagIndex(),
       BooruType.e621 => const E621TagIndex(),
       BooruType.Philomena => const PhilomenaTagIndex(),
+      BooruType.BooruOnRails => const BooruOnRailsTagIndex(),
       BooruType.Moebooru => const MoebooruTagIndex(),
       BooruType.Sankaku => const SankakuTagIndex(),
       _ => null,

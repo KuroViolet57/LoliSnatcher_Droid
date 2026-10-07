@@ -31,6 +31,7 @@ import 'package:lolisnatcher/sources/tube/kusowanka_handler.dart';
 import 'package:lolisnatcher/sources/tube/kusowanka_tag_catalog.dart';
 import 'package:lolisnatcher/sources/booru/civitai_handler.dart';
 import 'package:lolisnatcher/sources/booru/civitai_tag_catalog.dart';
+import 'package:lolisnatcher/sources/booru/booru_on_rails_handler.dart';
 import 'package:lolisnatcher/sources/booru/szurubooru_handler.dart';
 import 'package:lolisnatcher/sources/booru/szurubooru_tag_catalog.dart';
 import 'package:lolisnatcher/sources/framework/booru_handler_factory.dart';
@@ -435,7 +436,7 @@ void main() {
       BooruType.R34Hentai: 'not probed yet: Cloudflare-fronted from here (r32)',
       BooruType.R34US: 'not probed yet: the alphabetic page looks script-driven (r32)',
       BooruType.AGNPH: 'not probed yet: /gallery/tags/ answers but carries no tag table (r32)',
-      BooruType.BooruOnRails: 'not probed yet: /api/v3/search/tags (r32)',
+
       BooruType.Rainbooru: "its tag endpoint points at another site's vocabulary",
       BooruType.NyanPals: 'no tag endpoint',
       BooruType.WildCritters: 'no tag endpoint',
@@ -493,6 +494,10 @@ void main() {
       expect(keys(TikPornHandler(b('t', BooruType.TikPorn, 'https://tik.porn'), 20)), ['tag', 'action']);
       expect(keys(KusowankaHandler(b('k', BooruType.Kusowanka, 'https://kusowanka.com'), 20)), ['tag', 'artist', 'character', 'parody', 'metadata']);
       expect(keys(CivitaiHandler(b('c', BooruType.Civitai, 'https://civitai.com'), 20)), ['tag']);
+      expect(
+        keys(BooruOnRailsHandler(b('twi', BooruType.BooruOnRails, 'https://twibooru.org'), 20)),
+        ['artist', 'character', 'copyright', 'species', 'tag'],
+      );
     });
   });
 }

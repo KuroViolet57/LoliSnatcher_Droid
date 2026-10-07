@@ -6,12 +6,19 @@ import 'package:lolisnatcher/models/tag.dart';
 import 'package:lolisnatcher/models/tag_suggestion.dart';
 import 'package:lolisnatcher/sources/framework/booru_handler.dart';
 import 'package:lolisnatcher/sources/framework/booru_handler_utils.dart';
+import 'package:lolisnatcher/sources/framework/tags/booru_tag_catalog.dart';
+import 'package:lolisnatcher/sources/framework/tags/tag_catalog_source.dart';
 
 // TODO autoreplace both ways all that special symbol crap (see tag suggestions) to normal format for user
 // TODO fix file names like we do with shimmie, probably should move file name encode/decode process to boorus themselves instead of image writer
 
 class BooruOnRailsHandler extends BooruHandler {
   BooruOnRailsHandler(super.booru, super.limit);
+
+  /// Artists, characters, series, species, and general tags from
+  /// `/api/v3/search/tags` (see BooruOnRailsTagIndex).
+  @override
+  late final TagCatalogSource? tagCatalog = BooruTagCatalog.forHandler(this);
 
   @override
   bool get hasSizeData => true;
