@@ -5,11 +5,13 @@ import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:extended_image/extended_image.dart';
+import 'package:photo_view/photo_view.dart';
 
 import 'package:lolisnatcher/models/booru.dart';
 import 'package:lolisnatcher/models/booru_item.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/core/utils/tools.dart';
+import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
 
 /// Dedicated GIF renderer using extended_image (the same engine Boorusama
 /// uses). The win over the default Image path: extended_image decodes the
@@ -30,11 +32,17 @@ class GifViewer extends StatefulWidget {
   final bool isViewed;
 
   @override
-  State<GifViewer> createState() => _GifViewerState();
+  State<GifViewer> createState() => GifViewerState();
 }
 
-class _GifViewerState extends State<GifViewer> {
+class GifViewerState extends State<GifViewer> {
   final SettingsHandler settingsHandler = SettingsHandler.instance;
+  final ViewerHandler viewerHandler = ViewerHandler.instance;
+  final PhotoViewScaleStateController scaleController = PhotoViewScaleStateController();
+  final PhotoViewController viewController = PhotoViewController();
+  final ValueNotifier<bool> isZoomed = ValueNotifier(false);
+  late final StreamSubscription<PhotoViewControllerValue> _viewSub;
+  late final StreamSubscription<PhotoViewScaleState> _scaleSub;
 
   Map<String, String>? _headers;
   bool _failedHeaders = false;
@@ -49,12 +57,37 @@ class _GifViewerState extends State<GifViewer> {
   @override
   void initState() {
     super.initState();
+    _viewSub = viewController.outputStateStream.listen((PhotoViewControllerValue value) {
+      viewerHandler.setViewValue(widget.key, value);
+    });
+    _scaleSub = scaleController.outputScaleStateStream.listen(_onScaleStateChanged);
     _loadHeaders();
+  }
+
+  void _onScaleStateChanged(PhotoViewScaleState scaleState) {
+    isZoomed.value =
+        scaleState == PhotoViewScaleState.zoomedIn ||
+        scaleState == PhotoViewScaleState.covering ||
+        scaleState == PhotoViewScaleState.originalSize;
+    viewerHandler.setZoomed(widget.key, isZoomed.value);
+  }
+
+  /// Same cover the still-image zoom button uses.
+  void doubleTapZoom() {
+    scaleController.scaleState = PhotoViewScaleState.covering;
+  }
+
+  void resetZoom() {
+    scaleController.scaleState = PhotoViewScaleState.initial;
+    viewerHandler.setZoomed(widget.key, false);
   }
 
   @override
   void didUpdateWidget(GifViewer oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.isViewed && !widget.isViewed) {
+      resetZoom();
+    }
     // PreloadPageView builds adjacent pages ahead of time, so their gifs decode
     // and animate off-screen. Without a reset, swiping to one shows it already
     // mid-animation. When a page scrolls into view, restart it from frame 0.
@@ -63,6 +96,16 @@ class _GifViewerState extends State<GifViewer> {
     } else if (!widget.isViewed && oldWidget.isViewed) {
       _didResetForView = false;
     }
+  }
+
+  @override
+  void dispose() {
+    _viewSub.cancel();
+    _scaleSub.cancel();
+    scaleController.dispose();
+    viewController.dispose();
+    isZoomed.dispose();
+    super.dispose();
   }
 
   Future<void> _loadHeaders() async {
@@ -139,26 +182,28 @@ class _GifViewerState extends State<GifViewer> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    return ExtendedImage(
+    final Size screen = MediaQuery.sizeOf(context);
+    return PhotoView.customChild(
+      childSize: screen,
+      customSize: screen,
+      backgroundDecoration: const BoxDecoration(color: Colors.transparent),
+      minScale: PhotoViewComputedScale.contained,
+      maxScale: PhotoViewComputedScale.covered * 8,
+      initialScale: PhotoViewComputedScale.contained,
+      basePosition: Alignment.center,
+      controller: viewController,
+      scaleStateController: scaleController,
+      enableRotation: settingsHandler.allowRotation,
+      child: ExtendedImage(
       // Key on the restart token so becoming-viewed forces a fresh decode
       // (frame 0) rather than resuming the cached mid-animation completer.
       key: ValueKey('gif-${widget.booruItem.fileURL}-$_restartToken'),
       image: _buildProvider(context),
       fit: BoxFit.contain,
-      mode: ExtendedImageMode.gesture,
-      // animate immediately and loop, like a GIF should
+      // Pinch and the zoom button belong to the PhotoView wrapper, the same
+      // one a still image uses. Two gesture detectors fight the page swipe.
+      mode: ExtendedImageMode.none,
       enableLoadState: true,
-      initGestureConfigHandler: (state) => GestureConfig(
-        minScale: 0.9,
-        maxScale: 4,
-        animationMinScale: 0.7,
-        animationMaxScale: 4.5,
-        speed: 1,
-        inertialSpeed: 100,
-        initialScale: 1,
-        cacheGesture: false,
-        inPageView: true,
-      ),
       loadStateChanged: (ExtendedImageState state) {
         switch (state.extendedImageLoadState) {
           case LoadState.loading:
@@ -181,6 +226,7 @@ class _GifViewerState extends State<GifViewer> {
             return null; // let extended_image render (and animate) the gif
         }
       },
+      ),
     );
   }
 }

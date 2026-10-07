@@ -9,6 +9,7 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:get/get.dart' hide ContextExt, FirstWhereOrNullExt;
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
+import 'package:photo_view/photo_view.dart';
 
 import 'package:lolisnatcher/core/logging/perf_trace.dart';
 import 'package:lolisnatcher/features/recommender/logic/interests_handler.dart';
@@ -97,10 +98,16 @@ class MediaKitPlayerView extends StatefulWidget {
   }
 
   @override
-  State<MediaKitPlayerView> createState() => _MediaKitPlayerViewState();
+  State<MediaKitPlayerView> createState() => MediaKitPlayerViewState();
 }
 
-class _MediaKitPlayerViewState extends State<MediaKitPlayerView> with TraceLifecycle {
+class MediaKitPlayerViewState extends State<MediaKitPlayerView> with TraceLifecycle {
+  final PhotoViewScaleStateController scaleController = PhotoViewScaleStateController();
+  final PhotoViewController viewController = PhotoViewController();
+  final ValueNotifier<bool> isZoomed = ValueNotifier(false);
+  late final StreamSubscription<PhotoViewControllerValue> _viewSub;
+  late final StreamSubscription<PhotoViewScaleState> _scaleSub;
+  bool get hasPlayer => _entry != null;
   _PooledPlayer? _entry;
   String? _acquiredUrl;
 
@@ -126,9 +133,32 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> with TraceLifec
   @override
   void initState() {
     super.initState();
+    _viewSub = viewController.outputStateStream.listen((PhotoViewControllerValue value) {
+      ViewerHandler.instance.setViewValue(widget.key, value);
+    });
+    _scaleSub = scaleController.outputScaleStateStream.listen(_onScaleStateChanged);
     if (_wantsPlayer) {
       _scheduleInit();
     }
+  }
+
+  void _onScaleStateChanged(PhotoViewScaleState scaleState) {
+    isZoomed.value =
+        scaleState == PhotoViewScaleState.zoomedIn ||
+        scaleState == PhotoViewScaleState.covering ||
+        scaleState == PhotoViewScaleState.originalSize;
+    ViewerHandler.instance.setZoomed(widget.key, isZoomed.value);
+  }
+
+  /// Same cover the still-image zoom button uses. The controls stay put.
+  void doubleTapZoom() {
+    if (_entry == null) return;
+    scaleController.scaleState = PhotoViewScaleState.covering;
+  }
+
+  void resetZoom() {
+    scaleController.scaleState = PhotoViewScaleState.initial;
+    ViewerHandler.instance.setZoomed(widget.key, false);
   }
 
   @override
@@ -137,6 +167,7 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> with TraceLifec
 
     final bool itemChanged = oldWidget.booruItem != widget.booruItem;
     if (itemChanged) {
+      resetZoom();
       _release();
       if (_wantsPlayer) {
         _scheduleInit();
@@ -162,6 +193,7 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> with TraceLifec
       } else {
         // Off-screen: pause but keep the player + its buffer warm in the
         // pool. Releasing the slot happens only on widget dispose.
+        resetZoom();
         _entry?.player.pause();
       }
     }
@@ -381,6 +413,11 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> with TraceLifec
   @override
   void dispose() {
     _release();
+    _viewSub.cancel();
+    _scaleSub.cancel();
+    scaleController.dispose();
+    viewController.dispose();
+    isZoomed.dispose();
     super.dispose();
   }
 
@@ -396,14 +433,26 @@ class _MediaKitPlayerViewState extends State<MediaKitPlayerView> with TraceLifec
         child: Stack(
           fit: StackFit.expand,
           children: [
-            Video(
-              // r77: a replaced player comes with its own controller; the
-              // video surface is rebuilt for it (media_kit_video's state does
-              // not rebind to a new controller).
-              key: ObjectKey(entry.controller),
-              controller: entry.controller,
-              fit: BoxFit.contain,
-              controls: NoVideoControls,
+            PhotoView.customChild(
+              childSize: MediaQuery.sizeOf(context),
+              customSize: MediaQuery.sizeOf(context),
+              backgroundDecoration: const BoxDecoration(color: Colors.transparent),
+              minScale: PhotoViewComputedScale.contained,
+              maxScale: PhotoViewComputedScale.covered * 8,
+              initialScale: PhotoViewComputedScale.contained,
+              basePosition: Alignment.center,
+              controller: viewController,
+              scaleStateController: scaleController,
+              enableRotation: SettingsHandler.instance.allowRotation,
+              child: Video(
+                // r77: a replaced player comes with its own controller; the
+                // video surface is rebuilt for it (media_kit_video's state does
+                // not rebind to a new controller).
+                key: ObjectKey(entry.controller),
+                controller: entry.controller,
+                fit: BoxFit.contain,
+                controls: NoVideoControls,
+              ),
             ),
             _MediaKitControls(
               player: entry.player,
