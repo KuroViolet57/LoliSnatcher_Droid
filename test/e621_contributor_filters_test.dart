@@ -59,10 +59,10 @@ void main() {
   test('a media chip appends its type clause after the query', () {
     SourceSettingsHandler.instance.resetForTests();
     expect(e621Handler(e621(), 20).sourceQuery('fox'), 'fox');
-    expect((e621Handler(e621(), 20)..mediaFilter = 'video').sourceQuery('fox'), 'fox type:mp4|type:webm');
+    expect((e621Handler(e621(), 20)..mediaFilter = 'video').sourceQuery('fox'), 'fox type:mp4|type:webm|type:gif');
     expect(
       (e621Handler(e621(), 20)..mediaFilter = 'image').sourceQuery('fox'),
-      'fox type:jpg|type:png|type:gif|type:webp',
+      'fox type:jpg|type:png|type:webp',
     );
     expect((e621Handler(e621(), 20)..mediaFilter = 'sound').sourceQuery('fox'), 'fox');
     SourceSettingsHandler.instance.resetForTests();

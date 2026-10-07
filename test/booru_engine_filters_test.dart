@@ -72,10 +72,10 @@ void main() {
     expect(DanbooruHandler(danbooru, 20).sourceQuery('cat'), base);
 
     final DanbooruHandler video = DanbooruHandler(danbooru, 20)..mediaFilter = 'video';
-    expect(video.sourceQuery('cat'), '$base filetype:mp4|filetype:webm');
+    expect(video.sourceQuery('cat'), '$base filetype:mp4|filetype:webm|filetype:gif');
 
     final DanbooruHandler image = DanbooruHandler(danbooru, 20)..mediaFilter = 'image';
-    expect(image.sourceQuery('cat'), '$base filetype:jpg|filetype:png|filetype:gif');
+    expect(image.sourceQuery('cat'), '$base filetype:jpg|filetype:png');
 
     final DanbooruHandler sound = DanbooruHandler(danbooru, 20)..mediaFilter = 'sound';
     expect(sound.sourceQuery('cat'), base, reason: 'sound has no checked filetype clause');

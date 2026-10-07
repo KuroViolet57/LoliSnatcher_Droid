@@ -8,27 +8,34 @@ import 'package:lolisnatcher/models/booru_type.dart';
 ///
 /// Checked on 2026-10-07 with the app user agent.
 ///
-/// Danbooru `filetype:` tilde form returned mp4 beside `1girl`, and the image
-/// clause returned jpg and png. `filetype:gif` and `filetype:webm` each
-/// returned that extension. Sound has no filetype. Flash and ugoira are in
-/// neither Images nor Video.
+/// A GIF is animated, so it is on Video, not Images. Checked again on
+/// 2026-10-07 with the app user agent, as the tilde form the translator
+/// emits.
 ///
-/// e621, e926, and e6ai `type:` tilde form returned webm and mp4, including
-/// beside `1girl` on e621. `type:gif` and `type:webp` each returned that
-/// extension. The image clause returned jpg and png. Flash is in neither
-/// Images nor Video. Sound is not offered.
+/// Danbooru Video `~filetype:mp4 ~filetype:webm ~filetype:gif` returned
+/// those three extensions, including beside `1girl`, and no jpg or png.
+/// Images `~filetype:jpg ~filetype:png` returned jpg and png and no gif.
+/// Sound has no filetype. Flash and ugoira are in neither chip.
+///
+/// e621 Video `~type:mp4 ~type:webm ~type:gif` returned those three,
+/// including beside `1girl`. The same query on e6ai did too. e926 answered
+/// curl with the same three; a PowerShell request to e926 was 403.
+/// Images `~type:jpg ~type:png ~type:webp` returned jpg, png, and webp,
+/// and no gif. Webp stays on Images: the app treats that extension as an
+/// image, and the site has no separate animated-webp type. Flash is in
+/// neither chip. Sound is not offered.
 String? remoteMediaClause(BooruType? type, String filter) {
   return switch (type) {
     BooruType.Danbooru => switch (filter) {
       'all' => '',
-      'video' => 'filetype:mp4|filetype:webm',
-      'image' => 'filetype:jpg|filetype:png|filetype:gif',
+      'video' => 'filetype:mp4|filetype:webm|filetype:gif',
+      'image' => 'filetype:jpg|filetype:png',
       _ => null,
     },
     BooruType.e621 => switch (filter) {
       'all' => '',
-      'video' => 'type:mp4|type:webm',
-      'image' => 'type:jpg|type:png|type:gif|type:webp',
+      'video' => 'type:mp4|type:webm|type:gif',
+      'image' => 'type:jpg|type:png|type:webp',
       _ => null,
     },
     _ => null,
