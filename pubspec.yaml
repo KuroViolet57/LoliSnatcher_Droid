@@ -57,7 +57,7 @@ dependencies:
       ref: 52759af6c6b245db4ba5bfa9ccc64d74f3ceb2fb
   font_awesome_flutter: ^11.0.0
   fpdart: ^1.2.0
-  fvp: ^0.35.2
+  fvp: ^0.39.0
   get_it: ^9.2.1
   get: ^5.0.0-release-candidate-9.3.2 # ^4.7.3
   google_fonts: ^8.0.2
