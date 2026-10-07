@@ -33,6 +33,7 @@ import 'package:lolisnatcher/core/ui/image/custom_network_image.dart';
 import 'package:lolisnatcher/core/ui/image/sprite_tile_image.dart';
 import 'package:lolisnatcher/core/ui/shimmer_builder.dart';
 import 'package:lolisnatcher/features/feed/logic/thumbnail_decode_box.dart';
+import 'package:lolisnatcher/features/feed/ui/thumbnail/thumbnail_gif_plan.dart';
 import 'package:lolisnatcher/features/feed/logic/thumbnail_reveal.dart';
 
 part 'thumbnail/item_refresher.dart';
@@ -88,6 +89,9 @@ class _ThumbnailState extends State<Thumbnail> {
   bool? isThumbQuality;
   late String thumbURL;
   late String thumbFolder;
+
+  /// True when this cell is an animated GIF sample. ResizeImage would keep one frame.
+  bool animateGifThumb = false;
   double? thumbWidth, thumbHeight;
 
   final ValueNotifier<ImageProvider?> mainProvider = ValueNotifier(null), extraProvider = ValueNotifier(null);
@@ -205,7 +209,7 @@ class _ThumbnailState extends State<Thumbnail> {
     final bool shouldResize = (thumbWidth != null || thumbHeight != null) && !SettingsHandler.isDesktopPlatform;
     final bool shouldPixelate = widget.item.isHidden && settingsHandler.shitDevice;
 
-    if (shouldResize || shouldPixelate) {
+    if (shouldPixelate || (shouldResize && !animateGifThumb)) {
       return ResizeImage(
         provider,
         // when in low performance mode - resize hidden images to 10px to simulate blur effect
@@ -296,23 +300,24 @@ class _ThumbnailState extends State<Thumbnail> {
   }) {
     startedAt.value = DateTime.now().millisecondsSinceEpoch;
 
-    // if scaling is disabled - allow gifs as thumbnails, but only if they are not hidden (resize image doesnt work with gifs)
-    final bool isSampleGif = widget.item.sampleURL.contains('.gif');
-    final bool isGifSampleNotAllowed =
-        widget.item.mediaType.value.isAnimation &&
-        ((settingsHandler.disableImageScaling && settingsHandler.gifsAsThumbnails) ? widget.item.isHidden : true);
-
-    isThumbQuality =
-        settingsHandler.previewMode.isThumbnail ||
-        (isGifSampleNotAllowed ||
-            widget.item.mediaType.value.isVideo ||
-            widget.item.mediaType.value.isNeedToGuess ||
-            widget.item.mediaType.value.isNeedToLoadItem) ||
-        (!widget.isStandalone && widget.item.fileURL == widget.item.sampleURL);
-    thumbURL = isThumbQuality == true
-        ? widget.item.displayThumbnailURL
-        : (!isSampleGif || isGifSampleNotAllowed ? widget.item.sampleURL : widget.item.displayThumbnailURL);
-    thumbFolder = (isThumbQuality == true || thumbURL == widget.item.displayThumbnailURL) ? 'thumbnails' : 'samples';
+    final ThumbnailLoadPlan plan = planThumbnailLoad(
+      previewIsThumbnail: settingsHandler.previewMode.isThumbnail,
+      isAnimation: widget.item.mediaType.value.isAnimation,
+      disableImageScaling: settingsHandler.disableImageScaling,
+      gifsAsThumbnails: settingsHandler.gifsAsThumbnails,
+      isHidden: widget.item.isHidden,
+      isVideo: widget.item.mediaType.value.isVideo,
+      needsGuess: widget.item.mediaType.value.isNeedToGuess,
+      needsLoadItem: widget.item.mediaType.value.isNeedToLoadItem,
+      standalone: widget.isStandalone,
+      fileUrl: widget.item.fileURL,
+      sampleUrl: widget.item.sampleURL,
+      thumbnailUrl: widget.item.displayThumbnailURL,
+    );
+    isThumbQuality = plan.thumbQuality;
+    thumbURL = plan.url;
+    thumbFolder = plan.folder;
+    animateGifThumb = plan.animate;
 
     // delay loading a little to improve performance when scrolling fast, ignore delay if it's a standalone widget (i.e. not in a list)
     debounceLoading = Timer(
