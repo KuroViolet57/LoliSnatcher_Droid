@@ -18,11 +18,11 @@ dependencies:
   auto_size_text_plus: ^3.0.2
   calendar_date_picker2: ^2.0.1
   chewie: ^1.13.0
-  better_player_plus: ^1.2.1
+  better_player_plus: ^1.4.1
   collection: ^1.19.1
   country_flags: ^4.1.2
   crypto: ^3.0.7
-  device_info_plus: ^12.4.0
+  device_info_plus: ^13.3.0
   dio: ^5.9.2
   dio_http2_adapter: ^2.7.0
   # PINNED. 1.9.0's build.gradle.kts uses `kotlin { compilerOptions { jvmTarget } }`,
@@ -98,7 +98,7 @@ dependencies:
       ref: b84b371347ab4f13374c2709becaf247aec354e4 # master - forked to change IME composing style
   scroll_to_index: ^3.0.1
   scrollable_positioned_list: ^0.3.8
-  share_plus: ^12.0.2 # not used directly, but is part of some deps (i.e. alice) # TODO move to this instead of our native share code?
+  share_plus: ^13.3.1 # not used directly, but is part of some deps (i.e. alice) # TODO move to this instead of our native share code?
   slang_flutter: ^4.14.0
   slang: ^4.14.0
   sqflite_common_ffi: ^2.4.0+2
@@ -121,7 +121,7 @@ dependencies:
 dependency_overrides:
   android_intent_plus: ^6.0.0
   material_color_utilities: ^0.13.0 # flutter_test conflict
-  share_plus: ^12.0.2 # alice conflict
+  share_plus: ^13.3.1 # alice wants 11; win32 6 needs 13 with the player bump
   # r59: our own copy, so the Android video surface can be capped to the screen
   # (third_party/media_kit_video/LOLISNATCHER_PATCH.md says how to undo it).
   media_kit_video:
