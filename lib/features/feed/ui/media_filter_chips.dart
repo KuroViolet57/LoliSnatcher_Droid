@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 
 import 'package:material_symbols_icons/symbols.dart';
 
+import 'package:lolisnatcher/core/logging/logger.dart';
 import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
+import 'package:lolisnatcher/sources/framework/remote_media_query.dart';
 
 /// Flow filter chips (All / Images / Video / Sound) shown above the grid for
 /// the local feeds (Favourites / Downloads / Collections). Sets the handler's
@@ -17,19 +19,42 @@ class MediaFilterChips extends StatefulWidget {
 }
 
 class _MediaFilterChipsState extends State<MediaFilterChips> {
-  static const List<({String value, String label, IconData icon})> _filters = [
+  static const List<({String value, String label, IconData icon})> _all = [
     (value: 'all', label: 'All', icon: Symbols.apps_rounded),
     (value: 'image', label: 'Images', icon: Symbols.image_rounded),
     (value: 'video', label: 'Video', icon: Symbols.videocam_rounded),
     (value: 'sound', label: 'Sound', icon: Symbols.volume_up_rounded),
   ];
 
-  void _select(String value) {
+  List<({String value, String label, IconData icon})> get _filters {
+    final type = widget.tab.selectedBooru.value.type;
+    if (!remoteMediaAsksSite(type)) return _all;
+    final List<String> allowed = remoteMediaChipValues(type);
+    return [for (final filter in _all) if (allowed.contains(filter.value)) filter];
+  }
+
+  Future<void> _select(String value) async {
     final handler = widget.tab.booruHandler;
     if (handler.mediaFilter == value) return;
     handler.mediaFilter = value;
-    handler.filterFetched();
-    setState(() {});
+    final type = widget.tab.selectedBooru.value.type;
+    if (remoteMediaAsksSite(type)) {
+      Logger.Inst().log(
+        'Asked the site for $value',
+        'MediaFilterChips',
+        '_select',
+        LogTypes.booruHandlerInfo,
+      );
+      await SearchHandler.instance.searchAction(
+        widget.tab.tags,
+        widget.tab.selectedBooru.value,
+        isRefresh: true,
+        mediaFilter: value,
+      );
+    } else {
+      handler.filterFetched();
+    }
+    if (mounted) setState(() {});
   }
 
   @override

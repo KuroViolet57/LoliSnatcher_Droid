@@ -7,6 +7,7 @@ import 'package:html/parser.dart';
 import 'package:lolisnatcher/sources/doujin/common/doujin_filters.dart';
 import 'package:lolisnatcher/sources/framework/booru_site_filters.dart';
 import 'package:lolisnatcher/models/booru_item.dart';
+import 'package:lolisnatcher/models/booru_type.dart';
 import 'package:lolisnatcher/models/comment_item.dart';
 import 'package:lolisnatcher/models/meta_tag.dart';
 import 'package:lolisnatcher/models/note_item.dart';
@@ -14,6 +15,7 @@ import 'package:lolisnatcher/models/tag.dart';
 import 'package:lolisnatcher/models/tag_suggestion.dart';
 import 'package:lolisnatcher/models/tag_type.dart';
 import 'package:lolisnatcher/sources/framework/booru_handler.dart';
+import 'package:lolisnatcher/sources/framework/remote_media_query.dart';
 import 'package:lolisnatcher/sources/framework/booru_handler_utils.dart';
 import 'package:lolisnatcher/sources/framework/tags/booru_tag_catalog.dart';
 import 'package:lolisnatcher/sources/framework/tags/tag_catalog_source.dart';
@@ -54,6 +56,16 @@ class DanbooruHandler extends BooruHandler {
 
   @override
   bool get hasNotesSupport => true;
+
+  @override
+  String sourceQuery(String tags) {
+    final String base = super.sourceQuery(tags);
+    if (booru.type != BooruType.Danbooru) return base;
+    final String? clause = remoteMediaClause(BooruType.Danbooru, mediaFilter);
+    if (clause == null || clause.isEmpty) return base;
+    final String trimmed = base.trim();
+    return trimmed.isEmpty ? clause : '$trimmed $clause';
+  }
 
   @override
   String validateTags(String tags) {

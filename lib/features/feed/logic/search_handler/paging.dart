@@ -41,7 +41,12 @@ extension SearchPaging on SearchHandler {
   // runs search on current tab
   // [isRefresh]: the same query again (pull to refresh), which is not a new
   // search for the search history or the taste profile.
-  Future<void> searchAction(String text, Booru? newBooru, {bool isRefresh = false}) async {
+  Future<void> searchAction(
+    String text,
+    Booru? newBooru, {
+    bool isRefresh = false,
+    String? mediaFilter,
+  }) async {
     final SettingsHandler settingsHandler = SettingsHandler.instance;
 
     // Remove extra spaces
@@ -78,6 +83,7 @@ extension SearchPaging on SearchHandler {
         null, // no current tab to take merge sources from
         text,
       );
+      if (mediaFilter != null) newTab.booruHandler.mediaFilter = mediaFilter;
       tabs.add(newTab);
     } else {
       // Preserve per-booru tag overrides + inherit flags across the tab swap
@@ -102,6 +108,7 @@ extension SearchPaging on SearchHandler {
       );
       // In-place search change keeps the tab in its group.
       newTab.groupName = currentTab.groupName;
+      if (mediaFilter != null) newTab.booruHandler.mediaFilter = mediaFilter;
       tabs[currentIndex] = newTab;
       // The user changed this tab's search while viewing it — update its
       // visited-history entry in place (same id) instead of duplicating.

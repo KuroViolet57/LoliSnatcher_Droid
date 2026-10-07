@@ -64,6 +64,26 @@ void main() {
     expect(DanbooruHandler(danbooru, 20).sourceQuery('cat'), 'cat order:score rating:general');
   });
 
+  test('a Danbooru media chip appends its clause after the source settings', () {
+    final Booru danbooru = b('danbooru', BooruType.Danbooru, 'https://danbooru.donmai.us');
+    SourceSettingsHandler.instance.update(danbooru, (s) => s.defaultFilters = 'rating:general order:score');
+    const String base = 'cat order:score rating:general';
+
+    expect(DanbooruHandler(danbooru, 20).sourceQuery('cat'), base);
+
+    final DanbooruHandler video = DanbooruHandler(danbooru, 20)..mediaFilter = 'video';
+    expect(video.sourceQuery('cat'), '$base filetype:mp4|filetype:webm');
+
+    final DanbooruHandler image = DanbooruHandler(danbooru, 20)..mediaFilter = 'image';
+    expect(image.sourceQuery('cat'), '$base filetype:jpg|filetype:png|filetype:gif');
+
+    final DanbooruHandler sound = DanbooruHandler(danbooru, 20)..mediaFilter = 'sound';
+    expect(sound.sourceQuery('cat'), base, reason: 'sound has no checked filetype clause');
+
+    final DanbooruHandler fav = DanbooruHandler(b('Favourites', BooruType.Favourites, ''), 20)..mediaFilter = 'video';
+    expect(fav.sourceQuery('cat'), 'cat', reason: 'a local view on this handler does not ask the site');
+  });
+
   test("the gelbooru engine: gelbooru.com's rating words, the booru.org words elsewhere, rule34.xxx's aspect ratio", () {
     final DoujinFilterSpec gel = GelbooruHandler(b('g', BooruType.Gelbooru, 'https://gelbooru.com'), 20).siteFilters!;
     expect(gel.group('rating')!.options.map((o) => o.value), ['', 'general', 'sensitive', 'questionable', 'explicit']);

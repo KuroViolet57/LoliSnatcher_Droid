@@ -37,6 +37,7 @@ import 'package:lolisnatcher/features/doujin/ui/doujin_tab_view.dart';
 import 'package:lolisnatcher/features/tabs/ui/tab_pill.dart';
 import 'package:lolisnatcher/features/tabs/ui/flow_tab_carousel.dart';
 import 'package:lolisnatcher/features/feed/ui/media_filter_chips.dart';
+import 'package:lolisnatcher/sources/framework/remote_media_query.dart';
 import 'package:lolisnatcher/features/feed/ui/waterfall_bottom_bar.dart';
 import 'package:lolisnatcher/features/feed/ui/main_appbar.dart';
 
@@ -567,9 +568,10 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware, TraceLif
                           // Flow tab-card carousel: swipeable tab cards under the
                           // header (active tab = wide card, others peek, dashed +).
                           const SliverToBoxAdapter(child: FlowTabCarousel()),
-                          // Media-type filter chips for the local feeds
-                          // (Favourites / Downloads / Collections).
-                          if (searchHandler.currentTab.selectedBooru.value.type?.isLocalDb == true)
+                          // Local feeds hide rows already loaded. Danbooru asks the
+                          // site, so the same chips run a new search.
+                          if (searchHandler.currentTab.selectedBooru.value.type?.isLocalDb == true ||
+                              remoteMediaAsksSite(searchHandler.currentTab.selectedBooru.value.type))
                             SliverPadding(
                               padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
                               sliver: SliverToBoxAdapter(
