@@ -118,6 +118,18 @@ class _HistoryBlockState extends State<HistoryBlock> {
             //
             const SizedBox(height: 10),
             ElevatedButton.icon(
+              onPressed: () => runHistorySave(
+                context: context,
+                searchText: entry.searchText,
+                booru: booru,
+                dbEnabled: settingsHandler.dbEnabled,
+              ),
+              icon: const Icon(Symbols.bookmark_rounded),
+              label: const Text('Save this search'),
+            ),
+            //
+            const SizedBox(height: 10),
+            ElevatedButton.icon(
               onPressed: () async {
                 await Clipboard.setData(ClipboardData(text: entry.searchText));
                 FlashElements.showSnackbar(

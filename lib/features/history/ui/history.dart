@@ -11,6 +11,7 @@ import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
 import 'package:lolisnatcher/models/booru.dart';
 import 'package:lolisnatcher/models/history_item.dart';
+import 'package:lolisnatcher/features/history/logic/history_save.dart';
 import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
 import 'package:lolisnatcher/features/feed/logic/search_history_store.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
@@ -156,8 +157,9 @@ class _HistoryListState extends State<HistoryList> {
   }
 
   void showHistoryEntryActions(Widget row, HistoryItem entry, Booru? booru) {
+    final BuildContext pageContext = context;
     showDialog(
-      context: context,
+      context: pageContext,
       builder: (context) {
         return SettingsDialog(
           contentItems: [
@@ -223,6 +225,22 @@ class _HistoryListState extends State<HistoryList> {
               },
               leading: const Icon(Symbols.add_circle_rounded),
               title: Text(context.loc.history.openInNewTab),
+            ),
+            //
+            const SizedBox(height: 10),
+            ListTile(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(5),
+                side: BorderSide(color: Theme.of(context).colorScheme.secondary),
+              ),
+              onTap: () => runHistorySave(
+                context: pageContext,
+                searchText: entry.searchText,
+                booru: booru,
+                dbEnabled: settingsHandler.dbEnabled,
+              ),
+              leading: const Icon(Symbols.bookmark_rounded),
+              title: const Text('Save this search'),
             ),
             //
             const SizedBox(height: 10),

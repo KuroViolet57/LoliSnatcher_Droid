@@ -36,6 +36,7 @@ import 'package:lolisnatcher/sources/framework/booru_handler_factory.dart';
 import 'package:lolisnatcher/core/storage/booru_tag_store.dart';
 import 'package:lolisnatcher/sources/doujin/common/doujin_filters.dart';
 import 'package:lolisnatcher/features/doujin/logic/doujin_data_handler.dart';
+import 'package:lolisnatcher/features/history/logic/history_save.dart';
 import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
 import 'package:lolisnatcher/core/platform/service_handler.dart';
 import 'package:lolisnatcher/features/tags/logic/followed_artists_handler.dart';
