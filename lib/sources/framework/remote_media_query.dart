@@ -24,7 +24,19 @@ import 'package:lolisnatcher/models/booru_type.dart';
 /// and no gif. Webp stays on Images: the app treats that extension as an
 /// image, and the site has no separate animated-webp type. Flash is in
 /// neither chip. Sound is not offered.
-String? remoteMediaClause(BooruType? type, String filter) {
+///
+/// Derpibooru, and only a base URL that contains `derpibooru`, checked
+/// 2026-10-07 with the app user agent. The handler quotes a metatag so its
+/// underscore survives, then keeps the spaces around `||`. That spaced OR
+/// returned gif, webm, and animated png, including beside `twilight sparkle`,
+/// and no jpg. A GIF the site marks as not animated is still a GIF, so
+/// Images also exclude `original_format:gif` and `original_format:webm`.
+/// That image query returned jpg, png, and svg, and a gif added to it
+/// returned nothing. Ponybooru and Ponerpics answered `original_format:gif`,
+/// but `animated:true` or `animated:false` returned nothing, so they get
+/// no chips. Sound is not offered. The comma form of `||` returned nothing
+/// on all three hosts.
+String? remoteMediaClause(BooruType? type, String filter, {String? baseUrl}) {
   return switch (type) {
     BooruType.Danbooru => switch (filter) {
       'all' => '',
@@ -38,24 +50,30 @@ String? remoteMediaClause(BooruType? type, String filter) {
       'image' => 'type:jpg|type:png|type:webp',
       _ => null,
     },
+    BooruType.Philomena when baseUrl?.contains('derpibooru') ?? false => switch (filter) {
+      'all' => '',
+      'video' => '"original_format:gif"|"original_format:webm"|animated:true',
+      'image' => 'animated:false -"original_format:gif" -"original_format:webm"',
+      _ => null,
+    },
     _ => null,
   };
 }
 
 /// The search text plus the chip clause, or the search text when this chip
 /// adds nothing.
-String appendRemoteMediaClause(String base, BooruType? type, String mediaFilter) {
-  final String? clause = remoteMediaClause(type, mediaFilter);
+String appendRemoteMediaClause(String base, BooruType? type, String mediaFilter, {String? baseUrl}) {
+  final String? clause = remoteMediaClause(type, mediaFilter, baseUrl: baseUrl);
   if (clause == null || clause.isEmpty) return base;
   final String trimmed = base.trim();
   return trimmed.isEmpty ? clause : '$trimmed $clause';
 }
 
 /// True when at least one chip can ask this source instead of hiding rows.
-bool remoteMediaAsksSite(BooruType? type) => remoteMediaClause(type, 'video') != null;
+bool remoteMediaAsksSite(BooruType? type, {String? baseUrl}) => remoteMediaClause(type, 'video', baseUrl: baseUrl) != null;
 
 /// Chip values for a source that asks the site. Local feeds do not use this.
-List<String> remoteMediaChipValues(BooruType? type) {
-  if (!remoteMediaAsksSite(type)) return const [];
+List<String> remoteMediaChipValues(BooruType? type, {String? baseUrl}) {
+  if (!remoteMediaAsksSite(type, baseUrl: baseUrl)) return const [];
   return const ['all', 'image', 'video'];
 }

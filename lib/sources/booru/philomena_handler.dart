@@ -5,6 +5,7 @@ import 'package:lolisnatcher/models/tag.dart';
 import 'package:lolisnatcher/models/tag_suggestion.dart';
 import 'package:lolisnatcher/sources/framework/booru_handler.dart';
 import 'package:lolisnatcher/sources/framework/booru_handler_utils.dart';
+import 'package:lolisnatcher/sources/framework/remote_media_query.dart';
 import 'package:lolisnatcher/sources/framework/tags/booru_tag_catalog.dart';
 import 'package:lolisnatcher/sources/framework/tags/tag_catalog_source.dart';
 
@@ -18,6 +19,14 @@ class PhilomenaHandler extends BooruHandler {
 
   @override
   bool get hasTagSuggestions => true;
+
+  @override
+  String sourceQuery(String tags) => appendRemoteMediaClause(
+    super.sourceQuery(tags),
+    booru.type,
+    mediaFilter,
+    baseUrl: booru.baseURL,
+  );
 
   @override
   String validateTags(String tags) {
@@ -122,7 +131,9 @@ class PhilomenaHandler extends BooruHandler {
     final String filter = picked ?? (_isDerpibooru ? '56027' : '2');
     final String sort = '${sf.isEmpty ? '' : '&sf=$sf'}${sd.isEmpty ? '' : '&sd=$sd'}';
 
-    final formattedTags = formatTagsWithUnderscores(words).replaceAll(' ', ',');
+    // Spaces around || are the site's OR. Replacing those with commas, or
+    // deleting them, returned nothing. Every other space is still AND.
+    final formattedTags = _keepPhilomenaOr(formatTagsWithUnderscores(words));
     if (booru.apiKey?.isEmpty ?? true) {
       return '${booru.baseURL}/api/v1/json/search/images?filter_id=$filter&q=$formattedTags&per_page=$limit&page=$pageNum$sort';
     } else {
@@ -313,4 +324,12 @@ class PhilomenaHandler extends BooruHandler {
 
     return TagSuggestion(tag: tag);
   }
+}
+
+/// Commas are AND. Spaces around `||` are OR. Checked on 2026-10-07: the
+/// comma form and a no-space `||` returned nothing on derpibooru, ponerpics,
+/// and ponybooru. The spaced form returned results on all three.
+String _keepPhilomenaOr(String formatted) {
+  const String marker = '\u0001';
+  return formatted.replaceAll(' || ', '$marker||$marker').replaceAll(' ', ',').replaceAll(marker, ' ');
 }

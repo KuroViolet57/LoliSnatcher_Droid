@@ -568,10 +568,13 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware, TraceLif
                           // Flow tab-card carousel: swipeable tab cards under the
                           // header (active tab = wide card, others peek, dashed +).
                           const SliverToBoxAdapter(child: FlowTabCarousel()),
-                          // Local feeds hide rows already loaded. Danbooru asks the
-                          // site, so the same chips run a new search.
+                          // Local feeds hide rows already loaded. Danbooru, e621, and
+                          // Derpibooru ask the site, so the same chips run a new search.
                           if (searchHandler.currentTab.selectedBooru.value.type?.isLocalDb == true ||
-                              remoteMediaAsksSite(searchHandler.currentTab.selectedBooru.value.type))
+                              remoteMediaAsksSite(
+                                searchHandler.currentTab.selectedBooru.value.type,
+                                baseUrl: searchHandler.currentTab.selectedBooru.value.baseURL,
+                              ))
                             SliverPadding(
                               padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
                               sliver: SliverToBoxAdapter(

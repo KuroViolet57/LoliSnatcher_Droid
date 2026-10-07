@@ -27,9 +27,10 @@ class _MediaFilterChipsState extends State<MediaFilterChips> {
   ];
 
   List<({String value, String label, IconData icon})> get _filters {
-    final type = widget.tab.selectedBooru.value.type;
-    if (!remoteMediaAsksSite(type)) return _all;
-    final List<String> allowed = remoteMediaChipValues(type);
+    final booru = widget.tab.selectedBooru.value;
+    final type = booru.type;
+    if (!remoteMediaAsksSite(type, baseUrl: booru.baseURL)) return _all;
+    final List<String> allowed = remoteMediaChipValues(type, baseUrl: booru.baseURL);
     return [for (final filter in _all) if (allowed.contains(filter.value)) filter];
   }
 
@@ -37,8 +38,9 @@ class _MediaFilterChipsState extends State<MediaFilterChips> {
     final handler = widget.tab.booruHandler;
     if (handler.mediaFilter == value) return;
     handler.mediaFilter = value;
-    final type = widget.tab.selectedBooru.value.type;
-    if (remoteMediaAsksSite(type)) {
+    final booru = widget.tab.selectedBooru.value;
+    final type = booru.type;
+    if (remoteMediaAsksSite(type, baseUrl: booru.baseURL)) {
       Logger.Inst().log(
         'Asked the site for $value',
         'MediaFilterChips',
