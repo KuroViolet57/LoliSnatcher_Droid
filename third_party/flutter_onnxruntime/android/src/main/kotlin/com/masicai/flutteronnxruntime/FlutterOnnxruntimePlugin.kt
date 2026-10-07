@@ -289,9 +289,8 @@ class FlutterOnnxruntimePlugin : FlutterPlugin, MethodCallHandler {
                                 "ACL" -> {
                                     ortSessionOptions.addACL(true)
                                 }
-                                "ARM_NN" -> {
-                                    ortSessionOptions.addArmNN(useArena)
-                                }
+                                // onnxruntime-android-qnn 1.29 dropped addArmNN. ARM_NN
+                                // falls through to the unsupported-provider error.
                                 "CORE_ML" -> {
                                     ortSessionOptions.addCoreML()
                                 }
