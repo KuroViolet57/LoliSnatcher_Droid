@@ -18,7 +18,18 @@ import 'package:lolisnatcher/sources/framework/booru_handler.dart';
 import 'package:lolisnatcher/sources/framework/tags/tag_catalog_source.dart';
 import 'package:lolisnatcher/core/network/dio_network.dart';
 import 'package:lolisnatcher/core/logging/logger.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/core/utils/tools.dart';
+
+/// Whether a Hanime1 title should be sent to the translation endpoint.
+/// ASCII titles are already readable. [enabled] is Settings → Network →
+/// Translate Hanime1 titles.
+bool hanimeTitleTranslationRequested(String text, {required bool enabled}) {
+  if (!enabled) return false;
+  final String trimmed = text.trim();
+  if (trimmed.isEmpty) return false;
+  return RegExp(r'[^\x00-\x7F]').hasMatch(trimmed);
+}
 
 /// hanime1.me handler — a Chinese-language hentai video site, presented in
 /// English.
@@ -486,6 +497,9 @@ class Hanime1Handler extends BooruHandler {
   /// (the same one the Google Translate browser extension calls). Failures
   /// are swallowed: the original title is always shown regardless.
   static Future<String?> _translateFreeText(String text) async {
+    if (!hanimeTitleTranslationRequested(text, enabled: SettingsHandler.instance.translateHanimeTitles)) {
+      return null;
+    }
     final String trimmed = text.trim();
     if (trimmed.isEmpty) return null;
     // Nothing to do for text that is already ASCII.

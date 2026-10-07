@@ -149,6 +149,8 @@ extension SettingsStorage on SettingsHandler {
         return useBottomInfoSheet;
       case 'showViewerTutorial':
         return showViewerTutorial;
+      case 'translateHanimeTitles':
+        return translateHanimeTitles;
       case 'bottomSheetSizeMultiplier':
         return bottomSheetSizeMultiplier;
       case 'defaultTabAddMode':
@@ -494,6 +496,9 @@ extension SettingsStorage on SettingsHandler {
         break;
       case 'showViewerTutorial':
         showViewerTutorial = validatedValue;
+        break;
+      case 'translateHanimeTitles':
+        translateHanimeTitles = validatedValue;
         break;
       case 'bottomSheetSizeMultiplier':
         bottomSheetSizeMultiplier = (validatedValue as num).toDouble().clamp(0.5, 3.0);

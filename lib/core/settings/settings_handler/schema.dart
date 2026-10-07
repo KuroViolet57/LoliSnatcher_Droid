@@ -406,6 +406,10 @@ extension SettingsSchema on SettingsHandler {
       'type': 'bool',
       'default': true,
     },
+    'translateHanimeTitles': {
+      'type': 'bool',
+      'default': true,
+    },
     'bottomSheetSizeMultiplier': {
       'type': 'double',
       'default': 2.0,

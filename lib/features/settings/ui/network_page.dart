@@ -27,6 +27,7 @@ class _NetworkPageState extends State<NetworkPage> {
   final SettingsHandler settingsHandler = SettingsHandler.instance;
 
   bool allowSelfSignedCerts = false;
+  bool translateHanimeTitles = true;
   Booru? selectedBooru;
   List<Cookie> selectedBooruCookies = [];
   ProxyType proxyType = ProxyType.direct;
@@ -41,6 +42,7 @@ class _NetworkPageState extends State<NetworkPage> {
     super.initState();
 
     allowSelfSignedCerts = settingsHandler.allowSelfSignedCerts;
+    translateHanimeTitles = settingsHandler.translateHanimeTitles;
     userAgentController.text = settingsHandler.customUserAgent;
     proxyType = settingsHandler.proxyType;
     proxyAddressController.text = settingsHandler.proxyAddress;
@@ -59,6 +61,7 @@ class _NetworkPageState extends State<NetworkPage> {
 
   Future<void> _onPopInvoked(_, _) async {
     settingsHandler.allowSelfSignedCerts = allowSelfSignedCerts;
+    settingsHandler.translateHanimeTitles = translateHanimeTitles;
     settingsHandler.customUserAgent = userAgentController.text;
     settingsHandler.proxyType = proxyType;
     settingsHandler.proxyAddress = proxyAddressController.text;
@@ -89,6 +92,19 @@ class _NetworkPageState extends State<NetworkPage> {
                   });
                 },
                 title: context.loc.settings.network.enableSelfSignedSSLCertificates,
+              ),
+              SettingsToggle(
+                value: translateHanimeTitles,
+                defaultValue: true,
+                onChanged: (newValue) {
+                  setState(() {
+                    translateHanimeTitles = newValue;
+                  });
+                },
+                title: 'Translate Hanime1 titles',
+                subtitle: const Text(
+                  'When a Hanime1 post title is not already English, the app sends that title to translate.googleapis.com and adds an English line under it. Turn this off to keep the original title and not send it.',
+                ),
               ),
               const SettingsButton(name: '', enabled: false),
               SettingsDropdown<ProxyType>(

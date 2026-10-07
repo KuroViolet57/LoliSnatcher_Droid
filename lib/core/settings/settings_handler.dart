@@ -305,6 +305,9 @@ class SettingsHandler {
   // First open of the viewer explains tap, long-press, and double-tap.
   // Close sets this false and saves. Settings → Viewer turns it back on.
   bool showViewerTutorial = true;
+  // Hanime1 titles that are not already English are sent to
+  // translate.googleapis.com. Settings → Network turns that off.
+  bool translateHanimeTitles = true;
   // How much of the screen the bottom info sheet occupies when open, expressed
   // as "thirds": 1 => ~1/3 of the screen, 1.5 => ~1/2, 2 => ~2/3, 3 => full.
   // The sheet locks at this size (content scrolls inside it). fraction = N/3.
