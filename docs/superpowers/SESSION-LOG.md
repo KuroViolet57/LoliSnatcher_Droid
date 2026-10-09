@@ -45,6 +45,6 @@
 - Branch claude/post-details-sheet-lag-1a23ce fast-forwarded to 81ee01ef (the zoom-target refactor).
 - Tests: architecture, viewer_zoom_target, viewer_zoom_targets, info_sheet_body, viewer_peek_bar_artist,
   viewer_tutorial, video_engine_choice, desktop_image_listener: 24 passed, 0 failed.
-- Delivered: K:\My DriveooruApk8.apk (1.0 info sheet and zoom tidy - tested), side-by-side APK = 147 + zoom refactor.
+- Delivered: K:\My Drive\booruApk\148.apk (1.0 info sheet and zoom tidy - tested), side-by-side APK = 147 + zoom refactor.
 - Not done: no phone or emulator run (no device connected).
 - Next step: user tests 148 with its changes.txt checklist (sheet one-tap, swipe, GIF/video zoom). Next token 149.
