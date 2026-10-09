@@ -14,10 +14,12 @@ part of '../gallery_view_page.dart';
 class _SwipeUpListener extends StatefulWidget {
   const _SwipeUpListener({
     required this.controller,
+    required this.gate,
     required this.openSize,
   });
 
   final DraggableScrollableController controller;
+  final InfoSheetContentGate gate;
   final double openSize;
 
   @override
@@ -36,6 +38,10 @@ class _SwipeUpListenerState extends State<_SwipeUpListener> {
   // True only when the gesture began while the sheet was (near) closed. When
   // the sheet is already open we leave dragging to its own physics.
   bool _eligible = false;
+  // False when this swipe made the sheet build its tag view. That swap lands
+  // on the next frame and stops any sheet animation already running, so a
+  // flick released before it waits a frame to settle.
+  bool _contentWasLive = true;
 
   static const double _engagePx = 12;
   static const double _flingPxPerSec = 600;
@@ -78,6 +84,10 @@ class _SwipeUpListenerState extends State<_SwipeUpListener> {
           // Vertical must dominate horizontal so we don't hijack page swipes.
           if (dxAbs > dyUp) return;
           _engaged = true;
+          // Build the tag view now, so the sheet has its content as it rises.
+          _contentWasLive = widget.gate.live.value;
+          widget.gate.requestOpen();
+          PerfTrace.instance.event('viewer.infoSheet.swipe', _contentWasLive ? 'ready' : 'build');
         }
 
         if (!widget.controller.isAttached) return;
@@ -120,10 +130,21 @@ class _SwipeUpListenerState extends State<_SwipeUpListener> {
       target = current >= widget.openSize / 2 ? widget.openSize : 0;
     }
 
-    widget.controller.animateTo(
-      target,
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeOutCubic,
-    );
+    void animate() {
+      if (!widget.controller.isAttached) return;
+      widget.controller.animateTo(
+        target,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+      );
+    }
+
+    if (_contentWasLive) {
+      animate();
+    } else {
+      _contentWasLive = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) => animate());
+      WidgetsBinding.instance.ensureVisualUpdate();
+    }
   }
 }

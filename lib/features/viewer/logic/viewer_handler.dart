@@ -115,7 +115,9 @@ class ViewerHandler {
   // gallery page so overlays (e.g. video controls) can tell whether the Flow
   // peek bar is actually on screen: it only shows while the chrome is visible
   // AND the sheet is closed.
-  final RxDouble infoSheetExtent = 0.0.obs;
+  // Whether the bottom info sheet is shut or nearly (its peek zone). A bool
+  // so readers rebuild only when it flips, not per frame of the sheet.
+  final RxBool infoSheetInPeekZone = true.obs;
 
   /// r77: the viewer that is on screen right now (no page, dialog or sheet
   /// route over it), or null. Each viewer claims it when its route becomes
@@ -132,7 +134,7 @@ class ViewerHandler {
     if (identical(_onScreen, viewer)) _onScreen = null;
   }
 
-  bool get isPeekBarVisible => displayAppbar.value && infoSheetExtent.value < 0.06;
+  bool get isPeekBarVisible => displayAppbar.value && infoSheetInPeekZone.value;
 
   // ── manual pause tracking ────────────────────────────────────────────────
   // URLs of videos the USER paused via the controls. While the

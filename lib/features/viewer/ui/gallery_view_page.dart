@@ -39,6 +39,7 @@ import 'package:lolisnatcher/core/ui/buttons/close_dialog_button.dart';
 import 'package:lolisnatcher/core/ui/long_press_repeater.dart';
 import 'package:lolisnatcher/features/viewer/ui/chrome/gallery_buttons.dart';
 import 'package:lolisnatcher/features/viewer/ui/chrome/hideable_appbar.dart';
+import 'package:lolisnatcher/features/viewer/logic/info_sheet_body.dart';
 import 'package:lolisnatcher/features/viewer/ui/info/item_info_bottom_sheet.dart';
 import 'package:lolisnatcher/features/viewer/ui/notes_renderer.dart';
 import 'package:lolisnatcher/features/viewer/ui/info/tag_view.dart';
@@ -133,14 +134,25 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware, Trac
   // Boorusama-style bottom info sheet (alternative to the side endDrawer).
   final DraggableScrollableController infoSheetController = DraggableScrollableController();
   final ValueNotifier<double> infoSheetExtent = ValueNotifier(0);
+  // Builds the tag view before an open starts and keeps it for the post.
+  final InfoSheetContentGate infoSheetGate = InfoSheetContentGate();
+  // True while the sheet is shut (extent 0): Back leaves the viewer. Flips
+  // once per open/close instead of rebuilding the PopScope every frame.
+  final ValueNotifier<bool> infoSheetShut = ValueNotifier(true);
   bool get useBottomInfoSheet => settingsHandler.useBottomInfoSheet;
   // Sheet open height as a fraction of the screen. The user setting is "in
   // thirds": 1 => 1/3, 2 => 2/3, 3 => full. fraction = N/3.
   double get infoSheetOpenSize => (settingsHandler.bottomSheetSizeMultiplier / 3).clamp(0.2, 0.98);
 
   void _mirrorSheetExtent() {
-    viewerHandler.infoSheetExtent.value = infoSheetExtent.value;
+    final double extent = infoSheetExtent.value;
+    // A bool, so the video controls' Obx rebuilds only when the sheet
+    // crosses the peek zone, not on every frame of the sheet's motion.
+    viewerHandler.infoSheetInPeekZone.value = infoSheetInPeekZone(extent);
+    infoSheetShut.value = extent <= 0.001;
   }
+
+  void _onPageForInfoSheet() => infoSheetGate.onPageChanged(infoSheetExtent.value);
 
   @override
   void initState() {
@@ -151,8 +163,9 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware, Trac
 
     // Mirror the sheet extent into ViewerHandler so video-control overlays
     // know whether the peek bar is actually visible.
-    viewerHandler.infoSheetExtent.value = 0;
+    viewerHandler.infoSheetInPeekZone.value = true;
     infoSheetExtent.addListener(_mirrorSheetExtent);
+    page.addListener(_onPageForInfoSheet);
 
     // pause all active videos to avoid performance and sound overlay issues
     viewerHandler.pauseAllVideos();
@@ -223,7 +236,7 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware, Trac
     // global sheet-extent mirror and resets it to 0 in its own initState —
     // re-assert THIS viewer's actual sheet position so video controls don't
     // lift for a peek bar that isn't there (sheet open ⇒ no peek bar).
-    viewerHandler.infoSheetExtent.value = infoSheetExtent.value;
+    viewerHandler.infoSheetInPeekZone.value = infoSheetInPeekZone(infoSheetExtent.value);
 
     try {
       final item = widget.tab.booruHandler.filteredFetched[page.value];
@@ -259,7 +272,10 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware, Trac
     NavigationHandler.instance.routeObserver.unsubscribe(this);
     infoSheetController.dispose();
     infoSheetExtent.removeListener(_mirrorSheetExtent);
-    // NOTE: deliberately NOT resetting viewerHandler.infoSheetExtent here — a
+    page.removeListener(_onPageForInfoSheet);
+    infoSheetGate.dispose();
+    infoSheetShut.dispose();
+    // NOTE: deliberately NOT resetting viewerHandler.infoSheetInPeekZone here — a
     // nested viewer disposing after the outer one's didPopNext would clobber
     // the outer viewer's just-restored sheet position. The next viewer's
     // initState sets its own value.
@@ -275,26 +291,14 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware, Trac
 
   void openInfoPanel() {
     if (useBottomInfoSheet) {
-      // Animate even on the first call. The controller attaches as soon as the
-      // sheet's first frame runs, which has happened by the time the user can
-      // tap a button or swipe. If somehow not attached, retry next frame.
-      if (infoSheetController.isAttached) {
-        infoSheetController.animateTo(
-          infoSheetOpenSize,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOutCubic,
-        );
-      } else {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (infoSheetController.isAttached) {
-            infoSheetController.animateTo(
-              infoSheetOpenSize,
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeOutCubic,
-            );
-          }
-        });
-      }
+      // One tap opens it fully: the tag view is built first, the animation
+      // starts after that frame (see openInfoSheet).
+      PerfTrace.instance.event('viewer.infoSheet.open', infoSheetGate.live.value ? 'ready' : 'build');
+      openInfoSheet(
+        controller: infoSheetController,
+        gate: infoSheetGate,
+        size: infoSheetOpenSize,
+      );
     } else {
       viewerScaffoldKey.currentState?.openEndDrawer();
     }
@@ -875,6 +879,7 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware, Trac
               currentPage: page,
               sheetController: infoSheetController,
               extentNotifier: infoSheetExtent,
+              gate: infoSheetGate,
               openSize: infoSheetOpenSize,
             ),
             // Full-screen passive listener: observes pointer events without
@@ -887,6 +892,7 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware, Trac
             Positioned.fill(
               child: _SwipeUpListener(
                 controller: infoSheetController,
+                gate: infoSheetGate,
                 openSize: infoSheetOpenSize,
               ),
             ),
@@ -903,7 +909,7 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware, Trac
                 return ValueListenableBuilder<double>(
                   valueListenable: infoSheetExtent,
                   builder: (context, extent, _) {
-                    final double t = (1 - (extent / 0.06)).clamp(0.0, 1.0);
+                    final double t = (1 - (extent / infoSheetPeekExtent)).clamp(0.0, 1.0);
                     if (t <= 0.01) return const SizedBox.shrink();
                     return Opacity(
                       opacity: t,
@@ -942,11 +948,11 @@ class _GalleryViewPageState extends State<GalleryViewPage> with RouteAware, Trac
     // When the bottom info sheet is open, intercept the system back button to
     // close the sheet instead of leaving the viewer.
     final Widget maybeBackHandled = useBottomInfoSheet
-        ? ValueListenableBuilder<double>(
-            valueListenable: infoSheetExtent,
-            builder: (context, extent, child) {
+        ? ValueListenableBuilder<bool>(
+            valueListenable: infoSheetShut,
+            builder: (context, shut, child) {
               return PopScope(
-                canPop: extent <= 0.001,
+                canPop: shut,
                 onPopInvokedWithResult: (didPop, result) {
                   // r77: a preview window shown on this page takes this Back
                   // (it closes first; the sheet closes on the next one).
