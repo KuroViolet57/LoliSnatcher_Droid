@@ -14,6 +14,7 @@ import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/core/utils/tools.dart';
 import 'package:lolisnatcher/features/viewer/logic/gif_decode_width.dart';
 import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
+import 'package:lolisnatcher/features/viewer/logic/viewer_zoom_target.dart';
 
 /// Dedicated GIF renderer using extended_image (the same engine Boorusama
 /// uses). The win over the default Image path: extended_image decodes the
@@ -37,12 +38,16 @@ class GifViewer extends StatefulWidget {
   State<GifViewer> createState() => GifViewerState();
 }
 
-class GifViewerState extends State<GifViewer> {
+class GifViewerState extends State<GifViewer> implements ViewerZoomTarget {
   final SettingsHandler settingsHandler = SettingsHandler.instance;
   final ViewerHandler viewerHandler = ViewerHandler.instance;
   final PhotoViewScaleStateController scaleController = PhotoViewScaleStateController();
+  @override
   final PhotoViewController viewController = PhotoViewController();
+  @override
   final ValueNotifier<bool> isZoomed = ValueNotifier(false);
+  @override
+  bool get isZoomTargetLoaded => true;
   late final StreamSubscription<PhotoViewControllerValue> _viewSub;
   late final StreamSubscription<PhotoViewScaleState> _scaleSub;
 
@@ -95,10 +100,12 @@ class GifViewerState extends State<GifViewer> {
   }
 
   /// Same cover the still-image zoom button uses.
+  @override
   void doubleTapZoom() {
     scaleController.scaleState = PhotoViewScaleState.covering;
   }
 
+  @override
   void resetZoom() {
     scaleController.scaleState = PhotoViewScaleState.initial;
     viewerHandler.setZoomed(widget.key, false);

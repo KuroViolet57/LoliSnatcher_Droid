@@ -10,9 +10,8 @@ import 'package:lolisnatcher/core/constants.dart';
 import 'package:lolisnatcher/core/platform/service_handler.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/core/utils/debouncer.dart';
-import 'package:lolisnatcher/features/viewer/ui/media/gif_viewer.dart';
+import 'package:lolisnatcher/features/viewer/logic/viewer_zoom_target.dart';
 import 'package:lolisnatcher/features/viewer/ui/media/image_viewer.dart';
-import 'package:lolisnatcher/features/video/ui/media_kit_player_view.dart';
 import 'package:lolisnatcher/features/video/ui/video_viewer.dart';
 
 // TODO media actions, video pause/mute... global controller
@@ -225,21 +224,14 @@ class ViewerHandler {
           setFullScreenState(widgetState.chewieController.value?.isFullScreen ?? false);
           viewState.value = widgetState.viewController.value;
           break;
-        case GifViewer():
-          final widgetState = state! as GifViewerState;
-          isZoomed.value = widgetState.isZoomed.value;
-          isLoaded.value = true;
+        // The fast GIF and the media_kit video (ui pages this layer can't import).
+        case _ when state is ViewerZoomTarget:
+          final ViewerZoomTarget target = state! as ViewerZoomTarget;
+          isZoomed.value = target.isZoomed.value;
+          isLoaded.value = target.isZoomTargetLoaded;
           isStopped.value = false;
           setFullScreenState(false);
-          viewState.value = widgetState.viewController.value;
-          break;
-        case MediaKitPlayerView():
-          final widgetState = state! as MediaKitPlayerViewState;
-          isZoomed.value = widgetState.isZoomed.value;
-          isLoaded.value = widgetState.hasPlayer;
-          isStopped.value = false;
-          setFullScreenState(false);
-          viewState.value = widgetState.viewController.value;
+          viewState.value = target.viewController.value;
           break;
         default:
           isZoomed.value = false;
@@ -273,11 +265,8 @@ class ViewerHandler {
       case VideoViewer():
         (state as VideoViewerState?)?.resetZoom();
         break;
-      case GifViewer():
-        (state as GifViewerState?)?.resetZoom();
-        break;
-      case MediaKitPlayerView():
-        (state as MediaKitPlayerViewState?)?.resetZoom();
+      case _ when state is ViewerZoomTarget:
+        (state! as ViewerZoomTarget).resetZoom();
         break;
       default:
         break;
@@ -293,11 +282,8 @@ class ViewerHandler {
       case VideoViewer():
         (state as VideoViewerState?)?.doubleTapZoom();
         break;
-      case GifViewer():
-        (state as GifViewerState?)?.doubleTapZoom();
-        break;
-      case MediaKitPlayerView():
-        (state as MediaKitPlayerViewState?)?.doubleTapZoom();
+      case _ when state is ViewerZoomTarget:
+        (state! as ViewerZoomTarget).doubleTapZoom();
         break;
       default:
         break;

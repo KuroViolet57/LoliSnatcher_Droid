@@ -21,6 +21,7 @@ import 'package:lolisnatcher/models/booru.dart';
 import 'package:lolisnatcher/models/booru_item.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
+import 'package:lolisnatcher/features/viewer/logic/viewer_zoom_target.dart';
 import 'package:lolisnatcher/core/network/dio_network.dart';
 import 'package:lolisnatcher/core/logging/logger.dart';
 import 'package:lolisnatcher/core/utils/tools.dart';
@@ -101,13 +102,17 @@ class MediaKitPlayerView extends StatefulWidget {
   State<MediaKitPlayerView> createState() => MediaKitPlayerViewState();
 }
 
-class MediaKitPlayerViewState extends State<MediaKitPlayerView> with TraceLifecycle {
+class MediaKitPlayerViewState extends State<MediaKitPlayerView> with TraceLifecycle implements ViewerZoomTarget {
   final PhotoViewScaleStateController scaleController = PhotoViewScaleStateController();
+  @override
   final PhotoViewController viewController = PhotoViewController();
+  @override
   final ValueNotifier<bool> isZoomed = ValueNotifier(false);
   late final StreamSubscription<PhotoViewControllerValue> _viewSub;
   late final StreamSubscription<PhotoViewScaleState> _scaleSub;
   bool get hasPlayer => _entry != null;
+  @override
+  bool get isZoomTargetLoaded => hasPlayer;
   _PooledPlayer? _entry;
   String? _acquiredUrl;
 
@@ -151,11 +156,13 @@ class MediaKitPlayerViewState extends State<MediaKitPlayerView> with TraceLifecy
   }
 
   /// Same cover the still-image zoom button uses. The controls stay put.
+  @override
   void doubleTapZoom() {
     if (_entry == null) return;
     scaleController.scaleState = PhotoViewScaleState.covering;
   }
 
+  @override
   void resetZoom() {
     scaleController.scaleState = PhotoViewScaleState.initial;
     ViewerHandler.instance.setZoomed(widget.key, false);

@@ -21,3 +21,22 @@
 - Next step: user tests 147 with the checklist in changes.txt. If the swipe still stutters, get a
   Settings -> Debug -> Record a trace report while swiping the sheet, and look at the viewer relayout
   (gallery_view_page.dart, the SizedBox(height: viewerH) builder) next.
+
+## 2026-10-09 Claude: architecture test green again (zoom hooks moved to a logic interface), no build
+- Branch: claude/optimistic-kalam-384c29 (worktree), fast-forwarded onto claude/post-details-sheet-lag-1a23ce (4ebea8a6).
+- Files: new lib/features/viewer/logic/viewer_zoom_target.dart (ViewerZoomTarget: isZoomed, viewController,
+  isZoomTargetLoaded, doubleTapZoom, resetZoom); lib/features/viewer/logic/viewer_handler.dart;
+  lib/features/viewer/ui/media/gif_viewer.dart; lib/features/video/ui/media_kit_player_view.dart;
+  new test/viewer_zoom_target_test.dart; test/viewer_zoom_targets_test.dart.
+- Changed: 6a3bbfd8 had viewer_handler.dart (logic) import gif_viewer.dart and media_kit_player_view.dart (ui).
+  GifViewerState and MediaKitPlayerViewState now implement ViewerZoomTarget and the handler reaches them with
+  `case _ when state is ViewerZoomTarget`. Same behaviour: GIF reports loaded, media_kit reports loaded once it
+  has a player. No allowlist line added.
+- Tests: red first (architecture_test, the new zoom test and import check failed: 3), then architecture,
+  viewer_zoom_target (2), viewer_zoom_targets, info_sheet_body, viewer_tutorial, viewer_peek_bar_artist: 20 passed.
+  Analyzer: no issues in lib/features/viewer, lib/features/video/ui and the two tests.
+  Note: a bare tester.pump() did not run setNewState's post-frame callback; the test schedules a frame first.
+- Delivered: nothing (no APK asked for). Next token stays 148.
+- Not done: not tried on a phone (no code path for the user changed, only how the handler finds the page).
+- Next step: user tests 147 per its changes.txt; the next delivery (148) carries this refactor along with
+  whatever change comes next.
