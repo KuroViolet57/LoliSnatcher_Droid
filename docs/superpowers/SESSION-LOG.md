@@ -53,3 +53,32 @@
 - Next step (two steps): step 1, fast-forward grok/1.0-continue to this tip if its worktree is clean; step 2, the M3 leftovers:
   1) shrink test/architecture_allowlist.txt (79 entries; start with the 18 that import UI or app from a lower layer);
   2) remove the verified dead code from docs/superpowers/specs/1.0-map/*.json deadCode entries; 3) build token 149.
+
+## 2026-10-09 Claude: token 149 delivered (doujin list lighter, grid titles), M3 not started (36a01753)
+- Branch claude/suspicious-visvesvaraya-aacef1 (worktree), fast-forwarded to 19b7158c first.
+- Step 1 of the plan done: grok/1.0-continue fast-forwarded to 19b7158c (its worktree was clean).
+- The user then asked, mid-session, for two doujin fixes ASAP; they took this session and token 149
+  (the planned "1.0 layer cleanup" moves to 150):
+  1) 872730a2 feat(feed): titles on doujin grid cards. sourceSettings.gridTitle (default on), Source
+     settings -> GRID -> Titles on grid cards with an ExplainButton; title (2 lines) between cover and
+     tags; staggered cell +36 px; language badge stays tied to the tag strip. Also shows in the floating
+     tag-preview grid (same card).
+  2) 36a01753 perf(feed): lighter doujin list rows. DoujinListCard's tag block builds only the chips that
+     fit the screen width (letter width 2.5 px, under any real glyph) until the first pointer-down on it;
+     list feed uses SliverFixedExtentList at DoujinListCard.rowExtent(height) = height + 6.
+- Tests: red first (120 chips built; missing gridTitle/rowExtent). Then doujin card/list/adapt/settings
+  and architecture tests: 81 passed. Full suite: +1986 ~14 -11 = the 10 known live booru_test failures
+  plus video_frames_test "r77: no grab until mpv..." (passes alone 20/20; timing-sensitive under the
+  full parallel run, untouched here).
+- Thor (149, E-Hentai tab in List): in-app trace, 8,395 frames over 161 s, app work median 0.2 ms / worst
+  38 ms, drawing median 3 / worst 41, none over 100 ms. E-Hentai listings carry 1-6 tags per gallery, so the
+  chip saving is small there. A SurfaceFlinger --latency A/B against 148 was void: the gaps between scripted
+  adb swipes showed up as 135-170 ms "frames". Grid titles were not looked at on the device.
+- Device state: the 1.0 side-by-side app on the Thor has 149 installed plus one extra E-Hentai tab (5064
+  tabs) I added; after a burn-in refresh the screen stopped updating (app drawn in the top part).
+- Delivered: K:\My Drive\booruApk\149.apk (1.0 doujin list lighter and grid titles - tested), side-by-side.
+- Next step: user tests 149 with its changes.txt checklist. Then M3 leftovers as planned, as token 150:
+  2a) shrink test/architecture_allowlist.txt (79 entries), starting with the 18 lower-layer -> UI/app imports
+  (core->features/ui 5, sources->features/ui 5, features/logic->features/ui 7, core->app 1), pattern of
+  lib/features/viewer/logic/viewer_zoom_target.dart (81ee01ef); 2b) dead code from
+  docs/superpowers/specs/1.0-map/*.json deadCode, grepped first. Build 150 "1.0 layer cleanup" --side-by-side.
