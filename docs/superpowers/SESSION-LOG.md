@@ -40,3 +40,11 @@
 - Not done: not tried on a phone (no code path for the user changed, only how the handler finds the page).
 - Next step: user tests 147 per its changes.txt; the next delivery (148) carries this refactor along with
   whatever change comes next.
+
+## 2026-10-09 Claude: token 148 delivered (81ee01ef)
+- Branch claude/post-details-sheet-lag-1a23ce fast-forwarded to 81ee01ef (the zoom-target refactor).
+- Tests: architecture, viewer_zoom_target, viewer_zoom_targets, info_sheet_body, viewer_peek_bar_artist,
+  viewer_tutorial, video_engine_choice, desktop_image_listener: 24 passed, 0 failed.
+- Delivered: K:\My DriveooruApk8.apk (1.0 info sheet and zoom tidy - tested), side-by-side APK = 147 + zoom refactor.
+- Not done: no phone or emulator run (no device connected).
+- Next step: user tests 148 with its changes.txt checklist (sheet one-tap, swipe, GIF/video zoom). Next token 149.
