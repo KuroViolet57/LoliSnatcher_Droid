@@ -48,3 +48,8 @@
 - Delivered: K:\My Drive\booruApk\148.apk (1.0 info sheet and zoom tidy - tested), side-by-side APK = 147 + zoom refactor.
 - Not done: no phone or emulator run (no device connected).
 - Next step: user tests 148 with its changes.txt checklist (sheet one-tap, swipe, GIF/video zoom). Next token 149.
+
+## 2026-10-09 Claude: next architecture step chosen (no code)
+- Next step: M3 leftovers on this branch. 0) fast-forward grok/1.0-continue to this tip if its worktree is clean;
+  1) shrink test/architecture_allowlist.txt (79 entries; start with the 18 that import UI or app from a lower layer);
+  2) remove the verified dead code from docs/superpowers/specs/1.0-map/*.json deadCode entries; 3) build token 149.
