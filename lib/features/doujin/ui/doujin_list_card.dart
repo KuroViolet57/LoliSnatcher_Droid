@@ -66,6 +66,13 @@ class DoujinListCard extends StatelessWidget {
   /// The tag block is this many rows tall and scrolls sideways.
   static const int tagRows = 3;
 
+  /// Space above and below each card inside its row.
+  static const double verticalGap = 3;
+
+  /// A whole feed row, card plus its gaps: the feed lays rows out at this
+  /// fixed extent instead of measuring each one while scrolling (2026-10-09).
+  static double rowExtent(double height) => height + 2 * verticalGap;
+
   @override
   Widget build(BuildContext context) {
     PerfTrace.instance.built('DoujinListCard');
@@ -85,7 +92,7 @@ class DoujinListCard extends StatelessWidget {
       controller: scrollController,
       index: index,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: verticalGap),
         child: Material(
           key: const ValueKey('doujin-list-card-surface'),
           // r66: a raised card - a shadow gives the row some volume instead of
@@ -141,7 +148,7 @@ class DoujinListCard extends StatelessWidget {
                                   ),
                                 ),
                               const SizedBox(height: 5),
-                              Expanded(child: _tagBlock(context, tags, doujinData)),
+                              Expanded(child: _tagBlock(context, tags)),
                               const SizedBox(height: 4),
                               _metaRow(context, category: category, language: language, pages: pages),
                             ],
@@ -223,7 +230,7 @@ class DoujinListCard extends StatelessWidget {
   }
 
   /// [tagRows] rows of chips that scroll sideways together.
-  Widget _tagBlock(BuildContext context, List<Tag> tags, DoujinDataHandler doujinData) {
+  Widget _tagBlock(BuildContext context, List<Tag> tags) {
     if (tags.isEmpty) {
       return Align(
         alignment: Alignment.centerLeft,
@@ -234,34 +241,10 @@ class DoujinListCard extends StatelessWidget {
       );
     }
 
-    final int perRow = (tags.length / tagRows).ceil().clamp(1, tags.length);
-    return SingleChildScrollView(
-      key: const ValueKey('doujin-list-card-tags'),
-      scrollDirection: Axis.horizontal,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.start,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          for (int row = 0; row < tagRows; row++)
-            if (row * perRow < tags.length)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 3),
-                child: Row(
-                  children: [
-                    for (final Tag tag in tags.skip(row * perRow).take(perRow))
-                      Padding(
-                        padding: const EdgeInsets.only(right: 3),
-                        child: _chip(context, tag, isMarked: doujinData.isTagStarred(tag.fullString)),
-                      ),
-                  ],
-                ),
-              ),
-        ],
-      ),
-    );
+    return _TagBlock(tags: tags, chip: _chip);
   }
 
-  Widget _chip(BuildContext context, Tag tag, {required bool isMarked}) {
+  static Widget _chip(BuildContext context, Tag tag, {required bool isMarked}) {
     final ThemeData theme = Theme.of(context);
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -340,6 +323,81 @@ class DoujinListCard extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// The list card's tag block (2026-10-09, "very laggy" when scrolling).
+///
+/// Every chip of every row used to be built as the row scrolled in, though
+/// only the first few fit beside the cover. Until the block is touched, each
+/// row now stops at the screen's width - measured as if every letter were
+/// far narrower than any real one, so a row never stops short of the visible
+/// edge. The first touch (before any drag can move it) builds the rest, so
+/// the block scrolls exactly as before.
+class _TagBlock extends StatefulWidget {
+  const _TagBlock({required this.tags, required this.chip});
+
+  final List<Tag> tags;
+  final Widget Function(BuildContext context, Tag tag, {required bool isMarked}) chip;
+
+  /// Narrower than any letter at the chip's 10.5 px (Roboto's 'i' is ~2.9).
+  static const double minCharWidth = 2.5;
+
+  /// The chip's own padding plus the gap after it.
+  static const double chipChrome = 6 + 6 + 3;
+
+  @override
+  State<_TagBlock> createState() => _TagBlockState();
+}
+
+class _TagBlockState extends State<_TagBlock> {
+  bool _all = false;
+
+  /// The chips of one row that can be visible before the block is scrolled.
+  Iterable<Tag> _visiblePart(Iterable<Tag> row, double budget) sync* {
+    double used = 0;
+    for (final Tag tag in row) {
+      if (used > budget) return;
+      yield tag;
+      used += tag.fullString.length * _TagBlock.minCharWidth + _TagBlock.chipChrome;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final List<Tag> tags = widget.tags;
+    final DoujinDataHandler doujinData = DoujinDataHandler.instance;
+    final int perRow = (tags.length / DoujinListCard.tagRows).ceil().clamp(1, tags.length);
+    final double budget = MediaQuery.sizeOf(context).width;
+    return Listener(
+      onPointerDown: _all ? null : (_) => setState(() => _all = true),
+      child: SingleChildScrollView(
+        key: const ValueKey('doujin-list-card-tags'),
+        scrollDirection: Axis.horizontal,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (int row = 0; row < DoujinListCard.tagRows; row++)
+              if (row * perRow < tags.length)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 3),
+                  child: Row(
+                    children: [
+                      for (final Tag tag in _all
+                          ? tags.skip(row * perRow).take(perRow)
+                          : _visiblePart(tags.skip(row * perRow).take(perRow), budget))
+                        Padding(
+                          padding: const EdgeInsets.only(right: 3),
+                          child: widget.chip(context, tag, isMarked: doujinData.isTagStarred(tag.fullString)),
+                        ),
+                    ],
+                  ),
+                ),
+          ],
+        ),
+      ),
     );
   }
 }

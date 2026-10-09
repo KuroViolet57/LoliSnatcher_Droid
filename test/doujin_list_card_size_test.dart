@@ -81,6 +81,16 @@ void main() {
     expect(tester.getSize(find.byKey(const ValueKey('doujin-list-card-row'))).height, 260);
   });
 
+  // 2026-10-09: the feed lays the rows out at a fixed extent (no measuring
+  // each row while scrolling), so that extent has to be exactly the card's
+  // own outer height - row plus its padding - or rows would clip or gap.
+  testWidgets('a whole row, padding included, is exactly rowExtent tall', (tester) async {
+    for (final double h in [120.0, 176.0, 320.0]) {
+      await pumpCard(tester, height: h);
+      expect(tester.getSize(find.byType(DoujinListCard)).height, DoujinListCard.rowExtent(h));
+    }
+  });
+
   testWidgets('the card is raised: it casts a shadow', (tester) async {
     await pumpCard(tester, height: 176);
     final Material material = tester.widget<Material>(find.byKey(const ValueKey('doujin-list-card-surface')));

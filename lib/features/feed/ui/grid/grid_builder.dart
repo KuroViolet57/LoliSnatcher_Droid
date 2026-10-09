@@ -42,7 +42,14 @@ class GridBuilder extends StatelessWidget {
     if (listCards) {
       return ValueListenableBuilder(
         valueListenable: tab.booruHandler.filteredFetched,
-        builder: (context, currentFetched, child) => SliverList.builder(
+        builder: (context, currentFetched, child) {
+          final double cardHeight = SourceSettingsHandler.instance.listCardHeight(tab.booruHandler.booru).toDouble();
+          final double coverWidth = SourceSettingsHandler.instance.listCoverWidth(tab.booruHandler.booru).toDouble();
+          // Every row is the same height, so the list is laid out at that
+          // fixed extent instead of measuring each row as it scrolls in
+          // (2026-10-09).
+          return SliverFixedExtentList.builder(
+          itemExtent: DoujinListCard.rowExtent(cardHeight),
           addAutomaticKeepAlives: false,
           itemCount: currentFetched.length,
           itemBuilder: (BuildContext context, int index) => Obx(() {
@@ -56,8 +63,8 @@ class GridBuilder extends StatelessWidget {
               item: item,
               handler: tab.booruHandler,
               scrollController: scrollController,
-              height: SourceSettingsHandler.instance.listCardHeight(tab.booruHandler.booru).toDouble(),
-              coverWidth: SourceSettingsHandler.instance.listCoverWidth(tab.booruHandler.booru).toDouble(),
+              height: cardHeight,
+              coverWidth: coverWidth,
               isHighlighted: ViewerHandler.instance.current.value?.key == item.key,
               selectedIndex: isSelected ? selectedIndex : null,
               onSelected: hasSelected ? onSelected : null,
@@ -67,7 +74,8 @@ class GridBuilder extends StatelessWidget {
               onSecondaryTap: onSecondaryTap,
             );
           }),
-        ),
+          );
+        },
       );
     }
 

@@ -134,6 +134,74 @@ void main() {
     );
   });
 
+  /// 2026-10-09, "it takes quite a long time to load, and it's very laggy":
+  /// every row used to build every tag chip, including the dozens to the right
+  /// of the card that nobody sees until they scroll the tag block. A row now
+  /// builds what can be on screen and the rest the moment a finger touches
+  /// the tag block - before the drag moves anything.
+  Future<void> pumpManyTags(WidgetTester tester, int count) async {
+    final NHentaiHandler handler = NHentaiHandler(nhentaiBooru(), 20);
+    final BooruItem item = doujin()..tagsList = [for (int i = 0; i < count; i++) Tag('tag number $i')];
+    handler.fetched.add(item);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 400,
+            child: DoujinListCard(
+              index: 0,
+              item: item,
+              handler: handler,
+              scrollController: AutoScrollController(),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+  }
+
+  testWidgets('a row builds only the tags that can be on screen', (tester) async {
+    await pumpManyTags(tester, 120);
+
+    final int built = find.textContaining('tag number ').evaluate().length;
+    expect(built, lessThan(60), reason: 'the 120 chips must not all be built for a row nobody has touched');
+    // The first chip of each of the three rows is there.
+    expect(find.text('tag number 0'), findsOneWidget);
+    expect(find.text('tag number 40'), findsOneWidget);
+    expect(find.text('tag number 80'), findsOneWidget);
+  });
+
+  testWidgets('touching the tag block builds the rest, and the last tag can be reached', (tester) async {
+    await pumpManyTags(tester, 120);
+    expect(find.text('tag number 39'), findsNothing);
+
+    final Finder block = find.byKey(const ValueKey('doujin-list-card-tags'));
+    await tester.drag(block, const Offset(-200, 0));
+    await tester.pumpAndSettle();
+    expect(find.text('tag number 39'), findsOneWidget);
+    expect(find.text('tag number 119'), findsOneWidget);
+
+    // Drag to the far end: the last chip of the widest row (the third: its
+    // tags have the longest names) comes fully into view.
+    for (int i = 0; i < 20; i++) {
+      await tester.drag(block, const Offset(-400, 0));
+      await tester.pump();
+    }
+    await tester.pumpAndSettle();
+    final Rect blockRect = tester.getRect(block);
+    final Rect last = tester.getRect(find.text('tag number 119'));
+    expect(last.right, lessThanOrEqualTo(blockRect.right + 0.5));
+    expect(last.left, greaterThanOrEqualTo(blockRect.left - 0.5));
+  });
+
+  testWidgets('a row with few tags builds them all, as before', (tester) async {
+    await pumpManyTags(tester, 9);
+    for (int i = 0; i < 9; i++) {
+      expect(find.text('tag number $i'), findsOneWidget);
+    }
+  });
+
   test('the card style is a per-source setting, grid by default', () {
     final Booru booru = nhentaiBooru();
     expect(SourceSettingsHandler.instance.feedCardStyle(booru), 'grid');
