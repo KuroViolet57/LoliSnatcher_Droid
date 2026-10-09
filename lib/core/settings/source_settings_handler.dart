@@ -28,6 +28,7 @@ class SourceSettings {
     this.contentTypes,
     this.siteVariant,
     this.gridTagStrip,
+    this.gridTitle,
     this.coverDisplay,
     this.feedCardStyle,
     this.listCardHeight,
@@ -61,6 +62,7 @@ class SourceSettings {
     contentTypes: json['contentTypes'] as String?,
     siteVariant: json['siteVariant'] as String?,
     gridTagStrip: json['gridTagStrip'] as bool?,
+    gridTitle: json['gridTitle'] as bool?,
     coverDisplay: json['coverDisplay'] as String?,
     feedCardStyle: json['feedCardStyle'] as String?,
     listCardHeight: json['listCardHeight'] as int?,
@@ -120,6 +122,9 @@ class SourceSettings {
 
   /// Show the tag strip + language badge on grid cards.
   bool? gridTagStrip;
+
+  /// The gallery's title under the cover on grid cards (2026-10-09).
+  bool? gridTitle;
 
   /// How feed cards show the cover: 'fit' letterboxes the whole cover,
   /// 'crop' fills the card (the old behaviour), 'adapt' sizes the card to
@@ -201,6 +206,7 @@ class SourceSettings {
     if (contentTypes != null) 'contentTypes': contentTypes,
     if (siteVariant != null) 'siteVariant': siteVariant,
     if (gridTagStrip != null) 'gridTagStrip': gridTagStrip,
+    if (gridTitle != null) 'gridTitle': gridTitle,
     if (coverDisplay != null) 'coverDisplay': coverDisplay,
     if (feedCardStyle != null) 'feedCardStyle': feedCardStyle,
     if (listCardHeight != null) 'listCardHeight': listCardHeight,
@@ -439,6 +445,9 @@ class SourceSettingsHandler {
   String? siteVariant(Booru? booru) => settingsFor(booru).siteVariant;
 
   bool gridTagStrip(Booru? booru) => _resolve(booru, (s) => s.gridTagStrip, true);
+
+  /// Title under the cover on grid cards; on unless the source turns it off.
+  bool gridTitle(Booru? booru) => _resolve(booru, (s) => s.gridTitle, true);
 
   /// 'crop' (default) | 'fit' | 'adapt'.
   ///

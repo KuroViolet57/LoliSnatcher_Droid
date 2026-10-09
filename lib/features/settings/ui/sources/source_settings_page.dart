@@ -8,6 +8,7 @@ import 'package:lolisnatcher/models/meta_tag.dart';
 import 'package:lolisnatcher/sources/framework/booru_handler.dart';
 import 'package:lolisnatcher/sources/framework/booru_handler_factory.dart';
 import 'package:lolisnatcher/features/doujin/logic/doujin_data_handler.dart';
+import 'package:lolisnatcher/core/ui/explain_button.dart';
 import 'package:lolisnatcher/core/ui/flash_elements.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/core/settings/source_settings_handler.dart';
@@ -488,12 +489,13 @@ class _SourceSettingsPageState extends State<SourceSettingsPage> {
   Widget _switchRow({
     required String title,
     required bool? layerValue, required bool inheritedValue, required void Function(bool?) onChanged, String? subtitle,
+    Widget? explain,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SwitchListTile(
-          title: Text(title),
+          title: explain == null ? Text(title) : Row(children: [Flexible(child: Text(title)), explain]),
           subtitle: subtitle == null ? null : Text(subtitle),
           value: layerValue ?? inheritedValue,
           onChanged: onChanged,
@@ -855,6 +857,28 @@ class _SourceSettingsPageState extends State<SourceSettingsPage> {
             layerValue: layer.gridTagStrip,
             inheritedValue: globalLayer.gridTagStrip ?? true,
             onChanged: (v) => _update((s) => s.gridTagStrip = v),
+          ),
+          _switchRow(
+            title: 'Titles on grid cards',
+            subtitle: "The gallery's title under each cover, two lines, above the tags.",
+            layerValue: layer.gridTitle,
+            inheritedValue: globalLayer.gridTitle ?? true,
+            onChanged: (v) => _update((s) => s.gridTitle = v),
+            explain: ExplainButton(
+              title: 'Titles on grid cards',
+              intro: 'Grid cards only; list cards always show the title.',
+              choices: () => const [
+                ExplainChoice(
+                  name: 'On (default)',
+                  text: "Each card shows the first line of the gallery's title, cut after two lines. "
+                      'The cover gives up about two lines of height for it.',
+                ),
+                ExplainChoice(
+                  name: 'Off',
+                  text: 'The cover keeps that space; the title is on the gallery page when you open it.',
+                ),
+              ],
+            ),
           ),
           _stepperRow(
             title: 'Feed columns (portrait)',

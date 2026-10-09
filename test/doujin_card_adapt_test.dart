@@ -308,7 +308,8 @@ void main() {
       SourceSettingsHandler.instance.update(handler.booru, (s) {
         s
           ..coverDisplay = 'adapt'
-          ..gridTagStrip = false;
+          ..gridTagStrip = false
+          ..gridTitle = false;
       });
       final item = itemFor('nostrip');
       handler.fetched.add(item);

@@ -72,8 +72,12 @@ class ThumbnailCardBuild extends StatelessWidget {
     // the cover's fit follows the per-source display setting. Strip cells
     // trade the tag strip for the title and ignore the grid setting.
     final bool isDoujinStripCard = stripMode && handler.hasReader;
-    final bool isDoujinCard =
-        isDoujinStripCard || (handler.hasReader && SourceSettingsHandler.instance.gridTagStrip(handler.booru));
+    final bool showTagStrip =
+        !isDoujinStripCard && handler.hasReader && SourceSettingsHandler.instance.gridTagStrip(handler.booru);
+    // 2026-10-09: feed cards carry the title too, between cover and tags.
+    final bool showFeedTitle =
+        !isDoujinStripCard && handler.hasReader && SourceSettingsHandler.instance.gridTitle(handler.booru);
+    final bool isDoujinCard = isDoujinStripCard || showTagStrip || showFeedTitle;
     final String coverDisplay = SourceSettingsHandler.instance.coverDisplay(handler.booru);
     // In adapt mode the cover box already HAS the cover's aspect ratio, so
     // cover and contain paint the same rect — cover is used because it cannot
@@ -152,7 +156,8 @@ class ThumbnailCardBuild extends StatelessWidget {
                                   fit: coverFit,
                                 ),
                               ),
-                            if (isDoujinStripCard) _stripTitle(context) else _doujinFooter(context),
+                            if (isDoujinStripCard || showFeedTitle) _stripTitle(context),
+                            if (showTagStrip) _doujinFooter(context),
                           ],
                         )
                       : adaptCover
@@ -214,7 +219,7 @@ class ThumbnailCardBuild extends StatelessWidget {
             //
             // Language badge stays on the cover's corner; the tag strip is
             // part of the card COLUMN below the artwork.
-            if (isDoujinCard) ..._languageBadgeOverlay(context),
+            if (isDoujinStripCard || showTagStrip) ..._languageBadgeOverlay(context),
             //
             Positioned.fill(
               child: ListenableBuilder(
@@ -331,7 +336,8 @@ class ThumbnailCardBuild extends StatelessWidget {
     ];
   }
 
-  /// Strip cells: just the title under the cover, two lines, ellipsized.
+  /// The title under the cover, two lines, ellipsized: strip cells, and feed
+  /// cards unless Source settings -> Grid -> Titles on grid cards is off.
   Widget _stripTitle(BuildContext context) {
     final String title =
         (item.description ?? '').split('\n').firstWhere((l) => l.trim().isNotEmpty, orElse: () => '');

@@ -123,6 +123,11 @@ class StaggeredBuilder extends StatelessWidget {
                     SourceSettingsHandler.instance.gridTagStrip(tab.booruHandler.booru)) {
                   possibleHeight += 58;
                 }
+                // ...and the title above it, up to two lines (2026-10-09).
+                if (tab.booruHandler.hasReader &&
+                    SourceSettingsHandler.instance.gridTitle(tab.booruHandler.booru)) {
+                  possibleHeight += 36;
+                }
 
                 return SizedBox(
                   height: possibleHeight,

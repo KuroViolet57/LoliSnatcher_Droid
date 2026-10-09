@@ -86,7 +86,62 @@ void main() {
     expect(find.text('EN'), findsOneWidget);
   });
 
-  testWidgets('feed card shows the tag strip and NO title', (tester) async {
+  // 2026-10-09: the user asked for the title on grid cards too ("in the
+  // grid, the doujins have no title"). It sits between the cover and the tag
+  // strip, and Source settings -> Grid -> Titles on grid cards turns it off.
+  Future<void> pumpFeedCard(WidgetTester tester) async {
+    final handler = NHentaiHandler(nhentaiBooru(), 20);
+    final item = doujinItem();
+    handler.fetched.add(item);
+    await tester.pumpWidget(
+      host(
+        ThumbnailCardBuild(
+          index: 0,
+          item: item,
+          handler: handler,
+          scrollController: AutoScrollController(),
+          selectable: false,
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+  }
+
+  testWidgets('feed card shows the title above the tag strip', (tester) async {
+    await pumpFeedCard(tester);
+
+    expect(find.text('[Artist] My Great Doujin Title'), findsOneWidget);
+    expect(find.text('big breasts'), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.text('[Artist] My Great Doujin Title')).dy,
+      lessThan(tester.getTopLeft(find.text('big breasts')).dy),
+      reason: 'the title sits under the cover, above the tags',
+    );
+    expect(find.text('EN'), findsOneWidget);
+  });
+
+  testWidgets('the title on feed cards is a per-source setting, on by default', (tester) async {
+    final Booru booru = nhentaiBooru();
+    expect(SourceSettingsHandler.instance.gridTitle(booru), isTrue);
+    SourceSettingsHandler.instance.settingsFor(booru).gridTitle = false;
+
+    await pumpFeedCard(tester);
+
+    expect(find.text('[Artist] My Great Doujin Title'), findsNothing);
+    expect(find.text('big breasts'), findsOneWidget);
+  });
+
+  test('the title switch survives a save and a backup (toJson/fromJson)', () {
+    final SourceSettings s = SourceSettings(gridTitle: false);
+    expect(SourceSettings.fromJson(s.toJson()).gridTitle, isFalse);
+    expect(SourceSettings.fromJson(const {}).gridTitle, isNull);
+  });
+
+  testWidgets('with titles and tags both off the feed card is the plain cover', (tester) async {
+    final Booru booru = nhentaiBooru();
+    SourceSettingsHandler.instance.settingsFor(booru)
+      ..gridTitle = false
+      ..gridTagStrip = false;
     final handler = NHentaiHandler(nhentaiBooru(), 20);
     final item = doujinItem();
     handler.fetched.add(item);
@@ -104,8 +159,6 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.text('[Artist] My Great Doujin Title'), findsNothing);
-    expect(find.text('big breasts'), findsOneWidget);
-    expect(find.text('vanilla'), findsOneWidget);
-    expect(find.text('EN'), findsOneWidget);
+    expect(find.text('big breasts'), findsNothing);
   });
 }
