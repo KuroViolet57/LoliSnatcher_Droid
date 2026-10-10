@@ -145,4 +145,43 @@ void main() {
     t.stop();
     expect(t.report(), isNot(contains('posts opened')));
   });
+
+  /// 2026-10-10 (F42, the doujin list "didn't get smoother"): the Thor showed
+  /// about one 20-30 ms frame per fling and the trace could not say what that
+  /// frame did. A slow frame now lists the widgets built in it.
+  test('a slow frame says which widgets were built in it', () {
+    final PerfTrace t = PerfTrace.instance..start();
+    // fast frame: not listed
+    t.frameBegan(0);
+    t.built('DoujinListCard');
+    t.frameEnded(3000);
+    // slow frame: 22 ms, nine rows and a grid card
+    t.frameBegan(10000);
+    for (int i = 0; i < 9; i++) {
+      t.built('DoujinListCard');
+    }
+    t.built('ThumbnailCardBuild');
+    t.frameEnded(32000);
+    // slow frame that built nothing
+    t.frameBegan(40000);
+    t.frameEnded(60000);
+    t.stop();
+
+    expect(t.slowFrames, hasLength(2));
+    final String report = t.report();
+    expect(report, contains('SLOW FRAMES, WHAT WAS BUILT'));
+    expect(report, contains('22 ms  DoujinListCard × 9, ThumbnailCardBuild × 1'));
+    expect(report, contains('20 ms  nothing counted'));
+    expect(t.builds['DoujinListCard'], 10, reason: 'the totals still count every build');
+  });
+
+  test('frame begin and end are ignored when not recording', () {
+    final PerfTrace t = PerfTrace.instance;
+    t.frameBegan(0);
+    t.frameEnded(50000);
+    t.start();
+    expect(t.slowFrames, isEmpty);
+    t.frameEnded(90000);
+    expect(t.slowFrames, isEmpty, reason: 'an end without a begin in this recording is not a frame');
+  });
 }

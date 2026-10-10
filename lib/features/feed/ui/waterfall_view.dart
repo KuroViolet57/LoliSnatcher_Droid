@@ -207,9 +207,11 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware, TraceLif
     final Duration wait = feedCache.remainingAt(DateTime.now()) + const Duration(milliseconds: 50);
     feedCacheTimer = Timer(wait, () {
       if (!mounted) return;
+      PerfTrace.instance.event('feed.cache', 'resting');
       setState(() {});
     });
     if (!opened || !mounted) return;
+    PerfTrace.instance.event('feed.cache', 'wide');
     Logger.Inst().log(
       'Grid cache widened for a fling',
       'WaterfallView',

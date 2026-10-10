@@ -1,3 +1,5 @@
+import 'dart:developer' show Timeline;
+
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
@@ -167,6 +169,14 @@ class PerfTrace {
   final Map<String, int> _builds = {};
   final Map<String, ({int created, int disposed})> _lifecycles = {};
 
+  /// 2026-10-10: the widgets built in the frame now running, and the slow
+  /// frames (app work over 16.7 ms) with what they built. The engine's frame
+  /// timings say a frame was slow but not what it did; these do.
+  final Map<String, int> _frameBuilds = {};
+  final List<({int atMs, double ms, Map<String, int> builds})> _slowFrames = [];
+  int? _frameBeganUs;
+  bool _frameHooks = false;
+
   bool _listening = false;
 
   int get frameCount => _buildMs.length;
@@ -175,6 +185,9 @@ class PerfTrace {
 
   /// How many times each widget rebuilt while recording.
   Map<String, int> get builds => Map.unmodifiable(_builds);
+
+  /// The slowest frames by the app's own work, each with what it built.
+  List<({int atMs, double ms, Map<String, int> builds})> get slowFrames => List.unmodifiable(_slowFrames);
 
   double get medianBuildMs => _percentile(_buildMs, 0.5);
   double get medianRasterMs => _percentile(_rasterMs, 0.5);
@@ -197,7 +210,59 @@ class PerfTrace {
       SchedulerBinding.instance.addTimingsCallback(_onTimings);
       _listening = true;
     }
+    _hookFrames();
     revision.value++;
+  }
+
+  /// Times each frame's app work from the app side, so a slow one can be
+  /// matched with what it built. A persistent callback (registered once, it
+  /// cannot be removed) runs after the frame's build, layout and paint, and
+  /// measures from the frame's vsync ([SchedulerBinding.currentSystemFrameTimeStamp],
+  /// the engine's monotonic clock) to now ([Timeline.now], the same clock on
+  /// Android). Where the two clocks do not line up (a test binding), the
+  /// frame is skipped rather than guessed.
+  void _hookFrames() {
+    if (_frameHooks) return;
+    _frameHooks = true;
+    SchedulerBinding.instance.addPersistentFrameCallback((_) {
+      if (!isRecording.value) return;
+      final int began = SchedulerBinding.instance.currentSystemFrameTimeStamp.inMicroseconds;
+      final int now = Timeline.now;
+      if (now < began || now - began > 10000000) {
+        _frameBuilds.clear();
+        return;
+      }
+      frameBegan(began, keepBuilds: true);
+      frameEnded(now);
+    });
+  }
+
+  /// A frame started ([nowUs]: microseconds on any steady clock). The builds
+  /// counted so far belong to it when [keepBuilds] (the frame hook books a
+  /// frame after the fact).
+  void frameBegan(int nowUs, {bool keepBuilds = false}) {
+    if (!isRecording.value) return;
+    _frameBeganUs = nowUs;
+    if (!keepBuilds) _frameBuilds.clear();
+  }
+
+  /// The frame's build, layout and paint are done. Over 16.7 ms, it is kept
+  /// with the widgets it built (the 12 slowest).
+  void frameEnded(int nowUs) {
+    final int? began = _frameBeganUs;
+    _frameBeganUs = null;
+    if (!isRecording.value || began == null) return;
+    final double ms = (nowUs - began) / 1000;
+    if (ms > 16.7) {
+      _slowFrames.add((
+        atMs: DateTime.now().difference(startedAt ?? DateTime.now()).inMilliseconds,
+        ms: ms,
+        builds: Map.of(_frameBuilds),
+      ));
+      _slowFrames.sort((a, b) => b.ms.compareTo(a.ms));
+      if (_slowFrames.length > 12) _slowFrames.removeRange(12, _slowFrames.length);
+    }
+    _frameBuilds.clear();
   }
 
   void stop() {
@@ -262,6 +327,7 @@ class PerfTrace {
   void built(String widget) {
     if (!isRecording.value) return;
     _builds[widget] = (_builds[widget] ?? 0) + 1;
+    _frameBuilds[widget] = (_frameBuilds[widget] ?? 0) + 1;
   }
 
   /// A widget's state was created ([alive] true) or disposed (false).
@@ -304,6 +370,16 @@ class PerfTrace {
         b.writeln(
           '  +${(s.atMs / 1000).toStringAsFixed(1)} s  app ${_fmt(s.buildMs)} ms  drawing ${_fmt(s.rasterMs)} ms',
         );
+      }
+      b.writeln();
+    }
+
+    if (_slowFrames.isNotEmpty) {
+      b.writeln('SLOW FRAMES, WHAT WAS BUILT');
+      for (final s in _slowFrames) {
+        final List<String> names = s.builds.keys.toList()..sort((a, b) => s.builds[b]!.compareTo(s.builds[a]!));
+        final String what = names.isEmpty ? 'nothing counted' : names.map((n) => '$n × ${s.builds[n]}').join(', ');
+        b.writeln('  +${(s.atMs / 1000).toStringAsFixed(1)} s  ${_fmt(s.ms)} ms  $what');
       }
       b.writeln();
     }
@@ -365,6 +441,9 @@ class PerfTrace {
     _counts.clear();
     _builds.clear();
     _lifecycles.clear();
+    _frameBuilds.clear();
+    _slowFrames.clear();
+    _frameBeganUs = null;
   }
 
   @visibleForTesting

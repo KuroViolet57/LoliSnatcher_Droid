@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:scroll_to_index/scroll_to_index.dart';
 
+import 'package:lolisnatcher/core/logging/perf_trace.dart';
 import 'package:lolisnatcher/features/doujin/ui/doujin_list_card.dart';
 import 'package:lolisnatcher/models/booru_item.dart';
 import 'package:lolisnatcher/core/settings/source_settings_handler.dart';
@@ -43,6 +44,9 @@ class GridBuilder extends StatelessWidget {
       return ValueListenableBuilder(
         valueListenable: tab.booruHandler.filteredFetched,
         builder: (context, currentFetched, child) {
+          // On the trace's timeline: every rebuild of the list rebuilds every
+          // row it has built (2026-10-10).
+          PerfTrace.instance.event('feed.list', '${currentFetched.length} items');
           final double cardHeight = SourceSettingsHandler.instance.listCardHeight(tab.booruHandler.booru).toDouble();
           final double coverWidth = SourceSettingsHandler.instance.listCoverWidth(tab.booruHandler.booru).toDouble();
           // Every row is the same height, so the list is laid out at that
