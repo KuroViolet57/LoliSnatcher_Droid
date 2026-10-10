@@ -415,7 +415,7 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware, TraceLif
 
       WidgetsBinding.instance.addPostFrameCallback((_) {
         navigationHandler.floatingHeaderKey.currentState?.show();
-        navigationHandler.bottomBarKey.currentState?.show();
+        navigationHandler.bottomBar?.show();
       });
     } else {
       viewerHandler.setCurrent(searchHandler.currentFetched[index]);
@@ -706,10 +706,10 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware, TraceLif
                                 onTap: (bool forward) {
                                   if (forward) {
                                     navigationHandler.floatingHeaderKey.currentState?.hide();
-                                    navigationHandler.bottomBarKey.currentState?.hide();
+                                    navigationHandler.bottomBar?.hide();
                                   } else {
                                     navigationHandler.floatingHeaderKey.currentState?.show();
-                                    navigationHandler.bottomBarKey.currentState?.show();
+                                    navigationHandler.bottomBar?.show();
                                   }
                                   noteFeedPrefetch();
                                 },

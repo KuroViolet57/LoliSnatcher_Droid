@@ -8,7 +8,7 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:lolisnatcher/features/sync/logic/loli_sync_handler.dart';
 import 'package:lolisnatcher/core/platform/service_handler.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
-import 'package:lolisnatcher/features/sync/ui/loli_sync_page.dart';
+import 'package:lolisnatcher/features/sync/logic/sync_modes.dart';
 import 'package:lolisnatcher/core/ui/settings_widgets.dart';
 
 class LoliSyncProgressPage extends StatefulWidget {

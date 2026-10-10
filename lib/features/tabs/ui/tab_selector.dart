@@ -29,7 +29,7 @@ import 'package:lolisnatcher/core/ui/text/marquee_text.dart';
 import 'package:lolisnatcher/core/ui/settings_widgets.dart';
 import 'package:lolisnatcher/core/ui/image/booru_favicon.dart';
 import 'package:lolisnatcher/features/feed/ui/main_appbar.dart';
-import 'package:lolisnatcher/features/tabs/ui/widgets/tab_booru_selector.dart';
+import 'package:lolisnatcher/core/ui/booru_selector_item.dart';
 import 'package:lolisnatcher/features/tabs/ui/manager/tab_filters_dialog.dart';
 import 'package:lolisnatcher/features/tabs/ui/manager/tab_move_dialog.dart';
 import 'package:lolisnatcher/features/tabs/ui/widgets/tab_row.dart';

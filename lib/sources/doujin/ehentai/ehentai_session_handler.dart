@@ -5,13 +5,13 @@ import 'package:flutter/foundation.dart';
 
 import 'package:dio/dio.dart';
 
+import 'package:lolisnatcher/core/network/webview_environment.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/core/network/dio_network.dart';
 import 'package:lolisnatcher/core/logging/logger.dart';
 import 'package:lolisnatcher/core/utils/tools.dart';
 import 'dart:async';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:lolisnatcher/features/webview/ui/webview_page.dart';
 
 /// The e-hentai forum session, kept in `ehentai_session.json` beside the
 /// settings — and deliberately NOT in the shared WebView cookie jar.

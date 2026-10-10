@@ -8,6 +8,8 @@ import 'package:lolisnatcher/sources/kemono/kemono_api.dart';
 import 'package:lolisnatcher/sources/kemono/kemono_handler.dart';
 import 'package:lolisnatcher/sources/kemono/kemono_query.dart';
 import 'package:lolisnatcher/sources/kemono/kemono_tag_catalog.dart';
+import 'package:lolisnatcher/features/kemono/ui/kemono_artists_page.dart';
+import 'package:lolisnatcher/features/tags/ui/tag_catalog_pickers.dart';
 import 'package:lolisnatcher/models/booru.dart';
 import 'package:lolisnatcher/models/booru_item.dart';
 import 'package:lolisnatcher/sources/kemono/kemono_creator.dart';
@@ -214,10 +216,12 @@ void main() {
       expect(rows.first.count, greaterThan(100000));
       final catalog = handler().tagCatalog as KemonoTagCatalog;
       expect(catalog.searchTerm(rows.first), 'tag:nsfw');
-      expect(catalog.namespaceFor('creator')!.customPicker, isNotNull);
+      expect(catalog.namespaceFor('creator')!.pickerId, KemonoTagCatalog.artistsPicker);
+      expect(tagCatalogPicker(catalog.namespaceFor('creator')!), KemonoArtistsPage.pick);
       expect(catalog.namespaceFor('creator_tags'), isNull, reason: 'only on a creator tab');
       final onCreator = handler()..makeURL('creator:patreon:5993691');
       expect(onCreator.tagCatalog.namespaceFor('creator_tags'), isNotNull);
+      expect(tagCatalogPicker(onCreator.tagCatalog.namespaceFor('creator_tags')!), KemonoCreatorTagsSheet.pick);
     });
   });
 

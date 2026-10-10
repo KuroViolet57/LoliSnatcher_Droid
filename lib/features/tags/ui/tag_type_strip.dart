@@ -8,6 +8,7 @@ import 'package:lolisnatcher/models/booru.dart';
 import 'package:lolisnatcher/models/booru_tag.dart';
 import 'package:lolisnatcher/core/storage/booru_tag_store.dart';
 import 'package:lolisnatcher/features/tags/logic/tag_catalog_puller.dart';
+import 'package:lolisnatcher/features/tags/ui/tag_catalog_pickers.dart';
 import 'package:lolisnatcher/sources/framework/tags/tag_catalog_source.dart';
 import 'package:lolisnatcher/core/utils/extensions.dart';
 import 'package:lolisnatcher/core/ui/settings_widgets.dart';
@@ -49,7 +50,7 @@ class _TagCatalogChipState extends State<TagCatalogChip> {
   int _seenStored = -1;
 
   Future<void> _open() async {
-    final TagCatalogPicker? custom = widget.namespace.customPicker;
+    final TagCatalogPicker? custom = tagCatalogPicker(widget.namespace);
     if (custom != null) {
       final String? picked = await custom(context, widget.booru);
       widget.onStoredChanged?.call();

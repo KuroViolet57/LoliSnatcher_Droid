@@ -21,7 +21,7 @@ import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
 import 'package:lolisnatcher/core/logging/logger.dart';
-import 'package:lolisnatcher/features/video/ui/media_kit_player_view.dart';
+import 'package:lolisnatcher/features/video/logic/video_frame_players.dart';
 
 /// What the frame service needs from a player: the pooled media_kit player
 /// in the app, a fake in tests.
@@ -64,7 +64,7 @@ class MediaKitFrameTarget implements FrameTarget {
     if (n == null) throw StateError('not a native media_kit player');
     // r77: mpv's screenshot messages right after this are its answer, not a
     // player error (the pool would mark the player broken).
-    if (args.isNotEmpty && args.first.startsWith('screenshot')) MediaKitFrameSource.noteGrab(player);
+    if (args.isNotEmpty && args.first.startsWith('screenshot')) VideoFramePlayers.source.noteGrab(player);
     return n.command(args);
   }
 
@@ -522,7 +522,7 @@ class VideoFrames {
   // ── defaults ──
 
   static ({FrameTarget target, bool Function() stillShowing})? _mediaKitLookup(String url) {
-    final found = MediaKitFrameSource.showing(url);
+    final found = VideoFramePlayers.source.showing(url);
     if (found == null) return null;
     return (target: MediaKitFrameTarget(found.player), stillShowing: found.stillShowing);
   }

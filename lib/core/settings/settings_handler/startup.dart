@@ -180,7 +180,7 @@ extension SettingsStartup on SettingsHandler {
 
     unawaited(checkUpdate(withMessage: false));
     // r84: once after the whole database came back from a backup.
-    unawaited(DownloadsCheck.offerAfterRestore());
+    unawaited(SettingsHandler.afterRestoreCheck());
     // r85: the link entry follows the saved switch (Settings → Links).
     unawaited(SourceLinks.applySaved());
     // r88: what this build of ONNX Runtime can run on (Run on offers only that).

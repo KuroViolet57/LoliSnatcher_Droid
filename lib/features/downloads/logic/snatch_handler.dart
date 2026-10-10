@@ -20,7 +20,6 @@ import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/features/downloads/logic/image_writer.dart';
 import 'package:lolisnatcher/core/ui/flash_elements.dart';
-import 'package:lolisnatcher/features/feed/ui/thumbnail/thumbnail_build.dart';
 import 'package:lolisnatcher/core/logging/logger.dart';
 import 'package:lolisnatcher/core/utils/tools.dart';
 import 'package:lolisnatcher/features/downloads/logic/snatch_queue_journal.dart';
@@ -47,6 +46,13 @@ class SnatchHandler {
   }
 
   static void unregister() => GetIt.instance.unregister<SnatchHandler>();
+
+  /// The 64 px thumbnail in the snatch snackbars (features/feed/ui
+  /// ThumbnailBuild, simple and not selectable). Bound once at start by
+  /// app/layer_bindings.dart.
+  static Widget Function(BooruItem item, BooruHandler handler) thumbnailPreview = _noThumbnail;
+
+  static Widget _noThumbnail(BooruItem item, BooruHandler handler) => const SizedBox.shrink();
 
   final RxBool active = false.obs;
   final RxString status = ''.obs;
@@ -270,14 +276,12 @@ class SnatchHandler {
                       SizedBox(
                         width: 64,
                         height: 64,
-                        child: ThumbnailBuild(
-                          item: current.value!.booruItems.first,
-                          handler: BooruHandlerFactory().getBooruHandler(
+                        child: thumbnailPreview(
+                          current.value!.booruItems.first,
+                          BooruHandlerFactory().getBooruHandler(
                             [current.value!.booru],
                             null,
                           ).booruHandler,
-                          selectable: false,
-                          simple: true,
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -544,11 +548,9 @@ class SnatchHandler {
                 SizedBox(
                   width: 64,
                   height: 64,
-                  child: ThumbnailBuild(
-                    item: booruItems.first,
-                    handler: BooruHandlerFactory().getBooruHandler([booru], null).booruHandler,
-                    selectable: false,
-                    simple: true,
+                  child: thumbnailPreview(
+                    booruItems.first,
+                    BooruHandlerFactory().getBooruHandler([booru], null).booruHandler,
                   ),
                 ),
                 const SizedBox(width: 8),

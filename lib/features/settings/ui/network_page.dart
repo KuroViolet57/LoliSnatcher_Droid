@@ -6,6 +6,7 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
+import 'package:lolisnatcher/core/network/webview_environment.dart';
 import 'package:lolisnatcher/models/booru.dart';
 import 'package:lolisnatcher/core/constants.dart';
 import 'package:lolisnatcher/models/settings/proxy_type.dart';
@@ -15,7 +16,6 @@ import 'package:lolisnatcher/core/logging/logger.dart';
 import 'package:lolisnatcher/core/utils/tools.dart';
 import 'package:lolisnatcher/core/ui/flash_elements.dart';
 import 'package:lolisnatcher/core/ui/settings_widgets.dart';
-import 'package:lolisnatcher/features/webview/ui/webview_page.dart';
 
 class NetworkPage extends StatefulWidget {
   const NetworkPage({super.key});

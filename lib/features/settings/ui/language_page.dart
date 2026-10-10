@@ -10,6 +10,7 @@ import 'package:country_flags/country_flags.dart';
 import 'package:lolisnatcher/core/constants.dart';
 import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
 
+import 'package:lolisnatcher/core/settings/app_locale_ext.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/core/network/dio_network.dart';
 import 'package:lolisnatcher/core/logging/logger.dart';
@@ -178,28 +179,6 @@ Widget buildFlag(BuildContext context, AppLocale? locale) {
       ],
     );
   }
-}
-
-extension AppLocaleExt on AppLocale {
-  String get localeCode {
-    return LocaleSettings.instance.translationMap[this]?.locale ?? '?';
-  }
-
-  String get localeName {
-    return LocaleSettings.instance.translationMap[this]?.localeName ?? 'Loading...';
-  }
-
-  static List<AppLocale> get allowedValues => AppLocale.values
-      .where(
-        (l) => [
-          // Other languages are disabled until they reach at least 80% of completion
-          AppLocale.en,
-          AppLocale.ruRu,
-          AppLocale.trTr,
-          AppLocale.jaJp,
-        ].any((bl) => bl == l),
-      )
-      .toList();
 }
 
 class _SecondLanguageFlagClipper extends CustomClipper<Path> {

@@ -13,7 +13,6 @@ import 'package:lolisnatcher/features/doujin/logic/doujin_data_handler.dart';
 import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
 import 'package:lolisnatcher/core/ui/navigation_handler.dart';
 import 'package:lolisnatcher/core/logging/logger.dart';
-import 'package:lolisnatcher/features/tags/ui/floating_tag_preview_window.dart';
 
 /// One floating tag-preview window.
 ///
@@ -58,6 +57,12 @@ class FloatingPreviewHandler extends ChangeNotifier {
   }
 
   static void unregister() => GetIt.instance.unregister<FloatingPreviewHandler>();
+
+  /// The overlay that draws every window (features/tags/ui
+  /// FloatingPreviewOverlayStack). Bound once at start by app/layer_bindings.dart.
+  static Widget Function() overlayBuilder = _noOverlay;
+
+  static Widget _noOverlay() => const SizedBox.shrink();
 
   late final FloatingPreviewRouteObserver routeObserver = FloatingPreviewRouteObserver(this);
 
@@ -219,7 +224,7 @@ class FloatingPreviewHandler extends ChangeNotifier {
       return;
     }
     _overlayEntry = OverlayEntry(
-      builder: (_) => const FloatingPreviewOverlayStack(),
+      builder: (_) => overlayBuilder(),
     );
     overlay.insert(_overlayEntry!);
   }

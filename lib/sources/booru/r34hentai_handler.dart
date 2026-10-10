@@ -1,3 +1,4 @@
+import 'package:lolisnatcher/core/network/webview_environment.dart';
 import 'package:lolisnatcher/sources/framework/booru_handler.dart';
 import 'dart:convert';
 import 'dart:io';
@@ -16,7 +17,6 @@ import 'package:lolisnatcher/models/tag_suggestion.dart';
 import 'package:lolisnatcher/core/network/dio_network.dart';
 import 'package:lolisnatcher/core/logging/logger.dart';
 import 'package:lolisnatcher/core/utils/tools.dart';
-import 'package:lolisnatcher/features/webview/ui/webview_page.dart';
 
 class R34HentaiHandler extends ShimmieHandler {
   R34HentaiHandler(super.booru, super.limit);

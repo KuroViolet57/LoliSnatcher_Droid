@@ -26,6 +26,7 @@ import 'package:lolisnatcher/core/network/dio_network.dart';
 import 'package:lolisnatcher/core/utils/media_size_cap.dart';
 import 'package:lolisnatcher/core/utils/tools.dart';
 import 'package:lolisnatcher/features/viewer/ui/media_loading.dart';
+import 'package:lolisnatcher/features/viewer/logic/viewer_media_page.dart';
 import 'package:lolisnatcher/core/ui/image/custom_network_image.dart';
 import 'package:lolisnatcher/features/feed/ui/thumbnail/thumbnail.dart';
 
@@ -73,11 +74,12 @@ class ImageViewer extends StatefulWidget {
   State<ImageViewer> createState() => ImageViewerState();
 }
 
-class ImageViewerState extends State<ImageViewer> {
+class ImageViewerState extends State<ImageViewer> implements ViewerMediaPage {
   final settingsHandler = SettingsHandler.instance;
   final viewerHandler = ViewerHandler.instance;
 
   PhotoViewScaleStateController scaleController = PhotoViewScaleStateController();
+  @override
   PhotoViewController viewController = PhotoViewController();
 
   final ValueNotifier<int> total = ValueNotifier(0), received = ValueNotifier(0), startedAt = ValueNotifier(0);
@@ -85,9 +87,20 @@ class ImageViewerState extends State<ImageViewer> {
   final ValueNotifier<bool> isLoaded = ValueNotifier(false);
   final ValueNotifier<bool> isViewed = ValueNotifier(false);
   final ValueNotifier<bool> isFromCache = ValueNotifier(false);
+  @override
   final ValueNotifier<bool> isZoomed = ValueNotifier(false);
+  @override
   final ValueNotifier<bool> isStopped = ValueNotifier(false);
   final ValueNotifier<bool> showLoading = ValueNotifier(true);
+
+  @override
+  bool get isMediaLoaded => isLoaded.value;
+
+  @override
+  bool get isMediaFullScreen => false;
+
+  @override
+  ValueNotifier<bool> get extraUi => showLoading;
 
   PreloadBlockState blockPreloadState = .initial;
   final ValueNotifier<ViewerStopReason?> stopReason = ValueNotifier(null);
@@ -300,6 +313,7 @@ class ImageViewerState extends State<ImageViewer> {
     imageStream!.addListener(imageListener!);
   }
 
+  @override
   void forceLoad() {
     if (isStopped.value) {
       onManualRestart();
@@ -512,6 +526,7 @@ class ImageViewerState extends State<ImageViewer> {
     viewerHandler.setViewValue(widget.key, viewState);
   }
 
+  @override
   void resetZoom() {
     scaleController.scaleState = PhotoViewScaleState.initial;
     viewerHandler.setZoomed(widget.key, false);
@@ -532,6 +547,7 @@ class ImageViewerState extends State<ImageViewer> {
     }
   }
 
+  @override
   void doubleTapZoom() {
     if (!isLoaded.value) return;
     scaleController.scaleState = PhotoViewScaleState.covering;

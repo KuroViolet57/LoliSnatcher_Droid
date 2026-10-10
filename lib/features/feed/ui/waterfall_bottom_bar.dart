@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lolisnatcher/core/ui/bottom_bar_visibility.dart';
 
 import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
@@ -17,7 +18,7 @@ class WaterfallBottomBar extends StatefulWidget {
   WaterfallBottomBarState createState() => WaterfallBottomBarState();
 }
 
-class WaterfallBottomBarState extends State<WaterfallBottomBar> with TickerProviderStateMixin {
+class WaterfallBottomBarState extends State<WaterfallBottomBar> with TickerProviderStateMixin implements BottomBarVisibility {
   final SearchHandler searchHandler = SearchHandler.instance;
   final SettingsHandler settingsHandler = SettingsHandler.instance;
 
@@ -43,12 +44,14 @@ class WaterfallBottomBarState extends State<WaterfallBottomBar> with TickerProvi
     );
   }
 
+  @override
   void show() {
     if (animationController.status != AnimationStatus.reverse) {
       animationController.reverse();
     }
   }
 
+  @override
   void hide() {
     if (animationController.status != AnimationStatus.forward) {
       animationController.forward();

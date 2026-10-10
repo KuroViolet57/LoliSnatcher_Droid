@@ -16,7 +16,7 @@ import 'package:get_it/get_it.dart';
 import 'package:lolisnatcher/features/recommender/logic/model_tasks.dart';
 import 'package:lolisnatcher/core/settings/modular_ui.dart';
 import 'package:lolisnatcher/models/tag.dart';
-import 'package:lolisnatcher/features/settings/ui/language_page.dart';
+import 'package:lolisnatcher/core/settings/app_locale_ext.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
 import 'package:lolisnatcher/gen/strings.g.dart';
@@ -62,7 +62,6 @@ import 'package:lolisnatcher/core/network/http_overrides.dart';
 import 'package:lolisnatcher/core/logging/logger.dart';
 import 'package:lolisnatcher/core/logging/startup_timeline.dart';
 import 'package:lolisnatcher/core/utils/tools.dart';
-import 'package:lolisnatcher/features/downloads/ui/downloads_check.dart';
 import 'package:lolisnatcher/core/ui/flash_elements.dart';
 import 'package:lolisnatcher/core/ui/settings_widgets.dart';
 import 'package:lolisnatcher/features/video/logic/media_kit_video_player.dart';
@@ -90,6 +89,13 @@ class SettingsHandler {
   static void unregister() => GetIt.instance.unregister<SettingsHandler>();
 
   static bool get isDesktopPlatform => Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+
+  /// r84: once after the whole database came back from a backup, offer to
+  /// check the downloads (features/downloads/ui DownloadsCheck). Bound once at
+  /// start by app/layer_bindings.dart.
+  static Future<void> Function() afterRestoreCheck = _noAfterRestoreCheck;
+
+  static Future<void> _noAfterRestoreCheck() async {}
 
   DBHandler dbHandler = DBHandler();
 

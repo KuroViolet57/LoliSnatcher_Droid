@@ -2,7 +2,7 @@ import 'package:flutter/cupertino.dart';
 
 import 'package:get_it/get_it.dart';
 
-import 'package:lolisnatcher/features/feed/ui/waterfall_bottom_bar.dart';
+import 'package:lolisnatcher/core/ui/bottom_bar_visibility.dart';
 import 'package:lolisnatcher/core/ui/sliver/custom_sliver_persistent_header.dart';
 
 class NavigationHandler {
@@ -24,5 +24,8 @@ class NavigationHandler {
   final RouteObserver<ModalRoute> routeObserver = RouteObserver<ModalRoute>();
 
   final GlobalKey<CustomFloatingHeaderState> floatingHeaderKey = GlobalKey<CustomFloatingHeaderState>();
-  final GlobalKey<WaterfallBottomBarState> bottomBarKey = GlobalKey<WaterfallBottomBarState>();
+  /// The feed's bottom bar (WaterfallBottomBar); drive it through [bottomBar].
+  final GlobalKey bottomBarKey = GlobalKey();
+
+  BottomBarVisibility? get bottomBar => bottomBarKey.currentState as BottomBarVisibility?;
 }

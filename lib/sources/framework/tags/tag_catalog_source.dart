@@ -9,6 +9,7 @@ import 'package:lolisnatcher/core/storage/booru_tag_store.dart';
 
 /// A source-specific picker for one namespace: opened in place of the
 /// generic list sheet, returns the term to insert (null = nothing picked).
+/// The ui layer maps [TagCatalogNamespace.pickerId] to one.
 typedef TagCatalogPicker = Future<String?> Function(BuildContext context, Booru booru);
 
 /// One namespace a source can list in full: the chip in the tag builder.
@@ -19,13 +20,14 @@ class TagCatalogNamespace {
     required this.type,
     this.shards,
     this.maxShards,
-    this.customPicker,
+    this.pickerId,
     this.byType = false,
   });
 
-  /// When set, the chip opens this instead of the generic picker (kemono's
-  /// Artists page: 108,000 names want banners and a service filter).
-  final TagCatalogPicker? customPicker;
+  /// When set, the chip opens the picker with this id instead of the generic
+  /// one (kemono's Artists page: 108,000 names want banners and a service
+  /// filter). Resolved by features/tags/ui/tag_catalog_pickers.dart.
+  final String? pickerId;
 
   /// The source's own key: `artist`, `circle`, `female`, `tag`, …
   final String key;

@@ -18,7 +18,7 @@ import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/core/storage/tag_handler.dart';
 import 'package:lolisnatcher/core/ui/navigation_handler.dart';
 import 'package:lolisnatcher/features/sync/logic/sync_search_payload.dart';
-import 'package:lolisnatcher/features/sync/ui/loli_sync_page.dart';
+import 'package:lolisnatcher/features/sync/logic/sync_modes.dart';
 import 'package:lolisnatcher/core/logging/logger.dart';
 import 'package:lolisnatcher/core/ui/flash_elements.dart';
 

@@ -5,11 +5,11 @@ import 'package:flutter/foundation.dart';
 
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
+import 'package:lolisnatcher/core/network/webview_environment.dart';
 import 'package:lolisnatcher/sources/furaffinity/furaffinity_parser.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/core/logging/logger.dart';
 import 'package:lolisnatcher/core/utils/tools.dart';
-import 'package:lolisnatcher/features/webview/ui/webview_page.dart' show webViewEnvironment;
 
 /// What to do with the shared cookie jar after a FurAffinity webview closed.
 enum FurAffinityJarAction { none, reseed }

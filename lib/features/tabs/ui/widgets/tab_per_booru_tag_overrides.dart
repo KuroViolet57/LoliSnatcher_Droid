@@ -12,7 +12,7 @@ import 'package:lolisnatcher/sources/framework/booru_handler_factory.dart';
 import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
 import 'package:lolisnatcher/core/storage/tag_handler.dart';
 import 'package:lolisnatcher/features/feed/ui/search/main_search_query_editor_page.dart';
-import 'package:lolisnatcher/features/tabs/ui/widgets/tab_booru_selector.dart';
+import 'package:lolisnatcher/core/ui/booru_selector_item.dart';
 
 // Per-booru tag override editor shown when a tab is in merge mode.
 // One row per participating booru (primary + secondaries). Each row holds:

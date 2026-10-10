@@ -6,7 +6,7 @@ import 'package:lolisnatcher/models/booru.dart';
 import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/core/ui/loli_dropdown.dart';
-import 'package:lolisnatcher/features/tabs/ui/widgets/tab_booru_selector.dart';
+import 'package:lolisnatcher/core/ui/booru_selector_item.dart';
 
 class TabSecondaryBooruSelector extends StatelessWidget {
   const TabSecondaryBooruSelector({

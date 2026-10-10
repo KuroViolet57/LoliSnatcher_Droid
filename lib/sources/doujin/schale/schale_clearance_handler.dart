@@ -12,7 +12,7 @@ import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/core/network/dio_network.dart';
 import 'package:lolisnatcher/core/logging/logger.dart';
 import 'package:lolisnatcher/core/utils/tools.dart';
-import 'package:lolisnatcher/features/webview/ui/webview_page.dart';
+import 'package:lolisnatcher/core/network/webview_pages.dart';
 import 'package:lolisnatcher/sources/doujin/schale/schale_network.dart';
 
 /// The clearance token niyaniya/Schale requires before it will serve readable
@@ -863,7 +863,7 @@ try {
       await Navigator.push(
         context,
         MaterialPageRoute<void>(
-          builder: (_) => InAppWebviewView(
+          builder: (_) => WebviewPages.build(
             initialUrl: openAt,
             title: 'Reader access',
             subtitle: 'Complete the check. This window closes by itself once the site accepts it.',

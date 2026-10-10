@@ -7,7 +7,6 @@ import 'package:lolisnatcher/models/booru.dart';
 import 'package:lolisnatcher/models/booru_tag.dart';
 import 'package:lolisnatcher/models/tag_type.dart';
 import 'package:lolisnatcher/sources/framework/tags/tag_catalog_source.dart';
-import 'package:lolisnatcher/features/kemono/ui/kemono_artists_page.dart';
 
 /// kemono's tag builder: the site's global tag list (`/api/v1/posts/tags`,
 /// 2,000 tags with counts, one shard) as the Tags chip, and the creator index
@@ -24,6 +23,11 @@ class KemonoTagCatalog extends TagCatalogSource {
   static const String creatorKey = 'creator';
   static const String creatorTagsKey = 'creator_tags';
 
+  /// Picker ids (features/tags/ui/tag_catalog_pickers.dart): the Artists
+  /// page and this creator's tags sheet.
+  static const String artistsPicker = 'kemono.artists';
+  static const String creatorTagsPicker = 'kemono.creatorTags';
+
   @override
   List<TagCatalogNamespace> get namespaces => [
     if (handler.site.hasTagList) const TagCatalogNamespace(key: tagKey, label: 'Tags', type: TagType.none, shards: 1),
@@ -32,7 +36,7 @@ class KemonoTagCatalog extends TagCatalogSource {
       label: 'Artists',
       type: TagType.artist,
       shards: 0,
-      customPicker: KemonoArtistsPage.pick,
+      pickerId: artistsPicker,
     ),
     if (handler.currentCreator != null)
       const TagCatalogNamespace(
@@ -40,7 +44,7 @@ class KemonoTagCatalog extends TagCatalogSource {
         label: "This creator's tags",
         type: TagType.none,
         shards: 0,
-        customPicker: KemonoCreatorTagsSheet.pick,
+        pickerId: creatorTagsPicker,
       ),
   ];
 

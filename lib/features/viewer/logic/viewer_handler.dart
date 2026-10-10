@@ -11,8 +11,7 @@ import 'package:lolisnatcher/core/platform/service_handler.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/core/utils/debouncer.dart';
 import 'package:lolisnatcher/features/viewer/logic/viewer_zoom_target.dart';
-import 'package:lolisnatcher/features/viewer/ui/media/image_viewer.dart';
-import 'package:lolisnatcher/features/video/ui/video_viewer.dart';
+import 'package:lolisnatcher/features/viewer/logic/viewer_media_page.dart';
 
 // TODO media actions, video pause/mute... global controller
 
@@ -207,26 +206,17 @@ class ViewerHandler {
     // addPostFrameCallback waits until widget is built to avoid calling setState in it while other setState is active
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final state = key.currentState;
-      switch (state?.widget) {
-        case ImageViewer():
-          final widgetState = state! as ImageViewerState;
-          isZoomed.value = widgetState.isZoomed.value;
-          isLoaded.value = widgetState.isLoaded.value;
-          isStopped.value = widgetState.isStopped.value;
-          setFullScreenState(false);
-          viewState.value = widgetState.viewController.value;
+      switch (state) {
+        // The image and the ExoPlayer video (ui pages this layer can't import).
+        case final ViewerMediaPage page:
+          isZoomed.value = page.isZoomed.value;
+          isLoaded.value = page.isMediaLoaded;
+          isStopped.value = page.isStopped.value;
+          setFullScreenState(page.isMediaFullScreen);
+          viewState.value = page.viewController.value;
           break;
-        case VideoViewer():
-          final widgetState = state! as VideoViewerState;
-          isZoomed.value = widgetState.isZoomed.value;
-          isLoaded.value = widgetState.isVideoInited;
-          isStopped.value = widgetState.isStopped.value;
-          setFullScreenState(widgetState.chewieController.value?.isFullScreen ?? false);
-          viewState.value = widgetState.viewController.value;
-          break;
-        // The fast GIF and the media_kit video (ui pages this layer can't import).
-        case _ when state is ViewerZoomTarget:
-          final ViewerZoomTarget target = state! as ViewerZoomTarget;
+        // The fast GIF and the media_kit video.
+        case final ViewerZoomTarget target:
           isZoomed.value = target.isZoomed.value;
           isLoaded.value = target.isZoomTargetLoaded;
           isStopped.value = false;
@@ -258,15 +248,12 @@ class ViewerHandler {
 
   void resetZoom() {
     final state = (current.value?.key as GlobalKey?)?.currentState;
-    switch (state?.widget) {
-      case ImageViewer():
-        (state as ImageViewerState?)?.resetZoom();
+    switch (state) {
+      case final ViewerMediaPage page:
+        page.resetZoom();
         break;
-      case VideoViewer():
-        (state as VideoViewerState?)?.resetZoom();
-        break;
-      case _ when state is ViewerZoomTarget:
-        (state! as ViewerZoomTarget).resetZoom();
+      case final ViewerZoomTarget target:
+        target.resetZoom();
         break;
       default:
         break;
@@ -275,15 +262,12 @@ class ViewerHandler {
 
   void doubleTapZoom() {
     final state = (current.value?.key as GlobalKey?)?.currentState;
-    switch (state?.widget) {
-      case ImageViewer():
-        (state as ImageViewerState?)?.doubleTapZoom();
+    switch (state) {
+      case final ViewerMediaPage page:
+        page.doubleTapZoom();
         break;
-      case VideoViewer():
-        (state as VideoViewerState?)?.doubleTapZoom();
-        break;
-      case _ when state is ViewerZoomTarget:
-        (state! as ViewerZoomTarget).doubleTapZoom();
+      case final ViewerZoomTarget target:
+        target.doubleTapZoom();
         break;
       default:
         break;
@@ -293,9 +277,9 @@ class ViewerHandler {
   void toggleMuteAllVideos({bool mute = true}) {
     for (final key in activeKeys) {
       final state = key?.currentState;
-      switch (state?.widget) {
-        case VideoViewer():
-          (state as VideoViewerState?)?.videoController.value?.setVolume(mute ? 0 : 1);
+      switch (state) {
+        case final ViewerVideoPage page:
+          page.setVolume(mute ? 0 : 1);
           break;
         default:
           break;
@@ -306,10 +290,10 @@ class ViewerHandler {
   void pauseAllVideos() {
     for (final key in activeKeys) {
       final state = key?.currentState;
-      switch (state?.widget) {
-        case VideoViewer():
+      switch (state) {
+        case final ViewerVideoPage page:
           WidgetsBinding.instance.addPostFrameCallback(
-            (_) => (state as VideoViewerState?)?.videoController.value?.pause(),
+            (_) => page.pause(),
           );
           break;
         default:
@@ -320,12 +304,9 @@ class ViewerHandler {
 
   void forceLoadCurrentItem() {
     final state = (current.value?.key as GlobalKey?)?.currentState;
-    switch (state?.widget) {
-      case ImageViewer():
-        (state as ImageViewerState?)?.forceLoad();
-        break;
-      case VideoViewer():
-        (state as VideoViewerState?)?.forceLoad();
+    switch (state) {
+      case final ViewerMediaPage page:
+        page.forceLoad();
         break;
       default:
         break;
@@ -340,12 +321,9 @@ class ViewerHandler {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       for (final key in activeKeys) {
         final state = key?.currentState;
-        switch (state?.widget) {
-          case ImageViewer():
-            (state as ImageViewerState?)?.showLoading.value = false;
-            break;
-          case VideoViewer():
-            (state as VideoViewerState?)?.showControls.value = false;
+        switch (state) {
+          case final ViewerMediaPage page:
+            page.extraUi.value = false;
             break;
           default:
             break;
@@ -358,12 +336,9 @@ class ViewerHandler {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       for (final key in activeKeys) {
         final state = key?.currentState;
-        switch (state?.widget) {
-          case ImageViewer():
-            (state as ImageViewerState?)?.showLoading.value = true;
-            break;
-          case VideoViewer():
-            (state as VideoViewerState?)?.showControls.value = true;
+        switch (state) {
+          case final ViewerMediaPage page:
+            page.extraUi.value = true;
             break;
           default:
             break;

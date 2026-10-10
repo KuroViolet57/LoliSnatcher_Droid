@@ -5,9 +5,8 @@ import 'package:get/get.dart';
 import 'package:lolisnatcher/models/booru.dart';
 import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/core/ui/booru_selector_item.dart';
 import 'package:lolisnatcher/core/ui/loli_dropdown.dart';
-import 'package:lolisnatcher/core/ui/text/marquee_text.dart';
-import 'package:lolisnatcher/core/ui/image/booru_favicon.dart';
 
 class TabBooruSelector extends StatelessWidget {
   const TabBooruSelector({
@@ -87,64 +86,5 @@ class TabBooruSelector extends StatelessWidget {
         ),
       );
     });
-  }
-}
-
-class TabBooruSelectorItem extends StatelessWidget {
-  const TabBooruSelectorItem({
-    required this.booru,
-    this.withFavicon = true,
-    this.compact = false,
-    this.extraText,
-    super.key,
-  });
-
-  final Booru booru;
-  final bool withFavicon;
-  final bool compact;
-  final String? extraText;
-
-  @override
-  Widget build(BuildContext context) {
-    final String name = ' ${booru.name}${extraText?.isNotEmpty == true ? extraText : ''}';
-    final String type = ' ${booru.type?.name ?? ''}';
-
-    final column = Column(
-      mainAxisSize: .min,
-      crossAxisAlignment: .start,
-      children: [
-        MarqueeText(
-          key: ValueKey('name-$name'),
-          text: name,
-          isExpanded: false,
-        ),
-        if (!compact) ...[
-          const SizedBox(height: 8),
-          MarqueeText(
-            key: ValueKey('type-$type'),
-            text: type,
-            style: DefaultTextStyle.of(context).style.copyWith(
-              fontSize: 12,
-              height: 1,
-              color: DefaultTextStyle.of(context).style.color?.withValues(alpha: 0.66),
-            ),
-            isExpanded: false,
-          ),
-        ],
-      ],
-    );
-
-    return Row(
-      mainAxisSize: compact ? .min : .max,
-      children: [
-        //Booru Icon
-        if (withFavicon) ...[
-          BooruFavicon(booru),
-          const SizedBox(width: 4),
-        ],
-        //Booru name
-        if (compact) column else Expanded(child: column),
-      ],
-    );
   }
 }

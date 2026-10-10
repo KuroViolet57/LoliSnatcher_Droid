@@ -10,6 +10,7 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
+import 'package:lolisnatcher/core/network/webview_environment.dart';
 import 'package:lolisnatcher/sources/booru/idol_sankaku_handler.dart';
 import 'package:lolisnatcher/sources/booru/sankaku_handler.dart';
 import 'package:lolisnatcher/models/booru.dart';
@@ -21,7 +22,7 @@ import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/core/utils/extensions.dart';
 import 'package:lolisnatcher/core/logging/logger.dart';
 import 'package:lolisnatcher/core/ui/timed_leave_dialog.dart';
-import 'package:lolisnatcher/features/webview/ui/webview_page.dart';
+import 'package:lolisnatcher/core/network/webview_pages.dart';
 
 class Tools {
   // code taken from: https://gist.github.com/zzpmaster/ec51afdbbfa5b2bf6ced13374ff891d9
@@ -463,7 +464,7 @@ class Tools {
         await Navigator.push(
         NavigationHandler.instance.navContext,
         MaterialPageRoute(
-          builder: (context) => InAppWebviewView(
+          builder: (context) => WebviewPages.build(
             initialUrl: '${uri.scheme}://$host${uri.hasPort && uri.port != 80 ? ':${uri.port}' : ''}',
             userAgent: customUserAgent,
             title: context.loc.webview.captcha,

@@ -6,7 +6,6 @@ import 'package:lolisnatcher/models/booru.dart';
 import 'package:lolisnatcher/features/doujin/logic/doujin_data_handler.dart';
 import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
 import 'package:lolisnatcher/core/logging/logger.dart';
-import 'package:lolisnatcher/features/links/ui/linked_media_sheet.dart';
 
 enum IncomingLinkKind { post, search, doujin, other }
 
@@ -163,6 +162,13 @@ class IncomingLinks {
   /// app's own page view, so it never bounces back to the app).
   static Future<void> Function(BuildContext context, LinkedMedia media) openMedia = _defaultOpenMedia;
 
+  /// The app's opener (features/links/ui LinkedMediaOpener.open), bound once at
+  /// start by app/layer_bindings.dart; a test reset goes back to it.
+  static void bind(Future<void> Function(BuildContext context, LinkedMedia media) opener) {
+    _defaultOpenMedia = opener;
+    openMedia = opener;
+  }
+
   static void resetForTests() {
     openTab = _defaultOpenTab;
     openMedia = _defaultOpenMedia;
@@ -190,5 +196,7 @@ class IncomingLinks {
     SearchHandler.instance.addTabByString(query, customBooru: booru, switchToNew: true, doujinPostURL: doujinPostURL);
   }
 
-  static Future<void> _defaultOpenMedia(BuildContext context, LinkedMedia media) => LinkedMediaOpener.open(context, media);
+  static Future<void> Function(BuildContext context, LinkedMedia media) _defaultOpenMedia = _noOpenMedia;
+
+  static Future<void> _noOpenMedia(BuildContext context, LinkedMedia media) async {}
 }

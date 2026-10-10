@@ -10,7 +10,7 @@ import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/core/storage/tag_handler.dart';
 import 'package:lolisnatcher/core/ui/buttons/clear_button.dart';
 import 'package:lolisnatcher/core/ui/settings_widgets.dart';
-import 'package:lolisnatcher/features/tabs/ui/widgets/tab_booru_selector.dart';
+import 'package:lolisnatcher/core/ui/booru_selector_item.dart';
 
 class TabManagerFiltersDialog extends StatefulWidget {
   const TabManagerFiltersDialog({

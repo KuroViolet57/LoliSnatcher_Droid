@@ -90,7 +90,7 @@ import 'package:lolisnatcher/features/viewer/ui/notes_renderer.dart';
 import 'package:lolisnatcher/features/viewer/ui/info/find_elsewhere_sheet.dart';
 import 'package:lolisnatcher/core/ui/image/booru_favicon.dart';
 import 'package:lolisnatcher/features/feed/ui/search/main_search_tag_chip.dart';
-import 'package:lolisnatcher/features/tabs/ui/widgets/tab_booru_selector.dart';
+import 'package:lolisnatcher/core/ui/booru_selector_item.dart';
 import 'package:lolisnatcher/features/tags/ui/manager/tm_list_item_dialog.dart';
 import 'package:lolisnatcher/features/feed/ui/thumbnail/thumbnail_card_build.dart';
 

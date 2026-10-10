@@ -17,6 +17,7 @@ import 'package:lolisnatcher/features/video/logic/player_pool_planner.dart';
 import 'package:lolisnatcher/features/video/logic/media_kit_engine_options.dart';
 import 'package:lolisnatcher/features/video/logic/video_completion_tracker.dart';
 import 'package:lolisnatcher/features/video/logic/video_surface_cap.dart';
+import 'package:lolisnatcher/features/video/logic/video_frame_players.dart';
 import 'package:lolisnatcher/models/booru.dart';
 import 'package:lolisnatcher/models/booru_item.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';

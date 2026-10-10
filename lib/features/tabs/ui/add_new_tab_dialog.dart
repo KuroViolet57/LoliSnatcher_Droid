@@ -9,7 +9,7 @@ import 'package:lolisnatcher/core/ui/buttons/cancel_button.dart';
 import 'package:lolisnatcher/core/ui/loli_dropdown.dart';
 import 'package:lolisnatcher/core/ui/settings_widgets.dart';
 import 'package:lolisnatcher/features/tags/ui/tag_search_query_editor_page.dart';
-import 'package:lolisnatcher/features/tabs/ui/widgets/tab_booru_selector.dart';
+import 'package:lolisnatcher/core/ui/booru_selector_item.dart';
 
 enum _Querymode {
   defaultTags,

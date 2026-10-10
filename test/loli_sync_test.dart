@@ -11,7 +11,7 @@ import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
 import 'package:lolisnatcher/features/sync/logic/loli_sync_handler.dart';
 import 'package:lolisnatcher/features/sync/logic/sync_search_payload.dart';
 import 'package:lolisnatcher/models/saved_search.dart';
-import 'package:lolisnatcher/features/sync/ui/loli_sync_page.dart';
+import 'package:lolisnatcher/features/sync/logic/sync_modes.dart';
 import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
 import 'package:lolisnatcher/models/booru_item.dart';
 import 'package:lolisnatcher/core/storage/database_handler.dart';

@@ -214,9 +214,9 @@ class _MainAppBarState extends State<MainAppBar> {
         headerKey: NavigationHandler.instance.floatingHeaderKey,
         onHeaderVisiblityChanged: (visible) {
           if (visible) {
-            NavigationHandler.instance.bottomBarKey.currentState?.show();
+            NavigationHandler.instance.bottomBar?.show();
           } else {
-            NavigationHandler.instance.bottomBarKey.currentState?.hide();
+            NavigationHandler.instance.bottomBar?.hide();
           }
         },
         // Obx: a hand side change swaps the buttons at once (this bar is

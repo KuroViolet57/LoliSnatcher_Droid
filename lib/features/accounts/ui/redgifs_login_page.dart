@@ -7,8 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:lolisnatcher/core/network/webview_environment.dart';
 import 'package:lolisnatcher/core/utils/tools.dart';
-import 'package:lolisnatcher/features/webview/ui/webview_page.dart';
 
 /// A WebView-based RedGifs login.
 ///

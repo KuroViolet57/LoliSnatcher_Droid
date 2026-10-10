@@ -17,9 +17,11 @@ import 'package:lemberfpsmonitor/lemberfpsmonitor.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:talker_flutter/talker_flutter.dart';
 
+import 'package:lolisnatcher/core/network/webview_environment.dart';
 import 'package:lolisnatcher/core/platform/photo_picker.dart';
 import 'package:lolisnatcher/core/logging/perf_trace.dart';
 import 'package:lolisnatcher/core/logging/startup_timeline.dart';
+import 'package:lolisnatcher/app/layer_bindings.dart';
 import 'package:lolisnatcher/app/status_bar_inset.dart';
 import 'package:lolisnatcher/models/booru.dart';
 import 'package:lolisnatcher/models/theme_item.dart';
@@ -64,7 +66,6 @@ import 'package:lolisnatcher/app/overlays/dev_overlay.dart';
 import 'package:lolisnatcher/features/debug/ui/image_stats.dart';
 import 'package:lolisnatcher/app/scroll_physics.dart';
 import 'package:lolisnatcher/features/video/ui/media_kit_player_view.dart';
-import 'package:lolisnatcher/features/webview/ui/webview_page.dart';
 import 'package:lolisnatcher/core/storage/database_handler.dart';
 
 /// The WebView user agent being read (1.0); see main() and MainApp.initHandlers.
@@ -74,6 +75,7 @@ void main() async {
   StartupTimeline.start();
   CustomWidgetsBinding.ensureInitialized();
   StartupTimeline.mark('binding');
+  bindLayers();
 
   // Default imageCache is 100 MB / 1000 images. For a booru client where a
   // single 4K JPEG can easily decode to 30+ MB of RGBA, that cache spills to

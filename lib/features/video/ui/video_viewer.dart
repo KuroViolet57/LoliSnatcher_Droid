@@ -34,6 +34,7 @@ import 'package:lolisnatcher/core/ui/transparent_pointer.dart';
 import 'package:lolisnatcher/features/feed/ui/thumbnail/thumbnail.dart';
 import 'package:lolisnatcher/features/video/ui/loli_controls.dart';
 import 'package:lolisnatcher/features/video/logic/media_kit_video_player.dart';
+import 'package:lolisnatcher/features/viewer/logic/viewer_media_page.dart';
 
 // TODO remove setState use
 
@@ -55,12 +56,13 @@ class VideoViewer extends StatefulWidget {
   State<VideoViewer> createState() => VideoViewerState();
 }
 
-class VideoViewerState extends State<VideoViewer> {
+class VideoViewerState extends State<VideoViewer> implements ViewerMediaPage, ViewerVideoPage {
   final SettingsHandler settingsHandler = SettingsHandler.instance;
   final ViewerHandler viewerHandler = ViewerHandler.instance;
   final LocalAuthHandler localAuthHandler = LocalAuthHandler.instance;
 
   final PhotoViewScaleStateController scaleController = PhotoViewScaleStateController();
+  @override
   final PhotoViewController viewController = PhotoViewController();
   final ValueNotifier<VideoPlayerController?> videoController = ValueNotifier(null);
   final ValueNotifier<ChewieController?> chewieController = ValueNotifier(null);
@@ -69,8 +71,10 @@ class VideoViewerState extends State<VideoViewer> {
   int lastViewedIndex = -1;
   PreloadBlockState blockPreloadState = .initial;
   final ValueNotifier<bool> isFromCache = ValueNotifier(false);
+  @override
   final ValueNotifier<bool> isStopped = ValueNotifier(false);
   final ValueNotifier<bool> isViewed = ValueNotifier(false);
+  @override
   final ValueNotifier<bool> isZoomed = ValueNotifier(false);
   final ValueNotifier<bool> showControls = ValueNotifier(true);
   final ValueNotifier<bool> forceCache = ValueNotifier(false);
@@ -116,6 +120,25 @@ class VideoViewerState extends State<VideoViewer> {
   }
 
   bool get isVideoInited => videoController.value?.value.isInitialized ?? false;
+
+  @override
+  bool get isMediaLoaded => isVideoInited;
+
+  @override
+  bool get isMediaFullScreen => chewieController.value?.isFullScreen ?? false;
+
+  @override
+  ValueNotifier<bool> get extraUi => showControls;
+
+  @override
+  void setVolume(double volume) {
+    videoController.value?.setVolume(volume);
+  }
+
+  @override
+  void pause() {
+    videoController.value?.pause();
+  }
 
   Future<void> downloadVideo() async {
     isStopped.value = false;
@@ -550,6 +573,7 @@ class VideoViewerState extends State<VideoViewer> {
     viewerHandler.setViewValue(widget.key, viewState);
   }
 
+  @override
   void resetZoom() {
     if (!isVideoInited) return;
     scaleController.scaleState = PhotoViewScaleState.initial;
@@ -572,6 +596,7 @@ class VideoViewerState extends State<VideoViewer> {
     }
   }
 
+  @override
   void doubleTapZoom() {
     if (!isVideoInited) return;
     // viewController.scale = 2;
@@ -741,6 +766,7 @@ class VideoViewerState extends State<VideoViewer> {
     updateState();
   }
 
+  @override
   void forceLoad() {
     if (isStopped.value) {
       onManualRestart();

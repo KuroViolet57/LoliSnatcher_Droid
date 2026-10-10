@@ -59,7 +59,10 @@ class _PooledPlayer {
 /// ([PlayerPoolPlanner]) instead of being destroyed and rebuilt; only slots
 /// ABOVE the capacity are disposed, and only once nobody is watching them.
 class _MediaKitPlayerPool {
-  _MediaKitPlayerPool._();
+  _MediaKitPlayerPool._() {
+    // VideoFrames (logic) finds the showing players through this.
+    VideoFramePlayers.source = const MediaKitFrameSource._();
+  }
   static final _MediaKitPlayerPool instance = _MediaKitPlayerPool._();
 
   final List<_PooledPlayer> _slots = [];
@@ -345,18 +348,20 @@ class _MediaKitPlayerPool {
 /// frames (VideoFrames). Read-only: nothing here changes the pool or a
 /// player. `stillShowing` tells afterwards whether that player still holds
 /// the same video (the pool may re-point an idle player at another one).
-class MediaKitFrameSource {
+class MediaKitFrameSource implements VideoFramePlayerSource {
   const MediaKitFrameSource._();
 
   /// r77: a frame is about to be asked of [player]; its screenshot messages
   /// in the next few seconds are its answer, not a player error.
-  static void noteGrab(Player player) {
+  @override
+  void noteGrab(Player player) {
     for (final _PooledPlayer e in _MediaKitPlayerPool.instance._slots) {
       if (identical(e.player, player)) e.lastGrabAt = MediaKitPlayerView.monoNow();
     }
   }
 
-  static ({Player player, bool Function() stillShowing})? showing(String url) {
+  @override
+  ({Player player, bool Function() stillShowing})? showing(String url) {
     for (final _PooledPlayer e in _MediaKitPlayerPool.instance._slots) {
       // r77: an idle pooled player (refCount 0) is paused off screen.
       if (e.url != url || e.hasError || e.refCount <= 0) continue;

@@ -3,8 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_html/flutter_html.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
-import 'package:lolisnatcher/app/routing.dart';
-
 class LoliHtml extends StatelessWidget {
   const LoliHtml(
     this.content, {
@@ -18,6 +16,12 @@ class LoliHtml extends StatelessWidget {
 
   /// Extra renderers; the caller's take precedence over flutter_html's built-ins.
   final List<HtmlExtension> extensions;
+
+  /// Opens a link the device has no app for inside the app (app/routing.dart
+  /// internalRouting). Bound once at start by app/layer_bindings.dart.
+  static Future<bool> Function(BuildContext context, String link) onInternalLink = _noInternalLink;
+
+  static Future<bool> _noInternalLink(BuildContext context, String link) async => false;
 
   static Map<String, Style> defaultHtmlStyle(BuildContext context) {
     final Map<String, Style> htmlStyle = Style.fromThemeData(Theme.of(context));
@@ -63,7 +67,7 @@ class LoliHtml extends StatelessWidget {
             mode: LaunchMode.externalApplication,
           );
         } else {
-          await internalRouting(context, link);
+          await onInternalLink(context, link);
         }
       },
       extensions: extensions,

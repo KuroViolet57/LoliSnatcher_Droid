@@ -10,7 +10,7 @@ import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/core/ui/flash_elements.dart';
 import 'package:lolisnatcher/core/ui/loli_dropdown.dart';
 import 'package:lolisnatcher/core/ui/settings_widgets.dart';
-import 'package:lolisnatcher/features/tabs/ui/widgets/tab_booru_selector.dart';
+import 'package:lolisnatcher/core/ui/booru_selector_item.dart';
 import 'package:lolisnatcher/features/tabs/ui/widgets/tab_per_booru_tag_overrides.dart';
 import 'package:lolisnatcher/features/tabs/ui/widgets/tab_secondary_booru_selector.dart';
 
