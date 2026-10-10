@@ -45,6 +45,7 @@ class Thumbnail extends StatefulWidget {
     this.isStandalone = false,
     this.useHero = true,
     this.fitOverride,
+    this.coverBackdrop = false,
     super.key,
   });
 
@@ -59,8 +60,48 @@ class Thumbnail extends StatefulWidget {
   /// show the whole cover (contain) instead of cropping.
   final BoxFit? fitOverride;
 
+  /// Paints a blurred, dimmed copy of the same image, cropped to fill the box,
+  /// behind the image (2026-10-10, list cards in Adapt): the box is always
+  /// full while the cover itself is shown whole. The copy is the same decoded
+  /// image, so it costs no extra download or decode.
+  final bool coverBackdrop;
+
+  /// Blur of the [coverBackdrop] copy, in logical pixels.
+  static const double backdropBlur = 10;
+
   @override
   State<Thumbnail> createState() => _ThumbnailState();
+}
+
+/// The [Thumbnail.coverBackdrop] fill: [image] cropped to the box, blurred
+/// and dimmed so the whole cover in front of it reads as the picture.
+class _CoverBackdrop extends StatelessWidget {
+  const _CoverBackdrop({required this.image});
+
+  final ImageProvider image;
+
+  @override
+  Widget build(BuildContext context) {
+    return ImageFiltered(
+      key: const ValueKey('thumbnail-backdrop'),
+      imageFilter: ImageFilter.blur(
+        sigmaX: Thumbnail.backdropBlur,
+        sigmaY: Thumbnail.backdropBlur,
+        tileMode: TileMode.clamp,
+      ),
+      child: Image(
+        image: image,
+        fit: BoxFit.cover,
+        filterQuality: FilterQuality.low,
+        color: Colors.black.withValues(alpha: 0.35),
+        colorBlendMode: BlendMode.srcATop,
+        width: double.infinity,
+        height: double.infinity,
+        excludeFromSemantics: true,
+        gaplessPlayback: true,
+      ),
+    );
+  }
 }
 
 class _ThumbnailState extends State<Thumbnail> {
@@ -656,6 +697,12 @@ class _ThumbnailState extends State<Thumbnail> {
                             }
                           },
                         );
+                        if (widget.coverBackdrop) {
+                          child = Stack(
+                            fit: StackFit.expand,
+                            children: [_CoverBackdrop(image: extraProvider), child],
+                          );
+                        }
                       }
 
                       return AnimatedSwitcher(
@@ -718,6 +765,12 @@ class _ThumbnailState extends State<Thumbnail> {
                             }
                           },
                         );
+                        if (widget.coverBackdrop) {
+                          child = Stack(
+                            fit: StackFit.expand,
+                            children: [_CoverBackdrop(image: mainProvider), child],
+                          );
+                        }
                       }
 
                       return AnimatedSwitcher(

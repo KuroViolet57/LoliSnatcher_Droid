@@ -6,7 +6,6 @@ import 'package:lolisnatcher/core/logging/perf_trace.dart';
 import 'package:lolisnatcher/models/booru_item.dart';
 import 'package:lolisnatcher/models/tag.dart';
 import 'package:lolisnatcher/sources/framework/booru_handler.dart';
-import 'package:lolisnatcher/features/doujin/logic/doujin_cover_aspect_handler.dart';
 import 'package:lolisnatcher/features/doujin/logic/doujin_data_handler.dart';
 import 'package:lolisnatcher/core/settings/source_settings_handler.dart';
 import 'package:lolisnatcher/features/doujin/logic/doujin_card_meta.dart';
@@ -55,12 +54,9 @@ class DoujinListCard extends StatelessWidget {
   static const double defaultHeight = 176;
   static const double defaultCoverWidth = 116;
 
-  /// Adapt never squeezes the column below this.
-  static const double minCoverWidth = 48;
-
   final double height;
 
-  /// The cover column's width; for Adapt the widest it may get.
+  /// The cover column's width, the same in every row and every mode.
   final double coverWidth;
 
   /// The tag block is this many rows tall and scrolls sideways.
@@ -166,16 +162,18 @@ class DoujinListCard extends StatelessWidget {
     );
   }
 
-  /// The cover column, following the source's Cover display choice (r69):
-  /// crop fills the column, fit shows the whole cover with bars, adapt gives
-  /// the column the cover's own shape at the row height - the width setting
-  /// is its cap, and a cover wider than the cap is cropped to it.
+  /// The cover column, following the source's Cover display choice (r69).
+  /// The column is the same size in every row and every mode (2026-10-10:
+  /// Adapt used to narrow it to each cover, and the list looked uneven):
+  /// crop fills it, fit shows the whole cover with bars, adapt shows the
+  /// whole cover over a blurred copy of itself that fills the rest.
   Widget _cover(BuildContext context, {required bool isSelected}) {
     final ThemeData theme = Theme.of(context);
+    final String display = SourceSettingsHandler.instance.coverDisplay(handler.booru);
 
-    Widget column({required double width, required BoxFit fit}) => SizedBox(
+    return SizedBox(
       key: const ValueKey('doujin-list-card-cover'),
-      width: width,
+      width: coverWidth,
       child: ColoredBox(
         color: theme.colorScheme.surfaceContainerHighest,
         child: ThumbnailBuild(
@@ -184,29 +182,11 @@ class DoujinListCard extends StatelessWidget {
           selectable: selectable,
           selectedIndex: isSelected ? selectedIndex : null,
           onSelected: onSelected == null ? null : () => onSelected!(index),
-          fit: fit,
+          fit: display == 'fit' || display == 'adapt' ? BoxFit.contain : BoxFit.cover,
+          coverBackdrop: display == 'adapt',
         ),
       ),
     );
-
-    switch (SourceSettingsHandler.instance.coverDisplay(handler.booru)) {
-      case 'fit':
-        return column(width: coverWidth, fit: BoxFit.contain);
-      case 'adapt':
-        return ValueListenableBuilder<double?>(
-          valueListenable: DoujinCoverAspects.instance.notifierFor(item.displayThumbnailURL),
-          builder: (context, aspect, _) {
-            final double wanted = height * (aspect ?? DoujinCoverAspects.provisional);
-            final double width = wanted.clamp(minCoverWidth, coverWidth);
-            // The column has the cover's exact shape: nothing to crop. Capped,
-            // or not decoded yet: the cover fills what it has.
-            final bool exact = aspect != null && wanted >= minCoverWidth && wanted <= coverWidth;
-            return column(width: width, fit: exact ? BoxFit.contain : BoxFit.cover);
-          },
-        );
-      default:
-        return column(width: coverWidth, fit: BoxFit.cover);
-    }
   }
 
   /// One line that scrolls sideways: long titles are read, not truncated.

@@ -35,6 +35,7 @@ class ThumbnailBuild extends StatelessWidget {
     this.onSelected,
     this.simple = false,
     this.fit,
+    this.coverBackdrop = false,
     super.key,
   });
 
@@ -45,6 +46,9 @@ class ThumbnailBuild extends StatelessWidget {
   final void Function()? onSelected;
   final bool simple;
   final BoxFit? fit;
+
+  /// See [Thumbnail.coverBackdrop].
+  final bool coverBackdrop;
 
   @override
   Widget build(BuildContext context) {
@@ -95,6 +99,7 @@ class ThumbnailBuild extends StatelessWidget {
                   isStandalone: true,
                   useHero: selectable,
                   fitOverride: fit,
+                  coverBackdrop: coverBackdrop,
                 );
               },
             ),

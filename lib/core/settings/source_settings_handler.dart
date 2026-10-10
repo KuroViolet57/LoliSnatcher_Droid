@@ -140,7 +140,7 @@ class SourceSettings {
   int? listCardHeight;
 
   /// r69: the list card's cover column width (72-240): fixed for Fit and
-  /// Crop, the widest the column may get for Adapt.
+  /// Crop, and for Adapt too since 2026-10-10 (every list row the same size).
   int? listCoverWidth;
 
   /// r69: on the detail page, show the gallery's first page image as the

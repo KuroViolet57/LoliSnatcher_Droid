@@ -824,7 +824,7 @@ class _SourceSettingsPageState extends State<SourceSettingsPage> {
           _choiceRow<String>(
             title: 'Cover display',
             subtitle:
-                'Grid and list cards alike. Fit shows the whole cover with bars; crop fills the card or the cover column; adapt gives the card (or the list column) the shape of the cover.',
+                'Grid and list cards alike. Fit shows the whole cover with bars; crop fills the card or the cover column; adapt gives each grid card the shape of its cover, and in List shows the whole cover over a blurred copy of itself so every row stays the same size.',
             options: const [('fit', 'Fit'), ('crop', 'Crop'), ('adapt', 'Adapt')],
             layerValue: layer.coverDisplay,
             inheritedValue: globalLayer.coverDisplay ?? 'crop',
@@ -843,7 +843,7 @@ class _SourceSettingsPageState extends State<SourceSettingsPage> {
           _stepperRow(
             title: 'List cover width',
             subtitle:
-                'The cover column of a list card. Fixed for Fit and Crop; for Adapt the widest the column may get. Sites serve small covers (e-hentai: 250 px), so a narrower column is a sharper one.',
+                'The cover column of a list card, the same in every row whatever the cover display. Sites serve small covers (e-hentai: 250 px), so a narrower column is a sharper one.',
             layerValue: layer.listCoverWidth,
             effective: sourceSettings.listCoverWidth(booru),
             min: 72,

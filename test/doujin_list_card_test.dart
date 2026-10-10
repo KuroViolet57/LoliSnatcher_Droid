@@ -234,23 +234,27 @@ void main() {
       expect(tester.getSize(find.byKey(const ValueKey('doujin-list-card-row'))).height, DoujinListCard.defaultHeight);
     });
 
-    testWidgets('adapt gives the column the shape of the cover, the width setting as the cap', (tester) async {
+    // 2026-10-10 (user, F42): the column no longer takes each cover's shape;
+    // it keeps the width setting and the whole cover sits over a blurred copy
+    // of itself. Every row the same size: doujin_list_rows_equal_test.dart.
+    testWidgets('adapt keeps the column and shows the whole cover over a blurred fill', (tester) async {
       SourceSettingsHandler.instance.settingsFor(nhentaiBooru()).coverDisplay = 'adapt';
-      // Nothing decoded yet: the provisional cover shape, capped.
-      final BooruItem item = await pumpCard(tester);
-      expect(tester.getSize(column).width, DoujinListCard.defaultCoverWidth);
-
-      // A tall cover (1:2) at the 176 row: 88 wide, whole, nothing cropped.
+      final BooruItem item = await pumpCard(tester, coverWidth: 140);
       DoujinCoverAspects.instance.record(item.displayThumbnailURL, 300, 600);
       await tester.pump();
-      expect(tester.getSize(column).width, closeTo(88, 0.5));
-      expect(tester.widget<ThumbnailBuild>(find.byType(ThumbnailBuild)).fit, BoxFit.contain);
 
-      // A square cover would want 176: the cap wins and the overflow is cropped.
-      DoujinCoverAspects.instance.record(item.displayThumbnailURL, 500, 500);
-      await tester.pump();
-      expect(tester.getSize(column).width, DoujinListCard.defaultCoverWidth);
-      expect(tester.widget<ThumbnailBuild>(find.byType(ThumbnailBuild)).fit, BoxFit.cover);
+      expect(tester.getSize(column).width, 140);
+      final ThumbnailBuild cover = tester.widget<ThumbnailBuild>(find.byType(ThumbnailBuild));
+      expect(cover.fit, BoxFit.contain, reason: 'the whole cover shows');
+      expect(cover.coverBackdrop, isTrue, reason: 'and the column is filled');
+    });
+
+    testWidgets('crop and fit paint no blurred fill', (tester) async {
+      for (final String mode in ['crop', 'fit']) {
+        SourceSettingsHandler.instance.settingsFor(nhentaiBooru()).coverDisplay = mode;
+        await pumpCard(tester);
+        expect(tester.widget<ThumbnailBuild>(find.byType(ThumbnailBuild)).coverBackdrop, isFalse, reason: mode);
+      }
     });
   });
 }
