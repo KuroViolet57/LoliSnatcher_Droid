@@ -82,3 +82,34 @@
   (core->features/ui 5, sources->features/ui 5, features/logic->features/ui 7, core->app 1), pattern of
   lib/features/viewer/logic/viewer_zoom_target.dart (81ee01ef); 2b) dead code from
   docs/superpowers/specs/1.0-map/*.json deadCode, grepped first. Build 150 "1.0 layer cleanup" --side-by-side.
+
+## 2026-10-10 Claude: token 150 delivered (doujin list rows same size + list rebuild storm), M3 moves to 151 (d59b9453)
+- Branch claude/cool-wilson-ea4d28 (worktree), on 3eba19bd (token 149). Session "Fix doujin list rows (F42), test on the Thor".
+- User (F42 "Doesn't work", 2026-10-10): List rows looked different sizes in Adapt; scrolling no smoother in any mode.
+- Found on the Thor (screenshots measured): 148 and 149 both draw every row at the set height (184 dp); in Adapt the
+  cover COLUMN took each cover's shape (48-140 dp), unchanged since r69. Trace: every list rebuild rebuilt every row.
+- Commits: 558d10e8 fix(feed) every doujin list row the same size in Adapt (fixed column; Thumbnail.coverBackdrop =
+  blurred dimmed copy of the same image behind the whole cover; help texts); 5085a469 feat(debug) trace section
+  "SLOW FRAMES, WHAT WAS BUILT" (persistent frame callback, vsync -> end of paint via Timeline.now) + feed.cache /
+  feed.list timeline events; b290f2d7 perf(feed) DoujinListSliver keeps row widgets while item + look unchanged
+  (didUpdateWidget compares by identity: GetX RxList == never matched); d59b9453 perf(feed) List-view fling cache window
+  opens in 6 steps over 360 ms (FeedCacheWindow.extent(ramped:)).
+- Tests: red first (doujin_list_rows_equal_test: 1:2 cover got a 92 dp column; perf_trace_test; doujin_list_sliver_test;
+  feed_cache_extent_test). Full suite on b290f2d7: +1994 ~14 -11, the 11 = live booru_test network cases (same as on 149);
+  final run on d59b9453: +1995 ~14 -11, the same 11.
+- Thor (side-by-side APK, in-app trace, 15+15 adb flings, screenshots checked): E-Hentai and hitomi rows equal in
+  Adapt/Crop/Fit (184 dp / 176 dp, cover columns identical). App frames over 16.7 ms: E-Hentai 149 Adapt 33, Crop 38;
+  hitomi before the list work Adapt 41 -> final Adapt 28, Crop 33, Fit 32; E-Hentai final Adapt 25. Rows built per
+  run ~1,100-1,800 -> ~460. Left: a page landing at the bottom builds 10-11 rows in one frame (~25 ms).
+- Tooling gotchas (Thor): uiautomator dump fails while a trace records (app draws every frame) and breaks the side
+  drawer if taken while it is open; coming back from Settings leaves the drawer open (close with its X at 1015,75);
+  pushing sourceSettings.json with cp loses its SELinux categories (write with `cat > file`). Scripts in this
+  session's scratchpad (trace_run2.sh, ui.py, rows2.py).
+- Thor state: 150 side-by-side installed; sourceSettings restored (e-hentai Adapt/List 184/140, hitomi as before);
+  current tab back on E-Hentai.
+- Not done: nhentai not tried; per-row build cost (~2.4 ms a row) and page-landing batches not reduced.
+- Delivered: K:\My Drive\booruApk\150.apk (1.0 doujin list rows same size - tested), side-by-side.
+- Next step: user tests 150 with its changes.txt checklist. Then the M3 layer cleanup as token 151:
+  1) shrink test/architecture_allowlist.txt, starting with the 18 lower-layer -> UI/app imports (pattern of
+  lib/features/viewer/logic/viewer_zoom_target.dart, 81ee01ef); 2) remove the verified dead code listed in
+  docs/superpowers/specs/1.0-map/*.json deadCode (grep each first); build 151 "1.0 layer cleanup" --side-by-side.
