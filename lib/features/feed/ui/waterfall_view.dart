@@ -71,6 +71,13 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware, TraceLif
   int viewedItemCleanupCount = 0;
   final FeedCacheWindow feedCache = FeedCacheWindow();
   Timer? feedCacheTimer;
+  Timer? feedCacheRampTimer;
+
+  /// The doujin List view: its rows are tall and costly, so the fling cache
+  /// window opens there in steps (2026-10-10).
+  bool get isDoujinList =>
+      searchHandler.currentBooruHandler.hasReader &&
+      SourceSettingsHandler.instance.feedCardStyle(searchHandler.currentBooru) == 'list';
 
   @override
   void initState() {
@@ -212,6 +219,14 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware, TraceLif
     });
     if (!opened || !mounted) return;
     PerfTrace.instance.event('feed.cache', 'wide');
+    if (isDoujinList) {
+      // One step at a time: each builds about one more row a side.
+      feedCacheRampTimer?.cancel();
+      feedCacheRampTimer = Timer.periodic(FeedCacheWindow.ramp ~/ FeedCacheWindow.rampSteps, (timer) {
+        if (!mounted || feedCache.rampDone(DateTime.now()) || !feedCache.isOpen) timer.cancel();
+        if (mounted) setState(() {});
+      });
+    }
     Logger.Inst().log(
       'Grid cache widened for a fling',
       'WaterfallView',
@@ -225,6 +240,7 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware, TraceLif
   void dispose() {
     viewedItemCleanupTimer?.cancel();
     feedCacheTimer?.cancel();
+    feedCacheRampTimer?.cancel();
     NavigationHandler.instance.routeObserver.unsubscribe(this);
     searchHandler.index.removeListener(tabIndexListener);
     searchHandler.tabId.removeListener(tabIdListener);
@@ -564,6 +580,7 @@ class _WaterfallViewState extends State<WaterfallView> with RouteAware, TraceLif
                         cacheExtent: feedCache.extent(
                           devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
                           shitDevice: settingsHandler.shitDevice,
+                          ramped: isDoujinList,
                         ),
                         slivers: [
                           const MainAppBar(),
