@@ -128,7 +128,7 @@
   zoom button), Record a trace. Device state restored: zoomButtonPosition Disabled, e-hentai List, current tab E-Hentai.
 - Order slip: the first full suite ran before the build; the build was parked before the deciding run.
 - Not done: TabSelector/TabRow unused parameters, tagFetchActive/queue path, the 60 remaining allowlist lines
-  (models importing core/features: 22; core importing features/sources logic: ~30; sources -> features logic: ~10).
+  (models -> core 16, models -> features/logic 4, core -> features/logic 20, core -> sources 9, sources -> features/logic 11).
 - Delivered: K:\My Drive\booruApk\151.apk (1.0 layer cleanup - tested), side-by-side.
 - Next step: user tests 151 with its changes.txt checklist (nothing should look different). Then the next M3 slice as
   token 152: the models -> core imports in test/architecture_allowlist.txt (models/booru_item.dart, models/settings/*,
