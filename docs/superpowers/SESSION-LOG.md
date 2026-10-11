@@ -113,3 +113,23 @@
   1) shrink test/architecture_allowlist.txt, starting with the 18 lower-layer -> UI/app imports (pattern of
   lib/features/viewer/logic/viewer_zoom_target.dart, 81ee01ef); 2) remove the verified dead code listed in
   docs/superpowers/specs/1.0-map/*.json deadCode (grep each first); build 151 "1.0 layer cleanup" --side-by-side.
+
+## 2026-10-11 Claude: token 151 delivered (1.0 layer cleanup, M3), tested on the Thor (0f6a8584)
+- Branch claude/1-0-m3-layer-cleanup-151-a2ff5d (worktree) from e98e54b0 (token 150). Session "1.0 build 151: M3 layer cleanup".
+- Before starting: grok/1.0-continue had no new work since 19b7158c (only our 149 commits, worktree clean), fast-forwarded to
+  e98e54b0. Stray C:\Program Files\Git\tmp_sliver_backup.dart (a copy of doujin_list_sliver.dart) deleted.
+- Commits: f62def4a plan section; 1284f231 refactor(arch) the 18 lower-layer -> UI/app imports gone (allowlist 79 -> 61):
+  moves (AppLocaleExt, webViewEnvironment, TabBooruSelectorItem, sync modes), interfaces (BottomBarVisibility,
+  ViewerMediaPage/ViewerVideoPage), TagCatalogNamespace.pickerId, VideoFramePlayers (set by the media_kit pool),
+  hooks bound in lib/app/layer_bindings.dart bindLayers() at the top of main(); 0f6a8584 dead code (~3,400 lines,
+  16 files, allowlist 61 -> 60), ledger in docs/superpowers/specs/1.0-map/dead-code-151.md.
+- Tests: red first; full suite after the build +2003 ~14 -11 (all live booru_test). Analyzer 0 errors/0 warnings.
+- Thor (151 side-by-side): install/start, E-Hentai List + Grid, rule34 feed, viewer (video, image double-tap zoom,
+  zoom button), Record a trace. Device state restored: zoomButtonPosition Disabled, e-hentai List, current tab E-Hentai.
+- Order slip: the first full suite ran before the build; the build was parked before the deciding run.
+- Not done: TabSelector/TabRow unused parameters, tagFetchActive/queue path, the 60 remaining allowlist lines
+  (models importing core/features: 22; core importing features/sources logic: ~30; sources -> features logic: ~10).
+- Delivered: K:\My Drive\booruApk\151.apk (1.0 layer cleanup - tested), side-by-side.
+- Next step: user tests 151 with its changes.txt checklist (nothing should look different). Then the next M3 slice as
+  token 152: the models -> core imports in test/architecture_allowlist.txt (models/booru_item.dart, models/settings/*,
+  models/tag_type.dart ...), same pattern (move down or pass in), build 152 --side-by-side.
