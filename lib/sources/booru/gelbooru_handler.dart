@@ -456,30 +456,6 @@ class GelbooruHandler extends BooruHandler {
     }
   }
 
-  List parseCommentsListOld(dynamic response) {
-    final parsedResponse = XmlDocument.parse(response.data);
-    return parsedResponse.findAllElements('comment').toList();
-  }
-
-  CommentItem? parseCommentOld(dynamic responseItem, int index) {
-    final current = responseItem;
-    final String avatar = current.getAttribute('creator_id')!.isEmpty
-        ? "${booru.baseURL}/user_avatars/avatar_${current.getAttribute("creator")}.jpg"
-        : '${booru.baseURL}/user_avatars/honkonymous.png';
-
-    return CommentItem(
-      id: current.getAttribute('id'),
-      title: current.getAttribute('id'),
-      content: current.getAttribute('body'),
-      authorID: current.getAttribute('creator_id'),
-      authorName: current.getAttribute('creator'),
-      postID: current.getAttribute('post_id'),
-      avatarUrl: avatar,
-      createDate: current.getAttribute('created_at'), // 2021-11-15 12:09
-      createDateFormat: 'yyyy-MM-dd HH:mm',
-    );
-  }
-
   // ----------------- Notes
 
   @override

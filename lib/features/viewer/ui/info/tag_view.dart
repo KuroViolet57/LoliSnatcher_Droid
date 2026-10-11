@@ -29,7 +29,6 @@ import 'package:lolisnatcher/core/ui/loli_dropdown.dart';
 import 'package:lolisnatcher/features/feed/ui/search/main_search_query_editor_page.dart';
 import 'package:lolisnatcher/features/tabs/ui/tab_selector.dart';
 import 'package:scroll_to_index/scroll_to_index.dart';
-import 'package:url_launcher/url_launcher_string.dart';
 import 'package:uuid/uuid.dart';
 
 import 'package:lolisnatcher/models/booru_type.dart';
@@ -75,14 +74,11 @@ import 'package:lolisnatcher/features/tags/ui/tag_hub_page.dart';
 import 'package:lolisnatcher/features/viewer/ui/gallery_view_page.dart';
 import 'package:lolisnatcher/core/utils/debouncer.dart';
 import 'package:lolisnatcher/core/utils/extensions.dart';
-import 'package:lolisnatcher/core/utils/text_parser/rules/url_rule.dart';
 import 'package:lolisnatcher/features/collections/ui/add_to_collection_sheet.dart';
 import 'package:lolisnatcher/features/viewer/ui/info/post_details_sheet.dart';
 import 'package:lolisnatcher/core/ui/buttons/close_dialog_button.dart';
-import 'package:lolisnatcher/core/ui/text/draggable_overflow_text.dart';
 import 'package:lolisnatcher/core/ui/flash_elements.dart';
 import 'package:lolisnatcher/core/ui/kaomoji/kaomoji.dart';
-import 'package:lolisnatcher/core/ui/text/parsed_text.dart';
 import 'package:lolisnatcher/core/ui/settings_widgets.dart';
 import 'package:lolisnatcher/core/ui/desktop_scroll.dart';
 import 'package:lolisnatcher/features/viewer/ui/comments_dialog.dart';
@@ -97,7 +93,6 @@ import 'package:lolisnatcher/features/feed/ui/thumbnail/thumbnail_card_build.dar
 part 'tag_view/tag_dialog.dart';
 part 'tag_view/tab_group_picker.dart';
 part 'tag_view/related_tabs_dialog.dart';
-part 'tag_view/source_link_error_dialog.dart';
 part 'tag_view/collapsible_related_preview.dart';
 part 'tag_view/tag_content_preview.dart';
 
@@ -176,7 +171,6 @@ class _TagViewState extends State<TagView> with TraceLifecycle {
   CancelToken? cancelToken;
   bool loadingUpdate = false, failedUpdate = false;
 
-  bool? detailsExpanded;
   bool relatedExpanded = false;
 
   // Batch tag selection: pick several tags from the list and open them as
@@ -773,150 +767,6 @@ class _TagViewState extends State<TagView> with TraceLifecycle {
         );
       }
     });
-  }
-
-  Widget sourcesList(List<String> sources) {
-    sources = sources.where((l) => l.trim().isNotEmpty).toList();
-
-    if (sources.isNotEmpty) {
-      return Column(
-        children: [
-          Divider(
-            color: context.theme.dividerTheme.color?.withValues(alpha: 0.66),
-          ),
-          infoText(context.loc.gallery.sources(count: sources.length), ' ', canCopy: false),
-          Column(
-            children: sources
-                .map(
-                  (link) => ListTile(
-                    onLongPress: () async {
-                      await ServiceHandler.vibrate();
-                      await showDialog(
-                        context: context,
-                        builder: (_) => SourceLinkErrorDialog(link: link),
-                      );
-                    },
-                    onTap: () async {
-                      final detectedUrl = UrlParseRule.detectPureUrl(link);
-                      if (detectedUrl != null) {
-                        if (await canLaunchUrlString(detectedUrl)) {
-                          await launchUrlString(
-                            detectedUrl,
-                            mode: LaunchMode.externalApplication,
-                          );
-                          return;
-                        }
-                        // Pure URL but failed to launch — show dialog with error context
-                        if (mounted) {
-                          await showDialog(
-                            context: context,
-                            builder: (_) => SourceLinkErrorDialog(link: link),
-                          );
-                        }
-                        return;
-                      }
-
-                      // Mixed content or no URL — show dialog without error header
-                      if (mounted) {
-                        await showDialog(
-                          context: context,
-                          builder: (_) => SourceLinkErrorDialog(link: link),
-                        );
-                      }
-                    },
-                    title: DraggableOverflowText(link),
-                  ),
-                )
-                .toList(),
-          ),
-        ],
-      );
-    } else {
-      return const SizedBox.shrink();
-    }
-  }
-
-  // Flow key/value row (matches the Details sheet): muted key column, bold
-  // value, subtle copy/open glyph. Tap copies (or opens links).
-  Widget infoText(
-    String title,
-    String data, {
-    bool canCopy = true,
-    bool isLink = false,
-    VoidCallback? onTap,
-    VoidCallback? onLongPress,
-    Widget? trailing,
-  }) {
-    if (data.isEmpty) return const SizedBox.shrink();
-
-    final theme = Theme.of(context);
-    return InkWell(
-      onTap:
-          onTap ??
-          (isLink
-              ? () => launchUrlString(data, mode: LaunchMode.externalApplication)
-              : (canCopy
-                    ? () {
-                        Clipboard.setData(ClipboardData(text: data));
-                        FlashElements.showSnackbar(
-                          context: context,
-                          duration: const Duration(seconds: 2),
-                          title: Text(
-                            context.loc.copiedToClipboard,
-                            style: const TextStyle(fontSize: 20),
-                          ),
-                          content: Text(
-                            '$title: $data',
-                            style: const TextStyle(fontSize: 16),
-                          ),
-                          leadingIcon: Symbols.content_copy_rounded,
-                          sideColor: Colors.green,
-                        );
-                      }
-                    : null)),
-      onLongPress: onLongPress,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
-        child: Row(
-          children: [
-            SizedBox(
-              width: 92,
-              child: Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w600,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ),
-            Expanded(
-              child: Text(
-                data,
-                maxLines: isLink ? 1 : 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: isLink ? theme.colorScheme.secondary : theme.colorScheme.onSurface,
-                  decoration: isLink ? TextDecoration.underline : null,
-                  decorationColor: theme.colorScheme.secondary,
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            trailing ??
-                Icon(
-                  isLink ? Symbols.open_in_new_rounded : Symbols.content_copy_rounded,
-                  size: 15,
-                  color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
-                ),
-          ],
-        ),
-      ),
-    );
   }
 
   /// Builds the "More from artist X" + "More from uploader Y" inline grid

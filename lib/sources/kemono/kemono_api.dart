@@ -30,10 +30,6 @@ class KemonoApiException implements Exception {
 class KemonoApi {
   KemonoApi._();
 
-  static const String site = 'https://kemono.cr';
-  static const String api = '$site/api/v1';
-  static const String img = 'https://img.kemono.cr';
-
   static const Duration timeout = Duration(seconds: 25);
 
   static Map<String, String> headers(Booru? booru) => headersFor(KemonoSite.of(booru), booru: booru);
@@ -116,22 +112,6 @@ class KemonoApi {
   }
 
   // ── URLs (kemono's; a handler asks its [KemonoSite] instead) ─────────
-
-  static String creatorPath(String service, String id) => KemonoSite.kemono.creatorPath(service, id);
-
-  static String postsUrl({String base = '$api/posts', String q = '', int offset = 0, List<String> tags = const []}) =>
-      KemonoSite.kemono.postsUrl(base: base, q: q, offset: offset, tags: tags);
-
-  static String popularUrl({required String period, required String date, int offset = 0}) =>
-      KemonoSite.kemono.popularUrl(period: period, date: date, offset: offset);
-
-  static String postUrl(String service, String user, String postId) => KemonoSite.kemono.postUrl(service, user, postId);
-
-  static String thumbUrl(String path) => KemonoSite.kemono.thumbUrl(path);
-
-  static String iconUrl(String service, String id) => KemonoSite.kemono.iconUrl(service, id);
-
-  static String bannerUrl(String service, String id) => KemonoSite.kemono.bannerUrl(service, id);
 
   /// The file hosts and their share of the paths, as the site's bundle
   /// (`/assets/index-szizO2gj.js`, read 2026-09-04) lists them. The site never

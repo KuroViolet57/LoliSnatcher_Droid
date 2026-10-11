@@ -436,8 +436,6 @@ class SchaleHandler extends BooruHandler with DoujinListingTagBackfill, DoujinNa
   /// queries are rejected by the API, so anything unrecognised is left as a
   /// plain tag rather than guessed at - a wrong namespace would send the tag
   /// to the wrong section of the tag hub and break blacklist matching.
-  static Map<int, String> get namespaceCodes => _namespaceCodes;
-
   static const Map<int, String> _namespaceCodes = {
     1: 'artist',
     2: 'circle',

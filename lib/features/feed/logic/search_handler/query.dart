@@ -1,13 +1,8 @@
 part of '../search_handler.dart';
 
-/// The search text, the grid scroll stream and the volume-key stream.
+/// The search text, the grid scroll position and the volume-key stream.
 extension SearchQuery on SearchHandler {
-  Stream<ScrollNotification>? get scrollStream => _scrollStream?.stream;
-
   void sendToScrollStream(ScrollNotification notification) {
-    _scrollStream?.sink.add(notification);
-
-    scrollOffset.value = gridScrollController.offset;
     currentTab.scrollPosition = gridScrollController.offset;
   }
 

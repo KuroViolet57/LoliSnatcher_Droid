@@ -53,11 +53,4 @@ class SchaleNetwork {
     if (host == 'hdoujin.org' || host.endsWith('.hdoujin.org')) return hdoujin;
     return schale;
   }
-
-  static SchaleNetwork? byKey(String key) {
-    for (final n in all) {
-      if (n.key == key) return n;
-    }
-    return null;
-  }
 }

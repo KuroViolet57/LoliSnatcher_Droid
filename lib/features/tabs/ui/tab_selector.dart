@@ -322,12 +322,6 @@ class _TabManagerPageState extends State<TabManagerPage> with TraceLifecycle {
     });
   }
 
-  void jumpToTop() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      scrollController.jumpTo(0);
-    });
-  }
-
   void scrollToTop() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       scrollController.animateTo(

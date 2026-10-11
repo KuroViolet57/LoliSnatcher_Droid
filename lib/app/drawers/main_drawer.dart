@@ -31,8 +31,6 @@ import 'package:lolisnatcher/core/ui/mascot_image.dart';
 import 'package:lolisnatcher/features/tabs/ui/multibooru_toggle.dart';
 import 'package:lolisnatcher/core/ui/settings_widgets.dart';
 import 'package:lolisnatcher/features/feed/ui/search/main_search_bar.dart';
-import 'package:lolisnatcher/features/history/ui/saved_searches/saved_search_tile.dart';
-import 'package:lolisnatcher/features/history/ui/saved_searches/saved_searches_page.dart';
 import 'package:lolisnatcher/features/tabs/ui/booru_switcher_sheet.dart';
 import 'package:lolisnatcher/core/ui/inner_drawer.dart';
 import 'package:lolisnatcher/core/ui/image/booru_favicon.dart';
@@ -449,87 +447,5 @@ class MainDrawer extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-// Collapsed-by-default panel in the main drawer that lists saved searches.
-// Shows the first 5 entries and a "View all" button that opens the full
-// SavedSearchesPage. Only renders when there's at least one saved search.
-class SavedSearchesDrawerSection extends StatefulWidget {
-  const SavedSearchesDrawerSection({super.key});
-
-  @override
-  State<SavedSearchesDrawerSection> createState() => _SavedSearchesDrawerSectionState();
-}
-
-class _SavedSearchesDrawerSectionState extends State<SavedSearchesDrawerSection> {
-  bool _expanded = false;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      SearchHandler.instance.reloadSavedSearches();
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Obx(() {
-      final searchHandler = SearchHandler.instance;
-      final list = searchHandler.savedSearches;
-      final preview = list.take(5).toList(growable: false);
-      final theme = Theme.of(context);
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          ListTile(
-            leading: const Icon(Symbols.bookmarks_rounded),
-            title: Text(
-              list.isEmpty ? 'Saved searches' : 'Saved searches (${list.length})',
-            ),
-            trailing: Icon(_expanded ? Symbols.expand_less_rounded : Symbols.expand_more_rounded),
-            onTap: () => setState(() => _expanded = !_expanded),
-          ),
-          AnimatedSize(
-            duration: const Duration(milliseconds: 200),
-            alignment: Alignment.topCenter,
-            child: !_expanded
-                ? const SizedBox.shrink()
-                : Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      if (list.isEmpty)
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 4, 20, 4),
-                          child: Text(
-                            'No saved searches yet. Tap the bookmark icon in the search bar to add the current query.',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        )
-                      else
-                        for (final entry in preview) SavedSearchTile(entry: entry),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        child: OutlinedButton.icon(
-                          icon: const Icon(Symbols.list_rounded),
-                          label: const Text('View all'),
-                          onPressed: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => const SavedSearchesPage(),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-          ),
-        ],
-      );
-    });
   }
 }

@@ -30,10 +30,6 @@ class SecureStorageHandler {
     return storage.read(key: key.name);
   }
 
-  Future<bool> contains(SecureStorageKey key) async {
-    return await read(key) != null;
-  }
-
   Future<void> delete(SecureStorageKey key) async {
     await storage.delete(key: key.name);
   }

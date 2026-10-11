@@ -16,9 +16,6 @@ class PhilomenaTagIndex extends TagIndexSource {
   int get pageSize => 50;
 
   @override
-  bool get orderedByCount => true;
-
-  @override
   bool get walksByCategory => true;
 
   @override

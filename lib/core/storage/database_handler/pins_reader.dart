@@ -111,11 +111,6 @@ extension DBPinsAndReader on DBHandler {
     return null;
   }
 
-  /// Update sort order for pinned tags
-  Future<void> updatePinnedTagOrder(int id, int sortOrder) async {
-    await db?.rawUpdate('UPDATE PinnedTag SET sortOrder = ? WHERE id = ?', [sortOrder, id]);
-  }
-
   /// Batch update sort order for multiple pinned tags
   Future<void> updatePinnedTagsOrder(List<PinnedTag> tags) async {
     final batch = db?.batch();

@@ -142,8 +142,6 @@ class SchaleClearanceHandler {
     return _records[keyFor(siteUrl)]?.trace ?? '';
   }
 
-  String get issuedTrace => issuedTraceFor('');
-
   /// Keeps a token for the network of [siteUrl] (the Schale network when null).
   void store(String value, {String trace = '', String? siteUrl}) {
     ensureLoaded();
@@ -927,15 +925,6 @@ try {
       _log('solver closed: ${stored ? 'site stored a clearance' : 'no clearance was stored'}');
     }
     return stored;
-  }
-
-  /// The full manual flow: harvest what the site already holds; if nothing,
-  /// open the solver, then harvest again. Returns the token or null.
-  Future<String?> obtain(String siteUrl) async {
-    final String? existing = await harvest(siteUrl);
-    if (existing != null) return existing;
-    await solve(siteUrl);
-    return harvest(siteUrl);
   }
 
   static String _describe(String? token) =>

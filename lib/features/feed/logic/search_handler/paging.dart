@@ -234,13 +234,4 @@ extension SearchPaging on SearchHandler {
     await runSearch();
     return;
   }
-
-  void reset() {
-    tabs.clear();
-    index.value = 0;
-    pageNum.value = -1;
-    isLoading.value = true;
-    isLastPage.value = false;
-    errorString.value = '';
-  }
 }

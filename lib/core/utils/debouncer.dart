@@ -66,24 +66,9 @@ class Debounce {
     }
   }
 
-  static void fire(String tag, {bool withCancel = false}) {
-    // call the callback immediately, ignoring the debounce
-    _debounceMap[tag]?.callback();
-
-    if (withCancel) {
-      cancel(tag);
-    }
-  }
-
   static void cancel(String tag) {
     _debounceMap[tag]?.timer.cancel();
     _debounceMap.remove(tag);
-  }
-
-  static void cancelAllStartingWith(String substring) {
-    // cancel all debounce operations that have tag, starting with the given substring
-    // i.e. loading_element_progress_[fileUrl] where [fileUrl] is not included in the substring
-    _debounceMap.keys.where((key) => key.startsWith(substring)).forEach(cancel);
   }
 
   static void cancelAll() {

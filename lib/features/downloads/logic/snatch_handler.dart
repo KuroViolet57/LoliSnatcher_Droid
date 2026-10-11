@@ -83,24 +83,6 @@ class SnatchHandler {
 
   final RxList<SnatchItem> queuedList = RxList<SnatchItem>([]);
 
-  Stream<Map<String, int>> writeMultipleFake(List<BooruItem> items, Booru booru, int cooldown) async* {
-    int snatchedCounter = 0;
-    for (int i = 0; i < items.length; i++) {
-      await Future.delayed(const Duration(milliseconds: 2000), () async {});
-      snatchedCounter++;
-      yield {
-        'snatched': snatchedCounter,
-      };
-    }
-
-    yield {
-      'snatched': snatchedCounter,
-      'exists': 0,
-      'failed': 0,
-      'cancelled': 0,
-    };
-  }
-
   void onProgress(int newReceived, int newTotal) {
     received.value = newReceived;
     total.value = newTotal;

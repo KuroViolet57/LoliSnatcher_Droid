@@ -837,20 +837,4 @@ class SourceCaptureHandler {
     }
   }
 
-  /// A compact JSON form, for when the text bundle is awkward to move around.
-  @visibleForTesting
-  String buildJson() => jsonEncode({
-    'target': _target,
-    'entries': [
-      for (final entry in _entries)
-        {
-          'kind': entry.kind.name,
-          'url': entry.url,
-          'status': ?entry.status,
-          'contentType': ?entry.contentType,
-          'truncatedFrom': ?entry.truncatedFrom,
-          'body': ?entry.body,
-        },
-    ],
-  });
 }

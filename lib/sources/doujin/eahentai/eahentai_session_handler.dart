@@ -83,11 +83,6 @@ class EaHentaiSessionHandler {
     return _loginName;
   }
 
-  int get savedAt {
-    ensureLoaded();
-    return _savedAt;
-  }
-
   List<({int id, String name})> get lists {
     ensureLoaded();
     return _lists;

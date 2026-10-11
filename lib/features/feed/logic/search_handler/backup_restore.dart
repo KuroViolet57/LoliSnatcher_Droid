@@ -551,7 +551,5 @@ extension SearchTabBackup on SearchHandler {
       await settingsHandler.dbHandler.clearTabRestore();
     }
     _backupGate.written(signature);
-
-    lastBackupTime = DateTime.now();
   }
 }

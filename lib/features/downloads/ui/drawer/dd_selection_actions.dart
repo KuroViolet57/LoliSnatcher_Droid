@@ -5,10 +5,6 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:get/get.dart' hide FirstWhereOrNullExt;
 
 import 'package:lolisnatcher/gen/strings.g.dart';
-import 'package:lolisnatcher/models/booru.dart';
-import 'package:lolisnatcher/features/doujin/ui/library/doujin_downloads_page.dart';
-import 'package:lolisnatcher/features/downloads/ui/snatcher_page.dart';
-import 'package:lolisnatcher/features/downloads/ui/downloads_check.dart';
 import 'package:lolisnatcher/core/utils/extensions.dart';
 import 'package:lolisnatcher/features/collections/ui/add_to_collection_sheet.dart';
 import 'package:lolisnatcher/core/ui/settings_widgets.dart';
@@ -97,70 +93,4 @@ class DDSelectionActions extends StatelessWidget {
       }
     });
   }
-}
-
-class DDNavigationButtons extends StatelessWidget {
-  const DDNavigationButtons({
-    required this.controller,
-    required this.toggleDrawer,
-    super.key,
-  });
-
-  final DownloadsDrawerController controller;
-  final VoidCallback toggleDrawer;
-
-  @override
-  Widget build(BuildContext context) {
-    final searchHandler = controller.searchHandler;
-    final settingsHandler = controller.settingsHandler;
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        SettingsButton(
-          name: context.loc.snatcher.title,
-          icon: const Icon(Symbols.download_rounded),
-          page: () => const SnatcherPage(),
-        ),
-        SettingsButton(
-          name: context.loc.snatcher.snatchingHistory,
-          icon: const Icon(Symbols.file_download_rounded),
-          action: () {
-            final Booru? downloadsBooru = settingsHandler.booruList.firstWhereOrNull(
-              (booru) => booru.type?.isDownloads == true,
-            );
-            final bool hasDownloads = downloadsBooru != null;
-
-            if (!hasDownloads) {
-              return;
-            }
-
-            searchHandler.addTabByString(
-              '',
-              switchToNew: true,
-              customBooru: downloadsBooru,
-            );
-            toggleDrawer();
-          },
-        ),
-        // Doujins are folders of pages, not media rows: their own surface,
-        // read from the download folder.
-        SettingsButton(
-          name: 'Doujin downloads',
-          subtitle: const Text('Saved books, read from the download folder'),
-          icon: const Icon(Symbols.menu_book_rounded),
-          page: () => const DoujinDownloadsPage(),
-        ),
-        SettingsButton(
-          name: 'Check downloads against disk',
-          subtitle: const Text('Finds media entries whose file is no longer there'),
-          icon: const Icon(Symbols.fact_check_rounded),
-          action: () => _auditDownloads(context),
-        ),
-      ],
-    );
-  }
-
-  /// r84: the shared check (also in Settings → Save & cache).
-  Future<void> _auditDownloads(BuildContext context) => DownloadsCheck.run(context);
 }

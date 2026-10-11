@@ -5,8 +5,7 @@ import 'dart:math';
 /// Categories of kaomoji emoticons.
 ///
 /// Each category contains a themed collection of Japanese emoticons (kaomoji).
-/// Use [KaomojiData.getAll] to get all kaomojis in a category,
-/// or [KaomojiData.random] to get a random one.
+/// Use [KaomojiData.random] to get a random one.
 enum KaomojiCategory {
   /// Happy, cheerful expressions.
   /// Examples: `(*^ω^)`, `(´∀`*)`, `٩(◕‿◕｡)۶`, `(≧◡≦)`
@@ -171,8 +170,6 @@ enum KaomojiCategory {
 /// - [random] - Get a random kaomoji from a specific category
 /// - [randomAny] - Get a random kaomoji from any category
 /// - [get] - Get a specific kaomoji by category and index
-/// - [getAll] - Get all kaomojis in a category
-/// - [count] - Get the number of kaomojis in a category
 class KaomojiData {
   KaomojiData._();
 
@@ -1241,25 +1238,5 @@ class KaomojiData {
   static String get(KaomojiCategory category, int index) {
     final list = kaomojis[category]!;
     return list[index % list.length];
-  }
-
-  /// Get all kaomojis in a category.
-  ///
-  /// Example:
-  /// ```dart
-  /// final allCats = KaomojiData.getAll(KaomojiCategory.cat);
-  /// ```
-  static List<String> getAll(KaomojiCategory category) {
-    return kaomojis[category]!;
-  }
-
-  /// Get the number of kaomojis in a category.
-  ///
-  /// Example:
-  /// ```dart
-  /// final count = KaomojiData.count(KaomojiCategory.joy); // 98
-  /// ```
-  static int count(KaomojiCategory category) {
-    return kaomojis[category]!.length;
   }
 }

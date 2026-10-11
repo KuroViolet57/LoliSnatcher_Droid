@@ -60,10 +60,6 @@ class ThemeHandler {
     accentIsDark = accentBrightness == Brightness.dark;
   }
 
-  ThemeData getTheme() {
-    return isDark ? darkTheme() : lightTheme();
-  }
-
   ThemeData lightTheme() {
     final ColorScheme lightColorScheme = colorScheme();
 

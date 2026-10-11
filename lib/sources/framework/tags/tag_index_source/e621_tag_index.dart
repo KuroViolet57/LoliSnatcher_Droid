@@ -9,9 +9,6 @@ class E621TagIndex extends TagIndexSource {
   @override
   int get pageSize => 100;
 
-  @override
-  bool get orderedByCount => true;
-
   static const Map<TagType, String> categoryCodes = {
     TagType.artist: '1',
     TagType.character: '4',

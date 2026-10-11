@@ -5,7 +5,6 @@
 # Fix one by moving the code down a layer or passing it in from above.
 core/logging/perf_trace.dart -> features/recommender/logic/model_work.dart
 core/network/dio_downloader.dart -> features/downloads/logic/image_writer.dart
-core/network/dio_downloader.dart -> features/downloads/logic/image_writer_isolate.dart
 core/network/origin_page_client.dart -> sources/doujin/schale/schale_clearance_handler.dart
 core/platform/get_perms.dart -> features/downloads/logic/download_folders.dart
 core/settings/settings_handler.dart -> features/doujin/logic/doujin_data_handler.dart

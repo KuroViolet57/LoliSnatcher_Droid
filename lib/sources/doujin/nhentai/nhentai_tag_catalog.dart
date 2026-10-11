@@ -49,9 +49,6 @@ class NHentaiTagCatalog extends TagCatalogSource {
     TagCatalogNamespace(key: 'tag', label: 'Tags', type: doujinNoneType),
   ];
 
-  /// Prefixes still to ask, for the picker's "N prefixes done" line.
-  int get queued => _queue.length;
-
   @override
   Future<List<BooruTagEntry>?> shardAt(String namespace, int shard) async {
     if (shard == 0) {

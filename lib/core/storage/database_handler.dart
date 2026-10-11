@@ -352,7 +352,7 @@ class DBHandler {
     );
   }
 
-  /// Like [getSearchHistoryByInput], but keeps each row's booru name so the
+  /// Search history rows that start with [queryStr], with each row's booru name so the
   /// caller can drop rows belonging to another domain (doujin searches
   /// recorded before they got their own store).
   Future<List<({String searchText, String booruName})>> getSearchHistoryByInputWithBooru(

@@ -7,9 +7,6 @@ class DanbooruTagIndex extends TagIndexSource {
   @override
   int get pageSize => 100;
 
-  @override
-  bool get orderedByCount => true;
-
   /// `tags.json` filters by `search[category]`, so each chip walks its own
   /// category most-used first, a thousand rows a page, five pages a pull.
   static const Map<TagType, String> categoryCodes = {

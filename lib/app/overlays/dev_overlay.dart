@@ -36,11 +36,6 @@ class OverlayScreen {
     entries?[key]?.remove();
     entries?.remove(key);
   }
-
-  void removeAll() {
-    entries?.forEach((_, v) => v.remove());
-    entries?.clear();
-  }
 }
 
 class DevOverlayContent extends StatefulWidget {

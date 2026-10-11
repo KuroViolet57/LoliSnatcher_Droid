@@ -7,7 +7,7 @@ void main() {
     final String handler = File('lib/features/viewer/logic/viewer_handler.dart').readAsStringSync();
     // Reached through the logic-layer ViewerZoomTarget, not by importing the
     // ui pages (test/viewer_zoom_target_test.dart drives it).
-    expect(handler, contains('case _ when state is ViewerZoomTarget'));
+    expect(handler, contains('case final ViewerZoomTarget target:'));
 
     final String gif = File('lib/features/viewer/ui/media/gif_viewer.dart').readAsStringSync();
     expect(gif, contains('class GifViewerState extends State<GifViewer> implements ViewerZoomTarget'));

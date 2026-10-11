@@ -1054,26 +1054,6 @@ extension SettingsStorage on SettingsHandler {
       });
     }
 
-    try {
-      final List<String> legacyKeys = [];
-      for (final String key in legacyKeys) {
-        if (json.keys.contains(key)) {
-          switch (key) {
-            default:
-              break;
-          }
-        }
-      }
-    } catch (e, s) {
-      Logger.Inst().log(
-        'Failed to parse legacy keys $e',
-        'SettingsHandler',
-        'loadFromJSON',
-        LogTypes.exception,
-        s: s,
-      );
-    }
-
     // force mobile app mode, until we redo UI for desktop and start doing builds again
     appMode.value = AppMode.Mobile;
 

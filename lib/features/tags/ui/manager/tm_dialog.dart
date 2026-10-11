@@ -57,12 +57,6 @@ class _TagsManagerDialogState extends State<TagsManagerDialog> {
     return;
   }
 
-  Future<void> saveTags() async {
-    await tagHandler.saveTags();
-    setState(() {});
-    return;
-  }
-
   void filterTags() {
     // logic of this IF repeats, because we don't need to call array filtering every time when there are no filters enabled
     if (filterSearchController.text != '') {
@@ -96,11 +90,6 @@ class _TagsManagerDialogState extends State<TagsManagerDialog> {
         return TagsManagerListItemDialog(
           tag: item,
           debug: true,
-          onDelete: () {
-            selected.removeWhere((e) => e == item);
-            deleteItem(item);
-            Navigator.of(context).pop(true);
-          },
           onChangedType: (TagType? newValue) {
             if (newValue != null && item.tagType != newValue) {
               item.tagType = newValue;

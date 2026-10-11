@@ -57,7 +57,6 @@ EventChannel? volumeKeyChannel = Platform.isAndroid ? const EventChannel('com.no
 class SearchHandler {
   SearchHandler() {
     _volumeStreamController = Platform.isAndroid ? StreamController.broadcast() : null;
-    _scrollStream = StreamController.broadcast();
     _rootVolumeListener = volumeKeyChannel?.receiveBroadcastStream().listen((event) {
       _volumeStreamController?.sink.add(event);
     });
@@ -104,15 +103,9 @@ class SearchHandler {
   // grid scroll controller
   AutoScrollController gridScrollController =
       AutoScrollController(); // will be overwritten on the first render because there is hasClients check
-  RxDouble scrollOffset = 0.0.obs;
-  // stream that will notify it's listeners about scroll events of the grid controller
-  StreamController<ScrollNotification>? _scrollStream;
 
   // search box text controller
   final TextEditingController searchTextController = TextEditingController();
-
-  // search box focus node
-  FocusNode searchBoxFocus = FocusNode();
 
   final GlobalKey mainDrawerKey = GlobalKey();
 
@@ -177,7 +170,6 @@ class SearchHandler {
   VoidCallback? rootRestate;
 
   void dispose() {
-    _scrollStream?.close();
     _rootVolumeListener?.cancel();
     _volumeStreamController?.close();
   }
@@ -191,9 +183,6 @@ class SearchHandler {
   // bool to notify the main build that tab restoratiuon is complete
   RxBool isRestored = false.obs;
   RxBool canBackup = false.obs;
-
-  // keeps track of the last time tabs were backupped
-  DateTime lastBackupTime = DateTime.now();
 
   /// 1.0: lets [backupTabs] skip an unchanged tab list (see [TabBackupGate]).
   final TabBackupGate _backupGate = TabBackupGate();

@@ -199,10 +199,6 @@ class SettingsHandler {
   double mousewheelScrollSpeed = 10;
   double preloadSizeLimit = 0.2;
 
-  int currentColumnCount(BuildContext context) {
-    return context.isPortrait ? portraitColumns : landscapeColumns;
-  }
-
   Duration cacheDuration = Duration.zero;
 
   List<GalleryButton> buttonOrder = [...GalleryButton.values];

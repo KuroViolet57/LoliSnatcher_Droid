@@ -15,9 +15,6 @@ class GelbooruTagIndex extends TagIndexSource {
   @override
   int get maxIndexPages => 250;
 
-  @override
-  bool get orderedByCount => true;
-
   /// Rows the list page renders per request, by host. Most forks render 20;
   /// these render 50 (verified 2026-09-06) — and `pid` counts ROWS, so a walk
   /// stepping by 20 there would re-read most of every page. Page 0 teaches

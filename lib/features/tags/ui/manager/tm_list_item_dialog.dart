@@ -20,7 +20,6 @@ class TagsManagerListItemDialog extends StatefulWidget {
     this.onSetStale,
     this.onResetStale,
     this.onSetUnstaleable,
-    this.onDelete,
     this.debug = false,
     super.key,
   });
@@ -30,7 +29,6 @@ class TagsManagerListItemDialog extends StatefulWidget {
   final void Function()? onSetStale;
   final void Function()? onResetStale;
   final void Function()? onSetUnstaleable;
-  final void Function()? onDelete;
   final bool debug;
 
   @override
@@ -140,19 +138,6 @@ class _TagsManagerListItemDialogState extends State<TagsManagerListItemDialog> {
           leading: const Icon(Symbols.content_copy_rounded),
           title: Text(context.loc.tagsManager.copy),
         ),
-        //
-        // don't need this since we shouldn't delete tags from sqlite
-        // const SizedBox(height: 10),
-        // ListTile(
-        //   shape: RoundedRectangleBorder(
-        //     borderRadius: BorderRadius.circular(5),
-        //     side: BorderSide(color: Theme.of(context).colorScheme.secondary),
-        //   ),
-        //   onTap: widget.onDelete,
-        //   leading: Icon(Symbols.delete_forever_rounded, color: Theme.of(context).errorColor),
-        //   title: const Text('Delete'),
-        // ),
-        //
         if (widget.onSetStale != null) ...[
           const SizedBox(height: 10),
           ListTile(

@@ -242,12 +242,6 @@ class _SaveCachePageState extends State<SaveCachePage> {
     );
   }
 
-  void setPath(String path) {
-    if (path.isNotEmpty) {
-      settingsHandler.extPathOverride = path;
-    }
-  }
-
   Widget buildCacheButton(_CacheType type) {
     final Map<String, dynamic> stat = cacheStats.firstWhere(
       (stat) => stat['type'] == type.folder,

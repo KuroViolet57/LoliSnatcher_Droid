@@ -108,11 +108,6 @@ class EHentaiSessionHandler {
     return _igneous;
   }
 
-  int get savedAt {
-    ensureLoaded();
-    return _savedAt;
-  }
-
   bool get isLoggedIn {
     ensureLoaded();
     return (_memberId ?? '').isNotEmpty && (_passHash ?? '').isNotEmpty;

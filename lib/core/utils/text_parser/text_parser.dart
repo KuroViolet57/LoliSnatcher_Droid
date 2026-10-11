@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 
 /// Represents a parsed segment of text with its type and metadata
 class ParsedTextSegment {
@@ -169,66 +168,4 @@ class _MatchWithRule {
   const _MatchWithRule({required this.match, required this.rule});
   final TextParseMatch match;
   final TextParseRule rule;
-}
-
-/// Registry for segment builders that handles rendering of parsed segments
-class SegmentBuilderRegistry {
-  SegmentBuilderRegistry({
-    Map<String, SegmentBuilderFn>? builders,
-  }) : _builders = {...?builders};
-
-  final Map<String, SegmentBuilderFn> _builders;
-
-  /// Register a builder for a specific segment type
-  void register(String type, SegmentBuilderFn builder) {
-    _builders[type] = builder;
-  }
-
-  /// Remove a builder for a specific segment type
-  void unregister(String type) {
-    _builders.remove(type);
-  }
-
-  /// Get the builder for a segment type, or the default builder
-  SegmentBuilderFn getBuilder(String type) {
-    return _builders[type] ?? defaultSegmentBuilder;
-  }
-
-  /// Build an InlineSpan for a segment
-  InlineSpan build(
-    BuildContext context,
-    ParsedTextSegment segment,
-    TextStyle? style,
-  ) {
-    final builder = getBuilder(segment.type);
-    return builder(context, segment, style, this);
-  }
-
-  /// Build spans for a list of segments
-  List<InlineSpan> buildAll(
-    BuildContext context,
-    List<ParsedTextSegment> segments,
-    TextStyle? style,
-  ) {
-    return segments.map((s) => build(context, s, style)).toList();
-  }
-}
-
-/// Builder function type for rendering parsed segments
-typedef SegmentBuilderFn =
-    InlineSpan Function(
-      BuildContext context,
-      ParsedTextSegment segment,
-      TextStyle? style,
-      SegmentBuilderRegistry registry,
-    );
-
-/// Default builder that just returns a TextSpan
-InlineSpan defaultSegmentBuilder(
-  BuildContext context,
-  ParsedTextSegment segment,
-  TextStyle? style,
-  SegmentBuilderRegistry registry,
-) {
-  return TextSpan(text: segment.text, style: style);
 }

@@ -113,8 +113,6 @@ class BooruTagStore {
     return Map.unmodifiable(_manual[keyFor(booru)] ?? const {});
   }
 
-  static int get manualCount => _manual.values.fold(0, (sum, m) => sum + m.length);
-
   static Future<void> setManualType(Booru booru, String tag, TagType type) async {
     final String key = keyFor(booru);
     final String name = _clean(tag);
@@ -237,15 +235,6 @@ class BooruTagStore {
       return await _settings.dbHandler.countBooruTags(keyFor(booru), namespace: namespace, tagType: type?.name);
     } catch (_) {
       return 0;
-    }
-  }
-
-  /// Rows per namespace — the badge on each tag-builder chip.
-  static Future<Map<String, int>> namespaceCounts(Booru booru) async {
-    try {
-      return await _settings.dbHandler.countBooruTagsByNamespace(keyFor(booru));
-    } catch (_) {
-      return const {};
     }
   }
 

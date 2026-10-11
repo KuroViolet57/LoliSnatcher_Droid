@@ -1,5 +1,4 @@
 import 'package:lolisnatcher/core/network/webview_environment.dart';
-import 'package:lolisnatcher/sources/framework/booru_handler.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -446,35 +445,3 @@ class _R34HentaiHandlerDummy extends R34HentaiHandler {
 
 /// Booru Handler for the r34hentai engine
 // TODO they removed their api, both shimmie and custom one, but maybe it is still hidden somewhere?
-class R34HentaiHandlerOld extends R34HentaiHandler {
-  R34HentaiHandlerOld(super.booru, super.limit);
-
-  @override
-  Future<List> parseListFromResponse(dynamic response) async {
-    final List<dynamic> parsedResponse = BooruHandler.asResponseList(response.data);
-    return parsedResponse; // Limit doesn't work with this api
-  }
-
-  @override
-  BooruItem? parseItemFromResponse(dynamic responseItem, int index) {
-    final current = responseItem;
-    final String imageUrl = current['file_url'];
-    final String sampleUrl = current['sample_url'];
-    final String thumbnailUrl = current['preview_url'];
-
-    final BooruItem item = BooruItem(
-      fileURL: imageUrl,
-      sampleURL: sampleUrl,
-      thumbnailURL: thumbnailUrl,
-      tagsList: current['tags'].split(' ').map(Tag.new).toList(),
-      postURL: makePostURL(current['id'].toString()),
-    );
-
-    return item;
-  }
-
-  @override
-  String makeURL(String tags) {
-    return '${booru.baseURL}/post/index.json?limit=$limit&page=$pageNum&tags=$tags';
-  }
-}

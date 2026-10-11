@@ -68,15 +68,6 @@ extension SettingsTagFilters on SettingsHandler {
     return TagsListData(hiddenInItem, markedInItem, soundInItem, aiInItem);
   }
 
-  bool containsHidden(List<String> itemTags) {
-    // Approximate — only checks plain-tag tokens from any global line.
-    // For the proper line-based evaluation (operators, metatags, per-booru
-    // scoping) callers should use [isItemHiddenForBooru].
-    final tokens = blacklistedTagTokens;
-    if (tokens.isEmpty) return false;
-    return itemTags.any(tokens.contains);
-  }
-
   /// Proper line-based evaluation against the global blacklist only.
   /// Use this from places that don't have per-booru context.
   bool isItemHiddenGlobally(BooruItem item) {

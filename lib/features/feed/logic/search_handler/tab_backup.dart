@@ -121,22 +121,4 @@ class TabBackup {
 
     return jsonList.map((e) => fromJson(e as Map<String, dynamic>)).where((e) => e != null).cast<TabBackup>().toList();
   }
-
-  TabBackup copyWith({
-    String? tags,
-    String? booru,
-    List<String>? secondaryBoorus,
-    Map<String, String>? tagOverrides,
-    Map<String, bool>? inheritMainTags,
-    bool? selected,
-  }) {
-    return TabBackup(
-      tags: tags ?? this.tags,
-      booru: booru ?? this.booru,
-      secondaryBoorus: secondaryBoorus ?? this.secondaryBoorus,
-      tagOverrides: tagOverrides ?? this.tagOverrides,
-      inheritMainTags: inheritMainTags ?? this.inheritMainTags,
-      selected: selected ?? this.selected,
-    );
-  }
 }

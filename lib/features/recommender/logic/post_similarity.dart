@@ -1,12 +1,11 @@
-import 'dart:math';
 
-import 'package:lolisnatcher/models/tag_type.dart';
 
 /// Shared vocabulary for the recommendation code: which tags actually carry
 /// meaning, and how to compare tag names across boorus that spell them
 /// differently (spaces vs underscores).
 ///
 /// See SuggestionEngine for how these are used to build varied suggestions.
+library;
 
 /// Medium / format / catch-all tags. These match a huge share of any booru,
 /// so they carry almost no relevance information.
@@ -25,42 +24,3 @@ const Set<String> kGenericMediumTags = {
 /// Tags are spelled with spaces on some boorus and underscores on others —
 /// compare on a single normalised form.
 String normalizeTagName(String tag) => tag.trim().toLowerCase().replaceAll(' ', '_');
-
-/// How much a shared tag says about two posts being alike.
-///
-/// [count] is the booru-reported number of posts carrying the tag when the
-/// handler provides one (rule34.xyz does, and it is by far the best rarity
-/// signal available); otherwise rarity falls back to 1 and only the tag type
-/// and the generic-tag stoplist shape the weight.
-double tagRelevanceWeight(String name, TagType type, int count) {
-  final String normalized = normalizeTagName(name);
-  if (normalized.isEmpty || normalized == 'tagme') return 0;
-
-  final double typeWeight = switch (type) {
-    TagType.artist => 6,
-    TagType.character => 5,
-    TagType.copyright => 3,
-    TagType.species => 2,
-    TagType.contributor => 5,
-    TagType.meta => 0.3,
-    _ => 1,
-  };
-
-  // Rarity: a tag on 200 posts is a much stronger hint than one on 200k.
-  // log-scaled and clamped so a single ultra-rare tag can't swamp everything.
-  double rarityWeight;
-  if (count > 0) {
-    rarityWeight = (log(2000000 / max(count, 1)) / log(10)).clamp(0.2, 4.0);
-  } else {
-    rarityWeight = 1;
-  }
-
-  // Untyped generic/medium tags carry nearly nothing. Typed tags keep their
-  // weight even if the name looks generic (an artist literally named "loop"
-  // is still an artist).
-  if (type == TagType.none && kGenericMediumTags.contains(normalized)) {
-    rarityWeight = min(rarityWeight, 0.15);
-  }
-
-  return typeWeight * rarityWeight;
-}

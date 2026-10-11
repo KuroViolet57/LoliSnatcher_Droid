@@ -10,9 +10,6 @@ class SankakuTagIndex extends TagIndexSource {
   @override
   int get pageSize => 100;
 
-  @override
-  bool get orderedByCount => true;
-
   /// 8 is "medium" (comic, portrait, doujinshi…), which the handler already
   /// files as meta; 9 holds the site's own visibility flags and is skipped.
   static const Map<TagType, String> categoryCodes = {

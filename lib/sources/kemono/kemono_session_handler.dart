@@ -25,8 +25,6 @@ class KemonoSessionHandler {
   static final KemonoSessionHandler instance = KemonoSessionHandler._();
 
   static const String fileName = 'kemono_session.json';
-  static const String site = 'https://kemono.cr';
-  static const String api = '$site/api/v1';
   static const Duration reloginInterval = Duration(seconds: 60);
 
   /// Rises whenever a session appears or goes, so sidebars can re-read.

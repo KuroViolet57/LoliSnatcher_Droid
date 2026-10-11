@@ -52,9 +52,6 @@ class SettingsEnumRegistry {
   /// Check if a type name is registered in the registry.
   static bool isRegistered(String typeName) => _fromStringMap.containsKey(typeName);
 
-  /// Get the fromString function for a registered type.
-  static dynamic Function(String)? getFromString(String typeName) => _fromStringMap[typeName];
-
   /// Validate and convert a value for a registered enum type.
   ///
   /// When [toJSON] is true, converts the enum to its JSON string representation.
@@ -146,10 +143,3 @@ void initSettingsEnumRegistry() {
     fromString: AppAlias.fromString,
   );
 }
-
-/// Helper to create a map entry for an enum setting.
-/// Use in the settings map to reduce boilerplate.
-Map<String, dynamic> enumSettingEntry<T extends Enum>(T defaultValue, String typeName) => {
-  'type': typeName,
-  'default': defaultValue,
-};

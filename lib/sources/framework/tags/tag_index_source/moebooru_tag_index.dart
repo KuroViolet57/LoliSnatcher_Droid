@@ -10,9 +10,6 @@ class MoebooruTagIndex extends TagIndexSource {
   @override
   int get pageSize => 100;
 
-  @override
-  bool get orderedByCount => true;
-
   /// Types 5 and 6 mean different things per site (yande.re: circles and
   /// faults; konachan: style and series) and are left out.
   static const Map<TagType, String> categoryCodes = {

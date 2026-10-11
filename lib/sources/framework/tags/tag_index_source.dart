@@ -61,10 +61,6 @@ abstract class TagIndexSource {
   /// entire tag database on a phone; the point is the useful end of it.
   int get maxIndexPages => 60;
 
-  /// Whether [pageAt] returns the most-used tags first. When false, walking
-  /// the index is a slog through whatever internal order the site uses.
-  bool get orderedByCount => false;
-
   /// One page of the full tag index. [page] is 0-based.
   Future<List<BooruTagEntry>> pageAt(Booru booru, int page);
 

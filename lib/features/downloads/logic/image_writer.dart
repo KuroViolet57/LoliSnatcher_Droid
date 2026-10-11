@@ -405,32 +405,6 @@ class ImageWriter {
     return cachePath + fileName;
   }
 
-  // calculates cache (total or by type) size and file count
-  Future<Map<String, int>> getCacheStat(String? typeFolder) async {
-    String cacheDirPath;
-    int fileNum = 0;
-    int totalSize = 0;
-    try {
-      await setPaths();
-      cacheDirPath = "$cacheRootPath${typeFolder ?? ''}/";
-
-      final Directory cacheDir = Directory(cacheDirPath);
-      if (await cacheDir.exists()) {
-        final List<FileSystemEntity> files = await cacheDir.list(recursive: true, followLinks: false).toList();
-        for (final FileSystemEntity file in files) {
-          if (file is File) {
-            fileNum++;
-            totalSize += await file.length();
-          }
-        }
-      }
-    } catch (e) {
-      print('Image Writer Exception :: get cache stat :: $e');
-    }
-
-    return {'fileNum': fileNum, 'totalSize': totalSize};
-  }
-
   static const List<String> cleanableFolders = ['thumbnails', 'samples', 'media', 'WebView'];
 
   /// 1. Temp file cleanup (always): removes .temp_* and 0-byte files from ALL folders
@@ -624,7 +598,6 @@ class ImageWriter {
     final String hash = md5.convert(utf8.encode(dir)).toString().substring(0, 10);
     return '${hash}_$fileName';
   }
-
 
   String sanitizeName(String fileName, {required String fileNameExtras}) {
     return '${Tools.sanitize(fileNameExtras)}${Tools.sanitize(fileName)}';

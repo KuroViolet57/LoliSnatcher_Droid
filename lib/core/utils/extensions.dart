@@ -73,9 +73,6 @@ extension StringExtras on String {
   bool toBool() => this == 'true' || this == '1';
 
   String regexpEscape() => RegExp.escape(this);
-
-  @Deprecated('MOVE THIS TO LOCALIZATION')
-  String get temploc => this;
 }
 
 extension IntExtras on int {
@@ -109,10 +106,6 @@ extension DoubleExtras on double {
         RegExp(r'(\.\d*?[1-9]|)\.?0+$'),
         (match) => '${match[1] == '.' ? '' : match[1]}',
       );
-}
-
-extension BoolExtras on bool {
-  void toggle() => this ? false : true;
 }
 
 String formatNumber(num number) {

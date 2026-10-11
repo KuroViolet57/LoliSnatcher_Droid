@@ -17,11 +17,6 @@ extension DBHistory on DBHandler {
     return restoreItem;
   }
 
-  Future<void> removeTabRestore(String id) async {
-    await db?.rawDelete('DELETE FROM TabRestore WHERE id=?;', [id]);
-    return;
-  }
-
   /// Get search history entries
   Future<List<HistoryItem>> getSearchHistory() async {
     final metaData = await db?.rawQuery('SELECT * FROM SearchHistory GROUP BY searchText, booruName ORDER BY id DESC');
@@ -55,20 +50,6 @@ extension DBHistory on DBHandler {
       });
     });
     return List.from(result.map(HistoryItem.fromMap));
-  }
-
-  Future<List<String>> getSearchHistoryByInput(String queryStr, int limit) async {
-    final List<String> tags = [];
-    final result = await db?.rawQuery(
-      'SELECT DISTINCT searchText FROM SearchHistory WHERE lower(searchText) LIKE (?) LIMIT $limit',
-      ['${queryStr.toLowerCase()}%'],
-    );
-    if (result != null && result.isNotEmpty) {
-      for (int i = 0; i < result.length; i++) {
-        tags.add(result[i]['searchText'].toString());
-      }
-    }
-    return tags;
   }
 
   /// Delete entry from search history (if no id given - clears everything)

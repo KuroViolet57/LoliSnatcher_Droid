@@ -314,18 +314,6 @@ class ServiceHandler {
     return result;
   }
 
-  static Future<String> getFilesByExt(String safUri, String fileExt) async {
-    String result = '';
-    try {
-      result = await platform.invokeMethod('getTempDirAccess');
-      log('Got saf path back');
-      log(result);
-    } catch (e) {
-      log(e);
-    }
-    return result;
-  }
-
   /// A folder the user picked for a model import. Empty when they cancel.
   static Future<String> selectModelFolder() async {
     try {
@@ -422,16 +410,6 @@ class ServiceHandler {
     }
   }
 
-  static Future<String> getDocumentsDir() async {
-    String result = '';
-    try {
-      result = await platform.invokeMethod('getDocumentsPath');
-    } catch (e) {
-      log(e);
-    }
-    return result;
-  }
-
   static Future<String> getPicturesDir() async {
     String result = '';
     try {
@@ -523,24 +501,6 @@ class ServiceHandler {
     return [for (final l in lines ?? const []) '$l'];
   }
 
-  static Future<void> emptyCache() async {
-    try {
-      if (Platform.isAndroid) {
-        await platform.invokeMethod('emptyCache');
-      } else if (Platform.isIOS) {
-        // ???
-      } else if (Platform.isLinux || Platform.isWindows) {
-        final String cacheD = await getCacheDir();
-        final File cacheDir = File(cacheD);
-        // TODO parse through possible folder list and don't do recursive to exclude wrong path problems
-        await cacheDir.delete(recursive: true);
-      }
-    } catch (e) {
-      log(e);
-    }
-    return;
-  }
-
   static Future<void> deleteDB(SettingsHandler settingsHandler) async {
     if (Platform.isAndroid) {
       final File dbFile = File('${settingsHandler.path}store.db');
@@ -621,14 +581,6 @@ class ServiceHandler {
     if (Platform.isAndroid) {
       platform.invokeMethod('setVolumeButtons', {'setActive': setActive});
     }
-  }
-
-  static Future<Uint8List?> makeVidThumb(String videoURL) async {
-    Uint8List? thumbnail;
-    if (Platform.isAndroid) {
-      thumbnail = await platform.invokeMethod('makeVidThumb', {'videoURL': videoURL});
-    }
-    return thumbnail;
   }
 
   static Future<List<Uint8List>?> sliceImage(String path, int sliceHeight, {int quality = 90}) async {
@@ -717,29 +669,6 @@ class ServiceHandler {
     } catch (e) {
       log(e);
       return false;
-    }
-  }
-
-  /// Gets the currently active app alias (Android only)
-  static Future<String> getCurrentAlias() async {
-    if (!Platform.isAndroid) return 'loli_snatcher';
-    try {
-      return await platform.invokeMethod('getCurrentAlias') ?? 'loli_snatcher';
-    } catch (e) {
-      log(e);
-      return 'loli_snatcher';
-    }
-  }
-
-  /// Gets list of available aliases (Android only)
-  static Future<List<String>> getAvailableAliases() async {
-    if (!Platform.isAndroid) return ['loli_snatcher'];
-    try {
-      final result = await platform.invokeMethod('getAvailableAliases');
-      return List<String>.from(result ?? ['loli_snatcher']);
-    } catch (e) {
-      log(e);
-      return ['loli_snatcher'];
     }
   }
 }
