@@ -43,6 +43,22 @@ must not be forced onto the OpenGL context, so the two options media_kit_video s
 
 To undo: put the two options back in `real.dart` (search `LoliSnatcher patch (token 153)`) and
 delete that file.
+
+## Third change (token 154): SurfaceTexture fallback
+
+Taken as is from Predidit/media-kit 87cdfef7 (the fork Kazumi ships; Kazumi has used it as its
+default since 2026-06-18, with Impeller off as we do). On Android 10+ Flutter's
+`createSurfaceProducer()` always hands out an ImageReader producer; with
+`VideoControllerConfiguration.enableAndroidSurfaceProducer: false` the plugin instead creates a
+classic `SurfaceTexture` (`createSurfaceTexture()`), sizes it with `setDefaultBufferSize` and
+frees the old `wid` 5 s later, as the SurfaceProducer path does. The default (`true`) is the old
+path, unchanged. The app sets it from Settings -> Video -> "Draw videos into a SurfaceTexture".
+
+Files: `MediaKitVideoPlugin.java` (reads `enableSurfaceProducer`), `VideoOutputManager.java`,
+`VideoOutput.java`, `android_video_controller/real.dart` (passes the flag),
+`platform_video_controller.dart` (the field). Search `LoliSnatcher patch (token 154)`.
+To undo: revert those five files to 2.0.1 (the field can stay; unknown arguments are ignored).
+
 ## To undo
 
 1. Delete the four lines under `dependency_overrides` in `pubspec.yaml`.

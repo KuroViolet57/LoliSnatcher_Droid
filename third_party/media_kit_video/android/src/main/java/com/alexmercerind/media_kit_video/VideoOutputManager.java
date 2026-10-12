@@ -26,11 +26,12 @@ public class VideoOutputManager {
         this.textureRegistryReference = textureRegistryReference;
     }
 
-    public void create(long handle, TextureUpdateCallback textureUpdateCallback) {
+    // LoliSnatcher patch (token 154): SurfaceTexture fallback, from Predidit/media-kit 87cdfef7.
+    public void create(long handle, boolean enableSurfaceProducer, TextureUpdateCallback textureUpdateCallback) {
         synchronized (lock) {
             Log.i(TAG, String.format(Locale.ENGLISH, "com.alexmercerind.media_kit_video.VideoOutputManager.create: %d", handle));
             if (!videoOutputs.containsKey(handle)) {
-                final VideoOutput videoOutput = new VideoOutput(textureRegistryReference, textureUpdateCallback);
+                final VideoOutput videoOutput = new VideoOutput(textureRegistryReference, enableSurfaceProducer, textureUpdateCallback);
                 videoOutputs.put(handle, videoOutput);
             }
         }

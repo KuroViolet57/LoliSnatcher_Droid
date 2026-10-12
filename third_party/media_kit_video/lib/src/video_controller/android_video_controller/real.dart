@@ -198,6 +198,8 @@ class AndroidVideoController extends PlatformVideoController {
       'VideoOutputManager.Create',
       {
         'handle': handle.toString(),
+        // LoliSnatcher patch (token 154): SurfaceTexture fallback, from Predidit/media-kit 87cdfef7.
+        'enableSurfaceProducer': configuration.enableAndroidSurfaceProducer,
       },
     );
 
