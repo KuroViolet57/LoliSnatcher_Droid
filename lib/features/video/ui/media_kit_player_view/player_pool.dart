@@ -249,9 +249,9 @@ class _MediaKitPlayerPool {
       ),
   ];
 
-  /// vo | hwdec | hardware acceleration, as the slot was built with.
-  static String _optionsSignature(SettingsHandler settings) =>
-      '${settings.altVideoPlayerVO.toJson()}|${settings.altVideoPlayerHWDEC.toJson()}|${settings.altVideoPlayerHwAccel}';
+  /// vo | hwdec | hardware acceleration (+ token 154 switches), as the slot
+  /// was built with.
+  static String _optionsSignature(SettingsHandler settings) => MediaKitEngineOptions.signature(settings);
 
   /// Drops idle players built before the engine settings changed, so the new
   /// ones take effect on the next video instead of living on in a slot.
@@ -344,7 +344,9 @@ class _MediaKitPlayerPool {
         }
 
         final String hw = await read('hwdec-current');
-        final String used = 'decoder ${hw == 'no' ? 'no (software)' : hw} · output ${await read('current-vo')} · gpu ${await read('current-gpu-context')} · ${MediaKitEngine.loaded?.setting ?? '?'}';
+        // Token 154: and which surface it drew into.
+        final String surface = MediaKitEngineOptions.surfaceOfSignature(entry.options);
+        final String used = 'decoder ${hw == 'no' ? 'no (software)' : hw} · output ${await read('current-vo')} · gpu ${await read('current-gpu-context')} · surface $surface · ${MediaKitEngine.loaded?.setting ?? '?'}';
         PerfTrace.instance.event('video.decoder', used);
         Logger.Inst().log(
           'video: $used ($url)',

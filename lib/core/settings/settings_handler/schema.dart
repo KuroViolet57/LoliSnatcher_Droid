@@ -289,6 +289,14 @@ extension SettingsSchema on SettingsHandler {
       'default': 'classic',
       'options': ['classic', 'mpv041'],
     },
+    'mediaKitHwdecChain': {
+      'type': 'bool',
+      'default': false,
+    },
+    'mediaKitSurfaceTexture': {
+      'type': 'bool',
+      'default': false,
+    },
     'mediaKitMaxPlayers': {
       'type': 'int',
       'default': 4,

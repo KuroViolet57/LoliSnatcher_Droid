@@ -228,6 +228,12 @@ class SettingsHandler {
   // (v1.1.11, mpv 2023) or mpv041 (our own mpv 0.41 build). Read once per
   // process by MediaKitEngine; a change needs a restart.
   String mediaKitLibmpv = 'classic';
+  // Token 154: the pooled engine asks mpv for `mediacodec,mediacodec-copy`
+  // instead of the HWDEC dropdown (MediaKitEngineOptions.hwdecChain).
+  bool mediaKitHwdecChain = false;
+  // Token 154: media_kit_video draws into a SurfaceTexture instead of
+  // Flutter's SurfaceProducer (ImageReader on Android 10+).
+  bool mediaKitSurfaceTexture = false;
   // How many media_kit (libmpv) players to keep warm in the LRU pool. More =
   // scrolling back to a recent video resumes instantly with its buffer
   // intact, at the cost of RAM. libmpv has no MediaCodec limit so this is
@@ -442,6 +448,8 @@ class SettingsHandler {
     'altVideoPlayerVO',
     'altVideoPlayerHWDEC',
     'altVideoPlayerHwAccel',
+    'mediaKitHwdecChain',
+    'mediaKitSurfaceTexture',
     'theme',
     'themeMode',
     'isAmoled',

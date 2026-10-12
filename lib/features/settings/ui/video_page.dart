@@ -13,6 +13,7 @@ import 'package:lolisnatcher/models/settings/video_cache_mode.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
 import 'package:lolisnatcher/core/ui/explain_button.dart';
 import 'package:lolisnatcher/core/ui/settings_widgets.dart';
+import 'package:lolisnatcher/features/video/logic/engine_measurements.dart';
 import 'package:lolisnatcher/features/video/logic/media_kit_engine.dart';
 import 'package:lolisnatcher/features/video/logic/media_kit_video_player.dart';
 
@@ -33,6 +34,8 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
   bool useBetterPlayer = false;
   bool useMediaKitPlayer = false;
   String mediaKitLibmpv = 'classic';
+  bool mediaKitHwdecChain = false;
+  bool mediaKitSurfaceTexture = false;
   String videoEngineChoice = 'off';
   final TextEditingController mediaKitMaxPlayersController = TextEditingController();
   final TextEditingController videoStartDelayController = TextEditingController();
@@ -57,6 +60,8 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
     useBetterPlayer = settingsHandler.useBetterPlayer;
     useMediaKitPlayer = settingsHandler.useMediaKitPlayer;
     mediaKitLibmpv = MpvBuild.fromSetting(settingsHandler.mediaKitLibmpv).setting;
+    mediaKitHwdecChain = settingsHandler.mediaKitHwdecChain;
+    mediaKitSurfaceTexture = settingsHandler.mediaKitSurfaceTexture;
     videoEngineChoice = settingsHandler.videoEngineChoice;
     mediaKitMaxPlayersController.text = settingsHandler.mediaKitMaxPlayers.toString();
     videoStartDelayController.text = settingsHandler.videoStartDelayMs.toString();
@@ -85,6 +90,8 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
     settingsHandler.useBetterPlayer = useBetterPlayer;
     settingsHandler.useMediaKitPlayer = useMediaKitPlayer;
     settingsHandler.mediaKitLibmpv = MpvBuild.fromSetting(mediaKitLibmpv).setting;
+    settingsHandler.mediaKitHwdecChain = mediaKitHwdecChain;
+    settingsHandler.mediaKitSurfaceTexture = mediaKitSurfaceTexture;
     settingsHandler.videoEngineChoice = videoEngineChoiceFromString(videoEngineChoice).name;
     settingsHandler.mediaKitMaxPlayers =
         (int.tryParse(mediaKitMaxPlayersController.text) ?? 4).clamp(1, 20);
@@ -270,22 +277,94 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
                     title: 'media_kit libmpv build',
                     intro:
                         'The library inside the media_kit engine that opens, decodes and draws the videos. Both are in this app; one is used until the app is closed. The warm player pool, the controls and every other video setting work the same with either.',
-                    choices: () => const [
+                    choices: () => [
                       ExplainChoice(
                         name: 'Classic (mpv 2023, FFmpeg 6.0) - as before',
                         text:
                             'What every build up to 151 used: libmpv-android-video-build v1.1.11, an mpv from October 2023 with FFmpeg 6.0. Draws with OpenGL only; output gpu-next is not in it.',
-                        timing: 'Times are in the log after you watch a few videos: "video: playing after N ms (…, classic)".',
+                        timing: EngineMeasurements.build(MpvBuild.classic),
                       ),
                       ExplainChoice(
                         name: 'mpv 0.41 (FFmpeg 7.1, libplacebo)',
                         text:
                             'Our own build of mpv 0.41 with FFmpeg 7.1 and libplacebo, the same mpv the Kazumi app ships. Newer decoders and fixes; output gpu-next works and may draw with Vulkan (OpenGL when Vulkan is not usable). About 9 MB bigger in the app.',
-                        timing: 'Times are in the log after you watch a few videos: "video: playing after N ms (…, mpv041)".',
+                        timing: EngineMeasurements.build(MpvBuild.mpv041),
                       ),
                     ],
                     footer:
-                        'Restart the app after changing it (close it from the recent apps). Hardware decoding "vulkan" decodes in software with both builds on phones whose GPU has no Vulkan video decoding (the test handheld\'s Adreno 740 has none); "auto-safe" or "mediacodec" use the phone\'s video decoder. Each video\'s decoder, output and GPU are in the log ("video: decoder …").',
+                        'Restart the app after changing it (close it from the recent apps). Hardware decoding "vulkan" decodes in software with both builds on phones whose GPU has no Vulkan video decoding (the test handheld\'s Adreno 740 has none); "auto-safe" or "mediacodec" use the phone\'s video decoder. Your own times are in the log after a few videos ("video: playing after N ms (…)"; "video: decoder …" gives each video\'s decoder, output, GPU and surface).',
+                  ),
+                ),
+              if (!SettingsHandler.isDesktopPlatform && useMediaKitPlayer)
+                SettingsToggle(
+                  key: const ValueKey('media-kit-hwdec-chain'),
+                  value: mediaKitHwdecChain,
+                  onChanged: (newValue) {
+                    setState(() {
+                      mediaKitHwdecChain = newValue;
+                    });
+                  },
+                  title: 'Decoder chain: phone decoder, then copy',
+                  leadingIcon: const Icon(Symbols.memory_rounded),
+                  subtitle: const Text(
+                    "Off: the HWDEC choice below is used, as before. On: the media_kit engine asks for the phone's video decoder drawing straight into the picture, and where that cannot start, the copying decoder, before software. Overrides HWDEC while hardware decoding is on. New videos use it.",
+                  ),
+                  trailingIcon: ExplainButton(
+                    key: const ValueKey('media-kit-hwdec-chain-explain'),
+                    title: 'Decoder chain',
+                    intro:
+                        "mpv is given a list of decoders and takes the first that starts: \"mediacodec\" (the phone's decoder writes straight into the picture, no copy), then \"mediacodec-copy\" (the same decoder, frames copied back to memory). If neither starts, it decodes in software. Same list on both libmpv builds.",
+                    choices: () => const [
+                      ExplainChoice(
+                        name: 'Off - as before',
+                        text:
+                            'mpv gets the HWDEC choice from below as it is. "auto-safe" picks the copying decoder (mpv never picks the direct one by itself), "mediacodec" alone falls to software where the direct path cannot run, "vulkan" is software on phones without Vulkan video decoding.',
+                      ),
+                      ExplainChoice(
+                        name: 'On',
+                        text:
+                            "Least memory where the direct path runs (output gpu), and still the phone's decoder where it cannot: output gpu-next draws with Vulkan and mpv's direct decoder needs OpenGL, so there it should end on the copying decoder instead of software.",
+                        timing: EngineMeasurements.chain,
+                      ),
+                    ],
+                    footer:
+                        'Only for the media_kit engine. Players already open keep their decoder; the next videos get the new one. The log line "video: decoder …" says which one each video used.',
+                  ),
+                ),
+              if (!SettingsHandler.isDesktopPlatform && useMediaKitPlayer)
+                SettingsToggle(
+                  key: const ValueKey('media-kit-surface-texture'),
+                  value: mediaKitSurfaceTexture,
+                  onChanged: (newValue) {
+                    setState(() {
+                      mediaKitSurfaceTexture = newValue;
+                    });
+                  },
+                  title: 'Draw videos into a SurfaceTexture',
+                  leadingIcon: const Icon(Symbols.layers_rounded),
+                  subtitle: const Text(
+                    "Off: Flutter's SurfaceProducer, as before. On: the older SurfaceTexture way of handing video frames to the app, the one the Kazumi app uses by default. New videos use it.",
+                  ),
+                  trailingIcon: ExplainButton(
+                    key: const ValueKey('media-kit-surface-texture-explain'),
+                    title: 'SurfaceTexture or SurfaceProducer',
+                    intro:
+                        "How mpv's pictures reach the screen: mpv draws each frame into an Android surface, and Flutter shows that surface as a texture in the viewer.",
+                    choices: () => const [
+                      ExplainChoice(
+                        name: 'Off: SurfaceProducer - as before',
+                        text:
+                            "Flutter's newer way. On Android 10 and later it is an ImageReader: frames are handed over as hardware buffers. What every build so far used.",
+                      ),
+                      ExplainChoice(
+                        name: 'On: SurfaceTexture',
+                        text:
+                            'The older OpenGL texture way, kept as a fallback for phones where the SurfaceProducer shows black, stale or flickering frames. It works because this app draws with Skia (Impeller is off). Taken from the media_kit fork the Kazumi app ships.',
+                        timing: EngineMeasurements.surfaceTexture,
+                      ),
+                    ],
+                    footer:
+                        'Only for the media_kit engine. Players already open keep their surface; the next videos get the new one. The log line "video: decoder …" ends with "surface texture" or "surface producer".',
                   ),
                 ),
               if (!SettingsHandler.isDesktopPlatform && useMediaKitPlayer)

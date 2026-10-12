@@ -15,9 +15,36 @@ class MediaKitEngineOptions {
     return VideoControllerConfiguration(
       enableHardwareAcceleration: settings.altVideoPlayerHwAccel,
       vo: settings.altVideoPlayerVO.toJson(),
-      hwdec: settings.altVideoPlayerHWDEC.toJson(),
+      hwdec: hwdec(settings),
       androidAttachSurfaceAfterVideoParameters: settings.altVideoPlayerVO.isGpu ? true : null,
+      enableAndroidSurfaceProducer: !settings.mediaKitSurfaceTexture,
     );
+  }
+
+  /// Token 154, "Decoder chain": the phone's decoder straight into the
+  /// picture, and where that cannot start (output gpu-next on Vulkan: mpv's
+  /// direct mediacodec needs OpenGL) the copying one, before software. mpv
+  /// goes down a list until one decoder starts (options.rst, --hwdec).
+  static const String hwdecChain = 'mediacodec,mediacodec-copy';
+
+  /// What mpv is asked for: the chain while it is on and hardware decoding is
+  /// allowed, else the Settings -> Video HWDEC choice, as before.
+  static String hwdec(SettingsHandler settings) =>
+      settings.mediaKitHwdecChain && settings.altVideoPlayerHwAccel ? hwdecChain : settings.altVideoPlayerHWDEC.toJson();
+
+  /// Token 154: "texture" when media_kit_video draws into a SurfaceTexture,
+  /// "producer" for Flutter's SurfaceProducer (the default).
+  static String surfaceLabel(SettingsHandler settings) => settings.mediaKitSurfaceTexture ? 'texture' : 'producer';
+
+  /// The surface a slot built with [signature] draws into (for its log line).
+  static String surfaceOfSignature(String signature) => signature.endsWith('|texture') ? 'texture' : 'producer';
+
+  /// vo | hwdec | hardware acceleration (+ the token 154 switches when on),
+  /// as a pool slot was built with. With both switches off it is what 153
+  /// used, so slots built before an update keep matching.
+  static String signature(SettingsHandler settings) {
+    final String base = '${settings.altVideoPlayerVO.toJson()}|${settings.altVideoPlayerHWDEC.toJson()}|${settings.altVideoPlayerHwAccel}';
+    return '$base${settings.mediaKitHwdecChain ? '|chain' : ''}${settings.mediaKitSurfaceTexture ? '|texture' : ''}';
   }
 
   /// How long a video has to stay on screen before its player is built (r62).
