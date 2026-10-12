@@ -181,3 +181,4 @@
 - Next step: user tests 154 with its changes.txt checklist (the two switches, especially SurfaceTexture and the chain
   with gpu-next on the S24 Ultra). Engine work has no further planned step; if the user wants one, the candidate is a
   fresh reviewer pass over 153+154's third_party changes (needs the user's yes).
+- Report page: features/V75 (v2), V76, V77, reports/20261012-2130-media-kit-engine-step2-154 and meta/project (v5) were sent from a scratch copy (the worktree guard blocks C:\bodu-apk\docs\reports); pull them into the main checkout before the next report there.
