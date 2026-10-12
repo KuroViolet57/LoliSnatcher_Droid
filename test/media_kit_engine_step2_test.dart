@@ -133,6 +133,26 @@ void main() {
       expect(real, contains("'enableSurfaceProducer': configuration.enableAndroidSurfaceProducer"));
     });
 
+    /// Thor, 154 first build: with SurfaceTexture on, a pool player re-pointed
+    /// at a video of another size showed it squashed (post 13 of the rule34
+    /// feed: a 16:9 video drawn as a ~5:1 strip). The SurfaceTexture keeps one
+    /// surface, so `wid` never changes on a resize and mpv kept the previous
+    /// video's android-surface-size. A resize of an attached SurfaceTexture
+    /// must re-run the same vo re-init a new wid triggers.
+    test('a resized SurfaceTexture re-applies the surface size to mpv', () {
+      final String real = File(
+        'third_party/media_kit_video/lib/src/video_controller/android_video_controller/real.dart',
+      ).readAsStringSync().replaceAll('\r\n', '\n');
+      expect(real, contains('final int? widBefore = wid.value;'));
+      expect(
+        real,
+        contains(
+          'if (!configuration.enableAndroidSurfaceProducer && widBefore != null && widBefore != 0) {\n'
+          '          unawaited(widListener());',
+        ),
+      );
+    });
+
     test('the plugin builds a SurfaceTexture when asked, and frees its wid late', () {
       const String dir = 'third_party/media_kit_video/android/src/main/java/com/alexmercerind/media_kit_video';
       final String plugin = File('$dir/MediaKitVideoPlugin.java').readAsStringSync();

@@ -59,6 +59,14 @@ Files: `MediaKitVideoPlugin.java` (reads `enableSurfaceProducer`), `VideoOutputM
 `platform_video_controller.dart` (the field). Search `LoliSnatcher patch (token 154)`.
 To undo: revert those five files to 2.0.1 (the field can stay; unknown arguments are ignored).
 
+Our own fix on top (found on the Thor with the first 154 build): a SurfaceTexture keeps one
+surface, so when a pooled player is re-pointed at a video of another size the plugin hands back
+the same `wid`, `widListener` never runs, and mpv keeps the previous video's
+`android-surface-size` (the next video was drawn squashed). `real.dart` now re-runs
+`widListener()` after a resize of an already attached SurfaceTexture, the same vo re-init a new
+`wid` triggers on the SurfaceProducer path. Predidit's fork does not have this (Kazumi opens one
+video per player).
+
 ## To undo
 
 1. Delete the four lines under `dependency_overrides` in `pubspec.yaml`.

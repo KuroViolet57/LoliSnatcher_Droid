@@ -115,6 +115,7 @@ class AndroidVideoController extends PlatformVideoController {
         }
 
         final handle = await player.handle;
+        final int? widBefore = wid.value;
 
         await _channel.invokeMethod(
           'VideoOutputManager.SetSurfaceSize',
@@ -131,6 +132,16 @@ class AndroidVideoController extends PlatformVideoController {
           surfaceWidth.toDouble(),
           surfaceHeight.toDouble(),
         );
+
+        // LoliSnatcher patch (token 154): a SurfaceTexture keeps one surface,
+        // so a resize hands back the same wid and widListener never runs; mpv
+        // then keeps the previous video's android-surface-size and draws the
+        // next one squashed (a pool player re-pointed at a video of another
+        // size). Re-run the same vo re-init a new wid triggers, once this
+        // lock is released.
+        if (!configuration.enableAndroidSurfaceProducer && widBefore != null && widBefore != 0) {
+          unawaited(widListener());
+        }
 
         if (!waitUntilFirstFrameRenderedCompleter.isCompleted) {
           waitUntilFirstFrameRenderedCompleter.complete();
