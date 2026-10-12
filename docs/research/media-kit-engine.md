@@ -111,3 +111,19 @@ The S24 Ultra (Adreno 750) is unchecked.
 1. SurfaceTexture fallback for devices where Flutter's SurfaceProducer misbehaves — [Predidit 87cdfef7](https://github.com/Predidit/media-kit/commit/87cdfef7)
 2. A hardware-decoder chain with a copy fallback and a codec whitelist (`mediacodec,mediacodec-copy` + `hwdec-codecs`) — [mpv-android MPVView.kt](https://github.com/mpv-android/mpv-android/blob/master/app/src/main/java/is/xyz/mpv/MPVView.kt)
 3. "Safe screenshot" (frame grab that cannot crash the player) for our frame reader — [Predidit a7d4a070](https://github.com/Predidit/media-kit/commit/a7d4a070)
+
+## Step 2 findings (token 154, 2026-10-12)
+
+- **Direct MediaCodec works on the Thor with both builds** (HWDEC `mediacodec`, output gpu):
+  `hwdec-current` = `mediacodec` on classic and mpv 0.41; native memory after 4 videos 614 / 620 MB
+  vs 713 / 740 MB copying (auto-safe) and 881 / 1028 MB software. Frame grabs still work.
+- mpv 0.41 `options.rst`: `mediacodec` is outside the `auto` whitelist (so auto-safe always picks
+  `mediacodec-copy`) and needs `--vo=gpu --gpu-context=android`; "Most non-copy methods only work
+  with the OpenGL GPU backend" (so not with gpu-next on Vulkan); a list is tried in order, then
+  software. Default `--hwdec-codecs` = h264,vc1,hevc,vp8,vp9,av1,prores,prores_raw,ffv1,dpx.
+- Flutter 3.42 `FlutterRenderer.createSurfaceProducer()` returns an ImageReader producer on every
+  API 29+ device (line 202); `createSurfaceTexture()` is the only way to the SurfaceTexture path.
+  Kazumi sets `enableAndroidSurfaceProducer: false` since 060c6e67 (2026-06-18), Impeller off.
+- Predidit a7d4a070 "safe screenshot" only repairs `NativePlayer.screenshot()` (`_screenshot`
+  allocates `args.join().length` bytes for a pointer array). The app never calls it; our frame
+  reader uses `command(['screenshot-to-file', …])` (128 zeroed slots). Not ported.
