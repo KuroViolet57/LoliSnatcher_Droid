@@ -133,3 +133,27 @@
 - Next step: user tests 151 with its changes.txt checklist (nothing should look different). Then the next M3 slice as
   token 152: the models -> core imports in test/architecture_allowlist.txt (models/booru_item.dart, models/settings/*,
   models/tag_type.dart ...), same pattern (move down or pass in), build 152 --side-by-side.
+
+## 2026-10-12 Claude: token 153 delivered (own media_kit engine, mpv 0.41), tested on the Thor (99168f5b)
+- Branch claude/1.0-media-kit-engine (worktree serene-sanderson-f1fe7c) from a60fc3d3 (151). Session "Custom media_kit engine: research and update".
+- Research docs/research/media-kit-engine.md: media-kit#1091 (flicker on mpv >= 0.37) is fixed in media_kit 1.2.1
+  (video-params, PR #1107; we run 1.2.6). Kazumi ships mpv 0.41 via Predidit's forks. Thor's Adreno 740 has no
+  VK_KHR_video_* -> hwdec "vulkan" is software with any build. Spec docs/superpowers/specs/2026-10-12-media-kit-engine-design.md,
+  plan docs/superpowers/plans/2026-10-12-media-kit-engine.md.
+- Our libmpv: third_party/libmpv-android/ls-arm64-v8a.jar = libmpvls.so (mpv v0.41.0-110, FFmpeg 7.1.3, libplacebo),
+  built in Docker inside WSL by third_party/libmpv-android/build/build_ls_libmpv.sh (Predidit dd2bfba8 + rename), ~4 min.
+- Our media_kit: third_party/media_kit (1.2.6 + JavaVM to the chosen library + #1446 leak fixes + bare
+  NativeLibrary call keeps the chosen library). media_kit_video: gpu-next gets gpu-api=vulkan,opengl.
+- App: Settings -> Video -> media_kit libmpv build (Classic default | mpv 0.41) with (i); MediaKitEngine locks per process;
+  log/trace lines video.engine, video.decoder, video.firstframe; demuxer-cache-dir.
+- Thor A/B (4 mp4, 8 s each): output gpu both builds about equal; auto-safe = mediacodec-copy on both; mpv041 + gpu-next
+  (androidvk) fastest first frames and 0 drops, +150 MB graphics memory. Numbers in K: changes.txt.
+- Found on device: first build crashed with mpv041 (SIGSEGV in classic libmpv.so via media_kit_video queryDecoders) -> fixed.
+- Slip: a failed adb push + unguarded `cat > settings.json` emptied the Thor's settings.json once; restored byte-identical
+  within a minute (tabs/DB untouched). Thor state now: user's settings (vo gpu, hwdec vulkan, pool 8), Classic, 153 installed.
+- Tests: full suite +2018 ~14 -10, the 10 = live booru_test network cases (151 had 11).
+- Not done: webm sample, scrub/loop/fullscreen on mpv041, measured times in the (i) window, fresh reviewer (needs yes).
+- Delivered: K:\My Drive\booruApk\153.apk (1.0 media_kit engine mpv 0.41 - tested), side-by-side, APK +8.5 MB.
+- Next step: user tests 153 (changes.txt checklist, especially webm and scrubbing on mpv 0.41, and gpu-next on the S24U).
+  Then engine step 2 as its own token: put the measured times into the (i) window and, if the user picks them, the
+  extra features from docs/research/media-kit-engine.md (SurfaceTexture fallback, hwdec chain, safe screenshot).
