@@ -34,9 +34,21 @@ class EngineMeasurements {
     }
   }
 
-  /// Decoder chain (token 154). Filled from the token 154 device runs.
-  static const String chain = 'Not measured yet on the $device.';
+  /// Decoder chain (token 154 runs r1, r2, r2b, r9).
+  static const String chain =
+      'Measured on the $device, mpv 0.41, same 4 mp4 posts.\n'
+      '- output gpu, chain on: "mediacodec" for every video, 984 / 973 / 870 / 616 ms, dropped 0 / 13 / 9 / 0, '
+      '609 MB (software decoding: 881-1028 MB, copying: 713-740 MB).\n'
+      '- output gpu-next, chain on: "mediacodec-copy" for every video, 724 / 1054 / 1165 / 663 ms, nothing dropped, 725 MB. '
+      'With HWDEC "mediacodec" alone and the chain off, gpu-next decoded in software (graphics memory 461 MB instead of 327 MB).\n'
+      '- 4 VP9 webm posts from e621: "mediacodec" too.';
 
-  /// SurfaceTexture (token 154). Filled from the token 154 device runs.
-  static const String surfaceTexture = 'Not measured yet on the $device.';
+  /// SurfaceTexture (token 154 runs r3-r6 and the swipe check).
+  static const String surfaceTexture =
+      'Measured on the $device, same 4 mp4 posts. First pictures the same as SurfaceProducer within network luck; '
+      'less graphics memory:\n'
+      '- mpv 0.41, output gpu: 131 MB instead of 182 MB (816 / 987 / 882 / 1074 ms vs 777 / 1362 / 876 / 798 ms).\n'
+      '- mpv 0.41, output gpu-next with the decoder chain: 203 MB instead of 327 MB, nothing dropped.\n'
+      '- Classic, output gpu: 128 MB.\n'
+      'Swiping through 12 posts, leaving the app and coming back: right shapes, no black frames, no crash.';
 }

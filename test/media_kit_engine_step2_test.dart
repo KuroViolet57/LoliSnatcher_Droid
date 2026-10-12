@@ -180,6 +180,16 @@ void main() {
       expect(mpv041, contains('gpu-next'));
     });
 
+    test('the two switches carry their own Thor runs (token 154)', () {
+      for (final String t in [EngineMeasurements.chain, EngineMeasurements.surfaceTexture]) {
+        expect(t, contains('AYN Thor'));
+        expect(t, isNot(contains('Not measured')));
+      }
+      expect(EngineMeasurements.chain, contains('"mediacodec-copy"'));
+      expect(EngineMeasurements.chain, contains('609 MB'));
+      expect(EngineMeasurements.surfaceTexture, contains('131 MB instead of 182 MB'));
+    });
+
     test('the libmpv (i) window shows them', () {
       final String page = File('lib/features/settings/ui/video_page.dart').readAsStringSync();
       expect(page, contains('EngineMeasurements.build(MpvBuild.classic)'));

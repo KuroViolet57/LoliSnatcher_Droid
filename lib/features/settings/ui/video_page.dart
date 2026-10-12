@@ -323,7 +323,7 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
                       ExplainChoice(
                         name: 'On',
                         text:
-                            "Least memory where the direct path runs (output gpu), and still the phone's decoder where it cannot: output gpu-next draws with Vulkan and mpv's direct decoder needs OpenGL, so there it should end on the copying decoder instead of software.",
+                            "Least memory where the direct path runs (output gpu), and still the phone's decoder where it cannot: output gpu-next draws with Vulkan and mpv's direct decoder needs OpenGL, so there it ends on the copying decoder instead of software.",
                         timing: EngineMeasurements.chain,
                       ),
                     ],
