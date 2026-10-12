@@ -30,6 +30,19 @@ the hook in `lib/src/widgets/video/video_surface_cap.dart` (behind the Modular
 UI switch `viewer.videoCapToScreen`); with no hook installed, this copy behaves
 exactly like the published package.
 
+## Second change (token 153): GPU options for vo=gpu-next
+
+The app can now load our own mpv 0.41 build (libmpvls.so, with libplacebo). Its `vo=gpu-next`
+must not be forced onto the OpenGL context, so the two options media_kit_video set unconditionally
+(`opengl-es=yes`, `gpu-context=android`) now come from
+`lib/src/video_controller/android_video_controller/android_gpu_options.dart`:
+
+- `vo=gpu` and anything else: exactly the old two options.
+- `vo=gpu-next`: `gpu-api=vulkan,opengl` (Vulkan, OpenGL when Vulkan is not usable), as in
+  Kazumi's fork (Predidit/media-kit e3732e30).
+
+To undo: put the two options back in `real.dart` (search `LoliSnatcher patch (token 153)`) and
+delete that file.
 ## To undo
 
 1. Delete the four lines under `dependency_overrides` in `pubspec.yaml`.

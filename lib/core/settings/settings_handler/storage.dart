@@ -102,6 +102,8 @@ extension SettingsStorage on SettingsHandler {
         return useMediaKitPlayer;
       case 'videoEngineChoice':
         return videoEngineChoice;
+      case 'mediaKitLibmpv':
+        return mediaKitLibmpv;
       case 'mediaKitMaxPlayers':
         return mediaKitMaxPlayers;
       case 'videoStartDelayMs':
@@ -425,6 +427,9 @@ extension SettingsStorage on SettingsHandler {
         break;
       case 'videoEngineChoice':
         videoEngineChoice = validatedValue;
+        break;
+      case 'mediaKitLibmpv':
+        mediaKitLibmpv = validatedValue;
         break;
       case 'mediaKitMaxPlayers':
         mediaKitMaxPlayers = (validatedValue as int).clamp(1, 20);

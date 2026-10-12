@@ -4,13 +4,16 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:fvp/fvp.dart' as fvp;
 
+import 'package:lolisnatcher/models/settings/mpv_build.dart';
 import 'package:lolisnatcher/models/settings/mpv_hardware_decoding.dart';
 import 'package:lolisnatcher/models/settings/mpv_video_output.dart';
 import 'package:lolisnatcher/models/settings/video_backend_mode.dart';
 import 'package:lolisnatcher/models/settings/video_engine_choice.dart';
 import 'package:lolisnatcher/models/settings/video_cache_mode.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/core/ui/explain_button.dart';
 import 'package:lolisnatcher/core/ui/settings_widgets.dart';
+import 'package:lolisnatcher/features/video/logic/media_kit_engine.dart';
 import 'package:lolisnatcher/features/video/logic/media_kit_video_player.dart';
 
 class VideoSettingsPage extends StatefulWidget {
@@ -29,6 +32,7 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
   bool disableVideo = false;
   bool useBetterPlayer = false;
   bool useMediaKitPlayer = false;
+  String mediaKitLibmpv = 'classic';
   String videoEngineChoice = 'off';
   final TextEditingController mediaKitMaxPlayersController = TextEditingController();
   final TextEditingController videoStartDelayController = TextEditingController();
@@ -52,6 +56,7 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
     disableVideo = settingsHandler.disableVideo;
     useBetterPlayer = settingsHandler.useBetterPlayer;
     useMediaKitPlayer = settingsHandler.useMediaKitPlayer;
+    mediaKitLibmpv = MpvBuild.fromSetting(settingsHandler.mediaKitLibmpv).setting;
     videoEngineChoice = settingsHandler.videoEngineChoice;
     mediaKitMaxPlayersController.text = settingsHandler.mediaKitMaxPlayers.toString();
     videoStartDelayController.text = settingsHandler.videoStartDelayMs.toString();
@@ -64,6 +69,14 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
     videoCacheMode = settingsHandler.videoCacheMode;
   }
 
+  /// Token 153: what runs now and whether a restart is pending.
+  String _libmpvSubtitle() {
+    final MpvBuild? loaded = MediaKitEngine.loaded;
+    final String now = loaded == null ? 'Nothing loaded yet in this run.' : 'Loaded now: ${loaded.label}.';
+    final String restart = MediaKitEngine.restartNeeded(mediaKitLibmpv) ? ' Restart the app to switch.' : '';
+    return 'Which libmpv plays the videos. Restart the app after changing it. $now$restart';
+  }
+
   Future<void> _onPopInvoked(_, _) async {
     settingsHandler.autoPlayEnabled = autoPlay;
     settingsHandler.respectManualPause = respectManualPause;
@@ -71,6 +84,7 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
     settingsHandler.disableVideo = disableVideo;
     settingsHandler.useBetterPlayer = useBetterPlayer;
     settingsHandler.useMediaKitPlayer = useMediaKitPlayer;
+    settingsHandler.mediaKitLibmpv = MpvBuild.fromSetting(mediaKitLibmpv).setting;
     settingsHandler.videoEngineChoice = videoEngineChoiceFromString(videoEngineChoice).name;
     settingsHandler.mediaKitMaxPlayers =
         (int.tryParse(mediaKitMaxPlayersController.text) ?? 4).clamp(1, 20);
@@ -231,6 +245,47 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
                   resetText: () => '4',
                   subtitle: const Text(
                     "How many recently-viewed videos to keep warm in memory. Scrolling back to a video that's still in the pool resumes with its buffer intact instead of restarting the download. Higher = smoother scrub-back but more RAM. libmpv has no MediaCodec limit, so values up to ~10 are safe on most devices. Default 4 (current + previous + next + one more).",
+                  ),
+                ),
+              if (!SettingsHandler.isDesktopPlatform && useMediaKitPlayer)
+                SettingsDropdown<String>(
+                  key: const ValueKey('media-kit-libmpv'),
+                  value: mediaKitLibmpv,
+                  items: MpvBuild.settingOptions,
+                  itemTitleBuilder: (item) => MpvBuild.fromSetting(item).label,
+                  onChanged: (String? newValue) {
+                    setState(() {
+                      mediaKitLibmpv = MpvBuild.fromSetting(newValue).setting;
+                    });
+                  },
+                  onReset: () {
+                    setState(() {
+                      mediaKitLibmpv = MpvBuild.classic.setting;
+                    });
+                  },
+                  title: 'media_kit libmpv build',
+                  subtitle: Text(_libmpvSubtitle()),
+                  trailingIcon: ExplainButton(
+                    key: const ValueKey('media-kit-libmpv-explain'),
+                    title: 'media_kit libmpv build',
+                    intro:
+                        'The library inside the media_kit engine that opens, decodes and draws the videos. Both are in this app; one is used until the app is closed. The warm player pool, the controls and every other video setting work the same with either.',
+                    choices: () => const [
+                      ExplainChoice(
+                        name: 'Classic (mpv 2023, FFmpeg 6.0) - as before',
+                        text:
+                            'What every build up to 151 used: libmpv-android-video-build v1.1.11, an mpv from October 2023 with FFmpeg 6.0. Draws with OpenGL only; output gpu-next is not in it.',
+                        timing: 'Times are in the log after you watch a few videos: "video: playing after N ms (…, classic)".',
+                      ),
+                      ExplainChoice(
+                        name: 'mpv 0.41 (FFmpeg 7.1, libplacebo)',
+                        text:
+                            'Our own build of mpv 0.41 with FFmpeg 7.1 and libplacebo, the same mpv the Kazumi app ships. Newer decoders and fixes; output gpu-next works and may draw with Vulkan (OpenGL when Vulkan is not usable). About 9 MB bigger in the app.',
+                        timing: 'Times are in the log after you watch a few videos: "video: playing after N ms (…, mpv041)".',
+                      ),
+                    ],
+                    footer:
+                        'Restart the app after changing it (close it from the recent apps). Hardware decoding "vulkan" decodes in software with both builds on phones whose GPU has no Vulkan video decoding (the test handheld\'s Adreno 740 has none); "auto-safe" or "mediacodec" use the phone\'s video decoder. Each video\'s decoder, output and GPU are in the log ("video: decoder …").',
                   ),
                 ),
               if (!SettingsHandler.isDesktopPlatform && useMediaKitPlayer)

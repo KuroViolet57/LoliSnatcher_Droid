@@ -48,11 +48,13 @@ void main() {
     expect(ram['cache-secs'], '30');
     expect(ram['demuxer-max-bytes'], '67108864');
     expect(ram['loop-file'], 'inf');
-    expect(ram.containsKey('cache-dir'), isFalse);
+    expect(ram.containsKey('demuxer-cache-dir'), isFalse);
 
     final Map<String, String> disk = MediaKitEngineOptions.nativeProperties(cacheDir: r'C:\tmp\mpv_cache');
     expect(disk['cache-on-disk'], 'yes');
-    expect(disk['cache-dir'], r'C:\tmp\mpv_cache');
+    // mpv 0.39 removed the old cache-dir alias; both builds accept this name.
+    expect(disk['demuxer-cache-dir'], r'C:\tmp\mpv_cache');
+    expect(disk.containsKey('cache-dir'), isFalse);
   });
 
   /// r62: swiping past videos built and tore down a player for almost every

@@ -224,6 +224,10 @@ class SettingsHandler {
   // off keeps media_kit / better_player / Chewie. media3 and the two mpvlib
   // builds use LoliControls and, on Android, win over those switches.
   String videoEngineChoice = 'off';
+  // Token 153: which libmpv the media_kit engine loads (MpvBuild): classic
+  // (v1.1.11, mpv 2023) or mpv041 (our own mpv 0.41 build). Read once per
+  // process by MediaKitEngine; a change needs a restart.
+  String mediaKitLibmpv = 'classic';
   // How many media_kit (libmpv) players to keep warm in the LRU pool. More =
   // scrolling back to a recent video resumes instantly with its buffer
   // intact, at the cost of RAM. libmpv has no MediaCodec limit so this is

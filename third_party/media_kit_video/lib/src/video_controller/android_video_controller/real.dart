@@ -14,6 +14,7 @@ import 'package:media_kit/media_kit.dart';
 
 import 'package:media_kit_video/src/utils/query_decoders.dart';
 import 'package:media_kit_video/src/video_controller/platform_video_controller.dart';
+import 'package:media_kit_video/src/video_controller/android_video_controller/android_gpu_options.dart';
 
 /// {@template android_video_controller}
 ///
@@ -206,9 +207,9 @@ class AndroidVideoController extends PlatformVideoController {
         'vo': 'null',
         'hwdec': configuration.hwdec!,
         'vid': 'auto',
-        'opengl-es': 'yes',
+        // LoliSnatcher patch (token 153): gpu-next may use Vulkan (mpv 0.41 build).
+        ...androidGpuOptions(configuration.vo),
         'force-window': 'yes',
-        'gpu-context': 'android',
         'sub-use-margins': 'no',
         'sub-font-provider': 'none',
         'sub-scale-with-window': 'yes',

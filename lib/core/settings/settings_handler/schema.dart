@@ -284,6 +284,11 @@ extension SettingsSchema on SettingsHandler {
       'default': 'off',
       'options': ['off', 'media3', 'mpvlibVulkan', 'mpvlibOpengl'],
     },
+    'mediaKitLibmpv': {
+      'type': 'stringFromList',
+      'default': 'classic',
+      'options': ['classic', 'mpv041'],
+    },
     'mediaKitMaxPlayers': {
       'type': 'int',
       'default': 4,

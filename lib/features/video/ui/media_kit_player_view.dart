@@ -14,7 +14,10 @@ import 'package:photo_view/photo_view.dart';
 import 'package:lolisnatcher/core/logging/perf_trace.dart';
 import 'package:lolisnatcher/features/recommender/logic/interests_handler.dart';
 import 'package:lolisnatcher/features/video/logic/player_pool_planner.dart';
+import 'package:lolisnatcher/features/video/logic/media_kit_engine.dart';
 import 'package:lolisnatcher/features/video/logic/media_kit_engine_options.dart';
+import 'package:lolisnatcher/features/video/logic/first_frame_clock.dart';
+import 'package:lolisnatcher/models/settings/mpv_build.dart';
 import 'package:lolisnatcher/features/video/logic/video_completion_tracker.dart';
 import 'package:lolisnatcher/features/video/logic/video_surface_cap.dart';
 import 'package:lolisnatcher/features/video/logic/video_frame_players.dart';
@@ -128,6 +131,11 @@ class MediaKitPlayerViewState extends State<MediaKitPlayerView> with TraceLifecy
   StreamSubscription<String>? _errorProbeSub;
   StreamSubscription<Duration>? _positionSub;
   final VideoCompletionTracker _completion = VideoCompletionTracker();
+
+  // Token 153: time from asking for a player to its first frame, per video.
+  FirstFrameClock _firstFrame = FirstFrameClock();
+  final Stopwatch _sinceAsked = Stopwatch();
+  String _howGot = 'new player';
   // r77: logs what mpv was doing when a video shows no picture 8 s in.
   Timer? _pictureCheck;
   // Per-URL cooldown so a genuinely broken file can't loop probe/retry.
@@ -218,6 +226,11 @@ class MediaKitPlayerViewState extends State<MediaKitPlayerView> with TraceLifecy
   Future<void> _init() async {
     if (_initInProgress) return;
     _initInProgress = true;
+    _firstFrame = FirstFrameClock();
+    if (!widget.isViewed) _firstFrame.skip();
+    _sinceAsked
+      ..reset()
+      ..start();
     try {
       final settings = SettingsHandler.instance;
       final headers = await Tools.getFileCustomHeaders(
@@ -259,6 +272,7 @@ class MediaKitPlayerViewState extends State<MediaKitPlayerView> with TraceLifecy
         return;
       }
 
+      _howGot = entry.wasReused ? 'reused' : (entry.rebound ? 're-pointed' : 'new player');
       setState(() {
         _entry = entry;
         _acquiredUrl = url;
@@ -316,6 +330,16 @@ class MediaKitPlayerViewState extends State<MediaKitPlayerView> with TraceLifecy
   }
 
   void _onPlaybackPosition(Duration position) {
+    final int? firstMs = widget.isViewed ? _firstFrame.onPosition(position, _sinceAsked.elapsedMilliseconds) : null;
+    if (firstMs != null) {
+      PerfTrace.instance.event('video.firstframe', '$firstMs ms $_howGot');
+      Logger.Inst().log(
+        '${FirstFrameClock.line(firstMs, _howGot, MediaKitEngine.loaded)} (${widget.booruItem.fileURL})',
+        'MediaKitPlayerView',
+        'firstFrame',
+        LogTypes.booruItemLoad,
+      );
+    }
     final Duration duration = _entry?.player.state.duration ?? Duration.zero;
     if (_completion.noteIfViewed(
       isViewed: widget.isViewed,

@@ -43,7 +43,8 @@ class MediaKitEngineOptions {
     };
     if (cacheDir != null && cacheDir.isNotEmpty) {
       out['cache-on-disk'] = 'yes';
-      out['cache-dir'] = cacheDir;
+      // mpv 0.39 removed the old `cache-dir` alias; both builds know this one.
+      out['demuxer-cache-dir'] = cacheDir;
     }
     return out;
   }

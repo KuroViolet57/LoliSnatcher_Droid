@@ -122,11 +122,16 @@ dependency_overrides:
   android_intent_plus: ^6.0.0
   material_color_utilities: ^0.13.0 # flutter_test conflict
   share_plus: ^13.3.1 # alice wants 11; win32 6 needs 13 with the player bump
+  # Token 153: our own copy, so a second libmpv (libmpvls.so, mpv 0.41) gets the
+  # JavaVM too (third_party/media_kit/LOLISNATCHER_PATCH.md says how to undo it).
+  media_kit:
+    path: third_party/media_kit
   # r59: our own copy, so the Android video surface can be capped to the screen
   # (third_party/media_kit_video/LOLISNATCHER_PATCH.md says how to undo it).
   media_kit_video:
     path: third_party/media_kit_video
-  # r60: arm64 libmpv v1.1.11 (0.36 ABI) instead of the package's v1.1.7 all-ABI download.
+  # r60: arm64 libmpv v1.1.11 instead of the package's v1.1.7 all-ABI download;
+  # token 153 adds our own mpv 0.41 build next to it (third_party/libmpv-android/README.md).
   media_kit_libs_android_video:
     path: third_party/media_kit_libs_android_video
   # r87: our own copy, so the models can run on the NPU (QNN)

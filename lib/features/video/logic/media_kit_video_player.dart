@@ -22,6 +22,7 @@ import 'package:video_player_platform_interface/video_player_platform_interface.
 import 'package:lolisnatcher/models/settings/mpv_hardware_decoding.dart';
 import 'package:lolisnatcher/models/settings/mpv_video_output.dart';
 import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/features/video/logic/media_kit_engine.dart';
 
 // https://github.com/dart-lang/linter/issues/1381
 // ignore_for_file: close_sinks
@@ -53,7 +54,8 @@ class MediaKitVideoPlayer extends VideoPlayerPlatform {
 
   /// Registers this class as the default instance of [VideoPlayerPlatform].
   static void registerWith({bool androidCodecFallback = false}) {
-    MediaKit.ensureInitialized();
+    // Token 153: the same libmpv as the gallery pool, locked once per process.
+    MediaKitEngine.ensureInitialized(SettingsHandler.instance.mediaKitLibmpv);
     VideoPlayerPlatform.instance = MediaKitVideoPlayer(androidCodecFallback: androidCodecFallback);
   }
 

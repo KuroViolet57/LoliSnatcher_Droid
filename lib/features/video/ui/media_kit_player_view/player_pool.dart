@@ -23,6 +23,8 @@ class _PooledPlayer {
   int lastUsedTick = 0;
   // Set per acquire() call so callers know whether they got a warm buffer.
   bool wasReused = false;
+  // Token 153: true when this acquire re-pointed the player at a new file.
+  bool rebound = false;
   // Set when the player reported an error (network block, expired session
   // cookie, ...). An errored entry is rebuilt with fresh headers on the next
   // acquire instead of being reused broken.
@@ -68,13 +70,15 @@ class _MediaKitPlayerPool {
   final List<_PooledPlayer> _slots = [];
   int _tick = 0;
   bool _initialized = false;
+  bool _engineLogged = false;
 
   Future<_PooledPlayer> acquire({
     required String url,
     required Map<String, String> headers,
   }) async {
     if (!_initialized) {
-      MediaKit.ensureInitialized();
+      // Token 153: classic libmpv or our mpv 0.41 build, locked per process.
+      MediaKitEngine.ensureInitialized(SettingsHandler.instance.mediaKitLibmpv);
       // r59: tells our copy of media_kit_video how big the surface may be.
       VideoSurfaceCap.install();
       _initialized = true;
@@ -121,6 +125,7 @@ class _MediaKitPlayerPool {
       entry.url = url;
       entry.hasError = false;
       entry.wasReused = false;
+      entry.rebound = true;
       entry.refCount = 1;
       entry.lastUsedTick = ++_tick;
       try {
@@ -173,6 +178,16 @@ class _MediaKitPlayerPool {
         for (final entry in MediaKitEngineOptions.nativeProperties(cacheDir: cacheDir).entries) {
           await platform.setProperty(entry.key, entry.value);
         }
+        if (!_engineLogged) {
+          _engineLogged = true;
+          final MpvBuild build = MediaKitEngine.loaded ?? MpvBuild.classic;
+          final String line = MediaKitEngine.engineLine(
+            build,
+            mpvVersion: await platform.getProperty('mpv-version'),
+            ffmpegVersion: await platform.getProperty('ffmpeg-version'),
+          );
+          Logger.Inst().log(line, '_MediaKitPlayerPool', 'acquire', LogTypes.booruItemLoad);
+        }
       }
     } catch (e, s) {
       Logger.Inst().log(
@@ -188,6 +203,7 @@ class _MediaKitPlayerPool {
       ..refCount = 1
       ..lastUsedTick = ++_tick
       ..wasReused = false
+      ..rebound = false
       ..replaced = replacing
       ..options = options;
     // Cancelled on evict/reset/dispose — the pool owns the lifecycle.
@@ -315,6 +331,24 @@ class _MediaKitPlayerPool {
     final String url = entry.url;
     unawaited(() async {
       try {
+        // Token 153: which decoder, output and GPU API this video used, to
+        // compare the two libmpv builds (classic has no current-gpu-context).
+        Future<String> read(String name) async {
+          try {
+            final String v = (await platform.getProperty(name)).trim();
+            return v.isEmpty ? '?' : v;
+          } catch (_) {
+            return '?';
+          }
+        }
+
+        final String hw = await read('hwdec-current');
+        Logger.Inst().log(
+          'video: decoder ${hw == 'no' ? 'no (software)' : hw} · output ${await read('current-vo')} · gpu ${await read('current-gpu-context')} · ${MediaKitEngine.loaded?.setting ?? '?'} ($url)',
+          '_MediaKitPlayerPool',
+          'release',
+          LogTypes.booruItemLoad,
+        );
         final String output = await platform.getProperty('frame-drop-count');
         final String decoder = await platform.getProperty('decoder-frame-drop-count');
         final String? line = MediaKitPlayerView.droppedLine(output, decoder, url);
