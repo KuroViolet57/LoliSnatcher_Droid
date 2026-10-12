@@ -24,6 +24,13 @@ dependency_overrides:
    (commit c533e446 on `main`, not released yet), the `real.dart` part only:
    `_getPropertyString`, `_setProperty` and `_command` free their native memory on every path,
    and a request that could not be sent is removed from the pending map.
+3. **A call without a library keeps the one already chosen** (`LoliSnatcher patch (token 153)`
+   in `lib/src/player/native/core/native_library.dart`). media_kit_video's decoder query
+   (`queryDecoders`, run for every Android video controller) calls `NativeLibrary.ensureInitialized()`
+   with no argument; media_kit then re-resolved to the first default name, `libmpv.so`, and
+   handles made by `libmpvls.so` went to the classic library: SIGSEGV in `libmpv.so`
+   `mpv_get_property` on the Thor (first 153 build, 2026-10-12). `debugSetResolved` and
+   `debugDefaultNames` are test seams (`test/media_kit_engine_test.dart`).
 
 ## To undo
 

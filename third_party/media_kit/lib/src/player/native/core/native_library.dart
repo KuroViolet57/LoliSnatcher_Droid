@@ -36,6 +36,13 @@ abstract class NativeLibrary {
       _resolved = libmpv;
       return;
     }
+    // LoliSnatcher patch (token 153): a call without a library keeps the one
+    // already chosen. media_kit_video's decoder query calls this bare; on
+    // Android that re-resolved to libmpv.so while players ran on libmpvls.so,
+    // and their handles then went to the wrong library (SIGSEGV).
+    if (_resolved != null) {
+      return;
+    }
     // Attempt to load [LIBMPV_LIBRARY_PATH] environment variable.
     try {
       final env = Platform.environment['LIBMPV_LIBRARY_PATH'];
@@ -67,9 +74,10 @@ abstract class NativeLibrary {
         'libmpv.so',
       ],
     }[Platform.operatingSystem];
-    if (names != null) {
+    final List<String>? tried = debugDefaultNames ?? names;
+    if (tried != null) {
       // Try to load the dynamic library from the system using [DynamicLibrary.open].
-      for (final name in names) {
+      for (final name in tried) {
         try {
           DynamicLibrary.open(name);
           _resolved = name;
@@ -104,4 +112,10 @@ abstract class NativeLibrary {
   ///
   /// **NOTE:** We are storing this value as [String] because we want to send/receive this across [Isolate]s.
   static String? _resolved;
+
+  /// LoliSnatcher patch (token 153): for tests.
+  static void debugSetResolved(String? value) => _resolved = value;
+
+  /// LoliSnatcher patch (token 153): for tests, the default names to try.
+  static List<String>? debugDefaultNames;
 }

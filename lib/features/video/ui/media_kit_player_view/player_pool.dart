@@ -186,6 +186,7 @@ class _MediaKitPlayerPool {
             mpvVersion: await platform.getProperty('mpv-version'),
             ffmpegVersion: await platform.getProperty('ffmpeg-version'),
           );
+          PerfTrace.instance.event('video.engine', line.replaceFirst('media_kit engine: ', ''));
           Logger.Inst().log(line, '_MediaKitPlayerPool', 'acquire', LogTypes.booruItemLoad);
         }
       }
@@ -343,8 +344,10 @@ class _MediaKitPlayerPool {
         }
 
         final String hw = await read('hwdec-current');
+        final String used = 'decoder ${hw == 'no' ? 'no (software)' : hw} · output ${await read('current-vo')} · gpu ${await read('current-gpu-context')} · ${MediaKitEngine.loaded?.setting ?? '?'}';
+        PerfTrace.instance.event('video.decoder', used);
         Logger.Inst().log(
-          'video: decoder ${hw == 'no' ? 'no (software)' : hw} · output ${await read('current-vo')} · gpu ${await read('current-gpu-context')} · ${MediaKitEngine.loaded?.setting ?? '?'} ($url)',
+          'video: $used ($url)',
           '_MediaKitPlayerPool',
           'release',
           LogTypes.booruItemLoad,

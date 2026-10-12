@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:media_kit/src/player/native/core/native_library.dart';
 import 'package:media_kit/src/player/native/utils/android_helper.dart';
 import 'package:media_kit_video/src/video_controller/android_video_controller/android_gpu_options.dart';
 
@@ -87,6 +88,23 @@ void main() {
     expect(AndroidHelper.libmpvName('libmpvls.so'), 'libmpvls.so');
     final String real = File('third_party/media_kit/lib/src/player/native/player/real.dart').readAsStringSync();
     expect(real, contains('AndroidHelper.ensureInitialized(libmpv: libmpv)'));
+  });
+
+  /// Thor, 153 first build: media_kit_video's decoder query called
+  /// NativeLibrary.ensureInitialized() with no library; media_kit re-resolved
+  /// to libmpv.so and later calls handed the mpv 0.41 player's handle to the
+  /// classic library -> SIGSEGV in libmpv.so mpv_get_property.
+  test('a call without a library keeps the one already resolved', () {
+    NativeLibrary.debugSetResolved('libmpvls.so');
+    // A default name that opens on the test machine, as libmpv.so does on Android.
+    NativeLibrary.debugDefaultNames = [if (Platform.isWindows) 'kernel32.dll' else 'libc.so.6'];
+    try {
+      NativeLibrary.ensureInitialized();
+      expect(NativeLibrary.path, 'libmpvls.so');
+    } finally {
+      NativeLibrary.debugSetResolved(null);
+      NativeLibrary.debugDefaultNames = null;
+    }
   });
 
   test('vo=gpu keeps the OpenGL context; gpu-next may use Vulkan', () {
