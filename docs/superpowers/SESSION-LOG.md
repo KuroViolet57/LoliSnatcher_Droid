@@ -158,3 +158,26 @@
   Then engine step 2 as its own token: put the measured times into the (i) window and, if the user picks them, the
   extra features from docs/research/media-kit-engine.md (SurfaceTexture fallback, hwdec chain, safe screenshot).
 - Report page: features/V75, reports/20261012-1905-media-kit-engine-153 and meta/project (v4) were sent from a scratch copy (the worktree guard blocks writing C:\bodu-apk\docs\reports); that main local copy does not have them yet - pull them before the next report there.
+
+## 2026-10-12 Claude: token 154 delivered (media_kit engine step 2), tested on the Thor (472df5b0)
+- Branch claude/1-0-media-kit-engine-step2-45508a (worktree) from a20abe26 (153). Session "Engine step 2: (i) times, webm check, 3 extras".
+- Plan docs/superpowers/plans/2026-10-12-media-kit-engine-step2.md (ground truth, design, review focus, execution notes);
+  research docs/research/media-kit-engine.md "Step 2 findings".
+- (i) times: Settings -> Video -> media_kit libmpv build (i) lists the Thor's first-picture times, drops and memory per
+  build/output/decoder (lib/features/video/logic/engine_measurements.dart).
+- Decoder chain (mediaKitHwdecChain, off): hwdec "mediacodec,mediacodec-copy" instead of the HWDEC dropdown. Thor: gpu ->
+  mediacodec (609 MB vs 881-1028 software); gpu-next -> mediacodec-copy (plain "mediacodec" there = software). Kept.
+- SurfaceTexture (mediaKitSurfaceTexture, off): Predidit 87cdfef7 in third_party/media_kit_video + our fix (re-run
+  widListener after a resize of an attached SurfaceTexture; without it a re-pointed pool player drew the next video
+  squashed). Thor: graphics 131 vs 182 MB (gpu), 203 vs 327 MB (gpu-next). Kept.
+- Safe screenshot (Predidit a7d4a070): left out - it repairs NativePlayer.screenshot(), which the app never calls.
+- 153's open checks on mpv 0.41: webm (e621 VP9) plays on both builds, scrub, loop, double-tap skip, fullscreen, gif OK.
+- Both keys device-specific in settings.json (backup); pool slot signature unchanged while both are off.
+- Tests: focused 44 green; full suite after the first build +2030 ~14 -11, on the final tree +2032 ~14 -11 (all 11 = live booru_test).
+- Thor state: 154 installed; settings.json restored byte-identical (sha256 227eae8e, 12,266 bytes; Classic, gpu, vulkan,
+  pool 8); 2 test tabs closed (5,064 tabs, toned_body current). History/seen marks from the e621/rule34 runs remain.
+- Not done: S24 Ultra; fresh reviewer (needs the user's yes).
+- Delivered: K:\My Drive\booruApk\154.apk (1.0 media_kit engine step 2 - tested), side-by-side.
+- Next step: user tests 154 with its changes.txt checklist (the two switches, especially SurfaceTexture and the chain
+  with gpu-next on the S24 Ultra). Engine work has no further planned step; if the user wants one, the candidate is a
+  fresh reviewer pass over 153+154's third_party changes (needs the user's yes).

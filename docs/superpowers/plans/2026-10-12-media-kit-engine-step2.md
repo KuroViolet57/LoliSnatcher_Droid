@@ -76,12 +76,34 @@
 
 ## Tasks
 
-- [ ] T1 tests red: `test/media_kit_engine_step2_test.dart` (options, signature, settings,
+- [x] T1 tests red: `test/media_kit_engine_step2_test.dart` (options, signature, settings,
   media_kit_video flag + Java path, measurements text).
-- [ ] T2 media_kit_video: config flag, real.dart passes it, Java SurfaceTexture path, patch notes.
-- [ ] T3 app: settings plumbing, MediaKitEngineOptions (chain, surface, signature), pool uses
+- [x] T2 media_kit_video: config flag, real.dart passes it, Java SurfaceTexture path, patch notes.
+- [x] T3 app: settings plumbing, MediaKitEngineOptions (chain, surface, signature), pool uses
   the shared signature + log, Settings -> Video toggles with (i), measured times in the libmpv (i).
-- [ ] T4 analyzer, focused tests green; changelog; build 154 `--side-by-side`; full suite.
-- [ ] T5 Thor: both builds x mp4/webm/gif, scrub/loop/fullscreen on mpv 0.41; chain (gpu and
+- [x] T4 analyzer, focused tests green; changelog; build 154 `--side-by-side`; full suite.
+- [x] T5 Thor: both builds x mp4/webm/gif, scrub/loop/fullscreen on mpv 0.41; chain (gpu and
   gpu-next); SurfaceTexture A/B (first frame, drops, memory); trace. Decide keep/drop per
   feature; put the numbers in the (i); rebuild if anything changed; restore the user's settings.
+
+## Execution notes
+
+- f56be2be plan; a82fb796 SurfaceTexture path in media_kit_video (Predidit 87cdfef7 applied as is,
+  marked); 3ab2f566 app (settings, options, signature, (i) windows, measured times); 8b9b9f83 fix;
+  472df5b0 Thor numbers in the (i). Research note 1 commit.
+- Found on the Thor (first 154 build): SurfaceTexture + a re-pointed pool player at a video of another
+  size -> squashed picture. The SurfaceTexture keeps one surface, so the resize returns the same wid,
+  widListener never runs, mpv keeps the old android-surface-size (mpv only reads it on vo init:
+  context_android.c android_reconfig; the option has no runtime update flag). Fix: real.dart re-runs
+  widListener() after a resize of an attached SurfaceTexture. Verified: post 13 at 16:9 after 12 swipes.
+- Thor runs (traces in the session scratchpad runs/trace-*.txt): r1 chain+gpu = mediacodec, 609 MB;
+  r2 chain+gpu-next = mediacodec-copy, 0 drops; r2b mediacodec alone on gpu-next = software (graphics
+  461 MB); r3/r4 producer vs texture graphics 182 vs 131 MB; r5 classic texture 128 MB; r6 gpu-next +
+  chain + texture 203 MB vs 327; r7-r9 e621 VP9 webms on both builds (slow starts = e621 CDN, classic
+  slower); scrub/loop/double-tap/fullscreen on mpv 0.41 with a webm; e621 gif animates with mpv041.
+- Left out: safe screenshot (Predidit a7d4a070) - repairs NativePlayer.screenshot(), never called here.
+- Tests: focused 44 green before the build; full suite after the first build +2030 ~14 -11 (all 11 =
+  live booru_test network cases).
+- Gotchas: rule34xxx re-encodes uploads to MP4 (its "webm" tag shows MP4 files) - use e621 type:webm.
+  Long-press the top "+" for the add-tab dialog with a source picker; the tab manager closes tabs.
+  Heredocs with \n inside python strings break; write edit scripts to files.
