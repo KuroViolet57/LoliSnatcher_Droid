@@ -157,3 +157,4 @@
 - Next step: user tests 153 (changes.txt checklist, especially webm and scrubbing on mpv 0.41, and gpu-next on the S24U).
   Then engine step 2 as its own token: put the measured times into the (i) window and, if the user picks them, the
   extra features from docs/research/media-kit-engine.md (SurfaceTexture fallback, hwdec chain, safe screenshot).
+- Report page: features/V75, reports/20261012-1905-media-kit-engine-153 and meta/project (v4) were sent from a scratch copy (the worktree guard blocks writing C:\bodu-apk\docs\reports); that main local copy does not have them yet - pull them before the next report there.
