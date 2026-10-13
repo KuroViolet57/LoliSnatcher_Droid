@@ -199,7 +199,7 @@
   564-2366 ms (new player)" and "34 ms (reused)"; SurfaceTexture on: 10 swipes forward + 3 back, shapes right, "surface texture" decoder
   lines, no new Logger error, no crash. settings.json backed up first (also /data/local/tmp/settings-155-backup.json on the Thor) and
   restored byte-identical after (sha256 227eae8e, 12,266 bytes). App left force-stopped. Viewer history/seen marks from the runs remain.
-- Delivered: K:\My DriveooruApkm.apk (1.0 media_kit engine review fixes - tested), side-by-side.
+- Delivered: K:\My Drive\booruApk\155.apk (1.0 media_kit engine review fixes - tested), side-by-side.
 - Not done: S24 Ultra; "Use hardware acceleration" off still does not make the media_kit pool decode in software (pre-existing, next list).
 - Next step: user tests 155 with its changes.txt checklist (status line, the (i) text, SurfaceTexture swipe run, reused timings). Then the
   next M3 slice as token 152 (models -> core imports in test/architecture_allowlist.txt) as planned on 2026-10-11; next new token after that 156.
