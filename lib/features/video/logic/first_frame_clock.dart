@@ -10,10 +10,25 @@ class FirstFrameClock {
   /// neighbour warmed up early) is not timed: its wait was not the user's.
   void skip() => _done = true;
 
+  bool _rewinding = false;
+
+  /// A reused pool player was parked mid-video and is sought back to the
+  /// start; position events from before that seek lands must not count as
+  /// its first frame (review 2026-10-14, finding 4). Positions from
+  /// [rewindWindow] on are ignored until one below it arrives.
+  void afterRewind() => _rewinding = true;
+
+  static const Duration rewindWindow = Duration(seconds: 1);
+
   /// [elapsedMs] since the player was asked for. Returns it once, at the first
   /// position past zero; null before and after.
   int? onPosition(Duration position, int elapsedMs) {
-    if (_done || position <= Duration.zero) return null;
+    if (_done) return null;
+    if (_rewinding) {
+      if (position >= rewindWindow) return null;
+      _rewinding = false;
+    }
+    if (position <= Duration.zero) return null;
     _done = true;
     return elapsedMs;
   }

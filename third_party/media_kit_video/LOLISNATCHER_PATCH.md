@@ -65,7 +65,10 @@ the same `wid`, `widListener` never runs, and mpv keeps the previous video's
 `android-surface-size` (the next video was drawn squashed). `real.dart` now re-runs
 `widListener()` after a resize of an already attached SurfaceTexture, the same vo re-init a new
 `wid` triggers on the SurfaceProducer path. Predidit's fork does not have this (Kazumi opens one
-video per player).
+video per player). Since the review of 2026-10-14 the condition lives in
+`android_video_controller/surface_texture_resize.dart` and skips a player disposed while the resize
+was in flight (a dropped pool slot); a dispose landing while the re-init waits for the lock is
+swallowed instead of surfacing "[Player] has been disposed" as an unhandled error.
 
 ## To undo
 

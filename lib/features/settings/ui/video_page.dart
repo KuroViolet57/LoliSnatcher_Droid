@@ -76,10 +76,7 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
 
   /// Token 153: what runs now and whether a restart is pending.
   String _libmpvSubtitle() {
-    final MpvBuild? loaded = MediaKitEngine.loaded;
-    final String now = loaded == null ? 'Nothing loaded yet in this run.' : 'Loaded now: ${loaded.label}.';
-    final String restart = MediaKitEngine.restartNeeded(mediaKitLibmpv) ? ' Restart the app to switch.' : '';
-    return 'Which libmpv plays the videos. Restart the app after changing it. $now$restart';
+    return 'Which libmpv plays the videos. Restart the app after changing it. ${MediaKitEngine.statusText(mediaKitLibmpv)}';
   }
 
   Future<void> _onPopInvoked(_, _) async {
@@ -292,7 +289,7 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
                       ),
                     ],
                     footer:
-                        'Restart the app after changing it (close it from the recent apps). Hardware decoding "vulkan" decodes in software with both builds on phones whose GPU has no Vulkan video decoding (the test handheld\'s Adreno 740 has none); "auto-safe" or "mediacodec" use the phone\'s video decoder. Your own times are in the log after a few videos ("video: playing after N ms (…)"; "video: decoder …" gives each video\'s decoder, output, GPU and surface).',
+                        'Restart the app after changing it (close it from the recent apps). Hardware decoding "vulkan" decodes in software: always with Classic (built without Vulkan), and with mpv 0.41 on phones whose GPU has no Vulkan video decoding (the test handheld\'s Adreno 740 has none); "auto-safe" or "mediacodec" use the phone\'s video decoder. Your own times are in the log after a few videos ("video: playing after N ms (…)"; "video: decoder …" gives each video\'s decoder, output, GPU and surface).',
                   ),
                 ),
               if (!SettingsHandler.isDesktopPlatform && useMediaKitPlayer)
@@ -318,7 +315,7 @@ class _VideoSettingsPageState extends State<VideoSettingsPage> {
                       ExplainChoice(
                         name: 'Off - as before',
                         text:
-                            'mpv gets the HWDEC choice from below as it is. "auto-safe" picks the copying decoder (mpv never picks the direct one by itself), "mediacodec" alone falls to software where the direct path cannot run, "vulkan" is software on phones without Vulkan video decoding.',
+                            'mpv gets the HWDEC choice from below as it is. "auto-safe" picks the copying decoder (mpv never picks the direct one by itself), "mediacodec" alone falls to software where the direct path cannot run, "vulkan" is software always with Classic and, with mpv 0.41, on phones without Vulkan video decoding.',
                       ),
                       ExplainChoice(
                         name: 'On',

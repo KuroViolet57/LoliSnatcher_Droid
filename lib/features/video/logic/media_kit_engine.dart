@@ -22,6 +22,13 @@ class MediaKitEngine {
   /// The build this process runs, or null before the first video.
   static MpvBuild? get loaded => _loaded;
 
+  static MpvBuild? _fellBackFrom;
+
+  /// The build that was asked for but would not open in this process (Classic
+  /// plays instead), or null. A restart would fail the same way, so Settings
+  /// says so instead of promising one (review 2026-10-14, finding 1).
+  static MpvBuild? get fellBackFrom => _fellBackFrom;
+
   /// Starts media_kit once. [open] and [log] are seams for tests.
   static MpvBuild ensureInitialized(
     String? setting, {
@@ -44,6 +51,7 @@ class MediaKitEngine {
     } catch (e) {
       if (build == MpvBuild.classic) rethrow;
       write('media_kit engine: ${build.libraryName} would not open ($e); using classic (${MpvBuild.classic.libraryName})');
+      _fellBackFrom = build;
       build = MpvBuild.classic;
       openLibrary(build.libraryName);
     }
@@ -52,10 +60,24 @@ class MediaKitEngine {
     return build;
   }
 
-  /// True when the stored choice is not the build this process loaded.
+  /// True when the stored choice is not the build this process loaded and a
+  /// restart can change that (not when that choice just failed to open).
   static bool restartNeeded(String? setting) {
     final MpvBuild? now = _loaded;
-    return now != null && now != MpvBuild.fromSetting(setting);
+    final MpvBuild wanted = MpvBuild.fromSetting(setting);
+    return now != null && now != wanted && wanted != _fellBackFrom;
+  }
+
+  /// The Settings -> Video line under "media_kit libmpv build": what runs now
+  /// and whether a restart is pending, or that the chosen build would not open.
+  static String statusText(String? setting) {
+    final MpvBuild? now = _loaded;
+    if (now == null) return 'Nothing loaded yet in this run.';
+    final MpvBuild? failed = _fellBackFrom;
+    if (failed != null && failed == MpvBuild.fromSetting(setting)) {
+      return '${failed.label} would not open on this device; ${now.label} plays the videos (see the log, "media_kit engine").';
+    }
+    return 'Loaded now: ${now.label}.${restartNeeded(setting) ? ' Restart the app to switch.' : ''}';
   }
 
   /// "media_kit engine: mpv041 (libmpvls.so) · mpv v0.41.0-110 · FFmpeg n7.1.3".
@@ -68,5 +90,8 @@ class MediaKitEngine {
       Logger.Inst().log(message, 'MediaKitEngine', 'ensureInitialized', LogTypes.booruItemLoad);
 
   @visibleForTesting
-  static void resetForTest() => _loaded = null;
+  static void resetForTest() {
+    _loaded = null;
+    _fellBackFrom = null;
+  }
 }

@@ -52,7 +52,7 @@ void main() {
       expect(c.enableAndroidSurfaceProducer, isTrue, reason: 'one switch never flips the other');
     });
 
-    test('hardware acceleration off still means software decoding', () {
+    test('hardware acceleration off: the chain steps aside and the HWDEC choice is sent', () {
       SettingsHandler.instance.mediaKitHwdecChain = true;
       SettingsHandler.instance.altVideoPlayerHwAccel = false;
       SettingsHandler.instance.altVideoPlayerHWDEC = MpvHardwareDecoding.autoSafe;
@@ -144,13 +144,10 @@ void main() {
         'third_party/media_kit_video/lib/src/video_controller/android_video_controller/real.dart',
       ).readAsStringSync().replaceAll('\r\n', '\n');
       expect(real, contains('final int? widBefore = wid.value;'));
-      expect(
-        real,
-        contains(
-          'if (!configuration.enableAndroidSurfaceProducer && widBefore != null && widBefore != 0) {\n'
-          '          unawaited(widListener());',
-        ),
-      );
+      // Review 2026-10-14 finding 2: the condition moved to
+      // reapplySurfaceSizeAfterResize (media_kit_engine_review_test).
+      expect(real, contains('surfaceProducer: configuration.enableAndroidSurfaceProducer,'));
+      expect(real, contains('unawaited(widListener().catchError('));
     });
 
     test('the plugin builds a SurfaceTexture when asked, and frees its wid late', () {

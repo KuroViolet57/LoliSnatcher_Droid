@@ -15,6 +15,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/src/utils/query_decoders.dart';
 import 'package:media_kit_video/src/video_controller/platform_video_controller.dart';
 import 'package:media_kit_video/src/video_controller/android_video_controller/android_gpu_options.dart';
+import 'package:media_kit_video/src/video_controller/android_video_controller/surface_texture_resize.dart';
 
 /// {@template android_video_controller}
 ///
@@ -138,9 +139,18 @@ class AndroidVideoController extends PlatformVideoController {
         // then keeps the previous video's android-surface-size and draws the
         // next one squashed (a pool player re-pointed at a video of another
         // size). Re-run the same vo re-init a new wid triggers, once this
-        // lock is released.
-        if (!configuration.enableAndroidSurfaceProducer && widBefore != null && widBefore != 0) {
-          unawaited(widListener());
+        // lock is released. Not for a player disposed meanwhile; a dispose
+        // landing while the re-init waits for the lock is swallowed (review
+        // 2026-10-14, surface_texture_resize.dart).
+        if (reapplySurfaceSizeAfterResize(
+          surfaceProducer: configuration.enableAndroidSurfaceProducer,
+          widBefore: widBefore,
+          disposed: platform.disposed,
+        )) {
+          unawaited(widListener().catchError(
+            (Object _) {},
+            test: (Object _) => platform.disposed,
+          ));
         }
 
         if (!waitUntilFirstFrameRenderedCompleter.isCompleted) {

@@ -273,6 +273,7 @@ class MediaKitPlayerViewState extends State<MediaKitPlayerView> with TraceLifecy
       }
 
       _howGot = entry.wasReused ? 'reused' : (entry.rebound ? 're-pointed' : 'new player');
+      if (entry.wasReused) _firstFrame.afterRewind();
       setState(() {
         _entry = entry;
         _acquiredUrl = url;
