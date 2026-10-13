@@ -129,3 +129,10 @@ by every fix (no option, library or signature touched).
 - Next list (not this round): "Use hardware acceleration" off does not switch the media_kit pool to
   software (it sends the HWDEC dropdown; pre-existing since before 153).
 - Tests: red first (10 failed, 1 control passed); then the four engine test files 46/46.
+  Commits bce26eae (docs), 48f1f7a2 (fixes).
+- Recheck 1 (48f1f7a2): 1, 2, 5 FIXED; 3, 6, 7 ACCEPTED; 4 PARTIAL + new issue A: the 1 s window
+  misread slots parked in their first second or short loops, and a slot resumed at a saved position
+  got no reading at all. Fix f21d708e: the view reads the parked position before the seek;
+  `afterRewind(parked:, target:)` ignores only events equal to the parked spot (a paused player
+  repeats it) and does nothing when parked is 0 or equals the target. Tests: red 4, then 49/49.
+  The session-log correction for finding 6 goes into this round's log entry.
