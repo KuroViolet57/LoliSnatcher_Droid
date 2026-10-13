@@ -254,9 +254,13 @@ class MediaKitPlayerViewState extends State<MediaKitPlayerView> with TraceLifecy
       // Restart from beginning whenever this widget becomes the active view —
       // unless a previous incarnation parked its position (nested-viewer
       // cover), in which case resume exactly there.
+      // Where a reused slot was paused, read before the seek moves it (the
+      // first-frame clock ignores that stale position).
+      final Duration parked = entry.player.state.position;
+      Duration target = Duration.zero;
       if (widget.isViewed) {
-        final Duration? savedPosition = ViewerHandler.instance.takeVideoPosition(url);
-        await entry.player.seek(savedPosition ?? Duration.zero);
+        target = ViewerHandler.instance.takeVideoPosition(url) ?? Duration.zero;
+        await entry.player.seek(target);
       }
       if (settings.startVideosMuted) {
         await entry.player.setVolume(0);
@@ -273,7 +277,7 @@ class MediaKitPlayerViewState extends State<MediaKitPlayerView> with TraceLifecy
       }
 
       _howGot = entry.wasReused ? 'reused' : (entry.rebound ? 're-pointed' : 'new player');
-      if (entry.wasReused) _firstFrame.afterRewind();
+      if (entry.wasReused) _firstFrame.afterRewind(parked: parked, target: target);
       setState(() {
         _entry = entry;
         _acquiredUrl = url;

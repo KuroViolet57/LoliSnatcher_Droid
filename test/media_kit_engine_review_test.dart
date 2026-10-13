@@ -78,11 +78,35 @@ void main() {
 
   group('finding 4: a reused player is timed from its rewind', () {
     test('a stale position from before the rewind is not a first frame', () {
-      final FirstFrameClock c = FirstFrameClock()..afterRewind();
+      final FirstFrameClock c = FirstFrameClock()..afterRewind(parked: const Duration(seconds: 7), target: Duration.zero);
       expect(c.onPosition(const Duration(seconds: 7), 5), isNull, reason: 'where the slot was parked');
       expect(c.onPosition(Duration.zero, 40), isNull);
       expect(c.onPosition(const Duration(milliseconds: 33), 180), 180);
       expect(c.onPosition(const Duration(milliseconds: 66), 210), isNull);
+    });
+
+    // Recheck 2026-10-14, issue A: a 1 s window missed these three.
+    test('a slot parked in its first second (or a short loop) is not read at its parked spot', () {
+      const Duration parked = Duration(milliseconds: 420);
+      final FirstFrameClock c = FirstFrameClock()..afterRewind(parked: parked, target: Duration.zero);
+      expect(c.onPosition(parked, 3), isNull);
+      expect(c.onPosition(parked, 4), isNull, reason: 'a paused player repeats the same position');
+      expect(c.onPosition(const Duration(milliseconds: 21), 150), 150);
+    });
+
+    test('a slot resumed at a saved position is still timed', () {
+      final FirstFrameClock c = FirstFrameClock()
+        ..afterRewind(parked: const Duration(seconds: 3), target: const Duration(seconds: 12));
+      expect(c.onPosition(const Duration(seconds: 3), 2), isNull);
+      expect(c.onPosition(const Duration(milliseconds: 12033), 260), 260);
+    });
+
+    test('nothing to tell apart: parked at the start or exactly where it resumes', () {
+      final FirstFrameClock fresh = FirstFrameClock()..afterRewind(parked: Duration.zero, target: Duration.zero);
+      expect(fresh.onPosition(const Duration(milliseconds: 33), 300), 300);
+      final FirstFrameClock same = FirstFrameClock()
+        ..afterRewind(parked: const Duration(seconds: 5), target: const Duration(seconds: 5));
+      expect(same.onPosition(const Duration(seconds: 5), 90), 90);
     });
 
     test('a new player is timed as before', () {
@@ -92,9 +116,13 @@ void main() {
 
     test('the view arms it for reused slots before listening', () {
       final String view = File('lib/features/video/ui/media_kit_player_view.dart').readAsStringSync();
-      final int arm = view.indexOf('_firstFrame.afterRewind()');
+      final int parked = view.indexOf('final Duration parked = entry.player.state.position;');
+      final int seek = view.indexOf('await entry.player.seek(target);');
+      final int arm = view.indexOf('_firstFrame.afterRewind(parked: parked, target: target)');
       final int listen = view.indexOf('_positionSub = entry.player.stream.position.listen');
-      expect(arm, greaterThan(0));
+      expect(parked, greaterThan(0));
+      expect(parked, lessThan(seek), reason: 'the parked spot is read before the seek moves it');
+      expect(arm, greaterThan(seek));
       expect(arm, lessThan(listen));
     });
   });
