@@ -107,3 +107,25 @@
 - Gotchas: rule34xxx re-encodes uploads to MP4 (its "webm" tag shows MP4 files) - use e621 type:webm.
   Long-press the top "+" for the add-tab dialog with a source picker; the tab manager closes tabs.
   Heredocs with \n inside python strings break; write edit scripts to files.
+
+## Review (2026-10-14)
+
+Fresh reviewer over a60fc3d3..fe005af5 (153 + 154), report and triage in
+`2026-10-14-media-kit-engine-review.md`. Verdict "ship", 7 findings. Fix branch
+`claude/1-0-media-kit-review-fixes` from fe005af5. Classic with both switches off is unchanged
+by every fix (no option, library or signature touched).
+
+- [x] R1 (finding 1) fallback status: `MediaKitEngine.fellBackFrom`, `restartNeeded` false for the
+  build that failed to open, `statusText()` in Settings -> Video. Test group 1.
+- [x] R2 (finding 2) resize re-init skipped for a disposed player, late dispose swallowed:
+  `third_party/media_kit_video/.../surface_texture_resize.dart` + `real.dart`. Test group 2.
+- [x] R3 (finding 4) reused slots timed from the rewind: `FirstFrameClock.afterRewind()`. Test group 3.
+- [x] R4 (finding 5) Vulkan texts: Classic is software always. Test "finding 5".
+- [x] R5 (finding 3) test renamed; (finding 6) correction notes below; (finding 7) accepted.
+- Correction (finding 6): "No codec whitelist" above is wrong - media_kit_video 2.0.1 already sends
+  `hwdec-codecs=h264,hevc,mpeg4,mpeg2video,vp8,vp9,av1`, so the chain runs under it (every booru
+  codec is in it). "Device-specific" keys are only kept out of LoliSync; the settings backup carries
+  every key.
+- Next list (not this round): "Use hardware acceleration" off does not switch the media_kit pool to
+  software (it sends the HWDEC dropdown; pre-existing since before 153).
+- Tests: red first (10 failed, 1 control passed); then the four engine test files 46/46.
