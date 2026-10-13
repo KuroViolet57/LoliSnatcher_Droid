@@ -182,3 +182,24 @@
   with gpu-next on the S24 Ultra). Engine work has no further planned step; if the user wants one, the candidate is a
   fresh reviewer pass over 153+154's third_party changes (needs the user's yes).
 - Report page: features/V75 (v2), V76, V77, reports/20261012-2130-media-kit-engine-step2-154 and meta/project (v5) were sent from a scratch copy (the worktree guard blocks C:\bodu-apk\docs\reports); pull them into the main checkout before the next report there.
+
+## 2026-10-14 Claude: fresh review of the media_kit engine (153+154), fixes, token 155 delivered, tested on the Thor (859883c9)
+- Branch claude/1-0-media-kit-review-fixes (worktree blissful-blackwell-a4b7f0) from fe005af5 (154). Session "Fresh review of the media_kit engine (153+154)".
+- Review: one fresh reviewer (strongest model, report-only) in a detached worktree at fe005af5 over a60fc3d3..fe005af5. Report + triage +
+  both rechecks: docs/superpowers/plans/2026-10-14-media-kit-engine-review.md; plan section "Review (2026-10-14)" in the step 2 plan.
+  7 findings, verdict ship; no crash path, Classic invariant confirmed (library, options, pool signature byte-identical with both switches off).
+- Commits: bce26eae docs; 48f1f7a2 fixes 1-5 (fallback status line: MediaKitEngine.fellBackFrom/statusText; SurfaceTexture resize re-init
+  skipped for a disposed player + late dispose swallowed: third_party/media_kit_video .../surface_texture_resize.dart; reused-slot first-frame
+  timing; Classic-has-no-Vulkan texts; test rename); f21d708e recheck issue A (clock ignores the parked position, not a 1 s window);
+  859883c9 plan note. Recheck 2 clean; two plausible timing nits accepted (start delay 0 + instant swipe back; seek landing on the parked frame).
+- Correction to the 154 entry above (review finding 6): "device-specific" only keeps mediaKitHwdecChain/mediaKitSurfaceTexture out of
+  LoliSync; the settings backup carries every key. And the chain runs under media_kit_video's own hwdec-codecs list (h264..av1).
+- Tests: red first (10, then 4); engine files 49/49; full suite after the build +2046 ~14 -11 (all 11 = live booru_test). Analyzer clean on changed files.
+- Thor (155 side-by-side, user's settings): Classic plays, status line "Loaded now: Classic (...)", corrected (i) text; Logger "playing after
+  564-2366 ms (new player)" and "34 ms (reused)"; SurfaceTexture on: 10 swipes forward + 3 back, shapes right, "surface texture" decoder
+  lines, no new Logger error, no crash. settings.json backed up first (also /data/local/tmp/settings-155-backup.json on the Thor) and
+  restored byte-identical after (sha256 227eae8e, 12,266 bytes). App left force-stopped. Viewer history/seen marks from the runs remain.
+- Delivered: K:\My DriveooruApkm.apk (1.0 media_kit engine review fixes - tested), side-by-side.
+- Not done: S24 Ultra; "Use hardware acceleration" off still does not make the media_kit pool decode in software (pre-existing, next list).
+- Next step: user tests 155 with its changes.txt checklist (status line, the (i) text, SurfaceTexture swipe run, reused timings). Then the
+  next M3 slice as token 152 (models -> core imports in test/architecture_allowlist.txt) as planned on 2026-10-11; next new token after that 156.

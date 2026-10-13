@@ -91,3 +91,26 @@ the plan section "Review (2026-10-14)" in `2026-10-12-media-kit-engine-step2.md`
 | 5 | Real. Classic has no Vulkan at all. | Both texts corrected (libmpv (i) footer and chain "Off" choice). Test: finding 5. |
 | 6 | Real, docs only. media_kit_video 2.0.1 sends `hwdec-codecs=h264,hevc,mpeg4,mpeg2video,vp8,vp9,av1` (`real.dart:239`); `deviceSpecificSettings` only keeps keys out of LoliSync, the settings backup carries every key. | Correction notes in the step 2 plan and the session log. No code. |
 | 7 | Debug-only (hot restart keeps the .so loaded, `_loaded` resets). Release unaffected. | Accepted, registered: switch the build only with a full restart while debugging. |
+
+## Recheck 1 (48f1f7a2, same reviewer)
+
+1 FIXED, 2 FIXED, 3 ACCEPTED (test renamed), 4 PARTIAL, 5 FIXED, 6 ACCEPTED (docs; the session-log
+correction was still missing -> added in this round's log entry), 7 ACCEPTED. New issue A (nit):
+the 1 s window misread a slot parked in its first second or a short loop, and a slot resumed at a
+saved position got no reading at all. Checked correct: the catchError guard swallows only errors
+arriving once disposed; statusText after a fallback for every dropdown flip; Classic byte-identical.
+
+Fix f21d708e: the view reads the parked position before the seek, the clock ignores only events
+equal to it (none when parked is 0 or equals the target). Tests red 4, then 49/49.
+
+## Recheck 2 (859883c9, same reviewer): clean
+
+Finding 4 / issue A FIXED (code trace + tests). Verdict: ship. Two PLAUSIBLE nits accepted and
+registered, not fixed:
+- With Video start delay 0 and an immediate swipe back, the pool's unawaited pause() may still be
+  in flight, so one reused reading can be ~0 ms (default delay 333 ms makes this unlikely).
+- If the seek lands exactly on the parked frame, that event is dropped and the next frame is
+  timed (a few ms late).
+Note from the reviewer: mpv observes time-pos on change only, so a parked, paused player emits no
+events until its seek lands; the original finding 4 was mostly theoretical. The Thor (155) showed
+"34 ms (reused, classic)", a warm player rewinding inside its own buffer.
