@@ -203,3 +203,19 @@
 - Not done: S24 Ultra; "Use hardware acceleration" off still does not make the media_kit pool decode in software (pre-existing, next list).
 - Next step: user tests 155 with its changes.txt checklist (status line, the (i) text, SurfaceTexture swipe run, reused timings). Then the
   next M3 slice as token 152 (models -> core imports in test/architecture_allowlist.txt) as planned on 2026-10-11; next new token after that 156.
+
+## 2026-10-14 Claude: models checked with 155 on the Thor (no code change)
+- Asked by the user: do the three models (text, looks, tagger) and their options still work with the new player setup?
+- Native libs: 155's APK = 151's plus libmpvls.so only; libonnxruntime*, libQnn*, libc++_shared identical in size. No model code changed in 153-155.
+- Only code link between models and the player: frame grabs (video_frames.dart, screenshot-to-file on the pooled player).
+  155 with mpv 0.41 + decoder chain + SurfaceTexture all on: decoder "mediacodec" (direct) on output gpu, 8 frames grabbed
+  ("look: frame 1/5 ... in 304 ms (43 KB from mpv)"), the looks model read them (model_timings run.look.cpu.x2 133 -> 141), then
+  "look: sessions closed (idle)". Text model (XNNPACK) and looks model (CPU) ran on 155 too.
+- Tagger "Try it on a picture": works on the CPU (24 and 18 correct tags, 3.6 s), but the NPU refuses on EVERY build:
+  155, 151 (pre-engine) and the regular app 2.6.0 (installed 2026-10-04) all log
+  "QNN SetupBackend failed Failed to create device. Error: QNN_DEVICE_ERROR_INVALID_CONFIG", with SELinux denials for the app on
+  /dev/adsprpc-smd-secure and /vendor/dsp/cdsp. Not caused by the player work; no record that the in-app NPU ever ran on the Thor
+  (r87-r89 were tested on the suite/emulator). Proposed as its own session.
+- Thor state: 155 installed again (151 and back for the A/B); settings.json restored byte-identical (227eae8e); a stray empty
+  rule34xxx tab created by a mis-tap on 151 was closed (5,064 tabs, toned_body current). Music stream muted throughout.
+- Next step: unchanged (user tests 155; then 152). NPU investigation only if the user starts that session.
