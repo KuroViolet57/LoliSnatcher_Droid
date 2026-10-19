@@ -219,3 +219,18 @@
 - Thor state: 155 installed again (151 and back for the A/B); settings.json restored byte-identical (227eae8e); a stray empty
   rule34xxx tab created by a mis-tap on 151 was closed (5,064 tabs, toned_body current). Music stream muted throughout.
 - Next step: unchanged (user tests 155; then 152). NPU investigation only if the user starts that session.
+
+## 2026-10-19 Claude: 1.0 work gathered on the trunk and pushed (9a26d445)
+- All 1.0 worktree work (tokens 141-155: Grok's 1.0 line, info sheet 147/148, doujin 149/150, M3 cleanup 151,
+  own media_kit engine 153/154, review fixes 155) is on claude/experimental-doujin, fast-forwarded to 9a26d445
+  (no merge commits). claude/r87-npu and grok/1.0-continue point at the same commit. Pushed both claude/* branches;
+  PR #41 (experimental-doujin -> master) now carries it. master itself is untouched.
+- Checked before pushing: every local branch is contained (the 9 worktree-wf_* branches are only master from July);
+  android/key.properties and the test .jks are the same blobs already on GitHub since 2026-07-31; no file over 50 MB.
+- The old app-refactor-rebuild-209b44 worktree held uncommitted analyzer edits; all but three `show` import
+  narrowings were committed as e1043be4. Its patch and an untracked Grok transcript.md were copied to
+  C:\Users\alexb\Documents\LoliSnatcher-notes\ before any worktree clean-up.
+- Main checkout C:\bodu-apk is on claude/experimental-doujin (untracked docs/reports = report page copy).
+- Next step: the user tests 155 on the phone (changes.txt). Then pick the next goal; candidates: merge PR #41 into
+  master, the NPU investigation the review session proposed (NPU refuses on every build on the Thor), token 152.
+  Next free token 156. Start new work from claude/experimental-doujin.
