@@ -1,0 +1,1845 @@
+{
+ "subsystem": "tags_ml",
+ "summary": "Two halves. TAGS: a global one-type-per-tag store (TagHandler, GetIt, loaded whole from store.db Tag table or tags.json at startup, awaited before tab restore; parsers write authoritative types via BooruHandler.addTagsWithType) plus a per-booru layer: BooruTagStore (static; BooruTag snapshot rows keyed by host without www, BooruTagOverride manual corrections held in memory) with TagTypeLookup.resolve as the display answer (correction -> handler's own parse -> shared store (never for doujin) -> tag's own type). Snapshots are filled by TagCatalogPuller (singleton, one paced resumable walk per host, ValueNotifier progress, keys host/namespace or host/* for shared walks) driving TagCatalogSource implementations: BooruTagCatalog adapts TagIndexSource families (gelbooru HTML scrape, danbooru, e621, philomena, moebooru, sankaku; rows byType with empty namespace) and per-source catalogs live beside handlers (civitai, furaffinity, hanime1 from HanimeDictionary, kemono with a custom Artists picker page, kusowanka, rule34video, tik.porn). UI: Tag browser (drawer), Tag hub (tag sheet / floating preview / followed artists), Pinned tags page + PinBuilderSheet (sidebar Quick access, Modular UI gated), Followed artists (pins labelled 'followed'), Pools page + PoolPostsHandler (allowlisted hosts only). Two different classes both named TagAliasResolver translate tags across boorus (handlers/: session cache, whole queries; utils/: TagAliasCache DB, per term). Models: Tag, TagType, BooruTagEntry/TagTypeOrigin, TagSuggestion, BooruPool, PinnedTag, PinnedTagVisibility, SavedSearch, MetaTag family, BlacklistLine grammar.\nML/RECOMMENDER (handlers/recommender/): RecommenderHandler (GetIt, `maybe` null-safe) keeps one hashed-feature FTRL model per world (booru/doujin), files recommender/<world>.bin + taste json, an Interaction log (20k rows/world) it can replay, dismissals, exposure 'quiet no', explain/adjust, seedTerms/rerank/score/scorer. Learning steps run through ModelWork (one-at-a-time queue, quiet gate 1.5 s / 20 s deadline, heavy steps held by video, lite or deferred-to-file when the app leaves; ActivityClock fed by a global pointer route + PerfTrace route/scroll observers). Three downloadable Hugging Face ONNX models with near-identical download/manifest/status/idle-close code: EncoderHandler (WordPiece text encoder), ImageTaggerHandler (WD v3 tagger), LookModelHandler (MobileCLIP image+text halves); runners open via openOnnxSession (CPU/XNNPACK/NNAPI/NPU-QNN with compiled copies, failure counting, CPU fallback per run), pictures decoded by ModelPictures, timings in ModelTimings (model_timings.json). VideoFrames grabs mpv frames from the pooled media_kit player; PixelTags tags reactions; LookMemory remembers looks. ModelTasks (in data/) is the settings facade for per-job switches/threads/run-on. Consumers: ForYouHandler (virtual For You feed: history facet blend or seeds), SuggestionHandler (Suggested strip + `suggest:` tabs), BoardHandler (board:<id> tabs; BoardQueryBuilder, ReverseImageSearch SauceNAO/e621 iqdb, BoardsHandler boards.json), InterestsHandler (classic TagSignal profile that also forwards every event to the recommender), SuggestionEngine (facets + capped round-robin blend). Pages: ForYouPage, BoardsPage/BoardEditPage. Registration order matters (main.dart registers Interests/Recommender before SettingsHandler; Encoder/Tagger/Look/VideoFrames/LookMemory/ModelWork after). The virtual feed handlers live in boorus/ but depend on feature logic, and several data/ models import handlers.",
+ "features": [
+  {
+   "name": "Tag browser page",
+   "navPath": "Left drawer -> Tag browser (shown only with the database on, at least one booru, and not on a doujin tab)",
+   "what": "Browse the local tag snapshot of a booru most-used first, 60 rows per page with infinite scroll; booru dropdown (only when >1 eligible booru; local/recommendation/merge boorus excluded; defaults to current tab's booru); search field debounced 350 ms with clear button; when a typed query has no local rows, the site is searched live (TagIndexSource.search), results stored, then shown; empty-state texts per mode",
+   "files": [
+    "lib/src/pages/tag_browser_page.dart",
+    "lib/src/handlers/booru_tag_store.dart",
+    "lib/src/handlers/tag_index_source.dart"
+   ],
+   "storedIn": "store.db BooruTag table",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Tag browser filters (Yours / type chips)",
+   "navPath": "Tag browser -> filter row",
+   "what": "'Yours' FilterChip turns the list into the corrections manager (rows from the in-memory override map, sorted by name); 'All' + one chip per TagType filters by type (coloured dot avatar); tapping the selected type chip clears it",
+   "files": [
+    "lib/src/pages/tag_browser_page.dart"
+   ],
+   "storedIn": "memory only"
+  },
+  {
+   "name": "Tag browser row gestures and visuals",
+   "navPath": "Tag browser -> a tag row",
+   "what": "Tap = open the tag in a new tab and switch to it (pops the page); long-press = set-type dialog; trailing tab button = open in background tab with 'Opened \"x\" in a new tab' snackbar. Row shows coloured dot (filled unless untyped), name, type label ('general' for none), origin label (yours/reported/inferred/untyped), count formatted k/M; solid outline = reported, dashed outline = inferred (borrowed), thick accent outline + lock icon = manual correction",
+   "files": [
+    "lib/src/pages/tag_browser_page.dart"
+   ]
+  },
+  {
+   "name": "Per-booru tag type correction",
+   "navPath": "Tag browser -> long-press row -> pick a type / Remove correction / Cancel",
+   "what": "Sets a manual type for that tag on that booru only (keyed by host); manual pairs are never overwritten by snapshot writes; the correction recolours chips app-wide via TagHandler.getTagFor/typeForDisplay and TagTypeLookup",
+   "files": [
+    "lib/src/pages/tag_browser_page.dart",
+    "lib/src/handlers/booru_tag_store.dart",
+    "lib/src/handlers/tag_handler.dart",
+    "lib/src/handlers/tag_type_lookup.dart"
+   ],
+   "storedIn": "store.db BooruTagOverride (also cached in memory)",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Tag browser status line and Pull index",
+   "navPath": "Tag browser -> line under the filters",
+   "what": "Shows 'N tags stored · M corrected · no tag index on this site'; while pulling 'Pulling tag index… list x of y · N stored' with a Stop button (cancelEverything); a 'Pull index' button when nothing is stored and the site has a catalog; snackbar when a pull stops ('Stopped after N tags' orange with rate-limit hint, or 'Tag index pull failed' red)",
+   "files": [
+    "lib/src/pages/tag_browser_page.dart",
+    "lib/src/handlers/tag_catalog_puller.dart"
+   ]
+  },
+  {
+   "name": "Tag browser overflow menu",
+   "navPath": "Tag browser -> ⋮ menu",
+   "what": "Pull tag index (only when the site has a catalog; TagCatalogPuller.pullEverything walks every category so the tag builder chips share the lists); Import snapshot (backup folder) reads tagsnapshot-<host>.json via SAF; Import snapshot from URL (dialog, any http(s) URL, rows filed under this host; foreign snapshot imported as inferred with a warning); Export snapshot writes the whole stored snapshot (500-row pages) to the backup folder; Clear stored tags (confirm, keeps corrections); Remove my corrections (confirm). Export/import require Settings -> Backup & Restore folder",
+   "files": [
+    "lib/src/pages/tag_browser_page.dart",
+    "lib/src/handlers/booru_tag_store.dart"
+   ],
+   "storedIn": "store.db BooruTag/BooruTagOverride; snapshot JSON file in backup folder",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Tag catalog pulls (tag builder chips backend)",
+   "navPath": "Search editor -> Tag builder card -> a namespace chip (UI in widgets/preview, not in this subsystem) and Tag browser -> Pull tag index",
+   "what": "Background, paced, resumable walk of a source's tag index one shard at a time into the snapshot; one walk per host at a time (others wait), progress notifier per host/namespace (or host/* for shared walks), cancel, resume point kept in memory, per-pull caps (maxShards / maxShardsPerPull), finished walks reset the resume point; errors keep what was stored",
+   "files": [
+    "lib/src/handlers/tag_catalog_puller.dart",
+    "lib/src/handlers/tag_catalog_source.dart",
+    "lib/src/handlers/booru_tag_catalog.dart"
+   ],
+   "storedIn": "store.db BooruTag; resume points memory only",
+   "inBackup": "partial"
+  },
+  {
+   "name": "Booru family tag catalogs",
+   "navPath": "Tag builder chips on gelbooru-family, danbooru, e621, philomena, moebooru, sankaku sources",
+   "what": "Site categories as chips (Artists, Contributors, Characters, Copyrights, Species, Meta, Lore, Tags) read by type from snapshot rows with empty namespace; gelbooru family = one shared count-ordered HTML walk (20 or 50 rows/page learned from page 0, up to 250 pages, gelbooru.com own markup, deprecated alias rows skipped, realbooru 'model'=artist); danbooru search[category] 1000/page; e621 320/page 1 req/s basic auth; philomena artist:* and category queries, underscored names; moebooru tag.json type= 500/page; sankaku sankakuapi tags 1000/page; first empty page is an error; logs once when a site ignores the category filter; SiteProfile.hasTagCatalog can veto a host",
+   "files": [
+    "lib/src/handlers/booru_tag_catalog.dart",
+    "lib/src/handlers/tag_index_source.dart"
+   ]
+  },
+  {
+   "name": "Source tag catalogs (non-booru families)",
+   "navPath": "Tag builder chips on civitai, FurAffinity, hanime1, kemono, kusowanka, rule34video, tik.porn sources",
+   "what": "civitai: Tags, /api/v1/tags 100/page, 10 pages/pull, rank kept as descending count, stop at first empty page. FurAffinity: Categories/Themes/Species from the search form selects, inserted as ns:id. hanime1: seven HanimeGroup chips + Genres, instant from the built-in dictionary (no request), tags insert bare, genres genre:x. kemono: Tags (global tag list, when the site has one), Artists (opens the Artists page picker; count from creator index), This creator's tags (only on a creator tab; custom sheet); terms always tag:/creator:. kusowanka: five paged indexes (tags/artists/characters/parodies/metadata), 20 pages/pull, display name + slug sourceId, last page read from the pager anchored to the index. rule34video: tags/artists/categories KVS async blocks with per-pull caps 40/50/35, DDoS-Guard page reported as an error, last fragment read from pagination. tik.porn: 84 tags + 131 acts from the handler's vocabulary, acts insert action:",
+   "files": [
+    "lib/src/boorus/civitai_tag_catalog.dart",
+    "lib/src/boorus/furaffinity_tag_catalog.dart",
+    "lib/src/boorus/hanime1_tag_catalog.dart",
+    "lib/src/boorus/kemono_tag_catalog.dart",
+    "lib/src/boorus/kusowanka_tag_catalog.dart",
+    "lib/src/boorus/rule34video_tag_catalog.dart",
+    "lib/src/boorus/tikporn_tag_catalog.dart",
+    "lib/src/data/hanime_dictionary.dart"
+   ],
+   "storedIn": "store.db BooruTag (namespace + sourceId columns)",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Typed namespace autocomplete from the local catalog",
+   "navPath": "Search box / query editor -> type `artist:par` (any catalogued namespace)",
+   "what": "TagCatalogSource.suggestFromCatalog answers up to 25 local rows for a typed namespace:partial; steps aside (null) when nothing is stored so a metatag's own autocomplete still answers",
+   "files": [
+    "lib/src/handlers/tag_catalog_source.dart",
+    "lib/src/handlers/booru_tag_store.dart"
+   ]
+  },
+  {
+   "name": "Exact tag lookups against the site's tag DB",
+   "navPath": "automatic (gelbooru handler type correction)",
+   "what": "TagIndexSource.exact returns one authoritative row per tag name per family (gelbooru name=, danbooru/e621 name_matches, philomena q, moebooru/sankaku name=) used to type tags the snapshot lacks",
+   "files": [
+    "lib/src/handlers/tag_index_source.dart"
+   ]
+  },
+  {
+   "name": "Global tag type store",
+   "navPath": "automatic (chip colours everywhere)",
+   "what": "TagHandler holds one type per tag string; loaded at startup from DB (or tags.json when the DB is off) before tabs restore; parsers' addTagsWithType overwrite with authoritative non-none types and only seed unknown tags for none; doujin sources never read it (typeForDisplay/colourForDisplay); manual per-booru corrections applied on top; tags.json saved every 30 s when the DB is off; included in backup as tags.json and restored via loadFromJSON",
+   "files": [
+    "lib/src/handlers/tag_handler.dart",
+    "lib/src/data/tag.dart",
+    "lib/src/data/tag_type.dart"
+   ],
+   "settingsKeys": [
+    "dbEnabled"
+   ],
+   "storedIn": "store.db Tag table / tags.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Background tag type fetching queue",
+   "navPath": "Settings -> (tagTypeFetchEnabled switch, defined in settings_handler) / automatic after each page",
+   "what": "Untyped tags of each page are queued for genTagObjects on that booru (or another booru that populates tags), 100 at a time with a cooldown; fill-in only. NOTE: currently never runs (see bugs)",
+   "files": [
+    "lib/src/handlers/tag_handler.dart"
+   ],
+   "settingsKeys": [
+    "tagTypeFetchEnabled"
+   ],
+   "storedIn": "memory queue; results to Tag table"
+  },
+  {
+   "name": "Tag type colours and names",
+   "navPath": "automatic",
+   "what": "Flow palette per TagType (artist, contributor, character, copyright, meta, species, lore), localized names (contributor/lore English only)",
+   "files": [
+    "lib/src/data/tag_type.dart"
+   ]
+  },
+  {
+   "name": "Tag type resolution for display",
+   "navPath": "automatic (tag list, tag sheet, hubs, More from)",
+   "what": "TagTypeLookup.resolve: your correction -> handler's ownTagType -> shared store (not doujin) -> tag's own type",
+   "files": [
+    "lib/src/handlers/tag_type_lookup.dart"
+   ]
+  },
+  {
+   "name": "Tag hub / Artist hub",
+   "navPath": "Viewer -> tag chip -> tag menu -> Tag hub/Artist hub; floating tag preview window -> hub button; Followed artists -> row",
+   "what": "Header card with type icon/colour, display name, type name; Follow/Following button for artists (booru follows as labelled pins, doujin follows in the doujin store scoped to the source); favourites count stat (booru only, searchDBCount); 'N boorus' stat; 'ACROSS YOUR BOORUS' strips: one TagContentPreview per configured booru of the same domain (doujin hubs show doujin sources only), each collapsing when empty, query via HubTagQuery (artist:/character:... namespaces stripped except FurAffinity, Philomena, Civitai, Hanime1, InkBunny, Rule34Video, XXXTik); hub type from knownType or nhentai-style namespace on doujin",
+   "files": [
+    "lib/src/pages/tag_hub_page.dart",
+    "lib/src/utils/hub_tag_query.dart",
+    "lib/src/handlers/followed_artists_handler.dart"
+   ],
+   "storedIn": "store.db PinnedTag (booru follows), doujinData.json (doujin follows)",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Followed artists page",
+   "navPath": "Right sidebar (Quick access) -> Followed artists (count badge)",
+   "what": "Alphabetical list of followed tags, row tap opens the hub (list reloads on return), Unfollow button, empty-state hint; follows are global PinnedTag rows labelled 'followed' kept out of pinned-tag UIs",
+   "files": [
+    "lib/src/pages/followed_artists_page.dart",
+    "lib/src/handlers/followed_artists_handler.dart"
+   ],
+   "storedIn": "store.db PinnedTag (label 'followed')",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Pinned tags page",
+   "navPath": "Right sidebar (Quick access) -> '<source> pinned tags' (only when Modular UI sidebar.pinnedTags is on)",
+   "what": "Lists the source's pins plus global ones (follow pins hidden); drag handle reorder (database pins only); tap = new tab on that source searching the pin's tags (switch + pop); eye button hides/shows the pin on this source only; edit; delete (confirm); FAB 'New pin'; subtitle shows tags (when named), 'All sources', 'Hidden on <source>'; doujin sources use the doujin store (no names, no order, ids negative); orphaned id: hides cleaned when listed",
+   "files": [
+    "lib/src/pages/pinned_tags_page.dart",
+    "lib/src/data/pinned_tag.dart",
+    "lib/src/data/pinned_tag_visibility.dart"
+   ],
+   "settingsKeys": [
+    "modularUi sidebar.pinnedTags"
+   ],
+   "storedIn": "store.db PinnedTag; doujinData.json; sourceSettings.json hiddenPins",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Pin builder sheet",
+   "navPath": "Pinned tags page -> New pin / edit icon",
+   "what": "Add several tags at once (Add button or submit), suggestions while typing (250 ms debounce: local snapshot -> seen tags DB -> site autocomplete, 8 shown, a leading -/~ kept), chips removable, Name (optional; database pins only), 'Pin on every source' switch (global vs only this source), Save",
+   "files": [
+    "lib/src/pages/pinned_tags_page.dart"
+   ]
+  },
+  {
+   "name": "Hidden pins per source",
+   "navPath": "Pinned tags page -> eye button",
+   "what": "Hide keys id:N (database pins) / tag:x (doujin pins) stored per source; honoured by the sidebar and the search window pins block; a deleted pin's id hides are forgotten on every source (DB delete) and orphan id: hides dropped when the page lists",
+   "files": [
+    "lib/src/data/pinned_tag_visibility.dart"
+   ],
+   "storedIn": "sourceSettings.json (hiddenPins)",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Pools browser",
+   "navPath": "Left drawer -> Pools (only when the current booru's host is rule34.xxx, realbooru.com, xbooru.com or booru.allthefallen.moe)",
+   "what": "Paged pool list with infinite scroll (short page = last), post count and creator subtitle, tap opens the pool as a tab and switches (pops), long-press or trailing button opens in background with snackbar, Retry on errors, empty states",
+   "files": [
+    "lib/src/pages/pools_page.dart",
+    "lib/src/handlers/pool_source.dart",
+    "lib/src/data/booru_pool.dart"
+   ]
+  },
+  {
+   "name": "Pool tab (pool order preserved)",
+   "navPath": "Pools -> a pool (tab titled 'pool: <name>')",
+   "what": "PoolPostsHandler serves pool posts as a normal feed in pool order: danbooru ordpool:/philomena gallery_id: delegate page by page; e621 pool: fetch all (≤1000) then reorder by post_ids; gelbooru HTML ids then id:<n> per post (6 in parallel); totalCount = member count",
+   "files": [
+    "lib/src/boorus/pool_posts_handler.dart",
+    "lib/src/handlers/pool_source.dart"
+   ]
+  },
+  {
+   "name": "Cross-booru tag translation (query resolver)",
+   "navPath": "automatic: Find elsewhere sheet, tag previews, Suggested strip cross-booru mode, For You history blend",
+   "what": "Resolves each plain term of a query through the target's autocomplete (exact hit kept; de-qualified base, first two words, first word tried; scored by word coverage, same type +3, popularity); meta terms pass through; cached per booru+term for the session; misses cached only when the site answered",
+   "files": [
+    "lib/src/handlers/tag_alias_resolver.dart"
+   ],
+   "storedIn": "memory only"
+  },
+  {
+   "name": "Cross-booru tag translation (per-term DB cache)",
+   "navPath": "automatic: floating tag preview, boards' must-have tags and derived tags, For You seeds",
+   "what": "Per tag: exact -> unqualified base -> base_(qualifier) -> prefix -> contains, by post count; null = confirmed miss (callers skip the site); failures fall back to the literal tag and are not cached; in-flight dedupe",
+   "files": [
+    "lib/src/utils/tag_alias_resolver.dart"
+   ],
+   "storedIn": "store.db TagAliasCache",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Blacklist grammar",
+   "navPath": "Settings -> Filters / Source settings blacklist (UI elsewhere); automatic filtering",
+   "what": "e621-style lines: tags AND, -tag NOT, ~tag OR group, metatags rating (s/q/e and words), id, score, user/username/uploader (incl. !id), userid, width, height, filesize (kb/mb); # comments; pasted multi-line entries split; plainTagTokens feed the red eye-slash on chips",
+   "files": [
+    "lib/src/data/blacklist_line.dart"
+   ],
+   "storedIn": "settings.json hiddenTags / per-booru filters",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Metatag definitions and value autocomplete",
+   "navPath": "Search editor -> Metatags card (UI elsewhere)",
+   "what": "MetaTag hierarchy (boolean, comparable number, date with ranges, number, sort/order, string, string from list, user), compare modes :<= := :>=, value autocomplete for MetaTagWithValues, generic key:value detection, rating sets, LocalDbSiteMetaTag 'site:' listing saveable booru hosts for Favourites/Downloads",
+   "files": [
+    "lib/src/data/meta_tag.dart"
+   ]
+  },
+  {
+   "name": "Saved search model",
+   "navPath": "Right sidebar -> Saved searches (UI elsewhere)",
+   "what": "Stores name, tags, booru, secondary boorus, per-booru overrides/inherit flags as TabBackup JSON payload; deleted secondary boorus dropped on restore; label falls back to tags then '(no tags)'",
+   "files": [
+    "lib/src/data/saved_search.dart"
+   ],
+   "storedIn": "store.db SavedSearch",
+   "inBackup": "yes"
+  },
+  {
+   "name": "hanime1 tag dictionary",
+   "navPath": "automatic (hanime1 source: display, search, tag builder)",
+   "what": "240 site tags EN<->ZH with type and search-form group, 9 genres, 7 sort orders; lookup by either language, search in both",
+   "files": [
+    "lib/src/data/hanime_dictionary.dart"
+   ]
+  },
+  {
+   "name": "For You page",
+   "navPath": "Left drawer -> For You (booru world when the DB is on; doujin world on doujin tabs); Settings -> Recommendations & AI -> Recommendations -> For You button",
+   "what": "'Open my For You feed' (switches, pops to first route), 'Or recommend around a tag' field + Go (seed:<tag>); booru: 'Your taste profile' with the tracking switch, top 60 classic interest tags with bars, per row Recommend around this / Forget; Reset profile (app bar, confirm); doujin: 'What the model learned' (seedable liked features), Recommend around this, Push this down (forgetFeature), Forget everything learned (reset world, confirm)",
+   "files": [
+    "lib/src/pages/foryou_page.dart"
+   ],
+   "settingsKeys": [
+    "enableInterestTracking",
+    "aiLearning"
+   ],
+   "storedIn": "store.db TagSignal / Interaction",
+   "inBackup": "yes"
+  },
+  {
+   "name": "For You feed",
+   "navPath": "For You page -> Open my For You feed (virtual For You booru tab)",
+   "what": "Profile mode with viewing history: 60 recent viewed posts (only those with facets) ordered by learner score, 3 posts x 3 facets per page blended under artist/character caps and translated per site; seed mode: seed:x or plain tags, -tag excluded, filter:tag required, from:<host> asks that site first; seeds = learned seed terms then classic profile (≤24); up to 8 sources, 4 per page rotating with a random per-session offset, page depth per feed page, 6 s resolve / 12 s search timeouts, site confirmed-miss skip, dedupe vs seen posts and fetched, profile score + popularity + jitter then learner rerank, two empty rounds retried then 'why empty' error text, exposures logged as 'foryou'",
+   "files": [
+    "lib/src/boorus/foryou_handler.dart",
+    "lib/src/handlers/suggestion_engine.dart"
+   ],
+   "storedIn": "memory only (tab query string restores it)"
+  },
+  {
+   "name": "Suggested strip and suggest: tabs",
+   "navPath": "Viewer -> info sheet -> Suggested strip (UI in tag_view); strip header -> open in new tab",
+   "what": "Facets per post: character (2 when two), franchise excluding the post's characters, artist (≤4), two act tags, style+act, sparse fallback; round-robin blend with per-facet quotas and global caps 4 per artist / 6 per character; rounds rotate facet seeds; cross-booru mode spreads facets over boorus with query translation; strip filter (videos/GIFs) applied to every facet; Not interested removed; learner rerank mix 0.5; exposures 'suggested'; tab query `suggest: c: f: a: t: s: with: on: post:` rebuilds the post so tabs restore; two empty rounds retried",
+   "files": [
+    "lib/src/boorus/suggestion_handler.dart",
+    "lib/src/handlers/suggestion_engine.dart"
+   ]
+  },
+  {
+   "name": "Classic interest profile",
+   "navPath": "automatic; For You page -> Your taste profile",
+   "what": "Signals: view dwell 0.2-1.5 (≥1.5 s, capped 30 s), favourite +6 / unfavourite -3, collect +5, snatch +4, search +2 (5 terms), tag preview +1.5, video completed +4; generic tags and metatags ignored; doujin items/sources refused; flushed every 10 s to TagSignal (30-day half-life in DB); every entry point also forwards to the recommender; seedTagsFromItem picks characters/artist/copyright then rarest distinctive tags for 'Recommend more like this'",
+   "files": [
+    "lib/src/handlers/interests_handler.dart"
+   ],
+   "settingsKeys": [
+    "enableInterestTracking",
+    "dbEnabled"
+   ],
+   "storedIn": "store.db TagSignal",
+   "inBackup": "yes"
+  },
+  {
+   "name": "On-device recommender (learning)",
+   "navPath": "automatic; Settings -> Recommendations & AI -> Recommendations (switches)",
+   "what": "Two worlds never mixed; hashed features (tag, type, ns, pair lead|tag, site, media, score bucket, doujin pages/title, encoder components, look components, taste buckets, pixel tags); FTRL update per event with rewardFor weights; every teaching event logged (20,000 rows/world kept, feature names stored) so a missing/corrupt/foreign model is rebuilt by replay; model saved every 30 s while dirty and on pause/inactive; exposures of the previous batch that were rendered, untouched and not shown again learned as exposeLapsed (not logged); taste centroids (text and looks, EMA 0.1) from rewards ≥2",
+   "files": [
+    "lib/src/handlers/recommender/recommender_handler.dart",
+    "lib/src/handlers/recommender/ftrl_model.dart",
+    "lib/src/handlers/recommender/item_features.dart",
+    "lib/src/handlers/recommender/rewards.dart"
+   ],
+   "settingsKeys": [
+    "aiLearning",
+    "aiRecommendations",
+    "dbEnabled"
+   ],
+   "storedIn": "<config>/recommender/<world>.bin, <world>.taste.json, <world>.look-taste.json; store.db Interaction, RecommenderFeature",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Recommendation ordering and exploration",
+   "navPath": "automatic on For You, Suggested, doujin For You, doujin Recommended, nhentai rows, boards",
+   "what": "rerank = mix of model probability and incoming order, every 5th slot to the best item with ≥60 % unseen features; score/scorer/doujin parts scorers; seedTerms from strongest liked seedable features; all return neutral when recommendations are off or nothing learned",
+   "files": [
+    "lib/src/handlers/recommender/recommender_handler.dart"
+   ],
+   "settingsKeys": [
+    "aiRecommendations"
+   ]
+  },
+  {
+   "name": "Not interested",
+   "navPath": "Viewer toolbar Not interested button (recommendation-feed tabs) / doujin card menu -> Not interested",
+   "what": "dismiss(): item never recommended again (kept in memory and as notInterested log rows read back at load, logged even with learning off), negative reward weight 3 when learning is on; surfaces filter with withoutDismissed",
+   "files": [
+    "lib/src/handlers/recommender/recommender_handler.dart"
+   ],
+   "storedIn": "store.db Interaction",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Picked because / corrections",
+   "navPath": "Viewer -> info sheet 'Picked because' (recommendation feeds); Settings -> Recommendations -> learned tag chips -> More of this / Less of this / Forget it",
+   "what": "explain(): top 4 positive and 3 negative contributions grouped into plain labels (how it reads, how it looks, 'a with b', from site...); adjust(): ±0.5 or zero a feature's weight, counted as an update and saved; forgetFeature pushes a feature down via a logged forget event",
+   "files": [
+    "lib/src/handlers/recommender/recommender_handler.dart"
+   ]
+  },
+  {
+   "name": "Reaction picture tags",
+   "navPath": "Settings -> Recommendations & AI -> Models -> Image tagger -> What it does -> Tag reactions with the picture",
+   "what": "For booru reactions weighing ≥2 (favourite, unfavourite, collect, snatch, video complete, not interested) the tagger reads up to three kept video frames (merged, characters first) or the thumbnail (grid cache first, else download with booru headers) and the tags join the item's features; 30 s timeout; log line 'tagger: reaction ...'",
+   "files": [
+    "lib/src/handlers/recommender/pixel_tags.dart",
+    "lib/src/handlers/recommender/recommender_handler.dart"
+   ],
+   "settingsKeys": [
+    "taggerOnReactions"
+   ]
+  },
+  {
+   "name": "Background model work scheduler",
+   "navPath": "automatic",
+   "what": "ModelWork: learning/exposure/frame-look steps one at a time after 1.5 s without touch/scroll/page change, run anyway after 20 s (logged + model.deadline trace), heavy (tagger) steps held up to 10 s while a video plays, step timeout 60 s, errors logged never thrown; when the app is paused/hidden waiting steps with a defer are kept to disk, others run lite; model files flushed after a lite drain; ActivityClock fed by a global pointer route, root scroll notifications and route observer",
+   "files": [
+    "lib/src/handlers/recommender/model_work.dart"
+   ],
+   "storedIn": "memory only"
+  },
+  {
+   "name": "Learning kept for later",
+   "navPath": "automatic (app leaves with steps waiting)",
+   "what": "Pending learning events written synchronously to recommender/deferred.json (cap 200) and replayed as normal steps at the first event of the next run; stopped during a restore",
+   "files": [
+    "lib/src/handlers/recommender/deferred_learning.dart",
+    "lib/src/handlers/recommender/recommender_handler.dart"
+   ],
+   "storedIn": "<config>/recommender/deferred.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Text encoder model",
+   "navPath": "Settings -> Recommendations & AI -> Models -> Text model (Model part: presets English (small) / Multilingual / custom repo, Download / Cancel / Delete, status; 'Use' switch)",
+   "what": "Downloads onnx/model_quantized.onnx + vocab.txt + tokenizer_config.json + config.json into encoder/<slug>/ via a temp folder, manifest with dim/case/token types/max length; WordPiece tokenizer, batches of 8 padded, ≤96 tokens, mean-pooled and L2-normalised; vectors cached in a 4000-entry LRU and the vectors DB (items by key, texts by FNV key); a failed run sets an error status until refresh; deletes clear its stored vectors; log line + model.encoder trace",
+   "files": [
+    "lib/src/handlers/recommender/encoder_handler.dart",
+    "lib/src/handlers/recommender/wordpiece_tokenizer.dart",
+    "lib/src/handlers/recommender/onnx_embedding_runner.dart"
+   ],
+   "settingsKeys": [
+    "encoderModel",
+    "aiEncoder",
+    "aiModelsOff"
+   ],
+   "storedIn": "<path>/encoder/<slug>/ files; vectors.db ItemEmbedding",
+   "inBackup": "partial"
+  },
+  {
+   "name": "Image tagger model",
+   "navPath": "Settings -> Recommendations & AI -> Models -> Image tagger (presets WD ViT / ConvNeXt / SwinV2 or custom repo; Download / Cancel / Delete; Try it on a picture; Use switch)",
+   "what": "Downloads model.onnx + selected_tags.csv (+ config.json for input size) into tagger/<slug>/; reads a picture: white background/square padding, cubic resize to 448, BGR NHWC; general >0.35 (24 max), characters >0.85, rating argmax; session threads decided by who opens it (waiting 4 / background 2), idle close after 120 s never under a run, error status until refresh; log line per run with decode/model ms and provider",
+   "files": [
+    "lib/src/handlers/recommender/image_tagger_handler.dart",
+    "lib/src/handlers/recommender/onnx_tag_runner.dart"
+   ],
+   "settingsKeys": [
+    "imageTaggerModel",
+    "aiImageTagger",
+    "aiModelsOff"
+   ],
+   "storedIn": "<path>/tagger/<slug>/",
+   "inBackup": "no"
+  },
+  {
+   "name": "Looks (CLIP) model",
+   "navPath": "Settings -> Recommendations & AI -> Models -> Looks model (presets Small S0 / Larger S2 or custom; Download / Cancel / Delete; Use switch; frames and remember-looks switches)",
+   "what": "Downloads vision/text halves + tokenizer.json + preprocessor_config.json into look/<slug>/; CLIP BPE tokenizer (77 tokens); image prep shortest-edge resize + centre crop, optional mean/std; imageVector/textVector unit vectors; imageVectors reads memory -> vectors DB (look:<slug>) -> thumbnails; putItemVector stores a video's frame mean; idle close 120 s; error status until refresh; log 'look: N thumbnails in X ms'",
+   "files": [
+    "lib/src/handlers/recommender/look_model_handler.dart",
+    "lib/src/handlers/recommender/clip_tokenizer.dart",
+    "lib/src/handlers/recommender/onnx_look_runner.dart"
+   ],
+   "settingsKeys": [
+    "lookModel",
+    "aiLook",
+    "aiModelsOff"
+   ],
+   "storedIn": "<path>/look/<slug>/; vectors.db ItemEmbedding",
+   "inBackup": "partial"
+  },
+  {
+   "name": "NPU full-precision picture half",
+   "navPath": "Settings -> Models -> Looks model -> Speed -> Run on: NPU (prompt to download)",
+   "what": "downloadNpuFile fetches onnx/vision_model.onnx as vision_model_npu.onnx; the NPU runs the picture half only from it; text half and int8 file stay on CPU",
+   "files": [
+    "lib/src/handlers/recommender/look_model_handler.dart",
+    "lib/src/handlers/recommender/onnx_look_runner.dart"
+   ],
+   "storedIn": "<path>/look/<slug>/vision_model_npu.onnx",
+   "inBackup": "no"
+  },
+  {
+   "name": "Run on (accelerator) per model",
+   "navPath": "Settings -> Recommendations & AI -> Models -> <model> -> Speed -> Run on (+ info button)",
+   "what": "CPU (default), XNNPACK, NNAPI, NPU (looks + tagger only); only what the installed ORT build has (OnnxAvailability at startup); refused choice falls back to CPU with threads then ORT defaults and says why; NPU: compiled copy kept beside the model (<model>.npu2-<bytes>-whole|mixed.onnx), whole model tried first with CPU fallback disabled, then mixed; stale build-117 copies removed; a QNN failure while running counts (2 -> CPU until NPU picked again), runs that input on the CPU, whole copy deleted + .failed marker; native ORT/QNN log lines captured after failures; Compile again deletes copies; npuCopyState line and npuErrorWords summary for the page",
+   "files": [
+    "lib/src/handlers/recommender/onnx_options.dart",
+    "lib/src/handlers/recommender/onnx_availability.dart",
+    "lib/src/data/model_tasks.dart"
+   ],
+   "settingsKeys": [
+    "modelRunOn"
+   ],
+   "storedIn": "settings.json modelRunOn (device-specific); model_timings.json npuFailed.*",
+   "inBackup": "no"
+  },
+  {
+   "name": "Model jobs, threads and global switch",
+   "navPath": "Settings -> Recommendations & AI -> Models (All models off; per-model cards) -> <model> -> What it does / Speed",
+   "what": "Nine job switches (text: learning, For You, boards; look: learning, For You, Posts like this, boards; tagger: Try it, boards), a job off never opens the model; all models off; model on/off; thread counts per use (defaults text 1/1, look 1/1, tagger 4/2, clamped to cores) applied on the next session open (threadsChanged closes idle sessions); vector space size choices 25 MB-2 GB; frame modes; remember looks",
+   "files": [
+    "lib/src/data/model_tasks.dart"
+   ],
+   "settingsKeys": [
+    "modelTasks",
+    "modelThreads",
+    "aiModelsOff",
+    "aiEncoder",
+    "aiLook",
+    "aiImageTagger",
+    "videoFrames",
+    "taggerOnReactions",
+    "framesForYou",
+    "framesOtherTabs",
+    "rememberLooks",
+    "vectorSpaceMb",
+    "pictureDecoder",
+    "modelRunOn"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "partial"
+  },
+  {
+   "name": "Picture decoding choice",
+   "navPath": "Settings -> Recommendations & AI -> Models -> Picture decoding (+ info)",
+   "what": "phone (engine decode to 2x model size then Dart prep in compute), phoneFast (straight to size), dart (full-size pure Dart, also the fallback for files the phone cannot read); applies to tagger, looks model and video frame shrinking; decode times recorded",
+   "files": [
+    "lib/src/handlers/recommender/model_pictures.dart"
+   ],
+   "settingsKeys": [
+    "pictureDecoder"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Model timings",
+   "navPath": "Settings -> Models -> info windows / cards",
+   "what": "Per model+accelerator(+threads) run times, openings, per-decoder preparation, fastest choice, persisted NPU failure counts, last opening tried/used/refused (memory); loaded once at startup and before any session opens",
+   "files": [
+    "lib/src/handlers/recommender/model_timings.dart"
+   ],
+   "storedIn": "<config>/model_timings.json",
+   "inBackup": "no"
+  },
+  {
+   "name": "Frames from the playing video",
+   "navPath": "Settings -> Models -> Looks model -> What it does -> video frames switch, For You frames / Other tabs frames (While it plays / When you react / Off)",
+   "what": "mpv screenshot-to-file of the pooled media_kit player's current frame: first after 2.5 s, then every 6 s while playing, 5 max (3 in reaction mode, first one taken at the reaction itself); waits for a real video output and drawn frame (backoff, per-visit and per-video limits), only on screen, app resumed and quiet; skipped for mediacodec_embed output, doujin, hidden posts; frames shrunk to 512 px and kept for 24 videos; each frame read by the looks model as a background step and the mean stored as the video's look; decoder/output/codec log line once per video; temp files swept; frameNow for Posts like this and the board editor",
+   "files": [
+    "lib/src/handlers/recommender/video_frames.dart"
+   ],
+   "settingsKeys": [
+    "videoFrames",
+    "framesForYou",
+    "framesOtherTabs"
+   ],
+   "storedIn": "memory (frames); vectors.db (mean vector)",
+   "inBackup": "partial"
+  },
+  {
+   "name": "Remember looks of opened posts",
+   "navPath": "Settings -> Models -> Looks model -> Remember the looks of posts you open (off by default)",
+   "what": "Leaving a post viewed ≥2.5 s queues a background imageVectors read (memory/DB first), once per post per run, not for doujin/hidden posts",
+   "files": [
+    "lib/src/handlers/recommender/look_memory.dart"
+   ],
+   "settingsKeys": [
+    "rememberLooks"
+   ],
+   "storedIn": "vectors.db ItemEmbedding",
+   "inBackup": "partial"
+  },
+  {
+   "name": "Boards page",
+   "navPath": "Left drawer -> Boards (booru tabs only)",
+   "what": "List of visible boards (hidden 'Posts like this' boards excluded) with thumbnail (copy file, else image/board icon), subtitle (description · must · not · sources or 'every source'); tap = open as tab and switch (pops to first route); per-board menu Open / Edit / Duplicate (copies picked image, clears caches) / Refresh image matches (only with an image; clears matches, pixel tags and look cache) / Delete (removes its image copy); FAB New board; explanatory empty state",
+   "files": [
+    "lib/src/pages/boards_page.dart",
+    "lib/src/handlers/boards_handler.dart",
+    "lib/src/data/board.dart"
+   ],
+   "storedIn": "<path>/boards.json, <path>/boards/ pictures",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Board editor",
+   "navPath": "Boards -> New board / menu Edit; Viewer info sheet -> Find posts like this (new board)",
+   "what": "Name (optional; else first 6 words of the description), What to look for, Must have these tags, Never these tags (split on spaces/commas, lowercased, leading -/~ dropped), Reference image: Pick image (Android photo picker through PickerWatch: picture / nothing / lost / failed messages and logs) / Change image / Remove image / image address field (picked file wins), Tags from the picture (tagger chips with %, person icon for characters, tap adds to Must once; hint when no tagger; 'switched off' text when the job is off), Sources chips (none = every eligible booru), Save copies a picked file or a post's image (with its booru's headers) under boards/; from a post: characters/series/artists first then tags as words (14), sample (thumbnail for videos, or the current video frame) as reference",
+   "files": [
+    "lib/src/pages/boards_page.dart",
+    "lib/src/utils/picker_watch.dart"
+   ],
+   "settingsKeys": [
+    "modelTasks tagger.boards"
+   ],
+   "storedIn": "boards.json + boards/",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Posts like this (hidden board)",
+   "navPath": "Viewer -> info sheet action grid -> Posts like this (booru context)",
+   "what": "Creates a hidden board 'Like: …' from the post (video: current frame, else image copy through the source's headers, else address), saves and opens it in a background tab with an 'Opened in a new tab' notice; hidden boards pruned after 3 days with their image copy",
+   "files": [
+    "lib/src/pages/boards_page.dart",
+    "lib/src/handlers/boards_handler.dart"
+   ],
+   "storedIn": "boards.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Board feed",
+   "navPath": "Board tab (board:<id>, virtual Boards booru)",
+   "what": "Loads boards.json if needed; image matches from SauceNAO (user key) and e621 iqdb (when e621 is a source) cached on the board per image (empty answer trusted 24 h, failures kept in imageError); tagger seeds cached per image+model; looks reference vector cached per image+model (or description text vector); derived tags from BoardQueryBuilder (top 8); must-have tags resolved per source (sources lacking one skipped); first page asks id:<n> of exact matches on danbooru/gelbooru/yande.re/konachan/e621 hosts in its own wave; then up to 4 rotating sources each asking must + one rotating derived tag, deepening per query; filters must/exclude/seen/duplicates; score = 100 exact + 10×text cosine + 20×look cosine + derived weights + jitter; Not interested removed; exposures 'board'; two empty rounds lock with an explanatory error; one init and one page future shared by concurrent callers",
+   "files": [
+    "lib/src/boorus/board_handler.dart",
+    "lib/src/handlers/board_query.dart",
+    "lib/src/handlers/reverse_image_search.dart"
+   ],
+   "settingsKeys": [
+    "modelTasks text.boards/look.boards/look.similar/tagger.boards"
+   ],
+   "storedIn": "boards.json caches",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Board query understanding",
+   "navPath": "automatic (board feed)",
+   "what": "Tokens without stop words + bigrams looked up in each source's snapshot in parallel (exact +3, prefix word_ +1.5, contains +0.5), unknown words (≤4) asked of site autocomplete (+2/+1), image-match names +4, tagger seeds weighted, encoder adds 2×cosine for the top 24 in one batch; accepts() enforces must/exclude incl. site spellings",
+   "files": [
+    "lib/src/handlers/board_query.dart"
+   ]
+  },
+  {
+   "name": "SauceNAO key and reverse image search",
+   "navPath": "Settings -> Recommendations & AI -> Recommendations -> Boards (SauceNAO API key field)",
+   "what": "SauceNAO POST search.php (file upload or url, numres 8, db 999), results ≥55 similarity, site+post id by preference, alsoOn ids, character/material/creator names as tags; negative header status = refusal error; e621 iqdb_queries.json results ≥60 with tag_string; key stored in boards.json",
+   "files": [
+    "lib/src/handlers/reverse_image_search.dart",
+    "lib/src/handlers/boards_handler.dart"
+   ],
+   "storedIn": "boards.json (sauceNaoApiKey)",
+   "inBackup": "yes"
+  },
+  {
+   "name": "System photo picker and picker watch",
+   "navPath": "automatic at startup; used by Try it and the board editor",
+   "what": "PhotoPicker.useSystemPicker switches image_picker to Android's photo picker; PickerWatch waits however long the picker is in front, gives up 6 s after the app resumes without an answer (5 min backstop), hands late answers to onLate, reports picture/nothing/lost/failed with open time",
+   "files": [
+    "lib/src/utils/photo_picker.dart",
+    "lib/src/utils/picker_watch.dart"
+   ]
+  },
+  {
+   "name": "Generic tag vocabulary",
+   "navPath": "automatic",
+   "what": "kGenericMediumTags stoplist and normalizeTagName shared by the suggestion engine and interests seeding",
+   "files": [
+    "lib/src/utils/post_similarity.dart"
+   ]
+  },
+  {
+   "name": "Rendered-item tracking",
+   "navPath": "automatic (thumbnail build)",
+   "what": "RecommenderHandler.onRendered records items whose thumbnail was built so only on-screen items can count as passed over",
+   "files": [
+    "lib/src/handlers/recommender/recommender_handler.dart"
+   ],
+   "storedIn": "memory only"
+  },
+  {
+   "name": "Recommender restore safety",
+   "navPath": "Settings -> Backup & Restore -> restore (recommender / boards items)",
+   "what": "stopWritingForRestore forgets models/tastes and stops writes and deferred keeping until restart; BoardsHandler.reloadFromDisk after restore",
+   "files": [
+    "lib/src/handlers/recommender/recommender_handler.dart",
+    "lib/src/handlers/recommender/deferred_learning.dart",
+    "lib/src/handlers/boards_handler.dart"
+   ]
+  }
+ ],
+ "fileHomes": [
+  {
+   "path": "lib/src/boorus/civitai_tag_catalog.dart",
+   "newHome": "lib/sources/booru/civitai/civitai_tag_catalog.dart",
+   "role": "civitai tag list catalog (Tags chip)",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/furaffinity_tag_catalog.dart",
+   "newHome": "lib/sources/furaffinity/furaffinity_tag_catalog.dart",
+   "role": "FurAffinity category/theme/species catalog from the search form",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/hanime1_tag_catalog.dart",
+   "newHome": "lib/sources/tube/hanime1/hanime1_tag_catalog.dart",
+   "role": "hanime1 instant catalog served from the dictionary",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/kemono_tag_catalog.dart",
+   "newHome": "lib/sources/kemono/kemono_tag_catalog.dart",
+   "role": "kemono tags/artists/creator-tags catalog (custom pickers)",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/kusowanka_tag_catalog.dart",
+   "newHome": "lib/sources/booru/kusowanka/kusowanka_tag_catalog.dart",
+   "role": "kusowanka five-index paged catalog",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/pool_posts_handler.dart",
+   "newHome": "lib/sources/booru/pools/pool_posts_handler.dart",
+   "role": "virtual handler serving one pool's posts in pool order",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/rule34video_tag_catalog.dart",
+   "newHome": "lib/sources/tube/rule34video/rule34video_tag_catalog.dart",
+   "role": "rule34video tags/models/categories catalog",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/tikporn_tag_catalog.dart",
+   "newHome": "lib/sources/tube/tikporn/tikporn_tag_catalog.dart",
+   "role": "tik.porn tags+acts catalog",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/data/blacklist_line.dart",
+   "newHome": "lib/models/filters/blacklist_line.dart",
+   "role": "e621-style blacklist line parser and matcher",
+   "layer": "models"
+  },
+  {
+   "path": "lib/src/data/booru_pool.dart",
+   "newHome": "lib/models/booru_pool.dart",
+   "role": "pool/gallery data class",
+   "layer": "models"
+  },
+  {
+   "path": "lib/src/data/booru_tag.dart",
+   "newHome": "lib/models/booru_tag.dart",
+   "role": "BooruTagEntry snapshot row + TagTypeOrigin",
+   "layer": "models"
+  },
+  {
+   "path": "lib/src/data/hanime_dictionary.dart",
+   "newHome": "lib/sources/tube/hanime1/hanime_dictionary.dart",
+   "role": "hanime1 EN<->ZH tag/genre/sort dictionary",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/data/meta_tag.dart",
+   "newHome": "lib/models/meta_tag.dart",
+   "role": "metatag type hierarchy (LocalDbSiteMetaTag to move to sources/local)",
+   "layer": "models"
+  },
+  {
+   "path": "lib/src/data/pinned_tag.dart",
+   "newHome": "lib/models/pinned_tag.dart",
+   "role": "pinned tag row (labels, title, scope)",
+   "layer": "models"
+  },
+  {
+   "path": "lib/src/data/pinned_tag_visibility.dart",
+   "newHome": "lib/features/tags/logic/pinned_tag_visibility.dart",
+   "role": "per-source hidden pins over SourceSettings",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/data/saved_search.dart",
+   "newHome": "lib/models/saved_search.dart",
+   "role": "saved search model (payload = TabBackup JSON)",
+   "layer": "models"
+  },
+  {
+   "path": "lib/src/data/tag.dart",
+   "newHome": "lib/models/tag.dart",
+   "role": "Tag (string, type, count, updatedAt)",
+   "layer": "models"
+  },
+  {
+   "path": "lib/src/data/tag_suggestion.dart",
+   "newHome": "lib/models/tag_suggestion.dart",
+   "role": "autocomplete suggestion (holds an optional Widget icon)",
+   "layer": "models"
+  },
+  {
+   "path": "lib/src/data/tag_type.dart",
+   "newHome": "lib/models/tag_type.dart",
+   "role": "TagType enum, palette, localized names",
+   "layer": "models"
+  },
+  {
+   "path": "lib/src/handlers/booru_tag_catalog.dart",
+   "newHome": "lib/sources/framework/tags/booru_tag_catalog.dart",
+   "role": "adapts a family TagIndexSource into the tag builder catalog",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/handlers/booru_tag_store.dart",
+   "newHome": "lib/core/storage/booru_tag_store.dart",
+   "role": "per-booru tag snapshot + manual corrections repository, resolve, import/export",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/handlers/pool_source.dart",
+   "newHome": "lib/sources/booru/pools/pool_source.dart",
+   "role": "per-site pool routes (allowlisted hosts)",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/handlers/tag_alias_resolver.dart",
+   "newHome": "lib/sources/framework/tag_alias_resolver.dart",
+   "role": "cross-booru query translation (session cache) - merge with utils/ resolver",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/handlers/tag_catalog_puller.dart",
+   "newHome": "lib/features/tags/logic/tag_catalog_puller.dart",
+   "role": "background resumable catalog walks with progress",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/handlers/tag_catalog_source.dart",
+   "newHome": "lib/sources/framework/tags/tag_catalog_source.dart",
+   "role": "catalog interface, namespace descriptor, typed autocomplete",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/handlers/tag_handler.dart",
+   "newHome": "lib/core/storage/tag_store.dart",
+   "role": "global tag-type map, load/save, type-fetch queue (queue to move to features/tags/logic)",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/handlers/tag_index_source.dart",
+   "newHome": "lib/sources/framework/tags/tag_index_source.dart",
+   "role": "tag DB access per booru family (split per family)",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/handlers/tag_type_lookup.dart",
+   "newHome": "lib/features/tags/logic/tag_type_lookup.dart",
+   "role": "single display-type resolution",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/pages/pinned_tags_page.dart",
+   "newHome": "lib/features/tags/ui/pinned_tags_page.dart",
+   "role": "pinned tags page + pin builder sheet (stores/suggester to logic)",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/pages/pools_page.dart",
+   "newHome": "lib/features/feed/ui/pools_page.dart",
+   "role": "pool list page",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/pages/tag_browser_page.dart",
+   "newHome": "lib/features/tags/ui/tag_browser_page.dart",
+   "role": "tag snapshot browser and corrections manager",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/pages/tag_hub_page.dart",
+   "newHome": "lib/features/tags/ui/tag_hub_page.dart",
+   "role": "tag/artist hub page",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/utils/hub_tag_query.dart",
+   "newHome": "lib/features/tags/logic/hub_tag_query.dart",
+   "role": "strip type namespaces per target booru",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/utils/tag_alias_resolver.dart",
+   "newHome": "lib/sources/framework/tag_alias_resolver.dart",
+   "role": "per-term cross-booru translation cached in TagAliasCache - merge with handlers/ resolver",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/board_handler.dart",
+   "newHome": "lib/features/boards/logic/board_feed_handler.dart",
+   "role": "virtual board:<id> feed",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/boorus/foryou_handler.dart",
+   "newHome": "lib/features/recommender/logic/foryou_handler.dart",
+   "role": "virtual For You feed",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/boorus/suggestion_handler.dart",
+   "newHome": "lib/features/recommender/logic/suggestion_handler.dart",
+   "role": "Suggested strip feed + suggest: tab grammar",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/data/board.dart",
+   "newHome": "lib/models/board.dart",
+   "role": "Board model with match/pixel/look caches",
+   "layer": "models"
+  },
+  {
+   "path": "lib/src/data/model_tasks.dart",
+   "newHome": "lib/features/recommender/logic/model_tasks.dart",
+   "role": "ML enums (to lib/models/ml/model_enums.dart) + ModelTasks settings facade",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/handlers/board_query.dart",
+   "newHome": "lib/features/boards/logic/board_query.dart",
+   "role": "description -> tags derivation, accepts()",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/handlers/boards_handler.dart",
+   "newHome": "lib/features/boards/logic/boards_store.dart",
+   "role": "boards.json store, images, SauceNAO key",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/handlers/followed_artists_handler.dart",
+   "newHome": "lib/features/tags/logic/followed_artists.dart",
+   "role": "follow = labelled global pin",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/handlers/interests_handler.dart",
+   "newHome": "lib/features/recommender/logic/interests_handler.dart",
+   "role": "classic interest profile + event forwarding",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/handlers/recommender/clip_tokenizer.dart",
+   "newHome": "lib/features/recommender/logic/ml/clip_tokenizer.dart",
+   "role": "CLIP BPE tokenizer",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/handlers/recommender/deferred_learning.dart",
+   "newHome": "lib/features/recommender/logic/deferred_learning.dart",
+   "role": "learning kept to disk for the next run",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/handlers/recommender/encoder_handler.dart",
+   "newHome": "lib/features/recommender/logic/ml/encoder_model.dart",
+   "role": "downloadable text encoder + vector cache",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/handlers/recommender/ftrl_model.dart",
+   "newHome": "lib/features/recommender/logic/ftrl_model.dart",
+   "role": "FTRL logistic regression + binary format",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/handlers/recommender/image_tagger_handler.dart",
+   "newHome": "lib/features/recommender/logic/ml/tagger_model.dart",
+   "role": "downloadable WD tagger",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/handlers/recommender/item_features.dart",
+   "newHome": "lib/features/recommender/logic/item_features.dart",
+   "role": "feature hashing and naming",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/handlers/recommender/look_memory.dart",
+   "newHome": "lib/features/recommender/logic/look_memory.dart",
+   "role": "remember looks of viewed posts",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/handlers/recommender/look_model_handler.dart",
+   "newHome": "lib/features/recommender/logic/ml/look_model.dart",
+   "role": "downloadable CLIP looks model + vectors",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/handlers/recommender/model_pictures.dart",
+   "newHome": "lib/features/recommender/logic/ml/model_pictures.dart",
+   "role": "picture decoding for models",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/handlers/recommender/model_timings.dart",
+   "newHome": "lib/features/recommender/logic/ml/model_timings.dart",
+   "role": "measured timings, NPU failure counts",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/handlers/recommender/model_work.dart",
+   "newHome": "lib/features/recommender/logic/model_work.dart",
+   "role": "background step queue (ActivityClock to lib/core/utils/activity_clock.dart)",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/handlers/recommender/onnx_availability.dart",
+   "newHome": "lib/features/recommender/logic/onnx/onnx_availability.dart",
+   "role": "providers present in the ORT build",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/handlers/recommender/onnx_embedding_runner.dart",
+   "newHome": "lib/features/recommender/logic/onnx/embedding_runner.dart",
+   "role": "ORT session for the encoder",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/handlers/recommender/onnx_look_runner.dart",
+   "newHome": "lib/features/recommender/logic/onnx/look_runner.dart",
+   "role": "ORT sessions for the looks halves",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/handlers/recommender/onnx_options.dart",
+   "newHome": "lib/features/recommender/logic/onnx/onnx_sessions.dart",
+   "role": "session options, NPU compile/copies, runGuarded",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/handlers/recommender/onnx_tag_runner.dart",
+   "newHome": "lib/features/recommender/logic/onnx/tag_runner.dart",
+   "role": "ORT session for the tagger",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/handlers/recommender/pixel_tags.dart",
+   "newHome": "lib/features/recommender/logic/pixel_tags.dart",
+   "role": "tagger over frames/thumbnail for reactions",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/handlers/recommender/recommender_handler.dart",
+   "newHome": "lib/features/recommender/logic/recommender.dart",
+   "role": "recommender facade: models, events, ranking",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/handlers/recommender/rewards.dart",
+   "newHome": "lib/models/recommender/interaction.dart",
+   "role": "InteractionKind, InteractionRow, Reward, rewardFor",
+   "layer": "models"
+  },
+  {
+   "path": "lib/src/handlers/recommender/video_frames.dart",
+   "newHome": "lib/features/recommender/logic/video_frames.dart",
+   "role": "mpv frame grabs (player lookup injected from features/video/logic)",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/handlers/recommender/wordpiece_tokenizer.dart",
+   "newHome": "lib/features/recommender/logic/ml/wordpiece_tokenizer.dart",
+   "role": "BERT WordPiece tokenizer",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/handlers/reverse_image_search.dart",
+   "newHome": "lib/features/boards/logic/reverse_image_search.dart",
+   "role": "SauceNAO / e621 iqdb (ReverseMatch to models/board.dart)",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/handlers/suggestion_engine.dart",
+   "newHome": "lib/features/recommender/logic/suggestion_engine.dart",
+   "role": "facets and capped blend",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/pages/boards_page.dart",
+   "newHome": "lib/features/boards/ui/boards_page.dart",
+   "role": "boards list + board editor (split into two files)",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/pages/followed_artists_page.dart",
+   "newHome": "lib/features/tags/ui/followed_artists_page.dart",
+   "role": "followed artists list",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/pages/foryou_page.dart",
+   "newHome": "lib/features/recommender/ui/foryou_page.dart",
+   "role": "For You entry/profile page",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/utils/photo_picker.dart",
+   "newHome": "lib/core/platform/photo_picker.dart",
+   "role": "switch image_picker to Android photo picker",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/utils/picker_watch.dart",
+   "newHome": "lib/core/platform/picker_watch.dart",
+   "role": "lifecycle-watched picture pick",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/utils/post_similarity.dart",
+   "newHome": "lib/features/recommender/logic/tag_vocabulary.dart",
+   "role": "generic tag stoplist, normalizeTagName (tagRelevanceWeight dead)",
+   "layer": "feature-logic"
+  }
+ ],
+ "layerViolations": [
+  {
+   "file": "lib/src/data/tag_type.dart",
+   "line": 2,
+   "imports": "handlers/navigation_handler.dart, handlers/settings_handler.dart",
+   "reason": "model reads NavigationHandler.instance.navContext for locName",
+   "fix": "use the global `loc` getter from gen/strings.g.dart (or pass Translations in); drop both handler imports"
+  },
+  {
+   "file": "lib/src/data/meta_tag.dart",
+   "line": 8,
+   "imports": "handlers/settings_handler.dart",
+   "reason": "LocalDbSiteMetaTag reads SettingsHandler.booruList inside a model",
+   "fix": "move LocalDbSiteMetaTag to lib/sources/local/ (favourites/downloads handlers) or pass the booru list into its constructor"
+  },
+  {
+   "file": "lib/src/data/pinned_tag_visibility.dart",
+   "line": 3,
+   "imports": "handlers/source_settings_handler.dart",
+   "reason": "logic over SourceSettingsHandler placed in data/; database_handler (storage) calls it on delete",
+   "fix": "move to features/tags/logic; have DBHandler.removePinnedTag emit a callback/event instead of calling PinnedTagVisibility"
+  },
+  {
+   "file": "lib/src/data/saved_search.dart",
+   "line": 4,
+   "imports": "handlers/search_handler.dart (TabBackup)",
+   "reason": "model depends on the search handler for its payload type",
+   "fix": "move TabBackup (pure JSON class) to lib/models/tab_backup.dart"
+  },
+  {
+   "file": "lib/src/data/board.dart",
+   "line": 1,
+   "imports": "handlers/board_query.dart (WeightedTag), handlers/reverse_image_search.dart (ReverseMatch)",
+   "reason": "model imports feature logic for two value types",
+   "fix": "move the WeightedTag typedef and ReverseMatch class into lib/models/board.dart (or models/reverse_match.dart)"
+  },
+  {
+   "file": "lib/src/data/model_tasks.dart",
+   "line": 6,
+   "imports": "handlers/recommender/model_timings.dart, handlers/settings_handler.dart",
+   "reason": "settings facade with side effects (saveSettings, ModelTimings.clearNpuFailures) in data/",
+   "fix": "enums (ModelUse, ModelKind, FrameMode, ModelAccelerator, PictureDecoder, ModelTask) to lib/models/ml/; ModelTasks static class to features/recommender/logic"
+  },
+  {
+   "file": "lib/src/data/pinned_tag.dart",
+   "line": 1,
+   "imports": "boorus/booru_type.dart",
+   "reason": "model imports the sources framework enum",
+   "fix": "move BooruType to lib/models (it is a plain enum with getters) or store the type name string only"
+  },
+  {
+   "file": "lib/src/data/tag_suggestion.dart",
+   "line": 1,
+   "imports": "package:flutter/widgets.dart (Widget? icon field)",
+   "reason": "model carries a widget",
+   "fix": "replace icon with an enum/IconData-free marker; the UI picks the icon"
+  },
+  {
+   "file": "lib/src/boorus/kemono_tag_catalog.dart",
+   "line": 10,
+   "imports": "pages/kemono_artists_page.dart (KemonoArtistsPage.pick, KemonoCreatorTagsSheet.pick)",
+   "reason": "source imports UI pages for customPicker",
+   "fix": "TagCatalogNamespace carries a picker id; the tags UI resolves id -> page through a registry populated by features/ui at bootstrap"
+  },
+  {
+   "file": "lib/src/handlers/tag_catalog_source.dart",
+   "line": 1,
+   "imports": "package:flutter/widgets.dart (BuildContext in TagCatalogPicker typedef)",
+   "reason": "sources framework exposes a UI callback type",
+   "fix": "same picker-id registry as above; keep framework free of BuildContext"
+  },
+  {
+   "file": "lib/src/handlers/recommender/video_frames.dart",
+   "line": 24,
+   "imports": "widgets/video/media_kit_player_view.dart (MediaKitFrameSource, MediaKitPlayerView)",
+   "reason": "logic imports a widget file to reach the player pool",
+   "fix": "move the pool lookup (MediaKitFrameSource.showing/noteGrab, anyPlaying) into features/video/logic/player_pool.dart; inject FrameLookup at bootstrap"
+  },
+  {
+   "file": "lib/src/pages/pinned_tags_page.dart",
+   "line": 21,
+   "imports": "widgets/preview/main_search_query_editor_page.dart (doujinPinsAsPinnedTags)",
+   "reason": "PinnedTagsStore/PinTagSuggestions (logic) live in a page and pull a helper out of a widget file",
+   "fix": "move doujinPinsAsPinnedTags to the doujin logic layer and PinnedTagsStore/PinTagSuggestions to features/tags/logic/pinned_tags_store.dart"
+  },
+  {
+   "file": "lib/src/utils/perf_trace.dart",
+   "line": 4,
+   "imports": "handlers/recommender/model_work.dart (ActivityClock)",
+   "reason": "core util imports feature logic; circular with model_work importing perf_trace",
+   "fix": "move ActivityClock to lib/core/utils/activity_clock.dart; model_work imports it"
+  },
+  {
+   "file": "lib/src/boorus/board_handler.dart",
+   "line": 20,
+   "imports": "handlers/recommender/{encoder,image_tagger,look_model,recommender}_handler.dart, handlers/boards_handler.dart",
+   "reason": "a 'source' (BooruHandler subclass in boorus/) depends on feature logic; BooruHandlerFactory must import it",
+   "fix": "move to features/boards/logic and let the feature register a builder for BooruType.Board into the factory at bootstrap (same for For You and Suggestion feeds)"
+  },
+  {
+   "file": "lib/src/boorus/foryou_handler.dart",
+   "line": 11,
+   "imports": "handlers/interests_handler.dart, handlers/recommender/*",
+   "reason": "virtual feed in boorus/ depends on recommender logic",
+   "fix": "features/recommender/logic + factory registration"
+  },
+  {
+   "file": "lib/src/boorus/suggestion_handler.dart",
+   "line": 12,
+   "imports": "handlers/recommender/item_features.dart, recommender_handler.dart",
+   "reason": "virtual feed in boorus/ depends on recommender logic",
+   "fix": "features/recommender/logic + factory registration"
+  },
+  {
+   "file": "lib/src/handlers/tag_handler.dart",
+   "line": 13,
+   "imports": "handlers/booru_handler_factory.dart, handlers/doujin_data_handler.dart",
+   "reason": "the global tag store (needed by BooruHandler, i.e. below sources) builds handlers for type fetching and asks the doujin store",
+   "fix": "keep the map+persistence in core/storage/tag_store.dart; move getTagTypes/queue to features/tags/logic/tag_type_fetcher.dart; inject isDoujinBooru"
+  },
+  {
+   "file": "lib/src/handlers/tag_index_source.dart",
+   "line": 8,
+   "imports": "boorus/sankaku_handler.dart, handlers/booru_handler_factory.dart",
+   "reason": "framework file imports a concrete source and builds handlers to read tagTypeMap",
+   "fix": "split per family into each source folder; pass the type map in from the handler (BooruTagCatalog already has it)"
+  },
+  {
+   "file": "lib/src/handlers/booru_tag_store.dart",
+   "line": 10,
+   "imports": "handlers/tag_handler.dart, handlers/settings_handler.dart, utils/dio_network.dart",
+   "reason": "storage repository resolves against the global map and downloads snapshots",
+   "fix": "keep DB access in core/storage; move resolve()/importFromUrl to features/tags/logic"
+  },
+  {
+   "file": "lib/src/handlers/database_handler.dart",
+   "line": 20,
+   "imports": "handlers/recommender/rewards.dart",
+   "reason": "storage imports recommender logic for InteractionRow/InteractionKind (outside this subsystem, caused by it)",
+   "fix": "move InteractionKind/InteractionRow/Reward to lib/models/recommender/"
+  },
+  {
+   "file": "lib/src/handlers/settings_handler.dart",
+   "line": 53,
+   "imports": "handlers/recommender/model_timings.dart, onnx_availability.dart",
+   "reason": "settings (core) imports ML feature logic for startup loads",
+   "fix": "bootstrap (lib/app) triggers ModelTimings.ensureLoaded and OnnxAvailability.load after settings"
+  }
+ ],
+ "splits": [
+  {
+   "file": "lib/src/handlers/recommender/recommender_handler.dart",
+   "lines": 1088,
+   "proposal": "Keep RecommenderHandler as the public facade (all current public members and static seams stay on it). Move: RecommenderReport + Explanation(labelOf) -> recommender_report.dart; _Taste -> taste_centroid.dart (public TasteCentroid); persistence (modelFor/_load/_replay/_loadDismissed/flush/_markDirty/file paths/stopWritingForRestore/reset) -> recommender_store.dart; events (onEvent/_learnEvent/_maybeReplayKept/replayKept/_wantsPixelTags/_pixelTags/dismiss/_logDismissal/onQuery/onQueryInWorld/onExposed/_exposedNow/onRendered/forgetFeature/_learn) -> recommender_events.dart; ranking (score/scorer/doujinPartsScorer/scoreDoujinParts/scoreDoujinPartsMany/rerank/seedTerms/report/_names/explain/adjust/withoutDismissed/isDismissed) -> recommender_ranking.dart; shared helpers (_featuresFor/_embeddings/_looks) -> recommender_features.dart. Implement with `part`/`part of` files or mixins over one state holder so private maps stay private.",
+   "risk": "Heavy shared private state (_models, _loading, _dirty, _generation, _saveTimer, _exposed, _interacted, _rendered, _dismissed, _taste, _lookTaste, _frozen, _replayedKept); tests use resetForTests/resetSeamsForTests and static seams pixelTagsFor/lookVectorsFor/reactionFrames by class name; recommendation_surfaces_test greps source files by path - update its paths."
+  },
+  {
+   "file": "lib/src/handlers/tag_index_source.dart",
+   "lines": 1039,
+   "proposal": "tag_index_source.dart keeps the abstract class, catalogOrder/typeNamespace/namespacesFor/typeMapFor/hostOf/forBooru/resetForTests; one file per family moved beside its source: gelbooru_tag_index.dart (+HTML list parser), danbooru_tag_index.dart, e621_tag_index.dart, philomena_tag_index.dart, moebooru_tag_index.dart, sankaku_tag_index.dart.",
+   "risk": "GelbooruTagIndex has a static mutable _rowsPerPage reset by TagIndexSource.resetForTests; typeMapFor builds handlers through the factory (import cycle factory -> handler -> BooruTagCatalog -> TagIndexSource.forBooru -> families); tag_index_sources_test calls @visibleForTesting parsers by class name."
+  },
+  {
+   "file": "lib/src/pages/tag_browser_page.dart",
+   "lines": 1032,
+   "proposal": "tag_browser_page.dart (state, list, filters, status line); tag_browser_actions.dart (export/import file/import URL/clear/confirm dialogs and set-type dialog as functions taking the booru and callbacks); tag_row_tile.dart (_TagRowTile); core/ui/dashed_border_painter.dart (_DashedBorderPainter, generic).",
+   "risk": "Private methods rely on setState/_reset/_toast/_booru and the pull-state listeners; keep them in the State and pass closures. Low risk otherwise (no tests reference privates)."
+  },
+  {
+   "file": "lib/src/handlers/recommender/look_model_handler.dart",
+   "lines": 819,
+   "proposal": "look_model_types.dart (LookPreset, LookState, LookStatus, LookRunner, typedefs); look_image_prep.dart (prepareImage, imageFromPicture, normalizeInPlace, cosine, meanOf - pure, compute-safe); a shared DownloadableModel base (download to temp + rename, manifest, status notifier, cancel, delete, refresh skeleton, _dioFetch, threadsChanged/_inFlight/_closeWhenIdle/_touch idle close) used by encoder/tagger/looks; look_model.dart keeps vectors (imageVector/textVector/imageVectors/putItemVector/LRU) and the NPU file download.",
+   "risk": "model_pictures.dart compute entry points call LookModelHandler.imageFromPicture/prepareImage statically and tests call them by class name - keep static forwarders; _onnxRunner reads the private _openThreads; idle-close/_inFlight rules (never close under a run) must survive the move."
+  },
+  {
+   "file": "lib/src/handlers/recommender/image_tagger_handler.dart",
+   "lines": 736,
+   "proposal": "tagger_types.dart (TaggerPreset, TaggerState, TaggerStatus, TaggerResult, TagRow, PixelTag, TagRunner, typedefs); tagger_prep.dart (parseTagsCsv, _splitCsv, interpret, prepareTensor, tensorFromImage - pure); handler uses the DownloadableModel base for download/refresh/delete/idle close.",
+   "risk": "Tests call ImageTaggerHandler.interpret/parseTagsCsv/prepareTensor statically; model_pictures compute functions reference ImageTaggerHandler.tensorFromImage; TaggerUse typedef used by PixelTags."
+  },
+  {
+   "file": "lib/src/handlers/recommender/encoder_handler.dart",
+   "lines": 730,
+   "proposal": "encoder_types.dart (EncoderPreset, EncoderState, EncoderStatus, EmbeddingRunner, typedefs); encoder_text.dart (textOf, textOfDoujinParts, _compose, _words, textKey - static, also used by LookModelHandler); encoder_model.dart (vectors: embedTexts/embedItems/_pool/LRU/_store/cached) on the DownloadableModel base.",
+   "risk": "_onnxRunner reads private _dim/_openThreads; tests rely on fetcher/runnerFactory seams; LookModelHandler uses EncoderHandler.textKey/keyOf."
+  },
+  {
+   "file": "lib/src/boorus/board_handler.dart",
+   "lines": 708,
+   "proposal": "board_feed_handler.dart (search/_searchPage/_ask/_seen/_isDuplicate/scoreItem); board_setup.dart (_ensureInit/_init: sources, image matches, pixel tags, look vector, derived tags, must per source, description vector); board_images.dart (referenceImageBytes, seedsFrom, defaultPixelTagger, defaultImageMatcher, defaultReferenceLook, _defaultLookItems, _defaultEmbedText/_defaultEmbedItems); a shared VirtualFeed base with ForYou/Suggestion (_bounded, sub-handler page tail, sourceFactory).",
+   "risk": "Init and page share private state (_sources, _handlers, _startPages, _mustBySource, _derivedBySource, _derived, _matches, _descVec, _refLook, _asked, _feedPage, _emptyStreak, _initFuture, _pageInFlight); 12 static seams reset by resetForTests and used by board_handler_test - keep them on BoardHandler."
+  },
+  {
+   "file": "lib/src/pages/boards_page.dart",
+   "lines": 703,
+   "proposal": "boards_page.dart (BoardsPage, open, openSimilar, _BoardThumb); board_edit_page.dart (BoardEditPage + state); features/boards/logic/board_templates.dart (templateFromItem, similarFromItem, extensionOf, default image fetcher).",
+   "risk": "openSimilar uses BoardEditPage statics (similarFromItem, imageFetcher, extensionOf, deleteCopy, frameCleanupDelay, pickImagePath, taggerReady, pixelTagger) that boards_page_test overrides by class name - keep the names (forwarders) on BoardEditPage."
+  },
+  {
+   "file": "lib/src/boorus/foryou_handler.dart",
+   "lines": 608,
+   "proposal": "foryou_handler.dart (search, _searchBlended, scoring); foryou_query.dart (parseFilter, preferredHost, _parseSeeds, _sanitizeSeed, _dropPrefixes - pure statics); shared VirtualFeed base (sources from booruList, _bounded, _isDuplicate, page tail, empty-streak retry) with Board/Suggestion handlers.",
+   "risk": "@visibleForTesting statics parseFilter/preferredHost/withFilter and seams sourceFactory/resolveTag used by foryou_seed_test; recommendation_surfaces_test greps this exact path for rerank(/onExposed(/'foryou'/withoutDismissed(."
+  },
+  {
+   "file": "lib/src/pages/pinned_tags_page.dart",
+   "lines": 561,
+   "proposal": "features/tags/logic/pinned_tags_store.dart (PinnedTagsStore, _DbPinnedTagsStore, _DoujinPinnedTagsStore, PinTagSuggestions, PinTagSuggester); ui/pinned_tags_page.dart; ui/pin_builder_sheet.dart (PinBuilderSheet, PinBuilderResult).",
+   "risk": "pinned_tags_page_test / pinned_tags_hide_suggest_test inject store/suggest and use widget keys ('pinned-*', 'pin-builder-*'); keys must not change."
+  }
+ ],
+ "bugs": [
+  {
+   "file": "lib/src/handlers/tag_handler.dart",
+   "line": 271,
+   "title": "Tag type fetch queue never runs and grows forever",
+   "scenario": "Any booru page with untyped tags: BooruHandler.populateTagHandler -> TagHandler.queue -> untypedQueue.value.add(...). The ValueNotifier is mutated in place so its listener (queueListener -> tryGetTagTypes) never fires; getTagTypes is never started, tagTypeFetchEnabled does nothing, and every page appends another UntypedCollection that is never removed.",
+   "evidence": "ctor: untypedQueue.addListener(queueListener) (line 29); queue(): `untypedQueue.value.add(UntypedCollection(untypedTags, cooldown, booru));` (line 271) - no assignment to .value, no notifyListeners; tryGetTagTypes is only called from queueListener and from the end of getTagTypes (lines 55, 223); grep shows no other caller.",
+   "confidence": "confirmed",
+   "severity": "leak"
+  },
+  {
+   "file": "lib/src/handlers/recommender/recommender_handler.dart",
+   "line": 530,
+   "title": "Deferred (kept-for-later) learning replays items with garbage tags",
+   "scenario": "Favourite a post, leave the app before the step ran -> event kept with item.toJson(); next run replayKept() rebuilds the item with BooruItem.fromMap, whose tags become strings like '{fullString: red_hair, updatedAt: 1696..., tagType: none}'. The model learns unique junk tag:/pair: features instead of the real tags (and loses score/type/media), polluting weights.",
+   "evidence": "keep: `'item': item.toJson()` (line 498); BooruItem.toJson puts `'tags': tagsList` (List<Tag>, booru_item.dart:181) which jsonEncode turns into Tag.toJson maps; replay: `BooruItem.fromMap(Map<String, dynamic>.from(e['item'] as Map))` (line 530) and fromMap does `tags.add(tagz[i].toString())` (booru_item.dart:252) on each map. Tests only count rows.",
+   "confidence": "confirmed",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/boorus/suggestion_handler.dart",
+   "line": 243,
+   "title": "Suggested strip runs all facet searches concurrently on one sub-handler (wrong pages, mixed results)",
+   "scenario": "Post's own booru (single target): ~7 facets. Each closure synchronously does handler.pageNum = handler.pageNum + 1 then calls handler.search, which suspends at `await searchSetup()` before makeURL reads pageNum. All facets therefore request page start+7 (skipping the first 7 pages; small character tags return nothing), each search resets the shared `fetched` (prevTags differ), and each facet's tail `got.sublist(got.length - limit)` can contain other facets' posts, so quotas/caps are applied to the wrong facets.",
+   "evidence": "suggestion_handler.dart:243-248 `final BooruHandler handler = _handlerFor(target); handler.pageNum = handler.pageNum + 1; ... handler.search(finalQuery, null)` inside requests built in a loop then Future.wait; booru_handler.dart:331 `if (!await searchSetup())` precedes makeURL (356) and `if (prevTags != tags) fetched.value = []` (344). HANDOVER: 'a handler's search is not re-entrant' (DoujinForYou lanes, BoardHandler waves).",
+   "confidence": "confirmed",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/boorus/foryou_handler.dart",
+   "line": 533,
+   "title": "For You history blend hits the same source handler concurrently",
+   "scenario": "Profile mode with history: 3 posts x up to 3 facets = up to 9 requests spread over at most 8 sources (_maxSources) - with the usual 2-4 boorus several facets share one handler concurrently; they share fetched/prevTags/locked, so results are lost or attributed to the wrong facet.",
+   "evidence": "`final int j = (facetIndex + _feedPage + _rotationOffset) % _sources.length;` (533) then `handler.search(withFilter(query), null)` per facet in parallel (548-549); the seed path comments 'Source indices within a page are distinct, so no handler is hit concurrently' (425-426), the blended path has no such guarantee.",
+   "confidence": "confirmed",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/boorus/foryou_handler.dart",
+   "line": 575,
+   "title": "For You history-blend mode does not drop 'Not interested' posts",
+   "scenario": "Default For You (profile mode with viewing history): a post marked Not interested is removed from the tab, but later pages / a new For You tab can serve it again because _searchBlended never calls withoutDismissed (rerank does not filter dismissals).",
+   "evidence": "_searchBlended: `SuggestionEngine.blend(...)` then `RecommenderHandler.maybe?.rerank(blended, ...)` (568-575) - no withoutDismissed; seed path has it (490). rerank (recommender_handler.dart:893-933) never checks isDismissed. recommendation_surfaces_test only greps the file for the string 'withoutDismissed(', which the seed path satisfies.",
+   "confidence": "confirmed",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/handlers/followed_artists_handler.dart",
+   "line": 49,
+   "title": "Unfollowing an artist deletes a normal global pin with the same tag",
+   "scenario": "User pins 'artist_x' on every source (global pin), also follows artist_x; tapping Unfollow (hub or Followed artists page) deletes BOTH rows, because removal is by tag name over all global pins, not by the follow label.",
+   "evidence": "unfollow: `_settings.dbHandler.removePinnedTagByName(tagName)`; database_handler.dart:2478 `DELETE FROM PinnedTag WHERE tagName = ? AND booruName IS NULL` (no label filter); also skips PinnedTagVisibility.forgetId for the deleted ids.",
+   "confidence": "confirmed",
+   "severity": "data-loss"
+  },
+  {
+   "file": "lib/src/pages/tag_browser_page.dart",
+   "line": 195,
+   "title": "Changing query/filter/booru while a page loads shows stale rows and never loads the new list",
+   "scenario": "Type a query the snapshot lacks (slow live site search) then tap a type chip or switch booru: _reset clears rows but _loadMore returns at once because _loading is still true; when the old request finishes its rows (old query/booru) are appended under the new filter, and the new query is never fetched until the user scrolls.",
+   "evidence": "_reset (195-204) clears _rows/_offset but not _loading, then calls _loadMore; _loadMore: `if (_loading || _isLastPage) return;` (226); the in-flight call later does `_rows.addAll(got); _offset += got.length` (276-277) without checking that query/filter/booru are unchanged.",
+   "confidence": "confirmed",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/boorus/pool_posts_handler.dart",
+   "line": 180,
+   "title": "Gelbooru pool paging cursor drifts or stops when some ids fail",
+   "scenario": "Pool on rule34.xxx: a page where 2 of 20 id lookups fail adds 18 posts; the next page starts at fetched.length (18) and re-fetches 2 already-shown ids (duplicates in fetched); a page where every lookup fails (rate limit) returns empty and locks the pool although later members exist.",
+   "evidence": "_pageById: `final int start = fetched.length; ... ids.skip(start).take(limit)` (180-182), failures return null and are dropped (197-203); search(): `if (pageItems.isEmpty) { locked = true; ...}` (111-114).",
+   "confidence": "confirmed",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/data/blacklist_line.dart",
+   "line": 246,
+   "title": "Blacklist `filesize:>5mb` style terms compare against 0",
+   "scenario": "Blacklist line `filesize:>5mb` hides every post with a known file size (> 0 bytes); `filesize:1mb..2mb` becomes 0..0.",
+   "evidence": "_parseNumericValue('>5mb') -> `int.tryParse(raw.substring(1)) ?? 0` = 0 (287-289; unit stripping only on the bare-number path, 297); _resolveFileSizeValues then multiplies [0] by 1 MB (246-257).",
+   "confidence": "confirmed",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/pages/boards_page.dart",
+   "line": 619,
+   "title": "Removing a board's image leaves its copy on disk forever",
+   "scenario": "Edit a board with a picked image -> Remove image -> Save: imagePath becomes '' but boards/<id>.<ext> is never deleted; deleting the board later only deletes board.imagePath (now empty).",
+   "evidence": "Remove: `imagePath = ''; pendingPick = null; imageUrl.clear();` (619-623); _save deletes the previous copy only inside `if (pendingPick != null)` (502-514); BoardsHandler.delete deletes `b.imagePath` only if non-empty (boards_handler.dart:113).",
+   "confidence": "confirmed",
+   "severity": "leak"
+  },
+  {
+   "file": "lib/src/pages/boards_page.dart",
+   "line": 528,
+   "title": "Saving a board in the editor drops its pixel-tag and look caches",
+   "scenario": "Edit only the name of an image board -> Save: the new Board is built without pixelTags/pixelImage/lookVector/lookImage, so the next open re-runs the tagger (seconds) and the looks model on the same image.",
+   "evidence": "_save constructs Board(... matches/matchedAt/matchedImage/createdAt ...) (528-543) and omits pixelTags, pixelImage, lookVector, lookImage (and hidden).",
+   "confidence": "confirmed",
+   "severity": "perf"
+  },
+  {
+   "file": "lib/src/handlers/recommender/recommender_handler.dart",
+   "line": 535,
+   "title": "Reset ('Forget everything learned') does not drop kept or queued replay learning",
+   "scenario": "Learning kept in deferred.json from the last run (or replay steps already queued) is learned into the freshly reset model; replayKept closures have no generation check and reset() never clears DeferredLearning.",
+   "evidence": "replayKept queues `_learnEvent(...)` directly (535-541) without the `_generation` check that onEvent uses (486); reset() bumps _generation and clears DB/files (1000-1030) but not DeferredLearning.",
+   "confidence": "plausible",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/handlers/tag_catalog_puller.dart",
+   "line": 87,
+   "title": "A second tap while a pull waits for its host starts a duplicate pull",
+   "scenario": "Tap a chip while another namespace of the same host is pulling, then tap the same chip again: both calls pass `state.value.running` (still false while waiting) and both later walk the same namespace.",
+   "evidence": "`if (state.value.running) return;` (87) is checked before the busy-host wait loop (92-95); running is only set after the wait (109).",
+   "confidence": "plausible",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/handlers/recommender/look_memory.dart",
+   "line": 83,
+   "title": "A post left while the app goes away is never remembered this run",
+   "scenario": "Leave a post (≥2.5 s) as the app is paused: the step runs lite and does nothing, but the key is already in _asked, so reopening the post later in the same run does not queue it again (contradicts the comment 'remembered the next time it is opened').",
+   "evidence": "_left: `_asked.add(key)` (83) before queue; _defaultQueue: `if (!lite) await step();` (105).",
+   "confidence": "plausible",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/handlers/recommender/model_timings.dart",
+   "line": 207,
+   "title": "Timing/NPU-failure change can miss being written",
+   "scenario": "A _record/recordNpuFailure arriving after the save loop exited but before `_saving = null` sees _saving != null, returns, and nothing writes the change until the next record (or never, if the app dies).",
+   "evidence": "_save: `if (_saving != null) return;` (191); after the loop `await _saving; _saving = null;` (207-208) without re-checking _dirty.",
+   "confidence": "plausible",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/pages/tag_browser_page.dart",
+   "line": 121,
+   "title": "Tag browser leaks a ValueNotifier per booru switch",
+   "scenario": "Each booru change calls _bindPull which creates a new ValueNotifier for _pullState; old ones are never disposed (and none on dispose).",
+   "evidence": "`_pullState = catalog == null ? null : ValueNotifier(...)` (121); dispose only removes listeners (185-188).",
+   "confidence": "confirmed",
+   "severity": "minor"
+  }
+ ],
+ "fragile": [
+  {
+   "what": "Sub-handler search is not re-entrant",
+   "where": "BooruHandler.search (booru_handler.dart:325) used by ForYouHandler, SuggestionHandler, BoardHandler, DoujinForYouHandler",
+   "rule": "Never run two searches on the same BooruHandler instance concurrently; serialize per handler (lanes) or use one handler per request. pageNum is read after an await."
+  },
+  {
+   "what": "Feature names and hashing",
+   "where": "item_features.dart (FNV-1a over UTF-8, 18-bit buckets; tag:, type:<t>:, ns:<ns>:, pair:a|b, site:, media:, score:, pages:, title:, emb:<model>:<i>, look:<model>:<i>, taste:, ltaste:)",
+   "rule": "Strings and hash are persisted in <world>.bin, the Interaction log and RecommenderFeature; any change silently invalidates learned weights. Only loggedHashes (binary features) are logged."
+  },
+  {
+   "what": "FTRL model file format",
+   "where": "ftrl_model.dart toBytes/fromBytes",
+   "rule": "magic 'LSRM' 0x4D52534C, version 1, 56-byte header (buckets, updates, lastUpdate, alpha, beta, l1, l2) then z and n Float32 little-endian; a foreign bucket count forces a replay rebuild."
+  },
+  {
+   "what": "Registration order and null-safe access",
+   "where": "main.dart 103-136; RecommenderHandler.maybe, EncoderHandler.maybe, ImageTaggerHandler.maybe, LookModelHandler.maybe, VideoFrames.maybe",
+   "rule": "Recommender/Interests register before SettingsHandler exists - nothing in register() may read settings (replayKept is deferred to the first onEvent, guarded by GetIt.isRegistered<SettingsHandler>); models register after settings; every caller goes through `maybe`."
+  },
+  {
+   "what": "ModelWork contract",
+   "where": "model_work.dart",
+   "rule": "Steps never rethrow; lite only when away (paused/hidden/detached, not inactive); steps with defer are kept to disk instead of running lite; quiet 1.5 s, deadline 20 s, video hold 10 s, step timeout 60 s; onDrainedAway flushes models."
+  },
+  {
+   "what": "ONNX session rules",
+   "where": "onnx_*_runner.dart, encoder/tagger/look handlers",
+   "rule": "Int64List for int64 inputs; one session per model (never a second copy); thread count fixed at session open (the opener's ModelUse decides); never close a session under a run (_inFlight, _closeWhenIdle); idle close 120 s re-armed when the last run ends; a run failure sets the model's error status until refresh."
+  },
+  {
+   "what": "NPU compiled copies",
+   "where": "onnx_options.dart",
+   "rule": "Copy names `<model>.npu2-<bytes>-whole|mixed.onnx`, marker `<model>.npu2-<bytes>-whole.failed`; staleNpuFiles removes `.npu-` (build 117) and other sizes; ModelTimings.ensureLoaded must complete before openOnnxSession decides; only QNN failures count, once per session id; 2 failures -> CPU until NPU picked again (setRunOn clears)."
+  },
+  {
+   "what": "Vector storage keys",
+   "where": "EncoderHandler (_slug, text keys 'text:<fnv hex>-<bytes>'), LookModelHandler.storeKey 'look:<slug>', item key = postURL else fileURL",
+   "rule": "vectors.db ItemEmbedding is shared by both models and split by the 'look:' prefix for usage/pruning; keys must stay identical across the refactor."
+  },
+  {
+   "what": "Tab query grammars that restore tabs",
+   "where": "board_handler.dart boardIdOf ('board:<id>'), suggestion_handler.dart queryFor/isQuery/fromQuery ('suggest: c: f: a: t: s: with: on: post:' with %20/%25 escaping), foryou_handler.dart (seed:, from:, filter:, -tag, plain tags), pools ('pool: <name>' + poolId)",
+   "rule": "Saved tabs and SearchTab constructor parse these; SearchHandler.isPlainSearch keeps suggest: queries out of history/interests."
+  },
+  {
+   "what": "Tag snapshot storage shape",
+   "where": "BooruTagStore.keyFor (host lowercased, first 'www.' removed; fallback type/name for URL-less boorus), filterFor (byType -> namespace '' + tagType; else namespace = ns key)",
+   "rule": "Booru catalogs read rows with EMPTY namespace by type so the tag browser and the chips share lists; doujin/kemono rows carry the site namespace; manual overrides keyed the same way and never overwritten by record()."
+  },
+  {
+   "what": "Catalog guard tests",
+   "where": "test/tag_catalog_sources_test.dart ('every source has a decided answer'), test/recommendation_surfaces_test.dart (hard-coded file paths + string greps)",
+   "rule": "Every BooruType.saveable must offer a catalog or be in noCatalog with a reason; surface files must contain rerank(/scorer(, onExposed(, the surface name and withoutDismissed( - moving files requires updating the test paths."
+  },
+  {
+   "what": "Follow pins and hidden pins",
+   "where": "FollowedArtistsHandler.followLabel 'followed'; PinnedTagVisibility keys 'id:N' / 'tag:x' in SourceSettings.hiddenPins; DBHandler.removePinnedTag -> forgetId",
+   "rule": "Follows are global PinnedTag rows with the label and must stay out of pinned-tag UIs (isFollowPin); PinnedTag.id is reused by SQLite (no AUTOINCREMENT) so id hides must be forgotten on delete."
+  },
+  {
+   "what": "GetX listening",
+   "where": "VideoFrames.attach, LookMemory.attach (ViewerHandler.instance.current.addListener)",
+   "rule": "Use addListener, not .listen/stream: GetX 5's stream stops feeding once its last stream listener cancels."
+  },
+  {
+   "what": "mpv frame grabs",
+   "where": "video_frames.dart MediaKitFrameTarget.command",
+   "rule": "Use screenshot-to-file through NativePlayer.command, never Player.screenshot() (media_kit 1.2.6 buffer bug); call MediaKitFrameSource.noteGrab before the command so the pool ignores 'Taking screenshot failed.'; check current-vo and video-frame-info/interlaced first; skip mediacodec_embed output."
+  },
+  {
+   "what": "Deferred learning file",
+   "where": "recommender/deferred.json",
+   "rule": "Written synchronously (app may be killed), cap 200 oldest-first, handed over once (file emptied before replay); stop() during restore."
+  },
+  {
+   "what": "Tabs never kidnap",
+   "where": "BoardsPage.open(switchTo:), openSimilar, openFromItem, pools/tag browser background opens",
+   "rule": "Tabs opened from content open in the background with a notice; only the user's choice from a list (Boards page Open, Tag browser row tap, Pools tap, For You page) switches."
+  },
+  {
+   "what": "Startup ordering for tag colours",
+   "where": "main.dart initHandlers: tagHandler.initialize() before searchHandler.restoreTabs()",
+   "rule": "Search box chips are coloured from the global tag map on first render; BooruTagStore.load() (manual overrides) happens in the same step."
+  },
+  {
+   "what": "Boards persistence",
+   "where": "boards.json (version 1: sauceNaoApiKey + boards with matches/pixelTags/lookVector caches), boards/<id>.<ext> pictures, hidden boards pruned after 3 days",
+   "rule": "Included in backup (boards.json, board pictures); BoardsHandler.reloadFromDisk after restore; the SauceNAO key is a credential stored in plain JSON and travels with backups."
+  },
+  {
+   "what": "Settings keys of this subsystem",
+   "where": "settings_handler.dart",
+   "rule": "enableInterestTracking, aiRecommendations, aiLearning, aiEncoder, encoderModel, aiImageTagger, imageTaggerModel, taggerOnReactions, aiLook, lookModel, videoFrames, aiModelsOff, framesForYou, framesOtherTabs, pictureDecoder, rememberLooks, vectorSpaceMb, tagTypeFetchEnabled, modelTasks, modelThreads (device-specific), modelRunOn (device-specific); ModelTasks.parse/parseThreads/parseRunOn whitelist values."
+  },
+  {
+   "what": "Test seams as static mutable fields",
+   "where": "BoardHandler, ForYouHandler, RecommenderHandler, PixelTags, BoardEditPage, BoardsPage, BoardQueryBuilder, ReverseImageSearch, PickerWatch, ModelTasks, onnx_options top-level seams, *.resetForTests",
+   "rule": "~50 tests assign these by class name; renaming or moving them breaks the suite."
+  },
+  {
+   "what": "tag_view.dart contains a NUL byte",
+   "where": "lib/src/widgets/gallery/tag_view.dart around offset 116622 (ripgrep reports it as binary)",
+   "rule": "Tag hub, Suggested strip, Posts like this and find-elsewhere entry points live there; text tools may skip or corrupt it - check before automated edits."
+  },
+  {
+   "what": "hanime1 term mapping",
+   "where": "Hanime1TagCatalog.searchTerm + HanimeDictionary",
+   "rule": "Tags insert bare English and the handler maps back to the exact Chinese tags[] value; genres insert genre:<key>."
+  }
+ ],
+ "perf": [
+  {
+   "file": "lib/src/handlers/tag_handler.dart",
+   "line": 284,
+   "issue": "Startup loads the whole Tag table into memory with one awaited putTag per tag, and main.dart awaits it before restoring tabs",
+   "impact": "Cold start blocked proportionally to tag count (tens of thousands of microtask hops + allocation) before the first tab appears",
+   "safeFix": "Fill _tagMap directly in a sync loop (no await per tag) or in a compute isolate; restore tabs in parallel and recolour chips when the map lands"
+  },
+  {
+   "file": "lib/src/handlers/tag_handler.dart",
+   "line": 381,
+   "issue": "saveTags runs every 30 s from Home's backup timer: with the DB on it only calls getStoragePermission() (a platform call) each time; with the DB off it jsonEncodes and rewrites the whole map whether or not anything changed",
+   "impact": "Periodic method-channel traffic / large UI-isolate JSON encodes and file writes every 30 s",
+   "safeFix": "Track a dirty flag; skip entirely when DB is on; ask permission once"
+  },
+  {
+   "file": "lib/src/handlers/tag_handler.dart",
+   "line": 331,
+   "issue": "loadFromJSON (restore of tags.json) does jsonList.indexOf(rawTag) per element, logs every parsed tag, and writes each tag to the DB individually",
+   "impact": "O(n^2) plus n log lines and n single-row DB writes on restore",
+   "safeFix": "Index loop counter, batch updateTagsFromObjects, no per-tag log"
+  },
+  {
+   "file": "lib/src/handlers/booru_handler.dart",
+   "line": 1253,
+   "issue": "populateTagHandler uses unTyped.contains per tag (O(n^2)) and queues into a list nobody drains (see bug)",
+   "impact": "CPU per page plus unbounded memory growth",
+   "safeFix": "Use a Set; fix the queue notification or drop the feature"
+  },
+  {
+   "file": "lib/src/handlers/recommender/look_model_handler.dart",
+   "line": 607,
+   "issue": "imageVectors fetches and embeds thumbnails strictly one after another",
+   "impact": "For You/boards pages with 20-30 new items take 18-23 s (HANDOVER r79 log) before looks-based ordering is ready",
+   "safeFix": "Prefetch thumbnail bytes concurrently (bounded) while the single ORT session runs sequentially"
+  },
+  {
+   "file": "lib/src/pages/tag_hub_page.dart",
+   "line": 290,
+   "issue": "One TagContentPreview (a live search) per configured booru, all started at once",
+   "impact": "N simultaneous searches (N = every booru of the domain) on opening a hub",
+   "safeFix": "Lazy-build strips as they scroll into view or cap concurrent loads"
+  },
+  {
+   "file": "lib/src/handlers/recommender/onnx_tag_runner.dart",
+   "line": 114,
+   "issue": "Tagger and looks runners copy the plugin's output element-by-element even when it is already a Float32List (the encoder runner skips this since r77)",
+   "impact": "Extra UI-isolate work per run (10,861 floats per tagger run)",
+   "safeFix": "`if (raw is Float32List) return raw;` as in OnnxEmbeddingRunner"
+  },
+  {
+   "file": "lib/src/handlers/recommender/video_frames.dart",
+   "line": 400,
+   "issue": "Synchronous file IO on the UI isolate per grab (dir.listSync sweep, readAsBytesSync of the JPEG)",
+   "impact": "Jank risk while a video plays",
+   "safeFix": "Async reads, sweep on a timer"
+  },
+  {
+   "file": "lib/src/handlers/boards_handler.dart",
+   "line": 60,
+   "issue": "boards.json read/written synchronously with flush (includes 512-float look vectors and match lists)",
+   "impact": "Small UI stalls on every save/load",
+   "safeFix": "Async write with a write-behind queue"
+  },
+  {
+   "file": "lib/src/handlers/recommender/pixel_tags.dart",
+   "line": 51,
+   "issue": "Cached thumbnail read with readAsBytesSync on the UI isolate (also BoardHandler.referenceImageBytes line 644, BoardEditPage._tagImage)",
+   "impact": "UI-thread IO per reaction / board",
+   "safeFix": "await File.readAsBytes()"
+  },
+  {
+   "file": "lib/src/boorus/foryou_handler.dart",
+   "line": 372,
+   "issue": "_isDuplicate scans all of fetched for every candidate (same in BoardHandler._isDuplicate)",
+   "impact": "O(n^2) as the feed grows long",
+   "safeFix": "Maintain a Set of fileURL/postURL/md5 keys"
+  },
+  {
+   "file": "lib/src/boorus/pool_posts_handler.dart",
+   "line": 162,
+   "issue": "order.contains(item.serverId) inside a loop over collected members",
+   "impact": "O(n·m) up to 1000x1000 on large e621 pools",
+   "safeFix": "Convert order to a Set first"
+  },
+  {
+   "file": "lib/src/handlers/recommender/encoder_handler.dart",
+   "line": 710,
+   "issue": "Model downloads create a new Dio() per file and never close it (same in tagger and looks handlers)",
+   "impact": "Leaked HttpClient/sockets per downloaded file",
+   "safeFix": "One shared Dio for downloads, closed after use, or DioNetwork with a download helper"
+  },
+  {
+   "file": "lib/src/handlers/recommender/recommender_handler.dart",
+   "line": 943,
+   "issue": "seedTerms/report call topWeights which scans all 262,144 buckets on the UI isolate (twice in report)",
+   "impact": "A few ms per For You init / settings page open",
+   "safeFix": "Keep a small heap of top weights updated incrementally or compute in an isolate"
+  }
+ ],
+ "deadCode": [
+  {
+   "file": "lib/src/utils/post_similarity.dart",
+   "symbol": "tagRelevanceWeight",
+   "evidence": "grep 'tagRelevanceWeight' in lib/ and test/: only the definition at post_similarity.dart:35"
+  },
+  {
+   "file": "lib/src/handlers/tag_index_source.dart",
+   "symbol": "TagIndexSource.catalogPagesPerPull (and overrides)",
+   "evidence": "grep 'catalogPagesPerPull': only definitions in tag_index_source.dart and tests (booru_tag_catalog_test.dart:49, tag_index_sources_test.dart:83); BooruTagCatalog uses maxIndexPages/maxShardsPerPull"
+  },
+  {
+   "file": "lib/src/handlers/tag_index_source.dart",
+   "symbol": "TagIndexSource.orderedByCount (and overrides)",
+   "evidence": "grep 'orderedByCount': only definitions in tag_index_source.dart"
+  },
+  {
+   "file": "lib/src/handlers/tag_index_source.dart",
+   "symbol": "TagIndexSource.pageAt (all family implementations, gelbooru dapi fallback)",
+   "evidence": "grep '\\.pageAt\\(' finds no caller; only the base catalogPageAt default calls it and every family overrides catalogPageAt; a test fake overrides pageAt"
+  },
+  {
+   "file": "lib/src/handlers/pool_source.dart",
+   "symbol": "E621PoolSource, PhilomenaGallerySource",
+   "evidence": "forBooru returns null unless host is in _poolHosts {rule34.xxx, realbooru.com, xbooru.com, booru.allthefallen.moe}; no e621/philomena host there, so these switch arms are unreachable; no test references them"
+  },
+  {
+   "file": "lib/src/handlers/booru_tag_store.dart",
+   "symbol": "BooruTagStore.namespaceCounts, BooruTagStore.manualCount",
+   "evidence": "grep 'namespaceCounts(' and 'manualCount' in lib/ and test/: only their definitions (lines 243, 115)"
+  },
+  {
+   "file": "lib/src/handlers/tag_handler.dart",
+   "symbol": "tryGetTagTypes/getTagTypes path (queueListener)",
+   "evidence": "effectively unreachable: queue() never notifies untypedQueue (see bug); grep shows no other caller of tryGetTagTypes/getTagTypes"
+  },
+  {
+   "file": "lib/src/handlers/tag_handler.dart",
+   "symbol": "TagHandler.tagFetchActive",
+   "evidence": "grep 'tagFetchActive' in lib/: only tag_handler.dart lines 51,149,161,221 (internal)"
+  }
+ ],
+ "duplication": [
+  {
+   "where": "lib/src/handlers/tag_alias_resolver.dart and lib/src/utils/tag_alias_resolver.dart",
+   "what": "Two classes both named TagAliasResolver doing cross-booru tag translation with different strategies and caches (session vs TagAliasCache DB); foryou_handler imports both with a prefix",
+   "consolidation": "One sources/framework/tag_alias_resolver.dart exposing resolve(term) and resolveQuery(query), one handler cache, DB-backed cache with session layer, one ranking"
+  },
+  {
+   "where": "encoder_handler.dart, image_tagger_handler.dart, look_model_handler.dart",
+   "what": "Identical preset/status/repoOf/slugOf/dirFor/fileUrl/download-to-temp-and-rename/manifest/refresh/delete/cancel/_dioFetch/_json/_saveSetting/threadsChanged/_inFlight/_closeWhenIdle/idle-close/_fail code",
+   "consolidation": "DownloadableModel<TStatus> base (files + session lifecycle) with per-model hooks for side files and manifest fields"
+  },
+  {
+   "where": "onnx_embedding_runner.dart, onnx_tag_runner.dart, onnx_look_runner.dart",
+   "what": "Same open-once future, openOnnxSession call, provider/used bookkeeping, runGuarded CPU failover, output flattening and dispose loops",
+   "consolidation": "OnnxSessionHolder helper (open/close/failover/flatten) used by all three"
+  },
+  {
+   "where": "foryou_handler.dart, board_handler.dart, suggestion_handler.dart",
+   "what": "Virtual-feed plumbing: sourceFactory seam, sub-handler setup with storeTagsGlobally=false, _bounded timeout helper, page tail `got.sublist(got.length - limit)`, _isDuplicate, empty-streak retries, hasSizeData/hasTagSuggestions/validateTags/availableMetaTags overrides",
+   "consolidation": "VirtualFeedHandler base with a per-handler serialized `ask(source, query)` that also fixes the re-entrancy bug"
+  },
+  {
+   "where": "EncoderHandler.keyOf, LookModelHandler.keyOf, RecommenderHandler.keyOf, VideoFrames.keyOf, LookMemory.keyOf, inline in SuggestionHandler/ForYouHandler/SuggestionEngine.blend",
+   "what": "item key = postURL else fileURL",
+   "consolidation": "BooruItem.identityKey getter in models"
+  },
+  {
+   "where": "ItemFeatures.cosine, LookModelHandler.cosine, BoardQueryBuilder.dot, ItemFeatures.hash vs EncoderHandler.textKey",
+   "what": "Vector dot/cosine and FNV-1a hashing implemented several times",
+   "consolidation": "core/utils/vector_math.dart and core/utils/fnv.dart"
+  },
+  {
+   "where": "InterestsHandler.seedTagsFromItem (typeOf + rarity sort) and SuggestionEngine.typeOf/actTags; TagTypeLookup.resolve; ItemFeatures._typeOf",
+   "what": "Tag type fallback to the shared TagHandler map and the 'rarest/most specific first' comparator duplicated",
+   "consolidation": "TagTypeLookup for types and one distinctiveTags(item) helper in suggestion_engine"
+  },
+  {
+   "where": "InterestsHandler.genericTags and post_similarity.kGenericMediumTags",
+   "what": "Two overlapping generic-tag stoplists",
+   "consolidation": "One tag_vocabulary.dart with named sets"
+  },
+  {
+   "where": "PixelTags.thumbnailBytes, BoardHandler.referenceImageBytes, BoardEditPage._defaultImageFetcher",
+   "what": "Fetch image bytes with the booru's headers via Tools.getFileCustomHeaders + DioNetwork bytes",
+   "consolidation": "core/network image_bytes.dart helper (cache-first option)"
+  },
+  {
+   "where": "tag_browser_page.dart and pools_page.dart",
+   "what": "Same scroll-listener infinite paging with _loading/_isLastPage/_error/Retry layouts and background-open snackbar",
+   "consolidation": "core/ui paged list helper + one 'opened in background' snackbar function"
+  },
+  {
+   "where": "BooruTagStore.keyFor, TagIndexSource.hostOf, PoolSource.forBooru host, TagCatalogPuller.hostOf",
+   "what": "Host-without-www derivation repeated",
+   "consolidation": "Booru.hostKey getter"
+  },
+  {
+   "where": "EncoderHandler/LookModelHandler memory LRUs (_remember/_recall, cap 4000)",
+   "what": "Same LinkedHashMap LRU code",
+   "consolidation": "core/utils/lru_cache.dart"
+  }
+ ],
+ "tests": [
+  "test/booru_tag_catalog_test.dart",
+  "test/booru_tag_store_test.dart",
+  "test/tag_builder_block_test.dart",
+  "test/tag_catalog_puller_test.dart",
+  "test/tag_catalog_sources_test.dart",
+  "test/tag_index_sources_test.dart",
+  "test/tag_index_live_test.dart",
+  "test/tag_type_lookup_test.dart",
+  "test/hanime1_tag_catalog_test.dart",
+  "test/rule34video_test.dart",
+  "test/kemono_test.dart",
+  "test/furaffinity_test.dart",
+  "test/pinned_tags_page_test.dart",
+  "test/pinned_tags_hide_suggest_test.dart",
+  "test/pinned_hide_sidebar_test.dart",
+  "test/doujin_separation_test.dart",
+  "test/interests_guard_test.dart",
+  "test/recommender_ftrl_test.dart",
+  "test/recommender_features_test.dart",
+  "test/recommender_rewards_test.dart",
+  "test/recommender_handler_test.dart",
+  "test/recommendation_surfaces_test.dart",
+  "test/recommendations_page_test.dart",
+  "test/deferred_learning_test.dart",
+  "test/model_work_test.dart",
+  "test/model_tasks_test.dart",
+  "test/models_page_test.dart",
+  "test/model_pictures_test.dart",
+  "test/model_run_on_test.dart",
+  "test/npu_test.dart",
+  "test/vector_store_test.dart",
+  "test/encoder_handler_test.dart",
+  "test/encoder_live_test.dart",
+  "test/wordpiece_tokenizer_test.dart",
+  "test/image_tagger_handler_test.dart",
+  "test/image_tagger_preprocess_test.dart",
+  "test/look_model_handler_test.dart",
+  "test/clip_tokenizer_test.dart",
+  "test/look_memory_test.dart",
+  "test/pixel_tags_test.dart",
+  "test/video_frames_test.dart",
+  "test/foryou_seed_test.dart",
+  "test/foryou_seed_live_test.dart",
+  "test/suggestion_filter_test.dart",
+  "test/suggestion_query_test.dart",
+  "test/suggestion_tab_live_test.dart",
+  "test/doujin_foryou_test.dart",
+  "test/boards_page_test.dart",
+  "test/boards_store_test.dart",
+  "test/board_handler_test.dart",
+  "test/board_query_test.dart",
+  "test/reverse_image_search_test.dart",
+  "test/photo_picker_test.dart",
+  "test/picker_watch_test.dart"
+ ]
+}

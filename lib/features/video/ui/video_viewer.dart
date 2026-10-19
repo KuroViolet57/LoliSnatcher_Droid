@@ -1,0 +1,1257 @@
+import 'dart:async';
+import 'dart:io';
+import 'dart:math';
+import 'dart:ui';
+
+import 'package:flutter/gestures.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+import 'package:chewie/chewie.dart';
+import 'package:dio/dio.dart';
+import 'package:lolisnatcher/features/viewer/ui/media/image_viewer.dart';
+import 'package:photo_view/photo_view.dart';
+import 'package:video_player/video_player.dart';
+
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/models/booru_item.dart';
+import 'package:lolisnatcher/sources/framework/booru_handler_factory.dart';
+import 'package:lolisnatcher/models/settings/video_cache_mode.dart';
+import 'package:lolisnatcher/models/settings/video_engine_choice.dart';
+import 'package:lolisnatcher/features/recommender/logic/interests_handler.dart';
+import 'package:lolisnatcher/core/platform/local_auth_handler.dart';
+import 'package:lolisnatcher/core/platform/service_handler.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/features/video/logic/bridged_video_controller.dart';
+import 'package:lolisnatcher/features/video/logic/external_video_session.dart';
+import 'package:lolisnatcher/features/video/logic/video_completion_tracker.dart';
+import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
+import 'package:lolisnatcher/core/network/dio_downloader.dart';
+import 'package:lolisnatcher/core/network/dio_network.dart';
+import 'package:lolisnatcher/core/utils/tools.dart';
+import 'package:lolisnatcher/features/viewer/ui/media_loading.dart';
+import 'package:lolisnatcher/core/ui/transparent_pointer.dart';
+import 'package:lolisnatcher/features/feed/ui/thumbnail/thumbnail.dart';
+import 'package:lolisnatcher/features/video/ui/loli_controls.dart';
+import 'package:lolisnatcher/features/video/logic/media_kit_video_player.dart';
+import 'package:lolisnatcher/features/viewer/logic/viewer_media_page.dart';
+
+// TODO remove setState use
+
+class VideoViewer extends StatefulWidget {
+  const VideoViewer(
+    this.booruItem, {
+    required this.booru,
+    required this.isViewed,
+    this.enableFullscreen = true,
+    super.key,
+  });
+
+  final BooruItem booruItem;
+  final Booru booru;
+  final bool isViewed;
+  final bool enableFullscreen;
+
+  @override
+  State<VideoViewer> createState() => VideoViewerState();
+}
+
+class VideoViewerState extends State<VideoViewer> implements ViewerMediaPage, ViewerVideoPage {
+  final SettingsHandler settingsHandler = SettingsHandler.instance;
+  final ViewerHandler viewerHandler = ViewerHandler.instance;
+  final LocalAuthHandler localAuthHandler = LocalAuthHandler.instance;
+
+  final PhotoViewScaleStateController scaleController = PhotoViewScaleStateController();
+  @override
+  final PhotoViewController viewController = PhotoViewController();
+  final ValueNotifier<VideoPlayerController?> videoController = ValueNotifier(null);
+  final ValueNotifier<ChewieController?> chewieController = ValueNotifier(null);
+
+  final ValueNotifier<int> total = ValueNotifier(0), received = ValueNotifier(0), startedAt = ValueNotifier(0);
+  int lastViewedIndex = -1;
+  PreloadBlockState blockPreloadState = .initial;
+  final ValueNotifier<bool> isFromCache = ValueNotifier(false);
+  @override
+  final ValueNotifier<bool> isStopped = ValueNotifier(false);
+  final ValueNotifier<bool> isViewed = ValueNotifier(false);
+  @override
+  final ValueNotifier<bool> isZoomed = ValueNotifier(false);
+  final ValueNotifier<bool> showControls = ValueNotifier(true);
+  final ValueNotifier<bool> forceCache = ValueNotifier(false);
+  final ValueNotifier<ViewerStopReason?> stopReason = ValueNotifier(null);
+  final ValueNotifier<String?> stopDetails = ValueNotifier(null);
+  Timer? bufferingTimer, pauseCheckTimer;
+
+  CancelToken? cancelToken, sizeCancelToken;
+  CancelToken? loadItemCancelToken;
+  DioDownloader? client, sizeClient;
+  File? video;
+  StreamSubscription? viewStateSubscription, scaleStateSubscription;
+
+  bool useMpvFallbackBackend = false;
+  bool attemptedMpvFallback = false;
+  Timer? mpvWatchdogTimer;
+
+  // Media3 and mpvlib draw into this texture. The Chewie widget stays unmounted
+  // so video_player does not allocate a second picture.
+  int _playerGeneration = 0;
+  bool _externalSurface = false;
+  int? _externalTextureId;
+  bool _externalFullscreenOpen = false;
+  Route<void>? _externalFullscreenRoute;
+
+  // Cached per-item HTTP headers. Computing this involves an awaited cookie
+  // lookup, so we want exactly one call per video open, not three.
+  Map<String, String>? _cachedCustomHeaders;
+  // Futures from the previous player's dispose calls — the next initPlayer
+  // awaits them so we never have two decoders fighting for the GPU.
+  final List<Future<void>> _pendingDispose = [];
+  // The fileURL the live controller was created for — the key for the
+  // nested-viewer position hand-off (widget.booruItem may already point at a
+  // different item by the time disposables() runs).
+  String? _positionKeyUrl;
+
+  Future<Map<String, String>> _customHeaders() async {
+    return _cachedCustomHeaders ??= await Tools.getFileCustomHeaders(
+      widget.booru,
+      item: widget.booruItem,
+      checkForReferer: true,
+    );
+  }
+
+  bool get isVideoInited => videoController.value?.value.isInitialized ?? false;
+
+  @override
+  bool get isMediaLoaded => isVideoInited;
+
+  @override
+  bool get isMediaFullScreen => chewieController.value?.isFullScreen ?? false;
+
+  @override
+  ValueNotifier<bool> get extraUi => showControls;
+
+  @override
+  void setVolume(double volume) {
+    videoController.value?.setVolume(volume);
+  }
+
+  @override
+  void pause() {
+    videoController.value?.pause();
+  }
+
+  Future<void> downloadVideo() async {
+    isStopped.value = false;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      viewerHandler.setStopped(widget.key, false);
+    });
+    startedAt.value = DateTime.now().millisecondsSinceEpoch;
+
+    unawaited(getSize());
+
+    // HLS streams (.m3u8) are playlists, not a single file — caching them to
+    // disk would save the manifest text, not the video, and playback from the
+    // saved file fails. Always stream HLS straight from the network.
+    final bool isHlsStream = widget.booruItem.fileURL.contains('.m3u8');
+
+    if (isHlsStream || !settingsHandler.mediaCache) {
+      // Media caching disabled (or impossible for HLS) - don't cache videos
+      unawaited(initPlayer());
+      return;
+    }
+
+    final usedVideoCacheMode = forceCache.value ? VideoCacheMode.cache : settingsHandler.videoCacheMode;
+
+    switch (usedVideoCacheMode) {
+      case .cache:
+        // Cache to device from custom request
+        break;
+
+      // Load and stream from default player network request, cache to device from custom request
+      // TODO: change video handler to allow viewing and caching from single network request
+      case .streamCache:
+        unawaited(initPlayer());
+        break;
+
+      // Only stream, notice the return
+      case .stream:
+        unawaited(initPlayer());
+        return;
+    }
+
+    cancelToken?.cancel();
+    cancelToken = CancelToken();
+    client = DioDownloader(
+      widget.booruItem.fileURL,
+      headers: await _customHeaders(),
+      cancelToken: cancelToken,
+      onProgress: onBytesAdded,
+      onEvent: onEvent,
+      onError: onError,
+      onDoneFile: (File file) async {
+        video = file;
+        // save video from cache, but restate only if player is not initialized yet
+        if (!isVideoInited) {
+          unawaited(initPlayer());
+          updateState();
+        }
+      },
+      cacheEnabled: settingsHandler.mediaCache,
+      cacheFolder: 'media',
+      fileNameExtras: widget.booruItem.fileNameExtras,
+    );
+    unawaited(client!.runRequest());
+    return;
+  }
+
+  Future<void> getSize() async {
+    sizeCancelToken?.cancel();
+    sizeCancelToken = CancelToken();
+    sizeClient = DioDownloader(
+      widget.booruItem.fileURL,
+      headers: await _customHeaders(),
+      cancelToken: sizeCancelToken,
+      onEvent: onEvent,
+      fileNameExtras: widget.booruItem.fileNameExtras,
+    );
+    unawaited(sizeClient!.runRequestSize());
+    return;
+  }
+
+  void onSize(int size) {
+    total.value = size;
+    // TODO find a way to stop loading based on size when caching is enabled
+
+    final int? maxSize = settingsHandler.preloadSizeLimit == 0
+        ? null
+        : (1024 * 1024 * settingsHandler.preloadSizeLimit * 1000).round();
+    // print('onSize: $size $maxSize ${size > maxSize}');
+    if (size == 0) {
+      stopLoading(
+        reason: ViewerStopReason.error,
+        title: context.loc.media.loading.fileIsZeroBytes,
+      );
+    } else if (maxSize != null && (size > maxSize) && !blockPreloadState.isIgnore) {
+      // TODO add check if resolution is too big
+      blockPreloadState = .tooBig;
+      stopLoading(
+        reason: ViewerStopReason.tooBig,
+        details:
+            '${context.loc.media.loading.fileSize(size: Tools.formatBytes(size, 2))}\n'
+            '${context.loc.media.loading.sizeLimit(limit: Tools.formatBytes(maxSize, 2, withTrailingZeroes: false))}',
+      );
+    }
+
+    if (size > 0) {
+      widget.booruItem.fileSize = size;
+    }
+  }
+
+  void onBytesAdded(int receivedNew, int totalNew) {
+    received.value = receivedNew;
+    total.value = totalNew;
+    onSize(totalNew);
+  }
+
+  void onEvent(String event, dynamic data) {
+    switch (event) {
+      case 'loaded':
+        //
+        break;
+      case 'size':
+        onSize(data as int);
+        break;
+      case 'isFromCache':
+        isFromCache.value = true;
+        break;
+      case 'isFromNetwork':
+        isFromCache.value = false;
+        break;
+      default:
+        break;
+    }
+    updateState();
+  }
+
+  void onError(Exception error) {
+    //// Error handling
+    if (error is DioException && CancelToken.isCancel(error)) {
+      // print('Canceled by user: $imageURL | $error');
+    } else {
+      BooruHandlerFactory.onMediaErrorFor(widget.booru, widget.booruItem.fileURL, error);
+      if (error is DioException) {
+        stopLoading(
+          reason: ViewerStopReason.error,
+          title: error.type.name,
+          details: (error.response?.statusCode != null)
+              ? '${error.response?.statusCode} - ${error.response?.statusMessage ?? DioNetwork.badResponseExceptionMessage(error.response?.statusCode)}'
+              : null,
+        );
+      } else {
+        stopLoading(
+          reason: ViewerStopReason.error,
+          details: settingsHandler.videoBackendMode.isNormal
+              ? '\n${context.loc.media.loading.tryChangingVideoBackend}'
+              : null,
+        );
+      }
+      // print('Dio request cancelled: $error');
+    }
+  }
+
+  // Only download/decode when this page is actually visible, unless the user
+  // has explicitly opted into eager neighbour preloading. mpvlib is one player
+  // for the whole process, so a neighbour must not open it.
+  bool get _shouldLoadNow {
+    if (Platform.isAndroid &&
+        videoEngineChoiceFromString(settingsHandler.videoEngineChoice).isMpvlib &&
+        !widget.isViewed) {
+      return false;
+    }
+    return widget.isViewed || settingsHandler.preloadVideos;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+
+    isViewed.value = widget.isViewed;
+
+    viewerHandler.addViewed(widget.key);
+
+    viewStateSubscription = viewController.outputStateStream.listen(onViewStateChanged);
+    scaleStateSubscription = scaleController.outputScaleStateStream.listen(onScaleStateChanged);
+
+    if (_shouldLoadNow) {
+      initVideo(false);
+    }
+  }
+
+  @override
+  void didUpdateWidget(VideoViewer oldWidget) {
+    // force redraw on item data change
+    if (oldWidget.booruItem != widget.booruItem) {
+      _cachedCustomHeaders = null;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        resetBackendFallback();
+        stopLoading(reason: ViewerStopReason.reset);
+        if (_shouldLoadNow) {
+          initVideo(false);
+        }
+        updateState();
+      });
+    }
+
+    if (oldWidget.isViewed != widget.isViewed) {
+      videoController.value?.seekTo(Duration.zero);
+      isViewed.value = widget.isViewed;
+      // Sought to the start on every flip: the next low position is a
+      // restart, not a loop having wrapped.
+      _completion.markResumed();
+
+      if (isViewed.value) {
+        // Deferred-load case: this page just became visible without ever
+        // having started its download. Kick it off now.
+        if (videoController.value == null && client == null && !isStopped.value) {
+          initVideo(false);
+        }
+        if (settingsHandler.autoPlayEnabled &&
+            !(settingsHandler.respectManualPause && viewerHandler.isManuallyPaused(widget.booruItem.fileURL))) {
+          videoController.value?.play();
+        }
+        if (viewerHandler.videoAutoMute) {
+          videoController.value?.setVolume(0);
+        }
+      } else {
+        videoController.value?.pause();
+        resetZoom();
+        // The next page's open replaces this process-wide player. Drop it
+        // now so coming back opens the right file again.
+        if (Platform.isAndroid && videoEngineChoiceFromString(settingsHandler.videoEngineChoice).isMpvlib) {
+          disposables();
+          updateState();
+        }
+      }
+    }
+
+    super.didUpdateWidget(oldWidget);
+  }
+
+  void updateState() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  Future<void> initVideo(bool ignoreTagsCheck) async {
+    if (widget.booruItem.isHidden && !ignoreTagsCheck) {
+      final tagsData = settingsHandler.parseTagsListForItem(widget.booruItem, isCapped: true);
+      stopLoading(
+        reason: ViewerStopReason.hidden,
+        details: tagsData.hiddenTags.join('\n'),
+      );
+    } else {
+      final String? outage = BooruHandlerFactory.mediaOutageNoticeFor(widget.booru, widget.booruItem.fileURL);
+      if (outage != null) {
+        stopLoading(reason: ViewerStopReason.videoError, title: 'File host unreachable', details: outage);
+        return;
+      }
+      await downloadVideo();
+    }
+  }
+
+  void stopLoading({
+    required ViewerStopReason reason,
+    String? title,
+    String? details,
+  }) {
+    disposables();
+
+    bufferingTimer?.cancel();
+    pauseCheckTimer?.cancel();
+
+    total.value = 0;
+    received.value = 0;
+    startedAt.value = 0;
+
+    isFromCache.value = false;
+    isStopped.value = true;
+    stopReason.value = reason;
+    stopDetails.value = '${title != null ? '$title\n' : ''}${details ?? ''}';
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      viewerHandler.setStopped(widget.key, true);
+      viewerHandler.setLoaded(widget.key, false);
+    });
+
+    resetZoom();
+
+    video = null;
+
+    updateState();
+  }
+
+  @override
+  void dispose() {
+    disposables();
+
+    viewStateSubscription?.cancel();
+    scaleStateSubscription?.cancel();
+
+    scaleController.dispose();
+    viewController.dispose();
+
+    bufferingTimer?.cancel();
+    pauseCheckTimer?.cancel();
+
+    viewerHandler.removeViewed(widget.key);
+
+    super.dispose();
+  }
+
+  void disposeClient() {
+    client?.dispose();
+    client = null;
+    sizeClient?.dispose();
+    sizeClient = null;
+  }
+
+  void disposables() {
+    _playerGeneration++;
+    mpvWatchdogTimer?.cancel();
+    mpvWatchdogTimer = null;
+    _externalSurface = false;
+    _externalTextureId = null;
+    final bool popFullscreen = _externalFullscreenOpen;
+    final Route<void>? fullscreenRoute = _externalFullscreenRoute;
+    _externalFullscreenOpen = false;
+    _externalFullscreenRoute = null;
+
+    final vc = videoController.value;
+    final cc = chewieController.value;
+    cc?.removeListener(_onExternalChewieChanged);
+    // Tearing down while still the viewed page = we're being unmounted under
+    // the user (nested viewer cover / backend restart), not swiped away —
+    // park the position so the next init resumes instead of starting over.
+    // Keyed on the URL the controller was actually created for, not the
+    // (possibly already swapped) current widget item.
+    if (vc != null && widget.isViewed && vc.value.isInitialized) {
+      viewerHandler.saveVideoPosition(_positionKeyUrl, vc.value.position);
+    }
+    _positionKeyUrl = null;
+    vc?.setVolume(0);
+    vc?.pause();
+    vc?.removeListener(updateVideoState);
+    if (vc != null) {
+      _pendingDispose.add(vc.dispose().catchError((_) {}));
+    }
+    if (cc != null) {
+      // ChewieController.dispose is synchronous (void). Capture as a no-op
+      // future so the await chain in initPlayer still works uniformly.
+      cc.dispose();
+    }
+    videoController.value = null;
+    chewieController.value = null;
+
+    if (!(cancelToken?.isCancelled ?? true)) {
+      cancelToken?.cancel();
+    }
+    cancelToken = null;
+
+    if (!(sizeCancelToken?.isCancelled ?? true)) {
+      sizeCancelToken?.cancel();
+    }
+    sizeCancelToken = null;
+
+    if (!(loadItemCancelToken?.isCancelled ?? true)) {
+      loadItemCancelToken?.cancel();
+    }
+    loadItemCancelToken = null;
+
+    disposeClient();
+
+    if (popFullscreen && fullscreenRoute != null && fullscreenRoute.isActive && mounted) {
+      Navigator.of(context, rootNavigator: true).removeRoute(fullscreenRoute);
+    }
+  }
+
+  void resetBackendFallback() {
+    useMpvFallbackBackend = false;
+    attemptedMpvFallback = false;
+  }
+
+  bool get canFallbackToMpvBackend {
+    return !_externalSurface && Platform.isAndroid && settingsHandler.videoBackendMode.isNormal && !attemptedMpvFallback;
+  }
+
+  bool tryFallbackToMpvBackend(String? errorDescription) {
+    if (_externalSurface) return false;
+    if (!canFallbackToMpvBackend) return false;
+
+    attemptedMpvFallback = true;
+    useMpvFallbackBackend = true;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+
+      stopLoading(reason: ViewerStopReason.reset);
+      await initVideo(false);
+      updateState();
+    });
+
+    return true;
+  }
+
+  void registerVideoBackendForCurrentAttempt() {
+    if (!Platform.isAndroid || !settingsHandler.videoBackendMode.isNormal) return;
+
+    if (useMpvFallbackBackend) {
+      MediaKitVideoPlayer.registerWith(androidCodecFallback: true);
+    } else {
+      MediaKitVideoPlayer.registerNative();
+    }
+  }
+
+  // debug functions
+  void onScaleStateChanged(PhotoViewScaleState scaleState) {
+    // print(scaleState);
+
+    final bool prevIsZoomed = isZoomed.value;
+
+    isZoomed.value =
+        scaleState == PhotoViewScaleState.zoomedIn ||
+        scaleState == PhotoViewScaleState.covering ||
+        scaleState == PhotoViewScaleState.originalSize;
+    viewerHandler.setZoomed(widget.key, isZoomed.value);
+    if (prevIsZoomed != isZoomed.value) {
+      updateState();
+    }
+  }
+
+  void onViewStateChanged(PhotoViewControllerValue viewState) {
+    // print(viewState);
+    viewerHandler.setViewValue(widget.key, viewState);
+  }
+
+  @override
+  void resetZoom() {
+    if (!isVideoInited) return;
+    scaleController.scaleState = PhotoViewScaleState.initial;
+    viewerHandler.setZoomed(widget.key, false);
+  }
+
+  void scrollZoomImage(double value) {
+    final double upperLimit = min(8, (viewController.scale ?? 1) + (value / 200));
+    // zoom on which image fits to container can be less than limit
+    // therefore don't clump the value to lower limit if we are zooming in to avoid unnecessary zoom jumps
+    final double lowerLimit = value > 0 ? upperLimit : max(0.75, upperLimit);
+
+    // print('ll $lowerLimit $value');
+    // if zooming out and zoom is smaller than limit - reset to container size
+    // TODO minimal scale to fit can be different from limit
+    if (lowerLimit == 0.75 && value < 0) {
+      scaleController.scaleState = PhotoViewScaleState.initial;
+    } else {
+      viewController.scale = lowerLimit;
+    }
+  }
+
+  @override
+  void doubleTapZoom() {
+    if (!isVideoInited) return;
+    // viewController.scale = 2;
+    // viewController.updateMultiple(scale: 2);
+    scaleController.scaleState = PhotoViewScaleState.covering;
+  }
+
+  /// r34: a video watched through is a signal, once per item.
+  final VideoCompletionTracker _completion = VideoCompletionTracker();
+
+  void updateVideoState() {
+    // print(videoController?.value);
+
+    if (chewieController.value == null) return;
+
+    final vp = videoController.value?.value;
+    if (vp != null &&
+        isViewed.value &&
+        vp.isInitialized &&
+        _completion.update(key: widget.booruItem.fileURL, position: vp.position, duration: vp.duration)) {
+      InterestsHandler.instance.onVideoCompleted(widget.booruItem);
+    }
+
+    if (isVideoInited) {
+      bufferingTimer?.cancel();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        viewerHandler.setLoaded(widget.key, true);
+      });
+    }
+
+    if (isViewed.value) {
+      if (chewieController.value!.isFullScreen || !settingsHandler.useVolumeButtonsForScroll) {
+        ServiceHandler.setVolumeButtons(true); // in full screen or volumebuttons scroll setting is disabled
+      } else {
+        ServiceHandler.setVolumeButtons(viewerHandler.displayAppbar.value); // same as app bar value
+      }
+    } else {
+      if (videoController.value?.value.isPlaying == true) {
+        videoController.value?.pause();
+      }
+    }
+
+    if (!isStopped.value && videoController.value?.value.hasError == true) {
+      final errorDescription = videoController.value?.value.errorDescription;
+      if (tryFallbackToMpvBackend(errorDescription)) return;
+
+      stopLoading(
+        reason: ViewerStopReason.videoError,
+        details: errorDescription,
+      );
+    }
+  }
+
+  Future<void> initPlayer() async {
+    // ignore if player is already inited (i.e. stream+cache mode)
+    if (isVideoInited) return;
+
+    // Drain any previous player's dispose calls before allocating a new
+    // decoder, otherwise on Android we end up with two MediaPlayer instances
+    // briefly contending for the GPU.
+    if (_pendingDispose.isNotEmpty) {
+      final toAwait = List<Future<void>>.from(_pendingDispose);
+      _pendingDispose.clear();
+      await Future.wait(toAwait);
+      // Swiped away while the old player was being torn down.
+      if (!mounted) return;
+    }
+
+    final VideoEngineChoice engineChoice = videoEngineChoiceFromString(settingsHandler.videoEngineChoice);
+    if (Platform.isAndroid && (engineChoice == VideoEngineChoice.media3 || engineChoice.isMpvlib)) {
+      await _initExternalPlayer(engineChoice);
+      return;
+    }
+
+    registerVideoBackendForCurrentAttempt();
+
+    // Remember which item this controller belongs to for the position
+    // hand-off in disposables().
+    _positionKeyUrl = widget.booruItem.fileURL;
+
+    if (video != null) {
+      // Start from cache if was already cached or only caching is allowed
+      videoController.value = VideoPlayerController.file(
+        video!,
+        videoPlayerOptions: Platform.isAndroid ? VideoPlayerOptions(mixWithOthers: true) : null,
+      );
+    } else {
+      // Otherwise load from network
+      videoController.value = VideoPlayerController.networkUrl(
+        Uri.parse(widget.booruItem.fileURL),
+        videoPlayerOptions: Platform.isAndroid ? VideoPlayerOptions(mixWithOthers: true) : null,
+        httpHeaders: await _customHeaders(),
+      );
+    }
+    // Swiped away while the headers were read: nothing would ever dispose
+    // this controller, and the context below is gone.
+    if (!mounted) {
+      final VideoPlayerController? orphan = videoController.value;
+      videoController.value = null;
+      unawaited(orphan?.dispose());
+      return;
+    }
+    // mixWithOthers: true, allows to not interrupt audio sources from other apps
+    videoController.value!.addListener(updateVideoState);
+
+    _mountChewieController();
+
+    if (settingsHandler.startVideosMuted || viewerHandler.videoAutoMute) {
+      await videoController.value?.setVolume(0);
+    }
+
+    if (!forceCache.value) {
+      bufferingTimer?.cancel();
+      bufferingTimer = Timer(
+        const Duration(seconds: 10),
+        () {
+          // force restart with cache mode, but only if file size isn't loaded yet or it's small enough (<25mb) (big videos may take a while to buffer)
+          const int maxForceCacheSize = 1024 * 1024 * 25;
+          if (!isVideoInited && (total.value == 0 || total.value < maxForceCacheSize)) {
+            forceCache.value = true;
+            WidgetsBinding.instance.addPostFrameCallback((_) async {
+              stopLoading(reason: ViewerStopReason.reset);
+              await initVideo(false);
+              updateState();
+            });
+          }
+        },
+      );
+    }
+
+    // Proactive ExoPlayer→MPV watchdog: if initialize() hasn't completed in
+    // a few seconds, trigger the fallback ourselves rather than waiting for
+    // an explicit error. The reactive errorBuilder path is preserved below as
+    // belt-and-suspenders for failures that surface late.
+    mpvWatchdogTimer?.cancel();
+    if (canFallbackToMpvBackend) {
+      mpvWatchdogTimer = Timer(const Duration(seconds: 3), () {
+        if (!mounted || isVideoInited) return;
+        tryFallbackToMpvBackend('watchdog: initialize timed out');
+      });
+    }
+
+    try {
+      await Future.wait([videoController.value!.initialize()]);
+    } catch (error) {
+      mpvWatchdogTimer?.cancel();
+      if (tryFallbackToMpvBackend(error.toString())) return;
+      rethrow;
+    }
+    mpvWatchdogTimer?.cancel();
+
+    // Position parked by a previous incarnation of this video (nested-viewer
+    // cover, backend fallback restart) — pick up where it left off.
+    final Duration? savedPosition = viewerHandler.takeVideoPosition(widget.booruItem.fileURL);
+    if (savedPosition != null) {
+      await videoController.value!.seekTo(savedPosition);
+    }
+
+    if (settingsHandler.autoPlayEnabled &&
+        !(settingsHandler.respectManualPause && viewerHandler.isManuallyPaused(widget.booruItem.fileURL))) {
+      await videoController.value!.play();
+    }
+
+    forceCache.value = false;
+
+    // Ensure the first frame is shown after the video is initialized, even before the play button has been pressed.
+    updateState();
+  }
+
+  @override
+  void forceLoad() {
+    if (isStopped.value) {
+      onManualRestart();
+    }
+  }
+
+  Future<void> pauseOnAppLock() async {
+    pauseCheckTimer?.cancel();
+    await videoController.value?.pause();
+    if (videoController.value?.value.isPlaying == false) {
+      return;
+    }
+    pauseCheckTimer = Timer.periodic(const Duration(milliseconds: 500), (_) async {
+      if (videoController.value?.value.isPlaying == true) {
+        await videoController.value?.pause();
+        if (videoController.value?.value.isPlaying == false) {
+          pauseCheckTimer?.cancel();
+        }
+      }
+    });
+  }
+
+  AnimatedWidget fullscreenRoutePageBuilder(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    ChewieControllerProvider controllerProvider,
+  ) {
+    resetZoom();
+
+    return AnimatedBuilder(
+      animation: animation,
+      builder: (context, child) => child!,
+      child: Scaffold(
+        resizeToAvoidBottomInset: false,
+        body: Container(
+          alignment: Alignment.center,
+          color: Colors.black,
+          child: Stack(
+            children: [
+              ImageFiltered(
+                enabled: settingsHandler.blurImages.value,
+                imageFilter: ImageFilter.blur(
+                  sigmaX: 40,
+                  sigmaY: 40,
+                  tileMode: TileMode.decal,
+                ),
+                child: controllerProvider,
+              ),
+              ChewieControllerProvider(
+                controller: chewieController.value!,
+                child: const TransparentPointer(
+                  child: SafeArea(
+                    top: false,
+                    child: LoliControls(),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> onManualRestart() async {
+    resetBackendFallback();
+
+    await BooruHandlerFactory.beforeMediaRetryFor(widget.booru, widget.booruItem.fileURL);
+    if (blockPreloadState.isTooBig) {
+      blockPreloadState = .ignore;
+    }
+    isStopped.value = false;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      viewerHandler.setStopped(widget.key, false);
+    });
+    startedAt.value = DateTime.now().millisecondsSinceEpoch;
+    updateState();
+    final bool shouldUpdate = switch (stopReason.value) {
+      ViewerStopReason.error => true,
+      ViewerStopReason.videoError => true,
+      _ => false,
+    };
+    if (shouldUpdate) {
+      final bool? updateRes = await tryToLoadAndUpdateItem(
+        widget.booruItem,
+        loadItemCancelToken,
+      );
+      forceCache.value = false;
+      updateState();
+
+      if (updateRes != true && widget.booru.baseURL?.isNotEmpty == true) {
+        await DioNetwork.get(
+          widget.booru.baseURL ?? '',
+          headers: await Tools.getFileCustomHeaders(
+            widget.booru,
+            item: widget.booruItem,
+            checkForReferer: true,
+          ),
+          customInterceptor: (dio) => DioNetwork.captchaInterceptor(
+            dio,
+            customUserAgent: Tools.appUserAgent,
+          ),
+        );
+      }
+    }
+
+    await initVideo(true);
+    updateState();
+  }
+
+  void onManualStop({List<String>? reason}) {
+    stopLoading(reason: ViewerStopReason.user);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final double reportedAspect = videoController.value?.value.aspectRatio ?? (16 / 9);
+    final double aspectRatio = reportedAspect.isFinite && reportedAspect > 0 ? reportedAspect : 16 / 9;
+    final screenSize = MediaQuery.sizeOf(context);
+    final double screenRatio = screenSize.width / screenSize.height;
+    final Size childSize = Size(
+      aspectRatio > screenRatio ? screenSize.width : screenSize.height * aspectRatio,
+      aspectRatio < screenRatio ? screenSize.height : screenSize.width / aspectRatio,
+    );
+
+    return Material(
+      color: Colors.transparent,
+      child: Stack(
+        alignment: Alignment.center,
+        fit: StackFit.expand,
+        children: [
+          AnimatedOpacity(
+            duration: const Duration(milliseconds: 300),
+            opacity: isVideoInited ? 0 : 1,
+            child: ValueListenableBuilder(
+              valueListenable: isViewed,
+              builder: (context, isViewed, child) {
+                return Hero(
+                  tag: 'imageHero${isViewed ? '' : '-ignore-'}${widget.booruItem.hashCode}',
+                  child: child!,
+                );
+              },
+              child: Thumbnail(
+                item: widget.booruItem,
+                booru: widget.booru,
+                isStandalone: false,
+                useHero: false,
+              ),
+            ),
+          ),
+          //
+          ValueListenableBuilder(
+            valueListenable: showControls,
+            builder: (context, showControlsVal, child) {
+              return AnimatedSwitcher(
+                duration: const Duration(milliseconds: 200),
+                child: (isVideoInited || !showControlsVal) ? const SizedBox.shrink() : child,
+              );
+            },
+            child: ListenableBuilder(
+              listenable: Listenable.merge([
+                isViewed,
+                isStopped,
+                isFromCache,
+                stopReason,
+                stopDetails,
+              ]),
+              builder: (context, _) {
+                return MediaLoading(
+                  item: widget.booruItem,
+                  hasProgress:
+                      settingsHandler.mediaCache && (forceCache.value || !settingsHandler.videoCacheMode.isStream),
+                  isFromCache: isFromCache.value,
+                  isDone: isVideoInited,
+                  isTooBig: blockPreloadState.isTooBig,
+                  isStopped: isStopped.value,
+                  stopReason: stopReason.value,
+                  stopDetails: stopDetails.value,
+                  isViewed: isViewed.value,
+                  total: total,
+                  received: received,
+                  startedAt: startedAt,
+                  onRestart: onManualRestart,
+                  onStop: onManualStop,
+                );
+              },
+            ),
+          ),
+          //
+          Positioned.fill(
+            child: AnimatedSwitcher(
+              duration: Duration(milliseconds: settingsHandler.appMode.value.isDesktop ? 50 : 200),
+              child: isVideoInited
+                  ? Listener(
+                      onPointerSignal: (pointerSignal) {
+                        if (SettingsHandler.isDesktopPlatform && pointerSignal is PointerScrollEvent) {
+                          scrollZoomImage(pointerSignal.scrollDelta.dy);
+                        }
+                      },
+                      child: Stack(
+                        children: [
+                          ImageFiltered(
+                            enabled: settingsHandler.blurImages.value,
+                            imageFilter: ImageFilter.blur(
+                              sigmaX: 40,
+                              sigmaY: 40,
+                              tileMode: TileMode.decal,
+                            ),
+                            child: PhotoView.customChild(
+                              childSize: childSize,
+                              customSize: MediaQuery.sizeOf(context),
+                              backgroundDecoration: const BoxDecoration(
+                                color: Colors.transparent,
+                              ),
+                              minScale: PhotoViewComputedScale.contained,
+                              maxScale: PhotoViewComputedScale.covered * 8,
+                              initialScale: PhotoViewComputedScale.contained,
+                              basePosition: Alignment.center,
+                              controller: viewController,
+                              scaleStateController: scaleController,
+                              enableRotation: settingsHandler.allowRotation,
+                              child: ValueListenableBuilder(
+                                valueListenable: localAuthHandler.isAuthenticated,
+                                builder: (context, isAuthenticated, child) {
+                                  if (isAuthenticated != false) {
+                                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                                      pauseCheckTimer?.cancel();
+                                    });
+
+                                    return child!;
+                                  } else {
+                                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                                      pauseOnAppLock();
+                                    });
+
+                                    return const Center(child: CircularProgressIndicator());
+                                  }
+                                },
+                                child: _externalSurface
+                                    ? (_externalFullscreenOpen || _externalTextureId == null
+                                          ? const SizedBox.expand()
+                                          : SizedBox(
+                                              width: childSize.width,
+                                              height: childSize.height,
+                                              child: Texture(textureId: _externalTextureId!),
+                                            ))
+                                    : Chewie(controller: chewieController.value!),
+                              ),
+                            ),
+                          ),
+                          ChewieControllerProvider(
+                            controller: chewieController.value!,
+                            child: TransparentPointer(
+                              child: SafeArea(
+                                top: false,
+                                child: ListenableBuilder(
+                                  listenable: Listenable.merge([
+                                    isViewed,
+                                    localAuthHandler.isAuthenticated,
+                                    showControls,
+                                    viewerHandler.isFullscreen,
+                                  ]),
+                                  builder: (context, child) {
+                                    final bool shouldShow =
+                                        isViewed.value &&
+                                        localAuthHandler.isAuthenticated.value != false &&
+                                        showControls.value &&
+                                        !viewerHandler.isFullscreen.value;
+
+                                    return AnimatedSwitcher(
+                                      duration: const Duration(milliseconds: 200),
+                                      child: shouldShow ? child : const SizedBox.shrink(),
+                                    );
+                                  },
+                                  child: ValueListenableBuilder(
+                                    valueListenable: isZoomed,
+                                    builder: (context, isZoomedVal, _) {
+                                      return LoliControls(
+                                        useLongTapFastForward: !isZoomedVal,
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : const SizedBox.shrink(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Same Chewie wrapper the default player uses, so LoliControls keeps its
+  /// speeds, colours, and fullscreen flag. Media3 and mpvlib do not mount the
+  /// Chewie picture widget.
+  void _mountChewieController() {
+    final Color accentColor = Theme.of(context).colorScheme.secondary;
+    final Color darkenedAceentColor = Color.lerp(accentColor, Colors.black, 0.5)!;
+    chewieController.value = ChewieController(
+      videoPlayerController: videoController.value!,
+      autoPlay: false,
+      allowedScreenSleep: false,
+      looping: true,
+      allowFullScreen: widget.enableFullscreen,
+      showControls: false,
+      showControlsOnInitialize: viewerHandler.displayAppbar.value,
+      progressIndicatorDelay: const Duration(milliseconds: 100),
+      customControls: null,
+      playbackSpeeds: const [
+        0.1,
+        0.25,
+        0.5,
+        0.75,
+        1,
+        1.25,
+        1.5,
+        1.75,
+        2,
+        3,
+        4,
+        6,
+        8,
+        12,
+        16,
+        32,
+      ],
+      materialProgressColors: ChewieProgressColors(
+        playedColor: accentColor,
+        handleColor: darkenedAceentColor,
+        bufferedColor: Colors.white.withValues(alpha: 0.66),
+        backgroundColor: Theme.of(context).disabledColor.withValues(alpha: 0.5),
+      ),
+      systemOverlaysOnEnterFullScreen: [],
+      systemOverlaysAfterFullScreen: SystemUiOverlay.values,
+      errorBuilder: (context, errorMessage) {
+        if (!tryFallbackToMpvBackend(errorMessage)) {
+          onError(Exception(errorMessage));
+        }
+        return Center(
+          child: Text(errorMessage, style: const TextStyle(color: Colors.white)),
+        );
+      },
+      routePageBuilder: fullscreenRoutePageBuilder,
+    );
+  }
+
+  Future<void> _initExternalPlayer(VideoEngineChoice choice) async {
+    final int generation = _playerGeneration;
+    _externalSurface = true;
+    debugPrint('video-engine: viewer ${choice.name}');
+    if (choice.isMpvlib) {
+      final String loaded = await loadedMpvlibVariant();
+      if (!mounted || generation != _playerGeneration) return;
+      final String wanted = mpvlibVariantFileText(choice);
+      if (loaded != wanted) {
+        debugPrint('video-engine: loaded $loaded wanted $wanted');
+        stopLoading(
+          reason: ViewerStopReason.videoError,
+          title: 'Restart the app to switch the mpvlib build',
+          details: 'This process loaded "$loaded". The setting asks for "$wanted".',
+        );
+        return;
+      }
+    }
+    if (!mounted || generation != _playerGeneration) return;
+
+    _positionKeyUrl = widget.booruItem.fileURL;
+    final String url = video != null ? video!.uri.toString() : widget.booruItem.fileURL;
+    try {
+      final ExternalVideoHandle handle = await openExternalVideo(
+        choice: choice,
+        url: url,
+        headers: await _customHeaders(),
+      );
+      if (!mounted || generation != _playerGeneration) {
+        await handle.controller.dispose();
+        return;
+      }
+      final BridgedVideoController bridged = handle.controller;
+      _externalTextureId = handle.textureId;
+      videoController.value = bridged;
+      bridged.addListener(updateVideoState);
+      _mountChewieController();
+      chewieController.value?.addListener(_onExternalChewieChanged);
+
+      if (settingsHandler.startVideosMuted || viewerHandler.videoAutoMute) {
+        await bridged.setVolume(0);
+      }
+      final Duration? savedPosition = viewerHandler.takeVideoPosition(widget.booruItem.fileURL);
+      if (savedPosition != null) {
+        await bridged.seekTo(savedPosition);
+      }
+      if (settingsHandler.autoPlayEnabled &&
+          !(settingsHandler.respectManualPause && viewerHandler.isManuallyPaused(widget.booruItem.fileURL))) {
+        await bridged.play();
+      }
+      forceCache.value = false;
+      updateState();
+    } catch (error, stack) {
+      debugPrint('video-engine: viewer open failed $error\n$stack');
+      if (!mounted || generation != _playerGeneration) return;
+      stopLoading(
+        reason: ViewerStopReason.videoError,
+        details: error.toString(),
+      );
+    }
+  }
+
+  void _onExternalChewieChanged() {
+    final ChewieController? chewie = chewieController.value;
+    if (chewie == null || !_externalSurface) return;
+    if (chewie.isFullScreen && !_externalFullscreenOpen) {
+      _externalFullscreenOpen = true;
+      updateState();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || chewieController.value != chewie || !chewie.isFullScreen) return;
+          unawaited(_pushExternalFullscreen(chewie));
+        });
+      });
+    } else if (!chewie.isFullScreen && _externalFullscreenOpen) {
+      final Route<void>? route = _externalFullscreenRoute;
+      _externalFullscreenOpen = false;
+      if (route != null && route.isActive) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (route.isActive && mounted) {
+            Navigator.of(context, rootNavigator: true).removeRoute(route);
+          }
+          if (mounted) updateState();
+        });
+      }
+    }
+  }
+
+  Future<void> _pushExternalFullscreen(ChewieController chewie) async {
+    final int? textureId = _externalTextureId;
+    if (!mounted || textureId == null || !chewie.isFullScreen) {
+      _externalFullscreenOpen = false;
+      return;
+    }
+    final Route<void> route = PageRouteBuilder<void>(
+      pageBuilder: (BuildContext routeContext, Animation<double> animation, Animation<double> secondary) {
+        return Scaffold(
+          backgroundColor: Colors.black,
+          resizeToAvoidBottomInset: false,
+          body: Stack(
+            fit: StackFit.expand,
+            children: [
+              ImageFiltered(
+                enabled: settingsHandler.blurImages.value,
+                imageFilter: ImageFilter.blur(
+                  sigmaX: 40,
+                  sigmaY: 40,
+                  tileMode: TileMode.decal,
+                ),
+                child: Center(child: Texture(textureId: textureId)),
+              ),
+              ChewieControllerProvider(
+                controller: chewie,
+                child: const TransparentPointer(
+                  child: SafeArea(
+                    top: false,
+                    child: LoliControls(),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    _externalFullscreenRoute = route;
+    await Navigator.of(context, rootNavigator: true).push<void>(route);
+    if (!mounted || chewieController.value != chewie) return;
+    _externalFullscreenRoute = null;
+    _externalFullscreenOpen = false;
+    if (chewie.isFullScreen) {
+      chewie.exitFullScreen();
+    }
+    updateState();
+  }
+}

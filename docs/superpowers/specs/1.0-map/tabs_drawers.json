@@ -1,0 +1,1352 @@
+{
+ "subsystem": "tabs_drawers",
+ "summary": "These 43 files are the tab-management UI, the side drawers, a few shared dialogs, the tag filter and tag manager screens, search history, saved searches and collections. They are almost all widgets. They drive the GetX singletons directly (SearchHandler.instance, SettingsHandler.instance, DoujinDataHandler, TagHandler, dbHandler); no feature-logic layer sits in between.\n\nTABS. tab_selector.dart (2,597 lines) holds:\n- TabSelector, the desktop top-bar booru picker and tab label. ActiveTitle also uses it, but nothing builds ActiveTitle.\n- TabManagerPage, the full tab manager. Filtering, sorting, duplicate detection, groups, the select mode, the shuffle / save-order action, the visited-tabs history dialog and the help dialog are all written inside one State. Sort and filter state, and which groups are collapsed, survive a close/reopen only in private static fields, for the app session.\n- TabManagerItem (the row), TabSortingIcon, VisitedTabsHistoryList, and the TabSortingMode enum.\nThe list uses ReorderableListView with itemExtentBuilder. Extents come from a display cache rebuilt once per build. Drag reordering works only when the shown list equals the real tab list.\n\nOther tab files:\n- tab_row.dart renders one tab: coloured tags, pool badge, doujin cover and title. It is reused by TabSelector, TabManagerItem and the mini manager.\n- doujin_mini_tab_manager.dart is the end drawer on doujin tabs: a cut-down copy of the manager.\n- tab_move_dialog, tab_filters_dialog, tab_buttons (desktop only), tab_booru_selector (desktop; its TabBooruSelectorItem is also used by settings_widgets), and tab_secondary_booru_selector plus tab_per_booru_tag_overrides (both inside the main drawer's multibooru section).\n\nENTRY POINTS on mobile:\n- TabsCountPill and the TabPill open TabManagerPage.\n- The tab strip's '+' long-press opens AddNewTabDialog.\n- The page chip opens PageNumberDialog.\n- flow_search_bar and the search window open HistoryList.\n\nDRAWERS. mobile_home_page picks the 'pinned side' of InnerDrawer: KemonoSidebar on kemono-style tabs (setting kemonoSidebar), FurAffinitySidebar on FurAffinity tabs (setting furAffinitySidebar), otherwise DownloadsDrawer. Despite its name, DownloadsDrawer only wraps DrawerQuickAccess, the Pinned tags + Quick access panel. Every other drawers/downloads/dd_* file (the old snatch queue, retry controls and multi-select batch actions) is unreachable dead code. As a result the mobile batch actions on selected grid items (snatch, favourite, add to collection) currently have no UI.\n\nThe quick-access panel reloads pins and counts from the database:\n- on every tab-index change, through ever(searchHandler.index);\n- on DrawerRefresh.tick;\n- after a page opened from it closes.\nOn doujin tabs it reads only the doujin store, which keeps the separation rule.\n\nOTHER SCREENS:\n- History: one State holding a HugeListView, a filter, favourites and multi-select.\n- Saved searches: a page with Obx over searchHandler.savedSearches, plus the tile.\n- Collections: a grid page, plus an add-to-collection sheet that sends doujin items to doujin collections and booru items to the database.\n- Tag filters: the list, add/edit dialogs and filter toggles. These are pieces of Settings → Tags & filters.\n- Tag manager: Settings → Debug → Tags manager.\n- comments_dialog: the viewer and kemono post-page comments.\n- timed_leave_dialog: generic, used after the webview captcha.",
+ "features": [
+  {
+   "name": "Desktop tab selector bar",
+   "navPath": "Desktop home → top bar (TabSelector)",
+   "what": "Favicon + arrow opens the booru picker dialog (searchable when there are more than 5 boorus, current booru highlighted; switching runs searchAction with the current text). Label 'Tab | i/total' plus the result count with an image icon. Shows the current TabRow and booru names (merge: first + secondaries, marquee). Tapping the tab area opens the Tab manager. Empty states: 'Add boorus in settings' and a spinner while no tabs exist.",
+   "files": [
+    "lib/src/widgets/tabs/tab_selector.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Desktop booru dropdown",
+   "navPath": "Desktop home → booru dropdown (TabBooruSelector)",
+   "what": "Dropdown of every booru (54 px items, favicon + name + type). Picking one runs searchAction on the current tab. Protects against a selected booru that is no longer in the list.",
+   "files": [
+    "lib/src/widgets/tabs/tab_booru_selector.dart"
+   ],
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Desktop tab buttons",
+   "navPath": "Desktop home → tab buttons row (TabButtons)",
+   "what": "Previous/next tab with looping (byUser, so it records a visit); remove current tab; search history; page number sheet; add tab (tap: new tab at the end with default tags; long-press: vibrate + Add new tab sheet; one InkResponse handles both gestures). Below 370 px wide it lays out as 2 rows.",
+   "files": [
+    "lib/src/widgets/tabs/tab_buttons.dart"
+   ],
+   "settingsKeys": [
+    "defTags"
+   ],
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Tab manager page",
+   "navPath": "Home → tabs count pill (app bar) / tab pill long-press / mini tab manager → Open full tab manager / desktop TabSelector tab area",
+   "what": "Full list of tabs. Title shows the count (filtered/total with a filter icon). Opens scrolled to the current tab. Heals split group blocks on open (compactGroupBlocks). Scrollbar on the hand side. Empty state: kaomoji + 'No tabs found'. Bottom bar is hand-side aware: scroll to top, to current (shows its number), to bottom, Close.",
+   "files": [
+    "lib/src/widgets/tabs/tab_selector.dart"
+   ],
+   "settingsKeys": [
+    "handSide",
+    "incognitoKeyboard"
+   ],
+   "storedIn": "memory only (static fields for the app session)",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Tab manager source view",
+   "navPath": "Tab manager → Doujins / Boorus & other / All segmented button",
+   "what": "Shows only doujin tabs (handler hasReader), only booru tabs, or all. Defaults to the kind of the current tab. Counts as a filter, so it disables drag reorder and save-order.",
+   "files": [
+    "lib/src/widgets/tabs/tab_selector.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Tab manager text filter",
+   "navPath": "Tab manager → Search field",
+   "what": "Case-insensitive match on the tab query or the group name; matches are highlighted green in the rows; clearable, pasteable; honours the incognito keyboard; remembered for the app session.",
+   "files": [
+    "lib/src/widgets/tabs/tab_selector.dart",
+    "lib/src/widgets/tabs/tab_row.dart"
+   ],
+   "settingsKeys": [
+    "incognitoKeyboard"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Tab manager filters sheet",
+   "navPath": "Tab manager → filter icon (red badge = active count)",
+   "what": "Filters: Booru (only boorus that have tabs, with counts); Loaded (All/Loaded/Not loaded); Tag type (help dialog, per-type counts, never matches doujin tabs); Multibooru (All/Enabled/Disabled); Duplicates (sub-toggle 'check duplicates on same booru'; on Apply it forces alphabetical sort); Empty search query. Clear / Apply buttons. Persisted for the app session.",
+   "files": [
+    "lib/src/widgets/tabs/tab_filters_dialog.dart",
+    "lib/src/widgets/tabs/tab_selector.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Remove all duplicates",
+   "navPath": "Tab manager → Filters → Duplicates on → 'Remove all duplicates (keep one copy)'",
+   "what": "Confirm dialog, then removes every extra copy, keeping the earliest-opened tab of each duplicate key (booru+tags or tags only).",
+   "files": [
+    "lib/src/widgets/tabs/tab_selector.dart"
+   ],
+   "storedIn": "tabs (TabRestore via the periodic backupTabs)",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Tab sorting modes",
+   "navPath": "Tab manager → sort button (app bar)",
+   "what": "Cycles through 7 modes: none → A-Z → Z-A → by booru → by booru reversed → by booru keeping open order → the same reversed → none. The icon is flipped or replaced per mode, with a 'by booru' caption. Session-persisted.",
+   "files": [
+    "lib/src/widgets/tabs/tab_selector.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Shuffle / save sorted order",
+   "navPath": "Tab manager → long-press the sort button (disabled while any filter is active)",
+   "what": "With mode none: confirm, then shuffle all tabs randomly. Otherwise: confirm, then save the current sorted order as the real tab order. Snackbar in both cases. Re-selects the current tab.",
+   "files": [
+    "lib/src/widgets/tabs/tab_selector.dart"
+   ],
+   "storedIn": "tabs list",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Tab drag reorder",
+   "navPath": "Tab manager → long-press and drag a row (only with no filter, no sort, select mode off, no collapsed group)",
+   "what": "Moves the tab. Its group is normalised afterwards: dropped inside a group block it joins; dragged away from its own block it leaves.",
+   "files": [
+    "lib/src/widgets/tabs/tab_selector.dart"
+   ],
+   "storedIn": "tabs + SearchTab.groupName",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Tab groups",
+   "navPath": "Tab manager → app bar 'New tab group' / group header / Jump to group menu / select mode → group button",
+   "what": "New group: prompt for a name, then create an empty tab on the current booru next to the active tab. Group blocks are framed. The header has a collapse chevron (collapsed groups remembered for the session), name, count, '+' (new tab in group, at the end), and a menu: Rename / Ungroup (keep tabs) / Close all tabs (with confirm). The app bar Jump to group menu shows counts. Select mode can add the selected tabs to an existing or new group (with snackbar).",
+   "files": [
+    "lib/src/widgets/tabs/tab_selector.dart"
+   ],
+   "storedIn": "SearchTab.groupName → TabBackup 'group' (TabRestore)",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Tab manager row",
+   "navPath": "Tab manager → any row",
+   "what": "Favicon (26 px) or doujin cover (76 px in a 104 px row), TabRow, booru names + result count ('n', 'n+' or '—'), options button (slider icon), close X. The current tab is highlighted. Tap switches to the tab (byUser, which records a visit) and closes the manager.",
+   "files": [
+    "lib/src/widgets/tabs/tab_selector.dart",
+    "lib/src/widgets/tabs/tab_row.dart"
+   ],
+   "settingsKeys": [
+    "thumbnailCache"
+   ],
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Tab options dialog",
+   "navPath": "Tab manager → row options (slider icon)",
+   "what": "Copy the tab's tags (snackbar), Move (opens the move dialog), Remove, Close.",
+   "files": [
+    "lib/src/widgets/tabs/tab_selector.dart"
+   ],
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Tab move dialog",
+   "navPath": "Tab manager → row options → Move",
+   "what": "Move to top; Move to bottom; tab-number input with +/- buttons, reset and range clamp; 'Move to N' with an invalid-number snackbar; a preview of the first, previous, moved, next and last tabs (tap a preview row to pick that position); Cancel. Moving closes both dialogs.",
+   "files": [
+    "lib/src/widgets/tabs/tab_move_dialog.dart"
+   ],
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Tab select mode",
+   "navPath": "Tab manager → select-all icon (app bar)",
+   "what": "Checkboxes on rows; the current tab cannot be selected. Bottom bar: select all / deselect all (over the filtered list), add to group, delete selected (confirm dialog listing the tabs in list order).",
+   "files": [
+    "lib/src/widgets/tabs/tab_selector.dart"
+   ],
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Visited tabs history",
+   "navPath": "Tab manager → history (clock) icon",
+   "what": "Dialog listing visited tabs, newest first: favicon, query or '(empty search)', booru · time ago · closed. Tap jumps to the tab if it is still open, otherwise reopens it next to the active tab with the same tab id. Clear button. The list does not scroll itself; the dialog does.",
+   "files": [
+    "lib/src/widgets/tabs/tab_selector.dart"
+   ],
+   "storedIn": "store.db TabVisitHistory (SearchHandler.visitedTabsHistory)",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Tab manager help",
+   "navPath": "Tab manager → help icon",
+   "what": "Explains scrolling, filters, the sort modes (including the two open-order modes), long-press to save order, select mode, move, index numbers, and the special filters.",
+   "files": [
+    "lib/src/widgets/tabs/tab_selector.dart"
+   ],
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Tab row rendering",
+   "navPath": "automatic (tab manager, mini manager, desktop selector)",
+   "what": "Doujin tab: cover + title from the fetched item, otherwise the persisted doujinTitle/doujinThumb. Booru tab: favicon (ValueListenable on selectedBooru), red 'pool' badge, tags coloured by per-booru tag type, meta tags pink, '-' shown as a red em-dash, '~' purple, an 'N#' booru-number prefix dimmed, italic when nothing is loaded, filter highlight. No tag colouring on doujin boorus.",
+   "files": [
+    "lib/src/widgets/tabs/tab_row.dart"
+   ],
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Doujin mini tab manager",
+   "navPath": "Doujin tab view / doujin detail page → swipe in from the right edge or tap the edge handle",
+   "what": "End drawer (320 px). Header buttons: New tab (inherits the current group, placed next), New group, Open full tab manager. Doujins/Boorus/All segments (default by context). Filter field matches the visible title, tags or group. Rows: TabRow, close X, and a drag handle (unfiltered list only). Group header tap opens a sheet: New tab in group / Rename / Ungroup / Close group (with confirm). Scrolls to the current tab on open. Row tap pops to the first route, then switches tab.",
+   "files": [
+    "lib/src/widgets/tabs/doujin_mini_tab_manager.dart"
+   ],
+   "storedIn": "tabs",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Add new tab sheet",
+   "navPath": "Home → tab strip '+' long-press (or desktop TabButtons '+' long-press)",
+   "what": "Booru (empty = current); Add position (TabAddMode); Used query (default tags / current input / custom with a TagSearchBox that autocompletes and has a booru selector); Add/keep secondary boorus toggle (opens the multiselect automatically when none are chosen); Start from custom page number toggle with a number input; Switch to new tab toggle; Cancel / Add.",
+   "files": [
+    "lib/src/widgets/dialogs/add_new_tab_dialog.dart"
+   ],
+   "settingsKeys": [
+    "defTags"
+   ],
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Page changer sheet",
+   "navPath": "Home → page chip in the tab strip (or desktop TabButtons numbered-list icon)",
+   "what": "Page number input (+/-); delay between loads in ms (step 100, 0-10000, default 200); 'Current page' button; 'Possible max page' button when the total is known; a pulsing warning while an auto-search runs; Jump to page; Search until page; Stop searching. Rides above the keyboard; no autofocus.",
+   "files": [
+    "lib/src/widgets/dialogs/page_number_dialog.dart"
+   ],
+   "settingsKeys": [
+    "itemLimit"
+   ],
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Timed leave dialog",
+   "navPath": "automatic: webview captcha page after Cloudflare is cleared (Tools captcha flow)",
+   "what": "Countdown bar with seconds left; Stay / Leave now; pops 'leave' automatically when time runs out.",
+   "files": [
+    "lib/src/widgets/dialogs/timed_leave_dialog.dart"
+   ],
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Comments viewer",
+   "navPath": "Viewer → info panel → Comments; Kemono post page → comments button",
+   "what": "Pinned post thumbnail header that shrinks on scroll (tap = select / scroll to top). Comment cards: avatar (tap opens it large with an image-search button), author, title, date (unix/iso/custom formats), score coloured +/-, parsed content. Tap selects a comment. Up/down navigation with long-press repeat. Count shown as 'i/n'. Refresh button and pull-to-refresh; infinite paging; open the post in the external browser. Hand-side aware. 'No API for comments' and empty states.",
+   "files": [
+    "lib/src/widgets/dialogs/comments_dialog.dart"
+   ],
+   "settingsKeys": [
+    "handSide"
+   ],
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Pinned tags drawer: pins",
+   "navPath": "Home → pin icon in the app bar, or swipe in from the edge opposite the main drawer",
+   "what": "Global pins plus pins scoped to the current booru. Follow pins are excluded, as are pins hidden on this source (r79). On doujin tabs the pins come from the doujin store only, with an 'all doujins' label. Each row has a type-colour dot and up to 2 labels. Tap adds the tag to the search and closes the drawer; long-press adds it, runs the search and vibrates. Reloads on tab change, on DrawerRefresh, and after a page opened from the drawer closes. A single scroll view, so it works in landscape.",
+   "files": [
+    "lib/src/widgets/drawers/downloads/drawer_quick_access.dart",
+    "lib/src/widgets/drawers/downloads/downloads_drawer.dart"
+   ],
+   "storedIn": "store.db PinnedTag / doujinData.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Quick access (booru tabs)",
+   "navPath": "Pinned tags drawer → QUICK ACCESS",
+   "what": "Rows: 'Use the <kemono site> sidebar' (kemono tabs, sets kemonoSidebar=true); 'Use the FurAffinity sidebar' (FurAffinity tabs, sets furAffinitySidebar=true); Global blacklist (count) → TagsFiltersPage; '<booru> blacklist' → BooruEdit; Favorites (count) → tab on the Favourites booru; History (count) → tab on the History booru (ensureHistoryBooru); Followed artists (count); Saved searches (count); '<booru> pinned tags' → PinnedTagsPage (Modular UI sidebar.pinnedTags); Collections (count).",
+   "files": [
+    "lib/src/widgets/drawers/downloads/drawer_quick_access.dart"
+   ],
+   "settingsKeys": [
+    "kemonoSidebar",
+    "furAffinitySidebar",
+    "hiddenTags",
+    "modularUi:sidebar.pinnedTags"
+   ],
+   "storedIn": "settings.json + store.db",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Quick access (doujin tabs)",
+   "navPath": "Pinned tags drawer on a doujin tab → QUICK ACCESS",
+   "what": "Doujin blacklist (global count) → SourceSettingsPage; '<source> blacklist'; Favorites, History, Followed artists, Saved searches ('n kept'), Collections ('n sets'). Each opens the doujin library page for that source. Reads only the doujin store.",
+   "files": [
+    "lib/src/widgets/drawers/downloads/drawer_quick_access.dart"
+   ],
+   "storedIn": "doujinData.json, sourceSettings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "FurAffinity sidebar",
+   "navPath": "FurAffinity tab → pinned side drawer (when Use the FurAffinity sidebar is on)",
+   "what": "Header: favicon, name, login state ('~user'), close. BROWSE: Browse (newest), Search (opens the search window), Animated only ('animated:gif sort:date'). YOU (logged in): Submissions inbox ('inbox:'), Watched artists page, My favorites, My gallery. ARTIST · <name> (FurAffinity artist tabs): Gallery, Scraps, Favorites, Folders sheet, Watch/Unwatch (checked live). ACCOUNT: Log in → FurAffinityLoginPage; or Blocklist (copies the site blocklist into this booru's hidden tags), Content filter (webview on /controls/settings/), Log out. Bottom: 'Use the app sidebar' (furAffinitySidebar=false).",
+   "files": [
+    "lib/src/widgets/drawers/furaffinity_sidebar.dart"
+   ],
+   "settingsKeys": [
+    "furAffinitySidebar",
+    "hiddenTagsPerBooru"
+   ],
+   "storedIn": "settings.json, furaffinity_session.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "FurAffinity watched artists page",
+   "navPath": "FurAffinity sidebar → You → Watched artists",
+   "what": "Pages of 200 with endless scroll, a filter field, and errors shown inline. Tapping an artist opens 'user:<name>' as a new tab.",
+   "files": [
+    "lib/src/widgets/drawers/furaffinity_sidebar.dart"
+   ],
+   "inBackup": "n/a"
+  },
+  {
+   "name": "FurAffinity folders sheet",
+   "navPath": "FurAffinity sidebar → Artist → Folders",
+   "what": "Sheet of the artist's gallery folders, grouped under headings, with counts. Tapping a folder opens it as a feed tab.",
+   "files": [
+    "lib/src/widgets/drawers/furaffinity_sidebar.dart"
+   ],
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Kemono sidebar",
+   "navPath": "Kemono/pawchive tab → pinned side drawer (when kemonoSidebar is on)",
+   "what": "Header: favicon, name, host, close. ARTISTS: Search (artists page), Recent (if the site has it), Random (if the site has it). POSTS: Search (search window), Popular ('popular:day'), Tags (catalog picker sheet → add the tag and search), Random. FAVORITES: Posts and Artists, or 'Sign in' → BooruEdit. MESSAGES: DMs (kemono), Announcements (needs a creator tab). Status card: creator index state with refresh, file-host summary with a check button. 'Use the app sidebar' (kemonoSidebar=false). Starts the creator-index freshness check when created.",
+   "files": [
+    "lib/src/widgets/drawers/kemono_sidebar.dart"
+   ],
+   "settingsKeys": [
+    "kemonoSidebar"
+   ],
+   "storedIn": "settings.json, kemono_session.json, KemonoCreator/PawchiveCreator tables",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Search history page",
+   "navPath": "Home → search bar history button; Search window → History; desktop TabButtons → history",
+   "what": "List with favourites first, then by date. Filter on text, booru name or type, or 'unknown'; heart toggle to show or hide favourites. Scroll thumb shows the date. Entry actions: Open (search in the current tab), Open in new tab, Set/Remove favourite, Copy, Delete. Multi-select checkboxes; Select all (only when filtered); Delete N (confirm); Clear selection. Messages when history is disabled or the database is off. The doujin store or the booru database is chosen by the current tab.",
+   "files": [
+    "lib/src/widgets/history/history.dart"
+   ],
+   "settingsKeys": [
+    "searchHistoryEnabled",
+    "dbEnabled",
+    "incognitoKeyboard"
+   ],
+   "storedIn": "store.db SearchHistory / doujinData.json history",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Saved searches",
+   "navPath": "Pinned tags drawer → Quick access → Saved searches; Main drawer → saved searches preview → View all",
+   "what": "Live list (Obx), reloaded after the first frame. Tile tap opens the search (respects defaultTabAddMode). The ⋮ menu offers: Open in another booru (booru picker), Rename, Delete (with confirm). Empty hint text.",
+   "files": [
+    "lib/src/widgets/saved_searches/saved_searches_page.dart",
+    "lib/src/widgets/saved_searches/saved_search_tile.dart"
+   ],
+   "settingsKeys": [
+    "defaultTabAddMode"
+   ],
+   "storedIn": "store.db SavedSearch",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Collections page",
+   "navPath": "Pinned tags drawer → Quick access → Collections; Main drawer → Collections",
+   "what": "Grid of cards: cover thumbnail or the first letter, name, post count. Tap opens 'collection:<id>' on the Collections virtual booru and pops to home; an empty collection shows a snackbar instead. Long-press or ⋮ opens Open / Rename / Delete (confirm, explains the unlinking). Sort menu (recent / name / count) when there is more than 1 collection. New collection from the app bar, a FAB, or the empty-state button. Pull to refresh.",
+   "files": [
+    "lib/src/pages/collections_page.dart"
+   ],
+   "storedIn": "store.db Collection/CollectionItem",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Add to collection",
+   "navPath": "Viewer → info panel → Add to collection; doujin detail → bookmark long-press (doujin picker)",
+   "what": "Routed per item: doujin items go to the doujin collection picker dialog; booru items go to a bottom sheet. Single item: a checklist that toggles membership. Several items: tap adds them all, with a snackbar. 'New collection' inline. Records the interest signal (onItemsCollected) and creates the Collections virtual booru. Doujin picker: New collection, check marks for membership (a single item toggles off), counts.",
+   "files": [
+    "lib/src/widgets/collections/add_to_collection_sheet.dart"
+   ],
+   "storedIn": "store.db Collection tables / doujinData.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Tag filter lists (Hidden / Marked)",
+   "navPath": "Settings → Tags & filters → Hidden / Marked tabs (also Pinned tags drawer → Global blacklist)",
+   "what": "Search field with filtered/total count. Empty state: a button that opens the add dialog. Tap a filter to edit it. Add dialog: TagSearchBox with a booru selector; the tag is lowercased and trimmed; empty input warns. Edit dialog: text with reset, Delete, Save.",
+   "files": [
+    "lib/src/widgets/tags_filters/tf_list.dart",
+    "lib/src/widgets/tags_filters/tf_list_item.dart",
+    "lib/src/widgets/tags_filters/tf_add_dialog.dart",
+    "lib/src/widgets/tags_filters/tf_edit_dialog.dart"
+   ],
+   "settingsKeys": [
+    "hiddenTags",
+    "markedTags",
+    "incognitoKeyboard"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Item filter toggles",
+   "navPath": "Settings → Tags & filters → Filters tab",
+   "what": "Toggles: Remove hidden, Remove marked, Remove favourited, Remove snatched, Remove AI.",
+   "files": [
+    "lib/src/widgets/tags_filters/tf_settings_list.dart"
+   ],
+   "settingsKeys": [
+    "filterHated",
+    "filterMarked",
+    "filterFavourites",
+    "filterSnatched",
+    "filterAi"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Tags manager",
+   "navPath": "Settings → Debug → Tags manager",
+   "what": "Search by name or type with count; HugeListView with a scroll thumb showing 'type [first letter]'; pull to refresh. Row tap opens actions: type dropdown, 'stale after' date, Add a tab, Copy, Set stale, Reset stale, Make unstaleable, Close. Checkboxes; Select all when filtered; Delete N (confirm); Clear selection. FAB Add tag (name + type).",
+   "files": [
+    "lib/src/widgets/tags_manager/tm_dialog.dart",
+    "lib/src/widgets/tags_manager/tm_list.dart",
+    "lib/src/widgets/tags_manager/tm_list_item.dart",
+    "lib/src/widgets/tags_manager/tm_list_item_dialog.dart",
+    "lib/src/widgets/tags_manager/tm_list_bottom.dart",
+    "lib/src/widgets/tags_manager/tm_list_filter.dart",
+    "lib/src/widgets/tags_manager/tm_add_dialog.dart"
+   ],
+   "settingsKeys": [
+    "dbEnabled",
+    "incognitoKeyboard"
+   ],
+   "storedIn": "store.db Tag + TagHandler tagMap",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Secondary boorus (merge mode)",
+   "navPath": "Main drawer → Multibooru toggle → Secondary boorus",
+   "what": "Multiselect of boorus shown as chips; an empty selection turns merge mode off (mergeAction).",
+   "files": [
+    "lib/src/widgets/tabs/tab_secondary_booru_selector.dart"
+   ],
+   "storedIn": "SearchTab.secondaryBoorus → TabBackup",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Per-booru tag overrides",
+   "navPath": "Main drawer → Multibooru toggle (merge active) → Per-booru tag overrides",
+   "what": "One row per participating booru: booru chip, text field for extra tags with that booru's own autocomplete (400 ms debounce, cancellable, 'tap to retry' on failure, coloured suggestions with counts), and an 'Inherit main tags' checkbox. Submitting runs searchAction.",
+   "files": [
+    "lib/src/widgets/tabs/tab_per_booru_tag_overrides.dart"
+   ],
+   "storedIn": "SearchTab.tagOverrides / inheritMainTags → TabBackup 'to'/'in'",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Downloads queue + batch selection panel (UNREACHABLE)",
+   "navPath": "none: no widget builds it (DownloadsDrawer renders only DrawerQuickAccess)",
+   "what": "Dead UI:\n- Active download with byte/percent progress and Cancel.\n- Queued batches.\n- Exists/failed/cancelled rows with Save anyway / Retry (long-press ignores 'exists') / Skip.\n- Pause/Resume, Retry all, Clear retryable.\n- Batch selection actions: Snatch selected (long-press variant), Remove snatched status, Favourite / Unfavourite selected, Add to collection, Clear selected, Select all.\n- Navigation: Snatcher page, Snatching history tab, Doujin downloads, Check downloads against disk.\nThe last of these is still reachable from Settings → Save & cache.",
+   "files": [
+    "lib/src/widgets/drawers/downloads/dd_active_item.dart",
+    "lib/src/widgets/drawers/downloads/dd_content.dart",
+    "lib/src/widgets/drawers/downloads/dd_control_panel.dart",
+    "lib/src/widgets/drawers/downloads/dd_controller.dart",
+    "lib/src/widgets/drawers/downloads/dd_empty_state.dart",
+    "lib/src/widgets/drawers/downloads/dd_queue_controls.dart",
+    "lib/src/widgets/drawers/downloads/dd_queued_item.dart",
+    "lib/src/widgets/drawers/downloads/dd_retryable_item.dart",
+    "lib/src/widgets/drawers/downloads/dd_selection_actions.dart"
+   ],
+   "settingsKeys": [
+    "snatchCooldown",
+    "favouriteOnSnatch",
+    "dbEnabled"
+   ],
+   "inBackup": "n/a"
+  }
+ ],
+ "fileHomes": [
+  {
+   "path": "lib/src/pages/collections_page.dart",
+   "newHome": "lib/features/collections/ui/collections_page.dart",
+   "role": "Collections grid page: open, rename, delete, sort, create",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/collections/add_to_collection_sheet.dart",
+   "newHome": "lib/features/collections/ui/add_to_collection_sheet.dart (split: doujin picker → lib/features/doujin/ui/doujin_collection_picker.dart; _NameDialog → lib/core/ui/text_prompt_dialog.dart)",
+   "role": "Add-to-collection sheet, the doujin collection picker, and the collection name dialog",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/dialogs/add_new_tab_dialog.dart",
+   "newHome": "lib/features/tabs/ui/add_new_tab_sheet.dart",
+   "role": "Long-press '+' sheet: booru, position, query, secondary boorus, page, switch",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/dialogs/comments_dialog.dart",
+   "newHome": "lib/features/viewer/ui/comments/comments_page.dart (+ comment_entry.dart, comments_header_delegate.dart)",
+   "role": "Comments page with pinned thumbnail header, paging and navigation",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/dialogs/page_number_dialog.dart",
+   "newHome": "lib/features/feed/ui/page_number_sheet.dart",
+   "role": "Page changer: jump, search until page, stop",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/dialogs/timed_leave_dialog.dart",
+   "newHome": "lib/core/ui/timed_leave_dialog.dart",
+   "role": "Generic countdown 'leave this page?' dialog",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/drawers/downloads/dd_active_item.dart",
+   "newHome": "lib/features/downloads/ui/queue/dd_active_item.dart (dead: restore or delete)",
+   "role": "Active download row with progress and cancel (unreachable)",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/drawers/downloads/dd_content.dart",
+   "newHome": "lib/features/downloads/ui/queue/dd_content.dart (dead)",
+   "role": "Combined queue / retryable list (unreachable)",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/drawers/downloads/dd_control_panel.dart",
+   "newHome": "lib/features/downloads/ui/queue/dd_control_panel.dart (dead)",
+   "role": "Queue controls + selection actions + nav buttons panel with a loading overlay (unreachable)",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/drawers/downloads/dd_controller.dart",
+   "newHome": "lib/features/downloads/logic/selection_actions.dart (strip BuildContext and snackbars)",
+   "role": "Snatch / fav / unfav / retry / remove-snatched actions on the selection (unreachable)",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/widgets/drawers/downloads/dd_empty_state.dart",
+   "newHome": "lib/features/downloads/ui/queue/dd_empty_state.dart (dead)",
+   "role": "'No items in queue' kaomoji (unreachable)",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/drawers/downloads/dd_queue_controls.dart",
+   "newHome": "lib/features/downloads/ui/queue/dd_queue_controls.dart (dead)",
+   "role": "Pause/resume, retry all, clear retryable (unreachable)",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/drawers/downloads/dd_queued_item.dart",
+   "newHome": "lib/features/downloads/ui/queue/dd_queued_item.dart (dead)",
+   "role": "Queued batch row (unreachable)",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/drawers/downloads/dd_retryable_item.dart",
+   "newHome": "lib/features/downloads/ui/queue/dd_retryable_item.dart (dead)",
+   "role": "Exists / failed / cancelled row with retry and skip (unreachable)",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/drawers/downloads/dd_selection_actions.dart",
+   "newHome": "lib/features/downloads/ui/queue/dd_selection_actions.dart (dead; batch actions may need restoring into the quick-access drawer)",
+   "role": "Batch actions on the grid selection + downloads navigation (unreachable)",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/drawers/downloads/downloads_drawer.dart",
+   "newHome": "lib/app/drawers/quick_access_drawer.dart",
+   "role": "Material + SafeArea wrapper around DrawerQuickAccess (the pinned side of InnerDrawer)",
+   "layer": "app"
+  },
+  {
+   "path": "lib/src/widgets/drawers/downloads/drawer_quick_access.dart",
+   "newHome": "lib/app/drawers/quick_access_panel.dart (+ data loading → lib/app/drawers/quick_access_counts.dart)",
+   "role": "Pinned tags list + Quick access rows (booru vs doujin)",
+   "layer": "app"
+  },
+  {
+   "path": "lib/src/widgets/drawers/furaffinity_sidebar.dart",
+   "newHome": "lib/app/drawers/furaffinity_sidebar.dart (watchlist page + folder list → lib/features/feed/ui/furaffinity/; FaSection/FaPill → lib/app/drawers/widgets/sidebar_pill.dart)",
+   "role": "FurAffinity sidebar, watched-artists page, folders sheet, pill widgets",
+   "layer": "app"
+  },
+  {
+   "path": "lib/src/widgets/drawers/kemono_sidebar.dart",
+   "newHome": "lib/app/drawers/kemono_sidebar.dart",
+   "role": "Kemono/pawchive sidebar with the status card",
+   "layer": "app"
+  },
+  {
+   "path": "lib/src/widgets/history/history.dart",
+   "newHome": "lib/features/history/ui/search_history_page.dart (formatDate → lib/core/utils/date_format.dart)",
+   "role": "Search history page",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/saved_searches/saved_search_tile.dart",
+   "newHome": "lib/features/history/ui/saved_searches/saved_search_tile.dart",
+   "role": "Saved search row with open / other booru / rename / delete",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/saved_searches/saved_searches_page.dart",
+   "newHome": "lib/features/history/ui/saved_searches/saved_searches_page.dart",
+   "role": "Saved searches list page",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/tabs/doujin_mini_tab_manager.dart",
+   "newHome": "lib/features/tabs/ui/mini_tab_manager.dart",
+   "role": "Doujin end-drawer mini tab manager + edge handle",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/tabs/tab_booru_selector.dart",
+   "newHome": "lib/features/tabs/ui/widgets/tab_booru_selector.dart (TabBooruSelectorItem → lib/core/ui/booru_tile.dart)",
+   "role": "Desktop booru dropdown + booru label widget (the label is shared by settings_widgets)",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/tabs/tab_buttons.dart",
+   "newHome": "lib/features/tabs/ui/tab_buttons.dart",
+   "role": "Desktop tab button row",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/tabs/tab_filters_dialog.dart",
+   "newHome": "lib/features/tabs/ui/manager/tab_filters_sheet.dart",
+   "role": "Tab manager filters bottom sheet",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/tabs/tab_move_dialog.dart",
+   "newHome": "lib/features/tabs/ui/manager/tab_move_dialog.dart",
+   "role": "Move-tab dialog with preview",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/tabs/tab_per_booru_tag_overrides.dart",
+   "newHome": "lib/features/tabs/ui/widgets/per_booru_tag_overrides.dart",
+   "role": "Merge-mode per-booru override editor with autocomplete",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/tabs/tab_row.dart",
+   "newHome": "lib/features/tabs/ui/widgets/tab_row.dart",
+   "role": "Single-line tab rendering (tags, pool, doujin cover / title)",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/tabs/tab_secondary_booru_selector.dart",
+   "newHome": "lib/features/tabs/ui/widgets/tab_secondary_booru_selector.dart",
+   "role": "Secondary-booru multiselect for merge mode",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/tabs/tab_selector.dart",
+   "newHome": "lib/features/tabs/ui/tab_selector.dart + lib/features/tabs/ui/manager/* + lib/features/tabs/logic/{tab_sorting_mode,tab_list_query,tab_manager_session}.dart",
+   "role": "Desktop TabSelector + TabManagerPage + TabManagerItem + TabSortingIcon + VisitedTabsHistoryList + TabSortingMode",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/tags_filters/tf_add_dialog.dart",
+   "newHome": "lib/features/tags/ui/filters/tf_add_dialog.dart",
+   "role": "Add hidden/marked tag filter dialog",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/tags_filters/tf_edit_dialog.dart",
+   "newHome": "lib/features/tags/ui/filters/tf_edit_dialog.dart",
+   "role": "Edit / delete tag filter dialog",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/tags_filters/tf_list.dart",
+   "newHome": "lib/features/tags/ui/filters/tf_list.dart",
+   "role": "Searchable tag filter list",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/tags_filters/tf_list_item.dart",
+   "newHome": "lib/features/tags/ui/filters/tf_list_item.dart",
+   "role": "Tag filter row",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/tags_filters/tf_settings_list.dart",
+   "newHome": "lib/features/tags/ui/filters/tf_settings_list.dart",
+   "role": "Remove hidden / marked / fav / snatched / AI toggles",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/tags_manager/tm_add_dialog.dart",
+   "newHome": "lib/features/tags/ui/manager/tm_add_dialog.dart",
+   "role": "Add tag (name + type) dialog",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/tags_manager/tm_dialog.dart",
+   "newHome": "lib/features/tags/ui/manager/tags_manager_page.dart",
+   "role": "Tags manager page (debug)",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/tags_manager/tm_list.dart",
+   "newHome": "lib/features/tags/ui/manager/tm_list.dart",
+   "role": "HugeListView of tags",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/tags_manager/tm_list_bottom.dart",
+   "newHome": "lib/features/tags/ui/manager/tm_list_bottom.dart (or the shared lib/core/ui/selection_action_bar.dart)",
+   "role": "Select all / delete N / clear selection bar",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/tags_manager/tm_list_filter.dart",
+   "newHome": "lib/features/tags/ui/manager/tm_list_filter.dart",
+   "role": "Search input row",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/tags_manager/tm_list_item.dart",
+   "newHome": "lib/features/tags/ui/manager/tm_list_item.dart",
+   "role": "Tag row with colour, type, stale marker, checkbox",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/tags_manager/tm_list_item_dialog.dart",
+   "newHome": "lib/features/tags/ui/manager/tm_list_item_dialog.dart",
+   "role": "Tag actions dialog (type, stale, add tab, copy)",
+   "layer": "feature-ui"
+  }
+ ],
+ "layerViolations": [
+  {
+   "file": "lib/src/widgets/drawers/downloads/dd_controller.dart",
+   "line": 16,
+   "imports": "package:flutter/material.dart, widgets/common/flash_elements.dart, widgets/common/kaomoji.dart",
+   "reason": "A logic controller (snatch / favourite / retry actions) takes a BuildContext and shows snackbars and kaomoji widgets itself.",
+   "fix": "Move it to features/downloads/logic. Return a result (noPermission / noSelection / ok) and let the UI show the snackbar."
+  },
+  {
+   "file": "lib/src/widgets/common/settings_widgets.dart",
+   "line": 754,
+   "imports": "widgets/tabs/tab_booru_selector.dart (TabBooruSelectorItem)",
+   "reason": "The generic settings widget library (core/ui candidate) depends on the tabs feature for its booru dropdown item.",
+   "fix": "Move TabBooruSelectorItem to lib/core/ui/booru_tile.dart (it needs only the Booru model, BooruFavicon and MarqueeText) and import it from both places."
+  },
+  {
+   "file": "lib/src/widgets/tabs/tab_selector.dart",
+   "line": 37,
+   "imports": "defines enum TabSortingMode plus all filter / sort / duplicate logic inside widget state",
+   "reason": "A model (TabSortingMode) and pure list logic (filterTabs, _computeDuplicateTabsToRemove, _ensureDisplayCache, _normalizeMovedTabGroup) live in a UI State, so they cannot be unit-tested or shared with the mini manager.",
+   "fix": "Move them to lib/features/tabs/logic/ (TabSortingMode, TabListQuery with filter/sort, TabDisplayLayout, and a SearchHandler.moveTabNormalizingGroup)."
+  },
+  {
+   "file": "lib/src/widgets/tabs/doujin_mini_tab_manager.dart",
+   "line": 140,
+   "imports": "mutates SearchTab.groupName directly after searchHandler.moveTab",
+   "reason": "The group-membership rule after a drag is copied in two widgets (here and tab_selector._normalizeMovedTabGroup), with different rules: the mini manager never removes a tab from its old group.",
+   "fix": "Add one SearchHandler method (moveTab with group normalisation) and call it from both."
+  },
+  {
+   "file": "lib/src/widgets/drawers/downloads/drawer_quick_access.dart",
+   "line": 76,
+   "imports": "settingsHandler.dbHandler.getPinnedTags / searchDBCount / getCollections / countViewedPosts, FollowedArtistsHandler.listFollowed",
+   "reason": "Not a strict layer breach (UI may call down), but the drawer's data loading (pins, five counts, the doujin-vs-booru branch) is logic embedded in a widget; it runs on every tab switch and cannot be tested on its own.",
+   "fix": "Add lib/app/drawers/quick_access_counts.dart (or features/*/logic) returning an immutable snapshot; the widget only renders it."
+  },
+  {
+   "file": "lib/src/widgets/dialogs/comments_dialog.dart",
+   "line": 683,
+   "imports": "handlers/navigation_handler.dart (NavigationHandler.instance.navContext)",
+   "reason": "A sliver header delegate reads MediaQuery from the global navigator context in a static getter instead of from its own BuildContext; this ties UI layout to a global singleton.",
+   "fix": "Compute minThumbHeight in build() from the LayoutBuilder or MediaQuery and pass it into the delegate."
+  },
+  {
+   "file": "lib/src/widgets/tabs/tab_per_booru_tag_overrides.dart",
+   "line": 14,
+   "imports": "widgets/preview/main_search_query_editor_page.dart (for TagSuggestionText); furaffinity_sidebar/kemono_sidebar import the same 4,500-line page module; add_new_tab_dialog/tf_add_dialog import tag_search_query_editor_page.dart for TagSearchBox",
+   "reason": "Cross-feature UI imports of whole page modules just to reach one shared widget. Not a strict layer breach, but it couples tabs, drawers and filters to the search editor.",
+   "fix": "Move TagSuggestionText and TagSearchBox to lib/features/tags/ui/widgets/."
+  },
+  {
+   "file": "lib/src/widgets/history/history.dart",
+   "line": 634,
+   "imports": "top-level formatDate() defined in a widget file",
+   "reason": "A utility lives in UI.",
+   "fix": "Move it to lib/core/utils/date_format.dart."
+  }
+ ],
+ "splits": [
+  {
+   "file": "lib/src/widgets/tabs/tab_selector.dart",
+   "lines": 2597,
+   "proposal": "Split into these files:\n- features/tabs/logic/tab_sorting_mode.dart: the TabSortingMode enum.\n- features/tabs/logic/tab_list_query.dart: a TabListQuery data class (sourceView, booru, loaded, tagType, duplicate, duplicateBooru, empty, multibooru, text, sortingMode) and a pure apply(tabs) holding filterTabs and the sort comparator (with a precomputed index map). It also exposes duplicateKey() and duplicatesToRemove().\n- features/tabs/logic/tab_manager_session.dart: replaces the 9 private static _saved* fields and the static _collapsedGroups.\n- features/tabs/logic/tab_display_layout.dart: the pure display list / extents / prefix offsets (_ensureDisplayCache, rowExtentForIndex, offsetForTabIndex), plus group counts.\n- features/tabs/ui/tab_selector.dart: TabSelector only. Reuse TabBooruSelector's dropdown builder.\n- features/tabs/ui/manager/tab_manager_page.dart: the State, build, scroll helpers and the ReorderableListView.\n- features/tabs/ui/manager/tab_group_header.dart and features/tabs/ui/manager/tab_group_dialogs.dart: _promptGroupName, the close-group confirm and the add-to-group picker, shared with the mini manager.\n- features/tabs/ui/manager/tab_manager_dialogs.dart: options, delete-selected, visit history, help and shuffle/save-order dialogs.\n- features/tabs/ui/manager/tab_manager_bottom_bar.dart.\n- features/tabs/ui/manager/tab_manager_item.dart: TabManagerItem, also imported by tag_view.dart, tab_move_dialog.dart and tab_cards_test.\n- tab_sorting_icon.dart.\n- visited_tabs_history_list.dart, imported by visited_tabs_history_scroll_test.\n\nCoupling that makes it hard:\n- The dialogs and the item builder close over State fields (selectMode, selectedTabs, filteredTabs, sortingMode, the filter fields) and call setState() / getTabs().\n- The private statics _collapsedGroups and _saved* are read in initState and in the display cache.\n- TabManagerItem.doujinRowHeight feeds the extents.\n- The TraceLifecycle mixin.\n\nThe lowest-risk first step is `part`/`part of` files or extension methods on _TabManagerPageState, which keep private access with zero behaviour change; then lift the pure logic out with tests.",
+   "risk": "High:\n- The extents must equal the real row heights (itemExtentBuilder, plus the group header of 44 px).\n- Reorder is allowed only when the shown list equals the real list.\n- Session-persisted state must survive close/reopen.\n- Tests import TabManagerPage, TabManagerItem and VisitedTabsHistoryList from tab_selector.dart, so they need re-exports or updated imports."
+  },
+  {
+   "file": "lib/src/widgets/dialogs/comments_dialog.dart",
+   "lines": 757,
+   "proposal": "Split into:\n- comments_page.dart: the State (paging, selection, navigation) and build.\n- comment_entry.dart: _CommentEntry, formatDate, _showAvatarDialog.\n- comments_header_delegate.dart: _CommentsHeaderDelegate.\nPass minThumbHeight into the delegate instead of reading the global navContext. The classes are private but self-contained, so coupling is low.",
+   "risk": "Low. Keep AutoScrollTag keys (ValueKey(i)) and the header's shrink math identical."
+  },
+  {
+   "file": "lib/src/widgets/drawers/furaffinity_sidebar.dart",
+   "lines": 654,
+   "proposal": "Split into:\n- furaffinity_sidebar.dart: the sidebar state and sections.\n- furaffinity_watchlist_page.dart.\n- furaffinity_folder_list.dart.\n- drawers/widgets/sidebar_pill.dart: FaSection/FaPill, which also replace kemono_sidebar's identical private _Section/_Pill.",
+   "risk": "Low. Tests find the keys 'fa-sidebar-app' and 'fa-folder-row-<id>' and the visible texts. FaSection's title is in a Flexible, while kemono's _Section has none; keep the Flexible (harmless for kemono)."
+  },
+  {
+   "file": "lib/src/widgets/history/history.dart",
+   "lines": 648,
+   "proposal": "Split into:\n- search_history_page.dart: state, load, filter.\n- history_entry_tile.dart: buildEntry → a stateless widget taking the entry, booru, isSelected and callbacks.\n- history_entry_actions_dialog.dart: Open / Open in new tab / favourite / copy / delete.\n- A shared lib/core/ui/selection_action_bar.dart (select all when filtered / delete N with confirm / clear selection), also used by tm_list_bottom.dart.\n- formatDate → core/utils.\nCoupling: buildEntry reads the history, filteredHistory and selectedEntries lists and calls setState; the dialogs call deleteEntry and filterHistory.",
+   "risk": "Medium. Track selection by id rather than instance while splitting (that also fixes the stale-selection crash). Keep the HugeListView page size (screen height / 70)."
+  }
+ ],
+ "bugs": [
+  {
+   "file": "lib/src/widgets/tabs/tab_selector.dart",
+   "line": 1564,
+   "title": "Tab options 'Remove' leaves the dialog open; a second tap closes the CURRENT tab",
+   "scenario": "In the Tab manager, open a non-current tab's options and tap Remove: the tab is removed but the dialog stays. Tap Remove again: the current tab is closed instead.",
+   "evidence": "The onTap does selectedTabs.remove(tab); searchHandler.removeTabAt(tabIndex: searchHandler.tabs.indexOf(tab)); getTabs(); and never calls Navigator.pop. On the second tap indexOf returns -1, and search_handler.dart:264-265 treats `if (tabIndex == -1) tabIndex = currentIndex;`.",
+   "confidence": "confirmed",
+   "severity": "data-loss"
+  },
+  {
+   "file": "lib/src/handlers/search_handler.dart",
+   "line": 374,
+   "title": "Moving an earlier tab onto the current tab's position makes the moved tab current",
+   "scenario": "Tabs [A,B,C] with C current. Tab manager → A's options → Move → Move to bottom (or drag A below C). The result is [B,C,A], but the app now treats A as the current tab: the search text, page and feed switch to A, while tabId still holds C.",
+   "evidence": "tab_move_dialog.dart:75 calls moveTab(0, total-1). In moveTab, fromIndex(0) != currentIndex(2) and toIndex(2) == currentIndex, so it calls changeTabIndex(toIndex + 1 = 3). That is clamped to 2 == currentIndex, so the index does not change, and currentTab => tabs[2] == A. Also reached from tab_selector.dart:2140 (drag) and doujin_mini_tab_manager.dart:140.",
+   "confidence": "confirmed",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/handlers/search_handler.dart",
+   "line": 515,
+   "title": "Page changer 'Jump to page' rebuilds the tab and drops its group, pool, doujin identity and per-booru overrides",
+   "scenario": "On a tab inside a group (or a pool tab, a doujin detail tab, or a merge tab with overrides), open the page chip → Page changer → Jump to page. The tab leaves its group, a pool tab turns into a plain tag search, the overrides are lost, and a doujin tab loses its cover and title.",
+   "evidence": "page_number_dialog.dart:131 calls changeCurrentTabPageNumber, which builds `SearchTab(currentBooru, currentSecondaryBoorus.value, currentTab.tags, tabId: currentTab.id)`: no groupName, poolId/poolName, doujinPostURL/Title/Thumb, tagOverrides or inheritMainTags. Then tabs[currentIndex] = newTab.",
+   "confidence": "confirmed",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/widgets/drawers/downloads/downloads_drawer.dart",
+   "line": 21,
+   "title": "Batch actions on selected grid items have no UI on mobile",
+   "scenario": "Select posts in the grid on a phone. The app bar pin button shows the selected count (main_appbar.dart:118), but the drawer it opens has no Snatch selected, Favourite / Unfavourite selected, Add to collection, Remove snatched status or Clear selection. The Collections empty state (collections_page.dart:233-236) still tells users to use 'Add to collection' in the downloads drawer.",
+   "evidence": "DownloadsDrawer builds only DrawerQuickAccess. DDSelectionActions and DDControlPanel are referenced only inside the dd_* cluster (grep). The only other batch UI is desktop_home_page.dart:105-118.",
+   "confidence": "confirmed",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/widgets/history/history.dart",
+   "line": 548,
+   "title": "History delete-confirm dialog throws a RangeError after the filter reloads the list",
+   "scenario": "In Search history, tick an entry, type a character in the search field, then tap 'Delete 1 item'. The confirm dialog fails to build (error box).",
+   "evidence": "filterBuild onChanged calls getHistory() (line 423), which replaces `history` with new HistoryItem instances; HistoryItem has no == override. selectedEntries keeps the old instances, so the dialog's `history.indexOf(entry)` returns -1, and buildEntry(-1, false, false) evaluates history[-1].",
+   "confidence": "confirmed",
+   "severity": "crash"
+  },
+  {
+   "file": "lib/src/widgets/dialogs/comments_dialog.dart",
+   "line": 583,
+   "title": "Comment author names shorter than 2 characters crash the comment row",
+   "scenario": "A comment by a one-letter (or empty-named) author, with no avatar or a failing avatar, renders an error widget instead of the comment.",
+   "evidence": "`Text(comment.authorName?.substring(0, 2) ?? '?')` at lines 583 and 586; String.substring(0,2) throws a RangeError when length < 2.",
+   "confidence": "confirmed",
+   "severity": "crash"
+  },
+  {
+   "file": "lib/src/widgets/drawers/kemono_sidebar.dart",
+   "line": 53,
+   "title": "Kemono sidebar keeps the first site's data after switching to a tab on the other kemono-style site",
+   "scenario": "With kemono.cr and pawchive both configured, open the sidebar on a kemono.cr tab, then switch to a pawchive tab. The sidebar shows the pawchive name, but its rows (Popular / Random / Tags / DMs), its creator-index status and the file-host checks still belong to kemono.cr.",
+   "evidence": "`late final KemonoSite site = KemonoSite.of(widget.booru)`, along with store and hosts, is fixed at first build, and there is no didUpdateWidget. mobile_home_page.dart:126 builds `KemonoSidebar(booru: current!, ...)` with no key, so Flutter reuses the State.",
+   "confidence": "confirmed",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/widgets/tabs/tab_selector.dart",
+   "line": 1468,
+   "title": "Doujin tabs inside a group render squashed with a gap in the Tab manager",
+   "scenario": "Put a doujin detail tab in a tab group. Its row's cover shrinks to about 58 px and a 24 px empty band appears below it inside the group frame.",
+   "evidence": "_ensureDisplayCache (line 527) gives the row doujinRowHeight=104 (+44 header), but itemBuilder wraps grouped rows in `SizedBox(height: tabHeight /*80*/, child: tabItem)`. TabManagerItem's doujin content needs 3+8+76+8+3=98 px.",
+   "confidence": "confirmed",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/widgets/tabs/tab_selector.dart",
+   "line": 872,
+   "title": "Dismissing the Filters sheet resets the sort mode",
+   "scenario": "Set sort A-Z, open Filters with no filter active, swipe the sheet away. The next refresh (typing, toggling the view) shows the default order and the sort button falls back to none.",
+   "evidence": "The reset block runs when `result == 'clear' || (all filters null/false)`, independent of result, and sets sortingMode = TabSortingMode.none. With result == null nothing persists or refreshes, so the change is applied silently at the next getTabs().",
+   "confidence": "confirmed",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/widgets/dialogs/comments_dialog.dart",
+   "line": 89,
+   "title": "Comments setState after the page is closed",
+   "scenario": "Open comments and close the page before they load: Flutter logs 'setState() called after dispose()'.",
+   "evidence": "getComments awaits widget.handler.getComments(...), then calls `setState(() {})` with no `mounted` check (lines 72-89).",
+   "confidence": "confirmed",
+   "severity": "leak"
+  },
+  {
+   "file": "lib/src/widgets/dialogs/comments_dialog.dart",
+   "line": 76,
+   "title": "End-of-comments check compares by identity, so repeated pages are not detected",
+   "scenario": "A source whose comments endpoint ignores the page number (or repeats the last page) appends duplicate comments on every scroll until it returns an empty page.",
+   "evidence": "`if (fetched.isEmpty || comments.contains(fetched.first)) isCompleted = true;`, and CommentItem (data/comment_item.dart) defines no operator ==, so contains() is always false for freshly parsed items.",
+   "confidence": "plausible",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/widgets/tabs/tab_selector.dart",
+   "line": 2384,
+   "title": "Doujin cover choice differs between the tab manager row and TabRow",
+   "scenario": "A doujin tab whose persisted doujinThumb differs from its fetched item's thumbnail shows one cover in the manager row and another in TabRow-based views (mini manager, desktop selector).",
+   "evidence": "TabManagerItem uses doujinThumb first, then filteredFetched.first.thumbnailURL. tab_row.dart:59-61 uses the fetched thumbnail first, then doujinThumb.",
+   "confidence": "confirmed",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/widgets/tabs/doujin_mini_tab_manager.dart",
+   "line": 116,
+   "title": "Mini tab manager switches are not recorded in the visited-tabs history",
+   "scenario": "Tap a tab in the doujin mini manager, then open Tab manager → Visited tabs history: the switch is missing. A tap in the full manager would have been recorded.",
+   "evidence": "_switchTo calls `searchHandler.changeTabIndex(index)` without byUser: true. The full manager (tab_selector.dart:1363) passes byUser: true, and recordTabVisit only runs when byUser is set.",
+   "confidence": "plausible",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/widgets/dialogs/page_number_dialog.dart",
+   "line": 43,
+   "title": "'Possible max page' rounds instead of rounding up",
+   "scenario": "140 results at 100 per page shows 'possible max page 1', although there are 2 pages.",
+   "evidence": "`(total / settingsHandler.itemLimit).round()`.",
+   "confidence": "confirmed",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/widgets/tabs/tab_row.dart",
+   "line": 97,
+   "title": "Filter highlight is case-sensitive while filtering is not",
+   "scenario": "Typing 'Cat' in the Tab manager filter lists the 'cat_ears' tabs but highlights nothing; a trailing space has the same effect.",
+   "evidence": "filterTabs lowercases and trims the text (tab_selector.dart:785); TabRow splits by the raw `filterText!` (`tagText.split(filterText!)`).",
+   "confidence": "confirmed",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/widgets/drawers/furaffinity_sidebar.dart",
+   "line": 143,
+   "title": "Watch state check runs from build and gets stuck on errors",
+   "scenario": "If fetchWatchLink throws (network or Cloudflare), the artist's Watch pill stays 'Checking' and disabled for that artist until the sidebar is rebuilt from scratch.",
+   "evidence": "build() calls unawaited(_checkWatch(artist)). _checkWatch sets _watchFor = artist before awaiting and has no try/catch, so it is never retried (the guard is artist != _watchFor) and the error goes unhandled.",
+   "confidence": "plausible",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/widgets/drawers/furaffinity_sidebar.dart",
+   "line": 424,
+   "title": "Watched-artists page retries on every scroll event after a failure",
+   "scenario": "A failed watchlist page leaves hasNext=true; every ScrollNotification with extentAfter < 600 fires another request.",
+   "evidence": "_more() catches the error into `error`, but neither sets hasNext=false nor backs off; the NotificationListener calls `unawaited(_more())` on each notification.",
+   "confidence": "plausible",
+   "severity": "perf"
+  },
+  {
+   "file": "lib/src/widgets/history/history.dart",
+   "line": 616,
+   "title": "History title count uses onPrimary on the app bar",
+   "scenario": "In dark themes the 'n' / 'filtered/total' count under 'Search history' can be unreadable. The same bug was fixed in the tab manager in r66.",
+   "evidence": "style: titleTextStyle.copyWith(color: Theme.of(context).colorScheme.onPrimary); tab_selector.dart:1928-1933 documents why onPrimary is wrong on the bar.",
+   "confidence": "plausible",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/widgets/tabs/tab_selector.dart",
+   "line": 1113,
+   "title": "Text controllers disposed while the dialog is still animating out",
+   "scenario": "Closing the group-name / rename prompt can log 'A TextEditingController was used after being disposed'.",
+   "evidence": "`controller.dispose()` runs immediately after `await showDialog` returns, while the dialog's exit transition still holds a TextField on that controller. Same pattern at doujin_mini_tab_manager.dart:183 and saved_search_tile.dart:175.",
+   "confidence": "plausible",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/pages/collections_page.dart",
+   "line": 352,
+   "title": "Collection covers bypass the source media headers and the thumbnail cache",
+   "scenario": "Covers from sources that need cookies or a specific Referer (mediaHeadersFor) show the letter fallback, and covers are re-downloaded on every visit.",
+   "evidence": "Uses Image.network(url, headers: {User-Agent, Referer: own origin}) instead of CustomNetworkImage with BooruHandlerFactory.mediaHeadersFor, which HANDOVER §3.2 says every media fetch should use.",
+   "confidence": "plausible",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/widgets/tags_manager/tm_list.dart",
+   "line": 96,
+   "title": "Scroll-thumb label crashes on an empty tag name",
+   "scenario": "If TagHandler.tagMap holds a tag with an empty fullString, dragging the scroll thumb over it throws a RangeError.",
+   "evidence": "title: '${tag.tagType} [${tag.fullString[0]}]'.",
+   "confidence": "plausible",
+   "severity": "crash"
+  },
+  {
+   "file": "lib/src/widgets/dialogs/timed_leave_dialog.dart",
+   "line": 49,
+   "title": "ValueNotifier is never disposed",
+   "scenario": "Each timed-leave dialog leaks one ValueNotifier.",
+   "evidence": "`ValueNotifier<int> secondsRemaining` is created in State; dispose() disposes only _controller.",
+   "confidence": "confirmed",
+   "severity": "leak"
+  }
+ ],
+ "fragile": [
+  {
+   "what": "Tab manager row extents",
+   "where": "tab_selector.dart _ensureDisplayCache / itemBuilder / TabManagerItem.extentFor",
+   "rule": "itemExtentBuilder extents must equal the real row heights: 80 per row, 104 for a doujin row, +44 for a group run-start header, 44 for a collapsed group. Group frames are painted as overlays so heights stay exact. The cache is invalidated at the top of build(). HANDOVER rule: any list that jumps to an index must have fixed or builder-given extents."
+  },
+  {
+   "what": "Reorder only when display == real list",
+   "where": "tab_selector.dart:1495, 2137-2141",
+   "rule": "Drag is enabled only with select mode off, no filter (the source view counts), no sort and no collapsed group, so ReorderableListView indices map 1:1 to searchHandler.tabs. onReorderItem's newIndex is already adjusted for the removal; both managers rely on that."
+  },
+  {
+   "what": "Session-persisted manager state",
+   "where": "tab_selector.dart static _saved* fields and _collapsedGroups",
+   "rule": "Sort mode, filters, search text and collapsed groups survive closing and reopening the manager within one app run (a user request); they are not written to disk."
+  },
+  {
+   "what": "Visited-tab recording",
+   "where": "SearchHandler.changeTabIndex(byUser) from TabManagerPage, TabButtons, _openVisitedTab",
+   "rule": "Only user-initiated switches record visits. Reopening a closed visit reuses visit.tabId and adds the tab next to the active one (TabAddMode.next)."
+  },
+  {
+   "what": "VisitedTabsHistoryList must not scroll",
+   "where": "tab_selector.dart VisitedTabsHistoryList",
+   "rule": "shrinkWrap + NeverScrollableScrollPhysics, because the SettingsDialog scrolls (r61; visited_tabs_history_scroll_test)."
+  },
+  {
+   "what": "TabButtons add gesture",
+   "where": "tab_buttons.dart:95",
+   "rule": "Tap and long-press must live on the same InkResponse; a GestureDetector around an IconButton loses the long-press in the gesture arena."
+  },
+  {
+   "what": "Doujin vs booru separation",
+   "where": "drawer_quick_access.dart _load / _quickAccessRows, tab_selector tag-type filter, tab_row colouring, add_to_collection_sheet routing",
+   "rule": "Doujin tabs read only the doujin store (no booru pins or counts); the tag-type filter never matches doujin tabs; no booru tag colours on doujin boorus; collections are routed per item via DoujinDataHandler.isDoujinItem (doujin_separation_test, doujin_drawer_refresh_test)."
+  },
+  {
+   "what": "Pinned drawer content rules",
+   "where": "drawer_quick_access.dart:115-118",
+   "rule": "Follow pins (FollowedArtistsHandler.isFollowPin) are excluded, and PinnedTagVisibility.visible() hides pins hidden on the current source (r79; pinned_hide_sidebar_test). Refresh on DrawerRefresh.tick and after closing a page opened from it."
+  },
+  {
+   "what": "Pinned drawer layout",
+   "where": "drawer_quick_access.dart build",
+   "rule": "One CustomScrollView with SliverFillRemaining(hasScrollBody: false), so landscape scrolls and portrait keeps Quick access at the bottom (drawer_landscape_test)."
+  },
+  {
+   "what": "Modular UI switch",
+   "where": "drawer_quick_access.dart:468",
+   "rule": "The '<booru> pinned tags' row is gated by ModularUi.isOn(ModularUi.sidebarPinnedTags) inside an `if` where it is built (never built and then hidden)."
+  },
+  {
+   "what": "Sidebars need their own Material",
+   "where": "kemono_sidebar.dart, furaffinity_sidebar.dart, downloads_drawer.dart",
+   "rule": "InnerDrawer children have no Material ancestor; without one, text gets yellow underlines and InkWell throws."
+  },
+  {
+   "what": "Sidebar swap settings",
+   "where": "drawer_quick_access 'Use the … sidebar' rows, the sidebars' 'Use the app sidebar' rows, mobile_home_page.dart:122-129",
+   "rule": "kemonoSidebar / furAffinitySidebar are RxBool settings saved with saveSettings(restate:false); mobile_home_page picks the pinned side reactively."
+  },
+  {
+   "what": "Test keys",
+   "where": "doujin_mini_tab_manager.dart, furaffinity_sidebar.dart, tab_selector.dart",
+   "rule": "Keep 'mini-manager-new-tab', 'mini-manager-new-group', 'mini-manager-full', 'mini-manager-edge-handle', 'mini-tab-<id>', 'fa-sidebar-app', 'fa-folder-row-<id>', 'item-<tab.id>' (doujin_tabs_test, furaffinity_pages_test)."
+  },
+  {
+   "what": "Public class names used by tests and other features",
+   "where": "TabManagerPage, TabManagerItem (also tag_view.dart:3218), VisitedTabsHistoryList, TabRow, DoujinMiniTabManager, DrawerQuickAccess, FurAffinitySidebar, TabBooruSelectorItem (settings_widgets, multibooru_toggle)",
+   "rule": "A move needs re-exports or updated imports; TabManagerItem.extentFor/doujinRowHeight are asserted in tab_cards_test."
+  },
+  {
+   "what": "TabRow doujin rendering",
+   "where": "tab_row.dart",
+   "rule": "TabRow.isDoujinTab == tab.isDoujinDetail. The persisted doujinTitle/doujinThumb render before any fetch (doujin_tabs_test). doujinCoverHeight 0 means no inline cover (the manager draws its own)."
+  },
+  {
+   "what": "Paging semantics in the page changer",
+   "where": "page_number_dialog.dart:131,145",
+   "rule": "The entered page minus 1 becomes handler.pageNum, because runSearch increments before the first fetch (HANDOVER §3.2 paging rule)."
+  },
+  {
+   "what": "App bar title colour and height",
+   "where": "tab_selector.dart:1914-1933",
+   "rule": "r66: toolbarHeight 64 for the two-line title; the count uses appBarTheme.foregroundColor, not onPrimary."
+  },
+  {
+   "what": "Mini manager pops to the root before switching",
+   "where": "doujin_mini_tab_manager.dart _switchTo",
+   "rule": "popUntil(isFirst) on the root navigator, then changeTabIndex in a post-frame callback (the doujin detail route must be gone first)."
+  },
+  {
+   "what": "Per-booru overrides persistence",
+   "where": "tab_per_booru_tag_overrides.dart",
+   "rule": "Writes straight into SearchTab.tagOverrides / inheritMainTags (RxMap), keyed by booru name; empty overrides are removed and inherit=true is stored as absence. The rows are keyed '${tab.id}::${booru.name}' so a tab swap rebuilds the controllers."
+  },
+  {
+   "what": "Tab persistence cadence",
+   "where": "main.dart:536 backupTabs timer",
+   "rule": "Group, order and override changes made in these UIs reach TabRestore only through the 30 s backup timer; there is no explicit save."
+  }
+ ],
+ "perf": [
+  {
+   "file": "lib/src/widgets/tabs/tab_selector.dart",
+   "line": 822,
+   "issue": "The sort comparator calls searchHandler.tabs.indexOf(a/b) (O(n)) on every comparison; the duplicate filter does `searchHandler.tabs.where(duplicateTabs.contains)` (O(n·d)). filterTabs runs on every keystroke with no debounce.",
+   "impact": "With thousands of tabs (the user has had 4,529), each keystroke or sort toggle does O(n² log n) work on the UI thread, which makes typing in the filter janky.",
+   "safeFix": "Build one Map<SearchTab,int> index per filterTabs call and use it in the comparator; use a Set for the duplicate membership test."
+  },
+  {
+   "file": "lib/src/widgets/tabs/tab_selector.dart",
+   "line": 1254,
+   "issue": "Every group header build calls searchHandler.tabsInGroup(g) (O(n)); the app bar 'Jump to group' menu calls tabGroupNames plus tabsInGroup per group on every build; itemBuilder calls searchHandler.tabs.indexOf(tab) per row for originalIndex.",
+   "impact": "O(n·G) per manager rebuild (every keystroke and selection toggle).",
+   "safeFix": "Compute group counts and real indices once in the display-cache pass and read them O(1)."
+  },
+  {
+   "file": "lib/src/widgets/tabs/tab_row.dart",
+   "line": 159,
+   "issue": "tab.booruHandler.availableMetaTags() is called inside the per-tag loop, inside an Obx, for every visible row; each tag also runs every metatag's tagParser.",
+   "impact": "Repeated list construction and regex work per tag per row build in the manager, mini manager and desktop selector.",
+   "safeFix": "Hoist availableMetaTags() out of the loop (once per build)."
+  },
+  {
+   "file": "lib/src/widgets/tabs/doujin_mini_tab_manager.dart",
+   "line": 464,
+   "issue": "ReorderableListView/ListView with no itemExtent, plus a manual jumpTo the current tab's offset; _visibleTabs, including _labelOf string splitting, is rebuilt over all tabs on every Obx tick.",
+   "impact": "Opening the drawer with the current tab far down lays out every row before it (the r39 lesson); filter typing rescans all tabs.",
+   "safeFix": "Give the rows fixed extents (rowHeight + groupHeaderHeight via itemExtentBuilder) and cache the labels per build."
+  },
+  {
+   "file": "lib/src/widgets/drawers/downloads/drawer_quick_access.dart",
+   "line": 61,
+   "issue": "ever(searchHandler.index, _load) runs about 5 async DB queries (pins, favourites count, collections, followed, viewed count) on every tab switch, even while the drawer is closed (InnerDrawer keeps the child built).",
+   "impact": "Extra database work during fast tab swiping or pill flings; it competes with feed loading.",
+   "safeFix": "Skip when the current booru is unchanged, or debounce; the drawer already reloads on open via DrawerRefresh.request()."
+  },
+  {
+   "file": "lib/src/widgets/history/history.dart",
+   "line": 423,
+   "issue": "The filter field's onChanged calls getHistory(), which re-reads the whole search history from the database (or the doujin store) and re-sorts it on every keystroke.",
+   "impact": "Database round trips per character; results can arrive out of order.",
+   "safeFix": "Call filterHistory() on change (in-memory) and reload only on open or after deletes."
+  },
+  {
+   "file": "lib/src/widgets/tags_manager/tm_dialog.dart",
+   "line": 214,
+   "issue": "Bulk delete calls deleteItem per selected tag; each one runs filterTags(), which filters and sorts the whole tag list and calls setState.",
+   "impact": "Deleting k of n tags costs O(k·n log n); it freezes with large tag maps.",
+   "safeFix": "Remove all selected tags first, then filter once."
+  },
+  {
+   "file": "lib/src/widgets/tabs/tab_filters_dialog.dart",
+   "line": 296,
+   "issue": "_TagTypeDropdownItem scans every tab and every tag (TagHandler.getTag) for each TagType on every dropdown build; _BooruDropdownItem and itemFilter scan all tabs per booru.",
+   "impact": "O(types·tabs·tags) each time the filter sheet builds or opens a dropdown.",
+   "safeFix": "Precompute per-type and per-booru counts once in initState."
+  },
+  {
+   "file": "lib/src/widgets/drawers/kemono_sidebar.dart",
+   "line": 77,
+   "issue": "store.ensureFresh() runs in initState; the sidebar is built as soon as a kemono-style tab is current (the InnerDrawer child), not when it is opened.",
+   "impact": "May start the full creator-index download (pawchive: 93k rows) just by switching to a kemono tab.",
+   "safeFix": "Defer it to the drawer's open callback (DrawerRefresh) if that matches intent."
+  }
+ ],
+ "deadCode": [
+  {
+   "file": "lib/src/widgets/drawers/downloads/dd_content.dart",
+   "symbol": "DDContent, DDCombinedList",
+   "evidence": "Grep for DDContent|DDCombinedList across lib/ and test/ finds hits only inside dd_content.dart. DownloadsDrawer (downloads_drawer.dart:21) builds only DrawerQuickAccess."
+  },
+  {
+   "file": "lib/src/widgets/drawers/downloads/dd_controller.dart",
+   "symbol": "DownloadsDrawerController",
+   "evidence": "Referenced only by dd_content.dart, dd_control_panel.dart, dd_queue_controls.dart and dd_selection_actions.dart, which are themselves unreferenced."
+  },
+  {
+   "file": "lib/src/widgets/drawers/downloads/dd_control_panel.dart",
+   "symbol": "DDControlPanel",
+   "evidence": "No reference outside its own file (grep DDControlPanel)."
+  },
+  {
+   "file": "lib/src/widgets/drawers/downloads/dd_queue_controls.dart",
+   "symbol": "DDQueueControls",
+   "evidence": "Used only by dd_control_panel.dart:50 (dead)."
+  },
+  {
+   "file": "lib/src/widgets/drawers/downloads/dd_selection_actions.dart",
+   "symbol": "DDSelectionActions, DDNavigationButtons",
+   "evidence": "Used only by dd_control_panel.dart:51-55 (dead). The loc keys snatchSelected / removeSnatchedStatusFromSelected are used nowhere else."
+  },
+  {
+   "file": "lib/src/widgets/drawers/downloads/dd_active_item.dart",
+   "symbol": "DDActiveItem",
+   "evidence": "Used only by dd_content.dart:109 (dead)."
+  },
+  {
+   "file": "lib/src/widgets/drawers/downloads/dd_queued_item.dart",
+   "symbol": "DDQueuedItem",
+   "evidence": "Used only by dd_content.dart:129 (dead)."
+  },
+  {
+   "file": "lib/src/widgets/drawers/downloads/dd_retryable_item.dart",
+   "symbol": "DDRetryableItem, RetryableItemType",
+   "evidence": "Used only by dd_content.dart:140-155 (dead)."
+  },
+  {
+   "file": "lib/src/widgets/drawers/downloads/dd_empty_state.dart",
+   "symbol": "DDEmptyState",
+   "evidence": "Used only by dd_content.dart:42 (dead)."
+  },
+  {
+   "file": "lib/src/widgets/tabs/tab_selector.dart",
+   "symbol": "_TabManagerPageState.jumpToTop, proxyDecorator (identity)",
+   "evidence": "Grep jumpToTop: only the definition at line 681. proxyDecorator just returns its child."
+  },
+  {
+   "file": "lib/src/widgets/tabs/tab_selector.dart",
+   "symbol": "TabSelector countOnTop / withBorder:false / color parameters",
+   "evidence": "Only lib/src/widgets/root/active_title.dart:27 passes them, and grep 'ActiveTitle(' finds no constructor call outside its own file. desktop_home_page.dart:57 uses the defaults."
+  },
+  {
+   "file": "lib/src/widgets/tags_manager/tm_dialog.dart",
+   "symbol": "_TagsManagerDialogState.saveTags",
+   "evidence": "Grep 'saveTags()' in widgets/: only the definition at tm_dialog.dart:60."
+  },
+  {
+   "file": "lib/src/widgets/tags_manager/tm_list_item_dialog.dart",
+   "symbol": "TagsManagerListItemDialog.onDelete",
+   "evidence": "The delete tile that used it is commented out (lines 144-154); tm_dialog passes onDelete but it is never invoked."
+  },
+  {
+   "file": "lib/src/widgets/tabs/tab_row.dart",
+   "symbol": "TabRow.withColoredTags / fontWeight / isExpanded parameters",
+   "evidence": "A multiline grep for TabRow(... withColoredTags|fontWeight|isExpanded) matches only the constructor itself; all 3 call sites use the defaults."
+  }
+ ],
+ "duplication": [
+  {
+   "where": "furaffinity_sidebar.dart FaSection/FaPill vs kemono_sidebar.dart _Section/_Pill",
+   "what": "The same section heading and coloured stadium pill widgets, character for character (FaSection only adds a Flexible around the title).",
+   "consolidation": "One lib/app/drawers/widgets/sidebar_pill.dart (SidebarSection, SidebarPill), used by both sidebars."
+  },
+  {
+   "where": "tab_selector.dart (_promptGroupName, close-group confirm, group menu actions, _createNew group) vs doujin_mini_tab_manager.dart (_promptGroupName, _groupMenu)",
+   "what": "Group name prompt, 'Close group \"x\"? n tabs will be closed' confirm, and rename / ungroup / close / add-to-group flows written twice, with slightly different labels ('Create' vs OK).",
+   "consolidation": "features/tabs/ui/manager/tab_group_dialogs.dart, shared by both managers."
+  },
+  {
+   "where": "tab_selector.dart sourceView + filterTabs vs doujin_mini_tab_manager.dart sourceView/_visibleTabs (and FlowTabCarousel.sectionIndexes)",
+   "what": "The 'doujins' | 'boorus' | 'all' split by hasReader, defaulting by context, implemented separately.",
+   "consolidation": "A TabSourceView enum with matches(tab) and defaultFor(currentTab) in features/tabs/logic."
+  },
+  {
+   "where": "tab_selector.dart _normalizeMovedTabGroup vs doujin_mini_tab_manager.dart _reorder",
+   "what": "Group normalisation after a drag, with diverging rules (the mini manager never removes a tab from its old group).",
+   "consolidation": "SearchHandler.moveTab(..., normalizeGroup: true)."
+  },
+  {
+   "where": "tab_row.dart doujin title/cover derivation vs doujin_mini_tab_manager.dart _labelOf vs TabManagerItem cover",
+   "what": "Three implementations of 'what a doujin tab shows' (title from the item description or doujinTitle; the cover with opposite precedence in TabManagerItem).",
+   "consolidation": "SearchTab extension getters displayTitle / displayCover in features/tabs/logic."
+  },
+  {
+   "where": "tab_selector.dart TabSelector dropdown vs tab_booru_selector.dart TabBooruSelector",
+   "what": "Identical LoliDropdown configuration (itemExtent 54, item builder with primaryContainer highlight, selectedItemBuilder, onChanged → searchAction).",
+   "consolidation": "A buildBooruDropdown() helper in tab_booru_selector, reused by TabSelector."
+  },
+  {
+   "where": "add_new_tab_dialog.dart, tab_secondary_booru_selector.dart, common/multibooru_toggle.dart",
+   "what": "The LoliMultiselectDropdown<Booru> itemBuilder and the chip-Wrap selectedItemBuilder, copy-pasted.",
+   "consolidation": "A shared SecondaryBoorusDropdown widget in features/tabs/ui/widgets."
+  },
+  {
+   "where": "tab_selector.dart filterTabs (tagTypeFilter) vs tab_filters_dialog.dart _TagTypeDropdownItem",
+   "what": "The same 'does this tab contain a tag of type T, never for doujin tabs' predicate.",
+   "consolidation": "TabListQuery.matchesTagType(tab, type) in features/tabs/logic."
+  },
+  {
+   "where": "tab_selector.dart filterTabs (duplicate key) vs _computeDuplicateTabsToRemove",
+   "what": "The duplicate key ('booruName+tags' or tags) is built in two places.",
+   "consolidation": "One duplicateKey(tab, sameBooru) function."
+  },
+  {
+   "where": "history.dart selectedActionsBuild vs tm_list_bottom.dart; history.dart listBuild vs tm_list.dart",
+   "what": "The same select all (when filtered) / delete N with confirm list / clear selection bar, and the same HugeListView + CustomScrollBarThumb setup with sublist paging.",
+   "consolidation": "lib/core/ui/selection_action_bar.dart and a small paged-list helper."
+  },
+  {
+   "where": "collections _NameDialog, saved_search_tile._rename, tab_selector/_promptGroupName, doujin_mini_tab_manager/_promptGroupName, add_to_collection_sheet _DoujinCollectionPicker._createNew",
+   "what": "Five 'enter a name' AlertDialogs, each with its own controller lifecycle (most dispose it unsafely right after showDialog returns).",
+   "consolidation": "lib/core/ui/text_prompt_dialog.dart (a StatefulWidget that owns and disposes its controller)."
+  },
+  {
+   "where": "drawer_quick_access _openFavourites/_openHistory, dd_selection_actions 'Snatching history', collections_page _open",
+   "what": "'Open a virtual booru (Favourites / History / Downloads / Collections) as a new tab and close the drawer or page'.",
+   "consolidation": "A SearchHandler.openVirtualBooruTab(type, query) helper."
+  },
+  {
+   "where": "tf_add_dialog.dart / tf_edit_dialog.dart",
+   "what": "The same onSubmit (trim, lowercase, empty-input snackbar, pop) and the same header tile layout.",
+   "consolidation": "One TagFilterDialog with add/edit modes."
+  },
+  {
+   "where": "TabManagerItem.rowHeight (72+8) vs _TabManagerPageState.tabHeight (72+8)",
+   "what": "The same constant declared twice.",
+   "consolidation": "Use TabManagerItem.rowHeight everywhere."
+  }
+ ],
+ "tests": [
+  "test/tab_cards_test.dart",
+  "test/doujin_tabs_test.dart",
+  "test/visited_tabs_history_scroll_test.dart",
+  "test/drawer_landscape_test.dart",
+  "test/doujin_drawer_refresh_test.dart",
+  "test/pinned_hide_sidebar_test.dart",
+  "test/furaffinity_pages_test.dart",
+  "test/doujin_separation_test.dart"
+ ]
+}

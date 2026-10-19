@@ -1,0 +1,215 @@
+import 'dart:async';
+
+import 'package:flutter_test/flutter_test.dart';
+
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/models/booru_tag.dart';
+import 'package:lolisnatcher/models/tag_type.dart';
+import 'package:lolisnatcher/features/tags/logic/tag_catalog_puller.dart';
+import 'package:lolisnatcher/sources/framework/tags/tag_catalog_source.dart';
+
+/// A source with in-memory shards; one shard can be made to throw.
+class _Fake extends TagCatalogSource {
+  _Fake({this.shared = false, this.total, this.failAt, this.open = false, this.perPull});
+
+  final bool shared;
+  final int? total;
+  final int? failAt;
+  final int perShard = 3;
+  final bool open;
+  final int? perPull;
+  final List<(String, int)> asked = [];
+
+  @override
+  bool get sharedShards => shared;
+
+  @override
+  int? get sharedShardCount => total;
+
+  @override
+  int? get maxShardsPerPull => perPull;
+
+  @override
+  Duration get shardDelay => Duration.zero;
+
+  @override
+  List<TagCatalogNamespace> get namespaces => [
+    TagCatalogNamespace(key: 'artist', label: 'Artists', type: TagType.artist, shards: open ? null : total, maxShards: open ? 4 : null),
+    const TagCatalogNamespace(key: 'tag', label: 'Tags', type: TagType.none),
+  ];
+
+  @override
+  Future<List<BooruTagEntry>?> shardAt(String namespace, int shard) async {
+    asked.add((namespace, shard));
+    if (failAt == shard) throw Exception('rate limited');
+    if (open && shard >= 6) return null;
+    return [
+      for (int i = 0; i < perShard; i++)
+        BooruTagEntry(name: 's${shard}_$i', namespace: shared ? (i.isEven ? 'artist' : 'tag') : namespace, tagType: TagType.none),
+    ];
+  }
+}
+
+void main() {
+  final Booru booru = Booru('h', BooruType.Hitomi, '', 'https://hitomi.la', '');
+  final puller = TagCatalogPuller.instance;
+  late List<BooruTagEntry> written;
+
+  setUp(() {
+    written = [];
+    puller.recordFn = (b, entries) async {
+      written.addAll(entries);
+      return entries.length;
+    };
+  });
+
+  test('walks every known shard, stores each, and reports done', () async {
+    final fake = _Fake(total: 3);
+    puller.resetResume(booru, fake, 'artist');
+    await puller.pull(booru, fake, 'artist');
+    final state = puller.stateFor(booru, fake, 'artist').value;
+    expect(fake.asked, [('artist', 0), ('artist', 1), ('artist', 2)]);
+    expect(written.length, 9);
+    expect(state.done, isTrue);
+    expect(state.running, isFalse);
+    expect(state.stored, 9);
+    expect(state.progress, 1);
+  });
+
+  test('a failing shard keeps what was stored and resumes from there', () async {
+    final fake = _Fake(total: 4, failAt: 2);
+    puller.resetResume(booru, fake, 'artist');
+    await puller.pull(booru, fake, 'artist');
+    var state = puller.stateFor(booru, fake, 'artist').value;
+    expect(state.error, contains('rate limited'));
+    expect(state.done, isFalse);
+    expect(written.length, 6);
+
+    final again = _Fake(total: 4);
+    await puller.pull(booru, again, 'artist');
+    expect(again.asked.first, ('artist', 2), reason: 'resumes at the failed shard');
+    state = puller.stateFor(booru, again, 'artist').value;
+    expect(state.done, isTrue);
+  });
+
+  test('an open-ended walk stops at the cap, then at the end', () async {
+    final fake = _Fake(open: true);
+    puller.resetResume(booru, fake, 'artist');
+    await puller.pull(booru, fake, 'artist');
+    expect(fake.asked.length, 4, reason: 'maxShards 4 per pull');
+    expect(puller.stateFor(booru, fake, 'artist').value.done, isFalse);
+    final more = _Fake(open: true);
+    await puller.pull(booru, more, 'artist');
+    expect(more.asked.map((a) => a.$2).toList(), [4, 5, 6]);
+    expect(puller.stateFor(booru, more, 'artist').value.done, isTrue, reason: 'shard 6 answered null');
+  });
+
+  test('a shared source runs one job that every namespace mirrors', () async {
+    final fake = _Fake(shared: true, total: 2);
+    puller.resetResume(booru, fake, 'artist');
+    await puller.pull(booru, fake, 'tag');
+    expect(fake.asked, [('', 0), ('', 1)]);
+    expect(identical(puller.stateFor(booru, fake, 'artist'), puller.stateFor(booru, fake, 'tag')), isTrue);
+    expect(written.map((e) => e.namespace).toSet(), {'artist', 'tag'});
+  });
+
+  test('cancel stops the walk and keeps the resume point', () async {
+    final fake = _Fake(total: 50);
+    puller.resetResume(booru, fake, 'tag');
+    // Cancel from inside the first shard by hooking the record function.
+    puller.recordFn = (b, entries) async {
+      puller.cancel(booru, fake, 'tag');
+      return entries.length;
+    };
+    await puller.pull(booru, fake, 'tag');
+    final state = puller.stateFor(booru, fake, 'tag').value;
+    expect(fake.asked.length, 1);
+    expect(state.running, isFalse);
+    expect(state.done, isFalse);
+  });
+
+  test('a shared walk with no shard count stops at the per-pull cap and resumes from there', () async {
+    final fake = _Fake(shared: true, perPull: 2);
+    puller.resetResume(booru, fake, 'artist');
+    await puller.pull(booru, fake, 'artist');
+    expect(fake.asked, [('', 0), ('', 1)]);
+    expect(puller.stateFor(booru, fake, 'artist').value.done, isFalse);
+    final more = _Fake(shared: true, perPull: 2);
+    await puller.pull(booru, more, 'tag');
+    expect(more.asked, [('', 2), ('', 3)], reason: 'one job for every chip, resumed');
+  });
+
+  test('r50: pulling everything walks each category to its end, and the overall state adds them up', () async {
+    final Booru other = Booru('e', BooruType.e621, '', 'https://e621.example', '');
+    final two = _Categories();
+    for (final ns in two.namespaces) {
+      puller.resetResume(other, two, ns.key);
+    }
+    await puller.pullEverything(other, two);
+    expect(two.asked, [('artist', 0), ('artist', 1), ('tag', 0), ('tag', 1), ('tag', 2)]);
+    final overall = puller.overallState(other, two);
+    expect((overall.done, overall.running, overall.stored, overall.shard, overall.shards), (true, false, 10, 2, 2));
+  });
+
+  test('1.0 (M2): a second tap while a pull waits for its host does not walk the namespace twice', () async {
+    final Booru other = Booru('d', BooruType.Hitomi, '', 'https://dup.example', '');
+    final Completer<void> gate = Completer<void>();
+    final _Gated cats = _Gated(gate);
+    for (final ns in cats.namespaces) {
+      puller.resetResume(other, cats, ns.key);
+    }
+    // The host is busy with the tag walk ...
+    final Future<void> busy = puller.pull(other, cats, 'tag');
+    await Future<void>.delayed(Duration.zero);
+    // ... while the artist chip is tapped twice.
+    final Future<void> first = puller.pull(other, cats, 'artist');
+    final Future<void> second = puller.pull(other, cats, 'artist');
+    gate.complete();
+    await Future.wait([busy, first, second]);
+    expect(cats.asked.where((a) => a.$1 == 'artist').toList(), [('artist', 0), ('artist', 1)], reason: 'one walk, not two');
+  });
+
+  test('r50: pulling everything on a shared source is the one shared walk', () async {
+    final Booru other = Booru('g', BooruType.Gelbooru, '', 'https://gel.example', '');
+    final fake = _Fake(shared: true, total: 2);
+    puller.resetResume(other, fake, '');
+    await puller.pullEverything(other, fake);
+    expect(fake.asked, [('', 0), ('', 1)]);
+    expect(puller.overallState(other, fake).done, isTrue);
+  });
+}
+
+/// Two categories that end on their own: artists after 2 pages, tags after 3.
+class _Categories extends TagCatalogSource {
+  final List<(String, int)> asked = [];
+
+  @override
+  Duration get shardDelay => Duration.zero;
+
+  @override
+  List<TagCatalogNamespace> get namespaces => const [
+    TagCatalogNamespace(key: 'artist', label: 'Artists', type: TagType.artist),
+    TagCatalogNamespace(key: 'tag', label: 'Tags', type: TagType.none),
+  ];
+
+  @override
+  Future<List<BooruTagEntry>?> shardAt(String namespace, int shard) async {
+    if (shard >= (namespace == 'artist' ? 2 : 3)) return null;
+    asked.add((namespace, shard));
+    return [BooruTagEntry(name: '${namespace}_$shard', namespace: namespace, tagType: TagType.none), BooruTagEntry(name: '${namespace}_${shard}b', namespace: namespace, tagType: TagType.none)];
+  }
+}
+
+/// [_Categories] whose tag walk waits at a gate, keeping the host busy.
+class _Gated extends _Categories {
+  _Gated(this.gate);
+
+  final Completer<void> gate;
+
+  @override
+  Future<List<BooruTagEntry>?> shardAt(String namespace, int shard) async {
+    if (namespace == 'tag') await gate.future;
+    return super.shardAt(namespace, shard);
+  }
+}

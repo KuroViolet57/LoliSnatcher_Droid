@@ -1,0 +1,150 @@
+import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
+
+import 'package:get/get.dart';
+import 'package:url_launcher/url_launcher_string.dart';
+
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/features/settings/ui/sources/booru_edit_page.dart';
+import 'package:lolisnatcher/features/settings/ui/settings_page.dart';
+import 'package:lolisnatcher/core/ui/settings_widgets.dart';
+import 'package:lolisnatcher/features/feed/ui/waterfall_view.dart';
+import 'package:lolisnatcher/features/webview/ui/webview_browser_view.dart';
+
+class MediaPreviews extends StatefulWidget {
+  const MediaPreviews({super.key});
+
+  @override
+  State<MediaPreviews> createState() => _MediaPreviewsState();
+}
+
+class _MediaPreviewsState extends State<MediaPreviews> {
+  final SettingsHandler settingsHandler = SettingsHandler.instance;
+  final SearchHandler searchHandler = SearchHandler.instance;
+
+  final ValueNotifier<bool> booruListFilled = ValueNotifier(false), tabListFilled = ValueNotifier(false);
+
+  @override
+  void initState() {
+    super.initState();
+
+    booruListFilled.value = settingsHandler.booruList.isNotEmpty;
+    settingsHandler.booruList.addListener(booruListener);
+
+    tabListFilled.value = searchHandler.tabs.isNotEmpty;
+    searchHandler.tabs.addListener(tabListener);
+  }
+
+  void booruListener() {
+    if (!booruListFilled.value) {
+      booruListFilled.value = settingsHandler.booruList.isNotEmpty;
+    }
+  }
+
+  void tabListener() {
+    if (!tabListFilled.value) {
+      tabListFilled.value = searchHandler.tabs.isNotEmpty;
+    }
+  }
+
+  @override
+  void dispose() {
+    settingsHandler.booruList.removeListener(booruListener);
+    searchHandler.tabs.removeListener(tabListener);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // print('image previews build $booruListFilled $tabListFilled');
+
+    return ListenableBuilder(
+      listenable: Listenable.merge([booruListFilled, tabListFilled]),
+      builder: (context, _) {
+        final booruListFilledVal = booruListFilled.value;
+        final tabListFilledVal = tabListFilled.value;
+
+        // no booru configs
+        if (!booruListFilledVal) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.max,
+              children: [
+                SettingsButton(
+                  name: context.loc.mediaPreviews.noBooruConfigsFound,
+                  icon: const Icon(null),
+                ),
+                SettingsButton(
+                  name: context.loc.mediaPreviews.addNewBooru,
+                  icon: const Icon(Symbols.settings_rounded),
+                  page: () => BooruEdit(Booru('New', null, '', '', '')),
+                ),
+                SettingsButton(
+                  name: context.loc.mediaPreviews.help,
+                  icon: const Icon(Symbols.help_center_rounded),
+                  action: () {
+                    launchUrlString(
+                      'https://github.com/NO-ob/LoliSnatcher_Droid/wiki',
+                      mode: LaunchMode.externalApplication,
+                    );
+                  },
+                  trailingIcon: const Icon(Symbols.exit_to_app_rounded),
+                ),
+                SettingsButton(
+                  name: context.loc.mediaPreviews.settings,
+                  icon: const Icon(Symbols.settings_rounded),
+                  page: () => const SettingsPage(),
+                ),
+              ],
+            ),
+          );
+        }
+
+        // temp message while restoring tabs (or for some reason initial tab was not created)
+        if (!tabListFilledVal) {
+          return Center(
+            child: Column(
+              children: [
+                const CircularProgressIndicator(),
+                ValueListenableBuilder(
+                  valueListenable: searchHandler.isRestored,
+                  builder: (context, isRestored, child) {
+                    if (searchHandler.isRestored.value) {
+                      return const SizedBox.shrink();
+                    }
+
+                    return child!;
+                  },
+                  child: Text(context.loc.mediaPreviews.restoringPreviousSession),
+                ),
+              ],
+            ),
+          );
+        }
+
+        // render thumbnails grid — or an embedded browser for WebView-type
+        // boorus (sites that can't be scraped still get a tab this way)
+        return Obx(() {
+          searchHandler.index.value; // subscribe to tab switches
+          searchHandler.tabId.value;
+          if (searchHandler.tabs.isEmpty) {
+            return const WaterfallView();
+          }
+          final tab = searchHandler.currentTab;
+          if (tab.selectedBooru.value.type?.isWebView == true) {
+            return WebViewBrowserView(
+              // recreate on tab switch or new search text
+              key: ValueKey('webview-${tab.id}-${tab.tags}'),
+              tab: tab,
+            );
+          }
+          return const WaterfallView();
+        });
+      },
+    );
+  }
+}

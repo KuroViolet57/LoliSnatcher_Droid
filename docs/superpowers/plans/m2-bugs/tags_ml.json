@@ -1,0 +1,296 @@
+{
+ "bugs": [
+  {
+   "title": "Unfollowing an artist deletes a normal global pin with the same tag",
+   "file": "lib/features/tags/logic/followed_artists_handler.dart",
+   "line": 49,
+   "scenario": "User pins 'artist_x' on every source (global pin), also follows artist_x; tapping Unfollow (hub or Followed artists page) deletes BOTH rows, because removal is by tag name over all global pins, not by the follow label.",
+   "evidence": "unfollow: `_settings.dbHandler.removePinnedTagByName(tagName)`; database_handler.dart:2478 `DELETE FROM PinnedTag WHERE tagName = ? AND booruName IS NULL` (no label filter); also skips PinnedTagVisibility.forgetId for the deleted ids.",
+   "severity": "data-loss",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Scroll-thumb label crashes on an empty tag name",
+   "file": "lib/features/tags/ui/manager/tm_list.dart",
+   "line": 96,
+   "scenario": "If TagHandler.tagMap holds a tag with an empty fullString, dragging the scroll thumb over it throws a RangeError.",
+   "evidence": "title: '${tag.tagType} [${tag.fullString[0]}]'.",
+   "severity": "crash",
+   "confidence": "plausible"
+  },
+  {
+   "title": "Deferred (kept-for-later) learning replays items with garbage tags",
+   "file": "lib/features/recommender/logic/recommender_handler.dart",
+   "line": 530,
+   "scenario": "Favourite a post, leave the app before the step ran -> event kept with item.toJson(); next run replayKept() rebuilds the item with BooruItem.fromMap, whose tags become strings like '{fullString: red_hair, updatedAt: 1696..., tagType: none}'. The model learns unique junk tag:/pair: features instead of the real tags (and loses score/type/media), polluting weights.",
+   "evidence": "keep: `'item': item.toJson()` (line 498); BooruItem.toJson puts `'tags': tagsList` (List<Tag>, booru_item.dart:181) which jsonEncode turns into Tag.toJson maps; replay: `BooruItem.fromMap(Map<String, dynamic>.from(e['item'] as Map))` (line 530) and fromMap does `tags.add(tagz[i].toString())` (booru_item.dart:252) on each map. Tests only count rows.",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Suggested strip runs all facet searches concurrently on one sub-handler (wrong pages, mixed results)",
+   "file": "lib/features/recommender/logic/suggestion_handler.dart",
+   "line": 243,
+   "scenario": "Post's own booru (single target): ~7 facets. Each closure synchronously does handler.pageNum = handler.pageNum + 1 then calls handler.search, which suspends at `await searchSetup()` before makeURL reads pageNum. All facets therefore request page start+7 (skipping the first 7 pages; small character tags return nothing), each search resets the shared `fetched` (prevTags differ), and each facet's tail `got.sublist(got.length - limit)` can contain other facets' posts, so quotas/caps are applied to the wrong facets.",
+   "evidence": "suggestion_handler.dart:243-248 `final BooruHandler handler = _handlerFor(target); handler.pageNum = handler.pageNum + 1; ... handler.search(finalQuery, null)` inside requests built in a loop then Future.wait; booru_handler.dart:331 `if (!await searchSetup())` precedes makeURL (356) and `if (prevTags != tags) fetched.value = []` (344). HANDOVER: 'a handler's search is not re-entrant' (DoujinForYou lanes, BoardHandler waves).",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "For You history blend hits the same source handler concurrently",
+   "file": "lib/features/recommender/logic/foryou_handler.dart",
+   "line": 533,
+   "scenario": "Profile mode with history: 3 posts x up to 3 facets = up to 9 requests spread over at most 8 sources (_maxSources) - with the usual 2-4 boorus several facets share one handler concurrently; they share fetched/prevTags/locked, so results are lost or attributed to the wrong facet.",
+   "evidence": "`final int j = (facetIndex + _feedPage + _rotationOffset) % _sources.length;` (533) then `handler.search(withFilter(query), null)` per facet in parallel (548-549); the seed path comments 'Source indices within a page are distinct, so no handler is hit concurrently' (425-426), the blended path has no such guarantee.",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "For You history-blend mode does not drop 'Not interested' posts",
+   "file": "lib/features/recommender/logic/foryou_handler.dart",
+   "line": 575,
+   "scenario": "Default For You (profile mode with viewing history): a post marked Not interested is removed from the tab, but later pages / a new For You tab can serve it again because _searchBlended never calls withoutDismissed (rerank does not filter dismissals).",
+   "evidence": "_searchBlended: `SuggestionEngine.blend(...)` then `RecommenderHandler.maybe?.rerank(blended, ...)` (568-575) - no withoutDismissed; seed path has it (490). rerank (recommender_handler.dart:893-933) never checks isDismissed. recommendation_surfaces_test only greps the file for the string 'withoutDismissed(', which the seed path satisfies.",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Changing query/filter/booru while a page loads shows stale rows and never loads the new list",
+   "file": "lib/features/tags/ui/tag_browser_page.dart",
+   "line": 195,
+   "scenario": "Type a query the snapshot lacks (slow live site search) then tap a type chip or switch booru: _reset clears rows but _loadMore returns at once because _loading is still true; when the old request finishes its rows (old query/booru) are appended under the new filter, and the new query is never fetched until the user scrolls.",
+   "evidence": "_reset (195-204) clears _rows/_offset but not _loading, then calls _loadMore; _loadMore: `if (_loading || _isLastPage) return;` (226); the in-flight call later does `_rows.addAll(got); _offset += got.length` (276-277) without checking that query/filter/booru are unchanged.",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Gelbooru pool paging cursor drifts or stops when some ids fail",
+   "file": "lib/sources/booru/pools/pool_posts_handler.dart",
+   "line": 180,
+   "scenario": "Pool on rule34.xxx: a page where 2 of 20 id lookups fail adds 18 posts; the next page starts at fetched.length (18) and re-fetches 2 already-shown ids (duplicates in fetched); a page where every lookup fails (rate limit) returns empty and locks the pool although later members exist.",
+   "evidence": "_pageById: `final int start = fetched.length; ... ids.skip(start).take(limit)` (180-182), failures return null and are dropped (197-203); search(): `if (pageItems.isEmpty) { locked = true; ...}` (111-114).",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Blacklist `filesize:>5mb` style terms compare against 0",
+   "file": "lib/models/blacklist_line.dart",
+   "line": 246,
+   "scenario": "Blacklist line `filesize:>5mb` hides every post with a known file size (> 0 bytes); `filesize:1mb..2mb` becomes 0..0.",
+   "evidence": "_parseNumericValue('>5mb') -> `int.tryParse(raw.substring(1)) ?? 0` = 0 (287-289; unit stripping only on the bare-number path, 297); _resolveFileSizeValues then multiplies [0] by 1 MB (246-257).",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Catalog picker filter can show the previous query's rows",
+   "file": "lib/features/tags/ui/tag_type_strip.dart",
+   "line": 200,
+   "scenario": "Type in the picker filter while a page read is in flight: _reset clears the rows and calls _loadMore, which returns because _loading is true. The old read then appends the OLD query's rows and the new query is never loaded.",
+   "evidence": "_reset(){_offset=0;_rows.clear();await count; await _loadMore();} and _loadMore(){ if (_loading || _lastPage) return; ...}. The in-flight call does _rows.addAll(got); _offset += got.length.",
+   "severity": "wrong-behaviour",
+   "confidence": "plausible"
+  },
+  {
+   "title": "Reset ('Forget everything learned') does not drop kept or queued replay learning",
+   "file": "lib/features/recommender/logic/recommender_handler.dart",
+   "line": 535,
+   "scenario": "Learning kept in deferred.json from the last run (or replay steps already queued) is learned into the freshly reset model; replayKept closures have no generation check and reset() never clears DeferredLearning.",
+   "evidence": "replayKept queues `_learnEvent(...)` directly (535-541) without the `_generation` check that onEvent uses (486); reset() bumps _generation and clears DB/files (1000-1030) but not DeferredLearning.",
+   "severity": "wrong-behaviour",
+   "confidence": "plausible"
+  },
+  {
+   "title": "Tag type fetch queue never runs and grows forever",
+   "file": "lib/core/storage/tag_handler.dart",
+   "line": 271,
+   "scenario": "Any booru page with untyped tags: BooruHandler.populateTagHandler -> TagHandler.queue -> untypedQueue.value.add(...). The ValueNotifier is mutated in place so its listener (queueListener -> tryGetTagTypes) never fires; getTagTypes is never started, tagTypeFetchEnabled does nothing, and every page appends another UntypedCollection that is never removed.",
+   "evidence": "ctor: untypedQueue.addListener(queueListener) (line 29); queue(): `untypedQueue.value.add(UntypedCollection(untypedTags, cooldown, booru));` (line 271) - no assignment to .value, no notifyListeners; tryGetTagTypes is only called from queueListener and from the end of getTagTypes (lines 55, 223); grep shows no other caller.",
+   "severity": "leak",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Removing a board's image leaves its copy on disk forever",
+   "file": "lib/features/boards/ui/boards_page.dart",
+   "line": 619,
+   "scenario": "Edit a board with a picked image -> Remove image -> Save: imagePath becomes '' but boards/<id>.<ext> is never deleted; deleting the board later only deletes board.imagePath (now empty).",
+   "evidence": "Remove: `imagePath = ''; pendingPick = null; imageUrl.clear();` (619-623); _save deletes the previous copy only inside `if (pendingPick != null)` (502-514); BoardsHandler.delete deletes `b.imagePath` only if non-empty (boards_handler.dart:113).",
+   "severity": "leak",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Saving a board in the editor drops its pixel-tag and look caches",
+   "file": "lib/features/boards/ui/boards_page.dart",
+   "line": 528,
+   "scenario": "Edit only the name of an image board -> Save: the new Board is built without pixelTags/pixelImage/lookVector/lookImage, so the next open re-runs the tagger (seconds) and the looks model on the same image.",
+   "evidence": "_save constructs Board(... matches/matchedAt/matchedImage/createdAt ...) (528-543) and omits pixelTags, pixelImage, lookVector, lookImage (and hidden).",
+   "severity": "perf",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Doujin For You source rotation is always 0 on the first page",
+   "file": "lib/features/recommender/logic/doujin_foryou_handler.dart",
+   "line": 308,
+   "scenario": "First load of the doujin For You feed always starts at the first configured source instead of a random one",
+   "evidence": "search() calls await _init(tags) (which sets _rotation = sources.length <= 1 ? 0 : random) BEFORE _refreshSources() fills `sources`; on first init sources is empty",
+   "severity": "minor",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Floating window 'Open in a new tab' ignores the 'previous' tab position",
+   "file": "lib/features/tags/ui/floating_tag_preview_window.dart",
+   "line": 363,
+   "scenario": "New tab position set to 'prev': the window's new-tab button puts the tab at the end.",
+   "evidence": "final addMode = settingsHandler.defaultTabAddMode == 'next' ? TabAddMode.next : TabAddMode.end; addTabByString(addMode: null) would follow the setting.",
+   "severity": "minor",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Tag browser leaks a ValueNotifier per booru switch",
+   "file": "lib/features/tags/ui/tag_browser_page.dart",
+   "line": 121,
+   "scenario": "Each booru change calls _bindPull which creates a new ValueNotifier for _pullState; old ones are never disposed (and none on dispose).",
+   "evidence": "`_pullState = catalog == null ? null : ValueNotifier(...)` (121); dispose only removes listeners (185-188).",
+   "severity": "minor",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "A second tap while a pull waits for its host starts a duplicate pull",
+   "file": "lib/features/tags/logic/tag_catalog_puller.dart",
+   "line": 87,
+   "scenario": "Tap a chip while another namespace of the same host is pulling, then tap the same chip again: both calls pass `state.value.running` (still false while waiting) and both later walk the same namespace.",
+   "evidence": "`if (state.value.running) return;` (87) is checked before the busy-host wait loop (92-95); running is only set after the wait (109).",
+   "severity": "minor",
+   "confidence": "plausible"
+  },
+  {
+   "title": "A post left while the app goes away is never remembered this run",
+   "file": "lib/features/recommender/logic/look_memory.dart",
+   "line": 83,
+   "scenario": "Leave a post (≥2.5 s) as the app is paused: the step runs lite and does nothing, but the key is already in _asked, so reopening the post later in the same run does not queue it again (contradicts the comment 'remembered the next time it is opened').",
+   "evidence": "_left: `_asked.add(key)` (83) before queue; _defaultQueue: `if (!lite) await step();` (105).",
+   "severity": "minor",
+   "confidence": "plausible"
+  },
+  {
+   "title": "Timing/NPU-failure change can miss being written",
+   "file": "lib/features/recommender/logic/ml/model_timings.dart",
+   "line": 207,
+   "scenario": "A _record/recordNpuFailure arriving after the save loop exited but before `_saving = null` sees _saving != null, returns, and nothing writes the change until the next record (or never, if the app dies).",
+   "evidence": "_save: `if (_saving != null) return;` (191); after the loop `await _saving; _saving = null;` (207-208) without re-checking _dirty.",
+   "severity": "minor",
+   "confidence": "plausible"
+  }
+ ],
+ "fragile": [
+  {
+   "what": "Sub-handler search is not re-entrant",
+   "where": "BooruHandler.search (booru_handler.dart:325) used by ForYouHandler, SuggestionHandler, BoardHandler, DoujinForYouHandler",
+   "rule": "Never run two searches on the same BooruHandler instance concurrently; serialize per handler (lanes) or use one handler per request. pageNum is read after an await."
+  },
+  {
+   "what": "Feature names and hashing",
+   "where": "item_features.dart (FNV-1a over UTF-8, 18-bit buckets; tag:, type:<t>:, ns:<ns>:, pair:a|b, site:, media:, score:, pages:, title:, emb:<model>:<i>, look:<model>:<i>, taste:, ltaste:)",
+   "rule": "Strings and hash are persisted in <world>.bin, the Interaction log and RecommenderFeature; any change silently invalidates learned weights. Only loggedHashes (binary features) are logged."
+  },
+  {
+   "what": "FTRL model file format",
+   "where": "ftrl_model.dart toBytes/fromBytes",
+   "rule": "magic 'LSRM' 0x4D52534C, version 1, 56-byte header (buckets, updates, lastUpdate, alpha, beta, l1, l2) then z and n Float32 little-endian; a foreign bucket count forces a replay rebuild."
+  },
+  {
+   "what": "Registration order and null-safe access",
+   "where": "main.dart 103-136; RecommenderHandler.maybe, EncoderHandler.maybe, ImageTaggerHandler.maybe, LookModelHandler.maybe, VideoFrames.maybe",
+   "rule": "Recommender/Interests register before SettingsHandler exists - nothing in register() may read settings (replayKept is deferred to the first onEvent, guarded by GetIt.isRegistered<SettingsHandler>); models register after settings; every caller goes through `maybe`."
+  },
+  {
+   "what": "ModelWork contract",
+   "where": "model_work.dart",
+   "rule": "Steps never rethrow; lite only when away (paused/hidden/detached, not inactive); steps with defer are kept to disk instead of running lite; quiet 1.5 s, deadline 20 s, video hold 10 s, step timeout 60 s; onDrainedAway flushes models."
+  },
+  {
+   "what": "ONNX session rules",
+   "where": "onnx_*_runner.dart, encoder/tagger/look handlers",
+   "rule": "Int64List for int64 inputs; one session per model (never a second copy); thread count fixed at session open (the opener's ModelUse decides); never close a session under a run (_inFlight, _closeWhenIdle); idle close 120 s re-armed when the last run ends; a run failure sets the model's error status until refresh."
+  },
+  {
+   "what": "NPU compiled copies",
+   "where": "onnx_options.dart",
+   "rule": "Copy names `<model>.npu2-<bytes>-whole|mixed.onnx`, marker `<model>.npu2-<bytes>-whole.failed`; staleNpuFiles removes `.npu-` (build 117) and other sizes; ModelTimings.ensureLoaded must complete before openOnnxSession decides; only QNN failures count, once per session id; 2 failures -> CPU until NPU picked again (setRunOn clears)."
+  },
+  {
+   "what": "Vector storage keys",
+   "where": "EncoderHandler (_slug, text keys 'text:<fnv hex>-<bytes>'), LookModelHandler.storeKey 'look:<slug>', item key = postURL else fileURL",
+   "rule": "vectors.db ItemEmbedding is shared by both models and split by the 'look:' prefix for usage/pruning; keys must stay identical across the refactor."
+  },
+  {
+   "what": "Tab query grammars that restore tabs",
+   "where": "board_handler.dart boardIdOf ('board:<id>'), suggestion_handler.dart queryFor/isQuery/fromQuery ('suggest: c: f: a: t: s: with: on: post:' with %20/%25 escaping), foryou_handler.dart (seed:, from:, filter:, -tag, plain tags), pools ('pool: <name>' + poolId)",
+   "rule": "Saved tabs and SearchTab constructor parse these; SearchHandler.isPlainSearch keeps suggest: queries out of history/interests."
+  },
+  {
+   "what": "Tag snapshot storage shape",
+   "where": "BooruTagStore.keyFor (host lowercased, first 'www.' removed; fallback type/name for URL-less boorus), filterFor (byType -> namespace '' + tagType; else namespace = ns key)",
+   "rule": "Booru catalogs read rows with EMPTY namespace by type so the tag browser and the chips share lists; doujin/kemono rows carry the site namespace; manual overrides keyed the same way and never overwritten by record()."
+  },
+  {
+   "what": "Catalog guard tests",
+   "where": "test/tag_catalog_sources_test.dart ('every source has a decided answer'), test/recommendation_surfaces_test.dart (hard-coded file paths + string greps)",
+   "rule": "Every BooruType.saveable must offer a catalog or be in noCatalog with a reason; surface files must contain rerank(/scorer(, onExposed(, the surface name and withoutDismissed( - moving files requires updating the test paths."
+  },
+  {
+   "what": "Follow pins and hidden pins",
+   "where": "FollowedArtistsHandler.followLabel 'followed'; PinnedTagVisibility keys 'id:N' / 'tag:x' in SourceSettings.hiddenPins; DBHandler.removePinnedTag -> forgetId",
+   "rule": "Follows are global PinnedTag rows with the label and must stay out of pinned-tag UIs (isFollowPin); PinnedTag.id is reused by SQLite (no AUTOINCREMENT) so id hides must be forgotten on delete."
+  },
+  {
+   "what": "GetX listening",
+   "where": "VideoFrames.attach, LookMemory.attach (ViewerHandler.instance.current.addListener)",
+   "rule": "Use addListener, not .listen/stream: GetX 5's stream stops feeding once its last stream listener cancels."
+  },
+  {
+   "what": "mpv frame grabs",
+   "where": "video_frames.dart MediaKitFrameTarget.command",
+   "rule": "Use screenshot-to-file through NativePlayer.command, never Player.screenshot() (media_kit 1.2.6 buffer bug); call MediaKitFrameSource.noteGrab before the command so the pool ignores 'Taking screenshot failed.'; check current-vo and video-frame-info/interlaced first; skip mediacodec_embed output."
+  },
+  {
+   "what": "Deferred learning file",
+   "where": "recommender/deferred.json",
+   "rule": "Written synchronously (app may be killed), cap 200 oldest-first, handed over once (file emptied before replay); stop() during restore."
+  },
+  {
+   "what": "Tabs never kidnap",
+   "where": "BoardsPage.open(switchTo:), openSimilar, openFromItem, pools/tag browser background opens",
+   "rule": "Tabs opened from content open in the background with a notice; only the user's choice from a list (Boards page Open, Tag browser row tap, Pools tap, For You page) switches."
+  },
+  {
+   "what": "Startup ordering for tag colours",
+   "where": "main.dart initHandlers: tagHandler.initialize() before searchHandler.restoreTabs()",
+   "rule": "Search box chips are coloured from the global tag map on first render; BooruTagStore.load() (manual overrides) happens in the same step."
+  },
+  {
+   "what": "Boards persistence",
+   "where": "boards.json (version 1: sauceNaoApiKey + boards with matches/pixelTags/lookVector caches), boards/<id>.<ext> pictures, hidden boards pruned after 3 days",
+   "rule": "Included in backup (boards.json, board pictures); BoardsHandler.reloadFromDisk after restore; the SauceNAO key is a credential stored in plain JSON and travels with backups."
+  },
+  {
+   "what": "Settings keys of this subsystem",
+   "where": "settings_handler.dart",
+   "rule": "enableInterestTracking, aiRecommendations, aiLearning, aiEncoder, encoderModel, aiImageTagger, imageTaggerModel, taggerOnReactions, aiLook, lookModel, videoFrames, aiModelsOff, framesForYou, framesOtherTabs, pictureDecoder, rememberLooks, vectorSpaceMb, tagTypeFetchEnabled, modelTasks, modelThreads (device-specific), modelRunOn (device-specific); ModelTasks.parse/parseThreads/parseRunOn whitelist values."
+  },
+  {
+   "what": "Test seams as static mutable fields",
+   "where": "BoardHandler, ForYouHandler, RecommenderHandler, PixelTags, BoardEditPage, BoardsPage, BoardQueryBuilder, ReverseImageSearch, PickerWatch, ModelTasks, onnx_options top-level seams, *.resetForTests",
+   "rule": "~50 tests assign these by class name; renaming or moving them breaks the suite."
+  },
+  {
+   "what": "tag_view.dart contains a NUL byte",
+   "where": "lib/features/viewer/ui/info/tag_view.dart around offset 116622 (ripgrep reports it as binary)",
+   "rule": "Tag hub, Suggested strip, Posts like this and find-elsewhere entry points live there; text tools may skip or corrupt it - check before automated edits."
+  },
+  {
+   "what": "hanime1 term mapping",
+   "where": "Hanime1TagCatalog.searchTerm + HanimeDictionary",
+   "rule": "Tags insert bare English and the handler maps back to the exact Chinese tags[] value; genres insert genre:<key>."
+  }
+ ]
+}

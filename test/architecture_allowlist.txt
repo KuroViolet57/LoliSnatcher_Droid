@@ -1,0 +1,65 @@
+# Imports that broke the 1.0 layer rule when the app was restructured
+# (models < core < sources < features/*/logic < features/*/ui < app).
+# test/architecture_test.dart fails on any violation NOT listed here and on
+# any listed line that is no longer a violation, so this list only shrinks.
+# Fix one by moving the code down a layer or passing it in from above.
+core/logging/perf_trace.dart -> features/recommender/logic/model_work.dart
+core/network/dio_downloader.dart -> features/downloads/logic/image_writer.dart
+core/network/origin_page_client.dart -> sources/doujin/schale/schale_clearance_handler.dart
+core/platform/get_perms.dart -> features/downloads/logic/download_folders.dart
+core/settings/settings_handler.dart -> features/doujin/logic/doujin_data_handler.dart
+core/settings/settings_handler.dart -> features/feed/logic/search_handler.dart
+core/settings/settings_handler.dart -> features/links/logic/source_links.dart
+core/settings/settings_handler.dart -> features/recommender/logic/ml/model_timings.dart
+core/settings/settings_handler.dart -> features/recommender/logic/model_tasks.dart
+core/settings/settings_handler.dart -> features/recommender/logic/onnx/onnx_availability.dart
+core/settings/settings_handler.dart -> features/video/logic/media_kit_video_player.dart
+core/settings/source_settings_handler.dart -> features/doujin/logic/doujin_data_handler.dart
+core/settings/source_settings_handler.dart -> features/recommender/logic/item_features.dart
+core/settings/source_settings_handler.dart -> features/recommender/logic/recommender_handler.dart
+core/settings/source_settings_handler.dart -> features/recommender/logic/rewards.dart
+core/settings/source_settings_handler.dart -> sources/doujin/common/doujin_filters.dart
+core/storage/booru_tag_store.dart -> sources/framework/tags/tag_catalog_source.dart
+core/storage/database_handler.dart -> features/doujin/logic/doujin_data_handler.dart
+core/storage/database_handler.dart -> features/recommender/logic/rewards.dart
+core/storage/database_handler.dart -> features/tags/logic/pinned_tag_visibility.dart
+core/storage/tag_handler.dart -> features/doujin/logic/doujin_data_handler.dart
+core/storage/tag_handler.dart -> sources/framework/booru_handler.dart
+core/storage/tag_handler.dart -> sources/framework/booru_handler_factory.dart
+core/ui/flash_elements.dart -> features/feed/logic/search_handler.dart
+core/ui/image/custom_network_image.dart -> features/downloads/logic/image_writer.dart
+core/ui/image/sprite_tile_image.dart -> sources/framework/booru_handler_factory.dart
+core/utils/tools.dart -> sources/booru/idol_sankaku_handler.dart
+core/utils/tools.dart -> sources/booru/sankaku_handler.dart
+core/utils/tools.dart -> sources/framework/booru_handler_factory.dart
+models/board.dart -> features/boards/logic/board_query.dart
+models/board.dart -> features/boards/logic/reverse_image_search.dart
+models/booru.dart -> core/utils/extensions.dart
+models/booru_item.dart -> core/settings/settings_handler.dart
+models/booru_item.dart -> core/settings/source_settings_handler.dart
+models/booru_item.dart -> core/utils/tools.dart
+models/booru_item.dart -> features/doujin/logic/doujin_data_handler.dart
+models/booru_type.dart -> core/settings/settings_handler.dart
+models/history_item.dart -> core/utils/extensions.dart
+models/meta_tag.dart -> core/settings/settings_handler.dart
+models/pinned_tag.dart -> core/utils/extensions.dart
+models/saved_search.dart -> features/feed/logic/search_handler.dart
+models/settings/app_mode.dart -> core/settings/settings_handler.dart
+models/settings/button_position.dart -> core/settings/settings_handler.dart
+models/settings/mpv_hardware_decoding.dart -> core/settings/settings_handler.dart
+models/settings/mpv_video_output.dart -> core/settings/settings_handler.dart
+models/settings/proxy_type.dart -> core/utils/extensions.dart
+models/tag.dart -> core/constants.dart
+models/tag_type.dart -> core/settings/settings_handler.dart
+models/tag_type.dart -> core/ui/navigation_handler.dart
+sources/doujin/common/doujin_recommendation_engine.dart -> features/recommender/logic/item_features.dart
+sources/doujin/common/doujin_recommendation_engine.dart -> features/recommender/logic/recommender_handler.dart
+sources/doujin/nhentai/nhentai_handler.dart -> features/recommender/logic/item_features.dart
+sources/doujin/nhentai/nhentai_handler.dart -> features/recommender/logic/recommender_handler.dart
+sources/framework/booru_handler.dart -> features/doujin/logic/doujin_data_handler.dart
+sources/framework/booru_handler_factory.dart -> features/boards/logic/board_handler.dart
+sources/framework/booru_handler_factory.dart -> features/recommender/logic/doujin_foryou_handler.dart
+sources/framework/booru_handler_factory.dart -> features/recommender/logic/foryou_handler.dart
+sources/local/downloads_handler.dart -> features/doujin/logic/doujin_data_handler.dart
+sources/local/downloads_handler.dart -> features/downloads/logic/download_folders.dart
+sources/local/downloads_handler.dart -> features/downloads/logic/downloads_reconciler.dart

@@ -1,0 +1,4 @@
+{
+ "lib/app/theme/theme_handler.dart": "lib/core/ui/theme_handler.dart",
+ "lib/app/drawers/mascot_image.dart": "lib/core/ui/mascot_image.dart"
+}

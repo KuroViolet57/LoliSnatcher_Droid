@@ -40,6 +40,7 @@ import java.util.concurrent.Executors
 
 class MainActivity: FlutterFragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        setDspLibraryPath()
         super.onCreate(savedInstanceState)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -48,12 +49,123 @@ class MainActivity: FlutterFragmentActivity() {
         }
     }
 
+    // r87: the NPU (Qualcomm QNN, HTP). The DSP-side loader looks for its
+    // libraries (libQnnHtpV75Skel.so and the like, shipped in this app's
+    // native library folder) only on the paths in ADSP_LIBRARY_PATH; it is set
+    // before the engine starts, so before any model opens. The vendor paths
+    // stay after ours.
+    private fun setDspLibraryPath() {
+        try {
+            val own = applicationInfo.nativeLibraryDir
+            val vendor = "/odm/lib/rfsa/adsp;/vendor/lib/rfsa/adsp;/vendor/dsp/cdsp;/system/lib/rfsa/adsp;/system/vendor/lib/rfsa/adsp;/dsp"
+            android.system.Os.setenv("ADSP_LIBRARY_PATH", "$own;$vendor", true)
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Error setting ADSP_LIBRARY_PATH", e)
+        }
+    }
+
+    // r85: with Settings -> Links on, the app is a handler for its sources' sites.
+    // A web link the app itself sends out ("Open in browser") can then come
+    // straight back to it - so one this app sent goes on to the browser and
+    // never reaches app_links.
+    override fun onNewIntent(intent: Intent) {
+        if (isOwnWebLink(intent)) {
+            intent.data?.let { openInBrowser(it) }
+            return
+        }
+        super.onNewIntent(intent)
+    }
+
+    private fun isOwnWebLink(intent: Intent): Boolean {
+        if (intent.action != Intent.ACTION_VIEW) return false
+        val link = intent.data ?: return false
+        if (link.scheme != "http" && link.scheme != "https") return false
+        if (link.host?.endsWith("loli.snatcher") == true) return false
+        // getReferrer() names the sender of a new intent only after setIntent();
+        // the activity's intent is put back as it was either way.
+        val previous = getIntent()
+        setIntent(intent)
+        val own = referrer?.host == packageName
+        setIntent(previous)
+        return own
+    }
+
+    // The manifest's ".SourceLinks", named from this class's own package.
+    private fun sourceLinksComponent() =
+        ComponentName(packageName, MainActivity::class.java.name.substringBeforeLast('.') + ".SourceLinks")
+
+    private fun openInBrowser(link: Uri) {
+        val view = Intent(Intent.ACTION_VIEW, link)
+            .addCategory(Intent.CATEGORY_BROWSABLE)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        try {
+            val probe = Intent(Intent.ACTION_VIEW, Uri.fromParts("http", "", "")).addCategory(Intent.CATEGORY_BROWSABLE)
+            val browser = packageManager.resolveActivity(probe, PackageManager.MATCH_DEFAULT_ONLY)?.activityInfo?.packageName
+            if (browser != null && browser != "android" && browser != packageName) {
+                startActivity(view.setPackage(browser))
+                return
+            }
+            // No default browser: Android's chooser, without this app in it.
+            val chooser = Intent.createChooser(view, null)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                chooser.putExtra(
+                    Intent.EXTRA_EXCLUDE_COMPONENTS,
+                    arrayOf(sourceLinksComponent(), ComponentName(packageName, MainActivity::class.java.name)),
+                )
+            }
+            startActivity(chooser)
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Error handing a link to the browser", e)
+        }
+    }
+
+    private fun setSourceLinks(enabled: Boolean): Boolean {
+        return try {
+            packageManager.setComponentEnabledSetting(
+                sourceLinksComponent(),
+                if (enabled) PackageManager.COMPONENT_ENABLED_STATE_ENABLED else PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                PackageManager.DONT_KILL_APP,
+            )
+            true
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Error switching the source links", e)
+            false
+        }
+    }
+
     private val SERVICES_CHANNEL = "com.noaisu.loliSnatcher/services"
+
+    /**
+     * r89: this process's own Android log since [sinceMs], only the tags of ONNX Runtime and
+     * Qualcomm's DSP/NPU libraries - never the app's own lines (flutter), which can carry
+     * addresses. An app may read its own process's log without any permission.
+     */
+    private fun readNativeLog(sinceMs: Long): List<String> {
+        val args = mutableListOf("logcat", "-d", "-v", "time", "--pid=${android.os.Process.myPid()}")
+        if (sinceMs > 0) args += listOf("-T", String.format(Locale.US, "%d.%03d", sinceMs / 1000, sinceMs % 1000))
+        args += listOf("onnxruntime:V", "QnnDsp:V", "QnnHtp:V", "QNN:V", "adsprpc:V", "cdsprpc:V", "fastrpc:V", "*:S")
+        val process = ProcessBuilder(args).redirectErrorStream(true).start()
+        val lines = ArrayDeque<String>()
+        process.inputStream.bufferedReader().useLines { seq ->
+            seq.forEach { line ->
+                if (line.isBlank() || line.startsWith("-----")) return@forEach
+                lines.addLast(if (line.length > 600) line.substring(0, 600) else line)
+                if (lines.size > 400) lines.removeFirst()
+            }
+        }
+        process.waitFor()
+        return lines.toList()
+    }
     private val VOLUME_CHANNEL = "com.noaisu.loliSnatcher/volume"
     private var volumeSink: EventChannel.EventSink? = null
     private var isSinkingVolume: Boolean = false
     private var SAFUri: String? = ""
     private var methodResult: MethodChannel.Result? = null
+    // r77: the request code of our own folder/file pickers (see onActivityResult).
+    private val SAF_REQUEST = 4273
+    // Model import: a read-only tree. Kept off SAF_REQUEST so a cancel is not
+    // reported as a permission error, and the persistable write grant is untouched.
+    private val MODEL_FOLDER_REQUEST = 4274
 
     private val activeFiles = mutableMapOf<Uri, OutputStream?>()
 
@@ -210,6 +322,10 @@ class MainActivity: FlutterFragmentActivity() {
                         methodResult = result
                         requestImageAccess()
                     }
+                    "selectModelFolder" -> {
+                        methodResult = result
+                        requestModelFolder()
+                    }
                     "getFileBytes" -> {
                         val uri = call.argument<String>("uri")
                         if (uri != null) {
@@ -284,6 +400,54 @@ class MainActivity: FlutterFragmentActivity() {
                             result.error("INVALID_ARGUMENT", "URI or fileName is null", null)
                         }
                     }
+                    // Doujin downloads: one folder per book under the SAF root.
+                    // r83: what a picked folder holds at its top, and whether the
+                    // app still holds its access - for the Downloads log.
+                    "probeSafFolder" -> {
+                        val uri = call.argument<String>("uri")
+                        if (uri != null) {
+                            Executors.newSingleThreadExecutor().execute {
+                                val probe = probeSafFolder(uri)
+                                runOnUiThread { result.success(probe) }
+                            }
+                        } else {
+                            result.error("INVALID_ARGUMENT", "URI is null", null)
+                        }
+                    }
+                    "listSafDirectory" -> {
+                        val uri = call.argument<String>("uri")
+                        if (uri != null) {
+                            Executors.newSingleThreadExecutor().execute {
+                                val entries = listSafDirectory(uri)
+                                runOnUiThread { result.success(entries) }
+                            }
+                        } else {
+                            result.error("INVALID_ARGUMENT", "URI is null", null)
+                        }
+                    }
+                    "getOrCreateSafDirectory" -> {
+                        val uri = call.argument<String>("uri")
+                        val name = call.argument<String>("name")
+                        if (uri != null && name != null) {
+                            Executors.newSingleThreadExecutor().execute {
+                                val created = getOrCreateSafDirectory(uri, name)
+                                runOnUiThread { result.success(created) }
+                            }
+                        } else {
+                            result.error("INVALID_ARGUMENT", "URI or name is null", null)
+                        }
+                    }
+                    "deleteSafTree" -> {
+                        val uri = call.argument<String>("uri")
+                        if (uri != null) {
+                            Executors.newSingleThreadExecutor().execute {
+                                val deleted = deleteSafTree(uri)
+                                runOnUiThread { result.success(deleted) }
+                            }
+                        } else {
+                            result.error("INVALID_ARGUMENT", "URI is null", null)
+                        }
+                    }
                     "createFileStream" -> {
                         val fileName = call.argument<String>("fileName")
                         val mediaType = call.argument<String>("mediaType")
@@ -341,6 +505,20 @@ class MainActivity: FlutterFragmentActivity() {
                             result.error("INVALID_ARGUMENT", "One or more arguments are null", null)
                         }
                     }
+                    // Streams one content URI onto a file. Used for model files
+                    // that are too large to load into memory.
+                    "copyContentUriToFile" -> {
+                        val uri = call.argument<String>("uri")
+                        val destPath = call.argument<String>("destPath")
+                        if (uri != null && destPath != null) {
+                            Executors.newSingleThreadExecutor().execute {
+                                val success = copyContentUriToFile(uri, destPath)
+                                runOnUiThread { result.success(success) }
+                            }
+                        } else {
+                            result.error("INVALID_ARGUMENT", "URI or destPath is null", null)
+                        }
+                    }
                     "copyFileToSafDir" -> {
                         val sourcePath = call.argument<String>("sourcePath")
                         val fileName = call.argument<String>("fileName")
@@ -355,12 +533,21 @@ class MainActivity: FlutterFragmentActivity() {
                             result.error("INVALID_ARGUMENT", "One or more arguments are null", null)
                         }
                     }
+                    // 1.0: does the app still hold a read+write grant for this folder?
+                    // Asks Android only: no picker, no test file (testSAF does both).
+                    "hasSafAccess" -> {
+                        val uri: String? = call.argument("uri")
+                        result.success(uri != null && hasSafAccess(uri))
+                    }
                     "testSAF" -> {
                         val uri: String? = call.argument("uri")
                         if (uri != null) {
                             val permissions =
                                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-                                        this.contentResolver.persistedUriPermissions.takeWhile { it.isReadPermission && it.isWritePermission }
+                                        // 1.0: was takeWhile, which stopped at the first grant without
+                                        // write access and so reported "no access" (and opened the picker)
+                                        // although a usable grant followed it.
+                                        this.contentResolver.persistedUriPermissions.filter { it.isReadPermission && it.isWritePermission }
                                     } else {
                                         emptyList()
                                     }
@@ -411,6 +598,11 @@ class MainActivity: FlutterFragmentActivity() {
                             } catch (ignored: Throwable) {
                             }
                         }
+                        // r85: answered, so a caller that awaits it goes on.
+                        result.success(null)
+                    }
+                    "setSourceLinks" -> {
+                        result.success(setSourceLinks(call.argument<Boolean>("enabled") ?: false))
                     }
                     "restartApp" -> {
                         restartApp()
@@ -431,6 +623,18 @@ class MainActivity: FlutterFragmentActivity() {
                     "getAvailableAliases" -> {
                         result.success(getAvailableAliases())
                     }
+                    // r89: ONNX Runtime's / QNN's own lines (why the NPU refused or failed).
+                    "readNativeLog" -> {
+                        val since = call.argument<Number>("sinceMs")?.toLong() ?: 0L
+                        Executors.newSingleThreadExecutor().execute {
+                            val lines = try {
+                                readNativeLog(since)
+                            } catch (e: Throwable) {
+                                listOf("could not read the log: ${e.message}")
+                            }
+                            runOnUiThread { result.success(lines) }
+                        }
+                    }
                     else -> result.notImplemented()
                 }
             } catch (e: Exception) {
@@ -448,6 +652,8 @@ class MainActivity: FlutterFragmentActivity() {
                 volumeSink = null
             }
         })
+
+        VideoEngineBridge.install(this, flutterEngine)
     }
 
     private fun requestDirectoryAccess() {
@@ -458,7 +664,7 @@ class MainActivity: FlutterFragmentActivity() {
                     Intent.FLAG_GRANT_WRITE_URI_PERMISSION
         }
         
-        startActivityForResult(intent, 1)
+        startActivityForResult(intent, SAF_REQUEST)
     }
 
     private fun requestTemporaryDirectoryAccess() {
@@ -467,7 +673,7 @@ class MainActivity: FlutterFragmentActivity() {
             flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
         }
 
-        startActivityForResult(intent, 1)
+        startActivityForResult(intent, SAF_REQUEST)
     }
 
     private fun requestImageAccess() {
@@ -484,12 +690,44 @@ class MainActivity: FlutterFragmentActivity() {
                     Intent.FLAG_GRANT_WRITE_URI_PERMISSION
         }
 
-        startActivityForResult(intent, 1)
+        startActivityForResult(intent, SAF_REQUEST)
+    }
+
+    // Read-only. A cancel answers "" so the Dart side can tell it from a failure.
+    private fun requestModelFolder() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+            flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                    Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+        }
+        startActivityForResult(intent, MODEL_FOLDER_REQUEST)
     }
 
     @RequiresApi(Build.VERSION_CODES.KITKAT)
     override fun onActivityResult(requestCode: Int, resultCode: Int, resultData: Intent?) {
         super.onActivityResult(requestCode, resultCode, resultData)
+        // r77: only our own folder/file requests are answered here. Every other
+        // result (the image picker's, a share's) is the plugins' business, and
+        // answering it on the stale reply of an earlier folder request made
+        // Flutter throw "Reply already submitted" and could crash the app.
+        if (requestCode == MODEL_FOLDER_REQUEST) {
+            val reply = methodResult ?: return
+            methodResult = null
+            val uri = if (resultCode == Activity.RESULT_OK) resultData?.data else null
+            if (uri == null) {
+                reply.success("")
+                return
+            }
+            try {
+                contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (e: SecurityException) {
+                Log.w("MainActivity", "Model folder grant is for this session only", e)
+            }
+            reply.success(uri.toString())
+            return
+        }
+        if (requestCode != SAF_REQUEST) return
+        val reply = methodResult ?: return
+        methodResult = null
 
         if (resultCode == Activity.RESULT_OK && resultData?.data != null) {
             val uri = resultData.data
@@ -499,16 +737,16 @@ class MainActivity: FlutterFragmentActivity() {
                 SAFUri = uri.toString()
                 try {
                     contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-                    methodResult?.success(uri.toString())
+                    reply.success(uri.toString())
                 } catch (e: SecurityException) {
                     Log.e("MainActivity", "Failed to take persistable URI permission", e)
-                    methodResult?.error("PERMISSION_ERROR", "Failed to take persistable URI permission", null)
+                    reply.error("PERMISSION_ERROR", "Failed to take persistable URI permission", null)
                 }
             } else {
-                methodResult?.error("INVALID_URI", "URI is null", null)
+                reply.error("INVALID_URI", "URI is null", null)
             }
         } else {
-            methodResult?.error("RESULT_ERROR", "Invalid result or data", null)
+            reply.error("RESULT_ERROR", "Invalid result or data", null)
         }
     }
 
@@ -637,6 +875,143 @@ class MainActivity: FlutterFragmentActivity() {
         } catch (e: Exception) {
             Log.e("MainActivity", "Error listing SAF files: $uriString", e)
             emptyList()
+        }
+    }
+
+    // A tree URI (the picked root) or a document-in-tree URI (a folder made by
+    // getOrCreateSafDirectory) both resolve to their OWN children here; the
+    // older listFileNames always resolves to the root's.
+    private fun childDocumentId(uri: Uri): String {
+        return if (DocumentsContract.isDocumentUri(applicationContext, uri)) {
+            DocumentsContract.getDocumentId(uri)
+        } else {
+            DocumentsContract.getTreeDocumentId(uri)
+        }
+    }
+
+    // One query per directory: name, mime, size, modified and a usable URI per child.
+    private fun listSafDirectory(uriString: String): List<Map<String, Any?>> {
+        val uri = Uri.parse(uriString)
+        if (uri == Uri.EMPTY) return emptyList()
+        return try {
+            val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(uri, childDocumentId(uri))
+            val entries = mutableListOf<Map<String, Any?>>()
+            contentResolver.query(
+                childrenUri,
+                arrayOf(
+                    DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                    DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                    DocumentsContract.Document.COLUMN_MIME_TYPE,
+                    DocumentsContract.Document.COLUMN_SIZE,
+                    DocumentsContract.Document.COLUMN_LAST_MODIFIED
+                ),
+                null, null, null
+            )?.use { cursor ->
+                while (cursor.moveToNext()) {
+                    val docId = cursor.getString(0)
+                    val mime = cursor.getString(2) ?: ""
+                    entries.add(
+                        mapOf(
+                            "name" to (cursor.getString(1) ?: ""),
+                            "uri" to DocumentsContract.buildDocumentUriUsingTree(uri, docId).toString(),
+                            "isDir" to (mime == DocumentsContract.Document.MIME_TYPE_DIR),
+                            "mime" to mime,
+                            "size" to (if (cursor.isNull(3)) 0L else cursor.getLong(3)),
+                            "modified" to (if (cursor.isNull(4)) 0L else cursor.getLong(4))
+                        )
+                    )
+                }
+            }
+            entries
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Error listing SAF directory: $uriString", e)
+            emptyList()
+        }
+    }
+
+    private fun hasSafAccess(uriString: String): Boolean {
+        val uri = Uri.parse(uriString)
+        return try {
+            contentResolver.persistedUriPermissions.any { it.uri == uri && it.isReadPermission && it.isWritePermission }
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    private fun probeSafFolder(uriString: String): Map<String, Any?> {
+        val uri = Uri.parse(uriString)
+        val access = try {
+            contentResolver.persistedUriPermissions.any { it.uri == uri && it.isReadPermission }
+        } catch (e: Exception) {
+            false
+        }
+        var files = 0
+        var dirs = 0
+        val sampleFiles = mutableListOf<String>()
+        val sampleDirs = mutableListOf<String>()
+        var error: String? = null
+        try {
+            val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(uri, childDocumentId(uri))
+            val cursor = contentResolver.query(
+                childrenUri,
+                arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_MIME_TYPE),
+                null, null, null
+            )
+            if (cursor == null) {
+                error = "the folder answered nothing"
+            } else {
+                cursor.use { c ->
+                    while (c.moveToNext()) {
+                        val name = c.getString(0) ?: ""
+                        if (c.getString(1) == DocumentsContract.Document.MIME_TYPE_DIR) {
+                            dirs++
+                            if (sampleDirs.size < 5) sampleDirs.add(name)
+                        } else {
+                            files++
+                            if (sampleFiles.size < 5) sampleFiles.add(name)
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            error = e.javaClass.simpleName + ": " + (e.message ?: "")
+        }
+        return mapOf(
+            "access" to access,
+            "files" to files,
+            "dirs" to dirs,
+            "sampleFiles" to sampleFiles,
+            "sampleDirs" to sampleDirs,
+            "error" to error
+        )
+    }
+
+    private fun getOrCreateSafDirectory(uriString: String, name: String): String? {
+        val uri = Uri.parse(uriString)
+        if (uri == Uri.EMPTY) return null
+        val dir = DocumentFile.fromTreeUri(applicationContext, uri) ?: return null
+        return try {
+            val existing = dir.findFile(name)
+            if (existing != null) {
+                if (existing.isDirectory) existing.uri.toString() else null
+            } else {
+                dir.createDirectory(name)?.uri?.toString()
+            }
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Error creating SAF directory: $name in $uriString", e)
+            null
+        }
+    }
+
+    private fun deleteSafTree(uriString: String): Boolean {
+        val uri = Uri.parse(uriString)
+        if (uri == Uri.EMPTY) return false
+        val doc = DocumentFile.fromTreeUri(applicationContext, uri) ?: return false
+        return try {
+            doc.delete()
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Error deleting SAF tree: $uriString", e)
+            false
         }
     }
 
@@ -813,6 +1188,30 @@ class MainActivity: FlutterFragmentActivity() {
         return true
     }
 
+    // Copies [uriString] onto [destPath] in chunks. A failed copy deletes the part file.
+    private fun copyContentUriToFile(uriString: String, destPath: String): Boolean {
+        val uri = Uri.parse(uriString)
+        if (uri == Uri.EMPTY) return false
+        val dest = File(destPath)
+        dest.parentFile?.mkdirs()
+        val inputStream = try {
+            contentResolver.openInputStream(uri) ?: return false
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Error opening model file: $uriString", e)
+            return false
+        }
+        return try {
+            FileOutputStream(dest).use { output -> inputStream.copyTo(output) }
+            true
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Error copying model file to $destPath", e)
+            dest.delete()
+            false
+        } finally {
+            inputStream.close()
+        }
+    }
+
     @Throws(IOException::class)
     private fun copySafFileToDir(uriString: String, fileName: String, targetPath: String): Boolean {
         val uri = Uri.parse(uriString) ?: return false
@@ -950,14 +1349,20 @@ class MainActivity: FlutterFragmentActivity() {
         "booru" to ".MainActivityAlias_Booru"
     )
 
+    // 1.0: the aliases are named under the code's namespace (the manifest's
+    // ".MainActivityAlias_X"), which differs from packageName in the store and
+    // side-by-side builds; "$packageName$alias" named a component that did not exist there.
+    private fun aliasComponent(alias: String) =
+        ComponentName(packageName, MainActivity::class.java.name.substringBeforeLast('.') + alias)
+
     private fun setAppAlias(alias: String): Boolean {
         val targetAlias = aliasMap[alias] ?: return false
         val pm = packageManager
 
         try {
             // Disable all aliases first
-            for ((_, aliasComponent) in aliasMap) {
-                val component = ComponentName(packageName, "$packageName$aliasComponent")
+            for ((_, aliasName) in aliasMap) {
+                val component = aliasComponent(aliasName)
                 pm.setComponentEnabledSetting(
                     component,
                     PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
@@ -966,7 +1371,7 @@ class MainActivity: FlutterFragmentActivity() {
             }
 
             // Enable the selected alias
-            val component = ComponentName(packageName, "$packageName$targetAlias")
+            val component = aliasComponent(targetAlias)
             pm.setComponentEnabledSetting(
                 component,
                 PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
@@ -983,7 +1388,7 @@ class MainActivity: FlutterFragmentActivity() {
     private fun getCurrentAlias(): String {
         val pm = packageManager
         for ((key, alias) in aliasMap) {
-            val component = ComponentName(packageName, "$packageName$alias")
+            val component = aliasComponent(alias)
             val state = pm.getComponentEnabledSetting(component)
             if (state == PackageManager.COMPONENT_ENABLED_STATE_ENABLED ||
                 (state == PackageManager.COMPONENT_ENABLED_STATE_DEFAULT && key == "loli_snatcher")) {

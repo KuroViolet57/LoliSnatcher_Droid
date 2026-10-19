@@ -1,0 +1,291 @@
+{
+ "bugs": [
+  {
+   "title": "Editor dispose leaves the debounce and request alive, so setState runs after dispose",
+   "file": "lib/features/feed/ui/search/main_search_query_editor_page.dart",
+   "line": 801,
+   "scenario": "Type a letter and press back within 400 ms (or while DB/catalog/metatag suggestions load): the Timer fires and calls setState() at line 216. The metatag/DB/error branches (lines 243, 265, 319) call setState after awaits with no mounted check. Release builds hit a null _element (an uncaught error in the log); debug builds assert.",
+   "evidence": "dispose() removes listeners and disposes the controller/focus node but never calls debounce?.cancel() or cancelToken?.cancel(). The runSearch Timer callback starts with loading=true; setState(() {}). Only the data branch checks mounted.",
+   "severity": "crash",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "RangeError in card builders right after the last file of a snatch batch",
+   "file": "lib/features/feed/ui/thumbnail/thumbnail_card_build.dart",
+   "line": 232,
+   "scenario": "After the last item of a batch: queueProgress becomes booruItems.length (snatch_handler.dart:321) while current stays non-null until the stream's onDone. A frame in between evaluates current.booruItems[queueProgress] and throws in every visible card's ListenableBuilder, and in _ThumbnailBottomRightIcons' Obx (thumbnail_build.dart:419).",
+   "evidence": "final bool isCurrentlyBeingSnatched = current?.booruItems[queueProgress] == item && total != 0; the index is read before the total check, with no bounds check.",
+   "severity": "crash",
+   "confidence": "plausible"
+  },
+  {
+   "title": "replaceTabs can leave zero tabs",
+   "file": "lib/features/feed/logic/search_handler.dart",
+   "line": 1624,
+   "scenario": "Debug page 'replace tabs' or LoliSync replace with tabs whose boorus are not on this device: restoredTabs is empty, tabs.value = [], and changeTabIndex returns early. Every currentTab read (WaterfallView, MainSearchBar, WaterfallErrorButtons, MediaPreviews -> WaterfallView) throws a RangeError. replaceTabsLegacy also reads booruAndTags[2] without a length check (line 1455).",
+   "evidence": "replaceTabsNew: tabs.value = restoredTabs; changeTabIndex(newSelectedIndex) with no empty fallback. MediaPreviews returns WaterfallView even when tabs.isEmpty (media_previews.dart:134), and its initState reads currentTab.scrollPosition.",
+   "severity": "crash",
+   "confidence": "plausible"
+  },
+  {
+   "title": "mergeTabsNew keeps only duplicates (condition inverted)",
+   "file": "lib/features/feed/logic/search_handler.dart",
+   "line": 1580,
+   "scenario": "LoliSync tabs in merge mode (or any mergeTabs call with JSON) carrying tabs the device does not have: none of them are added. Tabs identical to existing ones (no secondaries) are added again as duplicates. Tabs with secondary boorus are never added, because List == List compares identity.",
+   "evidence": "if (newTab.selectedBooru.value.name != null && tabs.any((tab) => same name && tab.secondaryBoorus...toList() == newTab...toList() && tab.tags == newTab.tags)) { restoredTabs.add(newTab); } The comment says 'add only if there are not already the same tab'; the legacy version uses indexWhere(...) == -1.",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "removeTagFromSearch removes substrings from other tags",
+   "file": "lib/features/feed/logic/search_handler.dart",
+   "line": 431,
+   "scenario": "FlowSearchBar chip ✕ on 'blue' with the query 'blue blue_eyes' leaves ' _eyes'; removing 'cat' from 'cat category' leaves ' egory'. The broken query is then searched at once.",
+   "evidence": "searchTextController.text = text.replaceAll(regex...).replaceAll('-$tag','').replaceAll('~$tag','').replaceAll(tag, ''); this is a plain substring replace with no token boundaries. Called from flow_search_bar.dart:94 _removeTag, followed by searchAction.",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "History entry for a deleted booru opens a tab on an unknown booru",
+   "file": "lib/features/feed/ui/search/main_search_query_editor_page.dart",
+   "line": 2046,
+   "scenario": "Editor History card -> entry whose booru was removed -> Open or Open in new tab: searchAction/addTabByString gets Booru.unknown (type null). The intended 'unknown booru type' snackbar never shows.",
+   "evidence": "final booru = booruList.firstWhere(..., orElse: Booru.unknown) is never null. showHistoryEntryActions checks `if (booru != null)` before searchAction / addTabByString.",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Jump to page and merge toggle drop the tab's group, pool and doujin state",
+   "file": "lib/features/feed/logic/search_handler.dart",
+   "line": 514,
+   "scenario": "A tab in group 'A' -> Pg pill -> jump to page 5: the tab leaves its group, loses its per-booru overrides, and a pool tab turns into a plain text search. Toggling merge boorus (mergeAction, line 1109) also drops the group, pool and doujin fields.",
+   "evidence": "changeCurrentTabPageNumber: SearchTab(currentBooru, currentSecondaryBoorus.value, currentTab.tags, tabId: currentTab.id) with no groupName/tagOverrides/inheritMainTags/poolId/doujin*. searchAction, in contrast, copies groupName and overrides.",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Moving an earlier tab onto the current tab's position makes the moved tab current",
+   "file": "lib/features/feed/logic/search_handler.dart",
+   "line": 374,
+   "scenario": "Tabs [A,B,C] with C current. Tab manager → A's options → Move → Move to bottom (or drag A below C). The result is [B,C,A], but the app now treats A as the current tab: the search text, page and feed switch to A, while tabId still holds C.",
+   "evidence": "tab_move_dialog.dart:75 calls moveTab(0, total-1). In moveTab, fromIndex(0) != currentIndex(2) and toIndex(2) == currentIndex, so it calls changeTabIndex(toIndex + 1 = 3). That is clamped to 2 == currentIndex, so the index does not change, and currentTab => tabs[2] == A. Also reached from tab_selector.dart:2140 (drag) and doujin_mini_tab_manager.dart:140.",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Page changer 'Jump to page' rebuilds the tab and drops its group, pool, doujin identity and per-booru overrides",
+   "file": "lib/features/feed/logic/search_handler.dart",
+   "line": 515,
+   "scenario": "On a tab inside a group (or a pool tab, a doujin detail tab, or a merge tab with overrides), open the page chip → Page changer → Jump to page. The tab leaves its group, a pool tab turns into a plain tag search, the overrides are lost, and a doujin tab loses its cover and title.",
+   "evidence": "page_number_dialog.dart:131 calls changeCurrentTabPageNumber, which builds `SearchTab(currentBooru, currentSecondaryBoorus.value, currentTab.tags, tabId: currentTab.id)`: no groupName, poolId/poolName, doujinPostURL/Title/Thumb, tagOverrides or inheritMainTags. Then tabs[currentIndex] = newTab.",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "removeTabs mutates tabs.value without refreshing the RxList",
+   "file": "lib/features/feed/logic/search_handler.dart",
+   "line": 323,
+   "scenario": "Tab manager -> delete several tabs that sit after the current one: the index does not change, so TabsCountPill ('N tabs'), FlowTabCarousel and TabPill (Obx on tabs) still show the deleted tabs until something else triggers a rebuild.",
+   "evidence": "for (tab in tabsToRemove) tabs.value.remove(tab); and tabs.value[0] = newTab mutate the inner list (no refresh()). changeTabIndex only sets index/tabId when they differ.",
+   "severity": "wrong-behaviour",
+   "confidence": "plausible"
+  },
+  {
+   "title": "Older suggestion results can overwrite newer ones",
+   "file": "lib/features/feed/logic/query_editor_core.dart",
+   "line": 147,
+   "scenario": "Type 'artist:a' then 'artist:ab' quickly: the catalog, metatag-autocomplete and DB/history paths have no cancel token. Whichever await finishes last wins, so the list can show suggestions for the older text. The same applies to the main editor's copy (main_search_query_editor_page.dart:224-320).",
+   "evidence": "Only the getTagSuggestions branch uses cancelToken. suggestFromCatalog/getAutoComplete/dbHandler.getTags results are assigned to suggestedTags without checking that the input still matches.",
+   "severity": "wrong-behaviour",
+   "confidence": "plausible"
+  },
+  {
+   "title": "Doujin floating preview searches id:<serverId> without the gallery key",
+   "file": "lib/features/feed/logic/floating_preview_handler.dart",
+   "line": 150,
+   "scenario": "Doujin item menu -> floating preview on HDoujin/niyaniya/e-hentai: the window's SearchTab gets tag 'id:N' with no doujinPostURL, so seedPersistedDoujinItem cannot run and keyed sources may not resolve the gallery (the case SearchTab.doujinIdQuery exists for).",
+   "evidence": "openDoujinPreview: FloatingPreviewEntry(tag: 'id:${item.serverId}', doujinItem: item). The window's loadPreview builds SearchTab(selectedBooru, null, _effectiveTag) and never passes doujinPostURL or doujinIdQuery(item).",
+   "severity": "wrong-behaviour",
+   "confidence": "plausible"
+  },
+  {
+   "title": "tryToLoadAndUpdateItem cannot be cancelled by its caller",
+   "file": "lib/features/feed/ui/thumbnail/thumbnail.dart",
+   "line": 840,
+   "scenario": "Tap 'retry' on a favourite thumbnail, then scroll away: loadItem keeps running (requests, captcha check), because the State's loadItemCancelToken stays null.",
+   "evidence": "tryToLoadAndUpdateItem(item, CancelToken? cancelToken) { ... cancelToken?.cancel(); cancelToken = CancelToken(); ... } reassigns the parameter only. _ThumbnailState passes loadItemCancelToken (always null), and disposables() cancels nothing.",
+   "severity": "leak",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Thumbnail attaches image-stream listeners after it was disposed",
+   "file": "lib/features/feed/ui/thumbnail/thumbnail.dart",
+   "line": 332,
+   "scenario": "Fast scroll: the 200 ms timer has fired and startDownloading is awaiting Tools.getFileCustomHeaders when the cell is disposed. It then resolves the provider and adds listeners that disposables() already passed over. The download and the decode go on and the listener keeps the State and ImageStream alive.",
+   "evidence": "startDownloading: mainProvider.value = await getImageProvider(...); then mainImageStream = ...resolve(); addListener. There is no mounted check after either await (line 381 for extra too). dispose() calls disposables() before that.",
+   "severity": "leak",
+   "confidence": "plausible"
+  },
+  {
+   "title": "searchAction's empty-tabs branch throws before it can create a tab",
+   "file": "lib/features/feed/logic/search_handler.dart",
+   "line": 654,
+   "scenario": "searchAction called while tabs is empty: currentSecondaryBoorus reads currentTab -> tabs[0] -> RangeError.",
+   "evidence": "if (tabs.isEmpty) { ... SearchTab(settingsHandler.booruList[0], currentSecondaryBoorus.value, text) }; currentSecondaryBoorus => currentTab.secondaryBoorus.",
+   "severity": "minor",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "'Possible max page' rounds instead of rounding up",
+   "file": "lib/features/feed/ui/page_number_dialog.dart",
+   "line": 43,
+   "scenario": "140 results at 100 per page shows 'possible max page 1', although there are 2 pages.",
+   "evidence": "`(total / settingsHandler.itemLimit).round()`.",
+   "severity": "minor",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Pull-to-refresh counts as a new search",
+   "file": "lib/features/feed/ui/waterfall_view.dart",
+   "line": 481,
+   "scenario": "Pull to refresh a tag feed 5 times: 5 InterestsHandler.onSearch signals (inflating For You) and 5 search-history bumps.",
+   "evidence": "onRefresh: () => searchHandler.searchAction(currentTab.tags, null). searchAction calls InterestsHandler.onSearch and SearchHistoryStore.record for any non-empty plain query.",
+   "severity": "minor",
+   "confidence": "plausible"
+  },
+  {
+   "title": "Unfilled-screen auto-load can start a second concurrent page fetch",
+   "file": "lib/features/feed/ui/waterfall_view.dart",
+   "line": 509,
+   "scenario": "The first page does not fill the screen: every Obx rebuild schedules a postFrame callback that waits 500 ms and calls runSearch without re-checking isLoading. The NotificationListener path or another rebuild may have started a fetch meanwhile, so two pages load at once.",
+   "evidence": "if (hasClients && !isLoading) { ... await Future.delayed(500 ms); unawaited(searchHandler.runSearch()); } and runSearch itself has no in-flight guard.",
+   "severity": "minor",
+   "confidence": "plausible"
+  },
+  {
+   "title": "Restored selected tab can shift when an entry fails",
+   "file": "lib/features/feed/logic/search_handler.dart",
+   "line": 1505,
+   "scenario": "A TabBackup entry throws in parseTabFromBackup (caught and skipped): newSelectedIndex is an index into tabBackups, not restoredTabs, so the wrong tab becomes current.",
+   "evidence": "newSelectedIndex = tabBackups.indexWhere((tb) => tb == tabBackup); the catch skips adding to restoredTabs.",
+   "severity": "minor",
+   "confidence": "plausible"
+  },
+  {
+   "title": "The top bar keeps the old hand side until the tab changes",
+   "file": "lib/features/feed/ui/main_appbar.dart",
+   "line": 222,
+   "scenario": "Settings -> Interface -> Hand side changed to Right, then back: the drawers swap sides (MobileHome Obx), but the top bar keeps the menu icon on the left. Tapping it opens the start side, which now holds the pinned drawer, until the next tab switch rebuilds the CustomScrollView.",
+   "evidence": "MainAppBar reads `settingsHandler.handSide.value` in build without Obx. It is `const MainAppBar()` in waterfall_view.dart:532 (rebuilt only via the tab-keyed CustomScrollView). user_interface_page saves with restate only when predictive back changed.",
+   "severity": "minor",
+   "confidence": "plausible"
+  }
+ ],
+ "fragile": [
+  {
+   "what": "Paging rule",
+   "where": "search_handler.dart runSearch/retrySearch, SearchTab constructor (startingPage)",
+   "rule": "pageNum is incremented BEFORE each fetch; the first page number comes from BooruHandlerFactory.startingPage (default -1). retrySearch decrements and re-runs. Own lists loop at most ownListPagesPerLoad=10, and state is written only while the same tab is current."
+  },
+  {
+   "what": "TabBackup JSON schema + legacy format",
+   "where": "search_handler.dart TabBackup, restoreTabs, saved_search.dart, doujin_migration.dart",
+   "rule": "Keys t,b,i,g,p,pn,dp,dt,dth,sb,to,in,s must stay. A string starting with '[' is JSON, otherwise legacy 'booru|||tags|||selected~~~...'. Only false inherit flags and non-empty overrides are stored. fromJson falls back to {t,b}. SavedSearch and the doujin migration reuse this schema."
+  },
+  {
+   "what": "Tab identity",
+   "where": "SearchTab.id, searchAction/mergeAction/changeCurrentTabPageNumber, TabVisit",
+   "rule": "An in-place search change keeps tabId (visited history is one entry per tab id). Restore uses TabBackup.id."
+  },
+  {
+   "what": "Backup gating",
+   "where": "SearchHandler.canBackup, backup_app.dart:59, main.dart timer",
+   "rule": "No tab backup before restoreTabs finishes, and none during a database restore; otherwise the empty or default tab set overwrites TabRestore. generateBackupJson returns null (clear) for the only-default-tab case."
+  },
+  {
+   "what": "Doujin/booru separation",
+   "where": "SearchHistoryStore (the only router), markPostSeen, toggleItemFavourite/updateFavForMultipleItems, addCurrentTabAsSavedSearch, FloatingPreviewHandler.open (no Interests for doujin), floating booru picker sameDomain, FlowSearchBar/MainSearchTagChip colours, pin dialogs (doujin pins id -1), ThumbnailCardBuild footer stars from DoujinDataHandler",
+   "rule": "A doujin query, view, favourite, pin or saved search never reaches the booru tables and vice versa. Guarded by doujin_separation_test, doujin_favourite_tags_test and doujin_drawer_refresh_test."
+  },
+  {
+   "what": "Suggest queries are not searches",
+   "where": "SearchHandler.isPlainSearch, addTabByString, searchAction, SearchTab constructor",
+   "rule": "'suggest: … post:' queries never go to search history or InterestsHandler.onSearch, and they rebuild SuggestionHandler on restore (suggestion_query_test)."
+  },
+  {
+   "what": "Fixed extents for jumping lists",
+   "where": "flow_tab_carousel.dart itemExtentBuilder + jump active*(peekWidth+gap)",
+   "rule": "Any list that jumps to an index must have fixed or builder-given extents (r39: 4,529 tabs built thousands of cards). FlowTabCarousel.cardsBuilt is asserted in tab_cards_test; card keys are flow-card-<tab index>; sectionIndexes splits by hasReader."
+  },
+  {
+   "what": "Feed scroll filter",
+   "where": "feed_scroll.dart, waterfall_view.dart onNotification",
+   "rule": "Only depth-0 vertical notifications trigger next-page loading and sendToScrollStream; horizontal scrolls inside cards must not (r66, feed_scroll_test)."
+  },
+  {
+   "what": "No cache clear on tab switch",
+   "where": "changeTabIndex",
+   "rule": "Use Tools.trimMemoryCacheIfFull, never forceClearMemoryCache, on a switch (r39)."
+  },
+  {
+   "what": "Floating preview ownership/Back",
+   "where": "floating_preview_handler.dart, gallery_view_page/hideable_appbar/mobile_home_page back handlers",
+   "rule": "A window belongs to its owner page route and is dropped (with a log line) when the owner closed. _PreviewBackEntry blocks Back and closes the newest window in a microtask; page Back handlers stand down via hasWindowFor(topPageRoute). Never call ModalRoute.of(context) in callbacks. routeObserver must be in navigatorObservers. floating_preview_owner_test covers this."
+  },
+  {
+   "what": "Viewer route name",
+   "where": "waterfall_view.onTap (name 'viewer'), floating window (ViewerCloseObserver.viewerRoute)",
+   "rule": "The viewer route must stay named 'viewer' for close logging and trace counts."
+  },
+  {
+   "what": "Modular UI built-or-not",
+   "where": "waterfall_view (grid.feedScrollbar), thumbnail (grid.seenThumbnailsAtOnce), SuggestionsMainContent (search.history/pinned/popular/siteFilters)",
+   "rule": "Check ModularUi.isOn where the widget is built; never build and then hide."
+  },
+  {
+   "what": "UA / headers invariant for images",
+   "where": "thumbnail.dart (CustomNetworkImage with Tools.getFileCustomHeaders, thumbnailFallbacksFor http(s) only)",
+   "rule": "Every image fetch goes through CustomNetworkImage/SpriteTileImage with the source's media headers. CustomNetworkImage == compares the headers map by identity. Only Schale's spare server is used as a fallback (r89)."
+  },
+  {
+   "what": "Thumbnail decode rules",
+   "where": "thumbnail_decode_box.dart",
+   "rule": "Doujin covers decode for their box × 1.5 and are never upscaled; everything else follows the square/rectangle/staggered rules verbatim. Doujin covers use FilterQuality.high (thumbnail_decode_box_test)."
+  },
+  {
+   "what": "Staggered vs list",
+   "where": "waterfall_view._computeIsStaggered",
+   "rule": "List cards force non-staggered; doujin 'adapt' forces staggered whatever hasSizeData says."
+  },
+  {
+   "what": "Test keys",
+   "where": "tab_pill.dart, doujin_list_card.dart, main editor DoujinFiltersBlock, tag_type_strip, furaffinity_artist_header, doujin_tab_view, main_search_bar, floating window",
+   "rule": "Keep 'tab-pill', 'doujin-list-card-row|surface|cover|title|tags', 'doujin-filter-<key>-<value|(default)>', 'tag-type-<ns>', 'fa-artist-*', 'fa-strip-*', 'doujin-tab-close|open-browser|tabs|reason', 'clear-button', 'reset-button', 'save-search-button', 'search-button', 'floating-preview-<id>'."
+  },
+  {
+   "what": "Doujin detail tab key and open counting",
+   "where": "doujin_tab_view.dart key 'doujin-tab-<id>-<serverId>'; DoujinDetailPage.claimOpen",
+   "rule": "Switching back to a doujin tab must not count as a new open (r39)."
+  },
+  {
+   "what": "Favourite does not hide the post live",
+   "where": "SearchTab.toggleItemFavourite / updateFavForMultipleItems -> exemptFromLiveFilter",
+   "rule": "Favouriting keeps the post visible for the session; filters apply on load."
+  },
+  {
+   "what": "Group contiguity",
+   "where": "_snapInsertionIndex, addTabByString end-of-group, moveTabsToGroup, compactGroupBlocks after restore",
+   "rule": "A group is always one contiguous block."
+  },
+  {
+   "what": "Trace hooks",
+   "where": "TraceLifecycle on _WaterfallViewState/_FlowTabCarouselState/_DoujinTabViewState; PerfTrace.built('ThumbnailCardBuild'|'DoujinListCard')",
+   "rule": "Keep the names: traces and perf_trace tests read them."
+  },
+  {
+   "what": "Localized Favourites/Downloads names",
+   "where": "handleFavDlsNameChange",
+   "rule": "Restore must map the Favourites/Downloads booru names across every AppLocale."
+  }
+ ]
+}

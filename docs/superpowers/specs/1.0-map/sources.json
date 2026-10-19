@@ -1,0 +1,2206 @@
+{
+ "subsystem": "sources",
+ "summary": "The sources subsystem turns every supported site (classic boorus, tube sites, FurAffinity, kemono/pawchive, local virtual feeds) into one uniform BooruHandler API that the feed, viewer, tag builder and settings consume.\nCore: lib/src/handlers/booru_handler.dart (abstract BooruHandler, 1413 lines) owns the search pipeline (searchSetup -> sourceQuery (Source settings default filters/always-add) -> translateOrSyntax (cross-booru a|b) -> validateTags -> makeURL -> fetchSearch (DioNetwork + captcha interceptor) -> parseListFromResponse/parseItemFromResponse -> afterParseResponse (filterFetched, DB favourite/snatched flags, TagHandler queue)), plus parallel pipelines for tag suggestions (Either<ResponseError,..>), comments, notes, counts, loadItem, account (signIn/isSignedIn), site favourites, media hooks (getMediaHeaders, mediaOutageNotice, onMediaError, beforeMediaRetry, thumbnailFallbacks) and ~40 capability getters the UI reads.\nfilterFetched implements every feed filter (blacklist per source/global, marked, AI, favourited/snatched with live exemptions, media-type chips, duplicates, doujin blacklist separation) and the hiddenBy counters.\nBooruHandlerFactory maps BooruType -> handler with per-source startingPage (paging rule: runSearch increments pageNum before the first fetch) and caches per-booru media headers/handlers for the image loader; several boorus => MergebooruHandler.\nBooruType (enum persisted by NAME in boorus.json/backups) lists types, dropdown/detectable/saveable sets and display aliases. SiteProfile (per-host deviations: bakemono, kemono) is resolved by host.\n~45 concrete handlers in lib/src/boorus/: JSON/XML API engines (Danbooru, e621, Gelbooru family incl. rule34.xxx via api host, Moebooru, Philomena, BooruOnRails, Szurubooru, Sankaku/Idol, Hydrus, InkBunny, Civitai, World/XYZ, Nozomi packed indexes, Rule34.dev Next.js data), HTML scrapers (GelbooruV1, Realbooru, R34US, R34Hentai, Shimmie/paheal, Rainbooru, WildCritters, AGNPH), tube sites (Hanime1 with dictionary + Google translate, Kusowanka, RedGifs, Rule34Video with query grammar and phone-side type walk, TikPorn, XXXTik keyset + Firebase login, XXXFollow), FurAffinity (query grammar, parser, session in own file + jar seeding), kemono/pawchive (KemonoSite config, KemonoApi with 401 relogin, creator index in DB, file-host probe, session file), local feeds (Downloads with file reconciliation, Favourites, Collections, History, Merge).\nPer-source UI pages (kemono artists/DMs/announcements/post page, FurAffinity post page) live in lib/src/pages and talk to handlers + SearchHandler directly.\nInfrastructure in this subsystem: DioNetwork (one shared pooled HttpClient, per-request Dio with logging/alice/cookie interceptors, 429/503 retry, captcha auto-webview, SAF streaming download), Tools (UA invariant, WebView cookie jar with timeout/pause, media headers, captcha page, file names), http_overrides (proxy/root cert), html_parse/html_color (notes/comments to spans), text_parser (comment markup rules), extensions, debouncer, status_bar_inset.\nWiring today is singleton-heavy: handlers, models (BooruItem, BooruType) and utils reach into SettingsHandler, SourceSettingsHandler, DoujinDataHandler, TagHandler, NavigationHandler and even widgets (webview_page, flash_elements), which is the main source of layer violations a restructure must cut by injecting small interfaces (settings reader, DB repositories, app paths, cookie jar, webview env).",
+ "features": [
+  {
+   "name": "Unified source search pipeline",
+   "navPath": "automatic (every feed tab: scroll to load next page, pull to refresh)",
+   "what": "Builds URL from tags, applies source-settings query composition, cross-booru OR translation, validation, fetch with captcha check, parse, filter, DB flags, tag typing; locks the feed when a page adds nothing; special error text for rule34.xxx 'Missing authentication' and gelbooru/rule34 401 with a link to Settings > Booru & Search",
+   "files": [
+    "lib/src/handlers/booru_handler.dart"
+   ],
+   "storedIn": "memory only",
+   "settingsKeys": [
+    "itemLimit"
+   ],
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Feed filters (blacklist, marked, AI, favourited, snatched, duplicates)",
+   "navPath": "Settings -> Tags & filters (remove hidden/marked/AI/favourited/snatched toggles); automatic on every feed",
+   "what": "filterFetched hides blacklisted posts per source (global list unless the source ignores it), marked-tag posts, AI posts, already favourited/snatched posts (not on own lists: Downloads/Favourites/Collections/History), duplicates by fileURL/serverId; items favourited/snatched while browsing stay visible until reload (live exemptions); counts per reason feed the 'whole page hidden' banner; blur state hiddenInSource follows the same rules",
+   "files": [
+    "lib/src/handlers/booru_handler.dart",
+    "lib/src/data/booru_item.dart"
+   ],
+   "storedIn": "settings.json",
+   "settingsKeys": [
+    "filterHated",
+    "filterMarked",
+    "filterAi",
+    "filterFavourites",
+    "filterSnatched"
+   ],
+   "inBackup": "yes"
+  },
+  {
+   "name": "Media-type filter chips",
+   "navPath": "Favourites / Downloads tab -> filter chips (All / Images / Videos / Sound)",
+   "what": "BooruHandler.mediaFilter applied in filterFetched (image incl. animation, video, sound by sound tags)",
+   "files": [
+    "lib/src/handlers/booru_handler.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Doujin/booru blacklist separation in feeds",
+   "navPath": "automatic (doujin tabs, merge tabs, doujin For You)",
+   "what": "Doujin items are judged only by their source's doujin blacklist (per item host in mixed feeds), never by booru hidden/marked lists; doujin hearts come from the doujin store; doujin tag names never enter the shared tag store",
+   "files": [
+    "lib/src/handlers/booru_handler.dart",
+    "lib/src/data/booru_item.dart"
+   ],
+   "storedIn": "sourceSettings.json / doujinData.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Cross-booru OR syntax (tag1|tag2)",
+   "navPath": "Search bar: type a|b",
+   "what": "Translated per engine: ~a ~b (Danbooru/e621 with ( ) grouping), {a ~ b} (gelbooru.com, realbooru), ( a ~ b ) (rule34.xxx/safebooru), (a || b) (Philomena/BooruOnRails); dropped with a log warning on engines without OR (Sankaku, Shimmie, Nozomi, Hydrus, local, tube sites); hasNativeOrSupport tells the UI",
+   "files": [
+    "lib/src/handlers/booru_handler.dart",
+    "lib/src/boorus/danbooru_handler.dart",
+    "lib/src/boorus/gelbooru_handler.dart",
+    "lib/src/boorus/gelbooru_alikes_handler.dart",
+    "lib/src/boorus/realbooru_handler.dart",
+    "lib/src/boorus/philomena_handler.dart",
+    "lib/src/boorus/booru_on_rails_handler.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Source settings query composition and Filters card",
+   "navPath": "Settings -> Boorus & Search -> edit source -> Source settings (default filters, always add); Search window -> Filters",
+   "what": "sourceQuery composes default filters and always-add terms into every search (not for doujin, local, feeds, merge, or id lookups); siteFilters builds the Filters card from the handler's doujinFilters or from its sort/order/rating metatags (BooruSiteFilters), with engine cheat-sheet filters for Danbooru and Gelbooru families",
+   "files": [
+    "lib/src/handlers/booru_handler.dart",
+    "lib/src/boorus/booru_site_filters.dart"
+   ],
+   "storedIn": "sourceSettings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Per-source notes on Source settings",
+   "navPath": "Settings -> Boorus & Search -> edit source -> Source settings (notes block)",
+   "what": "BooruSiteNotes lists live-checked quirks per site (gelbooru/rule34.xxx need API key, realbooru API offline, danbooru 2-tag limit, derpibooru filters, paheal, r34us, rule34hentai, kusowanka, idol, FurAffinity, kemono) plus capability lines (sign-in, favourites sync, comments, notes, suggestions, tag builder)",
+   "files": [
+    "lib/src/boorus/booru_site_filters.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Tag suggestions (autocomplete)",
+   "navPath": "Search bar -> type a tag",
+   "what": "Per-source suggestion endpoints with HTML-entity decoding and a 20-item cap; local DB usage counts on Favourites/Downloads/Collections; local dictionary (hanime1), creator index + tag snapshot (kemono), snapshot (rule34video), five namespaces (kusowanka), vocabulary + elastic index (tik.porn), niche catalogue (redgifs niche:), merge routes N#tag to the Nth booru",
+   "files": [
+    "lib/src/handlers/booru_handler.dart",
+    "lib/src/boorus/*_handler.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Comments and translation notes",
+   "navPath": "Viewer -> info sheet -> Comments / Notes button",
+   "what": "getComments/getNotes pipelines; supported on Danbooru, e621, Gelbooru (HTML), Gelbooru-alikes (API + rule34.xxx HTML fallback for single comments), Moebooru, Philomena, BooruOnRails, Szurubooru, Sankaku/Idol, Shimmie/paheal, kemono/pawchive (404 = none), tik.porn",
+   "files": [
+    "lib/src/handlers/booru_handler.dart",
+    "lib/src/boorus/danbooru_handler.dart",
+    "lib/src/boorus/gelbooru_alikes_handler.dart",
+    "lib/src/boorus/moebooru_handler.dart",
+    "lib/src/boorus/tikporn_handler.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Total result count",
+   "navPath": "Feed header count badge",
+   "what": "searchCount per source (Danbooru counts API, gelbooru @attributes, XML posts count, local DB counts, merge sums children); countIsQuestionable for phone-filtered rule34video",
+   "files": [
+    "lib/src/handlers/booru_handler.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Load item on open (needToLoadItem)",
+   "navPath": "automatic when a post is opened in the viewer; Retry re-resolves",
+   "what": "loadItem resolves real file URLs / tags for sources whose grid lacks them (FurAffinity, Realbooru, R34US, Hanime1, Kusowanka, Rule34Video signed mp4s, Danbooru/Gelbooru/rule34.xxx tag types and counts, Idol HTML, World/XYZ tags, kemono detail)",
+   "files": [
+    "lib/src/handlers/booru_handler.dart",
+    "lib/src/boorus/rule34video_handler.dart",
+    "lib/src/boorus/hanime1_handler.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Tag typing into the shared tag store",
+   "navPath": "automatic (tag colours in viewer/tag cloud)",
+   "what": "addTagsWithType keeps ownTagTypes per handler and writes to TagHandler when storeTagsGlobally; populateTagHandler queues untyped tags (skipping doujin items) to be typed through the booru tag API",
+   "files": [
+    "lib/src/handlers/booru_handler.dart",
+    "lib/src/boorus/gelbooru_handler.dart"
+   ],
+   "storedIn": "store.db Tag table",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Videos/GIFs-only preview filter cycle",
+   "navPath": "Tag preview strip -> videos/GIFs button",
+   "what": "animatedPreviewFilters per source (animated|video default, realbooru video/webm/animated, paheal/rule34hentai animated, World/XYZ animated/video/gif, hidden on video-only sites and bakemono/kemono)",
+   "files": [
+    "lib/src/handlers/booru_handler.dart",
+    "lib/src/data/site_profile.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Discovery strip (creators and similar tags)",
+   "navPath": "Feed -> strip above the grid",
+   "what": "relatedCreators/relatedTags filled by RedGifs (uploaders + common tags), XXXFollow (users, tags), kemono (creators of first page, >=2)",
+   "files": [
+    "lib/src/boorus/redgifs_handler.dart",
+    "lib/src/boorus/xxxfollow_handler.dart",
+    "lib/src/boorus/kemono_handler.dart",
+    "lib/src/data/creator_info.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Source type catalogue and Autodetect",
+   "navPath": "Settings -> Boorus & Search -> add/edit source -> Type dropdown",
+   "what": "BooruType values with aliases; dropdown hides special types; detectable list excludes fixed-host and catch-all types; saveable list",
+   "files": [
+    "lib/src/boorus/booru_type.dart"
+   ],
+   "storedIn": "boorus (type name)",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Handler factory and per-site sub-handlers",
+   "navPath": "automatic",
+   "what": "Gelbooru type picks GelbooruHandler for gelbooru.com, RealbooruHandler for realbooru, alikes otherwise; Shimmie picks HTML handler for paheal; starting page per site; several boorus -> merge handler; media headers/handler cache for the image loader; Schale spare thumbnails",
+   "files": [
+    "lib/src/handlers/booru_handler_factory.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Per-source media headers and media outage notices",
+   "navPath": "automatic (thumbnails, viewer, downloads)",
+   "what": "getMediaHeaders per source (Referers for FA, nozomi, kemono...), sendsJarCookiesToMedia false for FA/e-hentai, kemono outage notice text instead of loading when file host is unreachable, re-probe on error/retry",
+   "files": [
+    "lib/src/handlers/booru_handler.dart",
+    "lib/src/handlers/booru_handler_factory.dart",
+    "lib/src/utils/tools.dart",
+    "lib/src/boorus/kemono_handler.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Account sign-in per source",
+   "navPath": "Settings -> Boorus & Search -> edit source (User ID / API key fields, labels per source)",
+   "what": "Auto sign-in before searches: Sankaku token, Idol x-rails-token, InkBunny sid (guest when empty), rule34hentai form login into jar, World/XYZ JWT + playlists, XXXTik Firebase email/password with refresh, kemono API/pawchive form login, RedGifs user JWT in API key; usesUserId/usesApiKey hide unused fields",
+   "files": [
+    "lib/src/boorus/sankaku_handler.dart",
+    "lib/src/boorus/idol_sankaku_handler.dart",
+    "lib/src/boorus/ink_bunny_handler.dart",
+    "lib/src/boorus/r34hentai_handler.dart",
+    "lib/src/boorus/worldxyz_handler.dart",
+    "lib/src/boorus/xxxtik_handler.dart",
+    "lib/src/boorus/redgifs_handler.dart",
+    "lib/src/handlers/kemono_session_handler.dart"
+   ],
+   "storedIn": "boorus (userID/apiKey); tokens memory only",
+   "inBackup": "partial"
+  },
+  {
+   "name": "Site favourites sync",
+   "navPath": "Viewer -> heart button (synced when signed in)",
+   "what": "setSiteFavourite on kemono (posts + creators), FurAffinity (fav link), with hasSiteFavourites gating and login hints",
+   "files": [
+    "lib/src/boorus/kemono_handler.dart",
+    "lib/src/boorus/kemono_api.dart",
+    "lib/src/boorus/furaffinity_handler.dart"
+   ],
+   "storedIn": "remote site",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Danbooru engine specifics",
+   "navPath": "Danbooru-type source feed",
+   "what": "rating:safe -> general on danbooru.donmai.us, app UA, captcha retry with app UA, autocomplete.json, comments, notes, counts API, uploader name lookup in info sheet, cheat-sheet Filters, large file for zip/ugoira, HTML tag counts with K/M parsing",
+   "files": [
+    "lib/src/boorus/danbooru_handler.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Gelbooru hybrid listing and tag types",
+   "navPath": "Gelbooru-type source (gelbooru.com, bakemono.app)",
+   "what": "API by default; bakemono listing page when sort:/source: used (falls back to API permanently if scrape breaks); file-count backfill badges; exact tag-type resolution (name=, 3 concurrent, 45 max, snapshot reuse); fringeBenefits cookie; HTML comments",
+   "files": [
+    "lib/src/boorus/gelbooru_handler.dart",
+    "lib/src/data/site_profiles/bakemono_profile.dart",
+    "lib/src/data/site_profile.dart"
+   ],
+   "storedIn": "store.db BooruTag",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Multi-file posts (bakemono, kemono)",
+   "navPath": "Viewer -> burst badge / files toolbar action",
+   "what": "SiteProfile.postFilesUrl/parsePostFiles give a post's file list; kemono profile reads the detail envelope, cover first, non-displayable files listed on post page",
+   "files": [
+    "lib/src/data/site_profile.dart",
+    "lib/src/data/site_profiles/bakemono_profile.dart",
+    "lib/src/data/site_profiles/kemono_profile.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "rule34.xxx API host and credentials help",
+   "navPath": "Settings -> Boorus & Search -> edit rule34.xxx (warning text)",
+   "what": "API calls go to api.rule34.xxx; single-comment HTML fallback; tag types from post page; credentials warning text",
+   "files": [
+    "lib/src/boorus/gelbooru_alikes_handler.dart"
+   ],
+   "storedIn": "boorus",
+   "inBackup": "yes"
+  },
+  {
+   "name": "e621 tags, filters and comments",
+   "navPath": "e621-type source",
+   "what": "All tag groups incl. contributor/lore/invalid, Basic auth, cheatsheet Filters (order, rating, type, date, score, favcount, duration, status, child/parent/pool/source/description/verified), number metatags, comments",
+   "files": [
+    "lib/src/boorus/e621_handler.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Philomena/Derpibooru and BooruOnRails filters",
+   "navPath": "Philomena/BooruOnRails source -> Filters",
+   "what": "filter:/sf:/sd: terms to URL params (derpibooru system filters), range filters, comments APIs, slug tag suggestions",
+   "files": [
+    "lib/src/boorus/philomena_handler.dart",
+    "lib/src/boorus/booru_on_rails_handler.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Szurubooru query language",
+   "navPath": "Szurubooru source",
+   "what": "order:asc/desc mapped to -sort:, Token auth, safety/type/special/flag/ranges metatags, comments from post resource, Direction filter group",
+   "files": [
+    "lib/src/boorus/szurubooru_handler.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Hydrus client integration",
+   "navPath": "Settings -> Boorus & Search -> Hydrus source (verify / request access key); Viewer -> Send to Hydrus",
+   "what": "search_files with sort/order, metadata pages of 20, access-key URLs, request new permissions, verify key, add URL with tags (snackbar on error)",
+   "files": [
+    "lib/src/boorus/hydrus_handler.dart"
+   ],
+   "storedIn": "boorus (apiKey)",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Sankaku and Idol",
+   "navPath": "Sankaku / Sankaku Idol source",
+   "what": "sankakuapi.com for known hosts (self-hosted mirrors kept), app UAs, token login, comments/notes, Idol HTML loadItem with tag classes, premium-wall detection",
+   "files": [
+    "lib/src/boorus/sankaku_handler.dart",
+    "lib/src/boorus/idol_sankaku_handler.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Nozomi packed index search",
+   "navPath": "Nozomi source",
+   "what": "Byte-range slices of index.nozomi for empty queries, intersect/subtract per-tag .nozomi files, sort:popular, exact totals",
+   "files": [
+    "lib/src/boorus/nozomi_handler.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Rule34.dev aggregator",
+   "navPath": "Rule34.dev source -> source: chip",
+   "what": "Next.js data route with cached buildId refreshed on 404, source selector (r34/gel/e621/paheal), per-source autocomplete",
+   "files": [
+    "lib/src/boorus/rule34dev_handler.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "World/XYZ (rule34.xyz) feeds",
+   "navPath": "World source -> sort: / feed: / playlist: chips",
+   "what": "POST search with include/exclude tags, sort mapping (newest/oldest/likes/views/random), account feeds likes/bookmarks and playlists after JWT login, engine detection for file extension schemes, app.json storage base",
+   "files": [
+    "lib/src/boorus/worldxyz_handler.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Civitai gallery",
+   "navPath": "Civitai source",
+   "what": "Tag names resolved to ids, -tag exclusion on phone, artist:me via API key, sort/period/nsfw/type/basemodel/model/post params, cursor paging, image transforms for thumb/sample, tag catalog",
+   "files": [
+    "lib/src/boorus/civitai_handler.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "InkBunny",
+   "navPath": "InkBunny source",
+   "what": "Guest or user sid, rating options set, two-step search (ids then submissions), one item per file with p2/p3 names, pools as pool:id:name tags, type:/scraps:/artist:/order: terms",
+   "files": [
+    "lib/src/boorus/ink_bunny_handler.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "HTML-scraped boorus",
+   "navPath": "GelbooruV1 / Realbooru / R34US / Rainbooru / WildCritters / AGNPH / paheal sources",
+   "what": "Grid scraping with thumb->file URL rewrites, mobile/desktop layouts on rule34.us, realbooru sort chips, paheal filters (content/ext/score), AGNPH deferred tag fetch",
+   "files": [
+    "lib/src/boorus/gelbooruv1_handler.dart",
+    "lib/src/boorus/realbooru_handler.dart",
+    "lib/src/boorus/r34us_handler.dart",
+    "lib/src/boorus/rainbooru_handler.dart",
+    "lib/src/boorus/wildcritters_handler.dart",
+    "lib/src/boorus/agnph_handler.dart",
+    "lib/src/boorus/shimmie_handler.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "rule34hentai search, popular pages and login",
+   "navPath": "rule34hentai source -> Filters (Sort, Popular, Content, File type, Score, Favorites, Comments)",
+   "what": "order: -> order=, popular:day/month/year pages (one page, other chips dropped), own autocomplete, form login into WebView jar with sign-in check",
+   "files": [
+    "lib/src/boorus/r34hentai_handler.dart"
+   ],
+   "storedIn": "WebView cookie jar",
+   "inBackup": "no"
+  },
+  {
+   "name": "Hanime1 English dictionary and title translation",
+   "navPath": "Hanime1 source",
+   "what": "English tokens to exact Chinese tags, genre/sort/mode:any, artist via free text, CF block domain fallback .me <-> .com remembered per session, best quality mp4 on open, typed tags, views/date, machine-translated title via translate.googleapis.com (no on/off toggle)",
+   "files": [
+    "lib/src/boorus/hanime1_handler.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Kusowanka facets and shelves",
+   "navPath": "Kusowanka source -> Sort chip (Popular/Random/Top rated)",
+   "what": "One facet per query (tag/artist/character/parody/metadata) with slugs, refusal for multi-term, shelves one page each, tag names from post page",
+   "files": [
+    "lib/src/boorus/kusowanka_handler.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "RedGifs",
+   "navPath": "RedGifs source (sort/type/verified chips, creator:, niche:)",
+   "what": "Guest token (20 h) or user token from login page in API key, re-auth on 401, creator feed, niche feed and full niche catalogue autocomplete, type gifs/images, verified only, sound tag, niche tags",
+   "files": [
+    "lib/src/boorus/redgifs_handler.dart"
+   ],
+   "storedIn": "boorus (apiKey user token)",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Rule34Video routes and content types",
+   "navPath": "Rule34Video source -> Sort / Type chips; Source settings -> content types default",
+   "what": "Query grammar to one route (latest, search, tag by id, artist, category, uploader), refusal of combinations, tag ids from snapshot or session, phone filtering of gay/futa on text search with up to 5 hops per fetch and 2 extra rounds, DDoS-Guard message, flashvars best quality on open, learned tag ids recorded",
+   "files": [
+    "lib/src/boorus/rule34video_handler.dart",
+    "lib/src/boorus/rule34video_query.dart"
+   ],
+   "storedIn": "store.db BooruTag; sourceSettings.json contentTypes/defaultSort",
+   "inBackup": "yes"
+  },
+  {
+   "name": "tik.porn feeds",
+   "navPath": "Tik.Porn source",
+   "what": "Tag/action/creator id feeds with recent/popular sort, catalogue search * for empty query, underscore to space search terms, vocabulary + elastic suggestions, comments",
+   "files": [
+    "lib/src/boorus/tikporn_handler.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "xxxtik and xxxfollow",
+   "navPath": "xxxtik / xxxfollow sources",
+   "what": "xxxtik keyset cursor feeds (new/top periods/tag/creator), HLS posts, optional Firebase login; xxxfollow session cookie bootstrap, gender sort, discovery payload for empty query",
+   "files": [
+    "lib/src/boorus/xxxtik_handler.dart",
+    "lib/src/boorus/xxxfollow_handler.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "WebView browser source",
+   "navPath": "Settings -> Boorus & Search -> add source of type WebView; tab shows the site",
+   "what": "Inert handler; resolveUrl fills {tags} or %s placeholders with the search",
+   "files": [
+    "lib/src/boorus/webview_browser_handler.dart"
+   ],
+   "storedIn": "boorus",
+   "inBackup": "yes"
+  },
+  {
+   "name": "FurAffinity routes and Filters",
+   "navPath": "FurAffinity source -> search window Filters (Sort, Order, Type, Animated, Rating, Gender, Posted within, Match, Results per page)",
+   "what": "browse, search with site operators, user:/gallery:/artist:, scraps:, favorites: (cursor), folder:, inbox: (logged in, cursor), id:, category/theme/species ids, animated:gif via @filename gif",
+   "files": [
+    "lib/src/boorus/furaffinity_query.dart",
+    "lib/src/boorus/furaffinity_handler.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "FurAffinity blocklist, account and media icons",
+   "navPath": "automatic on FurAffinity feeds; thumbnails show music/story/flash/GIF icons",
+   "what": "Blocked submissions (tags/users/tagless) left out, username noted from pages, cards built from listing figures with type/rating/category/theme/species tags, mature content needs login messages",
+   "files": [
+    "lib/src/boorus/furaffinity_parser.dart",
+    "lib/src/boorus/furaffinity_handler.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "FurAffinity artist header actions",
+   "navPath": "FurAffinity gallery tab -> artist header (profile stats, Watch button)",
+   "what": "fetchUser profile once per session, watch/unwatch via keyed link",
+   "files": [
+    "lib/src/boorus/furaffinity_handler.dart",
+    "lib/src/boorus/furaffinity_parser.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "FurAffinity session",
+   "navPath": "Settings -> Accounts / FurAffinity login page (WebView)",
+   "what": "a/b cookies stored in furaffinity_session.json, sent on site page requests only, seeded into the jar before FA webviews and synced back after (newer cookies kept, guest jar reseeded), scrubbed on logout",
+   "files": [
+    "lib/src/handlers/furaffinity_session_handler.dart"
+   ],
+   "storedIn": "furaffinity_session.json",
+   "inBackup": "no"
+  },
+  {
+   "name": "FurAffinity post page",
+   "navPath": "Viewer -> toolbar 'Post page' (article icon) or info sheet button on a FurAffinity post",
+   "what": "Picture (GIF/preview, tap for zoomable full view), Play Flash (Ruffle), title, artist row -> gallery tab, stats chips, description HTML, Linked media list, mini gallery + Newer/Older, folders chips -> folder tab, keywords chips -> search tab, comments (tap -> user tab), FA favourite toggle, open page in webview",
+   "files": [
+    "lib/src/pages/furaffinity_post_page.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Linked media from descriptions",
+   "navPath": "Viewer -> link button (shows once a post's description was read); FurAffinity post page -> Linked media",
+   "what": "Resolves description links to installed-source posts (opens in app), video/GIF files (plays), known media pages (webview); unwraps FA externalurl; label from link words or line text; Sankaku/Idol browser address rewrite; same-site host sets",
+   "files": [
+    "lib/src/boorus/linked_media.dart"
+   ],
+   "storedIn": "memory only (session)",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Kemono/Pawchive query grammar and feeds",
+   "navPath": "Kemono or Pawchive source (search bar, sidebar Posts pills)",
+   "what": "words (min 3/2 chars), tag:, creator:service:id or creator:name (index lookup), service: filtered on phone with up to 3 extra pages, popular:period[:date], random, favorites:posts, id:service:creator:post; site capability gating with messages",
+   "files": [
+    "lib/src/boorus/kemono_query.dart",
+    "lib/src/boorus/kemono_handler.dart",
+    "lib/src/boorus/kemono_site.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Kemono session and auto re-login",
+   "navPath": "Settings -> Boorus & Search -> edit kemono/pawchive (Username/Password optional)",
+   "what": "API login (kemono) or form login (pawchive), session cookie per site|user in kemono_session.json (bare keys migrated), one automatic re-login on 401 at most once a minute, adopt existing jar session on 409, logout when credentials removed",
+   "files": [
+    "lib/src/handlers/kemono_session_handler.dart",
+    "lib/src/boorus/kemono_api.dart"
+   ],
+   "storedIn": "kemono_session.json",
+   "inBackup": "no"
+  },
+  {
+   "name": "Kemono creator index",
+   "navPath": "Kemono sidebar -> Artists -> refresh button / pull to refresh; automatic on first search and when older than 24 h",
+   "what": "Downloads every creator (/creators, decoded in an isolate), batch upserts into KemonoCreator/PawchiveCreator tables, prunes missing, progress line, names on cards and tags",
+   "files": [
+    "lib/src/handlers/kemono_creator_store.dart"
+   ],
+   "storedIn": "store.db KemonoCreator/PawchiveCreator + kemono_creators.json/pawchive_creators.json",
+   "inBackup": "partial"
+  },
+  {
+   "name": "Kemono file host probe",
+   "navPath": "Kemono sidebar status card; viewer outage notice",
+   "what": "HEAD per file host with 8 s timeout, 10 min freshness, notice text recommending Private DNS, re-probe on connection errors and retry",
+   "files": [
+    "lib/src/handlers/kemono_file_hosts.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Kemono Artists page",
+   "navPath": "Kemono sidebar -> Artists -> Search / Recent / (Favorites) Artists; tag builder Artists chip (picker)",
+   "what": "Banner cards two per row (service badge, heart when signed in, avatar, name, favourites count, updated date), name search with debounce, service chips, sort menu (most favourited, recently updated, recently added, name), All/Recent/Favourites modes, infinite scroll 60/page, index status line, tap opens creator tab, long-press favourites, picker returns creator: term",
+   "files": [
+    "lib/src/pages/kemono_artists_page.dart"
+   ],
+   "storedIn": "store.db KemonoCreator",
+   "inBackup": "partial"
+  },
+  {
+   "name": "Kemono creator tags sheet",
+   "navPath": "Search window tag builder on a kemono creator tab -> creator tags chip",
+   "what": "Live list of the creator's tags with filter, pops tag:name",
+   "files": [
+    "lib/src/pages/kemono_artists_page.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Kemono DMs and announcements",
+   "navPath": "Kemono sidebar -> Messages -> DMs / Announcements (creator tab); creator header",
+   "what": "Paged searchable DM list (50/page) or one creator's DMs, announcements list, tap opens creator tab, long-press copies text",
+   "files": [
+    "lib/src/pages/kemono_messages_pages.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Kemono post page",
+   "navPath": "Viewer -> toolbar 'Post page' (article icon) or info sheet button on a kemono post",
+   "what": "Creator row -> creator tab, title, dates, file count, outage and preview-only notices, content HTML with absolute /data links, embed card, poll, pictures as full-width tiles (800 px, Full chip loads real files when host is up), Download all per section, file long-press menu (download/copy/open), videos into the files overlay, attachments download with real names, tags -> tag tabs, comments preview + full dialog, previous/next post, open in browser, copy link",
+   "files": [
+    "lib/src/pages/kemono_post_page.dart"
+   ],
+   "storedIn": "settings.json",
+   "settingsKeys": [
+    "kemonoPostFullImages",
+    "mediaCache",
+    "snatchCooldown"
+   ],
+   "inBackup": "yes"
+  },
+  {
+   "name": "Downloads tab with file reconciliation",
+   "navPath": "Right drawer -> Downloads (or Downloads tab)",
+   "what": "Snatched rows from DB minus doujin galleries, each checked against the download folder(s); missing rows held for the drawer; empty note pointing to Settings -> Save & cache -> Earlier download folders; ends when DB runs out of rows; sort random/reverse and site: metatags",
+   "files": [
+    "lib/src/boorus/downloads_handler.dart"
+   ],
+   "storedIn": "store.db BooruItem",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Favourites, Collections and History feeds",
+   "navPath": "Right drawer quick access -> Favourites / Collections (collection:<id>) / History",
+   "what": "Local DB searches with tag/site filters, sort random/reverse, counts, local tag suggestions; History lists viewed posts newest first",
+   "files": [
+    "lib/src/boorus/favourites_handler.dart",
+    "lib/src/boorus/collections_handler.dart",
+    "lib/src/boorus/history_handler.dart",
+    "lib/src/data/collection_info.dart"
+   ],
+   "storedIn": "store.db BooruItem/Collection/ViewedPost",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Merge tabs",
+   "navPath": "Search bar -> select secondary boorus (merge); per-booru tag overrides with inherit toggle",
+   "what": "Runs each child handler per page, interleaves results, de-duplicates by md5 (sha1 for GelbooruV1) or file/post URL for md5-less engines, N#tag targets the Nth booru, per-booru override strings, combined metatags, summed counts",
+   "files": [
+    "lib/src/boorus/mergebooru_handler.dart"
+   ],
+   "storedIn": "tab restore (DB)",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Search history entries",
+   "navPath": "Search bar -> history list (favourite star)",
+   "what": "HistoryItem rows with booru type/name and favourite flag",
+   "files": [
+    "lib/src/data/history_item.dart"
+   ],
+   "storedIn": "store.db SearchHistory",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Booru config sharing link",
+   "navPath": "Settings -> Boorus & Search -> share source (with or without keys)",
+   "what": "Booru.toLink base64 link (https://www.loli.snatcher?...) and Booru.fromLink import; ignoreGlobalBlacklist flag per source",
+   "files": [
+    "lib/src/data/booru.dart"
+   ],
+   "storedIn": "boorus",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Shared HTTP client, retries and captcha auto-solve",
+   "navPath": "automatic; captcha page appears when a site answers 403/503 or a known challenge",
+   "what": "One pooled HttpClient (20 s idle, 30 s connect, 8 per host, self-signed per setting), 429/503 retries with Retry-After, captcha WebView page with auto-close dialog when clearance is obtained, cookie merge without duplicates, alice/talker logging",
+   "files": [
+    "lib/src/utils/dio_network.dart",
+    "lib/src/utils/tools.dart"
+   ],
+   "storedIn": "settings.json",
+   "settingsKeys": [
+    "allowSelfSignedCerts"
+   ],
+   "inBackup": "yes"
+  },
+  {
+   "name": "User agent and cookie jar",
+   "navPath": "Settings -> Network -> custom user agent",
+   "what": "Device WebView UA captured at startup (custom UA overrides), WebView-marker stripping for Schale, jar reads with 5 s timeout and 30 s pause, per-host read dedupe, Set-Cookie written back to the jar",
+   "files": [
+    "lib/src/utils/tools.dart",
+    "lib/src/utils/dio_network.dart"
+   ],
+   "storedIn": "settings.json",
+   "settingsKeys": [
+    "customUserAgent"
+   ],
+   "inBackup": "yes"
+  },
+  {
+   "name": "SAF streaming downloads",
+   "navPath": "automatic when downloading to a SAF folder",
+   "what": "downloadCustom streams response chunks into a SAF file with progress, cancel and timeout cleanup",
+   "files": [
+    "lib/src/utils/dio_network.dart"
+   ],
+   "storedIn": "download folder",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Proxy and root certificate",
+   "navPath": "Settings -> Network -> Proxy (direct/system/http/socks5/socks4, address, username, password)",
+   "what": "initProxy sets findProxy per type, system proxy detection, ISRG Root X1 added on Android",
+   "files": [
+    "lib/src/utils/http_overrides.dart"
+   ],
+   "storedIn": "settings.json",
+   "settingsKeys": [
+    "proxyType",
+    "proxyAddress",
+    "proxyUsername",
+    "proxyPassword",
+    "allowSelfSignedCerts"
+   ],
+   "inBackup": "yes"
+  },
+  {
+   "name": "Hidden status bar insets",
+   "navPath": "Settings -> hide status bar; Settings -> Modular UI -> draw under hidden status bar",
+   "what": "Keeps the swipe edge as top padding unless the Modular UI switch draws under it; follows keyboard",
+   "files": [
+    "lib/src/utils/status_bar_inset.dart"
+   ],
+   "storedIn": "settings.json",
+   "settingsKeys": [
+    "hideStatusBar"
+   ],
+   "inBackup": "yes"
+  },
+  {
+   "name": "HTML notes/comments rendering",
+   "navPath": "Viewer notes overlay; comments dialog",
+   "what": "HTML to InlineSpan with bold/italic/underline/strike/small/big/font color/inline style font-size and color, links (external), ruby, translator notes, bordered note text, colorless variant",
+   "files": [
+    "lib/src/utils/html_parse.dart",
+    "lib/src/utils/html_color.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Comment markup parsing",
+   "navPath": "Comments dialog / kemono post comments",
+   "what": "Rules for URLs (scheme, www, bare TLD), code, [quote] nested, spoilers and ||discord|| spoilers, >>post references, @mentions, said, bold/italic/underline/strike, ruby, hashtags, tags, greentext; pure-URL detection for info-sheet links",
+   "files": [
+    "lib/src/utils/text_parser/text_parser.dart",
+    "lib/src/utils/text_parser/comment_parser.dart",
+    "lib/src/utils/text_parser/rules/url_rule.dart",
+    "lib/src/utils/text_parser/rules/quote_rule.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Locale-aware number formatting and UI extensions",
+   "navPath": "automatic (counts, badges)",
+   "what": "formatNumber/formatNumberShort with app locale, BuildContext/Widget/String/Color helpers, firstWhereOrNull",
+   "files": [
+    "lib/src/utils/extensions.dart"
+   ],
+   "storedIn": "settings.json",
+   "settingsKeys": [
+    "locale"
+   ],
+   "inBackup": "yes"
+  },
+  {
+   "name": "Debounce helper",
+   "navPath": "automatic (search typing, loading indicators)",
+   "what": "Tagged debounce and delay timers",
+   "files": [
+    "lib/src/utils/debouncer.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  }
+ ],
+ "fileHomes": [
+  {
+   "path": "lib/src/boorus/agnph_handler.dart",
+   "newHome": "lib/sources/booru/agnph_handler.dart",
+   "role": "AGNPH XML API, tags fetched per post afterwards",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/booru_on_rails_handler.dart",
+   "newHome": "lib/sources/booru/booru_on_rails_handler.dart",
+   "role": "Twibooru/BooruOnRails v3 API, sf/sd filters, comments",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/booru_site_filters.dart",
+   "newHome": "lib/sources/framework/site_filters.dart",
+   "role": "Filters from metatags, engine cheat-sheet filters, per-source notes",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/booru_type.dart",
+   "newHome": "lib/models/booru_type.dart",
+   "role": "BooruType enum (persisted by name), dropdown/detectable/saveable lists, aliases",
+   "layer": "models"
+  },
+  {
+   "path": "lib/src/boorus/civitai_handler.dart",
+   "newHome": "lib/sources/booru/civitai_handler.dart",
+   "role": "Civitai REST images API with tag-id resolution and cursor paging",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/collections_handler.dart",
+   "newHome": "lib/sources/local/collections_handler.dart",
+   "role": "Local DB feed over saved collections",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/danbooru_handler.dart",
+   "newHome": "lib/sources/booru/danbooru_handler.dart",
+   "role": "Danbooru engine (posts.json, autocomplete, comments, notes, counts, HTML tag counts)",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/downloads_handler.dart",
+   "newHome": "lib/sources/local/downloads_handler.dart",
+   "role": "Local Downloads feed with on-disk reconciliation",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/e621_handler.dart",
+   "newHome": "lib/sources/booru/e621_handler.dart",
+   "role": "e621/e926/e6ai engine with cheatsheet filters and comments",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/empty_handler.dart",
+   "newHome": "lib/sources/framework/empty_handler.dart",
+   "role": "Inert handler for unknown types",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/favourites_handler.dart",
+   "newHome": "lib/sources/local/favourites_handler.dart",
+   "role": "Local Favourites feed",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/furaffinity_handler.dart",
+   "newHome": "lib/sources/furaffinity/furaffinity_handler.dart",
+   "role": "FurAffinity page-scraping handler, account actions, filters",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/furaffinity_parser.dart",
+   "newHome": "lib/sources/furaffinity/furaffinity_parser.dart",
+   "role": "FA HTML parsers (listing, submission, blocklist, folders, watchlist, user)",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/furaffinity_query.dart",
+   "newHome": "lib/sources/furaffinity/furaffinity_query.dart",
+   "role": "FA query grammar to routes/URLs (pure Dart)",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/gelbooru_alikes_handler.dart",
+   "newHome": "lib/sources/booru/gelbooru_alikes_handler.dart",
+   "role": "Gelbooru 0.2 XML family (rule34.xxx via api host, safebooru)",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/gelbooru_handler.dart",
+   "newHome": "lib/sources/booru/gelbooru_handler.dart",
+   "role": "gelbooru.com JSON API, hybrid site-profile listing, exact tag typing",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/gelbooruv1_handler.dart",
+   "newHome": "lib/sources/booru/gelbooru_v1_handler.dart",
+   "role": "Gelbooru 0.1 HTML scraper",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/hanime1_handler.dart",
+   "newHome": "lib/sources/tube/hanime1_handler.dart",
+   "role": "hanime1 scraper with Chinese dictionary, domain fallback, title translation",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/history_handler.dart",
+   "newHome": "lib/sources/local/history_handler.dart",
+   "role": "Viewed-posts history feed",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/hydrus_handler.dart",
+   "newHome": "lib/sources/booru/hydrus_handler.dart",
+   "role": "Hydrus client API (search, metadata, access key, add URL)",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/idol_sankaku_handler.dart",
+   "newHome": "lib/sources/booru/idol_sankaku_handler.dart",
+   "role": "Sankaku Idol API + HTML loadItem",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/ink_bunny_handler.dart",
+   "newHome": "lib/sources/booru/inkbunny_handler.dart",
+   "role": "InkBunny API with session id and submission expansion",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/kemono_api.dart",
+   "newHome": "lib/sources/kemono/kemono_api.dart",
+   "role": "kemono/pawchive HTTP helper (headers, 401 relogin, detail cache, typed endpoints, murmur2 host pick)",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/kemono_handler.dart",
+   "newHome": "lib/sources/kemono/kemono_handler.dart",
+   "role": "kemono-style handler (query, feeds, parsing, suggestions, comments, account)",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/kemono_query.dart",
+   "newHome": "lib/sources/kemono/kemono_query.dart",
+   "role": "kemono query grammar (pure Dart)",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/kemono_site.dart",
+   "newHome": "lib/sources/kemono/kemono_site.dart",
+   "role": "Per-site constants and URL builders for kemono.cr and pawchive.pw",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/kusowanka_handler.dart",
+   "newHome": "lib/sources/tube/kusowanka_handler.dart",
+   "role": "kusowanka facet/shelf scraper",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/linked_media.dart",
+   "newHome": "lib/sources/framework/linked_media.dart",
+   "role": "Description link resolver (per-engine post ids) and session store of post links",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/mergebooru_handler.dart",
+   "newHome": "lib/sources/local/merge_handler.dart",
+   "role": "Merge tab interleaving several child handlers",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/moebooru_handler.dart",
+   "newHome": "lib/sources/booru/moebooru_handler.dart",
+   "role": "Moebooru (yande.re/konachan) XML + JSON comments/notes",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/nozomi_handler.dart",
+   "newHome": "lib/sources/booru/nozomi_handler.dart",
+   "role": "nozomi.la packed-index search (overrides search)",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/nyanpals_handler.dart",
+   "newHome": "lib/sources/booru/nyanpals_handler.dart",
+   "role": "NyanPals kontent API (videos dropped)",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/philomena_handler.dart",
+   "newHome": "lib/sources/booru/philomena_handler.dart",
+   "role": "Philomena/Derpibooru API with filters and comments",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/r34hentai_handler.dart",
+   "newHome": "lib/sources/booru/r34hentai_handler.dart",
+   "role": "rule34hentai Shimmie HTML, popular pages, form login",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/r34us_handler.dart",
+   "newHome": "lib/sources/booru/r34us_handler.dart",
+   "role": "rule34.us HTML scraper (mobile+desktop layouts)",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/rainbooru_handler.dart",
+   "newHome": "lib/sources/booru/rainbooru_handler.dart",
+   "role": "Rainbooru scraper (per-post page fetch)",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/realbooru_handler.dart",
+   "newHome": "lib/sources/booru/realbooru_handler.dart",
+   "role": "Realbooru HTML scraper with loadItem",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/redgifs_handler.dart",
+   "newHome": "lib/sources/tube/redgifs_handler.dart",
+   "role": "RedGifs v2 API (tokens, creator/niche feeds, niche catalogue)",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/rule34dev_handler.dart",
+   "newHome": "lib/sources/booru/rule34dev_handler.dart",
+   "role": "app.rule34.dev Next.js data aggregator",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/rule34video_handler.dart",
+   "newHome": "lib/sources/tube/rule34video_handler.dart",
+   "role": "rule34video KVS scraper (routes, phone filter walk, video page)",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/rule34video_query.dart",
+   "newHome": "lib/sources/tube/rule34video_query.dart",
+   "role": "rule34video query grammar (pure Dart)",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/sankaku_handler.dart",
+   "newHome": "lib/sources/booru/sankaku_handler.dart",
+   "role": "Sankaku API (token login, comments, notes)",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/shimmie_handler.dart",
+   "newHome": "lib/sources/booru/shimmie_handler.dart",
+   "role": "Shimmie XML API + paheal HTML handler",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/szurubooru_handler.dart",
+   "newHome": "lib/sources/booru/szurubooru_handler.dart",
+   "role": "Szurubooru API",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/tikporn_handler.dart",
+   "newHome": "lib/sources/tube/tikporn_handler.dart",
+   "role": "tik.porn JSON API (tags/actions/creators, elastic suggestions, comments)",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/webview_browser_handler.dart",
+   "newHome": "lib/sources/framework/webview_browser_handler.dart",
+   "role": "Inert handler for the WebView source type + URL template",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/wildcritters_handler.dart",
+   "newHome": "lib/sources/booru/wildcritters_handler.dart",
+   "role": "WildCritters scraper (per-post page fetch)",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/worldxyz_handler.dart",
+   "newHome": "lib/sources/booru/worldxyz_handler.dart",
+   "role": "rule34.xyz/World engine (POST search, auth, feeds, playlists)",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/xxxfollow_handler.dart",
+   "newHome": "lib/sources/tube/xxxfollow_handler.dart",
+   "role": "xxxfollow Laravel API",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/boorus/xxxtik_handler.dart",
+   "newHome": "lib/sources/tube/xxxtik_handler.dart",
+   "role": "xxxtik API with keyset cursor and Firebase login",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/data/booru.dart",
+   "newHome": "lib/models/booru.dart",
+   "role": "Source config model, JSON, share link",
+   "layer": "models"
+  },
+  {
+   "path": "lib/src/data/booru_item.dart",
+   "newHome": "lib/models/booru_item.dart",
+   "role": "Post model + MediaType (filter-flag getters must move out)",
+   "layer": "models"
+  },
+  {
+   "path": "lib/src/data/collection_info.dart",
+   "newHome": "lib/models/collection_info.dart",
+   "role": "Collection summary model",
+   "layer": "models"
+  },
+  {
+   "path": "lib/src/data/creator_info.dart",
+   "newHome": "lib/models/creator_info.dart",
+   "role": "Discovery-strip creator model",
+   "layer": "models"
+  },
+  {
+   "path": "lib/src/data/history_item.dart",
+   "newHome": "lib/models/history_item.dart",
+   "role": "Search history row model",
+   "layer": "models"
+  },
+  {
+   "path": "lib/src/data/kemono_creator.dart",
+   "newHome": "lib/sources/kemono/kemono_creator.dart",
+   "role": "kemono creator index row",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/data/kemono_post.dart",
+   "newHome": "lib/sources/kemono/kemono_post.dart",
+   "role": "kemono post detail decoded (files, embed, poll)",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/data/response_error.dart",
+   "newHome": "lib/models/response_error.dart",
+   "role": "Error value for Either results",
+   "layer": "models"
+  },
+  {
+   "path": "lib/src/data/site_profile.dart",
+   "newHome": "lib/sources/framework/site_profile.dart",
+   "role": "Per-host deviation hooks + registry, PostFile",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/data/site_profiles/bakemono_profile.dart",
+   "newHome": "lib/sources/booru/bakemono_profile.dart",
+   "role": "bakemono.app profile (autocomplete, listing, multi-file)",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/data/site_profiles/kemono_profile.dart",
+   "newHome": "lib/sources/kemono/kemono_profile.dart",
+   "role": "kemono multi-file profile",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/handlers/booru_handler.dart",
+   "newHome": "lib/sources/framework/booru_handler.dart",
+   "role": "Abstract source handler: pipelines, filters, capabilities",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/handlers/booru_handler_factory.dart",
+   "newHome": "lib/sources/framework/booru_handler_factory.dart",
+   "role": "BooruType -> handler, starting page, media caches",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/handlers/booru_handler_utils.dart",
+   "newHome": "lib/sources/framework/handler_utils.dart",
+   "role": "Pure parsing helpers shared by handlers",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/handlers/furaffinity_session_handler.dart",
+   "newHome": "lib/sources/furaffinity/furaffinity_session.dart",
+   "role": "FA a/b session file + jar seeding/sync",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/handlers/kemono_creator_store.dart",
+   "newHome": "lib/sources/kemono/kemono_creator_store.dart",
+   "role": "Creator index download/store/search",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/handlers/kemono_file_hosts.dart",
+   "newHome": "lib/sources/kemono/kemono_file_hosts.dart",
+   "role": "File-host reachability probe",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/handlers/kemono_session_handler.dart",
+   "newHome": "lib/sources/kemono/kemono_session.dart",
+   "role": "kemono/pawchive login session file",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/pages/furaffinity_post_page.dart",
+   "newHome": "lib/features/viewer/ui/post_pages/furaffinity_post_page.dart",
+   "role": "FA submission page",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/pages/kemono_artists_page.dart",
+   "newHome": "lib/features/feed/ui/kemono/kemono_artists_page.dart",
+   "role": "Artists page, creator card, creator tags sheet",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/pages/kemono_messages_pages.dart",
+   "newHome": "lib/features/feed/ui/kemono/kemono_messages_pages.dart",
+   "role": "DMs and announcements pages",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/pages/kemono_post_page.dart",
+   "newHome": "lib/features/viewer/ui/post_pages/kemono_post_page.dart",
+   "role": "kemono post page",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/utils/debouncer.dart",
+   "newHome": "lib/core/utils/debouncer.dart",
+   "role": "Tagged debounce timers",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/utils/dio_network.dart",
+   "newHome": "lib/core/network/dio_network.dart",
+   "role": "Shared HTTP client, retries, cookie/captcha interceptors, SAF download",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/utils/extensions.dart",
+   "newHome": "lib/core/utils/extensions.dart",
+   "role": "Context/widget/string/number/list extensions",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/utils/html_color.dart",
+   "newHome": "lib/core/ui/html/html_color.dart",
+   "role": "CSS color parser",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/utils/html_parse.dart",
+   "newHome": "lib/core/ui/html/html_spans.dart",
+   "role": "HTML to InlineSpan",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/utils/http_overrides.dart",
+   "newHome": "lib/core/network/proxy.dart",
+   "role": "Proxy setup and root cert",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/utils/status_bar_inset.dart",
+   "newHome": "lib/app/status_bar_inset.dart",
+   "role": "Hidden-status-bar MediaQuery wrapper (reads settings + Modular UI)",
+   "layer": "app"
+  },
+  {
+   "path": "lib/src/utils/text_parser/comment_parser.dart",
+   "newHome": "lib/core/utils/text_parser/comment_parser.dart",
+   "role": "Preconfigured comment parser",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/utils/text_parser/rules/formatting_rule.dart",
+   "newHome": "lib/core/utils/text_parser/rules/formatting_rule.dart",
+   "role": "Bold/italic/underline/strike/ruby/code rules",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/utils/text_parser/rules/mention_rule.dart",
+   "newHome": "lib/core/utils/text_parser/rules/mention_rule.dart",
+   "role": "@mention and said rules",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/utils/text_parser/rules/post_reference_rule.dart",
+   "newHome": "lib/core/utils/text_parser/rules/post_reference_rule.dart",
+   "role": ">>post / post # references",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/utils/text_parser/rules/quote_rule.dart",
+   "newHome": "lib/core/utils/text_parser/rules/quote_rule.dart",
+   "role": "[quote] and greentext rules",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/utils/text_parser/rules/rules.dart",
+   "newHome": "lib/core/utils/text_parser/rules/rules.dart",
+   "role": "Barrel export",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/utils/text_parser/rules/spoiler_rule.dart",
+   "newHome": "lib/core/utils/text_parser/rules/spoiler_rule.dart",
+   "role": "Spoiler rules",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/utils/text_parser/rules/tag_rule.dart",
+   "newHome": "lib/core/utils/text_parser/rules/tag_rule.dart",
+   "role": "Tag and hashtag rules",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/utils/text_parser/rules/url_rule.dart",
+   "newHome": "lib/core/utils/text_parser/rules/url_rule.dart",
+   "role": "URL rule + pure URL detection",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/utils/text_parser/text_parser.dart",
+   "newHome": "lib/core/utils/text_parser/text_parser.dart",
+   "role": "Rule engine (drop unused UI builder registry)",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/utils/tools.dart",
+   "newHome": "lib/core/utils/tools.dart (temporary facade) split into lib/core/network/cookie_jar.dart, lib/core/network/user_agent.dart, lib/core/utils/file_names.dart, lib/core/ui/image_cache.dart, lib/sources/framework/media_headers.dart, lib/features/webview/logic/captcha_guard.dart",
+   "role": "Grab-bag: UA, cookie jar, media headers, captcha page, file names, image cache",
+   "layer": "core"
+  }
+ ],
+ "layerViolations": [
+  {
+   "file": "lib/src/data/booru_item.dart",
+   "line": 10,
+   "imports": "handlers/doujin_data_handler.dart, handlers/settings_handler.dart, handlers/source_settings_handler.dart, utils/tools.dart",
+   "reason": "Model reads feature singletons in isHidden/isMarked/isSound/isAI and uses Tools.getFileExt",
+   "fix": "Move the four getters to an extension/service in lib/features/feed/logic (ItemFlags) that takes the lists; getFileExt from lib/core/utils/file_names.dart"
+  },
+  {
+   "file": "lib/src/data/booru_item.dart",
+   "line": 3,
+   "imports": "package:flutter/material.dart (GlobalKey)",
+   "reason": "Model imports the widget layer; the key is used as viewer widget GlobalKey",
+   "fix": "Import only flutter/widgets.dart show GlobalKey/Key (keep GlobalKey semantics, see fragile) or let the viewer own a key map keyed by item identity"
+  },
+  {
+   "file": "lib/src/boorus/booru_type.dart",
+   "line": 3,
+   "imports": "handlers/settings_handler.dart",
+   "reason": "Enum (model) reads SettingsHandler.isDebug in dropDownValues",
+   "fix": "dropDownValues({required bool isDebug}); callers pass the setting"
+  },
+  {
+   "file": "lib/src/data/kemono_creator.dart",
+   "line": 1,
+   "imports": "boorus/kemono_site.dart",
+   "reason": "data/ model depends on a source class",
+   "fix": "Move KemonoCreator into lib/sources/kemono/"
+  },
+  {
+   "file": "lib/src/data/kemono_post.dart",
+   "line": 1,
+   "imports": "boorus/kemono_site.dart, data/site_profiles/kemono_profile.dart",
+   "reason": "data/ model depends on source config and profile",
+   "fix": "Move KemonoPost into lib/sources/kemono/"
+  },
+  {
+   "file": "lib/src/data/site_profiles/kemono_profile.dart",
+   "line": 3,
+   "imports": "boorus/kemono_api.dart (network + session)",
+   "reason": "data/ profile performs network-header building through the API/session singleton",
+   "fix": "Move to lib/sources/kemono/kemono_profile.dart"
+  },
+  {
+   "file": "lib/src/data/site_profile.dart",
+   "line": 6,
+   "imports": "site_profiles/bakemono_profile.dart, site_profiles/kemono_profile.dart",
+   "reason": "Registry hardcodes concrete source profiles inside data/",
+   "fix": "Keep SiteProfile in lib/sources/framework with a register() called by each source folder (or by the factory)"
+  },
+  {
+   "file": "lib/src/handlers/booru_handler.dart",
+   "line": 29,
+   "imports": "handlers/doujin_data_handler.dart, settings_handler.dart, source_settings_handler.dart, tag_handler.dart, tag_catalog_source.dart; boorus/doujin/doujin_filters.dart",
+   "reason": "Framework base class reaches into feature-logic singletons (filters, DB flags, tag store, doujin store)",
+   "fix": "Inject a SourceEnvironment (feed filter policy, tracked-values repository, tag sink, source-settings reader) registered at bootstrap; move DoujinFilterSpec/DoujinFilterGroup/DoujinFilterOption to lib/models"
+  },
+  {
+   "file": "lib/src/handlers/booru_handler.dart",
+   "line": 7,
+   "imports": "package:flutter/widgets.dart show IconData",
+   "reason": "Source layer returns widget-layer icons (mediaIconFor)",
+   "fix": "Return a semantic enum (music/story/flash/animation/image) mapped to icons in feature-ui"
+  },
+  {
+   "file": "lib/src/boorus/furaffinity_handler.dart",
+   "line": 8,
+   "imports": "handlers/settings_handler.dart; package:flutter/cupertino.dart",
+   "reason": "Reads SettingsHandler.booruList for linked media; returns Cupertino/Material icons",
+   "fix": "Pass a booru list provider into the handler/environment; semantic icon enum"
+  },
+  {
+   "file": "lib/src/handlers/booru_handler_factory.dart",
+   "line": 58,
+   "imports": "handlers/settings_handler.dart",
+   "reason": "Factory reads itemLimit from settings",
+   "fix": "Caller passes the limit (SearchHandler already has it)"
+  },
+  {
+   "file": "lib/src/boorus/hydrus_handler.dart",
+   "line": 14,
+   "imports": "handlers/navigation_handler.dart, widgets/common/flash_elements.dart, gen/strings.g.dart, package:flutter/material.dart",
+   "reason": "Handler shows a snackbar (UI) from addURL",
+   "fix": "addURL returns a result/exception; hideable_appbar shows the snackbar"
+  },
+  {
+   "file": "lib/src/boorus/r34hentai_handler.dart",
+   "line": 19,
+   "imports": "widgets/webview/webview_page.dart (webViewEnvironment, globalWindowsCookies)",
+   "reason": "Source logic imports a page widget file for platform globals",
+   "fix": "Move webViewEnvironment/globalWindowsCookies to lib/core/platform/webview_env.dart and expose jar writes via lib/core/network/cookie_jar.dart"
+  },
+  {
+   "file": "lib/src/handlers/furaffinity_session_handler.dart",
+   "line": 12,
+   "imports": "widgets/webview/webview_page.dart, handlers/settings_handler.dart",
+   "reason": "Session logic imports a widget file and settings for the app path",
+   "fix": "core/platform/webview_env.dart + core/storage/app_paths.dart"
+  },
+  {
+   "file": "lib/src/handlers/kemono_session_handler.dart",
+   "line": 11,
+   "imports": "handlers/settings_handler.dart",
+   "reason": "Uses SettingsHandler.instance.path for its file",
+   "fix": "Inject AppPaths from lib/core/storage"
+  },
+  {
+   "file": "lib/src/handlers/kemono_creator_store.dart",
+   "line": 12,
+   "imports": "handlers/settings_handler.dart",
+   "reason": "Uses SettingsHandler.path and SettingsHandler.dbHandler",
+   "fix": "KemonoCreatorRepository in lib/core/storage + AppPaths"
+  },
+  {
+   "file": "lib/src/boorus/downloads_handler.dart",
+   "line": 10,
+   "imports": "handlers/doujin_data_handler.dart, downloads_reconciler.dart, settings_handler.dart, services/download_folders.dart",
+   "reason": "Local source depends on downloads feature logic and settings",
+   "fix": "Inject a DownloadsRepository + reconciler interface (or place DownloadsHandler under lib/features/downloads/logic as a feature-provided source registered in the factory)"
+  },
+  {
+   "file": "lib/src/boorus/favourites_handler.dart",
+   "line": 9,
+   "imports": "handlers/settings_handler.dart",
+   "reason": "DB access through SettingsHandler.dbHandler (same in collections_handler.dart:9, history_handler.dart:4)",
+   "fix": "Use repositories from lib/core/storage directly"
+  },
+  {
+   "file": "lib/src/boorus/gelbooru_handler.dart",
+   "line": 23,
+   "imports": "handlers/booru_tag_store.dart, post_files_handler.dart, tag_index_source.dart",
+   "reason": "Source calls feature-logic singletons (tag store, post files enrichment)",
+   "fix": "BooruTagStore -> core/storage repository; PostFilesHandler.enrichCounts via injected callback"
+  },
+  {
+   "file": "lib/src/boorus/rule34video_handler.dart",
+   "line": 20,
+   "imports": "handlers/booru_tag_store.dart, handlers/source_settings_handler.dart",
+   "reason": "Source reads source settings and tag store singletons",
+   "fix": "Inject source-settings reader and tag repository"
+  },
+  {
+   "file": "lib/src/boorus/kemono_handler.dart",
+   "line": 26,
+   "imports": "handlers/booru_tag_store.dart",
+   "reason": "Suggestions read the tag store singleton",
+   "fix": "Inject tag repository"
+  },
+  {
+   "file": "lib/src/boorus/kemono_tag_catalog.dart",
+   "line": 10,
+   "imports": "pages/kemono_artists_page.dart",
+   "reason": "A source tag catalog imports a page to open the Artists picker",
+   "fix": "Catalog exposes a 'pick artist' intent; the tag builder UI opens KemonoArtistsPage.pick"
+  },
+  {
+   "file": "lib/src/utils/tools.dart",
+   "line": 13,
+   "imports": "boorus/idol_sankaku_handler.dart, boorus/sankaku_handler.dart, handlers/booru_handler_factory.dart, handlers/navigation_handler.dart, handlers/settings_handler.dart, widgets/dialogs/timed_leave_dialog.dart, widgets/webview/webview_page.dart",
+   "reason": "Core utility depends on sources, settings and widgets (captcha page, media headers)",
+   "fix": "Split: user_agent/cookie_jar/file_names in core, media headers in sources/framework, captcha guard in features/webview"
+  },
+  {
+   "file": "lib/src/utils/dio_network.dart",
+   "line": 9,
+   "imports": "handlers/service_handler.dart, handlers/settings_handler.dart",
+   "reason": "core/network reads settings (alice, allowSelfSignedCerts) and platform SAF service",
+   "fix": "NetworkConfig injected at bootstrap; SAF writer interface from core/platform"
+  },
+  {
+   "file": "lib/src/utils/extensions.dart",
+   "line": 6,
+   "imports": "handlers/settings_handler.dart",
+   "reason": "Number formatting reads SettingsHandler.locale",
+   "fix": "Read from a core locale holder updated by settings"
+  },
+  {
+   "file": "lib/src/utils/http_overrides.dart",
+   "line": 8,
+   "imports": "handlers/settings_handler.dart",
+   "reason": "Proxy init reads settings directly",
+   "fix": "initProxy(ProxyConfig) called from bootstrap"
+  },
+  {
+   "file": "lib/src/utils/status_bar_inset.dart",
+   "line": 5,
+   "imports": "data/modular_ui.dart, handlers/settings_handler.dart",
+   "reason": "Widget reading settings/Modular UI sits in utils",
+   "fix": "Move to lib/app (root widgets)"
+  },
+  {
+   "file": "lib/src/pages/kemono_post_page.dart",
+   "line": 29,
+   "imports": "pages/kemono_artists_page.dart",
+   "reason": "Page imports another page only for KemonoArtistsPage.handlerFor (SearchHandler lookup)",
+   "fix": "Move handlerFor to a kemono logic helper (current tab handler or a fresh one)"
+  }
+ ],
+ "splits": [
+  {
+   "file": "lib/src/handlers/booru_handler.dart",
+   "lines": 1413,
+   "proposal": "Keep abstract class BooruHandler in sources/framework/booru_handler.dart but compose it from mixins in sibling files so subclasses still override the same members: or_syntax.dart (static orSyntaxPrefixTilde, orSyntaxBraced, dropOrGroupsWithWarning + the Philomena '||' variant now duplicated in two handlers), tag_suggestions_mixin.dart (hasTagSuggestions, getTagSuggestions, fetchTagSuggestions*, parseTagSuggestion*, makeTagURL), comments_mixin.dart, notes_mixin.dart, account_mixin.dart (hasSignInSupport..signOut, usesUserId/apiKey labels, site favourites), media_hooks_mixin.dart (getMediaHeaders, thumbnailFallbacks, outage/error/retry, sendsJarCookiesToMedia). Feed filtering (filterFetched, liveFilterExemptions, hiddenBy) and setMultipleTrackedValues move behind injected strategies (FeedFilterPolicy, TrackedValuesSource) registered at bootstrap so the framework no longer imports SettingsHandler/DoujinDataHandler/SourceSettingsHandler/TagHandler.",
+   "risk": "Mixins must keep override resolution (GelbooruAlikes calls super.getComments; Rule34Video/TikPorn call super.search/super.fetchSearch). fetched/filteredFetched are GetX Rx fields read by the feed UI and SearchHandler; keep them on the base. Order of filterFetched -> setMultipleTrackedValues -> filterFetched in afterParseResponse must stay (r85 behaviour)."
+  },
+  {
+   "file": "lib/src/utils/dio_network.dart",
+   "lines": 866,
+   "proposal": "core/network/http_client.dart (sharedHttpClient, getClient, defaultOptions, mergeOptions, separateUrlAndQueryParams, get/post/delete/head), core/network/retry_policy.dart (_withTransientRetries, _retryDelay), core/network/cookie_interceptor.dart, core/network/captcha_interceptor.dart (one shared function for the duplicated onResponse/onError cookie-merge-and-retry block), core/platform/saf_download.dart (downloadCustom with a SafWriter interface), core/network/http_status_text.dart (badResponseExceptionMessage as a const map).",
+   "risk": "Never close a Dio from getClient (kills the pooled HttpClient). Captcha interceptor depends on Tools.checkForCaptcha (UI) - inject the guard. Tests: cookie_jar_timeout_test, http_log_redaction_test."
+  },
+  {
+   "file": "lib/src/boorus/rule34video_handler.dart",
+   "lines": 855,
+   "proposal": "rule34video_listing.dart (static cardsOf, groupsOfCard, cardPasses, totalOf, hasNextPage, looksBlocked, unbadgedGroups), rule34video_video_page.dart (flashvarsOf, bestVideoOf, infoLine, static regexes; applyVideoPage takes a TagSink + tag repository), handler keeps search/resolveQuery/makeURL/urlFor/walkFiltered/suggestions.",
+   "risk": "walkFiltered mutates pageNum and moreAfterWalk and reads current; listingFetch test seam and static knownTagIds/knownUploaderIds are referenced by rule34video_test - keep names or re-export."
+  },
+  {
+   "file": "lib/src/boorus/worldxyz_handler.dart",
+   "lines": 789,
+   "proposal": "worldxyz_auth.dart (static _jwtCache/_userIdCache/_authFailedAt/_lastAuthError/_playlistCache, _ensureAuth, _fetchPlaylists keyed by _authKey), worldxyz_files.dart (file type/extension tables and URL builder from the files map + storageBase), handler keeps search/parse/metatags/loadItem; delete the unused top-level const a (move its notes to a doc comment).",
+   "risk": "isXyz and _lastFetchWasFeedRoute are set during fetch and read during parse; keep them on the handler instance."
+  },
+  {
+   "file": "lib/src/pages/kemono_artists_page.dart",
+   "lines": 744,
+   "proposal": "kemono_artists_page.dart (page + state), kemono_creator_card.dart (KemonoCreatorCard), kemono_creator_tags_sheet.dart (KemonoCreatorTagsSheet + pick); move static handlerFor into lib/sources/kemono (or features/feed/logic) helper; extract the debounce + reset + infinite-scroll pattern into a small PagedLoader that also fixes the reset race.",
+   "risk": "Low: no private cross-class access. KemonoArtistsPage.pick and KemonoCreatorTagsSheet.pick are called by the kemono tag catalog and sidebar; furaffinity/kemono tests may pump these widgets."
+  },
+  {
+   "file": "lib/src/utils/tools.dart",
+   "lines": 690,
+   "proposal": "core/utils/file_names.dart (formatBytes, parseFormattedBytes, getFileExt, getFileName, sanitize, bool helpers), core/network/user_agent.dart (appUserAgent, deviceWebViewUserAgent, captureWebViewUserAgent, browserUserAgent, stripWebViewMarkers, nonWebViewUserAgent), core/network/cookie_jar.dart (getCookies, saveCookies, parse/build/merge cookie strings, timeout/pause/test seams), core/platform/platform_info.dart (isTestMode, isOnPlatformWithWebviewSupport), core/ui/image_cache.dart (trimMemoryCacheIfFull, forceClearMemoryCache), core/ui/media_icons.dart (getFileIcon), sources/framework/media_headers.dart (getFileCustomHeaders, attachesJarCookies, isGoodResponse), features/webview/logic/captcha_guard.dart (hasCaptchaStrings, checkForCaptcha, captchaScreenActive) with the WebView push in features/webview/ui. Keep a temporary Tools facade forwarding the old static names to avoid touching hundreds of call sites at once.",
+   "risk": "Tools is referenced app-wide and by tests (cookieJarReaderOverride, resetCookieJarForTests). browserUserAgent reads SettingsHandler.customUserAgent - inject. captchaScreenActive is a top-level global."
+  },
+  {
+   "file": "lib/src/pages/kemono_post_page.dart",
+   "lines": 684,
+   "proposal": "kemono_post_page.dart (state, load, actions) + kemono_post_sections.dart (stateless widgets for embed card, poll, picture tile, file row, comment tile, section header) taking callbacks and the shared headers map.",
+   "risk": "_mediaHeaders must stay ONE map instance for the page lifetime (CustomNetworkImage compares headers by identity); pass the same instance down. Obx on kemonoPostFullImages must stay reactive."
+  },
+  {
+   "file": "lib/src/boorus/kemono_handler.dart",
+   "lines": 666,
+   "proposal": "kemono_parsing.dart (static postOf, hasMedia, rowsOf, filterRows, extensionOf, textOf, creatorsOf), kemono_account.dart (mixin on KemonoHandler: session getters, signIn/out, searchSetup, site favourites, favouriteCreatorKeys, loadFavouriteCreatorKeys, creatorProfile loading), handler keeps query/URL/fetch/parse/suggestions/comments.",
+   "risk": "kemono_test/pawchive_test call KemonoHandler.rowsOf/filterRows (@visibleForTesting statics) - keep forwarding statics. favouriteCreatorKeys (RxSet) and creatorProfile (Rxn) are read by the artists page and creator header."
+  },
+  {
+   "file": "lib/src/boorus/danbooru_handler.dart",
+   "lines": 652,
+   "proposal": "danbooru_meta_tags.dart (the 190-line availableMetaTags list), shared booru_html_post.dart with Gelbooru/GelbooruAlikes for the post-page scrape (video/image source, tag-type classes, counts incl. K/M), handler keeps API code.",
+   "risk": "Low; the three loadItem scrapes differ in selectors (tag-type-N vs tag-type-name vs 'tag-type-x tag', gelcomVideoPlayer og:video) - parametrize, do not unify behaviour."
+  },
+  {
+   "file": "lib/src/boorus/tikporn_handler.dart",
+   "lines": 645,
+   "proposal": "tikporn_vocabulary.dart (static tag/action/creator id maps, _loadVocabulary/_fetchVocabulary, _resolveCreator, display names, catalog accessors), tikporn_suggestions.dart (elastic query), handler keeps parse/URL/comments.",
+   "risk": "Static caches are shared with TikPornTagCatalog (tagIdsForCatalog/actionIdsForCatalog)."
+  },
+  {
+   "file": "lib/src/boorus/gelbooru_handler.dart",
+   "lines": 644,
+   "proposal": "gelbooru_tag_types.dart (genTagObjects resolution), gelbooru_comments.dart (HTML comment parsing), hybrid listing kept with makeURL/parseResponse; drop parseCommentsListOld/parseCommentOld.",
+   "risk": "_usingListing/_listingDisabled/_listingTags/_lastApiTags are per-instance state shared between makeURL and parseResponse."
+  },
+  {
+   "file": "lib/src/boorus/redgifs_handler.dart",
+   "lines": 632,
+   "proposal": "redgifs_auth.dart (static guest token, expiry, decodeJwtExpiry, user-token selection), redgifs_niches.dart (static niche cache/future, _fetchAllNiches, nichePage seam, resetNichesForTests), handler keeps URL/parse/suggestions.",
+   "risk": "Static token shared by every instance; tests use nichePage/resetNichesForTests."
+  }
+ ],
+ "bugs": [
+  {
+   "file": "lib/src/boorus/mergebooru_handler.dart",
+   "line": 265,
+   "title": "Merge tabs drop every md5-less item after the first page",
+   "scenario": "Merge tab with Nozomi/RedGifs/kemono/FurAffinity/Civitai/tube sources (items with md5String == null). Page 1 shows items; on page 2 every md5-less item is logged 'Skipped because hash match' and never shown",
+   "evidence": "search(): for boorus not in isBooruWithoutMd5 it calls hashInFetched(fetched, item.md5String, ...); hashInFetched returns true when fetched[i].md5String == hash, and null == null is true once page-1 items without md5 are in fetched",
+   "confidence": "confirmed",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/utils/tools.dart",
+   "line": 625,
+   "title": "saveCookies ignores every cookie attribute and truncates values containing '='",
+   "scenario": "A Set-Cookie 'sess=abc==; Path=/; Domain=.site.com; Expires=...; Secure' from any Dio response is stored in the WebView jar as sess=<last segment after '='> with path '/', no domain, no expiry (session cookie), not secure",
+   "evidence": "parts = c.split(';').map((p) => p.split('=')); value = parts.first.last (last '='-segment, not the remainder); attributes are matched with p.first.toLowerCase() == 'domain' but p.first keeps the leading space from split(';') (' Domain'), so domain/path/expires/secure/httponly are never found; Expires (HTTP-date) would also not parse with DateTime.tryParse",
+   "confidence": "confirmed",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/handlers/booru_handler.dart",
+   "line": 1219,
+   "title": "FurAffinity session cookies written to the log unredacted on every request",
+   "scenario": "Logged-in FurAffinity user exports logs (Settings -> Debug -> Logger): every FA search/comment fetch has a line 'https://www.furaffinity.net: a=<session>; b=<session>' - full account session",
+   "evidence": "FurAffinityHandler.getHeaders adds Cookie 'a=..; b=..'; BooruHandler.getCookies merges it and logs '${booru.baseURL}: $cookieString'; redactSecrets has no rule for cookie names a/b and the line has no 'Cookie:' prefix for the generic header rule",
+   "confidence": "confirmed",
+   "severity": "privacy"
+  },
+  {
+   "file": "lib/src/boorus/ink_bunny_handler.dart",
+   "line": 96,
+   "title": "InkBunny session id logged in clear",
+   "scenario": "Signed-in InkBunny account: log contains 'Inkbunny session token found: <sid>' and every search URL '...&sid=<sid>&...'",
+   "evidence": "setSessionToken logs the sid; makeURL embeds sid=$sessionToken and BooruHandler.search logs the URL; redactSecrets parameter list does not include sid",
+   "confidence": "confirmed",
+   "severity": "privacy"
+  },
+  {
+   "file": "lib/src/pages/kemono_artists_page.dart",
+   "line": 127,
+   "title": "Artists page shows stale results when filters change during a load",
+   "scenario": "Tap a service chip, change sort, switch mode, or type a name (250 ms debounce) while a page is loading (or the index refresh finishes mid-load): the list keeps the OLD query's rows and the new query is never run",
+   "evidence": "_reset() clears _rows/_offset then calls _loadMore(), which returns immediately because _loading is true; the in-flight _loadMore then appends its old-query rows and advances _offset. Same pattern in kemono_messages_pages.dart _reset/_loadMore (DM search)",
+   "confidence": "confirmed",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/boorus/rule34video_handler.dart",
+   "line": 293,
+   "title": "rule34video loses tag-id routing when Source settings add default filters or always-add terms",
+   "scenario": "Set a default Sort filter (or always-add term) for rule34video in Source settings, then search a tag name: the request goes to the text search instead of /tags/{id}/ (and the content filter is not applied server-side)",
+   "evidence": "search() resolves `source` without sourceQuery; BooruHandler.search then builds tags = validateTags(translateOrSyntax(sourceQuery(tags))) and makeURL(tags) finds _isCurrent(tags) false, so it re-parses with parseQuery (no DB resolution) and unknown names become text search",
+   "confidence": "confirmed",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/boorus/nozomi_handler.dart",
+   "line": 61,
+   "title": "Nozomi and Hydrus ignore Source settings default filters and always-add terms",
+   "scenario": "Source settings offers a Sort default for Nozomi (from its sort: metatag) and Sort/Order for Hydrus; choosing one has no effect on searches",
+   "evidence": "Both handlers override search() and never call sourceQuery() (NozomiHandler.search line 71, HydrusHandler.search line 76), unlike BooruHandler.search",
+   "confidence": "confirmed",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/handlers/booru_handler.dart",
+   "line": 229,
+   "title": "Different posts with the same numeric id from different sources are hidden as duplicates",
+   "scenario": "Merge tab (or any mixed feed) loads post 12345 from site A and an unrelated post 12345 from site B: the second is hidden with HiddenReason.duplicate",
+   "evidence": "filterFetched isDuplicate = filteredItems.any((e) => e.fileURL == item.fileURL || (e.serverId != null && e.serverId == item.serverId)) with no source/host check",
+   "confidence": "confirmed",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/boorus/civitai_handler.dart",
+   "line": 336,
+   "title": "Civitai '-tag' exclusion can end the feed early",
+   "scenario": "Search with an exclusion that removes every item of one API page: the base sees no new items and locks the feed although later pages have results",
+   "evidence": "parseItemFromResponse returns null for excluded items; BooruHandler.search sets locked = true when fetched.length did not change",
+   "confidence": "confirmed",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/boorus/agnph_handler.dart",
+   "line": 76,
+   "title": "AGNPH deferred tags can land on the wrong post",
+   "scenario": "A page contains a post without file_url (skipped); every later post's tags are written onto the post after it (index shift); tags also arrive after the feed was filtered so the blacklist never applies to AGNPH",
+   "evidence": "newIndex = fetched.length + index uses the raw response index while skipped posts are not added; getTagsLater writes fetched.elementAt(fetchedIndex).tagsList asynchronously after afterParseResponse/filterFetched",
+   "confidence": "confirmed",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/utils/dio_network.dart",
+   "line": 131,
+   "title": "Requests without explicit headers lose the browser User-Agent",
+   "scenario": "DanbooruHandler.getUploaderName (info sheet uploader name) calls DioNetwork.get without headers: the request goes out with dart:io's default 'Dart/x' UA, breaking the one-UA invariant",
+   "evidence": "get(headers = const {}) -> mergeOptions(options, {}) -> usedOptions.copyWith(headers: {...?headers ?? usedOptions.headers ?? defaultOptions.headers}); the non-null empty map wins so defaultOptions headers (with User-Agent) are dropped",
+   "confidence": "confirmed",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/boorus/gelbooru_handler.dart",
+   "line": 608,
+   "title": "Double-slash URL cleanup in loadItem is a no-op",
+   "scenario": "Post pages with '//' inside paths keep them; intended normalisation never happens",
+   "evidence": "item.thumbnailURL.replaceAll('(?<!https?:)//', '/') passes a String (literal) pattern, not a RegExp",
+   "confidence": "confirmed",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/boorus/r34hentai_handler.dart",
+   "line": 349,
+   "title": "rule34hentai login cookie values cut at the second '='",
+   "scenario": "A session cookie value containing '=' (base64 padding) is stored truncated, so the login silently fails",
+   "evidence": "value = cookie.split(';')[0].split('=')[1]",
+   "confidence": "plausible",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/utils/dio_network.dart",
+   "line": 554,
+   "title": "downloadCustom keeps a paused response stream when the SAF file cannot be created",
+   "scenario": "SAF folder lost permission: the future errors, but the code continues to listen; the first chunk throws on fileUri! in onData after subscription.pause(), leaving the connection held open",
+   "evidence": "completer.completeError(...) when fileUri == null has no return; stream.listen onData calls subscription.pause() then writeStreamToFileFromSAFDirectory(fileUri!, data)",
+   "confidence": "plausible",
+   "severity": "leak"
+  },
+  {
+   "file": "lib/src/handlers/booru_handler.dart",
+   "line": 1382,
+   "title": "Tracked-values update can index a list that was reset meanwhile",
+   "scenario": "Feed refreshed (fetched reset) while the favourite/snatched DB lookup of the previous page is still running: fetched[fetchedIndexes[index]] throws RangeError, surfacing as a search error",
+   "evidence": "setMultipleTrackedValues awaits dbHandler.getMultipleTrackedValues then indexes fetched by the pre-await indexes without re-checking length",
+   "confidence": "plausible",
+   "severity": "crash"
+  },
+  {
+   "file": "lib/src/boorus/hanime1_handler.dart",
+   "line": 331,
+   "title": "Hanime1 post identity changes with the session's working domain",
+   "scenario": "After a Cloudflare block flips the session to hanime1.com, posts get .com postURLs; favourites/seen/history saved under hanime1.me no longer match the same video",
+   "evidence": "makePostURL => '$_base/watch?v=$id' and _base replaces the host with the static _workingHost",
+   "confidence": "plausible",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/boorus/booru_type.dart",
+   "line": 80,
+   "title": "NyanPals and WildCritters hidden from the type list only when debug is ON",
+   "scenario": "Normal users see the debug-quality types; debug users do not",
+   "evidence": "..remove(isDebug ? BooruType.NyanPals : null)..remove(isDebug ? BooruType.WildCritters : null) - condition looks inverted",
+   "confidence": "plausible",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/boorus/redgifs_handler.dart",
+   "line": 340,
+   "title": "RedGifs clears the user token on the shared Booru object",
+   "scenario": "A 401 (IP change) sets booru.apiKey = '' on the Booru instance shared with the settings list; a later settings save persists the cleared key and the user is silently logged out",
+   "evidence": "fetchSearch 401 branch and signOut assign booru.apiKey = ''",
+   "confidence": "plausible",
+   "severity": "data-loss"
+  },
+  {
+   "file": "lib/src/boorus/gelbooru_handler.dart",
+   "line": 87,
+   "title": "Gelbooru XML refusal reason never shown",
+   "scenario": "gelbooru.com answers XML with a rate-limit reason: the user gets a type error instead of the reason",
+   "evidence": "the try around 'parsedResponse = response.data' cannot throw, so the XmlDocument.parse branch that extracts the reason is unreachable; parsedResponse['post'] on a String then throws",
+   "confidence": "plausible",
+   "severity": "minor"
+  }
+ ],
+ "fragile": [
+  {
+   "what": "Shared pooled HttpClient",
+   "where": "lib/src/utils/dio_network.dart getClient/sharedHttpClient",
+   "rule": "Never call close() on a Dio returned by getClient (its adapter would close the shared HttpClient for the whole app)."
+  },
+  {
+   "what": "One User-Agent invariant",
+   "where": "Tools.browserUserAgent (lib/src/utils/tools.dart)",
+   "rule": "Every request/WebView/media fetch uses Tools.browserUserAgent (custom UA setting > device WebView UA > app UA). Documented exceptions only: Danbooru app UA, Sankaku/Idol app UAs, nonWebViewUserAgent for Schale. Cloudflare binds cf_clearance to UA."
+  },
+  {
+   "what": "Paging start",
+   "where": "BooruHandlerFactory.getBooruHandler startingPage + SearchHandler.runSearch",
+   "rule": "runSearch increments pageNum before the first fetch; default -1 => first request page 0; 1-based sites get pageNum 0 from the factory (Moebooru, Danbooru, e621, Philomena, Sankaku, RedGifs, XXXFollow, ...). Kemono offset = page*50; FA/Hanime1/Kusowanka/Rule34Video compute page = pageNum+1 themselves."
+  },
+  {
+   "what": "BooruType names are persisted",
+   "where": "Booru.toJson/setFromMap, HistoryItem.fromMap, tab restore",
+   "rule": "Enum value names (case-insensitive) are stored in boorus.json, backups, DB rows and share links; never rename/remove a value, add new ones only."
+  },
+  {
+   "what": "BooruItem.key is a GlobalKey used as the viewer widget key",
+   "where": "gallery_view_page.dart, post_files_page.dart, viewer_handler.dart, waterfall_view.dart",
+   "rule": "Keep one GlobalKey per BooruItem instance (state reparenting and current-item lookup); equality is effectively identity because key is in props."
+  },
+  {
+   "what": "Media headers are separate from API headers and cached per type|baseURL",
+   "where": "BooruHandler.getMediaHeaders, BooruHandlerFactory.mediaHeadersFor/mediaHandlerFor, Tools.getFileCustomHeaders",
+   "rule": "Hotlink-protected sources must override getMediaHeaders; media_headers_test guards the table. sendsJarCookiesToMedia=false for FurAffinity and e-hentai must hold (session never sent to image hosts)."
+  },
+  {
+   "what": "CustomNetworkImage compares headers by identity",
+   "where": "kemono_post_page.dart _mediaHeaders (late final), furaffinity_post_page.dart const map",
+   "rule": "Pass the same headers map instance across rebuilds or every rebuild refetches every picture."
+  },
+  {
+   "what": "prevTags vs currentTags",
+   "where": "BooruHandler.search",
+   "rule": "prevTags is set only after a successful parse; currentTags is set before the fetch and is what parsers that depend on the query must read (FA, doujin)."
+  },
+  {
+   "what": "afterParseResponse ordering",
+   "where": "BooruHandler.afterParseResponse",
+   "rule": "filterFetched, then await setMultipleTrackedValues (DB favourite/snatched flags), then filterFetched again; favourite/snatched filters only on page load, live exemptions cleared only on a new query; own lists (isLocalDb) ignore filterFavourites/filterSnatched (r85)."
+  },
+  {
+   "what": "Doujin/booru separation",
+   "where": "BooruHandler.storeTagsGlobally, filterFetched, populateTagHandler, setMultipleTrackedValues; BooruItem.isHidden/isMarked",
+   "rule": "Doujin items never use booru blacklists/marked tags/tag store; checks are per item (host) so merge feeds stay separated; doujin hearts come from DoujinDataHandler."
+  },
+  {
+   "what": "Source settings composition scope",
+   "where": "BooruHandler.sourceQuery/siteFilters, applySourceSettings",
+   "rule": "Not applied to doujin sources, local DB views, recommendation feeds, merge, webview, or id lookups (applySourceSettings=false, e.g. _R34HentaiHandlerDummy). Handlers overriding search() must call it themselves."
+  },
+  {
+   "what": "rule34.xxx cookies across hosts",
+   "where": "BooruHandler.getCookies vs DioNetwork.cookieInterceptor",
+   "rule": "getCookies attaches the booru SITE host's jar (captcha clearance) while the interceptor adds the REQUEST host's jar; rule34.xxx API lives on api.rule34.xxx, so the explicit getCookies is not redundant."
+  },
+  {
+   "what": "Cookie jar must never block",
+   "where": "Tools.getCookies/saveCookies/checkForCaptcha",
+   "rule": "Every CookieManager call is bounded by cookieJarTimeout (5 s) and a timeout pauses the jar for 30 s; reads are deduped per host; captchaScreenActive must be reset in finally."
+  },
+  {
+   "what": "Kemono API specifics",
+   "where": "KemonoSite, KemonoApi, KemonoSessionHandler, KemonoFileHosts",
+   "rule": "kemono API needs Accept: text/css; one automatic re-login on 401, max once per minute per user; session file keyed '<site>|<user>' with bare-key migration; never prefetch pawchive files (IP block); thumbnails on pawchive are WebP under .jpeg; file host probe freshness 10 min; post detail cache 10 min/50."
+  },
+  {
+   "what": "FurAffinity session handling",
+   "where": "FurAffinitySessionHandler, webview_page.dart",
+   "rule": "a/b live in furaffinity_session.json AND are seeded into the jar before FA webviews (prepareWebView) and synced back after (syncAfterWebView); logout scrubs the jar; images never get the session."
+  },
+  {
+   "what": "Pure-Dart grammars",
+   "where": "kemono_query.dart, furaffinity_query.dart, rule34video_query.dart",
+   "rule": "No Flutter imports so the grammar tests run without bindings."
+  },
+  {
+   "what": "Gelbooru-family OR padding",
+   "where": "GelbooruHandler/RealbooruHandler (no padding {a ~ b}) vs GelbooruAlikesHandler (padded ( a ~ b ))",
+   "rule": "Verified against live APIs; the wrong padding returns zero posts."
+  },
+  {
+   "what": "Bakemono hybrid listing",
+   "where": "GelbooruHandler.makeURL/parseResponse + BakemonoProfile",
+   "rule": "Listing only for sort:/source: queries; a failed scrape disables the listing for the handler's life and serves the page from the API (never an empty grid)."
+  },
+  {
+   "what": "Rule34Video session state",
+   "where": "Rule34VideoHandler",
+   "rule": "knownTagIds/knownUploaderIds are static and shared; _isCurrent keeps a changed per-source default from splicing into a grid mid-pagination; walkFiltered advances pageNum."
+  },
+  {
+   "what": "Test seams",
+   "where": "Rule34VideoHandler.listingFetch, RedGifsHandler.nichePage/resetNichesForTests, KemonoFileHosts.probeOverride/resetForTests, KemonoCreatorStore/KemonoSessionHandler/FurAffinitySessionHandler resetForTests, Tools.cookieJar*Override, BooruHandlerFactory.clearMediaHeaderCache, LinkedMediaStore.resetForTests, KemonoApi.clearDetailCache",
+   "rule": "Keep these names (or update tests in the same change)."
+  },
+  {
+   "what": "Static caches with session lifetime",
+   "where": "Hanime1Handler._workingHost/_translationCache, RedGifsHandler._token, Rule34DevHandler._buildId, CivitaiHandler._tagIdCache, TikPornHandler vocab, WorldXyzHandler auth maps, XXXTikHandler Firebase session, FurAffinityHandler._users/_folders",
+   "rule": "Shared across handler instances on purpose (handlers are rebuilt per tab/search)."
+  },
+  {
+   "what": "URL query building",
+   "where": "DioNetwork.separateUrlAndQueryParams",
+   "rule": "Must strip the dangling '?' (hanime1 Cloudflare blocks 'path?&a=b'); tags[] and repeated tag= params are built by hand in Hanime1/KemonoSite."
+  },
+  {
+   "what": "Doc headers with verification dates",
+   "where": "every handler file",
+   "rule": "Keep the per-handler doc comments (endpoints, quirks, dates verified) when moving files."
+  }
+ ],
+ "perf": [
+  {
+   "file": "lib/src/handlers/booru_handler.dart",
+   "line": 229,
+   "issue": "filterFetched duplicate check scans all kept items for every item (O(n^2)) and runs twice per page",
+   "impact": "Long feeds (1000+ items) do millions of comparisons on the UI isolate on every page load and every favourite toggle",
+   "safeFix": "Track seen fileURLs and serverIds in two Sets inside the loop (same predicate)"
+  },
+  {
+   "file": "lib/src/data/booru_item.dart",
+   "line": 160,
+   "issue": "isMarked/isSound/isAI each map tagsList to a new List<String> per call; filterFetched calls them per item",
+   "impact": "Allocations x3 per item per filter pass",
+   "safeFix": "Build the tag string list once per item in filterFetched and pass it to the settings checks"
+  },
+  {
+   "file": "lib/src/data/booru_item.dart",
+   "line": 202,
+   "issue": "Equatable == / hashCode over ~38 props including deep tagsList and Rx objects; BooruItem used as Map/Set key in foryou/board/nhentai and in listEquals",
+   "impact": "Expensive hashing; hash changes when items are mutated (loadItem) while in a map",
+   "safeFix": "Identity equality/hashCode (semantics unchanged because the unique GlobalKey is already a prop)"
+  },
+  {
+   "file": "lib/src/utils/dio_network.dart",
+   "line": 104,
+   "issue": "Every request builds a new Dio with logging, alice and cookie interceptors; the cookie interceptor reads the WebView jar over a platform channel on each request, and BooruHandler.fetch* read it again via getCookies",
+   "impact": "Two channel round-trips + interceptor setup per API request; thumbnails/pages pay it too",
+   "safeFix": "Reuse preconfigured Dio instances; short TTL per-host jar cache invalidated by saveCookies and the captcha flow"
+  },
+  {
+   "file": "lib/src/handlers/booru_handler.dart",
+   "line": 710,
+   "issue": "Full tag-suggestion response body logged on every keystroke (also InkBunny logs whole JSON per page and per item); Logger.log runs redactSecrets regexes over the whole string before truncating to 10000 chars",
+   "impact": "Dozens of regex passes over large bodies on the UI isolate while typing/scrolling",
+   "safeFix": "Drop body logging or truncate (with margin) before redaction"
+  },
+  {
+   "file": "lib/src/boorus/worldxyz_handler.dart",
+   "line": 187,
+   "issue": "searchSetup GETs /app.json on every page fetch",
+   "impact": "One extra request per page on World/XYZ sources",
+   "safeFix": "Cache appConfig per handler (or per host) after the first success"
+  },
+  {
+   "file": "lib/src/boorus/r34hentai_handler.dart",
+   "line": 374,
+   "issue": "isSignedIn runs a full 'rating:explicit' search whenever credentials are set, and searchSetup calls it before every page",
+   "impact": "Doubles requests to a Cloudflare-fronted site for signed-in users",
+   "safeFix": "Remember a successful check for the session (invalidate on 401/sign-out)"
+  },
+  {
+   "file": "lib/src/boorus/wildcritters_handler.dart",
+   "line": 34,
+   "issue": "Each grid item fetches its post page sequentially inside parseItemFromResponse (same in rainbooru_handler.dart:47)",
+   "impact": "A page of N items costs N serial round-trips before anything shows",
+   "safeFix": "Parse ids first, then Future.wait with bounded concurrency"
+  },
+  {
+   "file": "lib/src/boorus/hanime1_handler.dart",
+   "line": 449,
+   "issue": "loadItem awaits the Google translate request before returning the resolved video",
+   "impact": "Opening a video waits for an unrelated third-party request",
+   "safeFix": "Return the item first and fill the translated description asynchronously"
+  },
+  {
+   "file": "lib/src/pages/kemono_artists_page.dart",
+   "line": 498,
+   "issue": "Banner Image.network and avatar NetworkImage decode full-size images for small two-column cards",
+   "impact": "High memory/decoding cost while scrolling 100k creators",
+   "safeFix": "cacheWidth / ResizeImage sized to the card"
+  },
+  {
+   "file": "lib/src/pages/furaffinity_post_page.dart",
+   "line": 150,
+   "issue": "LinkedMediaResolver.mediaLinksIn re-parses the description on every build",
+   "impact": "Regex-heavy work per rebuild",
+   "safeFix": "Compute once after load and store in state"
+  },
+  {
+   "file": "lib/src/boorus/mergebooru_handler.dart",
+   "line": 61,
+   "issue": "availableMetaTags is O(handlers^2 x tags) and re-calls children's availableMetaTags inside loops",
+   "impact": "Query editor rebuilds on merge tabs recompute large lists",
+   "safeFix": "Compute children lists once per call (or cache per handler)"
+  },
+  {
+   "file": "lib/src/utils/extensions.dart",
+   "line": 118,
+   "issue": "formatNumber/formatNumberShort construct a NumberFormat per call",
+   "impact": "Allocation per badge/count render",
+   "safeFix": "Cache formatters per locale"
+  },
+  {
+   "file": "lib/src/boorus/linked_media.dart",
+   "line": 266,
+   "issue": "_labelBefore takes html.substring(0, offset) and scans all line breaks for every link",
+   "impact": "Quadratic on long descriptions",
+   "safeFix": "Precompute line-break offsets once"
+  },
+  {
+   "file": "lib/src/boorus/agnph_handler.dart",
+   "line": 77,
+   "issue": "One unbounded concurrent request per item for tags",
+   "impact": "Burst of ~limit requests per page",
+   "safeFix": "Bounded concurrency queue"
+  }
+ ],
+ "deadCode": [
+  {
+   "file": "lib/src/boorus/r34hentai_handler.dart",
+   "symbol": "R34HentaiHandlerOld",
+   "evidence": "grep R34HentaiHandlerOld in lib/ and test/: only its own declaration (line 447)"
+  },
+  {
+   "file": "lib/src/boorus/gelbooru_handler.dart",
+   "symbol": "parseCommentsListOld, parseCommentOld",
+   "evidence": "grep in lib/ and test/: only declarations (lines 455, 460)"
+  },
+  {
+   "file": "lib/src/boorus/worldxyz_handler.dart",
+   "symbol": "top-level const a (notes string)",
+   "evidence": "declared at line 711, never referenced"
+  },
+  {
+   "file": "lib/src/boorus/kemono_api.dart",
+   "symbol": "KemonoApi.site/api/img, creatorPath, postsUrl, popularUrl, postUrl, thumbUrl, iconUrl, bannerUrl (static kemono-only wrappers)",
+   "evidence": "grep in lib/: no callers (handlers use KemonoSite); KemonoApi.fileUrl used only by kemono_test/pawchive_test"
+  },
+  {
+   "file": "lib/src/handlers/kemono_session_handler.dart",
+   "symbol": "KemonoSessionHandler.site, KemonoSessionHandler.api",
+   "evidence": "grep KemonoSessionHandler.(site|api): no references"
+  },
+  {
+   "file": "lib/src/boorus/furaffinity_handler.dart",
+   "symbol": "fetchFolders, fetchWatchlist",
+   "evidence": "grep fetchFolders|fetchWatchlist in lib/ and test/: only declarations (lines 331, 344); the r42 'folders and watch lists are read' feature has no UI caller (parser functions are tested)"
+  },
+  {
+   "file": "lib/src/boorus/furaffinity_parser.dart",
+   "symbol": "FurAffinityParser.ruffleScript",
+   "evidence": "used only by test/furaffinity_test.dart:384, no lib caller"
+  },
+  {
+   "file": "lib/src/utils/text_parser/text_parser.dart",
+   "symbol": "SegmentBuilderRegistry, SegmentBuilderFn, defaultSegmentBuilder",
+   "evidence": "grep in lib/ and test/: referenced only inside text_parser.dart"
+  },
+  {
+   "file": "lib/src/utils/text_parser/comment_parser.dart",
+   "symbol": "CommentParser.createMinimal, CommentParser.createCustom",
+   "evidence": "grep createMinimal|createCustom: only declarations"
+  },
+  {
+   "file": "lib/src/utils/debouncer.dart",
+   "symbol": "Debounce.cancelAllStartingWith, Debounce.fire",
+   "evidence": "grep in lib/: no callers; cancelAllStartingWith would also throw ConcurrentModificationError (removes from the map while iterating its lazy keys)"
+  },
+  {
+   "file": "lib/src/utils/extensions.dart",
+   "symbol": "BoolExtras.toggle, StringExtras.temploc",
+   "evidence": "toggle() calls in lib are GetX RxBool.toggle; .temploc has no references; BoolExtras.toggle is a no-op"
+  },
+  {
+   "file": "lib/src/data/booru_item.dart",
+   "symbol": "MediaType.fromExtension case 'loadItem'",
+   "evidence": "BooruItem lowercases fileExt before fromExtension, so 'loadItem' never matches; handlers set MediaType.needToLoadItem directly (grep 'loadItem' fileExt: none)"
+  }
+ ],
+ "duplication": [
+  {
+   "where": "danbooru_handler.dart _tagsFromHtml, realbooru_handler.dart _tagsFromHtml, r34us_handler.dart _tagsFromHtml, idol_sankaku_handler.dart _tagsFromHtml, booru_handler_utils.dart parseTagsFromGelbooruHtml",
+   "what": "Same 'first non-empty <a> in tag-type element (+ optional count)' scraping with tiny variations (skip '?' or '!', K/M counts)",
+   "consolidation": "One helper in handler_utils.dart with skip-text and count-parsing options"
+  },
+  {
+   "where": "gelbooruv1, realbooru, wildcritters, r34us, r34hentai getHashFromURL",
+   "what": "Identical md5-from-thumbnail substring",
+   "consolidation": "handler_utils.hashFromThumbUrl"
+  },
+  {
+   "where": "danbooru_handler.loadItem, gelbooru_handler.loadItem, gelbooru_alikes_handler.loadItem",
+   "what": "Near-identical post-page scrape (video/image source, tag classes, count back-fill, isUpdated)",
+   "consolidation": "Shared scrapeBooruPostPage(html, selectors) returning file/sample/thumb and typed tags"
+  },
+  {
+   "where": "philomena_handler.dart and booru_on_rails_handler.dart translateOrSyntax/parseTagSuggestion; rainbooru parseTagSuggestion",
+   "what": "'||' OR translation and slug replacement table (-colon-, -dash-, ...)",
+   "consolidation": "or_syntax.dart orSyntaxDoublePipe + handler_utils.philomenaSlugToTag"
+  },
+  {
+   "where": "favourites_handler.dart, collections_handler.dart, downloads_handler.dart (search skeleton, getTagSuggestions, availableMetaTags)",
+   "what": "Local DB search template and identical local tag suggestions",
+   "consolidation": "LocalDbHandler base in sources/local with a query hook"
+  },
+  {
+   "where": "dio_network.dart captchaInterceptor onResponse and onError",
+   "what": "Identical cookie retire/merge and request clone blocks",
+   "consolidation": "One private _retryWithFreshCookies(requestOptions, handler)"
+  },
+  {
+   "where": "realbooru_handler.parseItemFromResponse and r34us_handler.parseItemFromResponse",
+   "what": "Same thumbnail->image URL rewrite and media-type guess from tags",
+   "consolidation": "Shared helper guessMediaFromTags + thumbToFileUrl"
+  },
+  {
+   "where": "base fetchSearch/fetchTagSuggestions/fetchComments/fetchNotes, DanbooruHandler.fetchSearch, GelbooruAlikes.searchCount, WorldXyz fetch/loadItem/searchSetup, R34US.loadItem, Rule34Video.fetchPage",
+   "what": "'cookies = await getCookies(); headers = {...getHeaders(), Cookie}' repeated",
+   "consolidation": "BooruHandler.requestHeaders() and a captchaUserAgent getter (removes the Danbooru fetchSearch copy)"
+  },
+  {
+   "where": "KemonoQuery.services, KemonoSite.kemono.services, KemonoCreatorCard.serviceInitials",
+   "what": "Service lists maintained three times",
+   "consolidation": "KemonoSite.services + a display-name map in one place"
+  },
+  {
+   "where": "KemonoApi.site/api/img + URL wrappers, KemonoSessionHandler.site/api, KemonoSite",
+   "what": "kemono hosts/URLs defined in three classes",
+   "consolidation": "KemonoSite only"
+  },
+  {
+   "where": "KemonoHandler.postOf and KemonoPost.fromDetail",
+   "what": "Envelope unwrapping (post vs bare)",
+   "consolidation": "KemonoPost.postMapOf used by both"
+  },
+  {
+   "where": "rule34dev, tikporn, xxxtik, xxxfollow _nonEmpty",
+   "what": "Same null/empty/'null' string helper",
+   "consolidation": "handler_utils.nonEmptyString"
+  },
+  {
+   "where": "Sankaku and IdolSankaku parseItemFromResponse",
+   "what": "Tag type map building and BooruItem construction",
+   "consolidation": "Shared protected helper on SankakuHandler with name-key parameter"
+  },
+  {
+   "where": "kemono_artists_page.dart and kemono_messages_pages.dart",
+   "what": "Debounce + reset + infinite scroll + loading flag pattern (with the same race)",
+   "consolidation": "Reusable paged-list controller in core/ui or features/feed/ui"
+  },
+  {
+   "where": "FurAffinityQuery.site/host and FurAffinitySessionHandler.site/jarOrigins",
+   "what": "FA host constants twice",
+   "consolidation": "Single constant in furaffinity_query.dart"
+  },
+  {
+   "where": "r34hentai_handler.signIn cookie parsing and Tools.saveCookies",
+   "what": "Hand-rolled Set-Cookie parsing (both buggy)",
+   "consolidation": "One tested Set-Cookie parser in core/network/cookie_jar.dart (dart:io Cookie.fromSetCookieValue)"
+  }
+ ],
+ "tests": [
+  "test/booru_engine_filters_test.dart",
+  "test/booru_long_tail_filters_test.dart",
+  "test/booru_parity_test.dart",
+  "test/booru_parity_live_test.dart",
+  "test/booru_source_settings_test.dart",
+  "test/booru_test.dart",
+  "test/booru_tag_catalog_test.dart",
+  "test/cookie_jar_timeout_test.dart",
+  "test/e621_contributor_filters_test.dart",
+  "test/e621_live_test.dart",
+  "test/filter_chip_keys_test.dart",
+  "test/furaffinity_test.dart",
+  "test/furaffinity_query_test.dart",
+  "test/furaffinity_pages_test.dart",
+  "test/furaffinity_live_test.dart",
+  "test/gallery_linked_media_button_test.dart",
+  "test/hanime1_tag_catalog_test.dart",
+  "test/hidden_status_bar_insets_test.dart",
+  "test/status_bar_inset_test.dart",
+  "test/http_log_redaction_test.dart",
+  "test/log_redaction_test.dart",
+  "test/kemono_test.dart",
+  "test/pawchive_test.dart",
+  "test/linked_media_test.dart",
+  "test/linked_media_links_test.dart",
+  "test/linked_media_opener_test.dart",
+  "test/linked_media_ui_test.dart",
+  "test/linked_media_live_test.dart",
+  "test/media_headers_test.dart",
+  "test/own_list_paging_test.dart",
+  "test/own_lists_filters_test.dart",
+  "test/downloads_reconcile_test.dart",
+  "test/downloads_check_test.dart",
+  "test/download_folders_test.dart",
+  "test/r34hentai_parity_test.dart",
+  "test/rule34video_test.dart",
+  "test/rule34video_live_test.dart",
+  "test/sankaku_links_test.dart",
+  "test/shimmie_r34us_filters_test.dart",
+  "test/source_capabilities_test.dart",
+  "test/source_links_test.dart",
+  "test/source_matrix_report_test.dart",
+  "test/thumbnail_fallbacks_test.dart",
+  "test/tag_catalog_sources_test.dart",
+  "test/tag_index_sources_test.dart",
+  "test/tag_type_lookup_test.dart",
+  "test/doujin_separation_test.dart"
+ ]
+}

@@ -1,0 +1,2275 @@
+{
+ "subsystem": "settings",
+ "summary": "SettingsHandler (lib/src/handlers/settings_handler.dart, 3347 lines, GetIt singleton, imported by 205 files) is the app-wide settings store. About 150 declared settings live as plain fields or Rx fields. A `map` getter acts as the schema (type, default, step and limits, options). Parallel 150-case switches `getByString`/`setByString` sit beside it, and `validateValue` handles the 15 SettingsEnum enums through SettingsEnumRegistry, which main() fills via initSettingsEnumRegistry(). `toJson`/`loadFromJSON` read and write settings.json in the config dir. Maps that are not declared settings are written next to the declared keys: modularUi, modelTasks, modelThreads, modelRunOn, earlierDownloadFolders and hiddenTagsPerBooru.\n\nThe same class also owns:\n- the booru config list (boorus/<name>.json, the virtual Favourites/Downloads/ForYou/ForYouDoujin/Boards/Collections/History boorus, sorting, prefBooru)\n- the global and per-booru hidden tags and marked tags, the cache of e621-style blacklist lines, and per-item tag badges (domain-aware: doujin items are routed to SourceSettingsHandler/DoujinDataHandler)\n- the GitHub update check, including a Scaffold changelog page built inside the handler\n- the DBHandler instance and Alice\n- startup: initialize() runs before runApp (storage permission, load settings, locale, Alice, SAF cache); postInit() runs from MainApp.initHandlers (proxy, video backend registration, DB connect and index, boorus, the external tags/tabs/migration action, update check, DownloadsCheck.offerAfterRestore, SourceLinks.applySaved, OnnxAvailability, ModelTimings).\n\nloadFromJSON does several things on every load:\n- forces appMode to Mobile\n- sets keys missing from the file to their defaults (startup only)\n- runs a one-time Flow-skin migration guarded by flowSkinApplied, then saves at once.\n\nsaveSettings(restate:true) also refilters fetched items and calls rootRestate after 1 s; this happens on Settings-hub exit, Debug exit and first launch.\n\nMost settings sub-pages copy values into local state in initState and write them back plus saveSettings in PopScope.onPopInvokedWithResult, so changes apply when the page closes. Recommendations, Modular UI, Links, Models/ModelPage, Debug captures, Theme (500 ms debounced) and the database/cache actions write immediately.\n\nSourceSettingsHandler (singleton, sourceSettings.json, lazy synchronous load) keeps doujin settings in two layers: a global layer under '_global' and per-host overrides. Effective value = override ?? global ?? hardcoded default. It also holds booru source settings (alwaysAdd, defaultFilters):\n- BooruHandler.search applies them through composeQuery.\n- The search window applies them through withDefaults.\n- The doujin blacklist (extend/override) feeds isItemHiddenForDoujin.\n- It also stores hiddenPins.\n\nModular UI has 13 toggles in data/modular_ui.dart. Their values live in SettingsHandler.modularUi, are read with ModularUi.isOn where 10 widget files build, and are edited on ModularUiPage.\n\nThe UI is the settings_page hub (7 sections; settings_layout_test checks their order by reading the source file) plus about 30 pages in pages/settings. The main layering problems: models import the handler (modular_ui and 4 enums); the handler imports pages and widgets; UI files host logic (booru test and autodetect, cache-stat isolates, the Sankaku URL updater, model seams in ModelsPage and RecommendationsPage).",
+ "features": [
+  {
+   "name": "Settings hub with sections",
+   "navPath": "Left drawer -> Settings",
+   "what": "Sections SOURCES (Boorus & Search, Accounts, Filters, Links, Doujin), RECOMMENDATIONS & AI (Recommendations, Models), LOOK & FEEL (Interface, Modular UI, Theme, Language), VIEWING (Viewer, Video, Performance), DOWNLOADS & STORAGE (Save & cache, Database, Backup & restore), SYSTEM (Network, Privacy, Sync, Logs, Debug), ABOUT (About, Check for updates, Help, Discord, Version, mascot). Leaving the hub saves settings with restate (refilter + root rebuild after 1 s).",
+   "files": [
+    "lib/src/pages/settings_page.dart"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Sync entry gated by database",
+   "navPath": "Settings -> Sync",
+   "what": "Opens LoliSyncPage only when the database is enabled; otherwise shows an error snackbar (sync needs DB).",
+   "files": [
+    "lib/src/pages/settings_page.dart"
+   ],
+   "settingsKeys": [
+    "dbEnabled"
+   ],
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Export logs / open logger",
+   "navPath": "Settings -> Logs (tap / long-press)",
+   "what": "Shown only when Logger.viewController exists. Tap: warning dialog, then exports the newest-first log, redacted, capped at 10 MB. Long-press opens the Talker logger view.",
+   "files": [
+    "lib/src/pages/settings_page.dart",
+    "lib/src/pages/settings/logger_page.dart"
+   ],
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Debug mode via version row",
+   "navPath": "Settings -> Version row (tap 6x / long-press)",
+   "what": "6 taps enable debug mode (persisted since r80); long-press disables it. A snackbar shows each change. Debug mode reveals the Debug entry, the force-save long-press in the booru editor and the debug index buttons.",
+   "files": [
+    "lib/src/pages/settings_page.dart",
+    "lib/src/handlers/settings_handler.dart"
+   ],
+   "settingsKeys": [
+    "isDebug"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Version label",
+   "navPath": "Settings -> Version row",
+   "what": "Shows '<buildCodename>-<versionName>' plus '/ Play' or '/ Test' or '/ Debug'.",
+   "files": [
+    "lib/src/pages/settings_page.dart"
+   ],
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Check for updates / What's new",
+   "navPath": "Settings -> Check for updates; automatic at postInit",
+   "what": "Fetches NO-ob update.json (or update_store.json) from GitHub and shows an update page (Later / Visit releases or Play Store), a 'latest version' snackbar with a 'view latest changelog' action, or a What's-new page once after an update (viewed build kept in secure storage; new users without boorus are skipped). The discord URL is overridden from the update file.",
+   "files": [
+    "lib/src/handlers/settings_handler.dart",
+    "lib/src/pages/settings_page.dart"
+   ],
+   "storedIn": "secure storage (viewedUpdateChangelogForBuild)",
+   "inBackup": "no"
+  },
+  {
+   "name": "Help link",
+   "navPath": "Settings -> Help",
+   "what": "Opens Constants.wikiURL in an external browser.",
+   "files": [
+    "lib/src/pages/settings_page.dart"
+   ],
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Default tags for new tabs",
+   "navPath": "Settings -> Boorus & Search -> Default tags",
+   "what": "Tag search box with booru selector, multiple tags, clearable; saved on exit.",
+   "files": [
+    "lib/src/pages/settings/booru_page.dart"
+   ],
+   "settingsKeys": [
+    "defTags"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Items per page",
+   "navPath": "Settings -> Boorus & Search -> Items per page",
+   "what": "Number field 10-100 with +/- step 10, reset and validator; clamped on exit.",
+   "files": [
+    "lib/src/pages/settings/booru_page.dart"
+   ],
+   "settingsKeys": [
+    "limit"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Import booru from clipboard",
+   "navPath": "Settings -> Boorus & Search -> Import booru",
+   "what": "Reads a loli.snatcher link from the clipboard, renames it '(duplicate)' when the name exists, and opens the editor. Snackbars for an invalid URL or an empty clipboard.",
+   "files": [
+    "lib/src/pages/settings/booru_page.dart"
+   ],
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Preferred booru selector",
+   "navPath": "Settings -> Boorus & Search -> Added boorus dropdown (+help)",
+   "what": "Picking a booru sets it as preferred (sorted first). On leaving the page a dialog asks whether to change the default booru or keep the current one.",
+   "files": [
+    "lib/src/pages/settings/booru_page.dart",
+    "lib/src/handlers/settings_handler.dart"
+   ],
+   "settingsKeys": [
+    "prefBooru"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Edit / share / webview / delete booru",
+   "navPath": "Settings -> Boorus & Search -> (selected booru) Edit / Share / Open webview / Delete",
+   "what": "Share asks whether to include credentials, then uses the Android share intent (desktop: clipboard); a help dialog links to Android 'open by default'. Delete is refused while tabs use the booru, otherwise confirmed. Webview opens the booru URL.",
+   "files": [
+    "lib/src/pages/settings/booru_page.dart"
+   ],
+   "storedIn": "boorus/<name>.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Booru editor form",
+   "navPath": "Settings -> Boorus & Search -> Add new booru / Edit booru",
+   "what": "Name and URL fields (clearable, pasteable, honour the incognito keyboard), Open webview, a 'Source settings' button for existing boorus, a searchable type dropdown, a favicon URL field with live preview, and default tags with tag search for the typed booru.",
+   "files": [
+    "lib/src/pages/settings/booru_edit_page.dart"
+   ],
+   "storedIn": "boorus/<name>.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Per-type defaults prefill",
+   "navPath": "Booru editor -> Booru type dropdown",
+   "what": "Choosing FurAffinity, RedGifs, Rule34.dev, Hanime1, Kusowanka, Rule34Video, nhentai, niyaniya, HDoujin, E-Hentai, HentaiPaw, Kemono, Pawchive, ASMHentai, EAHentai, hentalk, hitomi, Tik.Porn, xxxtik, xxxfollow or Civitai fills an empty URL, name and favicon.",
+   "files": [
+    "lib/src/pages/settings/booru_edit_page.dart"
+   ],
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Per-type instructions",
+   "navPath": "Booru editor -> instructions block",
+   "what": "HTML help for each type: gelbooru.com and rule34.xxx credential warnings, FA, RedGifs, Rule34.dev, Kemono, Pawchive, HDoujin, E-Hentai, nhentai, Hanime1, Kusowanka, Rule34Video, TikPorn, xxxtik, xxxfollow, Civitai, WebView; default text otherwise.",
+   "files": [
+    "lib/src/pages/settings/booru_edit_page.dart"
+   ],
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Credential fields by capability",
+   "navPath": "Booru editor -> User ID / API key fields",
+   "what": "Shown only when the handler reads them; labels per type (Login, Password, Email); API key obscurable; a note when the source has no account. RedGifs has no fields.",
+   "files": [
+    "lib/src/pages/settings/booru_edit_page.dart"
+   ],
+   "storedIn": "boorus/<name>.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Ignore global blacklist per booru",
+   "navPath": "Booru editor -> Ignore global blacklist for this booru",
+   "what": "Booru (non-doujin) sources only: the global hidden list stops filtering this booru; per-booru lines still apply.",
+   "files": [
+    "lib/src/pages/settings/booru_edit_page.dart",
+    "lib/src/handlers/settings_handler.dart"
+   ],
+   "storedIn": "boorus/<name>.json (ignoreGlobalBlacklist)",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Per-booru hidden tag lines",
+   "navPath": "Booru editor -> Hidden tag lines for this booru (+ add, delete, syntax help); also Quick access -> '<booru> blacklist'",
+   "what": "Adds or removes e621-style lines that hide posts on this booru only; a help dialog explains the syntax.",
+   "files": [
+    "lib/src/pages/settings/booru_edit_page.dart",
+    "lib/src/handlers/settings_handler.dart"
+   ],
+   "settingsKeys": [
+    "hiddenTagsPerBooru"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Hydrus access key",
+   "navPath": "Booru editor (type Hydrus) -> Get Hydrus API key",
+   "what": "Requests an access key from the Hydrus client, fills the key field, and shows instructions.",
+   "files": [
+    "lib/src/pages/settings/booru_edit_page.dart"
+   ],
+   "inBackup": "n/a"
+  },
+  {
+   "name": "RedGifs sign-in",
+   "navPath": "Booru editor (type RedGifs) -> Sign in with browser / Sign in again / Sign out; Settings -> Accounts -> RedGifs",
+   "what": "Opens the RedGifs WebView login, a JS hook captures the user bearer JWT (guest tokens rejected), and the token is stored in the API key field. Expiry is decoded to show the signed-in state.",
+   "files": [
+    "lib/src/pages/settings/booru_edit_page.dart",
+    "lib/src/pages/settings/redgifs_login_page.dart"
+   ],
+   "storedIn": "boorus/<name>.json (apiKey)",
+   "inBackup": "yes"
+  },
+  {
+   "name": "FurAffinity login and content filter",
+   "navPath": "Booru editor (FurAffinity) -> Log in with browser / Content filter / Log out; Settings -> Accounts -> FurAffinity; FA source settings -> ACCOUNT",
+   "what": "WebView login polls the cookie jar every 1.5 s for a/b and stores them in FurAffinitySessionHandler. Content filter opens /controls/settings/ with the session seeded and syncs it afterwards. Log out.",
+   "files": [
+    "lib/src/pages/settings/furaffinity_login_page.dart",
+    "lib/src/pages/settings/booru_edit_page.dart",
+    "lib/src/pages/settings/booru_source_settings_view.dart"
+   ],
+   "storedIn": "FurAffinity session file",
+   "inBackup": "no"
+  },
+  {
+   "name": "Save booru with test",
+   "navPath": "Booru editor -> Save booru (long-press in debug mode = force save)",
+   "what": "Sanitizes the name and tests the source: the special engines skip the scrape test, Hydrus verifies API access, Autodetect tries every detectable type, others run a test search. Failures show the error with a Copy button. Duplicate checks (same config, name, URL), confirm dialog with favicon and type, the old config is replaced, open tabs are re-pointed (applyBooruEdit), a first tab is created when none exist, and the app restates globally.",
+   "files": [
+    "lib/src/pages/settings/booru_edit_page.dart",
+    "lib/src/handlers/settings_handler.dart"
+   ],
+   "storedIn": "boorus/<name>.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Site-URL to API-URL and favicon heuristics",
+   "navPath": "automatic on test/save",
+   "what": "Sankaku and Idol site URLs become their API hosts; favicon guesses for agn.ph, rule34.us and Sankaku; https:// is added and a trailing slash stripped.",
+   "files": [
+    "lib/src/pages/settings/booru_edit_page.dart"
+   ],
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Accounts overview",
+   "navPath": "Settings -> Accounts",
+   "what": "e-hentai/ExHentai, FurAffinity and RedGifs rows with signed-in state. They open the e-hentai login, the FA login, or the first RedGifs source's editor (a snackbar when there is no RedGifs source).",
+   "files": [
+    "lib/src/pages/settings/accounts_page.dart"
+   ],
+   "inBackup": "n/a"
+  },
+  {
+   "name": "e-hentai forum login",
+   "navPath": "Settings -> Accounts -> e-hentai; e-hentai source settings -> ACCOUNT -> Log in",
+   "what": "WebView forum login copies ipb_member_id/ipb_pass_hash into EHentaiSessionHandler, fetches igneous from exhentai, then scrubs the shared jar. Reload button.",
+   "files": [
+    "lib/src/pages/settings/ehentai_login_page.dart"
+   ],
+   "storedIn": "e-hentai session file",
+   "inBackup": "no"
+  },
+  {
+   "name": "Item filters: hidden and marked tags",
+   "navPath": "Settings -> Filters (also from the waterfall error buttons and Quick access)",
+   "what": "Hidden and Marked tabs with search, add, edit and delete dialogs and a duplicate warning; blacklist syntax help. On exit the lists are cleaned and saved and every open tab is refiltered.",
+   "files": [
+    "lib/src/pages/settings/tags_filters_page.dart",
+    "lib/src/handlers/settings_handler.dart"
+   ],
+   "settingsKeys": [
+    "hiddenTags",
+    "markedTags"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Item filter switches",
+   "navPath": "Settings -> Filters -> Settings tab",
+   "what": "Completely hide hidden items, hide marked, hide favourited, hide snatched, hide AI-generated.",
+   "files": [
+    "lib/src/pages/settings/tags_filters_page.dart"
+   ],
+   "settingsKeys": [
+    "filterHated",
+    "filterMarked",
+    "filterFavourites",
+    "filterSnatched",
+    "filterAi"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Open source links in the app",
+   "navPath": "Settings -> Links",
+   "what": "Toggle that enables the Android link-handling component (SourceLinks.apply; re-applied at startup), a button to Android 'Open by default', and the lists of covered and uncovered sources.",
+   "files": [
+    "lib/src/pages/settings/links_page.dart",
+    "lib/src/handlers/settings_handler.dart"
+   ],
+   "settingsKeys": [
+    "openSourceLinks"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Doujin settings hub",
+   "navPath": "Settings -> Doujin",
+   "what": "'Global doujin settings' plus one entry per configured doujin source (sources with a reader); a hint when there are none.",
+   "files": [
+    "lib/src/pages/settings/doujin_settings_page.dart"
+   ],
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Doujin source settings: reading",
+   "navPath": "Settings -> Doujin -> Global or <source>; drawer -> '<doujin source> settings'; booru editor -> Source settings",
+   "what": "Reading direction (ltr/rtl/vertical), page-turn animation, tap zones, double-tap zoom, preload pages (0-20), keep screen on, reader image quality (sources with several sizes). Per-source rows show 'Overridden for this source · tap to reset'.",
+   "files": [
+    "lib/src/pages/settings/source_settings_page.dart",
+    "lib/src/handlers/source_settings_handler.dart"
+   ],
+   "settingsKeys": [
+    "readingDirection",
+    "pageTurnAnimation",
+    "tapZones",
+    "doubleTapZoom",
+    "preloadPages",
+    "keepScreenOn",
+    "imageQuality"
+   ],
+   "storedIn": "sourceSettings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Doujin source settings: search",
+   "navPath": "Doujin source settings -> SEARCH",
+   "what": "Default sort (source sort metatag, or nhentai sorts on the global layer), content types (rule34video, per source), only-show language, title language, tag blacklist text, blacklist mode extend/override (per source), import blacklist from account (nhentai API / e-hentai My Tags; merges).",
+   "files": [
+    "lib/src/pages/settings/source_settings_page.dart",
+    "lib/src/handlers/source_settings_handler.dart"
+   ],
+   "settingsKeys": [
+    "defaultSort",
+    "contentTypes",
+    "languageFilter",
+    "titleLanguage",
+    "tagBlacklist",
+    "blacklistMode"
+   ],
+   "storedIn": "sourceSettings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Doujin source settings: detail, tabs, recommendations, grid",
+   "navPath": "Doujin source settings -> DETAIL PAGE / TABS / RECOMMENDATIONS / GRID",
+   "what": "Detail layout compact/cover; detail cover from first page (e-hentai/eahentai); new-tab placement; tag chip tap menu/newtab; endless recommendations and items per gallery (5-100); feed cards grid/list; cover display fit/crop/adapt; list card height (120-320); list cover width (72-240); tags on grid cards; feed columns portrait (1-5) and landscape (1-8); page preview columns (1-6).",
+   "files": [
+    "lib/src/pages/settings/source_settings_page.dart",
+    "lib/src/handlers/source_settings_handler.dart"
+   ],
+   "settingsKeys": [
+    "detailLayout",
+    "detailCoverFromFirstPage",
+    "tabPlacement",
+    "tagChipTap",
+    "recommendedCount",
+    "feedCardStyle",
+    "coverDisplay",
+    "listCardHeight",
+    "listCoverWidth",
+    "gridTagStrip",
+    "columnsPortrait",
+    "columnsLandscape",
+    "pagePreviewColumns"
+   ],
+   "storedIn": "sourceSettings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "e-hentai account rows",
+   "navPath": "e-hentai source settings -> ACCOUNT",
+   "what": "Login state (member id, exhentai access or a 'mystery' explanation), Check again (fetchIgneous), Log out, Log in, Site choice e-hentai/exhentai, and buttons for the site's settings, My Tags and Watched pages in a webview with cookies seeded for that visit and scrubbed after.",
+   "files": [
+    "lib/src/pages/settings/source_settings_page.dart"
+   ],
+   "settingsKeys": [
+    "siteVariant"
+   ],
+   "storedIn": "sourceSettings.json + e-hentai session file",
+   "inBackup": "partial"
+  },
+  {
+   "name": "eahentai API login",
+   "navPath": "eahentai source settings -> ACCOUNT -> Log in / Log out",
+   "what": "Uses the credentials from the edit page (re-read from the live booru list), checks canSignIn, signs in and keeps the token; snackbars with the site message.",
+   "files": [
+    "lib/src/pages/settings/source_settings_page.dart"
+   ],
+   "storedIn": "eahentai session file",
+   "inBackup": "no"
+  },
+  {
+   "name": "Booru source settings",
+   "navPath": "Left drawer -> '<source> settings' (Modular UI) / Booru editor -> Source settings",
+   "what": "ACCOUNT row (FA login state, or credentials leading to the edit page); 'Always add to searches' terms; Default filters (a DoujinFiltersBlock over the site's sort/order/rating metatags); hidden-tag count with a link to Filters; About this site (engine, host, BooruSiteNotes).",
+   "files": [
+    "lib/src/pages/settings/booru_source_settings_view.dart",
+    "lib/src/handlers/source_settings_handler.dart"
+   ],
+   "settingsKeys": [
+    "alwaysAdd",
+    "defaultFilters"
+   ],
+   "storedIn": "sourceSettings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Source query composition",
+   "navPath": "automatic (every booru search; search window Filters card)",
+   "what": "composeQuery appends the stored default of every filter group the query leaves unset (only values the site offers), then always-add terms not already present; doujin sources are untouched. withDefaults shows the saved defaults as checked chips.",
+   "files": [
+    "lib/src/handlers/source_settings_handler.dart"
+   ],
+   "storedIn": "sourceSettings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Doujin blacklist and hidden pins store",
+   "navPath": "automatic (tag menu 'add to hidden', drawer doujin blacklist rows, pins hide)",
+   "what": "addBlacklistTag on the global or source layer (also a strong 'no' signal for the recommender); removeBlacklistTag from both layers; isItemHiddenForDoujin is the only hidden check for doujin items; dropHiddenPins; reloadFromDisk after a restore.",
+   "files": [
+    "lib/src/handlers/source_settings_handler.dart"
+   ],
+   "settingsKeys": [
+    "tagBlacklist",
+    "hiddenPins"
+   ],
+   "storedIn": "sourceSettings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "AI recommendations / AI learning switches",
+   "navPath": "Settings -> Recommendations",
+   "what": "Two independent toggles: the learned model orders the recommendation surfaces; the model keeps learning. A warning when the DB is off.",
+   "files": [
+    "lib/src/pages/settings/recommendations_page.dart"
+   ],
+   "settingsKeys": [
+    "aiRecommendations",
+    "aiLearning"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Recommender report cards",
+   "navPath": "Settings -> Recommendations -> Booru model / Doujin model",
+   "what": "Interactions and learning steps, last update, taste-centroid count, Likes and Dislikes chips (tap: more of this / less of this / forget it), a For You button, and 'forget everything learned' with confirmation.",
+   "files": [
+    "lib/src/pages/settings/recommendations_page.dart"
+   ],
+   "storedIn": "store.db (recommender tables)",
+   "inBackup": "yes"
+  },
+  {
+   "name": "SauceNAO key for boards",
+   "navPath": "Settings -> Recommendations -> Boards card",
+   "what": "API key field saved with a 600 ms debounce (flushed on dispose).",
+   "files": [
+    "lib/src/pages/settings/recommendations_page.dart"
+   ],
+   "storedIn": "boards file (sauceNaoApiKey)",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Models overview",
+   "navPath": "Settings -> Models (also Recommendations -> Models)",
+   "what": "All models off; a card per model (downloaded, runs on, jobs on); Picture decoding (phone / straight to size / Dart) with an explain button and timings; Saved vectors space chips with usage (prune and compact on change).",
+   "files": [
+    "lib/src/pages/settings/models_page.dart"
+   ],
+   "settingsKeys": [
+    "aiModelsOff",
+    "pictureDecoder",
+    "vectorSpaceMb"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Model download sections",
+   "navPath": "Settings -> Models -> <model> -> Model part",
+   "what": "Text encoder, looks model and image tagger: preset chips or a custom Hugging Face repo, Download / Download again / Cancel / Delete, status line, and a 'Use the <model>' toggle.",
+   "files": [
+    "lib/src/pages/settings/recommendations_page.dart",
+    "lib/src/pages/settings/model_page.dart"
+   ],
+   "settingsKeys": [
+    "encoderModel",
+    "aiEncoder",
+    "lookModel",
+    "aiLook",
+    "imageTaggerModel",
+    "aiImageTagger"
+   ],
+   "storedIn": "settings.json + model files",
+   "inBackup": "partial"
+  },
+  {
+   "name": "Tagger Try it",
+   "navPath": "Settings -> Models -> Image tagger -> Try it on a picture",
+   "what": "Picks a picture through the system photo picker (PickerWatch: failed / lost / late), tags it, shows tags, rating and timings. A picture lost when Android ended the app is recovered. Hidden when the tryIt job is off.",
+   "files": [
+    "lib/src/pages/settings/recommendations_page.dart"
+   ],
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Model jobs",
+   "navPath": "Settings -> Models -> <model> -> What it does",
+   "what": "Per-job toggles (text: learning, forYou, boards; look: learning, forYou, similar, boards; tagger: tryIt, boards). Looks extras: read frames from playing videos, frames on For You and in other tabs (playing / reaction / off), remember looks. Tagger: tag reactions.",
+   "files": [
+    "lib/src/pages/settings/model_page.dart"
+   ],
+   "settingsKeys": [
+    "modelTasks",
+    "videoFrames",
+    "framesForYou",
+    "framesOtherTabs",
+    "rememberLooks",
+    "taggerOnReactions"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Model Run on / NPU",
+   "navPath": "Settings -> Models -> <model> -> Speed -> Run on",
+   "what": "Segmented CPU/XNNPACK/NNAPI/NPU limited to what the build offers, with an explain button (timings, available providers). Prompts to download the looks model's full-precision half for NPU. NPU copy line, Compile again (+explain), refused and failed notes.",
+   "files": [
+    "lib/src/pages/settings/model_page.dart",
+    "lib/src/pages/settings/models_page.dart"
+   ],
+   "settingsKeys": [
+    "modelRunOn"
+   ],
+   "storedIn": "settings.json (device-specific)",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Model thread counts",
+   "navPath": "Settings -> Models -> <model> -> Threads while you wait / in the background",
+   "what": "+/- 1..cores with an explain button (what it does, cost, recommendation, measured timings); the model session reopens.",
+   "files": [
+    "lib/src/pages/settings/model_page.dart"
+   ],
+   "settingsKeys": [
+    "modelThreads"
+   ],
+   "storedIn": "settings.json (device-specific)",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Interface: hand side and search bar",
+   "navPath": "Settings -> Interface",
+   "what": "Hand side (+help), show search bar in preview grid, move input to top in search view, tab pill (experimental), search-view quick actions panel, search input autofocus.",
+   "files": [
+    "lib/src/pages/settings/user_interface_page.dart"
+   ],
+   "settingsKeys": [
+    "handSide",
+    "showBottomSearchbar",
+    "useTopSearchbarInput",
+    "tabPill",
+    "showSearchbarQuickActions",
+    "autofocusSearchbar"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Interface: system behaviour",
+   "navPath": "Settings -> Interface",
+   "what": "Predictive back (changing it restates the theme), disable vibration, hide status bar (applied immediately), personalized recommendations (interest tracking), inline related-posts grids, bottom info sheet plus its size (0.5-3 thirds), new-tab placement for a single tap (end/next).",
+   "files": [
+    "lib/src/pages/settings/user_interface_page.dart"
+   ],
+   "settingsKeys": [
+    "usePredictiveBack",
+    "disableVibration",
+    "hideStatusBar",
+    "enableInterestTracking",
+    "inlineRelatedGrids",
+    "useBottomInfoSheet",
+    "bottomSheetSizeMultiplier",
+    "defaultTabAddMode"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Interface: grid",
+   "navPath": "Settings -> Interface",
+   "what": "Preview columns portrait and landscape (warnings above 4/8), preview quality (+help), preview display square/rectangle/staggered plus a fallback for staggered, don't scale images (warning dialog), GIF thumbnails (requires don't-scale), scroll-previews buttons position, mouse wheel modifier (desktop only).",
+   "files": [
+    "lib/src/pages/settings/user_interface_page.dart"
+   ],
+   "settingsKeys": [
+    "portraitColumns",
+    "landscapeColumns",
+    "previewMode",
+    "previewDisplay",
+    "previewDisplayFallback",
+    "disableImageScaling",
+    "gifsAsThumbnails",
+    "scrollGridButtonsPosition",
+    "mousewheelScrollSpeed"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Modular UI switches",
+   "navPath": "Settings -> Modular UI",
+   "what": "13 switches grouped by area. Search window: History, Pinned tags, Popular tags (off by default), Site filters. Left sidebar: Source settings button, Pinned tags button. Preview grid: Feed scrollbar, Seen thumbnails at once. Viewer: Linked media button, Videos at screen size, Pictures at most 4K, Post actions as buttons. Whole app: Draw under hidden status bar (off). Only non-default values are stored; parts that are off are not built.",
+   "files": [
+    "lib/src/data/modular_ui.dart",
+    "lib/src/pages/settings/modular_ui_page.dart"
+   ],
+   "settingsKeys": [
+    "modularUi"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Theme mode, AMOLED, dynamic colour",
+   "navPath": "Settings -> Theme",
+   "what": "System/light/dark with icons; black background (dark/system); dynamic colour (Android 12+). Applied after a 500 ms debounce.",
+   "files": [
+    "lib/src/pages/settings/theme_page.dart"
+   ],
+   "settingsKeys": [
+    "themeMode",
+    "isAmoled",
+    "useDynamicColor"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Theme presets and custom colours",
+   "navPath": "Settings -> Theme -> Theme / Primary colour / Secondary colour / Reset",
+   "what": "Presets Flow, Pink, Purple, Blue, Teal, Red, Green, Halloween, Custom shown with swatches; Custom has colour-picker dialogs (wheel, custom, b/w) and a reset.",
+   "files": [
+    "lib/src/pages/settings/theme_page.dart",
+    "lib/src/handlers/settings_handler.dart"
+   ],
+   "settingsKeys": [
+    "theme",
+    "customPrimaryColor",
+    "customAccentColor"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Font family",
+   "navPath": "Settings -> Theme -> Font family",
+   "what": "Bottom sheet with default fonts, 'view more fonts', and a custom Google Font dialog with preview (English plus the current locale); reset to System.",
+   "files": [
+    "lib/src/pages/settings/theme_page.dart"
+   ],
+   "settingsKeys": [
+    "fontFamily"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Drawer mascot",
+   "navPath": "Settings -> Theme -> Enable drawer mascot / Set custom mascot / Remove custom mascot",
+   "what": "Toggle; a SAF image is picked and copied by ImageWriter on exit; remove deletes the file.",
+   "files": [
+    "lib/src/pages/settings/theme_page.dart"
+   ],
+   "settingsKeys": [
+    "enableDrawerMascot",
+    "drawerMascotPathOverride"
+   ],
+   "storedIn": "settings.json + mascot file",
+   "inBackup": "partial"
+  },
+  {
+   "name": "Flow skin one-time migration",
+   "navPath": "automatic (startup load)",
+   "what": "Older installs get the Flow preset, dark mode, no AMOLED and no dynamic colour once (flowSkinApplied), saved at once.",
+   "files": [
+    "lib/src/handlers/settings_handler.dart"
+   ],
+   "settingsKeys": [
+    "flowSkinApplied"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Language",
+   "navPath": "Settings -> Language",
+   "what": "Dropdown System / en / ru / tr / ja with flags; changing it reloads the boorus (localized virtual names), saves and backs up tabs. 'Help us translate' link and a POEditor progress card (network).",
+   "files": [
+    "lib/src/pages/settings/language_page.dart",
+    "lib/src/handlers/settings_handler.dart"
+   ],
+   "settingsKeys": [
+    "locale"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Viewer: preload and quality",
+   "navPath": "Settings -> Viewer",
+   "what": "Preload amount (0-4), preload size limit (GB), preload height limit, image quality sample/full, scroll direction, toolbar position, zoom button position, change-page buttons position.",
+   "files": [
+    "lib/src/pages/settings/gallery_page.dart"
+   ],
+   "settingsKeys": [
+    "preloadCount",
+    "preloadSizeLimit",
+    "preloadHeight",
+    "galleryMode",
+    "galleryScrollDirection",
+    "galleryBarPosition",
+    "zoomButtonPosition",
+    "changePageButtonsPosition"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Viewer: behaviour toggles",
+   "navPath": "Settings -> Viewer",
+   "what": "Hide toolbar on open, expand details by default, hide translation notes, dim already-viewed posts, fast GIF playback, rotation, prevent sleep, open/close animation (hero), custom page-change animation, Kanna loading GIF.",
+   "files": [
+    "lib/src/pages/settings/gallery_page.dart"
+   ],
+   "settingsKeys": [
+    "autoHideImageBar",
+    "expandDetails",
+    "hideNotes",
+    "dimSeenPosts",
+    "fastGifPlayback",
+    "allowRotation",
+    "wakeLockEnabled",
+    "enableHeroTransitions",
+    "disableCustomPageTransitions",
+    "loadingGif"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Clear viewed / viewing history",
+   "navPath": "Settings -> Viewer -> Clear viewed history (when dimming) / Clear viewing history",
+   "what": "Confirm dialogs; clears SeenPost (SearchHandler.clearSeenPosts) or ViewedPost (History feed).",
+   "files": [
+    "lib/src/pages/settings/gallery_page.dart"
+   ],
+   "storedIn": "store.db",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Viewer toolbar buttons order",
+   "navPath": "Settings -> Viewer -> Toolbar buttons order",
+   "what": "Reorderable list (long-press or handle) with an enable checkbox per button (info cannot be disabled), icons, reset and help. Buttons: snatch, favourite, info, share, linked media, select, open, slideshow, reload no scale, toggle quality, external player, image search, not interested.",
+   "files": [
+    "lib/src/pages/settings/gallery_page.dart",
+    "lib/src/data/settings/gallery_button.dart"
+   ],
+   "settingsKeys": [
+    "buttonOrder",
+    "disabledButtons"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Default share action",
+   "navPath": "Settings -> Viewer -> Default share action (+help)",
+   "what": "Ask, post URL (with tags), file URL (with tags), file (with tags), Hydrus (only when a Hydrus booru exists).",
+   "files": [
+    "lib/src/pages/settings/gallery_page.dart",
+    "lib/src/data/settings/share_action.dart"
+   ],
+   "settingsKeys": [
+    "shareAction"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Volume buttons scrolling and slideshow",
+   "navPath": "Settings -> Viewer",
+   "what": "Use volume buttons for scrolling (+help; applied with ServiceHandler.setVolumeButtons), scroll speed, slideshow duration, slideshow duration for videos/GIFs.",
+   "files": [
+    "lib/src/pages/settings/gallery_page.dart"
+   ],
+   "settingsKeys": [
+    "useVolumeButtonsForScroll",
+    "volumeButtonsScrollSpeed",
+    "galleryAutoScrollTime",
+    "galleryAutoScrollVideoTime"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Video settings",
+   "navPath": "Settings -> Video",
+   "what": "Disable videos (+help), autoplay, keep paused after a manual pause, start muted. Experimental: media_kit engine plus pool size (1-20) and start delay (0-5000 ms); better_player engine plus cache MB and per-file MB; backend normal/mpv/mdk; mpv hardware acceleration, VO, HWDEC; video cache mode (+help). The backend is re-registered on exit.",
+   "files": [
+    "lib/src/pages/settings/video_page.dart",
+    "lib/src/data/settings/video_backend_mode.dart",
+    "lib/src/data/settings/mpv_video_output.dart",
+    "lib/src/data/settings/mpv_hardware_decoding.dart",
+    "lib/src/data/settings/video_cache_mode.dart"
+   ],
+   "settingsKeys": [
+    "disableVideo",
+    "autoPlayEnabled",
+    "respectManualPause",
+    "startVideosMuted",
+    "useMediaKitPlayer",
+    "mediaKitMaxPlayers",
+    "videoStartDelayMs",
+    "useBetterPlayer",
+    "betterPlayerCacheMb",
+    "betterPlayerPerFileMb",
+    "videoBackendMode",
+    "altVideoPlayerHwAccel",
+    "altVideoPlayerVO",
+    "altVideoPlayerHWDEC",
+    "videoCacheMode"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Performance page and low performance mode",
+   "navPath": "Settings -> Performance",
+   "what": "Low performance mode (confirm dialog; sets thumbnail previews, sample quality, 2/4 columns, preload 0, size 0.2, height 8192, autoplay off, scaling on). Also preview quality, image quality, columns, preload amount/size/height, don't scale images, autoplay, preload videos, disable videos.",
+   "files": [
+    "lib/src/pages/settings/performance_page.dart"
+   ],
+   "settingsKeys": [
+    "shitDevice",
+    "preloadVideos"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Save & cache: downloads",
+   "navPath": "Settings -> Save & cache -> Downloads",
+   "what": "Snatch quality, snatch cooldown, download notifications, snatch on favourite, favourite on snatch, write image data JSON on save (needs a custom folder on Android).",
+   "files": [
+    "lib/src/pages/settings/save_cache_page.dart"
+   ],
+   "settingsKeys": [
+    "snatchMode",
+    "snatchCooldown",
+    "downloadNotifications",
+    "snatchOnFavourite",
+    "favouriteOnSnatch",
+    "jsonWrite"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Download folders",
+   "navPath": "Settings -> Save & cache -> Download folders",
+   "what": "Set storage directory (SAF; a cancel keeps the folder), reset, earlier download folders (list, remove, add), check downloads against disk (DownloadsCheck).",
+   "files": [
+    "lib/src/pages/settings/save_cache_page.dart"
+   ],
+   "settingsKeys": [
+    "extPathOverride",
+    "earlierDownloadFolders"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Cache settings and stats",
+   "navPath": "Settings -> Save & cache -> Cache",
+   "what": "Cache previews, cache media, video cache mode, delete cache after (Never .. 1 month), cache size limit, stats per type (total, favicons, thumbnails, samples, media, WebView; computed in isolates) with clear per type, clear all cache.",
+   "files": [
+    "lib/src/pages/settings/save_cache_page.dart"
+   ],
+   "settingsKeys": [
+    "thumbnailCache",
+    "mediaCache",
+    "videoCacheMode",
+    "cacheDuration",
+    "cacheSize"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Database settings and maintenance",
+   "navPath": "Settings -> Database",
+   "what": "Enable database (+help), indexing (creates or drops indexes; debug create/drop buttons), search history, tag type fetching, delete database, clear snatched, clear favourites, clear search history (each confirmed). Leaving is blocked while working.",
+   "files": [
+    "lib/src/pages/settings/database_page.dart"
+   ],
+   "settingsKeys": [
+    "dbEnabled",
+    "indexesEnabled",
+    "searchHistoryEnabled",
+    "tagTypeFetchEnabled"
+   ],
+   "storedIn": "settings.json + store.db",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Sankaku favourites URL update",
+   "navPath": "Settings -> Database -> Sankaku favourites update",
+   "what": "Pick the Sankaku/Idol type and an optional query; reloads each saved item (100 ms pace) and updates its URLs. Progress counts, skip current, stop, purge failed, retry failed.",
+   "files": [
+    "lib/src/pages/settings/database_page.dart"
+   ],
+   "storedIn": "store.db",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Backup & restore checklist and folder",
+   "navPath": "Settings -> Backup & restore",
+   "what": "Checklist of items (All/None). Folder: select (SAF, validated), back up, restore (choose items present), reset. Non-Android shows an Android-only message. Leaving is blocked while busy.",
+   "files": [
+    "lib/src/pages/settings/backup_restore_page.dart"
+   ],
+   "settingsKeys": [
+    "backupPath"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Google Drive backups",
+   "navPath": "Settings -> Backup & restore -> Google Drive",
+   "what": "Set or change the OAuth client (secure storage), link the account (dialog on failure), back up into a named snapshot, restore from the snapshot picker (dates, delete), unlink. The database comes back whole or in parts, a confirm dialog follows, and the app restarts after 3 s when needed.",
+   "files": [
+    "lib/src/pages/settings/backup_restore_page.dart"
+   ],
+   "storedIn": "secure storage + Drive",
+   "inBackup": "no"
+  },
+  {
+   "name": "Network: certificates and proxy",
+   "navPath": "Settings -> Network",
+   "what": "Allow self-signed certificates; proxy direct/system/http/socks5/socks4 with address, username and password; applied by initProxy on exit and at startup.",
+   "files": [
+    "lib/src/pages/settings/network_page.dart",
+    "lib/src/data/settings/proxy_type.dart"
+   ],
+   "settingsKeys": [
+    "allowSelfSignedCerts",
+    "proxyType",
+    "proxyAddress",
+    "proxyUsername",
+    "proxyPassword"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Custom user agent",
+   "navPath": "Settings -> Network -> Custom user agent (+help) / Set browser user agent",
+   "what": "Free text (empty = default), a button sets the default browser UA.",
+   "files": [
+    "lib/src/pages/settings/network_page.dart"
+   ],
+   "settingsKeys": [
+    "customUserAgent"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Cookie cleaner",
+   "navPath": "Settings -> Network -> Cookie cleaner",
+   "what": "Pick a booru to list its WebView cookies (plus Windows globals), delete one, clear the booru's cookies, or clear all.",
+   "files": [
+    "lib/src/pages/settings/network_page.dart"
+   ],
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Privacy: app alias, lock, blur, incognito keyboard",
+   "navPath": "Settings -> Privacy",
+   "what": "Launcher display name alias (7 aliases; restart dialog; reverted on failure), app lock with an auto-lock timeout (local auth), blur on leave, incognito keyboard (Android).",
+   "files": [
+    "lib/src/pages/settings/privacy_page.dart",
+    "lib/src/data/settings/app_alias.dart"
+   ],
+   "settingsKeys": [
+    "appAlias",
+    "useLockscreen",
+    "autoLockTimeout",
+    "blurOnLeave",
+    "incognitoKeyboard"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Debug overlays and tools",
+   "navPath": "Settings -> Debug (debug mode)",
+   "what": "Performance graph, FPS graph, image stats, video stats (memory only), blur images and mute (dev builds), desktop list drag, animation speed cycle, tags manager, text parser test, resolution and pixel ratio, logger, webview test, delete all cookies, clear secure storage (dev), get and set session string (tabs JSON).",
+   "files": [
+    "lib/src/pages/settings/debug_page.dart",
+    "lib/src/handlers/settings_handler.dart"
+   ],
+   "settingsKeys": [
+    "showPerf",
+    "showFps",
+    "showImageStats",
+    "showVideoStats",
+    "blurImages",
+    "desktopListsDrag"
+   ],
+   "storedIn": "memory only (except desktopListsDrag in settings.json)",
+   "inBackup": "partial"
+  },
+  {
+   "name": "Trace recorder",
+   "navPath": "Settings -> Debug -> Record a trace / Stop recording",
+   "what": "PerfTrace start and stop; the report goes into the log in parts and into a captures file; a dialog shows up to 20,000 characters with Copy (handles the Binder failure).",
+   "files": [
+    "lib/src/pages/settings/debug_page.dart"
+   ],
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Captures folder",
+   "navPath": "Settings -> Debug -> Captures folder / Use the download folder for captures",
+   "what": "SAF folder for trace and source-capture files; reset to '<download folder>/captures'.",
+   "files": [
+    "lib/src/pages/settings/debug_page.dart"
+   ],
+   "settingsKeys": [
+    "capturesPath"
+   ],
+   "storedIn": "settings.json (device-specific)",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Source capture",
+   "navPath": "Settings -> Debug -> Source capture",
+   "what": "Enter a site and 'open and record' in a webview (pages, resources, a JS network hook, popups blocked); fetch response bodies; summary; save to the captures folder (also automatic when the browser closes); share; copy (shortened when too big); discard; contents list; an interrupted session is recovered.",
+   "files": [
+    "lib/src/pages/settings/source_capture_page.dart"
+   ],
+   "storedIn": "source-capture-session.jsonl (cache) + captures files",
+   "inBackup": "no"
+  },
+  {
+   "name": "Text parser test",
+   "navPath": "Settings -> Debug -> Text Parser Test",
+   "what": "Custom input rendered with ParsedText plus a segments debug view; about 40 samples in 10 categories with a debug dialog and tap feedback.",
+   "files": [
+    "lib/src/pages/settings/text_parser_test_page.dart"
+   ],
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Settings persistence and validation",
+   "navPath": "automatic",
+   "what": "settings.json is loaded before the first frame. Each value is validated by schema type and range (out-of-range ints are reset to their default on save); legacy enum string encodings and the legacy hatedTags/lovedTags keys are accepted; missing keys get defaults; appMode is forced to Mobile; isDebug is persisted.",
+   "files": [
+    "lib/src/handlers/settings_handler.dart",
+    "lib/src/data/settings/settings_enum.dart"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Device-specific settings excluded from LoliSync",
+   "navPath": "automatic (Settings -> Sync -> send settings)",
+   "what": "deviceSpecificSettings (about 60 keys: theme, proxy, paths, DB, video backend, model threads and run-on, captures path, earlier folders, ...) are stripped from the sync payload.",
+   "files": [
+    "lib/src/handlers/settings_handler.dart"
+   ],
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Booru list management",
+   "navPath": "automatic",
+   "what": "Loads boorus/*.json (deletes types that cannot be saved; flags Hydrus); adds the virtual Favourites, Downloads, For You, For You (doujin), Boards, Collections and History boorus when the DB is on; sorts alphabetically with the preferred booru first and the virtual boorus last; ensureXBooru creates them lazily.",
+   "files": [
+    "lib/src/handlers/settings_handler.dart"
+   ],
+   "storedIn": "boorus/*.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Blacklist evaluation and tag badges",
+   "navPath": "automatic (thumbnails, viewer, tag lists, filtering)",
+   "what": "Global and per-booru e621-style lines with cache; isItemHiddenForBooru honours ignoreGlobalBlacklist; parseTagsListForItem gives hidden, marked, sound and AI badges (capped at 5); doujin items use the doujin blacklist and starred tags.",
+   "files": [
+    "lib/src/handlers/settings_handler.dart",
+    "lib/src/handlers/source_settings_handler.dart"
+   ],
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Startup post-init chain",
+   "navPath": "automatic (init screen messages)",
+   "what": "Proxy, video backend registration (normal=media_kit native, mpv=media_kit, mdk=fvp; desktop fvp), DB connect with status, index create or drop, boorus, then the external action (tags, tabs, doujin migration, bookmarks merge); then update check, downloads check after a restore, source links, ONNX providers, model timings.",
+   "files": [
+    "lib/src/handlers/settings_handler.dart"
+   ],
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Settings enums with localized names",
+   "navPath": "Settings pages option lists",
+   "what": "15 SettingsEnum enums with backwards-compatible JSON strings and locName for option lists; GalleryButton with disableable and locName.",
+   "files": [
+    "lib/src/data/settings/settings_enum.dart",
+    "lib/src/data/settings/app_alias.dart",
+    "lib/src/data/settings/app_mode.dart",
+    "lib/src/data/settings/button_position.dart",
+    "lib/src/data/settings/gallery_button.dart",
+    "lib/src/data/settings/hand_side.dart",
+    "lib/src/data/settings/image_quality.dart",
+    "lib/src/data/settings/mpv_hardware_decoding.dart",
+    "lib/src/data/settings/mpv_video_output.dart",
+    "lib/src/data/settings/preview_display_mode.dart",
+    "lib/src/data/settings/preview_quality.dart",
+    "lib/src/data/settings/proxy_type.dart",
+    "lib/src/data/settings/scroll_direction.dart",
+    "lib/src/data/settings/share_action.dart",
+    "lib/src/data/settings/vertical_position.dart",
+    "lib/src/data/settings/video_backend_mode.dart",
+    "lib/src/data/settings/video_cache_mode.dart"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Misc persisted UI state",
+   "navPath": "automatic",
+   "what": "previewWindowRect (floating tag preview window position), lastSyncIp and lastSyncPort (LoliSync page), kemonoSidebar, furAffinitySidebar and kemonoPostFullImages (flipped from drawers).",
+   "files": [
+    "lib/src/handlers/settings_handler.dart"
+   ],
+   "settingsKeys": [
+    "previewWindowRect",
+    "lastSyncIp",
+    "lastSyncPort",
+    "kemonoSidebar",
+    "furAffinitySidebar",
+    "kemonoPostFullImages"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  }
+ ],
+ "fileHomes": [
+  {
+   "path": "lib/src/data/modular_ui.dart",
+   "newHome": "lib/features/settings/logic/modular_ui.dart (toggle constants -> lib/models/settings/modular_ui_toggles.dart)",
+   "role": "Modular UI toggle definitions, isOn/set/parse, revision notifier",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/data/settings/app_alias.dart",
+   "newHome": "lib/models/settings/app_alias.dart",
+   "role": "Launcher alias enum (activity-alias names)",
+   "layer": "models"
+  },
+  {
+   "path": "lib/src/data/settings/app_mode.dart",
+   "newHome": "lib/models/settings/app_mode.dart",
+   "role": "Desktop/Mobile mode enum (forced Mobile)",
+   "layer": "models"
+  },
+  {
+   "path": "lib/src/data/settings/button_position.dart",
+   "newHome": "lib/models/settings/button_position.dart",
+   "role": "Disabled/left/right position enum for viewer and grid buttons",
+   "layer": "models"
+  },
+  {
+   "path": "lib/src/data/settings/gallery_button.dart",
+   "newHome": "lib/models/settings/gallery_button.dart",
+   "role": "Viewer toolbar button enum, JSON names, disableable",
+   "layer": "models"
+  },
+  {
+   "path": "lib/src/data/settings/hand_side.dart",
+   "newHome": "lib/models/settings/hand_side.dart",
+   "role": "Left/right hand enum",
+   "layer": "models"
+  },
+  {
+   "path": "lib/src/data/settings/image_quality.dart",
+   "newHome": "lib/models/settings/image_quality.dart",
+   "role": "Sample/full-res enum for viewer and snatch",
+   "layer": "models"
+  },
+  {
+   "path": "lib/src/data/settings/mpv_hardware_decoding.dart",
+   "newHome": "lib/models/settings/mpv_hardware_decoding.dart",
+   "role": "mpv hwdec option enum",
+   "layer": "models"
+  },
+  {
+   "path": "lib/src/data/settings/mpv_video_output.dart",
+   "newHome": "lib/models/settings/mpv_video_output.dart",
+   "role": "mpv vo option enum",
+   "layer": "models"
+  },
+  {
+   "path": "lib/src/data/settings/preview_display_mode.dart",
+   "newHome": "lib/models/settings/preview_display_mode.dart",
+   "role": "Square/rectangle/staggered grid enum",
+   "layer": "models"
+  },
+  {
+   "path": "lib/src/data/settings/preview_quality.dart",
+   "newHome": "lib/models/settings/preview_quality.dart",
+   "role": "Thumbnail/sample preview enum",
+   "layer": "models"
+  },
+  {
+   "path": "lib/src/data/settings/proxy_type.dart",
+   "newHome": "lib/models/settings/proxy_type.dart",
+   "role": "Proxy type enum",
+   "layer": "models"
+  },
+  {
+   "path": "lib/src/data/settings/scroll_direction.dart",
+   "newHome": "lib/models/settings/scroll_direction.dart",
+   "role": "Viewer scroll direction enum",
+   "layer": "models"
+  },
+  {
+   "path": "lib/src/data/settings/setting_definition.dart",
+   "newHome": "delete (dead) - or lib/models/settings/setting_definition.dart if reused for the field registry",
+   "role": "Unused typed SettingDefinition classes",
+   "layer": "models"
+  },
+  {
+   "path": "lib/src/data/settings/settings_enum.dart",
+   "newHome": "lib/models/settings/settings_enum.dart",
+   "role": "SettingsEnum mixin, SettingsEnumRegistry, initSettingsEnumRegistry",
+   "layer": "models"
+  },
+  {
+   "path": "lib/src/data/settings/share_action.dart",
+   "newHome": "lib/models/settings/share_action.dart",
+   "role": "Default share action enum",
+   "layer": "models"
+  },
+  {
+   "path": "lib/src/data/settings/vertical_position.dart",
+   "newHome": "lib/models/settings/vertical_position.dart",
+   "role": "Top/bottom toolbar position enum",
+   "layer": "models"
+  },
+  {
+   "path": "lib/src/data/settings/video_backend_mode.dart",
+   "newHome": "lib/models/settings/video_backend_mode.dart",
+   "role": "normal/mpv/mdk backend enum",
+   "layer": "models"
+  },
+  {
+   "path": "lib/src/data/settings/video_cache_mode.dart",
+   "newHome": "lib/models/settings/video_cache_mode.dart",
+   "role": "Stream/cache/stream+cache enum",
+   "layer": "models"
+  },
+  {
+   "path": "lib/src/handlers/settings_handler.dart",
+   "newHome": "lib/core/storage/settings/settings_handler.dart (split, see splits)",
+   "role": "Settings store, schema, JSON IO, booru list, blacklist, update check, startup",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/handlers/source_settings_handler.dart",
+   "newHome": "lib/core/storage/source_settings_store.dart (+ lib/models/source_settings.dart, lib/sources/framework/source_query.dart)",
+   "role": "Two-layer per-source settings store (sourceSettings.json), composeQuery/withDefaults, doujin blacklist",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/pages/settings/accounts_page.dart",
+   "newHome": "lib/features/accounts/ui/accounts_page.dart",
+   "role": "Sign-ins overview (e-hentai, FA, RedGifs)",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/pages/settings/backup_restore_page.dart",
+   "newHome": "lib/features/backup/ui/backup_restore_page.dart",
+   "role": "Backup checklist, folder and Drive backup/restore UI",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/pages/settings/booru_edit_page.dart",
+   "newHome": "lib/features/settings/ui/sources/booru_edit_page.dart (split)",
+   "role": "Booru config editor, test/autodetect, per-type defaults and instructions, logins",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/pages/settings/booru_page.dart",
+   "newHome": "lib/features/settings/ui/sources/booru_page.dart",
+   "role": "Boorus & Search page: default tags, limit, booru list actions",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/pages/settings/booru_source_settings_view.dart",
+   "newHome": "lib/features/settings/ui/sources/booru_source_settings_view.dart",
+   "role": "Booru source settings (always add, default filters, hidden tags, site notes)",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/pages/settings/database_page.dart",
+   "newHome": "lib/features/settings/ui/database_page.dart (Sankaku updater -> lib/features/settings/logic/sankaku_url_updater.dart)",
+   "role": "DB toggles, maintenance, Sankaku URL update",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/pages/settings/debug_page.dart",
+   "newHome": "lib/features/debug/ui/debug_page.dart",
+   "role": "Debug overlays, trace, captures folder, tools",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/pages/settings/dir_picker_page.dart",
+   "newHome": "delete (dead; only referenced in commented-out code)",
+   "role": "Legacy filesystem directory picker",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/pages/settings/doujin_settings_page.dart",
+   "newHome": "lib/features/doujin/ui/settings/doujin_settings_page.dart",
+   "role": "Doujin settings hub (global + per source)",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/pages/settings/ehentai_login_page.dart",
+   "newHome": "lib/features/accounts/ui/ehentai_login_page.dart",
+   "role": "e-hentai forum WebView login",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/pages/settings/furaffinity_login_page.dart",
+   "newHome": "lib/features/accounts/ui/furaffinity_login_page.dart",
+   "role": "FurAffinity WebView login",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/pages/settings/gallery_page.dart",
+   "newHome": "lib/features/settings/ui/viewer_settings_page.dart (class GalleryPage kept)",
+   "role": "Viewer settings incl. toolbar order editor",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/pages/settings/language_page.dart",
+   "newHome": "lib/features/settings/ui/language_page.dart (AppLocaleExt -> lib/core/utils/app_locale.dart)",
+   "role": "Language picker, flags, POEditor progress",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/pages/settings/links_page.dart",
+   "newHome": "lib/features/links/ui/links_page.dart",
+   "role": "Open source links in app toggle and coverage",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/pages/settings/logger_page.dart",
+   "newHome": "lib/features/debug/ui/logger_page.dart",
+   "role": "Talker logger view wrapper",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/pages/settings/model_page.dart",
+   "newHome": "lib/features/recommender/ui/model_page.dart",
+   "role": "One model's page (download, jobs, run on, threads)",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/pages/settings/models_page.dart",
+   "newHome": "lib/features/recommender/ui/models_page.dart (seams -> lib/features/recommender/logic/model_settings.dart)",
+   "role": "Models overview, picture decoder, vector space; hosts model seams",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/pages/settings/modular_ui_page.dart",
+   "newHome": "lib/features/settings/ui/modular_ui_page.dart",
+   "role": "Modular UI switches page",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/pages/settings/network_page.dart",
+   "newHome": "lib/features/settings/ui/network_page.dart",
+   "role": "Certificates, proxy, user agent, cookie cleaner",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/pages/settings/performance_page.dart",
+   "newHome": "lib/features/settings/ui/performance_page.dart",
+   "role": "Low performance mode and perf-related settings",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/pages/settings/privacy_page.dart",
+   "newHome": "lib/features/settings/ui/privacy_page.dart",
+   "role": "App alias, lock, blur, incognito keyboard",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/pages/settings/recommendations_page.dart",
+   "newHome": "lib/features/recommender/ui/recommendations_page.dart (model sections -> lib/features/recommender/ui/model_sections/)",
+   "role": "Recommender switches and reports, model download sections, Try it, SauceNAO key",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/pages/settings/redgifs_login_page.dart",
+   "newHome": "lib/features/accounts/ui/redgifs_login_page.dart",
+   "role": "RedGifs WebView login capturing the bearer token",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/pages/settings/save_cache_page.dart",
+   "newHome": "lib/features/settings/ui/save_cache_page.dart (cache stats -> lib/features/settings/logic/cache_stats.dart)",
+   "role": "Downloads, download folders, cache settings and stats",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/pages/settings/settings_template.dart",
+   "newHome": "delete (dead)",
+   "role": "Unused template page",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/pages/settings/source_capture_page.dart",
+   "newHome": "lib/features/debug/ui/source_capture_page.dart",
+   "role": "Source capture recorder UI",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/pages/settings/source_settings_page.dart",
+   "newHome": "lib/features/settings/ui/sources/source_settings_page.dart",
+   "role": "Doujin layered source settings; dispatches booru sources to BooruSourceSettingsView",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/pages/settings/tags_filters_page.dart",
+   "newHome": "lib/features/tags/ui/tags_filters_page.dart",
+   "role": "Hidden/marked tag lists and filter switches",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/pages/settings/text_parser_test_page.dart",
+   "newHome": "lib/features/debug/ui/text_parser_test_page.dart",
+   "role": "Comment text parser test page",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/pages/settings/theme_page.dart",
+   "newHome": "lib/features/settings/ui/theme_page.dart",
+   "role": "Theme mode/preset/colours, font picker, mascot",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/pages/settings/user_interface_page.dart",
+   "newHome": "lib/features/settings/ui/user_interface_page.dart",
+   "role": "Interface settings (search bar, grid, info sheet, status bar)",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/pages/settings/video_page.dart",
+   "newHome": "lib/features/settings/ui/video_settings_page.dart",
+   "role": "Video engine/backend/mpv/cache settings",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/pages/settings_page.dart",
+   "newHome": "lib/features/settings/ui/settings_page.dart (update the path read by test/settings_layout_test.dart)",
+   "role": "Settings hub with sections, logs export, version/debug toggle",
+   "layer": "feature-ui"
+  }
+ ],
+ "layerViolations": [
+  {
+   "file": "lib/src/data/modular_ui.dart",
+   "line": 3,
+   "imports": "lib/src/handlers/settings_handler.dart",
+   "reason": "Model file reads and writes SettingsHandler.modularUi and saves through the handler.",
+   "fix": "Toggle constants go to lib/models/settings/modular_ui_toggles.dart; isOn/set/revision go to lib/features/settings/logic/modular_ui.dart over a values map owned by the settings store."
+  },
+  {
+   "file": "lib/src/data/settings/app_mode.dart",
+   "line": 4,
+   "imports": "lib/src/handlers/settings_handler.dart",
+   "reason": "Enum (model) imports the handler for SettingsHandler.isDesktopPlatform and for `loc` through the handler's re-export.",
+   "fix": "Add lib/core/platform/platform_info.dart (isDesktopPlatform); import gen/strings.g.dart directly."
+  },
+  {
+   "file": "lib/src/data/settings/button_position.dart",
+   "line": 2,
+   "imports": "lib/src/handlers/settings_handler.dart",
+   "reason": "Model imports the handler for isDesktopPlatform and loc.",
+   "fix": "Same as app_mode."
+  },
+  {
+   "file": "lib/src/data/settings/mpv_hardware_decoding.dart",
+   "line": 2,
+   "imports": "lib/src/handlers/settings_handler.dart",
+   "reason": "Model imports the handler for isDesktopPlatform.",
+   "fix": "Same as app_mode."
+  },
+  {
+   "file": "lib/src/data/settings/mpv_video_output.dart",
+   "line": 2,
+   "imports": "lib/src/handlers/settings_handler.dart",
+   "reason": "Model imports the handler for isDesktopPlatform.",
+   "fix": "Same as app_mode."
+  },
+  {
+   "file": "lib/src/data/settings/setting_definition.dart",
+   "line": 8,
+   "imports": "lib/src/pages/settings/language_page.dart",
+   "reason": "Model imports a page (for AppLocaleExt).",
+   "fix": "Delete the dead file, or move AppLocaleExt to lib/core/utils/app_locale.dart."
+  },
+  {
+   "file": "lib/src/handlers/settings_handler.dart",
+   "line": 19,
+   "imports": "lib/src/pages/settings/language_page.dart",
+   "reason": "Handler imports a page for AppLocaleExt.allowedValues (locale validation).",
+   "fix": "Move AppLocaleExt to lib/core/utils/app_locale.dart; language_page and about_page import it from there."
+  },
+  {
+   "file": "lib/src/handlers/settings_handler.dart",
+   "line": 63,
+   "imports": "widgets/common/downloads_check.dart, widgets/common/flash_elements.dart, widgets/common/settings_widgets.dart, widgets/video/media_kit_video_player.dart",
+   "reason": "Logic imports UI: showUpdate builds a Scaffold page; initialize/postInit/checkUpdate show snackbars; postInit registers the video widgets' backends; postInit calls DownloadsCheck.offerAfterRestore.",
+   "fix": "Update check logic to lib/features/settings/logic/update_checker.dart and the changelog page to lib/features/settings/ui/update_page.dart; the postInit chain to lib/app/bootstrap.dart; errors reported through a notifier or callback that the app layer turns into snackbars."
+  },
+  {
+   "file": "lib/src/handlers/settings_handler.dart",
+   "line": 51,
+   "imports": "handlers/search_handler.dart, handlers/doujin_data_handler.dart, handlers/source_settings_handler.dart",
+   "reason": "The future core settings store depends on feature logic: saveSettings(restate) calls SearchHandler.filterCurrentFetched/rootRestate; parseTagsListForItem uses the doujin stores.",
+   "fix": "Settings store emits a 'saved(restate)' event and SearchHandler subscribes. Blacklist and tag-badge code moves to lib/features/tags/logic/blacklist_service.dart."
+  },
+  {
+   "file": "lib/src/handlers/settings_handler.dart",
+   "line": 53,
+   "imports": "recommender/model_timings.dart, recommender/onnx_availability.dart, services/source_links.dart, services/get_perms.dart, services/saf_file_cache.dart, utils/http_overrides.dart",
+   "reason": "Startup orchestration lives inside the settings store.",
+   "fix": "Move to lib/app/bootstrap.dart (initialize/postInit)."
+  },
+  {
+   "file": "lib/src/handlers/source_settings_handler.dart",
+   "line": 10,
+   "imports": "handlers/recommender/recommender_handler.dart, item_features.dart, rewards.dart, handlers/doujin_data_handler.dart",
+   "reason": "Store depends on the recommender (addBlacklistTag sends a blacklist signal). Sources (booru_handler, nhentai, ehentai, eahentai, schale, hitomi, rule34video) and models (booru_item, pinned_tag_visibility) import this file, so sources and models end up depending on feature logic.",
+   "fix": "SourceSettings data class to lib/models/source_settings.dart; store to lib/core/storage/source_settings_store.dart without the recommender; the recommender signal raised by the caller (tag-menu action); composeQuery/withDefaults to lib/sources/framework/source_query.dart."
+  },
+  {
+   "file": "lib/src/data/model_tasks.dart",
+   "line": 7,
+   "imports": "lib/src/handlers/settings_handler.dart, handlers/recommender/model_timings.dart",
+   "reason": "Model reads and writes settings maps (modelTasks/modelThreads/modelRunOn) and saves. SettingsHandler imports it back, so the two form a circle.",
+   "fix": "Keep ModelTask/ModelKind/ModelUse in models; move the get/set logic to lib/features/recommender/logic/model_tasks_service.dart."
+  },
+  {
+   "file": "lib/src/data/booru_item.dart",
+   "imports": "lib/src/handlers/settings_handler.dart, lib/src/handlers/source_settings_handler.dart",
+   "reason": "Model calls SettingsHandler.isItemHiddenGlobally/containsMarked/containsSound/containsAI and the doujin blacklist.",
+   "fix": "Move the hidden/marked checks to the tags blacklist service; BooruItem keeps the data only."
+  },
+  {
+   "file": "lib/src/utils/status_bar_inset.dart",
+   "line": 41,
+   "imports": "lib/src/data/modular_ui.dart (+ settings)",
+   "reason": "core/utils code listens to a feature toggle.",
+   "fix": "Move to lib/app (root widgets), or pass the toggle value in."
+  },
+  {
+   "file": "lib/src/pages/settings/models_page.dart",
+   "line": 31,
+   "imports": "recommender handlers, database_handler, onnx_options",
+   "reason": "UI class hosts logic seams (threadsChanged, vectorUsage, applyVectorSpace, lookNpuReady/Bytes, downloadLookNpu, npuModelPath, downloaded()) that ModelPage and the tests use.",
+   "fix": "Move them to lib/features/recommender/logic/model_settings.dart, keeping forwarding statics for the tests."
+  },
+  {
+   "file": "lib/src/pages/settings/recommendations_page.dart",
+   "line": 33,
+   "imports": "image_picker, image_tagger_handler",
+   "reason": "UI class hosts the Try-it seams (pickImageBytes/tagImage/lostPick) used by TaggerModelSection.",
+   "fix": "Move to lib/features/recommender/logic/try_it.dart."
+  },
+  {
+   "file": "lib/src/pages/settings/model_page.dart",
+   "line": 12,
+   "imports": "pages/settings/models_page.dart, pages/settings/recommendations_page.dart",
+   "reason": "Circular page imports (model_page <-> models_page); ModelPage borrows public widgets from a sibling page.",
+   "fix": "Model sections to their own ui files; seams to logic."
+  },
+  {
+   "file": "lib/src/pages/settings/booru_source_settings_view.dart",
+   "line": 16,
+   "imports": "lib/src/widgets/preview/main_search_query_editor_page.dart",
+   "reason": "Settings UI depends on the 1600+ line search editor page for DoujinFiltersBlock.",
+   "fix": "Extract DoujinFiltersBlock to lib/features/tags/ui/filters_block.dart."
+  },
+  {
+   "file": "lib/src/pages/settings/booru_edit_page.dart",
+   "line": 1425,
+   "imports": "BooruHandlerFactory, HydrusHandler, SearchHandler",
+   "reason": "UI holds the booru test, autodetect, Hydrus key request, duplicate checks, config replacement and the tab re-pointing.",
+   "fix": "Move to lib/features/settings/logic/booru_editor.dart (test/save returning results); the UI only shows them."
+  },
+  {
+   "file": "lib/src/pages/settings/save_cache_page.dart",
+   "line": 92,
+   "imports": "dart:isolate, services/image_writer_isolate.dart",
+   "reason": "Cache statistics with isolates are computed in the page.",
+   "fix": "lib/features/settings/logic/cache_stats.dart."
+  },
+  {
+   "file": "lib/src/pages/settings/database_page.dart",
+   "line": 122,
+   "imports": "SankakuHandler, IdolSankakuHandler, DBHandler",
+   "reason": "The network-and-DB Sankaku URL update loop lives in UI state.",
+   "fix": "lib/features/settings/logic/sankaku_url_updater.dart with a progress notifier."
+  },
+  {
+   "file": "lib/src/pages/settings/language_page.dart",
+   "line": 244,
+   "imports": "DioNetwork, Constants.poeditorApiKey",
+   "reason": "Network fetch (POEditor) in a widget; the locale extension used by core lives in a page.",
+   "fix": "POEditor client into logic; AppLocaleExt into core/utils."
+  },
+  {
+   "file": "lib/src/pages/settings/source_settings_page.dart",
+   "line": 215,
+   "imports": "EaHentaiHandler, EHentaiSessionHandler, EaHentaiSessionHandler",
+   "reason": "UI mutates handler.booru credentials (_liveBooru) and runs login and cookie-seeding flows.",
+   "fix": "Move to lib/features/accounts/logic (ehentai/eahentai account services)."
+  }
+ ],
+ "splits": [
+  {
+   "file": "lib/src/handlers/settings_handler.dart",
+   "lines": 3347,
+   "proposal": "1. lib/core/storage/settings/settings_schema.dart: the `map` table built ONCE (static final; isDesktopPlatform defaults are per-process constants) plus validateValue. Add the missing 'double' validation only if the intent is to keep today's values (it does not validate now).\n2. lib/core/storage/settings/settings_handler.dart: class SettingsHandler (same name, GetIt) keeps every field (plain and Rx), getByString/setByString (or one field registry replacing the three parallel 150-case lists), toJson/loadFromJSON (incl. modularUi/modelTasks/modelThreads/modelRunOn/earlierDownloadFolders/hiddenTagsPerBooru), saveSettings/loadSettings/loadSettingsJson/checkForSettings/setConfigDir, deviceSpecificSettings, the Flow migration, path/cachePath/boorusPath.\n3. lib/core/storage/booru_repository.dart (or lib/sources/framework/booru_registry.dart): booruList, loadBoorus, saveBooru, deleteBooru, sortBooruList, the ensureXBooru methods, hasHydrus; SettingsHandler keeps forwarding getters (booruList is an RxList watched by Obx everywhere).\n4. lib/features/tags/logic/blacklist_service.dart: hiddenTags/markedTags/hiddenTagsPerBooru operations, blacklist line caches, parseTagsList/parseTagsListForItem/TagsListData, soundTags/aiTags, isItemHiddenForBooru/isItemHiddenGlobally (the data sets stay persisted by the store).\n5. lib/features/settings/logic/update_checker.dart (checkUpdate, updateInfo, discordURL) + lib/features/settings/ui/update_page.dart (showUpdate/showLastVersionMessage).\n6. lib/app/bootstrap.dart: initialize (permissions, locale, Alice, SAF populate) and postInit (proxy, video backends, loadDatabase/indexDatabase, boorus, external action, follow-ups); isInit/isPostInit/postInitMessage stay readable by InitHomePage.\n7. dbHandler and alice instances to their owners with forwarding getters.",
+   "risk": "High. 205 files access fields directly; JSON key names and legacy encodings must stay byte-compatible (backups, LoliSync, older installs). The restate side effect (filterCurrentFetched + rootRestate after 1 s) must be kept. The Flow migration and its immediate save, and appMode forcing, must keep their order. setMissingKeys runs only on startup. Tests set fields directly on SettingsHandler.instance (path, aiModelsOff, modularUi...). Circular imports with model_tasks.dart and source_settings_handler.dart."
+  },
+  {
+   "file": "lib/src/pages/settings/booru_edit_page.dart",
+   "lines": 1730,
+   "proposal": "1. lib/sources/framework/booru_presets.dart: a table BooruType -> (url, name, favicon) replacing the 22 prefill blocks in the dropdown onChanged and the duplicated name/URL defaults in onTest; convertSiteUrlToApiUrl/convertSiteUrlToFaviconUrl.\n2. lib/sources/framework/booru_instructions.dart: getInstructions (per-type HTML, url-dependent warnings), getUserIDTitle/getApiKeyTitle.\n3. lib/features/settings/logic/booru_editor.dart: booruTest (Hydrus verify, autodetect loop, test search, error string), the save plan (duplicate checks, removal of the old config, saveBooru, applyBooruEdit, first-tab creation, tab re-pointing, restate) returning result enums.\n4. lib/features/settings/ui/sources/booru_edit_page.dart: the form only.\n5. ui widgets: hydrus_access_key.dart (_HydrusAccessKeyWidget), per_booru_blacklist_editor.dart (_PerBooruBlacklistEditor/_Row/_showHelp shared with Filters), redgifs_login_card.dart, furaffinity_login_card.dart.",
+   "risk": "Medium-high. The private state (6 controllers, selectedBooruType, booruType, isTesting, ignoreGlobalBlacklist) is shared by build/onTest/onSave, and onTest/onSave use context for snackbars and dialogs mid-flow. Snackbar texts and order are user-visible. Other files construct BooruEdit(booru): main.dart, media_previews, booru_switcher_sheet, kemono_sidebar, drawer_quick_access, accounts, booru_page, source settings."
+  },
+  {
+   "file": "lib/src/pages/settings/recommendations_page.dart",
+   "lines": 1139,
+   "proposal": "1. recommendations_page.dart: page, report cards, _FeatureList, _BoardsSection.\n2. model_sections/encoder_model_section.dart, look_model_section.dart, tagger_model_section.dart (public, used by ModelPage), or one generic ModelDownloadSection<Status> with per-model adapters (presets, status text, download/delete/cancel, the use toggle key) plus a TaggerTryIt widget.\n3. Try-it seams (pickImageBytes/tagImage/lostPick/resetForTests) to lib/features/recommender/logic/try_it.dart, with RecommendationsPage forwarding statics for tests.",
+   "risk": "Medium. recommendations_page_test, models_page_test and settings_layout_test rely on ValueKeys ('encoder-status', 'look-download', 'tagger-try', 'tagger-try-off', 'tagger-try-message', 'ai-*-toggle', 'recommender-report-<world>', 'feature-*', 'saucenao-key', 'models-page') and on the RecommendationsPage.* seams."
+  },
+  {
+   "file": "lib/src/pages/settings/theme_page.dart",
+   "lines": 990,
+   "proposal": "theme_page.dart (page state, debounce), font_picker_sheet.dart (_FontPickerSheet + _CustomFontDialog + the shared 'English + localized preview text' helper), theme_clippers.dart (_SunClipper/_MoonClipper/_ThemeLeftClipper/_ThemeRightClipper), the ThemeModeExt extension to lib/core/ui or models, and the theme preset list moved from settingsHandler.map['theme']['options'] to lib/models/theme_presets.dart.",
+   "risk": "Low-medium. Private classes only. The Debounce tag 'theme_change' and its cancel in dispose must stay, as must the mascot write on pop."
+  },
+  {
+   "file": "lib/src/pages/settings/source_settings_page.dart",
+   "lines": 893,
+   "proposal": "1. source_settings_page.dart: dispatcher (booru -> BooruSourceSettingsView) and the doujin rows.\n2. widgets/layered_rows.dart: _choiceRow/_multiChoiceRow/_switchRow/_stepperRow/_overrideMarker as widgets taking a small LayerEditor (isGlobal, update callback).\n3. ehentai_account_rows.dart (_ehentaiRows, _ehLogin, _openEhPage) and eahentai_account_rows.dart (_eahentaiRows, _liveBooru, _eaLogin) backed by lib/features/accounts/logic services.\n4. Account blacklist import to logic.",
+   "risk": "Medium. Every helper reads isGlobal/layer/globalLayer and calls _update(setState). booru_source_settings_test and doujin_detail_layout_test find rows by text and keys ('ehentai-check-again'). The 'Overridden for this source · tap to reset' text is user-visible."
+  },
+  {
+   "file": "lib/src/pages/settings/backup_restore_page.dart",
+   "lines": 836,
+   "proposal": "backup_restore_page.dart (sections and checklist), backup_dialogs.dart (_askSnapshotName, _pickSnapshot, _pickItems, _askDatabaseRestore, _confirmRestore as functions returning results), lib/features/backup/logic/drive_state.dart (refreshDriveState, link/unlink, snapshot listing, the seams).",
+   "risk": "Medium. backup_page_test uses the static seams (isAndroid, driveHasCredentials, driveIsLinked, driveSnapshots, driveLink, resetForTests) and keys (backup-item-<name>, backup-all/none, drive-*, restore-item-*, db-whole/parts, db-part-*, confirm-restore, backup-status, snapshot-*). The dialogs read page state (selected, snapshots) and refresh Drive state."
+  },
+  {
+   "file": "lib/src/pages/settings/gallery_page.dart",
+   "lines": 796,
+   "proposal": "viewer_settings_page.dart plus widgets/toolbar_buttons_order_editor.dart (ExpansionTile, ReorderableListView, icon switch, reset, help; takes and returns buttonOrder/disabledButtons) plus widgets/history_clear_buttons.dart. Shared preload inputs reused with the Performance page.",
+   "risk": "Low. Page state is written back only on pop; gallery_linked_media_button_test covers the button list and keys ('checkbox-<name>', 'item-<name>')."
+  },
+  {
+   "file": "lib/src/pages/settings/database_page.dart",
+   "lines": 777,
+   "proposal": "database_page.dart (toggles and clear actions), widgets/sankaku_update_section.dart (UI), lib/features/settings/logic/sankaku_url_updater.dart (getSankakuBoorus, updateSankakuItems, purge, cancel token, progress ValueNotifier).",
+   "risk": "Low-medium. PopScope canPop depends on isUpdating/changingIndexes; the update continues across rebuilds via safeSetState."
+  },
+  {
+   "file": "lib/src/pages/settings/save_cache_page.dart",
+   "lines": 645,
+   "proposal": "save_cache_page.dart with three part widgets (downloads_part.dart, download_folders_part.dart: storage dir, earlier folders, downloads check; cache_part.dart) and lib/features/settings/logic/cache_stats.dart (one isolate computing all cache types, ports closed).",
+   "risk": "Low-medium. One _onPopInvoked saves all fields; the extPathOverride change goes through DownloadFolders.change (download_folders_test). Keys 'earlier-folder-*', 'downloads-check', 'save-part-*'."
+  },
+  {
+   "file": "lib/src/pages/settings/user_interface_page.dart",
+   "lines": 632,
+   "proposal": "Drop the dead `if (false)` AppMode block. Extract shared widgets with Performance/Gallery: columns inputs (portrait/landscape with warnings), preview quality list with help, don't-scale-images toggle with warning dialog, preview display + fallback lists.",
+   "risk": "Low."
+  },
+  {
+   "file": "lib/src/pages/settings/text_parser_test_page.dart",
+   "lines": 630,
+   "proposal": "Samples to lib/features/debug/logic/text_parser_samples.dart; the page keeps the rendering.",
+   "risk": "Very low (debug-only page)."
+  }
+ ],
+ "bugs": [
+  {
+   "file": "lib/src/handlers/settings_handler.dart",
+   "line": 2293,
+   "title": "LoliSync receive wipes the receiver's device-specific model threads, NPU choices and earlier download folders",
+   "scenario": "Device A sends settings via LoliSync. Device B (which had custom model thread counts, Run on = NPU, and earlier download folders) ends up with all three cleared, and the next save persists that.",
+   "evidence": "loli_sync_handler.dart:629-632 removes every deviceSpecificSettings key (incl. 'modelThreads','modelRunOn','earlierDownloadFolders') from the payload; storeSettings (loli_sync_handler.dart:80) calls loadFromJSON(content,false), which unconditionally runs modelThreads..clear()..addAll(ModelTasks.parseThreads(json['modelThreads'])) (null -> {}), the same for modelRunOn, and earlierDownloadFolders.clear() (settings_handler.dart:2290-2305).",
+   "confidence": "confirmed",
+   "severity": "data-loss"
+  },
+  {
+   "file": "lib/src/pages/settings/gallery_page.dart",
+   "line": 429,
+   "title": "Toolbar order Reset throws and leaves an empty button order that is then saved",
+   "scenario": "Settings -> Viewer -> Toolbar buttons order -> reset icon: the list is cleared, then a TypeError is thrown; on leaving the page settingsHandler.buttonOrder = [] and the viewer toolbar shows no ordered buttons until restart (loadFromJSON re-adds the missing ones).",
+   "evidence": "buttonOrder.clear(); buttonOrder.addAll(settingsHandler.map['buttonOrder']!['default']); the default is <String>[...GalleryButton.values.map((b) => b.toJson())] (settings_handler.dart:1062), but buttonOrder is List<GalleryButton>, so the dynamic argument fails the runtime cast. _onPopInvoked then writes settingsHandler.buttonOrder = [...buttonOrder]; hideable_appbar.dart:207 builds from settingsHandler.buttonOrder.",
+   "confidence": "confirmed",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/handlers/settings_handler.dart",
+   "line": 2422,
+   "title": "On a fresh install the Flow migration runs on the 2nd launch and overrides theme choices from the first session",
+   "scenario": "New install, user picks the Pink theme and AMOLED in the first session. At the next launch the theme is reset to Flow/dark/no AMOLED/no dynamic colour.",
+   "evidence": "loadSettings: no settings.json -> saveSettings writes flowSkinApplied=false (field default) and loadFromJSON is never called. The next start runs loadFromJSON(setMissingKeys:true) with flowSkinApplied false, so the theme, themeMode, isAmoled and useDynamicColor are overwritten and _flowMigrationPending saves it.",
+   "confidence": "confirmed",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/handlers/settings_handler.dart",
+   "line": 2449,
+   "title": "settings.json written non-atomically; concurrent unawaited saves can interleave",
+   "scenario": "The app is killed during a save, or two saves overlap (e.g. ModularUi.set and an unawaited addTagToList/saveSettings from another page). settings.json is truncated or garbled; the next start's jsonDecode fails, json = {}, and every setting reverts to defaults.",
+   "evidence": "saveSettings: settingsFile.openWrite(); writer.write(jsonEncode(toJson())); await writer.close() - no temp file or rename, no lock. Many callers do not await (addTagToList:2811, removeTagFromList:2828, addTagToBooruHiddenList:2848, recommendations toggles, VersionButton). loadFromJSON catches the decode error and continues with {}.",
+   "confidence": "plausible",
+   "severity": "data-loss"
+  },
+  {
+   "file": "lib/src/handlers/settings_handler.dart",
+   "line": 2389,
+   "title": "Loading a settings file without buttonOrder/disabledButtons throws out of loadFromJSON",
+   "scenario": "An empty or corrupt settings.json (see the non-atomic write) gives jsonDecode failure -> json = {} -> the setMissingKeys loop reaches 'buttonOrder' and throws. The rest of the defaults and the Flow migration are skipped and the 'init error' snackbar shows.",
+   "evidence": "map.forEach(... setByString(key, map[key]!['default'])) with no try/catch; setByString('buttonOrder') assigns validatedValue (a List<String> default, settings_handler.dart:1062) to List<GalleryButton> buttonOrder (line 1759), giving a TypeError; the same for disabledButtons <String>[]. initialize() catches and shows the snackbar.",
+   "confidence": "plausible",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/pages/settings/booru_edit_page.dart",
+   "line": 1352,
+   "title": "Changing a booru's URL (and name) adds a new config instead of replacing the old one",
+   "scenario": "Edit booru 'X' (URL A) -> change URL to B and name to 'Y' -> Save: 'X' stays (file and list entry) and 'Y' is added. With only the URL changed, the in-memory list holds two 'X' entries until restart.",
+   "evidence": "The old-config removal loop only considers entries whose baseURL == booruURLController.text (the NEW URL); the old entry with URL A never matches, so deleteBooru(widget.booru) is not called. saveBooru then booruList.add(newBooru).",
+   "confidence": "confirmed",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/pages/settings/booru_edit_page.dart",
+   "line": 469,
+   "title": "Per-booru hidden lines are keyed by name: lost on rename, stored under 'New' for an unsaved booru",
+   "scenario": "(a) Rename a booru: its per-booru hidden lines no longer apply (they stay under the old name). (b) In 'Add new booru', add lines before saving: they are stored under the key 'New' and never apply to the saved booru.",
+   "evidence": "_PerBooruBlacklistEditor(booruName: widget.booru.name) writes via addTagToBooruHiddenList(booruName!, line); new boorus are constructed as Booru('New', ...) (booru_page.dart:116); onSave never migrates hiddenTagsPerBooru to the new name.",
+   "confidence": "confirmed",
+   "severity": "data-loss"
+  },
+  {
+   "file": "lib/src/pages/settings/booru_source_settings_view.dart",
+   "line": 146,
+   "title": "'Hidden tags' row counts per-booru tags but opens the global Filters page",
+   "scenario": "Booru source settings -> Hidden tags ('3 tags hidden on X') opens Settings -> Filters, which edits only the global hidden list; the per-booru lines are on the booru editor.",
+   "evidence": "subtitle uses SettingsHandler.instance.hiddenTagsForBooru(booru.name).length; onTap pushes const TagsFiltersPage(), which edits settingsHandler.hiddenTags/markedTags.",
+   "confidence": "confirmed",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/pages/settings/booru_page.dart",
+   "line": 88,
+   "title": "Empty 'Items per page' makes the pop handler throw: limit not saved, default-booru prompt skipped",
+   "scenario": "Clear the Items per page field and press back: FormatException; prefBooru prompt, itemLimit and saveSettings are skipped (defTags is set in memory only).",
+   "evidence": "_onPopInvoked: settingsHandler.defTags = ...; if (int.parse(limitController.text) > 100) - int.parse('') throws; the digits-only formatter allows an empty field; the validator does not block the pop.",
+   "confidence": "confirmed",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/pages/settings/save_cache_page.dart",
+   "line": 134,
+   "title": "Empty snatch cooldown or cache size field: none of the Save & cache changes are saved",
+   "scenario": "Clear 'Snatch cooldown' (or 'Cache size limit'), change other options, press back: FormatException in the pop handler; jsonWrite, cache toggles, cacheDuration, snatchMode etc. are not applied or saved.",
+   "evidence": "settingsHandler.snatchCooldown = int.parse(snatchCooldownController.text); ... settingsHandler.cacheSize = int.parse(cacheSizeController.text); with no try or tryParse; saveSettings is at the end.",
+   "confidence": "confirmed",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/pages/settings/save_cache_page.dart",
+   "line": 72,
+   "title": "Save & cache page fails to open when cacheDuration is not one of the listed options",
+   "scenario": "A settings.json (restored, synced or hand-edited) with cacheDuration e.g. 7200 s: firstWhere throws StateError in initState and the page shows an error.",
+   "evidence": "cacheDurationSelected = settingsHandler.map['cacheDuration']!['options']!.firstWhere((dur) => dur['value'].inSeconds == cacheDuration.inSeconds); has no orElse; validateValue('duration') accepts any int (settings_handler.dart:1291).",
+   "confidence": "plausible",
+   "severity": "crash"
+  },
+  {
+   "file": "lib/src/pages/settings/save_cache_page.dart",
+   "line": 105,
+   "title": "Cache stats leak ReceivePorts and only the last isolate is killed",
+   "scenario": "Each open of Save & cache (and each clear) spawns 6 isolates with 6 ReceivePorts that are never closed; dispose kills only the last isolate.",
+   "evidence": "for each type: receivePort = ReceivePort(); isolate = await Isolate.spawn(...); receivePort.listen(...) - no receivePort.close(); dispose(): isolate?.kill() on the single field.",
+   "confidence": "confirmed",
+   "severity": "leak"
+  },
+  {
+   "file": "lib/src/pages/settings/source_settings_page.dart",
+   "line": 798,
+   "title": "'Tap to reset' on Endless recommendations sets 30 instead of clearing the override",
+   "scenario": "In a doujin source's settings, override Endless, then tap 'Overridden for this source · tap to reset': the value becomes recommendedCount=30 (still overridden) and the marker never disappears.",
+   "evidence": "_switchRow(... onChanged: (v) => _update((s) => s.recommendedCount = (v ?? false) ? 0 : 30)); the marker calls onChanged(null), giving 30, not null.",
+   "confidence": "confirmed",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/pages/settings/source_settings_page.dart",
+   "line": 416,
+   "title": "Global doujin layer shows no selected chip for unset choices",
+   "scenario": "Settings -> Doujin -> Global: Reading direction, Page turn, Detail layout etc. show no chip selected although the effective default (ltr, animated, compact) applies.",
+   "evidence": "final T? shown = layerValue ?? (isGlobal ? layerValue : inheritedValue); on the global layer this is null when unset, so no ChoiceChip is selected.",
+   "confidence": "confirmed",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/pages/settings/gallery_page.dart",
+   "line": 125,
+   "title": "Slideshow duration silently clamped to 10 s on exit",
+   "scenario": "Enter 30000 ms in 'Slideshow duration': after leaving the page it is 10000 ms, although the schema allows up to 100000 and the UI has no max.",
+   "evidence": "settingsHandler.galleryAutoScrollTime = (int.tryParse(...) ?? 4000).clamp(100, 10000); map 'galleryAutoScrollTime' upperLimit 100000 (settings_handler.dart:673); numberMax double.infinity.",
+   "confidence": "confirmed",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/pages/settings/furaffinity_login_page.dart",
+   "line": 50,
+   "title": "Login cookie check can run twice and pop two routes",
+   "scenario": "The 1.5 s poll and onLoadStop both call _checkCookies while readJar is pending; both pass the _done guard before the await, both store the session and both call Navigator.pop. The second pop closes the page underneath (Accounts / booru editor). The same pattern exists in ehentai_login_page.dart:55 (_finishing is set only after the await).",
+   "evidence": "if (_done) return; final parsed = ...(await session.readJar()); ... _done = true; ... Navigator.of(context).pop(...) with no re-check after the await; mounted stays true during the pop animation.",
+   "confidence": "plausible",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/handlers/source_settings_handler.dart",
+   "line": 255,
+   "title": "A corrupt sourceSettings.json is silently dropped and then overwritten by the next change",
+   "scenario": "sourceSettings.json is truncated (writeAsStringSync is not atomic) or holds a value of the wrong type: the load fails and is logged with _loaded=true; the next update() writes only the new entry and every source's settings are lost.",
+   "evidence": "_ensureLoaded: jsonDecode / entry.value as Map / field casts inside one try; on an exception _byHost is partial or empty; _save writes _byHost wholesale.",
+   "confidence": "plausible",
+   "severity": "data-loss"
+  },
+  {
+   "file": "lib/src/handlers/settings_handler.dart",
+   "line": 2237,
+   "title": "disabledButtons with a non-disableable entry hits a concurrent-modification error and keeps the stale list",
+   "scenario": "A settings file whose disabledButtons contains 'info' (an old version, sync or hand edit): removing it while iterating throws ConcurrentModificationError, which is caught; disabledButtons is not updated (on a restore it keeps the previous list).",
+   "evidence": "for (final button in tempDisabledButtons) { ... tempDisabledButtons.remove(button); } inside the try at 2225-2258.",
+   "confidence": "plausible",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/handlers/settings_handler.dart",
+   "line": 3084,
+   "title": "'What's new' title shows the remote version instead of the installed one",
+   "scenario": "After updating, the What's-new page title reads 'What's new: <latest GitHub version>' while the body is Constants.updateInfo (installed).",
+   "evidence": "_updateInfo = isAfterUpdate ? Constants.updateInfo : updateInfo.value; but the title uses updateInfo.value!.versionName/buildNumber.",
+   "confidence": "confirmed",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/handlers/settings_handler.dart",
+   "line": 2935,
+   "title": "Fork checks upstream NO-ob update.json",
+   "scenario": "When upstream's build_number exceeds this fork's 5211, users get 'Update available' pointing to upstream releases (which would replace the fork).",
+   "evidence": "DioNetwork.get('https://raw.githubusercontent.com/NO-ob/LoliSnatcher_Droid/master/$updateFileName'); compares Constants.updateInfo.buildNumber < json build_number.",
+   "confidence": "plausible",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/handlers/settings_handler.dart",
+   "line": 1311,
+   "title": "'double' settings are never validated (no case)",
+   "scenario": "mousewheelScrollSpeed/preloadSizeLimit from JSON are taken raw: no range check, and an int value (e.g. from an older sync) causes a TypeError on assignment, swallowed per key.",
+   "evidence": "validateValue switch has no 'double' case, so default: return value; setByString assigns validatedValue to a double field.",
+   "confidence": "plausible",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/handlers/settings_handler.dart",
+   "line": 2668,
+   "title": "deleteBooru throws when the booru file is missing",
+   "scenario": "Delete a booru whose file was already removed or renamed: File.delete throws FileSystemException, uncaught in the booru_page delete dialog; the dialog stays open with selectedBooru already changed.",
+   "evidence": "await booruFile.delete(); with no exists check or try; booru_page.dart:309 awaits it without try.",
+   "confidence": "plausible",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/pages/settings/language_page.dart",
+   "line": 266,
+   "title": "setState after dispose in the POEditor card and the language dropdown",
+   "scenario": "Open Language and leave before the POEditor request (network) or loadAllLocales completes: setState on a disposed State (debug assert; release null-check error in the zone). The same in privacy_page.dart:34 (canCheckBiometrics().then(setState)) and theme_page.dart:123 (debounced callback after an awaited save).",
+   "evidence": "_fetchLanguages: await DioNetwork.post(...); setState(...) with no mounted check; initState: LocaleSettings.instance.loadAllLocales().then((_) { setState(() {}); }).",
+   "confidence": "plausible",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/pages/settings/database_page.dart",
+   "line": 756,
+   "title": "setState given an async callback",
+   "scenario": "Purge failed items: setState(purgeFailedSankakuItems) passes a Future-returning function, so in debug Flutter throws 'setState() callback argument returned a Future'.",
+   "evidence": "action: () { setState(purgeFailedSankakuItems); }",
+   "confidence": "confirmed",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/pages/settings/user_interface_page.dart",
+   "line": 117,
+   "title": "Empty mouse wheel field throws in the pop handler (desktop)",
+   "scenario": "Desktop only: clear 'Mouse wheel scroll modifier' and leave: FormatException, and the Interface page's changes are not saved.",
+   "evidence": "settingsHandler.mousewheelScrollSpeed = double.parse(mouseSpeedController.text); before saveSettings.",
+   "confidence": "confirmed",
+   "severity": "minor"
+  }
+ ],
+ "fragile": [
+  {
+   "what": "settings.json schema and encodings",
+   "where": "lib/src/handlers/settings_handler.dart (map, toJson, loadFromJSON) + lib/src/data/settings/*.dart toJson/fromString",
+   "rule": "Key names and value encodings must stay readable both ways: legacy enum strings ('Full Res', 'Stream+Cache', 'Ask', 'Post URL with tags', 'Disabled', 'auto-safe', 'gpu-next', 'mediacodec_embed', 'loli_snatcher'...), legacy hatedTags/lovedTags read as hiddenTags/markedTags, buttonOrder as a list or a comma string, cacheDuration in seconds, colours as ARGB ints, theme by name, locale by name."
+  },
+  {
+   "what": "Non-declared maps written next to the declared settings",
+   "where": "settings_handler.dart toJson/loadFromJSON (modularUi, modelTasks, modelThreads, modelRunOn, earlierDownloadFolders, hiddenTagsPerBooru)",
+   "rule": "Store only values that differ from the default (ModularUi.set removes defaults, ModelTasks the same); ModularUi.parse keeps only String->bool. They ride in settings backups."
+  },
+  {
+   "what": "Modular UI contract",
+   "where": "lib/src/data/modular_ui.dart and the 10 consumer widgets (main_search_query_editor_page, main_drawer, drawer_quick_access, waterfall_view, thumbnail, linked_media_sheet, video_surface_cap, image_viewer, tag_view, status_bar_inset)",
+   "rule": "Values load before the first screen; a widget checks ModularUi.isOn in an `if` where it builds and never builds then hides. New UI removals become toggles (user rule). Defaults: search History/Pinned/Popular and app.drawUnderHiddenStatusBar off, the rest on (modular_ui_test asserts). Keys 'modular-ui-<key>'."
+  },
+  {
+   "what": "Flow skin one-time migration",
+   "where": "settings_handler.dart:2418-2433 + loadSettingsJson",
+   "rule": "Runs only on startup loads (setMissingKeys) while flowSkinApplied is false, and is saved immediately (_flowMigrationPending); never on LoliSync payloads."
+  },
+  {
+   "what": "appMode forced Mobile; isDebug persisted",
+   "where": "settings_handler.dart:2416, map 'isDebug'",
+   "rule": "appMode is overwritten after every load. isDebug survives restarts (r80); 6 taps on Version enable it, long-press disables it."
+  },
+  {
+   "what": "Device-specific settings",
+   "where": "SettingsHandler.deviceSpecificSettings + loli_sync_handler.dart:630",
+   "rule": "These keys are not sent over LoliSync. The list includes modelThreads/modelRunOn/capturesPath/earlierDownloadFolders (r80-r82)."
+  },
+  {
+   "what": "Restate on save",
+   "where": "saveSettings(restate:true)",
+   "rule": "Calls SearchHandler.filterCurrentFetched() and rootRestate after 1 s; the Settings hub and Debug exits, Interface (predictive back change) and first launch rely on it."
+  },
+  {
+   "what": "Doujin/booru personal-space separation",
+   "where": "SettingsHandler.parseTagsListForItem, SourceSettingsHandler.isItemHiddenForDoujin/tagBlacklistForItem, booru_edit_page (per-booru blacklist hidden for doujin boorus)",
+   "rule": "Doujin items never use booru blacklists or marked tags and vice versa (standing user rule; doujin_separation_test guards it)."
+  },
+  {
+   "what": "Source settings layering and keying",
+   "where": "source_settings_handler.dart",
+   "rule": "Effective = source override ?? global ?? default; global under '_global'; layers keyed by baseURL host (keyFor); only non-null fields are serialized and empty layers dropped; contentTypes/siteVariant/blacklistMode are source-only; reloadFromDisk after restore; resetForTests for tests."
+  },
+  {
+   "what": "composeQuery semantics",
+   "where": "SourceSettingsHandler.composeQuery / withDefaults, BooruHandler.sourceQuery (booru_handler.dart:985)",
+   "rule": "Query first, then the default of each filter group the query leaves unset (only values the site offers, lowercase match), then always-add words not already present; doujin sources are untouched (booru_source_settings_test)."
+  },
+  {
+   "what": "Blacklist cache invalidation",
+   "where": "SettingsHandler.invalidateBlacklistCache",
+   "rule": "Every change to hiddenTags or hiddenTagsPerBooru must invalidate it (tags_filters_page calls it manually after replacing the set; loadFromJSON calls it)."
+  },
+  {
+   "what": "Booru list order and virtual boorus",
+   "where": "loadBoorus/sortBooruList",
+   "rule": "Virtual boorus are added only when dbEnabled and real boorus exist; order is alphabetical, preferred booru first, then Favourites, Downloads, For You, For You (doujin), Boards, Collections, History last; non-saveable booru files are deleted on load."
+  },
+  {
+   "what": "Booru save side effects",
+   "where": "booru_edit_page.dart onSave",
+   "rule": "Booru files are named by the sanitized name; after saving, SearchHandler.applyBooruEdit re-points open tabs, the first tab is created when none exist, and a root restate follows."
+  },
+  {
+   "what": "Settings hub source layout read by a test",
+   "where": "lib/src/pages/settings_page.dart + test/settings_layout_test.dart:53",
+   "rule": "The test reads the file by its path and the literal `_sectionLabel(context, 'SECTION')` and `const XPage()` strings in order. Moving or renaming the file, or changing that syntax, breaks the test."
+  },
+  {
+   "what": "Test seams on page classes",
+   "where": "BackupRestorePage.{isAndroid,driveHasCredentials,driveIsLinked,driveSnapshots,driveLink,resetForTests}, RecommendationsPage.{pickImageBytes,tagImage,lostPick,resetForTests}, ModelsPage.{threadsChanged,vectorUsage,applyVectorSpace,lookNpuReady,lookNpuBytes,downloadLookNpu,npuModelPath,resetForTests}, ModularUi.save",
+   "rule": "Keep or forward these statics when moving logic; tests replace them."
+  },
+  {
+   "what": "ValueKeys used by widget tests",
+   "where": "settings pages",
+   "rule": "Preserve keys such as 'source-links-toggle', 'source-links-android', 'account-ehentai/furaffinity/redgifs', 'model-card-<kind>', 'model-runon-<kind>[-row|-explain]', 'model-npu-copy/recompile-<kind>', 'model-threads-<kind>-<use>[-minus|-plus|-explain|-row]', 'models-all-off', 'picture-decoder[-explain|-row]', 'vector-space-<mb>', 'vector-space-used', 'backup-item-<name>', 'captures-folder', 'capture-save', 'earlier-folder-*', 'source-always-add', 'ehentai-check-again', 'fa-login', 'fa-content-filter'."
+  },
+  {
+   "what": "Settings pages write on pop",
+   "where": "most pages' PopScope.onPopInvokedWithResult",
+   "rule": "Values are copied into page state and committed on exit (changes made while on the page are lost if the app is killed). Theme commits after a 500 ms debounce; Recommendations, Modular UI, Links, Models and Debug captures commit immediately."
+  },
+  {
+   "what": "Settings enum registry init order",
+   "where": "main.dart:113 initSettingsEnumRegistry() before SettingsHandler.initialize()",
+   "rule": "Without the registry, enum keys in loadFromJSON fall through validateValue and fail to assign; tests that load JSON must init it."
+  },
+  {
+   "what": "Credential storage locations",
+   "where": "settings.json proxyPassword/customUserAgent; boorus/*.json apiKey/userID (RedGifs token); FA/e-hentai/eahentai session files; Drive OAuth client in secure storage",
+   "rule": "LogRedaction scrubs logs; booru share asks before including credentials; sessions are kept out of the image servers' cookies (scrubJar / seedJar for one visit)."
+  }
+ ],
+ "perf": [
+  {
+   "file": "lib/src/handlers/settings_handler.dart",
+   "line": 463,
+   "issue": "`map` is a getter that rebuilds the whole ~150-entry schema (including 9 ThemeItems and a duration option list) on every access; validateValue, toJson and loadFromJSON call it once per key, and settings pages call settingsHandler.map[...] repeatedly in build/validators.",
+   "impact": "About 150 x 150 map-entry allocations per saveSettings and per startup load (on the critical startup path before runApp); repeated on every settings page rebuild.",
+   "safeFix": "static final schema built once (desktop-dependent defaults are per-process constants); keep the `map` getter returning it."
+  },
+  {
+   "file": "lib/src/handlers/settings_handler.dart",
+   "line": 2443,
+   "issue": "saveSettings calls getStoragePermission() on every save (platform-channel getAndroidSDKVersion, and a permission request on Android < 33) although settings.json lives in the app's own config dir.",
+   "impact": "An extra method-channel round trip per save; saves happen on every settings page exit, every toggle on several pages and every tag add.",
+   "safeFix": "Request storage permission once at startup (it is already called in initialize)."
+  },
+  {
+   "file": "lib/src/handlers/settings_handler.dart",
+   "line": 2906,
+   "issue": "blacklistedTagTokens builds a new Set from all global lines on every call; parseTagsList (per thumbnail and tag list) and containsHidden call it.",
+   "impact": "O(lines x tokens) allocation per rendered item while scrolling the grid.",
+   "safeFix": "Cache the token set beside _cachedGlobalLines and clear both in invalidateBlacklistCache."
+  },
+  {
+   "file": "lib/src/handlers/source_settings_handler.dart",
+   "line": 270,
+   "issue": "_save() rewrites sourceSettings.json synchronously on the UI thread for every update. The 'Always add' field (booru_source_settings_view.dart:111) and the doujin 'Tag blacklist' field (source_settings_page.dart:717) call update on every keystroke.",
+   "impact": "Synchronous disk write per keystroke and per chip tap; jank on slow storage.",
+   "safeFix": "Debounce plus an async write of a temp file followed by a rename."
+  },
+  {
+   "file": "lib/src/handlers/source_settings_handler.dart",
+   "line": 249,
+   "issue": "Lazy first load uses readAsStringSync and jsonDecode on whichever thread first asks; often a thumbnail/card build (gridTagStrip, coverDisplay) or a search.",
+   "impact": "A synchronous file read inside the first feed frame.",
+   "safeFix": "Preload asynchronously during postInit; keep the lazy fallback."
+  },
+  {
+   "file": "lib/src/handlers/source_settings_handler.dart",
+   "line": 486,
+   "issue": "tagBlacklistForItem resolves the doujin booru per item, Uri.tryParse in keyFor, and splits/joins/lowercases the blacklist strings on every call (parseTagsListForItem per doujin card, isItemHiddenForDoujin per filtered item).",
+   "impact": "Repeated string processing per item in doujin feeds.",
+   "safeFix": "Cache the resolved Set per host; invalidate in update/updateGlobal/reloadFromDisk."
+  },
+  {
+   "file": "lib/src/pages/settings/booru_edit_page.dart",
+   "line": 537,
+   "issue": "_credentialCapabilities builds a new BooruHandler through the factory on each access (5 accesses per build) and build runs on every keystroke (onChanged: setState).",
+   "impact": "Handler construction several times per keystroke in the editor.",
+   "safeFix": "Compute once when the type or URL changes and store it in state."
+  },
+  {
+   "file": "lib/src/pages/settings_page.dart",
+   "line": 50,
+   "issue": "Leaving Settings always calls saveSettings(restate:true): refilter every tab plus a full-app rootRestate after 1 s, even when nothing changed.",
+   "impact": "A whole-app rebuild on every Settings exit.",
+   "safeFix": "Snapshot toJson on entry and restate only when filter- or theme-relevant keys changed (keep today's behaviour when unsure)."
+  },
+  {
+   "file": "lib/src/pages/settings/save_cache_page.dart",
+   "line": 104,
+   "issue": "Cache stats spawn one isolate per cache type (6) on open and again after each clear; the ports are never closed.",
+   "impact": "Six isolate spawns per visit plus leaked ports.",
+   "safeFix": "One isolate computes every type in a single pass; close the ports."
+  },
+  {
+   "file": "lib/src/pages/settings/doujin_settings_page.dart",
+   "line": 18,
+   "issue": "_doujinSources constructs a BooruHandler for every configured booru in each build; source_settings_page does the same for _doujinHandlers and _accountBlacklistHandler (the latter per access).",
+   "impact": "Handler construction for N boorus per build of these pages.",
+   "safeFix": "Use BooruType/DoujinDataHandler.isDoujinSource checks or cache the handlers in initState."
+  },
+  {
+   "file": "lib/src/pages/settings/source_capture_page.dart",
+   "line": 366,
+   "issue": "The contents list renders every capture entry eagerly inside a ListView children array.",
+   "impact": "Slow rebuilds for large captures (each revision tick rebuilds them all).",
+   "safeFix": "ListView.builder / a SliverList for the entries."
+  }
+ ],
+ "deadCode": [
+  {
+   "file": "lib/src/data/settings/setting_definition.dart",
+   "symbol": "SettingDefinition, StringSetting, IntSetting, DoubleSetting, BoolSetting, EnumSetting, ColorSetting, DurationSetting, ThemeSetting, ThemeModeSetting, LocaleSetting, StringListSetting (whole file)",
+   "evidence": "Grep 'setting_definition|SettingDefinition' over lib/ and test/: only matches inside the file itself; no imports."
+  },
+  {
+   "file": "lib/src/data/settings/settings_enum.dart",
+   "symbol": "enumSettingEntry, SettingsEnumRegistry.getFromString",
+   "evidence": "Grep 'enumSettingEntry|getFromString(' matches only the definitions (lines 56, 152)."
+  },
+  {
+   "file": "lib/src/pages/settings/dir_picker_page.dart",
+   "symbol": "DirPicker (whole file)",
+   "evidence": "Grep 'DirPicker(' matches only its constructor and commented-out lines save_cache_page.dart:432/439; no import of dir_picker_page.dart anywhere."
+  },
+  {
+   "file": "lib/src/pages/settings/settings_template.dart",
+   "symbol": "SettingsTemplate (whole file)",
+   "evidence": "Grep 'SettingsTemplate' matches only the file itself; no import of settings_template.dart."
+  },
+  {
+   "file": "lib/src/handlers/settings_handler.dart",
+   "symbol": "containsHidden, currentColumnCount, legacyKeys loop in loadFromJSON",
+   "evidence": "Grep 'containsHidden|currentColumnCount' matches only the definitions (2764, 188); legacyKeys is an empty const list (2396)."
+  },
+  {
+   "file": "lib/src/pages/settings/save_cache_page.dart",
+   "symbol": "_SaveCachePageState.setPath",
+   "evidence": "Grep 'setPath(' matches only the definition (233) and the comment at 441."
+  },
+  {
+   "file": "lib/src/pages/settings/user_interface_page.dart",
+   "symbol": "AppMode selector inside `if (false)`",
+   "evidence": "Lines 135-203 are guarded by a literal `if (false)` with an ignore dead_code comment."
+  }
+ ],
+ "duplication": [
+  {
+   "where": "lib/src/pages/settings/booru_edit_page.dart:211-400 and 1013-1070",
+   "what": "Per-type default URL, name and favicon written as 22 if-blocks in the type dropdown, with name and URL defaults repeated in onTest for 9 types.",
+   "consolidation": "One BooruPreset table (type -> url, name, favicon) in lib/sources/framework/booru_presets.dart used by both."
+  },
+  {
+   "where": "user_interface_page.dart, performance_page.dart, gallery_page.dart, video_page.dart",
+   "what": "The same settings edited on several pages, each with its own copy of the input and validator code: columns portrait/landscape with 4/8 warnings, preview quality, image quality, preload amount/size/height, don't-scale-images toggle with the same warning dialog, autoplay and disable videos.",
+   "consolidation": "Shared row widgets in lib/features/settings/ui/widgets/common_rows.dart bound to SettingsHandler keys and the schema limits."
+  },
+  {
+   "where": "lib/src/pages/settings/recommendations_page.dart:298-1070",
+   "what": "EncoderModelSection, LookModelSection and TaggerModelSection repeat the same preset chips, custom repo field, download/cancel/delete, status text, MB formatting and 'use' toggle.",
+   "consolidation": "A generic ModelDownloadSection with per-model adapters; Try it as a separate widget."
+  },
+  {
+   "where": "booru_edit_page.dart:1660 (_showHelp) and tags_filters_page.dart:60 (_showBlacklistHelp)",
+   "what": "Two near-identical blacklist syntax help dialogs.",
+   "consolidation": "One BlacklistSyntaxHelp dialog in lib/features/tags/ui."
+  },
+  {
+   "where": "furaffinity_login_page.dart, ehentai_login_page.dart, redgifs_login_page.dart",
+   "what": "Same WebView login scaffold (UA settings, 1.2-1.5 s polling timer, progress bar, reload/cancel, pop with result).",
+   "consolidation": "A WebViewLoginPage base taking a 'check' callback and an explanation text."
+  },
+  {
+   "where": "settings_page._sectionLabel, source_settings_page._header, booru_source_settings_view._header, modular_ui_page area header, doujin_settings_page 'SOURCES' header, backup_restore_page._section",
+   "what": "Six private section-header widgets with slightly different paddings and sizes; SettingsPart already exists in settings_widgets.",
+   "consolidation": "Reuse SettingsPart or a single SectionHeader (keep the `_sectionLabel(context, '...')` literal in settings_page.dart for settings_layout_test)."
+  },
+  {
+   "where": "database_page.dart:465-648, gallery_page.dart:331-389",
+   "what": "Six near-identical confirm-then-clear dialogs with snackbars.",
+   "consolidation": "A confirmDestructive(context, title, onConfirm, doneText) helper."
+  },
+  {
+   "where": "lib/src/handlers/settings_handler.dart map / getByString / setByString",
+   "what": "Three parallel 150-case lists for every setting; adding a setting needs edits in three places plus the field.",
+   "consolidation": "One declarative field registry (key, getter, setter, schema), which is what the unused setting_definition.dart started."
+  },
+  {
+   "where": "settings_handler.dart:2533-2583 (ensureCollectionsBooru/ForYou/ForYouDoujin/Boards/History) and sortBooruList:2611-2641",
+   "what": "Five copy-paste ensure methods and repeated 'move type X to the end' code.",
+   "consolidation": "ensureVirtualBooru(type, name) and a single ordered list of virtual types."
+  },
+  {
+   "where": "source_settings_page._openEhPage and booru_edit_page._openFurAffinitySettings",
+   "what": "The same seed-session, open webview, scrub/sync-in-finally pattern.",
+   "consolidation": "An openSiteWithSession(session, url, title) helper in the accounts logic."
+  },
+  {
+   "where": "theme_page.dart:783-790 and 938-945",
+   "what": "The 'English + localized font preview text' builder is duplicated.",
+   "consolidation": "One fontPreviewText(context) helper."
+  },
+  {
+   "where": "accounts_page.dart:82 vs booru_edit_page.dart:821-823",
+   "what": "RedGifs signed-in state computed two ways (non-empty token vs. JWT expiry).",
+   "consolidation": "RedGifsHandler.isSignedIn(token) used by both."
+  }
+ ],
+ "tests": [
+  "test/settings_layout_test.dart",
+  "test/modular_ui_test.dart",
+  "test/booru_source_settings_test.dart",
+  "test/backup_page_test.dart",
+  "test/backup_plan_test.dart",
+  "test/drive_snapshots_test.dart",
+  "test/drive_backup_link_test.dart",
+  "test/recommendations_page_test.dart",
+  "test/models_page_test.dart",
+  "test/model_run_on_test.dart",
+  "test/model_tasks_test.dart",
+  "test/npu_test.dart",
+  "test/source_links_test.dart",
+  "test/download_folders_test.dart",
+  "test/capture_files_test.dart",
+  "test/source_capture_test.dart",
+  "test/source_capture_inpage_test.dart",
+  "test/doujin_separation_test.dart",
+  "test/doujin_detail_layout_test.dart",
+  "test/doujin_list_card_size_test.dart",
+  "test/doujin_card_adapt_test.dart",
+  "test/pinned_hide_sidebar_test.dart",
+  "test/hidden_status_bar_insets_test.dart",
+  "test/status_bar_inset_test.dart",
+  "test/thumbnail_seen_reveal_test.dart",
+  "test/video_surface_cap_test.dart",
+  "test/gallery_linked_media_button_test.dart",
+  "test/media_kit_engine_options_test.dart"
+ ]
+}

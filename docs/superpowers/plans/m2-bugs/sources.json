@@ -1,0 +1,310 @@
+{
+ "bugs": [
+  {
+   "title": "FurAffinity session cookies written to the log unredacted on every request",
+   "file": "lib/sources/framework/booru_handler.dart",
+   "line": 1219,
+   "scenario": "Logged-in FurAffinity user exports logs (Settings -> Debug -> Logger): every FA search/comment fetch has a line 'https://www.furaffinity.net: a=<session>; b=<session>' - full account session",
+   "evidence": "FurAffinityHandler.getHeaders adds Cookie 'a=..; b=..'; BooruHandler.getCookies merges it and logs '${booru.baseURL}: $cookieString'; redactSecrets has no rule for cookie names a/b and the line has no 'Cookie:' prefix for the generic header rule",
+   "severity": "privacy",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "InkBunny session id logged in clear",
+   "file": "lib/sources/booru/ink_bunny_handler.dart",
+   "line": 96,
+   "scenario": "Signed-in InkBunny account: log contains 'Inkbunny session token found: <sid>' and every search URL '...&sid=<sid>&...'",
+   "evidence": "setSessionToken logs the sid; makeURL embeds sid=$sessionToken and BooruHandler.search logs the URL; redactSecrets parameter list does not include sid",
+   "severity": "privacy",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "RedGifs clears the user token on the shared Booru object",
+   "file": "lib/sources/tube/redgifs_handler.dart",
+   "line": 340,
+   "scenario": "A 401 (IP change) sets booru.apiKey = '' on the Booru instance shared with the settings list; a later settings save persists the cleared key and the user is silently logged out",
+   "evidence": "fetchSearch 401 branch and signOut assign booru.apiKey = ''",
+   "severity": "data-loss",
+   "confidence": "plausible"
+  },
+  {
+   "title": "Tracked-values update can index a list that was reset meanwhile",
+   "file": "lib/sources/framework/booru_handler.dart",
+   "line": 1382,
+   "scenario": "Feed refreshed (fetched reset) while the favourite/snatched DB lookup of the previous page is still running: fetched[fetchedIndexes[index]] throws RangeError, surfacing as a search error",
+   "evidence": "setMultipleTrackedValues awaits dbHandler.getMultipleTrackedValues then indexes fetched by the pre-await indexes without re-checking length",
+   "severity": "crash",
+   "confidence": "plausible"
+  },
+  {
+   "title": "Merge tabs drop every md5-less item after the first page",
+   "file": "lib/sources/local/mergebooru_handler.dart",
+   "line": 265,
+   "scenario": "Merge tab with Nozomi/RedGifs/kemono/FurAffinity/Civitai/tube sources (items with md5String == null). Page 1 shows items; on page 2 every md5-less item is logged 'Skipped because hash match' and never shown",
+   "evidence": "search(): for boorus not in isBooruWithoutMd5 it calls hashInFetched(fetched, item.md5String, ...); hashInFetched returns true when fetched[i].md5String == hash, and null == null is true once page-1 items without md5 are in fetched",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "saveCookies ignores every cookie attribute and truncates values containing '='",
+   "file": "lib/core/utils/tools.dart",
+   "line": 625,
+   "scenario": "A Set-Cookie 'sess=abc==; Path=/; Domain=.site.com; Expires=...; Secure' from any Dio response is stored in the WebView jar as sess=<last segment after '='> with path '/', no domain, no expiry (session cookie), not secure",
+   "evidence": "parts = c.split(';').map((p) => p.split('=')); value = parts.first.last (last '='-segment, not the remainder); attributes are matched with p.first.toLowerCase() == 'domain' but p.first keeps the leading space from split(';') (' Domain'), so domain/path/expires/secure/httponly are never found; Expires (HTTP-date) would also not parse with DateTime.tryParse",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Artists page shows stale results when filters change during a load",
+   "file": "lib/features/kemono/ui/kemono_artists_page.dart",
+   "line": 127,
+   "scenario": "Tap a service chip, change sort, switch mode, or type a name (250 ms debounce) while a page is loading (or the index refresh finishes mid-load): the list keeps the OLD query's rows and the new query is never run",
+   "evidence": "_reset() clears _rows/_offset then calls _loadMore(), which returns immediately because _loading is true; the in-flight _loadMore then appends its old-query rows and advances _offset. Same pattern in kemono_messages_pages.dart _reset/_loadMore (DM search)",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "rule34video loses tag-id routing when Source settings add default filters or always-add terms",
+   "file": "lib/sources/tube/rule34video_handler.dart",
+   "line": 293,
+   "scenario": "Set a default Sort filter (or always-add term) for rule34video in Source settings, then search a tag name: the request goes to the text search instead of /tags/{id}/ (and the content filter is not applied server-side)",
+   "evidence": "search() resolves `source` without sourceQuery; BooruHandler.search then builds tags = validateTags(translateOrSyntax(sourceQuery(tags))) and makeURL(tags) finds _isCurrent(tags) false, so it re-parses with parseQuery (no DB resolution) and unknown names become text search",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Nozomi and Hydrus ignore Source settings default filters and always-add terms",
+   "file": "lib/sources/booru/nozomi_handler.dart",
+   "line": 61,
+   "scenario": "Source settings offers a Sort default for Nozomi (from its sort: metatag) and Sort/Order for Hydrus; choosing one has no effect on searches",
+   "evidence": "Both handlers override search() and never call sourceQuery() (NozomiHandler.search line 71, HydrusHandler.search line 76), unlike BooruHandler.search",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Different posts with the same numeric id from different sources are hidden as duplicates",
+   "file": "lib/sources/framework/booru_handler.dart",
+   "line": 229,
+   "scenario": "Merge tab (or any mixed feed) loads post 12345 from site A and an unrelated post 12345 from site B: the second is hidden with HiddenReason.duplicate",
+   "evidence": "filterFetched isDuplicate = filteredItems.any((e) => e.fileURL == item.fileURL || (e.serverId != null && e.serverId == item.serverId)) with no source/host check",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Civitai '-tag' exclusion can end the feed early",
+   "file": "lib/sources/booru/civitai_handler.dart",
+   "line": 336,
+   "scenario": "Search with an exclusion that removes every item of one API page: the base sees no new items and locks the feed although later pages have results",
+   "evidence": "parseItemFromResponse returns null for excluded items; BooruHandler.search sets locked = true when fetched.length did not change",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "AGNPH deferred tags can land on the wrong post",
+   "file": "lib/sources/booru/agnph_handler.dart",
+   "line": 76,
+   "scenario": "A page contains a post without file_url (skipped); every later post's tags are written onto the post after it (index shift); tags also arrive after the feed was filtered so the blacklist never applies to AGNPH",
+   "evidence": "newIndex = fetched.length + index uses the raw response index while skipped posts are not added; getTagsLater writes fetched.elementAt(fetchedIndex).tagsList asynchronously after afterParseResponse/filterFetched",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Kemono banner/avatar and discovery avatars bypass the app UA and media headers",
+   "file": "lib/features/kemono/ui/kemono_creator_header.dart",
+   "line": 123,
+   "scenario": "Creator banner/icon on kemono/pawchive behind DDoS-Guard/Cloudflare, or xxxfollow/redgifs avatars: they are fetched by Image.network/NetworkImage with Dart's default UA, no cookies and no Referer, so they 403 and show the placeholder while the rest of the site works.",
+   "evidence": "Image.network(KemonoSite.of(booru).bannerUrl(...)) and NetworkImage(iconUrl) here; NetworkImage(avatar) in discovery_strip.dart:61. The project invariant: every request uses Tools.browserUserAgent through CustomNetworkImage.",
+   "severity": "wrong-behaviour",
+   "confidence": "plausible"
+  },
+  {
+   "title": "rule34hentai login cookie values cut at the second '='",
+   "file": "lib/sources/booru/r34hentai_handler.dart",
+   "line": 349,
+   "scenario": "A session cookie value containing '=' (base64 padding) is stored truncated, so the login silently fails",
+   "evidence": "value = cookie.split(';')[0].split('=')[1]",
+   "severity": "wrong-behaviour",
+   "confidence": "plausible"
+  },
+  {
+   "title": "Hanime1 post identity changes with the session's working domain",
+   "file": "lib/sources/tube/hanime1_handler.dart",
+   "line": 331,
+   "scenario": "After a Cloudflare block flips the session to hanime1.com, posts get .com postURLs; favourites/seen/history saved under hanime1.me no longer match the same video",
+   "evidence": "makePostURL => '$_base/watch?v=$id' and _base replaces the host with the static _workingHost",
+   "severity": "wrong-behaviour",
+   "confidence": "plausible"
+  },
+  {
+   "title": "downloadCustom keeps a paused response stream when the SAF file cannot be created",
+   "file": "lib/core/network/dio_network.dart",
+   "line": 554,
+   "scenario": "SAF folder lost permission: the future errors, but the code continues to listen; the first chunk throws on fileUri! in onData after subscription.pause(), leaving the connection held open",
+   "evidence": "completer.completeError(...) when fileUri == null has no return; stream.listen onData calls subscription.pause() then writeStreamToFileFromSAFDirectory(fileUri!, data)",
+   "severity": "leak",
+   "confidence": "plausible"
+  },
+  {
+   "title": "Requests without explicit headers lose the browser User-Agent",
+   "file": "lib/core/network/dio_network.dart",
+   "line": 131,
+   "scenario": "DanbooruHandler.getUploaderName (info sheet uploader name) calls DioNetwork.get without headers: the request goes out with dart:io's default 'Dart/x' UA, breaking the one-UA invariant",
+   "evidence": "get(headers = const {}) -> mergeOptions(options, {}) -> usedOptions.copyWith(headers: {...?headers ?? usedOptions.headers ?? defaultOptions.headers}); the non-null empty map wins so defaultOptions headers (with User-Agent) are dropped",
+   "severity": "minor",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Double-slash URL cleanup in loadItem is a no-op",
+   "file": "lib/sources/booru/gelbooru_handler.dart",
+   "line": 608,
+   "scenario": "Post pages with '//' inside paths keep them; intended normalisation never happens",
+   "evidence": "item.thumbnailURL.replaceAll('(?<!https?:)//', '/') passes a String (literal) pattern, not a RegExp",
+   "severity": "minor",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Creator header can show the previous creator's index data",
+   "file": "lib/features/kemono/ui/kemono_creator_header.dart",
+   "line": 67,
+   "scenario": "Switch quickly between two kemono creator tabs: _load for creator A finishes after B's and sets _indexed to A (name, favourites, updated date).",
+   "evidence": "_load(): _indexed = await store.get(widget.creator...); there is no check that widget.creator is still the requested one. didUpdateWidget starts another _load.",
+   "severity": "minor",
+   "confidence": "plausible"
+  },
+  {
+   "title": "NyanPals and WildCritters hidden from the type list only when debug is ON",
+   "file": "lib/models/booru_type.dart",
+   "line": 80,
+   "scenario": "Normal users see the debug-quality types; debug users do not",
+   "evidence": "..remove(isDebug ? BooruType.NyanPals : null)..remove(isDebug ? BooruType.WildCritters : null) - condition looks inverted",
+   "severity": "minor",
+   "confidence": "plausible"
+  },
+  {
+   "title": "Gelbooru XML refusal reason never shown",
+   "file": "lib/sources/booru/gelbooru_handler.dart",
+   "line": 87,
+   "scenario": "gelbooru.com answers XML with a rate-limit reason: the user gets a type error instead of the reason",
+   "evidence": "the try around 'parsedResponse = response.data' cannot throw, so the XmlDocument.parse branch that extracts the reason is unreachable; parsedResponse['post'] on a String then throws",
+   "severity": "minor",
+   "confidence": "plausible"
+  }
+ ],
+ "fragile": [
+  {
+   "what": "Shared pooled HttpClient",
+   "where": "lib/core/network/dio_network.dart getClient/sharedHttpClient",
+   "rule": "Never call close() on a Dio returned by getClient (its adapter would close the shared HttpClient for the whole app)."
+  },
+  {
+   "what": "One User-Agent invariant",
+   "where": "Tools.browserUserAgent (lib/core/utils/tools.dart)",
+   "rule": "Every request/WebView/media fetch uses Tools.browserUserAgent (custom UA setting > device WebView UA > app UA). Documented exceptions only: Danbooru app UA, Sankaku/Idol app UAs, nonWebViewUserAgent for Schale. Cloudflare binds cf_clearance to UA."
+  },
+  {
+   "what": "Paging start",
+   "where": "BooruHandlerFactory.getBooruHandler startingPage + SearchHandler.runSearch",
+   "rule": "runSearch increments pageNum before the first fetch; default -1 => first request page 0; 1-based sites get pageNum 0 from the factory (Moebooru, Danbooru, e621, Philomena, Sankaku, RedGifs, XXXFollow, ...). Kemono offset = page*50; FA/Hanime1/Kusowanka/Rule34Video compute page = pageNum+1 themselves."
+  },
+  {
+   "what": "BooruType names are persisted",
+   "where": "Booru.toJson/setFromMap, HistoryItem.fromMap, tab restore",
+   "rule": "Enum value names (case-insensitive) are stored in boorus.json, backups, DB rows and share links; never rename/remove a value, add new ones only."
+  },
+  {
+   "what": "BooruItem.key is a GlobalKey used as the viewer widget key",
+   "where": "gallery_view_page.dart, post_files_page.dart, viewer_handler.dart, waterfall_view.dart",
+   "rule": "Keep one GlobalKey per BooruItem instance (state reparenting and current-item lookup); equality is effectively identity because key is in props."
+  },
+  {
+   "what": "Media headers are separate from API headers and cached per type|baseURL",
+   "where": "BooruHandler.getMediaHeaders, BooruHandlerFactory.mediaHeadersFor/mediaHandlerFor, Tools.getFileCustomHeaders",
+   "rule": "Hotlink-protected sources must override getMediaHeaders; media_headers_test guards the table. sendsJarCookiesToMedia=false for FurAffinity and e-hentai must hold (session never sent to image hosts)."
+  },
+  {
+   "what": "CustomNetworkImage compares headers by identity",
+   "where": "kemono_post_page.dart _mediaHeaders (late final), furaffinity_post_page.dart const map",
+   "rule": "Pass the same headers map instance across rebuilds or every rebuild refetches every picture."
+  },
+  {
+   "what": "prevTags vs currentTags",
+   "where": "BooruHandler.search",
+   "rule": "prevTags is set only after a successful parse; currentTags is set before the fetch and is what parsers that depend on the query must read (FA, doujin)."
+  },
+  {
+   "what": "afterParseResponse ordering",
+   "where": "BooruHandler.afterParseResponse",
+   "rule": "filterFetched, then await setMultipleTrackedValues (DB favourite/snatched flags), then filterFetched again; favourite/snatched filters only on page load, live exemptions cleared only on a new query; own lists (isLocalDb) ignore filterFavourites/filterSnatched (r85)."
+  },
+  {
+   "what": "Doujin/booru separation",
+   "where": "BooruHandler.storeTagsGlobally, filterFetched, populateTagHandler, setMultipleTrackedValues; BooruItem.isHidden/isMarked",
+   "rule": "Doujin items never use booru blacklists/marked tags/tag store; checks are per item (host) so merge feeds stay separated; doujin hearts come from DoujinDataHandler."
+  },
+  {
+   "what": "Source settings composition scope",
+   "where": "BooruHandler.sourceQuery/siteFilters, applySourceSettings",
+   "rule": "Not applied to doujin sources, local DB views, recommendation feeds, merge, webview, or id lookups (applySourceSettings=false, e.g. _R34HentaiHandlerDummy). Handlers overriding search() must call it themselves."
+  },
+  {
+   "what": "rule34.xxx cookies across hosts",
+   "where": "BooruHandler.getCookies vs DioNetwork.cookieInterceptor",
+   "rule": "getCookies attaches the booru SITE host's jar (captcha clearance) while the interceptor adds the REQUEST host's jar; rule34.xxx API lives on api.rule34.xxx, so the explicit getCookies is not redundant."
+  },
+  {
+   "what": "Cookie jar must never block",
+   "where": "Tools.getCookies/saveCookies/checkForCaptcha",
+   "rule": "Every CookieManager call is bounded by cookieJarTimeout (5 s) and a timeout pauses the jar for 30 s; reads are deduped per host; captchaScreenActive must be reset in finally."
+  },
+  {
+   "what": "Kemono API specifics",
+   "where": "KemonoSite, KemonoApi, KemonoSessionHandler, KemonoFileHosts",
+   "rule": "kemono API needs Accept: text/css; one automatic re-login on 401, max once per minute per user; session file keyed '<site>|<user>' with bare-key migration; never prefetch pawchive files (IP block); thumbnails on pawchive are WebP under .jpeg; file host probe freshness 10 min; post detail cache 10 min/50."
+  },
+  {
+   "what": "FurAffinity session handling",
+   "where": "FurAffinitySessionHandler, webview_page.dart",
+   "rule": "a/b live in furaffinity_session.json AND are seeded into the jar before FA webviews (prepareWebView) and synced back after (syncAfterWebView); logout scrubs the jar; images never get the session."
+  },
+  {
+   "what": "Pure-Dart grammars",
+   "where": "kemono_query.dart, furaffinity_query.dart, rule34video_query.dart",
+   "rule": "No Flutter imports so the grammar tests run without bindings."
+  },
+  {
+   "what": "Gelbooru-family OR padding",
+   "where": "GelbooruHandler/RealbooruHandler (no padding {a ~ b}) vs GelbooruAlikesHandler (padded ( a ~ b ))",
+   "rule": "Verified against live APIs; the wrong padding returns zero posts."
+  },
+  {
+   "what": "Bakemono hybrid listing",
+   "where": "GelbooruHandler.makeURL/parseResponse + BakemonoProfile",
+   "rule": "Listing only for sort:/source: queries; a failed scrape disables the listing for the handler's life and serves the page from the API (never an empty grid)."
+  },
+  {
+   "what": "Rule34Video session state",
+   "where": "Rule34VideoHandler",
+   "rule": "knownTagIds/knownUploaderIds are static and shared; _isCurrent keeps a changed per-source default from splicing into a grid mid-pagination; walkFiltered advances pageNum."
+  },
+  {
+   "what": "Test seams",
+   "where": "Rule34VideoHandler.listingFetch, RedGifsHandler.nichePage/resetNichesForTests, KemonoFileHosts.probeOverride/resetForTests, KemonoCreatorStore/KemonoSessionHandler/FurAffinitySessionHandler resetForTests, Tools.cookieJar*Override, BooruHandlerFactory.clearMediaHeaderCache, LinkedMediaStore.resetForTests, KemonoApi.clearDetailCache",
+   "rule": "Keep these names (or update tests in the same change)."
+  },
+  {
+   "what": "Static caches with session lifetime",
+   "where": "Hanime1Handler._workingHost/_translationCache, RedGifsHandler._token, Rule34DevHandler._buildId, CivitaiHandler._tagIdCache, TikPornHandler vocab, WorldXyzHandler auth maps, XXXTikHandler Firebase session, FurAffinityHandler._users/_folders",
+   "rule": "Shared across handler instances on purpose (handlers are rebuilt per tab/search)."
+  },
+  {
+   "what": "URL query building",
+   "where": "DioNetwork.separateUrlAndQueryParams",
+   "rule": "Must strip the dangling '?' (hanime1 Cloudflare blocks 'path?&a=b'); tags[] and repeated tag= params are built by hand in Hanime1/KemonoSite."
+  },
+  {
+   "what": "Doc headers with verification dates",
+   "where": "every handler file",
+   "rule": "Keep the per-handler doc comments (endpoints, quirks, dates verified) when moving files."
+  }
+ ]
+}

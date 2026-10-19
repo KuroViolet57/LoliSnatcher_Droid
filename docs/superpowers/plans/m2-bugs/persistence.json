@@ -1,0 +1,321 @@
+{
+ "bugs": [
+  {
+   "title": "LoliSync receiver accepts unauthenticated writes from any device on the LAN",
+   "file": "lib/features/sync/logic/loli_sync_handler.dart",
+   "line": 39,
+   "scenario": "While the receiver page is open, any host on the same Wi-Fi can POST /lolisync/settings, /booru or /tabs and overwrite settings, add sources or replace tabs.",
+   "evidence": "HttpServer.bind(ip, port), then `await for (req in server)` dispatching by path. There is no token or pairing.",
+   "severity": "privacy",
+   "confidence": "plausible"
+  },
+  {
+   "title": "Restoring Doujin library together with a whole Database loses the restored doujin library",
+   "file": "lib/features/backup/logic/backup_app.dart",
+   "line": 62,
+   "scenario": "Restore from a backup with both 'Doujin library' and 'Database' (whole) ticked. doujinData.json is written first, then the database step calls rearmDoujinMigration, which saves the OLD in-memory doujin store over the restored file. The app restarts with the old favourites, collections, pins and history.",
+   "evidence": "backup_plan.dart restore order: doujinLibrary written at :378, database last -> _restoreWholeDatabase :403 hooks.rearmDoujinMigration(). backup_app.dart:65-67: `DoujinDataHandler.instance..ensureLoaded(); store.migrationDone = false; store.save();`. ensureLoaded is a no-op once loaded (doujin_data_handler.dart:400, loaded at startup by runDoujinMigrationIfNeeded), and save() writes exportJson() of memory (:469). reloadStores runs only after the loop (backup_plan.dart:334) and reads back the overwritten file.",
+   "severity": "data-loss",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Receiving settings over LoliSync wipes the receiver's own device-specific earlier download folders, model threads and Run on choices",
+   "file": "lib/features/sync/logic/loli_sync_handler.dart",
+   "line": 80,
+   "scenario": "Phone B runs the receiver and phone A sends Settings. B's earlierDownloadFolders, modelThreads and modelRunOn become empty and are saved when the LoliSync page is left. B's Downloads tab then stops finding files in its earlier folders, and the per-model thread and accelerator choices reset.",
+   "evidence": "The sender strips deviceSpecificSettings (loli_sync_handler.dart:630-632), which include modelThreads, modelRunOn and earlierDownloadFolders (settings_handler.dart:444-447). The receiver calls loadFromJSON(content, false) (:80), which unconditionally clears and refills from absent keys: settings_handler.dart:2294-2306 (modelThreads..clear()..addAll(parseThreads(null)), modelRunOn likewise, earlierDownloadFolders.clear()). loli_sync_page.dart:159 saveSettings on pop persists it.",
+   "severity": "data-loss",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Drive restore sees at most 200 files of a snapshot",
+   "file": "lib/features/backup/logic/drive_backup.dart",
+   "line": 632,
+   "scenario": "A snapshot holding many board pictures or recommender files (more than 200). list() returns only the first page, so DriveBackupTarget.names() misses files and their items are partly restored or reported absent. The 'Earlier backup' root listing also spends its 200 slots on snapshot folders.",
+   "evidence": "list(): 'pageSize': '200' with no nextPageToken handling. names() = list(folderId) (backup_app.dart:169), and restore picks recommender/board-picture files from names (backup_plan.dart:355-363).",
+   "severity": "data-loss",
+   "confidence": "plausible"
+  },
+  {
+   "title": "A SAF listing error looks like an empty folder, so every download is 'missing' and Forget is offered",
+   "file": "lib/features/downloads/logic/downloads_reconciler.dart",
+   "line": 112,
+   "scenario": "The SAF listing fails (HANDOVER 4.62: listFileNames turns every error into an empty list) while testSAF still passes. The cache is populated with 0 names, check() reports all rows missing, and DownloadsCheck offers 'Forget N'.",
+   "evidence": "saf_file_cache.dart:41-44 marks the cache populated with whatever list comes back. The reconciler does not distinguish an empty folder from a failed listing; FolderProbe/probeSafFolder exists but is used only for the log.",
+   "severity": "data-loss",
+   "confidence": "plausible"
+  },
+  {
+   "title": "Drive backup and restore hold whole files in memory (vectors.db up to 2 GB)",
+   "file": "lib/features/backup/logic/backup_app.dart",
+   "line": 187,
+   "scenario": "Vector space set to 1-2 GB, then 'Vector cache' backed up to Drive: file.readAsBytes() loads it all, and upload() copies each 256 KB chunk with sublist, leading to OOM. A restore also downloads into a BytesBuilder.",
+   "evidence": "DriveBackupTarget.writeFile -> write(name, await file.readAsBytes()); readToFile -> read() -> DriveBackup.download builder.takeBytes(); drive_backup.dart:569 bytes.sublist per chunk.",
+   "severity": "crash",
+   "confidence": "plausible"
+  },
+  {
+   "title": "Unchunked IN/OR lists can exceed SQLite's 999-variable limit on older Android",
+   "file": "lib/core/storage/database_handler.dart",
+   "line": 605,
+   "scenario": "Select and favourite more than 999 posts (updateMultipleBooruItems -> getItemIDs), or a very large page in getMultipleTrackedValues, on Android with SQLite below 3.32. 'too many SQL variables' aborts the whole operation.",
+   "evidence": "getItemIDs (:607), getMultipleTrackedValues (:2633), getBooruTagsByNames (:1521) and tagsCleanup empty-tag IN (:2826) bind one variable per element with no chunking. featureNames/getEmbeddings do chunk.",
+   "severity": "crash",
+   "confidence": "plausible"
+  },
+  {
+   "title": "JSON sidecar written to a SAF folder corrupts non-Latin text",
+   "file": "lib/features/downloads/logic/image_writer.dart",
+   "line": 124,
+   "scenario": "Write image data to JSON on save, with a custom folder on Android 12+, for a post whose tags or title are Japanese. The .json gets the low byte of each UTF-16 code unit: mojibake or invalid JSON.",
+   "evidence": "`Uint8List.fromList(jsonEncode(item.toJson()).codeUnits)`. codeUnits are UTF-16 and Uint8List truncates each to 8 bits; it should be utf8.encode.",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "JSON sidecar setting silently does nothing on desktop and fails on Android <12 with a custom folder",
+   "file": "lib/features/downloads/logic/image_writer.dart",
+   "line": 111,
+   "scenario": "Desktop: the Save & cache toggle is enabled (save_cache_page.dart:393 enables it off Android) but neither branch runs, so no file is written. Android 11 with a SAF folder: File('content://…/name.json') throws (caught and logged); no sidecar.",
+   "evidence": "Branch 1 needs Android && extPathOverride set && SDK>=31; branch 2 needs Android && SDK<31 and uses File('$dir$fileNameWoutExt.json') with dir = the SAF URI when extPathOverride is set. There is no non-Android branch.",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Batch Snatcher loops forever on failed requests, crashes on an empty amount, and queues more than asked",
+   "file": "lib/features/downloads/logic/snatch_handler.dart",
+   "line": 514,
+   "scenario": "(1) No network or a 5xx/403: search() sets errorString but never `locked`, so `while (count < amount && !locked)` requests page after page forever. (2) Amount field cleared: int.parse('') throws in the unawaited future after the page has popped, and nothing happens. (3) Amount 150 queues 200 posts (whole pages, never trimmed).",
+   "evidence": "booru_handler.dart:400-434: the non-200 and catch paths set errorString only; `locked` is set only when no new items arrive (:397). snatch_handler.dart:488/514 int.parse(amount); queue(booruItems…) at :521 passes the cumulative fetched list untrimmed.",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "A second source capture silently drops the site's API calls",
+   "file": "lib/features/debug/logic/source_capture_handler.dart",
+   "line": 111,
+   "scenario": "Record a site, close the browser, then tap 'Open site and record' again without 'Discard'. Every fetch/XHR already seen in the first session (same method and URL) is not recorded, and resources fetched before are not fetched again.",
+   "evidence": "start() clears _entries, _seenResources and _totalChars but not _seenXhr or _fetchedUrls (only clear() at :130-131 does). recordXhr returns early on `!_seenXhr.add('$method $url')` (:362); pendingResources skip _fetchedUrls (:382).",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Batch Snatcher page unreachable on mobile",
+   "file": "lib/features/downloads/ui/snatcher_page.dart",
+   "line": 15,
+   "scenario": "On a phone there is no way to open the batch downloader. Its only mobile entry is DDNavigationButtons inside DDControlPanel, which nothing builds since commit 28f6f458 (HANDOVER 4.63).",
+   "evidence": "grep: SnatcherPage( only in dd_selection_actions.dart:122 (DDNavigationButtons, built only by dd_control_panel.dart:55) and desktop_home_page.dart:72; grep 'DDControlPanel(' finds only its own constructor.",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Existence check never works for a SAF download folder, so a post is downloaded again as 'name (1)'",
+   "file": "lib/features/downloads/logic/image_writer.dart",
+   "line": 51,
+   "scenario": "With a custom SAF folder, a post whose row lost its snatched flag (Forget, DB restore, LoliSync, cleared snatched) is saved again. File('content://…'+name).exists() is always false, so it downloads again and SAF creates a duplicate.",
+   "evidence": "`final File image = File(dir + fileName); final bool fileExists = await image.exists();` where dir = extPathOverride (a content URI). SAFFileCache.existsFile exists but is not used here. DioNetwork.downloadCustom creates the file without checking (dio_network.dart:535).",
+   "severity": "wrong-behaviour",
+   "confidence": "plausible"
+  },
+  {
+   "title": "Folder change during the startup listing leaves the cache populated with the old folder; the reconciler trusts it",
+   "file": "lib/core/platform/saf_file_cache.dart",
+   "line": 32,
+   "scenario": "Right after start (a big SAF folder is still being listed), change the download folder. populate(new) returns early because _isPopulating is set; the old listing then sets _isPopulated with the old names. DownloadsReconciler.check uses fileNames without checking _cachedUri, so downloads are judged against the wrong folder and Forget can drop real marks.",
+   "evidence": "populate: `if (_isPopulating || …) { await _populateCompleter?.future; return; }`. invalidate() between the two runs does not cancel the old run, which sets `_isPopulated = true` (:44). downloads_reconciler.dart:112-133 checks isPopulated and SAFFileCache.instance.fileNames only.",
+   "severity": "wrong-behaviour",
+   "confidence": "plausible"
+  },
+  {
+   "title": "Badge lookup matches rows by postURL after querying by fileURL",
+   "file": "lib/core/storage/database_handler.dart",
+   "line": 2641,
+   "scenario": "A favourited gelbooru-family post whose stored postURL differs from the fetched one (http vs https, mirror host, changed post URL format) is found by fileURL but discarded by the postURL match, so the feed shows it as not favourited and not downloaded.",
+   "evidence": "The query uses `fileURL = ?` for most items (:2627) but the mapping does `result.firstWhere((el) => el['postURL'] == item.postURL, orElse: {0,0})`.",
+   "severity": "wrong-behaviour",
+   "confidence": "plausible"
+  },
+  {
+   "title": "Video stays loading forever when the cache write fails",
+   "file": "lib/core/network/dio_downloader.dart",
+   "line": 356,
+   "scenario": "The cache disk is full or not writable. writeCacheFromBytes returns null, onDoneFile is never called, no error is raised and dispose is never called, so the video viewer spins indefinitely.",
+   "evidence": "runRequest: `if (onDoneFile != null && tempFile != null) {...} else if (onDone != null) {...}`. video_viewer passes onDoneFile only (video_viewer.dart:150-168).",
+   "severity": "wrong-behaviour",
+   "confidence": "plausible"
+  },
+  {
+   "title": "The 8 MB capture cap applies only to pages",
+   "file": "lib/features/debug/logic/source_capture_handler.dart",
+   "line": 354,
+   "scenario": "Browse a single-page app for a long time. Each xhr/fetch body (up to 512K characters each) and every resource is appended to memory and to the journal without limit, so memory and the config-folder journal grow unbounded.",
+   "evidence": "maxTotalChars is checked only in recordPage (:163). recordXhr, fetchBodyInPage, fetchBody and recordResource call _add directly.",
+   "severity": "leak",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "snatchedSkipController never disposed",
+   "file": "lib/features/sync/ui/loli_sync_page.dart",
+   "line": 183,
+   "scenario": "Each visit to Settings -> LoliSync leaks a TextEditingController.",
+   "evidence": "dispose() disposes ip, port, favouritesSkip and startPort controllers, but not snatchedSkipController (declared :125).",
+   "severity": "leak",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Receiver server, sockets and wakelock outlive the page; HttpClients never closed",
+   "file": "lib/features/sync/ui/loli_sync_progress_page.dart",
+   "line": 44,
+   "scenario": "The progress route is removed without the stop dialog (a popUntil from elsewhere, or a route reset). There is no dispose, so the HttpServer stays bound on the port, keeps accepting LAN writes, and the wakelock stays on. Separately, every send creates a new HttpClient that is never closed (hundreds per favourites sync).",
+   "evidence": "_LoliSyncProgressPageState has no dispose(); only the dialog calls killServer/enableSleep (:140-145). loli_sync_handler.dart:365/376/386/397/407/419/436/492 `HttpClient().post(...)` with no close().",
+   "severity": "leak",
+   "confidence": "plausible"
+  },
+  {
+   "title": "Drive REST calls leak an HttpClient each",
+   "file": "lib/features/backup/logic/drive_backup.dart",
+   "line": 441,
+   "scenario": "Every list, find, upload init and download creates an HttpClient that is closed only on exceptions; its sockets stay until the idle timeout.",
+   "evidence": "_send(): `final HttpClient client = HttpClient(); … return await req.close();` with client.close() only in catch.",
+   "severity": "leak",
+   "confidence": "plausible"
+  },
+  {
+   "title": "'Fetch the response bodies' duplicates bodies and adds FETCH FAILED entries",
+   "file": "lib/features/debug/logic/source_capture_handler.dart",
+   "line": 401,
+   "scenario": "After browsing (bodies were already fetched in-page on each load stop), tap 'Fetch the response bodies'. The page loops over every interesting resource again. The webview is detached, so each goes through Dio, which on Cloudflare sites fails, and a second fetch entry ('FETCH FAILED: …') is added per URL. The bundle doubles and is noisy.",
+   "evidence": "source_capture_page.dart:171-184 iterates capture.interestingResources (all, not pendingResources) and calls fetchBody. fetchBody appends a new CaptureEntry every time (:432 / :443) with no dedup for the fetch kind. The controller is detached when the browser closes (source_capture_page.dart:150).",
+   "severity": "minor",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "LoliSync status texts wrong: 'Favourites Synced' never shows; snatched sync says 'Favourites'",
+   "file": "lib/features/sync/logic/loli_sync_handler.dart",
+   "line": 134,
+   "scenario": "Batch favourites sync: the receiver never shows 'Favourites Synced', because the last batch has offset+size == amount, never amount-1. The sender shows '0-100 / 100 - …' (updatedCount twice instead of the total), and the Snatched branch reports 'Favourites sent' / 'No Favourites'.",
+   "evidence": ":134 `lastIndex = offset + size; if (lastIndex == amount - 1)`; :570 `'$offset-$updatedCount / $updatedCount - $resp'`; :573/:575 shared texts for the Snatched case.",
+   "severity": "minor",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Status history duplicates entries on every rebuild",
+   "file": "lib/features/sync/ui/loli_sync_progress_page.dart",
+   "line": 214,
+   "scenario": "During a sync, toggle 'Keep screen awake'. setState rebuilds the StreamBuilder, and its builder calls addMessage(status) again, so the current line repeats in the history.",
+   "evidence": "addMessage(status) is called inside the StreamBuilder builder; toggleWakelock calls setState (:115).",
+   "severity": "minor",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "site: search term is interpolated into SQL",
+   "file": "lib/core/storage/database_handler.dart",
+   "line": 686,
+   "scenario": "In Favourites or Downloads, search `site:o'neil` and the query throws a SQL syntax error, so the list shows an error. Arbitrary SQL fragments typed in the local search box run.",
+   "evidence": "siteQuery = \"(bi.postURL … LIKE '%$term%' OR bi.fileURL … LIKE '%$term%')\" in searchDB (:686) and searchDBCount (:1777); term comes straight from the search text.",
+   "severity": "minor",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "dispose closes the stream before cancelling timers",
+   "file": "lib/core/utils/timed_progress_controller.dart",
+   "line": 56,
+   "scenario": "Leave the viewer during a slideshow. A periodic tick that lands while `await _progressController.close()` is pending adds to a closed controller, and 'Bad state: Cannot add event after closing' is logged.",
+   "evidence": "dispose(): `await _cancelStreams(); _cancelTimers();`. _setProgressAndNotify adds unconditionally.",
+   "severity": "minor",
+   "confidence": "plausible"
+  }
+ ],
+ "fragile": [
+  {
+   "what": "Download and cache file names",
+   "where": "image_writer.dart getFilename/snatchTail/_nameIsIdentifying/_disambiguate/parseThumbUrlToName/sanitizeName; image_writer_isolate.dart copy",
+   "rule": "Keep them byte-identical. The reconciler, SnatchedStatusIcon, earlier folders, doujin scan and every existing cache entry match files by these names. ImageWriter and ImageWriterIsolate must produce the same cache names (the Save & cache stats use the isolate copy)."
+  },
+  {
+   "what": "DB schema, table names and file names",
+   "where": "database_handler.dart updateTable; db_parts.dart tables map; backup_plan.dart fileOf",
+   "rule": "Tables Interaction/RecommenderFeature/TagSignal, BooruTag/BooruTagOverride/TagAliasCache and ItemEmbedding are named in DbParts. store.db and vectors.db are backup file names. ItemEmbedding is moved from store.db to vectors.db on every start that finds rows (an older-backup restore relies on this). vectorDatabase falls back to db when vectors.db is not open (tests)."
+  },
+  {
+   "what": "Tag table DDL quirk",
+   "where": "database_handler.dart:95-101",
+   "rule": "CREATE TABLE Tag lacks commas, so tagType and updatedAt are added by the ALTERs that follow. Fresh installs depend on those ALTERs; do not drop them when 'fixing' the DDL."
+  },
+  {
+   "what": "Doujin/booru separation in DB writers",
+   "where": "database_handler.dart updateBooruItem, updateMultipleBooruItems, addItemsToCollection",
+   "rule": "A doujin item never gets isFavourite=1 or tags in store.db; isSnatched is shared. Guarded by test/doujin_separation_test.dart. The DoujinMigration planner/applier ordering (store first, deletes second; migrationDone only after an OPEN DB was inspected; merge saved searches and global pins stay booru-side) must stay."
+  },
+  {
+   "what": "Downloads ordering",
+   "where": "database_handler.dart searchDB orderByClause",
+   "rule": "Downloads (without collectionId) order by COALESCE(snatchedAt,0) then id; updates keep the first snatchedAt (COALESCE) and clear it when unsnatched. own_list_paging_test/downloads tests depend on this."
+  },
+  {
+   "what": "Backup restore order and restart rules",
+   "where": "backup_plan.dart restore/_restoreOne/_restoreWholeDatabase",
+   "rule": "Files first and the database last. stopRecommenderWrites runs before recommender files are written. A whole-DB attempt forces a restart even on failure (_dbClosed). Vectors and tag types alone need no restart. The checkDownloadsMarker file name 'check-downloads-after-restore' is read by DownloadsCheck.offerAfterRestore. File names and prefixes 'recommender.' and 'board-picture.' are the backup format, which older backups use too."
+  },
+  {
+   "what": "SAF write semantics",
+   "where": "backup_app.dart FolderBackupTarget._copyIn; capture_files.dart _toSaf",
+   "rule": "Delete an existing file before copying (SAF otherwise writes 'name (1)'). The native copyFileToSafDir names the target after the source file, so the scratch file must carry the target name. A restore is never copied straight into the config folder."
+  },
+  {
+   "what": "Drive OAuth contract",
+   "where": "drive_backup.dart link/_token/exchange",
+   "rule": "Keep scope drive.file, access_type=offline plus prompt=consent (otherwise no refresh token after the first link), and the loopback redirect in the system browser (WebView OAuth is refused). Wait for the foreground before the exchange (r42 background network cut). Try the three token endpoints for two rounds. Only the refresh token is stored (secure storage keys driveClientId/driveClientSecret/driveRefreshToken). Snapshots are folders under 'LoliSnatcher'; top-level files become 'Earlier backup' (deleteSnapshot refuses it)."
+  },
+  {
+   "what": "LoliSync wire protocol",
+   "where": "loli_sync_handler.dart, loli_sync_page.dart enums",
+   "rule": "Paths /lolisync/{boorubatch,booruitem,settings,booru,tabs,tags,test,complete}; query params amount/offset/size/current/mode; mode strings 'Merge'/'Replace'/'Overwrite'/'PreferTypeIfNone' (fromString also accepts lowercase); toSync keys 'Favourites','Favouritesv2','Snatched','Settings','Booru','Tabs','Tags','Test'. Must stay compatible with other installs, and the sender strips deviceSpecificSettings."
+  },
+  {
+   "what": "Logger and redaction invariants",
+   "where": "logger.dart log/logParts/requestDataLine/RedactingDioLogger; log_redaction.dart",
+   "rule": "Redact BEFORE truncating (10,000 per entry; logParts redacts the whole text once, then parts of ≤9,000 cut at a newline in the second half; splitParts joins back to the input). Use replaceAllMapped, never replaceAll with $1. The cookie-header lookbehind spares document.cookie. defTags secrets: only key-like words (r88, so 'explicit' is not redacted). The Dio logger hides cookie/set-cookie/authorization/x-api-key and does not print request/response bodies. FlutterError.onError ignores Dio cancels. Tests: log_redaction_test, http_log_redaction_test."
+  },
+  {
+   "what": "Navigation trace names and observer order",
+   "where": "navigation_trace.dart; main.dart",
+   "rule": "The viewer route must be named 'viewer' (ViewerCloseObserver.viewerRoute) and tag dialogs 'tagDialog/$tag'. BackGestureLogger.attach() must run before runApp (handlePopRoute stops at the first observer). closing() holds the reason only for the duration of the call. Do not go back to reading the caller from the stack (wrong in AOT builds, r79). navigation_trace_test."
+  },
+  {
+   "what": "PerfTrace gesture layer also drives model work",
+   "where": "perf_trace.dart PerfTraceGestureLayer._onScroll, PerfTraceRouteObserver",
+   "rule": "ActivityClock.mark() runs on every route change and scroll even when not recording, and ModelWork waits for quiet moments based on it. Do not make the layer conditional on recording or remove it from main.dart's builder. Event names (viewer.open/swipe/close, route.push/pop, ui.*, widget.*) and the 'viewer'/'post files' route names are what reports and the user read."
+  },
+  {
+   "what": "Source capture journal and file locations",
+   "where": "source_capture_handler.dart",
+   "rule": "The journal is config/source-capture-session.jsonl, append-only and chained writes (journalFlushed is awaited by tests). writeBundle must write under the CACHE dir (FileProvider exposes only cache-path). A capture file is named source-capture-<host>-<startedAt stamp>.txt so saving again replaces it."
+  },
+  {
+   "what": "Download folder changes go through one place",
+   "where": "download_folders.dart change(); get_perms dialog; save page",
+   "rule": "Any extPathOverride change must call DownloadFolders.change (remember the folder left, invalidate and repopulate SAFFileCache, save). earlierDownloadFolders and capturesPath are device-specific. MainActivity keeps persistable grants, so earlier SAF folders stay readable."
+  },
+  {
+   "what": "Shared Dio client",
+   "where": "dio_downloader.dart dispose; image_writer downloads",
+   "rule": "Never close a Dio from DioNetwork.getClient(): it is the app-wide pooled HttpClient. Cancel through CancelToken only."
+  },
+  {
+   "what": "Test seams (static function fields)",
+   "where": "DownloadFolders.defaultFolder/listNames/probe/onChanged/save; CaptureFiles.isAndroid/scratchDir/appFolder/makeSafDir/copyToSaf/existsInSaf/deleteInSaf; IncomingLinks.openTab/openMedia; SourceLinks.apply; DownloadsReconciler.logLine/resetForTests; NavigationTrace.log/now/windows; DBHandler.pruneEvery/spaceOverrideBytes/createVectorTable; BackupHooks; DriveBackup.exchange(post:)",
+   "rule": "Keep names and signatures (or update the tests in the same step): download_folders_test, capture_files_test, incoming_link_test, source_links_test, downloads_reconcile_test, navigation_trace_test, vector_store_test, encoder_handler_test, backup_plan_test, drive_backup_link_test."
+  },
+  {
+   "what": "Source links manifest list",
+   "where": "source_links.dart sites + AndroidManifest .SourceLinks alias",
+   "rule": "The manifest hosts (host and *.host) must equal SourceLinks.sites (source_links_test). openSourceLinks is re-applied in postInit (applySaved), because the alias state is not restored with settings."
+  },
+  {
+   "what": "Files that are not in the backup",
+   "where": "config folder",
+   "rule": "tab_pill.json (pill position), model_timings.json, *_session.json / schale_clearance.json (logins, probably excluded on purpose), mascot.<ext>, the source-capture journal and the Drive credentials in secure storage are not backup items. Keep this list in mind when adding stores (user rule: every new setting and its data goes into the backup)."
+  }
+ ]
+}

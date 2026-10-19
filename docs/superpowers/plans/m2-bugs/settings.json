@@ -1,0 +1,335 @@
+{
+ "bugs": [
+  {
+   "title": "LoliSync receive wipes the receiver's device-specific model threads, NPU choices and earlier download folders",
+   "file": "lib/core/settings/settings_handler.dart",
+   "line": 2293,
+   "scenario": "Device A sends settings via LoliSync. Device B (which had custom model thread counts, Run on = NPU, and earlier download folders) ends up with all three cleared, and the next save persists that.",
+   "evidence": "loli_sync_handler.dart:629-632 removes every deviceSpecificSettings key (incl. 'modelThreads','modelRunOn','earlierDownloadFolders') from the payload; storeSettings (loli_sync_handler.dart:80) calls loadFromJSON(content,false), which unconditionally runs modelThreads..clear()..addAll(ModelTasks.parseThreads(json['modelThreads'])) (null -> {}), the same for modelRunOn, and earlierDownloadFolders.clear() (settings_handler.dart:2290-2305).",
+   "severity": "data-loss",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Per-booru hidden lines are keyed by name: lost on rename, stored under 'New' for an unsaved booru",
+   "file": "lib/features/settings/ui/sources/booru_edit_page.dart",
+   "line": 469,
+   "scenario": "(a) Rename a booru: its per-booru hidden lines no longer apply (they stay under the old name). (b) In 'Add new booru', add lines before saving: they are stored under the key 'New' and never apply to the saved booru.",
+   "evidence": "_PerBooruBlacklistEditor(booruName: widget.booru.name) writes via addTagToBooruHiddenList(booruName!, line); new boorus are constructed as Booru('New', ...) (booru_page.dart:116); onSave never migrates hiddenTagsPerBooru to the new name.",
+   "severity": "data-loss",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "settings.json written non-atomically; concurrent unawaited saves can interleave",
+   "file": "lib/core/settings/settings_handler.dart",
+   "line": 2449,
+   "scenario": "The app is killed during a save, or two saves overlap (e.g. ModularUi.set and an unawaited addTagToList/saveSettings from another page). settings.json is truncated or garbled; the next start's jsonDecode fails, json = {}, and every setting reverts to defaults.",
+   "evidence": "saveSettings: settingsFile.openWrite(); writer.write(jsonEncode(toJson())); await writer.close() - no temp file or rename, no lock. Many callers do not await (addTagToList:2811, removeTagFromList:2828, addTagToBooruHiddenList:2848, recommendations toggles, VersionButton). loadFromJSON catches the decode error and continues with {}.",
+   "severity": "data-loss",
+   "confidence": "plausible"
+  },
+  {
+   "title": "A corrupt sourceSettings.json is silently dropped and then overwritten by the next change",
+   "file": "lib/core/settings/source_settings_handler.dart",
+   "line": 255,
+   "scenario": "sourceSettings.json is truncated (writeAsStringSync is not atomic) or holds a value of the wrong type: the load fails and is logged with _loaded=true; the next update() writes only the new entry and every source's settings are lost.",
+   "evidence": "_ensureLoaded: jsonDecode / entry.value as Map / field casts inside one try; on an exception _byHost is partial or empty; _save writes _byHost wholesale.",
+   "severity": "data-loss",
+   "confidence": "plausible"
+  },
+  {
+   "title": "Save & cache page fails to open when cacheDuration is not one of the listed options",
+   "file": "lib/features/settings/ui/save_cache_page.dart",
+   "line": 72,
+   "scenario": "A settings.json (restored, synced or hand-edited) with cacheDuration e.g. 7200 s: firstWhere throws StateError in initState and the page shows an error.",
+   "evidence": "cacheDurationSelected = settingsHandler.map['cacheDuration']!['options']!.firstWhere((dur) => dur['value'].inSeconds == cacheDuration.inSeconds); has no orElse; validateValue('duration') accepts any int (settings_handler.dart:1291).",
+   "severity": "crash",
+   "confidence": "plausible"
+  },
+  {
+   "title": "Toolbar order Reset throws and leaves an empty button order that is then saved",
+   "file": "lib/features/settings/ui/gallery_page.dart",
+   "line": 429,
+   "scenario": "Settings -> Viewer -> Toolbar buttons order -> reset icon: the list is cleared, then a TypeError is thrown; on leaving the page settingsHandler.buttonOrder = [] and the viewer toolbar shows no ordered buttons until restart (loadFromJSON re-adds the missing ones).",
+   "evidence": "buttonOrder.clear(); buttonOrder.addAll(settingsHandler.map['buttonOrder']!['default']); the default is <String>[...GalleryButton.values.map((b) => b.toJson())] (settings_handler.dart:1062), but buttonOrder is List<GalleryButton>, so the dynamic argument fails the runtime cast. _onPopInvoked then writes settingsHandler.buttonOrder = [...buttonOrder]; hideable_appbar.dart:207 builds from settingsHandler.buttonOrder.",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "On a fresh install the Flow migration runs on the 2nd launch and overrides theme choices from the first session",
+   "file": "lib/core/settings/settings_handler.dart",
+   "line": 2422,
+   "scenario": "New install, user picks the Pink theme and AMOLED in the first session. At the next launch the theme is reset to Flow/dark/no AMOLED/no dynamic colour.",
+   "evidence": "loadSettings: no settings.json -> saveSettings writes flowSkinApplied=false (field default) and loadFromJSON is never called. The next start runs loadFromJSON(setMissingKeys:true) with flowSkinApplied false, so the theme, themeMode, isAmoled and useDynamicColor are overwritten and _flowMigrationPending saves it.",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Changing a booru's URL (and name) adds a new config instead of replacing the old one",
+   "file": "lib/features/settings/ui/sources/booru_edit_page.dart",
+   "line": 1352,
+   "scenario": "Edit booru 'X' (URL A) -> change URL to B and name to 'Y' -> Save: 'X' stays (file and list entry) and 'Y' is added. With only the URL changed, the in-memory list holds two 'X' entries until restart.",
+   "evidence": "The old-config removal loop only considers entries whose baseURL == booruURLController.text (the NEW URL); the old entry with URL A never matches, so deleteBooru(widget.booru) is not called. saveBooru then booruList.add(newBooru).",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "'Hidden tags' row counts per-booru tags but opens the global Filters page",
+   "file": "lib/features/settings/ui/sources/booru_source_settings_view.dart",
+   "line": 146,
+   "scenario": "Booru source settings -> Hidden tags ('3 tags hidden on X') opens Settings -> Filters, which edits only the global hidden list; the per-booru lines are on the booru editor.",
+   "evidence": "subtitle uses SettingsHandler.instance.hiddenTagsForBooru(booru.name).length; onTap pushes const TagsFiltersPage(), which edits settingsHandler.hiddenTags/markedTags.",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Empty 'Items per page' makes the pop handler throw: limit not saved, default-booru prompt skipped",
+   "file": "lib/features/settings/ui/sources/booru_page.dart",
+   "line": 88,
+   "scenario": "Clear the Items per page field and press back: FormatException; prefBooru prompt, itemLimit and saveSettings are skipped (defTags is set in memory only).",
+   "evidence": "_onPopInvoked: settingsHandler.defTags = ...; if (int.parse(limitController.text) > 100) - int.parse('') throws; the digits-only formatter allows an empty field; the validator does not block the pop.",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Empty snatch cooldown or cache size field: none of the Save & cache changes are saved",
+   "file": "lib/features/settings/ui/save_cache_page.dart",
+   "line": 134,
+   "scenario": "Clear 'Snatch cooldown' (or 'Cache size limit'), change other options, press back: FormatException in the pop handler; jsonWrite, cache toggles, cacheDuration, snatchMode etc. are not applied or saved.",
+   "evidence": "settingsHandler.snatchCooldown = int.parse(snatchCooldownController.text); ... settingsHandler.cacheSize = int.parse(cacheSizeController.text); with no try or tryParse; saveSettings is at the end.",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "The Windows cookie mirror is read and cleared with the wrong key",
+   "file": "lib/features/settings/ui/network_page.dart",
+   "line": 185,
+   "scenario": "On Windows, the Settings -> Network cookie list, delete and clear for a booru never find the in-memory webview cookies.",
+   "evidence": "webview_page.dart:216-222 stores `globalWindowsCookies[uri.host]`, but network_page.dart:185/210/250 uses `globalWindowsCookies[selectedBooru!.baseURL!]` (a full URL).",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Loading a settings file without buttonOrder/disabledButtons throws out of loadFromJSON",
+   "file": "lib/core/settings/settings_handler.dart",
+   "line": 2389,
+   "scenario": "An empty or corrupt settings.json (see the non-atomic write) gives jsonDecode failure -> json = {} -> the setMissingKeys loop reaches 'buttonOrder' and throws. The rest of the defaults and the Flow migration are skipped and the 'init error' snackbar shows.",
+   "evidence": "map.forEach(... setByString(key, map[key]!['default'])) with no try/catch; setByString('buttonOrder') assigns validatedValue (a List<String> default, settings_handler.dart:1062) to List<GalleryButton> buttonOrder (line 1759), giving a TypeError; the same for disabledButtons <String>[]. initialize() catches and shows the snackbar.",
+   "severity": "wrong-behaviour",
+   "confidence": "plausible"
+  },
+  {
+   "title": "Login cookie check can run twice and pop two routes",
+   "file": "lib/features/accounts/ui/furaffinity_login_page.dart",
+   "line": 50,
+   "scenario": "The 1.5 s poll and onLoadStop both call _checkCookies while readJar is pending; both pass the _done guard before the await, both store the session and both call Navigator.pop. The second pop closes the page underneath (Accounts / booru editor). The same pattern exists in ehentai_login_page.dart:55 (_finishing is set only after the await).",
+   "evidence": "if (_done) return; final parsed = ...(await session.readJar()); ... _done = true; ... Navigator.of(context).pop(...) with no re-check after the await; mounted stays true during the pop animation.",
+   "severity": "wrong-behaviour",
+   "confidence": "plausible"
+  },
+  {
+   "title": "Fork checks upstream NO-ob update.json",
+   "file": "lib/core/settings/settings_handler.dart",
+   "line": 2935,
+   "scenario": "When upstream's build_number exceeds this fork's 5211, users get 'Update available' pointing to upstream releases (which would replace the fork).",
+   "evidence": "DioNetwork.get('https://raw.githubusercontent.com/NO-ob/LoliSnatcher_Droid/master/$updateFileName'); compares Constants.updateInfo.buildNumber < json build_number.",
+   "severity": "wrong-behaviour",
+   "confidence": "plausible"
+  },
+  {
+   "title": "Cache stats leak ReceivePorts and only the last isolate is killed",
+   "file": "lib/features/settings/ui/save_cache_page.dart",
+   "line": 105,
+   "scenario": "Each open of Save & cache (and each clear) spawns 6 isolates with 6 ReceivePorts that are never closed; dispose kills only the last isolate.",
+   "evidence": "for each type: receivePort = ReceivePort(); isolate = await Isolate.spawn(...); receivePort.listen(...) - no receivePort.close(); dispose(): isolate?.kill() on the single field.",
+   "severity": "leak",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "'Tap to reset' on Endless recommendations sets 30 instead of clearing the override",
+   "file": "lib/features/settings/ui/sources/source_settings_page.dart",
+   "line": 798,
+   "scenario": "In a doujin source's settings, override Endless, then tap 'Overridden for this source · tap to reset': the value becomes recommendedCount=30 (still overridden) and the marker never disappears.",
+   "evidence": "_switchRow(... onChanged: (v) => _update((s) => s.recommendedCount = (v ?? false) ? 0 : 30)); the marker calls onChanged(null), giving 30, not null.",
+   "severity": "minor",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Global doujin layer shows no selected chip for unset choices",
+   "file": "lib/features/settings/ui/sources/source_settings_page.dart",
+   "line": 416,
+   "scenario": "Settings -> Doujin -> Global: Reading direction, Page turn, Detail layout etc. show no chip selected although the effective default (ltr, animated, compact) applies.",
+   "evidence": "final T? shown = layerValue ?? (isGlobal ? layerValue : inheritedValue); on the global layer this is null when unset, so no ChoiceChip is selected.",
+   "severity": "minor",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Slideshow duration silently clamped to 10 s on exit",
+   "file": "lib/features/settings/ui/gallery_page.dart",
+   "line": 125,
+   "scenario": "Enter 30000 ms in 'Slideshow duration': after leaving the page it is 10000 ms, although the schema allows up to 100000 and the UI has no max.",
+   "evidence": "settingsHandler.galleryAutoScrollTime = (int.tryParse(...) ?? 4000).clamp(100, 10000); map 'galleryAutoScrollTime' upperLimit 100000 (settings_handler.dart:673); numberMax double.infinity.",
+   "severity": "minor",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "'What's new' title shows the remote version instead of the installed one",
+   "file": "lib/core/settings/settings_handler.dart",
+   "line": 3084,
+   "scenario": "After updating, the What's-new page title reads 'What's new: <latest GitHub version>' while the body is Constants.updateInfo (installed).",
+   "evidence": "_updateInfo = isAfterUpdate ? Constants.updateInfo : updateInfo.value; but the title uses updateInfo.value!.versionName/buildNumber.",
+   "severity": "minor",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "setState given an async callback",
+   "file": "lib/features/settings/ui/database_page.dart",
+   "line": 756,
+   "scenario": "Purge failed items: setState(purgeFailedSankakuItems) passes a Future-returning function, so in debug Flutter throws 'setState() callback argument returned a Future'.",
+   "evidence": "action: () { setState(purgeFailedSankakuItems); }",
+   "severity": "minor",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Empty mouse wheel field throws in the pop handler (desktop)",
+   "file": "lib/features/settings/ui/user_interface_page.dart",
+   "line": 117,
+   "scenario": "Desktop only: clear 'Mouse wheel scroll modifier' and leave: FormatException, and the Interface page's changes are not saved.",
+   "evidence": "settingsHandler.mousewheelScrollSpeed = double.parse(mouseSpeedController.text); before saveSettings.",
+   "severity": "minor",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "disabledButtons with a non-disableable entry hits a concurrent-modification error and keeps the stale list",
+   "file": "lib/core/settings/settings_handler.dart",
+   "line": 2237,
+   "scenario": "A settings file whose disabledButtons contains 'info' (an old version, sync or hand edit): removing it while iterating throws ConcurrentModificationError, which is caught; disabledButtons is not updated (on a restore it keeps the previous list).",
+   "evidence": "for (final button in tempDisabledButtons) { ... tempDisabledButtons.remove(button); } inside the try at 2225-2258.",
+   "severity": "minor",
+   "confidence": "plausible"
+  },
+  {
+   "title": "'double' settings are never validated (no case)",
+   "file": "lib/core/settings/settings_handler.dart",
+   "line": 1311,
+   "scenario": "mousewheelScrollSpeed/preloadSizeLimit from JSON are taken raw: no range check, and an int value (e.g. from an older sync) causes a TypeError on assignment, swallowed per key.",
+   "evidence": "validateValue switch has no 'double' case, so default: return value; setByString assigns validatedValue to a double field.",
+   "severity": "minor",
+   "confidence": "plausible"
+  },
+  {
+   "title": "deleteBooru throws when the booru file is missing",
+   "file": "lib/core/settings/settings_handler.dart",
+   "line": 2668,
+   "scenario": "Delete a booru whose file was already removed or renamed: File.delete throws FileSystemException, uncaught in the booru_page delete dialog; the dialog stays open with selectedBooru already changed.",
+   "evidence": "await booruFile.delete(); with no exists check or try; booru_page.dart:309 awaits it without try.",
+   "severity": "minor",
+   "confidence": "plausible"
+  },
+  {
+   "title": "setState after dispose in the POEditor card and the language dropdown",
+   "file": "lib/features/settings/ui/language_page.dart",
+   "line": 266,
+   "scenario": "Open Language and leave before the POEditor request (network) or loadAllLocales completes: setState on a disposed State (debug assert; release null-check error in the zone). The same in privacy_page.dart:34 (canCheckBiometrics().then(setState)) and theme_page.dart:123 (debounced callback after an awaited save).",
+   "evidence": "_fetchLanguages: await DioNetwork.post(...); setState(...) with no mounted check; initState: LocaleSettings.instance.loadAllLocales().then((_) { setState(() {}); }).",
+   "severity": "minor",
+   "confidence": "plausible"
+  }
+ ],
+ "fragile": [
+  {
+   "what": "settings.json schema and encodings",
+   "where": "lib/core/settings/settings_handler.dart (map, toJson, loadFromJSON) + lib/data/settings/*.dart toJson/fromString",
+   "rule": "Key names and value encodings must stay readable both ways: legacy enum strings ('Full Res', 'Stream+Cache', 'Ask', 'Post URL with tags', 'Disabled', 'auto-safe', 'gpu-next', 'mediacodec_embed', 'loli_snatcher'...), legacy hatedTags/lovedTags read as hiddenTags/markedTags, buttonOrder as a list or a comma string, cacheDuration in seconds, colours as ARGB ints, theme by name, locale by name."
+  },
+  {
+   "what": "Non-declared maps written next to the declared settings",
+   "where": "settings_handler.dart toJson/loadFromJSON (modularUi, modelTasks, modelThreads, modelRunOn, earlierDownloadFolders, hiddenTagsPerBooru)",
+   "rule": "Store only values that differ from the default (ModularUi.set removes defaults, ModelTasks the same); ModularUi.parse keeps only String->bool. They ride in settings backups."
+  },
+  {
+   "what": "Modular UI contract",
+   "where": "lib/core/settings/modular_ui.dart and the 10 consumer widgets (main_search_query_editor_page, main_drawer, drawer_quick_access, waterfall_view, thumbnail, linked_media_sheet, video_surface_cap, image_viewer, tag_view, status_bar_inset)",
+   "rule": "Values load before the first screen; a widget checks ModularUi.isOn in an `if` where it builds and never builds then hides. New UI removals become toggles (user rule). Defaults: search History/Pinned/Popular and app.drawUnderHiddenStatusBar off, the rest on (modular_ui_test asserts). Keys 'modular-ui-<key>'."
+  },
+  {
+   "what": "Flow skin one-time migration",
+   "where": "settings_handler.dart:2418-2433 + loadSettingsJson",
+   "rule": "Runs only on startup loads (setMissingKeys) while flowSkinApplied is false, and is saved immediately (_flowMigrationPending); never on LoliSync payloads."
+  },
+  {
+   "what": "appMode forced Mobile; isDebug persisted",
+   "where": "settings_handler.dart:2416, map 'isDebug'",
+   "rule": "appMode is overwritten after every load. isDebug survives restarts (r80); 6 taps on Version enable it, long-press disables it."
+  },
+  {
+   "what": "Device-specific settings",
+   "where": "SettingsHandler.deviceSpecificSettings + loli_sync_handler.dart:630",
+   "rule": "These keys are not sent over LoliSync. The list includes modelThreads/modelRunOn/capturesPath/earlierDownloadFolders (r80-r82)."
+  },
+  {
+   "what": "Restate on save",
+   "where": "saveSettings(restate:true)",
+   "rule": "Calls SearchHandler.filterCurrentFetched() and rootRestate after 1 s; the Settings hub and Debug exits, Interface (predictive back change) and first launch rely on it."
+  },
+  {
+   "what": "Doujin/booru personal-space separation",
+   "where": "SettingsHandler.parseTagsListForItem, SourceSettingsHandler.isItemHiddenForDoujin/tagBlacklistForItem, booru_edit_page (per-booru blacklist hidden for doujin boorus)",
+   "rule": "Doujin items never use booru blacklists or marked tags and vice versa (standing user rule; doujin_separation_test guards it)."
+  },
+  {
+   "what": "Source settings layering and keying",
+   "where": "source_settings_handler.dart",
+   "rule": "Effective = source override ?? global ?? default; global under '_global'; layers keyed by baseURL host (keyFor); only non-null fields are serialized and empty layers dropped; contentTypes/siteVariant/blacklistMode are source-only; reloadFromDisk after restore; resetForTests for tests."
+  },
+  {
+   "what": "composeQuery semantics",
+   "where": "SourceSettingsHandler.composeQuery / withDefaults, BooruHandler.sourceQuery (booru_handler.dart:985)",
+   "rule": "Query first, then the default of each filter group the query leaves unset (only values the site offers, lowercase match), then always-add words not already present; doujin sources are untouched (booru_source_settings_test)."
+  },
+  {
+   "what": "Blacklist cache invalidation",
+   "where": "SettingsHandler.invalidateBlacklistCache",
+   "rule": "Every change to hiddenTags or hiddenTagsPerBooru must invalidate it (tags_filters_page calls it manually after replacing the set; loadFromJSON calls it)."
+  },
+  {
+   "what": "Booru list order and virtual boorus",
+   "where": "loadBoorus/sortBooruList",
+   "rule": "Virtual boorus are added only when dbEnabled and real boorus exist; order is alphabetical, preferred booru first, then Favourites, Downloads, For You, For You (doujin), Boards, Collections, History last; non-saveable booru files are deleted on load."
+  },
+  {
+   "what": "Booru save side effects",
+   "where": "booru_edit_page.dart onSave",
+   "rule": "Booru files are named by the sanitized name; after saving, SearchHandler.applyBooruEdit re-points open tabs, the first tab is created when none exist, and a root restate follows."
+  },
+  {
+   "what": "Settings hub source layout read by a test",
+   "where": "lib/features/settings/ui/settings_page.dart + test/settings_layout_test.dart:53",
+   "rule": "The test reads the file by its path and the literal `_sectionLabel(context, 'SECTION')` and `const XPage()` strings in order. Moving or renaming the file, or changing that syntax, breaks the test."
+  },
+  {
+   "what": "Test seams on page classes",
+   "where": "BackupRestorePage.{isAndroid,driveHasCredentials,driveIsLinked,driveSnapshots,driveLink,resetForTests}, RecommendationsPage.{pickImageBytes,tagImage,lostPick,resetForTests}, ModelsPage.{threadsChanged,vectorUsage,applyVectorSpace,lookNpuReady,lookNpuBytes,downloadLookNpu,npuModelPath,resetForTests}, ModularUi.save",
+   "rule": "Keep or forward these statics when moving logic; tests replace them."
+  },
+  {
+   "what": "ValueKeys used by widget tests",
+   "where": "settings pages",
+   "rule": "Preserve keys such as 'source-links-toggle', 'source-links-android', 'account-ehentai/furaffinity/redgifs', 'model-card-<kind>', 'model-runon-<kind>[-row|-explain]', 'model-npu-copy/recompile-<kind>', 'model-threads-<kind>-<use>[-minus|-plus|-explain|-row]', 'models-all-off', 'picture-decoder[-explain|-row]', 'vector-space-<mb>', 'vector-space-used', 'backup-item-<name>', 'captures-folder', 'capture-save', 'earlier-folder-*', 'source-always-add', 'ehentai-check-again', 'fa-login', 'fa-content-filter'."
+  },
+  {
+   "what": "Settings pages write on pop",
+   "where": "most pages' PopScope.onPopInvokedWithResult",
+   "rule": "Values are copied into page state and committed on exit (changes made while on the page are lost if the app is killed). Theme commits after a 500 ms debounce; Recommendations, Modular UI, Links, Models and Debug captures commit immediately."
+  },
+  {
+   "what": "Settings enum registry init order",
+   "where": "main.dart:113 initSettingsEnumRegistry() before SettingsHandler.initialize()",
+   "rule": "Without the registry, enum keys in loadFromJSON fall through validateValue and fail to assign; tests that load JSON must init it."
+  },
+  {
+   "what": "Credential storage locations",
+   "where": "settings.json proxyPassword/customUserAgent; boorus/*.json apiKey/userID (RedGifs token); FA/e-hentai/eahentai session files; Drive OAuth client in secure storage",
+   "rule": "LogRedaction scrubs logs; booru share asks before including credentials; sessions are kept out of the image servers' cookies (scrubJar / seedJar for one visit)."
+  }
+ ]
+}

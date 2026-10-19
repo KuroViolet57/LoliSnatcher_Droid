@@ -289,45 +289,45 @@ class Translations with BaseTranslations<AppLocale, Translations> {
   /// en: 'Leave now'
   String get leaveNow => TranslationOverrides.string(_root.$meta, 'leaveNow', {}) ?? 'Leave now';
 
-  late final TranslationsValidationErrorsEn validationErrors = TranslationsValidationErrorsEn.internal(_root);
-  late final TranslationsInitEn init = TranslationsInitEn.internal(_root);
-  late final TranslationsPermissionsEn permissions = TranslationsPermissionsEn.internal(_root);
-  late final TranslationsAuthenticationEn authentication = TranslationsAuthenticationEn.internal(_root);
-  late final TranslationsSearchHandlerEn searchHandler = TranslationsSearchHandlerEn.internal(_root);
-  late final TranslationsSnatcherEn snatcher = TranslationsSnatcherEn.internal(_root);
-  late final TranslationsMultibooruEn multibooru = TranslationsMultibooruEn.internal(_root);
-  late final TranslationsHydrusEn hydrus = TranslationsHydrusEn.internal(_root);
-  late final TranslationsTabsEn tabs = TranslationsTabsEn.internal(_root);
-  late final TranslationsHistoryEn history = TranslationsHistoryEn.internal(_root);
-  late final TranslationsWebviewEn webview = TranslationsWebviewEn.internal(_root);
-  late final TranslationsSettingsEn settings = TranslationsSettingsEn.internal(_root);
-  late final TranslationsCommentsEn comments = TranslationsCommentsEn.internal(_root);
-  late final TranslationsPageChangerEn pageChanger = TranslationsPageChangerEn.internal(_root);
-  late final TranslationsTagsFiltersDialogsEn tagsFiltersDialogs = TranslationsTagsFiltersDialogsEn.internal(_root);
-  late final TranslationsTagsManagerEn tagsManager = TranslationsTagsManagerEn.internal(_root);
-  late final TranslationsLockscreenEn lockscreen = TranslationsLockscreenEn.internal(_root);
-  late final TranslationsLoliSyncEn loliSync = TranslationsLoliSyncEn.internal(_root);
-  late final TranslationsImageSearchEn imageSearch = TranslationsImageSearchEn.internal(_root);
-  late final TranslationsTagViewEn tagView = TranslationsTagViewEn.internal(_root);
-  late final TranslationsPinnedTagsEn pinnedTags = TranslationsPinnedTagsEn.internal(_root);
-  late final TranslationsSearchBarEn searchBar = TranslationsSearchBarEn.internal(_root);
-  late final TranslationsMobileHomeEn mobileHome = TranslationsMobileHomeEn.internal(_root);
-  late final TranslationsDesktopHomeEn desktopHome = TranslationsDesktopHomeEn.internal(_root);
-  late final TranslationsGalleryViewEn galleryView = TranslationsGalleryViewEn.internal(_root);
-  late final TranslationsMediaPreviewsEn mediaPreviews = TranslationsMediaPreviewsEn.internal(_root);
-  late final TranslationsViewerEn viewer = TranslationsViewerEn.internal(_root);
-  late final TranslationsCommonEn common = TranslationsCommonEn.internal(_root);
-  late final TranslationsGalleryEn gallery = TranslationsGalleryEn.internal(_root);
-  late final TranslationsGalleryButtonsEn galleryButtons = TranslationsGalleryButtonsEn.internal(_root);
-  late final TranslationsMediaEn media = TranslationsMediaEn.internal(_root);
-  late final TranslationsImageStatsEn imageStats = TranslationsImageStatsEn.internal(_root);
-  late final TranslationsPreviewEn preview = TranslationsPreviewEn.internal(_root);
-  late final TranslationsTagTypeEn tagType = TranslationsTagTypeEn.internal(_root);
+  late final Translations$validationErrors$en validationErrors = Translations$validationErrors$en.internal(_root);
+  late final Translations$init$en init = Translations$init$en.internal(_root);
+  late final Translations$permissions$en permissions = Translations$permissions$en.internal(_root);
+  late final Translations$authentication$en authentication = Translations$authentication$en.internal(_root);
+  late final Translations$searchHandler$en searchHandler = Translations$searchHandler$en.internal(_root);
+  late final Translations$snatcher$en snatcher = Translations$snatcher$en.internal(_root);
+  late final Translations$multibooru$en multibooru = Translations$multibooru$en.internal(_root);
+  late final Translations$hydrus$en hydrus = Translations$hydrus$en.internal(_root);
+  late final Translations$tabs$en tabs = Translations$tabs$en.internal(_root);
+  late final Translations$history$en history = Translations$history$en.internal(_root);
+  late final Translations$webview$en webview = Translations$webview$en.internal(_root);
+  late final Translations$settings$en settings = Translations$settings$en.internal(_root);
+  late final Translations$comments$en comments = Translations$comments$en.internal(_root);
+  late final Translations$pageChanger$en pageChanger = Translations$pageChanger$en.internal(_root);
+  late final Translations$tagsFiltersDialogs$en tagsFiltersDialogs = Translations$tagsFiltersDialogs$en.internal(_root);
+  late final Translations$tagsManager$en tagsManager = Translations$tagsManager$en.internal(_root);
+  late final Translations$lockscreen$en lockscreen = Translations$lockscreen$en.internal(_root);
+  late final Translations$loliSync$en loliSync = Translations$loliSync$en.internal(_root);
+  late final Translations$imageSearch$en imageSearch = Translations$imageSearch$en.internal(_root);
+  late final Translations$tagView$en tagView = Translations$tagView$en.internal(_root);
+  late final Translations$pinnedTags$en pinnedTags = Translations$pinnedTags$en.internal(_root);
+  late final Translations$searchBar$en searchBar = Translations$searchBar$en.internal(_root);
+  late final Translations$mobileHome$en mobileHome = Translations$mobileHome$en.internal(_root);
+  late final Translations$desktopHome$en desktopHome = Translations$desktopHome$en.internal(_root);
+  late final Translations$galleryView$en galleryView = Translations$galleryView$en.internal(_root);
+  late final Translations$mediaPreviews$en mediaPreviews = Translations$mediaPreviews$en.internal(_root);
+  late final Translations$viewer$en viewer = Translations$viewer$en.internal(_root);
+  late final Translations$common$en common = Translations$common$en.internal(_root);
+  late final Translations$gallery$en gallery = Translations$gallery$en.internal(_root);
+  late final Translations$galleryButtons$en galleryButtons = Translations$galleryButtons$en.internal(_root);
+  late final Translations$media$en media = Translations$media$en.internal(_root);
+  late final Translations$imageStats$en imageStats = Translations$imageStats$en.internal(_root);
+  late final Translations$preview$en preview = Translations$preview$en.internal(_root);
+  late final Translations$tagType$en tagType = Translations$tagType$en.internal(_root);
 }
 
 // Path: validationErrors
-class TranslationsValidationErrorsEn {
-  TranslationsValidationErrorsEn.internal(this._root);
+class Translations$validationErrors$en {
+  Translations$validationErrors$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -380,8 +380,8 @@ class TranslationsValidationErrorsEn {
 }
 
 // Path: init
-class TranslationsInitEn {
-  TranslationsInitEn.internal(this._root);
+class Translations$init$en {
+  Translations$init$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -407,8 +407,8 @@ class TranslationsInitEn {
 }
 
 // Path: permissions
-class TranslationsPermissionsEn {
-  TranslationsPermissionsEn.internal(this._root);
+class Translations$permissions$en {
+  Translations$permissions$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -441,11 +441,23 @@ class TranslationsPermissionsEn {
   String get afterResetFilesWillBeSavedToDefaultDirectory =>
       TranslationOverrides.string(_root.$meta, 'permissions.afterResetFilesWillBeSavedToDefaultDirectory', {}) ??
       'Files will save to default directory after reset';
+
+  /// en: 'Storage permission is blocked'
+  String get storageBlockedTitle =>
+      TranslationOverrides.string(_root.$meta, 'permissions.storageBlockedTitle', {}) ?? 'Storage permission is blocked';
+
+  /// en: 'The system will not ask again. Saves stay blocked until storage is allowed in system settings.'
+  String get storageBlockedBody =>
+      TranslationOverrides.string(_root.$meta, 'permissions.storageBlockedBody', {}) ??
+      'The system will not ask again. Saves stay blocked until storage is allowed in system settings.';
+
+  /// en: 'Open settings'
+  String get openAppSettings => TranslationOverrides.string(_root.$meta, 'permissions.openAppSettings', {}) ?? 'Open settings';
 }
 
 // Path: authentication
-class TranslationsAuthenticationEn {
-  TranslationsAuthenticationEn.internal(this._root);
+class Translations$authentication$en {
+  Translations$authentication$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -469,8 +481,8 @@ class TranslationsAuthenticationEn {
 }
 
 // Path: searchHandler
-class TranslationsSearchHandlerEn {
-  TranslationsSearchHandlerEn.internal(this._root);
+class Translations$searchHandler$en {
+  Translations$searchHandler$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -555,8 +567,8 @@ class TranslationsSearchHandlerEn {
 }
 
 // Path: snatcher
-class TranslationsSnatcherEn {
-  TranslationsSnatcherEn.internal(this._root);
+class Translations$snatcher$en {
+  Translations$snatcher$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -669,8 +681,8 @@ class TranslationsSnatcherEn {
 }
 
 // Path: multibooru
-class TranslationsMultibooruEn {
-  TranslationsMultibooruEn.internal(this._root);
+class Translations$multibooru$en {
+  Translations$multibooru$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -698,8 +710,8 @@ class TranslationsMultibooruEn {
 }
 
 // Path: hydrus
-class TranslationsHydrusEn {
-  TranslationsHydrusEn.internal(this._root);
+class Translations$hydrus$en {
+  Translations$hydrus$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -721,8 +733,8 @@ class TranslationsHydrusEn {
 }
 
 // Path: tabs
-class TranslationsTabsEn {
-  TranslationsTabsEn.internal(this._root);
+class Translations$tabs$en {
+  Translations$tabs$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -945,13 +957,13 @@ class TranslationsTabsEn {
         other: 'Are you sure you want to delete ${count} tabs?',
       );
 
-  late final TranslationsTabsFiltersEn filters = TranslationsTabsFiltersEn.internal(_root);
-  late final TranslationsTabsMoveEn move = TranslationsTabsMoveEn.internal(_root);
+  late final Translations$tabs$filters$en filters = Translations$tabs$filters$en.internal(_root);
+  late final Translations$tabs$move$en move = Translations$tabs$move$en.internal(_root);
 }
 
 // Path: history
-class TranslationsHistoryEn {
-  TranslationsHistoryEn.internal(this._root);
+class Translations$history$en {
+  Translations$history$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -1033,8 +1045,8 @@ class TranslationsHistoryEn {
 }
 
 // Path: webview
-class TranslationsWebviewEn {
-  TranslationsWebviewEn.internal(this._root);
+class Translations$webview$en {
+  Translations$webview$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -1057,12 +1069,12 @@ class TranslationsWebviewEn {
   /// en: 'Captcha completed'
   String get captchaCompleted => TranslationOverrides.string(_root.$meta, 'webview.captchaCompleted', {}) ?? 'Captcha completed';
 
-  late final TranslationsWebviewNavigationEn navigation = TranslationsWebviewNavigationEn.internal(_root);
+  late final Translations$webview$navigation$en navigation = Translations$webview$navigation$en.internal(_root);
 }
 
 // Path: settings
-class TranslationsSettingsEn {
-  TranslationsSettingsEn.internal(this._root);
+class Translations$settings$en {
+  Translations$settings$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -1071,38 +1083,38 @@ class TranslationsSettingsEn {
   /// en: 'Settings'
   String get title => TranslationOverrides.string(_root.$meta, 'settings.title', {}) ?? 'Settings';
 
-  late final TranslationsSettingsLanguageEn language = TranslationsSettingsLanguageEn.internal(_root);
-  late final TranslationsSettingsBooruEn booru = TranslationsSettingsBooruEn.internal(_root);
-  late final TranslationsSettingsBooruEditorEn booruEditor = TranslationsSettingsBooruEditorEn.internal(_root);
-  late final TranslationsSettingsInterfaceEn interface = TranslationsSettingsInterfaceEn.internal(_root);
-  late final TranslationsSettingsThemeEn theme = TranslationsSettingsThemeEn.internal(_root);
-  late final TranslationsSettingsViewerEn viewer = TranslationsSettingsViewerEn.internal(_root);
-  late final TranslationsSettingsVideoEn video = TranslationsSettingsVideoEn.internal(_root);
-  late final TranslationsSettingsDownloadsEn downloads = TranslationsSettingsDownloadsEn.internal(_root);
-  late final TranslationsSettingsDatabaseEn database = TranslationsSettingsDatabaseEn.internal(_root);
-  late final TranslationsSettingsBackupAndRestoreEn backupAndRestore = TranslationsSettingsBackupAndRestoreEn.internal(_root);
-  late final TranslationsSettingsNetworkEn network = TranslationsSettingsNetworkEn.internal(_root);
-  late final TranslationsSettingsPrivacyEn privacy = TranslationsSettingsPrivacyEn.internal(_root);
-  late final TranslationsSettingsPerformanceEn performance = TranslationsSettingsPerformanceEn.internal(_root);
-  late final TranslationsSettingsCacheEn cache = TranslationsSettingsCacheEn.internal(_root);
-  late final TranslationsSettingsItemFiltersEn itemFilters = TranslationsSettingsItemFiltersEn.internal(_root);
-  late final TranslationsSettingsSyncEn sync = TranslationsSettingsSyncEn.internal(_root);
-  late final TranslationsSettingsAboutEn about = TranslationsSettingsAboutEn.internal(_root);
-  late final TranslationsSettingsCheckForUpdatesEn checkForUpdates = TranslationsSettingsCheckForUpdatesEn.internal(_root);
-  late final TranslationsSettingsLogsEn logs = TranslationsSettingsLogsEn.internal(_root);
-  late final TranslationsSettingsHelpEn help = TranslationsSettingsHelpEn.internal(_root);
-  late final TranslationsSettingsDebugEn debug = TranslationsSettingsDebugEn.internal(_root);
-  late final TranslationsSettingsLoggingEn logging = TranslationsSettingsLoggingEn.internal(_root);
-  late final TranslationsSettingsWebviewEn webview = TranslationsSettingsWebviewEn.internal(_root);
-  late final TranslationsSettingsDirPickerEn dirPicker = TranslationsSettingsDirPickerEn.internal(_root);
+  late final Translations$settings$language$en language = Translations$settings$language$en.internal(_root);
+  late final Translations$settings$booru$en booru = Translations$settings$booru$en.internal(_root);
+  late final Translations$settings$booruEditor$en booruEditor = Translations$settings$booruEditor$en.internal(_root);
+  late final Translations$settings$interface$en interface = Translations$settings$interface$en.internal(_root);
+  late final Translations$settings$theme$en theme = Translations$settings$theme$en.internal(_root);
+  late final Translations$settings$viewer$en viewer = Translations$settings$viewer$en.internal(_root);
+  late final Translations$settings$video$en video = Translations$settings$video$en.internal(_root);
+  late final Translations$settings$downloads$en downloads = Translations$settings$downloads$en.internal(_root);
+  late final Translations$settings$database$en database = Translations$settings$database$en.internal(_root);
+  late final Translations$settings$backupAndRestore$en backupAndRestore = Translations$settings$backupAndRestore$en.internal(_root);
+  late final Translations$settings$network$en network = Translations$settings$network$en.internal(_root);
+  late final Translations$settings$privacy$en privacy = Translations$settings$privacy$en.internal(_root);
+  late final Translations$settings$performance$en performance = Translations$settings$performance$en.internal(_root);
+  late final Translations$settings$cache$en cache = Translations$settings$cache$en.internal(_root);
+  late final Translations$settings$itemFilters$en itemFilters = Translations$settings$itemFilters$en.internal(_root);
+  late final Translations$settings$sync$en sync = Translations$settings$sync$en.internal(_root);
+  late final Translations$settings$about$en about = Translations$settings$about$en.internal(_root);
+  late final Translations$settings$checkForUpdates$en checkForUpdates = Translations$settings$checkForUpdates$en.internal(_root);
+  late final Translations$settings$logs$en logs = Translations$settings$logs$en.internal(_root);
+  late final Translations$settings$help$en help = Translations$settings$help$en.internal(_root);
+  late final Translations$settings$debug$en debug = Translations$settings$debug$en.internal(_root);
+  late final Translations$settings$logging$en logging = Translations$settings$logging$en.internal(_root);
+  late final Translations$settings$webview$en webview = Translations$settings$webview$en.internal(_root);
+  late final Translations$settings$dirPicker$en dirPicker = Translations$settings$dirPicker$en.internal(_root);
 
   /// en: 'Version'
   String get version => TranslationOverrides.string(_root.$meta, 'settings.version', {}) ?? 'Version';
 }
 
 // Path: comments
-class TranslationsCommentsEn {
-  TranslationsCommentsEn.internal(this._root);
+class Translations$comments$en {
+  Translations$comments$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -1121,8 +1133,8 @@ class TranslationsCommentsEn {
 }
 
 // Path: pageChanger
-class TranslationsPageChangerEn {
-  TranslationsPageChangerEn.internal(this._root);
+class Translations$pageChanger$en {
+  Translations$pageChanger$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -1164,8 +1176,8 @@ class TranslationsPageChangerEn {
 }
 
 // Path: tagsFiltersDialogs
-class TranslationsTagsFiltersDialogsEn {
-  TranslationsTagsFiltersDialogsEn.internal(this._root);
+class Translations$tagsFiltersDialogs$en {
+  Translations$tagsFiltersDialogs$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -1190,8 +1202,8 @@ class TranslationsTagsFiltersDialogsEn {
 }
 
 // Path: tagsManager
-class TranslationsTagsManagerEn {
-  TranslationsTagsManagerEn.internal(this._root);
+class Translations$tagsManager$en {
+  Translations$tagsManager$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -1253,8 +1265,8 @@ class TranslationsTagsManagerEn {
 }
 
 // Path: lockscreen
-class TranslationsLockscreenEn {
-  TranslationsLockscreenEn.internal(this._root);
+class Translations$lockscreen$en {
+  Translations$lockscreen$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -1273,8 +1285,8 @@ class TranslationsLockscreenEn {
 }
 
 // Path: loliSync
-class TranslationsLoliSyncEn {
-  TranslationsLoliSyncEn.internal(this._root);
+class Translations$loliSync$en {
+  Translations$loliSync$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -1322,8 +1334,8 @@ class TranslationsLoliSyncEn {
 }
 
 // Path: imageSearch
-class TranslationsImageSearchEn {
-  TranslationsImageSearchEn.internal(this._root);
+class Translations$imageSearch$en {
+  Translations$imageSearch$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -1334,8 +1346,8 @@ class TranslationsImageSearchEn {
 }
 
 // Path: tagView
-class TranslationsTagViewEn {
-  TranslationsTagViewEn.internal(this._root);
+class Translations$tagView$en {
+  Translations$tagView$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -1499,8 +1511,8 @@ class TranslationsTagViewEn {
 }
 
 // Path: pinnedTags
-class TranslationsPinnedTagsEn {
-  TranslationsPinnedTagsEn.internal(this._root);
+class Translations$pinnedTags$en {
+  Translations$pinnedTags$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -1599,8 +1611,8 @@ class TranslationsPinnedTagsEn {
 }
 
 // Path: searchBar
-class TranslationsSearchBarEn {
-  TranslationsSearchBarEn.internal(this._root);
+class Translations$searchBar$en {
+  Translations$searchBar$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -1669,8 +1681,8 @@ class TranslationsSearchBarEn {
 }
 
 // Path: mobileHome
-class TranslationsMobileHomeEn {
-  TranslationsMobileHomeEn.internal(this._root);
+class Translations$mobileHome$en {
+  Translations$mobileHome$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -1711,8 +1723,8 @@ class TranslationsMobileHomeEn {
 }
 
 // Path: desktopHome
-class TranslationsDesktopHomeEn {
-  TranslationsDesktopHomeEn.internal(this._root);
+class Translations$desktopHome$en {
+  Translations$desktopHome$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -1735,8 +1747,8 @@ class TranslationsDesktopHomeEn {
 }
 
 // Path: galleryView
-class TranslationsGalleryViewEn {
-  TranslationsGalleryViewEn.internal(this._root);
+class Translations$galleryView$en {
+  Translations$galleryView$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -1753,8 +1765,8 @@ class TranslationsGalleryViewEn {
 }
 
 // Path: mediaPreviews
-class TranslationsMediaPreviewsEn {
-  TranslationsMediaPreviewsEn.internal(this._root);
+class Translations$mediaPreviews$en {
+  Translations$mediaPreviews$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -1781,20 +1793,20 @@ class TranslationsMediaPreviewsEn {
 }
 
 // Path: viewer
-class TranslationsViewerEn {
-  TranslationsViewerEn.internal(this._root);
+class Translations$viewer$en {
+  Translations$viewer$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
   // Translations
-  late final TranslationsViewerTutorialEn tutorial = TranslationsViewerTutorialEn.internal(_root);
-  late final TranslationsViewerAppBarEn appBar = TranslationsViewerAppBarEn.internal(_root);
-  late final TranslationsViewerNotesEn notes = TranslationsViewerNotesEn.internal(_root);
+  late final Translations$viewer$tutorial$en tutorial = Translations$viewer$tutorial$en.internal(_root);
+  late final Translations$viewer$appBar$en appBar = Translations$viewer$appBar$en.internal(_root);
+  late final Translations$viewer$notes$en notes = Translations$viewer$notes$en.internal(_root);
 }
 
 // Path: common
-class TranslationsCommonEn {
-  TranslationsCommonEn.internal(this._root);
+class Translations$common$en {
+  Translations$common$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -1809,8 +1821,8 @@ class TranslationsCommonEn {
 }
 
 // Path: gallery
-class TranslationsGalleryEn {
-  TranslationsGalleryEn.internal(this._root);
+class Translations$gallery$en {
+  Translations$gallery$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -1842,8 +1854,8 @@ class TranslationsGalleryEn {
 }
 
 // Path: galleryButtons
-class TranslationsGalleryButtonsEn {
-  TranslationsGalleryButtonsEn.internal(this._root);
+class Translations$galleryButtons$en {
+  Translations$galleryButtons$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -1884,19 +1896,19 @@ class TranslationsGalleryButtonsEn {
 }
 
 // Path: media
-class TranslationsMediaEn {
-  TranslationsMediaEn.internal(this._root);
+class Translations$media$en {
+  Translations$media$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
   // Translations
-  late final TranslationsMediaLoadingEn loading = TranslationsMediaLoadingEn.internal(_root);
-  late final TranslationsMediaVideoEn video = TranslationsMediaVideoEn.internal(_root);
+  late final Translations$media$loading$en loading = Translations$media$loading$en.internal(_root);
+  late final Translations$media$video$en video = Translations$media$video$en.internal(_root);
 }
 
 // Path: imageStats
-class TranslationsImageStatsEn {
-  TranslationsImageStatsEn.internal(this._root);
+class Translations$imageStats$en {
+  Translations$imageStats$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -1919,18 +1931,18 @@ class TranslationsImageStatsEn {
 }
 
 // Path: preview
-class TranslationsPreviewEn {
-  TranslationsPreviewEn.internal(this._root);
+class Translations$preview$en {
+  Translations$preview$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
   // Translations
-  late final TranslationsPreviewErrorEn error = TranslationsPreviewErrorEn.internal(_root);
+  late final Translations$preview$error$en error = Translations$preview$error$en.internal(_root);
 }
 
 // Path: tagType
-class TranslationsTagTypeEn {
-  TranslationsTagTypeEn.internal(this._root);
+class Translations$tagType$en {
+  Translations$tagType$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -1956,8 +1968,8 @@ class TranslationsTagTypeEn {
 }
 
 // Path: tabs.filters
-class TranslationsTabsFiltersEn {
-  TranslationsTabsFiltersEn.internal(this._root);
+class Translations$tabs$filters$en {
+  Translations$tabs$filters$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -2013,8 +2025,8 @@ class TranslationsTabsFiltersEn {
 }
 
 // Path: tabs.move
-class TranslationsTabsMoveEn {
-  TranslationsTabsMoveEn.internal(this._root);
+class Translations$tabs$move$en {
+  Translations$tabs$move$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -2051,8 +2063,8 @@ class TranslationsTabsMoveEn {
 }
 
 // Path: webview.navigation
-class TranslationsWebviewNavigationEn {
-  TranslationsWebviewNavigationEn.internal(this._root);
+class Translations$webview$navigation$en {
+  Translations$webview$navigation$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -2116,8 +2128,8 @@ class TranslationsWebviewNavigationEn {
 }
 
 // Path: settings.language
-class TranslationsSettingsLanguageEn {
-  TranslationsSettingsLanguageEn.internal(this._root);
+class Translations$settings$language$en {
+  Translations$settings$language$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -2139,8 +2151,8 @@ class TranslationsSettingsLanguageEn {
 }
 
 // Path: settings.booru
-class TranslationsSettingsBooruEn {
-  TranslationsSettingsBooruEn.internal(this._root);
+class Translations$settings$booru$en {
+  Translations$settings$booru$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -2241,8 +2253,8 @@ class TranslationsSettingsBooruEn {
 }
 
 // Path: settings.booruEditor
-class TranslationsSettingsBooruEditorEn {
-  TranslationsSettingsBooruEditorEn.internal(this._root);
+class Translations$settings$booruEditor$en {
+  Translations$settings$booruEditor$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -2362,8 +2374,8 @@ class TranslationsSettingsBooruEditorEn {
 }
 
 // Path: settings.interface
-class TranslationsSettingsInterfaceEn {
-  TranslationsSettingsInterfaceEn.internal(this._root);
+class Translations$settings$interface$en {
+  Translations$settings$interface$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -2510,18 +2522,17 @@ class TranslationsSettingsInterfaceEn {
   /// en: 'Scroll modifier'
   String get scrollModifier => TranslationOverrides.string(_root.$meta, 'settings.interface.scrollModifier', {}) ?? 'Scroll modifier';
 
-  late final TranslationsSettingsInterfacePreviewQualityValuesEn previewQualityValues = TranslationsSettingsInterfacePreviewQualityValuesEn.internal(
-    _root,
-  );
-  late final TranslationsSettingsInterfacePreviewDisplayModeValuesEn previewDisplayModeValues =
-      TranslationsSettingsInterfacePreviewDisplayModeValuesEn.internal(_root);
-  late final TranslationsSettingsInterfaceAppModeValuesEn appModeValues = TranslationsSettingsInterfaceAppModeValuesEn.internal(_root);
-  late final TranslationsSettingsInterfaceHandSideValuesEn handSideValues = TranslationsSettingsInterfaceHandSideValuesEn.internal(_root);
+  late final Translations$settings$interface$previewQualityValues$en previewQualityValues =
+      Translations$settings$interface$previewQualityValues$en.internal(_root);
+  late final Translations$settings$interface$previewDisplayModeValues$en previewDisplayModeValues =
+      Translations$settings$interface$previewDisplayModeValues$en.internal(_root);
+  late final Translations$settings$interface$appModeValues$en appModeValues = Translations$settings$interface$appModeValues$en.internal(_root);
+  late final Translations$settings$interface$handSideValues$en handSideValues = Translations$settings$interface$handSideValues$en.internal(_root);
 }
 
 // Path: settings.theme
-class TranslationsSettingsThemeEn {
-  TranslationsSettingsThemeEn.internal(this._root);
+class Translations$settings$theme$en {
+  Translations$settings$theme$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -2571,6 +2582,9 @@ class TranslationsSettingsThemeEn {
 
   /// en: 'Dark'
   String get dark => TranslationOverrides.string(_root.$meta, 'settings.theme.dark', {}) ?? 'Dark';
+
+  /// en: 'Flow'
+  String get flow => TranslationOverrides.string(_root.$meta, 'settings.theme.flow', {}) ?? 'Flow';
 
   /// en: 'Pink'
   String get pink => TranslationOverrides.string(_root.$meta, 'settings.theme.pink', {}) ?? 'Pink';
@@ -2636,8 +2650,8 @@ class TranslationsSettingsThemeEn {
 }
 
 // Path: settings.viewer
-class TranslationsSettingsViewerEn {
-  TranslationsSettingsViewerEn.internal(this._root);
+class Translations$settings$viewer$en {
+  Translations$settings$viewer$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -2815,9 +2829,10 @@ class TranslationsSettingsViewerEn {
   /// en: 'Slideshow'
   String get slideshow => TranslationOverrides.string(_root.$meta, 'settings.viewer.slideshow', {}) ?? 'Slideshow';
 
-  /// en: '[WIP] Videos/GIFs: manual scroll only'
+  /// en: 'Videos and GIFs use their own longer timer. At the last loaded item, the next page loads when the search has more.'
   String get slideshowWIPNote =>
-      TranslationOverrides.string(_root.$meta, 'settings.viewer.slideshowWIPNote', {}) ?? '[WIP] Videos/GIFs: manual scroll only';
+      TranslationOverrides.string(_root.$meta, 'settings.viewer.slideshowWIPNote', {}) ??
+      'Videos and GIFs use their own longer timer. At the last loaded item, the next page loads when the search has more.';
 
   /// en: 'Prevent device from sleeping'
   String get preventDeviceFromSleeping =>
@@ -2841,20 +2856,21 @@ class TranslationsSettingsViewerEn {
   /// en: 'Kanna loading GIF'
   String get kannaLoadingGif => TranslationOverrides.string(_root.$meta, 'settings.viewer.kannaLoadingGif', {}) ?? 'Kanna loading GIF';
 
-  late final TranslationsSettingsViewerImageQualityValuesEn imageQualityValues = TranslationsSettingsViewerImageQualityValuesEn.internal(_root);
-  late final TranslationsSettingsViewerScrollDirectionValuesEn scrollDirectionValues = TranslationsSettingsViewerScrollDirectionValuesEn.internal(
+  late final Translations$settings$viewer$imageQualityValues$en imageQualityValues = Translations$settings$viewer$imageQualityValues$en.internal(
     _root,
   );
-  late final TranslationsSettingsViewerToolbarPositionValuesEn toolbarPositionValues = TranslationsSettingsViewerToolbarPositionValuesEn.internal(
-    _root,
-  );
-  late final TranslationsSettingsViewerButtonPositionValuesEn buttonPositionValues = TranslationsSettingsViewerButtonPositionValuesEn.internal(_root);
-  late final TranslationsSettingsViewerShareActionValuesEn shareActionValues = TranslationsSettingsViewerShareActionValuesEn.internal(_root);
+  late final Translations$settings$viewer$scrollDirectionValues$en scrollDirectionValues =
+      Translations$settings$viewer$scrollDirectionValues$en.internal(_root);
+  late final Translations$settings$viewer$toolbarPositionValues$en toolbarPositionValues =
+      Translations$settings$viewer$toolbarPositionValues$en.internal(_root);
+  late final Translations$settings$viewer$buttonPositionValues$en buttonPositionValues =
+      Translations$settings$viewer$buttonPositionValues$en.internal(_root);
+  late final Translations$settings$viewer$shareActionValues$en shareActionValues = Translations$settings$viewer$shareActionValues$en.internal(_root);
 }
 
 // Path: settings.video
-class TranslationsSettingsVideoEn {
-  TranslationsSettingsVideoEn.internal(this._root);
+class Translations$settings$video$en {
+  Translations$settings$video$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -2925,16 +2941,15 @@ class TranslationsSettingsVideoEn {
   /// en: 'Video cache mode'
   String get videoCacheMode => TranslationOverrides.string(_root.$meta, 'settings.video.videoCacheMode', {}) ?? 'Video cache mode';
 
-  late final TranslationsSettingsVideoCacheModesEn cacheModes = TranslationsSettingsVideoCacheModesEn.internal(_root);
-  late final TranslationsSettingsVideoCacheModeValuesEn cacheModeValues = TranslationsSettingsVideoCacheModeValuesEn.internal(_root);
-  late final TranslationsSettingsVideoVideoBackendModeValuesEn videoBackendModeValues = TranslationsSettingsVideoVideoBackendModeValuesEn.internal(
-    _root,
-  );
+  late final Translations$settings$video$cacheModes$en cacheModes = Translations$settings$video$cacheModes$en.internal(_root);
+  late final Translations$settings$video$cacheModeValues$en cacheModeValues = Translations$settings$video$cacheModeValues$en.internal(_root);
+  late final Translations$settings$video$videoBackendModeValues$en videoBackendModeValues =
+      Translations$settings$video$videoBackendModeValues$en.internal(_root);
 }
 
 // Path: settings.downloads
-class TranslationsSettingsDownloadsEn {
-  TranslationsSettingsDownloadsEn.internal(this._root);
+class Translations$settings$downloads$en {
+  Translations$settings$downloads$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -2979,8 +2994,8 @@ class TranslationsSettingsDownloadsEn {
 }
 
 // Path: settings.database
-class TranslationsSettingsDatabaseEn {
-  TranslationsSettingsDatabaseEn.internal(this._root);
+class Translations$settings$database$en {
+  Translations$settings$database$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -3205,8 +3220,8 @@ class TranslationsSettingsDatabaseEn {
 }
 
 // Path: settings.backupAndRestore
-class TranslationsSettingsBackupAndRestoreEn {
-  TranslationsSettingsBackupAndRestoreEn.internal(this._root);
+class Translations$settings$backupAndRestore$en {
+  Translations$settings$backupAndRestore$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -3375,8 +3390,8 @@ class TranslationsSettingsBackupAndRestoreEn {
 }
 
 // Path: settings.network
-class TranslationsSettingsNetworkEn {
-  TranslationsSettingsNetworkEn.internal(this._root);
+class Translations$settings$network$en {
+  Translations$settings$network$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -3457,8 +3472,8 @@ class TranslationsSettingsNetworkEn {
 }
 
 // Path: settings.privacy
-class TranslationsSettingsPrivacyEn {
-  TranslationsSettingsPrivacyEn.internal(this._root);
+class Translations$settings$privacy$en {
+  Translations$settings$privacy$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -3521,8 +3536,8 @@ class TranslationsSettingsPrivacyEn {
 }
 
 // Path: settings.performance
-class TranslationsSettingsPerformanceEn {
-  TranslationsSettingsPerformanceEn.internal(this._root);
+class Translations$settings$performance$en {
+  Translations$settings$performance$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -3571,8 +3586,8 @@ class TranslationsSettingsPerformanceEn {
 }
 
 // Path: settings.cache
-class TranslationsSettingsCacheEn {
-  TranslationsSettingsCacheEn.internal(this._root);
+class Translations$settings$cache$en {
+  Translations$settings$cache$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -3734,8 +3749,8 @@ class TranslationsSettingsCacheEn {
 }
 
 // Path: settings.itemFilters
-class TranslationsSettingsItemFiltersEn {
-  TranslationsSettingsItemFiltersEn.internal(this._root);
+class Translations$settings$itemFilters$en {
+  Translations$settings$itemFilters$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -3783,8 +3798,8 @@ class TranslationsSettingsItemFiltersEn {
 }
 
 // Path: settings.sync
-class TranslationsSettingsSyncEn {
-  TranslationsSettingsSyncEn.internal(this._root);
+class Translations$settings$sync$en {
+  Translations$settings$sync$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -3831,6 +3846,22 @@ class TranslationsSettingsSyncEn {
 
   /// en: 'Host Port (i.e. 7777)'
   String get portPlaceholder => TranslationOverrides.string(_root.$meta, 'settings.sync.portPlaceholder', {}) ?? 'Host Port (i.e. 7777)';
+
+  /// en: 'Sync code'
+  String get syncCode => TranslationOverrides.string(_root.$meta, 'settings.sync.syncCode', {}) ?? 'Sync code';
+
+  /// en: 'Code shown on the other phone'
+  String get syncCodePlaceholder =>
+      TranslationOverrides.string(_root.$meta, 'settings.sync.syncCodePlaceholder', {}) ?? 'Code shown on the other phone';
+
+  /// en: 'The other phone shows this code when its server starts. It changes every time that server starts, and it is not saved.'
+  String get syncCodeHelp =>
+      TranslationOverrides.string(_root.$meta, 'settings.sync.syncCodeHelp', {}) ??
+      'The other phone shows this code when its server starts. It changes every time that server starts, and it is not saved.';
+
+  /// en: 'Enter the code shown on the other phone.'
+  String get syncCodeRequired =>
+      TranslationOverrides.string(_root.$meta, 'settings.sync.syncCodeRequired', {}) ?? 'Enter the code shown on the other phone.';
 
   /// en: 'Send favourites'
   String get sendFavourites => TranslationOverrides.string(_root.$meta, 'settings.sync.sendFavourites', {}) ?? 'Send favourites';
@@ -3985,6 +4016,11 @@ class TranslationsSettingsSyncEn {
       TranslationOverrides.string(_root.$meta, 'settings.sync.receiverInstructions', {}) ??
       'Start server to receive data. Avoid public WiFi for security';
 
+  /// en: 'The next page shows a code. Type that code on the sending phone. It is not saved.'
+  String get syncCodeReceiverNote =>
+      TranslationOverrides.string(_root.$meta, 'settings.sync.syncCodeReceiverNote', {}) ??
+      'The next page shows a code. Type that code on the sending phone. It is not saved.';
+
   /// en: 'Available network interfaces'
   String get availableNetworkInterfaces =>
       TranslationOverrides.string(_root.$meta, 'settings.sync.availableNetworkInterfaces', {}) ?? 'Available network interfaces';
@@ -4005,8 +4041,8 @@ class TranslationsSettingsSyncEn {
 }
 
 // Path: settings.about
-class TranslationsSettingsAboutEn {
-  TranslationsSettingsAboutEn.internal(this._root);
+class Translations$settings$about$en {
+  Translations$settings$about$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -4053,8 +4089,8 @@ class TranslationsSettingsAboutEn {
 }
 
 // Path: settings.checkForUpdates
-class TranslationsSettingsCheckForUpdatesEn {
-  TranslationsSettingsCheckForUpdatesEn.internal(this._root);
+class Translations$settings$checkForUpdates$en {
+  Translations$settings$checkForUpdates$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -4097,8 +4133,8 @@ class TranslationsSettingsCheckForUpdatesEn {
 }
 
 // Path: settings.logs
-class TranslationsSettingsLogsEn {
-  TranslationsSettingsLogsEn.internal(this._root);
+class Translations$settings$logs$en {
+  Translations$settings$logs$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -4121,8 +4157,8 @@ class TranslationsSettingsLogsEn {
 }
 
 // Path: settings.help
-class TranslationsSettingsHelpEn {
-  TranslationsSettingsHelpEn.internal(this._root);
+class Translations$settings$help$en {
+  Translations$settings$help$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -4133,8 +4169,8 @@ class TranslationsSettingsHelpEn {
 }
 
 // Path: settings.debug
-class TranslationsSettingsDebugEn {
-  TranslationsSettingsDebugEn.internal(this._root);
+class Translations$settings$debug$en {
+  Translations$settings$debug$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -4216,8 +4252,8 @@ class TranslationsSettingsDebugEn {
 }
 
 // Path: settings.logging
-class TranslationsSettingsLoggingEn {
-  TranslationsSettingsLoggingEn.internal(this._root);
+class Translations$settings$logging$en {
+  Translations$settings$logging$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -4228,8 +4264,8 @@ class TranslationsSettingsLoggingEn {
 }
 
 // Path: settings.webview
-class TranslationsSettingsWebviewEn {
-  TranslationsSettingsWebviewEn.internal(this._root);
+class Translations$settings$webview$en {
+  Translations$settings$webview$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -4243,8 +4279,8 @@ class TranslationsSettingsWebviewEn {
 }
 
 // Path: settings.dirPicker
-class TranslationsSettingsDirPickerEn {
-  TranslationsSettingsDirPickerEn.internal(this._root);
+class Translations$settings$dirPicker$en {
+  Translations$settings$dirPicker$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -4286,8 +4322,8 @@ class TranslationsSettingsDirPickerEn {
 }
 
 // Path: viewer.tutorial
-class TranslationsViewerTutorialEn {
-  TranslationsViewerTutorialEn.internal(this._root);
+class Translations$viewer$tutorial$en {
+  Translations$viewer$tutorial$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -4306,8 +4342,8 @@ class TranslationsViewerTutorialEn {
 }
 
 // Path: viewer.appBar
-class TranslationsViewerAppBarEn {
-  TranslationsViewerAppBarEn.internal(this._root);
+class Translations$viewer$appBar$en {
+  Translations$viewer$appBar$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -4424,8 +4460,8 @@ class TranslationsViewerAppBarEn {
 }
 
 // Path: viewer.notes
-class TranslationsViewerNotesEn {
-  TranslationsViewerNotesEn.internal(this._root);
+class Translations$viewer$notes$en {
+  Translations$viewer$notes$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -4443,8 +4479,8 @@ class TranslationsViewerNotesEn {
 }
 
 // Path: media.loading
-class TranslationsMediaLoadingEn {
-  TranslationsMediaLoadingEn.internal(this._root);
+class Translations$media$loading$en {
+  Translations$media$loading$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -4479,7 +4515,7 @@ class TranslationsMediaLoadingEn {
   String startedSecondsAgo({required int seconds}) =>
       TranslationOverrides.string(_root.$meta, 'media.loading.startedSecondsAgo', {'seconds': seconds}) ?? 'Started ${seconds}s ago';
 
-  late final TranslationsMediaLoadingStopReasonsEn stopReasons = TranslationsMediaLoadingStopReasonsEn.internal(_root);
+  late final Translations$media$loading$stopReasons$en stopReasons = Translations$media$loading$stopReasons$en.internal(_root);
 
   /// en: 'File is zero bytes'
   String get fileIsZeroBytes => TranslationOverrides.string(_root.$meta, 'media.loading.fileIsZeroBytes', {}) ?? 'File is zero bytes';
@@ -4499,8 +4535,8 @@ class TranslationsMediaLoadingEn {
 }
 
 // Path: media.video
-class TranslationsMediaVideoEn {
-  TranslationsMediaVideoEn.internal(this._root);
+class Translations$media$video$en {
+  Translations$media$video$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -4542,8 +4578,8 @@ class TranslationsMediaVideoEn {
 }
 
 // Path: preview.error
-class TranslationsPreviewErrorEn {
-  TranslationsPreviewErrorEn.internal(this._root);
+class Translations$preview$error$en {
+  Translations$preview$error$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -4598,8 +4634,8 @@ class TranslationsPreviewErrorEn {
 }
 
 // Path: settings.interface.previewQualityValues
-class TranslationsSettingsInterfacePreviewQualityValuesEn {
-  TranslationsSettingsInterfacePreviewQualityValuesEn.internal(this._root);
+class Translations$settings$interface$previewQualityValues$en {
+  Translations$settings$interface$previewQualityValues$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -4613,8 +4649,8 @@ class TranslationsSettingsInterfacePreviewQualityValuesEn {
 }
 
 // Path: settings.interface.previewDisplayModeValues
-class TranslationsSettingsInterfacePreviewDisplayModeValuesEn {
-  TranslationsSettingsInterfacePreviewDisplayModeValuesEn.internal(this._root);
+class Translations$settings$interface$previewDisplayModeValues$en {
+  Translations$settings$interface$previewDisplayModeValues$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -4631,8 +4667,8 @@ class TranslationsSettingsInterfacePreviewDisplayModeValuesEn {
 }
 
 // Path: settings.interface.appModeValues
-class TranslationsSettingsInterfaceAppModeValuesEn {
-  TranslationsSettingsInterfaceAppModeValuesEn.internal(this._root);
+class Translations$settings$interface$appModeValues$en {
+  Translations$settings$interface$appModeValues$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -4646,8 +4682,8 @@ class TranslationsSettingsInterfaceAppModeValuesEn {
 }
 
 // Path: settings.interface.handSideValues
-class TranslationsSettingsInterfaceHandSideValuesEn {
-  TranslationsSettingsInterfaceHandSideValuesEn.internal(this._root);
+class Translations$settings$interface$handSideValues$en {
+  Translations$settings$interface$handSideValues$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -4661,8 +4697,8 @@ class TranslationsSettingsInterfaceHandSideValuesEn {
 }
 
 // Path: settings.viewer.imageQualityValues
-class TranslationsSettingsViewerImageQualityValuesEn {
-  TranslationsSettingsViewerImageQualityValuesEn.internal(this._root);
+class Translations$settings$viewer$imageQualityValues$en {
+  Translations$settings$viewer$imageQualityValues$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -4676,8 +4712,8 @@ class TranslationsSettingsViewerImageQualityValuesEn {
 }
 
 // Path: settings.viewer.scrollDirectionValues
-class TranslationsSettingsViewerScrollDirectionValuesEn {
-  TranslationsSettingsViewerScrollDirectionValuesEn.internal(this._root);
+class Translations$settings$viewer$scrollDirectionValues$en {
+  Translations$settings$viewer$scrollDirectionValues$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -4691,8 +4727,8 @@ class TranslationsSettingsViewerScrollDirectionValuesEn {
 }
 
 // Path: settings.viewer.toolbarPositionValues
-class TranslationsSettingsViewerToolbarPositionValuesEn {
-  TranslationsSettingsViewerToolbarPositionValuesEn.internal(this._root);
+class Translations$settings$viewer$toolbarPositionValues$en {
+  Translations$settings$viewer$toolbarPositionValues$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -4706,8 +4742,8 @@ class TranslationsSettingsViewerToolbarPositionValuesEn {
 }
 
 // Path: settings.viewer.buttonPositionValues
-class TranslationsSettingsViewerButtonPositionValuesEn {
-  TranslationsSettingsViewerButtonPositionValuesEn.internal(this._root);
+class Translations$settings$viewer$buttonPositionValues$en {
+  Translations$settings$viewer$buttonPositionValues$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -4724,8 +4760,8 @@ class TranslationsSettingsViewerButtonPositionValuesEn {
 }
 
 // Path: settings.viewer.shareActionValues
-class TranslationsSettingsViewerShareActionValuesEn {
-  TranslationsSettingsViewerShareActionValuesEn.internal(this._root);
+class Translations$settings$viewer$shareActionValues$en {
+  Translations$settings$viewer$shareActionValues$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -4759,8 +4795,8 @@ class TranslationsSettingsViewerShareActionValuesEn {
 }
 
 // Path: settings.video.cacheModes
-class TranslationsSettingsVideoCacheModesEn {
-  TranslationsSettingsVideoCacheModesEn.internal(this._root);
+class Translations$settings$video$cacheModes$en {
+  Translations$settings$video$cacheModes$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -4796,8 +4832,8 @@ class TranslationsSettingsVideoCacheModesEn {
 }
 
 // Path: settings.video.cacheModeValues
-class TranslationsSettingsVideoCacheModeValuesEn {
-  TranslationsSettingsVideoCacheModeValuesEn.internal(this._root);
+class Translations$settings$video$cacheModeValues$en {
+  Translations$settings$video$cacheModeValues$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -4814,8 +4850,8 @@ class TranslationsSettingsVideoCacheModeValuesEn {
 }
 
 // Path: settings.video.videoBackendModeValues
-class TranslationsSettingsVideoVideoBackendModeValuesEn {
-  TranslationsSettingsVideoVideoBackendModeValuesEn.internal(this._root);
+class Translations$settings$video$videoBackendModeValues$en {
+  Translations$settings$video$videoBackendModeValues$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -4832,8 +4868,8 @@ class TranslationsSettingsVideoVideoBackendModeValuesEn {
 }
 
 // Path: media.loading.stopReasons
-class TranslationsMediaLoadingStopReasonsEn {
-  TranslationsMediaLoadingStopReasonsEn.internal(this._root);
+class Translations$media$loading$stopReasons$en {
+  Translations$media$loading$stopReasons$en.internal(this._root);
 
   final Translations _root; // ignore: unused_field
 
@@ -4994,6 +5030,12 @@ extension on Translations {
           'permissions.afterResetFilesWillBeSavedToDefaultDirectory' =>
             TranslationOverrides.string(_root.$meta, 'permissions.afterResetFilesWillBeSavedToDefaultDirectory', {}) ??
                 'Files will save to default directory after reset',
+          'permissions.storageBlockedTitle' =>
+            TranslationOverrides.string(_root.$meta, 'permissions.storageBlockedTitle', {}) ?? 'Storage permission is blocked',
+          'permissions.storageBlockedBody' =>
+            TranslationOverrides.string(_root.$meta, 'permissions.storageBlockedBody', {}) ??
+                'The system will not ask again. Saves stay blocked until storage is allowed in system settings.',
+          'permissions.openAppSettings' => TranslationOverrides.string(_root.$meta, 'permissions.openAppSettings', {}) ?? 'Open settings',
           'authentication.pleaseAuthenticateToUseTheApp' =>
             TranslationOverrides.string(_root.$meta, 'authentication.pleaseAuthenticateToUseTheApp', {}) ?? 'Please authenticate to use the app',
           'authentication.noBiometricHardwareAvailable' =>
@@ -5569,6 +5611,7 @@ extension on Translations {
           'settings.theme.system' => TranslationOverrides.string(_root.$meta, 'settings.theme.system', {}) ?? 'System',
           'settings.theme.light' => TranslationOverrides.string(_root.$meta, 'settings.theme.light', {}) ?? 'Light',
           'settings.theme.dark' => TranslationOverrides.string(_root.$meta, 'settings.theme.dark', {}) ?? 'Dark',
+          'settings.theme.flow' => TranslationOverrides.string(_root.$meta, 'settings.theme.flow', {}) ?? 'Flow',
           'settings.theme.pink' => TranslationOverrides.string(_root.$meta, 'settings.theme.pink', {}) ?? 'Pink',
           'settings.theme.purple' => TranslationOverrides.string(_root.$meta, 'settings.theme.purple', {}) ?? 'Purple',
           'settings.theme.blue' => TranslationOverrides.string(_root.$meta, 'settings.theme.blue', {}) ?? 'Blue',
@@ -5685,7 +5728,8 @@ extension on Translations {
             TranslationOverrides.string(_root.$meta, 'settings.viewer.slideshowDurationInMs', {}) ?? 'Slideshow duration (in ms)',
           'settings.viewer.slideshow' => TranslationOverrides.string(_root.$meta, 'settings.viewer.slideshow', {}) ?? 'Slideshow',
           'settings.viewer.slideshowWIPNote' =>
-            TranslationOverrides.string(_root.$meta, 'settings.viewer.slideshowWIPNote', {}) ?? '[WIP] Videos/GIFs: manual scroll only',
+            TranslationOverrides.string(_root.$meta, 'settings.viewer.slideshowWIPNote', {}) ??
+                'Videos and GIFs use their own longer timer. At the last loaded item, the next page loads when the search has more.',
           'settings.viewer.preventDeviceFromSleeping' =>
             TranslationOverrides.string(_root.$meta, 'settings.viewer.preventDeviceFromSleeping', {}) ?? 'Prevent device from sleeping',
           'settings.viewer.viewerOpenCloseAnimation' =>
@@ -5750,6 +5794,9 @@ extension on Translations {
           'settings.video.backendMPVHelp' =>
             TranslationOverrides.string(_root.$meta, 'settings.video.backendMPVHelp', {}) ??
                 'Based on libmpv, has advanced settings which may help fix problems with some codecs/devices\n[MAY CAUSE CRASHES]',
+          _ => null,
+        } ??
+        switch (path) {
           'settings.video.backendMDKHelp' =>
             TranslationOverrides.string(_root.$meta, 'settings.video.backendMDKHelp', {}) ??
                 'Based on libmdk, may have better performance for some codecs/devices\n[MAY CAUSE CRASHES]',
@@ -5759,9 +5806,6 @@ extension on Translations {
           'settings.video.mpvUseHardwareAcceleration' =>
             TranslationOverrides.string(_root.$meta, 'settings.video.mpvUseHardwareAcceleration', {}) ?? 'MPV: use hardware acceleration',
           'settings.video.mpvVO' => TranslationOverrides.string(_root.$meta, 'settings.video.mpvVO', {}) ?? 'MPV: VO',
-          _ => null,
-        } ??
-        switch (path) {
           'settings.video.mpvHWDEC' => TranslationOverrides.string(_root.$meta, 'settings.video.mpvHWDEC', {}) ?? 'MPV: HWDEC',
           'settings.video.videoCacheMode' => TranslationOverrides.string(_root.$meta, 'settings.video.videoCacheMode', {}) ?? 'Video cache mode',
           'settings.video.cacheModes.title' => TranslationOverrides.string(_root.$meta, 'settings.video.cacheModes.title', {}) ?? 'Video cache modes',
@@ -6246,6 +6290,14 @@ extension on Translations {
             TranslationOverrides.string(_root.$meta, 'settings.sync.ipAddressPlaceholder', {}) ?? 'Host IP Address (i.e. 192.168.1.1)',
           'settings.sync.port' => TranslationOverrides.string(_root.$meta, 'settings.sync.port', {}) ?? 'Port',
           'settings.sync.portPlaceholder' => TranslationOverrides.string(_root.$meta, 'settings.sync.portPlaceholder', {}) ?? 'Host Port (i.e. 7777)',
+          'settings.sync.syncCode' => TranslationOverrides.string(_root.$meta, 'settings.sync.syncCode', {}) ?? 'Sync code',
+          'settings.sync.syncCodePlaceholder' =>
+            TranslationOverrides.string(_root.$meta, 'settings.sync.syncCodePlaceholder', {}) ?? 'Code shown on the other phone',
+          'settings.sync.syncCodeHelp' =>
+            TranslationOverrides.string(_root.$meta, 'settings.sync.syncCodeHelp', {}) ??
+                'The other phone shows this code when its server starts. It changes every time that server starts, and it is not saved.',
+          'settings.sync.syncCodeRequired' =>
+            TranslationOverrides.string(_root.$meta, 'settings.sync.syncCodeRequired', {}) ?? 'Enter the code shown on the other phone.',
           'settings.sync.sendFavourites' => TranslationOverrides.string(_root.$meta, 'settings.sync.sendFavourites', {}) ?? 'Send favourites',
           'settings.sync.favouritesCount' =>
             ({required String count}) =>
@@ -6326,6 +6378,9 @@ extension on Translations {
           'settings.sync.receiverInstructions' =>
             TranslationOverrides.string(_root.$meta, 'settings.sync.receiverInstructions', {}) ??
                 'Start server to receive data. Avoid public WiFi for security',
+          'settings.sync.syncCodeReceiverNote' =>
+            TranslationOverrides.string(_root.$meta, 'settings.sync.syncCodeReceiverNote', {}) ??
+                'The next page shows a code. Type that code on the sending phone. It is not saved.',
           'settings.sync.availableNetworkInterfaces' =>
             TranslationOverrides.string(_root.$meta, 'settings.sync.availableNetworkInterfaces', {}) ?? 'Available network interfaces',
           'settings.sync.selectedInterfaceIP' =>
@@ -6670,6 +6725,9 @@ extension on Translations {
           'desktopHome.addBoorusInSettings' =>
             TranslationOverrides.string(_root.$meta, 'desktopHome.addBoorusInSettings', {}) ?? 'Add boorus in settings',
           'desktopHome.settings' => TranslationOverrides.string(_root.$meta, 'desktopHome.settings', {}) ?? 'Settings',
+          _ => null,
+        } ??
+        switch (path) {
           'desktopHome.save' => TranslationOverrides.string(_root.$meta, 'desktopHome.save', {}) ?? 'Save',
           'desktopHome.noItemsSelected' => TranslationOverrides.string(_root.$meta, 'desktopHome.noItemsSelected', {}) ?? 'No items selected',
           'galleryView.noItems' => TranslationOverrides.string(_root.$meta, 'galleryView.noItems', {}) ?? 'No items',
@@ -6680,9 +6738,6 @@ extension on Translations {
           'mediaPreviews.addNewBooru' => TranslationOverrides.string(_root.$meta, 'mediaPreviews.addNewBooru', {}) ?? 'Add new Booru',
           'mediaPreviews.help' => TranslationOverrides.string(_root.$meta, 'mediaPreviews.help', {}) ?? 'Help',
           'mediaPreviews.settings' => TranslationOverrides.string(_root.$meta, 'mediaPreviews.settings', {}) ?? 'Settings',
-          _ => null,
-        } ??
-        switch (path) {
           'mediaPreviews.restoringPreviousSession' =>
             TranslationOverrides.string(_root.$meta, 'mediaPreviews.restoringPreviousSession', {}) ?? 'Restoring previous session…',
           'mediaPreviews.copiedFileURL' =>

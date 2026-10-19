@@ -1,0 +1,399 @@
+import 'package:flutter/foundation.dart';
+
+import 'package:html/dom.dart';
+import 'package:html/parser.dart';
+import 'package:lolisnatcher/sources/doujin/common/doujin_filters.dart';
+import 'package:lolisnatcher/models/tag.dart';
+import 'package:xml/xml.dart';
+
+import 'package:lolisnatcher/models/booru_item.dart';
+import 'package:lolisnatcher/models/comment_item.dart';
+import 'package:lolisnatcher/models/tag_suggestion.dart';
+import 'package:lolisnatcher/sources/framework/booru_handler.dart';
+import 'package:lolisnatcher/core/logging/logger.dart';
+import 'package:lolisnatcher/core/utils/tools.dart';
+
+// TODO check what's wrong with booru.xxx
+// TODO handle auth logic?
+
+class ShimmieHandler extends BooruHandler {
+  ShimmieHandler(super.booru, super.limit);
+
+  // Reads neither field (audited): the fields are hidden on the edit page.
+  @override
+  bool get usesUserId => false;
+  @override
+  bool get usesApiKey => false;
+
+  @override
+  bool get hasSizeData => true;
+
+  @override
+  bool get hasTagSuggestions => true;
+
+  @override
+  String validateTags(String tags) {
+    if (tags == ' ' || tags == '') {
+      return '*';
+    } else {
+      return super.validateTags(tags);
+    }
+  }
+
+  @override
+  String translateOrSyntax(String tags) => BooruHandler.dropOrGroupsWithWarning(tags, className);
+
+  @override
+  bool get hasNativeOrSupport => false;
+
+  // NOTE: no blanket media-filter list here. Shimmie is just the engine — the
+  // tags a site uses for video/animated content are decided per-site by its
+  // own community/admins, so concrete single-site subclasses (e.g.
+  // R34HentaiHandler) set their own verified `animatedPreviewFilters`.
+  // Generic user-added Shimmie sites fall back to the base default.
+
+  @override
+  Future<List> parseListFromResponse(dynamic response) async {
+    final parsedResponse = await compute(XmlDocument.parse, response.data as String);
+    try {
+      parseSearchCount(parsedResponse);
+    } catch (e, s) {
+      Logger.Inst().log(
+        'Error parsing search count: $e',
+        className,
+        'parseListFromResponse::parseSearchCount',
+        LogTypes.exception,
+        s: s,
+      );
+    }
+    /**
+     * This creates a list of xml elements 'post' to extract only the post elements which contain
+     * all the data needed about each image
+     */
+    List posts = parsedResponse.findAllElements('post').toList();
+    if (posts.isEmpty) {
+      posts = parsedResponse.findAllElements('tag').toList();
+    }
+    return posts;
+  }
+
+  @override
+  BooruItem? parseItemFromResponse(dynamic responseItem, int index) {
+    final current = responseItem as XmlElement;
+    if (current.getAttribute('file_url') != null) {
+      String preURL = '';
+      if (booru.baseURL!.contains('https://whyneko.com/booru')) {
+        // special case for whyneko
+        preURL = booru.baseURL!.split('/booru')[0];
+      }
+
+      final String thumbnailUrl = preURL + current.getAttribute('preview_url')!;
+      final String fileUrl = preURL + current.getAttribute('file_url')!;
+
+      final String dateString = current.getAttribute('date').toString();
+      final BooruItem item = BooruItem(
+        fileURL: fileUrl,
+        sampleURL: fileUrl,
+        thumbnailURL: thumbnailUrl,
+        tagsList: current.getAttribute('tags')!.split(' ').map(Tag.new).toList(),
+        postURL: makePostURL(current.getAttribute('id')!),
+        fileWidth: double.tryParse(current.getAttribute('width') ?? ''),
+        fileHeight: double.tryParse(current.getAttribute('height') ?? ''),
+        previewWidth: double.tryParse(current.getAttribute('preview_width') ?? ''),
+        previewHeight: double.tryParse(current.getAttribute('preview_height') ?? ''),
+        serverId: current.getAttribute('id'),
+        score: current.getAttribute('score'),
+        sources: (current.getAttribute('source') != null && current.getAttribute('source') is String) ? [current.getAttribute('source')!] : null,
+        md5String: current.getAttribute('md5'),
+        postDate: dateString, // 2021-06-18 04:37:31
+        postDateFormat: 'yyyy-MM-dd HH:mm:ss',
+      );
+
+      return item;
+    } else {
+      return null;
+    }
+  }
+
+  void parseSearchCount(XmlDocument response) {
+    final parsedResponse = response.findAllElements('posts').toList()[0];
+    final int count = int.tryParse(parsedResponse.getAttribute('count') ?? '0') ?? 0;
+    totalCount.value = count;
+  }
+
+  @override
+  String makePostURL(String id) {
+    return '${booru.baseURL}/post/view/$id';
+  }
+
+  @override
+  String makeURL(String tags) {
+    return '${booru.baseURL}/api/danbooru/find_posts/index.xml?tags=$tags&limit=$limit&page=$pageNum';
+  }
+
+  @override
+  String makeTagURL(String input) {
+    if (booru.baseURL!.contains('rule34.paheal.net')) {
+      return '${booru.baseURL}/api/internal/autocomplete?s=$input'; // doesn't allow limit, but sorts by popularity
+    } else {
+      // TODO others don't support / don't have the parser?
+      return '';
+      // return '${booru.baseURL}/tags.json?search[name_matches]=$input*&limit=20';
+    }
+  }
+
+  @override
+  List parseTagSuggestionsList(dynamic response) {
+    // TODO explain why this
+    return response.data
+        .substring(1, response.data.length - 1)
+        .replaceAll(RegExp('(:.([0-9])+)'), '')
+        .replaceAll('"', '')
+        .split(',')
+        .map((e) => TagSuggestion(tag: e))
+        .toList();
+  }
+
+  @override
+  TagSuggestion? parseTagSuggestion(dynamic responseItem, int index) {
+    // all manipulations were already done in list parse
+    return responseItem;
+  }
+
+  @override
+  bool get hasCommentsSupport => true;
+
+  @override
+  String makeCommentsURL(String postID, int pageNum) {
+    return makePostURL(postID);
+  }
+
+  @override
+  List parseCommentsList(dynamic response) {
+    final document = parse(response.data);
+    return document.querySelectorAll('.comment:not(.comment_add)');
+  }
+
+  @override
+  CommentItem? parseComment(dynamic responseItem, int index) {
+    final current = responseItem;
+    return CommentItem(
+      id: current.attributes['id'],
+      // title: postID,
+      content: current.nodes[current.nodes.length - 1].text.toString().replaceFirst(': ', '').replaceFirst('\n\t\t\t\t', ''),
+      authorName: current.querySelector('.username')?.text.toString(),
+      // postID: postID,
+      createDate: current.querySelector('time')?.attributes['datetime']?.split('+')[0].toString(), // 2021-12-25t10:02:28+00:00
+      createDateFormat: 'iso',
+    );
+  }
+}
+
+class ShimmieHtmlHandler extends BooruHandler {
+  ShimmieHtmlHandler(super.booru, super.limit);
+
+  /// r47: rule34.paheal's search help as Filters. Checked live 2026-09-15 on
+  /// "cat": 81 posts; content:video 14; ext=webm 1; score>10 16. Its
+  /// order:score_desc changed nothing, so there is no sort.
+  @override
+  DoujinFilterSpec? get doujinFilters => const DoujinFilterSpec([
+    DoujinFilterGroup(
+      key: 'content',
+      label: 'Content',
+      options: [DoujinFilterOption('', 'Any'), DoujinFilterOption('video', 'Videos'), DoujinFilterOption('audio', 'With audio')],
+    ),
+    DoujinFilterGroup(
+      key: 'ext',
+      label: 'File type',
+      divider: '=',
+      options: [
+        DoujinFilterOption('', 'Any'),
+        DoujinFilterOption('webm', 'WebM'),
+        DoujinFilterOption('mp4', 'MP4'),
+        DoujinFilterOption('gif', 'GIF'),
+        DoujinFilterOption('png', 'PNG'),
+        DoujinFilterOption('jpg', 'JPG'),
+        DoujinFilterOption('webp', 'WebP'),
+      ],
+    ),
+    DoujinFilterGroup(
+      key: 'score',
+      label: 'Score',
+      divider: '>',
+      options: [
+        DoujinFilterOption('', 'Any'),
+        DoujinFilterOption('0', 'Above 0'),
+        DoujinFilterOption('10', 'Above 10'),
+        DoujinFilterOption('50', 'Above 50'),
+        DoujinFilterOption('100', 'Above 100'),
+      ],
+    ),
+  ]);
+
+  // Reads neither field (audited): the fields are hidden on the edit page.
+  @override
+  bool get usesUserId => false;
+  @override
+  bool get usesApiKey => false;
+
+  @override
+  bool get hasSizeData => true;
+
+  @override
+  bool get hasTagSuggestions => true;
+
+  @override
+  String validateTags(String tags) {
+    if (tags == ' ' || tags == '') {
+      return '';
+    } else {
+      return super.validateTags(tags);
+    }
+  }
+
+  // Paheal-style Shimmie variant: URL-path search like
+  // `/post/list/tag1+tag2/1`, no native OR support.
+  @override
+  String translateOrSyntax(String tags) => BooruHandler.dropOrGroupsWithWarning(tags, className);
+
+  @override
+  bool get hasNativeOrSupport => false;
+
+  // ShimmieHtmlHandler serves paheal (rule34.paheal.net). Verified against the
+  // site: `animated` is the umbrella (webm posts are also tagged animated, and
+  // `gif` is an alias of `animated`); there is no standalone `video` tag. So a
+  // single `animated` stop catches everything without a dead second tap.
+  @override
+  List<String> get animatedPreviewFilters => const ['animated'];
+
+  @override
+  List parseListFromResponse(dynamic response) {
+    final document = parse(response.data);
+    return document.getElementsByClassName('thumb');
+  }
+
+  @override
+  BooruItem? parseItemFromResponse(dynamic responseItem, int index) {
+    try {
+      final current = responseItem as Element;
+      final img = current.firstChild!.firstChild!;
+      final imgData = img.attributes['title']!.split('\n');
+      final resSizeDate = imgData[1].split(' // ');
+      final res = resSizeDate[0].trim().split('x');
+      final size = Tools.parseFormattedBytes(resSizeDate[1].trim());
+      // final date = resSizeDate[2]; // TODO
+
+      final String id = current.attributes['data-post-id']!;
+      final String fileExt = current.attributes['data-ext']!;
+      final String thumbURL = img.attributes['src']!;
+      final double? thumbWidth = double.tryParse(img.attributes['width'] ?? '');
+      final double? thumbHeight = double.tryParse(img.attributes['height'] ?? '');
+      final double? fileWidth = double.tryParse(res[0]);
+      final double? fileHeight = double.tryParse(res[1]);
+      String fileURL = current.children[2].attributes['href']!; // "File only" link
+      fileURL = '$fileURL${fileURL.contains('?') ? '&' : '?'}file_ext=$fileExt';
+      final List<String> tags = current.attributes['data-tags']?.split(' ') ?? [];
+
+      final BooruItem item = BooruItem(
+        thumbnailURL: thumbURL,
+        sampleURL: fileURL,
+        fileURL: fileURL,
+        fileExt: fileExt,
+        fileSize: size == 0 ? null : size,
+        previewWidth: thumbWidth,
+        previewHeight: thumbHeight,
+        fileWidth: fileWidth,
+        fileHeight: fileHeight,
+        tagsList: tags.map(Tag.new).toList(),
+        md5String: fileURL.split('/').last.split('?').first,
+        postURL: makePostURL(id),
+        serverId: id,
+      );
+
+      return item;
+    } catch (e, s) {
+      Logger.Inst().log(
+        e,
+        'ShimmieHtmlHandler',
+        'parseItemFromResponse',
+        LogTypes.booruHandlerParseFailed,
+        s: s,
+      );
+      return null;
+    }
+  }
+
+  @override
+  String makePostURL(String id) {
+    return '${booru.baseURL}/post/view/$id';
+  }
+
+  @override
+  String makeURL(String tags) {
+    String tagsText = tags.replaceAll(' ', '+');
+    tagsText = tagsText.isEmpty ? '' : '$tagsText/';
+    return '${booru.baseURL}/post/list/$tagsText$pageNum';
+  }
+
+  @override
+  String makeTagURL(String input) {
+    if (booru.baseURL!.contains('rule34.paheal.net')) {
+      return '${booru.baseURL}/api/internal/autocomplete?s=$input'; // doesn't allow limit, but sorts by popularity
+    } else {
+      // TODO others don't support / don't have the parser?
+      return '';
+      // return '${booru.baseURL}/tags.json?search[name_matches]=$input*&limit=20';
+    }
+  }
+
+  @override
+  List parseTagSuggestionsList(dynamic response) {
+    // TODO explain why this
+    return response.data is List
+        ? (response.data as List).map((e) => TagSuggestion(tag: e)).toList()
+        : response.data is Map<String, dynamic>
+        ? (response.data as Map<String, dynamic>).entries
+              .map(
+                (e) => TagSuggestion(
+                  tag: e.key.toLowerCase(),
+                  count: e.value['count'],
+                ),
+              )
+              .toList()
+        : [];
+  }
+
+  @override
+  TagSuggestion? parseTagSuggestion(dynamic responseItem, int index) {
+    // all manipulations were already done in list parse
+    return responseItem;
+  }
+
+  @override
+  bool get hasCommentsSupport => true;
+
+  @override
+  String makeCommentsURL(String postID, int pageNum) {
+    return makePostURL(postID);
+  }
+
+  @override
+  List parseCommentsList(dynamic response) {
+    final document = parse(response.data);
+    return document.querySelectorAll('.comment:not(.comment_add)');
+  }
+
+  @override
+  CommentItem? parseComment(dynamic responseItem, int index) {
+    final current = responseItem as Element;
+    return CommentItem(
+      id: current.attributes['id'],
+      // title: postID,
+      content: current.querySelector('.bbcode')?.text,
+      authorName: current.querySelector('.username')?.text,
+      // postID: postID,
+      createDate: current.querySelector('time')?.attributes['datetime']?.split('+')[0], // 2021-12-25t10:02:28+00:00
+      createDateFormat: 'iso',
+    );
+  }
+}

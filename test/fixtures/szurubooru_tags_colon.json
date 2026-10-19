@@ -1,0 +1,29 @@
+{
+  "query": "name:*\\:*",
+  "offset": 0,
+  "limit": 3,
+  "total": 26,
+  "results": [
+    {
+      "names": [
+        ">:v"
+      ],
+      "category": "default",
+      "usages": 1
+    },
+    {
+      "names": [
+        "By:Muun"
+      ],
+      "category": "artist",
+      "usages": 10
+    },
+    {
+      "names": [
+        "Catrinvolador_:x"
+      ],
+      "category": "artist",
+      "usages": 6
+    }
+  ]
+}

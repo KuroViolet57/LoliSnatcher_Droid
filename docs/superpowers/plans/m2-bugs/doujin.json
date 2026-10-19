@@ -1,0 +1,204 @@
+{
+ "bugs": [
+  {
+   "title": "WebView page client start never completes on load timeout (hentaipaw fetches hang)",
+   "file": "lib/core/network/origin_page_client.dart",
+   "line": 75,
+   "scenario": "robots.txt load on hentaipaw.com stalls past 15 s without a main-frame error (slow/captive network) -> every pending pageClient.fetch() (listing, gallery, viewer, tag backfill, catalog shard) awaits forever; the feed/detail spinner never ends",
+   "evidence": "_start() returns done.future; on timeout `await done.future.timeout(timeout, onTimeout: () {...return false;})` only yields false locally, then `if (!ok) await dispose();` — `done` itself is never completed (only onLoadStop/onReceivedError/catch complete it), and _starting is reset in finally so callers already holding done.future never resume",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Schale page client start never completes on load timeout (reader load hangs)",
+   "file": "lib/sources/doujin/schale/schale_clearance_handler.dart",
+   "line": 387,
+   "scenario": "niyaniya robots.txt in the headless page client does not finish within 12 s -> SchaleHandler._gated awaits clearance.pageRequest forever -> detail page stays on the spinner, Read never enables, no Dio fallback",
+   "evidence": "Same pattern as OriginPageClient: `final bool ok = await done.future.timeout(pageClientTimeout, onTimeout: () {... return false;});` never completes `done`; pageRequest does `if (!await _startPageClient(siteUrl)) return null;` on done.future",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Swiping away a doujin favourite bypasses toggleFavouriteSynced",
+   "file": "lib/features/doujin/ui/library/doujin_library_pages.dart",
+   "line": 126,
+   "scenario": "nhentai (API key) or eahentai (logged in) favourite removed by swipe in Favorites list -> still favourited on the site account; cards already loaded keep a filled heart (item.isFavourite not reset); no unfavourite event reaches the recommender",
+   "evidence": "onDelete: `store.favourites.remove(e.postURL); store.save();` while DoujinDataHandler documents toggleFavouriteSynced as 'THE favourite entry point… Every UI path must go through this so account sync can never be skipped'",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Followed artist tap builds a query most sources cannot read",
+   "file": "lib/features/doujin/ui/library/doujin_library_pages.dart",
+   "line": 332,
+   "scenario": "Followed artist 'some_artist' tapped -> nhentai gets artist:\"\"some artist\"\" (double quotes), e-hentai artist:\"some_artist\"$ (underscores kept, no match), asmhentai routes to /artist/\"some-artist\"/, faccina/schale send underscored quoted value -> empty or wrong results",
+   "evidence": "addTabByString('artist:\"${f.tag}\"') with bare underscored tags; NHentaiHandler._siteTerm: value = body.substring(colon+1).replaceAll('_',' ') keeps the quotes then wraps in quotes again; EHentaiQuery.siteTerm keeps a pre-quoted name verbatim; AsmHentaiHandler.taxonomyPath regex captures the quotes into the slug; FaccinaHandler/SchaleHandler.translateQuery pass tokens containing '\"' untouched",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Bookmark tap opens id:<n> on the drawer's source without key/token",
+   "file": "lib/features/doujin/ui/library/doujin_favourites_page.dart",
+   "line": 132,
+   "scenario": "Bookmark collection holds a niyaniya or e-hentai gallery; user opens 'Doujin favourites & bookmarks' from an nhentai tab and taps it -> id:<n> searched on nhentai (wrong gallery or nothing); on the right source after a restart Schale/e-hentai fail with 'needs the gallery key/token'",
+   "evidence": "onTap: _openTab('id:${bookmark.serverId}') with customBooru: widget.booru; the library pages' _openEntry uses SearchTab.doujinIdQueryFrom(serverId, postURL) (adds /key) and _booruForHost(entry.booruHost)",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "'Account favourites' row enabled on sources that have no favorites:me feed",
+   "file": "lib/features/doujin/ui/library/doujin_favourites_page.dart",
+   "line": 43,
+   "scenario": "asmhentai/hentalk/eahentai config with a password in the key field -> row enabled -> tap opens a tab searching 'favorites:me' as text (asmhentai /search/?q=favorites:me, eahentai q=me) instead of account favourites",
+   "evidence": "hasKey = widget.booru.apiKey?.isNotEmpty; only NHentaiHandler._parse understands favorites:me; on asmhentai/faccina/eahentai apiKey is the password (apiKeyLabel 'Password (optional)')",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Loading the next page cancels the previous page's tag backfill",
+   "file": "lib/sources/doujin/common/doujin_listing_tag_backfill.dart",
+   "line": 49,
+   "scenario": "niyaniya feed (1 request per 500 ms) scrolled to page 2 before page 1's 25 cards got tags -> remaining page-1 cards never get tags this session: blacklist, starred-tag and hidden/marked checks never apply to them, tag strip stays empty",
+   "evidence": "afterParseResponse runs for every page (booru_handler.dart:391) and does unawaited(_backfill(newItems, ++_generation)); workers stop when generation != _generation, so the older page's pass returns early",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Multi-term hitomi query results cached for the handler's lifetime",
+   "file": "lib/sources/doujin/hitomi/hitomi_handler.dart",
+   "line": 741,
+   "scenario": "Tab searching 'female:x language:english' refreshed later in the session -> same id list served, new galleries never appear until the handler is recreated",
+   "evidence": "_resolvedIds[cacheKey] filled once and never cleared or aged; only single-term queries bypass it",
+   "severity": "wrong-behaviour",
+   "confidence": "plausible"
+  },
+  {
+   "title": "Read button never shows 'Continue · p.N' after an app restart",
+   "file": "lib/features/doujin/ui/detail/doujin_detail_page.dart",
+   "line": 500,
+   "scenario": "Read half a book, restart app, open its detail page -> button says 'Read · N pages' (tapping still resumes, because openDoujinReader loads progress)",
+   "evidence": "_actionRow uses ReaderHandler.instance.cachedProgress(...) only; loadProgress is called only in openDoujinReader/openLocalDoujinReader (doujin_reader_page.dart:906/932), never by the detail page",
+   "severity": "minor",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Schale id: items carry raw untyped tags",
+   "file": "lib/sources/doujin/schale/schale_handler.dart",
+   "line": 589,
+   "scenario": "Gallery reopened from favourites/history (id:<id>/<key> tab) or used as Recommended source -> card tags are TagType.none with original casing and no namespace (no sections/types, not the normalized form backfill uses) until the detail page loads; Recommended passes no sourceArtist so the artist cap is off",
+   "evidence": "_itemFromDetail builds Tag(t['name'].replaceAll(' ', '_'), tagType: TagType.none) instead of tagsFromDetail(detail); _fetchRecommended calls rankPersonal without sourceArtist",
+   "severity": "minor",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Concurrent gated call reports 'needs a check' while a harvest is running",
+   "file": "lib/sources/doujin/schale/schale_clearance_handler.dart",
+   "line": 560,
+   "scenario": "Two gated loads start without a stored token (detail page load + card menu Read) -> second gets harvest() == null immediately and shows the clearance message even if the first harvest finds a token",
+   "evidence": "if (_harvesting) return null; caller SchaleHandler._gated treats null as needsSolveMessage",
+   "severity": "minor",
+   "confidence": "plausible"
+  },
+  {
+   "title": "nhentai catalog pull cannot resume past shard 0 in a new session",
+   "file": "lib/sources/doujin/nhentai/nhentai_tag_catalog.dart",
+   "line": 50,
+   "scenario": "A pull interrupted at shard N and resumed after a restart starts at shard N with an empty _queue -> returns null immediately, pull treated as finished",
+   "evidence": "_queue is filled only when shard == 0; `if (shard < 0 || shard >= _queue.length) return null;`",
+   "severity": "minor",
+   "confidence": "plausible"
+  }
+ ],
+ "fragile": [
+  {
+   "what": "Reader layout contract",
+   "where": "lib/features/doujin/ui/reader/doujin_reader_page.dart header + _pushReader",
+   "rule": "Opaque MaterialPageRoute, no Scaffold slots (Stack with Positioned top/bottom bars), resizeToAvoidBottomInset false, ClipRect around the page view, tap zones on their own Listener layer (raw pointers), stock InteractiveViewer with panEnabled only when zoomed; ValueKeys reader-top-bar/bottom-bar/filmstrip/page-counter/direction-button/menu-button/close-button/tap-zones/strip-thumb-i/page-gid-i used by doujin_reader_test and doujin_strip_geometry_test"
+  },
+  {
+   "what": "Doujin/booru data separation",
+   "where": "DoujinDataHandler (doujinTypes, knownDoujinHosts, isDoujinItem, sameDomain) + callers in booru_item, booru_handler, database_handler, settings_handler, search_handler, snatch_handler",
+   "rule": "Doujin items never enter booru stores and vice versa; a new doujin source must be added to doujinTypes and knownDoujinHosts; toggleFavouriteSynced is the only favourite path; guarded by doujin_separation_test, doujin_domain_scoping_test, interests_guard_test, booru_switcher_domain_test"
+  },
+  {
+   "what": "Bare tag names with side-table namespaces",
+   "where": "doujin_tag_namespaces.dart (DoujinNamespacedTags), every doujin handler, DoujinDataHandler.namespacedTagsOf",
+   "rule": "Never store 'ns:name' as a Tag name; tagNamespace still honours inline prefixes for legacy data; qualifyTag restores namespaces for sites whose search needs them (hitomi, e-hentai, faccina, schale)"
+  },
+  {
+   "what": "doujinData.json schema",
+   "where": "DoujinDataHandler.exportJson/importJson and record toJson/fromJson",
+   "rule": "Keys version/migrationDone/legacyBookmarksMerged/lastBookmarkCollectionId/favourites/collections/followed/history/savedSearches/pins/starredTags/searchHistory and DoujinEntry keys must stay readable (backup item doujinLibrary, restore calls reloadFromDisk and re-arms DoujinMigration)"
+  },
+  {
+   "what": "Gathered history writes",
+   "where": "DoujinDataHandler.saveSoon/flushPendingSave + main.dart AppLifecycleState.paused",
+   "rule": "History open/tag updates are gathered 800 ms; the pause handler must keep calling flushPendingSave"
+  },
+  {
+   "what": "Schale clearance two-window design",
+   "where": "schale_clearance_handler.dart",
+   "rule": "Visible solver solves by hand (reduced Chrome UA from the real engine, main-frame-only host filter, rejected token removed at document start, diagnostics never hook window.turnstile); headless harvester on robots.txt only reads localStorage; gated calls from a page client on robots.txt; refused token dropped and remembered, never silently retried; one token per SchaleNetwork key; nothing auto-solves"
+  },
+  {
+   "what": "e-hentai session never in the shared cookie jar",
+   "where": "ehentai_session_handler.dart, EHentaiHandler constructor/getMediaHeaders/sendsJarCookiesToMedia",
+   "rule": "Forum cookies only in ehentai_session.json and the site Cookie header; media requests to hath.network get Referer only; jar scrubbed once per run and after browser visits"
+  },
+  {
+   "what": "e-hentai identity and pacing",
+   "where": "EHentaiHandler.galleryUrl, _cursorsFor, _pace/_paced",
+   "rule": "Post URLs always on e-hentai.org regardless of exhentai variant (favourites/history/download folder key on it); cursor map keyed by the query AS TYPED; requests paced 300 ms with a separate bulk lane"
+  },
+  {
+   "what": "Prebuilt items passthrough",
+   "where": "parseItemFromResponse override in every doujin handler that builds items in parseListFromResponse",
+   "rule": "Without the passthrough override the base class replaces items with blank BooruItems (empty cards)"
+  },
+  {
+   "what": "Download folder layout and manifest",
+   "where": "DoujinDownloadHandler",
+   "rule": "<root>/Doujin/<host>_<id>/NNN.ext + doujin.json (manifestVersion 1); files numbered by place in the book; missingPages keep numbering; SAF manifest deleted before create (avoid 'doujin (1).json'); legacy loose files grouped; earlier folders (DownloadFolders.earlier) scanned; covered by doujin_download_layout_test"
+  },
+  {
+   "what": "Reader progress key",
+   "where": "ReaderHandler.progressKey + openDoujinReader/openLocalDoujinReader/DoujinDownloadsPage",
+   "rule": "Key is '<booru host>|<serverId ?? postURL>'; downloads open with manifest serverId so progress carries over; stored in store.db ReaderProgress"
+  },
+  {
+   "what": "Book registry keyed by postURL",
+   "where": "ReaderHandler.registerBook, EHentaiHandler._applyThumbs/forgetPageThumbnail",
+   "rule": "Handlers register pages under the gallery item's postURL; e-hentai looks books up by its e-hentai.org gallery URL or the session host"
+  },
+  {
+   "what": "Site request quirks",
+   "where": "Schale/faccina/hitomi/eahentai handlers",
+   "rule": "Schale search param is s= (q/search ignored), API needs Origin + the solver UA, media needs Referer+Origin, 5-request budget; faccina param is q= (search= ignored); hitomi range reads need Accept-Encoding: identity and media Referer+Origin, gg.js nibble order; eahentai token only to /api, 401 logout skips /api/auth and /api/lists/mine"
+  },
+  {
+   "what": "Doujin For You lanes",
+   "where": "DoujinForYouHandler._ask/_askNow",
+   "rule": "One request at a time per source host (handlers are not re-entrant); per-query page counters because cursor sites can only serve page 0 of a new query"
+  },
+  {
+   "what": "Detail open semantics",
+   "where": "DoujinDetailPage.claimOpen",
+   "rule": "A doujin TAB re-shown is not a new open (no history/recommender open event); a pushed page always is"
+  },
+  {
+   "what": "Query protocol is persisted data",
+   "where": "all doujin handlers' _parseProtocol, SearchTab.doujinIdQueryFrom",
+   "rule": "id:<id>[/<key>], related:, recommend:, versions:, favorites:me, random:, sort:/category:/language: terms live in tab strings, tab backups and saved searches; grammar changes must stay backward compatible"
+  },
+  {
+   "what": "Test seams",
+   "where": "fetcher (e-hentai, eahentai, catalogs), accountWriter, setCookieFetcher, sourceHandlerFactory, DoujinReaderPage.testImageProviderBuilder/testPageResolver, resetForTests statics",
+   "rule": "Tests rely on these names and static entry points (e.g. EHentaiHandler.pageEntriesFromHtml, HitomiHandler.decodeNode); keep forwarding statics when splitting"
+  },
+  {
+   "what": "Session files excluded from backup",
+   "where": "backup_plan.dart BackupItems.fileOf",
+   "rule": "ehentai_session.json, eahentai_session.json, schale_clearance.json are NOT backup items (credentials); a restore therefore keeps the device's own sessions — decide explicitly before changing"
+  }
+ ]
+}

@@ -1,0 +1,314 @@
+{
+ "bugs": [
+  {
+   "title": "Comment author names shorter than 2 characters crash the comment row",
+   "file": "lib/features/viewer/ui/comments_dialog.dart",
+   "line": 583,
+   "scenario": "A comment by a one-letter (or empty-named) author, with no avatar or a failing avatar, renders an error widget instead of the comment.",
+   "evidence": "`Text(comment.authorName?.substring(0, 2) ?? '?')` at lines 583 and 586; String.substring(0,2) throws a RangeError when length < 2.",
+   "severity": "crash",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "TagView calls setState after dispose when loadItem returns late",
+   "file": "lib/features/viewer/ui/info/tag_view.dart",
+   "line": 355,
+   "scenario": "rule34.xxx/danbooru (shouldUpdateIteminTagView). Open the viewer and swipe to the next post before the panel's loadItem answers. The old TagView is disposed (bottom sheet keys TagView by fileURL). The await then resumes and calls setState, and the queued post-frame parseSortGroupTags calls setState too, on a disposed State: an uncaught exception in the log. This is the documented r54 bug; its fix (mounted guards) was reverted in r55.",
+   "evidence": "reloadItemData: 'final res = await (possibleBooruHandler ?? handler).loadItem(...)' ... 'loadingUpdate = false; setState(() {});' with no mounted check (lines 332-355). parseSortGroupTags (line 480) also does 'await cacheTabMatchData(); setState(() {})' without a mounted check, scheduled from a post-frame callback (356-358). HANDOVER 4.23/4.24.",
+   "severity": "crash",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "RangeError in notes overlay after 'Load notes' from the info panel",
+   "file": "lib/features/viewer/ui/notes_renderer.dart",
+   "line": 284,
+   "scenario": "The renderer's automatic load came back empty (network hiccup), so the info panel shows 'Load notes'. Tapping it sets item.notes from TagView. The renderer's Obx rebuilds and indexes notesMap[i], but notesMap is still empty because rebuildNotesMap only runs inside loadNotes/doCalculations: an exception in build.",
+   "evidence": "TagView.notesButton: 'item.notes.value = await handler.getNotes(item.serverId!)'. NotesRenderer build: List.generate(item.notes.length, (i) { ... notesMap[i].width ...}).",
+   "severity": "crash",
+   "confidence": "plausible"
+  },
+  {
+   "title": "Notes of the next post never load when swiping during a notes fetch",
+   "file": "lib/features/viewer/ui/notes_renderer.dart",
+   "line": 129,
+   "scenario": "Post A with notes is loading. The user swipes to post B, which also has notes. itemListener sets item=B, cancels the token and calls loadNotes, which returns at 'if (loading) return'. A's cancelled request returns [] and that is written to A's notes (the receiver was evaluated before the await). loading resets, and B's notes are never requested: no overlay on B.",
+   "evidence": "itemListener -> item = widget.item; cancelToken.cancel(); loadNotes(); loadNotes: 'if (loading) return;'. The in-flight 'item.notes.value = await widget.handler.getNotes(item.serverId!, cancelToken: ...)'. getNotes catches the cancel and returns an empty list.",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "media_kit engine never reports video completion to the recommender",
+   "file": "lib/features/video/ui/media_kit_player_view.dart",
+   "line": 98,
+   "scenario": "The user's setup (pooled media_kit viewer). Watching videos to the end never produces InterestsHandler.onVideoCompleted, so the r35 videoComplete signal (+weight 2, classic +4) is missing entirely for media_kit users.",
+   "evidence": "VideoCompletionTracker/onVideoCompleted are referenced only in video_viewer.dart:545-557 and better_player_view.dart:391-402. grep finds no use in media_kit_player_view.dart.",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "better_player + preload videos: preloading a neighbour kills the visible video",
+   "file": "lib/features/video/ui/better_player_view.dart",
+   "line": 264,
+   "scenario": "useBetterPlayer and preloadVideos on, viewing video N. Page N+1 is built (isNear) and _wantsPlayer is true. Its _init calls makeRoomFor, which with _maxAlive=1 evicts N's controller; N goes black and does not re-init because its isViewed did not change.",
+   "evidence": "_initInner: '_BetterPlayerPool.makeRoomFor(this);' before checks. makeRoomFor: 'while (_lru.length >= _maxAlive) { old._forceDisposeFromPool(); }'. didUpdateWidget re-inits only on an isViewed flip.",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "End-of-comments check compares by identity, so repeated pages are not detected",
+   "file": "lib/features/viewer/ui/comments_dialog.dart",
+   "line": 76,
+   "scenario": "A source whose comments endpoint ignores the page number (or repeats the last page) appends duplicate comments on every scroll until it returns an empty page.",
+   "evidence": "`if (fetched.isEmpty || comments.contains(fetched.first)) isCompleted = true;`, and CommentItem (data/comment_item.dart) defines no operator ==, so contains() is always false for freshly parsed items.",
+   "severity": "wrong-behaviour",
+   "confidence": "plausible"
+  },
+  {
+   "title": "Tall-image tiling and the preload height limit never trigger with default settings",
+   "file": "lib/features/viewer/ui/media/image_viewer.dart",
+   "line": 278,
+   "scenario": "Defaults: scaling on, 'Pictures decode at 4K at most' on, preloadHeight 16384. ResizeImage bounds the decoded height to 3840, so 'imageInfo.image.height >= preloadHeight' is never true. A 900x20000 webtoon decodes to about 170x3840 (blurry), tiling never runs, and the Preload height setting has no effect.",
+   "evidence": "getImageProvider: ResizeImage(height: ModularUi.isOn(imageCap4k) ? MediaSizeCap.imageLongEdge : null). The listener tests the decoded image: 'if (imageInfo.image.height >= settingsHandler.preloadHeight) await checkAndPrepareTiles();'. Default preloadHeight = 4096*4.",
+   "severity": "wrong-behaviour",
+   "confidence": "plausible"
+  },
+  {
+   "title": "Info drawer prev/next buttons jump out of range at the ends",
+   "file": "lib/features/viewer/ui/gallery_view_page.dart",
+   "line": 1304,
+   "scenario": "Classic drawer, on the first post. Pressing 'previous' calls jumpToPage(-1), which forces pixels below 0. onPageChanged may report -1, filteredFetched[-1] throws, and the catch calls viewerHandler.dropCurrent() (the same happens past the last post).",
+   "evidence": "LongPressRepeater onStart/OutlinedButton onPressed: widget.pageController.jumpToPage(page.value - 1) / (page.value + 1) without bounds; jumpTo does not clamp.",
+   "severity": "wrong-behaviour",
+   "confidence": "plausible"
+  },
+  {
+   "title": "Info panel Save skips the storage permission and favourite-on-snatch",
+   "file": "lib/features/viewer/ui/info/tag_view.dart",
+   "line": 1598,
+   "scenario": "Tapping Save in the action block queues the download without calling setPermissions() and ignores 'favourite on snatch', unlike the toolbar Save and the S key.",
+   "evidence": "_snatchItem: SnatchHandler.instance.queue([item], handler.booru, ...) then a snackbar. The toolbar .snatch does 'if (!await setPermissions()) return;' plus the favouriteOnSnatch toggle.",
+   "severity": "wrong-behaviour",
+   "confidence": "plausible"
+  },
+  {
+   "title": "Comments setState after the page is closed",
+   "file": "lib/features/viewer/ui/comments_dialog.dart",
+   "line": 89,
+   "scenario": "Open comments and close the page before they load: Flutter logs 'setState() called after dispose()'.",
+   "evidence": "getComments awaits widget.handler.getComments(...), then calls `setState(() {})` with no `mounted` check (lines 72-89).",
+   "severity": "leak",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "ImageViewer never disposes its PhotoView controllers or stream subscriptions",
+   "file": "lib/features/viewer/ui/media/image_viewer.dart",
+   "line": 451,
+   "scenario": "Every image page built (preloaded neighbours included) leaks a PhotoViewController and a PhotoViewScaleStateController plus their outputStateStream listeners. VideoViewer disposes its pair.",
+   "evidence": "initState: viewController.outputStateStream.listen(...); scaleController.outputScaleStateStream.listen(...) without keeping the subscriptions. dispose() only calls disposables() and removeViewed.",
+   "severity": "leak",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Controllers created by tag preview strips and panels are never disposed",
+   "file": "lib/features/viewer/ui/info/tag_view.dart",
+   "line": 3543,
+   "scenario": "Each TagContentPreview leaks an AutoScrollController and a ValueNotifier. _TagPreviewsListDialog creates ScrollControllers in build. TagView's own ScrollController (side drawer) is not disposed. _PlaybackSpeedDialog's PageAutoScrollController is not disposed.",
+   "evidence": "_TagContentPreviewState.dispose only calls removeTagPreview. 'final controllers = List.generate(list.length, (_) => ScrollController());' in build. _TagViewState.dispose has no scrollController.dispose().",
+   "severity": "leak",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Image download continues after the page is disposed during header lookup",
+   "file": "lib/features/viewer/ui/media/image_viewer.dart",
+   "line": 270,
+   "scenario": "Fast swiping. initViewer awaits getImageProvider (which awaits Tools.getFileCustomHeaders). If the page is disposed meanwhile, disposables() has already run, and the code still resolves the stream with a new CancelToken that nobody cancels. The full image downloads and decodes for a page that no longer exists.",
+   "evidence": "'mainProvider.value ??= await getImageProvider(...)' then 'imageStream = mainProvider.value!.resolve(...)' with no mounted check. getImageProvider creates cancelToken after the await point.",
+   "severity": "leak",
+   "confidence": "plausible"
+  },
+  {
+   "title": "Chewie initPlayer uses context after awaits without a mounted check",
+   "file": "lib/features/video/ui/video_viewer.dart",
+   "line": 626,
+   "scenario": "The default engine. Swiping away while initPlayer awaits pending disposes or headers leaves the State disposed. A VideoPlayerController is then created and gets a listener; Theme.of(context) throws on the unmounted State. The controller leaks (never disposed) and an unhandled async error is logged.",
+   "evidence": "initPlayer: 'await Future.wait(toAwait)' / 'httpHeaders: await _customHeaders()' then 'videoController.value = VideoPlayerController...; addListener(updateVideoState); final Color accentColor = Theme.of(context)...' with no mounted guard.",
+   "severity": "leak",
+   "confidence": "plausible"
+  },
+  {
+   "title": "MediaKitVideoPlayer leaks completers; init() modifies the map while iterating it",
+   "file": "lib/features/video/logic/media_kit_video_player.dart",
+   "line": 88,
+   "scenario": "Each Chewie video on the MPV backend adds _completers[textureId], and dispose never removes it. init() loops over _players.keys while dispose() removes from _players, which throws ConcurrentModificationError if init runs on an instance that holds players.",
+   "evidence": "dispose removes _players/_videoControllers/_streamControllers/_streamSubscriptions but not _completers. init: 'for (final textureId in _players.keys) { await dispose(textureId); }'.",
+   "severity": "leak",
+   "confidence": "plausible"
+  },
+  {
+   "title": "Every swiped post fires a loadItem request from the always-built info sheet",
+   "file": "lib/features/viewer/ui/info/item_info_bottom_sheet.dart",
+   "line": 99,
+   "scenario": "Bottom info sheet on, a source with shouldUpdateIteminTagView. Swiping quickly through 30 posts creates 30 TagViews (keyed by fileURL), and each initState calls reloadItemData(initial: true) immediately. The result is one post-page request per post even with the sheet closed, which triggered rule34.xxx 429/CAPTCHA (r54). The didUpdateWidget debounce never applies because the key changes the State.",
+   "evidence": "ItemInfoBottomSheet builds TagView(key: ValueKey(items[page].fileURL), ...) for the current page. TagView.initState -> reloadItemData(initial: true) with no delay. Debounce.debounce exists only in didUpdateWidget. The r54 SettledCall delay was reverted in r55.",
+   "severity": "perf",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Orphaned hide timers call setState after dispose",
+   "file": "lib/features/video/ui/loli_controls.dart",
+   "line": 820,
+   "scenario": "_startHideTimer overwrites _hideTimer without cancelling it. It is called from speed long-press and drag end while another timer is pending, so only the latest timer is cancelled in _dispose. The orphan fires setState on a disposed State.",
+   "evidence": "void _startHideTimer() { _hideTimer = Timer(const Duration(seconds: 3), () { setState(() { _hideStuff = true; }); }); } (no cancel, no mounted check)",
+   "severity": "minor",
+   "confidence": "plausible"
+  },
+  {
+   "title": "Closing a nested viewer forces the system UI visible under a hidden outer viewer",
+   "file": "lib/features/viewer/ui/chrome/hideable_appbar.dart",
+   "line": 1521,
+   "scenario": "The outer viewer has its chrome hidden. Open a tag-strip/linked-media nested viewer and close it: dispose calls setSystemUiVisibility(true), and initState had reset the global displayAppbar. Status and nav bars reappear while the outer toolbar state is out of sync.",
+   "evidence": "initState: viewerHandler.displayAppbar.value = !settingsHandler.autoHideImageBar; dispose: ServiceHandler.setSystemUiVisibility(true).",
+   "severity": "minor",
+   "confidence": "plausible"
+  },
+  {
+   "title": "Peek bar artist chip reads the shared booru tag store for doujin items",
+   "file": "lib/features/viewer/ui/gallery_view_page.dart",
+   "line": 1095,
+   "scenario": "A doujin item in the classic viewer (merge / For You). The artist chip is chosen by the booru-global TagHandler classification, while TagView uses TagTypeLookup, which skips the shared store on doujin. The chip can show a booru's idea of the artist.",
+   "evidence": "_artistOf: TagHandler.instance.getTag(t.fullString).tagType.isArtist for every item.",
+   "severity": "minor",
+   "confidence": "plausible"
+  },
+  {
+   "title": "Global mute / pause / extra-UI hide reach only Chewie viewers",
+   "file": "lib/features/viewer/logic/viewer_handler.dart",
+   "line": 275,
+   "scenario": "The LoliControls long-press global mute, the pause on opening a viewer and the hide on dismiss-drag do nothing for media_kit or better_player players, because only VideoViewer registers via addViewed and matches the switch.",
+   "evidence": "toggleMuteAllVideos/pauseAllVideos/hideExtraUi switch on 'case VideoViewer():' only; MediaKitPlayerView/BetterPlayerView never call addViewed.",
+   "severity": "minor",
+   "confidence": "plausible"
+  },
+  {
+   "title": "Multi-file posts are not fetched on virtual feeds",
+   "file": "lib/features/viewer/ui/gallery_view_page.dart",
+   "line": 111,
+   "scenario": "A bakemono/kemono post opened from Favourites or History never gets its file list or burst action, because the check uses the tab's (virtual) booru.",
+   "evidence": "_loadPostFiles: final booru = widget.tab.booruHandler.booru; if (!PostFilesHandler.instance.supports(booru)) return;",
+   "severity": "minor",
+   "confidence": "plausible"
+  }
+ ],
+ "fragile": [
+  {
+   "what": "Viewer key and stacking contract",
+   "where": "gallery_view_page.dart, viewer_handler.dart, waterfall_view, TagContentPreview.onPreviewTap, LinkedMediaOpener, openPostFilesOverlay, doujin_reader_page",
+   "rule": "Every viewer push registers its GlobalKey with addViewer before pushing; GalleryViewPage.dispose removes it in a post-frame callback (post-files overlay removes in finally). maxActiveViewers must stay 1: covering a viewer unmounts its media, which is the only thing that pauses covered videos. removeViewer clears saved positions and manual-pause marks when the stack empties."
+  },
+  {
+   "what": "Media widget key = item.key (GlobalKey)",
+   "where": "gallery_view_page itemBuilder, post_files_page, ViewerHandler.setNewState/resetZoom/doubleTapZoom/forceLoadCurrentItem",
+   "rule": "ViewerHandler reaches the media State via (current.key as GlobalKey).currentState and switches on ImageViewer/VideoViewer. The public fields of ImageViewerState/VideoViewerState (isZoomed, isLoaded/isVideoInited, isStopped, viewController, showLoading/showControls, videoController, chewieController, resetZoom, doubleTapZoom, forceLoad) are an API."
+  },
+  {
+   "what": "Viewer route name and close reasons",
+   "where": "all viewer pushes; hideable_appbar back arrow; gallery_view_page swipe/Escape; Not interested; tag_view tab list and new-tab notice; breadcrumb",
+   "rule": "Push with RouteSettings(name: ViewerCloseObserver.viewerRoute) and wrap every programmatic viewer pop in NavigationTrace.closing(reason, ...). Dialog pops after an await use NavigationTrace.popIfOnTop. The breadcrumb popUntil uses NavigationTrace.tagDialogOrViewer."
+  },
+  {
+   "what": "Back handling with floating previews",
+   "where": "gallery_view_page PopScope, hideable_appbar PopScope",
+   "rule": "Stand down when FloatingPreviewHandler.hasWindowFor(topPageRoute). Never call ModalRoute.of(context) in callbacks or chips (it rebuilds the tag list and feed on every route change)."
+  },
+  {
+   "what": "Bottom sheet attachment",
+   "where": "item_info_bottom_sheet.dart",
+   "rule": "The sheet must always build a scrollable (TagView) on its scrollController, or DraggableScrollableController.isAttached stays false and animateTo silently does nothing. The r56 lazy-details attempt broke the info button and was reverted in r58."
+  },
+  {
+   "what": "Split layout sizing",
+   "where": "gallery_view_page.dart ValueListenableBuilder(infoSheetExtent)",
+   "rule": "Use MediaQuery, not LayoutBuilder; LayoutBuilder defers build and the sheet/appbar read pageController.page before attach ('Bad state: No element')."
+  },
+  {
+   "what": "Swipe-up listener and dismiss",
+   "where": "gallery_view_page.dart _SwipeUpListener, Dismissible",
+   "rule": "Listener (not GestureDetector) so it never enters the gesture arena; with the bottom sheet on, only swipe-down dismisses. Do not reset viewerHandler.infoSheetExtent in dispose (a nested viewer would clobber the outer one)."
+  },
+  {
+   "what": "Toolbar button persistence",
+   "where": "GalleryButton enum, settings buttonOrder/disabledButtons",
+   "rule": "Enum value names are stored in settings.json; loadFromJSON appends missing values. Do not rename or reorder the semantics."
+  },
+  {
+   "what": "CustomNetworkImage equality",
+   "where": "custom_network_image.dart ==/hashCode",
+   "rule": "Headers are compared by identity; pass the same map instance across rebuilds (SpriteTileImage.sheetHeadersFor caches one per source) or every rebuild refetches. Never close a Dio from DioNetwork.getClient."
+  },
+  {
+   "what": "JPEG validation order",
+   "where": "custom_network_image.dart downloadAndCache",
+   "rule": "looksLikeJpeg (SOI) before hasJpegEndMarker; search for the last EOI in an 8 KB tail (pawchive serves WebP as .jpeg; erocdn appends bytes after EOI). thumbnailCandidates keeps only http(s) spares (e621 '-http://')."
+  },
+  {
+   "what": "media_kit pool semantics",
+   "where": "media_kit_player_view.dart, player_pool_planner.dart",
+   "rule": "Release by identity; replace errored free slots, never rebind them; rebind resets rate to 1 and volume to 100; PlaylistMode.single plus loop-file; options signature disposes stale idle slots; Video keyed by ObjectKey(controller); fullscreen holds refCount via holdForFullscreen/endFullscreenHold and _onPlayerError does nothing while held; start delay is cancelled on dispose and item change."
+  },
+  {
+   "what": "Frame grabs and the pool",
+   "where": "MediaKitFrameSource, isScreenshotNoise, VideoFrames",
+   "rule": "showing(url) requires refCount>0 and no error. noteGrab stamps lastGrabAt. Only the exact strings 'Taking screenshot failed.' and 'Error writing screenshot!' within 15 s of a grab (monotonic clock) are ignored. VideoFrames listens to ViewerHandler.current with addListener, NOT .listen (GetX 5 stream stops after the last cancel). claimScreen/releaseScreen: only the owner can release."
+  },
+  {
+   "what": "Video surface cap",
+   "where": "video_surface_cap.dart + third_party/media_kit_video patch",
+   "rule": "Install the hook once before the first player; read the Modular UI switch per video. Never resize the surface after creation (r57 broke playback, HANDOVER 4.27)."
+  },
+  {
+   "what": "better_player decoder safety",
+   "where": "better_player_view.dart",
+   "rule": "Evict before allocating and serialise every create/teardown through _DecoderGate; _maxAlive=1. Changing the order reintroduces native MediaCodec aborts."
+  },
+  {
+   "what": "Doujin/booru separation in the viewer",
+   "where": "tag_view.dart (isDoujinContext, tag menu, batch ops, parseTags), gallery_view_page _flushDwell, showSelectTagsDialog, find_elsewhere _otherBoorus",
+   "rule": "Doujin items never feed booru dwell, For You seeds or booru discovery. Blacklist, stars and pins route to the doujin store or source settings. The shared booru tag store is not consulted for doujin tags. Guarded by doujin_separation_test."
+  },
+  {
+   "what": "Preview strips do not write tag types",
+   "where": "TagContentPreview.loadPreview",
+   "rule": "tab.booruHandler.storeTagsGlobally = false; the Suggested strip's new tab uses TagContentPreview.newTabQuery (SuggestionHandler query)."
+  },
+  {
+   "what": "Linked media id lookup",
+   "where": "LinkedMediaOpener.prepareTab/showFetched",
+   "rule": "applySourceSettings=false and pageNum += 1 (SearchTab already set startingPage); show fetched when filters emptied filteredFetched."
+  },
+  {
+   "what": "Flash origin",
+   "where": "FlashPlayerPage.baseUrlFor",
+   "rule": "Page origin is the post's own site (e621 sends CORS only to e621.net)."
+  },
+  {
+   "what": "Post files fetched as plain text",
+   "where": "PostFilesHandler.ensureLoaded",
+   "rule": "ResponseType.plain plus bodyText(); fetch only when a post is opened, never during grid load; set fileCountHint from displayable files."
+  },
+  {
+   "what": "Tag chip preview zone",
+   "where": "tag_chip_shell.dart, tag_view buildTagChip",
+   "rule": "The zone is laid over the chip body so it fires without the double-tap wait; previewZoneWidthFor() must match the icon padding the chip draws (11+16+8+2)."
+  },
+  {
+   "what": "Image tiling",
+   "where": "image_viewer.dart checkAndPrepareTiles",
+   "rule": "Tiles at 4096 px, 512 MB budget, skip above 80000 px. Native slicing via ServiceHandler.sliceImage, isolate fallback (static entry)."
+  },
+  {
+   "what": "Favicon resolver keys",
+   "where": "booru_favicon.dart FaviconResolver.rememberWorking",
+   "rule": "Key by the SOURCE host, never the candidate host (all DuckDuckGo fallbacks share one host)."
+  }
+ ]
+}

@@ -1,0 +1,312 @@
+{
+ "bugs": [
+  {
+   "title": "Pasteable text fields read the clipboard on every keystroke",
+   "file": "lib/core/ui/settings_widgets.dart",
+   "line": 1128,
+   "scenario": "Focus any SettingsTextInput with pasteable:true (booru edit API key/user id, network proxy fields, tag filters, LoliSync IP) and type: each keystroke reads the clipboard again. On Android 12+ that shows the 'pasted from your clipboard' toast over and over, and reads whatever is on the clipboard (passwords from a password manager included).",
+   "evidence": "onChanged -> onChangedCallback -> setState (1041-1044) -> build -> buildSuffixIcons() -> `if (widget.pasteable && isFocused) FutureBuilder(future: Clipboard.getData(Clipboard.kTextPlain), ...)`. A new future is created on every build.",
+   "severity": "privacy",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "After an auto-lock timeout the app content is briefly visible before the lock screen",
+   "file": "lib/core/platform/local_auth_handler.dart",
+   "line": 160,
+   "scenario": "App lock on, Blur on leave off: return after the timeout. The feed shows for the 10 ms delay plus the awaited canCheckBiometrics platform call before isAuthenticated turns false.",
+   "evidence": "onReturn: `await Future.delayed(10ms)`, then lock(), which does `await canCheckBiometrics()` before `isAuthenticated.value = !shouldLock`. LockScreenPage only shows when the value is false.",
+   "severity": "privacy",
+   "confidence": "plausible"
+  },
+  {
+   "title": "Tab changes from the last 30 s are lost when the app is killed",
+   "file": "lib/main.dart",
+   "line": 536,
+   "scenario": "Open or close tabs, then swipe the app away or let Android reap it within 30 s: on the next start the old tab set comes back.",
+   "evidence": "backupTabs runs only from Timer.periodic(30 s) in _HomeState.initState. didChangeAppLifecycleState (paused/hidden/detached) flushes the recommender and doujin data but never calls searchHandler.backupTabs().",
+   "severity": "data-loss",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "One extra repeat fires after the long press is released",
+   "file": "lib/core/ui/long_press_repeater.dart",
+   "line": 64,
+   "scenario": "Hold the viewer's next-page button (info drawer open, gallery_view_page.dart:1317) and release: the page moves one more time after the finger is lifted, and after onStop has already run. The same happens with the feed scroll buttons, comment navigation and number steppers.",
+   "evidence": "runAction(): `await Future.delayed(tick)` then `await widget.onStart()` with no `active` check after the delay. onLongPressEnd only sets active=false, so the pending iteration still calls onStart once.",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "LoadItemViewer branch can never be reached on desktop",
+   "file": "lib/app/shells/desktop/desktop_image_listener.dart",
+   "line": 95,
+   "scenario": "On desktop, an item whose media type must be guessed, on a handler with hasLoadItemSupport, always gets GuessExtensionViewer. LoadItemViewer (which fetches the item details first) is never used.",
+   "evidence": "Line 82 `else if (item.mediaType.value.isNeedToGuess)` returns before line 95 `else if (item.mediaType.value.isNeedToGuess && ...hasLoadItemSupport)`, which tests the same condition.",
+   "severity": "wrong-behaviour",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Changing 'Blur on leave' has no effect until something rebuilds the whole app",
+   "file": "lib/main.dart",
+   "line": 333,
+   "scenario": "Settings -> Privacy -> turn on Blur on leave and go back, then switch apps: no blur, until a theme change, a settings save with restate:true, or a restart.",
+   "evidence": "The OverlayEntry builder reads `settingsHandler.blurOnLeave.value` only when MaterialApp.builder runs again. MainApp's Obx does not observe blurOnLeave, and privacy_page.dart:49 saves with `restate: false`, so rootRestate is never called.",
+   "severity": "wrong-behaviour",
+   "confidence": "plausible"
+  },
+  {
+   "title": "Every return from 'inactive' drops the headless Schale and HentaiPaw page clients",
+   "file": "lib/main.dart",
+   "line": 641,
+   "scenario": "Pull down the notification shade, use the biometric unlock prompt, or the system photo picker while a niyaniya or hentaipaw request goes through the headless page. On resume the page client is disposed mid-request, the call fails and falls back to Dio, which Cloudflare may refuse, and the next request has to restart the page.",
+   "evidence": "In didChangeAppLifecycleState, `resumed` always calls SchaleClearanceHandler.disposePageClient and HentaiPawHandler.pageClient.drop. The 'phone was away' intent is not checked (no minimum away time); inactive alone leads to resumed.",
+   "severity": "wrong-behaviour",
+   "confidence": "plausible"
+  },
+  {
+   "title": "Tap recognizers are created on every build and never disposed",
+   "file": "lib/core/ui/text/parsed_text.dart",
+   "line": 320,
+   "scenario": "Comments with links, tags or mentions rebuild (spoiler toggle, theme change, scrolling back in) and each build leaks new TapGestureRecognizers.",
+   "evidence": "_buildSpans creates `TapGestureRecognizer()..onTap` at lines 320, 336, 353, 370 and 387. The state has no dispose that releases them.",
+   "severity": "leak",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Dropdown sheet controllers are never disposed",
+   "file": "lib/core/ui/loli_dropdown.dart",
+   "line": 231,
+   "scenario": "Each dropdown sheet that is opened leaks its TextEditingController, and its own ScrollController when not draggable.",
+   "evidence": "_LoliDropdownBottomSheet creates searchController and `scrollController = widget.controller ?? ScrollController()` and has no dispose override.",
+   "severity": "leak",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "The browser tab's ValueNotifiers are never disposed",
+   "file": "lib/features/webview/ui/webview_browser_view.dart",
+   "line": 38,
+   "scenario": "Each WebView-type booru tab view that is created leaks two ValueNotifiers.",
+   "evidence": "progress and currentUrl ValueNotifiers; the state has no dispose override.",
+   "severity": "leak",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "ShimmerWrap ignores `enabled`, so the shimmer ticker runs forever in low-performance mode",
+   "file": "lib/core/ui/shimmer_builder.dart",
+   "line": 21,
+   "scenario": "Low performance mode (shitDevice) on: the feed passes enabled:false. Shimmer still starts repeat() in initState, and no ShimmerLoading child ever mounts (the spinner and the shimmer-less thumbnails are used instead), so stop() is never reached. The AnimationController ticks every frame for as long as the feed lives, on the devices meant to save work. Behind the non-opaque viewer (isActive false) the shimmer keeps animating too.",
+   "evidence": "ShimmerWrap.build returns Shimmer(enabled: true, ...) whatever this.enabled is. ShimmerState.initState: if (widget.enabled) _shimmerController.repeat(...). stop() is called only from deactivateChild/didUpdateWidget.",
+   "severity": "perf",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "The webview menu fails on a null controller when no webview exists",
+   "file": "lib/features/webview/ui/webview_navigation_menu.dart",
+   "line": 219,
+   "scenario": "Open the webview page on Linux (no webview support), or open a FurAffinity page while its session is still being prepared, then pick any menu item: 'Null check operator used on a null value' is thrown and nothing happens.",
+   "evidence": "The menu is built even when the FutureBuilder has no data: `onSelected` calls `_onGoToInitial(controller.data!)` etc. The controller completer only completes in InAppWebView.onWebViewCreated, and webview_page.dart:250 builds InAppWebView only when the platform supports it and sessionReady is true.",
+   "severity": "minor",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "Scroll-to-selected throws when the current value is not in the list",
+   "file": "lib/core/ui/loli_dropdown.dart",
+   "line": 248,
+   "scenario": "A SettingsDropdown or SettingsBooruDropdown whose value is filtered out, or is a stale Booru instance, opens its sheet: a RangeError(-1) is thrown in the post-frame callback and logged, and the list does not scroll to the selection.",
+   "evidence": "`final index = filteredItems.indexOf(widget.value as T); if (_keys[index].currentContext != null)`: there is no guard for index == -1.",
+   "severity": "minor",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "A malformed loli.snatcher config link fails silently with an uncaught exception",
+   "file": "lib/main.dart",
+   "line": 592,
+   "scenario": "Opening a loli.snatcher link with no '?', bad base64, or an unknown booru type throws inside a post-frame callback. The user gets no feedback; only an error log.",
+   "evidence": "openAppLink: `Booru.fromLink(url)` (booru.dart:37 `link.split('?')[1]`, base64Decode, jsonDecode), then `booru.type!.isSaveable`. There is no try/catch.",
+   "severity": "minor",
+   "confidence": "confirmed"
+  },
+  {
+   "title": "The post-frame width update force-unwraps currentContext before checking mounted",
+   "file": "lib/core/ui/inner_drawer.dart",
+   "line": 225,
+   "scenario": "If the InnerDrawer is removed in the frame after a size or orientation change (for example a mobile-to-desktop switch, which also forces landscape), the callback throws a null-check error, which is logged.",
+   "evidence": "`_drawerKey.currentContext!.findRenderObject()` is evaluated before `if (mounted && box != null ...)`.",
+   "severity": "minor",
+   "confidence": "plausible"
+  },
+  {
+   "title": "The history dialog puts a ListView directly in AlertDialog content",
+   "file": "lib/features/webview/ui/webview_navigation_controls.dart",
+   "line": 127,
+   "scenario": "Long-press Back in the webview: AlertDialog's IntrinsicWidth asks the viewport for its intrinsic size. That asserts in debug builds and leaves the width to the dialog's minimum in release.",
+   "evidence": "`AlertDialog(content: ListView.builder(...))` with no sized wrapper.",
+   "severity": "minor",
+   "confidence": "plausible"
+  },
+  {
+   "title": "setState is called after an await without a mounted check (Windows cookie mirror)",
+   "file": "lib/features/webview/ui/webview_page.dart",
+   "line": 224,
+   "scenario": "On Windows, closing the webview while getCookies is pending causes a 'setState() called after dispose()' error.",
+   "evidence": "saveCookiesOnWidnows: `await CookieManager...getCookies(...)` then `setState(() {})` with no mounted check.",
+   "severity": "minor",
+   "confidence": "plausible"
+  },
+  {
+   "title": "Fullscreen reuses the same keyed viewer widget (duplicate GlobalKey)",
+   "file": "lib/app/shells/desktop/desktop_image_listener.dart",
+   "line": 231,
+   "scenario": "Desktop: enter or leave fullscreen. The same itemWidget (key: item.key) can be in the pane and in the dialog during the transition, which raises the duplicate-key exception the TODO at line 45 mentions.",
+   "evidence": "The dialog's Obx returns `itemWidget` while the pane hides it only via isDesktopFullscreen. A TODO at line 45 acknowledges this.",
+   "severity": "minor",
+   "confidence": "plausible"
+  },
+  {
+   "title": "The progress bar disappears at the first subresource",
+   "file": "lib/features/webview/ui/webview_page.dart",
+   "line": 305,
+   "scenario": "The webview progress bar hides as soon as any subresource finishes, while the page is still loading.",
+   "evidence": "onLoadResource sets `loadingPercentage = 100`, and the bar renders only `if (loadingPercentage < 100)`.",
+   "severity": "minor",
+   "confidence": "plausible"
+  }
+ ],
+ "fragile": [
+  {
+   "what": "Startup order",
+   "where": "lib/main.dart main()",
+   "rule": "Keep this order: CustomWidgetsBinding.ensureInitialized first; Logger.Inst before captureWebViewUserAgent; all handler register() calls and initSettingsEnumRegistry() before SettingsHandler.initialize(); Encoder/ImageTagger/LookModel register+refresh after settings (they need the model id and app path); LocalAuthHandler.register after settings (lock() reads useLockscreen); runApp last."
+  },
+  {
+   "what": "Post-init order",
+   "where": "lib/main.dart _MainAppState.initHandlers",
+   "rule": "Order: tagHandler.initialize, then searchHandler.restoreTabs (tag colours on the first render), then runDoujinMigrationIfNeeded, then BookmarkHandler.ensureLoaded + mergeLegacyBookmarks (one-time). SettingsHandler.postInit runs the proxy, video backend, DB and boorus setup before this callback, and checkUpdate, DownloadsCheck.offerAfterRestore, SourceLinks, ONNX availability and timings after it."
+  },
+  {
+   "what": "Root overlay stack",
+   "where": "lib/main.dart MaterialApp.builder",
+   "rule": "Three Overlays in order: content (registers OverlayScreen for the dev overlay), blur-on-leave, lock screen. The lock screen must stay topmost. HiddenStatusBarInsets must read insets inside the overlay entry (r50/r52): no MediaQuery is created in the builder, or the keyboard insets go stale."
+  },
+  {
+   "what": "Navigator observers and key",
+   "where": "lib/main.dart, lib/core/ui/navigation_handler.dart",
+   "rule": "Keep NavigationHandler.navigatorKey as MaterialApp.navigatorKey and Alice's navigator key. Observers: routeObserver (feed and viewer subscribe), FloatingPreviewHandler.routeObserver, TalkerRouteObserver, PerfTraceRouteObserver, ViewerCloseObserver. Tests call NavigationHandler.register() and use navigatorKey (about 20 test files)."
+  },
+  {
+   "what": "Shell drawer key",
+   "where": "SearchHandler.mainDrawerKey; mobile_home_page.dart, main_appbar.dart, main_drawer.dart",
+   "rule": "mainDrawerKey must be the InnerDrawer key; three call sites check `state is InnerDrawerState` and call toggle/close."
+  },
+  {
+   "what": "Feed chrome keys",
+   "where": "NavigationHandler.floatingHeaderKey / bottomBarKey; main_appbar.dart, waterfall_view.dart",
+   "rule": "floatingHeaderKey is passed as CustomSliverAppBar.headerKey (programmatic show/hide via CustomFloatingHeaderState); bottomBarKey is the WaterfallBottomBar key; header visibility changes drive the bottom bar show/hide."
+  },
+  {
+   "what": "Vendored Flutter internals",
+   "where": "custom_sliver_app_bar.dart, custom_sliver_persistent_header.dart, predictive_back_transition.dart, inner_drawer.dart",
+   "rule": "These copy framework code (RenderSliverFloatingPersistentHeader snap API, FadeForwardsPageTransitionsBuilder.kTransitionMilliseconds). The app pins beta 3.42.0-0.4.pre; do not upgrade the engine (user rule) and do not 'clean up' their internals."
+  },
+  {
+   "what": "DrawerRefresh is a plain ValueNotifier",
+   "where": "lib/core/utils/drawer_refresh.dart",
+   "rule": "Deliberately not Rx: listeners must survive GetX worker lifecycles. Bump it on drawer open (MobileHome innerDrawerCallback) and on every doujin store write (doujin_drawer_refresh_test)."
+  },
+  {
+   "what": "Same-world booru switching",
+   "where": "booru_switcher_sheet.dart switchableBoorus",
+   "rule": "Only DoujinDataHandler.sameDomain sources are offered (doujin/booru separation rule; booru_switcher_domain_test)."
+  },
+  {
+   "what": "Webview navigation policies",
+   "where": "webview_page.dart isWebviewNavigationAllowed / isMainFrameNavigationAllowed",
+   "rule": "The solver policy judges main-frame navigations only. blob:, about:srcdoc and data: frames must load (Turnstile needs them). *.cloudflare.com is always allowed; intent:// and market: are refused. schale_clearance_flow_test covers the main-frame rule; the ad-block rule has no test despite its comment."
+  },
+  {
+   "what": "One User-Agent",
+   "where": "webview_page.dart, webview_browser_view.dart, main.dart (Tools.captureWebViewUserAgent)",
+   "rule": "Webviews use Tools.browserUserAgent (captured device UA). Cloudflare ties cookies to the UA; do not add another UA string. The UA must be captured before the first request."
+  },
+  {
+   "what": "Webview globals",
+   "where": "webview_page.dart webViewEnvironment, globalWindowsCookies",
+   "rule": "webViewEnvironment must exist before any webview or CookieManager on Windows (created in main). globalWindowsCookies is keyed by host and read by Tools/r34hentai/network page; debug and network pages clear it together with the CookieManager."
+  },
+  {
+   "what": "FurAffinity webview session",
+   "where": "webview_page.dart initState/dispose",
+   "rule": "FA pages wait for prepareWebView (sessionReady) before building InAppWebView and call syncAfterWebView on dispose (r41: otherwise guest visits)."
+  },
+  {
+   "what": "Gesture arena pattern",
+   "where": "SettingsButton iconOnly, MainAppBar.menuButton, WebviewNavigationControls back button",
+   "rule": "Tap plus long press go on one InkResponse; nesting an IconButton in a GestureDetector loses the long press (documented regressions)."
+  },
+  {
+   "what": "SettingsButton spacer",
+   "where": "settings_widgets.dart SettingsButton.build",
+   "rule": "An empty name, disabled, no icon/subtitle/page/action renders SizedBox(height: 10), not a blank card (tab_cards_test, r39)."
+  },
+  {
+   "what": "DownloadsCheck test seams",
+   "where": "downloads_check.dart",
+   "rule": "Keep the static audit/forget/configDir/contextNow/whereFound/say seams and resetForTests (downloads_check_test). The post-restore offer consumes BackupRunner.checkDownloadsMarker once."
+  },
+  {
+   "what": "FlashElements in tests",
+   "where": "flash_elements.dart",
+   "rule": "showSnackbar returns early under Tools.isTestMode. The dedupe key defaults to the title Text data; isKeyUnique dismisses the earlier one and waits 300 ms."
+  },
+  {
+   "what": "ErrorWidget replacement",
+   "where": "utils/logger.dart:64 sets CompactErrorWidget.builder",
+   "rule": "Keep CompactErrorWidget.builder as a static tear-off; the default red box breaks layouts (10000x10000)."
+  },
+  {
+   "what": "Flow theme tokens",
+   "where": "theme_handler.dart",
+   "rule": "ThemeHandler.flow* static colours are used by tab_pill.dart and flow_tab_carousel.dart. Every dark path (dynamic colour and AMOLED included) must pin the Flow neutrals; 'System' font maps to Manrope."
+  },
+  {
+   "what": "MethodChannel contract",
+   "where": "service_handler.dart",
+   "rule": "The channel name 'com.noaisu.loliSnatcher/services' and every method name must match MainActivity.kt. readNativeLog throws on failure (callers wrap it). setSystemUiVisibility keeps static re-hide state with a generation counter."
+  },
+  {
+   "what": "SecureStorageKey names are storage keys",
+   "where": "secure_storage_handler.dart",
+   "rule": "Values are stored under key.name; renaming an enum value loses the Drive credentials or the changelog marker."
+  },
+  {
+   "what": "Release constants",
+   "where": "constants.dart",
+   "rule": "Bump buildCodename every build (rNN-<two words>); updateInfo versionName/buildNumber mirror pubspec. The version row shows '{codename}-{version}'; update checks compare buildNumber."
+  },
+  {
+   "what": "borderWidth export",
+   "where": "settings_widgets.dart:18",
+   "rule": "The top-level const borderWidth is used by gallery_page.dart and add_new_tab_dialog.dart; keep it exported from the barrel."
+  },
+  {
+   "what": "Lock screen semantics",
+   "where": "local_auth_handler.dart, lockscreen_page.dart",
+   "rule": "isAuthenticated null shows nothing; false shows the lock screen and auto-prompts. A manual lock skips the first automatic prompt (initial && manuallyLocked). Returning within 1 s of an unlock never relocks (the native prompt counts as a leave). PopScope canPop false."
+  },
+  {
+   "what": "Tab opening from the drawer",
+   "where": "main_drawer.dart openVirtual, booru switcher",
+   "rule": "Drawer Downloads/Favourites open with switchToNew: true (explicit user action, an allowed exception to 'tabs never kidnap'); content-originated tabs must stay in the background."
+  },
+  {
+   "what": "Modular UI read at build",
+   "where": "main_drawer.dart ModularUi.isOn(sidebarSourceSettings)",
+   "rule": "Modular UI removals are switches read when building, never built and then hidden (user rule)."
+  },
+  {
+   "what": "Periodic jobs",
+   "where": "lib/main.dart _HomeState.initState",
+   "rule": "backupTabs + saveTags every 30 s (10 s in debug); cache cleanup at start and every 5 min; tagsCleanup once after 20 min (1 min in debug) to avoid DB lockups at startup; localAuth.onReturn at launch."
+  }
+ ]
+}

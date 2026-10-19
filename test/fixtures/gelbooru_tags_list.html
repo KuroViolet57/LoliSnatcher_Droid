@@ -1,0 +1,184 @@
+<!DOCTYPE html><html lang="en">
+	<head>
+		<meta charset="UTF-8">
+		<title>Tag Listing | Gelbooru - Anime Art & Hentai Gallery - Free to Explore</title>
+		<link rel="alternate" hreflang="ja" href="https://ja.gelbooru.com/index.php?page=tags&amp;s=list&amp;sort=desc&amp;order_by=index_count&amp;pid=0" />
+<link rel="alternate" hreflang="en" href="https://gelbooru.com/index.php?page=tags&amp;s=list&amp;sort=desc&amp;order_by=index_count&amp;pid=0" />
+
+		<meta name="keywords" content=", anime, doujinshi, hentai, porn, sex, japanese hentai, anime hentai, rule34, rule 34, imageboard" />
+		<meta name="description" content="Browse millions of anime, manga, videos, hentai, and video game themed images on Gelbooru. Discover art with detailed tags. Contains explicit hentai content." />
+		<meta name="rating" content="adult" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<link rel="stylesheet" href="gridStyle.css?16h">
+		
+		<link rel="SHORTCUT ICON" href="favicon.png" />
+		<link rel="search" type="application/opensearchdescription+xml" title="Gelbooru.com: Coded by Geltas" href="gelbooru.xml" />
+		
+		
+		<script async type="application/javascript" src="https://a.realsrv.com/ad-provider.js"></script> 
+	</head>
+	<body>
+	<style>
+	 .mn-container-adsby_position_bottom-right {
+		 display: none;
+	 }
+	</style>
+		<div id="container">
+		<div id="long-notice"></div><div id="notice" style="display: none;"></div>
+		  <header>
+			<div class="topnav" id="myTopnav">
+				<a href="https://gelbooru.com/index.php" class="homeIcon">
+					<img src="https://gelbooru.com/layout/gelbooru-logo.svg" style="height: 46px; width: 46px; margin: 0px; padding-bottom: 2px;">
+				</a>
+				<a href="index.php?page=account&s=home">Settings</a>
+				<a href="index.php?page=post&s=list&tags=all">Posts</a>
+				<a href="index.php?page=comment&s=list">Comments</a>
+				<a href="index.php?page=wiki&s=list">Wiki</a>
+				<a href="index.php?page=tags&s=list" class="active">Tags</a>
+				<a href="index.php?page=pool&s=list">Pools</a>
+				<a href="index.php?page=extras&s=artists">Featured</a>
+				<a href="index.php?page=forum&s=list">Forum</a>
+				<a href="index.php?page=tracker&s=list">Trac</a>
+				<a href="index.php?page=conversation&s=list">Live Chat</a>
+			
+				<a href="javascript:;" onclick="darkModeToggle(); return false;"><img src="layout/lightbulb-fill.svg" style="filter: invert(62%) sepia(93%) saturate(1352%) hue-rotate(18deg) brightness(119%) contrast(119%); width: 14px; padding: 0px; margin: 0px;"></a>
+								  
+				<a href="javascript:void(0);" class="icon" onclick="responsiveViewToggle();">
+					<img src="layout/list.svg" style="filter: invert(100); height: 16px;">
+				  </a>
+			</div>
+			<div style="background: #a43535; color: #fff; padding: 10px; font-size: 11px;" id="motd">
+				<i><b>Notice</b></i>: We will show one popunder ad per half day. This can be disabled in your account options. The popunder will spawn as soon as you click on the page. You have been informed. <a href="javascript:;" onclick="$.cookie('motd','1',{ expires: 7 }); $('#motd').hide(); $('#motdspacer').show(); return false;" style="color: #fff; text-decoration: underline;">(Dismiss)</a>
+			</div>
+		  </header><div class="navSubmenu"><a href="index.php?page=tags&amp;s=list">List</a>
+<a href="index.php?page=alias&amp;s=list">Aliases</a>
+<a href="index.php?page=tags&amp;s=implications">Implications</a>
+<a href="index.php?page=tags&amp;s=saved_search">Saved Searches</a></div>
+		  <div class="searchArea">
+			<div>
+				<form action="index.php?page=search" method="post">
+					<a href="javascript:;" onclick="saveTagSearch() ;return false;"><img class="" src="layout/heart-fill.svg" style="vertical-align: top; margin: 4px 10px 0px 10px; height: 24px; width: 24px; border: 0px !important; opacity: .6;" title="Save this search. Check your account page."></a>
+					<input id="tags-search" name="tags" autocomplete="on" style="padding: 7px; width: calc(100% - 180px); border: 1px solid #e0e0e0;"  data-autocomplete="tag-query" type="text" value="" placeholder="Search Example: video black_hair rating:sensitive"/>
+					<input name="commit" type="submit" value="Search" class="searchList"/>
+			</form>
+			</div>
+		  </div>		<section class="aside"></section>
+		<main>
+			<div class="mainBodyPadding">
+				<h2>Tag Listing</h2>
+<br />
+			  <form action="index.php?page=tags&s=list" method="get">
+			  	<input type="hidden" name="page" value="tags">
+				<input type="hidden" name="s" value="list">
+				
+				<table class="form" width="100%">
+				  <tbody>
+					<tr>
+					  <th width="15%">
+						<label for="name">Name</label>
+
+						<p>Use * as a wildcard.</p>
+					  </th>
+					  <td width="85%"><input id="name" name="tags" size="40" type="text" data-autocomplete="tag-query" class="tag-list-search" value=""></td>
+					</tr>
+					<tr>
+					  <th><label for="type">Order</label></th>
+					  <td><select id="type" name="sort"><option value="asc" selected="selected">Ascending</option>
+
+			<option value="desc">Descending</option>
+			</select></td>
+				</tr>
+				<tr>
+				  <th><label for="order">Sort</label></th>
+				  <td><select id="order" name="order_by">
+				  <option value="tag">Name</option>
+				  <option value="updated" selected="selected">Updated</option>
+				  <option value="type">Type</option>
+				  <option value="index_count">Total Count</option>
+				  </select></td>
+				</tr>
+			  </tbody>
+
+					<tr>
+					  <td></td>
+					  <td><input type="submit" value="Search" class="searchList"></td>
+					</tr>
+			</table>
+		  </form>
+	<br /><br />
+		<table class="highlightable" width="100%"><tr>
+		<th width="45%">Name</th><th width="47%">Type</th>
+<tr><td><span class="tag-type-artist"><a href="index.php?page=post&amp;s=list&amp;tags="></a></span> <span class="tag-count">14115639</span></td><td>artist (<a href="index.php?page=tags&amp;s=edit&amp;tag=">edit</a>)</td></tr><tr><td><span class="tag-type-general"><a href="index.php?page=post&amp;s=list&amp;tags=1girl">1girl</a></span> <span class="tag-count">9660501</span></td><td>general (<a href="index.php?page=tags&amp;s=edit&amp;tag=1girl">edit</a>)</td></tr><tr><td><span class="tag-type-metadata"><a href="index.php?page=post&amp;s=list&amp;tags=highres">highres</a></span> <span class="tag-count">9177983</span></td><td>metadata (<a href="index.php?page=tags&amp;s=edit&amp;tag=highres">edit</a>)</td></tr><tr><td><span class="tag-type-deprecated"><a href="index.php?page=post&amp;s=list&amp;tags=1firl">1firl</a></span> <span class="tag-count">8540770</span></td><td>deprecated (<a href="index.php?page=tags&amp;s=edit&amp;tag=1firl">edit</a>)</td></tr><tr><td><span class="tag-type-general"><a href="index.php?page=post&amp;s=list&amp;tags=solo">solo</a></span> <span class="tag-count">7514675</span></td><td>general (<a href="index.php?page=tags&amp;s=edit&amp;tag=solo">edit</a>)</td></tr><tr><td><span class="tag-type-deprecated"><a href="index.php?page=post&amp;s=list&amp;tags=1_girl">1 girl</a></span> <span class="tag-count">7273993</span></td><td>deprecated (<a href="index.php?page=tags&amp;s=edit&amp;tag=1_girl">edit</a>)</td></tr><tr><td><span class="tag-type-deprecated"><a href="index.php?page=post&amp;s=list&amp;tags=1woman">1woman</a></span> <span class="tag-count">6929852</span></td><td>deprecated (<a href="index.php?page=tags&amp;s=edit&amp;tag=1woman">edit</a>)</td></tr><tr><td><span class="tag-type-general"><a href="index.php?page=post&amp;s=list&amp;tags=long_hair">long hair</a></span> <span class="tag-count">6643424</span></td><td>general, ambiguous (<a href="index.php?page=tags&amp;s=edit&amp;tag=long_hair">edit</a>)</td></tr><tr><td><span class="tag-type-general"><a href="index.php?page=post&amp;s=list&amp;tags=breasts">breasts</a></span> <span class="tag-count">6158569</span></td><td>general (<a href="index.php?page=tags&amp;s=edit&amp;tag=breasts">edit</a>)</td></tr><tr><td><span class="tag-type-deprecated"><a href="index.php?page=post&amp;s=list&amp;tags=female_solo">female solo</a></span> <span class="tag-count">5880760</span></td><td>deprecated (<a href="index.php?page=tags&amp;s=edit&amp;tag=female_solo">edit</a>)</td></tr><tr><td><span class="tag-type-deprecated"><a href="index.php?page=post&amp;s=list&amp;tags=1gir">1gir</a></span> <span class="tag-count">5858002</span></td><td>deprecated (<a href="index.php?page=tags&amp;s=edit&amp;tag=1gir">edit</a>)</td></tr><tr><td><span class="tag-type-deprecated"><a href="index.php?page=post&amp;s=list&amp;tags=one_girl">one girl</a></span> <span class="tag-count">5701874</span></td><td>deprecated (<a href="index.php?page=tags&amp;s=edit&amp;tag=one_girl">edit</a>)</td></tr><tr><td><span class="tag-type-deprecated"><a href="index.php?page=post&amp;s=list&amp;tags=beautiful_breast">beautiful breast</a></span> <span class="tag-count">5644310</span></td><td>deprecated (<a href="index.php?page=tags&amp;s=edit&amp;tag=beautiful_breast">edit</a>)</td></tr><tr><td><span class="tag-type-deprecated"><a href="index.php?page=post&amp;s=list&amp;tags=metallic_breasts">metallic breasts</a></span> <span class="tag-count">5517484</span></td><td>deprecated (<a href="index.php?page=tags&amp;s=edit&amp;tag=metallic_breasts">edit</a>)</td></tr><tr><td><span class="tag-type-deprecated"><a href="index.php?page=post&amp;s=list&amp;tags=exposed_breats">exposed breats</a></span> <span class="tag-count">5500206</span></td><td>deprecated (<a href="index.php?page=tags&amp;s=edit&amp;tag=exposed_breats">edit</a>)</td></tr><tr><td><span class="tag-type-deprecated"><a href="index.php?page=post&amp;s=list&amp;tags=_breasts"> breasts</a></span> <span class="tag-count">5500184</span></td><td>deprecated (<a href="index.php?page=tags&amp;s=edit&amp;tag=_breasts">edit</a>)</td></tr><tr><td><span class="tag-type-deprecated"><a href="index.php?page=post&amp;s=list&amp;tags=sexy_breasts">sexy breasts</a></span> <span class="tag-count">5499553</span></td><td>deprecated (<a href="index.php?page=tags&amp;s=edit&amp;tag=sexy_breasts">edit</a>)</td></tr><tr><td><span class="tag-type-deprecated"><a href="index.php?page=post&amp;s=list&amp;tags=breast_touching">breast touching</a></span> <span class="tag-count">5463947</span></td><td>deprecated (<a href="index.php?page=tags&amp;s=edit&amp;tag=breast_touching">edit</a>)</td></tr><tr><td><span class="tag-type-general"><a href="index.php?page=post&amp;s=list&amp;tags=looking_at_viewer">looking at viewer</a></span> <span class="tag-count">5289012</span></td><td>general (<a href="index.php?page=tags&amp;s=edit&amp;tag=looking_at_viewer">edit</a>)</td></tr><tr><td><span class="tag-type-deprecated"><a href="index.php?page=post&amp;s=list&amp;tags=1girls">1girls</a></span> <span class="tag-count">5216787</span></td><td>deprecated (<a href="index.php?page=tags&amp;s=edit&amp;tag=1girls">edit</a>)</td></tr><tr><td><span class="tag-type-deprecated"><a href="index.php?page=post&amp;s=list&amp;tags=solo_female">solo female</a></span> <span class="tag-count">5210041</span></td><td>deprecated (<a href="index.php?page=tags&amp;s=edit&amp;tag=solo_female">edit</a>)</td></tr><tr><td><span class="tag-type-deprecated"><a href="index.php?page=post&amp;s=list&amp;tags=1female">1female</a></span> <span class="tag-count">5209361</span></td><td>deprecated (<a href="index.php?page=tags&amp;s=edit&amp;tag=1female">edit</a>)</td></tr><tr><td><span class="tag-type-deprecated"><a href="index.php?page=post&amp;s=list&amp;tags=tits_touching">tits touching</a></span> <span class="tag-count">5171754</span></td><td>deprecated (<a href="index.php?page=tags&amp;s=edit&amp;tag=tits_touching">edit</a>)</td></tr><tr><td><span class="tag-type-deprecated"><a href="index.php?page=post&amp;s=list&amp;tags=side_boobs">side boobs</a></span> <span class="tag-count">5171699</span></td><td>deprecated (<a href="index.php?page=tags&amp;s=edit&amp;tag=side_boobs">edit</a>)</td></tr><tr><td><span class="tag-type-deprecated"><a href="index.php?page=post&amp;s=list&amp;tags=breasts_exposed">breasts exposed</a></span> <span class="tag-count">5170749</span></td><td>deprecated (<a href="index.php?page=tags&amp;s=edit&amp;tag=breasts_exposed">edit</a>)</td></tr><tr><td><span class="tag-type-deprecated"><a href="index.php?page=post&amp;s=list&amp;tags=boob_pressing">boob pressing</a></span> <span class="tag-count">5169049</span></td><td>deprecated (<a href="index.php?page=tags&amp;s=edit&amp;tag=boob_pressing">edit</a>)</td></tr><tr><td><span class="tag-type-deprecated"><a href="index.php?page=post&amp;s=list&amp;tags=bustyboobs">bustyboobs</a></span> <span class="tag-count">5154912</span></td><td>deprecated (<a href="index.php?page=tags&amp;s=edit&amp;tag=bustyboobs">edit</a>)</td></tr><tr><td><span class="tag-type-deprecated"><a href="index.php?page=post&amp;s=list&amp;tags=thick_breasts">thick breasts</a></span> <span class="tag-count">5154288</span></td><td>deprecated (<a href="index.php?page=tags&amp;s=edit&amp;tag=thick_breasts">edit</a>)</td></tr><tr><td><span class="tag-type-deprecated"><a href="index.php?page=post&amp;s=list&amp;tags=squished_boobs">squished boobs</a></span> <span class="tag-count">5097928</span></td><td>deprecated (<a href="index.php?page=tags&amp;s=edit&amp;tag=squished_boobs">edit</a>)</td></tr><tr><td><span class="tag-type-deprecated"><a href="index.php?page=post&amp;s=list&amp;tags=non-mammal_breasts">non-mammal breasts</a></span> <span class="tag-count">4851528</span></td><td>deprecated (<a href="index.php?page=tags&amp;s=edit&amp;tag=non-mammal_breasts">edit</a>)</td></tr><tr><td><span class="tag-type-general"><a href="index.php?page=post&amp;s=list&amp;tags=blush">blush</a></span> <span class="tag-count">4814320</span></td><td>general (<a href="index.php?page=tags&amp;s=edit&amp;tag=blush">edit</a>)</td></tr><tr><td><span class="tag-type-deprecated"><a href="index.php?page=post&amp;s=list&amp;tags=furry_breasts">furry breasts</a></span> <span class="tag-count">4698918</span></td><td>deprecated (<a href="index.php?page=tags&amp;s=edit&amp;tag=furry_breasts">edit</a>)</td></tr><tr><td><span class="tag-type-deprecated"><a href="index.php?page=post&amp;s=list&amp;tags=busty_female">busty female</a></span> <span class="tag-count">4673240</span></td><td>deprecated (<a href="index.php?page=tags&amp;s=edit&amp;tag=busty_female">edit</a>)</td></tr><tr><td><span class="tag-type-deprecated"><a href="index.php?page=post&amp;s=list&amp;tags=breast_play">breast play</a></span> <span class="tag-count">4612489</span></td><td>deprecated (<a href="index.php?page=tags&amp;s=edit&amp;tag=breast_play">edit</a>)</td></tr><tr><td><span class="tag-type-deprecated"><a href="index.php?page=post&amp;s=list&amp;tags=showing_off_breasts">showing off breasts</a></span> <span class="tag-count">4612442</span></td><td>deprecated (<a href="index.php?page=tags&amp;s=edit&amp;tag=showing_off_breasts">edit</a>)</td></tr><tr><td><span class="tag-type-deprecated"><a href="index.php?page=post&amp;s=list&amp;tags=long_hair_male">long hair male</a></span> <span class="tag-count">4453634</span></td><td>deprecated (<a href="index.php?page=tags&amp;s=edit&amp;tag=long_hair_male">edit</a>)</td></tr><tr><td><span class="tag-type-deprecated"><a href="index.php?page=post&amp;s=list&amp;tags=long_hair_female">long hair female</a></span> <span class="tag-count">4453621</span></td><td>deprecated (<a href="index.php?page=tags&amp;s=edit&amp;tag=long_hair_female">edit</a>)</td></tr><tr><td><span class="tag-type-general"><a href="index.php?page=post&amp;s=list&amp;tags=smile">smile</a></span> <span class="tag-count">4435791</span></td><td>general (<a href="index.php?page=tags&amp;s=edit&amp;tag=smile">edit</a>)</td></tr><tr><td><span class="tag-type-deprecated"><a href="index.php?page=post&amp;s=list&amp;tags=throbbing_breasts">throbbing breasts</a></span> <span class="tag-count">4422576</span></td><td>deprecated (<a href="index.php?page=tags&amp;s=edit&amp;tag=throbbing_breasts">edit</a>)</td></tr><tr><td><span class="tag-type-deprecated"><a href="index.php?page=post&amp;s=list&amp;tags=natural_breasts">natural breasts</a></span> <span class="tag-count">4318079</span></td><td>deprecated (<a href="index.php?page=tags&amp;s=edit&amp;tag=natural_breasts">edit</a>)</td></tr><tr><td><span class="tag-type-deprecated"><a href="index.php?page=post&amp;s=list&amp;tags=inner_sideboob">inner sideboob</a></span> <span class="tag-count">4316310</span></td><td>deprecated (<a href="index.php?page=tags&amp;s=edit&amp;tag=inner_sideboob">edit</a>)</td></tr><tr><td><span class="tag-type-deprecated"><a href="index.php?page=post&amp;s=list&amp;tags=innerboob">innerboob</a></span> <span class="tag-count">4316191</span></td><td>deprecated (<a href="index.php?page=tags&amp;s=edit&amp;tag=innerboob">edit</a>)</td></tr><tr><td><span class="tag-type-deprecated"><a href="index.php?page=post&amp;s=list&amp;tags=top_heavy_breasts">top heavy breasts</a></span> <span class="tag-count">4316182</span></td><td>deprecated (<a href="index.php?page=tags&amp;s=edit&amp;tag=top_heavy_breasts">edit</a>)</td></tr><tr><td><span class="tag-type-deprecated"><a href="index.php?page=post&amp;s=list&amp;tags=exposed_boobs">exposed boobs</a></span> <span class="tag-count">4264084</span></td><td>deprecated (<a href="index.php?page=tags&amp;s=edit&amp;tag=exposed_boobs">edit</a>)</td></tr><tr><td><span class="tag-type-deprecated"><a href="index.php?page=post&amp;s=list&amp;tags=plump_breasts">plump breasts</a></span> <span class="tag-count">4239146</span></td><td>deprecated (<a href="index.php?page=tags&amp;s=edit&amp;tag=plump_breasts">edit</a>)</td></tr><tr><td><span class="tag-type-deprecated"><a href="index.php?page=post&amp;s=list&amp;tags=blushing_girl">blushing girl</a></span> <span class="tag-count">4170611</span></td><td>deprecated (<a href="index.php?page=tags&amp;s=edit&amp;tag=blushing_girl">edit</a>)</td></tr><tr><td><span class="tag-type-deprecated"><a href="index.php?page=post&amp;s=list&amp;tags=breasts_bigger_than_torso">breasts bigger than torso</a></span> <span class="tag-count">4134249</span></td><td>deprecated (<a href="index.php?page=tags&amp;s=edit&amp;tag=breasts_bigger_than_torso">edit</a>)</td></tr><tr><td><span class="tag-type-deprecated"><a href="index.php?page=post&amp;s=list&amp;tags=breasts_upward">breasts upward</a></span> <span class="tag-count">4134248</span></td><td>deprecated (<a href="index.php?page=tags&amp;s=edit&amp;tag=breasts_upward">edit</a>)</td></tr><tr><td><span class="tag-type-deprecated"><a href="index.php?page=post&amp;s=list&amp;tags=face_beyond_breasts">face beyond breasts</a></span> <span class="tag-count">4134246</span></td><td>deprecated (<a href="index.php?page=tags&amp;s=edit&amp;tag=face_beyond_breasts">edit</a>)</td></tr><tr><td><span class="tag-type-deprecated"><a href="index.php?page=post&amp;s=list&amp;tags=breasts_before_face">breasts before face</a></span> <span class="tag-count">4134245</span></td><td>deprecated (<a href="index.php?page=tags&amp;s=edit&amp;tag=breasts_before_face">edit</a>)</td></tr></table>
+
+	<div id="paginator"><div class="pagination"> <b>1</b> <a href="?page=tags&amp;s=list&amp;pid=50&sort=desc&order_by=index_count">2</a><a href="?page=tags&amp;s=list&amp;pid=100&sort=desc&order_by=index_count">3</a><a href="?page=tags&amp;s=list&amp;pid=150&sort=desc&order_by=index_count">4</a><a href="?page=tags&amp;s=list&amp;pid=200&sort=desc&order_by=index_count">5</a><a href="?page=tags&amp;s=list&amp;pid=250&sort=desc&order_by=index_count">6</a><a href="?page=tags&amp;s=list&amp;pid=300&sort=desc&order_by=index_count">7</a><a href="?page=tags&amp;s=list&amp;pid=350&sort=desc&order_by=index_count">8</a><a href="?page=tags&amp;s=list&amp;pid=400&sort=desc&order_by=index_count">9</a><a href="?page=tags&amp;s=list&amp;pid=50&sort=desc&order_by=index_count" alt="next">&rsaquo;</a><a href="?page=tags&amp;s=list&amp;pid=19950&sort=desc&order_by=index_count" alt="last page">&raquo;</a></div></main>		  
+		  <footer>
+		  		<a href="index.php?page=dmca&amp;s=index"><h2 style="display: inline-block;">DMCA</h2></a><a href="tos.php"><h2 style="display: inline-block;">TOS</h2></a>
+				<br /><br />
+				<a href="index.php?page=wiki&amp;s=list&amp;search=howto"><b>Help</b></a>
+				<a href="https://twitter.com/gelbooru" target="_blank">Twitter</a>
+				<a href="https://discord.gg/Zxs9tPE"><b>Discord</b></a>
+				<a href="index.php?page=extras&amp;s=patreon">Project Supporters</a>
+				
+			</footer>
+					</div>
+
+	<script>
+	(AdProvider = window.AdProvider || []).push({"serve": {}});
+
+	function responsiveViewToggle() {
+		var x = document.getElementById("myTopnav");
+		if (x.className === "topnav") {
+			x.className += " responsive";
+		} else {
+			x.className = "topnav";
+		}
+	}
+	</script>
+
+	<link rel="stylesheet" type="text/css" media="screen" href="css/jquery-ui.css?2" title="default" />
+
+	<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+	<script src="https://gelbooru.com//script/jquery.cookie.js"></script>
+	<script src="https://gelbooru.com//script/application.grid.js"></script>
+	<script src="https://gelbooru.com//script/jquery-hotkeys.js?1"></script>
+	<script src="https://gelbooru.com//script/autocomplete3.js?2"></script>
+	
+	<script type="text/javascript">
+		function tagPM(tagInput){
+			$('#tags-search').val($('#tags-search').val() + ' ' + tagInput);
+		}
+
+		function saveTagSearch() {
+			$.post("index.php?page=tags&s=saved_search&csrf-token=", { save_tag_search: $('#tags-search').val()} )
+			  .done(function( data ) {
+				if(data)
+				{
+					notice("Saved this search successfully! You can access these via the Tags link in the header.");
+				}
+				else
+				{
+					notice("There was an error saving this search. Perhaps it already existed or you are not logged in?");
+				}
+			  });;
+		}
+		if($.cookie('motd') == 1)
+		{
+			$("#motd").hide();
+		}
+
+		function darkModeToggle()
+		{
+			if ($.cookie('dark_mode') == 1 )
+			{
+				$.removeCookie("dark_mode");
+			}
+			else
+			{
+				$.cookie("dark_mode", 1, { expires : 365 });
+			}
+			location.reload();
+		}
+	</script>
+
+	</body>
+</html>

@@ -1,0 +1,112 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
+
+import 'package:lolisnatcher/models/tag.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/core/ui/buttons/cancel_button.dart';
+import 'package:lolisnatcher/core/ui/buttons/delete_button.dart';
+import 'package:lolisnatcher/core/ui/settings_widgets.dart';
+import 'package:lolisnatcher/features/tags/ui/manager/tm_list_item.dart';
+
+class TagsManagerListBottom extends StatelessWidget {
+  const TagsManagerListBottom({
+    required this.selected,
+    required this.isFilterActive,
+    required this.onSelectAll,
+    required this.onDeselectAll,
+    required this.onDelete,
+    super.key,
+  });
+
+  final List<Tag> selected;
+  final bool isFilterActive;
+  final VoidCallback onSelectAll;
+  final VoidCallback onDeselectAll;
+  final AsyncCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    if (selected.isEmpty) {
+      if (isFilterActive) {
+        return Row(
+          children: [
+            Expanded(
+              child: Container(
+                margin: const EdgeInsets.all(10),
+                child: ElevatedButton.icon(
+                  icon: const Icon(Symbols.select_all_rounded),
+                  label: Text(context.loc.selectAll),
+                  onPressed: onSelectAll,
+                ),
+              ),
+            ),
+          ],
+        );
+      } else {
+        return const SizedBox.shrink();
+      }
+    }
+
+    return Row(
+      children: [
+        Expanded(
+          child: Container(
+            margin: const EdgeInsets.all(10),
+            child: ElevatedButton.icon(
+              label: Text(
+                context.loc.tagsManager.deleteTags(count: selected.length),
+              ),
+              icon: const Icon(Symbols.delete_forever_rounded),
+              onPressed: () {
+                if (selected.isEmpty) {
+                  return;
+                }
+
+                final Widget deleteDialog = SettingsDialog(
+                  title: Text(context.loc.tagsManager.deleteTagsTitle),
+                  scrollable: false,
+                  content: SizedBox(
+                    width: double.maxFinite,
+                    child: ListView(
+                      shrinkWrap: true,
+                      children: [
+                        Text(
+                          context.loc.history.deleteItemsConfirm(count: selected.length),
+                        ),
+                        const SizedBox(height: 10),
+                        ...selected.map((Tag entry) {
+                          return TagsManagerListItem(tag: entry);
+                        }),
+                      ],
+                    ),
+                  ),
+                  actionButtons: [
+                    const CancelButton(withIcon: true),
+                    DeleteButton(
+                      withIcon: true,
+                      action: onDelete,
+                    ),
+                  ],
+                );
+
+                showDialog(
+                  context: context,
+                  builder: (_) => deleteDialog,
+                );
+              },
+            ),
+          ),
+        ),
+        Expanded(
+          child: ElevatedButton.icon(
+            icon: const Icon(Symbols.border_clear_rounded),
+            label: Text(context.loc.tagsManager.clearSelection),
+            onPressed: onDeselectAll,
+          ),
+        ),
+      ],
+    );
+  }
+}

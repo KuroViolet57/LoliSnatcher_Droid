@@ -1,0 +1,23 @@
+{
+  "query": "sort:usages",
+  "offset": 0,
+  "limit": 2,
+  "total": 6768,
+  "results": [
+    {
+      "names": [
+        "color"
+      ],
+      "category": "file_info",
+      "usages": 46174
+    },
+    {
+      "names": [
+        "monochrome",
+        "black_and_white"
+      ],
+      "category": "file_info",
+      "usages": 27065
+    }
+  ]
+}

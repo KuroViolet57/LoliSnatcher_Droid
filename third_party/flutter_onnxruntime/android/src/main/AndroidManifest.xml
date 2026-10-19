@@ -1,0 +1,6 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    package="com.masicai.flutteronnxruntime">
+    <!-- Plugin AAR minSdk is 27. This module stays on its own minSdk. -->
+    <uses-sdk tools:overrideLibrary="ai.onnxruntime.qnnpluginep" />
+</manifest>

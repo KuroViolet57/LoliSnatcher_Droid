@@ -1,0 +1,177 @@
+# wakelock_plus
+
+[![Flutter Community: wakelock_plus](https://fluttercommunity.dev/_github/header/wakelock_plus)](https://github.com/fluttercommunity/community)
+
+[![Pub version](https://img.shields.io/pub/v/wakelock_plus.svg)](https://pub.dev/packages/wakelock_plus) [![GitHub stars](https://img.shields.io/github/stars/fluttercommunity/wakelock_plus.svg)](https://github.com/fluttercommunity/wakelock_plus)  
+A continuation of the original [wakelock](https://github.com/creativecreatorormaybenot/wakelock) Flutter Plugin written by [creativecreatorormaybenot](https://github.com/creativecreatorormaybenot) that allows you to keep the device screen awake, i.e. prevent the screen from sleeping.
+
+You can enable and toggle the screen wakelock, which prevents the screen from turning off 
+automatically.
+
+---
+
+## Table of Contents
+1. [Supported Platforms](#supported-platforms)
+2. [Usage](#usage)
+   1. [Implementation](#implementation)
+   2. [Ensure the `WidgetsBinding` is initialized](#ensure-the-widgetsbinding-is-initialized)
+   3. [Calling `WakelockPlus.enable()` in `main()`](#calling-wakelockplusenable-in-main)
+3. [Platform Specific Integration Instructions](#platform-specific-integration-instructions)
+   1. [Android](#android)
+4. [Learn More](#learn-more)
+
+---
+
+## Supported Platforms
+
+| Platform | `wakelock_plus` support |
+|:---------|:-----------------------:|
+| Android  |            ✅            |
+| iOS      |            ✅            |
+| Web      |            ✅            |
+| macOS    |            ✅            |
+| Windows  |            ✅            |
+| Linux    |            ✅            |
+
+## Framework and Platform Requirements
+
+* Flutter
+  - Flutter SDK >=3.38.0
+  - Dart SDK >=3.10.0
+* Android
+  - Android API Level 24 (Nougat) or higher
+  - Java 17 or higher
+  - Android Gradle Plugin >=8.12.1
+  - Gradle wrapper >=8.13
+  - Kotlin 2.2.0 or higher
+* iOS
+  - iOS 13.0 or higher
+* macOS
+  - macOS 10.15 or higher
+* Windows
+  - Windows 7 or higher
+* Linux
+  - gtk+ >= 3.0
+  - glib >= 2.0
+  - gio >= 2.0
+* Web
+  - Modern browsers
+
+
+## Usage
+
+To use this plugin, follow the [installation guide](https://pub.dev/packages/wakelock_plus/install).
+
+The `wakelock_plus` plugin **does not require any special _permissions_** on any platform :)  
+This is because it only enables the _screen wakelock_ and not any partial 
+(CPU) wakelocks that would keep the app alive in the background.
+
+### Implementation
+
+Everything in this plugin is controlled via the 
+[`WakelockPlus` class](https://pub.dev/documentation/wakelock_plus/latest/wakelock_plus/WakelockPlus-class.html).  
+If you want to enable the wakelock, i.e. keep the device awake, you can simply call 
+[`WakelockPlus.enable`](https://pub.dev/documentation/wakelock_plus/latest/wakelock_plus/WakelockPlus/enable.html)
+and to disable it again, you can use 
+[`WakelockPlus.disable`](https://pub.dev/documentation/wakelock_plus/latest/wakelock_plus/WakelockPlus/disable.html):
+
+```dart
+import 'package:wakelock_plus/wakelock_plus.dart';
+// ...
+
+// The following line will enable the Android and iOS wakelock.
+WakelockPlus.enable();
+
+// The next line disables the wakelock again.
+WakelockPlus.disable();
+```
+
+For more advanced usage, you can pass a `bool` to 
+[`WakelockPlus.toggle`](https://pub.dev/documentation/wakelock_plus/latest/wakelock_plus/WakelockPlus/toggle.html)
+to enable or disable the wakelock and also retrieve the current wakelock status using
+[`WakelockPlus.isEnabled`](https://pub.dev/documentation/wakelock_plus/latest/wakelock_plus/WakelockPlus/isEnabled.html):
+
+```dart
+import 'package:wakelock_plus/wakelock_plus.dart';
+// ...
+
+// The following lines of code toggle the wakelock based on a bool value.
+bool enable = true;
+// The following statement enables the wakelock.
+WakelockPlus.toggle(enable: enable);
+
+enable = false;
+// The following statement disables the wakelock.
+WakelockPlus.toggle(enable: enable);
+
+// If you want to retrieve the current wakelock status,
+// you will have to be in an async scope
+// to await the Future returned by `enabled`.
+bool wakelockEnabled = await WakelockPlus.enabled;
+```
+
+If you want to wait for the wakelock toggle to complete (which takes an insignificant amount of
+time), you can also `await` any of `WakelockPlus.enable`, `WakelockPlus.disable`, and 
+`WakelockPlus.toggle`.
+
+### Ensure the `WidgetsBinding` is initialized
+
+If you want to call `WakelockPlus.enable()` or the other functions before `runApp()` 
+(e.g. in `main()`), you will have to ensure that the `WidgetsBinding` is initialized first:
+
+```dart
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  WakelockPlus.enable();
+
+  runApp(..);
+}
+```
+
+In general, it is advisable to make your wakelock dependent on certain components within your app
+instead, e.g. by only enabling it (continually) when a certain widget is visible.
+There is no negative impact in calling `WakelockPlus.enable()` more often.
+
+### Calling `WakelockPlus.enable()` in `main()`
+
+As touched on in the previous paragraph, calling `WakelockPlus.enable()` in your `main()` 
+function is not the best approach for a number of reasons.
+
+The most important factors are:
+
+1. Users expect their screen to automatically turn off unless e.g. a video is playing.  
+   It is unlikely that your whole app requires the screen to always stay on.
+2. The wakelock can be released by external sources at any time (e.g. by the OS).  
+   Only calling `WakelockPlus.enable()` once will most likely mean that the screen turns off 
+   at one point or another anyway.
+
+This is why you should instead prefer to enable the wakelock whenever components inside of your app
+that require the screen to stay on are active. This can e.g. happen in the `build` method of your
+widget.
+
+## Platform Specific Integration Instructions
+
+### Android
+
+When building your app on Android and using this library, you may be prompted by the following:
+
+```bash
+One or more plugins require a higher Android NDK version.
+```
+
+If this occurs, simply add the NDK version specified in the error message in your `app` module's 
+`build.gradle` file's `android` closure. For example:
+
+```gradle
+android {
+    // Current version at the time of this writing.
+    // Use the version specified by the error message.
+    ndkVersion flutter.ndkVersion
+    //....
+}
+```
+
+## Learn more
+
+If you want to learn more about how this plugin works, how to contribute, etc., you can read 
+through the [main README on GitHub](https://github.com/fluttercommunity/wakelock_plus).

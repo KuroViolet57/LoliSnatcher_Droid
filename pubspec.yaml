@@ -2,7 +2,7 @@ name: lolisnatcher
 description: Booru Client with the ability to batch download Images.
 publish_to: none
 
-version: 2.5.0+5210 # remember to update the values in constants.dart->updateInfo after changing them here
+version: 1.0.0+5211 # remember to update the values in constants.dart->updateInfo after changing them here
 
 environment:
   sdk: ">=3.12.0-113.2.beta <4.0.0"
@@ -18,14 +18,17 @@ dependencies:
   auto_size_text_plus: ^3.0.2
   calendar_date_picker2: ^2.0.1
   chewie: ^1.13.0
-  better_player_plus: ^1.2.1
+  better_player_plus: ^1.4.1
   collection: ^1.19.1
   country_flags: ^4.1.2
   crypto: ^3.0.7
-  device_info_plus: ^12.4.0
+  device_info_plus: ^13.3.0
   dio: ^5.9.2
   dio_http2_adapter: ^2.7.0
-  dynamic_color: ^1.8.1
+  # PINNED. 1.9.0's build.gradle.kts uses `kotlin { compilerOptions { jvmTarget } }`,
+  # which needs a newer Kotlin Gradle plugin than this project's Android setup
+  # provides. Revisit together with the Flutter/Gradle toolchain upgrade.
+  dynamic_color: 1.8.1
   equatable: ^2.0.8
   extended_image: ^10.0.1
   external_video_player_launcher: ^0.0.3
@@ -35,6 +38,9 @@ dependencies:
       url: https://github.com/NANI-SORE/fast_marquee.git
       ref: 828e79014ed5fd73062d6a24db14b6c114ac175b # master - forked to add richtext
   flash: ^3.1.1
+  # r34: the downloadable sentence encoder (ONNX Runtime 1.23 under a
+  # verified-publisher plugin; Android, iOS, desktop).
+  flutter_onnxruntime: ^1.8.5
   flex_color_picker: ^3.8.0
   flutter_avif: ^3.1.0
   flutter_displaymode: ^0.7.0
@@ -42,6 +48,8 @@ dependencies:
   flutter_inappwebview: ^6.2.0-beta.3
   flutter_keyboard_visibility: ^6.0.0
   flutter_linkify: ^6.0.0
+  # PINNED. 23.x needs Flutter 3.44. Immediate snatch notices only.
+  flutter_local_notifications: 22.3.1
   flutter_secure_storage: ^10.0.0
   flutter_socks_proxy:
     git:
@@ -49,11 +57,16 @@ dependencies:
       ref: 52759af6c6b245db4ba5bfa9ccc64d74f3ceb2fb
   font_awesome_flutter: ^11.0.0
   fpdart: ^1.2.0
-  fvp: ^0.35.2
+  fvp: ^0.39.0
   get_it: ^9.2.1
   get: ^5.0.0-release-candidate-9.3.2 # ^4.7.3
   google_fonts: ^8.0.2
-  html: ^0.15.6
+  material_symbols_icons: ^4.2801.0
+  # PINNED. 0.15.7 removed the top-level matches() from src/query_selector.dart,
+  # which flutter_html 3.0.0 imports directly (a src/ import - no semver
+  # protection). flutter_html is unmaintained, so this cannot move until it is
+  # replaced.
+  html: 0.15.6
   http_proxy: # ^1.2.2
     git:
       url: https://github.com/NANI-SORE/http_proxy.git
@@ -85,7 +98,7 @@ dependencies:
       ref: b84b371347ab4f13374c2709becaf247aec354e4 # master - forked to change IME composing style
   scroll_to_index: ^3.0.1
   scrollable_positioned_list: ^0.3.8
-  share_plus: ^12.0.2 # not used directly, but is part of some deps (i.e. alice) # TODO move to this instead of our native share code?
+  share_plus: ^13.3.1 # not used directly, but is part of some deps (i.e. alice) # TODO move to this instead of our native share code?
   slang_flutter: ^4.14.0
   slang: ^4.14.0
   sqflite_common_ffi: ^2.4.0+2
@@ -101,13 +114,35 @@ dependencies:
   video_player: ^2.11.1
   waterfall_flow: ^3.1.1
   xml: ^6.6.1
+  image_picker: ^1.2.3
 
 
 
 dependency_overrides:
   android_intent_plus: ^6.0.0
   material_color_utilities: ^0.13.0 # flutter_test conflict
-  share_plus: ^12.0.2 # alice conflict
+  share_plus: ^13.3.1 # alice wants 11; win32 6 needs 13 with the player bump
+  # Token 153: our own copy, so a second libmpv (libmpvls.so, mpv 0.41) gets the
+  # JavaVM too (third_party/media_kit/LOLISNATCHER_PATCH.md says how to undo it).
+  media_kit:
+    path: third_party/media_kit
+  # r59: our own copy, so the Android video surface can be capped to the screen
+  # (third_party/media_kit_video/LOLISNATCHER_PATCH.md says how to undo it).
+  media_kit_video:
+    path: third_party/media_kit_video
+  # r60: arm64 libmpv v1.1.11 instead of the package's v1.1.7 all-ABI download;
+  # token 153 adds our own mpv 0.41 build next to it (third_party/libmpv-android/README.md).
+  media_kit_libs_android_video:
+    path: third_party/media_kit_libs_android_video
+  # r87: our own copy, so the models can run on the NPU (QNN)
+  # (third_party/flutter_onnxruntime/LOLISNATCHER_PATCH.md says how to undo it).
+  flutter_onnxruntime:
+    path: third_party/flutter_onnxruntime
+  # Screen wakelock for media_kit and better_player. 1.7.0's generated Kotlin
+  # has no package line, and Kotlin 2.2.20 rejects the default-package imports.
+  # 1.8.x needs Flutter >=3.44. See third_party/wakelock_plus/LOLISNATCHER_PATCH.md.
+  wakelock_plus:
+    path: third_party/wakelock_plus
 
 
 
@@ -135,3 +170,4 @@ flutter:
     - assets/images/app_icon.png
     - assets/images/drawer_icon.png
     - assets/images/loading.gif
+    - assets/google_fonts/

@@ -1,0 +1,1424 @@
+import 'dart:convert';
+import 'dart:async';
+import 'dart:io';
+import 'dart:math';
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart' show IconData;
+
+import 'package:dio/dio.dart';
+import 'package:fpdart/fpdart.dart';
+import 'package:get/get.dart' hide Response;
+import 'package:html/parser.dart';
+
+import 'package:lolisnatcher/models/booru_type.dart';
+import 'package:lolisnatcher/sources/framework/booru_site_filters.dart';
+import 'package:lolisnatcher/models/booru.dart';
+import 'package:lolisnatcher/models/booru_item.dart';
+import 'package:lolisnatcher/sources/framework/site_profile.dart';
+import 'package:lolisnatcher/models/comment_item.dart';
+import 'package:lolisnatcher/models/creator_info.dart';
+import 'package:lolisnatcher/models/hidden_by_filters.dart';
+import 'package:lolisnatcher/sources/doujin/common/doujin_filters.dart';
+import 'package:lolisnatcher/models/meta_tag.dart';
+import 'package:lolisnatcher/models/note_item.dart';
+import 'package:lolisnatcher/models/response_error.dart';
+import 'package:lolisnatcher/models/tag.dart';
+import 'package:lolisnatcher/models/tag_suggestion.dart';
+import 'package:lolisnatcher/models/tag_type.dart';
+import 'package:lolisnatcher/features/doujin/logic/doujin_data_handler.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/sources/framework/tags/tag_catalog_source.dart';
+import 'package:lolisnatcher/core/settings/source_settings_handler.dart';
+import 'package:lolisnatcher/core/storage/tag_handler.dart';
+import 'package:lolisnatcher/core/network/dio_network.dart';
+import 'package:lolisnatcher/core/logging/logger.dart';
+import 'package:lolisnatcher/core/utils/tools.dart';
+
+// TODO better naming for some functions (i.e. Search => getSearch or smth like that)
+
+abstract class BooruHandler {
+  BooruHandler(this.booru, this.limit);
+  // pagenum = -1 as "didn't load anything yet" state
+  // gets set to higher number for special cases in handler factory
+  // TODO get rid of that logic and add pageOffset variable for special cases
+  int pageNum = -1;
+  int limit = 20;
+  String prevTags = '';
+
+  /// The query currently being fetched.
+  ///
+  /// [prevTags] is only assigned once a fetch has parsed successfully, so while
+  /// [parseListFromResponse] runs it still holds the PREVIOUS query - which
+  /// makes it useless to any handler whose parsing depends on what was asked
+  /// for (the doujin sources switch on `id:`/`related:`/`recommend:` there).
+  /// This is set before the fetch starts instead.
+  String currentTags = '';
+  bool locked = false;
+  Booru booru;
+
+  // When false, this handler's parsed tags are NOT written into the shared
+  // TagHandler store (neither the inline `addTagsWithType` categories nor the
+  // async `populateTagHandler` queue). Tag-preview strips set this so that
+  // previewing a tag on a *different* booru doesn't overwrite the current
+  // booru's tag types/colors — which used to re-type tags (e.g. species ->
+  // character) and, via the resulting tag-list rebuild, reset the strip's
+  // selected booru back to the tab's current one.
+  //
+  // Doujin handlers ([hasReader]) default to false: the shared tag store is a
+  // BOORU system. Writing doujin tags there re-typed booru tags whenever a
+  // name coincided, and — because doujin handlers can't type tags through a
+  // booru API — `populateTagHandler` would have shipped doujin tag names off
+  // to some unrelated booru's tag endpoint. Doujin surfaces read their types
+  // from the site's own info instead.
+  bool? _storeTagsGlobally;
+  bool get storeTagsGlobally => _storeTagsGlobally ?? !hasReader;
+  set storeTagsGlobally(bool value) => _storeTagsGlobally = value;
+
+  /// Off for a lookup by id (a linked post, r52): the source's default filters
+  /// and always-added terms would hide the very post asked for.
+  bool applySourceSettings = true;
+
+  /// The types this source parsed for its own items (r50), kept even when
+  /// [storeTagsGlobally] is off: a strip's preview tab or the floating preview
+  /// showed e621's modelers and artists under General without them.
+  final Map<String, TagType> ownTagTypes = {};
+
+  TagType? ownTagType(String tag) => ownTagTypes[tag.trim().toLowerCase()];
+
+  String errorString = '';
+
+  /// r82: why a feed that ended empty is empty, shown instead of "Change
+  /// search query or tap to retry" (the Downloads tab when no file is found).
+  /// Null for every source that sets nothing.
+  String? emptyNote;
+  // List<({BooruItem item, Object e, StackTrace? s})> failedItems = [];
+
+  // Discovery strip data (rendered above the results grid). Handlers that can
+  // surface the creators behind the current results and/or related tags fill
+  // these during parsing; empty means the strip stays hidden for this booru.
+  List<CreatorInfo> relatedCreators = [];
+  List<String> relatedTags = [];
+
+  Map<String, TagType> get tagTypeMap => {};
+
+  RxList<BooruItem> fetched = RxList<BooruItem>([]);
+  RxList<BooruItem> filteredFetched = RxList<BooruItem>([]);
+
+  /// Media-type filter for the grid ('all' | 'image' | 'video' | 'sound').
+  /// Driven by the Favourites/Downloads filter chips; applied in filterFetched.
+  String mediaFilter = 'all';
+
+  /// Filters the list of fetched items and stores them in filteredFetched
+  ///
+  /// Should always be called after fetched changed (so don't forget to add it in custom afterParseResponse or search methods)
+  /// (See gelbooru of favourites handlers for example)
+  /// Items exempted from the FAVOURITES and SNATCHED filters for this
+  /// session.
+  ///
+  /// Those two filters are meant to hide things you've already dealt with
+  /// when a page LOADS — not to yank a post out from under you the moment you
+  /// favourite it (which used to happen mid-video). Anything favourited or
+  /// snatched while browsing lands here and stays visible until the feed is
+  /// actually reloaded. Cleared on a new search / refresh (see search()).
+  /// Deliberately scoped to those two branches: the blacklist and the other
+  /// filters must keep applying live.
+  final Set<String> liveFilterExemptions = {};
+
+  static String exemptionKey(BooruItem item) => item.postURL.isNotEmpty ? item.postURL : item.fileURL;
+
+  void exemptFromLiveFilter(BooruItem item) => liveFilterExemptions.add(exemptionKey(item));
+
+  /// r85: how many loaded posts the last [filterFetched] left out, and why
+  /// (the feed's banner says it when a whole page is hidden).
+  final Map<HiddenReason, int> hiddenBy = {};
+
+  void filterFetched() {
+    final SettingsHandler settingsHandler = SettingsHandler.instance;
+
+    final List<BooruItem> itemsBeforeFilter = [...filteredFetched];
+    hiddenBy.clear();
+    void hide(HiddenReason reason) => hiddenBy[reason] = (hiddenBy[reason] ?? 0) + 1;
+
+    // r85: "Remove favourited / snatched items" are for the sites' feeds.
+    // Your own lists (Downloads, Favourites, Collections, History) show what
+    // they hold - with the first one on, the Downloads tab hid every download
+    // that is also a favourite.
+    final bool ownList = booru.type?.isLocalDb == true;
+    final bool filterFavourites = settingsHandler.filterFavourites && !ownList;
+    final bool filterSnatched = settingsHandler.filterSnatched && !ownList;
+
+    // Doujin items use the doujin blacklist (SourceSettingsHandler) and are
+    // NEVER touched by the booru hidden/marked filters — the two systems are
+    // fully separate, even when tag names coincide. The check is per ITEM
+    // (post URL host) so merge tabs mixing both worlds stay separated too.
+    // A doujin feed over several sources (the doujin For You) has no
+    // blacklist of its own: each card is judged by its source's.
+    final bool ownBlacklist = hasReader && booru.type?.isForYouDoujin != true;
+    final Set<String> ownDoujinBlacklist = ownBlacklist
+        ? SourceSettingsHandler.instance.tagBlacklist(booru).toSet()
+        : const {};
+    final Map<String, Set<String>> doujinBlacklistByHost = {};
+    Set<String> doujinBlacklistFor(BooruItem item) {
+      if (ownBlacklist) return ownDoujinBlacklist;
+      final String host = Uri.tryParse(item.postURL)?.host ?? '';
+      return doujinBlacklistByHost.putIfAbsent(
+        host,
+        () => SourceSettingsHandler.instance.tagBlacklist(DoujinDataHandler.doujinBooruForItem(item)).toSet(),
+      );
+    }
+
+    final List<BooruItem> filteredItems = [];
+    for (final item in fetched) {
+      final bool itemIsDoujin = hasReader || DoujinDataHandler.isDoujinItem(item);
+      if (itemIsDoujin) {
+        final Set<String> doujinBlacklist = doujinBlacklistFor(item);
+        if (doujinBlacklist.isNotEmpty && SourceSettingsHandler.matchesBlacklist(item, doujinBlacklist)) {
+          hide(HiddenReason.doujinBlacklist);
+          continue;
+        }
+      } else {
+        // r44: the blur of an item left in the feed follows the same source
+        // rules as the removal.
+        final bool hiddenHere = settingsHandler.isItemHiddenForBooru(item, booru);
+        item.hiddenInSource = hiddenHere;
+        if (settingsHandler.filterHated && hiddenHere) {
+          hide(HiddenReason.hiddenTags);
+          continue;
+        }
+      }
+
+      // isMarked reads the booru marked-tags list — a booru system, so it
+      // must never hide doujin items (coinciding tag names included).
+      if (!itemIsDoujin && settingsHandler.filterMarked && item.isMarked) {
+        hide(HiddenReason.marked);
+        continue;
+      }
+
+      if (settingsHandler.filterAi && item.isAI) {
+        hide(HiddenReason.ai);
+        continue;
+      }
+
+      if (mediaFilter != 'all') {
+        final mt = item.mediaType.value;
+        final bool keep = switch (mediaFilter) {
+          'image' => mt.isImage || mt.isAnimation,
+          'video' => mt.isVideo,
+          'sound' => item.isSound,
+          _ => true,
+        };
+        if (!keep) {
+          hide(HiddenReason.mediaType);
+          continue;
+        }
+      }
+
+      final bool isExempt = liveFilterExemptions.contains(exemptionKey(item));
+
+      if (filterFavourites && item.isFavourite.value == true && !isExempt) {
+        hide(HiddenReason.favourited);
+        continue;
+      }
+
+      if (filterSnatched && item.isSnatched.value == true && !isExempt) {
+        hide(HiddenReason.snatched);
+        continue;
+      }
+
+      // The same id is the same post only on the same site: a merge feed or
+      // a Downloads list can hold post 12345 of two different sites.
+      final bool isDuplicate = filteredItems.any(
+        (e) =>
+            e.fileURL == item.fileURL ||
+            (e.serverId != null && e.serverId == item.serverId && Uri.tryParse(e.postURL)?.host == Uri.tryParse(item.postURL)?.host),
+      );
+      if (isDuplicate) {
+        hide(HiddenReason.duplicate);
+        continue;
+      }
+
+      filteredItems.add(item);
+    }
+
+    if (!listEquals(itemsBeforeFilter, filteredItems)) {
+      filteredFetched.value = filteredItems;
+    }
+  }
+
+  String get className => runtimeType.toString();
+
+  bool get hasSizeData => false;
+
+  /// A response body as a list, or an empty list when it is not one.
+  ///
+  /// These endpoints normally answer with a JSON array, so the parsers cast
+  /// straight to List. When a site answers with something else instead - most
+  /// often a bot-check HTML page, which arrives as a String - that cast threw
+  /// `type 'String' is not a subtype of type 'List<dynamic>'` and took down
+  /// whatever was awaiting it. Seen on the device: a tag-suggestion lookup
+  /// during a For You search, where a challenge page killed the whole search
+  /// instead of costing one set of suggestions.
+  static List<dynamic> asResponseList(dynamic data) {
+    if (data is List) return data;
+    if (data is String) {
+      try {
+        final decoded = jsonDecode(data);
+        if (decoded is List) return decoded;
+      } catch (_) {
+        // Not JSON at all - a challenge page or an error body.
+      }
+    }
+    return const [];
+  }
+
+  /// Whether this handler's backend can translate cross-booru OR groups
+  /// (`tag1|tag2`) into a native query that actually returns combined
+  /// results. False for handlers that fall back to dropping OR groups
+  /// (Sankaku, Shimmie family, Nozomi, Hydrus, local Downloads/Favourites).
+  /// UI code reads this to decide whether to offer an OR-style filter
+  /// shortcut or fall back to a step-through cycle.
+  bool get hasNativeOrSupport => true;
+
+  /// Ordered list of tag fragments the tag-preview "videos / GIFs only"
+  /// button cycles through. Each entry is appended (with a space) to the
+  /// strip's base tag; the button walks off → [0] → [1] → … → off.
+  ///
+  /// Default:
+  /// - OR-capable boorus get a single combined `animated|video` stop, so
+  ///   the button is a simple on/off toggle that catches both kinds at once.
+  /// - Non-OR boorus get separate `animated` and `video` stops so the user
+  ///   can still narrow on one media kind at a time.
+  ///
+  /// Boorus that split animated content across more tags (e.g. realbooru's
+  /// independent video / webm / animated) override this with their own
+  /// ordered list. Verified against each site that these tags exist and
+  /// that the chosen combine/cycle strategy actually returns results.
+  List<String> get animatedPreviewFilters {
+    // A site profile may know this site has no way to express "animated" at
+    // all (empty list => the control hides) or spell it differently.
+    final List<String>? override = siteProfile?.animatedFilters();
+    if (override != null) return override;
+    return hasNativeOrSupport ? const ['animated|video'] : const ['animated', 'video'];
+  }
+
+  /// Per-site deviations from this handler's family behaviour, resolved by
+  /// host. Null for the vast majority of sites, which behave like the family.
+  late final SiteProfile? siteProfile = SiteProfile.forBooru(booru);
+
+  Future<bool> searchSetup() async {
+    if (hasSignInSupport) {
+      final bool canLogin = await canSignIn();
+      if (canLogin) {
+        final bool isLoggedIn = await isSignedIn();
+        if (isLoggedIn) {
+          //
+        } else {
+          // final bool didLogIn = await signIn();
+          await signIn();
+        }
+      } else {
+        //
+      }
+    }
+    return true;
+  }
+
+  /// This function will call a http request using the tags and pagenumber parsed to it
+  /// it will then create a list of booruItems
+  Future search(String tags, int? pageNumCustom, {bool withCaptchaCheck = true}) async {
+    // set custom page number
+    if (pageNumCustom != null) {
+      pageNum = pageNumCustom;
+    }
+    // Any setup that needs to happen before the url is created
+    if (!await searchSetup()) {
+      Logger.Inst().log('Search setup failed for booru: $booru', className, 'Search', LogTypes.booruHandlerFetchFailed);
+      locked = true;
+      return fetched;
+    }
+
+    // translate cross-booru OR syntax (tag1|tag2) into the handler's native form
+    tags = translateOrSyntax(sourceQuery(tags.trim()));
+    // validate tags (usually just convert empty string to current booru "search all" query)
+    tags = validateTags(tags.trim());
+    currentTags = tags;
+
+    // if tags are different than previous tags, reset fetched
+    if (prevTags != tags) {
+      fetched.value = [];
+      totalCount.value = 0;
+      // A genuinely new query: favourited/snatched posts should be filtered
+      // again from scratch.
+      liveFilterExemptions.clear();
+    }
+
+    // get amount of items before fetching
+    final int length = fetched.length;
+
+    // create url
+    final String url = makeURL(tags);
+    if (url.isEmpty) {
+      return fetched;
+    }
+
+    Uri uri;
+    try {
+      uri = Uri.parse(url);
+    } catch (e, s) {
+      Logger.Inst().log(
+        'invalid url: $url',
+        className,
+        'Search',
+        LogTypes.booruHandlerFetchFailed,
+        s: s,
+      );
+      errorString = 'Invalid URL ($url)';
+      return fetched;
+    }
+    Logger.Inst().log('$url $uri', className, 'Search', LogTypes.booruHandlerSearchURL);
+
+    Response response;
+    try {
+      response = await fetchSearch(uri, tags, withCaptchaCheck: withCaptchaCheck);
+      if (response.statusCode == 200) {
+        if (response.requestOptions.uri.toString().contains('rule34.xxx') &&
+            response.data is String &&
+            (response.data as String).contains('Missing authentication') == true) {
+          throw Exception(
+            '<p>Missing authentication</p><p><b>You may need to add your User ID and API key. Go to <a href="/settings/booru">[Settings > Booru & Search]</a> to update the booru config. Note: Anonymous access is NOT allowed.</b></p>',
+          );
+        }
+
+        // parse response data
+        final List<BooruItem> newItems = await parseResponse(response);
+        await afterParseResponse(newItems);
+
+        // save tags for check on next search
+        prevTags = tags;
+
+        // if amount of items didn't change after fetching, then we consider that there are no more pages and lock future fetches
+        if (fetched.length == length) {
+          locked = true;
+        }
+      } else {
+        Logger.Inst().log('error fetching url: $url', className, 'Search', LogTypes.booruHandlerFetchFailed);
+        Logger.Inst().log('status: ${response.statusCode}', className, 'Search', LogTypes.booruHandlerFetchFailed);
+        Logger.Inst().log('response: ${response.data}', className, 'Search', LogTypes.booruHandlerFetchFailed);
+        errorString = response.statusCode.toString();
+      }
+    } catch (e, s) {
+      Logger.Inst().log(
+        e.toString(),
+        className,
+        'Search',
+        LogTypes.booruHandlerFetchFailed,
+        s: s,
+      );
+      if (e is DioException) {
+        errorString = e.response?.statusCode != null
+            ? '${e.response?.statusCode} - ${e.response?.statusMessage ?? DioNetwork.badResponseExceptionMessage(e.response?.statusCode)}'
+            : (e.message ?? e.toString());
+
+        // TODO move error handling to separate function and allow per booru changes?
+        if (e.response?.statusCode == HttpStatus.unauthorized) {
+          if (e.requestOptions.uri.toString().contains('gelbooru.com')) {
+            // add a message to direct user to set his user ID and api key
+            errorString +=
+                '\n<p><b>You may need to add your User ID and API key. Go to <a href="/settings/booru">[Settings > Booru & Search]</a> to update the booru config. Note: Anonymous access is NOT allowed.</b></p>';
+          } else if (e.requestOptions.uri.toString().contains('rule34.xxx')) {
+            errorString +=
+                '\n<p><b>You may need to add your User ID and API key. Go to <a href="/settings/booru">[Settings > Booru & Search]</a> to update the booru config. Note: Anonymous access is NOT allowed.</b></p>';
+          }
+        }
+      } else {
+        errorString = e.toString();
+      }
+    }
+    return fetched;
+  }
+
+  Future<Response<dynamic>> fetchSearch(
+    Uri uri,
+    String input, {
+    bool withCaptchaCheck = true,
+    Map<String, dynamic>? queryParams,
+  }) async {
+    final String cookies = await getCookies() ?? '';
+    final Map<String, String> headers = {
+      ...getHeaders(),
+      if (cookies.isNotEmpty) 'Cookie': cookies,
+    };
+
+    Logger.Inst().log(
+      'fetching: $uri with headers: $headers',
+      className,
+      'Search',
+      LogTypes.booruHandlerSearchURL,
+    );
+
+    return DioNetwork.get(
+      uri.toString(),
+      headers: headers,
+      queryParameters: queryParams,
+      options: fetchSearchOptions(),
+      customInterceptor: withCaptchaCheck ? DioNetwork.captchaInterceptor : null,
+    );
+  }
+
+  Options? fetchSearchOptions() {
+    return null;
+  }
+
+  FutureOr<List<BooruItem>> parseResponse(dynamic response) async {
+    List posts = [];
+    try {
+      posts = await parseListFromResponse(response);
+    } catch (e, s) {
+      Logger.Inst().log(
+        e.toString(),
+        className,
+        'parseListFromResponse',
+        LogTypes.booruHandlerRawFetched,
+        s: s,
+      );
+      Logger.Inst().log(response.data, className, 'parseListFromResponse', LogTypes.booruHandlerRawFetched);
+      Logger.Inst().log(response.data.runtimeType, className, 'parseListFromResponse', LogTypes.booruHandlerRawFetched);
+      errorString = e.toString();
+      rethrow;
+    }
+
+    final List<BooruItem> newItems = [];
+    if (posts.isNotEmpty) {
+      for (int i = 0; i < posts.length; i++) {
+        final post = posts.elementAt(i);
+        try {
+          final BooruItem? item = await parseItemFromResponse(post, i);
+          if (item != null) {
+            newItems.add(item);
+          }
+        } catch (e, s) {
+          Logger.Inst().log(
+            '$e $post',
+            className,
+            'parseItemFromResponse',
+            LogTypes.booruHandlerRawFetched,
+            s: s,
+          );
+          // failedItems.add((item: post, e: e, s: s));
+        }
+      }
+    }
+
+    return newItems;
+  }
+
+  /// Parse raw response into a list of posts,
+  /// here you should also parse any other info included with the response (i.e. totalcount)
+  ///
+  /// [SHOULD BE OVERRIDDEN]
+  FutureOr<List> parseListFromResponse(dynamic response) {
+    return [];
+  }
+
+  /// [SHOULD BE OVERRIDDEN]
+  FutureOr<BooruItem?> parseItemFromResponse(dynamic responseItem, int index) {
+    return BooruItem(
+      fileURL: '',
+      sampleURL: '',
+      thumbnailURL: '',
+      tagsList: const [],
+      postURL: '',
+    );
+  }
+
+  Future<void> afterParseResponse(List<BooruItem> newItems) async {
+    final int lengthBefore = fetched.length;
+    fetched.addAll(newItems);
+    // First pass paints the grid immediately: everything that can be decided
+    // from the response alone (blacklist, media type, duplicates).
+    filterFetched();
+
+    // isFavourite / isSnatched are NOT known yet — they come from the local
+    // database. This used to be fire-and-forget, which meant the favourites
+    // and snatched filters ran against items whose flags were still false and
+    // so never removed anything on load. (They appeared to work only because
+    // a later favourite toggle re-ran the filter and yanked the post out
+    // mid-view — the very behaviour that was removed.) Wait for the flags,
+    // then filter again, so those two settings apply where they are meant to:
+    // when a page loads.
+    await setMultipleTrackedValues(lengthBefore, fetched.length);
+    filterFetched();
+
+    unawaited(populateTagHandler(newItems));
+
+    // TODO
+    // notifyAboutFailed();
+    // failedItems.clear();
+  }
+
+  String validateTags(String tags) {
+    // remember to return super.validateTags(tags) if you override this function
+    return Uri.encodeComponent(tags);
+  }
+
+  /// Translates the cross-booru OR operator (pipe-separated tokens like
+  /// `tag1|tag2|tag3`) into a form the current booru understands.
+  ///
+  /// Default: expands each pipe-token into `~tag1 ~tag2 ~tag3`, the standard
+  /// OR syntax used by Danbooru, Gelbooru, e621 and Moebooru-derived APIs.
+  ///
+  /// Single tokens without a pipe pass through unchanged. Empty sub-tags
+  /// produced by stray pipes (`tag1|`) are skipped silently.
+  ///
+  /// Handlers whose backend uses a different syntax (Philomena/BooruOnRails
+  /// use `||`) or has no OR support (Sankaku, Shimmie, Hydrus, Nozomi)
+  /// override this.
+  String translateOrSyntax(String tags) => orSyntaxPrefixTilde(tags);
+
+  /// Prefix-tilde OR expansion: each pipe-token `a|b|c` becomes `~a ~b ~c`.
+  ///
+  /// The catch: a bare stream of tildes is a single OR pool, so
+  /// `~a ~b ~c ~d` means "a OR b OR c OR d" — it can't express two separate
+  /// groups. When [grouping] is true and the query has 2+ OR groups, each is
+  /// wrapped in parentheses (`( ~a ~b ) ( ~c ~d )`) so they AND together —
+  /// verified working on Danbooru and e621. Moebooru and friends do NOT
+  /// support parentheses, so they keep [grouping] false (single-group OR
+  /// still works there; multi-group just falls back to the pool).
+  static String orSyntaxPrefixTilde(String tags, {bool grouping = false}) {
+    if (!tags.contains('|')) return tags;
+    final List<String> tokens = tags.split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
+    final int orGroupCount = tokens
+        .where((t) => t.split('|').where((p) => p.isNotEmpty).length >= 2)
+        .length;
+    final bool wrap = grouping && orGroupCount >= 2;
+    return tokens
+        .map((token) {
+          if (!token.contains('|')) return token;
+          final parts = token.split('|').where((p) => p.isNotEmpty).toList();
+          if (parts.isEmpty) return '';
+          if (parts.length == 1) return parts.first;
+          final String expanded = parts.map((p) => '~$p').join(' ');
+          return wrap ? '( $expanded )' : expanded;
+        })
+        .where((s) => s.isNotEmpty)
+        .join(' ');
+  }
+
+  /// Helper for handlers whose backend has no OR support: removes any
+  /// whitespace-separated token containing a pipe (`|`) and logs a warning
+  /// listing the dropped groups. The remaining tags are returned untouched
+  /// so the search still runs.
+  static String dropOrGroupsWithWarning(String tags, String className) {
+    if (!tags.contains('|')) return tags;
+    final List<String> dropped = [];
+    final String kept = tags
+        .split(RegExp(r'\s+'))
+        .where((t) => t.isNotEmpty)
+        .where((token) {
+          if (token.contains('|')) {
+            dropped.add(token);
+            return false;
+          }
+          return true;
+        })
+        .join(' ');
+    if (dropped.isNotEmpty) {
+      Logger.Inst().log(
+        'OR syntax not supported by this booru; dropped: ${dropped.join(', ')}',
+        className,
+        'translateOrSyntax',
+        LogTypes.booruHandlerInfo,
+      );
+    }
+    return kept;
+  }
+
+  /// Helper for Gelbooru-family boorus that wrap OR groups in braces with
+  /// an infix tilde. Different boorus in this family require different
+  /// inner padding, verified empirically against each API:
+  ///
+  /// - Gelbooru.com expects `{tag1 ~ tag2}` — NO space between brace and
+  ///   tag. Adding inner spaces returns zero posts.
+  /// - Rule34xxx / safebooru.org expect `( tag1 ~ tag2 )` — WITH a space
+  ///   between brace and tag. Removing inner spaces returns zero posts.
+  ///
+  /// `padInner` controls that: pass false for Gelbooru.com's curly braces,
+  /// true for the round-paren alikes.
+  static String orSyntaxBraced(
+    String tags,
+    String open,
+    String close, {
+    bool padInner = false,
+  }) {
+    if (!tags.contains('|')) return tags;
+    final String innerOpen = padInner ? '$open ' : open;
+    final String innerClose = padInner ? ' $close' : close;
+    return tags
+        .split(RegExp(r'\s+'))
+        .where((t) => t.isNotEmpty)
+        .map((token) {
+          if (!token.contains('|')) return token;
+          final parts = token.split('|').where((p) => p.isNotEmpty).toList();
+          if (parts.isEmpty) return '';
+          if (parts.length == 1) return parts.first;
+          return '$innerOpen${parts.join(' ~ ')}$innerClose';
+        })
+        .where((s) => s.isNotEmpty)
+        .join(' ');
+  }
+
+  /// [SHOULD BE OVERRIDDEN]
+  String makeURL(String tags) {
+    return '';
+  }
+
+  ////////////////////////////////////////////////////////////////////////
+
+  bool get hasTagSuggestions => false;
+
+  Future<Either<ResponseError, List<TagSuggestion>>> getTagSuggestions(String input, {CancelToken? cancelToken}) async {
+    final List<TagSuggestion> tags = [];
+
+    final String url = makeTagURL(input);
+    if (url.isEmpty) {
+      return Left(ResponseError(message: 'invalid url: $url'));
+    }
+
+    Uri uri;
+    try {
+      uri = Uri.parse(url);
+    } catch (e, s) {
+      Logger.Inst().log(
+        'invalid url: $url',
+        className,
+        'getTagSuggestions',
+        LogTypes.booruHandlerFetchFailed,
+        s: s,
+      );
+      return Left(
+        ResponseError(
+          message: 'invalid url: $url',
+          error: e,
+          stackTrace: s,
+        ),
+      );
+    }
+    Logger.Inst().log('$url $uri', className, 'getTagSuggestions', LogTypes.booruHandlerSearchURL);
+
+    Response response;
+    const int limit = 20;
+    try {
+      response = await fetchTagSuggestions(uri, input, cancelToken: cancelToken);
+      if (response.statusCode == 200) {
+        Logger.Inst().log('fetchTagSuggestions response: ${response.data}', className, 'getTagSuggestions', null);
+        final rawTags = await parseTagSuggestionsList(response);
+        for (int i = 0; i < rawTags.length; i++) {
+          final rawTag = rawTags[i];
+          try {
+            if (tags.length < limit) {
+              TagSuggestion? parsedTag = await parseTagSuggestion(rawTag, i);
+              String parsedText = '';
+              try {
+                parsedText = parseFragment(parsedTag?.tag.trim()).text ?? '';
+                parsedText = Uri.decodeComponent(parsedText).trim();
+              } catch (_) {}
+              parsedTag = parsedTag?.copyWith(
+                tag: parsedText,
+              );
+
+              if (parsedTag != null && parsedTag.tag.isNotEmpty) {
+                // TODO add tag to taghandler before adding it to list
+                // addTagsWithType(parsedTag, tagType);
+                tags.add(parsedTag);
+              }
+            }
+          } catch (e, s) {
+            Logger.Inst().log(
+              '$e $rawTag',
+              className,
+              'parseTagSuggestion',
+              LogTypes.booruHandlerRawFetched,
+              s: s,
+            );
+            return Left(
+              ResponseError(
+                message: 'parseTagSuggestion error',
+                error: e,
+                stackTrace: s,
+              ),
+            );
+          }
+        }
+      } else if (response.statusCode == 404) {
+        // return nothing on 404
+        return const Right([]);
+      } else {
+        Logger.Inst().log('error fetching url: $url', className, 'getTagSuggestions', LogTypes.booruHandlerFetchFailed);
+        Logger.Inst().log(
+          'status: ${response.statusCode}',
+          className,
+          'getTagSuggestions',
+          LogTypes.booruHandlerFetchFailed,
+        );
+        Logger.Inst().log(
+          'response: ${response.data}',
+          className,
+          'getTagSuggestions',
+          LogTypes.booruHandlerFetchFailed,
+        );
+        return Left(
+          ResponseError(
+            message: 'error fetching url: $url',
+            statusCode: response.statusCode,
+          ),
+        );
+      }
+    } catch (e, s) {
+      Logger.Inst().log(
+        e.toString(),
+        className,
+        'getTagSuggestions',
+        LogTypes.booruHandlerFetchFailed,
+        s: s,
+      );
+      return Left(
+        ResponseError(
+          message: 'getTagSuggestions error',
+          error: e,
+          stackTrace: s,
+        ),
+      );
+    }
+    return Right(tags);
+  }
+
+  Future<Response<dynamic>> fetchTagSuggestions(Uri uri, String input, {CancelToken? cancelToken}) async {
+    final String cookies = await getCookies() ?? '';
+    final Map<String, String> headers = {
+      ...getHeaders(),
+      if (cookies.isNotEmpty) 'Cookie': cookies,
+    };
+
+    return DioNetwork.get(
+      uri.toString(),
+      headers: headers,
+      options: fetchTagSuggestionsOptions(),
+      cancelToken: cancelToken,
+    );
+  }
+
+  Options? fetchTagSuggestionsOptions() {
+    return null;
+  }
+
+  /// [SHOULD BE OVERRIDDEN]
+  FutureOr<List> parseTagSuggestionsList(dynamic response) {
+    return [];
+  }
+
+  /// [SHOULD BE OVERRIDDEN]
+  FutureOr<TagSuggestion?> parseTagSuggestion(dynamic responseItem, int index) {
+    return null;
+  }
+
+  /// [SHOULD BE OVERRIDDEN]
+  String makeTagURL(String input) {
+    return '';
+  }
+
+  String makeDirectTagURL(List<String> tags) {
+    return '';
+  }
+
+  ////////////////////////////////////////////////////////////////////////
+
+  bool get hasCommentsSupport => false;
+  Future<List<CommentItem>> getComments(
+    String postID,
+    int pageNum, {
+    CancelToken? cancelToken,
+  }) async {
+    final List<CommentItem> comments = [];
+
+    final String url = makeCommentsURL(postID, pageNum);
+    if (url.isEmpty) {
+      return comments;
+    }
+    Uri uri;
+    try {
+      uri = Uri.parse(url);
+    } catch (e, s) {
+      Logger.Inst().log(
+        'invalid url: $url',
+        className,
+        'getComments',
+        LogTypes.booruHandlerFetchFailed,
+        s: s,
+      );
+      return comments;
+    }
+    Logger.Inst().log('$url $uri', className, 'getComments', LogTypes.booruHandlerSearchURL);
+
+    Response response;
+    try {
+      response = await fetchComments(uri, cancelToken: cancelToken);
+      if (response.statusCode == 200) {
+        final rawComments = await parseCommentsList(response);
+        for (int i = 0; i < rawComments.length; i++) {
+          final rawComment = rawComments[i];
+          try {
+            final CommentItem? parsedComment = await parseComment(rawComment, i);
+            if (parsedComment != null) {
+              comments.add(parsedComment);
+            }
+          } catch (e, s) {
+            Logger.Inst().log(
+              '$e $rawComment',
+              className,
+              'parseCommentsList',
+              LogTypes.booruHandlerRawFetched,
+              s: s,
+            );
+          }
+        }
+      } else {
+        Logger.Inst().log('error fetching url: $url', className, 'getComments', LogTypes.booruHandlerFetchFailed);
+        Logger.Inst().log('status: ${response.statusCode}', className, 'getComments', LogTypes.booruHandlerFetchFailed);
+        Logger.Inst().log('response: ${response.data}', className, 'getComments', LogTypes.booruHandlerFetchFailed);
+      }
+    } catch (e, s) {
+      Logger.Inst().log(
+        e.toString(),
+        className,
+        'getComments',
+        LogTypes.booruHandlerFetchFailed,
+        s: s,
+      );
+    }
+    return comments;
+  }
+
+  Future<Response<dynamic>> fetchComments(
+    Uri uri, {
+    CancelToken? cancelToken,
+  }) async {
+    final String cookies = await getCookies() ?? '';
+    final Map<String, String> headers = {
+      ...getHeaders(),
+      if (cookies.isNotEmpty) 'Cookie': cookies,
+    };
+
+    return DioNetwork.get(
+      uri.toString(),
+      headers: headers,
+      options: fetchCommentsOptions(),
+      cancelToken: cancelToken,
+    );
+  }
+
+  Options? fetchCommentsOptions() {
+    return null;
+  }
+
+  /// [SHOULD BE OVERRIDDEN]
+  FutureOr<List> parseCommentsList(dynamic response) {
+    return [];
+  }
+
+  /// [SHOULD BE OVERRIDDEN]
+  FutureOr<CommentItem?> parseComment(dynamic responseItem, int index) {
+    return const CommentItem();
+  }
+
+  /// [SHOULD BE OVERRIDDEN]
+  String makeCommentsURL(String postID, int pageNum) {
+    return '';
+  }
+
+  ////////////////////////////////////////////////////////////////////////
+
+  bool get hasLoadItemSupport => false;
+
+  bool get shouldUpdateIteminTagView => false;
+
+  /// True for doujin sources: a post is an ordered BOOK of pages, opened in
+  /// the reader (see ReaderHandler) instead of the multi-file carousel.
+  bool get hasReader => false;
+
+  /// The handler that owns [item]: itself, except for a virtual feed that
+  /// mixes several sources (the doujin For You), which hands each card to
+  /// the source it came from — for loading, the reader, the strips, the
+  /// page thumbnails.
+  // ignore: avoid_returning_this -- the item is this handler's own, by default
+  BooruHandler handlerForItem(BooruItem item) => this;
+
+  /// The icon at a thumbnail's bottom right for [item] (r40); null = the
+  /// app's usual one by media type (see Tools.getFileIcon).
+  IconData? mediaIconFor(BooruItem item) => null;
+
+  /// The browse filters this source can take (r37): sort, category,
+  /// language as the search window's checkmarks. Null = none.
+  DoujinFilterSpec? get doujinFilters => null;
+
+  DoujinFilterSpec? _siteFilters;
+  bool _siteFiltersRead = false;
+
+  /// The Filters a source offers (r43): its own [doujinFilters], else, on a
+  /// booru source, its sort/order and rating metatags as choices. Local
+  /// views and recommendation feeds offer none.
+  DoujinFilterSpec? get siteFilters {
+    // Local views, feeds, merges and the webview get none, even on a handler
+    // that declares its site's own filters (r45: danbooru's handler serves
+    // the Favourites view too).
+    final BooruType? t = booru.type;
+    if (t != null && (t.isLocalDb || t.isRecommendationFeed || t.isMerge || t.isWebView)) return null;
+    final DoujinFilterSpec? own = doujinFilters;
+    if (own != null) return own;
+    if (hasReader || t == null) return null;
+    if (!_siteFiltersRead) {
+      _siteFiltersRead = true;
+      _siteFilters = BooruSiteFilters.fromMetaTags(availableMetaTags());
+    }
+    return _siteFilters;
+  }
+
+  /// What a search on this source actually asks for (r43): the query with
+  /// the source settings' default filters and always-add terms. Doujin
+  /// sources, local views and feeds search the query as it is.
+  String sourceQuery(String tags) {
+    final BooruType? t = booru.type;
+    if (!applySourceSettings || hasReader || t == null || t.isLocalDb || t.isRecommendationFeed || t.isMerge) return tags;
+    final SourceSettings s = SourceSettingsHandler.instance.settingsFor(booru);
+    if ((s.alwaysAdd ?? '').isEmpty && (s.defaultFilters ?? '').isEmpty) return tags;
+    return SourceSettingsHandler.composeQuery(
+      query: tags,
+      spec: siteFilters,
+      defaultFilters: s.defaultFilters ?? '',
+      alwaysAdd: s.alwaysAdd ?? '',
+    );
+  }
+
+  /// Site-native namespace for a tag, when the source's own grouping is
+  /// richer than TagType (nhentai: parody / character / artist / group /
+  /// category / language / tag). The drawer's tag cloud groups by these
+  /// instead of TagType when [tagNamespaceSections] is non-empty.
+  String? tagNamespace(String tag) => null;
+
+  /// Render order + display label of the native namespace sections.
+  List<(String key, String label)> get tagNamespaceSections => const [];
+
+  /// Query returning the other chapters / language versions of this post
+  /// (the reference apps' "Related" section), or null when unknown.
+  String? relatedVersionsQuery(BooruItem item) => null;
+
+  /// True when favourites can be pushed to the USER'S ACCOUNT on the site
+  /// (auth configured). Purely-local favourites stay available regardless.
+  bool get hasSiteFavourites => false;
+
+  /// Adds/removes the post from the user's account favourites on the site.
+  /// Returns (ok, user-facing message).
+  Future<(bool, String)> setSiteFavourite(BooruItem item, bool value) async =>
+      (false, 'Not supported on this source');
+
+  Future<({BooruItem? item, bool failed, String? error})> loadItem({
+    required BooruItem item,
+    CancelToken? cancelToken,
+    bool withCapcthaCheck = false,
+  }) async {
+    return (item: item, failed: false, error: null);
+  }
+
+  /// Gives [page] its own thumbnail when the source serves page thumbnails
+  /// apart from the page list (e-hentai: one sprite strip per block of
+  /// pages, read when a page of that block comes into view). Writes
+  /// `page.transientThumbnailURL`; [cancelToken] is the caller's interest,
+  /// withdrawn when the tile leaves the screen. The default has nothing to
+  /// add.
+  Future<void> ensurePageThumbnail(BooruItem page, {CancelToken? cancelToken}) async {}
+
+  /// The thumbnail [ensurePageThumbnail] gave [page] could not be loaded (a
+  /// strip link that expired): drop it — and its block's, since they share
+  /// the strip — so the page shows its stored cover and a later visit reads
+  /// a fresh one. The default has nothing to forget.
+  void forgetPageThumbnail(BooruItem page) {}
+
+  ////////////////////////////////////////////////////////////////////////
+
+  bool get hasNotesSupport => false;
+  Future<List<NoteItem>> getNotes(
+    String postID, {
+    CancelToken? cancelToken,
+  }) async {
+    final List<NoteItem> notes = [];
+
+    final String url = makeNotesURL(postID);
+    if (url.isEmpty) {
+      return notes;
+    }
+    Uri uri;
+    try {
+      uri = Uri.parse(url);
+    } catch (e, s) {
+      Logger.Inst().log(
+        'invalid url: $url',
+        className,
+        'getNotes',
+        LogTypes.booruHandlerFetchFailed,
+        s: s,
+      );
+      return notes;
+    }
+    Logger.Inst().log('$url $uri', className, 'getNotes', LogTypes.booruHandlerSearchURL);
+
+    Response response;
+    try {
+      response = await fetchNotes(uri, cancelToken: cancelToken);
+      if (response.statusCode == 200) {
+        final rawNotes = await parseNotesList(response);
+        for (int i = 0; i < rawNotes.length; i++) {
+          final rawNote = rawNotes[i];
+          try {
+            final NoteItem? parsedNote = await parseNote(rawNote, i);
+            if (parsedNote != null) {
+              notes.add(parsedNote);
+            }
+          } catch (e, s) {
+            Logger.Inst().log(
+              '$e $rawNote',
+              className,
+              'parseNotesList',
+              LogTypes.booruHandlerRawFetched,
+              s: s,
+            );
+          }
+        }
+      } else {
+        Logger.Inst().log('error fetching url: $url', className, 'getNotes', LogTypes.booruHandlerFetchFailed);
+        Logger.Inst().log('status: ${response.statusCode}', className, 'getNotes', LogTypes.booruHandlerFetchFailed);
+        Logger.Inst().log('response: ${response.data}', className, 'getNotes', LogTypes.booruHandlerFetchFailed);
+      }
+    } catch (e, s) {
+      Logger.Inst().log(
+        e.toString(),
+        className,
+        'getNotes',
+        LogTypes.booruHandlerFetchFailed,
+        s: s,
+      );
+    }
+    return notes;
+  }
+
+  Future<Response<dynamic>> fetchNotes(
+    Uri uri, {
+    CancelToken? cancelToken,
+  }) async {
+    final String cookies = await getCookies() ?? '';
+    final Map<String, String> headers = {
+      ...getHeaders(),
+      if (cookies.isNotEmpty) 'Cookie': cookies,
+    };
+
+    return DioNetwork.get(
+      uri.toString(),
+      headers: headers,
+      options: Options(
+        sendTimeout: const Duration(seconds: 10),
+        receiveTimeout: const Duration(seconds: 10),
+      ),
+      cancelToken: cancelToken,
+    );
+  }
+
+  /// [SHOULD BE OVERRIDDEN]
+  FutureOr<List> parseNotesList(dynamic response) {
+    return [];
+  }
+
+  /// [SHOULD BE OVERRIDDEN]
+  FutureOr<NoteItem?> parseNote(dynamic responseItem, int index) {
+    return NoteItem(
+      id: '',
+      postID: '',
+      content: '',
+      height: 0,
+      width: 0,
+      posX: 0,
+      posY: 0,
+    );
+  }
+
+  /// [SHOULD BE OVERRIDDEN]
+  String makeNotesURL(String postID) {
+    return '';
+  }
+
+  ////////////////////////////////////////////////////////////////////////
+
+  RxInt totalCount = 0.obs;
+  // TODO for boorus where api doesn't give amount outright and we have to calculate it based on smth (last page*items per page, for example) - show "~" symbol to indicate that
+  bool get countIsQuestionable => false;
+  Future<void> searchCount(String input) async {
+    totalCount.value = 0;
+    return;
+  }
+
+  ////////////////////////////////////////////////////////////////////////
+
+  String makePostURL(String id) {
+    return '';
+  }
+
+  Map<String, String> getHeaders() {
+    return {
+      'Accept': 'text/html,application/xml,application/json',
+      'User-Agent': Tools.browserUserAgent,
+    };
+  }
+
+  /// Extra headers needed to fetch MEDIA — thumbnails, covers, page images —
+  /// from wherever this source keeps them.
+  ///
+  /// Deliberately separate from [getHeaders]: that describes how to talk to the
+  /// source's API and carries an `Accept` for markup and JSON, which is the
+  /// wrong thing to send a CDN. This is only the handful of headers an image
+  /// host demands, and it is empty for the many sources that demand none.
+  ///
+  /// Sources with hotlink protection MUST override this. Before it existed the
+  /// image loader consulted a hardcoded list of hosts in [Tools], so any source
+  /// not written into that list silently lost its referer and every thumbnail
+  /// 404'd — with the URLs themselves perfectly correct, which makes it a
+  /// genuinely confusing failure to diagnose.
+  Map<String, String> getMediaHeaders() => const {};
+
+  /// r89: spare addresses for [item]'s thumbnail, tried when the first one
+  /// fails - for a source that publishes a second image server with every
+  /// post (niyaniya/HDoujin). Empty for every other source: a post's
+  /// `sources` are the artist's links there, not thumbnails (since a15067f0
+  /// they were tried as spares, and e621's dead-link marker "-http://…"
+  /// failed the thumbnail before its real address was asked; log 2026-10-03).
+  List<String> thumbnailFallbacks(BooruItem item) => const [];
+
+  /// Text for the viewer to show INSTEAD of loading [url], when the source
+  /// knows its media host is down from this network (kemono's file hosts).
+  /// Null = load as usual.
+  String? mediaOutageNotice(String url) => null;
+
+  /// A media request for [url] failed with [error]; a source may re-probe
+  /// its hosts so the next item explains itself at once.
+  void onMediaError(String url, Object error) {}
+
+  /// The user asked to retry [url]; a source may re-probe first.
+  Future<void> beforeMediaRetry(String url) async {}
+
+  Future<String?> getCookies() async {
+    String cookieString = await Tools.getCookies(booru.baseURL!);
+
+    final Map<String, String> headers = getHeaders();
+    // MERGE, never concatenate: both sources carry the whole jar, so adding
+    // one to the other sent every cookie twice (see Tools.mergeCookieStrings).
+    cookieString = Tools.mergeCookieStrings([cookieString, headers['Cookie'] ?? '']);
+
+    // Names only: the values are sessions, some under names the redaction
+    // cannot know (FurAffinity's a and b), and a log gets shared.
+    final String names = Tools.parseCookieString(cookieString).keys.map((name) => '$name=<redacted>').join('; ');
+    Logger.Inst().log('${booru.baseURL}: $names', className, 'getCookies', LogTypes.booruHandlerSearchURL);
+
+    return cookieString.trim();
+  }
+
+  void addTagsWithType(List<String> tags, TagType type) {
+    if (type != TagType.none) {
+      if (ownTagTypes.length > 50000) ownTagTypes.clear();
+      for (final String tag in tags) {
+        ownTagTypes[tag.trim().toLowerCase()] = type;
+      }
+    }
+    if (!storeTagsGlobally) return;
+    TagHandler.instance.addTagsWithType(tags, type);
+  }
+
+  bool get shouldPopulateTags => false;
+
+  Future<void> populateTagHandler(List<BooruItem> items) async {
+    if (!storeTagsGlobally) return;
+    final List<String> unTyped = [];
+    for (int x = 0; x < items.length; x++) {
+      // Per ITEM, not just per handler: a merge feed is a booru handler
+      // (storeTagsGlobally true) that can carry doujin items, and queueing
+      // those would send doujin tag names to some unrelated booru's tag API
+      // and write its answers into the app-wide tag map.
+      if (DoujinDataHandler.isDoujinItem(items[x])) continue;
+      for (int i = 0; i < items[x].tagsList.length; i++) {
+        final Tag tag = items[x].tagsList[i];
+
+        final bool alreadyStoredAndNotStale = TagHandler.instance.hasTagAndNotStale(
+          tag.fullString,
+        ); //TagHandler.instance.hasTag(tag);
+        if (!alreadyStoredAndNotStale) {
+          final bool isPresent = unTyped.contains(tag.fullString);
+          if (!isPresent) {
+            unTyped.add(tag.fullString);
+          }
+        }
+      }
+    }
+
+    if (unTyped.isNotEmpty) {
+      TagHandler.instance.queue(unTyped, booru, 200);
+    }
+  }
+
+  String getTagDisplayString(String tag) {
+    // TODO Convert tag from things like artist:artistname to artistname
+    return tag;
+  }
+
+  Future<List<Tag>> genTagObjects(List<String> tags) async {
+    return [];
+  }
+
+  bool get hasSignInSupport => false;
+
+  /// Which credential fields this source can actually USE. The edit page and
+  /// the source settings show a field only when the handler reads it — a
+  /// field nothing reads makes a person think something is configurable when
+  /// it is not. The defaults keep the upstream behaviour (both shown) for the
+  /// booru engines that accept a login or key; a source that never reads them
+  /// overrides these to false.
+  bool get usesUserId => true;
+  bool get usesApiKey => true;
+
+  /// Field labels when the generic "User ID" / "API key" would mislead
+  /// (username + password logins, optional keys). null = the type's default.
+  String? get userIdLabel => null;
+  String? get apiKeyLabel => null;
+
+  /// Reader page widths the source can serve, as (value, label). Empty means
+  /// the source has ONE size and the image-quality setting is not offered.
+  List<(String value, String label)> get readerImageQualities => const [];
+
+  /// The tag namespaces this source can ENUMERATE (every artist, every
+  /// parody, …) for the search editor's tag builder, or null when the site
+  /// offers no way to list them. A type chip is offered only where this is
+  /// non-null and the namespace is listed — see TagCatalogSource.
+  TagCatalogSource? get tagCatalog => null;
+
+  /// A site-wide content filter the source offers (rule34video's Straight /
+  /// Gay / Futa / Music / Iwara toggles), as the values its `type:` metatag
+  /// takes. Non-empty makes the Source settings page offer a per-source
+  /// default for it; empty (the default) offers nothing.
+  List<MetaTagValue> get contentTypeOptions => const [];
+
+  /// False when the shared cookie jar's cookies for this source's host must
+  /// NOT be attached to media requests. e-hentai's images come from
+  /// volunteer hath.network nodes, so a session cookie left in the jar (by
+  /// the in-app browser, say) would be handed to a stranger; that source
+  /// keeps its session in its own file and sends it only to the site.
+  bool get sendsJarCookiesToMedia => true;
+
+  /// The hosts a source can be read from, as (value, label) — e-hentai.org
+  /// against exhentai.org. Non-empty makes the Source settings page offer the
+  /// choice, kept in `SourceSettings.siteVariant`; empty offers nothing.
+  List<(String value, String label)> get siteVariants => const [];
+
+  /// True when [fetchAccountBlacklist] can read the signed-in account's
+  /// hidden tags, so Source settings offers the import button.
+  bool get hasAccountBlacklist => false;
+
+  /// What to do so the heart also reaches the site (r70): shown when a
+  /// favourite is saved locally only.
+  String get siteFavouritesLoginHint => 'set up the account in Source settings to sync with the site';
+
+  /// r69: a sharper cover for the detail page than the listing's thumbnail,
+  /// once the gallery is loaded - the gallery's first page on e-hentai, whose
+  /// covers are 250 px wide. A cover-only item (thumbnail = sample = file =
+  /// that image, with its size), or null when there is nothing better.
+  Future<BooruItem?> detailCoverImage(BooruItem item) async => null;
+
+  /// The account's blacklisted tags as (ok, message, names).
+  Future<(bool, String, List<String>)> fetchAccountBlacklist() async =>
+      (false, 'This source cannot read an account blacklist.', const <String>[]);
+
+  /// Whether the per-source "Only show language" setting is honoured by
+  /// this handler's search, and whether "Title language" changes what it
+  /// shows. Rows for either are offered only where true.
+  bool get supportsLanguageFilter => false;
+  bool get supportsTitleLanguage => false;
+
+  Future<bool> canSignIn() async {
+    return booru.userID?.isNotEmpty == true && booru.apiKey?.isNotEmpty == true;
+  }
+
+  Future<dynamic> signIn() async {
+    return;
+  }
+
+  Future<bool> isSignedIn() async {
+    return false;
+  }
+
+  Future<dynamic> signOut({bool fromError = false}) async {
+    return;
+  }
+
+  List<String> searchModifiers() {
+    return [];
+  }
+
+  Future<void> setMultipleTrackedValues(int beforeLength, int afterLength) async {
+    // beforeLength can be -1, clamp to 0
+    final int beforePos = max(0, beforeLength);
+    // diff can be negative, clamp to 0
+    int diff = max(0, afterLength - beforeLength);
+    diff = diff > 0 ? diff + 1 : diff;
+    // we need +1 to make sure we don't miss the last item, because sublist doesn't include the item with the end index
+    // so this way we exceed the possible length of fetched to get it
+
+    if (diff == 0) {
+      // do nothing if nothing was added
+      return;
+    }
+
+    // generate list of new fetched indexes
+    final List<int> fetchedIndexes = List.generate(diff, (index) => beforePos + index);
+
+    final SettingsHandler settingsHandler = SettingsHandler.instance;
+    if (settingsHandler.dbHandler.db != null && diff > 0) {
+      // The posts the values are read for, kept across the await: the feed
+      // can be reset and refilled meanwhile (a refresh), and indexing it
+      // afterwards threw a RangeError or flagged another query's posts.
+      final List<BooruItem> items = fetched.sublist(fetchedIndexes.first, fetchedIndexes.last);
+      final List<List<bool>> valuesList = await settingsHandler.dbHandler.getMultipleTrackedValues(
+        items,
+      ); //.map((e) => e.fileURL).toList()
+
+      valuesList.asMap().forEach((index, values) {
+        final BooruItem item = items[index];
+        item.isSnatched.value = values[0];
+        // Doujin favourite state comes from the DOUJIN store, never the booru
+        // DB (snatched stays DB-backed: downloads are one shared system).
+        // Per item, so merge feeds attribute correctly too.
+        item.isFavourite.value = (hasReader || DoujinDataHandler.isDoujinItem(item))
+            ? DoujinDataHandler.instance.isFavourite(item)
+            : values[1];
+      });
+    } else {
+      // Even with the DB off, doujin hearts must reflect the doujin store.
+      for (final i in fetchedIndexes) {
+        if (i < fetched.length && (hasReader || DoujinDataHandler.isDoujinItem(fetched[i]))) {
+          fetched[i].isFavourite.value = DoujinDataHandler.instance.isFavourite(fetched[i]);
+        }
+      }
+    }
+
+    return;
+  }
+
+  String? get metatagsCheatSheetLink => null;
+
+  List<MetaTag> availableMetaTags() {
+    return [];
+  }
+}

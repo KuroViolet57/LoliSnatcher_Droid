@@ -1,0 +1,70 @@
+plugins {
+    id 'com.android.library'
+}
+
+// Conditionally apply KGP only if AGP version is earlier than 9.
+def agpMajor = com.android.Version.ANDROID_GRADLE_PLUGIN_VERSION.tokenize('.')[0] as int
+if (agpMajor < 9) {
+    project.pluginManager.apply('org.jetbrains.kotlin.android')
+}
+
+group 'dev.fluttercommunity.plus.wakelock'
+version '1.0-SNAPSHOT'
+
+android {
+    namespace 'dev.fluttercommunity.plus.wakelock'
+    compileSdk = flutter.compileSdkVersion
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lintOptions {
+        disable 'InvalidPackage'
+    }
+
+    sourceSets {
+        main.java.srcDirs += 'src/main/kotlin'
+        test.java.srcDirs += 'src/test/kotlin'
+    }
+
+    defaultConfig {
+        // Use flutter.minSdkVersion once the minimum supported Flutter version is 3.35 or higher.
+        minSdkVersion flutter.minSdkVersion
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+    }
+
+    dependencies {
+        testImplementation 'org.jetbrains.kotlin:kotlin-test'
+        testImplementation 'org.mockito:mockito-core:5.0.0'
+        // Robolectric runs the JVM unit tests against a simulated Android
+        // framework so the wakelock window flags can be asserted without a
+        // device. It is JUnit4-based, so the vintage engine bridges it onto the
+        // JUnit Platform configured below (useJUnitPlatform()).
+        testImplementation 'junit:junit:4.13.2'
+        testImplementation 'org.robolectric:robolectric:4.14.1'
+        testRuntimeOnly 'org.junit.vintage:junit-vintage-engine:5.11.4'
+    }
+
+    testOptions {
+        unitTests.includeAndroidResources = true
+        unitTests.all {
+            useJUnitPlatform()
+
+            testLogging {
+                events 'passed', 'skipped', 'failed', 'standardOut', 'standardError'
+                outputs.upToDateWhen { false }
+                showStandardStreams = true
+            }
+        }
+    }
+}
+
+
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+    }
+}
+

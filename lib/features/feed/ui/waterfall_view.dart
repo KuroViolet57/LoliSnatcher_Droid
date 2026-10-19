@@ -1,0 +1,781 @@
+import 'dart:async';
+import 'dart:math';
+
+import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
+import 'package:flutter/services.dart';
+
+import 'package:get/get.dart';
+import 'package:scroll_to_index/scroll_to_index.dart';
+
+import 'package:lolisnatcher/core/logging/perf_trace.dart';
+import 'package:lolisnatcher/core/settings/modular_ui.dart';
+import 'package:lolisnatcher/features/feed/ui/feed_scroll.dart';
+import 'package:lolisnatcher/features/furaffinity/ui/furaffinity_artist_header.dart';
+import 'package:lolisnatcher/models/booru_item.dart';
+import 'package:lolisnatcher/core/ui/navigation_handler.dart';
+import 'package:lolisnatcher/features/doujin/logic/doujin_data_handler.dart';
+import 'package:lolisnatcher/core/logging/logger.dart';
+import 'package:lolisnatcher/features/feed/logic/feed_cache_extent.dart';
+import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
+import 'package:lolisnatcher/core/platform/service_handler.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/features/viewer/logic/viewer_handler.dart';
+import 'package:lolisnatcher/features/viewer/ui/gallery_view_page.dart';
+import 'package:lolisnatcher/features/doujin/ui/detail/doujin_detail_page.dart';
+import 'package:lolisnatcher/features/doujin/ui/doujin_item_menu.dart';
+import 'package:lolisnatcher/core/settings/source_settings_handler.dart';
+import 'package:lolisnatcher/core/ui/flash_elements.dart';
+import 'package:lolisnatcher/core/ui/long_press_repeater.dart';
+import 'package:lolisnatcher/features/feed/ui/grid/grid_builder.dart';
+import 'package:lolisnatcher/features/kemono/ui/kemono_creator_header.dart';
+import 'package:lolisnatcher/core/ui/shimmer_builder.dart';
+import 'package:lolisnatcher/features/feed/ui/grid/staggered_builder.dart';
+import 'package:lolisnatcher/features/feed/ui/discovery_strip.dart';
+import 'package:lolisnatcher/features/doujin/ui/doujin_tab_view.dart';
+import 'package:lolisnatcher/features/tabs/ui/tab_pill.dart';
+import 'package:lolisnatcher/features/tabs/ui/flow_tab_carousel.dart';
+import 'package:lolisnatcher/features/feed/ui/media_filter_chips.dart';
+import 'package:lolisnatcher/sources/framework/remote_media_query.dart';
+import 'package:lolisnatcher/features/feed/ui/waterfall_bottom_bar.dart';
+import 'package:lolisnatcher/features/feed/ui/main_appbar.dart';
+
+part 'waterfall_view/scroll_buttons.dart';
+
+class WaterfallView extends StatefulWidget {
+  const WaterfallView({super.key});
+
+  @override
+  State<WaterfallView> createState() => _WaterfallViewState();
+}
+
+class _WaterfallViewState extends State<WaterfallView> with RouteAware, TraceLifecycle {
+  final SettingsHandler settingsHandler = SettingsHandler.instance;
+  final SearchHandler searchHandler = SearchHandler.instance;
+  final ViewerHandler viewerHandler = ViewerHandler.instance;
+  final NavigationHandler navigationHandler = NavigationHandler.instance;
+
+  StreamSubscription? volumeListener;
+  bool scrollDone = true;
+
+  Orientation currentOrientation = Orientation.portrait;
+
+  bool isStaggered = false;
+
+  bool get isMobile => settingsHandler.appMode.value.isMobile;
+
+  final ValueNotifier<bool> isActive = ValueNotifier(true);
+
+  Timer? viewedItemCleanupTimer;
+  int viewedItemCleanupCount = 0;
+  final FeedCacheWindow feedCache = FeedCacheWindow();
+  Timer? feedCacheTimer;
+  Timer? feedCacheRampTimer;
+
+  /// The doujin List view: its rows are tall and costly, so the fling cache
+  /// window opens there in steps (2026-10-10).
+  bool get isDoujinList =>
+      searchHandler.currentBooruHandler.hasReader &&
+      SourceSettingsHandler.instance.feedCardStyle(searchHandler.currentBooru) == 'list';
+
+  @override
+  void initState() {
+    super.initState();
+
+    // listen to current tab change to restore the scroll value
+    searchHandler.index.addListener(tabIndexListener);
+
+    searchHandler.tabId.addListener(tabIdListener);
+
+    // listen to isLoading to select first loaded item for desktop
+    searchHandler.isLoading.addListener(isLoadingListener);
+
+    setVolumeListener();
+    // reset the volume butons state
+    ServiceHandler.setVolumeButtons(!settingsHandler.useVolumeButtonsForScroll);
+    // tabChanged(0);
+    // TODO reset the controller when appMode changes
+    searchHandler.gridScrollController = AutoScrollController(
+      initialScrollOffset: searchHandler.currentTab.scrollPosition,
+      viewportBoundaryGetter: () => Rect.fromLTRB(
+        0,
+        isMobile ? (MediaQuery.paddingOf(context).top + kToolbarHeight + 4) : 0,
+        0,
+        MediaQuery.paddingOf(context).bottom,
+      ),
+    );
+
+    isStaggered = _computeIsStaggered();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    NavigationHandler.instance.routeObserver.subscribe(
+      this,
+      ModalRoute.of(context)! as PageRoute,
+    );
+  }
+
+  @override
+  void didPushNext() {
+    isActive.value = false;
+  }
+
+  @override
+  void didPush() {
+    isActive.value = true;
+  }
+
+  @override
+  void didPopNext() {
+    isActive.value = true;
+  }
+
+  void tabIdListener() {
+    if (searchHandler.tabId.value != null) {
+      tabIndexListener();
+    }
+  }
+
+  void tabIndexListener() {
+    // print('tabChanged: ${searchHandler.currentTab.scrollPosition} ${searchHandler.gridScrollController.hasClients}');
+
+    // postpone scroll updates until the current render is done, since this is called after the global restate after exiting settings
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // restore scroll position on tab change
+      if (searchHandler.gridScrollController.hasClients) {
+        searchHandler.gridScrollController.jumpTo(searchHandler.currentTab.scrollPosition);
+      } else {
+        // if (searchHandler.currentTab.scrollPosition != 0) {
+        // TODO reset the controller when appMode changes
+        searchHandler.gridScrollController = AutoScrollController(
+          initialScrollOffset: searchHandler.currentTab.scrollPosition,
+          viewportBoundaryGetter: () => Rect.fromLTRB(
+            0,
+            isMobile ? (MediaQuery.paddingOf(context).top + kToolbarHeight + 4) : 0,
+            0,
+            MediaQuery.paddingOf(context).bottom,
+          ),
+        );
+      }
+    });
+
+    // check if grid type changed when changing tab
+    final bool newIsStaggered =
+        _computeIsStaggered();
+    if (isStaggered != newIsStaggered) {
+      isStaggered = newIsStaggered;
+      setState(() {});
+    }
+  }
+
+  void isLoadingListener() {
+    if (!searchHandler.isLoading.value) {
+      afterSearch();
+    }
+  }
+
+  void setVolumeListener() {
+    volumeListener?.cancel();
+    volumeListener = searchHandler.volumeStream?.listen(volumeCallback);
+  }
+
+  Future<void> volumeCallback(String event) async {
+    if (isActive.value) {
+      int dir = 0;
+      if (event == 'up') {
+        dir = -1;
+      } else if (event == 'down') {
+        dir = 1;
+      }
+
+      if (dir != 0 && scrollDone == true) {
+        scrollDone = false;
+        final double offset = max(
+          searchHandler.gridScrollController.offset + (settingsHandler.volumeButtonsScrollSpeed * dir),
+          -20,
+        );
+        await searchHandler.gridScrollController.animateTo(
+          offset,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.linear,
+        );
+        scrollDone = true;
+      }
+    }
+  }
+
+  void noteFeedPrefetch() {
+    final bool opened = feedCache.noteActivity(DateTime.now(), shitDevice: settingsHandler.shitDevice);
+    if (settingsHandler.shitDevice) return;
+    feedCacheTimer?.cancel();
+    final Duration wait = feedCache.remainingAt(DateTime.now()) + const Duration(milliseconds: 50);
+    feedCacheTimer = Timer(wait, () {
+      if (!mounted) return;
+      PerfTrace.instance.event('feed.cache', 'resting');
+      setState(() {});
+    });
+    if (!opened || !mounted) return;
+    PerfTrace.instance.event('feed.cache', 'wide');
+    if (isDoujinList) {
+      // One step at a time: each builds about one more row a side.
+      feedCacheRampTimer?.cancel();
+      feedCacheRampTimer = Timer.periodic(FeedCacheWindow.ramp ~/ FeedCacheWindow.rampSteps, (timer) {
+        if (!mounted || feedCache.rampDone(DateTime.now()) || !feedCache.isOpen) timer.cancel();
+        if (mounted) setState(() {});
+      });
+    }
+    Logger.Inst().log(
+      'Grid cache widened for a fling',
+      'WaterfallView',
+      'noteFeedPrefetch',
+      LogTypes.imageInfo,
+    );
+    setState(() {});
+  }
+
+  @override
+  void dispose() {
+    viewedItemCleanupTimer?.cancel();
+    feedCacheTimer?.cancel();
+    feedCacheRampTimer?.cancel();
+    NavigationHandler.instance.routeObserver.unsubscribe(this);
+    searchHandler.index.removeListener(tabIndexListener);
+    searchHandler.tabId.removeListener(tabIdListener);
+    searchHandler.isLoading.removeListener(isLoadingListener);
+    volumeListener?.cancel();
+    ServiceHandler.setVolumeButtons(true);
+    super.dispose();
+  }
+
+  void jumpTo(int newIndex) {
+    if (!searchHandler.gridScrollController.hasClients || newIndex == -1 || (isActive.value && isMobile)) {
+      return;
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (newIndex == 0) {
+        searchHandler.gridScrollController.jumpTo(0);
+      } else {
+        searchHandler.gridScrollController.scrollToIndex(
+          newIndex,
+          duration: Duration(milliseconds: isMobile ? 10 : 100),
+          preferPosition: AutoScrollPosition.begin,
+        );
+      }
+    });
+  }
+
+  void afterSearch() {
+    if (isMobile) {
+      return;
+    }
+
+    if (viewerHandler.current.value == null &&
+        searchHandler.currentFetched.isNotEmpty &&
+        searchHandler.currentFetched.length < (settingsHandler.itemLimit + 1)) {
+      viewerHandler.setCurrent(searchHandler.currentFetched.first);
+    }
+  }
+
+  void viewerCallback() {
+    // do cleanup after a delay to avoid animation stutter when leaving the viewer (especially when there are thousands of items)
+    Future.delayed(const Duration(milliseconds: 500), () {
+      for (final item in searchHandler.currentFetched) {
+        if (item.toggleQuality.value) {
+          item.toggleQuality.value = false;
+        }
+      }
+      searchHandler.filterCurrentFetched();
+    });
+  }
+
+  void onViewerPageChanged(int index) {
+    if (isMobile) {
+      jumpTo(index);
+    } else {
+      // don't auto scroll on viewed index change on desktop
+      // call jumpTo only when viewed item is possibly out of view (i.e. selected by arrow keys)
+    }
+  }
+
+  /// Staggered = cells sized by each item's aspect ratio. Also forced by
+  /// the doujin 'adapt' cover-display mode, which IS this behaviour.
+  ///
+  /// Adapt deliberately does NOT require a handler's `hasSizeData`. Only
+  /// nhentai and niyaniya report cover dimensions in their listings; every
+  /// other doujin source reports none, and gating on that is what made adapt
+  /// silently degrade to a fixed grid with letterboxed covers. A doujin cell
+  /// learns its cover's aspect from the decoded image instead
+  /// (DoujinCoverAspects), so it needs nothing from the API.
+  bool _computeIsStaggered() {
+    // r63: the list card lays out its own row, so the staggered grid (which
+    // gives cells no height) must step aside.
+    if (searchHandler.currentBooruHandler.hasReader &&
+        SourceSettingsHandler.instance.feedCardStyle(searchHandler.currentBooru) == 'list') {
+      return false;
+    }
+    final bool adaptCovers =
+        searchHandler.currentBooruHandler.hasReader &&
+        SourceSettingsHandler.instance.coverDisplay(searchHandler.currentBooru) == 'adapt';
+    if (adaptCovers) return true;
+    return settingsHandler.previewDisplay.isStaggered && searchHandler.currentBooruHandler.hasSizeData;
+  }
+
+  Future<void> onTap(int index) async {
+    // Doujin sources: a card opens the DETAIL page (cover, tags, Related /
+    // Recommended, Pages, Read), not the image viewer — the viewer flow
+    // stays untouched for every other source.
+    if (searchHandler.currentBooruHandler.hasReader) {
+      if (!isActive.value) return;
+      isActive.value = false;
+      try {
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => DoujinDetailPage(
+              tab: searchHandler.currentTab,
+              index: index,
+            ),
+          ),
+        );
+      } finally {
+        isActive.value = true;
+      }
+      return;
+    }
+
+    if (isMobile) {
+      // protection from opening multiple viewers at once
+      if (!isActive.value) {
+        return;
+      }
+
+      viewedItemCleanupTimer?.cancel();
+      viewedItemCleanupCount = 0;
+      viewerHandler.setCurrent(searchHandler.currentFetched[index]);
+
+      isActive.value = false;
+      viewerHandler.showNotes.value = !settingsHandler.hideNotes;
+
+      final viewerKey = GlobalKey(debugLabel: 'viewer-main');
+      ViewerHandler.instance.addViewer(viewerKey);
+      await Navigator.of(context).push(
+        PageRouteBuilder(
+          settings: const RouteSettings(name: 'viewer'),
+          pageBuilder: (_, _, _) => GalleryViewPage(
+            key: viewerKey,
+            tab: searchHandler.currentTab,
+            initialIndex: index,
+            onPageChanged: onViewerPageChanged,
+          ),
+          opaque: false,
+          transitionDuration: const Duration(milliseconds: 300),
+          barrierColor: Colors.black26,
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            return const ZoomPageTransitionsBuilder().buildTransitions(
+              MaterialPageRoute(
+                builder: (_) => const SizedBox.shrink(),
+              ), // is not used anywhere, but function requires it to get allowSnapshotting from it
+              context,
+              animation,
+              secondaryAnimation,
+              child,
+            );
+          },
+        ),
+      );
+
+      viewerHandler.dropCurrent();
+
+      viewedItemCleanupTimer = Timer.periodic(
+        const Duration(milliseconds: 200),
+        (_) {
+          // workaround to forcefully clear the viewed item if it got set after we left the viewer (i.e. check after favouriting)
+          if (viewerHandler.current.value != null) {
+            viewerHandler.dropCurrent();
+          }
+
+          // run for 5s with 200ms interval
+          if (viewedItemCleanupCount < 25) {
+            viewedItemCleanupCount++;
+          } else {
+            viewedItemCleanupTimer?.cancel();
+          }
+        },
+      );
+
+      isActive.value = true;
+
+      // reset notes to default state, defined in settings
+      viewerHandler.showNotes.value = !settingsHandler.hideNotes;
+
+      viewerCallback();
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        navigationHandler.floatingHeaderKey.currentState?.show();
+        navigationHandler.bottomBar?.show();
+      });
+    } else {
+      viewerHandler.setCurrent(searchHandler.currentFetched[index]);
+    }
+  }
+
+  Future<void> onDoubleTap(int index) async {
+    final tab = searchHandler.currentTab;
+    if (tab.booruHandler.hasReader) {
+      // Doujin cards: doujin store + account sync — the SAME path as the
+      // detail page heart, so a double-tap favourite reaches the site too.
+      final BooruItem item = searchHandler.currentFetched[index];
+      // A doujin For You card syncs with its own site's account, not the feed's.
+      final result = await DoujinDataHandler.instance.toggleFavouriteSynced(item, tab.booruHandler.handlerForItem(item));
+      if (result.syncAttempted && !result.syncOk && mounted) {
+        FlashElements.showSnackbar(
+          duration: const Duration(seconds: 3),
+          title: Text(result.message ?? 'Account sync failed', style: const TextStyle(fontSize: 16)),
+          sideColor: Colors.red,
+        );
+      }
+      return;
+    }
+    await tab.toggleItemFavourite(index);
+  }
+
+  Future<void> onLongPress(int index) async {
+    final BooruItem item = searchHandler.currentFetched[index];
+    await ServiceHandler.vibrate();
+
+    // Doujin feeds: long-press opens the item's context menu (the centered
+    // popup), not multi-select.
+    if (searchHandler.currentTab.booruHandler.hasReader) {
+      if (!mounted) return;
+      await showDoujinItemMenu(context, tab: searchHandler.currentTab, index: index);
+      return;
+    }
+
+    if (searchHandler.currentSelected.contains(item)) {
+      searchHandler.currentTab.selected.remove(item);
+    } else {
+      searchHandler.currentTab.selected.add(item);
+    }
+  }
+
+  Future<void> onSecondaryTap(int index, BuildContext context) async {
+    final BooruItem item = searchHandler.currentFetched[index];
+    await Clipboard.setData(ClipboardData(text: Uri.encodeFull(item.fileURL)));
+    FlashElements.showSnackbar(
+      duration: const Duration(seconds: 2),
+      title: Text(context.loc.mediaPreviews.copiedFileURL, style: const TextStyle(fontSize: 20)),
+      content: Text(Uri.encodeFull(item.fileURL), style: const TextStyle(fontSize: 16)),
+      leadingIcon: Symbols.content_copy_rounded,
+      sideColor: Colors.green,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // check if grid type changed when rebuilding the widget (must happen only on start and when saving settings)
+    final bool newIsStaggered =
+        _computeIsStaggered();
+    if (isStaggered != newIsStaggered) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        isStaggered = newIsStaggered;
+        setState(() {});
+      });
+    }
+
+    final bool changedOrientation = context.orientation != currentOrientation;
+    if (changedOrientation && !isActive.value) {
+      // try to keep the scroll position at currently viewed item when screen orientation changes
+      currentOrientation = context.orientation;
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final itemIndex = searchHandler.currentFetched.indexWhere(
+          (item) => item.key == viewerHandler.current.value?.key,
+        );
+        if (itemIndex != -1) {
+          searchHandler.gridScrollController.scrollToIndex(
+            itemIndex,
+            duration: Duration(milliseconds: isMobile ? 10 : 100),
+            preferPosition: AutoScrollPosition.begin,
+          );
+        }
+      });
+    }
+
+    final Widget feedView = Stack(
+      alignment: Alignment.bottomCenter,
+      children: [
+        NotificationListener<ScrollNotification>(
+          child: Scrollbar(
+            controller: searchHandler.gridScrollController,
+            interactive: true,
+            // r66: Modular UI - off hides the thumb, the bar still scrolls.
+            thickness: ModularUi.isOn(ModularUi.feedScrollbar) ? 8 : 0,
+            thumbVisibility: ModularUi.isOn(ModularUi.feedScrollbar),
+            scrollbarOrientation: settingsHandler.handSide.value.isLeft
+                ? ScrollbarOrientation.left
+                : ScrollbarOrientation.right,
+            child: RefreshIndicator(
+              triggerMode: RefreshIndicatorTriggerMode.anywhere,
+              displacement: 40,
+              edgeOffset: MediaQuery.paddingOf(context).top + MainAppBar.height,
+              strokeWidth: 4,
+              color: Theme.of(context).colorScheme.secondary,
+              // The same search again: not a new search for the history or For You.
+              onRefresh: () => searchHandler.searchAction(
+                searchHandler.currentTab.tags,
+                null,
+                isRefresh: true,
+              ),
+              child: Stack(
+                children: [
+                  ValueListenableBuilder(
+                    valueListenable: isActive,
+                    builder: (context, isActive, child) {
+                      return ShimmerWrap(
+                        enabled: isActive && !SettingsHandler.instance.shitDevice,
+                        child: child ?? const SizedBox.shrink(),
+                      );
+                    },
+                    child: Obx(() {
+                      final bool isLoadingAndNoItems =
+                          searchHandler.isLoading.value && searchHandler.currentFetched.isEmpty;
+
+                      if (isLoadingAndNoItems) {
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          // reset scroll position if in loading state
+                          searchHandler.gridScrollController.jumpTo(0);
+                        });
+                      }
+
+                      // If loading just finished but content doesn't fill the viewport,
+                      // the NotificationListener won't fire (no scroll possible), so trigger next page here with a small delay.
+                      if (!searchHandler.isLoading.value && searchHandler.currentFetched.isNotEmpty) {
+                        WidgetsBinding.instance.addPostFrameCallback((_) async {
+                          if (searchHandler.gridScrollController.hasClients && !searchHandler.isLoading.value) {
+                            final pos = searchHandler.gridScrollController.position;
+                            final bool screenNotFilled = pos.extentBefore == 0 && pos.extentAfter == 0;
+                            if (screenNotFilled) {
+                              await Future.delayed(const Duration(milliseconds: 500));
+                              // Another rebuild's callback (or the scroll
+                              // listener) may have started the next page meanwhile.
+                              if (searchHandler.isLoading.value) return;
+                              unawaited(searchHandler.runSearch());
+                            }
+                          }
+                        });
+                      }
+
+                      return CustomScrollView(
+                        key: ValueKey('CustomScrollView-${searchHandler.currentTabId}'),
+                        controller: searchHandler.gridScrollController,
+                        physics: isLoadingAndNoItems
+                            ? const NeverScrollableScrollPhysics()
+                            : AlwaysScrollableScrollPhysics(
+                                parent: ScrollConfiguration.of(context).getScrollPhysics(context),
+                              ),
+                        shrinkWrap: false,
+                        cacheExtent: feedCache.extent(
+                          devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+                          shitDevice: settingsHandler.shitDevice,
+                          ramped: isDoujinList,
+                        ),
+                        slivers: [
+                          const MainAppBar(),
+                          // Flow tab-card carousel: swipeable tab cards under the
+                          // header (active tab = wide card, others peek, dashed +).
+                          const SliverToBoxAdapter(child: FlowTabCarousel()),
+                          // Local feeds hide rows already loaded. Danbooru, e621, and
+                          // Derpibooru ask the site, so the same chips run a new search.
+                          if (searchHandler.currentTab.selectedBooru.value.type?.isLocalDb == true ||
+                              remoteMediaAsksSite(
+                                searchHandler.currentTab.selectedBooru.value.type,
+                                baseUrl: searchHandler.currentTab.selectedBooru.value.baseURL,
+                              ))
+                            SliverPadding(
+                              padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
+                              sliver: SliverToBoxAdapter(
+                                child: MediaFilterChips(
+                                  key: ValueKey('media-filter-${searchHandler.currentTabId}'),
+                                  tab: searchHandler.currentTab,
+                                ),
+                              ),
+                            ),
+                          // A kemono creator tab carries the creator's card
+                          // (banner, counts, favourite/announcements/DMs/tags)
+                          // above the grid. Empty everywhere else.
+                          SliverPadding(
+                            padding: const EdgeInsets.fromLTRB(10, 12, 10, 0),
+                            sliver: SliverToBoxAdapter(
+                              child: KemonoCreatorHeader(tab: searchHandler.currentTab),
+                            ),
+                          ),
+                          // A FurAffinity artist tab: the artist's card (r40).
+                          SliverToBoxAdapter(child: FurAffinityArtistHeader(tab: searchHandler.currentTab)),
+                          // Discovery strip: creators + similar tags above the
+                          // results, for any handler that populates them
+                          // (xxxfollow, redgifs). No-op for the rest.
+                          SliverPadding(
+                            padding: const EdgeInsets.fromLTRB(10, 12, 10, 0),
+                            sliver: SliverToBoxAdapter(
+                              child: DiscoveryStrip(tab: searchHandler.currentTab),
+                            ),
+                          ),
+                          SliverPadding(
+                            padding: const EdgeInsets.fromLTRB(10, 16, 10, 180),
+                            sliver: Builder(
+                              builder: (context) {
+                                if (isLoadingAndNoItems) {
+                                  if (settingsHandler.shitDevice) {
+                                    return const SliverToBoxAdapter(
+                                      child: Center(
+                                        child: CircularProgressIndicator(),
+                                      ),
+                                    );
+                                  }
+
+                                  return const ThumbnailsShimmerList();
+                                }
+
+                                if (isStaggered) {
+                                  return Obx(
+                                    () => StaggeredBuilder(
+                                      key: ValueKey('StaggeredBuilder-${searchHandler.currentTabId}'),
+                                      tab: searchHandler.currentTab,
+                                      scrollController: searchHandler.gridScrollController,
+                                      onTap: onTap,
+                                      onDoubleTap: onDoubleTap,
+                                      onLongPress: onLongPress,
+                                      onSecondaryTap: (i) => onSecondaryTap(i, context),
+                                      onSelected: onLongPress,
+                                    ),
+                                  );
+                                }
+
+                                return Obx(
+                                  () => GridBuilder(
+                                    key: ValueKey('GridBuilder-${searchHandler.currentTabId}'),
+                                    tab: searchHandler.currentTab,
+                                    scrollController: searchHandler.gridScrollController,
+                                    onTap: onTap,
+                                    onDoubleTap: onDoubleTap,
+                                    onLongPress: onLongPress,
+                                    onSecondaryTap: (i) => onSecondaryTap(i, context),
+                                    onSelected: onLongPress,
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                      );
+                    }),
+                  ),
+                  // r38, experimental: the tab pill, on the side the scroll
+                  // buttons leave free until it is moved (r40: hold and drag).
+                  if (settingsHandler.tabPill)
+                    Positioned.fill(
+                      child: TabPillHost(
+                        bottomInset: MediaQuery.viewPaddingOf(context).bottom + 120,
+                        alignLeft: !settingsHandler.scrollGridButtonsPosition.isLeft,
+                      ),
+                    ),
+                  Positioned(
+                    bottom: MediaQuery.viewPaddingOf(context).bottom + 120,
+                    right: settingsHandler.scrollGridButtonsPosition.isRight
+                        ? MediaQuery.sizeOf(context).width * 0.07
+                        : null,
+                    left: settingsHandler.scrollGridButtonsPosition.isLeft
+                        ? MediaQuery.sizeOf(context).width * 0.07
+                        : null,
+                    child: Obx(() {
+                      final bool isLoadingAndNoItems =
+                          searchHandler.isLoading.value && searchHandler.currentFetched.isEmpty;
+
+                      return AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 300),
+                        child:
+                            (isLoadingAndNoItems ||
+                                settingsHandler.scrollGridButtonsPosition.isDisabled ||
+                                settingsHandler.appMode.value.isDesktop == true)
+                            ? const SizedBox.shrink()
+                            : WaterfallScrollButtons(
+                                onScrollStart: noteFeedPrefetch,
+                                onTap: (bool forward) {
+                                  if (forward) {
+                                    navigationHandler.floatingHeaderKey.currentState?.hide();
+                                    navigationHandler.bottomBar?.hide();
+                                  } else {
+                                    navigationHandler.floatingHeaderKey.currentState?.show();
+                                    navigationHandler.bottomBar?.show();
+                                  }
+                                  noteFeedPrefetch();
+                                },
+                              ),
+                      );
+                    }),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          onNotification: (notif) {
+            // r66: a horizontal scroll inside a card (tag rows, a title, the
+            // tab cards) bubbles up here too, and one at its own end looks
+            // exactly like the feed near its bottom - so the next page was
+            // fetched while the user was only reading tags.
+            if (!FeedScroll.isFeedScroll(notif)) return false;
+            if (notif is ScrollUpdateNotification && notif.dragDetails == null && (notif.scrollDelta ?? 0) != 0) {
+              noteFeedPrefetch();
+            }
+            if (notif is ScrollUpdateNotification || notif is OverscrollNotification) {
+              searchHandler.sendToScrollStream(notif);
+
+              // print('SCROLL NOTIFICATION');
+              // print(searchHandler.gridScrollController.position.maxScrollExtent);
+              // print(notif.metrics); // pixels before viewport, in viewport, after viewport
+
+              final bool isNotAtStart = notif.metrics.pixels > 0;
+              final bool isAtOrNearEdge =
+                  notif.metrics.atEdge ||
+                  notif.metrics.pixels >
+                      (notif.metrics.maxScrollExtent -
+                          (notif.metrics.extentInside *
+                              2)); // trigger new page when at edge or scroll position is less than 2 viewports
+              final bool isScreenFilled =
+                  notif.metrics.extentBefore != 0 ||
+                  notif.metrics.extentAfter != 0; // for cases when first page doesn't fill the screen
+
+              if (!searchHandler.isLoading.value) {
+                if (!isScreenFilled || (isNotAtStart && isAtOrNearEdge)) {
+                  searchHandler.runSearch();
+                }
+              }
+            }
+            return true;
+          },
+        ),
+        //
+        RepaintBoundary(
+          child: WaterfallBottomBar(
+            key: navigationHandler.bottomBarKey,
+          ),
+        ),
+      ],
+    );
+
+    // A doujin tab IS its detail page — none of the feed chrome above
+    // applies, so the whole subtree is swapped out, not just the grid sliver.
+    return Obx(() {
+      if (searchHandler.tabs.isNotEmpty && searchHandler.currentTab.isDoujinDetail) {
+        return DoujinTabView(
+          key: ValueKey('doujin-tab-view-${searchHandler.currentTabId}'),
+          tab: searchHandler.currentTab,
+        );
+      }
+      return feedView;
+    });
+  }
+}

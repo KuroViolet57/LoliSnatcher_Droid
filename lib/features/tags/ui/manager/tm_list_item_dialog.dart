@@ -1,0 +1,192 @@
+import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
+import 'package:flutter/services.dart';
+
+import 'package:lolisnatcher/core/constants.dart';
+import 'package:lolisnatcher/models/tag.dart';
+import 'package:lolisnatcher/models/tag_type.dart';
+import 'package:lolisnatcher/features/feed/logic/search_handler.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/core/ui/flash_elements.dart';
+import 'package:lolisnatcher/core/ui/settings_widgets.dart';
+import 'package:lolisnatcher/core/ui/image/booru_favicon.dart';
+import 'package:lolisnatcher/features/tags/ui/manager/tm_list_item.dart';
+
+class TagsManagerListItemDialog extends StatefulWidget {
+  const TagsManagerListItemDialog({
+    required this.tag,
+    required this.onChangedType,
+    this.onSetStale,
+    this.onResetStale,
+    this.onSetUnstaleable,
+    this.debug = false,
+    super.key,
+  });
+
+  final Tag tag;
+  final void Function(TagType?) onChangedType;
+  final void Function()? onSetStale;
+  final void Function()? onResetStale;
+  final void Function()? onSetUnstaleable;
+  final bool debug;
+
+  @override
+  State<TagsManagerListItemDialog> createState() => _TagsManagerListItemDialogState();
+}
+
+class _TagsManagerListItemDialogState extends State<TagsManagerListItemDialog> {
+  void callbackWithSetState(VoidCallback callback) {
+    callback();
+    setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final String staleText = DateTime.fromMillisecondsSinceEpoch(
+      widget.tag.updatedAt,
+    ).add(const Duration(milliseconds: Constants.tagStaleTime)).toString();
+
+    return SettingsDialog(
+      contentItems: [
+        SizedBox(
+          width: double.maxFinite,
+          child: TagsManagerListItem(
+            tag: widget.tag,
+            debug: widget.debug,
+          ),
+        ),
+        //
+        if (widget.debug) ...[
+          const SizedBox(height: 10),
+          Text(context.loc.tagsManager.staleAfter(staleText: staleText)),
+        ],
+        //
+        const SizedBox(height: 10),
+        SettingsDropdown(
+          value: widget.tag.tagType,
+          items: TagType.values,
+          onChanged: (TagType? newValue) {
+            callbackWithSetState(() {
+              widget.onChangedType(newValue);
+            });
+          },
+          title: context.loc.tagsManager.type,
+          drawBottomBorder: false,
+          itemBuilder: (item) => Row(
+            children: [
+              if (item != null && item.isNone == false)
+                Container(
+                  height: 24,
+                  width: 6,
+                  margin: const EdgeInsets.only(right: 8),
+                  decoration: BoxDecoration(
+                    color: item.getColour(),
+                    borderRadius: BorderRadius.circular(5),
+                  ),
+                ),
+              Text(item == null ? 'Any' : item.locName),
+            ],
+          ),
+          itemTitleBuilder: (item) => item == null ? 'Any' : item.locName,
+        ),
+        //
+        if (widget.debug) ...[
+          const SizedBox(height: 10),
+          ListTile(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(5),
+              side: BorderSide(color: Theme.of(context).colorScheme.secondary),
+            ),
+            onTap: () {
+              SearchHandler.instance.addTabByString(widget.tag.fullString);
+
+              FlashElements.showSnackbar(
+                context: context,
+                duration: const Duration(seconds: 2),
+                title: Text(context.loc.tagsManager.addedATab, style: const TextStyle(fontSize: 20)),
+                content: Text(widget.tag.fullString, style: const TextStyle(fontSize: 16)),
+                leadingIcon: Symbols.content_copy_rounded,
+                sideColor: Colors.green,
+              );
+              Navigator.of(context).pop(true);
+            },
+            leading: const Icon(Symbols.add_circle_rounded),
+            trailing: BooruFavicon(SearchHandler.instance.currentBooruHandler.booru),
+            title: Text(context.loc.tagsManager.addATab),
+          ),
+        ],
+        //
+        const SizedBox(height: 10),
+        ListTile(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(5),
+            side: BorderSide(color: Theme.of(context).colorScheme.secondary),
+          ),
+          onTap: () {
+            Clipboard.setData(ClipboardData(text: widget.tag.fullString));
+            FlashElements.showSnackbar(
+              context: context,
+              duration: const Duration(seconds: 2),
+              title: Text(context.loc.copiedToClipboard, style: const TextStyle(fontSize: 20)),
+              content: Text(widget.tag.fullString, style: const TextStyle(fontSize: 16)),
+              leadingIcon: Symbols.content_copy_rounded,
+              sideColor: Colors.green,
+            );
+            Navigator.of(context).pop(true);
+          },
+          leading: const Icon(Symbols.content_copy_rounded),
+          title: Text(context.loc.tagsManager.copy),
+        ),
+        if (widget.onSetStale != null) ...[
+          const SizedBox(height: 10),
+          ListTile(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(5),
+              side: BorderSide(color: Theme.of(context).colorScheme.secondary),
+            ),
+            onTap: () => callbackWithSetState(widget.onSetStale!),
+            leading: const Icon(Symbols.timer_off_rounded),
+            title: Text(context.loc.tagsManager.setStale),
+          ),
+        ],
+        //
+        if (widget.onResetStale != null) ...[
+          const SizedBox(height: 10),
+          ListTile(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(5),
+              side: BorderSide(color: Theme.of(context).colorScheme.secondary),
+            ),
+            onTap: () => callbackWithSetState(widget.onResetStale!),
+            leading: const Icon(Symbols.restore_rounded),
+            title: Text(context.loc.tagsManager.resetStale),
+          ),
+        ],
+        //
+        if (widget.onSetUnstaleable != null) ...[
+          const SizedBox(height: 10),
+          ListTile(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(5),
+              side: BorderSide(color: Theme.of(context).colorScheme.secondary),
+            ),
+            onTap: () => callbackWithSetState(widget.onSetUnstaleable!),
+            leading: const Icon(Symbols.lock_clock_rounded),
+            title: Text(context.loc.tagsManager.makeUnstaleable),
+          ),
+        ],
+        const SizedBox(height: 10),
+        ListTile(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(5),
+            side: BorderSide(color: Theme.of(context).colorScheme.secondary),
+          ),
+          onTap: () => Navigator.of(context).pop(),
+          leading: const Icon(Symbols.cancel_rounded),
+          title: Text(context.loc.close),
+        ),
+      ],
+    );
+  }
+}

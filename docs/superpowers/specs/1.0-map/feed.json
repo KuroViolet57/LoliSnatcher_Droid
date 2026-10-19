@@ -1,0 +1,1668 @@
+{
+ "subsystem": "feed",
+ "summary": "The feed subsystem is the app's main browsing surface and the tab model behind it.\n1. SearchHandler (lib/src/handlers/search_handler.dart, 2443 lines) is a GetIt singleton. It owns the tabs (RxList<SearchTab>), the current index and tab id, and the paging state (pageNum/isLoading/isLastPage/errorString). It also holds tab groups, the tab-visit history (TabVisitHistory table), seen posts (SeenPost/ViewedPost, with doujin items routed to the doujin history), saved searches, merge (secondary boorus with per-booru overrides) and tab backup/restore. Restore reads the TabRestore table, in JSON (TabBackup) or the legacy '|||'/'~~~' format. It also hosts UI objects: the search TextEditingController, the grid AutoScrollController, the drawer GlobalKey, the volume-key EventChannel, plus snackbars and a rootRestate callback. SearchTab, TabBackup, TabVisit and the enums live in the same file.\n2. Paging: runSearch increments pageNum before every fetch. Own lists loop up to 10 pages while nothing is visible (r85).\n3. Tab backup is driven by a 30 s timer in main.dart (Home.backupTimer). Restore runs from MainApp.initHandlers through settingsHandler.postInit.\n4. SearchHistoryStore is the single router between booru search history (store.db) and doujin search history (doujinData.json). HiddenByFilters supplies the words for the 'hidden by your filters' banner.\n5. UI: MediaPreviews (home body) shows WaterfallView, or a WebView tab for WebView boorus. WaterfallView is one CustomScrollView inside an Obx that rebuilds on isLoading/filteredFetched. Its slivers, top to bottom:\n   - MainAppBar, which carries TabsCountPill, PageIndicatorPill and NewTabButton from flow_tab_carousel.dart;\n   - FlowTabCarousel;\n   - MediaFilterChips (local DB feeds only);\n   - KemonoCreatorHeader, FurAffinityArtistHeader and DiscoveryStrip;\n   - GridBuilder (grid, or doujin list cards) or StaggeredBuilder (waterfall_flow), or a shimmer while loading.\n   It also has pull-to-refresh (re-runs searchAction), volume-key scroll, scroll buttons, an optional TabPillHost, and WaterfallBottomBar (status banner + FlowSearchBar). A doujin detail tab swaps the whole view for DoujinTabView.\n6. Cards: ThumbnailCardBuild → ThumbnailBuild (overlays, icons) → Thumbnail (stateful image loader with sample/thumb choice, retries, a 403 captcha probe, sprite tiles, AVIF, ThumbnailReveal, ThumbnailDecodeBox). DoujinListCard and DoujinCardMeta draw doujin list rows. The next-page trigger is the NotificationListener filtered by FeedScroll.isFeedScroll.\n7. Search entry points:\n   - MainSearchBar(WithActions) at the top, in the drawer and on desktop;\n   - FlowSearchBar at the bottom;\n   - MainSearchQueryEditorPage (4565 lines): suggestions, history, pinned, popular, metatags, tag builder, doujin/site filter cards, pin dialogs and managers, date pickers, prefix sheet;\n   - TagSearchQueryEditorPage + TagSearchBox, a reusable picker built on QueryEditorController.\n8. FloatingPreviewHandler keeps the floating tag-preview windows in the root overlay, each tied to its owner page route with a Back PopEntry. FloatingTagPreviewWindow is the draggable/resizable window: its own SearchTab, alias resolution, a viewer with endless paging, and a nested navigator for doujin detail windows.\n9. Persistence:\n   - In store.db (database backup): TabRestore, TabVisitHistory, SeenPost, ViewedPost, SearchHistory, SavedSearch, PinnedTag.\n   - In settings.json: previewWindowRect, tabPill and the other UI keys.\n   - tab_pill.json is not backed up.\n10. Layer debt: the logic files import widgets (FlashElements, the floating window, Navigator contexts) and the widget files contain logic (DB writes for pins, booru-by-host lookup, item reload). All of it is reached through SearchHandler.instance by about 100 files.",
+ "features": [
+  {
+   "name": "Tab list with add/remove/move",
+   "navPath": "Feed -> tab carousel / Tab manager (TabsCountPill) / desktop tab bar",
+   "what": "Tabs are SearchTab objects in SearchHandler.tabs. A new tab goes before the current, after it or at the end, following the New-tab-position setting, and an insert never splits a foreign group. Removing the last tab resets it to the default tags and shows a snackbar.",
+   "files": [
+    "lib/src/handlers/search_handler.dart"
+   ],
+   "settingsKeys": [
+    "defaultTabAddMode",
+    "defTags",
+    "prefBooru"
+   ],
+   "storedIn": "store.db TabRestore (JSON TabBackup list)",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Tab groups",
+   "navPath": "Tab manager -> group actions; tag chips open into the current group",
+   "what": "Groups are kept as contiguous blocks; inheritGroup puts a new tab in the opener's group. Groups can be renamed, dissolved or receive moved tabs, and fragmented blocks are compacted after restore.",
+   "files": [
+    "lib/src/handlers/search_handler.dart"
+   ],
+   "settingsKeys": [],
+   "storedIn": "TabBackup 'g' in TabRestore",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Tab restore at startup",
+   "navPath": "automatic (startup: 'Restoring tabs' message)",
+   "what": "Reads TabRestore as the new JSON format or the legacy '|||'/'~~~' format. Rebuilds pool, doujin-detail, suggestion and merge tabs, and handles localized Favourites/Downloads names. A snackbar lists tabs with problems. With no backup it creates a default tab. Seen posts and visit history are loaded first.",
+   "files": [
+    "lib/src/handlers/search_handler.dart",
+    "lib/main.dart"
+   ],
+   "settingsKeys": [],
+   "storedIn": "store.db TabRestore",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Periodic tab backup",
+   "navPath": "automatic (every 30 s, 10 s in debug)",
+   "what": "generateBackupJson writes all tabs. When the only tab is the default booru with default tags, TabRestore is cleared instead. Backup is allowed only after restore, and is paused during a database restore.",
+   "files": [
+    "lib/src/handlers/search_handler.dart",
+    "lib/main.dart"
+   ],
+   "settingsKeys": [],
+   "storedIn": "store.db TabRestore",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Tab merge/replace from text (LoliSync, debug)",
+   "navPath": "Settings -> Debug -> tabs session string (copy / replace); LoliSync tabs merge/replace",
+   "what": "mergeTabs/replaceTabs accept the JSON or legacy format.",
+   "files": [
+    "lib/src/handlers/search_handler.dart"
+   ],
+   "settingsKeys": [],
+   "storedIn": "memory then TabRestore",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Visited tabs history",
+   "navPath": "Tab manager -> visited tabs history dialog",
+   "what": "Records tabs the user switched to on purpose (byUser), one entry per tab id, capped at 150, and survives restarts.",
+   "files": [
+    "lib/src/handlers/search_handler.dart"
+   ],
+   "settingsKeys": [],
+   "storedIn": "store.db TabVisitHistory",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Search action",
+   "navPath": "Search bar search button / editor submit / FlowSearchBar magnifier",
+   "what": "Replaces the current tab in place (same id, group, overrides; keeps the doujin identity when the query is unchanged). Records search history unless the query is a suggest: query, records an Interests signal (not for local, recommendation or doujin feeds), clears the image memory cache and runs page 1.",
+   "files": [
+    "lib/src/handlers/search_handler.dart"
+   ],
+   "settingsKeys": [
+    "searchHistoryEnabled"
+   ],
+   "storedIn": "SearchHistory / doujinData.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Search reactions",
+   "navPath": "automatic on search",
+   "what": "A 'loli' query shows a crying-emoji snackbar (5 per session). rating:safe on gelbooru.com or danbooru shows the ratings-changed notice.",
+   "files": [
+    "lib/src/handlers/search_handler.dart"
+   ],
+   "settingsKeys": [],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Paging / infinite scroll",
+   "navPath": "Feed scroll near bottom (within 2 viewports), or first page not filling the screen",
+   "what": "runSearch increments the page and fetches. Own lists read up to 10 empty pages per load. State is written only for the tab that is still current. Total count is fetched once. Loading resets after 200 ms.",
+   "files": [
+    "lib/src/handlers/search_handler.dart",
+    "lib/src/widgets/preview/waterfall_view.dart",
+    "lib/src/widgets/preview/feed_scroll.dart"
+   ],
+   "settingsKeys": [
+    "itemLimit"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Jump to page / search until page",
+   "navPath": "Feed app bar -> 'Pg N' pill -> page number sheet",
+   "what": "changeCurrentTabPageNumber rebuilds the tab at a start page. searchCurrentTabUntilPageNumber loads page after page with a delay until the target or an error, and can be cancelled.",
+   "files": [
+    "lib/src/widgets/preview/flow_tab_carousel.dart",
+    "lib/src/handlers/search_handler.dart"
+   ],
+   "settingsKeys": [],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Merge (multibooru) tabs",
+   "navPath": "Multibooru toggle / secondary booru selector",
+   "what": "mergeAction sets the secondary boorus and keeps the per-booru tag overrides and inherit flags of boorus still in the set.",
+   "files": [
+    "lib/src/handlers/search_handler.dart"
+   ],
+   "settingsKeys": [],
+   "storedIn": "TabBackup sb/to/in",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Booru edit re-points open tabs",
+   "navPath": "Settings -> Boorus -> edit booru -> save",
+   "what": "applyBooruEdit rebuilds the handler only when the type or URL changed; otherwise it adopts the new Booru object.",
+   "files": [
+    "lib/src/handlers/search_handler.dart"
+   ],
+   "settingsKeys": [],
+   "storedIn": "memory",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Saved searches",
+   "navPath": "Search bar save button (label dialog); FlowSearchBar save button; saved searches list -> open / open in another booru",
+   "what": "Snapshots tags, booru, secondaries and overrides. Doujin tabs go to the doujin store. Opening a saved search follows the New-tab-position setting.",
+   "files": [
+    "lib/src/handlers/search_handler.dart",
+    "lib/src/widgets/preview/main_search_bar.dart",
+    "lib/src/widgets/preview/flow_search_bar.dart"
+   ],
+   "settingsKeys": [
+    "defaultTabAddMode"
+   ],
+   "storedIn": "store.db SavedSearch / doujinData.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Seen posts dimming + viewing history",
+   "navPath": "Settings -> Viewer -> dim seen posts (+ clear seen); automatic when viewing",
+   "what": "markPostSeen adds the post key to SeenPost and the item to ViewedPost, or to the doujin history for doujin items. Cards dim with an eye icon.",
+   "files": [
+    "lib/src/handlers/search_handler.dart",
+    "lib/src/widgets/thumbnail/thumbnail_card_build.dart"
+   ],
+   "settingsKeys": [
+    "dimSeenPosts"
+   ],
+   "storedIn": "store.db SeenPost, ViewedPost / doujinData.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Favourite toggle (double-tap / bulk)",
+   "navPath": "Feed card double-tap; multi-select favourite",
+   "what": "Doujin items go to toggleFavouriteSynced. Booru items: loadItem when tags are missing, vibrate, DB update, snatch-on-favourite, mirror to the site's favourites (kemono), and stay visible until reload (exemptFromLiveFilter).",
+   "files": [
+    "lib/src/handlers/search_handler.dart",
+    "lib/src/widgets/preview/waterfall_view.dart"
+   ],
+   "settingsKeys": [
+    "snatchOnFavourite",
+    "snatchCooldown",
+    "filterFavourites"
+   ],
+   "storedIn": "store.db BooruItem / doujinData.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Doujin detail tabs",
+   "navPath": "Doujin card -> open as tab; restored tabs",
+   "what": "SearchTab.doujinPostURL/Title/Thumb. seedPersistedDoujinItem plants a stub so keyed galleries reload after a restart. id:<n>/<key> query helpers.",
+   "files": [
+    "lib/src/handlers/search_handler.dart",
+    "lib/src/widgets/preview/doujin_tab_view.dart"
+   ],
+   "settingsKeys": [],
+   "storedIn": "TabBackup dp/dt/dth",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Pool tabs and suggestion tabs",
+   "navPath": "Pool entries / Suggested strip -> open in new tab",
+   "what": "A poolId builds PoolPostsHandler; a suggest: query builds SuggestionHandler; both are rebuilt on restore.",
+   "files": [
+    "lib/src/handlers/search_handler.dart"
+   ],
+   "settingsKeys": [],
+   "storedIn": "TabBackup p/pn, t",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Search history routing",
+   "navPath": "automatic; editor History card; History page",
+   "what": "SearchHistoryStore records and reads booru history in SQLite and doujin history in doujinData.json, routed by the target booru. Legacy doujin rows are filtered out of booru reads.",
+   "files": [
+    "lib/src/handlers/search_history_store.dart"
+   ],
+   "settingsKeys": [
+    "searchHistoryEnabled"
+   ],
+   "storedIn": "store.db SearchHistory / doujinData.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Hidden-by-filters banner",
+   "navPath": "Feed bottom banner when everything loaded is hidden",
+   "what": "'Everything loaded (N) is hidden by your filters' plus a per-reason summary. At the end of the list the tap opens Settings -> Filters; otherwise it loads the next page.",
+   "files": [
+    "lib/src/data/hidden_by_filters.dart",
+    "lib/src/widgets/preview/waterfall_error_buttons.dart"
+   ],
+   "settingsKeys": [],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Feed status banner",
+   "navPath": "Feed bottom (above the search bar)",
+   "what": "Shows 'Loading page N' with elapsed seconds (tap to retry if stuck for more than 5 s), errors with an HTML message (tap retries), no results with the source's emptyNote, or end reached. It can be collapsed, has blur unless low-performance mode is on, and leaves a gesture-inset spacer when idle.",
+   "files": [
+    "lib/src/widgets/preview/waterfall_error_buttons.dart",
+    "lib/src/widgets/preview/waterfall_bottom_bar.dart"
+   ],
+   "settingsKeys": [
+    "shitDevice",
+    "scrollGridButtonsPosition"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Bottom floating search bar",
+   "navPath": "Settings -> User interface -> bottom search bar",
+   "what": "A blurred pill: the magnifier runs the search; removable type-coloured chips (✕ removes the tag and searches); tap opens the editor; history button; save search; accent arrow. Hides on scroll down.",
+   "files": [
+    "lib/src/widgets/preview/flow_search_bar.dart",
+    "lib/src/widgets/preview/waterfall_bottom_bar.dart"
+   ],
+   "settingsKeys": [
+    "showBottomSearchbar",
+    "autofocusSearchbar"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Top/drawer/desktop search bar",
+   "navPath": "Main drawer search bar; desktop home top bar",
+   "what": "MainSearchBarWithActions: chips (tap opens the editor, long-press edits that tag, ✕ deletes the tag without searching), clear (when the text equals the tab query), reset (when edited), save search with a label dialog, search (long-press opens a new tab), Hero to the editor, chips re-rendered every 3 s.",
+   "files": [
+    "lib/src/widgets/preview/main_search_bar.dart"
+   ],
+   "settingsKeys": [
+    "autofocusSearchbar",
+    "shitDevice"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Search chip rendering",
+   "navPath": "Search bars, editors, TagSearchBox",
+   "what": "MainSearchTagChip: colour by tag type; metatags pink with sort/user/date icons and ≤/≥ marks; dates prettified; exclude (—) and OR (~) markers; merge booru number with favicon or a red '?#' when invalid; delete button.",
+   "files": [
+    "lib/src/widgets/preview/main_search_tag_chip.dart"
+   ],
+   "settingsKeys": [],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Main query editor",
+   "navPath": "Tap the search bar / tab card / FlowSearchBar",
+   "what": "Typed suggestions: source catalog for key: input, metatag autocomplete, site suggestions, or DB plus history. Tap edits a chip, long-press opens tag actions. Search pops and runs; long-press opens a new tab. Pull to refresh suggestions. Layout can be reversed for a top input. Incognito keyboard. 'Prefix' toolbar item for exclude/OR/booru number.",
+   "files": [
+    "lib/src/widgets/preview/main_search_query_editor_page.dart"
+   ],
+   "settingsKeys": [
+    "useTopSearchbarInput",
+    "showSearchbarQuickActions",
+    "incognitoKeyboard",
+    "handSide",
+    "autofocusSearchbar"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Keyboard quick-actions bar",
+   "navPath": "Settings -> User interface -> searchbar quick actions (Android/iOS)",
+   "what": "Buttons above the keyboard: insert '_', paste, hide keyboard, submit/add (long-press: new tab or tag actions).",
+   "files": [
+    "lib/src/widgets/preview/main_search_query_editor_page.dart",
+    "lib/src/widgets/preview/query_editor_core.dart"
+   ],
+   "settingsKeys": [
+    "showSearchbarQuickActions"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Suggestion/tag action sheet",
+   "navPath": "Editor -> long-press suggestion or chip",
+   "what": "Type colour and name, Add, Exclude, an inline TagContentPreview strip, Copy, Pin/Unpin (doujin pins go to the doujin store).",
+   "files": [
+    "lib/src/widgets/preview/main_search_query_editor_page.dart",
+    "lib/src/widgets/preview/tag_search_query_editor_page.dart"
+   ],
+   "settingsKeys": [],
+   "storedIn": "PinnedTag / doujinData.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "History card in editor",
+   "navPath": "Editor (empty input) -> History card; Settings -> Modular UI -> Search window -> History",
+   "what": "Chips for recent searches with a favourite heart. Tap opens a sheet with Apply, Open, Open in new tab, Copy. The chevron opens the full History page.",
+   "files": [
+    "lib/src/widgets/preview/main_search_query_editor_page.dart"
+   ],
+   "settingsKeys": [
+    "modularUi:search.history",
+    "dbEnabled"
+   ],
+   "storedIn": "SearchHistory / doujinData.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Pinned tags card + manager",
+   "navPath": "Editor -> Pinned tags card; Settings -> Modular UI -> Search window -> Pinned tags",
+   "what": "Label filter, sort cycle (custom / A-Z / Z-A), hidden pins excluded, follow pins excluded. The manager dialog has search, sort, reorder (DB only), add manually (TagSearchBox with booru selector), edit labels, unpin, and tap to insert.",
+   "files": [
+    "lib/src/widgets/preview/main_search_query_editor_page.dart"
+   ],
+   "settingsKeys": [
+    "modularUi:search.pinned",
+    "dbEnabled"
+   ],
+   "storedIn": "store.db PinnedTag / doujinData.json pins",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Popular tags card",
+   "navPath": "Editor -> Popular card; Settings -> Modular UI -> Search window -> Popular tags",
+   "what": "getTagSuggestions('') chips with counts and a retry button. Hidden on Favourites/Downloads.",
+   "files": [
+    "lib/src/widgets/preview/main_search_query_editor_page.dart"
+   ],
+   "settingsKeys": [
+    "modularUi:search.popular"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Metatags card + sheet",
+   "navPath": "Editor -> Metatags card (first 15 + More / chevron)",
+   "what": "Inserts key:, a single or range date picker, or a compare mode (=, ≤, ≥). Free-metatags notice. Cheat-sheet link.",
+   "files": [
+    "lib/src/widgets/preview/main_search_query_editor_page.dart"
+   ],
+   "settingsKeys": [],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Tag builder card",
+   "navPath": "Editor -> Tag builder card",
+   "what": "One chip per catalog namespace with the stored count. The picker sheet filters the local list; tap inserts, long-press inserts negated. Pull, Pull more/retry, Clear and pull again, Stop with progress. With the database off the card shows a note.",
+   "files": [
+    "lib/src/widgets/preview/main_search_query_editor_page.dart",
+    "lib/src/widgets/preview/tag_type_strip.dart"
+   ],
+   "settingsKeys": [
+    "dbEnabled"
+   ],
+   "storedIn": "store.db BooruTag",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Doujin/site filters card",
+   "navPath": "Editor -> Filters card; Settings -> Modular UI -> Search window -> Site filters (booru sources)",
+   "what": "FilterChips that rewrite query terms; source defaults (SourceSettings.defaultFilters) show as checked.",
+   "files": [
+    "lib/src/widgets/preview/main_search_query_editor_page.dart"
+   ],
+   "settingsKeys": [
+    "modularUi:search.siteFilters",
+    "sourceSettings.defaultFilters"
+   ],
+   "storedIn": "query text",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Generic tag picker (TagSearchBox)",
+   "navPath": "Add new tab dialog; Snatcher page; Tags filters add; Booru page/edit; Pinned tags manual add",
+   "what": "An input that opens TagSearchQueryEditorPage in single or multiple mode, with an optional booru selector and returns the result.",
+   "files": [
+    "lib/src/widgets/preview/tag_search_query_editor_page.dart",
+    "lib/src/widgets/preview/query_editor_core.dart"
+   ],
+   "settingsKeys": [],
+   "storedIn": "caller",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Tab cards carousel",
+   "navPath": "Feed header under the app bar",
+   "what": "The active card (wide: favicon, name, count, query, edit, loading state; tap opens the editor), peek cards (tap switches, recorded as byUser), add card, dots, covers. Shows only the current section (doujin or others). Fixed extents.",
+   "files": [
+    "lib/src/widgets/preview/flow_tab_carousel.dart"
+   ],
+   "settingsKeys": [],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "App bar pills",
+   "navPath": "Feed app bar",
+   "what": "'N tabs' opens the Tab manager. 'Pg N' opens the page sheet. New tab: tap follows the setting, hold opens the Add-new-tab sheet.",
+   "files": [
+    "lib/src/widgets/preview/flow_tab_carousel.dart"
+   ],
+   "settingsKeys": [
+    "defaultTabAddMode"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Tab pill",
+   "navPath": "Settings -> User interface -> Tab pill (experimental)",
+   "what": "Floating 'n/total' with the cover. Tap opens the large carousel sheet; a horizontal fling moves to the previous/next tab in the section; hold without moving opens the tab manager; hold and drag moves the pill (position saved as fractions).",
+   "files": [
+    "lib/src/widgets/preview/tab_pill.dart",
+    "lib/src/widgets/preview/waterfall_view.dart"
+   ],
+   "settingsKeys": [
+    "tabPill"
+   ],
+   "storedIn": "settings.json tabPill; tab_pill.json (position)",
+   "inBackup": "partial"
+  },
+  {
+   "name": "Grid/staggered/list layouts",
+   "navPath": "Settings -> User interface -> preview display / fallback / columns; Source settings -> GRID (feed cards, list height, cover width, cover display, columns, tag strip)",
+   "what": "Square or 9:16 grid. Staggered when size data exists, with a fallback otherwise. Doujin adapt forces staggered. Doujin list cards. Per-source column overrides.",
+   "files": [
+    "lib/src/widgets/preview/grid_builder.dart",
+    "lib/src/widgets/preview/staggered_builder.dart",
+    "lib/src/widgets/preview/waterfall_view.dart"
+   ],
+   "settingsKeys": [
+    "previewDisplay",
+    "previewDisplayFallback",
+    "portraitColumns",
+    "landscapeColumns",
+    "sourceSettings.feedCardStyle",
+    "sourceSettings.listCardHeight",
+    "sourceSettings.listCoverWidth",
+    "sourceSettings.coverDisplay",
+    "sourceSettings.columnsPortrait",
+    "sourceSettings.columnsLandscape",
+    "sourceSettings.gridTagStrip"
+   ],
+   "storedIn": "settings.json / sourceSettings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Card gestures",
+   "navPath": "Feed card",
+   "what": "Tap opens the viewer (mobile; zoom transition, route named 'viewer') or a doujin's DetailPage. Double-tap favourites. Long-press multi-selects (doujin: item menu). Secondary tap copies the file URL. Desktop: tap sets the viewer item and the first item is selected after a search.",
+   "files": [
+    "lib/src/widgets/preview/waterfall_view.dart",
+    "lib/src/widgets/thumbnail/thumbnail_card_build.dart"
+   ],
+   "settingsKeys": [
+    "appMode",
+    "hideNotes"
+   ],
+   "storedIn": "memory",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Multi-select overlay",
+   "navPath": "Feed card long-press, then checkboxes",
+   "what": "Bottom-left checkbox or selection number. Selection is per tab.",
+   "files": [
+    "lib/src/widgets/thumbnail/thumbnail_build.dart",
+    "lib/src/widgets/preview/grid_builder.dart"
+   ],
+   "settingsKeys": [],
+   "storedIn": "memory",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Card badges and icons",
+   "navPath": "Feed card overlays",
+   "what": "Favourite/marked star, snatched or queued (pulsing), AI, comments, notes, sound, media icon (handler.mediaIconFor), burst count badge, doujin language badge, merge booru index + favicon, favourites/downloads source favicon + name (tap opens a webview), debug copy-item button, snatch progress ring.",
+   "files": [
+    "lib/src/widgets/thumbnail/thumbnail_build.dart",
+    "lib/src/widgets/thumbnail/thumbnail_card_build.dart"
+   ],
+   "settingsKeys": [
+    "isDebug",
+    "dbEnabled"
+   ],
+   "storedIn": "memory",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Doujin card footer + all-tags sheet",
+   "navPath": "Doujin feed card footer '+N'",
+   "what": "Up to 5 tags, starred ones in gold first. The sheet groups tags by namespace; tapping a tag opens a background tab.",
+   "files": [
+    "lib/src/widgets/thumbnail/thumbnail_card_build.dart"
+   ],
+   "settingsKeys": [
+    "sourceSettings.gridTagStrip"
+   ],
+   "storedIn": "doujinData.json starred",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Doujin list cards",
+   "navPath": "Source settings -> GRID -> Feed cards: List",
+   "what": "Cover column (fit/crop/adapt), title that scrolls sideways, uploader, 3 rows of tags that scroll sideways, kind/language/pages.",
+   "files": [
+    "lib/src/widgets/thumbnail/doujin_list_card.dart",
+    "lib/src/widgets/thumbnail/doujin_card_meta.dart"
+   ],
+   "settingsKeys": [
+    "sourceSettings.listCardHeight",
+    "sourceSettings.listCoverWidth",
+    "sourceSettings.coverDisplay"
+   ],
+   "storedIn": "sourceSettings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Thumbnail loading",
+   "navPath": "automatic",
+   "what": "Thumbnail or sample quality, with a low-quality placeholder under samples. 200 ms delay plus fade, skipped for seen URLs. Resize decode via ThumbnailDecodeBox. Blur and hidden-item eye (pixelate on low-performance). Up to 8 retries (4 on low-performance or debug). 403 probe through the captcha interceptor; refreshes when the media epoch bumps. Sprite tiles fall back to the cover. AVIF. Schale spare fallbacks. Records doujin cover aspects. Hero transitions. 'Tap to update or retry' reloads the item for favourites/downloads.",
+   "files": [
+    "lib/src/widgets/thumbnail/thumbnail.dart",
+    "lib/src/widgets/thumbnail/thumbnail_reveal.dart",
+    "lib/src/widgets/thumbnail/thumbnail_decode_box.dart"
+   ],
+   "settingsKeys": [
+    "previewMode",
+    "thumbnailCache",
+    "blurImages",
+    "disableImageScaling",
+    "gifsAsThumbnails",
+    "enableHeroTransitions",
+    "shitDevice",
+    "modularUi:grid.seenThumbnailsAtOnce"
+   ],
+   "storedIn": "cache folders thumbnails/samples",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Page tile loader",
+   "navPath": "Doujin detail pages grid / reader filmstrip",
+   "what": "Asks the source for each page's own thumbnail (e-hentai sprite blocks) and cancels when the tile leaves the screen.",
+   "files": [
+    "lib/src/widgets/thumbnail/page_thumbnail_loader.dart"
+   ],
+   "settingsKeys": [],
+   "storedIn": "memory (transientThumbnailURL)",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Pull to refresh",
+   "navPath": "Feed pull down",
+   "what": "Re-runs searchAction with the current tags.",
+   "files": [
+    "lib/src/widgets/preview/waterfall_view.dart"
+   ],
+   "settingsKeys": [],
+   "storedIn": "memory",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Scroll buttons",
+   "navPath": "Settings -> User interface -> scroll grid buttons position (left/right/disabled)",
+   "what": "Page up/down with long-press repeat; hides or shows the bars. Hidden on desktop and while loading with no items.",
+   "files": [
+    "lib/src/widgets/preview/waterfall_view.dart"
+   ],
+   "settingsKeys": [
+    "scrollGridButtonsPosition"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Volume-key scrolling",
+   "navPath": "Settings -> Viewer -> volume buttons scroll + speed",
+   "what": "Native volume key events scroll the feed while it is the active page.",
+   "files": [
+    "lib/src/widgets/preview/waterfall_view.dart",
+    "lib/src/handlers/search_handler.dart"
+   ],
+   "settingsKeys": [
+    "useVolumeButtonsForScroll",
+    "volumeButtonsScrollSpeed"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Feed scrollbar",
+   "navPath": "Settings -> Modular UI -> Preview grid -> Feed scrollbar",
+   "what": "Draggable scrollbar on the side chosen by hand side.",
+   "files": [
+    "lib/src/widgets/preview/waterfall_view.dart"
+   ],
+   "settingsKeys": [
+    "modularUi:grid.feedScrollbar",
+    "handSide"
+   ],
+   "storedIn": "settings.json modularUi",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Loading shimmer",
+   "navPath": "automatic (feed first page, thumbnails)",
+   "what": "Shimmer grid while loading (a spinner on low-performance) and a shimmer card per loading thumbnail.",
+   "files": [
+    "lib/src/widgets/preview/shimmer_builder.dart"
+   ],
+   "settingsKeys": [
+    "shitDevice",
+    "itemLimit"
+   ],
+   "storedIn": "memory",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Viewer return behaviour",
+   "navPath": "automatic after closing the viewer",
+   "what": "Scrolls the grid to the viewed item, clears the viewed item for 5 s, resets notes, resets quality toggles and refilters after 500 ms, shows the header/bottom bar, and keeps position across an orientation change.",
+   "files": [
+    "lib/src/widgets/preview/waterfall_view.dart"
+   ],
+   "settingsKeys": [
+    "hideNotes"
+   ],
+   "storedIn": "memory",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Media filter chips",
+   "navPath": "Favourites / Downloads / Collections / History feeds",
+   "what": "All / Images / Video / Sound filter for the handler's fetched list.",
+   "files": [
+    "lib/src/widgets/preview/media_filter_chips.dart"
+   ],
+   "settingsKeys": [],
+   "storedIn": "memory (handler.mediaFilter)",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Discovery strip",
+   "navPath": "Feed header on xxxfollow/redgifs-style sources",
+   "what": "CREATORS avatars and SIMILAR TAGS pills; a tap runs that search in the current tab.",
+   "files": [
+    "lib/src/widgets/preview/discovery_strip.dart"
+   ],
+   "settingsKeys": [],
+   "storedIn": "memory",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Kemono creator card",
+   "navPath": "Kemono/Pawchive creator tab header",
+   "what": "Banner, avatar, name, service, post count, favourites, updated date. Favourite (signed in), Announcements page, DMs (sites that have them), Tags picker (adds a term and searches).",
+   "files": [
+    "lib/src/widgets/preview/kemono_creator_header.dart"
+   ],
+   "settingsKeys": [],
+   "storedIn": "KemonoCreator table / site",
+   "inBackup": "yes"
+  },
+  {
+   "name": "FurAffinity artist card",
+   "navPath": "FurAffinity user:/gallery:/scraps:/favorites:/folder tab header",
+   "what": "Avatar and counts. Watch/Unwatch when logged in. Gallery / Scraps / Favorites chips. Folders list. Strips toggle shows 3 preview rows for the session.",
+   "files": [
+    "lib/src/widgets/preview/furaffinity_artist_header.dart"
+   ],
+   "settingsKeys": [],
+   "storedIn": "memory (strips static)",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Doujin detail tab view",
+   "navPath": "A doujin detail tab",
+   "what": "The tab is the detail page itself. Error screen: close tab, open in browser, tabs drawer, Retry (same tab search), copy link. Edge handle for the mini tab manager. First fetch on mount.",
+   "files": [
+    "lib/src/widgets/preview/doujin_tab_view.dart"
+   ],
+   "settingsKeys": [],
+   "storedIn": "TabBackup",
+   "inBackup": "yes"
+  },
+  {
+   "name": "No-booru / restoring placeholders",
+   "navPath": "Home with no boorus / during restore",
+   "what": "Buttons: add booru, help wiki, settings. 'Restoring previous session' spinner. WebView boorus get an embedded browser tab.",
+   "files": [
+    "lib/src/widgets/preview/media_previews.dart"
+   ],
+   "settingsKeys": [],
+   "storedIn": "memory",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Floating tag preview windows",
+   "navPath": "Viewer tag chip preview icon / tag menu Preview / strip header button; doujin item menu -> preview",
+   "what": "Window owned by its page route (hidden while another page is on top, dropped when its page pops; Back closes the window first). Drag the title bar, resize the corner (rect persisted), minimize to a pill (drag, tap restores, long-press closes), close, extra-tags box, booru picker (same domain only, filter when there are more than 6), videos/GIFs filter cycle, open in new tab, open in group (window ducks), tag hub, alias auto-match banner, count, infinite grid, viewer with endless paging, double-tap favourite, retry. Doujin windows host the detail page in a nested navigator. Opening feeds the booru Interests profile (not doujin).",
+   "files": [
+    "lib/src/handlers/floating_preview_handler.dart",
+    "lib/src/widgets/preview/floating_tag_preview_window.dart"
+   ],
+   "settingsKeys": [
+    "previewWindowRect",
+    "defaultTabAddMode"
+   ],
+   "storedIn": "settings.json previewWindowRect",
+   "inBackup": "yes"
+  }
+ ],
+ "fileHomes": [
+  {
+   "path": "lib/src/data/hidden_by_filters.dart",
+   "newHome": "lib/models/hidden_by_filters.dart",
+   "role": "HiddenReason enum + banner wording",
+   "layer": "models"
+  },
+  {
+   "path": "lib/src/handlers/floating_preview_handler.dart",
+   "newHome": "lib/features/tags/logic/floating_preview_controller.dart",
+   "role": "Floating preview window registry, route ownership, Back pop entries, overlay host",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/handlers/search_handler.dart",
+   "newHome": "lib/features/tabs/logic/search_handler.dart (split: models/tab_backup.dart, features/tabs/logic/{search_tab,tab_persistence,tab_visit_history,tab_groups}.dart, features/feed/logic/{feed_paging,saved_searches,seen_posts}.dart)",
+   "role": "Tabs model, paging, groups, saved searches, seen posts, backup/restore",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/handlers/search_history_store.dart",
+   "newHome": "lib/features/history/logic/search_history_store.dart",
+   "role": "Booru/doujin search-history router",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/widgets/preview/discovery_strip.dart",
+   "newHome": "lib/features/feed/ui/headers/discovery_strip.dart",
+   "role": "Creators + similar tags header",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/preview/doujin_tab_view.dart",
+   "newHome": "lib/features/doujin/ui/doujin_tab_view.dart",
+   "role": "Doujin detail tab content + error screen",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/preview/feed_scroll.dart",
+   "newHome": "lib/features/feed/ui/feed_scroll.dart",
+   "role": "Scroll-notification filter (depth 0, vertical)",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/preview/floating_tag_preview_window.dart",
+   "newHome": "lib/features/tags/ui/floating_preview/floating_tag_preview_window.dart",
+   "role": "Overlay stack + draggable/resizable preview window",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/preview/flow_search_bar.dart",
+   "newHome": "lib/features/feed/ui/search/flow_search_bar.dart",
+   "role": "Bottom blurred search pill",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/preview/flow_tab_carousel.dart",
+   "newHome": "lib/features/tabs/ui/flow_tab_carousel.dart (+ tabs/ui/app_bar_pills.dart for TabsCountPill/NewTabButton/PageIndicatorPill)",
+   "role": "Tab cards carousel + app bar pills",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/preview/furaffinity_artist_header.dart",
+   "newHome": "lib/features/feed/ui/headers/furaffinity_artist_header.dart",
+   "role": "FA artist card above the feed",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/preview/grid_builder.dart",
+   "newHome": "lib/features/feed/ui/grid/grid_builder.dart",
+   "role": "Fixed grid / doujin list sliver",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/preview/kemono_creator_header.dart",
+   "newHome": "lib/features/feed/ui/headers/kemono_creator_header.dart",
+   "role": "Kemono creator card above the feed",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/preview/main_search_bar.dart",
+   "newHome": "lib/features/feed/ui/search/main_search_bar.dart",
+   "role": "Chip search bar (drawer/desktop/editor)",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/preview/main_search_query_editor_page.dart",
+   "newHome": "lib/features/feed/ui/query_editor/ (page + blocks) and lib/features/tags/ui/pins/ (pin dialogs/manager) + lib/features/tags/logic/pinned_tag_actions.dart",
+   "role": "Main query editor page and all its cards/dialogs",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/preview/main_search_tag_chip.dart",
+   "newHome": "lib/features/feed/ui/search/main_search_tag_chip.dart",
+   "role": "Query term chip rendering",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/preview/media_filter_chips.dart",
+   "newHome": "lib/features/feed/ui/media_filter_chips.dart",
+   "role": "All/Images/Video/Sound chips for local feeds",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/preview/media_previews.dart",
+   "newHome": "lib/features/feed/ui/media_previews.dart",
+   "role": "Home body: placeholders / WebView tab / WaterfallView",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/preview/query_editor_core.dart",
+   "newHome": "lib/features/feed/logic/query_editor_controller.dart + lib/features/feed/ui/query_editor/query_editor_keyboard_actions.dart",
+   "role": "Suggestion search controller + keyboard actions bar",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/widgets/preview/shimmer_builder.dart",
+   "newHome": "lib/core/ui/shimmer.dart (ThumbnailsShimmerList -> lib/features/feed/ui/grid/thumbnails_shimmer_list.dart)",
+   "role": "Shimmer effect widgets",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/preview/staggered_builder.dart",
+   "newHome": "lib/features/feed/ui/grid/staggered_builder.dart",
+   "role": "Waterfall-flow sliver with aspect sizing / adapt",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/preview/tab_pill.dart",
+   "newHome": "lib/features/tabs/ui/tab_pill.dart (+ position store in features/tabs/logic/tab_pill_position.dart)",
+   "role": "Floating tab pill + movable host",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/preview/tag_search_query_editor_page.dart",
+   "newHome": "lib/features/tags/ui/tag_search_query_editor_page.dart + lib/features/tags/ui/tag_search_box.dart",
+   "role": "Generic tag picker page + input box",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/preview/tag_type_strip.dart",
+   "newHome": "lib/features/tags/ui/tag_catalog_picker.dart",
+   "role": "Tag builder chip + catalog picker sheet",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/preview/waterfall_bottom_bar.dart",
+   "newHome": "lib/features/feed/ui/waterfall_bottom_bar.dart",
+   "role": "Hide-on-scroll bottom area (banner + search pill)",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/preview/waterfall_error_buttons.dart",
+   "newHome": "lib/features/feed/ui/feed_status_banner.dart",
+   "role": "Loading/error/end/hidden banner",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/preview/waterfall_view.dart",
+   "newHome": "lib/features/feed/ui/waterfall_view.dart (+ feed/ui/scroll_buttons.dart)",
+   "role": "The feed CustomScrollView and card actions",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/thumbnail/doujin_card_meta.dart",
+   "newHome": "lib/features/doujin/logic/doujin_card_meta.dart",
+   "role": "Title/language/category/pages/tags for doujin cards",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/widgets/thumbnail/doujin_list_card.dart",
+   "newHome": "lib/features/doujin/ui/doujin_list_card.dart",
+   "role": "Doujin list row card",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/thumbnail/page_thumbnail_loader.dart",
+   "newHome": "lib/features/doujin/ui/page_thumbnail_loader.dart",
+   "role": "Asks source for page tile thumbnails",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/thumbnail/thumbnail.dart",
+   "newHome": "lib/features/feed/ui/thumbnail/thumbnail.dart (+ tryToLoadAndUpdateItem -> lib/features/viewer/logic/item_refresher.dart)",
+   "role": "Stateful thumbnail image loader",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/thumbnail/thumbnail_build.dart",
+   "newHome": "lib/features/feed/ui/thumbnail/thumbnail_build.dart",
+   "role": "Thumbnail + overlay badges/icons/selection",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/thumbnail/thumbnail_card_build.dart",
+   "newHome": "lib/features/feed/ui/thumbnail/thumbnail_card.dart",
+   "role": "Grid card: gestures, highlight, doujin footer, badges, seen dim",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/thumbnail/thumbnail_decode_box.dart",
+   "newHome": "lib/features/feed/logic/thumbnail_decode_box.dart",
+   "role": "Decode-size rules",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/widgets/thumbnail/thumbnail_reveal.dart",
+   "newHome": "lib/features/feed/logic/thumbnail_reveal.dart",
+   "role": "Session seen-URL cache for no-delay/no-fade",
+   "layer": "feature-logic"
+  }
+ ],
+ "layerViolations": [
+  {
+   "file": "lib/src/handlers/search_handler.dart",
+   "line": 36,
+   "imports": "package:flutter/material.dart, widgets/common/flash_elements.dart, navigation_handler navContext, material_symbols",
+   "reason": "Logic builds snackbars with Text/Column/Colors (removed last tab, tabs restored/merged/replaced, search reactions, ratings notice, site favourite refused) and the enums carry locName/color(BuildContext)",
+   "fix": "Emit SearchNotice events (stream/ValueNotifier) that a feed-ui listener turns into snackbars; move HasTabWithTagResult.locName/color and TabAddMode.locName to UI extensions"
+  },
+  {
+   "file": "lib/src/handlers/search_handler.dart",
+   "line": 402,
+   "imports": "AutoScrollController, TextEditingController, FocusNode, GlobalKey (mainDrawerKey), EventChannel volume",
+   "reason": "UI controllers and a platform channel live in the logic singleton",
+   "fix": "Move gridScrollController/searchTextController/mainDrawerKey into a FeedUiController in features/feed/ui; volume EventChannel into core/platform/volume_keys.dart"
+  },
+  {
+   "file": "lib/src/data/saved_search.dart",
+   "line": 4,
+   "imports": "handlers/search_handler.dart (TabBackup)",
+   "reason": "A model imports a handler",
+   "fix": "Move TabBackup (and TabVisit) to lib/models/tab_backup.dart; saved_search imports the model"
+  },
+  {
+   "file": "lib/src/handlers/floating_preview_handler.dart",
+   "line": 15,
+   "imports": "widgets/preview/floating_tag_preview_window.dart",
+   "reason": "Logic inserts an OverlayEntry building FloatingPreviewOverlayStack (UI)",
+   "fix": "Mount the overlay from the UI: an app-level FloatingPreviewOverlayHost that listens to the controller, or register an overlay builder at startup"
+  },
+  {
+   "file": "lib/src/handlers/navigation_handler.dart",
+   "line": 5,
+   "imports": "widgets/preview/waterfall_bottom_bar.dart (GlobalKey<WaterfallBottomBarState>)",
+   "reason": "Logic depends on a feed widget State type",
+   "fix": "Replace the keys with a BarsVisibility ValueNotifier (show/hide) that the header and bottom bar listen to"
+  },
+  {
+   "file": "lib/src/handlers/snatch_handler.dart",
+   "line": 23,
+   "imports": "widgets/thumbnail/thumbnail_build.dart",
+   "reason": "Download logic builds ThumbnailBuild inside snackbars",
+   "fix": "Emit download notices; the UI renders the thumbnail"
+  },
+  {
+   "file": "lib/src/pages/pinned_tags_page.dart",
+   "line": 21,
+   "imports": "widgets/preview/main_search_query_editor_page.dart show doujinPinsAsPinnedTags",
+   "reason": "A pure data mapping lives in a 4.5k-line UI file",
+   "fix": "Move doujinPinsAsPinnedTags and the pin/unpin/label DB writes to features/tags/logic/pinned_tag_actions.dart"
+  },
+  {
+   "file": "lib/src/widgets/preview/main_search_query_editor_page.dart",
+   "line": 3407,
+   "imports": "dbHandler.addPinnedTag/removePinnedTag/updatePinnedTagLabels/updatePinnedTagsOrder, DoujinDataHandler.addPin/removePin",
+   "reason": "Persistence calls directly in dialogs (showPinTagDialog, showUnpinTagDialog, manager, reorder)",
+   "fix": "PinnedTagsStore/actions in feature logic; dialogs return results only"
+  },
+  {
+   "file": "lib/src/widgets/thumbnail/thumbnail.dart",
+   "line": 819,
+   "imports": "BooruHandlerFactory, dbHandler.updateBooruItem (tryToLoadAndUpdateItem)",
+   "reason": "Item reload + DB write logic in a widget file, also used by image_viewer and video_viewer",
+   "fix": "Move to features/viewer/logic/item_refresher.dart with the booru-by-host resolver in sources/framework"
+  },
+  {
+   "file": "lib/src/widgets/thumbnail/thumbnail_build.dart",
+   "line": 72,
+   "imports": "SettingsHandler.booruList scan + Sankaku/Idol handler known URLs",
+   "reason": "Source resolution logic duplicated in UI",
+   "fix": "sources/framework/booru_resolver.dart: BooruResolver.forItem(item)"
+  },
+  {
+   "file": "lib/src/widgets/preview/query_editor_core.dart",
+   "line": 28,
+   "imports": "flutter material (RichTextController styles, Icon in TagSuggestion), widgets file location",
+   "reason": "QueryEditorController (logic) sits in widgets and creates TagSuggestion with Icon widgets; TagSuggestion (model) holds an Icon",
+   "fix": "Logic in features/feed/logic; TagSuggestion gets a source enum (database/history) and the UI maps it to icons"
+  },
+  {
+   "file": "lib/src/widgets/preview/tab_pill.dart",
+   "line": 168,
+   "imports": "dart:io File in a widget (tab_pill.json)",
+   "reason": "Persistence from UI with sync IO",
+   "fix": "features/tabs/logic/tab_pill_position.dart (async, included in backup)"
+  },
+  {
+   "file": "lib/src/widgets/preview/waterfall_view.dart",
+   "line": 39,
+   "imports": "widgets/root/main_appbar.dart, pages/gallery_view_page.dart, pages/doujin_detail_page.dart, gallery/doujin_item_menu.dart",
+   "reason": "Feed UI imports the app/root layer (MainAppBar) and viewer/doujin pages directly",
+   "fix": "Move MainAppBar into features/feed/ui; open viewer/detail through a navigation facade (features/viewer/ui/open_viewer.dart)"
+  },
+  {
+   "file": "lib/src/widgets/preview/shimmer_builder.dart",
+   "line": 3,
+   "imports": "handlers/settings_handler.dart",
+   "reason": "Generic shimmer file reads feed settings (ThumbnailsShimmerList)",
+   "fix": "Keep Shimmer/ShimmerLoading/ShimmerCard in core/ui; move ThumbnailsShimmerList to feed/ui"
+  },
+  {
+   "file": "lib/src/widgets/preview/furaffinity_artist_header.dart",
+   "line": 14,
+   "imports": "widgets/drawers/furaffinity_sidebar.dart, widgets/gallery/tag_view.dart",
+   "reason": "Feed header depends on drawer and viewer widgets (FurAffinityFolderList, TagContentPreview)",
+   "fix": "Move FurAffinityFolderList and TagContentPreview into shared feature-ui modules (tags/ui/tag_content_preview.dart)"
+  }
+ ],
+ "splits": [
+  {
+   "file": "lib/src/handlers/search_handler.dart",
+   "lines": 2443,
+   "proposal": "lib/models/tab_backup.dart: TabBackup (JSON keys t,b,i,g,p,pn,dp,dt,dth,sb,to,in,s), decodeBackupString + tabDivider/listDivider, TabVisit, enums HasTabWithTagResult/TabAddMode/SearchReaction without the BuildContext methods.\nfeatures/tabs/logic/search_tab.dart: SearchTab (handler construction, doujin id helpers, seedPersistedDoujinItem, rebuildHandler, syncTagOverridesToHandler); toggleItemFavourite/updateFavForMultipleItems go to features/feed/logic/favourite_actions.dart.\nfeatures/tabs/logic/search_handler.dart: the facade SearchHandler (tabs RxList, index, tabId, add/remove/move, changeTabIndex, groups, add modes, hasTabWithTag).\nfeatures/tabs/logic/tab_persistence.dart: restoreTabs*, merge/replace (legacy + new), generateBackupJson, parseTabFromBackup, handleFavDlsNameChange, backupTabs.\nfeatures/tabs/logic/tab_visit_history.dart.\nfeatures/feed/logic/feed_paging.dart: runSearch, retrySearch, ownListLoadsMore, searchCurrentTabUntilPageNumber, pageNum/isLoading/isLastPage/errorString.\nfeatures/history/logic/seen_posts.dart: seenPostKeys, markPostSeen, clearSeenPosts.\nfeatures/feed/logic/saved_searches.dart.\nfeatures/feed/ui/search_notices.dart: the snackbars.\nfeatures/feed/ui/feed_ui_controller.dart: searchTextController, gridScrollController, mainDrawerKey, rootRestate.",
+   "risk": "About 100 files and many tests call SearchHandler.instance.<member>, so the facade must keep every public member (delegate or re-export) and the GetIt register/unregister. Obx widgets subscribe to tabs/index/tabId/pageNum/isLoading Rx fields, which must stay the same instances. changeTabIndex writes searchTextController and paging Rx state together. TabBackup JSON must stay byte-compatible: SavedSearch and doujin_migration reuse the schema."
+  },
+  {
+   "file": "lib/src/widgets/preview/main_search_query_editor_page.dart",
+   "lines": 4565,
+   "proposal": "feed/ui/query_editor/main_search_query_editor_page.dart: the page, using QueryEditorController instead of its copy of runSearch.\nfeed/ui/query_editor/tag_suggestion_text.dart.\nfeed/ui/query_editor/metatags.dart: AddMetatagBottomSheet, Result, MetatagsBlock, single/range date pickers.\nfeed/ui/query_editor/suggestions_main_content.dart: SuggestionsMainContent, SearchSectionCard, EditorSourceMixin made public.\nfeed/ui/query_editor/history_block.dart.\nfeed/ui/query_editor/popular_tags_block.dart.\nfeed/ui/query_editor/tag_builder_block.dart.\nfeed/ui/query_editor/prefix_edit_sheet.dart.\nfeed/ui/query_editor/doujin_filters_block.dart.\ntags/ui/pins/: pinned_tags_block, pin_tag_dialog, pinned_tags_manager_dialog, pinned_tags_reorder_dialog, edit_labels_dialog, manual_pin_tag_dialog, plus a shared LabelEditor.\ntags/logic/pinned_tag_actions.dart: showPin/unpin persistence, doujinPinsAsPinnedTags.\nKeep a barrel export at the old path for the tests.",
+   "risk": "Private coupling: GlobalKey<_PinnedTagsBlockState> in SuggestionsMainContent (calls init()), the private _EditorSourceMixin shared by 3 States, and _PrefixEditDialog used by the page. Tests import this path and use keys 'doujin-filter-<key>-<value|(default)>', TagBuilderBlock, DoujinFiltersBlock (doujin_filters_test, filter_chip_keys_test, tag_builder_block_test, furaffinity_test, shimmie_r34us_filters_test). tag_view, kemono_sidebar, booru_source_settings_view, tab_per_booru_tag_overrides and pinned_tags_page import symbols from it."
+  },
+  {
+   "file": "lib/src/widgets/preview/floating_tag_preview_window.dart",
+   "lines": 1069,
+   "proposal": "tags/ui/floating_preview/overlay_stack.dart: FloatingPreviewOverlayStack.\ntags/ui/floating_preview/window_shell.dart: rect fractions, drag/resize, persist, minimized pill.\ntags/logic/tag_preview_session.dart: SearchTab creation, loadPreview, alias resolution, the bounded auto-fill, the animated-filter cycle (a ChangeNotifier).\ntags/ui/floating_preview/booru_picker_panel.dart.\ntags/ui/floating_preview/preview_grid.dart: grid + footer + error.\ntags/ui/floating_preview/doujin_detail_host.dart: nested navigator.",
+   "risk": "All of this State shares setState-driven fields (tab, loading, isLastPage, errorString, extraTags, _resolvedBaseTag, _aliasTried). The viewer's onPageChanged calls loadPreview and scrollToIndex on the window's controller. Offstage + TickerMode wrapping must keep state alive. floating_preview_owner_test drives the handler."
+  },
+  {
+   "file": "lib/src/widgets/preview/tag_search_query_editor_page.dart",
+   "lines": 969,
+   "proposal": "tags/ui/tag_search_query_editor_page.dart: the page.\ntags/ui/tag_search_box.dart: TagSearchBox.\nShare a SuggestionRow widget and a TagActionsSheet with the main editor.",
+   "risk": "Low. The onTagsSelected callback and Navigator.pop both return the result; TagSearchBox handles both (the second is skipped when equal)."
+  },
+  {
+   "file": "lib/src/widgets/thumbnail/thumbnail.dart",
+   "lines": 869,
+   "proposal": "feed/ui/thumbnail/thumbnail.dart: widget/build.\nfeed/logic/thumbnail_source.dart: provider choice (thumb/sample/avif/sprite, headers, fallbacks, ResizeImage), retry policy, 403 probe.\nviewer/logic/item_refresher.dart: tryToLoadAndUpdateItem + BooruResolver.",
+   "risk": "Many ValueNotifiers are shared between the loader and the build. The postFrame-in-LayoutBuilder ordering (calcThumbWidth before selectThumbProvider) must be kept. Debounce tags are global. CustomNetworkImage equality compares headers by identity. image_viewer and video_viewer import tryToLoadAndUpdateItem."
+  },
+  {
+   "file": "lib/src/widgets/preview/waterfall_view.dart",
+   "lines": 812,
+   "proposal": "feed/ui/waterfall_view.dart: scroll view + slivers.\nfeed/ui/scroll_buttons.dart: WaterfallScrollButtons.\nfeed/ui/feed_card_actions.dart: onTap/onDoubleTap/onLongPress/onSecondaryTap and the viewer route builder shared with the floating window.\nfeed/ui/volume_scroll.dart.",
+   "risk": "_WaterfallViewState mixes RouteAware isActive (blocks double viewer opens, volume scroll and jumpTo), TraceLifecycle, and listeners on searchHandler.index/tabId/isLoading that replace the global gridScrollController. The Obx that rebuilds the whole CustomScrollView carries the CustomScrollView-<tabId> key."
+  }
+ ],
+ "bugs": [
+  {
+   "file": "lib/src/handlers/search_handler.dart",
+   "line": 1580,
+   "title": "mergeTabsNew keeps only duplicates (condition inverted)",
+   "scenario": "LoliSync tabs in merge mode (or any mergeTabs call with JSON) carrying tabs the device does not have: none of them are added. Tabs identical to existing ones (no secondaries) are added again as duplicates. Tabs with secondary boorus are never added, because List == List compares identity.",
+   "evidence": "if (newTab.selectedBooru.value.name != null && tabs.any((tab) => same name && tab.secondaryBoorus...toList() == newTab...toList() && tab.tags == newTab.tags)) { restoredTabs.add(newTab); } The comment says 'add only if there are not already the same tab'; the legacy version uses indexWhere(...) == -1.",
+   "confidence": "confirmed",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/handlers/search_handler.dart",
+   "line": 431,
+   "title": "removeTagFromSearch removes substrings from other tags",
+   "scenario": "FlowSearchBar chip ✕ on 'blue' with the query 'blue blue_eyes' leaves ' _eyes'; removing 'cat' from 'cat category' leaves ' egory'. The broken query is then searched at once.",
+   "evidence": "searchTextController.text = text.replaceAll(regex...).replaceAll('-$tag','').replaceAll('~$tag','').replaceAll(tag, ''); this is a plain substring replace with no token boundaries. Called from flow_search_bar.dart:94 _removeTag, followed by searchAction.",
+   "confidence": "confirmed",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/main.dart",
+   "line": 536,
+   "title": "Tab changes from the last 30 s are lost when the app is killed",
+   "scenario": "Open or close tabs, then swipe the app away or let Android reap it within 30 s: on the next start the old tab set comes back.",
+   "evidence": "backupTabs runs only from Timer.periodic(30 s) in _HomeState.initState. didChangeAppLifecycleState (paused/hidden/detached) flushes the recommender and doujin data but never calls searchHandler.backupTabs().",
+   "confidence": "confirmed",
+   "severity": "data-loss"
+  },
+  {
+   "file": "lib/src/widgets/preview/shimmer_builder.dart",
+   "line": 21,
+   "title": "ShimmerWrap ignores `enabled`, so the shimmer ticker runs forever in low-performance mode",
+   "scenario": "Low performance mode (shitDevice) on: the feed passes enabled:false. Shimmer still starts repeat() in initState, and no ShimmerLoading child ever mounts (the spinner and the shimmer-less thumbnails are used instead), so stop() is never reached. The AnimationController ticks every frame for as long as the feed lives, on the devices meant to save work. Behind the non-opaque viewer (isActive false) the shimmer keeps animating too.",
+   "evidence": "ShimmerWrap.build returns Shimmer(enabled: true, ...) whatever this.enabled is. ShimmerState.initState: if (widget.enabled) _shimmerController.repeat(...). stop() is called only from deactivateChild/didUpdateWidget.",
+   "confidence": "confirmed",
+   "severity": "perf"
+  },
+  {
+   "file": "lib/src/widgets/preview/main_search_query_editor_page.dart",
+   "line": 801,
+   "title": "Editor dispose leaves the debounce and request alive, so setState runs after dispose",
+   "scenario": "Type a letter and press back within 400 ms (or while DB/catalog/metatag suggestions load): the Timer fires and calls setState() at line 216. The metatag/DB/error branches (lines 243, 265, 319) call setState after awaits with no mounted check. Release builds hit a null _element (an uncaught error in the log); debug builds assert.",
+   "evidence": "dispose() removes listeners and disposes the controller/focus node but never calls debounce?.cancel() or cancelToken?.cancel(). The runSearch Timer callback starts with loading=true; setState(() {}). Only the data branch checks mounted.",
+   "confidence": "confirmed",
+   "severity": "crash"
+  },
+  {
+   "file": "lib/src/widgets/thumbnail/thumbnail.dart",
+   "line": 332,
+   "title": "Thumbnail attaches image-stream listeners after it was disposed",
+   "scenario": "Fast scroll: the 200 ms timer has fired and startDownloading is awaiting Tools.getFileCustomHeaders when the cell is disposed. It then resolves the provider and adds listeners that disposables() already passed over. The download and the decode go on and the listener keeps the State and ImageStream alive.",
+   "evidence": "startDownloading: mainProvider.value = await getImageProvider(...); then mainImageStream = ...resolve(); addListener. There is no mounted check after either await (line 381 for extra too). dispose() calls disposables() before that.",
+   "confidence": "plausible",
+   "severity": "leak"
+  },
+  {
+   "file": "lib/src/widgets/thumbnail/thumbnail.dart",
+   "line": 840,
+   "title": "tryToLoadAndUpdateItem cannot be cancelled by its caller",
+   "scenario": "Tap 'retry' on a favourite thumbnail, then scroll away: loadItem keeps running (requests, captcha check), because the State's loadItemCancelToken stays null.",
+   "evidence": "tryToLoadAndUpdateItem(item, CancelToken? cancelToken) { ... cancelToken?.cancel(); cancelToken = CancelToken(); ... } reassigns the parameter only. _ThumbnailState passes loadItemCancelToken (always null), and disposables() cancels nothing.",
+   "confidence": "confirmed",
+   "severity": "leak"
+  },
+  {
+   "file": "lib/src/widgets/thumbnail/thumbnail_card_build.dart",
+   "line": 232,
+   "title": "RangeError in card builders right after the last file of a snatch batch",
+   "scenario": "After the last item of a batch: queueProgress becomes booruItems.length (snatch_handler.dart:321) while current stays non-null until the stream's onDone. A frame in between evaluates current.booruItems[queueProgress] and throws in every visible card's ListenableBuilder, and in _ThumbnailBottomRightIcons' Obx (thumbnail_build.dart:419).",
+   "evidence": "final bool isCurrentlyBeingSnatched = current?.booruItems[queueProgress] == item && total != 0; the index is read before the total check, with no bounds check.",
+   "confidence": "plausible",
+   "severity": "crash"
+  },
+  {
+   "file": "lib/src/widgets/preview/main_search_query_editor_page.dart",
+   "line": 2046,
+   "title": "History entry for a deleted booru opens a tab on an unknown booru",
+   "scenario": "Editor History card -> entry whose booru was removed -> Open or Open in new tab: searchAction/addTabByString gets Booru.unknown (type null). The intended 'unknown booru type' snackbar never shows.",
+   "evidence": "final booru = booruList.firstWhere(..., orElse: Booru.unknown) is never null. showHistoryEntryActions checks `if (booru != null)` before searchAction / addTabByString.",
+   "confidence": "confirmed",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/handlers/search_handler.dart",
+   "line": 514,
+   "title": "Jump to page and merge toggle drop the tab's group, pool and doujin state",
+   "scenario": "A tab in group 'A' -> Pg pill -> jump to page 5: the tab leaves its group, loses its per-booru overrides, and a pool tab turns into a plain text search. Toggling merge boorus (mergeAction, line 1109) also drops the group, pool and doujin fields.",
+   "evidence": "changeCurrentTabPageNumber: SearchTab(currentBooru, currentSecondaryBoorus.value, currentTab.tags, tabId: currentTab.id) with no groupName/tagOverrides/inheritMainTags/poolId/doujin*. searchAction, in contrast, copies groupName and overrides.",
+   "confidence": "confirmed",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/handlers/search_handler.dart",
+   "line": 1624,
+   "title": "replaceTabs can leave zero tabs",
+   "scenario": "Debug page 'replace tabs' or LoliSync replace with tabs whose boorus are not on this device: restoredTabs is empty, tabs.value = [], and changeTabIndex returns early. Every currentTab read (WaterfallView, MainSearchBar, WaterfallErrorButtons, MediaPreviews -> WaterfallView) throws a RangeError. replaceTabsLegacy also reads booruAndTags[2] without a length check (line 1455).",
+   "evidence": "replaceTabsNew: tabs.value = restoredTabs; changeTabIndex(newSelectedIndex) with no empty fallback. MediaPreviews returns WaterfallView even when tabs.isEmpty (media_previews.dart:134), and its initState reads currentTab.scrollPosition.",
+   "confidence": "plausible",
+   "severity": "crash"
+  },
+  {
+   "file": "lib/src/handlers/search_handler.dart",
+   "line": 323,
+   "title": "removeTabs mutates tabs.value without refreshing the RxList",
+   "scenario": "Tab manager -> delete several tabs that sit after the current one: the index does not change, so TabsCountPill ('N tabs'), FlowTabCarousel and TabPill (Obx on tabs) still show the deleted tabs until something else triggers a rebuild.",
+   "evidence": "for (tab in tabsToRemove) tabs.value.remove(tab); and tabs.value[0] = newTab mutate the inner list (no refresh()). changeTabIndex only sets index/tabId when they differ.",
+   "confidence": "plausible",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/widgets/preview/tag_type_strip.dart",
+   "line": 200,
+   "title": "Catalog picker filter can show the previous query's rows",
+   "scenario": "Type in the picker filter while a page read is in flight: _reset clears the rows and calls _loadMore, which returns because _loading is true. The old read then appends the OLD query's rows and the new query is never loaded.",
+   "evidence": "_reset(){_offset=0;_rows.clear();await count; await _loadMore();} and _loadMore(){ if (_loading || _lastPage) return; ...}. The in-flight call does _rows.addAll(got); _offset += got.length.",
+   "confidence": "plausible",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/widgets/preview/query_editor_core.dart",
+   "line": 147,
+   "title": "Older suggestion results can overwrite newer ones",
+   "scenario": "Type 'artist:a' then 'artist:ab' quickly: the catalog, metatag-autocomplete and DB/history paths have no cancel token. Whichever await finishes last wins, so the list can show suggestions for the older text. The same applies to the main editor's copy (main_search_query_editor_page.dart:224-320).",
+   "evidence": "Only the getTagSuggestions branch uses cancelToken. suggestFromCatalog/getAutoComplete/dbHandler.getTags results are assigned to suggestedTags without checking that the input still matches.",
+   "confidence": "plausible",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/widgets/preview/kemono_creator_header.dart",
+   "line": 123,
+   "title": "Kemono banner/avatar and discovery avatars bypass the app UA and media headers",
+   "scenario": "Creator banner/icon on kemono/pawchive behind DDoS-Guard/Cloudflare, or xxxfollow/redgifs avatars: they are fetched by Image.network/NetworkImage with Dart's default UA, no cookies and no Referer, so they 403 and show the placeholder while the rest of the site works.",
+   "evidence": "Image.network(KemonoSite.of(booru).bannerUrl(...)) and NetworkImage(iconUrl) here; NetworkImage(avatar) in discovery_strip.dart:61. The project invariant: every request uses Tools.browserUserAgent through CustomNetworkImage.",
+   "confidence": "plausible",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/widgets/preview/waterfall_view.dart",
+   "line": 481,
+   "title": "Pull-to-refresh counts as a new search",
+   "scenario": "Pull to refresh a tag feed 5 times: 5 InterestsHandler.onSearch signals (inflating For You) and 5 search-history bumps.",
+   "evidence": "onRefresh: () => searchHandler.searchAction(currentTab.tags, null). searchAction calls InterestsHandler.onSearch and SearchHistoryStore.record for any non-empty plain query.",
+   "confidence": "plausible",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/widgets/preview/floating_tag_preview_window.dart",
+   "line": 363,
+   "title": "Floating window 'Open in a new tab' ignores the 'previous' tab position",
+   "scenario": "New tab position set to 'prev': the window's new-tab button puts the tab at the end.",
+   "evidence": "final addMode = settingsHandler.defaultTabAddMode == 'next' ? TabAddMode.next : TabAddMode.end; addTabByString(addMode: null) would follow the setting.",
+   "confidence": "confirmed",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/handlers/floating_preview_handler.dart",
+   "line": 150,
+   "title": "Doujin floating preview searches id:<serverId> without the gallery key",
+   "scenario": "Doujin item menu -> floating preview on HDoujin/niyaniya/e-hentai: the window's SearchTab gets tag 'id:N' with no doujinPostURL, so seedPersistedDoujinItem cannot run and keyed sources may not resolve the gallery (the case SearchTab.doujinIdQuery exists for).",
+   "evidence": "openDoujinPreview: FloatingPreviewEntry(tag: 'id:${item.serverId}', doujinItem: item). The window's loadPreview builds SearchTab(selectedBooru, null, _effectiveTag) and never passes doujinPostURL or doujinIdQuery(item).",
+   "confidence": "plausible",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/widgets/preview/waterfall_view.dart",
+   "line": 509,
+   "title": "Unfilled-screen auto-load can start a second concurrent page fetch",
+   "scenario": "The first page does not fill the screen: every Obx rebuild schedules a postFrame callback that waits 500 ms and calls runSearch without re-checking isLoading. The NotificationListener path or another rebuild may have started a fetch meanwhile, so two pages load at once.",
+   "evidence": "if (hasClients && !isLoading) { ... await Future.delayed(500 ms); unawaited(searchHandler.runSearch()); } and runSearch itself has no in-flight guard.",
+   "confidence": "plausible",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/handlers/search_handler.dart",
+   "line": 654,
+   "title": "searchAction's empty-tabs branch throws before it can create a tab",
+   "scenario": "searchAction called while tabs is empty: currentSecondaryBoorus reads currentTab -> tabs[0] -> RangeError.",
+   "evidence": "if (tabs.isEmpty) { ... SearchTab(settingsHandler.booruList[0], currentSecondaryBoorus.value, text) }; currentSecondaryBoorus => currentTab.secondaryBoorus.",
+   "confidence": "confirmed",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/widgets/preview/tab_pill.dart",
+   "line": 166,
+   "title": "Tab pill position is not in backup/restore",
+   "scenario": "Back up and restore to a new phone: the dragged pill position is lost (user rule: every persisted setting is backed up).",
+   "evidence": "TabPillHost writes '${SettingsHandler.instance.path}tab_pill.json'. BackupItems.fileOf (services/backup_plan.dart) lists settings.json, boorus.json, doujinData.json, sourceSettings.json, bookmarks.json, boards.json, tags.json, store.db and vectors.db only.",
+   "confidence": "confirmed",
+   "severity": "data-loss"
+  },
+  {
+   "file": "lib/src/widgets/preview/kemono_creator_header.dart",
+   "line": 67,
+   "title": "Creator header can show the previous creator's index data",
+   "scenario": "Switch quickly between two kemono creator tabs: _load for creator A finishes after B's and sets _indexed to A (name, favourites, updated date).",
+   "evidence": "_load(): _indexed = await store.get(widget.creator...); there is no check that widget.creator is still the requested one. didUpdateWidget starts another _load.",
+   "confidence": "plausible",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/handlers/search_handler.dart",
+   "line": 1505,
+   "title": "Restored selected tab can shift when an entry fails",
+   "scenario": "A TabBackup entry throws in parseTabFromBackup (caught and skipped): newSelectedIndex is an index into tabBackups, not restoredTabs, so the wrong tab becomes current.",
+   "evidence": "newSelectedIndex = tabBackups.indexWhere((tb) => tb == tabBackup); the catch skips adding to restoredTabs.",
+   "confidence": "plausible",
+   "severity": "minor"
+  }
+ ],
+ "fragile": [
+  {
+   "what": "Paging rule",
+   "where": "search_handler.dart runSearch/retrySearch, SearchTab constructor (startingPage)",
+   "rule": "pageNum is incremented BEFORE each fetch; the first page number comes from BooruHandlerFactory.startingPage (default -1). retrySearch decrements and re-runs. Own lists loop at most ownListPagesPerLoad=10, and state is written only while the same tab is current."
+  },
+  {
+   "what": "TabBackup JSON schema + legacy format",
+   "where": "search_handler.dart TabBackup, restoreTabs, saved_search.dart, doujin_migration.dart",
+   "rule": "Keys t,b,i,g,p,pn,dp,dt,dth,sb,to,in,s must stay. A string starting with '[' is JSON, otherwise legacy 'booru|||tags|||selected~~~...'. Only false inherit flags and non-empty overrides are stored. fromJson falls back to {t,b}. SavedSearch and the doujin migration reuse this schema."
+  },
+  {
+   "what": "Tab identity",
+   "where": "SearchTab.id, searchAction/mergeAction/changeCurrentTabPageNumber, TabVisit",
+   "rule": "An in-place search change keeps tabId (visited history is one entry per tab id). Restore uses TabBackup.id."
+  },
+  {
+   "what": "Backup gating",
+   "where": "SearchHandler.canBackup, backup_app.dart:59, main.dart timer",
+   "rule": "No tab backup before restoreTabs finishes, and none during a database restore; otherwise the empty or default tab set overwrites TabRestore. generateBackupJson returns null (clear) for the only-default-tab case."
+  },
+  {
+   "what": "Doujin/booru separation",
+   "where": "SearchHistoryStore (the only router), markPostSeen, toggleItemFavourite/updateFavForMultipleItems, addCurrentTabAsSavedSearch, FloatingPreviewHandler.open (no Interests for doujin), floating booru picker sameDomain, FlowSearchBar/MainSearchTagChip colours, pin dialogs (doujin pins id -1), ThumbnailCardBuild footer stars from DoujinDataHandler",
+   "rule": "A doujin query, view, favourite, pin or saved search never reaches the booru tables and vice versa. Guarded by doujin_separation_test, doujin_favourite_tags_test and doujin_drawer_refresh_test."
+  },
+  {
+   "what": "Suggest queries are not searches",
+   "where": "SearchHandler.isPlainSearch, addTabByString, searchAction, SearchTab constructor",
+   "rule": "'suggest: … post:' queries never go to search history or InterestsHandler.onSearch, and they rebuild SuggestionHandler on restore (suggestion_query_test)."
+  },
+  {
+   "what": "Fixed extents for jumping lists",
+   "where": "flow_tab_carousel.dart itemExtentBuilder + jump active*(peekWidth+gap)",
+   "rule": "Any list that jumps to an index must have fixed or builder-given extents (r39: 4,529 tabs built thousands of cards). FlowTabCarousel.cardsBuilt is asserted in tab_cards_test; card keys are flow-card-<tab index>; sectionIndexes splits by hasReader."
+  },
+  {
+   "what": "Feed scroll filter",
+   "where": "feed_scroll.dart, waterfall_view.dart onNotification",
+   "rule": "Only depth-0 vertical notifications trigger next-page loading and sendToScrollStream; horizontal scrolls inside cards must not (r66, feed_scroll_test)."
+  },
+  {
+   "what": "No cache clear on tab switch",
+   "where": "changeTabIndex",
+   "rule": "Use Tools.trimMemoryCacheIfFull, never forceClearMemoryCache, on a switch (r39)."
+  },
+  {
+   "what": "Floating preview ownership/Back",
+   "where": "floating_preview_handler.dart, gallery_view_page/hideable_appbar/mobile_home_page back handlers",
+   "rule": "A window belongs to its owner page route and is dropped (with a log line) when the owner closed. _PreviewBackEntry blocks Back and closes the newest window in a microtask; page Back handlers stand down via hasWindowFor(topPageRoute). Never call ModalRoute.of(context) in callbacks. routeObserver must be in navigatorObservers. floating_preview_owner_test covers this."
+  },
+  {
+   "what": "Viewer route name",
+   "where": "waterfall_view.onTap (name 'viewer'), floating window (ViewerCloseObserver.viewerRoute)",
+   "rule": "The viewer route must stay named 'viewer' for close logging and trace counts."
+  },
+  {
+   "what": "Modular UI built-or-not",
+   "where": "waterfall_view (grid.feedScrollbar), thumbnail (grid.seenThumbnailsAtOnce), SuggestionsMainContent (search.history/pinned/popular/siteFilters)",
+   "rule": "Check ModularUi.isOn where the widget is built; never build and then hide."
+  },
+  {
+   "what": "UA / headers invariant for images",
+   "where": "thumbnail.dart (CustomNetworkImage with Tools.getFileCustomHeaders, thumbnailFallbacksFor http(s) only)",
+   "rule": "Every image fetch goes through CustomNetworkImage/SpriteTileImage with the source's media headers. CustomNetworkImage == compares the headers map by identity. Only Schale's spare server is used as a fallback (r89)."
+  },
+  {
+   "what": "Thumbnail decode rules",
+   "where": "thumbnail_decode_box.dart",
+   "rule": "Doujin covers decode for their box × 1.5 and are never upscaled; everything else follows the square/rectangle/staggered rules verbatim. Doujin covers use FilterQuality.high (thumbnail_decode_box_test)."
+  },
+  {
+   "what": "Staggered vs list",
+   "where": "waterfall_view._computeIsStaggered",
+   "rule": "List cards force non-staggered; doujin 'adapt' forces staggered whatever hasSizeData says."
+  },
+  {
+   "what": "Test keys",
+   "where": "tab_pill.dart, doujin_list_card.dart, main editor DoujinFiltersBlock, tag_type_strip, furaffinity_artist_header, doujin_tab_view, main_search_bar, floating window",
+   "rule": "Keep 'tab-pill', 'doujin-list-card-row|surface|cover|title|tags', 'doujin-filter-<key>-<value|(default)>', 'tag-type-<ns>', 'fa-artist-*', 'fa-strip-*', 'doujin-tab-close|open-browser|tabs|reason', 'clear-button', 'reset-button', 'save-search-button', 'search-button', 'floating-preview-<id>'."
+  },
+  {
+   "what": "Doujin detail tab key and open counting",
+   "where": "doujin_tab_view.dart key 'doujin-tab-<id>-<serverId>'; DoujinDetailPage.claimOpen",
+   "rule": "Switching back to a doujin tab must not count as a new open (r39)."
+  },
+  {
+   "what": "Favourite does not hide the post live",
+   "where": "SearchTab.toggleItemFavourite / updateFavForMultipleItems -> exemptFromLiveFilter",
+   "rule": "Favouriting keeps the post visible for the session; filters apply on load."
+  },
+  {
+   "what": "Group contiguity",
+   "where": "_snapInsertionIndex, addTabByString end-of-group, moveTabsToGroup, compactGroupBlocks after restore",
+   "rule": "A group is always one contiguous block."
+  },
+  {
+   "what": "Trace hooks",
+   "where": "TraceLifecycle on _WaterfallViewState/_FlowTabCarouselState/_DoujinTabViewState; PerfTrace.built('ThumbnailCardBuild'|'DoujinListCard')",
+   "rule": "Keep the names: traces and perf_trace tests read them."
+  },
+  {
+   "what": "Localized Favourites/Downloads names",
+   "where": "handleFavDlsNameChange",
+   "rule": "Restore must map the Favourites/Downloads booru names across every AppLocale."
+  }
+ ],
+ "perf": [
+  {
+   "file": "lib/src/handlers/search_handler.dart",
+   "line": 1936,
+   "issue": "Every restored tab eagerly builds its BooruHandler (factory) and its Rx fields at startup",
+   "impact": "Startup scales with the tab count (the user has had 4,500+ tabs); thousands of handlers are built before the first frame of the feed",
+   "safeFix": "Create the handler lazily on first access (late, built on demand) while keeping the SearchTab fields; pool/suggest/doujin branches the same way"
+  },
+  {
+   "file": "lib/src/handlers/search_handler.dart",
+   "line": 1748,
+   "issue": "restoreTabs awaits loadSeenPosts (entire SeenPost table into a Set) and loadVisitedTabsHistory before restoring tabs",
+   "impact": "Adds DB time on the startup critical path, growing with history",
+   "safeFix": "Run them in parallel with the tab restore, or after the first paint (dimming fills in when ready)"
+  },
+  {
+   "file": "lib/main.dart",
+   "line": 536,
+   "issue": "backupTabs jsonEncodes every tab on the UI isolate and writes the DB every 30 s even when nothing changed",
+   "impact": "Periodic jank with many tabs, constant DB writes",
+   "safeFix": "Dirty flag set by tab mutations; encode in compute; also back up on pause"
+  },
+  {
+   "file": "lib/src/widgets/preview/waterfall_view.dart",
+   "line": 495,
+   "issue": "One Obx rebuilds the whole CustomScrollView (app bar, carousel, headers, grid sliver) on every isLoading change and every filteredFetched change, and schedules postFrame callbacks each time",
+   "impact": "Extra builds/layouts per page load; headers rebuilt needlessly",
+   "safeFix": "Narrow the Obx to the grid sliver and the loading flag; keep the headers const or outside"
+  },
+  {
+   "file": "lib/src/widgets/thumbnail/thumbnail.dart",
+   "line": 752,
+   "issue": "The loading overlay builds a new BooruHandler through BooruHandlerFactory on each rebuild, and the LayoutBuilder schedules a postFrame callback on every layout of every thumbnail",
+   "impact": "Allocation and callbacks per visible thumbnail during scrolls",
+   "safeFix": "Use BooruHandlerFactory's cached helper or compute hasLoadItemSupport once in initState; register the postFrame only when constraints changed"
+  },
+  {
+   "file": "lib/src/widgets/thumbnail/thumbnail_build.dart",
+   "line": 72,
+   "issue": "Favourites/Downloads/Collections/ForYou cards scan the whole booru list with Uri.tryParse twice per build (Thumbnail booru + favicon)",
+   "impact": "O(boorus) parsing per card build in local feeds",
+   "safeFix": "Cache host -> Booru in a resolver (sources/framework) invalidated on booruList change"
+  },
+  {
+   "file": "lib/src/widgets/thumbnail/thumbnail_card_build.dart",
+   "line": 220,
+   "issue": "Every visible card listens to snatchHandler.received (changes on every downloaded chunk)",
+   "impact": "All visible cards rebuild their overlay builder per chunk while anything downloads",
+   "safeFix": "Listen to current/queueProgress only and wrap the progress ring in a builder that is created only for the card being snatched"
+  },
+  {
+   "file": "lib/src/widgets/preview/main_search_bar.dart",
+   "line": 176,
+   "issue": "Timer.periodic 3 s setState for as long as the bar is mounted (drawer, desktop, editor)",
+   "impact": "Rebuilds all chips every 3 s forever",
+   "safeFix": "Rebuild on TagHandler type updates (a notifier) instead of polling"
+  },
+  {
+   "file": "lib/src/widgets/preview/main_search_query_editor_page.dart",
+   "line": 986,
+   "issue": "Each suggestion row runs a FutureBuilder DB query (getPinnedTag) on every rebuild, up to 100 rows per result set",
+   "impact": "Up to 100 sqlite queries per keystroke result",
+   "safeFix": "Load the pinned set once per booru into a Set and look up in memory"
+  },
+  {
+   "file": "lib/src/widgets/preview/query_editor_core.dart",
+   "line": 63,
+   "issue": "_getBooruHandler builds a fresh handler via the factory on every runSearch when an explicit booru is set",
+   "impact": "Allocation per keystroke in TagSearchQueryEditorPage",
+   "safeFix": "Cache the handler per booru, as _EditorSourceMixin does"
+  },
+  {
+   "file": "lib/src/handlers/search_handler.dart",
+   "line": 651,
+   "issue": "searchAction calls Tools.forceClearMemoryCache(withLive: true) on every search and pull-to-refresh",
+   "impact": "Every decoded thumbnail of every tab is dropped; returning to other tabs redraws everything",
+   "safeFix": "Use trimMemoryCacheIfFull, as tab switches do (would change memory behaviour; needs a measure first)"
+  },
+  {
+   "file": "lib/src/widgets/preview/shimmer_builder.dart",
+   "line": 133,
+   "issue": "Shimmer controller repeats from initState regardless of `enabled` (see bugs)",
+   "impact": "Continuous frame scheduling on the feed in low-performance mode",
+   "safeFix": "Honour enabled in ShimmerWrap and start repeat only when a child activates"
+  },
+  {
+   "file": "lib/src/widgets/preview/tab_pill.dart",
+   "line": 211,
+   "issue": "Synchronous file read in initState (and synchronous write on drag end)",
+   "impact": "Blocking IO on the UI thread when the feed builds",
+   "safeFix": "Load async once into a store and keep it in memory"
+  },
+  {
+   "file": "lib/src/widgets/preview/waterfall_error_buttons.dart",
+   "line": 69,
+   "issue": "Timer.periodic(1 s) setState while loading",
+   "impact": "Rebuilds the banner every second during slow loads (small)",
+   "safeFix": "Only the elapsed-seconds Text listens to a ticker notifier"
+  }
+ ],
+ "deadCode": [
+  {
+   "file": "lib/src/handlers/search_handler.dart",
+   "symbol": "TabBackup.copyWith",
+   "evidence": "Grep 'copyWith(|TabBackup' in lib/ and test/: no call of TabBackup.copyWith (only its definition at search_handler.dart:2368). It would also drop id/group/pool/doujin fields."
+  },
+  {
+   "file": "lib/src/handlers/search_handler.dart",
+   "symbol": "SearchHandler.reset()",
+   "evidence": "Grep '\\.reset\\(\\)' in lib/: only media_kit_player_view resetPool and image_tagger sw.reset; no SearchHandler caller."
+  },
+  {
+   "file": "lib/src/handlers/search_handler.dart",
+   "symbol": "scrollStream / _scrollStream / scrollOffset",
+   "evidence": "Grep 'scrollStream|scrollOffset\\.' in lib/: only search_handler.dart itself; no subscriber or reader (the currentTab.scrollPosition side effect in sendToScrollStream is used)."
+  },
+  {
+   "file": "lib/src/handlers/search_handler.dart",
+   "symbol": "searchBoxFocus",
+   "evidence": "Grep 'searchBoxFocus' in lib/: only the declaration at search_handler.dart:442."
+  },
+  {
+   "file": "lib/src/handlers/search_handler.dart",
+   "symbol": "lastBackupTime",
+   "evidence": "Grep '\\.lastBackupTime|lastBackupTime' outside search_handler.dart: none; it is written at 1823 and never read."
+  },
+  {
+   "file": "lib/src/widgets/thumbnail/thumbnail.dart",
+   "symbol": "isBlurred tap toggle (onTap: false && ...)",
+   "evidence": "thumbnail.dart:660 `onTap: false && (...)` is marked '// ignore: dead_code'; isBlurred never changes."
+  }
+ ],
+ "duplication": [
+  {
+   "where": "thumbnail.dart:824-838, thumbnail_build.dart:70-86 and 211-227",
+   "what": "Find the booru of an item by post/file host, including Sankaku/Idol known URLs (three copies; getMergeBooruEntry repeats the merge loop too)",
+   "consolidation": "BooruResolver.forItem(item) in lib/sources/framework with a host cache"
+  },
+  {
+   "where": "main_search_query_editor_page.dart runSearch (181-333) + buildConfig (646-798) vs query_editor_core.dart QueryEditorController.runSearch + QueryEditorKeyboardActions",
+   "what": "Suggestion search pipeline and keyboard quick-actions bar implemented twice",
+   "consolidation": "Main editor uses QueryEditorController (flags: raw text for merge handler, scroll-to-top callback) and QueryEditorKeyboardActions"
+  },
+  {
+   "where": "main editor suggestion row + long-press sheet vs tag_search_query_editor_page.dart rows + onSuggestionLongTap",
+   "what": "Suggestion tile and tag actions sheet duplicated with small differences (pin row, colour bar)",
+   "consolidation": "Shared SuggestionRow and TagActionsSheet widgets with options"
+  },
+  {
+   "where": "PinnedTagsBlock vs PinnedTagsManagerDialog; PinTagDialog/EditLabelsDialog/ManualPinTagDialog",
+   "what": "Sort-mode cycle/icon/tooltip and the label editor (TextField + popup + chips + _addLabel/_removeLabel) copied 2-3 times",
+   "consolidation": "PinnedTagsSort helper + LabelEditor widget"
+  },
+  {
+   "where": "search_handler.dart removeTabAt, removeTabs, restoreTabsLegacy, restoreTabsNew, restoreTabs catch, addNewTabRespectingSetting",
+   "what": "Default booru + default tags fallback and the removed-last-tab/tabs-restored snackbars repeated",
+   "consolidation": "_defaultTabFor(booru) and SearchNotices helpers"
+  },
+  {
+   "where": "searchAction, mergeAction, changeCurrentTabPageNumber",
+   "what": "Re-creating a SearchTab while carrying state, done three ways (two of them drop the group, pool and doujin fields)",
+   "consolidation": "SearchTab.recreate({tags, secondaries, page}) that always carries id/group/overrides/pool/doujin"
+  },
+  {
+   "where": "openSavedSearch, defaultTabAddModeResolved, floating window _openInNewTab",
+   "what": "New-tab-position resolution three ways",
+   "consolidation": "Use defaultTabAddModeResolved (or pass addMode null) everywhere"
+  },
+  {
+   "where": "grid_builder.dart:79-87, staggered_builder.dart:42-50, shimmer_builder.dart:42",
+   "what": "Column count (with per-doujin-source override) computed in three places; the shimmer ignores the override",
+   "consolidation": "FeedLayout.columnsFor(tab, context)"
+  },
+  {
+   "where": "thumbnail_card_build.dart _languageCodes/_languageBadgeOverlay/_doujinFooter vs doujin_card_meta.dart",
+   "what": "Language and card-tag rules duplicated and diverging (namespace stripping; plain 'english'/'manga' tags excluded in list cards but not in grid footers)",
+   "consolidation": "Grid card uses DoujinCardMeta.language/cardTags, keeping its count-sorted order as a parameter"
+  },
+  {
+   "where": "waterfall_view.onTap PageRouteBuilder vs floating_tag_preview_window._onThumbTap (and linked_media_sheet)",
+   "what": "Viewer route (named 'viewer', zoom transition, barrier, addViewer) built several times",
+   "consolidation": "openGalleryViewer(context, tab, index, onPageChanged) in features/viewer/ui"
+  },
+  {
+   "where": "waterfall_view onNotification vs floating window _buildGrid NotificationListener",
+   "what": "Near-bottom next-page trigger logic",
+   "consolidation": "FeedScroll.nearEnd(metrics, viewports) helper"
+  },
+  {
+   "where": "MainSearchTagChip, _PrefixEditDialog, QueryEditorController.suggestionTextControllerRawInput, main editor cleaned input, QueryEditorKeyboardActions",
+   "what": "Parsing of -/~ prefixes and N# booru numbers repeated",
+   "consolidation": "QueryTerm.parse(String) model in lib/models"
+  },
+  {
+   "where": "search_handler restoreTabsLegacy/mergeTabsLegacy/replaceTabsLegacy vs *New",
+   "what": "Parallel legacy and new implementations",
+   "consolidation": "Convert legacy strings to TabBackup lists once, then share one merge/replace/restore path"
+  }
+ ],
+ "tests": [
+  "test/doujin_tabs_test.dart",
+  "test/doujin_tab_view_test.dart",
+  "test/tab_cards_test.dart",
+  "test/feed_scroll_test.dart",
+  "test/floating_preview_owner_test.dart",
+  "test/own_lists_filters_test.dart",
+  "test/own_list_paging_test.dart",
+  "test/suggestion_query_test.dart",
+  "test/visited_tabs_history_scroll_test.dart",
+  "test/thumbnail_decode_box_test.dart",
+  "test/thumbnail_seen_reveal_test.dart",
+  "test/thumbnail_fallbacks_test.dart",
+  "test/doujin_list_card_test.dart",
+  "test/doujin_list_card_size_test.dart",
+  "test/doujin_card_test.dart",
+  "test/doujin_card_adapt_test.dart",
+  "test/doujin_card_fill_test.dart",
+  "test/doujin_card_per_source_test.dart",
+  "test/doujin_card_meta_test.dart",
+  "test/doujin_cover_height_test.dart",
+  "test/doujin_filters_test.dart",
+  "test/filter_chip_keys_test.dart",
+  "test/tag_builder_block_test.dart",
+  "test/shimmie_r34us_filters_test.dart",
+  "test/furaffinity_test.dart",
+  "test/doujin_drawer_refresh_test.dart",
+  "test/doujin_menu_test.dart",
+  "test/doujin_separation_test.dart",
+  "test/booru_source_settings_test.dart",
+  "test/e621_contributor_filters_test.dart",
+  "test/modular_ui_test.dart",
+  "test/sprite_tile_image_test.dart"
+ ]
+}

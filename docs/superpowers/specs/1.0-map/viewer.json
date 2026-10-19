@@ -1,0 +1,1883 @@
+{
+ "subsystem": "viewer",
+ "summary": "The viewer is GalleryViewPage (lib/src/pages/gallery_view_page.dart). It is pushed from the feed (waterfall_view), from tag-preview strips (TagContentPreview.onPreviewTap), from floating preview windows and from linked media (LinkedMediaOpener). Every push uses a GlobalKey registered with ViewerHandler.addViewer and the route name ViewerCloseObserver.viewerRoute. The page holds a PreloadPageView over tab.booruHandler.filteredFetched. For each item it picks a media widget: FlashPlayViewer, GifViewer (fastGifPlayback), ImageViewer, MediaKitPlayerView (useMediaKitPlayer) / BetterPlayerView (useBetterPlayer) / VideoViewer (Chewie + video_player, with ExoPlayer→MPV fallback through MediaKitVideoPlayer), GuessExtensionViewer, LoadItemViewer or VideoViewerPlaceholder. The media widget's key is item.key, a GlobalKey. ViewerHandler (a GetIt singleton) finds the current widget state through that key and switches on its widget type (ImageViewer/VideoViewer) for zoom, force-load, mute, pause and show/hide of the extra UI.\n\nChrome:\n- HideableAppBar: toolbar buttons driven by settings buttonOrder/disabledButtons, an overflow menu, slideshow, share/Hydrus, snatch, plus fixed extra actions (doujin reader, post-files carousel, FurAffinity Flash/post page, Kemono post page).\n- GalleryButtons: zoom and prev/next buttons.\n- NotesRenderer.\n- The info panel, either a Boorusama-style DraggableScrollableSheet (ItemInfoBottomSheet + a _SwipeUpListener + _InfoPeekBar) or the classic end drawer (ItemInfoDrawer). Both host TagView.\n\nTagView (4685 lines) is the post info panel:\n- action block (FlowActionGrid), source row, find-elsewhere, related/suggested strips (TagContentPreview), comments/notes, the tag chip cloud with the tag menu, batch selection, and doujin book header/pages grid.\n- The same file also holds shared widgets used across the app: TagContentPreview, showTagDialog, tab-group pickers and the related-tabs dialog.\n\nVideo:\n- media_kit uses a global warm player pool (_MediaKitPlayerPool, planned by the pure PlayerPoolPlanner). A start delay comes from MediaKitEngineOptions and a surface cap from VideoSurfaceCap, which hooks the patched third_party media_kit_video.\n- The pool also feeds VideoFrames (recommender) via MediaKitFrameSource and ModelWork via anyPlaying.\n- better_player has a 1-decoder LRU pool and a serialising decoder gate. Chewie uses LoliControls.\n- Image loading goes through CustomNetworkImage (Dio, disk cache, atomic write, JPEG/length validation, fallback mirrors). Also in this group: SpriteTileImage (e-hentai strips), local/SAF providers, BooruFavicon (favicon fallback chain).\n\nMulti-file posts are fetched lazily by PostFilesHandler (SiteProfile-driven) when a post is opened, and shown in PostFilesPage.\n\nState is spread across GetX Rx fields and ValueNotifiers. Logic and UI are mixed: ViewerHandler imports widget states; the recommender imports the media_kit widget file; services import the linked-media sheet. Viewer files import concrete source handlers for type checks.",
+ "features": [
+  {
+   "name": "Open viewer from a feed/strip/preview/link",
+   "navPath": "Feed -> tap thumbnail (also tag strips, floating preview, linked media)",
+   "what": "Pushes GalleryViewPage on top with an opening scale animation; registers the viewer key; logs viewer.open trace; first item becomes ViewerHandler.current.",
+   "files": [
+    "lib/src/pages/gallery_view_page.dart",
+    "lib/src/handlers/viewer_handler.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Swipe to dismiss viewer",
+   "navPath": "Viewer -> swipe down (horizontal mode: up/down; with bottom info sheet: down only; vertical mode: sideways)",
+   "what": "Dismissible with 0.2/0.3 thresholds; viewer scales to 0.75, corners round and background fades during drag; vibrates at threshold; closes with NavigationTrace reason 'swipe down'.",
+   "files": [
+    "lib/src/pages/gallery_view_page.dart"
+   ],
+   "settingsKeys": [
+    "galleryScrollDirection",
+    "useBottomInfoSheet",
+    "shitDevice"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Paging between posts",
+   "navPath": "Viewer -> swipe left/right (or up/down)",
+   "what": "PreloadPageView with stiff spring physics, preloadCount neighbours built, optional half-offset slide transition, videos preloaded at most 1 away (0 on Sankaku/Idol), viewer.swipe trace, ViewerHandler.setCurrent, dwell flush, seen-post marking, post-files fetch.",
+   "files": [
+    "lib/src/pages/gallery_view_page.dart"
+   ],
+   "settingsKeys": [
+    "galleryScrollDirection",
+    "preloadCount",
+    "disableCustomPageTransitions",
+    "dimSeenPosts"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Covered viewer stops rendering (nested viewers)",
+   "navPath": "automatic",
+   "what": "When another viewer is pushed on top (maxActiveViewers=1) the covered viewer's pages turn black, which disposes its players; positions are parked and restored on return.",
+   "files": [
+    "lib/src/pages/gallery_view_page.dart",
+    "lib/src/handlers/viewer_handler.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Keyboard shortcuts",
+   "navPath": "Viewer with hardware keyboard",
+   "what": "Left/H previous, Right/L next, S snatch (+favourite on snatch), F favourite, R force reload current item, Esc close (reason 'Escape key').",
+   "files": [
+    "lib/src/pages/gallery_view_page.dart"
+   ],
+   "settingsKeys": [
+    "favouriteOnSnatch",
+    "snatchCooldown",
+    "dbEnabled"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Volume keys change page",
+   "navPath": "Settings -> Viewer -> volume buttons scroll; Viewer with toolbar hidden",
+   "what": "Volume up/down jump to previous/next post when the viewer has focus; volume keys are given back to the system while the toolbar shows or in video fullscreen.",
+   "files": [
+    "lib/src/pages/gallery_view_page.dart",
+    "lib/src/handlers/viewer_handler.dart",
+    "lib/src/widgets/video/video_viewer.dart"
+   ],
+   "settingsKeys": [
+    "useVolumeButtonsForScroll"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Tap / long-press toggles viewer chrome",
+   "navPath": "Viewer -> tap or hold on media",
+   "what": "Toggles toolbar + system UI (hold also vibrates); initial state from auto-hide setting; video controls follow.",
+   "files": [
+    "lib/src/handlers/viewer_handler.dart",
+    "lib/src/widgets/gallery/hideable_appbar.dart",
+    "lib/src/pages/gallery_view_page.dart"
+   ],
+   "settingsKeys": [
+    "autoHideImageBar"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Screen kept awake in viewer",
+   "navPath": "automatic",
+   "what": "disableSleep on open and on every page change, enableSleep on close.",
+   "files": [
+    "lib/src/pages/gallery_view_page.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Dwell signal to taste profile",
+   "navPath": "automatic",
+   "what": "Time on each post is sent to InterestsHandler.onItemViewed on page change/close; skipped for doujin items/sources.",
+   "files": [
+    "lib/src/pages/gallery_view_page.dart"
+   ],
+   "storedIn": "store.db (interests)",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Multi-file (gallery) posts",
+   "navPath": "Viewer -> toolbar burst icon 'N files in this post'",
+   "what": "On opening a post of a site whose SiteProfile has multiple files per post, the post page is fetched once (plain text), parsed, cached for the session, the grid badge count set; a toolbar action opens PostFilesPage carousel using the same players; gelbooru-family listings backfill counts.",
+   "files": [
+    "lib/src/handlers/post_files_handler.dart",
+    "lib/src/pages/post_files_page.dart",
+    "lib/src/widgets/gallery/hideable_appbar.dart",
+    "lib/src/pages/gallery_view_page.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Viewer toolbar position and counter",
+   "navPath": "Settings -> Viewer -> toolbar position",
+   "what": "Toolbar at top or bottom (bottom adds safe padding), back arrow (reason 'back arrow'), 'index/total' title; animated hide.",
+   "files": [
+    "lib/src/widgets/gallery/hideable_appbar.dart"
+   ],
+   "settingsKeys": [
+    "galleryBarPosition"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Toolbar button order, visibility and overflow",
+   "navPath": "Settings -> Viewer -> toolbar buttons (order list + switches)",
+   "what": "Buttons ordered/disabled by user; first max(4, width/100) on the bar, rest in a popup menu (overflow shows select/slideshow state); Info always shown; buttons gated by context (readOnly, canSelect, media type, recommendation feed).",
+   "files": [
+    "lib/src/widgets/gallery/hideable_appbar.dart",
+    "lib/src/widgets/gallery/toolbar_action.dart"
+   ],
+   "settingsKeys": [
+    "buttonOrder",
+    "disabledButtons"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Info button",
+   "navPath": "Viewer -> toolbar Info",
+   "what": "Opens the bottom info sheet (animates to open size) or the end drawer.",
+   "files": [
+    "lib/src/widgets/gallery/hideable_appbar.dart",
+    "lib/src/pages/gallery_view_page.dart"
+   ],
+   "settingsKeys": [
+    "useBottomInfoSheet"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Open in browser",
+   "navPath": "Viewer -> toolbar globe",
+   "what": "Opens the post URL externally (Sankaku chan/beta remapped to www via LinkedMediaResolver.browserAddress).",
+   "files": [
+    "lib/src/widgets/gallery/hideable_appbar.dart"
+   ],
+   "storedIn": "n/a",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Slideshow (autoscroll)",
+   "navPath": "Viewer -> toolbar play/pause (autoscroll)",
+   "what": "Advances pages on a timer: still images use the image dwell, video/GIF the longer dwell; restartable progress ring; resets when the user swipes; stops at last loaded item with a snackbar.",
+   "files": [
+    "lib/src/widgets/gallery/hideable_appbar.dart"
+   ],
+   "settingsKeys": [
+    "galleryAutoScrollTime",
+    "galleryAutoScrollVideoTime"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Snatch (save) button",
+   "navPath": "Viewer -> toolbar save; long-press for dialog",
+   "what": "Requests storage permission, queues download, optional favourite-on-snatch; green/white sub-icon shows whether the file exists (incl. SAF and earlier download folders); progress ring while downloading; hold: shows file URL, toggle snatched status (DB), force snatch.",
+   "files": [
+    "lib/src/widgets/gallery/hideable_appbar.dart",
+    "lib/src/widgets/gallery/snatched_status_icon.dart"
+   ],
+   "settingsKeys": [
+    "favouriteOnSnatch",
+    "snatchCooldown",
+    "extPathOverride"
+   ],
+   "storedIn": "store.db (isSnatched)",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Favourite button",
+   "navPath": "Viewer -> toolbar heart",
+   "what": "Toggles favourite (animated filled pink heart, heart-slash when not in DB); re-sets current item after 1 s for the favourites filter.",
+   "files": [
+    "lib/src/widgets/gallery/hideable_appbar.dart"
+   ],
+   "settingsKeys": [
+    "dbEnabled"
+   ],
+   "storedIn": "store.db",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Share",
+   "navPath": "Viewer -> toolbar share (hold = choose dialog)",
+   "what": "Default action from Settings (post URL, post URL+tags, file URL, file URL+tags, file, file+tags, Hydrus, ask); tag picker grouped by type (doujin-safe); desktop copies to clipboard; file share downloads to cache with progress and 'already downloading / share new / abort' dialog, cancelled and cache deleted on viewer exit; Hydrus post/file URL dialog.",
+   "files": [
+    "lib/src/widgets/gallery/hideable_appbar.dart"
+   ],
+   "settingsKeys": [
+    "shareAction"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Linked media button",
+   "navPath": "Viewer -> toolbar link icon (Settings -> Viewer toolbar list; Settings -> Modular UI -> Viewer -> Linked media button)",
+   "what": "Shown when the post description links media (LinkedMediaStore); tap/hold opens the Linked media sheet; FurAffinity reads the post page once per session.",
+   "files": [
+    "lib/src/widgets/gallery/hideable_appbar.dart",
+    "lib/src/widgets/linked_media_sheet.dart"
+   ],
+   "settingsKeys": [
+    "buttonOrder",
+    "viewer.linkedMedia"
+   ],
+   "storedIn": "settings.json (Modular UI)",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Select button",
+   "navPath": "Viewer -> toolbar checkbox",
+   "what": "Adds/removes the post from the tab selection; shows its selection order number.",
+   "files": [
+    "lib/src/widgets/gallery/hideable_appbar.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Reload without scaling / toggle quality",
+   "navPath": "Viewer -> toolbar refresh / HQ buttons",
+   "what": "Per-post isNoScale reload (full-res decode) and sample/full quality toggle (images only).",
+   "files": [
+    "lib/src/widgets/gallery/hideable_appbar.dart",
+    "lib/src/widgets/image/image_viewer.dart"
+   ],
+   "settingsKeys": [
+    "disableImageScaling",
+    "galleryMode"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "External player",
+   "navPath": "Viewer -> toolbar exit icon (videos, Android)",
+   "what": "Launches the file URL in another video app.",
+   "files": [
+    "lib/src/widgets/gallery/hideable_appbar.dart"
+   ],
+   "storedIn": "n/a",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Image search",
+   "navPath": "Viewer -> toolbar image search (images); also comments avatar",
+   "what": "Dialog with Google Lens, Google, Yandex, SauceNAO, ImgOps opening the file URL externally.",
+   "files": [
+    "lib/src/widgets/gallery/image_search_dialog.dart",
+    "lib/src/widgets/gallery/hideable_appbar.dart"
+   ],
+   "storedIn": "n/a",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Not interested",
+   "navPath": "Viewer on a For You/recommendation tab -> toolbar thumbs-down",
+   "what": "Dismisses to the learner, removes from feed, snackbar, moves to next item or closes viewer when empty (reason logged).",
+   "files": [
+    "lib/src/widgets/gallery/hideable_appbar.dart"
+   ],
+   "storedIn": "store.db (recommender)",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Source-specific toolbar actions",
+   "navPath": "Viewer toolbar (automatic per source)",
+   "what": "Doujin 'Read · N pages' opens reader; FurAffinity 'Play Flash' and 'Post page'; Kemono 'Post page'.",
+   "files": [
+    "lib/src/widgets/gallery/hideable_appbar.dart"
+   ],
+   "storedIn": "n/a",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Bottom info sheet (Boorusama style)",
+   "navPath": "Settings -> Viewer -> bottom info sheet + size in thirds",
+   "what": "DraggableScrollableSheet locked at N/3 of screen; viewer shrinks into top area; passive swipe-up listener drags sheet 1:1 with fling snapping; Back closes sheet first; TagView always built for current post.",
+   "files": [
+    "lib/src/widgets/gallery/item_info_bottom_sheet.dart",
+    "lib/src/pages/gallery_view_page.dart"
+   ],
+   "settingsKeys": [
+    "useBottomInfoSheet",
+    "bottomSheetSizeMultiplier"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Info peek bar",
+   "navPath": "Viewer (bottom sheet mode, chrome visible, sheet closed)",
+   "what": "Bottom bar with artist chip, tag count chip and 'swipe up' hint; tap opens sheet; video controls lift above it.",
+   "files": [
+    "lib/src/pages/gallery_view_page.dart",
+    "lib/src/handlers/viewer_handler.dart"
+   ],
+   "settingsKeys": [
+    "useBottomInfoSheet"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Classic info end drawer",
+   "navPath": "Viewer -> Info (bottom sheet off)",
+   "what": "Semi-transparent right drawer with TagView and side buttons: reload when stopped, eye (tap toggles transparency, hold to peek), prev/next with long-press repeat; scrim follows visibility.",
+   "files": [
+    "lib/src/pages/gallery_view_page.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Zoom and page buttons",
+   "navPath": "Settings -> Viewer -> zoom button position / page buttons position",
+   "what": "Floating left/right button groups (mobile, chrome visible): zoom in/out toggle and prev/next with long-press repeat and edge overscroll bounce; dimmed until loaded.",
+   "files": [
+    "lib/src/widgets/gallery/gallery_buttons.dart",
+    "lib/src/widgets/gallery/zoom_button.dart",
+    "lib/src/widgets/gallery/change_page_buttons.dart"
+   ],
+   "settingsKeys": [
+    "zoomButtonPosition",
+    "changePageButtonsPosition",
+    "galleryBarPosition",
+    "appMode"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Post action block",
+   "navPath": "Viewer -> info panel top block",
+   "what": "Favorite (doujin: doujin store + account sync), Save (queue + snackbar), Collect (add to collection sheet), Details (sheet: ID, rating, score, resolution, size, type, posted date, uploader, source link, MD5; tap copies/opens).",
+   "files": [
+    "lib/src/widgets/gallery/tag_view.dart",
+    "lib/src/widgets/gallery/flow_action_grid.dart",
+    "lib/src/widgets/gallery/post_details_sheet.dart"
+   ],
+   "storedIn": "store.db",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Post actions as buttons",
+   "navPath": "Settings -> Modular UI -> Viewer -> Post actions as buttons",
+   "what": "Adds Comments (filled when post has comments), Elsewhere, Board, Similar, Recommend tiles (booru only except Comments); off restores the old full-width rows.",
+   "files": [
+    "lib/src/widgets/gallery/tag_view.dart",
+    "lib/src/widgets/gallery/flow_action_grid.dart"
+   ],
+   "settingsKeys": [
+    "viewer.postActionsAsButtons"
+   ],
+   "storedIn": "settings.json (Modular UI)",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Source row on virtual feeds",
+   "navPath": "Viewer -> info panel (For You, favourites, downloads, history, merge, suggestions, boards)",
+   "what": "'From <booru>' row; tag types, previews, strips and loadItem use the item's real source booru resolved by host (incl. Sankaku/Idol hosts).",
+   "files": [
+    "lib/src/widgets/gallery/tag_view.dart"
+   ],
+   "storedIn": "n/a",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Find this post elsewhere",
+   "navPath": "Viewer -> info panel -> Elsewhere / 'Find this post elsewhere'",
+   "what": "Sheet: blended suggestions across other configured boorus of the same domain; IQDB upload similarity search with 80% confidence gate and expander for weak matches; matches open in-app by id (switches to new tab) or in browser; Yandex/Google Lens/SauceNAO reverse search chips in a Custom Tab.",
+   "files": [
+    "lib/src/widgets/gallery/find_elsewhere_sheet.dart"
+   ],
+   "storedIn": "n/a",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "New board / Similar / Recommend from post",
+   "navPath": "Viewer -> info panel -> Board / Similar / Recommend",
+   "what": "Board editor seeded by the post; 'Posts like this' background tab; For You tab seeded by up to 3 tags from the post's site (background).",
+   "files": [
+    "lib/src/widgets/gallery/tag_view.dart"
+   ],
+   "settingsKeys": [
+    "dbEnabled"
+   ],
+   "storedIn": "store.db",
+   "inBackup": "yes"
+  },
+  {
+   "name": "More from artist / uploader strips",
+   "navPath": "Settings -> Interface -> inline related grids; Viewer -> info panel",
+   "what": "Up to 3 artist and 1 uploader collapsible strips (lazy, floating-window button) searched on the post's own booru; uploader only when the name is known (Danbooru name fetched).",
+   "files": [
+    "lib/src/widgets/gallery/tag_view.dart"
+   ],
+   "settingsKeys": [
+    "inlineRelatedGrids"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Comments",
+   "navPath": "Viewer -> info panel -> Comments",
+   "what": "Opens CommentsDialog for sources with comments support.",
+   "files": [
+    "lib/src/widgets/gallery/tag_view.dart",
+    "lib/src/data/comment_item.dart"
+   ],
+   "storedIn": "n/a",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Kemono / FurAffinity post page rows",
+   "navPath": "Viewer -> info panel -> Post page",
+   "what": "Opens the source's post page (content, files, comments / description, folders).",
+   "files": [
+    "lib/src/widgets/gallery/tag_view.dart"
+   ],
+   "storedIn": "n/a",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Doujin book header and pages grid",
+   "navPath": "Viewer on a doujin item -> info panel",
+   "what": "Language/category/pages/♥ line and Read or 'Continue reading · page N of M'; page thumbnails grid (columns per source) opening the reader at that page.",
+   "files": [
+    "lib/src/widgets/gallery/tag_view.dart"
+   ],
+   "settingsKeys": [
+    "sourceSettings.pagePreviewColumns"
+   ],
+   "storedIn": "doujin store (reader progress)",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Doujin Related / Recommended strips",
+   "navPath": "Viewer on a doujin item -> info panel",
+   "what": "'Related — chapters & versions' (collapsed) and 'Recommended' (expanded) strips via relatedVersionsQuery / recommend:<id>.",
+   "files": [
+    "lib/src/widgets/gallery/tag_view.dart"
+   ],
+   "storedIn": "n/a",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Suggested strip",
+   "navPath": "Viewer -> info panel -> Suggested",
+   "what": "Blended facet suggestions for the post; new tab carries a suggest: query; expansion remembered within the panel.",
+   "files": [
+    "lib/src/widgets/gallery/tag_view.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Picked because",
+   "navPath": "Viewer on a recommendation feed -> info panel",
+   "what": "Explanation sentence from RecommenderHandler.explain.",
+   "files": [
+    "lib/src/widgets/gallery/tag_view.dart"
+   ],
+   "storedIn": "n/a",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Notes overlay",
+   "navPath": "Viewer on posts with notes; info panel -> Show/Hide notes (hold = notes list), Load notes",
+   "what": "Note boxes positioned and scaled with zoom/pan and page transitions; tap opens note text (colour toggle), hold hides a note; spinner tap retries; visibility default from hideNotes.",
+   "files": [
+    "lib/src/widgets/gallery/notes_renderer.dart",
+    "lib/src/widgets/gallery/tag_view.dart",
+    "lib/src/data/note_item.dart"
+   ],
+   "settingsKeys": [
+    "hideNotes",
+    "galleryMode",
+    "disableImageScaling"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Tags header, reload and sort",
+   "navPath": "Viewer -> info panel -> Tags row",
+   "what": "Count (filtered/total), refresh item data (loadItem; cancel while loading; red error icon), source favicon/name, sort cycle grouped→A-Z→Z-A.",
+   "files": [
+    "lib/src/widgets/gallery/tag_view.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Automatic item data load in info panel",
+   "navPath": "automatic",
+   "what": "Sources with shouldUpdateIteminTagView reload the post (loadItem) when the panel builds; saved favourites/snatched rows get updated URLs; Danbooru uploader name fetched; tags re-sorted 3 s later and every 5 s.",
+   "files": [
+    "lib/src/widgets/gallery/tag_view.dart"
+   ],
+   "storedIn": "store.db (urlUpdate)",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Tag search in panel",
+   "navPath": "Viewer -> info panel -> Search field",
+   "what": "Filters chips with underlined match; clear/paste; incognito keyboard setting.",
+   "files": [
+    "lib/src/widgets/gallery/tag_view.dart"
+   ],
+   "settingsKeys": [
+    "incognitoKeyboard"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Tag chip cloud",
+   "navPath": "Viewer -> info panel -> tags",
+   "what": "Chips grouped by tag type or by the source's namespaces (doujin), flat when sorted; colour by TagTypeLookup; count; AI/sound/hidden/marked icons; in-search border; dot when a tab with the tag exists.",
+   "files": [
+    "lib/src/widgets/gallery/tag_view.dart",
+    "lib/src/widgets/gallery/tag_chip_shell.dart"
+   ],
+   "storedIn": "settings.json (hidden/marked lists)",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Tag chip gestures",
+   "navPath": "Viewer -> info panel -> tag chip",
+   "what": "Tap = tag menu; double tap = tag type editor (stored as per-booru manual correction); hold = new background tab (vibrate, honours new-tab placement, inherits group, snackbar); ⧉ zone tap = floating preview window (500 ms repeat guard), hold = new tab.",
+   "files": [
+    "lib/src/widgets/gallery/tag_view.dart",
+    "lib/src/widgets/gallery/tag_chip_shell.dart"
+   ],
+   "settingsKeys": [
+    "defaultTabAddMode"
+   ],
+   "storedIn": "store.db (manual tag types)",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Batch tag selection",
+   "navPath": "Viewer -> info panel -> Tags 'Select' pill",
+   "what": "Pick tags; One tab (combined), N tabs, More actions sheet (open in group, add all/exclude all to search, hide all with global/per-booru scope, mark all, pin all, copy all), cancel; doujin routes to doujin blacklist/stars/pins.",
+   "files": [
+    "lib/src/widgets/gallery/tag_view.dart"
+   ],
+   "storedIn": "settings.json / store.db / doujin store",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Tag menu",
+   "navPath": "Viewer -> tap a tag chip (also doujin detail page)",
+   "what": "Bottom sheet (boorus) or centred dialog (doujin): Preview window, Tag/Artist hub, Copy, Remove from search, Open in group (outside group, Open from, existing, new group), Add to marked, Add to hidden (scope), remove marked/hidden, remove from this booru's blacklist, Pin/Unpin, Related tabs (switch tab and exit viewer).",
+   "files": [
+    "lib/src/widgets/gallery/tag_view.dart"
+   ],
+   "storedIn": "settings.json / store.db / doujin store",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Tag content preview strip",
+   "navPath": "Info panel strips, tag hubs, search query editors, doujin detail, FurAffinity artist header, find elsewhere",
+   "what": "Booru chip (favicon, name, alias translation arrow, booru picker), videos/GIFs filter cycle, open in new tab (hold: end/next), auto-pagination of thin pages, scroll paging, tap opens nested viewer (highlight + follow), doujin card opens detail page, double tap favourite, hold doujin menu, secondary tap copies file URL, tag previews history dialog with breadcrumbs; keep-alive; hideWhenEmpty.",
+   "files": [
+    "lib/src/widgets/gallery/tag_view.dart"
+   ],
+   "settingsKeys": [
+    "defaultTabAddMode"
+   ],
+   "storedIn": "memory only (ViewerHandler.tagPreviewsHistory)",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Image viewer",
+   "navPath": "Viewer on an image post",
+   "what": "Thumbnail placeholder with Hero; progress/cache/stop/restart UI; photo_view pinch (8x), double-tap fill, rotation option, desktop wheel zoom; blur option; sample vs full by gallery mode; AVIF; disk cache folders samples/media; resize to 2x screen width with 4K height cap; hidden-tag stop listing hidden tags; size and height limits with tap-to-load-anyway; very tall image tiling (native slicing); host outage notice; HTTP error code; restart with loadItem/captcha probe.",
+   "files": [
+    "lib/src/widgets/image/image_viewer.dart",
+    "lib/src/widgets/image/custom_network_image.dart",
+    "lib/src/utils/media_size_cap.dart"
+   ],
+   "settingsKeys": [
+    "galleryMode",
+    "mediaCache",
+    "disableImageScaling",
+    "preloadSizeLimit",
+    "preloadHeight",
+    "gifsAsThumbnails",
+    "blurImages",
+    "allowRotation",
+    "shitDevice",
+    "viewer.imageCap4k"
+   ],
+   "storedIn": "settings.json; cache folder",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Fast GIF playback",
+   "navPath": "Settings -> Viewer -> fast GIF playback",
+   "what": "extended_image renderer decoding at display width, own cache, restarts at frame 0 when the page becomes viewed, gesture zoom, tap to retry.",
+   "files": [
+    "lib/src/widgets/image/gif_viewer.dart"
+   ],
+   "settingsKeys": [
+    "fastGifPlayback",
+    "mediaCache",
+    "disableImageScaling"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Video engine choice",
+   "navPath": "Settings -> Video -> media_kit engine / better_player / video backend",
+   "what": "Android: pooled media_kit, better_player, or Chewie/video_player (ExoPlayer with automatic MPV fallback + 3 s watchdog; MPV backend through MediaKitVideoPlayer); videos disabled → placeholder with external player (mpv on Linux) / browser.",
+   "files": [
+    "lib/src/pages/gallery_view_page.dart",
+    "lib/src/widgets/video/video_viewer.dart",
+    "lib/src/widgets/video/media_kit_video_player.dart",
+    "lib/src/widgets/video/video_viewer_placeholder.dart"
+   ],
+   "settingsKeys": [
+    "useMediaKitPlayer",
+    "useBetterPlayer",
+    "videoBackendMode",
+    "disableVideo",
+    "altVideoPlayerVO",
+    "altVideoPlayerHWDEC",
+    "altVideoPlayerHwAccel"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Common video playback behaviour",
+   "navPath": "Settings -> Video (autoplay, respect manual pause, start muted, preload videos)",
+   "what": "Autoplay when viewed, skip autoplay for user-paused videos (cleared when viewer stack closes), start muted, eager neighbour preload, restart from 0 on becoming viewed, resume parked position after nested viewer.",
+   "files": [
+    "lib/src/widgets/video/media_kit_player_view.dart",
+    "lib/src/widgets/video/better_player_view.dart",
+    "lib/src/widgets/video/video_viewer.dart",
+    "lib/src/handlers/viewer_handler.dart"
+   ],
+   "settingsKeys": [
+    "autoPlayEnabled",
+    "respectManualPause",
+    "startVideosMuted",
+    "preloadVideos"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "media_kit player pool",
+   "navPath": "Settings -> Video -> max players / video start delay (media_kit on)",
+   "what": "Warm pool: reuse/create/rebind/replace planning, start delay before a player is built, stale-engine-option disposal, mpv cache tuning (+ disk cache under app path/mpv_cache), loop-file, error probe through captcha interceptor (2-min cooldown), screenshot-noise filter, 8 s no-picture diagnostic, dropped-frame log, soft refresh from main appbar, anyPlaying for model work, frame source for VideoFrames.",
+   "files": [
+    "lib/src/widgets/video/media_kit_player_view.dart",
+    "lib/src/widgets/video/player_pool_planner.dart",
+    "lib/src/widgets/video/media_kit_engine_options.dart"
+   ],
+   "settingsKeys": [
+    "mediaKitMaxPlayers",
+    "videoStartDelayMs",
+    "altVideoPlayerVO",
+    "altVideoPlayerHWDEC",
+    "altVideoPlayerHwAccel"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Video surface cap",
+   "navPath": "Settings -> Modular UI -> Viewer -> Videos play at screen size",
+   "what": "Patched media_kit_video asks for the surface size; videos larger than the screen (best orientation) get a capped surface.",
+   "files": [
+    "lib/src/widgets/video/video_surface_cap.dart",
+    "lib/src/utils/media_size_cap.dart"
+   ],
+   "settingsKeys": [
+    "viewer.videoCapToScreen"
+   ],
+   "storedIn": "settings.json (Modular UI)",
+   "inBackup": "yes"
+  },
+  {
+   "name": "media_kit controls",
+   "navPath": "Viewer on a video (media_kit)",
+   "what": "Tap toggles (auto-hide 3 s), double-tap sides seek 5/10 s with feedback, centre double-tap play/pause, hold = 2× speed with badge, debounced buffering spinner and pause icon, seek bar drag/tap, time, mute restoring last volume, fullscreen route sharing the same player (held in pool).",
+   "files": [
+    "lib/src/widgets/video/media_kit_player_view.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "better_player engine",
+   "navPath": "Settings -> Video -> better_player (+ cache MB, per-file MB)",
+   "what": "One-decoder LRU pool, serialised decoder gate, 250 ms init debounce, ExoPlayer cache and buffer tuning, screen-filling aspect, fullscreen, own controls (tap, double-tap seek, play/pause, progress, mute, fullscreen), events to the log, completion tracking.",
+   "files": [
+    "lib/src/widgets/video/better_player_view.dart"
+   ],
+   "settingsKeys": [
+    "useBetterPlayer",
+    "betterPlayerCacheMb",
+    "betterPlayerPerFileMb",
+    "mediaCache"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Chewie video viewer",
+   "navPath": "Viewer on a video (default engine)",
+   "what": "Cache modes stream/cache/stream+cache (HLS always streamed), force cache after 10 s without init for files under 25 MB, size probe and size limit stop, progress/cache UI, zoomable video, blur, pause while app locked, playback speeds list, error with 'try changing video backend', fullscreen route.",
+   "files": [
+    "lib/src/widgets/video/video_viewer.dart"
+   ],
+   "settingsKeys": [
+    "videoCacheMode",
+    "mediaCache",
+    "preloadSizeLimit",
+    "videoBackendMode",
+    "blurImages",
+    "allowRotation"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "LoliControls (Chewie controls)",
+   "navPath": "Viewer on a video (default engine)",
+   "what": "Auto-hide, tap toggles toolbar, double-tap seek with accumulating seconds and Start/End, hold fast-forward 2–4× by sliding, speed sheet (pager, reset, confirm; hold resets 1×), mute tap / global auto-mute on hold, fullscreen with wakelock/system UI restore, Android buffering workaround, debug stats overlay, mini progress when hidden.",
+   "files": [
+    "lib/src/widgets/video/loli_controls.dart",
+    "lib/src/handlers/viewer_handler.dart"
+   ],
+   "settingsKeys": [
+    "showVideoStats",
+    "wakeLockEnabled",
+    "galleryBarPosition"
+   ],
+   "storedIn": "settings.json",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Video completion signal",
+   "navPath": "automatic",
+   "what": "Watching ≥90% or a loop wrap counts once per item → InterestsHandler.onVideoCompleted (Chewie and better_player only).",
+   "files": [
+    "lib/src/handlers/video_completion_tracker.dart",
+    "lib/src/widgets/video/video_viewer.dart",
+    "lib/src/widgets/video/better_player_view.dart"
+   ],
+   "storedIn": "store.db (interests)",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Flash posts",
+   "navPath": "Viewer on a Flash post -> Play / Open post in browser; toolbar 'Play Flash' (FurAffinity)",
+   "what": "Thumbnail + Play opens FlashPlayerPage (Ruffle in a WebView, origin = post site, Restart, progress); post page loaded in background for the real .swf.",
+   "files": [
+    "lib/src/widgets/video/flash_play_viewer.dart",
+    "lib/src/pages/flash_player_page.dart"
+   ],
+   "storedIn": "n/a",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Guess file extension",
+   "navPath": "Viewer on an item of unknown type",
+   "what": "HEAD content-type check, then probes extensions in order by possible media type; retry, open file, open post in browser.",
+   "files": [
+    "lib/src/widgets/video/guess_extension_viewer.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Load item data",
+   "navPath": "Viewer on an item that needs loadItem",
+   "what": "Loads the post (with captcha check), replaces it in the list; retry/open file/open post.",
+   "files": [
+    "lib/src/widgets/video/load_item_viewer.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Post files carousel",
+   "navPath": "Viewer -> toolbar burst icon; Kemono post page",
+   "what": "Nested viewer page of a post's files with counter and close; same image/video widgets; only visible slide plays.",
+   "files": [
+    "lib/src/pages/post_files_page.dart"
+   ],
+   "storedIn": "memory only",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Linked media sheet and player",
+   "navPath": "Viewer -> link button; FurAffinity post page 'Linked media'; incoming links",
+   "what": "Rows with title, destination and badge; source post → nested viewer searched by id without source filters (not found → snackbar + open as page); file/page → LinkedMediaPage WebView (video/img markup) with Reload and Open in browser.",
+   "files": [
+    "lib/src/widgets/linked_media_sheet.dart",
+    "lib/src/pages/linked_media_page.dart"
+   ],
+   "settingsKeys": [
+    "viewer.linkedMedia"
+   ],
+   "storedIn": "memory only (LinkedMediaStore)",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Doujin item menu",
+   "navPath": "Long-press a doujin card (feed, strips, floating windows)",
+   "what": "Centred menu: Open in new tab, Preview, Read now, Open in group, Favourite/Unfavourite (sync), Not interested (rec feeds), Bookmark into collection, Save all pages, Copy link.",
+   "files": [
+    "lib/src/widgets/gallery/doujin_item_menu.dart"
+   ],
+   "settingsKeys": [
+    "sourceSettings.tabPlacement"
+   ],
+   "storedIn": "doujin store",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Doujin tag chip",
+   "navPath": "Doujin detail page tags",
+   "what": "Tap/hold swapped by the source's 'Tag chip tap' setting (menu vs background tab); marked star.",
+   "files": [
+    "lib/src/widgets/gallery/doujin_tag_chip.dart"
+   ],
+   "settingsKeys": [
+    "sourceSettings.tagChipTap",
+    "sourceSettings.tabPlacement"
+   ],
+   "storedIn": "settings.json (source settings)",
+   "inBackup": "yes"
+  },
+  {
+   "name": "Source favicons",
+   "navPath": "Everywhere a source icon shows (tabs, drawers, settings, hubs, strips)",
+   "what": "Own favicon → DuckDuckGo → letter tile, remembered per host; tap letter/error tile re-probes (captcha check on 403/503); icons for Favourites/Downloads; shimmer while loading.",
+   "files": [
+    "lib/src/widgets/image/booru_favicon.dart"
+   ],
+   "settingsKeys": [
+    "shitDevice"
+   ],
+   "storedIn": "memory only + favicons cache folder",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Network image loading",
+   "navPath": "automatic (viewer, thumbnails, reader, favicons)",
+   "what": "Dio fetch with headers, disk cache with atomic temp→rename, Content-Length and JPEG end-marker validation, GIF min frame delay fix, spare mirror fallback (web addresses only), optional captcha interceptor, evict on error; AVIF variant.",
+   "files": [
+    "lib/src/widgets/image/custom_network_image.dart",
+    "lib/src/widgets/image/abstract_custom_network_image.dart"
+   ],
+   "storedIn": "cache folder",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Sprite tile thumbnails",
+   "navPath": "automatic (e-hentai page thumbnails in reader/pages grid)",
+   "what": "URL#xywh fragments cut from one cached strip decode; failed tiles evicted.",
+   "files": [
+    "lib/src/widgets/image/sprite_tile_image.dart"
+   ],
+   "storedIn": "cache folder 'thumbnails'",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Local and SAF images",
+   "navPath": "automatic (downloaded doujin pages)",
+   "what": "file://, absolute paths and content:// documents load locally (SAF bytes via native channel).",
+   "files": [
+    "lib/src/widgets/image/local_image_provider.dart"
+   ],
+   "storedIn": "n/a",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Back handling with preview windows",
+   "navPath": "Viewer -> system Back while a floating preview window is open",
+   "what": "Back closes the window first; viewer sheet close and share cleanup stand down.",
+   "files": [
+    "lib/src/pages/gallery_view_page.dart",
+    "lib/src/widgets/gallery/hideable_appbar.dart"
+   ],
+   "storedIn": "n/a",
+   "inBackup": "n/a"
+  },
+  {
+   "name": "Viewer tutorial (inactive)",
+   "navPath": "none (never shown)",
+   "what": "Overlay mounted in the viewer but _isVisible is always false.",
+   "files": [
+    "lib/src/widgets/gallery/viewer_tutorial.dart"
+   ],
+   "storedIn": "n/a",
+   "inBackup": "n/a"
+  }
+ ],
+ "fileHomes": [
+  {
+   "path": "lib/src/data/comment_item.dart",
+   "newHome": "lib/models/comment_item.dart",
+   "role": "Comment data class (Equatable, JSON)",
+   "layer": "models"
+  },
+  {
+   "path": "lib/src/data/note_item.dart",
+   "newHome": "lib/models/note_item.dart",
+   "role": "Post note data class (JSON)",
+   "layer": "models"
+  },
+  {
+   "path": "lib/src/handlers/post_files_handler.dart",
+   "newHome": "lib/sources/framework/post_files.dart",
+   "role": "Lazy per-post file lists via SiteProfile, grid count backfill, items for carousel (gelbooru_handler calls it, so it must sit at sources level)",
+   "layer": "sources"
+  },
+  {
+   "path": "lib/src/handlers/video_completion_tracker.dart",
+   "newHome": "lib/features/video/logic/video_completion_tracker.dart",
+   "role": "Pure once-per-item watched-through detector",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/handlers/viewer_handler.dart",
+   "newHome": "lib/features/viewer/logic/viewer_state.dart",
+   "role": "Global viewer state: current item, active viewers, zoom/loaded/stopped, toolbar, screen claim, manual pause, saved positions, tag-preview history, refresh epoch",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/pages/flash_player_page.dart",
+   "newHome": "lib/features/viewer/ui/flash/flash_player_page.dart",
+   "role": "Ruffle WebView Flash player page + isFlash helpers",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/pages/gallery_view_page.dart",
+   "newHome": "lib/features/viewer/ui/gallery_view_page.dart",
+   "role": "The viewer page: pager, dismiss, keyboard/volume, info sheet/drawer, peek bar, item widget selection",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/pages/linked_media_page.dart",
+   "newHome": "lib/features/links/ui/linked_media_page.dart",
+   "role": "WebView player for linked files/pages",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/pages/post_files_page.dart",
+   "newHome": "lib/features/viewer/ui/post_files_page.dart",
+   "role": "Nested carousel viewer for a multi-file post",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/utils/media_size_cap.dart",
+   "newHome": "lib/core/utils/media_size_cap.dart",
+   "role": "Pure video surface / image decode size ceilings",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/gallery/change_page_buttons.dart",
+   "newHome": "lib/features/viewer/ui/chrome/change_page_buttons.dart",
+   "role": "Prev/next page buttons with long-press repeat",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/gallery/doujin_item_menu.dart",
+   "newHome": "lib/features/doujin/ui/doujin_item_menu.dart",
+   "role": "Centred long-press menu for doujin cards",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/gallery/doujin_tag_chip.dart",
+   "newHome": "lib/features/doujin/ui/doujin_tag_chip.dart",
+   "role": "Doujin tag chip with source-configurable tap/hold",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/gallery/find_elsewhere_sheet.dart",
+   "newHome": "lib/features/viewer/ui/info/find_elsewhere_sheet.dart",
+   "role": "Cross-booru suggestions, IQDB search (parse -> logic/iqdb_search.dart), reverse-search links",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/gallery/flow_action_grid.dart",
+   "newHome": "lib/features/viewer/ui/info/flow_action_grid.dart",
+   "role": "Post action tiles grid + FlowExtras gating",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/gallery/gallery_buttons.dart",
+   "newHome": "lib/features/viewer/ui/chrome/gallery_buttons.dart",
+   "role": "Floating zoom/page button groups",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/gallery/hideable_appbar.dart",
+   "newHome": "lib/features/viewer/ui/chrome/viewer_app_bar.dart",
+   "role": "Viewer toolbar, buttons, slideshow, share/Hydrus, snatch dialog, select-tags dialog",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/gallery/image_search_dialog.dart",
+   "newHome": "lib/features/viewer/ui/chrome/image_search_dialog.dart",
+   "role": "Reverse image search engine picker",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/gallery/interactive_viewer.dart",
+   "newHome": "(delete) lib/features/viewer/ui/ - file holds only a TODO comment",
+   "role": "Empty placeholder file",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/gallery/item_info_bottom_sheet.dart",
+   "newHome": "lib/features/viewer/ui/info/item_info_bottom_sheet.dart",
+   "role": "DraggableScrollableSheet hosting TagView for current page",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/gallery/notes_renderer.dart",
+   "newHome": "lib/features/viewer/ui/notes/notes_renderer.dart",
+   "role": "Note overlay, note dialog, notes list dialog",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/gallery/post_details_sheet.dart",
+   "newHome": "lib/features/viewer/ui/info/post_details_sheet.dart",
+   "role": "Details key/value sheet",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/gallery/snatched_status_icon.dart",
+   "newHome": "lib/features/downloads/ui/snatched_status_icon.dart",
+   "role": "Saved-file existence badge (file check -> downloads/logic)",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/gallery/tag_chip_shell.dart",
+   "newHome": "lib/features/tags/ui/tag_chip_shell.dart",
+   "role": "Tag chip frame with separate preview hit zone",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/gallery/tag_view.dart",
+   "newHome": "lib/features/viewer/ui/info/tag_view.dart",
+   "role": "Post info panel + shared TagContentPreview, tag menu, group pickers, related-tabs dialog (to be split)",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/gallery/toolbar_action.dart",
+   "newHome": "lib/features/viewer/ui/chrome/toolbar_action.dart",
+   "role": "Toolbar icon button with stack/sub icon and long press",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/gallery/viewer_tutorial.dart",
+   "newHome": "lib/features/viewer/ui/viewer_tutorial.dart",
+   "role": "Inactive tutorial overlay (dead)",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/gallery/zoom_button.dart",
+   "newHome": "lib/features/viewer/ui/chrome/zoom_button.dart",
+   "role": "Zoom toggle button",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/image/abstract_custom_network_image.dart",
+   "newHome": "lib/core/ui/image/abstract_custom_network_image.dart",
+   "role": "Abstract ImageProvider key type for network images",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/image/booru_favicon.dart",
+   "newHome": "lib/core/ui/booru_favicon.dart",
+   "role": "Source favicon widget + FaviconResolver (-> core/network/favicon_resolver.dart) + letter tile",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/image/custom_network_image.dart",
+   "newHome": "lib/core/ui/image/custom_network_image.dart",
+   "role": "Dio-backed cached ImageProviders (JPEG/AVIF), validation, mirrors",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/image/gif_viewer.dart",
+   "newHome": "lib/features/viewer/ui/media/gif_viewer.dart",
+   "role": "extended_image GIF renderer",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/image/image_viewer.dart",
+   "newHome": "lib/features/viewer/ui/media/image_viewer.dart",
+   "role": "Zoomable image viewer with loading/stop/tiling (enums -> features/viewer/logic/viewer_stop_reason.dart)",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/image/local_image_provider.dart",
+   "newHome": "lib/core/ui/image/local_image_provider.dart",
+   "role": "File/SAF ImageProviders",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/image/sprite_tile_image.dart",
+   "newHome": "lib/core/ui/image/sprite_tile_image.dart",
+   "role": "Sprite-strip tile provider (SpriteTile parser -> lib/models/sprite_tile.dart, sources use it)",
+   "layer": "core"
+  },
+  {
+   "path": "lib/src/widgets/linked_media_sheet.dart",
+   "newHome": "lib/features/links/ui/linked_media_sheet.dart",
+   "role": "Linked media list/sheet/button + opener (opener -> features/links/logic)",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/video/better_player_view.dart",
+   "newHome": "lib/features/video/ui/better_player/better_player_view.dart",
+   "role": "better_player engine view, pool, decoder gate, controls",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/video/flash_play_viewer.dart",
+   "newHome": "lib/features/viewer/ui/media/flash_play_viewer.dart",
+   "role": "Flash post page in viewer (thumbnail + Play)",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/video/guess_extension_viewer.dart",
+   "newHome": "lib/features/viewer/ui/media/guess_extension_viewer.dart",
+   "role": "Media type guessing by HEAD probes (probe -> viewer/logic)",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/video/load_item_viewer.dart",
+   "newHome": "lib/features/viewer/ui/media/load_item_viewer.dart",
+   "role": "loadItem placeholder with retry",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/video/loli_controls.dart",
+   "newHome": "lib/features/video/ui/chewie/loli_controls.dart",
+   "role": "Chewie custom controls + speed sheet",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/video/media_kit_engine_options.dart",
+   "newHome": "lib/features/video/logic/media_kit_engine_options.dart",
+   "role": "mpv/VideoController options, start delay",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/widgets/video/media_kit_player_view.dart",
+   "newHome": "lib/features/video/ui/media_kit/media_kit_player_view.dart",
+   "role": "Pooled media_kit view + pool + controls + frame source (pool -> video/logic/media_kit_player_pool.dart)",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/video/media_kit_video_player.dart",
+   "newHome": "lib/features/video/logic/media_kit_video_player_platform.dart",
+   "role": "VideoPlayerPlatform implementation over media_kit (MPV backend for Chewie)",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/widgets/video/player_pool_planner.dart",
+   "newHome": "lib/features/video/logic/player_pool_planner.dart",
+   "role": "Pure pool decision logic",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/widgets/video/unknown_viewer_placeholder.dart",
+   "newHome": "lib/features/viewer/ui/media/unknown_viewer_placeholder.dart (dead - delete)",
+   "role": "Unused unknown-format placeholder",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/video/video_surface_cap.dart",
+   "newHome": "lib/features/video/logic/video_surface_cap.dart",
+   "role": "Installs surface size hook into patched media_kit_video",
+   "layer": "feature-logic"
+  },
+  {
+   "path": "lib/src/widgets/video/video_viewer.dart",
+   "newHome": "lib/features/video/ui/chewie/video_viewer.dart",
+   "role": "Chewie/video_player viewer with cache modes and MPV fallback",
+   "layer": "feature-ui"
+  },
+  {
+   "path": "lib/src/widgets/video/video_viewer_placeholder.dart",
+   "newHome": "lib/features/video/ui/video_viewer_placeholder.dart",
+   "role": "Videos-disabled placeholder with external player/browser",
+   "layer": "feature-ui"
+  }
+ ],
+ "layerViolations": [
+  {
+   "file": "lib/src/handlers/viewer_handler.dart",
+   "line": 13,
+   "imports": "lib/src/widgets/image/image_viewer.dart, lib/src/widgets/video/video_viewer.dart (also photo_view)",
+   "reason": "Logic singleton imports widget State classes and casts key.currentState to ImageViewerState/VideoViewerState for zoom, force-load, mute, pause and extra-UI control",
+   "fix": "Define an abstract ViewerMediaState interface (isZoomed, isLoaded, isStopped, viewValue, resetZoom, doubleTapZoom, forceLoad, setMuted, pause, setExtraUiVisible) in features/viewer/logic; the image/video states implement it; ViewerHandler checks 'state is ViewerMediaState'"
+  },
+  {
+   "file": "lib/src/widgets/gallery/tag_view.dart",
+   "line": 75,
+   "imports": "lib/src/pages/gallery_view_page.dart",
+   "reason": "Import cycle: gallery_view_page -> tag_view -> gallery_view_page (TagContentPreview pushes a nested viewer)",
+   "fix": "Move the 'open nested viewer' push into features/viewer/ui/viewer_routes.dart (openViewer(context, tab, index, ...)) that both import, or inject a callback"
+  },
+  {
+   "file": "lib/src/widgets/gallery/tag_view.dart",
+   "line": 20,
+   "imports": "boorus/danbooru_handler, kemono_handler, furaffinity_handler, favourites_handler, downloads_handler, board_handler, foryou_handler, history_handler, mergebooru_handler, suggestion_handler, sankaku/idol handlers",
+   "reason": "Info panel type-checks concrete source handlers (virtual feed detection, uploader name, post page buttons, Sankaku host lists)",
+   "fix": "Handler capabilities: isVirtualFeed, resolveSourceBooru(item), hasPostPage/postPageBuilder, uploaderNameFor(item); one BooruHandlerFactory.sourceBooruFor(item)"
+  },
+  {
+   "file": "lib/src/widgets/gallery/hideable_appbar.dart",
+   "line": 20,
+   "imports": "pages/flash_player_page, furaffinity_post_page, doujin_reader_page, kemono_post_page, post_files_page; boorus/furaffinity_handler, kemono_handler, hydrus_handler",
+   "reason": "Generic viewer chrome hard-codes per-source actions and pages by 'is FurAffinityHandler/KemonoHandler'",
+   "fix": "A ViewerExtraAction registry (or handler capability list) supplied by sources/features; app router opens pages"
+  },
+  {
+   "file": "lib/src/pages/gallery_view_page.dart",
+   "line": 17,
+   "imports": "boorus/booru_type, idol_sankaku_handler, sankaku_handler",
+   "reason": "Viewer UI resolves an item's source booru by host (duplicated with TagView) and special-cases Sankaku video preload",
+   "fix": "BooruHandlerFactory.sourceBooruFor(item) and a handler capability maxVideoPreload"
+  },
+  {
+   "file": "lib/src/widgets/linked_media_sheet.dart",
+   "line": 17,
+   "imports": "lib/src/pages/gallery_view_page.dart; boorus/furaffinity_parser, furaffinity_query",
+   "reason": "UI file contains logic (LinkedMediaOpener search, LinkedMediaButton.linksFor network fetch + parse) and services/incoming_link.dart imports this UI file",
+   "fix": "Split: features/links/logic/linked_media_opener.dart (search, prepareTab, showFetched) with an injected viewer opener; FA link fetch in sources/furaffinity; UI keeps list/sheet"
+  },
+  {
+   "file": "lib/src/services/incoming_link.dart",
+   "line": 9,
+   "imports": "lib/src/widgets/linked_media_sheet.dart",
+   "reason": "Service layer imports a UI widget file to open links",
+   "fix": "Depend on features/links/logic/linked_media_opener.dart"
+  },
+  {
+   "file": "lib/src/handlers/recommender/video_frames.dart",
+   "line": 24,
+   "imports": "lib/src/widgets/video/media_kit_player_view.dart",
+   "reason": "Recommender logic reaches the media_kit pool through the widget file (MediaKitFrameSource)",
+   "fix": "Move _MediaKitPlayerPool/_PooledPlayer/MediaKitFrameSource/isScreenshotNoise into features/video/logic/media_kit_player_pool.dart"
+  },
+  {
+   "file": "lib/src/handlers/settings_handler.dart",
+   "line": 66,
+   "imports": "lib/src/widgets/video/media_kit_video_player.dart",
+   "reason": "Settings logic imports a widgets-folder file to register the video_player platform",
+   "fix": "Move MediaKitVideoPlayer to features/video/logic and register via a VideoBackend service called from app bootstrap/settings page"
+  },
+  {
+   "file": "lib/src/widgets/common/media_loading.dart",
+   "line": 13,
+   "imports": "lib/src/widgets/image/image_viewer.dart",
+   "reason": "Generic common widget imports a feature widget for ViewerStopReason/PreloadBlockState enums (video_viewer.dart:12 does the same)",
+   "fix": "Move both enums to features/viewer/logic/viewer_stop_reason.dart (or models)"
+  },
+  {
+   "file": "lib/src/boorus/doujin/ehentai_handler.dart",
+   "line": 29,
+   "imports": "lib/src/widgets/image/sprite_tile_image.dart",
+   "reason": "Source parser imports a widgets file for the SpriteTile URL-fragment class (handlers/doujin_cover_aspect_handler.dart:3 too)",
+   "fix": "Move SpriteTile (pure) to lib/models/sprite_tile.dart; keep SpriteTileImage in core/ui/image"
+  },
+  {
+   "file": "lib/src/widgets/image/booru_favicon.dart",
+   "line": 12,
+   "imports": "handlers/settings_handler.dart, widgets/preview/shimmer_builder.dart",
+   "reason": "A widget meant for core/ui depends on feature logic (shitDevice) and a feed widget",
+   "fix": "Pass reduceEffects as a parameter or read from a core performance-settings interface; move shimmer to core/ui"
+  },
+  {
+   "file": "lib/src/widgets/image/custom_network_image.dart",
+   "line": 13,
+   "imports": "services/image_writer.dart",
+   "reason": "Core image loader depends on the downloads service only for cache path computation",
+   "fix": "Extract cache path helpers to core/storage/cache_paths.dart"
+  },
+  {
+   "file": "lib/src/widgets/root/main_appbar.dart",
+   "line": 22,
+   "imports": "widgets/video/better_player_view.dart, media_kit_player_view.dart",
+   "reason": "Main appbar reaches into video widget files for resetPool",
+   "fix": "features/video/logic/video_pools.dart resetAll() facade"
+  }
+ ],
+ "splits": [
+  {
+   "file": "lib/src/widgets/gallery/tag_view.dart",
+   "lines": 4685,
+   "proposal": "1) features/viewer/ui/info/tag_view.dart: TagView/_TagViewState core (init, didUpdateWidget, reloadItemData, parse/sort/group, build). 2) info/post_actions_block.dart: _flowActionRow, _extraTile, _toggleFavourite, _snatchItem, _openComments/_openFindElsewhere/_openNewBoard/_openSimilar/_openRecommend, comments/notes/FA/kemono post rows. Make it a widget taking (item, handler, sourceHandler). 3) info/tag_chip_cloud.dart: tagChipSectionSlivers, buildTagChip, _chipTagLabel, _openTagInNewTab, batch selection bar + sheet + _batch* ops. 4) info/related_sections.dart: _buildRelatedGrids, _CollapsibleRelatedPreview, doujin related/recommended/suggested expansions, _doujinBookHeader, _pagesGridSlivers. 5) features/tags/ui/tag_menu_sheet.dart: showTagDialog. Doujin/booru hide/mark/unmark routing plus _pickBlacklistScope/_BlacklistScope go to features/tags/logic/tag_list_actions.dart, shared with the batch ops, together with tagHiddenForHandler/tagMarkedForHandler. 6) features/tabs/ui/tab_group_picker.dart: pickTabGroupName, showOpenTagInGroupSheet, kOpenOutsideGroupSentinel, kOpenFromSentinel. 7) features/tabs/ui/related_tabs_dialog.dart. 8) features/tags/ui/tag_content_preview.dart: TagContentPreview + state + _TagPreviewsListDialog (still about 1270 lines, so move _buildBooruChip/_buildDoujinStripNewTabButton/new-tab actions into tag_content_preview_header.dart). 9) Delete the dead parts: sourcesList, infoText, SourceLinkErrorDialog, detailsExpanded.",
+   "risk": "Very high coupling through private _TagViewState fields: item, handler, possibleBooruHandler, tagBooru, isDoujinContext, tagsData, filteredTags, tabMatchesMap, searchController, tagSelectionMode, selectedBatchTags, sortTags. Several pieces call setState and parseSortGroupTagsWithoutCache, which is passed as onUpdate to the tag menu. _BlacklistScope and _openedInNewTab are shared privately. Tests key on ValueKey('tag-chip-<tag>'), 'flow-*' and the TagContentPreview strip geometry statics and newTabQuery (doujin_strip_geometry_test, suggestion_query_test, flow_action_grid_test, tag_chip_shell_test). The doujin separation rules must survive verbatim (doujin_separation_test)."
+  },
+  {
+   "file": "lib/src/widgets/gallery/hideable_appbar.dart",
+   "lines": 1663,
+   "proposal": "viewer_app_bar.dart (HideableAppBar, build, PopScope, getActions layout and overflow); toolbar_buttons.dart (buttonIcon/Subicon/StackWidget/Text/Click/Hold as a per-GalleryButton spec); features/viewer/logic/slideshow_controller.dart (autoscroll timer, dwell per media type, TimedProgressController); features/viewer/logic/share_actions.dart (text/file/Hydrus share, cache download with CancelToken and progress, cleanup) plus ui/share_dialog.dart (showShareDialog, already-downloading dialog); features/tags/ui/select_tags_dialog.dart (showSelectTagsDialog); viewer_extra_actions.dart (doujin reader, post files, FA flash/post page, kemono post page).",
+   "risk": "State shared through setState: autoScroll, sharedItem, shareProgress, shareCancelToken. The page ValueNotifier is driven by a pageController listener. Toolbar widgets are rebuilt from scratch on every build. The PopScope must keep cancelling the share and deleting the cache, and must stand down for preview windows. NavigationTrace reasons ('back arrow', 'Not interested emptied the list') and popIfOnTop on the snatch and Hydrus dialogs must stay. gallery_linked_media_button_test covers the linked-media button."
+  },
+  {
+   "file": "lib/src/pages/gallery_view_page.dart",
+   "lines": 1460,
+   "proposal": "gallery_view_page.dart (state, RouteAware claim/release, keyboard, volume, dismiss, scaffold); viewer_item_builder.dart (media widget selection shared with post_files_page and desktop_image_listener, plus isNear/isViewerTooDeep); source booru resolution moves to logic; swipe_up_listener.dart (_SwipeUpListener); info_peek_bar.dart (_InfoPeekBar); item_info_drawer.dart (ItemInfoDrawer); viewer_page_physics.dart (_SnappyPageSpringPhysics, slidePageTransition).",
+   "risk": "Private classes need public names. isOpeningAnimation, dismissProgress, page and infoSheetExtent are shared between pieces. The widget.key GlobalKey contract with ViewerHandler. The sheet split must keep MediaQuery, not LayoutBuilder (first-frame 'Bad state: No element'). The infoSheetExtent mirror must not be reset in dispose."
+  },
+  {
+   "file": "lib/src/widgets/video/media_kit_player_view.dart",
+   "lines": 1423,
+   "proposal": "features/video/logic/media_kit_player_pool.dart (PooledPlayer, MediaKitPlayerPool, MediaKitFrameSource, isScreenshotNoise, monoNow, droppedLine, anyPlaying, resetPool); ui/media_kit/media_kit_player_view.dart (widget: scheduling, init, error probe, picture watch); ui/media_kit/media_kit_controls.dart (_MediaKitControls, _FullscreenMediaKit); ui/common/seek_feedback.dart + video_progress_bar.dart shared with better_player.",
+   "risk": "Statics in MediaKitPlayerView access _MediaKitPlayerPool.instance._slots privately. Tests call MediaKitPlayerView.isScreenshotNoise/droppedLine (media_kit_error_filter_test) and MediaKitFrameSource via video_frames_test, so keep facades with the same names. The Video ObjectKey(controller), the hold/endFullscreenHold refcount, release by identity and the VideoSurfaceCap install all need care."
+  },
+  {
+   "file": "lib/src/widgets/video/loli_controls.dart",
+   "lines": 1308,
+   "proposal": "loli_controls.dart (widget/state/build), loli_controls_gestures.dart (double-tap seek and long-press speed logic as a mixin on the state), playback_speed_sheet.dart (_PlaybackSpeedDialog); delete formatDurationShorter.",
+   "risk": "Implementation imports of chewie/src (center_play_button, progress_bar, helpers/utils) break on chewie upgrades. The gesture mixin needs the state's timers and setState. ViewerHandler.videoAutoMute/toggleMuteAllVideos coupling."
+  },
+  {
+   "file": "lib/src/widgets/video/video_viewer.dart",
+   "lines": 1044,
+   "proposal": "video_viewer.dart (widget/build/zoom), features/video/logic/video_download_controller.dart (cache modes, DioDownloader, size probe, force-cache timer), features/video/logic/video_backend_fallback.dart (ExoPlayer->MPV registration and watchdog), chewie fullscreen route builder file.",
+   "risk": "ViewerHandler reads public VideoViewerState members (isZoomed, isVideoInited, isStopped, chewieController, viewController, videoController, showControls, resetZoom, doubleTapZoom, forceLoad). Registering the global VideoPlayerPlatform per attempt is order-sensitive."
+  },
+  {
+   "file": "lib/src/widgets/video/better_player_view.dart",
+   "lines": 1018,
+   "proposal": "features/video/logic/better_player_pool.dart (_BetterPlayerPool, _DecoderGate, behind an interface instead of the State type), ui/better_player/better_player_view.dart, ui/better_player/better_controls.dart, shared seek feedback and progress bar.",
+   "risk": "The pool holds the private _BetterPlayerViewState and calls _forceDisposeFromPool. The decoder gate serialisation is what prevents native aborts; keep the ordering exactly."
+  },
+  {
+   "file": "lib/src/widgets/image/image_viewer.dart",
+   "lines": 887,
+   "proposal": "image_viewer.dart (widget/build/zoom), features/viewer/logic/image_tiling.dart (checkAndPrepareTiles core, sliceImageOnIsolate top-level, budget constants), image_provider_factory.dart (sample/full folder choice, AVIF, ResizeImage width and 4K cap), viewer_stop_reason.dart (ViewerStopReason, PreloadBlockState).",
+   "risk": "ViewerHandler and MediaLoading depend on public state members and enums. The compute entry must remain static/top-level. The ServiceHandler.sliceImage native channel."
+  },
+  {
+   "file": "lib/src/widgets/image/custom_network_image.dart",
+   "lines": 660,
+   "proposal": "core/ui/image/network_image_loader.dart (mixin: _commitCacheFile, downloadAndCache, tryFixGifSpeed, deleteCache, jpeg helpers, thumbnailCandidates), custom_network_image.dart, custom_network_avif_image.dart.",
+   "risk": "jpeg_integrity_test and thumbnail_fallbacks_test import looksLikeJpeg/hasJpegEndMarker/jpegTailWindow/thumbnailCandidates from this path; re-export them. == compares headers by identity, which other code relies on."
+  },
+  {
+   "file": "lib/src/widgets/image/booru_favicon.dart",
+   "lines": 604,
+   "proposal": "core/network/favicon_resolver.dart (FaviconResolver), core/ui/favicon_letter_tile.dart (FaviconLetterTile, FaviconError), core/ui/booru_favicon.dart (widget).",
+   "risk": "favicon_fallback_test uses FaviconResolver/FaviconLetterTile statics."
+  }
+ ],
+ "bugs": [
+  {
+   "file": "lib/src/widgets/gallery/tag_view.dart",
+   "line": 355,
+   "title": "TagView calls setState after dispose when loadItem returns late",
+   "scenario": "rule34.xxx/danbooru (shouldUpdateIteminTagView). Open the viewer and swipe to the next post before the panel's loadItem answers. The old TagView is disposed (bottom sheet keys TagView by fileURL). The await then resumes and calls setState, and the queued post-frame parseSortGroupTags calls setState too, on a disposed State: an uncaught exception in the log. This is the documented r54 bug; its fix (mounted guards) was reverted in r55.",
+   "evidence": "reloadItemData: 'final res = await (possibleBooruHandler ?? handler).loadItem(...)' ... 'loadingUpdate = false; setState(() {});' with no mounted check (lines 332-355). parseSortGroupTags (line 480) also does 'await cacheTabMatchData(); setState(() {})' without a mounted check, scheduled from a post-frame callback (356-358). HANDOVER 4.23/4.24.",
+   "confidence": "confirmed",
+   "severity": "crash"
+  },
+  {
+   "file": "lib/src/widgets/gallery/item_info_bottom_sheet.dart",
+   "line": 99,
+   "title": "Every swiped post fires a loadItem request from the always-built info sheet",
+   "scenario": "Bottom info sheet on, a source with shouldUpdateIteminTagView. Swiping quickly through 30 posts creates 30 TagViews (keyed by fileURL), and each initState calls reloadItemData(initial: true) immediately. The result is one post-page request per post even with the sheet closed, which triggered rule34.xxx 429/CAPTCHA (r54). The didUpdateWidget debounce never applies because the key changes the State.",
+   "evidence": "ItemInfoBottomSheet builds TagView(key: ValueKey(items[page].fileURL), ...) for the current page. TagView.initState -> reloadItemData(initial: true) with no delay. Debounce.debounce exists only in didUpdateWidget. The r54 SettledCall delay was reverted in r55.",
+   "confidence": "confirmed",
+   "severity": "perf"
+  },
+  {
+   "file": "lib/src/widgets/gallery/notes_renderer.dart",
+   "line": 129,
+   "title": "Notes of the next post never load when swiping during a notes fetch",
+   "scenario": "Post A with notes is loading. The user swipes to post B, which also has notes. itemListener sets item=B, cancels the token and calls loadNotes, which returns at 'if (loading) return'. A's cancelled request returns [] and that is written to A's notes (the receiver was evaluated before the await). loading resets, and B's notes are never requested: no overlay on B.",
+   "evidence": "itemListener -> item = widget.item; cancelToken.cancel(); loadNotes(); loadNotes: 'if (loading) return;'. The in-flight 'item.notes.value = await widget.handler.getNotes(item.serverId!, cancelToken: ...)'. getNotes catches the cancel and returns an empty list.",
+   "confidence": "confirmed",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/widgets/gallery/notes_renderer.dart",
+   "line": 284,
+   "title": "RangeError in notes overlay after 'Load notes' from the info panel",
+   "scenario": "The renderer's automatic load came back empty (network hiccup), so the info panel shows 'Load notes'. Tapping it sets item.notes from TagView. The renderer's Obx rebuilds and indexes notesMap[i], but notesMap is still empty because rebuildNotesMap only runs inside loadNotes/doCalculations: an exception in build.",
+   "evidence": "TagView.notesButton: 'item.notes.value = await handler.getNotes(item.serverId!)'. NotesRenderer build: List.generate(item.notes.length, (i) { ... notesMap[i].width ...}).",
+   "confidence": "plausible",
+   "severity": "crash"
+  },
+  {
+   "file": "lib/src/widgets/video/media_kit_player_view.dart",
+   "line": 98,
+   "title": "media_kit engine never reports video completion to the recommender",
+   "scenario": "The user's setup (pooled media_kit viewer). Watching videos to the end never produces InterestsHandler.onVideoCompleted, so the r35 videoComplete signal (+weight 2, classic +4) is missing entirely for media_kit users.",
+   "evidence": "VideoCompletionTracker/onVideoCompleted are referenced only in video_viewer.dart:545-557 and better_player_view.dart:391-402. grep finds no use in media_kit_player_view.dart.",
+   "confidence": "confirmed",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/widgets/video/better_player_view.dart",
+   "line": 264,
+   "title": "better_player + preload videos: preloading a neighbour kills the visible video",
+   "scenario": "useBetterPlayer and preloadVideos on, viewing video N. Page N+1 is built (isNear) and _wantsPlayer is true. Its _init calls makeRoomFor, which with _maxAlive=1 evicts N's controller; N goes black and does not re-init because its isViewed did not change.",
+   "evidence": "_initInner: '_BetterPlayerPool.makeRoomFor(this);' before checks. makeRoomFor: 'while (_lru.length >= _maxAlive) { old._forceDisposeFromPool(); }'. didUpdateWidget re-inits only on an isViewed flip.",
+   "confidence": "confirmed",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/widgets/image/image_viewer.dart",
+   "line": 451,
+   "title": "ImageViewer never disposes its PhotoView controllers or stream subscriptions",
+   "scenario": "Every image page built (preloaded neighbours included) leaks a PhotoViewController and a PhotoViewScaleStateController plus their outputStateStream listeners. VideoViewer disposes its pair.",
+   "evidence": "initState: viewController.outputStateStream.listen(...); scaleController.outputScaleStateStream.listen(...) without keeping the subscriptions. dispose() only calls disposables() and removeViewed.",
+   "confidence": "confirmed",
+   "severity": "leak"
+  },
+  {
+   "file": "lib/src/widgets/image/image_viewer.dart",
+   "line": 270,
+   "title": "Image download continues after the page is disposed during header lookup",
+   "scenario": "Fast swiping. initViewer awaits getImageProvider (which awaits Tools.getFileCustomHeaders). If the page is disposed meanwhile, disposables() has already run, and the code still resolves the stream with a new CancelToken that nobody cancels. The full image downloads and decodes for a page that no longer exists.",
+   "evidence": "'mainProvider.value ??= await getImageProvider(...)' then 'imageStream = mainProvider.value!.resolve(...)' with no mounted check. getImageProvider creates cancelToken after the await point.",
+   "confidence": "plausible",
+   "severity": "leak"
+  },
+  {
+   "file": "lib/src/widgets/image/image_viewer.dart",
+   "line": 278,
+   "title": "Tall-image tiling and the preload height limit never trigger with default settings",
+   "scenario": "Defaults: scaling on, 'Pictures decode at 4K at most' on, preloadHeight 16384. ResizeImage bounds the decoded height to 3840, so 'imageInfo.image.height >= preloadHeight' is never true. A 900x20000 webtoon decodes to about 170x3840 (blurry), tiling never runs, and the Preload height setting has no effect.",
+   "evidence": "getImageProvider: ResizeImage(height: ModularUi.isOn(imageCap4k) ? MediaSizeCap.imageLongEdge : null). The listener tests the decoded image: 'if (imageInfo.image.height >= settingsHandler.preloadHeight) await checkAndPrepareTiles();'. Default preloadHeight = 4096*4.",
+   "confidence": "plausible",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/pages/gallery_view_page.dart",
+   "line": 1304,
+   "title": "Info drawer prev/next buttons jump out of range at the ends",
+   "scenario": "Classic drawer, on the first post. Pressing 'previous' calls jumpToPage(-1), which forces pixels below 0. onPageChanged may report -1, filteredFetched[-1] throws, and the catch calls viewerHandler.dropCurrent() (the same happens past the last post).",
+   "evidence": "LongPressRepeater onStart/OutlinedButton onPressed: widget.pageController.jumpToPage(page.value - 1) / (page.value + 1) without bounds; jumpTo does not clamp.",
+   "confidence": "plausible",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/widgets/video/video_viewer.dart",
+   "line": 626,
+   "title": "Chewie initPlayer uses context after awaits without a mounted check",
+   "scenario": "The default engine. Swiping away while initPlayer awaits pending disposes or headers leaves the State disposed. A VideoPlayerController is then created and gets a listener; Theme.of(context) throws on the unmounted State. The controller leaks (never disposed) and an unhandled async error is logged.",
+   "evidence": "initPlayer: 'await Future.wait(toAwait)' / 'httpHeaders: await _customHeaders()' then 'videoController.value = VideoPlayerController...; addListener(updateVideoState); final Color accentColor = Theme.of(context)...' with no mounted guard.",
+   "confidence": "plausible",
+   "severity": "leak"
+  },
+  {
+   "file": "lib/src/widgets/video/media_kit_video_player.dart",
+   "line": 88,
+   "title": "MediaKitVideoPlayer leaks completers; init() modifies the map while iterating it",
+   "scenario": "Each Chewie video on the MPV backend adds _completers[textureId], and dispose never removes it. init() loops over _players.keys while dispose() removes from _players, which throws ConcurrentModificationError if init runs on an instance that holds players.",
+   "evidence": "dispose removes _players/_videoControllers/_streamControllers/_streamSubscriptions but not _completers. init: 'for (final textureId in _players.keys) { await dispose(textureId); }'.",
+   "confidence": "plausible",
+   "severity": "leak"
+  },
+  {
+   "file": "lib/src/widgets/video/loli_controls.dart",
+   "line": 820,
+   "title": "Orphaned hide timers call setState after dispose",
+   "scenario": "_startHideTimer overwrites _hideTimer without cancelling it. It is called from speed long-press and drag end while another timer is pending, so only the latest timer is cancelled in _dispose. The orphan fires setState on a disposed State.",
+   "evidence": "void _startHideTimer() { _hideTimer = Timer(const Duration(seconds: 3), () { setState(() { _hideStuff = true; }); }); } (no cancel, no mounted check)",
+   "confidence": "plausible",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/widgets/gallery/tag_view.dart",
+   "line": 3543,
+   "title": "Controllers created by tag preview strips and panels are never disposed",
+   "scenario": "Each TagContentPreview leaks an AutoScrollController and a ValueNotifier. _TagPreviewsListDialog creates ScrollControllers in build. TagView's own ScrollController (side drawer) is not disposed. _PlaybackSpeedDialog's PageAutoScrollController is not disposed.",
+   "evidence": "_TagContentPreviewState.dispose only calls removeTagPreview. 'final controllers = List.generate(list.length, (_) => ScrollController());' in build. _TagViewState.dispose has no scrollController.dispose().",
+   "confidence": "confirmed",
+   "severity": "leak"
+  },
+  {
+   "file": "lib/src/widgets/gallery/tag_view.dart",
+   "line": 1598,
+   "title": "Info panel Save skips the storage permission and favourite-on-snatch",
+   "scenario": "Tapping Save in the action block queues the download without calling setPermissions() and ignores 'favourite on snatch', unlike the toolbar Save and the S key.",
+   "evidence": "_snatchItem: SnatchHandler.instance.queue([item], handler.booru, ...) then a snackbar. The toolbar .snatch does 'if (!await setPermissions()) return;' plus the favouriteOnSnatch toggle.",
+   "confidence": "plausible",
+   "severity": "wrong-behaviour"
+  },
+  {
+   "file": "lib/src/widgets/gallery/hideable_appbar.dart",
+   "line": 1521,
+   "title": "Closing a nested viewer forces the system UI visible under a hidden outer viewer",
+   "scenario": "The outer viewer has its chrome hidden. Open a tag-strip/linked-media nested viewer and close it: dispose calls setSystemUiVisibility(true), and initState had reset the global displayAppbar. Status and nav bars reappear while the outer toolbar state is out of sync.",
+   "evidence": "initState: viewerHandler.displayAppbar.value = !settingsHandler.autoHideImageBar; dispose: ServiceHandler.setSystemUiVisibility(true).",
+   "confidence": "plausible",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/pages/gallery_view_page.dart",
+   "line": 1095,
+   "title": "Peek bar artist chip reads the shared booru tag store for doujin items",
+   "scenario": "A doujin item in the classic viewer (merge / For You). The artist chip is chosen by the booru-global TagHandler classification, while TagView uses TagTypeLookup, which skips the shared store on doujin. The chip can show a booru's idea of the artist.",
+   "evidence": "_artistOf: TagHandler.instance.getTag(t.fullString).tagType.isArtist for every item.",
+   "confidence": "plausible",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/handlers/viewer_handler.dart",
+   "line": 275,
+   "title": "Global mute / pause / extra-UI hide reach only Chewie viewers",
+   "scenario": "The LoliControls long-press global mute, the pause on opening a viewer and the hide on dismiss-drag do nothing for media_kit or better_player players, because only VideoViewer registers via addViewed and matches the switch.",
+   "evidence": "toggleMuteAllVideos/pauseAllVideos/hideExtraUi switch on 'case VideoViewer():' only; MediaKitPlayerView/BetterPlayerView never call addViewed.",
+   "confidence": "plausible",
+   "severity": "minor"
+  },
+  {
+   "file": "lib/src/pages/gallery_view_page.dart",
+   "line": 111,
+   "title": "Multi-file posts are not fetched on virtual feeds",
+   "scenario": "A bakemono/kemono post opened from Favourites or History never gets its file list or burst action, because the check uses the tab's (virtual) booru.",
+   "evidence": "_loadPostFiles: final booru = widget.tab.booruHandler.booru; if (!PostFilesHandler.instance.supports(booru)) return;",
+   "confidence": "plausible",
+   "severity": "minor"
+  }
+ ],
+ "fragile": [
+  {
+   "what": "Viewer key and stacking contract",
+   "where": "gallery_view_page.dart, viewer_handler.dart, waterfall_view, TagContentPreview.onPreviewTap, LinkedMediaOpener, openPostFilesOverlay, doujin_reader_page",
+   "rule": "Every viewer push registers its GlobalKey with addViewer before pushing; GalleryViewPage.dispose removes it in a post-frame callback (post-files overlay removes in finally). maxActiveViewers must stay 1: covering a viewer unmounts its media, which is the only thing that pauses covered videos. removeViewer clears saved positions and manual-pause marks when the stack empties."
+  },
+  {
+   "what": "Media widget key = item.key (GlobalKey)",
+   "where": "gallery_view_page itemBuilder, post_files_page, ViewerHandler.setNewState/resetZoom/doubleTapZoom/forceLoadCurrentItem",
+   "rule": "ViewerHandler reaches the media State via (current.key as GlobalKey).currentState and switches on ImageViewer/VideoViewer. The public fields of ImageViewerState/VideoViewerState (isZoomed, isLoaded/isVideoInited, isStopped, viewController, showLoading/showControls, videoController, chewieController, resetZoom, doubleTapZoom, forceLoad) are an API."
+  },
+  {
+   "what": "Viewer route name and close reasons",
+   "where": "all viewer pushes; hideable_appbar back arrow; gallery_view_page swipe/Escape; Not interested; tag_view tab list and new-tab notice; breadcrumb",
+   "rule": "Push with RouteSettings(name: ViewerCloseObserver.viewerRoute) and wrap every programmatic viewer pop in NavigationTrace.closing(reason, ...). Dialog pops after an await use NavigationTrace.popIfOnTop. The breadcrumb popUntil uses NavigationTrace.tagDialogOrViewer."
+  },
+  {
+   "what": "Back handling with floating previews",
+   "where": "gallery_view_page PopScope, hideable_appbar PopScope",
+   "rule": "Stand down when FloatingPreviewHandler.hasWindowFor(topPageRoute). Never call ModalRoute.of(context) in callbacks or chips (it rebuilds the tag list and feed on every route change)."
+  },
+  {
+   "what": "Bottom sheet attachment",
+   "where": "item_info_bottom_sheet.dart",
+   "rule": "The sheet must always build a scrollable (TagView) on its scrollController, or DraggableScrollableController.isAttached stays false and animateTo silently does nothing. The r56 lazy-details attempt broke the info button and was reverted in r58."
+  },
+  {
+   "what": "Split layout sizing",
+   "where": "gallery_view_page.dart ValueListenableBuilder(infoSheetExtent)",
+   "rule": "Use MediaQuery, not LayoutBuilder; LayoutBuilder defers build and the sheet/appbar read pageController.page before attach ('Bad state: No element')."
+  },
+  {
+   "what": "Swipe-up listener and dismiss",
+   "where": "gallery_view_page.dart _SwipeUpListener, Dismissible",
+   "rule": "Listener (not GestureDetector) so it never enters the gesture arena; with the bottom sheet on, only swipe-down dismisses. Do not reset viewerHandler.infoSheetExtent in dispose (a nested viewer would clobber the outer one)."
+  },
+  {
+   "what": "Toolbar button persistence",
+   "where": "GalleryButton enum, settings buttonOrder/disabledButtons",
+   "rule": "Enum value names are stored in settings.json; loadFromJSON appends missing values. Do not rename or reorder the semantics."
+  },
+  {
+   "what": "CustomNetworkImage equality",
+   "where": "custom_network_image.dart ==/hashCode",
+   "rule": "Headers are compared by identity; pass the same map instance across rebuilds (SpriteTileImage.sheetHeadersFor caches one per source) or every rebuild refetches. Never close a Dio from DioNetwork.getClient."
+  },
+  {
+   "what": "JPEG validation order",
+   "where": "custom_network_image.dart downloadAndCache",
+   "rule": "looksLikeJpeg (SOI) before hasJpegEndMarker; search for the last EOI in an 8 KB tail (pawchive serves WebP as .jpeg; erocdn appends bytes after EOI). thumbnailCandidates keeps only http(s) spares (e621 '-http://')."
+  },
+  {
+   "what": "media_kit pool semantics",
+   "where": "media_kit_player_view.dart, player_pool_planner.dart",
+   "rule": "Release by identity; replace errored free slots, never rebind them; rebind resets rate to 1 and volume to 100; PlaylistMode.single plus loop-file; options signature disposes stale idle slots; Video keyed by ObjectKey(controller); fullscreen holds refCount via holdForFullscreen/endFullscreenHold and _onPlayerError does nothing while held; start delay is cancelled on dispose and item change."
+  },
+  {
+   "what": "Frame grabs and the pool",
+   "where": "MediaKitFrameSource, isScreenshotNoise, VideoFrames",
+   "rule": "showing(url) requires refCount>0 and no error. noteGrab stamps lastGrabAt. Only the exact strings 'Taking screenshot failed.' and 'Error writing screenshot!' within 15 s of a grab (monotonic clock) are ignored. VideoFrames listens to ViewerHandler.current with addListener, NOT .listen (GetX 5 stream stops after the last cancel). claimScreen/releaseScreen: only the owner can release."
+  },
+  {
+   "what": "Video surface cap",
+   "where": "video_surface_cap.dart + third_party/media_kit_video patch",
+   "rule": "Install the hook once before the first player; read the Modular UI switch per video. Never resize the surface after creation (r57 broke playback, HANDOVER 4.27)."
+  },
+  {
+   "what": "better_player decoder safety",
+   "where": "better_player_view.dart",
+   "rule": "Evict before allocating and serialise every create/teardown through _DecoderGate; _maxAlive=1. Changing the order reintroduces native MediaCodec aborts."
+  },
+  {
+   "what": "Doujin/booru separation in the viewer",
+   "where": "tag_view.dart (isDoujinContext, tag menu, batch ops, parseTags), gallery_view_page _flushDwell, showSelectTagsDialog, find_elsewhere _otherBoorus",
+   "rule": "Doujin items never feed booru dwell, For You seeds or booru discovery. Blacklist, stars and pins route to the doujin store or source settings. The shared booru tag store is not consulted for doujin tags. Guarded by doujin_separation_test."
+  },
+  {
+   "what": "Preview strips do not write tag types",
+   "where": "TagContentPreview.loadPreview",
+   "rule": "tab.booruHandler.storeTagsGlobally = false; the Suggested strip's new tab uses TagContentPreview.newTabQuery (SuggestionHandler query)."
+  },
+  {
+   "what": "Linked media id lookup",
+   "where": "LinkedMediaOpener.prepareTab/showFetched",
+   "rule": "applySourceSettings=false and pageNum += 1 (SearchTab already set startingPage); show fetched when filters emptied filteredFetched."
+  },
+  {
+   "what": "Flash origin",
+   "where": "FlashPlayerPage.baseUrlFor",
+   "rule": "Page origin is the post's own site (e621 sends CORS only to e621.net)."
+  },
+  {
+   "what": "Post files fetched as plain text",
+   "where": "PostFilesHandler.ensureLoaded",
+   "rule": "ResponseType.plain plus bodyText(); fetch only when a post is opened, never during grid load; set fileCountHint from displayable files."
+  },
+  {
+   "what": "Tag chip preview zone",
+   "where": "tag_chip_shell.dart, tag_view buildTagChip",
+   "rule": "The zone is laid over the chip body so it fires without the double-tap wait; previewZoneWidthFor() must match the icon padding the chip draws (11+16+8+2)."
+  },
+  {
+   "what": "Image tiling",
+   "where": "image_viewer.dart checkAndPrepareTiles",
+   "rule": "Tiles at 4096 px, 512 MB budget, skip above 80000 px. Native slicing via ServiceHandler.sliceImage, isolate fallback (static entry)."
+  },
+  {
+   "what": "Favicon resolver keys",
+   "where": "booru_favicon.dart FaviconResolver.rememberWorking",
+   "rule": "Key by the SOURCE host, never the candidate host (all DuckDuckGo fallbacks share one host)."
+  }
+ ],
+ "perf": [
+  {
+   "file": "lib/src/widgets/gallery/tag_view.dart",
+   "line": 203,
+   "issue": "Periodic 5 s Timer re-parses, sorts and groups all tags and calls setState on the whole TagView. It also re-parses on every keystroke in the main search bar (listener on searchHandler.searchTextController), for the TagView that is always mounted in the bottom sheet.",
+   "impact": "A full info panel rebuild every 5 s while viewing (Wrap of all chips, slivers), even with the sheet closed; a jank source during video playback.",
+   "safeFix": "Drop the periodic timer; re-parse on explicit triggers (tag store / settings change notifier, tag dialog onUpdate). Skip work while the sheet extent is 0 but keep the scrollable attached."
+  },
+  {
+   "file": "lib/src/widgets/gallery/item_info_bottom_sheet.dart",
+   "line": 95,
+   "issue": "A new TagView per page (keyed by fileURL) runs loadItem, cacheTabMatchData over all tabs, parsing and a possible BooruHandlerFactory handler creation in initState on every swipe.",
+   "impact": "Network request per swiped post on shouldUpdateIteminTagView sources (429s), plus a build spike in the page-change frame (the 50-80 ms page change measured in r54).",
+   "safeFix": "Delay the initial loadItem (cancelled in dispose) or start it only when the sheet extent > 0; keep the TagView itself mounted."
+  },
+  {
+   "file": "lib/src/pages/gallery_view_page.dart",
+   "line": 404,
+   "issue": "showExtraUi()/hideExtraUi() are called from inside a ValueListenableBuilder builder on every dismissProgress change. Each schedules a post-frame callback that walks activeKeys and sets ValueNotifiers.",
+   "impact": "Extra work and listener churn on every frame of a dismiss drag.",
+   "safeFix": "Call them only on 0 <-> non-0 transitions in Dismissible.onUpdate."
+  },
+  {
+   "file": "lib/src/widgets/video/media_kit_player_view.dart",
+   "line": 851,
+   "issue": "_MediaKitControls calls setState on every position/buffer event, rebuilding the whole overlay (gradient bar, Obx, gesture layers); two overlays when fullscreen.",
+   "impact": "Constant rebuilds during playback on the user's engine.",
+   "safeFix": "Throttle like LoliControls (250 ms), or drive only the progress bar and time text through ValueListenableBuilders."
+  },
+  {
+   "file": "lib/src/widgets/video/better_player_view.dart",
+   "line": 591,
+   "issue": "_BetterControls _onValue calls setState on every VideoPlayerValue change (about per frame).",
+   "impact": "Full overlay rebuild per frame.",
+   "safeFix": "Compare relevant fields and throttle position like LoliControls._updateState."
+  },
+  {
+   "file": "lib/src/widgets/image/booru_favicon.dart",
+   "line": 241,
+   "issue": "Each BooruFavicon builds its provider with a fresh headers map from Tools.getFileCustomHeaders. CustomNetworkImage == compares headers by identity, so identical favicons never share an image-cache entry.",
+   "impact": "Every favicon instance (tab lists, drawers, settings booru list, strips) re-reads its cache file and decodes it again.",
+   "safeFix": "Cache one headers map per booru (like SpriteTileImage.sheetHeadersFor) or make the provider key ignore headers."
+  },
+  {
+   "file": "lib/src/widgets/gallery/hideable_appbar.dart",
+   "line": 1559,
+   "issue": "getActions() rebuilds every toolbar button (Obx widgets, closures, filteredFetched lookups) on each page change, displayAppbar toggle and every 100 ms share-progress setState.",
+   "impact": "Toolbar rebuild in the page-change frame and during share downloads.",
+   "safeFix": "Build per-button widgets that listen to their own state; keep share progress in a ValueNotifier."
+  },
+  {
+   "file": "lib/src/widgets/image/image_viewer.dart",
+   "line": 278,
+   "issue": "With preloadHeight set to 0 (disabled), checkAndPrepareTiles runs for every loaded image: it re-reads the cached file from disk and builds an ImageDescriptor.",
+   "impact": "Extra disk IO and header decode per image.",
+   "safeFix": "Guard with preloadHeight > 0 or compare against the source size from the decoder."
+  },
+  {
+   "file": "lib/src/pages/gallery_view_page.dart",
+   "line": 529,
+   "issue": "For local/recommendation feeds, the itemBuilder scans the whole booruList with Uri parsing per built page to resolve possibleBooru (TagView repeats it).",
+   "impact": "Small but repeated work in every page build.",
+   "safeFix": "Resolve once per item (cache on the item or in BooruHandlerFactory.sourceBooruFor)."
+  }
+ ],
+ "deadCode": [
+  {
+   "file": "lib/src/widgets/gallery/interactive_viewer.dart",
+   "symbol": "(whole file)",
+   "evidence": "File contains only '// TODO make photo_view part independant from media type'; grep 'interactive_viewer.dart' in lib/ and test/ finds no import."
+  },
+  {
+   "file": "lib/src/widgets/video/unknown_viewer_placeholder.dart",
+   "symbol": "UnknownViewerPlaceholder",
+   "evidence": "grep 'unknown_viewer_placeholder.dart' finds no import. The only mention is a commented-out line in lib/src/widgets/desktop/desktop_image_listener.dart:123."
+  },
+  {
+   "file": "lib/src/widgets/gallery/viewer_tutorial.dart",
+   "symbol": "ViewerTutorial / ImageTutorial / VideoTutorial",
+   "evidence": "Mounted at gallery_view_page.dart:833, but _isVisible is set false in initState and never set true, so build always returns SizedBox.shrink(); the Image/Video tutorials are never shown."
+  },
+  {
+   "file": "lib/src/widgets/gallery/tag_view.dart",
+   "symbol": "_TagViewState.sourcesList, _TagViewState.infoText, SourceLinkErrorDialog, detailsExpanded",
+   "evidence": "grep 'sourcesList(' finds only its declaration (line 775). infoText( is called only from sourcesList (784). SourceLinkErrorDialog is used only inside sourcesList (no other file). The detailsExpanded field (172) is never read."
+  },
+  {
+   "file": "lib/src/widgets/video/loli_controls.dart",
+   "symbol": "formatDurationShorter",
+   "evidence": "Only reference is the commented-out line 673; the method is marked '//unused'."
+  }
+ ],
+ "duplication": [
+  {
+   "where": "gallery_view_page.dart itemBuilder (529-558) and tag_view.dart checkForPossibleBooruHandler (244-260)",
+   "what": "Resolving an item's real source booru on virtual feeds by post/file host incl. Sankaku/Idol known URL lists",
+   "consolidation": "BooruHandlerFactory.sourceBooruFor(item, booruList) in sources/framework, cached per item"
+  },
+  {
+   "where": "gallery_view_page.dart itemBuilder, post_files_page.dart _PostFileSlide, widgets/desktop/desktop_image_listener.dart",
+   "what": "Choosing the media widget (media_kit / better_player / Chewie / placeholder / image / GIF / guess / load)",
+   "consolidation": "features/viewer/ui/viewer_item_builder.dart used by all three"
+  },
+  {
+   "where": "media_kit_player_view.dart (_SeekFeedback, _ProgressBar, _fmt, _skipSecondsFor, double-tap side detection, speed boost) and better_player_view.dart (same classes verbatim); loli_controls.dart variant",
+   "what": "Video control overlay pieces and seek logic",
+   "consolidation": "features/video/ui/common/{seek_feedback,video_progress_bar,double_tap_seek}.dart"
+  },
+  {
+   "where": "image_viewer.dart and video_viewer.dart",
+   "what": "onSize preload size limit check, scrollZoomImage, onManualRestart captcha probe + tryToLoadAndUpdateItem flow, stop/restart bookkeeping with ViewerHandler",
+   "consolidation": "A shared viewer media mixin/controller in features/viewer/logic"
+  },
+  {
+   "where": "tag_view.dart buildTagChip (1836-1847) and _TagPreviewsListDialog (4552-4565, 4620-4635)",
+   "what": "'isInSearch' regex test of a tag against the search text",
+   "consolidation": "SearchHandler.isTagInSearch(tag)"
+  },
+  {
+   "where": "tag_view.dart _batchHide/_batchMark vs showTagDialog hide/mark/unmark entries",
+   "what": "Doujin-vs-booru routing of blacklist/star/pin operations",
+   "consolidation": "features/tags/logic/tag_list_actions.dart (hide(tag, scope, booru), mark, unmark, unhide)"
+  },
+  {
+   "where": "tag_view.dart (_openTagInNewTab, _openSelectedTagsAsTabs, _openedInNewTab, TagContentPreview._openInNewTab/_openInNewTabLongPress), doujin_item_menu, doujin_tag_chip, showOpenTagInGroupSheet",
+   "what": "'added_new_tab' snackbar and background-tab opening with placement mode",
+   "consolidation": "features/tabs/logic open-in-background helper + one snackbar builder"
+  },
+  {
+   "where": "guess_extension_viewer.dart and load_item_viewer.dart",
+   "what": "Thumbnail + dark card + retry / open file / open post buttons UI",
+   "consolidation": "A shared ViewerFailureCard widget"
+  },
+  {
+   "where": "hideable_appbar.dart showShareDialog",
+   "what": "Six identical bordered ListTiles differing by icon/label/action",
+   "consolidation": "A list of share option specs rendered in a loop"
+  },
+  {
+   "where": "post_details_sheet, find_elsewhere_sheet, tag_view (batch sheet, tag menu, group picker), _InfoPeekBar",
+   "what": "Drag handle container (40x4.5, Color(0xFF4A4260)) and sheet header pattern",
+   "consolidation": "core/ui SheetHandle + SheetHeader widgets"
+  },
+  {
+   "where": "hideable_appbar.dart (FA/Kemono post page actions) and tag_view.dart (furAffinityPostButton/kemonoPostButton)",
+   "what": "Per-source 'Post page' navigation",
+   "consolidation": "Handler capability postPageRoute(item) used by both"
+  }
+ ],
+ "tests": [
+  "test/player_pool_planner_test.dart",
+  "test/media_kit_engine_options_test.dart",
+  "test/media_kit_error_filter_test.dart",
+  "test/video_surface_cap_test.dart",
+  "test/media_size_cap_test.dart",
+  "test/video_completion_test.dart",
+  "test/video_frames_test.dart",
+  "test/perf_trace_ui_test.dart",
+  "test/tag_chip_shell_test.dart",
+  "test/flow_action_grid_test.dart",
+  "test/flash_play_viewer_test.dart",
+  "test/gallery_linked_media_button_test.dart",
+  "test/linked_media_test.dart",
+  "test/linked_media_ui_test.dart",
+  "test/linked_media_opener_test.dart",
+  "test/linked_media_links_test.dart",
+  "test/linked_media_live_test.dart",
+  "test/jpeg_integrity_test.dart",
+  "test/thumbnail_fallbacks_test.dart",
+  "test/sprite_tile_image_test.dart",
+  "test/favicon_fallback_test.dart",
+  "test/doujin_tag_chip_test.dart",
+  "test/doujin_menu_test.dart",
+  "test/doujin_strip_geometry_test.dart",
+  "test/suggestion_query_test.dart",
+  "test/kemono_test.dart",
+  "test/navigation_trace_test.dart",
+  "test/floating_preview_owner_test.dart",
+  "test/doujin_separation_test.dart",
+  "test/look_memory_test.dart"
+ ]
+}

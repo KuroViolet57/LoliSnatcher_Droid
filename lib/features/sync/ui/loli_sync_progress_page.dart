@@ -1,0 +1,296 @@
+import 'dart:core';
+import 'dart:io';
+
+import 'package:flutter/material.dart';
+
+import 'package:material_symbols_icons/symbols.dart';
+
+import 'package:lolisnatcher/features/sync/logic/loli_sync_handler.dart';
+import 'package:lolisnatcher/core/platform/service_handler.dart';
+import 'package:lolisnatcher/core/settings/settings_handler.dart';
+import 'package:lolisnatcher/features/sync/logic/sync_modes.dart';
+import 'package:lolisnatcher/core/ui/settings_widgets.dart';
+
+class LoliSyncProgressPage extends StatefulWidget {
+  const LoliSyncProgressPage({
+    required this.type, // sender or receiver
+    required this.ip,
+    required this.port,
+    this.favourites = false,
+    this.favouritesv2 = false,
+    this.favSkip = 0,
+    this.snatched = false,
+    this.snatchedSkip = 0,
+    this.settings = false,
+    this.booru = false,
+    this.tabs = false,
+    this.tabsMode = TabsMode.merge,
+    this.tags = false,
+    this.tagsMode = TagsMode.preferTypeIfNone,
+    this.searchHistory = false,
+    this.savedSearches = false,
+    this.code = '',
+    super.key,
+  });
+
+  final String type, port;
+
+  /// The code shown on the receiving phone. The receiver generates its own.
+  final String code;
+  final TabsMode tabsMode;
+  final TagsMode tagsMode;
+  final String? ip;
+  final bool favourites, favouritesv2, snatched, settings, booru, tabs, tags, searchHistory, savedSearches;
+  final int favSkip, snatchedSkip;
+
+  @override
+  State<LoliSyncProgressPage> createState() => _LoliSyncProgressPageState();
+}
+
+class _LoliSyncProgressPageState extends State<LoliSyncProgressPage> {
+  final LoliSync loliSync = LoliSync();
+  List<String> toSync = [];
+  late Stream<String> progressStream;
+
+  List<String> messagesHistory = [];
+  int maxHistoryLength = 100;
+  bool wakelocked = false;
+
+  /// 1.0: the snapshot last put in the history. A rebuild (the "Keep screen
+  /// awake" switch) hands the builder the same one again.
+  AsyncSnapshot<String>? lastSnapshot;
+
+  void addMessage(String message) {
+    // add new message to history but limit it to X items
+    if (message.startsWith('Server active at') &&
+        messagesHistory.indexWhere((msg) => msg.startsWith('Server active at')) != -1) {
+      return;
+    }
+
+    messagesHistory.insert(0, message);
+    if (messagesHistory.length > maxHistoryLength) {
+      messagesHistory.removeLast();
+    }
+  }
+
+  @override
+  // These lines are done in init state as they only need to be run once when the widget is first loaded
+  void initState() {
+    super.initState();
+    if (widget.type == 'sender') {
+      if (widget.favourites) {
+        toSync.add('Favourites');
+      }
+      if (widget.favouritesv2) {
+        toSync.add('Favouritesv2');
+      }
+      if (widget.snatched) {
+        toSync.add('Snatched');
+      }
+      if (widget.settings) {
+        toSync.add('Settings');
+      }
+      if (widget.booru) {
+        toSync.add('Booru');
+      }
+      if (widget.tabs) {
+        toSync.add('Tabs');
+      }
+      if (widget.tags) {
+        toSync.add('Tags');
+      }
+      if (widget.searchHistory) {
+        toSync.add('SearchHistory');
+      }
+      if (widget.savedSearches) {
+        toSync.add('SavedSearches');
+      }
+
+      progressStream = loliSync.startSync(
+        widget.ip!,
+        widget.port,
+        toSync,
+        widget.favSkip,
+        widget.snatchedSkip,
+        widget.tabsMode,
+        widget.tagsMode,
+        code: widget.code,
+      );
+    } else {
+      progressStream = loliSync.startServer(widget.ip, widget.port);
+    }
+  }
+
+  @override
+  void dispose() {
+    // 1.0: the page can go without the stop dialog (a popUntil, a reset):
+    // the receiving server must not keep taking writes from the network, the
+    // sync keep sending, or the screen stay awake.
+    if (widget.type == 'sender') {
+      loliSync.killSync();
+    } else {
+      loliSync.server?.close();
+    }
+    if (wakelocked) ServiceHandler.enableSleep();
+    super.dispose();
+  }
+
+  void toggleWakelock() {
+    if (wakelocked) {
+      ServiceHandler.enableSleep();
+      wakelocked = false;
+    } else {
+      ServiceHandler.disableSleep(force: true);
+      wakelocked = true;
+    }
+    setState(() {});
+  }
+
+  Future<bool?> showPopDialog() async {
+    return showDialog(
+      context: context,
+      builder: (context) {
+        return SettingsDialog(
+          title: Text(
+            widget.type == 'sender'
+                ? context.loc.loliSync.stopSyncingQuestion
+                : context.loc.loliSync.stopServerQuestion,
+          ),
+          actionButtons: [
+            ElevatedButton.icon(
+              icon: const Icon(Symbols.cancel_rounded),
+              label: Text(context.loc.no),
+              onPressed: () {
+                Navigator.of(context).pop(false);
+              },
+            ),
+            ElevatedButton.icon(
+              icon: const Icon(Symbols.exit_to_app_rounded),
+              label: Text(context.loc.yes),
+              onPressed: () {
+                if (widget.type == 'sender') {
+                  loliSync.killSync();
+                } else {
+                  loliSync.killServer();
+                }
+                ServiceHandler.enableSleep();
+                Navigator.of(context).pop(true);
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _onPopInvoked(bool didPop, _) async {
+    if (didPop) {
+      return;
+    }
+
+    final bool? shouldPop = await showPopDialog();
+    if (shouldPop ?? false) {
+      Navigator.of(context).pop();
+    }
+  }
+
+  Future<bool> _onWillPop() async {
+    final bool? shouldPop = await showPopDialog();
+    return shouldPop ?? false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: _onPopInvoked,
+      child: Scaffold(
+        resizeToAvoidBottomInset: false,
+        appBar: SettingsAppBar(
+          title: context.loc.loliSync.title,
+          leading: IconButton(
+            icon: const Icon(Symbols.arrow_back_rounded),
+            onPressed: () async {
+              if (await _onWillPop()) {
+                Navigator.of(context).pop();
+              }
+            },
+          ),
+        ),
+        body: Center(
+          child: StreamBuilder<String>(
+            stream: progressStream,
+            builder: (BuildContext context, AsyncSnapshot<String> snapshot) {
+              String status = '';
+              if (snapshot.hasError) {
+                status = '${context.loc.error} ${snapshot.error}';
+              } else {
+                switch (snapshot.connectionState) {
+                  case ConnectionState.none:
+                    status = context.loc.loliSync.noConnection;
+                    break;
+                  case ConnectionState.waiting:
+                    if (widget.type == 'sender') {
+                      status = context.loc.loliSync.waitingForConnection;
+                    } else {
+                      status = context.loc.loliSync.startingServer;
+                    }
+                    break;
+                  case ConnectionState.active:
+                  case ConnectionState.done:
+                    status = '${snapshot.data}';
+                    break;
+                }
+              }
+              if (!identical(snapshot, lastSnapshot)) {
+                lastSnapshot = snapshot;
+                addMessage(status);
+              }
+
+              return Center(
+                child: Column(
+                  children: [
+                    const SizedBox(height: 10),
+                    Icon(widget.type == 'sender' ? Symbols.sync_rounded : Symbols.dns_rounded, size: 250),
+                    const SizedBox(height: 10),
+                    if (Platform.isAndroid || Platform.isIOS)
+                      SettingsToggle(
+                        title: context.loc.loliSync.keepScreenAwake,
+                        value: wakelocked,
+                        onChanged: (bool newValue) {
+                          toggleWakelock();
+                        },
+                      ),
+                    Padding(
+                      padding: const EdgeInsets.all(4),
+                      child: Text(status, style: const TextStyle(fontSize: 18)),
+                    ),
+                    // show history of messages
+                    if (messagesHistory.length > 1)
+                      Expanded(
+                        child: ListView.builder(
+                          itemCount: messagesHistory.length - 1,
+                          itemBuilder: (BuildContext context, int index) {
+                            final int indexWoutStart = index + 1;
+                            return Padding(
+                              padding: const EdgeInsets.all(4),
+                              child: Center(
+                                child: Text(
+                                  messagesHistory[indexWoutStart],
+                                  style: const TextStyle(fontSize: 18),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
